@@ -104,7 +104,7 @@ func TestWireKeyConformance(t *testing.T) {
 			}
 			r.allowed[key] = true
 		}
-		if b, _ := iter.Meta["attachesToAll"].(bool); b {
+		if _, b := engine.AttachesFrom(iter); b {
 			attachKey = name
 		}
 		rules[name] = r

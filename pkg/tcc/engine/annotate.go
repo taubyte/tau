@@ -283,17 +283,35 @@ func Embeds(names ...string) NodeOption {
 	return GroupAnnotate("embeds", names)
 }
 
-// AttachesToAll marks a resource group as cross-cutting: every OTHER compiled
-// resource carries a trailing derived []string field listing the instances of
-// THIS kind attached to it. The generator names that universal field from this
-// group's Resource iface and keys it by this group's config key (e.g. the
-// smartops group -> a `SmartOps []string` field on every resource, key
-// "smartops"). The compiler synthesizes the list from each resource's tags
-// (driver.AttachAll reads this same annotation): a "<key>:<name>" tag adds
-// <name>'s id to that resource's <key> list — it is never an authored key.
+// AttachesToAll marks a resource group as cross-cutting: every OTHER compiled resource
+// carries a trailing derived []string field listing the instances of THIS kind attached
+// to it. The compiler synthesizes that list from a field each resource already has —
+// `from`, holding entries like "<key><sep><name>" — and adds the named instance's id.
+//
+// The field and the separator are NAMED here because they are the vocabulary's. The
+// driver used to read a field called `tags` and split on `:`, which is one vocabulary's
+// convention written into the layer that must not have one.
+//
 // Requires Resource(...) on the same node.
-func AttachesToAll() NodeOption {
-	return GroupAnnotate("attachesToAll", true)
+func AttachesToAll(from, sep string) NodeOption {
+	return GroupAnnotate("attachesToAll", AttachSpec{From: from, Sep: sep})
+}
+
+// AttachSpec is where a cross-cutting attachment is read from: the field holding the
+// entries, and what separates the group key from the name inside one.
+type AttachSpec struct {
+	From string
+	Sep  string
+}
+
+// AttachesFrom reads it back. The second value is false when the group is not
+// cross-cutting.
+func AttachesFrom(iter *Node) (AttachSpec, bool) {
+	if iter == nil {
+		return AttachSpec{}, false
+	}
+	spec, ok := iter.Meta["attachesToAll"].(AttachSpec)
+	return spec, ok
 }
 
 // Singular declares the Go type name a container group compiles to (e.g. the
@@ -302,6 +320,25 @@ func AttachesToAll() NodeOption {
 // than guess a singular from the plural key. Generation-only; no runtime effect.
 func Singular(goName string) NodeOption {
 	return GroupAnnotate("singular", goName)
+}
+
+// Indexed declares that a group takes part in the index, and at which position. The
+// index accumulates buckets shared across scopes, so the ORDER groups are visited in is
+// part of what comes out — and it is a fact about a vocabulary, not about the driver
+// visiting them. It was a list of eight group names in the interpreter: right for one
+// vocabulary and silently wrong for every other.
+//
+// Lower goes first. Groups that declare no position follow, in declaration order.
+func Indexed(position int) NodeOption { return GroupAnnotate("indexAt", position) }
+
+// IndexedAt reads a group's position back. The second value is false when it declares
+// none, which is not an error: it means "after the ones that do".
+func IndexedAt(iter *Node) (int, bool) {
+	if iter == nil {
+		return 0, false
+	}
+	at, ok := iter.Meta["indexAt"].(int)
+	return at, ok
 }
 
 // EnumBoolSpec is the compile/decompile contract for an EnumBool attribute.

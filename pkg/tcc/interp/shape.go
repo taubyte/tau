@@ -53,7 +53,7 @@ func usesRefs(root *engine.Node) bool {
 // the signal that the AttachAll cross-cutting attachment pass is needed.
 func usesAttachesToAll(root *engine.Node) bool {
 	return eachIter(root, func(iter *engine.Node) bool {
-		b, _ := iter.Meta["attachesToAll"].(bool)
+		_, b := engine.AttachesFrom(iter)
 		return b
 	})
 }

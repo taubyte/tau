@@ -208,25 +208,40 @@ func (s *Session) docPath(res []string) ([]string, error) {
 	bad := func(why string) error {
 		return fmt.Errorf("session: %q is not a resource address (%s)", strings.Join(res, "/"), why)
 	}
-	switch len(res) {
+
+	// SCOPES NEST, so an address does too: [namespace, shop, namespace, eu, function,
+	// notify] is `notify` in `shop/eu`. Reading only the shapes that fit in four segments
+	// answered "too deep" for anything two scopes down — a limit on the vocabulary
+	// invented by the reader, and one the compiler does not share.
+	rest := res
+	for len(rest) >= 2 && l.ContainerDoc(rest[0]) != "" {
+		rest = rest[2:]
+	}
+
+	switch len(rest) {
+	case 0:
+		// the address ended on a scope: its own fields live in the document the layout
+		// names, which is layout rather than something a caller should have to spell
+		return append(append([]string{}, res...), l.ContainerDoc(res[len(res)-2])), nil
 	case 1:
-		if res[0] != l.RootDoc() {
-			return nil, bad("a resource needs a group and a name")
+		// [.., container, instance, containerDoc] — the legacy explicit form, and the
+		// root document, which is the one address with no group above it
+		if len(res) == len(rest) {
+			if rest[0] != l.RootDoc() {
+				return nil, bad("a resource needs a group and a name")
+			}
+			return res, nil
 		}
-	case 2:
-		if doc := l.ContainerDoc(res[0]); doc != "" {
-			return append(append([]string{}, res...), doc), nil
-		}
-	case 3: // legacy [container, name, containerDoc]
-		if doc := l.ContainerDoc(res[0]); doc == "" || res[2] != doc {
+		if doc := l.ContainerDoc(res[len(res)-3]); doc == "" || rest[0] != doc {
 			return nil, bad("only a container instance's document is addressable three deep")
 		}
-	case 4: // [container, instance, group, name]
-		if l.ContainerDoc(res[0]) == "" {
-			return nil, bad(strconv.Quote(res[0]) + " is not a container")
+	case 2:
+		// [.., group, name] — a resource, at whatever depth its scopes put it
+		if l.ContainerDoc(rest[0]) != "" {
+			return nil, bad(strconv.Quote(rest[0]) + " is a scope, and a scope holds resources rather than being one at this depth")
 		}
 	default:
-		return nil, bad("too deep")
+		return nil, bad("a resource is a kind and a name, inside as many scopes as it lives in")
 	}
 	return res, nil
 }
@@ -777,7 +792,16 @@ func (s *Session) Address(kind, name, app string) ([]string, error) {
 	if !ok {
 		return nil, fmt.Errorf("session: this DSL has no container kind to scope %q under", app)
 	}
-	return []string{c.Group, app, k.Group, name}, nil
+	// Scopes NEST, so the scope is a path: "shop/eu" is two of them, and addressing it as
+	// one produced a scope literally called "shop/eu" that exists nowhere.
+	out := []string{}
+	for _, level := range strings.Split(app, "/") {
+		if level == "" {
+			return nil, fmt.Errorf("session: %q is not a scope path", app)
+		}
+		out = append(out, c.Group, level)
+	}
+	return append(out, k.Group, name), nil
 }
 
 // Names lists the instances of a kind in scope — the whole project when app is
@@ -860,13 +884,22 @@ func (s *Session) ResourceAt(filePath string) ([]string, bool) {
 	if !s.hasGroup(segs[0]) {
 		return nil, false
 	}
-	switch len(segs) {
+	// Peel the scopes off the front, however many there are: a file two namespaces deep
+	// is still a resource, and reading only four segments called it nothing.
+	rest := segs
+	for len(rest) >= 2 && l.ContainerDoc(rest[0]) != "" {
+		rest = rest[2:]
+	}
+	switch len(rest) {
+	case 0: // the path ended on a scope, whose own document is named by the layout
+		return segs[:len(segs)], true
+	case 1: // .../<container>/<instance>/<containerDoc> addresses the scope itself
+		if len(segs) == len(rest) {
+			return nil, false
+		}
+		return segs[:len(segs)-1], rest[0] == l.ContainerDoc(segs[len(segs)-3])
 	case 2:
-		return segs, true
-	case 3: // a container instance's own document addresses the container
-		return segs[:2], segs[2] == l.ContainerDoc(segs[0])
-	case 4:
-		return segs, l.ContainerDoc(segs[0]) != "" && s.hasGroup(segs[2])
+		return segs, s.hasGroup(rest[0]) && l.ContainerDoc(rest[0]) == ""
 	}
 	return nil, false
 }

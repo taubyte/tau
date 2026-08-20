@@ -163,8 +163,8 @@ func TestWebsiteServingMode(t *testing.T) {
 	assert.NilError(t, err)
 
 	site := only(t, resources(t, obj.Flat(), "website"))
-	assert.Equal(t, site["serve/mode"], "spa")
-	assert.Equal(t, site["serve/index"], "index.html", "the default a directory request returns")
+	assert.Equal(t, site["serve-mode"], "spa")
+	assert.Equal(t, site["serve-index"], "index.html", "the default a directory request returns")
 }
 
 // Every USE of a function is a place tcc can see, and the function says which world it

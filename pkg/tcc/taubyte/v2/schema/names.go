@@ -61,12 +61,12 @@ func ReachableNames(obj map[string]any) map[string]Reachable {
 		if at == "" {
 			continue
 		}
-		if res.str(at+"/kind") == "" {
+		if res.str(at+"-kind") == "" {
 			continue // it answers on no name, which is allowed
 		}
 
-		name := res.str(at + "/name")
-		zoneRef := res.str(at + "/zone")
+		name := res.str(at + "-name")
+		zoneRef := res.str(at + "-zone")
 		if zoneRef == "" {
 			// the cloud's own zone: the project's label is a pure function of its id,
 			// so the knowable part is computed rather than left to a caller

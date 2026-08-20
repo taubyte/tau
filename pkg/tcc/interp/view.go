@@ -140,7 +140,7 @@ func free(root *engine.Node, flat map[string]any, docs []placement) error {
 			}
 		}
 	}
-	if inner, ok := flat["object"].(map[string]any); ok {
+	if inner, ok := flat[ProjectKey].(map[string]any); ok {
 		flat = inner
 	}
 	walk(flat, "")

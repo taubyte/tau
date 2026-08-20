@@ -63,7 +63,7 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 
 	// An AttachesToAll marker alone adds exactly AttachAll.
 	attachRoot := mkRoot(mkResGroup("ops", []*engine.Attribute{{Name: "id"}},
-		map[string]any{"attachesToAll": true}))
+		map[string]any{"attachesToAll": engine.AttachSpec{From: "tags", Sep: ":"}}))
 	assert.Assert(t, usesAttachesToAll(attachRoot))
 	assert.Assert(t, !usesRefs(attachRoot))
 	assert.Assert(t, !UsesIndexing(attachRoot))
@@ -84,7 +84,7 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 			{Name: "id"},
 			{Name: "target", Meta: map[string]any{"ref": true}},
 		}, map[string]any{"indexName": true}),
-		mkResGroup("ops", []*engine.Attribute{{Name: "id"}}, map[string]any{"attachesToAll": true}),
+		mkResGroup("ops", []*engine.Attribute{{Name: "id"}}, map[string]any{"attachesToAll": engine.AttachSpec{From: "tags", Sep: ":"}}),
 	)
 	assert.Assert(t, usesRefs(full))
 	assert.Assert(t, usesAttachesToAll(full))

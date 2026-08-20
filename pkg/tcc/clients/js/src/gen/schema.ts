@@ -94,7 +94,7 @@ export class Session {
   project(): ProjectConfig {
     return new ProjectConfig(this);
   }
-  applications(): Promise<string[]> {
+  applicationNames(): Promise<string[]> {
     return this.binding.list(this.handle, ["applications"]);
   }
   resourceAt(path: string): Promise<string[] | null> {

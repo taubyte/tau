@@ -63,6 +63,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
 			Resource("databases", "Database", "Database", "database"),
+			interp.Indexed(4), // the order buckets accumulate in; see engine.Indexed
 			interp.IndexByName(HasIndexPath),
 		)),
 	DefineGroup("domains",
@@ -80,6 +81,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasIndex),
 			Embeds("Indexer"),
 			Resource("domains", "Domain", "Domain", "domain"),
+			interp.Indexed(7), // the order buckets accumulate in; see engine.Indexed
 			interp.IndexPlaceholder("fqdn"),
 		)),
 	DefineGroup("functions",
@@ -110,6 +112,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule, HasServices),
 			Embeds("Wasm"),
 			Resource("functions", "Function", "Function", "function"),
+			interp.Indexed(0), // the order buckets accumulate in; see engine.Indexed
 			interp.IndexByName(HasWasmModule),
 			interp.IndexForeignKey(HasHttp, "domains", "domains", "fqdn"),
 		)),
@@ -128,8 +131,9 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasWasmModule, HasNameIndex),
 			Embeds("Wasm"),
 			Resource("libraries", "Library", "Library", "library"),
+			interp.Indexed(2), // the order buckets accumulate in; see engine.Indexed
 			interp.IndexByName(HasWasmModule),
-			interp.IndexRepo(repositorytype.LibraryRepository),
+			interp.IndexRepo(repositorytype.LibraryRepository, "provider", "repository-id"),
 			interp.IndexName(),
 		)),
 	DefineGroup("messaging",
@@ -150,6 +154,7 @@ var TaubyteRessources = []*Node{
 			// the dream inject path (services/tns/mocks casts to structureSpec.Wasm).
 			Embeds("Basic", "Wasm"),
 			Resource("messaging", "Messaging", "Messaging", "messaging"),
+			interp.Indexed(5), // the order buckets accumulate in; see engine.Indexed
 			interp.IndexByScope(HasWebSocket),
 		)),
 	DefineGroup("services",
@@ -180,7 +185,9 @@ var TaubyteRessources = []*Node{
 			Resource("smartops", "SmartOps", "SmartOp", "smartops"),
 			// smartops attach to every resource: each compiled resource carries a
 			// derived SmartOps []string field (key "smartops"), sourced here.
-			AttachesToAll(),
+			// read from each resource's `tags`, where an entry is "smartops:<name>"
+			AttachesToAll("tags", ":"),
+			interp.Indexed(6), // the order buckets accumulate in; see engine.Indexed
 			interp.IndexByName(HasWasmModule),
 		)),
 	DefineGroup("storages",
@@ -208,6 +215,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
 			Resource("storages", "Storage", "Storage", "storage"),
+			interp.Indexed(3), // the order buckets accumulate in; see engine.Indexed
 			interp.IndexByName(HasIndexPath),
 		)),
 	DefineGroup("websites",
@@ -227,8 +235,9 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule),
 			Embeds("Basic", "Wasm"),
 			Resource("website", "Website", "Website", "website"),
+			interp.Indexed(1), // the order buckets accumulate in; see engine.Indexed
 			interp.IndexForeignKey(HasHttp, "domains", "domains", "fqdn"),
-			interp.IndexRepo(repositorytype.WebsiteRepository),
+			interp.IndexRepo(repositorytype.WebsiteRepository, "provider", "repository-id"),
 		)),
 }
 

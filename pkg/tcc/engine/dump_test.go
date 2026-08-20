@@ -341,17 +341,21 @@ func TestWriteValueToPath_WithEitherAndType(t *testing.T) {
 
 	query := seer.Query().Get("test").Document()
 
-	// Non-key attribute with Either() - needs type attribute
+	// A non-key attribute inside a switch: the branch comes from whichever attribute the
+	// schema marked Key(), which is what the node has to carry.
 	attr := &Attribute{
 		Name: "endpoint",
 		Type: TypeString,
 		Path: []StringMatch{Either("http", "p2p"), "endpoint"},
 	}
+	n := &Node{Attributes: []*Attribute{
+		String("type", Path(Either("http", "p2p")), Key()),
+	}}
 	obj := object.New[object.Refrence]()
 	obj.Set("type", "http")
 	obj.Set("endpoint", "/api/v1")
 
-	err = writeValueToPath(&Node{}, query, attr.Path, attr, "/api/v1", obj)
+	err = writeValueToPath(n, query, attr.Path, attr, "/api/v1", obj)
 	assert.NilError(t, err)
 
 	err = query.Commit()
@@ -408,16 +412,25 @@ func TestBranchKeyValue_FromTheKeyAttribute(t *testing.T) {
 	assert.Equal(t, got, "generated")
 }
 
-// v1's convention still answers, so nothing that worked stops working.
-func TestBranchKeyValue_FallsBackToType(t *testing.T) {
+// A SWITCH IS DECIDED BY Key(), and by nothing else. There used to be a fallback to a
+// field literally called `type` — one vocabulary's word, in the layer that must not have
+// one, on the path that writes config back out. A vocabulary whose `type` means something
+// else would have taken the wrong branch and said nothing.
+func TestBranchKeyValue_NeedsAKey(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("type", "http")
-	got, err := branchKeyValue(&Node{}, obj, []StringMatch{Either("http")}, 0)
+
+	_, err := branchKeyValue(&Node{}, obj, []StringMatch{Either("http")}, 0)
+	assert.ErrorContains(t, err, "no Key() attribute",
+		"a field named `type` is not a declaration; Key() is")
+
+	// ...and with the declaration, the same object answers
+	n := &Node{Attributes: []*Attribute{
+		String("type", Path(Either("http", "p2p")), Key()),
+	}}
+	got, err := branchKeyValue(n, obj, []StringMatch{Either("http", "p2p")}, 0)
 	assert.NilError(t, err)
 	assert.Equal(t, got, "http")
-
-	_, err = branchKeyValue(&Node{}, object.New[object.Refrence](), []StringMatch{Either("http")}, 0)
-	assert.ErrorContains(t, err, "no Key() attribute")
 }
 
 func TestDumpChild_WithNonGroupError(t *testing.T) {

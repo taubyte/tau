@@ -49,7 +49,7 @@ func universalTail(root []*engine.Node) []field {
 			continue
 		}
 		iter := g.Children[0]
-		if b, _ := iter.Meta["attachesToAll"].(bool); !b {
+		if _, ok := engine.AttachesFrom(iter); !ok {
 			continue
 		}
 		d, ok := descriptorFor(iter)

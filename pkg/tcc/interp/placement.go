@@ -127,7 +127,7 @@ func fill(tmpl, kind, name string) string {
 // what was written silently deleted that, and the agent's memory became a resource
 // nothing reaches.
 func onlyOnWhatExists(root *engine.Node, flat map[string]any, docs []placement, adds []granted) []granted {
-	if inner, ok := flat["object"].(map[string]any); ok {
+	if inner, ok := flat[ProjectKey].(map[string]any); ok {
 		flat = inner
 	}
 	_, nameField := engine.IdentityOf(root)

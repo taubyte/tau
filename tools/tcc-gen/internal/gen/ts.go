@@ -509,7 +509,13 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 		fmt.Fprintf(&b, "  %s(name: string): %sConfig {\n    return new %sConfig(this, name);\n  }\n", tsName(cSpec), cSpec, cSpec)
 	}
 	fmt.Fprintf(&b, "  project(): %sConfig {\n    return new %sConfig(this);\n  }\n", projectSpec, projectSpec)
-	fmt.Fprintf(&b, "  %s(): Promise<string[]> {\n    return this.binding.list(this.handle, [%q]);\n  }\n", container, container)
+	// ...and the LISTER is named the way every other lister is: <spec>Names(). It used to
+	// be named for the container's group key, which collides with the accessor above the
+	// moment a vocabulary's container is singular-shaped — v2 calls its scopes
+	// `namespace`, and the generated client had two methods called namespace().
+	if cSpec != "" {
+		fmt.Fprintf(&b, "  %sNames(): Promise<string[]> {\n    return this.binding.list(this.handle, [%q]);\n  }\n", tsName(cSpec), container)
+	}
 	// path -> canonical address, the inverse of a resource's serialize().
 	b.WriteString("  resourceAt(path: string): Promise<string[] | null> {\n    return this.binding.resourceAt(this.handle, path);\n  }\n")
 	// The generic, kind-keyed entry points. Everything above is statically named

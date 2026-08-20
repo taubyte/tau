@@ -464,7 +464,7 @@ func place(tree map[string]any, path []string, value any) {
 // stable order. Pure: same config, same plan, no network, no clock.
 func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 	scope := obj
-	if inner, ok := obj["object"].(map[string]any); ok {
+	if inner, ok := obj[ProjectKey].(map[string]any); ok {
 		scope = inner
 	}
 

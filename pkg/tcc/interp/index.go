@@ -3,6 +3,7 @@ package interp
 import (
 	"fmt"
 	"slices"
+	"sort"
 
 	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/pkg/specs/common"
@@ -53,12 +54,22 @@ func IndexForeignKey(cap engine.Capability, refField, targetGroup, targetKey str
 	return engine.GroupAnnotate("indexForeignKey", foreignKeyIndex{cap, refField, targetGroup, targetKey})
 }
 
-// IndexRepo declares the git-repo reverse index a website/library contributes: the
-// driver rebuilds the repository path from the instance's provider + repository-id
-// wire keys and Set()s the repo type at <repo>/type and this resource's IndexValue
-// at <repo>/resource/<id>. Replaces the website/library repository IndexSet arms.
-func IndexRepo(repoType repositorytype.Type) engine.NodeOption {
-	return engine.GroupAnnotate("indexRepo", repoType)
+// IndexRepo declares the git-repo reverse index a resource contributes: the driver
+// rebuilds the repository path from two of the resource's own fields and Set()s the repo
+// type at <repo>/type and this resource's IndexValue at <repo>/resource/<id>.
+//
+// The two fields are NAMED here because they are the vocabulary's. The driver used to
+// read "provider" and "repository-id" — this vocabulary's wire keys, spelled out in the
+// layer that must not know one.
+func IndexRepo(repoType repositorytype.Type, providerField, idField string) engine.NodeOption {
+	return engine.GroupAnnotate("indexRepo", repoIndex{repoType, providerField, idField})
+}
+
+// repoIndex is IndexRepo's payload: what kind of repository, and which two fields say
+// where it is.
+type repoIndex struct {
+	Type                   repositorytype.Type
+	ProviderField, IDField string
 }
 
 // IndexName declares the id-keyed name index a resource contributes: the driver
@@ -154,20 +165,20 @@ func foreignKeyPath(cap engine.Capability, value, groupKey string) (*common.TnsP
 // indexRepo reproduces the old repositoryPath + website/library repo IndexSet: it
 // rebuilds the repo path from the instance's provider + repository-id wire keys and
 // Set()s the repo type at <repo>/type and the IndexValue at <repo>/resource/<id>.
-func indexRepo(ic *IndexCtx, index object.Object[object.Refrence], repoType repositorytype.Type) error {
-	provider, err := ic.Obj.GetString("provider")
+func indexRepo(ic *IndexCtx, index object.Object[object.Refrence], repo repoIndex) error {
+	provider, err := ic.Obj.GetString(repo.ProviderField)
 	if err != nil {
-		return fmt.Errorf("git provider is not a string: %w", err)
+		return fmt.Errorf("%s is not a string: %w", repo.ProviderField, err)
 	}
-	repoId, err := ic.Obj.GetString("repository-id")
+	repoId, err := ic.Obj.GetString(repo.IDField)
 	if err != nil {
-		return fmt.Errorf("git repository is not a string: %w", err)
+		return fmt.Errorf("%s is not a string: %w", repo.IDField, err)
 	}
 	rp, err := methods.GetRepositoryPath(provider, repoId, ic.Project)
 	if err != nil {
 		return fmt.Errorf("getting repository path for %s failed with %w", repoId, err)
 	}
-	index.Set(rp.Type().String(), repoType)
+	index.Set(rp.Type().String(), repo.Type)
 	index.Set(rp.Resource(ic.Id).String(), ic.IndexValue.String())
 	return nil
 }
@@ -207,55 +218,57 @@ func indexPlaceholder(ic *IndexCtx, index object.Object[object.Refrence], groupK
 	return nil
 }
 
-// v1IndexOrder is v1's accumulation ORDER, taken verbatim from pass4/pipe.go: link
-// buckets shared across scopes accumulate in this sequence, so it is load-bearing for
-// parity and cannot be sorted or derived.
-//
-// It is an ORDER, not the SET. It used to be both, which made it the same latent bug
-// `decompileOrder` turned out to be: for any vocabulary but v1 it matches nothing, so
-// every indexed group is skipped and the indexes come out empty with no error. v2 does
-// not index today, so this was dormant rather than broken — the day it does, it would
-// have been silent.
-var v1IndexOrder = []string{
-	"functions",
-	"websites",
-	"libraries",
-	"storages",
-	"databases",
-	"messaging",
-	"smartops",
-	"domains",
-}
+// Indexed is engine.Indexed, re-exported so a vocabulary declares its index position
+// beside the rest of its index footprint.
+func Indexed(position int) engine.NodeOption { return engine.Indexed(position) }
 
-// indexedGroups is every group that declares an index footprint, in v1's order where
-// v1 names it and in declaration order after that.
+// indexedGroups is every group that declares an index footprint, in the order the
+// vocabulary put them in (engine.Indexed) and in declaration order after that.
+//
+// The order is load-bearing: buckets shared across scopes accumulate in it, so a
+// different sequence is a different artifact. It used to be a list of eight group names
+// here — v1's, verbatim — which is the same latent bug decompileOrder turned out to be:
+// for any other vocabulary it matches nothing, every indexed group is skipped, and the
+// indexes come out empty with no error.
 func indexedGroups(root *engine.Node) []string {
-	declared := map[string]bool{}
+	type at struct {
+		key      string
+		position int
+		declared bool
+	}
+	var groups []at
 	for _, g := range root.Children {
 		key, _ := g.Match.(string)
 		if key == "" || len(g.Children) == 0 {
 			continue
 		}
+		indexes := false
 		for _, k := range indexMetaKeys {
 			if _, ok := g.Children[0].Meta[k]; ok {
-				declared[key] = true
+				indexes = true
 				break
 			}
 		}
+		if !indexes {
+			continue
+		}
+		position, declared := engine.IndexedAt(g.Children[0])
+		groups = append(groups, at{key: key, position: position, declared: declared})
 	}
 
-	out := make([]string, 0, len(declared))
-	for _, key := range v1IndexOrder {
-		if declared[key] {
-			out = append(out, key)
-			delete(declared, key)
+	sort.SliceStable(groups, func(i, j int) bool {
+		if groups[i].declared != groups[j].declared {
+			return groups[i].declared // a stated position comes before an unstated one
 		}
-	}
-	for _, g := range root.Children {
-		if key, _ := g.Match.(string); declared[key] {
-			out = append(out, key)
-			delete(declared, key)
+		if !groups[i].declared {
+			return false // both unstated: declaration order, which SliceStable keeps
 		}
+		return groups[i].position < groups[j].position
+	})
+
+	out := make([]string, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, g.key)
 	}
 	return out
 }
@@ -279,7 +292,7 @@ func NewIndexDriver(root *engine.Node, branch string) transform.Transformer[obje
 func (d *IndexDriver) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
 	// Ensure `indexes` always exists, even with no resources (absorbs
 	// pass4/init_indexes.go).
-	if _, err := o.CreatePath("indexes"); err != nil {
+	if _, err := o.CreatePath(IndexesKey); err != nil {
 		return nil, fmt.Errorf("creating indexes path failed with %w", err)
 	}
 
@@ -299,7 +312,7 @@ func (d *IndexDriver) Process(ct transform.Context[object.Refrence], o object.Ob
 			groupKey: key, iter: g.Children[0], branch: d.branch, container: container,
 			idField: idField, nameField: nameField,
 		}
-		pipe = append(pipe, utils.Sub(utils.Global(container, gi), "object"))
+		pipe = append(pipe, utils.Sub(utils.Global(container, gi), ProjectKey))
 	}
 
 	return transform.Pipe(ct, o, pipe...)
@@ -365,14 +378,14 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 		return nil, fmt.Errorf("project id is not a string: %w", err)
 	}
 
-	index, err := root.CreatePath("indexes")
+	index, err := root.CreatePath(IndexesKey)
 	if err != nil {
 		return nil, fmt.Errorf("creating path for indexes failed with %w", err)
 	}
 
 	byNameCap, _ := gi.iter.Meta["indexByName"].(engine.Capability)
 	foreignKey, hasForeignKey := gi.iter.Meta["indexForeignKey"].(foreignKeyIndex)
-	repoType, hasRepo := gi.iter.Meta["indexRepo"].(repositorytype.Type)
+	repo, hasRepo := gi.iter.Meta["indexRepo"].(repoIndex)
 	_, hasName := gi.iter.Meta["indexName"].(bool)
 	scopeCap, _ := gi.iter.Meta["indexByScope"].(engine.Capability)
 	placeholderField, hasPlaceholder := gi.iter.Meta["indexPlaceholder"].(string)
@@ -418,7 +431,7 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 		}
 
 		if hasRepo {
-			if err := indexRepo(ic, index, repoType); err != nil {
+			if err := indexRepo(ic, index, repo); err != nil {
 				return nil, fmt.Errorf("index repo for %s %s failed with %w", gi.groupKey, id, err)
 			}
 		}

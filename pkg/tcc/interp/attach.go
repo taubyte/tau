@@ -38,11 +38,11 @@ type attachAll struct {
 }
 
 func (a *attachAll) Process(ct transform.Context[object.Refrence], scope object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	attachKey := attachesToAllKey(a.groups)
-	if attachKey == "" {
+	attachKey, spec := attachesToAllKey(a.groups)
+	if attachKey == "" || spec.From == "" {
 		return scope, nil
 	}
-	prefix := attachKey + ":"
+	prefix := attachKey + spec.Sep
 
 	for _, g := range a.groups {
 		groupKey, _ := g.Match.(string)
@@ -57,7 +57,7 @@ func (a *attachAll) Process(ct transform.Context[object.Refrence], scope object.
 		if _, isResource := iter.Meta["resource"].([4]string); !isResource {
 			continue
 		}
-		if !hasAttr(iter, "tags") {
+		if !hasAttr(iter, spec.From) {
 			continue
 		}
 
@@ -70,7 +70,7 @@ func (a *attachAll) Process(ct transform.Context[object.Refrence], scope object.
 		}
 
 		for _, instName := range groupObj.Children() {
-			if err := attachFromTags(ct, groupObj.Child(instName), attachKey, prefix, a.nameField); err != nil {
+			if err := attachFromTags(ct, groupObj.Child(instName), attachKey, prefix, spec.From, a.nameField); err != nil {
 				return nil, fmt.Errorf("%s %s: %w", groupKey, instName, err)
 			}
 		}
@@ -80,17 +80,17 @@ func (a *attachAll) Process(ct transform.Context[object.Refrence], scope object.
 
 // attachesToAllKey returns the config key of the group marked AttachesToAll, or ""
 // if none is (there is at most one).
-func attachesToAllKey(groups []*engine.Node) string {
+func attachesToAllKey(groups []*engine.Node) (string, engine.AttachSpec) {
 	for _, g := range groups {
 		if len(g.Children) == 0 {
 			continue
 		}
-		if b, _ := g.Children[0].Meta["attachesToAll"].(bool); b {
+		if spec, ok := engine.AttachesFrom(g.Children[0]); ok {
 			key, _ := g.Match.(string)
-			return key
+			return key, spec
 		}
 	}
-	return ""
+	return "", engine.AttachSpec{}
 }
 
 // attachFromTags reads one resource's compiled `tags`, resolves every
@@ -98,8 +98,8 @@ func attachesToAllKey(groups []*engine.Node) string {
 // project-root scope, via ResolveNamesToId) and writes the id list to the
 // resource's attachKey wire field when non-empty. Mirrors attachSmartOpsFromTags:
 // the set happens only for a non-empty list and the tags are not modified.
-func attachFromTags(ct transform.Context[object.Refrence], sel object.Selector[object.Refrence], attachKey, prefix, nameField string) error {
-	val, err := sel.Get("tags")
+func attachFromTags(ct transform.Context[object.Refrence], sel object.Selector[object.Refrence], attachKey, prefix, from, nameField string) error {
+	val, err := sel.Get(from)
 	if err != nil || val == nil {
 		return nil
 	}

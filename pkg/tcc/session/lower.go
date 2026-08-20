@@ -49,7 +49,7 @@ func (s *Session) Became(ctx context.Context, res []string, opts CompileOptions)
 // name is IN is the vocabulary's answer, which the binding supplies — the session has no
 // business guessing a field name any more than the interpreter does.
 func idOf(flat map[string]any, kind, name, scope, nameField string) (string, bool) {
-	root, ok := flat["object"].(map[string]any)
+	root, ok := flat[interp.ProjectKey].(map[string]any)
 	if !ok {
 		root = flat
 	}

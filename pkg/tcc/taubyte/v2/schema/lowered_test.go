@@ -328,3 +328,34 @@ func TestSessionKnowsTheRootDocument(t *testing.T) {
 	assert.NilError(t, err, "the project's own document is not readable")
 	assert.Assert(t, id != "")
 }
+
+// A RESOURCE TWO SCOPES DEEP IS STILL A RESOURCE. Scopes nest — v2 allows eight levels —
+// and the session read only the shapes that fit in four segments, so anything inside a
+// namespace inside a namespace answered "too deep". Became() accepted the address that
+// Get and Serialize rejected.
+func TestSessionAddressesNestedScopes(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+	s, err := schema.AdoptSession(fs)
+	assert.NilError(t, err)
+
+	deep := []string{"namespace", "shop", "namespace", "eu", "function", "relay"}
+
+	id, err := s.Get(deep, []string{"id"})
+	assert.NilError(t, err, "a function two namespaces down is not readable")
+	assert.Assert(t, id != "")
+
+	// the address a caller builds by kind, and the one a file path maps back to, agree
+	built, err := s.Address("function", "relay", "shop/eu")
+	assert.NilError(t, err)
+	assert.DeepEqual(t, built, deep)
+
+	back, ok := s.ResourceAt("/namespace/shop/namespace/eu/function/relay.yaml")
+	assert.Assert(t, ok, "the file a decompile writes maps back to no address")
+	assert.DeepEqual(t, back, deep)
+
+	// ...and the scope itself is addressable, which is where its own fields live
+	scope, ok := s.ResourceAt("/namespace/shop/namespace/eu/scope.yaml")
+	assert.Assert(t, ok)
+	assert.DeepEqual(t, scope, []string{"namespace", "shop", "namespace", "eu"})
+}

@@ -227,7 +227,7 @@ func checkReachable(all []compiled, byKind map[string][]compiled) []Finding {
 		// author picks rather than listed here — a list is a copy, and a copy goes
 		// stale the next time a kind gains an inbound block.
 		for _, prefix := range InboundBlocks() {
-			kind, name := res.str(prefix+"/kind"), res.str(prefix+"/name")
+			kind, name := res.str(prefix+"-kind"), res.str(prefix+"-name")
 			if kind != "" && name != "" {
 				fronted[kind+"/"+name] = true
 			}
@@ -306,7 +306,7 @@ func checkPortsAreFed(all []compiled) []Finding {
 			continue
 		}
 		used := map[string]bool{}
-		for _, probe := range []string{"readiness/port", "liveness/port"} {
+		for _, probe := range []string{"readiness-port", "liveness-port"} {
 			if p := res.str(probe); p != "" {
 				used[p] = true
 			}
@@ -318,7 +318,7 @@ func checkPortsAreFed(all []compiled) []Finding {
 			}
 			for _, e := range entries {
 				if entry, ok := e.(map[string]any); ok {
-					if p, _ := entry["deliver/port"].(string); p != "" {
+					if p, _ := entry["deliver-port"].(string); p != "" {
 						used[p] = true
 					}
 				}
@@ -326,8 +326,8 @@ func checkPortsAreFed(all []compiled) []Finding {
 		}
 		for _, other := range all {
 			for _, prefix := range InboundBlocks() {
-				if other.str(prefix+"/name") == res.name {
-					if p := other.str(prefix + "/port"); p != "" {
+				if other.str(prefix+"-name") == res.name {
+					if p := other.str(prefix + "-port"); p != "" {
 						used[p] = true
 					}
 				}
@@ -374,7 +374,7 @@ func checkDelivery(all []compiled) []Finding {
 				if !delivered {
 					continue
 				}
-				if p, _ := entry["deliver/port"].(string); p != "" {
+				if p, _ := entry["deliver-port"].(string); p != "" {
 					continue
 				}
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
@@ -427,14 +427,14 @@ func checkVariables(all []compiled) []Finding {
 func checkMountedSites(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
-		if res.str("route/handler/kind") != "website" {
+		if res.str("route-handler-kind") != "website" {
 			continue
 		}
-		path := res.str("route/path")
+		path := res.str("route-path")
 		if path == "" || path == "/" {
 			continue
 		}
-		if strip, _ := res.fields["route/strip-prefix"].(bool); strip {
+		if strip, _ := res.fields["route-strip-prefix"].(bool); strip {
 			continue
 		}
 		out = append(out, Finding{Check, res.kind, res.name, res.scope,
@@ -465,8 +465,8 @@ func checkHostWorlds(all []compiled) []Finding {
 	type use struct{ name, own, ns, wants, where string }
 	var uses []use
 	for _, res := range all {
-		if n := res.str("authorizer/name"); n != "" {
-			uses = append(uses, use{n, res.scope, res.str("authorizer/namespace"), "authorizer", res.kind + "/" + res.name + " authorizer"})
+		if n := res.str("authorizer-name"); n != "" {
+			uses = append(uses, use{n, res.scope, res.str("authorizer-namespace"), "authorizer", res.kind + "/" + res.name + " authorizer"})
 		}
 		wants := ""
 		switch res.kind {
@@ -480,8 +480,8 @@ func checkHostWorlds(all []compiled) []Finding {
 				uses = append(uses, use{field(el, "name"), res.scope, field(el, "namespace"), wants, res.kind + "/" + res.name + " transformers"})
 			}
 		}
-		if res.str("route/handler/kind") == "function" {
-			uses = append(uses, use{res.str("route/handler/name"), res.scope, res.str("route/handler/namespace"), "handler", res.kind + "/" + res.name + " route"})
+		if res.str("route-handler-kind") == "function" {
+			uses = append(uses, use{res.str("route-handler-name"), res.scope, res.str("route-handler-namespace"), "handler", res.kind + "/" + res.name + " route"})
 		}
 	}
 
@@ -738,7 +738,7 @@ func checkVolumeWriters(all []compiled) []Finding {
 			writers[volumeKey(all, target, field(entry, "namespace"), res.scope)] = append(
 				writers[volumeKey(all, target, field(entry, "namespace"), res.scope)], res)
 
-			if n := res.int("limits/max-instances"); n > 1 {
+			if n := res.int("limits-max-instances"); n > 1 {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("mounts volume %q for writing and may run %d instances", target, n),
 					"A volume is leased to one writer. Either the ceiling comes down to 1, or the volume is mounted read-only and something else owns the writes."})
@@ -817,8 +817,8 @@ func checkHandlerPorts(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
 		for _, prefix := range InboundBlocks() {
-			port := res.str(prefix + "/port")
-			kind := res.str(prefix + "/kind")
+			port := res.str(prefix + "-port")
+			kind := res.str(prefix + "-kind")
 			if port == "" || kind == "" || kind == "application" {
 				continue
 			}

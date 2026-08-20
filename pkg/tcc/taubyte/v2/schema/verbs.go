@@ -432,9 +432,9 @@ func namespacePathChecker() engine.Option {
 // A resource with no authorizer is decided by its declared access alone.
 func authorizerAttributes() []*Attribute {
 	return []*Attribute{
-		String("authorizer/name", Path("authorizer", "name"), IsVariableName(), Ref("function", ByName()), InSection("authorizer"),
+		String("authorizer-name", Path("authorizer", "name"), IsVariableName(), Ref("function", ByName()), InSection("authorizer"),
 			Doc("Authorizer", "A function that decides what a caller may do to this resource, and returns the ops it gets.")),
-		String("authorizer/namespace", Path("authorizer", "namespace"), IsNamespacePath(), InSection("authorizer"),
+		String("authorizer-namespace", Path("authorizer", "namespace"), IsNamespacePath(), InSection("authorizer"),
 			Doc("Authorizer Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
 	}
 }
@@ -476,9 +476,9 @@ func deliverAttributes(kind string) []*Attribute {
 		return nil
 	}
 	return []*Attribute{
-		String("deliver/port", Path("deliver", "port"), IsVariableName(), InSection("access"),
+		String("deliver-port", Path("deliver", "port"), IsVariableName(), InSection("access"),
 			Doc("Deliver To Port", "Which of this workload's own named ports each item is posted to. Containers only: a WASM consumer is dispatched and has no port.")),
-		String("deliver/path", Path("deliver", "path"), InSection("access"),
+		String("deliver-path", Path("deliver", "path"), InSection("access"),
 			Doc("Deliver To Path", "The path each item is posted to, e.g. \"/work\".")),
 	}
 }
@@ -601,7 +601,7 @@ func InboundBlocks() []string {
 		if r.KindFrom == "" {
 			continue
 		}
-		if prefix := strings.TrimSuffix(r.Field, "/name"); prefix != r.Field && !seen[prefix] {
+		if prefix := strings.TrimSuffix(r.Field, "-name"); prefix != r.Field && !seen[prefix] {
 			seen[prefix] = true
 			out = append(out, prefix)
 		}

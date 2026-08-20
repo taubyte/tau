@@ -67,7 +67,7 @@ func TestGenerateTSAccessors(t *testing.T) {
 		`super(s, app ? ["applications", app, "functions", name] : ["functions", name]);`, // resource address
 		`functionNames(app?: string): Promise<string[]> {`,                                // list
 		`delete(): Promise<void> {`,                                                       // delete
-		`applications(): Promise<string[]> {`,                                             // app list
+		`applicationNames(): Promise<string[]> {`,                                         // the container's list, named like every other lister
 		"async type(): Promise<FunctionType | undefined> {",                               // async + union
 		`this.s.binding.get(this.s.handle, this.res, ["trigger", "type"])`,                // field path
 		`this.s.binding.set(this.s.handle, this.res, ["execution", "memory"]`,             // setter path

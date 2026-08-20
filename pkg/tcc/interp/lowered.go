@@ -24,8 +24,19 @@ import (
 // wrote, a console that shows what one workflow became, and — later — a shell that stores
 // only what its lowering cannot give back.
 
-// LoweredKey is where the record sits in the compiled object.
-const LoweredKey = "lowered"
+// THE SHAPE OF A COMPILED ARTIFACT. Three keys, and they are tcc's rather than any
+// vocabulary's: whatever a schema calls its kinds, what comes out is the project under
+// one key with the index and the lowering record beside it. tau reads the first two off
+// every artifact it publishes (services/monkey/jobs/config.go), which is what makes them
+// a contract and not a convention.
+const (
+	// ProjectKey is where the compiled project sits.
+	ProjectKey = "object"
+	// IndexesKey is the index subtree beside it.
+	IndexesKey = "indexes"
+	// LoweredKey is the record of what the compile lowered.
+	LoweredKey = "lowered"
+)
 
 // Provenance is where a resource nobody wrote came from.
 type Provenance struct {
@@ -159,7 +170,7 @@ func recordOf(root *engine.Node, obj Object, docs []placement, adds []granted) L
 	_, nameField := engine.IdentityOf(root)
 	byName := map[string]string{}
 	flat := obj.Flat()
-	if inner, ok := flat["object"].(map[string]any); ok {
+	if inner, ok := flat[ProjectKey].(map[string]any); ok {
 		flat = inner
 	}
 	var walk func(scope map[string]any, at string)

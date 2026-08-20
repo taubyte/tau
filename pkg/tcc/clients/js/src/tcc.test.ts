@@ -104,7 +104,7 @@ test("session: list, application-scoped access, and delete", async () => {
   const session = await open(fixtureFs(), "/");
 
   assert.ok((await session.functionNames()).includes(FN_NAME), "list global functions");
-  assert.ok((await session.applications()).includes("test_app1"), "list applications");
+  assert.ok((await session.applicationNames()).includes("test_app1"), "list applications");
   assert.ok((await session.functionNames("test_app1")).includes("test_function2"), "list app functions");
 
   const appFn = session.function("test_function2", "test_app1");

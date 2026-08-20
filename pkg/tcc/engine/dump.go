@@ -327,12 +327,12 @@ func branchKeyValue(n *Node, obj object.Object[object.Refrence], path []StringMa
 		}
 		return v, nil
 	}
-	// v1's convention, kept as the fallback: a switch whose key attribute is simply
-	// called `type` and carries no Key().
-	if typeVal, ok := obj.Get("type").(string); ok && typeVal != "" {
-		return typeVal, nil
-	}
-	return "", fmt.Errorf("no Key() attribute captured this switch, and no `type` field")
+	// No fallback. There WAS one — a field literally called `type`, which is one
+	// vocabulary's word in the layer that must not have one, and on a live path: any
+	// other vocabulary with a `type` attribute meaning something else would have taken
+	// the wrong branch on write-back, silently. Key() is how a schema says which
+	// attribute decides a switch, and a schema that does not say cannot be written back.
+	return "", fmt.Errorf("no Key() attribute captured this switch")
 }
 
 // samePrefix reports whether two attribute paths name the same block up to depth.
