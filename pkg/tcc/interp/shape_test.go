@@ -71,7 +71,7 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 
 	// An index annotation alone adds chroot + IndexDriver (two transforms).
 	indexRoot := mkRoot(mkResGroup("widgets", []*engine.Attribute{{Name: "id"}},
-		map[string]any{"indexName": true}))
+		map[string]any{"indexes": indexSpec{index: func(IndexCtx) ([]IndexEntry, error) { return nil, nil }}}))
 	assert.Assert(t, UsesIndexing(indexRoot))
 	assert.Assert(t, !usesRefs(indexRoot))
 	assert.Assert(t, !usesAttachesToAll(indexRoot))
@@ -83,7 +83,7 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 		mkResGroup("widgets", []*engine.Attribute{
 			{Name: "id"},
 			{Name: "target", Meta: map[string]any{"ref": true}},
-		}, map[string]any{"indexName": true}),
+		}, map[string]any{"indexes": indexSpec{index: func(IndexCtx) ([]IndexEntry, error) { return nil, nil }}}),
 		mkResGroup("ops", []*engine.Attribute{{Name: "id"}}, map[string]any{"attachesToAll": engine.AttachSpec{From: "tags", Sep: ":"}}),
 	)
 	assert.Assert(t, usesRefs(full))
@@ -119,7 +119,7 @@ func TestContainerKey_DerivesNestedContainer(t *testing.T) {
 		Children: []*engine.Node{
 			mkResGroup("widgets", []*engine.Attribute{
 				{Name: "target", Meta: map[string]any{"ref": true}},
-			}, map[string]any{"indexName": true}),
+			}, map[string]any{"indexes": indexSpec{index: func(IndexCtx) ([]IndexEntry, error) { return nil, nil }}}),
 		},
 	}
 	nestedRoot := mkRoot(&engine.Node{Group: true, Match: "applications", Children: []*engine.Node{nestedIter}})

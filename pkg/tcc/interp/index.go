@@ -5,236 +5,90 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/taubyte/tau/core/common/repositorytype"
-	"github.com/taubyte/tau/pkg/specs/common"
-	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp/utils"
 	"github.com/taubyte/tau/pkg/tcc/object"
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
 
-// IndexCtx is the per-instance environment the driver's index-annotation routines
-// read. The driver computes every field before running an annotation, so each
-// routine only reads WHICH tns paths/entries its resource contributes — the driver
-// owns the append/dedup/Set mechanics.
+// AN INDEX IS PATHS AND VALUES, and which paths is the vocabulary's business.
+//
+// This driver used to carry six annotations — by-name, foreign-key, repository, name,
+// by-scope, placeholder — and each one computed a tau TNS path: it imported
+// specs/methods, specs/common and core/common/repositorytype, which is one vocabulary's
+// address space compiled into the layer that must serve every vocabulary. A second one
+// could not have an index at all without editing the interpreter.
+//
+// What is left is the mechanics, which really are generic: walk the indexed groups in
+// their declared order, over the project scope and every scope inside it; for each
+// resource work out its identity and hand it to the vocabulary; write what comes back.
+
+// IndexCtx is what the driver knows about one resource when it asks what to index. No
+// tau types: a path is the vocabulary's to compute, from these.
 type IndexCtx struct {
-	Branch, Project, App, Id, Name string
-	// IndexValue is the resource's IndexValue(branch, proj, app, id) — the value
-	// appended into every link bucket an annotation names. nil is never produced for
-	// the eight indexed groups (all declare HasIndex); groups whose footprint does
-	// not read it (domains) simply ignore it.
-	IndexValue *common.TnsPath
-	// Obj is the compiled instance (wire keys, refs already resolved).
+	// Branch is the compile branch, Project the project's id, Scope the id of the scope
+	// this resource is in ("" at the project root).
+	Branch, Project, Scope string
+	// Kind, ID and Name are the resource itself.
+	Kind, ID, Name string
+	// Obj is the compiled instance: wire keys, references already resolved.
 	Obj object.Object[object.Refrence]
-	// Lookup resolves a referenced instance by (group, id) with the pass4
-	// app-local-then-project-root rule: the current scope's group first, then the
-	// project-root group. ok is false when neither has it.
+	// Lookup finds another compiled resource by (group, id), this scope first and then
+	// the project root — the same order a reference resolves in.
 	Lookup func(group, id string) (object.Object[object.Refrence], bool)
 }
 
-// foreignKeyIndex is the declared footprint of an IndexForeignKey annotation: the
-// capability whose path form is written, the wire field holding the resolved
-// target ids, and the (group, key) the target's index value is read from.
-type foreignKeyIndex struct {
-	cap                              engine.Capability
-	refField, targetGroup, targetKey string
+// IndexEntry is one thing to write into the index.
+type IndexEntry struct {
+	// Path is where, in whatever path language the vocabulary uses. Opaque here.
+	Path string
+	// Value is what goes there. A nil value writes a hole, which is a real thing to want:
+	// it reserves a key without claiming anything is at it yet.
+	Value any
+	// Append accumulates into a de-duplicated list instead of setting a single value —
+	// the difference between a bucket every resource adds to and a fact about one.
+	Append bool
 }
 
-// IndexForeignKey declares the domain-style fan-out link: for each resolved target
-// id in refField (a []string of ids), the driver looks the target up in
-// targetGroup, reads targetKey off it, computes cap's path from that value, and
-// appends this resource's IndexValue at the path's Links() bucket. Replaces the
-// functions/websites domain-http closures — both declare
-// IndexForeignKey(HasHttp, "domains", "domains", "fqdn").
-func IndexForeignKey(cap engine.Capability, refField, targetGroup, targetKey string) engine.NodeOption {
-	if c, ok := cap.(*Cap); !ok || c.ForeignKey == nil {
-		panic(fmt.Sprintf("IndexForeignKey: capability %q carries no foreign-key path", cap.String()))
-	}
-	return engine.GroupAnnotate("indexForeignKey", foreignKeyIndex{cap, refField, targetGroup, targetKey})
+// Indexer is asked what one resource contributes to the index.
+type Indexer func(IndexCtx) ([]IndexEntry, error)
+
+// indexSpec is what a group declares with Indexes.
+type indexSpec struct {
+	position int
+	index    Indexer
 }
 
-// IndexRepo declares the git-repo reverse index a resource contributes: the driver
-// rebuilds the repository path from two of the resource's own fields and Set()s the repo
-// type at <repo>/type and this resource's IndexValue at <repo>/resource/<id>.
+// Indexes declares that a group contributes to the index, at a position, by a function
+// the vocabulary supplies.
 //
-// The two fields are NAMED here because they are the vocabulary's. The driver used to
-// read "provider" and "repository-id" — this vocabulary's wire keys, spelled out in the
-// layer that must not know one.
-func IndexRepo(repoType repositorytype.Type, providerField, idField string) engine.NodeOption {
-	return engine.GroupAnnotate("indexRepo", repoIndex{repoType, providerField, idField})
+// The POSITION is load-bearing and is why it is not simply declaration order: buckets
+// shared across scopes accumulate in the order groups are visited, so a different
+// sequence is a different artifact.
+func Indexes(position int, index Indexer) engine.NodeOption {
+	return engine.GroupAnnotate("indexes", indexSpec{position: position, index: index})
 }
 
-// repoIndex is IndexRepo's payload: what kind of repository, and which two fields say
-// where it is.
-type repoIndex struct {
-	Type                   repositorytype.Type
-	ProviderField, IDField string
+// indexerOf reads a group's declaration back.
+func indexerOf(iter *engine.Node) (indexSpec, bool) {
+	if iter == nil {
+		return indexSpec{}, false
+	}
+	spec, ok := iter.Meta["indexes"].(indexSpec)
+	return spec, ok
 }
-
-// IndexName declares the id-keyed name index a resource contributes: the driver
-// Set()s the resource's Name at <resourceType>/<id>. A marker (no payload) — the
-// path is generic in the group key. Replaces library's NameIndex IndexSet arm.
-func IndexName() engine.NodeOption {
-	return engine.GroupAnnotate("indexName", true)
-}
-
-// IndexByScope declares a per-(project,app) scope-aggregated RAW link: the driver
-// computes cap's scope path and appends this resource's IndexValue at path.String()
-// verbatim (NO Links() suffix), so every instance of the scope aggregates under
-// one key. Replaces messaging's websocket IndexLinkRaw closure.
-func IndexByScope(cap engine.Capability) engine.NodeOption {
-	if c, ok := cap.(*Cap); !ok || c.ScopePath == nil {
-		panic(fmt.Sprintf("IndexByScope: capability %q carries no scope path", cap.String()))
-	}
-	return engine.GroupAnnotate("indexByScope", cap)
-}
-
-// IndexPlaceholder declares a nil-placeholder link keyed by keyField's value: the
-// driver reverses the fqdn at keyField into the group's basic path and, only when
-// the key's Links() bucket is currently absent, Set()s it to nil. Replaces
-// domains' basic-path nil IndexSet closure.
-func IndexPlaceholder(keyField string) engine.NodeOption {
-	return engine.GroupAnnotate("indexPlaceholder", keyField)
-}
-
-// IndexByName declares the mechanical "keyed by Name" index link most resources
-// share: the driver appends the resource's IndexValue to cap(Name).Links(), where
-// cap is one of the resource's Addressing capabilities (wasm -> WasmModulePath,
-// indexPath -> IndexPath). It is declared explicitly rather than derived from
-// Addressing() because a capability being present does not imply it is indexed —
-// e.g. websites declare HasWasmModule but write no wasm index link.
-func IndexByName(cap engine.Capability) engine.NodeOption {
-	if c, ok := cap.(*Cap); !ok || c.ByName == nil {
-		panic(fmt.Sprintf("IndexByName: capability %q carries no by-name path", cap.String()))
-	}
-	return engine.GroupAnnotate("indexByName", cap)
-}
-
-// indexByNamePath computes a capability's by-Name index path from its declared
-// ByName role, keyed by the group's PathVariable — the exact paths the old
-// per-resource pass4 files built via each spec's Tns() helper. The IndexByName
-// constructor guarantees the role is present, so a miss here is a programmer error.
-func indexByNamePath(cap engine.Capability, project, app, name, groupKey string) (*common.TnsPath, error) {
-	c, ok := cap.(*Cap)
-	if !ok || c.ByName == nil {
-		return nil, fmt.Errorf("IndexByName: capability %q carries no by-name path", cap.String())
-	}
-	return c.ByName(project, app, name, common.PathVariable(groupKey))
-}
-
-// indexForeignKey reproduces the old domainHttpPaths fan-out: for every resolved
-// target id in fk.refField, look the target up, read fk.targetKey, compute fk.cap's
-// path from that value, and append the instance's IndexValue at its Links() bucket.
-func indexForeignKey(ic *IndexCtx, index object.Object[object.Refrence], groupKey string, fk foreignKeyIndex) error {
-	refVal := ic.Obj.Get(fk.refField)
-	refs, ok := refVal.([]string)
-	if !ok && refVal != nil {
-		return fmt.Errorf("%s is not a []string", fk.refField)
-	}
-
-	for _, targetId := range refs {
-		targetObj, ok := ic.Lookup(fk.targetGroup, targetId)
-		if !ok {
-			return fmt.Errorf("fetching %s object for %s failed", fk.targetGroup, targetId)
-		}
-		keyVal, err := targetObj.GetString(fk.targetKey)
-		if err != nil {
-			return fmt.Errorf("%s is not a string for %s %s: %w", fk.targetKey, fk.targetGroup, targetId, err)
-		}
-		p, err := foreignKeyPath(fk.cap, keyVal, groupKey)
-		if err != nil {
-			return fmt.Errorf("getting %s path for %s %s failed with %w", fk.cap.String(), fk.targetGroup, targetId, err)
-		}
-		appendLink(index, p.Versioning().Links().String(), ic.IndexValue.String())
-	}
-	return nil
-}
-
-// foreignKeyPath computes the path form IndexForeignKey writes from a capability's
-// ForeignKey role, keyed off the resolved target value (e.g. http ->
-// HttpPath(fqdn, group)). The IndexForeignKey constructor guarantees the role.
-func foreignKeyPath(cap engine.Capability, value, groupKey string) (*common.TnsPath, error) {
-	c, ok := cap.(*Cap)
-	if !ok || c.ForeignKey == nil {
-		return nil, fmt.Errorf("IndexForeignKey: capability %q carries no foreign-key path", cap.String())
-	}
-	return c.ForeignKey(value, common.PathVariable(groupKey))
-}
-
-// indexRepo reproduces the old repositoryPath + website/library repo IndexSet: it
-// rebuilds the repo path from the instance's provider + repository-id wire keys and
-// Set()s the repo type at <repo>/type and the IndexValue at <repo>/resource/<id>.
-func indexRepo(ic *IndexCtx, index object.Object[object.Refrence], repo repoIndex) error {
-	provider, err := ic.Obj.GetString(repo.ProviderField)
-	if err != nil {
-		return fmt.Errorf("%s is not a string: %w", repo.ProviderField, err)
-	}
-	repoId, err := ic.Obj.GetString(repo.IDField)
-	if err != nil {
-		return fmt.Errorf("%s is not a string: %w", repo.IDField, err)
-	}
-	rp, err := methods.GetRepositoryPath(provider, repoId, ic.Project)
-	if err != nil {
-		return fmt.Errorf("getting repository path for %s failed with %w", repoId, err)
-	}
-	index.Set(rp.Type().String(), repo.Type)
-	index.Set(rp.Resource(ic.Id).String(), ic.IndexValue.String())
-	return nil
-}
-
-// indexByScope reproduces the old messaging websocket IndexLinkRaw: it computes the
-// scope path for cap and appends the IndexValue at path.String() verbatim (no
-// Links() suffix), so every instance of the scope aggregates under one key.
-func indexByScope(ic *IndexCtx, index object.Object[object.Refrence], cap engine.Capability) error {
-	c, ok := cap.(*Cap)
-	if !ok || c.ScopePath == nil {
-		return fmt.Errorf("IndexByScope: capability %q carries no scope path", cap.String())
-	}
-	p, err := c.ScopePath(ic.Project, ic.App)
-	if err != nil {
-		return fmt.Errorf("getting scope path for %q failed with %w", cap.String(), err)
-	}
-	appendLink(index, p.String(), ic.IndexValue.String())
-	return nil
-}
-
-// indexPlaceholder reproduces the old domain nil-placeholder IndexSet: it reverses
-// the fqdn at keyField into the group's basic path and, only when the key's Links()
-// bucket is currently absent, Set()s it to nil.
-func indexPlaceholder(ic *IndexCtx, index object.Object[object.Refrence], groupKey, keyField string) error {
-	fqdn, err := ic.Obj.GetString(keyField)
-	if err != nil {
-		return fmt.Errorf("index key %s is not a string: %w", keyField, err)
-	}
-	p, err := methods.ReversedFqdnBasicPath(fqdn, common.PathVariable(groupKey))
-	if err != nil {
-		return fmt.Errorf("getting basic path for the index key failed with %w", err)
-	}
-	key := p.Versioning().Links().String()
-	if index.Get(key) == nil {
-		index.Set(key, nil)
-	}
-	return nil
-}
-
-// Indexed is engine.Indexed, re-exported so a vocabulary declares its index position
-// beside the rest of its index footprint.
-func Indexed(position int) engine.NodeOption { return engine.Indexed(position) }
 
 // indexedGroups is every group that declares an index footprint, in the order the
-// vocabulary put them in (engine.Indexed) and in declaration order after that.
+// vocabulary put them in.
 //
 // The order is load-bearing: buckets shared across scopes accumulate in it, so a
 // different sequence is a different artifact. It used to be a list of eight group names
-// here — v1's, verbatim — which is the same latent bug decompileOrder turned out to be:
-// for any other vocabulary it matches nothing, every indexed group is skipped, and the
-// indexes come out empty with no error.
+// here — v1's, verbatim — which for any other vocabulary matches nothing: every indexed
+// group is skipped and the indexes come out empty with no error.
 func indexedGroups(root *engine.Node) []string {
 	type at struct {
 		key      string
 		position int
-		declared bool
 	}
 	var groups []at
 	for _, g := range root.Children {
@@ -242,29 +96,11 @@ func indexedGroups(root *engine.Node) []string {
 		if key == "" || len(g.Children) == 0 {
 			continue
 		}
-		indexes := false
-		for _, k := range indexMetaKeys {
-			if _, ok := g.Children[0].Meta[k]; ok {
-				indexes = true
-				break
-			}
+		if spec, ok := indexerOf(g.Children[0]); ok {
+			groups = append(groups, at{key: key, position: spec.position})
 		}
-		if !indexes {
-			continue
-		}
-		position, declared := engine.IndexedAt(g.Children[0])
-		groups = append(groups, at{key: key, position: position, declared: declared})
 	}
-
-	sort.SliceStable(groups, func(i, j int) bool {
-		if groups[i].declared != groups[j].declared {
-			return groups[i].declared // a stated position comes before an unstated one
-		}
-		if !groups[i].declared {
-			return false // both unstated: declaration order, which SliceStable keeps
-		}
-		return groups[i].position < groups[j].position
-	})
+	sort.SliceStable(groups, func(i, j int) bool { return groups[i].position < groups[j].position })
 
 	out := make([]string, 0, len(groups))
 	for _, g := range groups {
@@ -383,13 +219,10 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 		return nil, fmt.Errorf("creating path for indexes failed with %w", err)
 	}
 
-	byNameCap, _ := gi.iter.Meta["indexByName"].(engine.Capability)
-	foreignKey, hasForeignKey := gi.iter.Meta["indexForeignKey"].(foreignKeyIndex)
-	repo, hasRepo := gi.iter.Meta["indexRepo"].(repoIndex)
-	_, hasName := gi.iter.Meta["indexName"].(bool)
-	scopeCap, _ := gi.iter.Meta["indexByScope"].(engine.Capability)
-	placeholderField, hasPlaceholder := gi.iter.Meta["indexPlaceholder"].(string)
-
+	spec, ok := indexerOf(gi.iter)
+	if !ok {
+		return config, nil
+	}
 	lookup := makeLookup(config, configRoot)
 
 	for _, id := range groupObj.Children() {
@@ -397,58 +230,28 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 		if err != nil {
 			return nil, fmt.Errorf("fetching %s object for %s failed with %w", gi.groupKey, id, err)
 		}
-
 		name, _ := instObj.GetString(gi.nameField)
 
-		indexValue, err := methods.IndexValue(gi.branch, projectId, appId, id, common.PathVariable(gi.groupKey))
+		entries, err := spec.index(IndexCtx{
+			Branch: gi.branch, Project: projectId, Scope: appId,
+			Kind: gi.groupKey, ID: id, Name: name,
+			Obj: instObj, Lookup: lookup,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("getting index value for %s %s failed with %w", gi.groupKey, id, err)
+			return nil, fmt.Errorf("indexing %s %s failed with %w", gi.groupKey, id, err)
 		}
-
-		ic := &IndexCtx{
-			Branch:     gi.branch,
-			Project:    projectId,
-			App:        appId,
-			Id:         id,
-			Name:       name,
-			IndexValue: indexValue,
-			Obj:        instObj,
-			Lookup:     lookup,
-		}
-
-		if byNameCap != nil {
-			p, err := indexByNamePath(byNameCap, projectId, appId, name, gi.groupKey)
-			if err != nil {
-				return nil, fmt.Errorf("index-by-name for %s %s failed with %w", gi.groupKey, id, err)
-			}
-			appendLink(index, p.Versioning().Links().String(), indexValue.String())
-		}
-
-		if hasForeignKey {
-			if err := indexForeignKey(ic, index, gi.groupKey, foreignKey); err != nil {
-				return nil, fmt.Errorf("index foreign key for %s %s failed with %w", gi.groupKey, id, err)
-			}
-		}
-
-		if hasRepo {
-			if err := indexRepo(ic, index, repo); err != nil {
-				return nil, fmt.Errorf("index repo for %s %s failed with %w", gi.groupKey, id, err)
-			}
-		}
-
-		if hasName {
-			index.Set(methods.NameIndex(ic.Id, common.PathVariable(gi.groupKey)).String(), ic.Name)
-		}
-
-		if scopeCap != nil {
-			if err := indexByScope(ic, index, scopeCap); err != nil {
-				return nil, fmt.Errorf("index by scope for %s %s failed with %w", gi.groupKey, id, err)
-			}
-		}
-
-		if hasPlaceholder {
-			if err := indexPlaceholder(ic, index, gi.groupKey, placeholderField); err != nil {
-				return nil, fmt.Errorf("index placeholder for %s %s failed with %w", gi.groupKey, id, err)
+		for _, e := range entries {
+			switch {
+			case e.Append:
+				appendLink(index, e.Path, fmt.Sprint(e.Value))
+			case e.Value == nil:
+				// a hole: reserve the key without claiming anything is at it, and never
+				// over a value something already put there
+				if index.Get(e.Path) == nil {
+					index.Set(e.Path, nil)
+				}
+			default:
+				index.Set(e.Path, e.Value)
 			}
 		}
 

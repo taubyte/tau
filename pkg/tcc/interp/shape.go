@@ -58,29 +58,13 @@ func usesAttachesToAll(root *engine.Node) bool {
 	})
 }
 
-// indexMetaKeys are the group-iterator annotations that give a group an index
-// footprint; any one present means the IndexDriver (and the chroot that makes room
-// for its `indexes` sibling) is needed.
-var indexMetaKeys = []string{
-	"indexByName",
-	"indexForeignKey",
-	"indexRepo",
-	"indexName",
-	"indexByScope",
-	"indexPlaceholder",
-}
-
 // UsesIndexing reports whether any group iterator declares an index footprint. It
 // gates the forward chroot+IndexDriver passes and the decompile chroot-unwrap; the
 // decompile subpackage consumes it, so it is exported.
 func UsesIndexing(root *engine.Node) bool {
 	return eachIter(root, func(iter *engine.Node) bool {
-		for _, k := range indexMetaKeys {
-			if _, ok := iter.Meta[k]; ok {
-				return true
-			}
-		}
-		return false
+		_, ok := indexerOf(iter)
+		return ok
 	})
 }
 

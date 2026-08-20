@@ -4,7 +4,6 @@ import (
 	"github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/tau/pkg/tcc/engine"
-	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // Object-addressing capabilities: the set of TNS-key methods a compiled
@@ -21,21 +20,21 @@ import (
 // and ViaTns picks the delegate form (<alias>.Tns().<Name> vs <alias>.<Name>).
 var (
 	// BasicPath(branch,commit,project,app,id)
-	HasBasicPath = &interp.Cap{
+	HasBasicPath = &Cap{
 		Name: "basic",
 		Gen: []engine.MethodSpec{
 			{Name: "BasicPath", Params: "branch, commit, project, app string", Ret: "(*common.TnsPath, error)", Args: "branch, commit, project, app, @.Id", ViaTns: true},
 		},
 	}
 	// IndexValue(branch,project,app,id)
-	HasIndex = &interp.Cap{
+	HasIndex = &Cap{
 		Name: "index",
 		Gen: []engine.MethodSpec{
 			{Name: "IndexValue", Params: "branch, project, app string", Ret: "(*common.TnsPath, error)", Args: "branch, project, app, @.Id", ViaTns: true},
 		},
 	}
 	// IndexPath(project,app)
-	HasIndexPath = &interp.Cap{
+	HasIndexPath = &Cap{
 		Name: "indexPath",
 		Gen: []engine.MethodSpec{
 			{Name: "IndexPath", Params: "project, app string", Ret: "*common.TnsPath", Args: "project, app, @.Name", ViaTns: true},
@@ -45,7 +44,7 @@ var (
 		},
 	}
 	// HttpPath(fqdn)
-	HasHttp = &interp.Cap{
+	HasHttp = &Cap{
 		Name: "http",
 		Gen: []engine.MethodSpec{
 			{Name: "HttpPath", Params: "fqdn string", Ret: "(*common.TnsPath, error)", Args: "fqdn", ViaTns: true},
@@ -53,7 +52,7 @@ var (
 		ForeignKey: methods.HttpPath,
 	}
 	// WasmModulePath(...) + ModuleName(name)
-	HasWasmModule = &interp.Cap{
+	HasWasmModule = &Cap{
 		Name: "wasm",
 		Gen: []engine.MethodSpec{
 			{Name: "WasmModulePath", Params: "project, app string", Ret: "(*common.TnsPath, error)", Args: "project, app, @.Name", ViaTns: true},
@@ -62,14 +61,14 @@ var (
 		ByName: methods.WasmModulePath,
 	}
 	// ServicesPath(project,app,serviceId,command)
-	HasServices = &interp.Cap{
+	HasServices = &Cap{
 		Name: "services",
 		Gen: []engine.MethodSpec{
 			{Name: "ServicesPath", Params: "project, app, serviceId string", Ret: "(*common.TnsPath, error)", Args: "project, app, serviceId, @.Command", ViaTns: true},
 		},
 	}
 	// WebSocketHashPath + WebSocketPath
-	HasWebSocket = &interp.Cap{
+	HasWebSocket = &Cap{
 		Name: "websocket",
 		Gen: []engine.MethodSpec{
 			{Name: "WebSocketHashPath", Params: "project, app string", Ret: "(*common.TnsPath, error)", Args: "project, app", ViaTns: true},
@@ -78,14 +77,14 @@ var (
 		ScopePath: methods.WebSocketHashPath,
 	}
 	// NameIndex(name)
-	HasNameIndex = &interp.Cap{
+	HasNameIndex = &Cap{
 		Name: "nameIndex",
 		Gen: []engine.MethodSpec{
 			{Name: "NameIndex", Params: "", Ret: "*common.TnsPath", Args: "@.Name", ViaTns: true},
 		},
 	}
 	// EmptyPath()
-	HasEmptyPath = &interp.Cap{
+	HasEmptyPath = &Cap{
 		Name: "empty",
 		Gen: []engine.MethodSpec{
 			{Name: "EmptyPath", Params: "branch, commit, project, app string", Ret: "(*common.TnsPath, error)", Args: "branch, commit, project, app", ViaTns: true},
