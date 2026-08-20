@@ -38,20 +38,80 @@ type IndexCtx struct {
 	Lookup func(group, id string) (object.Object[object.Refrence], bool)
 }
 
-// IndexEntry is one thing to write into the index.
+// IndexEntry is one thing to write into the index. Build one with Link, Set or Hole
+// rather than by hand: those are the three things an index entry can be, and a struct
+// literal with a bool in it makes the reader work out which.
 type IndexEntry struct {
 	// Path is where, in whatever path language the vocabulary uses. Opaque here.
 	Path string
-	// Value is what goes there. A nil value writes a hole, which is a real thing to want:
-	// it reserves a key without claiming anything is at it yet.
+	// Value is what goes there.
 	Value any
-	// Append accumulates into a de-duplicated list instead of setting a single value —
-	// the difference between a bucket every resource adds to and a fact about one.
+	// Append accumulates into a de-duplicated list instead of setting a single value.
 	Append bool
 }
 
+// Link appends a value to the bucket at a path — the shape most of an index is: many
+// resources accumulating under one key, each named once however many times it is added.
+func Link(path string, value any) IndexEntry {
+	return IndexEntry{Path: path, Value: value, Append: true}
+}
+
+// Set puts a single value at a path: a fact about this resource rather than a bucket.
+func Set(path string, value any) IndexEntry {
+	return IndexEntry{Path: path, Value: value}
+}
+
+// Hole reserves a key without claiming anything is at it yet — a name that resolves to
+// nothing so far, which is different from a name nobody has mentioned. Never written over
+// something already there.
+func Hole(path string) IndexEntry { return IndexEntry{Path: path} }
+
 // Indexer is asked what one resource contributes to the index.
 type Indexer func(IndexCtx) ([]IndexEntry, error)
+
+// Indexes composes several footprints into one, in order. A bucket accumulates, so the
+// order within a resource matters for the same reason the order of groups does.
+func indexAll(fns ...Indexer) Indexer {
+	return func(ic IndexCtx) ([]IndexEntry, error) {
+		var out []IndexEntry
+		for _, fn := range fns {
+			entries, err := fn(ic)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, entries...)
+		}
+		return out, nil
+	}
+}
+
+// Each resolves a reference field to the values it points at: for every id in refField,
+// the resource it names, and one of ITS fields. That fan-out — a resource indexed under
+// something another resource is called — is the one shape that needs the lookup, and
+// leaving it to each vocabulary means each one rewrites the same three failures.
+//
+// A field that is absent is no values rather than an error: nothing referenced, nothing
+// to fan out to.
+func (ic IndexCtx) Each(refField, targetGroup, targetKey string) ([]string, error) {
+	refs, ok := ic.Obj.Get(refField).([]string)
+	if !ok {
+		return nil, nil
+	}
+
+	out := make([]string, 0, len(refs))
+	for _, id := range refs {
+		target, found := ic.Lookup(targetGroup, id)
+		if !found {
+			return nil, fmt.Errorf("%s/%s, which %s references, is not in the compiled configuration", targetGroup, id, refField)
+		}
+		value, err := target.GetString(targetKey)
+		if err != nil {
+			return nil, fmt.Errorf("%s of %s/%s is not a string: %w", targetKey, targetGroup, id, err)
+		}
+		out = append(out, value)
+	}
+	return out, nil
+}
 
 // indexSpec is what a group declares with Indexes.
 type indexSpec struct {
@@ -65,8 +125,8 @@ type indexSpec struct {
 // The POSITION is load-bearing and is why it is not simply declaration order: buckets
 // shared across scopes accumulate in the order groups are visited, so a different
 // sequence is a different artifact.
-func Indexes(position int, index Indexer) engine.NodeOption {
-	return engine.GroupAnnotate("indexes", indexSpec{position: position, index: index})
+func Indexes(position int, index ...Indexer) engine.NodeOption {
+	return engine.GroupAnnotate("indexes", indexSpec{position: position, index: indexAll(index...)})
 }
 
 // indexerOf reads a group's declaration back.

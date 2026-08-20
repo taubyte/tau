@@ -28,71 +28,93 @@ import (
 //	byScope       a per-(project, scope) aggregate every instance appends to
 //	placeholder   a key reserved for an fqdn nothing links to yet
 
-// indexValue is the value every link bucket accumulates: this resource's TNS path.
-func indexValue(ic interp.IndexCtx) (*common.TnsPath, error) {
-	return methods.IndexValue(ic.Branch, ic.Project, ic.Scope, ic.ID, common.PathVariable(ic.Kind))
+// mine is the value every bucket accumulates: this resource's own TNS path. Five of the
+// six footprints below link something to it, and the sixth reserves a key for one.
+func mine(ic interp.IndexCtx) (string, error) {
+	p, err := methods.IndexValue(ic.Branch, ic.Project, ic.Scope, ic.ID, common.PathVariable(ic.Kind))
+	if err != nil {
+		return "", err
+	}
+	return p.String(), nil
 }
 
-// byName links this resource under the capability's by-name path.
-func byName(cap *Cap) func(interp.IndexCtx) ([]interp.IndexEntry, error) {
+// linkTo is the shape most of this index is: work out a path, and put this resource in
+// the bucket there. byName, byScope and the fan-out are all this, with a different path.
+func linkTo(path func(interp.IndexCtx) (string, error)) interp.Indexer {
 	return func(ic interp.IndexCtx) ([]interp.IndexEntry, error) {
-		if cap.ByName == nil {
-			return nil, fmt.Errorf("index by name: capability %q carries no by-name path", cap.Name)
-		}
-		p, err := cap.ByName(ic.Project, ic.Scope, ic.Name, common.PathVariable(ic.Kind))
-		if err != nil {
-			return nil, fmt.Errorf("index by name for %s %s failed with %w", ic.Kind, ic.ID, err)
-		}
-		v, err := indexValue(ic)
+		key, err := path(ic)
 		if err != nil {
 			return nil, err
 		}
-		return []interp.IndexEntry{{Path: p.Versioning().Links().String(), Value: v.String(), Append: true}}, nil
+		value, err := mine(ic)
+		if err != nil {
+			return nil, err
+		}
+		return []interp.IndexEntry{interp.Link(key, value)}, nil
 	}
 }
 
-// foreignKey is the domain-style fan-out: for each resolved id in refField, read the
-// target's key and link this resource under the capability's path for that value.
-func foreignKey(cap *Cap, refField, targetGroup, targetKey string) func(interp.IndexCtx) ([]interp.IndexEntry, error) {
+// byName: the bucket under the capability's by-name path, which is how a resource is
+// found by what it is called.
+func byName(cap *Cap) interp.Indexer {
+	return linkTo(func(ic interp.IndexCtx) (string, error) {
+		if cap.ByName == nil {
+			return "", fmt.Errorf("capability %q carries no by-name path", cap.Name)
+		}
+		p, err := cap.ByName(ic.Project, ic.Scope, ic.Name, common.PathVariable(ic.Kind))
+		if err != nil {
+			return "", err
+		}
+		return p.Versioning().Links().String(), nil
+	})
+}
+
+// byScope: one key per (project, scope) that every instance appends to, with no Links()
+// suffix — the scope's single list of everything in it.
+func byScope(cap *Cap) interp.Indexer {
+	return linkTo(func(ic interp.IndexCtx) (string, error) {
+		if cap.ScopePath == nil {
+			return "", fmt.Errorf("capability %q carries no scope path", cap.Name)
+		}
+		p, err := cap.ScopePath(ic.Project, ic.Scope)
+		if err != nil {
+			return "", err
+		}
+		return p.String(), nil
+	})
+}
+
+// foreignKey: the domain-style fan-out. For every resource this one references, read what
+// that one is called and link this one under the capability's path for that name.
+func foreignKey(cap *Cap, refField, targetGroup, targetKey string) interp.Indexer {
 	return func(ic interp.IndexCtx) ([]interp.IndexEntry, error) {
 		if cap.ForeignKey == nil {
-			return nil, fmt.Errorf("index foreign key: capability %q carries no foreign-key path", cap.Name)
+			return nil, fmt.Errorf("capability %q carries no foreign-key path", cap.Name)
 		}
-		refVal := ic.Obj.Get(refField)
-		refs, ok := refVal.([]string)
-		if !ok && refVal != nil {
-			return nil, fmt.Errorf("%s is not a []string", refField)
+		values, err := ic.Each(refField, targetGroup, targetKey)
+		if err != nil || len(values) == 0 {
+			return nil, err
 		}
-		if len(refs) == 0 {
-			return nil, nil
-		}
-		v, err := indexValue(ic)
+		value, err := mine(ic)
 		if err != nil {
 			return nil, err
 		}
 
-		out := make([]interp.IndexEntry, 0, len(refs))
-		for _, targetID := range refs {
-			targetObj, ok := ic.Lookup(targetGroup, targetID)
-			if !ok {
-				return nil, fmt.Errorf("fetching %s object for %s failed", targetGroup, targetID)
-			}
-			keyVal, err := targetObj.GetString(targetKey)
+		out := make([]interp.IndexEntry, 0, len(values))
+		for _, v := range values {
+			p, err := cap.ForeignKey(v, common.PathVariable(ic.Kind))
 			if err != nil {
-				return nil, fmt.Errorf("%s is not a string for %s %s: %w", targetKey, targetGroup, targetID, err)
+				return nil, fmt.Errorf("getting the %s path for %q failed with %w", cap.Name, v, err)
 			}
-			p, err := cap.ForeignKey(keyVal, common.PathVariable(ic.Kind))
-			if err != nil {
-				return nil, fmt.Errorf("getting %s path for %s %s failed with %w", cap.Name, targetGroup, targetID, err)
-			}
-			out = append(out, interp.IndexEntry{Path: p.Versioning().Links().String(), Value: v.String(), Append: true})
+			out = append(out, interp.Link(p.Versioning().Links().String(), value))
 		}
 		return out, nil
 	}
 }
 
-// repository is the git-repo reverse index: the repo's type, and this resource under it.
-func repository(repoType repositorytype.Type, providerField, idField string) func(interp.IndexCtx) ([]interp.IndexEntry, error) {
+// repository: the git-repo reverse index — what kind of repository it is, and this
+// resource under it.
+func repository(repoType repositorytype.Type, providerField, idField string) interp.Indexer {
 	return func(ic interp.IndexCtx) ([]interp.IndexEntry, error) {
 		provider, err := ic.Obj.GetString(providerField)
 		if err != nil {
@@ -104,74 +126,39 @@ func repository(repoType repositorytype.Type, providerField, idField string) fun
 		}
 		rp, err := methods.GetRepositoryPath(provider, repoID, ic.Project)
 		if err != nil {
-			return nil, fmt.Errorf("getting repository path for %s failed with %w", repoID, err)
+			return nil, fmt.Errorf("getting the repository path for %s failed with %w", repoID, err)
 		}
-		v, err := indexValue(ic)
+		value, err := mine(ic)
 		if err != nil {
 			return nil, err
 		}
 		return []interp.IndexEntry{
-			{Path: rp.Type().String(), Value: repoType},
-			{Path: rp.Resource(ic.ID).String(), Value: v.String()},
+			interp.Set(rp.Type().String(), repoType),
+			interp.Set(rp.Resource(ic.ID).String(), value),
 		}, nil
 	}
 }
 
-// nameIndex is the id-keyed name entry: what this resource is called, by its id.
+// nameIndex: what this resource is called, found by its id.
 func nameIndex(ic interp.IndexCtx) ([]interp.IndexEntry, error) {
 	return []interp.IndexEntry{
-		{Path: methods.NameIndex(ic.ID, common.PathVariable(ic.Kind)).String(), Value: ic.Name},
+		interp.Set(methods.NameIndex(ic.ID, common.PathVariable(ic.Kind)).String(), ic.Name),
 	}, nil
 }
 
-// byScope is the per-(project, scope) aggregate: every instance appends to one key, with
-// no Links() suffix, so the scope has a single list of everything in it.
-func byScope(cap *Cap) func(interp.IndexCtx) ([]interp.IndexEntry, error) {
-	return func(ic interp.IndexCtx) ([]interp.IndexEntry, error) {
-		if cap.ScopePath == nil {
-			return nil, fmt.Errorf("index by scope: capability %q carries no scope path", cap.Name)
-		}
-		p, err := cap.ScopePath(ic.Project, ic.Scope)
-		if err != nil {
-			return nil, fmt.Errorf("getting scope path for %q failed with %w", cap.Name, err)
-		}
-		v, err := indexValue(ic)
-		if err != nil {
-			return nil, err
-		}
-		return []interp.IndexEntry{{Path: p.String(), Value: v.String(), Append: true}}, nil
-	}
-}
-
-// placeholder reserves the key an fqdn resolves to, without claiming anything is at it.
-func placeholder(keyField string) func(interp.IndexCtx) ([]interp.IndexEntry, error) {
+// placeholder: reserve the key an fqdn resolves to. A name nothing links to yet is not
+// the same as a name nobody has mentioned, and the difference is what a lookup returns.
+func placeholder(keyField string) interp.Indexer {
 	return func(ic interp.IndexCtx) ([]interp.IndexEntry, error) {
 		fqdn, err := ic.Obj.GetString(keyField)
 		if err != nil {
-			return nil, fmt.Errorf("index key %s is not a string: %w", keyField, err)
+			return nil, fmt.Errorf("%s is not a string: %w", keyField, err)
 		}
 		p, err := methods.ReversedFqdnBasicPath(fqdn, common.PathVariable(ic.Kind))
 		if err != nil {
-			return nil, fmt.Errorf("getting basic path for the index key failed with %w", err)
+			return nil, fmt.Errorf("getting the basic path for %q failed with %w", fqdn, err)
 		}
-		return []interp.IndexEntry{{Path: p.Versioning().Links().String(), Value: nil}}, nil
-	}
-}
-
-// indexes runs several footprints in order and concatenates what they contribute. The
-// ORDER within a resource matters for the same reason the group order does: a bucket
-// accumulates.
-func indexes(fns ...func(interp.IndexCtx) ([]interp.IndexEntry, error)) interp.Indexer {
-	return func(ic interp.IndexCtx) ([]interp.IndexEntry, error) {
-		var out []interp.IndexEntry
-		for _, fn := range fns {
-			entries, err := fn(ic)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, entries...)
-		}
-		return out, nil
+		return []interp.IndexEntry{interp.Hole(p.Versioning().Links().String())}, nil
 	}
 }
 
