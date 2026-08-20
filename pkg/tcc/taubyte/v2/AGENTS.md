@@ -332,8 +332,8 @@ reachable through them; read `CompileRoot().Attributes` for those.
 
 Some kinds name nothing a component holds. A `workflow` is a way of writing queues; it
 LOWERS into them at compile, so the vocabulary gains a construct and operations gains
-nothing to deploy. The mechanism is tcc's (`interp/lowering.go`); the vocabulary
-declares what it becomes, in terms:
+nothing new to deploy. The mechanism is tcc's (`interp/lowering.go`, `view.go`); the
+vocabulary declares what it becomes, in terms:
 
 ```go
 Lowers(
@@ -341,33 +341,62 @@ Lowers(
         PerEach("steps"),
         Named("{name}_{each.name}"),
         Sets("max-attempts", "{each.attempts}"),
-        LinksTo("function", "{each.run}", "consumed by", LinkEffect(Read)),
-        LinksTo("queue", "{name}_{each.next.name}", "sends to", From("function", "{each.run}")),
+        // who reaches it, and with which of the target kind's own verbs
+        Reaches("receive", From("function", "{each.run}", "{each.namespace}")),
+        Reaches("send",
+            From("function", "{each.run}", "{each.namespace}"),
+            To("queue", "{name}_{each.next.name}")),
     ),
 )
 ```
 
+**COMPILING IS LOWERING.** `Compile` returns the configuration as it RUNS — the queues
+are in the object, because nothing runs a workflow. `Authored` is the compile of what was
+written, for an editor and for computing a lowering from. A caller who had to remember a
+second call would sooner or later hold an object silently missing what it needs.
+
+**Decompile chooses how far back it goes.** Half way, the default, writes only what
+somebody wrote: what belongs in a repository. `WithGenerated` writes everything. The
+object carries the record that makes the choice possible — which resources nobody wrote,
+where each came from, and which access entries a lowering added to a resource somebody
+did. It sits BESIDE the project, where the index subtree sits, because a resource has to
+stay the shape its schema declares.
+
 Rules that came out of getting each of these wrong first:
 
-- **A lowering ADDS; it never replaces.** The authored resource stays as the shell,
-  which is the metadata decompile needs and the thing everything else points at. tcc
-  compilation is reversible and that is not negotiable for a new construct.
+- **A lowering ADDS; it never replaces.** The authored resource stays as the shell, which
+  is what everything else points at and what decompile writes back. tcc compilation is
+  reversible and that is not negotiable for a new construct.
+- **A link is an ACCESS, and its verb is one the target kind declares.** `Reaches("receive",
+  …)` produces the entry an author would have written. The prose it replaced —
+  `"consumed by"` — was drawing information: there was nothing in it a compiler could
+  emit, which is why what a workflow became existed nowhere but a picture.
+- **What a lowering produces is config, and it proves it by compiling.** The resources go
+  into an in-memory layer over the project and through the ordinary pipeline, so a
+  produced resource that a kind would reject is a compile error rather than a document
+  that reads fine and deploys to nothing. Nothing renders yaml: the tree goes to yaseer,
+  which is what an editor hands one to.
+- **A name a lowering takes must be free.** Producing over an authored resource is an
+  error before anything is written, not a finding about an object that has already lost
+  the file.
+- **What the author wrote is theirs.** An op they already granted is not recorded as
+  granted, a namespace they wrote on an entry is not replaced — or decompiling to what
+  they wrote would delete their own lines.
 - **Read the lowering as a PICTURE before believing it.** Three modelling errors were
   invisible in the config and obvious as a diagram: a queue feeding a queue, nothing
   consuming a queue, and nothing starting the workflow at all.
 - **A derived resource must be able to EXIST.** `CheckLowerings` refuses a lowering that
-  leaves a required field of the produced kind unset — which caught a workflow lowering
-  into a code-bearing `entity` and setting none of the code.
+  leaves a required field of the produced kind unset, reads a field the shell does not
+  have, asks for an op the target kind does not declare, or cycles.
 - **Templates never grow a calculator.** A step counts `attempts`, not `retries`, so the
   queue's `max-attempts` is a copy. If a lowering needs arithmetic, the field is named
   wrong.
 - **The plan carries its source.** A fault found in something nobody wrote is reported
-  against something somebody did — the workflow and the step — or a diagnostic about
-  generated config is worth nothing.
+  against something somebody did — the workflow and the step.
 
 ## 8c. The rules a consumer depends on
 
-The DSL is the only place that knows this vocabulary. Four rules, each of which was
+The DSL is the only place that knows this vocabulary. Five rules, each of which was
 broken here before it was written down.
 
 **Everything in the DSL is generic.** A term in `engine` or `interp` may not know a
