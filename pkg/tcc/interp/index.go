@@ -26,8 +26,9 @@ import (
 // IndexCtx is what the driver knows about one resource when it asks what to index. No
 // tau types: a path is the vocabulary's to compute, from these.
 type IndexCtx struct {
-	// Branch is the compile branch, Project the project's id, Scope the id of the scope
-	// this resource is in ("" at the project root).
+	// Branch is the compile branch, Project the project's id, Scope where this resource
+	// lives: the ids of the scopes between the project root and it, joined by "/", and
+	// empty at the root. A vocabulary whose scopes cannot hold scopes reads one id.
 	Branch, Project, Scope string
 	// Kind, ID and Name are the resource itself.
 	Kind, ID, Name string
@@ -252,13 +253,9 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 		return nil, fmt.Errorf("config root is not an object")
 	}
 
-	appId := ""
+	scope := ""
 	if configRoot != config {
-		appsObj, err := configRoot.Child(gi.container).Object()
-		if err != nil {
-			return nil, fmt.Errorf("fetching %s failed with %w", gi.container, err)
-		}
-		appId = appsObj.Child(config).Name()
+		scope = scopeOf(configRoot, config, gi.container)
 	}
 
 	groupObj, err := config.Child(gi.groupKey).Object()
@@ -293,7 +290,7 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 		name, _ := instObj.GetString(gi.nameField)
 
 		entries, err := spec.index(IndexCtx{
-			Branch: gi.branch, Project: projectId, Scope: appId,
+			Branch: gi.branch, Project: projectId, Scope: scope,
 			Kind: gi.groupKey, ID: id, Name: name,
 			Obj: instObj, Lookup: lookup,
 		})
@@ -315,7 +312,7 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 			}
 		}
 
-		if err := emitAttrValidations(ct, instObj, gi.iter.Attributes, projectId, appId); err != nil {
+		if err := emitAttrValidations(ct, instObj, gi.iter.Attributes, projectId, scope); err != nil {
 			return nil, err
 		}
 	}
@@ -334,6 +331,33 @@ func appendLink(index object.Object[object.Refrence], key, val string) {
 		links = append(links, val)
 	}
 	index.Set(key, links)
+}
+
+// scopeOf is where a scope sits: the ids from the project root down to it, joined by
+// "/". It walks DOWN because the reverse lookup it replaced asked the root's container
+// for the name of the object it had been handed, and an object is a direct child of
+// that container only at the first level. v1's applications cannot hold applications,
+// so one level was the whole tree; v2's namespaces nest, and everything two deep was
+// indexed as though it sat at the project root — under a scope of "", against the same
+// keys the root's own resources use.
+func scopeOf(from, target object.Object[object.Refrence], container string) string {
+	scopes, err := from.Child(container).Object()
+	if err != nil {
+		return ""
+	}
+	for _, id := range scopes.Children() {
+		scope, err := scopes.Child(id).Object()
+		if err != nil {
+			continue
+		}
+		if scope == target {
+			return id
+		}
+		if under := scopeOf(scope, target, container); under != "" {
+			return id + "/" + under
+		}
+	}
+	return ""
 }
 
 // makeLookup builds the (group, id) resolver with pass4's app-local-then-global
