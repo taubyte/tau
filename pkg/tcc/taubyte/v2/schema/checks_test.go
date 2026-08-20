@@ -312,3 +312,24 @@ func findOne(t *testing.T, found []schema.Finding, contains string) schema.Findi
 	t.Fatalf("no finding containing %q; got %v", contains, found)
 	return schema.Finding{}
 }
+
+// The verb check AGENTS.md promised and nothing implemented: a lowering that asks for an
+// op the target kind does not declare. It cannot live in interp — whether "receive" is
+// something a queue does is this vocabulary's question — so it is asked here, and the
+// vocabulary as shipped has to pass it.
+func TestLoweredOpsAreVerbsOfTheirTarget(t *testing.T) {
+	assert.DeepEqual(t, schema.CheckLoweredOps(schema.CompileRoot()), []string(nil))
+
+	// and it has to actually catch one, or passing means nothing
+	bad := schema.Root(nil, schema.DefineGroup("workflow",
+		schema.DefineIter(nil, schema.Lowers(
+			schema.Into("queue",
+				schema.Named("x"),
+				schema.Reaches("consume", schema.From("function", "f")),
+			),
+		))))
+	problems := schema.CheckLoweredOps(bad)
+	assert.Equal(t, len(problems), 1, "got %v", problems)
+	assert.Assert(t, strings.Contains(problems[0], `"consume"`), problems[0])
+	assert.Assert(t, strings.Contains(problems[0], "receive"), "it names what a queue does: %s", problems[0])
+}

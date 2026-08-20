@@ -102,13 +102,16 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 // free reports the first name a lowering takes that is not its to take: one an author
 // already used, or one another part of the same lowering already produced.
 func free(root *engine.Node, flat map[string]any, docs []placement) error {
+	// Keyed by the SOURCE as a person would look for it, not by the resource's id: two
+	// steps of one workflow that produce the same name have the same id on both sides,
+	// so "by X and by X" named the collision and not the two things causing it.
 	taken := map[string]string{}
 	for _, d := range docs {
 		key := d.scope + "\x00" + d.kind + "\x00" + d.name
 		if by, clash := taken[key]; clash {
-			return fmt.Errorf("interp: %s/%s is produced twice, by %s and by %s", d.kind, d.name, by, d.from)
+			return fmt.Errorf("interp: %s/%s is produced twice, by %s and by %s", d.kind, d.name, by, d.src)
 		}
-		taken[key] = d.from
+		taken[key] = d.src
 	}
 
 	_, nameField := engine.IdentityOf(root)

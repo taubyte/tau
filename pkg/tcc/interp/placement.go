@@ -26,7 +26,11 @@ type placement struct {
 	id, kind, name, scope string
 	from                  string // the authored resource's id
 	part                  string // where inside it — "steps/0"
-	depth                 int    // how many lowerings deep this one is
+	// src is that resource as a person would look for it — "workflow/checkout
+	// (steps/0)". The id says which resource; only this says which STEP, and a
+	// collision between two parts of one lowering has the same id on both sides.
+	src   string
+	depth int // how many lowerings deep this one is
 }
 
 // granted is one value a lowering puts into a resource somebody else wrote.
@@ -49,7 +53,7 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 			at:   address(layout, d.Scope, d.Kind, d.Name),
 			tree: authored(root, d),
 			id:   d.ID, kind: d.Kind, name: d.Name, scope: d.Scope,
-			from: d.Source.ID, part: d.Source.Path, depth: len(d.Via),
+			from: d.Source.ID, part: d.Source.Path, src: d.Source.String(), depth: len(d.Via),
 		})
 
 		for _, w := range d.Writes {

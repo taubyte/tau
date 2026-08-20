@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -883,4 +884,40 @@ func checkExternal(all []compiled, r Resolver) []Finding {
 		}
 	}
 	return out
+}
+
+// EVERY OP A LOWERING ASKS FOR IS A VERB THE TARGET DECLARES.
+//
+// A lowering writes access entries — `Reaches("receive", …)` puts `receive` in a queue
+// entry's ops — and whether `receive` is something a queue DOES is this vocabulary's
+// question, not the interpreter's. interp.CheckLowerings deliberately cannot ask it: the
+// generic layer knows a value goes at a path and has no word for a verb.
+//
+// So it is asked here, over what the schema declares, with no config in the room. Without
+// it a mistyped op reaches the second compile and fails as a load error against a
+// document nobody wrote.
+func CheckLoweredOps(root *Node) []string {
+	ops := AccessEntryShape().Ops
+	var problems []string
+	for _, w := range interp.DeclaredWrites(root) {
+		// An access entry is <kind>/<name>/<ops>; anything else a lowering writes is an
+		// ordinary field and has no verb to check.
+		if len(w.Path) != 3 || w.Path[2] != ops {
+			continue
+		}
+		kind := w.Path[0]
+		if kind == "{into}" {
+			kind = w.Into // the resource this lowering produced
+		}
+		if strings.ContainsAny(kind, "{}") {
+			continue // a kind the plan fills in; nothing static to check
+		}
+		if _, ok := EffectOf(kind, w.Value); !ok {
+			problems = append(problems, fmt.Sprintf(
+				"%s lowers into %s and asks for %q on a %s, which does not do that; it has %s",
+				w.From, w.Into, w.Value, kind, strings.Join(opNames(kind), ", ")))
+		}
+	}
+	sort.Strings(problems)
+	return slices.Compact(problems)
 }

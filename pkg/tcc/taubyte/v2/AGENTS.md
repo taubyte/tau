@@ -395,7 +395,9 @@ Rules that came out of getting each of these wrong first:
   consuming a queue, and nothing starting the workflow at all.
 - **A derived resource must be able to EXIST.** `CheckLowerings` refuses a lowering that
   leaves a required field of the produced kind unset, reads a field the shell does not
-  have, asks for an op the target kind does not declare, or cycles.
+  have, or cycles. Whether an op is one the target kind DECLARES is not among them and
+  cannot be: the generic layer knows a value goes at a path and has no word for a verb.
+  That check is this vocabulary's — `CheckLoweredOps`, over `interp.DeclaredWrites`.
 - **Templates never grow a calculator.** A step counts `attempts`, not `retries`, so the
   queue's `max-attempts` is a copy. If a lowering needs arithmetic, the field is named
   wrong.

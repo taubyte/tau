@@ -228,6 +228,44 @@ func Lowers(into ...Lowering) engine.NodeOption {
 	return engine.GroupAnnotate("lowers", into)
 }
 
+// DeclaredWrite is one value a lowering says it will put somewhere, read off the schema
+// with no config in the room. It is here so a VOCABULARY can check its own lowerings —
+// whether an op is one the target kind declares is a question only the vocabulary can
+// answer, and CheckLowerings must not learn the word for it.
+type DeclaredWrite struct {
+	// From is the kind whose lowering declares this, Into the kind it produces.
+	From, Into string
+	// OnKind is the kind of the resource written into; empty means the produced one.
+	OnKind string
+	// Path is where inside it, and Value what goes there. Both as declared, templates
+	// and all.
+	Path  []string
+	Value string
+}
+
+// DeclaredWrites is every value every lowering in a schema writes.
+func DeclaredWrites(root *engine.Node) []DeclaredWrite {
+	var out []DeclaredWrite
+	eachIter(root, func(iter *engine.Node) bool {
+		from := ""
+		for _, g := range root.Children {
+			if key, _ := g.Match.(string); key != "" && len(g.Children) > 0 && g.Children[0] == iter {
+				from = key
+			}
+		}
+		for _, l := range LoweringsOf(iter) {
+			for _, w := range l.writes {
+				out = append(out, DeclaredWrite{
+					From: from, Into: l.into, OnKind: w.onKind,
+					Path: append([]string{}, w.path...), Value: w.value,
+				})
+			}
+		}
+		return false
+	})
+	return out
+}
+
 // LoweringsOf reads a node's declared lowerings back off the schema.
 func LoweringsOf(n *engine.Node) []Lowering {
 	if n == nil {
