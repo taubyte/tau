@@ -936,6 +936,42 @@ func unknownInputs(iter *engine.Node, l Lowering) []string {
 	return unknown
 }
 
+// opNamer is a kind's verb set, asked for its names. The vocabulary declares what a verb
+// IS — an effect class, whether it is delivered — and none of that is the interpreter's;
+// what it needs is whether a name is one of them.
+type opNamer interface{ Names() []string }
+
+// unknownOps is every op a lowering asks for that the kind it is asked of does not have.
+func unknownOps(root *engine.Node, l Lowering) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range l.reaches {
+		kind := r.toKind
+		if kind == "" {
+			kind = l.into // the derived resource itself is what is reached
+		}
+		if seen[kind+"\x00"+r.op] {
+			continue
+		}
+		seen[kind+"\x00"+r.op] = true
+
+		iter := iterOfKind(root, kind)
+		if iter == nil {
+			continue // an unknown kind is already reported, once, above
+		}
+		ops, declared := iter.Meta["ops"].(opNamer)
+		if !declared {
+			out = append(out, "\""+r.op+"\" on "+kind+", which nothing may reach")
+			continue
+		}
+		if !slices.Contains(ops.Names(), r.op) {
+			out = append(out, "\""+r.op+"\" on "+kind+", which has "+strings.Join(ops.Names(), ", "))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // templateKeys is every `{…}` in a template.
 func templateKeys(tmpl string) []string {
 	var out []string
@@ -999,6 +1035,14 @@ func CheckLowerings(root *engine.Node) []string {
 			// of them declared, so nothing arrives from somewhere a reader cannot see.
 			for _, unknown := range unknownInputs(iter, l) {
 				problems = append(problems, "lowering into "+l.into+" reads "+unknown+", which is not a field of what it lowers")
+			}
+			// EVERY OP MUST BE ONE THE TARGET KIND HAS. What a lowering produces is the
+			// entry an author would have written, and an entry naming a verb the kind
+			// does not declare is not config — it compiles nowhere and grants nothing.
+			// The prose verbs this replaced ("consumed by") were exactly that, which is
+			// why they could never be emitted.
+			for _, bad := range unknownOps(root, l) {
+				problems = append(problems, "lowering into "+l.into+" asks for "+bad)
 			}
 		}
 		return false

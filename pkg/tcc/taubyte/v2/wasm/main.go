@@ -107,7 +107,8 @@ func compileFn(_ js.Value, args []js.Value) any {
 	//
 	// The stub resolver: what tcc cannot see — is this zone delegated, is this image
 	// pullable — nothing in a browser can see either.
-	findings := schema.Audit(obj.Flat(), schema.StubResolver())
+	flatObj := obj.Flat()
+	findings := schema.Audit(flatObj, schema.StubResolver())
 	found := make([]map[string]any, 0, len(findings))
 	for _, f := range findings {
 		found = append(found, map[string]any{
@@ -117,48 +118,63 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	out["findings"] = found
 
-	// What the lowered resources become, and how they are wired to each other. Computed
-	// here for the same reason the audit is: it is a fact about the vocabulary, and a
-	// second implementation in the page would drift the first time a lowering changed.
-	// It is also what lets the page show the INSIDE of a workflow without knowing what
-	// a workflow is.
-	plan := schema.LoweringPlan(obj.Flat())
-	lowered := make([]map[string]any, 0, len(plan))
-	for _, d := range plan {
-		links := make([]map[string]any, 0, len(d.Links))
-		for _, l := range d.Links {
-			link := map[string]any{
-				"kind": l.Kind, "name": l.Name, "verb": l.Verb, "scope": l.Scope,
-				"effect": l.Effect, "ref": l.Ref,
-			}
-			// where the edge STARTS, when that is not the derived resource — a queue
-			// does not hand work to another queue, the function that consumed it does
-			if l.From.Kind != "" {
-				link["from"] = map[string]any{"kind": l.From.Kind, "name": l.From.Name}
-			}
-			links = append(links, link)
+	// WHAT EACH LOWERABLE RESOURCE BECOMES: the documents it produces and the entries it
+	// places on documents somebody wrote. The page shows the inside of a workflow with
+	// this and never learns what a workflow is.
+	emissions := make([]map[string]any, 0)
+	for _, e := range schema.Emissions(flatObj) {
+		docs := make([]map[string]any, 0, len(e.Documents))
+		for _, d := range e.Documents {
+			docs = append(docs, map[string]any{
+				"kind": d.Kind, "name": d.Name, "id": d.ID, "yaml": d.Body,
+				"path": d.Path, "at": d.At, "part": d.Part, "why": d.Why,
+			})
 		}
-		lowered = append(lowered, map[string]any{
-			"kind": d.Kind, "name": d.Name, "of": d.Of, "scope": d.Scope, "why": d.Why, "links": links,
-			// deterministic, and the document it would be — a resource nobody wrote is
-			// still a resource somebody may need to read
-			"id": d.ID, "yaml": d.Doc, "acts": d.Acts,
-			// Where it came from, so the page can show the construct as written as well
-			// as what it becomes.
-			"source": map[string]any{
-				"kind": d.Source.Kind, "name": d.Source.Name, "scope": d.Source.Scope,
-				"path": d.Source.Path, "part": d.Source.Part,
-			},
+		entries := make([]map[string]any, 0, len(e.Entries))
+		for _, x := range e.Entries {
+			entries = append(entries, map[string]any{
+				"on":   map[string]any{"kind": x.On.Kind, "name": x.On.Name, "scope": x.On.Scope},
+				"kind": x.Kind, "name": x.Name, "op": x.Op, "namespace": x.Namespace,
+			})
+		}
+		emissions = append(emissions, map[string]any{
+			"of":        map[string]any{"kind": e.Of.Kind, "name": e.Of.Name, "scope": e.Of.Scope},
+			"documents": docs, "entries": entries,
 		})
 	}
-	out["lowered"] = lowered
+	out["emissions"] = emissions
+
+	// AND THE PROJECT AFTER LOWERING. Not a plan of it: the compiled object, with the
+	// queues and the entries in it, because that is what a runtime is handed. The page
+	// draws the inside of a box from THIS — the same resources and the same relations it
+	// draws everything else from, so the picture of generated config is made the way the
+	// picture of written config is.
+	if lc, err := schema.Lowered(context.Background(), c); err == nil && lc != nil {
+		if lobj, _, err := lc.Compile(context.Background()); err == nil {
+			lflat := lobj.Flat()
+			lres := []map[string]any{}
+			for _, r := range schema.Resources(lflat) {
+				lres = append(lres, map[string]any{
+					"id": r.ID, "kind": r.Kind, "name": r.Name, "scope": r.Scope, "fields": r.Fields,
+				})
+			}
+			lrel := []map[string]any{}
+			for _, r := range schema.Relations(lflat) {
+				lrel = append(lrel, map[string]any{
+					"from": r.From, "to": r.To, "kind": r.Kind,
+					"verb": r.Verb, "effect": r.Effect, "class": string(r.Class),
+				})
+			}
+			out["lowered"] = map[string]any{"resources": lres, "relations": lrel}
+		}
+	}
 
 	// WHAT EACH RESOURCE IS REACHED AT. A name is the label it chose, the zone that
 	// answers for it and the project's own label — three places, so whoever assembles
 	// them decides what the name is, and a view assembling its own is a second answer.
 	// The cloud's fqdn stays absent, because it is not in the config.
 	names := map[string]any{}
-	for id, r := range schema.ReachableNames(obj.Flat()) {
+	for id, r := range schema.ReachableNames(flatObj) {
 		names[id] = map[string]any{
 			"name": r.Name, "zone": r.Zone, "fqdn": r.Fqdn, "generated": r.Generated,
 		}
@@ -169,7 +185,7 @@ func compileFn(_ js.Value, args []js.Value) any {
 	// telling a nested group from an access block from a list, which is schema knowledge:
 	// the walk lives with the schema and every consumer gets the same answer.
 	res := []map[string]any{}
-	for _, r := range schema.Resources(obj.Flat()) {
+	for _, r := range schema.Resources(flatObj) {
 		res = append(res, map[string]any{
 			"id": r.ID, "kind": r.Kind, "name": r.Name, "scope": r.Scope, "fields": r.Fields,
 		})
@@ -180,7 +196,7 @@ func compileFn(_ js.Value, args []js.Value) any {
 	// against a scope, and a consumer that does its own resolving is one that will
 	// disagree with the compiler about what a name means.
 	rels := []map[string]any{}
-	for _, r := range schema.Relations(obj.Flat()) {
+	for _, r := range schema.Relations(flatObj) {
 		rels = append(rels, map[string]any{
 			"from": r.From, "to": r.To, "kind": r.Kind,
 			"verb": r.Verb, "effect": r.Effect, "class": string(r.Class),

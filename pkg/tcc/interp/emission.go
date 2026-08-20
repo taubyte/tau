@@ -26,6 +26,16 @@ type Document struct {
 	Body string
 	Kind string
 	Name string
+	// ID is the deterministic id it compiles under, so a consumer can find it in the
+	// lowered object rather than matching on a name.
+	ID string
+	// At and Part are the piece of the authored document responsible — "steps/0" and the
+	// element itself. A view that shows a construct AS WRITTEN needs them; both are empty
+	// when the whole resource is responsible.
+	At   string
+	Part map[string]any
+	// Why is the one line the lowering gives for it.
+	Why string
 }
 
 // Entry is an access placed on a document that already exists.
@@ -69,7 +79,8 @@ func Emissions(root *engine.Node, obj map[string]any, layout Layout) []Emission 
 
 		e.Documents = append(e.Documents, Document{
 			Path: documentPath(layout, d.Scope, d.Kind, d.Name),
-			Body: d.Doc, Kind: d.Kind, Name: d.Name,
+			Body: d.Doc, Kind: d.Kind, Name: d.Name, ID: d.ID,
+			At: d.Source.Path, Part: d.Source.Part, Why: d.Why,
 		})
 
 		for _, g := range d.Grants {

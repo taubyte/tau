@@ -19,7 +19,7 @@ func pipelineSchema() (engine.Schema, *engine.Node) {
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		}, engine.Resource("job", "Job", "Job", "job"))),
+		}, engine.Resource("job", "Job", "Job", "job"), engine.GroupAnnotate("ops", testOps{"run", "hand-off"}))),
 		engine.DefineGroup("log", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
 		}, engine.Resource("log", "Log", "Log", "log"))),
@@ -239,7 +239,7 @@ func TestLoweringWritesTheAccessItDeclares(t *testing.T) {
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		}, engine.Resource("job", "Job", "Job", "job"))),
+		}, engine.Resource("job", "Job", "Job", "job"), engine.GroupAnnotate("ops", testOps{"run", "hand-off"}))),
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
 			engine.String("id"), engine.String("name"),
 		},
@@ -301,7 +301,7 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		}, engine.Resource("job", "Job", "Job", "job"))),
+		}, engine.Resource("job", "Job", "Job", "job"), engine.GroupAnnotate("ops", testOps{"run", "hand-off"}))),
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
 			engine.String("id"), engine.String("name"),
 		},
@@ -327,7 +327,7 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		}, engine.Resource("job", "Job", "Job", "job"))),
+		}, engine.Resource("job", "Job", "Job", "job"), engine.GroupAnnotate("ops", testOps{"run", "hand-off"}))),
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
 			engine.String("id"), engine.String("name"),
 		},
@@ -343,4 +343,34 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 		)),
 	)
 	assert.Equal(t, len(interp.CheckLowerings(ok)), 0, "got %v", interp.CheckLowerings(ok))
+}
+
+// testOps is a verb set the way a vocabulary declares one: the generic layer asks it for
+// the names and knows nothing else about a verb.
+type testOps []string
+
+func (o testOps) Names() []string { return o }
+
+// AN OP THE TARGET KIND DOES NOT HAVE is not config. What a lowering produces is the
+// entry an author would have written, and `ops: [recieve]` grants nothing, compiles
+// nowhere, and reads as though it works.
+func TestCheckLoweringsRefusesAnOpTheKindDoesNotHave(t *testing.T) {
+	root := engine.Root(
+		[]*engine.Attribute{engine.String("id")},
+		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
+		}, engine.Resource("job", "Job", "Job", "job"), engine.GroupAnnotate("ops", testOps{"run"}))),
+		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
+			engine.String("id"), engine.String("name"),
+		},
+			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
+			interp.Lowers(interp.Into("job", interp.Named("{name}-j"),
+				interp.Reaches("runn", interp.From("job", "a")),
+			)),
+		)),
+	)
+
+	problems := interp.CheckLowerings(root)
+	assert.Equal(t, len(problems), 1, "got %v", problems)
+	assert.Assert(t, strings.Contains(problems[0], `"runn" on job, which has run`), problems[0])
 }

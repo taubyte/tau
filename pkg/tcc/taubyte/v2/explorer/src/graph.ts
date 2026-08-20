@@ -12,7 +12,7 @@
 // dropped a use whose namespace was relative, both of which read as facts about the
 // config. What is left is layout and paint.
 
-import type { Compiled, Effect, Instance, Relation, Shapes } from "./wasm";
+import type { Compiled, Effect, Emission, Instance, LoweredProject, Relation, Shapes } from "./wasm";
 
 export interface Node {
   id: string;
@@ -117,28 +117,6 @@ export function iconOf(kind: string): string {
   return ICON[kind] ?? "";
 }
 
-/** One resource a lowered resource becomes, as computed by tcc — never here. */
-export interface Lowered {
-  kind: string;
-  name: string;
-  of: string;
-  scope: string;
-  why: string;
-  id?: string;
-  yaml?: string;
-  acts?: boolean;
-  links: {
-    kind: string;
-    name: string;
-    verb: string;
-    scope?: string;
-    effect?: string;
-    ref?: boolean;
-    from?: { kind: string; name: string };
-  }[];
-  source?: { kind: string; name: string; scope: string; path: string; part?: Record<string, unknown> };
-}
-
 /** What this vocabulary's shapes are, from tcc. Set once, with the kinds. */
 let SHAPES: Shapes = {
   refs: [],
@@ -181,8 +159,11 @@ export function buildGraph(
   /** Every resolved relationship, from tcc. This file resolves no names. */
   relations: Relation[] = [],
   names: Record<string, { name: string; zone: string; fqdn: string; generated: boolean }> = {},
-  lowered: Lowered[] = [],
-  /** Which lowered resources are showing what they BECOME rather than what was written. */
+  /** What each lowerable resource becomes, from tcc. */
+  emissions: Emission[] = [],
+  /** The project AFTER lowering — the same shapes, because it is the same kind of thing. */
+  loweredProject: LoweredProject = { resources: [], relations: [] },
+  /** Which boxes are showing what they BECOME rather than what was written. */
   flipped: Set<string> = new Set(),
 ): Graph {
   const nodes: Node[] = [];
@@ -249,35 +230,26 @@ export function buildGraph(
     }
   }
 
-  // A LOWERED RESOURCE IS A BOX, the same way a namespace is: a frame holding the parts
-  // that belong to it, with two faces — what was WRITTEN (the steps) and what it BECOMES
-  // (the queues). Both are read from the same plan tcc computed; neither is recomputed
-  // here, and nothing in this file knows what a step is.
+  // A LOWERED RESOURCE IS A BOX, the same way a namespace is: a frame holding what it
+  // becomes, with two faces — what was WRITTEN (the steps) and what it IS (the queues).
   //
-  // THE LAYOUT IS THE SAME FOR BOTH FACES, and that is the whole trick. Turning a box
-  // over used to re-run dot with a different node count, which moved every other node on
-  // the page — a gateway three columns away jumped 300px, and panning to hold the box
-  // still just pushed other things off the edge of the panel. So the layout is always
-  // computed for the LOWERED face, edges included, and the written face reuses those
-  // positions: one node per derived resource, wearing the step's name when the box is
-  // closed and the queue's when it is open.
-  //
-  // Nothing moves, because nothing about the layout changed. No pan, no animation, no
-  // clipping.
+  // Both faces are the SAME NODES. What a lowering produced is a real resource in the
+  // lowered project, with a real id and real relations, so the page does not build a
+  // second kind of node with a second kind of edge for it: it draws the resources tcc
+  // says exist and the relations tcc says hold, which is what it does for everything
+  // else. Turning a box over changes what the nodes are CALLED — a queue by its own
+  // name, or by the step that produced it — and nothing else. Nothing moves, because
+  // nothing about the layout changed.
   const frames = new Map<string, string>();
-  const sourcesOf = new Map<string, Lowered[]>();
-  for (const d of lowered) {
-    sourcesOf.set(d.of, [...(sourcesOf.get(d.of) ?? []), d]);
-  }
+  const derivedIds = new Set<string>();
 
-  for (const [of, parts] of sourcesOf) {
-    const src = nodes.find((n) => `${n.kind}/${n.name}` === of);
+  for (const e of emissions) {
+    const src = nodes.find((n) => n.kind === e.of.kind && n.name === e.of.name && n.scope === e.of.scope);
     if (!src) continue;
 
-    // Where the resource actually LIVES, kept before the frame takes its place: the
-    // parts inside a box still reach resources in the namespace the box is in.
+    // Where the resource actually LIVES, kept before the frame takes its place: what is
+    // inside the box still reaches resources in the namespace the box is in.
     const home = src.scope;
-
     // `@` cannot begin a resource name, so a frame can never collide with a namespace.
     const frame = `${src.scope ? `${src.scope}/` : ""}@${src.name}`;
     frames.set(frame, `${src.kind} · ${src.name}`);
@@ -290,96 +262,56 @@ export function buildGraph(
     src.anchor = true;
 
     const open = flipped.has(src.id);
-    const byPath = new Map<string, Node>();
-
-    // The part that ACTS for this resource, when the lowering names one: an agent's
-    // tools are called by its loop, so with the box open the agent's own edges hang off
-    // the loop rather than leaving the box for reasons the picture does not give.
-    const actor = open ? parts.find((d) => d.acts) : undefined;
-    if (actor) {
-      for (const a of live) {
-        if (a.from === src.id) a.from = `derived:${actor.kind}/${actor.name}`;
-      }
-    }
-
     // Does the CLOSED face have anything of its own to show? A workflow does — its
     // steps — so its hidden parts keep reserving space and the box is the same size
-    // either way, which is what stops the page moving when it is opened.
-    //
-    // An agent does NOT: its lowering is not per-element, so closed there is nothing
-    // inside, and reserving the open size drew a large empty rectangle. It gets a box
-    // the size of its label instead, and grows when it is opened. A box with nothing in
-    // it is worse than a box that changes size.
-    const showsParts = parts.some((d) => typeof d.source?.part?.name === "string");
+    // either way, which is what stops the page moving when it is opened. An agent does
+    // not: its lowering is not per-element, so closed there is nothing inside, and
+    // reserving the open size drew a large empty rectangle.
+    const shows = e.documents.some((d) => typeof d.part?.name === "string");
 
-    for (const d of parts) {
-      const id = `derived:${d.kind}/${d.name}`;
-      if (byId.has(id)) continue;
-      const part = typeof d.source?.part?.name === "string" ? (d.source.part.name as string) : "";
-      if (!open && !showsParts) continue; // nothing to show, and nothing to reserve
+    for (const d of e.documents) {
+      if (byId.has(d.id)) continue;
+      const part = typeof d.part?.name === "string" ? (d.part.name as string) : "";
+      if (!open && !shows) continue; // nothing to show, and nothing to reserve
       const node: Node = {
-        id,
-        of: id,
-        // Closed, this node IS the step it came from; open, it is what the step became.
+        id: d.id,
+        of: d.id,
+        // Closed, this node wears the step it came from; open, it wears what it is.
         kind: open || !part ? d.kind : "step",
         name: open || !part ? d.name : part,
         scope: frame,
-        derived: open ? { of: d.of, why: d.why } : undefined,
-        // A derived resource with no step behind it — the failure queue — exists in the
-        // layout either way, so the box does not change size, and is simply not drawn
-        // on the face where it does not exist.
+        derived: { of: `${e.of.kind}/${e.of.name}`, why: d.why },
+        // Something with no step behind it — the failure queue — exists in the layout
+        // either way, so the box does not change size, and is simply not drawn on the
+        // face where it does not belong.
         hidden: !open && !part,
         layer: 0,
         x: 0,
         y: 0,
       };
       nodes.push(node);
-      byId.set(id, node);
-      if (d.source?.path) byPath.set(d.source.path, node);
+      byId.set(d.id, node);
+      derivedIds.add(d.id);
     }
+  }
 
-    // Both faces' edges, tagged with the face they belong to. dot sees all of them, so
-    // the ranking is the same whichever face is showing; the page draws one face.
-    for (const d of parts) {
-      const self = byId.get(`derived:${d.kind}/${d.name}`);
-      if (!self) continue;
-      for (const l of d.links ?? []) {
-        const target =
-          byId.get(`derived:${l.kind}/${l.name}`) ??
-          nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === (l.scope || home));
-        if (!target) continue;
-        const effect = (l.effect as Effect) ?? "write";
-
-        // OPEN: exactly what tcc said, origin included — a function sends to the next
-        // queue, a queue points at its dead-letter.
-        const origin = l.from
-          ? (byId.get(`derived:${l.from.kind}/${l.from.name}`) ??
-            nodes.find((n) => n.kind === l.from!.kind && n.name === l.from!.name))
-          : self;
-        if (origin) {
-          live.push({ from: origin.id, to: target.id, kind: l.kind, verb: l.verb, effect, ref: l.ref, face: "lowered" });
-        }
-
-        // CLOSED: the same relationships attributed to the STEP, because that is what a
-        // reader has in front of them — the hop to the next step is the step's, not a
-        // queue's, and the function is what the step runs. A link that only points at
-        // lowered machinery (the dead-letter) has nothing to say as written.
-        if (l.ref) continue;
-        if (!target.hidden) {
-          live.push({ from: self.id, to: target.id, kind: l.kind, verb: l.verb, effect, face: "written" });
-        }
-
-        // ...and an edge that comes in from OUTSIDE lands on the workflow. Open, the
-        // function that ran a step sends to the next step's queue, which is a thing
-        // inside the box; closed, that queue is not a thing the reader has been shown,
-        // so the arrow would either vanish — leaving the function with no outgoing edge
-        // it plainly has — or point at machinery. It points at the box, which is the
-        // resource that owns what happens next.
-        if (origin && origin.id !== self.id && origin.scope !== frame) {
-          live.push({ from: origin.id, to: src.id, kind: src.kind, verb: l.verb, effect, face: "written" });
-        }
-      }
-    }
+  // THE EDGES INSIDE A BOX ARE THE PROJECT'S OWN. A queue is received from by the
+  // function that runs the step, and that is an access entry in the lowered project —
+  // the same shape, read the same way, as every other edge on this page. There is no
+  // lowering-specific edge code left, and there is nothing here that knows what a step
+  // is.
+  for (const r of loweredProject.relations) {
+    if (!derivedIds.has(r.from) && !derivedIds.has(r.to)) continue;
+    if (!byId.has(r.from) || !byId.has(r.to)) continue;
+    live.push({
+      from: r.from,
+      to: r.to,
+      kind: r.kind,
+      verb: r.verb,
+      effect: (r.effect || "read") as Effect,
+      policy: r.class === "policy" || undefined,
+      ref: r.class === "reference" || undefined,
+    });
   }
 
   // The zone that answers for a name is drawn as the INGRESS PATH — internet, then the

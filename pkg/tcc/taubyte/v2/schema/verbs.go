@@ -90,7 +90,22 @@ func isDelivered(kind string) bool {
 // route knows about, with no path, no gateway policy and no name in front of it.
 //
 // Ops annotates a kind with its verb set.
-func Ops(verbs ...Verb) NodeOption { return GroupAnnotate("ops", verbs) }
+func Ops(verbs ...Verb) NodeOption { return GroupAnnotate("ops", Verbs(verbs)) }
+
+// Verbs is a kind's verb set. It is a named type so the generic layer can ask it for the
+// names without knowing what a Verb is: a lowering declares the op it asks for, and
+// whether that op EXISTS is a question tcc has to be able to answer at build time
+// without importing this vocabulary.
+type Verbs []Verb
+
+// Names is the interface interp checks lowerings against. See interp.CheckLowerings.
+func (vs Verbs) Names() []string {
+	out := make([]string, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, v.Name)
+	}
+	return out
+}
 
 // OpsOf reads a kind's declared verbs back off the schema.
 func OpsOf(kind string) []Verb {
@@ -98,7 +113,7 @@ func OpsOf(kind string) []Verb {
 		if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
 			continue
 		}
-		if v, ok := g.Children[0].Meta["ops"].([]Verb); ok {
+		if v, ok := g.Children[0].Meta["ops"].(Verbs); ok {
 			return v
 		}
 	}
@@ -129,7 +144,7 @@ func Kinds() []string {
 		if len(g.Children) == 0 {
 			continue
 		}
-		if _, ok := g.Children[0].Meta["ops"].([]Verb); ok {
+		if _, ok := g.Children[0].Meta["ops"].(Verbs); ok {
 			out = append(out, name)
 		}
 	}

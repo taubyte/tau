@@ -103,7 +103,8 @@ function render() {
       lastResult.resources ?? [],
       lastResult.relations ?? [],
       lastResult.names ?? {},
-      lastResult.lowered ?? [],
+      lastResult.emissions ?? [],
+      lastResult.lowered ?? { resources: [], relations: [] },
       flipped,
     );
     const g = graph;
@@ -206,13 +207,15 @@ function editorPane(): HTMLElement {
   return pane;
 }
 
-// The lowered resource a node stands for, if it is one. The id carries it: a derived
-// node is `derived:<kind>/<name>`, which is exactly what the plan calls it.
+// The document a node stands for, when nobody wrote it. A derived resource compiles
+// under a deterministic id, so it is looked up by the same id everything else is.
 function loweredById(id: string) {
-  const made = (lastResult && !("error" in lastResult) ? (lastResult.lowered ?? []) : []).find(
-    (d) => `derived:${d.kind}/${d.name}` === id,
-  );
-  return made;
+  if (!lastResult || "error" in lastResult) return undefined;
+  for (const e of lastResult.emissions ?? []) {
+    const doc = e.documents.find((d) => d.id === id);
+    if (doc) return doc;
+  }
+  return undefined;
 }
 
 // A real directory tree, because the layout IS part of the DSL: a resource is a file

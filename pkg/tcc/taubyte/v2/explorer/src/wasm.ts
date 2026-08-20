@@ -66,17 +66,35 @@ export interface Omission {
   unblocks: string;
 }
 export type Compiled = Record<string, unknown>;
-/** One cross-resource finding, decided by tcc — see schema/checks.go. */
-export interface Lowered {
-  kind: string;
-  name: string;
-  of: string;
-  scope: string;
-  why: string;
-  id?: string;
-  yaml?: string;
-  acts?: boolean;
-  links: { kind: string; name: string; verb: string }[];
+/** What one lowerable resource becomes. Computed by tcc — see interp/emission.go. */
+export interface Emission {
+  of: { kind: string; name: string; scope: string };
+  /** The documents it produces: resources nobody wrote, each with the id it compiles under. */
+  documents: {
+    kind: string;
+    name: string;
+    id: string;
+    yaml: string;
+    path: string;
+    /** The piece of the authored document responsible — "steps/0" — and the element itself. */
+    at: string;
+    part?: Record<string, unknown>;
+    why: string;
+  }[];
+  /** The access entries it places on documents somebody else wrote. */
+  entries: {
+    on: { kind: string; name: string; scope: string };
+    kind: string;
+    name: string;
+    op: string;
+    namespace: string;
+  }[];
+}
+
+/** The project AFTER lowering: the same shapes as the authored one, because it is one. */
+export interface LoweredProject {
+  resources: Instance[];
+  relations: Relation[];
 }
 
 export interface Finding {
@@ -118,8 +136,10 @@ export interface CompileOk {
   resources?: Instance[];
   /** Every relationship between two resources, already resolved and already directed. */
   relations?: Relation[];
-  /** What the lowered resources become, and their wiring. Computed by tcc, not here. */
-  lowered?: Lowered[];
+  /** What each lowerable resource becomes. */
+  emissions?: Emission[];
+  /** The compiled project after lowering — what a runtime is handed. */
+  lowered?: LoweredProject;
   /** The project's label in a cloud's generated zone — derived from its id. */
   projectLabel?: string;
   object: Compiled;
