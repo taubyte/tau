@@ -51,26 +51,31 @@ type Lowering struct {
 	when string
 	// acts: this part does what the source resource DECLARES — the tools an agent may
 	// reach are reached by its loop
-	acts  bool
-	set   map[string]string
-	links []link
+	acts    bool
+	set     map[string]string
+	reaches []reach
 }
 
-type link struct {
-	kind, name, verb, scope string
-	// where the edge STARTS, when that is not the derived resource itself
-	fromKind, fromName string
-	// what KIND of edge it is, in the vocabulary's own terms. Opaque here: the
-	// interpreter does not know what "read" means, it only carries the word.
-	effect string
-	ref    bool
+// reach is one ACCESS a lowering declares: an accessor, a target, and the op it asks
+// for. Both ends default to the derived resource itself, and both are templates.
+//
+// It used to be a `link` carrying a prose verb ("consumed by") and a colour class, which
+// is a drawing rather than a declaration — there was nothing in it a compiler could
+// emit. An access entry is what an author would have written, so it is what a lowering
+// says.
+type reach struct {
+	op string
+	// each end: kind, name and the scope its name resolves in. Empty kind means the
+	// derived resource itself.
+	fromKind, fromName, fromScope string
+	toKind, toName, toScope       string
 }
 
 type (
 	// LoweringOption configures one lowering.
 	LoweringOption func(*Lowering)
-	// LinkOption configures one link out of a lowered resource.
-	LinkOption func(*link)
+	// ReachOption configures one access a lowered resource declares.
+	ReachOption func(*reach)
 )
 
 // Into declares that a resource of this kind is produced.
@@ -156,43 +161,47 @@ func Sets(field, tmpl string) LoweringOption {
 // workflow actually does would have to know what a workflow is, which is the knowledge
 // that must not leave the vocabulary.
 //
-// The verb is for a reader: "invokes", "gives up to".
-func LinksTo(kind, name, verb string, opts ...LinkOption) LoweringOption {
-	lk := link{kind: kind, name: name, verb: verb}
+// Reaches declares an ACCESS: who reaches what, with which op. The op has to be one the
+// target's kind declares — `receive` on a queue, `search` on a vector — because what
+// this produces is the entry an author would have written, and an entry naming a verb
+// the kind does not have is not config.
+//
+//	Reaches("receive", From("function", "{each.run}", "{each.namespace}"))
+//	Reaches("send", From("function", "{each.run}"), To("queue", "{name}_{each.next.name}"))
+//
+// Both ends default to the derived resource itself, so the common case names one side.
+func Reaches(op string, opts ...ReachOption) LoweringOption {
+	r := reach{op: op}
 	for _, o := range opts {
-		o(&lk)
+		o(&r)
 	}
-	return func(l *Lowering) { l.links = append(l.links, lk) }
+	return func(l *Lowering) { l.reaches = append(l.reaches, r) }
 }
 
-// From says what the edge starts AT, when the derived resource is not the thing doing
-// it. A queue does not hand work to another queue — the function that consumed the
-// first one is what sends to the second — and an edge drawn queue-to-queue says
-// something that cannot happen. Both ends are templates, like everything else here.
-func From(kind, name string) LinkOption {
-	return func(l *link) { l.fromKind, l.fromName = kind, name }
+// From is the side that DECLARES — the accessor, which is where the entry lands. A queue
+// does not hand work to another queue: the function that consumed the first one is what
+// sends to the second, and that function is what declares both.
+//
+// The scope is optional and says where the name resolves; omitted means the scope the
+// lowered resource lives in.
+func From(kind, name string, scope ...string) ReachOption {
+	return func(r *reach) {
+		r.fromKind, r.fromName = kind, name
+		if len(scope) > 0 {
+			r.fromScope = scope[0]
+		}
+	}
 }
 
-// Effect says what kind of edge this is, in the vocabulary's own words — the same
-// classes its verbs use. Opaque to the interpreter, which carries it rather than
-// interpreting it.
-func Effect(class string) LinkOption {
-	return func(l *link) { l.effect = class }
-}
-
-// AsReference marks a link that POINTS rather than acts: a queue naming its dead-letter
-// queue is the same statement as the authored `dead-letter` field, and drawing the two
-// differently says the lowering invented a relationship the config did not have.
-func AsReference() LinkOption {
-	return func(l *link) { l.ref = true }
-}
-
-// InScope says where the link's target lives, as a template. Omitted means the same
-// scope as the resource that was lowered. It exists because a step may name a function
-// in another namespace, and a checker that assumed otherwise would report a working
-// config as broken.
-func InScope(tmpl string) LinkOption {
-	return func(l *link) { l.scope = tmpl }
+// To is the side being reached. Omitted means the derived resource itself, which is the
+// usual shape: something the lowering produced, reached by something that already exists.
+func To(kind, name string, scope ...string) ReachOption {
+	return func(r *reach) {
+		r.toKind, r.toName = kind, name
+		if len(scope) > 0 {
+			r.toScope = scope[0]
+		}
+	}
 }
 
 // Lowers declares that a kind lowers into others. Declared on the kind's iterator,
@@ -262,7 +271,7 @@ type Derived struct {
 	Scope  string         // the namespace that resource lives in
 	Why    string         // one line: what this one carries
 	Fields map[string]any // its own values, expanded from Set
-	Links  []Resolved     // what it connects to, with both ends filled in
+	Grants []Access       // the access entries it implies, both ends filled in
 
 	// Source is the AUTHORED config responsible for this, and it is the reason a
 	// derived resource is not anonymous. An error found in something nobody wrote has
@@ -321,19 +330,26 @@ func (d Derived) Trail() string {
 }
 
 // Resolved is a Link with its template expanded.
-type Resolved struct {
-	Kind  string
-	Name  string
-	Verb  string
-	Scope string // "" means the lowered resource's own scope
-	// From is what the edge starts at, when that is not the resource carrying it.
-	// Empty Kind means it starts at the derived resource itself.
-	From struct{ Kind, Name string }
-	// Effect is the vocabulary's own class for this edge, and Ref marks one that
-	// points rather than acts.
-	Effect string
-	Ref    bool
+// Access is one reach with both ends filled in: the entry an author would have written,
+// ready to be placed on the accessor.
+type Access struct {
+	// Op is the verb, and it is one of the target kind's own.
+	Op string
+	// From is who declares it — the accessor. Empty Kind means the derived resource.
+	From End
+	// To is what it reaches. Empty Kind means the derived resource.
+	To End
 }
+
+// End is one side of an access: a resource named in a scope.
+type End struct {
+	Kind, Name string
+	// Scope is where the name resolves; "" means where the lowered resource lives.
+	Scope string
+}
+
+// Self reports whether this end is the derived resource itself.
+func (e End) Self() bool { return e.Kind == "" }
 
 func (d Derived) String() string { return d.Kind + "/" + d.Name + " (" + d.Why + ")" }
 
@@ -368,14 +384,18 @@ func document(root *engine.Node, d Derived) string {
 	}
 	writeTree(&b, tree, 0)
 
-	for _, l := range d.Links {
-		if l.Ref {
-			continue // already a field above
+	// An access this resource DECLARES is part of its document, written the way an
+	// author writes one. The ones it does not declare belong on the resource that does,
+	// and are placed there rather than mentioned here.
+	for _, g := range d.Grants {
+		if !g.From.Self() {
+			continue
 		}
-		b.WriteString("\n# " + l.Verb + " " + l.Kind + "/" + l.Name)
-	}
-	if len(d.Links) > 0 {
-		b.WriteString("\n")
+		b.WriteString(g.To.Kind + ":\n    " + g.To.Name + ":\n")
+		if g.To.Scope != "" {
+			b.WriteString("        namespace: " + g.To.Scope + "\n")
+		}
+		b.WriteString("        ops: [" + g.Op + "]\n")
 	}
 	return b.String()
 }
@@ -573,7 +593,7 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 			Kind: l.into, Name: expand(l.name, res, nil, nil), Of: of, Scope: scope,
 			ID:  derivedID(srcID, l.into, l.name),
 			Why: expand(l.why, res, nil, nil), Fields: setFor(root, l.into, l.set, res, nil, nil),
-			Links: links(l.links, res, nil, nil), Source: src, Via: via, Acts: l.acts,
+			Grants: reaches(l.reaches, res, nil, nil), Source: src, Via: via, Acts: l.acts,
 		}}
 	}
 
@@ -601,7 +621,7 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 			Kind: l.into, Name: expand(l.name, res, el, next), Of: of, Scope: scope,
 			ID:  derivedID(srcID, l.into, part),
 			Why: expand(l.why, res, el, next), Fields: setFor(root, l.into, l.set, res, el, next),
-			Links: links(l.links, res, el, next), Source: at, Via: via, Acts: l.acts,
+			Grants: reaches(l.reaches, res, el, next), Source: at, Via: via, Acts: l.acts,
 		})
 	}
 	return out
@@ -684,30 +704,36 @@ func set(fields map[string]string, res, each, next map[string]any) map[string]an
 // links expands each declared link. One whose name template cannot be filled is
 // DROPPED rather than emitted half-written: a step with no `on-error` has no failure
 // edge, and that is the common case rather than a mistake.
-func links(ls []link, res, each, next map[string]any) []Resolved {
-	out := make([]Resolved, 0, len(ls))
-	for _, l := range ls {
-		name := expand(l.name, res, each, next)
-		if name == "" || strings.ContainsAny(name, "{}") {
+func reaches(rs []reach, res, each, next map[string]any) []Access {
+	out := make([]Access, 0, len(rs))
+	for _, r := range rs {
+		end := func(kind, name, scope string) (End, bool) {
+			if kind == "" {
+				return End{}, true // the derived resource itself
+			}
+			n := expand(name, res, each, next)
+			// A name that cannot be filled is an access that does not exist: the last
+			// step has no next, so there is no queue for it to send to. Dropped, not
+			// emitted half-written.
+			if n == "" || strings.ContainsAny(n, "{}") {
+				return End{}, false
+			}
+			sc := expand(scope, res, each, next)
+			if strings.ContainsAny(sc, "{}") {
+				sc = "" // an unfillable scope is the absent one: wherever the resource lives
+			}
+			return End{Kind: kind, Name: n, Scope: sc}, true
+		}
+
+		from, ok := end(r.fromKind, r.fromName, r.fromScope)
+		if !ok {
 			continue
 		}
-		// An unfillable SCOPE is not a scope called "{each.namespace}" — it is the
-		// absent one, which means "wherever the lowered resource lives". Leaving the
-		// template in was silent and total: every consumer looked for a namespace by
-		// that literal name, found nothing, and drew no edge at all.
-		scope := expand(l.scope, res, each, next)
-		if strings.ContainsAny(scope, "{}") {
-			scope = ""
+		to, ok := end(r.toKind, r.toName, r.toScope)
+		if !ok {
+			continue
 		}
-		r := Resolved{Kind: l.kind, Name: name, Verb: l.verb, Scope: scope, Effect: l.effect, Ref: l.ref}
-		if l.fromKind != "" {
-			from := expand(l.fromName, res, each, next)
-			if from == "" || strings.ContainsAny(from, "{}") {
-				continue // an origin that cannot be named is an edge that cannot be drawn
-			}
-			r.From.Kind, r.From.Name = l.fromKind, from
-		}
-		out = append(out, r)
+		out = append(out, Access{Op: r.op, From: from, To: to})
 	}
 	if len(out) == 0 {
 		return nil
@@ -900,10 +926,11 @@ func unknownInputs(iter *engine.Node, l Lowering) []string {
 	for _, tmpl := range l.set {
 		check(tmpl)
 	}
-	for _, lk := range l.links {
-		check(lk.name)
-		check(lk.scope)
-		check(lk.fromName)
+	for _, r := range l.reaches {
+		check(r.fromName)
+		check(r.fromScope)
+		check(r.toName)
+		check(r.toScope)
 	}
 	sort.Strings(unknown)
 	return unknown

@@ -49,6 +49,19 @@ func AuditProject(ctx context.Context, r Resolver, opts ...Option) ([]Finding, e
 	return Audit(obj.Flat(), r), nil
 }
 
+// Lowered is the project as it is AFTER lowering: a compiler over an in-memory view that
+// holds the documents a lowering produces and the access entries it puts on authored
+// resources. The files on disk are not touched. Compile it and the object has the
+// queues, the functions and the entries — which is what a runtime needs, because nothing
+// runs a workflow.
+func Lowered(ctx context.Context, c *Compiler) (*Compiler, error) {
+	l := LayoutOf()
+	return c.Lowered(ctx, interp.Layout{Resource: l.Resource, Scope: l.Scope})
+}
+
+// ViewFsOf is for tests: the filesystem a compiler reads from.
+func ViewFsOf(c *Compiler) afero.Fs { return interp.FsOf(c) }
+
 // LoweringPlan is what this project's lowered resources become — the resources, and
 // the wiring between them, so a consumer can show what is INSIDE one of them. The
 // expansion is tcc's (interp.LoweringPlan); this binds it to THIS vocabulary's root.

@@ -17,6 +17,7 @@ type Env map[string]string
 func WithLocal(path string) Option {
 	return func(c *Compiler) error {
 		c.seerOptions = append(c.seerOptions, yaseer.SystemFS(path))
+		c.baseFs, c.basePath = afero.NewBasePathFs(afero.OsFs{}, path), ""
 		return nil
 	}
 }
@@ -24,6 +25,7 @@ func WithLocal(path string) Option {
 func WithVirtual(fs afero.Fs, path string) Option {
 	return func(c *Compiler) error {
 		c.seerOptions = append(c.seerOptions, yaseer.VirtualFS(fs, path))
+		c.baseFs, c.basePath = fs, path
 		return nil
 	}
 }

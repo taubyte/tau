@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // The cross-resource checks, run by tcc over the compiled object.
@@ -600,6 +602,31 @@ func startedBy(all []compiled, target compiled) bool {
 	return false
 }
 
+// checkLoweringCollisions: a lowered resource takes a name, and an authored resource
+// can already have it. The two would be the same key in the compiled object, and which
+// one wins is not something an author should have to know.
+func checkLoweringCollisions(root map[string]any, all []compiled) []Finding {
+	authored := map[string]compiled{}
+	for _, res := range all {
+		authored[res.kind+"\x00"+res.scope+"\x00"+res.name] = res
+	}
+
+	var out []Finding
+	for _, d := range LoweringPlan(root) {
+		for _, res := range all {
+			if res.kind+"/"+res.name != d.Of {
+				continue
+			}
+			if _, taken := authored[d.Kind+"\x00"+res.scope+"\x00"+d.Name]; taken {
+				out = append(out, Finding{Broken, d.Kind, d.Name, res.scope,
+					fmt.Sprintf("is authored here AND is what %s becomes", d.Of),
+					"A transpiled resource takes the name too, and both would be the same key. Rename one — the authored one is the one you can see."})
+			}
+		}
+	}
+	return out
+}
+
 // checkLoweredLinks: a fault INSIDE something nobody wrote, reported against something
 // somebody did.
 //
@@ -625,45 +652,24 @@ func checkLoweredLinks(root map[string]any, all []compiled) []Finding {
 
 	var out []Finding
 	for _, d := range plan {
-		for _, l := range d.Links {
-			if derived[l.Kind+"\x00"+l.Name] {
-				continue // points at another part of the same lowering
-			}
-			scope := l.Scope
-			if scope == "" {
-				scope = d.Scope
-			}
-			if lookupName(exists, l.Kind+"\x00"+l.Name, scope) {
-				continue
-			}
-			out = append(out, Finding{Broken, d.Source.Kind, d.Source.Name, d.Source.Scope,
-				fmt.Sprintf("%s %s/%s, which does not exist", l.Verb, l.Kind, l.Name),
-				"Found in what this becomes rather than in what you wrote: " + d.Trail() +
-					". The name is carried through the lowering unchanged, so fixing it where it is written fixes this."})
-		}
-	}
-	return out
-}
-
-// checkLoweringCollisions: a lowered resource takes a name, and an authored resource
-// can already have it. The two would be the same key in the compiled object, and which
-// one wins is not something an author should have to know.
-func checkLoweringCollisions(root map[string]any, all []compiled) []Finding {
-	authored := map[string]compiled{}
-	for _, res := range all {
-		authored[res.kind+"\x00"+res.scope+"\x00"+res.name] = res
-	}
-
-	var out []Finding
-	for _, d := range LoweringPlan(root) {
-		for _, res := range all {
-			if res.kind+"/"+res.name != d.Of {
-				continue
-			}
-			if _, taken := authored[d.Kind+"\x00"+res.scope+"\x00"+d.Name]; taken {
-				out = append(out, Finding{Broken, d.Kind, d.Name, res.scope,
-					fmt.Sprintf("is authored here AND is what %s becomes", d.Of),
-					"A transpiled resource takes the name too, and both would be the same key. Rename one — the authored one is the one you can see."})
+		// Both ends of every access it implies have to exist: the accessor is where the
+		// entry lands, and the target is what the entry names.
+		for _, g := range d.Grants {
+			for _, end := range []interp.End{g.From, g.To} {
+				if end.Self() || derived[end.Kind+"\x00"+end.Name] {
+					continue // the derived resource, or another part of the same lowering
+				}
+				scope := end.Scope
+				if scope == "" {
+					scope = d.Scope
+				}
+				if lookupName(exists, end.Kind+"\x00"+end.Name, scope) {
+					continue
+				}
+				out = append(out, Finding{Broken, d.Source.Kind, d.Source.Name, d.Source.Scope,
+					fmt.Sprintf("%s %s/%s, which does not exist", g.Op, end.Kind, end.Name),
+					"Found in what this becomes rather than in what you wrote: " + d.Trail() +
+						". The name is carried through the lowering unchanged, so fixing it where it is written fixes this."})
 			}
 		}
 	}

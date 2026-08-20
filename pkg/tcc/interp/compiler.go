@@ -10,6 +10,8 @@ package interp
 import (
 	"context"
 
+	"github.com/spf13/afero"
+
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/object"
 	"github.com/taubyte/tau/pkg/tcc/transform"
@@ -27,6 +29,12 @@ type Compiler struct {
 	env         Env
 	compileRoot *engine.Node
 	engine      engine.Engine
+
+	// Where the config is READ from, kept so a lowered view can be layered over it
+	// without the caller having to say twice where the project is. See view.go.
+	project  engine.Schema
+	baseFs   afero.Fs
+	basePath string
 }
 
 var DefaultBranch = "main"
@@ -39,6 +47,7 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c 
 	c = &Compiler{
 		env:         Env{"branch": DefaultBranch},
 		compileRoot: compileRoot,
+		project:     project,
 	}
 
 	for _, option := range options {

@@ -41,11 +41,9 @@ var (
 	Named            = interp.Named
 	Carries          = interp.Carries
 	Sets             = interp.Sets
-	LinksTo          = interp.LinksTo
-	InScope          = interp.InScope
+	Reaches          = interp.Reaches
 	From             = interp.From
-	LinkEffect       = interp.Effect
-	AsReference      = interp.AsReference
+	To               = interp.To
 	Doc              = engine.Doc
 	Duration         = engine.Duration
 	Either           = engine.Either

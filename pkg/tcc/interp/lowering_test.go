@@ -37,9 +37,10 @@ func pipelineSchema() (engine.Schema, *engine.Node) {
 					interp.PerEach("stages"),
 					interp.Named("{name}-{each.name}"),
 					interp.Carries("stage {each.name}"),
-					interp.LinksTo("job", "{each.run}", "runs"),
-					interp.LinksTo("job", "{name}-{each.next.name}", "then",
-						interp.From("job", "{each.run}")),
+					interp.Reaches("run", interp.From("job", "{each.run}")),
+					interp.Reaches("hand-off",
+						interp.From("job", "{each.run}"),
+						interp.To("job", "{name}-{each.next.name}")),
 				),
 				interp.Into("log",
 					interp.Named("{name}-log"),
@@ -93,15 +94,16 @@ func TestLoweringLinks(t *testing.T) {
 
 	compile, bare := byName(t, plan, "build-compile"), byName(t, plan, "build-bare")
 
-	// `runs` from its own field, and `then` to the element after it
-	assert.Equal(t, len(compile.Links), 2)
-	assert.Equal(t, compile.Links[0].Kind+"/"+compile.Links[0].Name, "job/cc")
-	assert.Equal(t, compile.Links[0].Verb, "runs")
-	assert.Equal(t, compile.Links[1].Name, "build-bare", "chains to the next element")
+	// what runs it, from its own field, and the hand-off to the element after it
+	assert.Equal(t, len(compile.Grants), 2)
+	assert.Equal(t, compile.Grants[0].From.Kind+"/"+compile.Grants[0].From.Name, "job/cc")
+	assert.Equal(t, compile.Grants[0].Op, "run")
+	assert.Assert(t, compile.Grants[0].To.Self(), "the derived resource is what is reached")
+	assert.Equal(t, compile.Grants[1].To.Name, "build-bare", "chains to the next element")
 
-	// `bare` has no `run`, so the link cannot be filled — and a half-written edge is
-	// worse than no edge, so it is dropped rather than emitted as "job/{each.run}".
-	assert.Equal(t, len(bare.Links), 0, "no run, and nothing after it: both links unfillable, both dropped")
+	// `bare` has no `run`, so neither end can be filled — and a half-written entry is
+	// worse than none, so it is dropped rather than emitted as "job/{each.run}".
+	assert.Equal(t, len(bare.Grants), 0, "no run, and nothing after it: both unfillable, both dropped")
 }
 
 func byName(t *testing.T, plan []interp.Derived, name string) interp.Derived {
@@ -161,9 +163,9 @@ func TestLoweringChainsToTheNextElement(t *testing.T) {
 	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n    - name: test\n      run: ct\n    - name: ship\n      run: cs\n")
 
 	next := func(name string) string {
-		for _, l := range byName(t, plan, name).Links {
-			if l.Verb == "then" {
-				return l.Kind + "/" + l.Name
+		for _, g := range byName(t, plan, name).Grants {
+			if g.Op == "hand-off" {
+				return g.To.Kind + "/" + g.To.Name
 			}
 		}
 		return ""
@@ -217,23 +219,22 @@ func TestLoweringLinkOrigin(t *testing.T) {
 
 	compile := byName(t, plan, "build-compile")
 	var chained, own int
-	for _, l := range compile.Links {
-		if l.From.Kind != "" {
-			chained++
-			assert.Equal(t, l.From.Kind+"/"+l.From.Name, "job/cc", "the chain starts at what ran")
-		} else {
+	for _, g := range compile.Grants {
+		assert.Equal(t, g.From.Kind+"/"+g.From.Name, "job/cc", "both are declared by what ran")
+		if g.To.Self() {
 			own++
+		} else {
+			chained++
 		}
 	}
 	assert.Equal(t, chained, 1)
-	assert.Equal(t, own, 1, "the link with no origin is the resource's own")
+	assert.Equal(t, own, 1, "the access with no target of its own reaches the derived resource")
 }
 
-// A lowering's edges carry the vocabulary's own classes. Without them every edge a
-// lowering produced was drawn as a use, including the ones that only POINT — and a
-// queue naming its dead-letter queue is the same statement as the authored field, so
-// drawing the two differently says the lowering invented a relationship.
-func TestLoweringLinkClasses(t *testing.T) {
+// AN ACCESS A DERIVED RESOURCE DECLARES IS IN ITS DOCUMENT, written the way an author
+// writes one. That is the whole point of the shape: what a lowering produces is config,
+// so it can be compiled, stored and executed rather than only drawn.
+func TestLoweringWritesTheAccessItDeclares(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
@@ -244,8 +245,10 @@ func TestLoweringLinkClasses(t *testing.T) {
 		},
 			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
 			interp.Lowers(interp.Into("job", interp.Named("{name}-j"),
-				interp.LinksTo("job", "a", "uses", interp.Effect("read")),
-				interp.LinksTo("job", "b", "points at", interp.AsReference()),
+				// declared BY this one: it lands in this one's document
+				interp.Reaches("read", interp.To("job", "a")),
+				// declared by something else: it lands on that, not here
+				interp.Reaches("write", interp.From("job", "b")),
 			)),
 		)),
 	)
@@ -254,9 +257,14 @@ func TestLoweringLinkClasses(t *testing.T) {
 		"pipeline": map[string]any{"x": map[string]any{"name": "x"}},
 	})
 	assert.Equal(t, len(plan), 1)
-	assert.Equal(t, plan[0].Links[0].Effect, "read")
-	assert.Equal(t, plan[0].Links[0].Ref, false)
-	assert.Equal(t, plan[0].Links[1].Ref, true, "a link that points is not a use")
+	assert.Equal(t, len(plan[0].Grants), 2)
+
+	doc := plan[0].Doc
+	assert.Assert(t, strings.Contains(doc, "job:"), "the access it declares is in its document: %s", doc)
+	assert.Assert(t, strings.Contains(doc, "    a:"), "%s", doc)
+	assert.Assert(t, strings.Contains(doc, "ops: [read]"), "%s", doc)
+	assert.Assert(t, !strings.Contains(doc, "ops: [write]"),
+		"an access somebody ELSE declares belongs on their document, not this one: %s", doc)
 }
 
 // A resource a compiler wrote is stored under its id and referred to by it, so the id
@@ -303,8 +311,8 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 			interp.Lowers(interp.Into("job",
 				interp.PerEach("stages"),
 				interp.Named("{name}-{each.name}"),
-				interp.Sets("tries", "{each.attemps}"),            // a typo
-				interp.LinksTo("job", "{each.next.nmae}", "then"), // and another
+				interp.Sets("tries", "{each.attemps}"),                      // a typo
+				interp.Reaches("run", interp.To("job", "{each.next.nmae}")), // and another
 			)),
 		)),
 	)
@@ -330,7 +338,7 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 				interp.PerEach("stages"),
 				interp.Named("{name}-{each.name}"),
 				interp.Sets("tries", "{each.attempts}"),
-				interp.LinksTo("job", "{each.next.name}", "then"),
+				interp.Reaches("run", interp.To("job", "{each.next.name}")),
 			)),
 		)),
 	)

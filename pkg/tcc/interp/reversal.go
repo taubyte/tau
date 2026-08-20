@@ -32,7 +32,7 @@ type Carriage struct {
 	// resource's own field.
 	In string
 	// Into is the kind produced, and As is where the value lands in it: a field name,
-	// or ">verb" for the name at the end of the link with that verb.
+	// or ">op" for the name at the far end of the access declared with that op.
 	Into string
 	As   string
 }
@@ -74,11 +74,15 @@ func Carriages(root *engine.Node, kind string) []Carriage {
 		for field, tmpl := range l.set {
 			add(tmpl, field)
 		}
-		// A link's name is a place a value lands, addressed by the verb — so two links
-		// sharing a verb address the same place, and neither can be read back from it.
-		for _, lk := range l.links {
-			if once(l.links, lk.verb) {
-				add(lk.name, linkAt+lk.verb)
+		// The name at the far end of an access is a place a value lands, addressed by
+		// the op — so two accesses sharing an op address the same place, and neither can
+		// be read back from it.
+		for _, r := range l.reaches {
+			if !once(l.reaches, r.op) {
+				continue
+			}
+			if r.fromKind != "" {
+				add(r.fromName, linkAt+r.op)
 			}
 		}
 	}
@@ -174,10 +178,10 @@ func ReadBack(plan []Derived, cs []Carriage) map[string]string {
 // valueAt reads the one place a carriage lands: a field of the derived resource, or the
 // name at the end of one of its links.
 func valueAt(d Derived, as string) (string, bool) {
-	if verb, ok := strings.CutPrefix(as, linkAt); ok {
-		for _, l := range d.Links {
-			if l.Verb == verb {
-				return l.Name, true
+	if op, ok := strings.CutPrefix(as, linkAt); ok {
+		for _, g := range d.Grants {
+			if g.Op == op && !g.From.Self() {
+				return g.From.Name, true
 			}
 		}
 		return "", false
@@ -204,11 +208,11 @@ func soleKey(tmpl string) (string, bool) {
 	return key, true
 }
 
-// once reports whether a verb addresses exactly one link.
-func once(ls []link, verb string) bool {
+// once reports whether an op addresses exactly one access.
+func once(rs []reach, op string) bool {
 	n := 0
-	for _, l := range ls {
-		if l.verb == verb {
+	for _, r := range rs {
+		if r.op == op {
 			n++
 		}
 	}

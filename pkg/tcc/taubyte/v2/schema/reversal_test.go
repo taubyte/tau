@@ -23,8 +23,9 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	assert.DeepEqual(t, schema.Carriages("workflow"), []interp.Carriage{
 		// a step's attempts becomes its queue's max-attempts, whole
 		{Field: "attempts", In: "steps", Into: "queue", As: "max-attempts"},
-		// and its run is the name at the end of the queue's "consumed by" link
-		{Field: "run", In: "steps", Into: "queue", As: ">consumed by"},
+		// and its run is the accessor of the queue's `receive` — the one entry that
+		// names it, so the name comes back from there
+		{Field: "run", In: "steps", Into: "queue", As: ">receive"},
 	})
 
 	// A step's NAME is read too — into `{name}_{each.name}` — and is not here, because

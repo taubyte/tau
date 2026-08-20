@@ -877,24 +877,36 @@ func TestWorkflowLowers(t *testing.T) {
 			continue
 		}
 		assert.Equal(t, d.Of, "workflow/checkout")
-		links := map[string]string{}
-		for _, l := range d.Links {
-			links[l.Kind+"/"+l.Name] = l.Verb
-		}
-		assert.Equal(t, links["function/reserve_stock"], "consumed by", "a queue nothing receives from is a queue nothing happens in")
-		assert.Equal(t, links["queue/checkout_charge"], "sends to", "the chain is what makes it a pipeline")
-		assert.Equal(t, links["queue/checkout_failed"], "dead-letter", "the same word the authored field uses")
 
-		// AND IT STARTS AT THE FUNCTION. A queue does not hand work to another queue;
-		// the function that consumed this one is what sends on, and an edge drawn
-		// queue-to-queue describes something that cannot happen.
-		for _, l := range d.Links {
-			if l.Verb == "sends to" {
-				assert.Equal(t, l.From.Kind+"/"+l.From.Name, "function/reserve_stock")
+		// WHAT IT IMPLIES IS AN ACCESS ENTRY, both ends filled in — the entry an author
+		// would have written, which is what makes it emittable rather than only
+		// drawable.
+		grants := map[string]string{}
+		for _, g := range d.Grants {
+			from := "self"
+			if !g.From.Self() {
+				from = g.From.Kind + "/" + g.From.Name
 			}
-			if l.Verb == "dead-letter" {
-				assert.Equal(t, l.From.Kind, "", "a dead-letter hop IS the queue's own doing")
+			to := "self"
+			if !g.To.Self() {
+				to = g.To.Kind + "/" + g.To.Name
 			}
+			grants[from+" -> "+to] = g.Op
+		}
+		// a queue nothing receives from is a queue nothing happens in
+		assert.Equal(t, grants["function/reserve_stock -> self"], "receive")
+		// ...and the chain is what makes it a pipeline. It starts at the FUNCTION: a
+		// queue does not hand work to another queue, the function that consumed this one
+		// sends on, and an entry on the queue would describe something that cannot
+		// happen.
+		assert.Equal(t, grants["function/reserve_stock -> queue/checkout_charge"], "send")
+
+		// The dead-letter queue is NOT here: it is the `dead-letter` field, which is
+		// already config. A second statement of it was the whole reason the arrow
+		// between two queues read as unexplained.
+		assert.Equal(t, d.Fields["dead-letter"], "queue/checkout_failed")
+		for _, g := range d.Grants {
+			assert.Assert(t, g.To.Name != "checkout_failed", "the dead-letter is a field, not an access")
 		}
 	}
 }

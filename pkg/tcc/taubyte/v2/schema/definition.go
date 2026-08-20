@@ -1352,7 +1352,10 @@ var V2Resources = []*Node{
 					Carries("what {name} remembers"),
 					Sets("dimensions", "{memory/dimensions}"),
 					Sets("size", "{memory/size}"),
-					LinksTo("function", "{name}_infer", "searched by", LinkEffect(Read)),
+					// The loop is what searches it, and that is an entry on the loop:
+					// `vector: { <name>_memory: { ops: [search] } }`, exactly what an
+					// author would have written.
+					Reaches("search", From("function", "{name}_infer")),
 				),
 			),
 			Resource("agent", "Agent", "Agent", "agent"),
@@ -1417,8 +1420,7 @@ var V2Resources = []*Node{
 					// happens in, so the step's function is named as its consumer — the
 					// `receive` half of the queue's own verbs, in the direction work
 					// actually travels.
-					LinksTo("function", "{each.run}", "consumed by", InScope("{each.namespace}"),
-						LinkEffect(Read)),
+					Reaches("receive", From("function", "{each.run}", "{each.namespace}")),
 
 					// WHAT MAKES IT A PIPELINE — and it starts at the FUNCTION, not at
 					// the queue. A queue does not hand work to another queue; the
@@ -1429,24 +1431,15 @@ var V2Resources = []*Node{
 					// The last step has no next, the template cannot be filled, and the
 					// link is dropped — which is exactly right, because that is where the
 					// run ends.
-					LinksTo("queue", "{name}_{each.next.name}", "sends to",
-						From("function", "{each.run}"), LinkEffect(Write)),
+					Reaches("send",
+						From("function", "{each.run}", "{each.namespace}"),
+						To("queue", "{name}_{each.next.name}")),
 
 					// Same origin for a step that names somewhere other than the failure
 					// queue to go when it has used up its attempts.
-					LinksTo("queue", "{name}_{each.on-error}", "on error",
-						From("function", "{each.run}"), LinkEffect(Write)),
-
-					// This one IS queue-to-queue, and truthfully: a queue's dead-letter
-					// is another queue, and moving an item there when its attempts are
-					// gone is the queue's own doing rather than anything the function
-					// decides. It is the field above, drawn.
-					// A REFERENCE, drawn the way the authored `dead-letter` field is, and
-					// CALLED what that field is called. It is the same statement — the
-					// queue moves an item there when its attempts are gone, which is the
-					// queue's own doing — and a second word for it was the whole reason
-					// the arrow between two queues read as unexplained.
-					LinksTo("queue", "{name}_failed", "dead-letter", AsReference()),
+					Reaches("send",
+						From("function", "{each.run}", "{each.namespace}"),
+						To("queue", "{name}_{each.on-error}")),
 				),
 
 				// The end of the line, with NO CONSUMER — deliberately. A dead-letter
