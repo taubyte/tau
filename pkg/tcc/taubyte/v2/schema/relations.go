@@ -207,7 +207,9 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 
 	ns := ""
 	if ref.Namespace != "" {
-		ns = field(from, ref.Namespace)
+		// the sibling holding the namespace is addressed by its key too —
+		// `authorizer/namespace` is two levels, not a flat entry
+		ns, _ = fieldValue(from, ref.Namespace).(string)
 	}
 	to, found := find(kind, val, res.scope, ns)
 	if !found {

@@ -577,8 +577,9 @@ func soleReference(tmpl string, res, each, next map[string]any) (any, bool) {
 	if src == nil {
 		return nil, false
 	}
-	v, ok := src[key]
-	return v, ok
+	// The key is a field's identity — its own key, joined — so it addresses a level per
+	// segment, exactly as lookup reads it.
+	return fieldAt(src, key)
 }
 
 // setFor expands a lowering's fields and puts any SCALAR back into the form an author

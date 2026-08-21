@@ -9,8 +9,8 @@ tls:
     mode: none
 transformers:
     - name: pg_audit
-rate-limit:
-    connections-per-minute: 120
+rate_limit:
+    connections_per_minute: 120
     concurrent: 40
     key: subnet
 forward:

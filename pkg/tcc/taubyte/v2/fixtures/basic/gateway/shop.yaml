@@ -23,7 +23,7 @@ transformers:
       fail: open
 cors:
     origins: ["https://shop.example.com"]
-rate-limit:
+rate_limit:
     rpm: 600
     burst: 60
     key: ip

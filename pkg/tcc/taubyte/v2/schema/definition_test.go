@@ -195,18 +195,18 @@ func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 	dbs := resources(t, flat, "database")
 
 	orders := namedResource(t, dbs, "orders")
-	assert.Equal(t, orders["engine-kind"], "postgres")
-	assert.Equal(t, orders["engine-host"], "db.example.com:5432")
+	assert.Equal(t, nested(orders, "engine", "kind"), "postgres")
+	assert.Equal(t, nested(orders, "engine", "host"), "db.example.com:5432")
 	engine, _ := orders["engine"].(map[string]any)
 	creds, _ := engine["credentials"].(map[string]any)
 	assert.Assert(t, creds != nil && creds["name"] != "",
 		"credentials resolve to a secret id, never a value: %v", engine)
-	_, borrowed := orders["engine-distributed-size"]
+	_, borrowed := nestedOK(orders, "engine", "distributed", "size")
 	assert.Assert(t, !borrowed)
 
 	obj := root(t, flat)
 	ledger := namedResource(t, namespace(t, obj, "billing")["database"].(map[string]any), "ledger")
-	assert.Equal(t, ledger["engine-kind"], "distributed")
+	assert.Equal(t, nested(ledger, "engine", "kind"), "distributed")
 	for _, gone := range []string{"engine-host", "engine-credentials", "engine-database"} {
 		_, present := ledger[gone]
 		assert.Assert(t, !present, "a distributed database has no %q", gone)
@@ -303,22 +303,22 @@ func TestGatewayRoute(t *testing.T) {
 	// The name lives on the gateway, and it names a ZONE plus a label rather than a
 	// flat fqdn — so a project moved to another cloud does not carry a name it does
 	// not have there.
-	assert.Equal(t, gw["host-kind"], "zone")
-	assert.Equal(t, gw["host-name"], "shop")
+	assert.Equal(t, nested(gw, "host", "kind"), "zone")
+	assert.Equal(t, nested(gw, "host", "name"), "shop")
 	host, _ := gw["host"].(map[string]any)
 	zone, _ := host["zone"].(map[string]any)
 	in, _ := zone["in"].(map[string]any)
 	assert.Assert(t, in != nil && in["name"] != "", "the zone resolves to a compiled zone id: %v", zone)
-	assert.Equal(t, gw["certificate-source"], "generated", "generated unless it is provided")
+	assert.Equal(t, nested(gw, "certificate", "source"), "generated", "generated unless it is provided")
 
-	assert.Equal(t, gw["route-path"], "/checkout")
-	assert.Equal(t, gw["route-match"], "prefix", "default applies")
-	assert.DeepEqual(t, gw["route-methods"], []string{"POST"})
+	assert.Equal(t, nested(gw, "route", "path"), "/checkout")
+	assert.Equal(t, nested(gw, "route", "match"), "prefix", "default applies")
+	assert.DeepEqual(t, nested(gw, "route", "methods"), []string{"POST"})
 
 	// the switch, and the resource path through namespaces
-	assert.Equal(t, gw["route-handler-kind"], "application", "Captures() captures which branch the handler took")
-	assert.Equal(t, gw["route-handler-name"], "api")
-	assert.Equal(t, gw["route-handler-port"], "http", "a workload with two ports is told which")
+	assert.Equal(t, nested(gw, "route", "handler", "kind"), "application", "Captures() captures which branch the handler took")
+	assert.Equal(t, nested(gw, "route", "handler", "name"), "api")
+	assert.Equal(t, nested(gw, "route", "handler", "port"), "http", "a workload with two ports is told which")
 
 	// there is no route resource kind
 	_, standalone := root(t, flat)["routes"]
@@ -379,7 +379,7 @@ func TestNamespacesNest(t *testing.T) {
 	// a third `sessions`, two levels down, distinct from both above it
 	kv := only(t, eu["cache"].(map[string]any))
 	assert.Equal(t, kv["match"], "sessions")
-	assert.Equal(t, kv["size"], int64(2000000))
+	assert.Equal(t, nested(kv, "size"), int64(2000000))
 }
 
 // The cost of nesting, asserted so it cannot change silently: the interpreter's
@@ -566,7 +566,7 @@ func TestZoneIsNotRouting(t *testing.T) {
 
 	// and the gateway that serves a name under it still holds the ingress
 	gw := namedResource(t, resources(t, flat, "gateway"), "shop")
-	assert.Equal(t, gw["host-name"], "shop")
+	assert.Equal(t, nested(gw, "host", "name"), "shop")
 }
 
 // A namespace path is absolute with a leading "/" and relative without one — the same
@@ -631,8 +631,8 @@ func TestTargetOwnsThePolicy(t *testing.T) {
 
 	// the cache being reached carries the authorizer
 	orders := namedResource(t, resources(t, flat, "cache"), "orders")
-	assert.Equal(t, orders["authorizer-name"], "tier_check")
-	assert.Equal(t, orders["authorizer-namespace"], "/shop")
+	assert.Equal(t, nested(orders, "authorizer", "name"), "tier_check")
+	assert.Equal(t, nested(orders, "authorizer", "namespace"), "/shop")
 
 	// the caller states what it asks for, and names no authorizer
 	fn := namedResource(t, resources(t, flat, "function"), "checkout")
@@ -645,7 +645,7 @@ func TestTargetOwnsThePolicy(t *testing.T) {
 
 	// a kind nothing can reach has no authorizer to declare
 	zone := only(t, resources(t, flat, "zone"))
-	_, present := zone["authorizer-name"]
+	_, present := nestedOK(zone, "authorizer", "name")
 	assert.Assert(t, !present, "a kind with no ops is not reachable, so it authorises nothing")
 }
 
@@ -661,31 +661,31 @@ func TestPortsAreNamed(t *testing.T) {
 	assert.Equal(t, ports["metrics"].(map[string]any)["number"], 9090)
 
 	// a probe names a port rather than repeating a number, and says which kind it is
-	assert.Equal(t, app["readiness-kind"], "http")
-	assert.Equal(t, app["readiness-port"], "http")
-	assert.Equal(t, app["liveness-kind"], "http")
-	assert.Equal(t, app["liveness-port"], "http")
+	assert.Equal(t, nested(app, "readiness", "kind"), "http")
+	assert.Equal(t, nested(app, "readiness", "http", "port"), "http")
+	assert.Equal(t, nested(app, "liveness", "kind"), "http")
+	assert.Equal(t, nested(app, "liveness", "http", "port"), "http")
 
 	// or a function decides, which is a different kind of answer and says so
 	pool := namedResource(t, resources(t, flat, "application"), "worker_pool")
-	assert.Equal(t, pool["readiness-kind"], "function")
-	assert.Equal(t, pool["readiness-function-name"], "pool_ready")
+	assert.Equal(t, nested(pool, "readiness", "kind"), "function")
+	assert.Equal(t, nested(pool, "readiness", "function", "name"), "pool_ready")
 
 	// and a workload that declares no liveness simply has none — the case an
 	// Either()+Captures() switch could not express before
-	_, live := pool["liveness-kind"]
+	_, live := nestedOK(pool, "liveness", "kind")
 	assert.Assert(t, !live, "no liveness declared, so nothing restarts it")
-	_, probe := pool["readiness-path"]
+	_, probe := nestedOK(pool, "readiness", "http", "path")
 	assert.Assert(t, !probe, "a function-checked workload declares no probe path")
 
 	// so does a route targeting the workload
 	gw := namedResource(t, resources(t, flat, "gateway"), "shop")
-	assert.Equal(t, gw["route-handler-kind"], "application")
-	assert.Equal(t, gw["route-handler-port"], "http")
+	assert.Equal(t, nested(gw, "route", "handler", "kind"), "application")
+	assert.Equal(t, nested(gw, "route", "handler", "port"), "http")
 
 	// ceilings are authored; counts are not
-	assert.Equal(t, app["limits-max-instances"], 10)
-	assert.Equal(t, app["limits-concurrency"], 80)
+	assert.Equal(t, nested(app, "limits", "max_instances"), 10)
+	assert.Equal(t, nested(app, "limits", "concurrency"), 80)
 	for _, gone := range []string{"port", "replicas", "instances"} {
 		_, present := app[gone]
 		assert.Assert(t, !present, "%q must not be authorable", gone)
@@ -741,7 +741,7 @@ func TestCronCarriesItsTimezone(t *testing.T) {
 // never opens a socket.
 func TestExternalDatabaseMustStateItsTransport(t *testing.T) {
 	orders := namedResource(t, resources(t, compileBasic(t), "database"), "orders")
-	assert.Equal(t, orders["engine-tls"], "verify-full")
+	assert.Equal(t, nested(orders, "engine", "tls"), "verify-full")
 
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -761,12 +761,12 @@ engine:
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err, "omitting it is allowed; absent means verify-full")
 	x := namedResource(t, resources(t, obj.Flat(), "database"), "x")
-	_, stated := x["engine-tls"]
+	_, stated := nestedOK(x, "engine", "tls")
 	assert.Assert(t, !stated, "and it stays absent rather than compiling a value nobody wrote")
 
 	// and tau's own engine is never asked the question
 	ledger := namedResource(t, namespace(t, root(t, compileBasic(t)), "billing")["database"].(map[string]any), "ledger")
-	_, present := ledger["engine-tls"]
+	_, present := nestedOK(ledger, "engine", "tls")
 	assert.Assert(t, !present, "a distributed database opens no socket")
 }
 
@@ -862,7 +862,7 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 
 	p := only(t, resources(t, obj.Flat(), "proxy"))
 	assert.Equal(t, p["protocol"], "tcp")
-	assert.Equal(t, p["certificate-source"], "generated")
+	assert.Equal(t, nested(p, "certificate", "source"), "generated")
 }
 
 // The workflow's lowering, on the real vocabulary: what it becomes, and the wiring that
@@ -956,14 +956,14 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 	assert.Assert(t, !src.ByName)
 
 	// keeps the authored name, and says where its namespace is
-	auth := find("cache", "authorizer-name")
+	auth := find("cache", "authorizer/name")
 	assert.Equal(t, auth.Kind, "function")
 	assert.Assert(t, auth.ByName, "an authorizer is named, not resolved")
-	assert.Equal(t, auth.Namespace, "authorizer-namespace")
+	assert.Equal(t, auth.Namespace, "authorizer/namespace")
 
 	// the kind is the author's choice, read from the switch beside it
-	handler := find("gateway", "route-handler-name")
-	assert.Equal(t, handler.KindFrom, "route-handler-kind")
+	handler := find("gateway", "route/handler/name")
+	assert.Equal(t, handler.KindFrom, "route/handler/kind")
 	assert.Assert(t, handler.ByName)
 
 	// the relationship runs the other way: the zone answers FOR the gateway
@@ -977,7 +977,7 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 	assert.Equal(t, step.Namespace, "namespace")
 
 	// the inbound blocks are derived from the references, not listed anywhere
-	assert.DeepEqual(t, schema.InboundBlocks(), []string{"forward", "route-handler", "serve"})
+	assert.DeepEqual(t, schema.InboundBlocks(), []string{"forward", "route/handler", "serve"})
 
 	// how an access entry is written, and where a document lives
 	access := schema.AccessEntryShape()
@@ -1018,6 +1018,20 @@ func TestReachableNames(t *testing.T) {
 	for _, r := range names {
 		assert.Assert(t, r.Name != "example_com", "a zone must not be listed as reachable")
 	}
+}
+
+// nestedOK is nested with the comma-ok a presence test needs.
+func nestedOK(res map[string]any, segments ...string) (any, bool) {
+	at := res
+	for _, seg := range segments[:len(segments)-1] {
+		next, ok := at[seg].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		at = next
+	}
+	v, ok := at[segments[len(segments)-1]]
+	return v, ok
 }
 
 // nested reads a value at a multi-segment key, which is what a nested Path compiles to.

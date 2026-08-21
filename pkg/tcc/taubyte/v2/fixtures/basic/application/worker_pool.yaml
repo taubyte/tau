@@ -10,7 +10,7 @@ readiness:
 execution:
     memory: 256MB
 limits:
-    max-instances: 4
+    max_instances: 4
     concurrency: 1
 queue:
     orders:

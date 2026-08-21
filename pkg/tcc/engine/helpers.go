@@ -60,7 +60,7 @@ func FieldName[T string | AKey](field T) string {
 func keyOf[T string | AKey](name T) (string, []string) {
 	switch k := any(name).(type) {
 	case string:
-		mustBeKey("attribute", k)
+		mustNotSpellAPath("attribute", k)
 		return k, nil
 	case AKey:
 		if len(k) == 0 {

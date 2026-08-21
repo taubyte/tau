@@ -94,7 +94,7 @@ func TestKeySwitchOnAnOptionalBlock(t *testing.T) {
 			String("id", Required()),
 			// optional: hangs off a `probe` block that need not be there
 			String("probe", Path("probe", Either("http", "function")), Captures()),
-			String("probe-path", Path("probe", "http", "path")),
+			String(Key("probe", "http", "path")),
 			// mandatory: the switch is at the top level, so its parent is the document
 			String("shape", Path(Either("round", "square")), Captures()),
 		})),

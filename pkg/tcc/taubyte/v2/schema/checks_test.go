@@ -139,7 +139,7 @@ func TestAuditMountedWebsite(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{"/website/docs.yaml": site, "/gateway/g.yaml": gw("")})
 	has(t, found, schema.Check, "does not strip the prefix")
 
-	found = auditDocs(t, nil, map[string]string{"/website/docs.yaml": site, "/gateway/g.yaml": gw("    strip-prefix: true\n")})
+	found = auditDocs(t, nil, map[string]string{"/website/docs.yaml": site, "/gateway/g.yaml": gw("    strip_prefix: true\n")})
 	hasNo(t, found, "strip the prefix")
 
 	// and at the root there is no prefix to strip
@@ -163,8 +163,8 @@ func TestWebsiteServingMode(t *testing.T) {
 	assert.NilError(t, err)
 
 	site := only(t, resources(t, obj.Flat(), "website"))
-	assert.Equal(t, site["serve-mode"], "spa")
-	assert.Equal(t, site["serve-index"], "index.html", "the default a directory request returns")
+	assert.Equal(t, nested(site, "serve", "mode"), "spa")
+	assert.Equal(t, nested(site, "serve", "index"), "index.html", "the default a directory request returns")
 }
 
 // Every USE of a function is a place tcc can see, and the function says which world it
@@ -267,13 +267,13 @@ func TestAuditVolumeWriters(t *testing.T) {
 	// and the same contradiction inside one resource: ten instances, one lease
 	found = auditDocs(t, nil, map[string]string{
 		"/volume/data.yaml":   vol,
-		"/application/a.yaml": mount("mount-rw") + "limits:\n    max-instances: 10\n",
+		"/application/a.yaml": mount("mount-rw") + "limits:\n    max_instances: 10\n",
 	})
 	has(t, found, schema.Broken, "may run 10 instances")
 
 	found = auditDocs(t, nil, map[string]string{
 		"/volume/data.yaml":   vol,
-		"/application/a.yaml": mount("mount-rw") + "limits:\n    max-instances: 1\n",
+		"/application/a.yaml": mount("mount-rw") + "limits:\n    max_instances: 1\n",
 	})
 	hasNo(t, found, "instances")
 }

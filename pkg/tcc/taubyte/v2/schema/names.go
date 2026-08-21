@@ -59,11 +59,11 @@ func ReachableNames(obj map[string]any) map[string]Reachable {
 		if at == "" {
 			continue
 		}
-		if res.str(at+"-kind") == "" {
+		if res.at(at, "kind") == "" {
 			continue // it answers on no name, which is allowed
 		}
 
-		name := res.str(at + "-name")
+		name := res.at(at, "name")
 		zoneRef := res.at(at, "zone", "in", "name")
 		if zoneRef == "" {
 			// the cloud's own zone: the project's label is a pure function of its id,

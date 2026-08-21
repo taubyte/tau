@@ -409,12 +409,15 @@ func TestWriteValueToPath_WithEitherNoMatch(t *testing.T) {
 // vocabulary calling it anything else could not be written back at all.
 func TestBranchKeyValue_FromTheKeyAttribute(t *testing.T) {
 	n := &Node{Attributes: []*Attribute{
-		String("engine-kind", Path("engine", Either("distributed", "postgres")), Captures()),
-		String("host-kind", Path("host", Either("generated", "zone")), Captures()),
+		String(Key("engine", "kind"), Path("engine", Either("distributed", "postgres")), Captures()),
+		String(Key("host", "kind"), Path("host", Either("generated", "zone")), Captures()),
 	}}
+	// a multi-segment key is a level of the object, not a flat entry with a slash in it
 	obj := object.New[object.Refrence]()
-	obj.Set("engine-kind", "postgres")
-	obj.Set("host-kind", "generated")
+	engine, _ := obj.CreatePath("engine")
+	engine.Set("kind", "postgres")
+	host, _ := obj.CreatePath("host")
+	host.Set("kind", "generated")
 
 	// the same switch, not merely one at the same depth: two switches sit at depth 1
 	got, err := branchKeyValue(n, obj, []StringMatch{"engine", Either("distributed", "postgres"), "host"}, 1)

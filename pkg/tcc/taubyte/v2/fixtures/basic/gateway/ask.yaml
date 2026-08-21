@@ -12,7 +12,7 @@ route:
     handler:
         agent:
             name: support
-rate-limit:
+rate_limit:
     rpm: 60
     burst: 10
     key: ip

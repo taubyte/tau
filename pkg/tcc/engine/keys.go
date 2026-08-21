@@ -20,13 +20,15 @@ import (
 // wants `execution` to hold `call` says so with Path and never by spelling a key
 // "execution/call".
 //
-// A KEY SHOULD BE A VARIABLE NAME, the same rule a resource's name follows —
-// `dead_letter`, not `dead-letter`. The regex below still admits "-" because 84 of v2's
-// attributes are a Path spelled into their name (`engine-kind` for
-// Path("engine", Either(...))) and each dissolves into segments as it is converted to
-// Key(...). Tighten it to varNameRegex the moment the last one is gone; the compound
-// leaves that needed it — max_attempts, on_error, on_overlap, visibility_timeout,
-// zone_label, dead_letter, image_pull_secret — are already renamed.
+// A KEY IS A VARIABLE NAME, the same rule a resource's name follows — `dead_letter`,
+// not `dead-letter`. Held strictly on the segments of a `Key(...)`, which is what the
+// compiled object is addressed by.
+//
+// A bare string name is held only to the "/" ban. It is an IDENTIFIER — what ShowWhen
+// and KindFrom call the attribute — and it is the compiled key only when nothing else
+// says otherwise. v1's `git-provider` is one: it compiles to the tag `provider`, and it
+// is also where the CLI's `--git-provider` flag comes from, so it is a published name
+// that has nothing to do with the object.
 //
 // The one exemption is Tag, which exists to say the compiled key differs from what this
 // vocabulary would call it — including differing from a name, because the format it is
@@ -36,7 +38,7 @@ import (
 // REFUSED AT CONSTRUCTION, loudly, like DefineList's unsupported terms: a schema that
 // cannot express a legal object is a build failure, not a config that compiles into a
 // shape nothing can merge.
-var keyRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
+var keyRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // mustNotSpellAPath refuses the one character that separates levels of the object. It is
 // all a Tag is held to: what it names is a foreign wire format, not this vocabulary.

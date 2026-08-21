@@ -18,7 +18,7 @@ liveness:
 execution:
     memory: 512MB
 limits:
-    max-instances: 10
+    max_instances: 10
     concurrency: 80
 variables:
     LOG_LEVEL:

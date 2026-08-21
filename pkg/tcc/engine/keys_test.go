@@ -40,20 +40,38 @@ func TestAKeyMayNotSpellItsOwnPath(t *testing.T) {
 }
 
 func TestAKeyIsAName(t *testing.T) {
-	refuses(t, "a leading digit", func() { String("2fast") })
-	refuses(t, "a dot", func() { String("execution.call") })
-	refuses(t, "a space", func() { String("max attempts") })
+	refuses(t, "a leading digit", func() { String(Key("x", "2fast")) })
+	refuses(t, "a dot", func() { String(Key("execution", "call.x")) })
+	refuses(t, "a space", func() { String(Key("max attempts")) })
 	refuses(t, "empty", func() { String("") })
 
-	// what both vocabularies actually use: names, and compound names with "-"
-	for _, ok := range []string{"id", "max-attempts", "useRegex", "webSocket", "_x", "route-handler-name"} {
+	// a bare name is an IDENTIFIER, held only to the "/" ban — v1's `git-provider` is
+	// one, and it is where the CLI's --git-provider flag comes from
+	String("git-provider")
+
+	// a KEY segment is a name, strictly: it addresses a level of the compiled object
+	refuses(t, "a dashed key segment", func() { String(Key("execution", "max-attempts")) })
+
+	// a key is a NAME, the same rule a resource's name follows: compound ones join
+	// with "_", and a path is declared with Key(...) rather than spelled into one
+	for _, ok := range []string{"id", "max_attempts", "useRegex", "webSocket", "_x"} {
 		String(ok) // must not panic
 	}
+	String(Key("route", "handler", "name")) // and this is how a nested one is said
 }
 
-// Nesting is declared, and this is the shape it is declared in.
-func TestNestingIsDeclaredWithPath(t *testing.T) {
-	a := String("execution-call", Path("execution", "call"))
-	assert.Equal(t, a.Name, "execution-call")
-	assert.Equal(t, len(a.Path), 2)
+// NESTING IS DECLARED, and the key IS the nesting. The identity is those segments
+// joined — the engine writes that "/", a vocabulary never does — and where the value is
+// AUTHORED defaults to the same place, so Path is declared only when the two differ.
+func TestTheKeyIsTheNesting(t *testing.T) {
+	a := String(Key("execution", "call"))
+	assert.Equal(t, a.Name, "execution/call")
+	assert.DeepEqual(t, a.Segments, []string{"execution", "call"})
+	assert.Equal(t, len(a.Path), 2, "authored where it compiles, unless Path says otherwise")
+
+	// v1's shape: read from execution.call, compile onto a flat `call`
+	b := String("call", Path("execution", "call"))
+	assert.Equal(t, b.Name, "call")
+	assert.Equal(t, len(b.Segments), 0)
+	assert.Equal(t, len(b.Path), 2)
 }

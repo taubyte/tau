@@ -9,4 +9,4 @@ inference:
             name: anthropic
 parameters:
     temperature: 0.2
-    max-tokens: 4096
+    max_tokens: 4096

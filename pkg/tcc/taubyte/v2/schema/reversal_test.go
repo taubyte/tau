@@ -97,7 +97,7 @@ func TestAgentValuesReadBackInAuthoredForm(t *testing.T) {
 	assert.NilError(t, yaml.Unmarshal(body, &authored))
 
 	assert.DeepEqual(t, got, map[string]string{
-		"memory-dimensions": strconv.Itoa(authored.Memory.Dimensions),
-		"memory-size":       authored.Memory.Size,
+		"memory/dimensions": strconv.Itoa(authored.Memory.Dimensions),
+		"memory/size":       authored.Memory.Size,
 	})
 }
