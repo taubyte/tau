@@ -333,3 +333,40 @@ func TestLoweredOpsAreVerbsOfTheirTarget(t *testing.T) {
 	assert.Assert(t, strings.Contains(problems[0], `"consume"`), problems[0])
 	assert.Assert(t, strings.Contains(problems[0], "receive"), "it names what a queue does: %s", problems[0])
 }
+
+// recorder remembers what the audit actually handed the resolver.
+type recorder struct{ pulls map[string]string }
+
+func (r *recorder) ZoneDelegated(string) error { return nil }
+func (r *recorder) ImagePullable(image, pullSecret string) error {
+	if r.pulls == nil {
+		r.pulls = map[string]string{}
+	}
+	r.pulls[image] = pullSecret
+	return nil
+}
+
+// A PULL SECRET REACHES THE RESOLVER. It is a reference, so it compiles to
+// `{secret: <id>}`; read as a string it is empty, and the audit then asks whether the
+// image pulls ANONYMOUSLY — a different question, answered yes by every stub.
+func TestPullSecretReachesTheResolver(t *testing.T) {
+	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+
+	r := &recorder{}
+	schema.Audit(obj.Flat(), r)
+	assert.Assert(t, len(r.pulls) > 0, "no image was checked at all")
+
+	// exactly one image in the fixture is pulled with a credential
+	withSecret := 0
+	for image, secret := range r.pulls {
+		if secret != "" {
+			withSecret++
+			assert.Assert(t, strings.HasPrefix(secret, "Qm"),
+				"%s was checked with %q, which is not a resolved secret id", image, secret)
+		}
+	}
+	assert.Equal(t, withSecret, 1, "the audit asked about every image anonymously: %v", r.pulls)
+}

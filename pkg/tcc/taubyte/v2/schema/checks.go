@@ -892,7 +892,10 @@ func checkExternal(all []compiled, r Resolver) []Finding {
 			}
 		}
 		if image := res.str("image"); image != "" {
-			if err := r.ImagePullable(image, res.str("image-pull-secret")); err != nil {
+			// The pull secret is a REFERENCE, so it is `{secret: <id>}` — reading it as
+			// a string hands the resolver an empty credential and asks whether the image
+			// pulls anonymously, which is a different question.
+			if err := r.ImagePullable(image, refID(res.fields["image-pull-secret"])); err != nil {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("image %q cannot be pulled", image),
 					err.Error()})
