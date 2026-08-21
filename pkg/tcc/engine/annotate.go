@@ -176,7 +176,7 @@ func Field(goName string) Option {
 // field, when the on-disk key isn't derivable from the schema (e.g. github-id ->
 // `mapstructure:"repository-id"`). Generation-only; no runtime effect.
 func Tag(key string) Option {
-	mustBeKey("tag", key)
+	mustNotSpellAPath("tag", key)
 	return Annotate("tag", key)
 }
 

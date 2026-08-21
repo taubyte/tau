@@ -584,7 +584,7 @@ func checkWorkflows(all []compiled) []Finding {
 			}
 			name := field(step, "name")
 			for _, other := range steps {
-				if field(other, "on-error") != name || field(steps[i-1], "name") != field(other, "name") {
+				if field(other, "on_error") != name || field(steps[i-1], "name") != field(other, "name") {
 					continue
 				}
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
@@ -595,7 +595,7 @@ func checkWorkflows(all []compiled) []Finding {
 
 		for _, step := range steps {
 			name := field(step, "name")
-			if target := field(step, "on-error"); target != "" && !named[target] {
+			if target := field(step, "on_error"); target != "" && !named[target] {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("step %q sends failure to %q, which is not a step of this workflow", name, target),
 					"On error the run would jump to a step that does not exist, which is the same as having no handler at all — except it reads like it has one."})
@@ -906,7 +906,7 @@ func checkExternal(all []compiled, r Resolver) []Finding {
 			// The pull secret is a REFERENCE, so it is `{secret: <id>}` — reading it as
 			// a string hands the resolver an empty credential and asks whether the image
 			// pulls anonymously, which is a different question.
-			if err := r.ImagePullable(image, res.at("image-pull-secret", "name")); err != nil {
+			if err := r.ImagePullable(image, res.at("image_pull_secret", "name")); err != nil {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("image %q cannot be pulled", image),
 					err.Error()})

@@ -39,11 +39,11 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 	// `max-attempts` is a number and its dead-letter reference resolved to an id like
 	// anyone else's — which is the whole claim: this is config, not a picture of it.
 	q := resource(t, flat, "queue", "checkout_reserve")
-	assert.Equal(t, q["max-attempts"], 4)
-	dead, _ := q["dead-letter"].(map[string]any)
+	assert.Equal(t, q["max_attempts"], 4)
+	dead, _ := q["dead_letter"].(map[string]any)
 	name, _ := dead["name"].(string)
 	assert.Assert(t, name != "" && name != "checkout_failed",
-		"the reference resolved like any other: %v", q["dead-letter"])
+		"the reference resolved like any other: %v", q["dead_letter"])
 
 	// AND THE ACCESS IT IMPLIES IS ON THE RESOURCE THAT DECLARES IT — the entry an author
 	// would have written, on the function, naming the queue it receives from.
@@ -150,7 +150,7 @@ func TestTwoOpsOnOneTargetMerge(t *testing.T) {
 			"    - name: again\n"+
 			"      run: charge_card\n"+
 			"      attempts: 2\n"+
-			"      on-error: again\n"), 0o644))
+			"      on_error: again\n"), 0o644))
 
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)

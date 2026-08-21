@@ -7,7 +7,7 @@ readiness:
     http:
         port: pg
         path: /
-image-pull-secret:
+image_pull_secret:
     name: stripe
 volume:
     pgdata:

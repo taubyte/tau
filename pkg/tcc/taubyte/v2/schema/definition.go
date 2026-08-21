@@ -318,7 +318,7 @@ func certificateSecret(section string) *Attribute {
 }
 
 func pullSecret() *Attribute {
-	return String(Key("image-pull-secret", "name"), IsVariableName(), Ref("secret"), InSection("code"),
+	return String(Key("image_pull_secret", "name"), IsVariableName(), Ref("secret"), InSection("code"),
 		Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with, as \"secret/<name>\". Omit for a public registry."))
 }
 
@@ -529,7 +529,7 @@ var V2Resources = []*Node{
 				// `skip` by default because it is the only one that cannot make things
 				// worse: queue turns a slow job into an unbounded backlog, and overlap
 				// runs a job against itself.
-				String("on-overlap", Path("on-overlap"), InSet("skip", "queue", "allow"), Default("skip"), InSection("firing"),
+				String("on_overlap", Path("on_overlap"), InSet("skip", "queue", "allow"), Default("skip"), InSection("firing"),
 					Doc("On Overlap", "skip: drop this tick, the run in flight continues. queue: hold it and run when the current one ends. allow: start it anyway, alongside.")),
 
 				// Every node in a fleet reading the same `0 3 * * *` fires at 03:00:00
@@ -827,15 +827,15 @@ var V2Resources = []*Node{
 	DefineGroup("queue",
 		resource(
 			commonAttributes(
-				Duration("visibility-timeout", Default("30s"), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
-				Int("max-attempts", Default(5), InSection("delivery"), Doc("Max Attempts", "Deliveries before the item moves to the dead-letter queue.")),
+				Duration("visibility_timeout", Default("30s"), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
+				Int("max_attempts", Default(5), InSection("delivery"), Doc("Max Attempts", "Deliveries before the item moves to the dead-letter queue.")),
 				// A REFERENCE IS A BLOCK. The kind is on the Ref, so writing it into the
 				// value is the same fact twice; and `<kind>/<name>` has nowhere to say
 				// WHICH namespace, so it silently means "somewhere up from here". Same
 				// shape every other cross-resource pointer here already uses.
-				String(Key("dead-letter", "namespace"), IsNamespacePath(), InSection("delivery"),
+				String(Key("dead_letter", "namespace"), IsNamespacePath(), InSection("delivery"),
 					Doc("Dead Letter Namespace", "Where that queue lives. Omitted means this queue's own scope, then its parents.")),
-				String(Key("dead-letter", "name"), IsVariableName(), Ref("queue"), InSection("delivery"),
+				String(Key("dead_letter", "name"), IsVariableName(), Ref("queue"), InSection("delivery"),
 					Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts.")),
 			),
 			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. Per-key ordering is an entity, not this."), Icon("list"), Category("data"),
@@ -1445,8 +1445,8 @@ var V2Resources = []*Node{
 					PerEach("steps"),
 					Named("{name}_{each.name}"),
 					Carries("work waiting for step {each.name}"),
-					Sets("max-attempts", "{each.attempts}"),
-					Sets(Key("dead-letter", "name"), "{name}_failed"),
+					Sets("max_attempts", "{each.attempts}"),
+					Sets(Key("dead_letter", "name"), "{name}_failed"),
 
 					// WHO CONSUMES IT. A queue nothing receives from is a queue nothing
 					// happens in, so the step's function is named as its consumer — the
@@ -1471,7 +1471,7 @@ var V2Resources = []*Node{
 					// queue to go when it has used up its attempts.
 					Reaches("send",
 						From("function", "{each.run}", "{each.namespace}"),
-						To("queue", "{name}_{each.on-error}")),
+						To("queue", "{name}_{each.on_error}")),
 				),
 
 				// The end of the line, with NO CONSUMER — deliberately. A dead-letter
@@ -1540,7 +1540,7 @@ func rootAttributes() []*Attribute {
 		// object; the validator is what says so out loud, because a key the schema
 		// knows would otherwise be silently accepted from a document that set it, and
 		// a stale copy of a derived name is exactly the drift deriving it avoids.
-		String("zone-label", Derived(DeriveDNSLabel, "id"), NoAccessors(),
+		String("zone_label", Derived(DeriveDNSLabel, "id"), NoAccessors(),
 			Validator(func(v string) error {
 				if v == "" {
 					return nil
@@ -1680,7 +1680,7 @@ func stepsGroup() *Node {
 		// with it.
 		Int("attempts", MinInt(1), Default(1), InSection("steps"),
 			Doc("Attempts", "How many times this step is run before it has failed. 1 means no retry. The delay between attempts is the queue's, not the step's.")),
-		String("on-error", IsVariableName(), InSection("steps"),
+		String("on_error", IsVariableName(), InSection("steps"),
 			Doc("On Error", "Another step to run when this one has exhausted its retries. Omitted means the run fails there.")),
 	}, GroupDoc("One step: a function, how often it is retried, and where failure goes."))
 }

@@ -136,7 +136,7 @@ func TestQueueDeadLetterResolves(t *testing.T) {
 	var dl string
 	for id, v := range queues {
 		q := v.(map[string]any)
-		if m, ok := q["dead-letter"].(map[string]any); ok {
+		if m, ok := q["dead_letter"].(map[string]any); ok {
 			s, _ := m["name"].(string)
 			assert.Assert(t, s != "", "dead-letter resolved to no id: %v", m)
 			dl = s
@@ -721,7 +721,7 @@ func TestCronCarriesItsTimezone(t *testing.T) {
 	cron := only(t, resources(t, compileBasic(t), "cron"))
 	assert.Equal(t, cron["schedule"], "0 3 * * *")
 	assert.Equal(t, cron["timezone"], "Europe/Paris", "the zone the schedule is written in")
-	assert.Equal(t, cron["on-overlap"], "skip", "the only choice that cannot make things worse")
+	assert.Equal(t, cron["on_overlap"], "skip", "the only choice that cannot make things worse")
 
 	// and a cron that says nothing gets the zone where every day has 24 hours
 	fs := afero.NewMemMapFs()
@@ -858,7 +858,7 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 	assert.NilError(t, err)
 
 	q := only(t, resources(t, obj.Flat(), "queue"))
-	assert.Equal(t, q["visibility-timeout"], int64(30000000000), "the default has to be reachable")
+	assert.Equal(t, q["visibility_timeout"], int64(30000000000), "the default has to be reachable")
 
 	p := only(t, resources(t, obj.Flat(), "proxy"))
 	assert.Equal(t, p["protocol"], "tcp")
@@ -913,7 +913,7 @@ func TestWorkflowLowers(t *testing.T) {
 		// The dead-letter queue is NOT here: it is the `dead-letter` field, which is
 		// already config. A second statement of it was the whole reason the arrow
 		// between two queues read as unexplained.
-		assert.Equal(t, d.Fields["dead-letter/name"], "checkout_failed")
+		assert.Equal(t, d.Fields["dead_letter/name"], "checkout_failed")
 		for _, w := range d.Writes {
 			assert.Assert(t, !strings.Contains(strings.Join(w.Path, "/"), "checkout_failed"),
 				"the dead-letter is a field, not an entry")
