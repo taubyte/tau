@@ -90,3 +90,62 @@ func auditGateway(t *testing.T, body string) []schema.Finding {
 	assert.NilError(t, err)
 	return schema.Audit(obj.Flat(), nil)
 }
+
+// A ROUTER LIVES SOMEWHERE, and the namespace beside its name is how the gateway says
+// where. Without it the name resolves outward from the gateway's own scope and quietly
+// finds a different function, or none — the failure a `{namespace, name}` block exists
+// to prevent, and the one a `<kind>/<name>` string could not even express.
+func TestARouterCanLiveInAnotherNamespace(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	for path, doc := range map[string]string{
+		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: p\n",
+		// same NAME in two scopes: only the namespace tells them apart
+		"/function/edge.yaml":                "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution:\n    call: nope\n    timeout: 1s\n    memory: 16MB\n",
+		"/namespace/shop/scope.yaml":         "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n",
+		"/namespace/shop/function/edge.yaml": "id: QmTaCZBnrxvJm5xkLQKN4o3TFhBqHfLYCUuCkFTGiT8s8t\nimplements: gateway-router\nexecution:\n    call: route\n    timeout: 1s\n    memory: 16MB\n",
+		"/gateway/g.yaml":                    "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\nhost:\n    generated:\n        name: shop\nrouter:\n    namespace: /shop\n    name: edge\n",
+	} {
+		assert.NilError(t, afero.WriteFile(fs, path, []byte(doc), 0o644))
+	}
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+
+	// it resolved to the one in /shop, not the root one that implements `handler`
+	var to string
+	for _, rel := range schema.Relations(obj.Flat()) {
+		if rel.Class == schema.Handoff {
+			for _, r := range schema.Resources(obj.Flat()) {
+				if r.ID == rel.To {
+					to = r.Scope + ":" + r.Kind + "/" + r.Name
+				}
+			}
+		}
+	}
+	assert.Equal(t, to, "shop:function/edge", "the namespace decides which `edge` routes")
+
+	// and the world was checked against THAT one, so the root's plain handler is not
+	// mistaken for a router
+	for _, f := range schema.Audit(obj.Flat(), nil) {
+		assert.Assert(t, f.Severity != schema.Broken, "%v", f)
+	}
+}
+
+// EVERY REFERENCE SAYS WHERE. A block that names a resource and cannot name its
+// namespace resolves outward from the declarer's own scope and silently finds a
+// different resource — which is the failure `<kind>/<name>` could not even express, and
+// the reason a reference is a block at all.
+//
+// Seventeen of them had only a name: the conversion added `{name}` and stopped. Three
+// more had a namespace the discovery could not see, because it looked for the sibling by
+// trimming a "name" suffix that `source/module` does not have.
+func TestEveryReferenceCanSayWhere(t *testing.T) {
+	var missing []string
+	for _, r := range schema.References() {
+		if r.Namespace == "" {
+			missing = append(missing, r.On+"."+r.Field)
+		}
+	}
+	assert.DeepEqual(t, missing, []string(nil))
+}

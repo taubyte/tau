@@ -228,7 +228,7 @@ var secSource = Section("source", "Source", "Where the code is sourced from.")
 func applicationAttributes() []*Attribute {
 	out := []*Attribute{
 		String("image", Required(), InSection("code"), Doc("Image", "OCI image reference this workload runs.")),
-		pullSecret(),
+		pullSecret()[0], pullSecret()[1],
 	}
 	out = append(out, probeAttributes("readiness", "network", "Whether this instance should be given work.")...)
 	out = append(out, probeAttributes("liveness", "network", "Whether this instance is still working, or should be replaced.")...)
@@ -343,15 +343,23 @@ func cpuLimit() *Attribute {
 // One reference rather than a secret for the key and a field for the chain, because
 // they are one artifact: they are issued together, they expire together, and rotating
 // them in two places means a window where they do not match.
-func certificateSecret(section string) *Attribute {
-	return String(Key("certificate", "secret", "name"), IsVariableName(), Ref("secret"),
-		RequiredWhen(Key("certificate", "source"), "provided"), Field("CertSecret"), InSection(section), ShowWhen(Key("certificate", "source"), "provided"),
-		Doc("Certificate Secret", "Secret holding the certificate chain and its private key, as \"secret/<name>\". The key never goes in git."))
+func certificateSecret(section string) []*Attribute {
+	return []*Attribute{
+		String(Key("certificate", "secret", "namespace"), IsNamespacePath(), InSection(section), ShowWhen(Key("certificate", "source"), "provided"),
+			Doc("Certificate Secret Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
+		String(Key("certificate", "secret", "name"), IsVariableName(), Ref("secret"),
+			RequiredWhen(Key("certificate", "source"), "provided"), Field("CertSecret"), InSection(section), ShowWhen(Key("certificate", "source"), "provided"),
+			Doc("Certificate Secret", "Secret holding the certificate chain and its private key. The key never goes in git.")),
+	}
 }
 
-func pullSecret() *Attribute {
-	return String(Key("image_pull_secret", "name"), IsVariableName(), Ref("secret"), InSection("code"),
-		Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with, as \"secret/<name>\". Omit for a public registry."))
+func pullSecret() []*Attribute {
+	return []*Attribute{
+		String(Key("image_pull_secret", "namespace"), IsNamespacePath(), InSection("code"),
+			Doc("Image Pull Secret Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
+		String(Key("image_pull_secret", "name"), IsVariableName(), Ref("secret"), InSection("code"),
+			Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with. Omit for a public registry.")),
+	}
 }
 
 // handlerKinds are what may serve a route. Closed, because it is the Either() a
@@ -424,6 +432,8 @@ func hostAttributes(section string) []*Attribute {
 		// INBOUND: the zone is what ANSWERS for this name. The reference is declared
 		// here because this is where the name is chosen, but the relationship runs the
 		// other way, and an arrow from here would say the gateway reaches the zone.
+		String(Key("host", "zone", "in", "namespace"), IsNamespacePath(), InSection(section),
+			Doc("Namespace", "Where that zone lives. Omitted means this resource's own scope, then its parents.")),
 		String(Key("host", "zone", "in", "name"), IsVariableName(), Ref("zone", Inbound()), RequiredWhen(Key("host", "kind"), "zone"), InSection(section), ShowWhen(Key("host", "kind"), "zone"),
 			Doc("Zone", "The zone this name lives in, as \"zone/<name>\". Only for a zone you own; a generated name has no zone to choose.")),
 	}
@@ -502,7 +512,7 @@ var V2Resources = []*Node{
 			wasmAttributes(
 				String("runtime", InSet("wasm", "container"), Default("wasm"), InSection("code"), Doc("Runtime", "Which tier runs this worker: wasm or container.")),
 				String("image", RequiredWhen("runtime", "container"), InSection("code"), Doc("Image", "OCI image reference (container runtime only).")),
-				pullSecret(),
+				pullSecret()[0], pullSecret()[1],
 			),
 			Nested(variablesGroup()),
 			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"),
@@ -518,7 +528,7 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				String("image", Required(), InSection("code"), Doc("Image", "OCI image the sandbox boots from.")),
-				pullSecret(),
+				pullSecret()[0], pullSecret()[1],
 				Duration(Key("lifetime", "idle"), InSection("limits"), Doc("Idle Timeout", "Stop the sandbox after this long with no activity.")),
 				Duration(Key("lifetime", "max"), InSection("limits"), Doc("Max Lifetime", "Hard ceiling on how long a sandbox may live.")),
 				egressAttribute(),
@@ -634,6 +644,8 @@ var V2Resources = []*Node{
 				Duration(Key("ttl"), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
 				// A REFERENCE, never the material. "key material or reference" let the
 				// same field be either, and the safe reading was the one nothing enforced.
+				String(Key("encryption", "key", "namespace"), IsNamespacePath(), InSection("encryption"),
+					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
 				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret"), NoAccessors(), InSection("encryption"),
 					Doc("Encryption Key", "Secret holding the key entries are encrypted with, as \"secret/<name>\".")),
 			),
@@ -695,6 +707,8 @@ var V2Resources = []*Node{
 					Doc("Host", "Where the external database is reached, as host or host:port.")),
 				String(Key("engine", "database"), Path("engine", Either(externalDatabaseEngines...), "database"), InSection("engine"),
 					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
+				String(Key("engine", "credentials", "namespace"), IsNamespacePath(), InSection("engine"),
+					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
 				String(Key("engine", "credentials", "name"), IsVariableName(), Path("engine", Either(externalDatabaseEngines...), "credentials", "name"), RequiredWhen(Key("engine", "kind"), externalDatabaseEngines...), Ref("secret"), InSection("engine"),
 					Doc("Credentials", "Secret holding the credentials to connect with, as \"secret/<name>\".")),
 
@@ -966,7 +980,7 @@ var V2Resources = []*Node{
 				String(Key("route", "target"), Path("route", Either("handler", "router")), Captures(), InSection("handler"),
 					Doc("Target", "handler: where the request ends. router: a function that says where it should go.")),
 				String(Key("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("naming"), ShowWhen(Key("host", "kind"), "zone"), Doc("Certificate", "generated: issued on demand for this name. provided: from the secret below. A host under the cloud's own zone needs neither — that zone has a wildcard.")),
-				certificateSecret("naming"),
+				certificateSecret("naming")[0], certificateSecret("naming")[1],
 
 				// THE NESTING IS DECLARED BY Path, never spelled into the key. TNS is
 				// a CRDT and the compiled object is a tree, so route -> handler ->
@@ -1104,7 +1118,7 @@ var V2Resources = []*Node{
 				// compile blocked on a field the author could not see.
 				String(Key("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("listener"), ShowWhen(Key("host", "kind"), "zone"),
 					Doc("Certificate", "generated: issued on demand for this name. provided: from the secret below. A host under the cloud's own zone needs neither — that zone has a wildcard.")),
-				certificateSecret("listener"),
+				certificateSecret("listener")[0], certificateSecret("listener")[1],
 
 				// Same shape as a gateway route's handler, one kind wide.
 				// FORWARD, not "handler". A gateway HANDLES a request — it parses one,
@@ -1299,6 +1313,8 @@ var V2Resources = []*Node{
 					Doc("Inference", "remote: a provider reached over the network. local: a workload in this project serving it (the key selects the block).")),
 				String(Key("inference", "remote", "endpoint"), IsURL(), RequiredWhen(Key("inference", "kind"), "remote"), InSection("model"),
 					Doc("Endpoint", "Base URL of the provider, e.g. \"https://api.anthropic.com\".")),
+				String(Key("inference", "remote", "credentials", "namespace"), IsNamespacePath(), InSection("model"),
+					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
 				String(Key("inference", "remote", "credentials", "name"), IsVariableName(), Ref("secret"), RequiredWhen(Key("inference", "kind"), "remote"), InSection("model"),
 					Doc("Credentials", "Secret holding the provider credential, as \"secret/<name>\". It lives here rather than on each caller, so rotating it is one edit.")),
 				String(Key("inference", "local", "name"), IsVariableName(), RequiredWhen(Key("inference", "kind"), "local"), InSection("model"),
@@ -1382,6 +1398,8 @@ var V2Resources = []*Node{
 				// from the one that answers — the widths and the pricing are different —
 				// which is exactly why memory needs its own reference rather than
 				// borrowing the agent's.
+				String(Key("memory", "embedder", "namespace"), IsNamespacePath(), InSection("memory"),
+					Doc("Namespace", "Where that model lives. Omitted means this resource's own scope, then its parents.")),
 				String(Key("memory", "embedder", "name"), IsVariableName(), Ref("model"), InSection("memory"),
 					Doc("Embedding Model", "The model that turns what this agent sees into vectors, as \"model/<name>\". Naming it is what turns memory on.")),
 				Int(Key("memory", "dimensions"), MinInt(1), RequiredWhen(Key("memory", "embedder", "name")), InSection("memory"),
@@ -1798,6 +1816,8 @@ func variablesGroup() *Node {
 		DefineIter([]*Attribute{
 			String("value", InSection("config"),
 				Doc("Value", "A literal, stored in git and readable by anyone who can read the repo. For anything that is not a secret.")),
+			String(Key("secret", "namespace"), IsNamespacePath(), InSection("config"),
+				Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
 			String(Key("secret", "name"), IsVariableName(), Ref("secret"), InSection("config"),
 				Doc("From Secret", "Take the value from this secret, as \"secret/<name>\". Only the reference is in git.")),
 

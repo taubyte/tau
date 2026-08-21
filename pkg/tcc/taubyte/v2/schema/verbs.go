@@ -573,10 +573,17 @@ func collectReferences(kind string, iter *engine.Node, in string, out *[]Referen
 			Prefix: spec.Prefix, ByName: spec.ByName, Inbound: spec.Inbound,
 			Serves: spec.Serves, In: in,
 		}
-		// The namespace beside it, by the vocabulary's own convention: the same prefix
-		// (`authorizer/name` -> `authorizer/namespace`), or the block's own `namespace`
-		// where the field has no prefix of its own (a workflow step's `run`).
-		for _, cand := range []string{strings.TrimSuffix(a.Name, "name") + "namespace", "namespace"} {
+		// THE NAMESPACE BESIDE IT: the sibling called `namespace` under the same
+		// parent. `authorizer/name` -> `authorizer/namespace`, and `source/module` ->
+		// `source/namespace` — which the old rule missed, because it trimmed a "name"
+		// suffix the field does not have and looked for `source/modulenamespace`. A
+		// reference whose namespace is not found resolves outward from the declarer's
+		// own scope and quietly finds a different resource.
+		parent := ""
+		if cut := strings.LastIndex(a.Name, "/"); cut >= 0 {
+			parent = a.Name[:cut+1]
+		}
+		for _, cand := range []string{parent + "namespace", "namespace"} {
 			if r.Namespace != "" {
 				break
 			}
