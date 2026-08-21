@@ -145,6 +145,10 @@ func (n *Node) childrenToSlice() []any {
 // matcher segment to the key actually present. It returns the RESOLVED segments
 // so a caller can report where it really looked ("streaming/size"), not the
 // declared shape — the two differ exactly where a matcher is involved.
+// ambiguousPath marks the one resolution failure that is a CONFLICT rather than an
+// absence: two branches of a switch open at once.
+const ambiguousPath = "ambiguous path"
+
 func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, []string, error) {
 	resolved := make([]string, 0, len(path))
 	var cachedList []string
@@ -191,7 +195,7 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, []s
 			default:
 				slices.Sort(matched) // stable message, whatever the map order was
 				return nil, nil, errorWithLocation(query,
-					"ambiguous path: %s each match, and only one may be set", strings.Join(matched, " and "))
+					"%s: %s each match, and only one may be set", ambiguousPath, strings.Join(matched, " and "))
 			}
 			query = query.Get(matched[0])
 			resolved = append(resolved, matched[0])
@@ -427,6 +431,15 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		}
 		aq, resolved, err := inferPathQuery(attr.Path, query)
 		if err != nil {
+			// AN AMBIGUOUS PATH IS NEVER A MISSING ONE. A switch with two of its
+			// branches open is a conflict, and the compat fallback swallowed it: an
+			// attribute with no legacy location resolves the empty path to the document
+			// root without error, so the conflict was reported later, and elsewhere, as
+			// "has an empty key". A path that simply is not there still falls through —
+			// an optional block that nobody wrote is not a mistake.
+			if strings.Contains(err.Error(), ambiguousPath) {
+				return err
+			}
 			aq, resolved, err = inferPathQuery(attr.Compat, query)
 			if err != nil {
 				return wrapErrorWithLocation(query, err, fmt.Sprintf("attribute '%s' path resolution failed", attr.Name))

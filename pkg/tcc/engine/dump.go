@@ -321,6 +321,16 @@ func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *At
 		}
 	}
 
+	// A CAPTURED VALUE IS THE KEY, so writing it back would write the key's own name
+	// INTO it: `router: router`, on top of the block. The branch is already selected
+	// above — reaching it is the whole write — and the fields underneath fill it in.
+	//
+	// It matters more for a switch whose branch holds one block than for v1's, where
+	// the branch always had a scalar beside it that happened to overwrite the damage.
+	if attr.Captures {
+		return nil
+	}
+
 	// Set the final value
 	if err := q.Set(val).Commit(); err != nil {
 		return fmt.Errorf("setting value failed: %w", err)

@@ -977,7 +977,7 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 	assert.Equal(t, step.Namespace, "namespace")
 
 	// the inbound blocks are derived from the references, not listed anywhere
-	assert.DeepEqual(t, schema.InboundBlocks(), []string{"forward", "route/handler", "serve"})
+	assert.DeepEqual(t, schema.InboundBlocks(), []string{"forward", "route/handler", "route/router", "router", "serve"})
 
 	// how an access entry is written, and where a document lives
 	access := schema.AccessEntryShape()

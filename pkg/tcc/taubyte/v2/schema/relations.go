@@ -215,10 +215,11 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 	if !found {
 		return Relation{}, false
 	}
-	// A reference whose KIND the author picked is where traffic goes; one whose kind the
-	// schema fixed is a function named to decide something about this resource.
+	// WHERE TRAFFIC GOES IS DECLARED. It used to be read off KindFrom — the author
+	// picking the kind stood in for "this is a handoff" — which a router breaks: its
+	// kind is fixed and it is still where the request goes.
 	class := Policy
-	if ref.KindFrom != "" {
+	if ref.Serves {
 		class, verb = Handoff, "serves"
 	}
 	return Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: class}, true

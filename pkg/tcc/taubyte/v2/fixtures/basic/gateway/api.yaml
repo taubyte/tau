@@ -1,0 +1,11 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zk
+description: every path under one name, decided by a function - the shape a static route cannot take
+host:
+    zone:
+        in:
+            name: example_com
+        name: api
+router:
+    name: edge_router
+cors:
+    origins: ["https://api.example.com"]

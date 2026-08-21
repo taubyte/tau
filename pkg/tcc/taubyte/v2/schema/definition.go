@@ -152,7 +152,7 @@ var secNetwork = Section("network", "Network", "How this workload is reached, an
 // The honest limit: this is the config's word for it, not the artifact's. If the build
 // can read the world out of the component's WIT imports, that is the better source and
 // this becomes the thing checked against it rather than the thing believed.
-var hostWorlds = []string{"handler", "authorizer", "gateway-transformer", "proxy-transformer"}
+var hostWorlds = []string{"handler", "authorizer", "gateway-transformer", "proxy-transformer", "gateway-router", "proxy-router"}
 
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	return commonAttributes(append([]*Attribute{
@@ -290,6 +290,38 @@ func probeAttributes(name, section, doc string) []*Attribute {
 			Doc(title(name)+" Function", "A function that answers for this workload, when \"working\" is not a status code — a queue drained, a migration finished, a lease still held.")),
 		String(Key(name, "function", "namespace"), IsNamespacePath(), InSection(section), ShowWhen(Key(name, "kind"), "function"),
 			Doc(title(name)+" Function Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
+	}
+}
+
+// routerAttributes: a serverless function that does the routing itself, instead of the
+// static block beside it.
+//
+// A gateway with a `route` serves one path; five paths are five gateway documents
+// repeating the host, the certificate, cors and the rate limit. A gateway with a
+// `router` has none of that: the request goes to the function, and the function decides.
+// It is the answer to a site whose routing is a program rather than a table — a
+// prefix map, an A/B split, a tenant lookup — and to the one-route-per-document limit
+// without inventing a route kind.
+//
+// THE KIND IS NOT WRITTEN, because there is only one thing a router can be. Nothing
+// else in the vocabulary runs code at the edge on a request that has not been routed
+// yet, so `router: {name: edge}` says everything: a function, by name, in a namespace.
+//
+// It is NOT a handler with a different word. A handler is where the request ENDS; a
+// router says where it should go and the gateway takes it there, which is why the world
+// it is built against is its own.
+func routerAttributes(section, world string, at ...string) []*Attribute {
+	ns := append(append([]string{}, at...), "namespace")
+	nm := append(append([]string{}, at...), "name")
+	where := "instead of a static route"
+	if len(at) > 1 {
+		where = "instead of this route's handler"
+	}
+	return []*Attribute{
+		String(Key(ns...), IsNamespacePath(), InSection(section),
+			Doc("Router Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
+		String(Key(nm...), IsVariableName(), Ref("function", ByName(), Serves()), InSection(section),
+			Doc("Router", "A function that decides where each request goes. Written "+where+", never beside one; it must be built against the "+world+" world.")),
 	}
 }
 
@@ -917,7 +949,22 @@ var V2Resources = []*Node{
 		resource(
 			// A gateway with no host block is reachable only by being mounted beneath
 			// another one, which is what collapsed the old `domains` kind into this one.
-			append(append(identityAttributes(), hostAttributes("naming")...),
+			append(append(append(append(identityAttributes(), hostAttributes("naming")...),
+				routerAttributes("route", "gateway-router", "router")...),
+				routerAttributes("handler", "gateway-router", "route", "router")...),
+				// EITHER A ROUTER OR ROUTES, and inside a route either a handler or a
+				// router of its own. Both are the switch this vocabulary already has:
+				// the Either lists the alternatives, Captures() records which was
+				// written, and the loader refuses a document that opens two of them or
+				// none — which is the whole of "exactly one", with nothing to check
+				// afterwards.
+				String(Key("routing"), Path(Either("route", "router")), Captures(), Required(), InSection("route"),
+					Doc("Routing", "route: this gateway serves one path, declared below. router: a function decides where everything goes, and there are no static routes.")),
+				// NOT Required: the switch inside an optional block is demanded only when
+				// the block is there, which is what parentExists answers. Required here
+				// would insist on a route even when a router routes everything.
+				String(Key("route", "target"), Path("route", Either("handler", "router")), Captures(), InSection("handler"),
+					Doc("Target", "handler: where the request ends. router: a function that says where it should go.")),
 				String(Key("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("naming"), ShowWhen(Key("host", "kind"), "zone"), Doc("Certificate", "generated: issued on demand for this name. provided: from the secret below. A host under the cloud's own zone needs neither — that zone has a wildcard.")),
 				certificateSecret("naming"),
 
@@ -926,7 +973,7 @@ var V2Resources = []*Node{
 				// namespace has to be three mergeable levels; a key that spelled the
 				// path itself would be one opaque leaf that can only be replaced whole,
 				// which is why "/" in a key is a build failure (engine/keys.go).
-				String(Key("route", "path"), Required(), InSection("route"), Doc("Path", "The path served, e.g. \"/checkout\" or \"/\".")),
+				String(Key("route", "path"), RequiredWhen(Key("routing"), "route"), InSection("route"), Doc("Path", "The path served, e.g. \"/checkout\" or \"/\". Required when this gateway declares a route; a gateway with a router has no paths of its own.")),
 				String(Key("route", "match"), InSet("prefix", "exact", "regex"), Default("prefix"), InSection("route"), Doc("Match", "How the path is compared: prefix, exact, or regex.")),
 				// A handler mounted at /docs receives /docs/x unless this is set. For an
 				// APPLICATION that is usually right — it routes on the full path and may
@@ -944,7 +991,7 @@ var V2Resources = []*Node{
 				// the switch: which kind handles it, and where that resource lives
 				String(Key("route", "handler", "kind"), Path("route", "handler", Either(handlerKinds...)), Captures(), Field("HandlerKind"), InSection("handler"), Doc("Handler", "Which kind serves this path (the key selects the handler block).")),
 				String(Key("route", "handler", "namespace"), Path("route", "handler", Either(handlerKinds...), "namespace"), InSection("handler"), Doc("Namespace", "Path to the namespace holding the handler, e.g. \"/shop/eu\". Omitted means the project root.")),
-				String(Key("route", "handler", "name"), Path("route", "handler", Either(handlerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom(Key("route", "handler", "kind")), ByName()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
+				String(Key("route", "handler", "name"), Path("route", "handler", Either(handlerKinds...), "name"), IsVariableName(), Ref("", KindFrom(Key("route", "handler", "kind")), ByName(), Serves()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
 				String(Key("route", "handler", "port"), Path("route", "handler", Either(handlerKinds...), "port"), IsVariableName(), InSection("handler"), Doc("Port", "Which of the handler's ports to reach, by name. A workload listening on more than one has to be told which, and the number is never written here — the platform assigns the external one, and there may be several instances of the workload on one host.")),
 
 				// The name this gateway answers on, whatever it turns out to be. A
@@ -961,7 +1008,7 @@ var V2Resources = []*Node{
 				String(Key("rate_limit", "key"), InSection("policy"), Doc("Rate Limit Key", "What the limit is counted per: \"ip\" or \"header:<name>\".")),
 			),
 			Nested(transformersGroup()),
-			GroupDoc("A name, the policy at it, and what it serves."), Category("internet"), Icon("route"),
+			GroupDoc("A name, the policy at it, and what it serves — one static route, or a function that routes."), Category("internet"), Icon("route"),
 			AnswersAt("host"),
 			secIdentity, secTransformers,
 			Section("naming", "Naming", "The name served, and where its certificate comes from."),
@@ -1019,7 +1066,10 @@ var V2Resources = []*Node{
 	// `zones` — those are produced, not authored.
 	DefineGroup("proxy",
 		resource(
-			append(append(identityAttributes(), hostAttributes("listener")...),
+			append(append(append(identityAttributes(), hostAttributes("listener")...),
+				routerAttributes("forward", "proxy-router", "router")...),
+				String(Key("routing"), Path(Either("forward", "router")), Captures(), Required(), InSection("forward"),
+					Doc("Routing", "forward: every connection goes to the workload named below. router: a function picks one per connection.")),
 				String("protocol", InSet("tcp", "udp", "sctp"), Default("tcp"), InSection("listener"),
 					Doc("Protocol", "The transport carried. tcp is the transparent one; see this kind's docs for what a tunnel does to udp and sctp.")),
 
@@ -1066,7 +1116,7 @@ var V2Resources = []*Node{
 					Doc("Forward To", "Which kind the connection is forwarded to (the key selects the block).")),
 				String(Key("forward", "namespace"), Path("forward", Either(proxyHandlerKinds...), "namespace"), IsNamespacePath(), InSection("forward"),
 					Doc("Namespace", "Path to the namespace holding the workload, e.g. \"/shop/eu\". Omitted means the project root.")),
-				String(Key("forward", "name"), Path("forward", Either(proxyHandlerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom(Key("forward", "kind")), ByName()), InSection("forward"),
+				String(Key("forward", "name"), Path("forward", Either(proxyHandlerKinds...), "name"), IsVariableName(), Ref("", KindFrom(Key("forward", "kind")), ByName(), Serves()), InSection("forward"),
 					Doc("Name", "The workload's name within that namespace.")),
 
 				// THE WORKLOAD'S OWN PORT, by name — the one it binds inside its
@@ -1099,7 +1149,7 @@ var V2Resources = []*Node{
 					Doc("Counted Per", "ip: each address separately. subnet: per /24 and /64, which is what stops one host with an address range from being many clients.")),
 			),
 			Nested(transformersGroup()),
-			GroupDoc("An allocated address that accepts a raw connection and streams it to a workload over p2p. For everything a gateway cannot parse."), Category("internet"), Icon("plug"),
+			GroupDoc("An allocated address that accepts a raw connection and streams it to a workload over p2p — to a fixed one, or to whichever a function picks. For everything a gateway cannot parse."), Category("internet"), Icon("plug"),
 			AnswersAt("host"),
 			secIdentity, secTransformers,
 			Section("listener", "Listener", "The protocol carried, the name it is reached by, and whether TLS stops here."),
@@ -1202,7 +1252,7 @@ var V2Resources = []*Node{
 					Doc("Served By", "Which kind answers this stream (the key selects the block).")),
 				String(Key("serve", "namespace"), Path("serve", Either(streamServerKinds...), "namespace"), IsNamespacePath(), InSection("stream"),
 					Doc("Namespace", "Path to the namespace holding it, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
-				String(Key("serve", "name"), Path("serve", Either(streamServerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom(Key("serve", "kind")), ByName()), InSection("stream"),
+				String(Key("serve", "name"), Path("serve", Either(streamServerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom(Key("serve", "kind")), ByName(), Serves()), InSection("stream"),
 					Doc("Name", "Its name within that namespace.")),
 				String(Key("serve", "port"), Path("serve", Either(streamServerKinds...), "port"), IsVariableName(), InSection("stream"),
 					Doc("Port", "Which of the workload's own named ports the stream is delivered to. Containers only; a function is dispatched, not connected.")),

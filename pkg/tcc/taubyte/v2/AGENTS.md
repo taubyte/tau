@@ -163,6 +163,34 @@ compiles into a shape nothing can merge.
 `Path(...)` is where the value is **read from**, `Tag(...)` is where it is **written
 to**. Two independent knobs; don't collapse them.
 
+### A mutual exclusion is `Either()`, never a check
+
+A gateway declares a `router` — one function that routes everything, and then there are
+no static routes at all — OR a `route`, which itself names a `handler` or hands the
+decision to a router of its own. Same for a proxy with `forward`.
+
+None of that is an audit rule. It is the switch the vocabulary already has:
+
+```go
+String(Key("routing"), Path(Either("route", "router")), Captures(), Required())
+String(Key("route", "target"), Path("route", Either("handler", "router")), Captures())
+```
+
+`inferPathQuery` refuses a document that opens two branches — *"ambiguous path: route and
+router each match, and only one may be set"*, with a line number — and `Captures()` on a
+`Required()` switch refuses one that opens none. "Exactly one" is a property of the
+DECLARATION; there is nothing left to check afterwards, and I wrote a `checkRouting`
+before remembering that.
+
+The inner switch is NOT `Required()`: a switch inside an optional block is demanded only
+when the block is there, which `parentExists` already answers. And a field under one
+branch is `RequiredWhen` the switch names that branch — `route.path` is required when the
+routing is a route, and meaningless when a router routes everything.
+
+**`Serves()` says an edge is a handoff.** It used to be inferred from `KindFrom` being
+set — the author picking the kind stood in for "traffic goes here" — which a router
+breaks: its kind is fixed and it is still where the request goes.
+
 ### A reference is a BLOCK, and `{kind}/{name}` is never written
 
 ```yaml

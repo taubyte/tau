@@ -420,6 +420,14 @@ type RefSpec struct {
 	// — the same reason a verb says whether it is Delivered.
 	Inbound bool
 
+	// Serves: TRAFFIC GOES THERE. A gateway's route hands a request to its handler; a
+	// proxy forwards a connection; a route with no handler hands the whole decision to
+	// a router function. It used to be inferred from KindFrom being set — "the author
+	// picked the kind, so it must be where traffic goes" — which is a proxy for the
+	// fact and stops being true the moment a handoff has a FIXED kind, as a router
+	// does. What is worth an arrow, and which arrow, is declared.
+	Serves bool
+
 	// ByName: the value stays a NAME. Most references resolve to the target's id at
 	// compile; some deliberately do not — an authorizer, a workflow step's function, a
 	// transformer entry — because they cross scopes the resolver does not follow, or
@@ -458,10 +466,14 @@ func KindFrom[T string | AKey](field T) RefOpt {
 // format, and nothing else's. See RefSpec.FlatValue.
 func FlatValue() RefOpt { return func(s *RefSpec) { s.FlatValue = true } }
 
-// Prefix sets the RefSpec key prefix.
-func Prefix(p string) RefOpt {
-	return func(s *RefSpec) { s.Prefix = p }
-}
+// Prefix is the kind written in front of a resolved reference's value, `libraries/<id>`.
+// v1's alone, and only alongside FlatValue: v2 authors a reference as a block and
+// compiles it to the id, so the kind is on the Ref and never in the value.
+func Prefix(p string) RefOpt { return func(s *RefSpec) { s.Prefix = p } }
+
+// Serves declares that traffic GOES to the referenced resource — a handoff rather than a
+// dependency. See RefSpec.Serves.
+func Serves() RefOpt { return func(s *RefSpec) { s.Serves = true } }
 
 // Ref declares that this attribute's value is a reference into another resource
 // group. Inert driver data — no generation or runtime effect this phase.

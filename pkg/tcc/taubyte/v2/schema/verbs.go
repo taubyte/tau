@@ -543,6 +543,9 @@ type Reference struct {
 	Field    string // the attribute holding the target
 	Kind     string // the kind it points at, when the schema fixes it
 	KindFrom string // the sibling holding the kind, when the author picks it
+	// Serves: traffic goes there. Declared, not inferred from KindFrom — a router is a
+	// handoff whose kind is fixed.
+	Serves bool
 	// Namespace is the sibling holding the target's namespace, when there is one.
 	Namespace string
 	Prefix    string // the value's prefix, for a reference that resolves
@@ -567,7 +570,8 @@ func collectReferences(kind string, iter *engine.Node, in string, out *[]Referen
 		seen[key] = true
 		r := Reference{
 			On: kind, Field: a.Name, Kind: spec.Group, KindFrom: spec.KindFrom,
-			Prefix: spec.Prefix, ByName: spec.ByName, Inbound: spec.Inbound, In: in,
+			Prefix: spec.Prefix, ByName: spec.ByName, Inbound: spec.Inbound,
+			Serves: spec.Serves, In: in,
 		}
 		// The namespace beside it, by the vocabulary's own convention: the same prefix
 		// (`authorizer/name` -> `authorizer/namespace`), or the block's own `namespace`
@@ -598,7 +602,7 @@ func InboundBlocks() []string {
 	seen := map[string]bool{}
 	out := []string{}
 	for _, r := range References() {
-		if r.KindFrom == "" {
+		if !r.Serves {
 			continue
 		}
 		// A field's identity is its key, joined — `route/handler/name` — so the block it

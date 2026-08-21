@@ -44,6 +44,7 @@ var (
 	Either           = engine.Either
 	AnswersAt        = engine.AnswersAt
 	ByName           = engine.ByName
+	Serves           = engine.Serves
 	Inbound          = engine.Inbound
 	EmitValidation   = engine.EmitValidation
 	EnumBool         = engine.EnumBool

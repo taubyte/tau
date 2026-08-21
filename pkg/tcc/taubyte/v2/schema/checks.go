@@ -514,6 +514,21 @@ func checkHostWorlds(all []compiled) []Finding {
 		if res.at("route", "handler", "kind") == "function" {
 			uses = append(uses, use{res.at("route", "handler", "name"), res.scope, res.at("route", "handler", "namespace"), "handler", res.kind + "/" + res.name + " route"})
 		}
+		// A ROUTER ANSWERS WITH A DESTINATION, not a response, so it is built against
+		// its own world — and a gateway's is not a proxy's: one is handed a parsed
+		// request, the other bytes on a connection.
+		if n := res.at("router", "name"); n != "" {
+			w := ""
+			switch res.kind {
+			case "gateway":
+				w = "gateway-router"
+			case "proxy":
+				w = "proxy-router"
+			}
+			if w != "" {
+				uses = append(uses, use{n, res.scope, res.at("router", "namespace"), w, res.kind + "/" + res.name + " router"})
+			}
+		}
 	}
 
 	var out []Finding
