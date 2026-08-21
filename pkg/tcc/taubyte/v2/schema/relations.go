@@ -169,24 +169,23 @@ func referenceRelations(res compiled, byID map[string]compiled, find func(kind, 
 }
 
 func resolveReference(res compiled, from map[string]any, ref Reference, byID map[string]compiled, find func(kind, name, own, ns string) (compiled, bool)) (Relation, bool) {
-	// A reference that KEEPS its name is a string; a resolved one is `{<kind>: <id>}`,
-	// two levels because a kind and an id are two facts. Both read as one value here.
-	val, _ := from[ref.Field].(string)
-	if val == "" {
-		val = refID(from[ref.Field])
-	}
+	// A reference is a name it KEEPS, or the id it resolved to. Either way, one value —
+	// at the field's own key, which for a block is more than one level down.
+	val, _ := fieldValue(from, ref.Field).(string)
 	if val == "" {
 		return Relation{}, false
 	}
 
 	kind := ref.Kind
 	if ref.KindFrom != "" {
-		kind, _ = from[ref.KindFrom].(string)
+		kind, _ = fieldValue(from, ref.KindFrom).(string)
 	}
 	if kind == "" {
 		return Relation{}, false
 	}
 
+	// The label is the field without the segment that holds the name: a reference is a
+	// block now, so `model/name` is the model and `memory/embedder/name` the embedder.
 	verb := strings.TrimSuffix(strings.TrimSuffix(ref.Field, "name"), "/")
 	if verb == "" {
 		verb = kind
@@ -199,7 +198,7 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 		if !ok {
 			return Relation{}, false
 		}
-		r := Relation{From: res.id, To: to.id, Kind: kind, Verb: ref.Field, Class: Depends}
+		r := Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: Depends}
 		if ref.Inbound {
 			r.From, r.To = to.id, res.id
 		}

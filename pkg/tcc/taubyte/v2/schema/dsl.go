@@ -34,7 +34,6 @@ var (
 	Lowers           = interp.Lowers
 	Into             = interp.Into
 	PerEach          = interp.PerEach
-	When             = interp.When
 	Acts             = interp.Acts
 	Named            = interp.Named
 	Carries          = interp.Carries
@@ -46,7 +45,6 @@ var (
 	AnswersAt        = engine.AnswersAt
 	ByName           = engine.ByName
 	Inbound          = engine.Inbound
-	KindFrom         = engine.KindFrom
 	EmitValidation   = engine.EmitValidation
 	EnumBool         = engine.EnumBool
 	Field            = engine.Field
@@ -70,14 +68,11 @@ var (
 	RepoBranch       = engine.RepoBranch
 	RepoName         = engine.RepoName
 	Required         = engine.Required
-	RequiredUnless   = engine.RequiredUnless
-	RequiredWhen     = engine.RequiredWhen
 	Resource         = engine.Resource
 	Root             = engine.Root
 	SchemaDefinition = engine.SchemaDefinition
 	InSection        = engine.InSection
 	Section          = engine.Section
-	ShowWhen         = engine.ShowWhen
 	Singular         = engine.Singular
 	Identity         = engine.Identity
 	Leaf             = engine.Leaf
@@ -99,6 +94,9 @@ type AKey = engine.AKey
 
 func Key(segments ...string) AKey { return engine.Key(segments...) }
 
+// When gates a lowering on one of the lowered kind's attributes, by key.
+func When[T string | AKey](field T) interp.LoweringOption { return interp.When(field) }
+
 // Sets names one of the produced kind's attributes, by key.
 func Sets[T string | AKey](field T, tmpl string) interp.LoweringOption {
 	return interp.Sets(field, tmpl)
@@ -115,3 +113,14 @@ func Bytes[T string | AKey](name T, o ...engine.Option) *Attribute { return engi
 func Duration[T string | AKey](name T, o ...engine.Option) *Attribute {
 	return engine.Duration(name, o...)
 }
+
+// The terms that NAME another attribute take either a plain key or a multi-segment
+// Key(...), so they are generic and cannot be re-exported as values.
+func ShowWhen[T string | AKey](field T, in ...string) engine.Option {
+	return engine.ShowWhen(field, in...)
+}
+func RequiredWhen[T string | AKey](field T, in ...string) engine.Option {
+	return engine.RequiredWhen(field, in...)
+}
+func RequiredUnless[T string | AKey](field T) engine.Option { return engine.RequiredUnless(field) }
+func KindFrom[T string | AKey](field T) engine.RefOpt       { return engine.KindFrom(field) }

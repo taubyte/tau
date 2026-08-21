@@ -137,8 +137,8 @@ func TestQueueDeadLetterResolves(t *testing.T) {
 	for id, v := range queues {
 		q := v.(map[string]any)
 		if m, ok := q["dead-letter"].(map[string]any); ok {
-			s, _ := m["queue"].(string)
-			assert.Assert(t, s != "", "dead-letter is not keyed by the kind it points at: %v", m)
+			s, _ := m["name"].(string)
+			assert.Assert(t, s != "", "dead-letter resolved to no id: %v", m)
 			dl = s
 			assert.Assert(t, dl != id, "a queue must not dead-letter to itself")
 		}
@@ -161,7 +161,7 @@ func TestConnectorCredentialsResolve(t *testing.T) {
 	}
 	for _, v := range resources(t, flat, "connector") {
 		conn := v.(map[string]any)
-		assert.DeepEqual(t, conn["credentials"], map[string]any{"secret": secretID})
+		assert.DeepEqual(t, conn["credentials"], map[string]any{"name": secretID})
 	}
 }
 
@@ -197,9 +197,10 @@ func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 	orders := namedResource(t, dbs, "orders")
 	assert.Equal(t, orders["engine-kind"], "postgres")
 	assert.Equal(t, orders["engine-host"], "db.example.com:5432")
-	creds, _ := orders["engine-credentials"].(map[string]any)
-	assert.Assert(t, creds != nil && creds["secret"] != "",
-		"credentials resolve to a secret id, never a value: %v", orders["engine-credentials"])
+	engine, _ := orders["engine"].(map[string]any)
+	creds, _ := engine["credentials"].(map[string]any)
+	assert.Assert(t, creds != nil && creds["name"] != "",
+		"credentials resolve to a secret id, never a value: %v", engine)
 	_, borrowed := orders["engine-distributed-size"]
 	assert.Assert(t, !borrowed)
 
@@ -229,7 +230,8 @@ func TestNamespaceScope(t *testing.T) {
 	shop := namespace(t, obj, "shop")
 
 	fn := namedResource(t, shop["function"].(map[string]any), "notify")
-	assert.Equal(t, fn["source"], ".", "inline source is not a ref")
+	_, hasSource := fn["source"]
+	assert.Assert(t, !hasSource, "a resource built from its own code writes no source block")
 	assert.Equal(t, nested(fn, "execution", "call"), "notify")
 
 	kv := only(t, shop["cache"].(map[string]any))
@@ -276,7 +278,6 @@ func TestAccessIsPerTarget(t *testing.T) {
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(`
 id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh
-source: "."
 execution: {call: checkout, timeout: 20s, memory: 32MB}
 cache:
     orders:
@@ -304,9 +305,10 @@ func TestGatewayRoute(t *testing.T) {
 	// not have there.
 	assert.Equal(t, gw["host-kind"], "zone")
 	assert.Equal(t, gw["host-name"], "shop")
-	zoneRef, _ := gw["host-zone"].(map[string]any)
-	assert.Assert(t, zoneRef != nil && zoneRef["zone"] != "",
-		"the zone resolves to a compiled zone id")
+	host, _ := gw["host"].(map[string]any)
+	zone, _ := host["zone"].(map[string]any)
+	in, _ := zone["in"].(map[string]any)
+	assert.Assert(t, in != nil && in["name"] != "", "the zone resolves to a compiled zone id: %v", zone)
 	assert.Equal(t, gw["certificate-source"], "generated", "generated unless it is provided")
 
 	assert.Equal(t, gw["route-path"], "/checkout")
@@ -504,7 +506,6 @@ func TestSiblingNamespaceIsNameableAndUnchecked(t *testing.T) {
 	// shop reaches into billing's books
 	assert.NilError(t, afero.WriteFile(fs, "/namespace/shop/function/notify.yaml", []byte(`
 id: QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR
-source: "."
 execution: {call: notify, timeout: 5s, memory: 16MB}
 database:
     ledger:
@@ -752,7 +753,8 @@ id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
 engine:
     postgres:
         host: db.example.com
-        credentials: secrets/k
+        credentials:
+            name: k
 `), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -810,8 +812,9 @@ func TestWorkloadVariables(t *testing.T) {
 	assert.Equal(t, vars["LOG_LEVEL"].(map[string]any)["value"], "info")
 
 	// a secret is a REFERENCE: the value never enters the config
-	from, _ := vars["STRIPE_KEY"].(map[string]any)["secret"].(map[string]any)
-	assert.Assert(t, from != nil && strings.HasPrefix(from["secret"].(string), "Qm"),
+	sec, _ := vars["STRIPE_KEY"].(map[string]any)["secret"].(map[string]any)
+	from, _ := sec["name"].(string)
+	assert.Assert(t, strings.HasPrefix(from, "Qm"),
 		"got %v, want a resolved secret id", vars["STRIPE_KEY"])
 	_, literal := vars["STRIPE_KEY"].(map[string]any)["value"]
 	assert.Assert(t, !literal)
@@ -910,7 +913,7 @@ func TestWorkflowLowers(t *testing.T) {
 		// The dead-letter queue is NOT here: it is the `dead-letter` field, which is
 		// already config. A second statement of it was the whole reason the arrow
 		// between two queues read as unexplained.
-		assert.Equal(t, d.Fields["dead-letter"], "queue/checkout_failed")
+		assert.Equal(t, d.Fields["dead-letter/name"], "checkout_failed")
 		for _, w := range d.Writes {
 			assert.Assert(t, !strings.Contains(strings.Join(w.Path, "/"), "checkout_failed"),
 				"the dead-letter is a field, not an entry")
@@ -945,10 +948,11 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 		return schema.Reference{}
 	}
 
-	// resolves to an id, with a prefix
-	src := find("function", "source")
+	// resolves to an id — the kind is on the Ref, and the namespace is authored beside
+	// the name, so nothing is packed into the value
+	src := find("function", "source/module")
 	assert.Equal(t, src.Kind, "module")
-	assert.Equal(t, src.Prefix, "module/")
+	assert.Equal(t, src.Prefix, "", "a v2 reference carries no kind in its value")
 	assert.Assert(t, !src.ByName)
 
 	// keeps the authored name, and says where its namespace is
@@ -963,7 +967,7 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 	assert.Assert(t, handler.ByName)
 
 	// the relationship runs the other way: the zone answers FOR the gateway
-	zone := find("gateway", "host-zone")
+	zone := find("gateway", "host/zone/in/name")
 	assert.Assert(t, zone.Inbound, "an arrow from the declarer would claim the opposite")
 
 	// and one that lives on the ENTRIES of a nested group, not on the resource — the
@@ -1012,7 +1016,7 @@ func TestReachableNames(t *testing.T) {
 
 	// a zone is what ANSWERS, not what is answered for
 	for _, r := range names {
-		assert.Assert(t, r.Name != "example-com", "a zone must not be listed as reachable")
+		assert.Assert(t, r.Name != "example_com", "a zone must not be listed as reachable")
 	}
 }
 

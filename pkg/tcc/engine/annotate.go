@@ -79,8 +79,8 @@ type ConditionSpec struct {
 // ShowWhen makes a field's display conditional: a UI/CLI shows it only when the
 // sibling attribute Field holds one of in. Schema-only, static — no compile or
 // parse effect.
-func ShowWhen(field string, in ...string) Option {
-	return Annotate("showWhen", ConditionSpec{Field: field, In: in})
+func ShowWhen[T string | AKey](field T, in ...string) Option {
+	return Annotate("showWhen", ConditionSpec{Field: FieldName(field), In: in})
 }
 
 // RequiredWhen makes a field required only when a sibling attribute holds one of
@@ -91,8 +91,8 @@ func ShowWhen(field string, in ...string) Option {
 //
 // Deliberately separate from ShowWhen. A field can be shown and optional (a
 // timeout), so "required" cannot be inferred from "visible".
-func RequiredWhen(field string, in ...string) Option {
-	return Annotate("requiredWhen", ConditionSpec{Field: field, In: in})
+func RequiredWhen[T string | AKey](field T, in ...string) Option {
+	return Annotate("requiredWhen", ConditionSpec{Field: FieldName(field), In: in})
 }
 
 // RequiredUnless makes a field required UNLESS a sibling boolean attribute is
@@ -105,8 +105,8 @@ func RequiredWhen(field string, in ...string) Option {
 // "condition cannot hold, so not required". Encoding it as a value list would
 // also break silently, because the value is read as a bool on one side and
 // compared as a string on the other.
-func RequiredUnless(field string) Option {
-	return Annotate("requiredUnless", field)
+func RequiredUnless[T string | AKey](field T) Option {
+	return Annotate("requiredUnless", FieldName(field))
 }
 
 // SectionSpec declares a human-facing section for a resource's fields — how a UI
@@ -449,7 +449,10 @@ func ByName() RefOpt { return func(s *RefSpec) { s.ByName = true } }
 
 // KindFrom marks a reference whose target KIND is read from a sibling attribute — the
 // Key() of the switch the author picked. See RefSpec.KindFrom.
-func KindFrom(field string) RefOpt { return func(s *RefSpec) { s.KindFrom = field } }
+func KindFrom[T string | AKey](field T) RefOpt {
+	name := FieldName(field)
+	return func(s *RefSpec) { s.KindFrom = name }
+}
 
 // FlatValue keeps a resolved reference as `<prefix><id>` in one string — v1's wire
 // format, and nothing else's. See RefSpec.FlatValue.

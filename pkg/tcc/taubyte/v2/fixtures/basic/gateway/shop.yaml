@@ -2,7 +2,8 @@ id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG
 description: the public entry point
 host:
     zone:
-        in: zone/example-com
+        in:
+            name: example_com
         name: shop
 certificate:
     source: generated

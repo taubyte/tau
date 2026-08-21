@@ -41,7 +41,8 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 	q := resource(t, flat, "queue", "checkout_reserve")
 	assert.Equal(t, q["max-attempts"], 4)
 	dead, _ := q["dead-letter"].(map[string]any)
-	assert.Assert(t, dead != nil && dead["queue"] != "" && dead["queue"] != "checkout_failed",
+	name, _ := dead["name"].(string)
+	assert.Assert(t, name != "" && name != "checkout_failed",
 		"the reference resolved like any other: %v", q["dead-letter"])
 
 	// AND THE ACCESS IT IMPLIES IS ON THE RESOURCE THAT DECLARES IT — the entry an author

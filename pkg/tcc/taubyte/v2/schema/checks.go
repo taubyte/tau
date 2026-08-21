@@ -153,20 +153,31 @@ func collect(scope map[string]any, path string) []compiled {
 	return out
 }
 
-// refID reads a resolved reference: `{<kind>: <id>}`, two levels because a kind and an
-// id are two facts. It used to be one string a caller split on "/" — which is a consumer
-// parsing a compiled value, and the same "/" that has no business inside one.
-func refID(v any) string {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return ""
-	}
-	for _, id := range m {
-		if s, ok := id.(string); ok && s != "" {
-			return s
+// at reads a value nested under a key — a reference is a block, so its id sits at
+// <field>/name rather than on the field itself.
+func (r compiled) at(segments ...string) string {
+	s, _ := valueAt(r.fields, segments...).(string)
+	return s
+}
+
+// valueAt walks one level of an object per segment. An attribute's identity is its key
+// joined by "/", so `fieldValue(fields, "memory/embedder/name")` and this are the same
+// question asked two ways.
+func valueAt(fields map[string]any, segments ...string) any {
+	cur := fields
+	for _, seg := range segments[:len(segments)-1] {
+		next, ok := cur[seg].(map[string]any)
+		if !ok {
+			return nil
 		}
+		cur = next
 	}
-	return ""
+	return cur[segments[len(segments)-1]]
+}
+
+// fieldValue reads a field by its identity — the key, joined.
+func fieldValue(fields map[string]any, field string) any {
+	return valueAt(fields, strings.Split(field, "/")...)
 }
 
 func (r compiled) str(key string) string {
@@ -895,7 +906,7 @@ func checkExternal(all []compiled, r Resolver) []Finding {
 			// The pull secret is a REFERENCE, so it is `{secret: <id>}` — reading it as
 			// a string hands the resolver an empty credential and asks whether the image
 			// pulls anonymously, which is a different question.
-			if err := r.ImagePullable(image, refID(res.fields["image-pull-secret"])); err != nil {
+			if err := r.ImagePullable(image, res.at("image-pull-secret", "name")); err != nil {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("image %q cannot be pulled", image),
 					err.Error()})

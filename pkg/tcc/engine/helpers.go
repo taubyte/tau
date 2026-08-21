@@ -45,6 +45,18 @@ type AKey []string
 func Key(segments ...string) AKey { return AKey(segments) }
 
 // keyOf normalises either spelling of an attribute's key.
+// fieldName is how one term names another attribute: a plain key, or the segments of a
+// nested one joined. The engine writes that "/"; a vocabulary never does.
+func FieldName[T string | AKey](field T) string {
+	switch f := any(field).(type) {
+	case string:
+		return f
+	case AKey:
+		return strings.Join(f, "/")
+	}
+	return ""
+}
+
 func keyOf[T string | AKey](name T) (string, []string) {
 	switch k := any(name).(type) {
 	case string:

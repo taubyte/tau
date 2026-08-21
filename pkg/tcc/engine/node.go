@@ -621,7 +621,7 @@ func loadSequence[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 	return nil
 }
 
-func load[T ObjectDataType](n *Node, query *yaseer.Query, strict bool) (object.Object[T], error) {
+func load[T ObjectDataType](n *Node, query *yaseer.Query, strict bool, claimed ...map[string]bool) (object.Object[T], error) {
 	obj := object.New[T]()
 
 	// Before reading anything: where the vocabulary asks for it, a key this node
@@ -642,7 +642,7 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query, strict bool) (object.O
 		}
 		// A nested resource's child groups live inside its OWN document, so they
 		// walk the same query: no config leaf, no directory descent.
-		return obj, loadChildren(n, obj, query, strict)
+		return obj, loadChildren(n, obj, query, strict, claimed...)
 	}
 
 	// file might or might not have config, so we ignore error
@@ -651,14 +651,76 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query, strict bool) (object.O
 		return nil, err
 	}
 
-	return obj, loadChildren(n, obj, query, strict)
+	return obj, loadChildren(n, obj, query, strict, claimed...)
+}
+
+// mergeInto folds one object's values and children into another, leaving what is
+// already there alone: whoever wrote first declared it, and this is the second
+// declaration arriving at the same key.
+func mergeInto[T ObjectDataType](into, from object.Object[T]) {
+	for key, val := range from.Flat() {
+		if child, err := from.Child(key).Object(); err == nil {
+			existing, err := into.CreatePath(key)
+			if err != nil {
+				continue
+			}
+			mergeInto(existing, child)
+			continue
+		}
+		if any(into.Get(key)) == nil {
+			if v, ok := val.(T); ok {
+				into.Set(key, v)
+			}
+		}
+	}
+}
+
+// claimedUnder is the set of keys this node's OWN attributes declare inside the child
+// group named `key` — the second segment of every attribute path that starts there. The
+// group must not read those as entries of its own.
+func claimedUnder(n *Node, key string) map[string]bool {
+	var out map[string]bool
+	for _, a := range n.Attributes {
+		if len(a.Path) < 2 {
+			continue
+		}
+		first, ok := a.Path[0].(string)
+		if !ok || first != key {
+			continue
+		}
+		second, ok := a.Path[1].(string)
+		if !ok {
+			continue
+		}
+		if out == nil {
+			out = map[string]bool{}
+		}
+		out[second] = true
+	}
+	return out
 }
 
 // loadChildren walks a node's child groups against the document at query. Shared by
 // group nodes (children are entries one level down) and nested resources (children
 // are keys of the resource's own document).
-func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, strict bool) error {
+func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, strict bool, claimed ...map[string]bool) error {
 	list, _ := query.List()
+
+	// A KEY AN ATTRIBUTE DECLARED IS NOT AN ENTRY OF THE GROUP THAT SHARES ITS NAME.
+	//
+	// A kind and an attribute may be called the same thing — `model` is a kind, and an
+	// agent has a `model`. The attribute writes at model/name and model/namespace; the
+	// access group generated for the kind holds one entry per target, keyed by the
+	// target's name. Both live under `model`, and they do not collide unless the group
+	// is allowed to read the attribute's own keys as entries — which it was, so
+	// `model: {name: opus}` came back as an entry called "name" with no ops.
+	//
+	// Same rule as the leaf below, and for the same reason: this key belongs to
+	// something else at this level.
+	var mine map[string]bool
+	if len(claimed) > 0 {
+		mine = claimed[0]
+	}
 
 	// Also enumerate keys nested inside the level's config.yaml so
 	// `DefineGroup("clouds", DefineIter(...))` matches a `clouds:` map
@@ -686,13 +748,24 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 	}
 
 	processChild := func(itm *Node, l string, childQuery *yaseer.Query) error {
+		if mine[l] {
+			return nil
+		}
 		match, matched := tryMatch(itm, l)
 		if !matched {
 			return nil
 		}
-		cobj, err := load[T](itm, childQuery, strict)
+		cobj, err := load[T](itm, childQuery, strict, claimedUnder(n, l))
 		if err != nil {
 			return err
+		}
+		// MERGE, never replace. Two declarations can land at one key — an attribute
+		// writing at model/name and the access group generated for the kind `model`,
+		// which holds one entry per target. Adding over the top made whichever ran
+		// second the only survivor, silently.
+		if into, err := obj.Child(match).Object(); err == nil {
+			mergeInto(into, cobj)
+			return nil
 		}
 		return obj.Child(match).Add(cobj)
 	}

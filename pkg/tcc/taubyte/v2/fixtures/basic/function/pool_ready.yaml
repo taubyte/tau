@@ -1,6 +1,5 @@
 id: QmTaCZBnrxvJm5xkLQKN4o3TFhBqHfLYCUuCkFTGiT8s8t
 description: decides whether the pool is ready to take work
-source: "."
 execution:
     call: ready
     timeout: 2s

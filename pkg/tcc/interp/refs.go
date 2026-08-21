@@ -37,13 +37,21 @@ type resolveRefs struct {
 type refAttr struct {
 	// segments is the compiled key, one level of the object per entry.
 	segments []string
-	spec     engine.RefSpec
+	// list says the field holds MANY names rather than one — which is the attribute's
+	// own type, not a second thing to declare. It used to be inferred from a Prefix
+	// being absent, so a single-valued reference could not exist without one.
+	list bool
+	spec engine.RefSpec
 }
 
 // name is the key as a person reads it, for an error message.
 func (r refAttr) name() string { return strings.Join(r.segments, "/") }
 
 // refHolder descends to the object a ref's value lives in, and the key it lives at.
+//
+// It never CREATES the levels on the way: a resource that did not write the block has no
+// reference to resolve, and creating one would file an empty block on every resource of
+// the kind — which then reads as "declared and empty" to everything downstream.
 func refHolder(sel object.Selector[object.Refrence], segs []string) (object.Object[object.Refrence], string, error) {
 	o, err := sel.Object()
 	if err != nil {
@@ -53,7 +61,7 @@ func refHolder(sel object.Selector[object.Refrence], segs []string) (object.Obje
 	if last == 0 {
 		return o, segs[0], nil
 	}
-	parent, err := o.CreatePath(segs[:last]...)
+	parent, err := o.Fetch(segs[:last]...)
 	if err != nil {
 		return nil, "", err
 	}
@@ -135,7 +143,7 @@ func collectRefAttrs(attrs []*engine.Attribute) []refAttr {
 		if t, ok := tagOf(a); ok {
 			segments = []string{t}
 		}
-		out = append(out, refAttr{segments: segments, spec: spec})
+		out = append(out, refAttr{segments: segments, list: a.Type == engine.TypeStringSlice, spec: spec})
 	}
 	return out
 }
@@ -159,7 +167,7 @@ func resolveRefAttr(ct transform.Context[object.Refrence], sel object.Selector[o
 		return nil
 	}
 
-	if ra.spec.Prefix == "" {
+	if ra.list {
 		names, ok := val.([]string)
 		if !ok {
 			return fmt.Errorf("%s is not a []string", ra.name())
@@ -172,14 +180,21 @@ func resolveRefAttr(ct transform.Context[object.Refrence], sel object.Selector[o
 		return nil
 	}
 
-	s, ok := val.(string)
+	name, ok := val.(string)
 	if !ok {
 		return fmt.Errorf("%s is not a string", ra.name())
 	}
-	if !strings.HasPrefix(s, ra.spec.Prefix) {
+	if ra.spec.Prefix != "" {
+		// v1 keeps the kind in the value, and uses it to tell a reference from a value
+		// that is not one — `source: "."` is inline code and resolves to nothing.
+		if !strings.HasPrefix(name, ra.spec.Prefix) {
+			return nil
+		}
+		name = strings.TrimPrefix(name, ra.spec.Prefix)
+	}
+	if name == "" {
 		return nil
 	}
-	name := strings.TrimPrefix(s, ra.spec.Prefix)
 	ids, err := utils.ResolveNamesToId(ct, ra.spec.Group, []string{name}, nameField)
 	if err != nil {
 		return fmt.Errorf("resolving %s names to IDs failed with %w", ra.spec.Group, err)
@@ -188,24 +203,15 @@ func resolveRefAttr(ct transform.Context[object.Refrence], sel object.Selector[o
 		return fmt.Errorf("resolving %s names to IDs failed", ra.spec.Group)
 	}
 
-	// A RESOLVED REFERENCE IS TWO FACTS, so it is two levels rather than one string.
-	// `model/Qm…` packs a kind and an id into a value, which every consumer then splits
-	// back apart by hand — and puts a "/" in a compiled value for the same reason it
-	// must never be in a key. Nested, `model` holds `{model: Qm…}`: the kind is the key,
-	// the id is the value, and nothing has to parse anything.
+	// A RESOLVED REFERENCE IS AN ID, and nothing else. Ids are unique, so which KIND one
+	// belongs to adds no information — it is already on the Ref — and a kind written
+	// into the value is that same fact free to disagree with it. Which NAMESPACE the
+	// name was looked up in is authored beside the name, not packed into it.
 	if ra.spec.FlatValue {
+		// v1 alone: its consumers read `libraries/<id>` off the compiled object.
 		holder.Set(key, object.Refrence(ra.spec.Prefix+ids[0]))
 		return nil
 	}
-
-	nested, err := holder.CreatePath(key)
-	if err != nil {
-		return fmt.Errorf("nesting the %s reference failed with %w", ra.spec.Group, err)
-	}
-	nested.Set(ra.spec.Group, object.Refrence(ids[0]))
-	// The authored string stays in the value map otherwise, shadowed by the subtree it
-	// just became. Only the value goes: anything else written at this name — an access
-	// block on a kind an attribute happens to share a name with — is not ours to drop.
-	holder.DeleteValue(key)
+	holder.Set(key, object.Refrence(ids[0]))
 	return nil
 }

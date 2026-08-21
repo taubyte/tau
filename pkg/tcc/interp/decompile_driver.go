@@ -234,7 +234,7 @@ func invertRefAttr(sel object.Selector[object.Refrence], ra refAttr, getMap func
 	}
 	m := getMap(ra.spec.Group)
 
-	if ra.spec.Prefix == "" {
+	if ra.list {
 		if val == nil {
 			return nil
 		}
@@ -270,23 +270,18 @@ func invertRefAttr(sel object.Selector[object.Refrence], ra refAttr, getMap func
 		return nil
 	}
 
-	// A resolved reference is `{<kind>: <id>}` — two levels, because a kind and an id
-	// are two facts. Authored it is one string, `<kind>/<name>`, which is the address a
-	// person writes; that is what goes back.
-	nested, nErr := holder.Child(key).Object()
-	if nErr != nil {
-		return nil
-	}
-	id, gErr := nested.GetString(ra.spec.Group)
-	if gErr != nil || id == "" {
+	// A resolved reference is the id alone; authored it is the NAME, in a block that
+	// says which namespace beside it. The namespace is an attribute of its own and
+	// needs no inverting — only the name was rewritten on the way in.
+	id, isStr := val.(string)
+	if !isStr || id == "" {
 		return nil
 	}
 	name, ok := m[id]
 	if !ok {
 		return fmt.Errorf("%s ID %s not found", ra.spec.Group, id)
 	}
-	holder.Delete(key)
-	holder.Set(key, object.Refrence(ra.spec.Prefix+name))
+	holder.Set(key, object.Refrence(name))
 	return nil
 }
 

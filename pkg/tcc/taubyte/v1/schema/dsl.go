@@ -53,15 +53,12 @@ var (
 	RepoBranch       = engine.RepoBranch
 	RepoName         = engine.RepoName
 	Required         = engine.Required
-	RequiredUnless   = engine.RequiredUnless
-	RequiredWhen     = engine.RequiredWhen
 	Resource         = engine.Resource
 	Root             = engine.Root
 	SchemaDefinition = engine.SchemaDefinition
 	InSection        = engine.InSection
 	Section          = engine.Section
 	SectionWhen      = engine.SectionWhen
-	ShowWhen         = engine.ShowWhen
 	Singular         = engine.Singular
 	Leaf             = engine.Leaf
 	Identity         = engine.Identity
@@ -93,3 +90,14 @@ func Bytes[T string | AKey](name T, o ...engine.Option) *Attribute { return engi
 func Duration[T string | AKey](name T, o ...engine.Option) *Attribute {
 	return engine.Duration(name, o...)
 }
+
+// The terms that NAME another attribute take either a plain key or a multi-segment
+// Key(...), so they are generic and cannot be re-exported as values.
+func ShowWhen[T string | AKey](field T, in ...string) engine.Option {
+	return engine.ShowWhen(field, in...)
+}
+func RequiredWhen[T string | AKey](field T, in ...string) engine.Option {
+	return engine.RequiredWhen(field, in...)
+}
+func RequiredUnless[T string | AKey](field T) engine.Option { return engine.RequiredUnless(field) }
+func KindFrom[T string | AKey](field T) engine.RefOpt       { return engine.KindFrom(field) }

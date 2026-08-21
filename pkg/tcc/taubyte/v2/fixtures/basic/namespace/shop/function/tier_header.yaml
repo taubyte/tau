@@ -1,7 +1,6 @@
 id: QmWQ7XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuB
 description: enriches inbound with the caller tier, and strips it from the response on the way out
 implements: gateway-transformer
-source: "."
 execution:
     call: tier
     timeout: 2s

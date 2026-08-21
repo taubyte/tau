@@ -5,7 +5,8 @@ format: anthropic
 inference:
     remote:
         endpoint: https://api.anthropic.com
-        credentials: secret/anthropic
+        credentials:
+            name: anthropic
 parameters:
     temperature: 0.2
     max-tokens: 4096

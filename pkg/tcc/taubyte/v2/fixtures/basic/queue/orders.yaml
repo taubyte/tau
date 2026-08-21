@@ -1,4 +1,5 @@
 id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o
 visibility-timeout: 45s
 max-attempts: 3
-dead-letter: queue/orders-dead
+dead-letter:
+    name: orders_dead

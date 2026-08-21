@@ -158,7 +158,21 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	return commonAttributes(append([]*Attribute{
 		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
 			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream.")),
-		String("source", Required(), Ref("module", Prefix("module/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"module/<name>\" to build from a defined module.")),
+		// WHERE THE CODE COMES FROM, as a block. Absent means this resource's own
+		// repository — the common case writes nothing at all, which is what "." used to
+		// say with a character. `module` names one of the project's modules, with the
+		// namespace it lives in beside it. `tau` names a program the RUNTIME ships, and
+		// is not an extension point: the set is closed by what exists.
+		//
+		// It was one string — "." or "module/<name>" or "tau/<name>" — which is a kind
+		// packed into a value with no room to say which namespace, and three shapes a
+		// reader has to parse.
+		String(Key("source", "namespace"), IsNamespacePath(), InSection("code"),
+			Doc("Module Namespace", "Where that module lives. Omitted means this resource's own scope, then its parents.")),
+		String(Key("source", "module"), IsVariableName(), Ref("module"), InSection("code"),
+			Doc("Module", "A module of this project to build from. Omitted, with no tau either, means this resource's own code.")),
+		String(Key("source", "tau"), IsVariableName(), InSection("code"),
+			Doc("Runtime Program", "A program the runtime itself ships. Not for authors: a lowering sets it.")),
 		String(Key("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
 		Duration(Key("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
 		Bytes(Key("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory this workload may use, as a human string (e.g. \"32MB\").")),
@@ -298,13 +312,13 @@ func cpuLimit() *Attribute {
 // they are one artifact: they are issued together, they expire together, and rotating
 // them in two places means a window where they do not match.
 func certificateSecret(section string) *Attribute {
-	return String("certificate-secret", Path("certificate", "secret"), Ref("secret", Prefix("secret/")),
+	return String(Key("certificate", "secret", "name"), IsVariableName(), Ref("secret"),
 		RequiredWhen("certificate-source", "provided"), Field("CertSecret"), InSection(section), ShowWhen("certificate-source", "provided"),
 		Doc("Certificate Secret", "Secret holding the certificate chain and its private key, as \"secret/<name>\". The key never goes in git."))
 }
 
 func pullSecret() *Attribute {
-	return String("image-pull-secret", Path("image-pull-secret"), Ref("secret", Prefix("secret/")), InSection("code"),
+	return String(Key("image-pull-secret", "name"), IsVariableName(), Ref("secret"), InSection("code"),
 		Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with, as \"secret/<name>\". Omit for a public registry."))
 }
 
@@ -355,7 +369,8 @@ var proxyHandlerKinds = []string{"application"}
 //
 //	host:
 //	    zone:
-//	        in: zones/example-com
+//	        in:
+//	            name: example_com
 //	        name: shop        # shop.example.com
 //
 // Making it a ZONE rather than a domain is what makes the rest work. The cloud is
@@ -377,7 +392,7 @@ func hostAttributes(section string) []*Attribute {
 		// INBOUND: the zone is what ANSWERS for this name. The reference is declared
 		// here because this is where the name is chosen, but the relationship runs the
 		// other way, and an arrow from here would say the gateway reaches the zone.
-		String("host-zone", Path("host", "zone", "in"), Ref("zone", Prefix("zone/"), Inbound()), RequiredWhen("host-kind", "zone"), InSection(section), ShowWhen("host-kind", "zone"),
+		String(Key("host", "zone", "in", "name"), IsVariableName(), Ref("zone", Inbound()), RequiredWhen("host-kind", "zone"), InSection(section), ShowWhen("host-kind", "zone"),
 			Doc("Zone", "The zone this name lives in, as \"zone/<name>\". Only for a zone you own; a generated name has no zone to choose.")),
 	}
 }
@@ -587,7 +602,7 @@ var V2Resources = []*Node{
 				Duration("ttl", Path("ttl"), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
 				// A REFERENCE, never the material. "key material or reference" let the
 				// same field be either, and the safe reading was the one nothing enforced.
-				String("encryption-key", Path("encryption", "key"), Ref("secret", Prefix("secret/")), NoAccessors(), InSection("encryption"),
+				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret"), NoAccessors(), InSection("encryption"),
 					Doc("Encryption Key", "Secret holding the key entries are encrypted with, as \"secret/<name>\".")),
 			),
 			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"),
@@ -648,7 +663,7 @@ var V2Resources = []*Node{
 					Doc("Host", "Where the external database is reached, as host or host:port.")),
 				String("engine-database", Path("engine", Either(externalDatabaseEngines...), "database"), InSection("engine"),
 					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
-				String("engine-credentials", Path("engine", Either(externalDatabaseEngines...), "credentials"), RequiredWhen("engine-kind", externalDatabaseEngines...), Ref("secret", Prefix("secret/")), InSection("engine"),
+				String(Key("engine", "credentials", "name"), IsVariableName(), Path("engine", Either(externalDatabaseEngines...), "credentials", "name"), RequiredWhen("engine-kind", externalDatabaseEngines...), Ref("secret"), InSection("engine"),
 					Doc("Credentials", "Secret holding the credentials to connect with, as \"secret/<name>\".")),
 
 				// SAFE BY DEFAULT, EXPLICIT TO WEAKEN: absent means verify-full, and an
@@ -814,7 +829,14 @@ var V2Resources = []*Node{
 			commonAttributes(
 				Duration("visibility-timeout", Default("30s"), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
 				Int("max-attempts", Default(5), InSection("delivery"), Doc("Max Attempts", "Deliveries before the item moves to the dead-letter queue.")),
-				String("dead-letter", Ref("queue", Prefix("queue/")), InSection("delivery"), Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts, as \"queue/<name>\".")),
+				// A REFERENCE IS A BLOCK. The kind is on the Ref, so writing it into the
+				// value is the same fact twice; and `<kind>/<name>` has nowhere to say
+				// WHICH namespace, so it silently means "somewhere up from here". Same
+				// shape every other cross-resource pointer here already uses.
+				String(Key("dead-letter", "namespace"), IsNamespacePath(), InSection("delivery"),
+					Doc("Dead Letter Namespace", "Where that queue lives. Omitted means this queue's own scope, then its parents.")),
+				String(Key("dead-letter", "name"), IsVariableName(), Ref("queue"), InSection("delivery"),
+					Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts.")),
 			),
 			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. Per-key ordering is an entity, not this."), Icon("list"), Category("data"),
 			secIdentity, secAccess,
@@ -1227,7 +1249,7 @@ var V2Resources = []*Node{
 					Doc("Inference", "remote: a provider reached over the network. local: a workload in this project serving it (the key selects the block).")),
 				String("inference-endpoint", Path("inference", "remote", "endpoint"), IsURL(), RequiredWhen("inference-kind", "remote"), InSection("model"),
 					Doc("Endpoint", "Base URL of the provider, e.g. \"https://api.anthropic.com\".")),
-				String("inference-credentials", Path("inference", "remote", "credentials"), Ref("secret", Prefix("secret/")), RequiredWhen("inference-kind", "remote"), InSection("model"),
+				String(Key("inference", "remote", "credentials", "name"), IsVariableName(), Ref("secret"), RequiredWhen("inference-kind", "remote"), InSection("model"),
 					Doc("Credentials", "Secret holding the provider credential, as \"secret/<name>\". It lives here rather than on each caller, so rotating it is one edit.")),
 				String("inference-workload", Path("inference", "local", "name"), IsVariableName(), RequiredWhen("inference-kind", "local"), InSection("model"),
 					Doc("Workload", "The application in this project that serves this model.")),
@@ -1280,8 +1302,14 @@ var V2Resources = []*Node{
 				// format and the parameters are its business, not this agent's — which
 				// is what stopped every agent carrying a copy of the same four facts and
 				// gave the credential somewhere to live that is not the caller.
-				String("model", Ref("model", Prefix("model/")), Required(), InSection("model"),
-					Doc("Model", "The model this agent answers with, as \"model/<name>\".")),
+				// `model` is a kind AND this attribute's name, and both live under the
+				// same key: this block, and the access group generated for the kind.
+				// They coexist because a key an attribute declares is not an entry of
+				// the group sharing its name (engine/node.go, claimedUnder).
+				String(Key("model", "namespace"), IsNamespacePath(), InSection("model"),
+					Doc("Model Namespace", "Where that model lives. Omitted means this agent's own scope, then its parents.")),
+				String(Key("model", "name"), IsVariableName(), Ref("model"), Required(), InSection("model"),
+					Doc("Model", "The model this agent answers with.")),
 
 				// The prompt is a string here and a file nowhere, which is the wrong
 				// way round for anything long. Recorded in omissions.go rather than
@@ -1304,9 +1332,9 @@ var V2Resources = []*Node{
 				// from the one that answers — the widths and the pricing are different —
 				// which is exactly why memory needs its own reference rather than
 				// borrowing the agent's.
-				String("memory-embedder", Path("memory", "embedder"), Ref("model", Prefix("model/")), InSection("memory"),
+				String(Key("memory", "embedder", "name"), IsVariableName(), Ref("model"), InSection("memory"),
 					Doc("Embedding Model", "The model that turns what this agent sees into vectors, as \"model/<name>\". Naming it is what turns memory on.")),
-				Int("memory-dimensions", Path("memory", "dimensions"), MinInt(1), RequiredWhen("memory-embedder"), InSection("memory"),
+				Int("memory-dimensions", Path("memory", "dimensions"), MinInt(1), RequiredWhen(Key("memory", "embedder", "name")), InSection("memory"),
 					Doc("Dimensions", "The width the embedding model produces — 1536 for text-embedding-3-small. Fixed once there is anything in memory.")),
 				Bytes("memory-size", Path("memory", "size"), Default("1GB"), InSection("memory"),
 					Doc("Memory Size", "How much the agent may remember, as a human string.")),
@@ -1341,7 +1369,7 @@ var V2Resources = []*Node{
 					Acts(),
 					Named("{name}_infer"),
 					Carries("the loop: call the model, run a tool, decide again"),
-					Sets("source", "tau/agent"),
+					Sets(Key("source", "tau"), "agent"),
 					Sets(Key("execution", "call"), "infer"),
 					Sets(Key("execution", "timeout"), "5m"),
 					Sets(Key("execution", "memory"), "128MB"),
@@ -1351,7 +1379,7 @@ var V2Resources = []*Node{
 				// Only when there is an embedder to fill it: an agent that remembers
 				// nothing gets no index rather than an empty one.
 				Into("vector",
-					When("memory-embedder"),
+					When(Key("memory", "embedder", "name")),
 					Named("{name}_memory"),
 					Carries("what {name} remembers"),
 					Sets("dimensions", "{memory-dimensions}"),
@@ -1418,7 +1446,7 @@ var V2Resources = []*Node{
 					Named("{name}_{each.name}"),
 					Carries("work waiting for step {each.name}"),
 					Sets("max-attempts", "{each.attempts}"),
-					Sets("dead-letter", "queue/{name}_failed"),
+					Sets(Key("dead-letter", "name"), "{name}_failed"),
 
 					// WHO CONSUMES IT. A queue nothing receives from is a queue nothing
 					// happens in, so the step's function is named as its consumer — the
@@ -1487,7 +1515,8 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				String("type", Required(), InSection("identity"), Doc("Type", "Which external system events are received from, e.g. \"kafka\", \"s3\", \"slack\".")),
-				String("credentials", Ref("secret", Prefix("secret/")), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials, as \"secret/<name>\".")),
+				String(Key("credentials", "namespace"), IsNamespacePath(), InSection("identity"), Doc("Credentials Namespace", "Where that secret lives. Omitted means this connector's own scope, then its parents.")),
+				String(Key("credentials", "name"), IsVariableName(), Ref("secret"), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials.")),
 				Bool("polls", InSection("identity"), Doc("Polls", "This connector holds a live connection to the external system and emits events from it. Exactly one node in the cloud runs it.")),
 			),
 			GroupDoc("An external system events are received from: credentials, and the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
@@ -1719,7 +1748,7 @@ func variablesGroup() *Node {
 		DefineIter([]*Attribute{
 			String("value", InSection("config"),
 				Doc("Value", "A literal, stored in git and readable by anyone who can read the repo. For anything that is not a secret.")),
-			String("secret", Ref("secret", Prefix("secret/")), InSection("config"),
+			String(Key("secret", "name"), IsVariableName(), Ref("secret"), InSection("config"),
 				Doc("From Secret", "Take the value from this secret, as \"secret/<name>\". Only the reference is in git.")),
 
 			// An environment variable has a size limit and no structure, so a

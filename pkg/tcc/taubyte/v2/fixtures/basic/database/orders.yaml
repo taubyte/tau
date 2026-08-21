@@ -4,5 +4,6 @@ engine:
     postgres:
         host: db.example.com:5432
         database: orders
-        credentials: secret/stripe
+        credentials:
+            name: stripe
         tls: verify-full

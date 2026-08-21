@@ -81,7 +81,7 @@ func TestAuditDelivery(t *testing.T) {
 func TestAuditVariables(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
 		"/secret/k.yaml":      "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n",
-		"/application/a.yaml": appBody + "variables:\n    BOTH:\n        value: x\n        secret: secret/k\n    NEITHER: {}\n",
+		"/application/a.yaml": appBody + "variables:\n    BOTH:\n        value: x\n        secret:\n            name: k\n    NEITHER: {}\n",
 	})
 	has(t, found, schema.Broken, "has both a value and a secret")
 	has(t, found, schema.Broken, "has neither a value nor a secret")
@@ -217,13 +217,13 @@ func TestAuditHandlerPorts(t *testing.T) {
 func TestAuditVariableAsFile(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
 		"/secret/k.yaml":      "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n",
-		"/application/a.yaml": appBody + "variables:\n    CERT:\n        secret: secret/k\n        as: file\n",
+		"/application/a.yaml": appBody + "variables:\n    CERT:\n        secret:\n            name: k\n        as: file\n",
 	})
 	has(t, found, schema.Broken, "names no path")
 
 	found = auditDocs(t, nil, map[string]string{
 		"/secret/k.yaml":      "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n",
-		"/application/a.yaml": appBody + "variables:\n    CERT:\n        secret: secret/k\n        as: file\n        path: /etc/tls/cert.pem\n",
+		"/application/a.yaml": appBody + "variables:\n    CERT:\n        secret:\n            name: k\n        as: file\n        path: /etc/tls/cert.pem\n",
 	})
 	hasNo(t, found, "names no path")
 }
@@ -346,9 +346,9 @@ func (r *recorder) ImagePullable(image, pullSecret string) error {
 	return nil
 }
 
-// A PULL SECRET REACHES THE RESOLVER. It is a reference, so it compiles to
-// `{secret: <id>}`; read as a string it is empty, and the audit then asks whether the
-// image pulls ANONYMOUSLY — a different question, answered yes by every stub.
+// A PULL SECRET REACHES THE RESOLVER. It is a reference, so what compiles out is the
+// secret's ID; if the audit reads the wrong place it hands the resolver "" and asks
+// whether the image pulls ANONYMOUSLY — a different question, answered yes by every stub.
 func TestPullSecretReachesTheResolver(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)

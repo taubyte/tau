@@ -2,7 +2,8 @@ id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg
 description: the way in to the agent - an agent is asked a question and answers it, which is a request and a response
 host:
     zone:
-        in: zone/example-com
+        in:
+            name: example_com
         name: ask
 route:
     path: /

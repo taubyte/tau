@@ -24,7 +24,8 @@ variables:
     REGION:
         value: eu-west
     STRIPE_KEY:
-        secret: secret/stripe
+        secret:
+            name: stripe
 egress: [api.stripe.com]
 cache:
     orders:

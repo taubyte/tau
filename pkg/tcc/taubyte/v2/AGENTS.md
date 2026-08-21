@@ -163,21 +163,32 @@ compiles into a shape nothing can merge.
 `Path(...)` is where the value is **read from**, `Tag(...)` is where it is **written
 to**. Two independent knobs; don't collapse them.
 
-### A resolved reference is two levels, not one string
+### A reference is a BLOCK, and `{kind}/{name}` is never written
 
-`model: model/opus` compiles to `model: {model: <id>}` — the kind is the key, the id is
-the value. It used to be `"model/<id>"`, a kind and an id packed into one value that every
-consumer split apart by hand, with the same `/` in it that has no business inside a key.
+```yaml
+model:                       source:                    dead-letter:
+    namespace: /shop             module: paylib             name: orders_dead
+    name: opus
+```
 
-That is also what stopped `agent.model` being destroyed. The attribute and the generated
-access group for kind `model` both want the name `model`; a scalar and a subtree at one
-name is a collision `Flat()` resolved by dropping the scalar. Nested, the reference IS a
-subtree — `model.model` — so there is nothing to resolve, and an access block written at
-`model.opus` sits beside it.
+Three facts, three places. The KIND is on the `Ref` and never repeated in the value — a
+second copy is free to disagree the moment a group is renamed. The NAMESPACE is authored
+beside the name, which `model/opus` had nowhere to put, so it silently meant "somewhere up
+from here". And the compiled value is **the id alone**: ids are unique, so nothing else is
+needed to find the resource.
 
-`FlatValue()` on a `Ref` keeps the old one-string form. v1 declares it on its two
-`source` refs, because its consumers read `libraries/<id>` off the compiled object; nothing
-else should.
+`Prefix(...)` is gone from v2. It was always `group + "/"` — the same fact a third time —
+and single-versus-list is the attribute's own type (`String` vs `StringSlice`). v1 keeps its
+composite through `FlatValue()`, because its consumers read `libraries/<id>` off the
+compiled object and the OLD compiler built it that way long before tcc.
+
+This is also why `agent.model` is no longer destroyed. `model` is a kind AND an attribute,
+so the attribute's block and the access group generated for the kind land at one key —
+and they coexist, because **a key an attribute declares is not an entry of the group that
+shares its name** (`engine/node.go`, `claimedUnder`), and a second declaration arriving at
+a key MERGES rather than replacing it.
+
+Resource names are variable names: `orders-dead` is not one.
 
 ### `Tag(x)` on an attribute already named `x` deletes the field
 

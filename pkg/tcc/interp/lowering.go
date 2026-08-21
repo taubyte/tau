@@ -105,8 +105,9 @@ func Into(kind string, opts ...LoweringOption) Lowering {
 //
 // A field being set, and nothing else. Not an expression: a lowering a reader cannot
 // evaluate in their head is a lowering that has to be run to be understood.
-func When(field string) LoweringOption {
-	return func(l *Lowering) { l.when = field }
+func When[T string | engine.AKey](field T) LoweringOption {
+	name := fieldName(field)
+	return func(l *Lowering) { l.when = name }
 }
 
 // Acts marks the part that does what the SOURCE declares.
@@ -159,17 +160,8 @@ func Sets[T string | engine.AKey](field T, tmpl string) LoweringOption {
 }
 
 // fieldName is how a lowering names one of the produced kind's attributes: a plain key,
-// or the segments of a nested one. An attribute's identity is its key, joined — which is
-// the one place "/" is written, by the engine and never by a vocabulary.
-func fieldName[T string | engine.AKey](field T) string {
-	switch f := any(field).(type) {
-	case string:
-		return f
-	case engine.AKey:
-		return strings.Join(f, "/")
-	}
-	return ""
-}
+// or the segments of a nested one. Same rule the engine's own terms use.
+func fieldName[T string | engine.AKey](field T) string { return engine.FieldName(field) }
 
 // LinksTo is what this derived resource connects to — the wiring INSIDE the construct.
 // Without it a plan is a list of names, and a consumer that wanted to show what a
@@ -853,6 +845,20 @@ func expand(tmpl string, res, each, next map[string]any) string {
 	}
 }
 
+// fieldAt reads a value by its key, walking a level per segment.
+func fieldAt(src map[string]any, key string) (any, bool) {
+	segs := strings.Split(key, "/")
+	for _, seg := range segs[:len(segs)-1] {
+		next, ok := src[seg].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		src = next
+	}
+	v, ok := src[segs[len(segs)-1]]
+	return v, ok
+}
+
 func lookup(key string, res, each, next map[string]any) (string, bool) {
 	src := res
 	// `{each.next.x}` is the FOLLOWING element's x. An ordered list whose elements can
@@ -873,7 +879,9 @@ func lookup(key string, res, each, next map[string]any) (string, bool) {
 		}
 		src, key = each, rest
 	}
-	v, ok := src[key]
+	// A field's identity is its key, joined — so `memory/embedder/name` addresses three
+	// levels of the compiled resource, not a flat entry that happens to have slashes.
+	v, ok := fieldAt(src, key)
 	if !ok {
 		return "", false
 	}
