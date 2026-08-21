@@ -888,6 +888,19 @@ func lookup(key string, res, each, next map[string]any) (string, bool) {
 		return strconv.FormatFloat(t, 'f', -1, 64), true
 	case bool:
 		return strconv.FormatBool(t), true
+	case map[string]any:
+		// A SINGLE-VALUED OBJECT READS AS ITS VALUE. One level holding one scalar is a
+		// value that was given a name — a resolved reference is exactly that, `{kind:
+		// id}` — and a template or a When asking for the field means the value, not the
+		// shape it is stored in. Anything with more in it is a block, and falls through.
+		if len(t) != 1 {
+			break
+		}
+		for _, only := range t {
+			if s, ok := only.(string); ok {
+				return s, true
+			}
+		}
 	}
 	// A field that is a block or a list has no place in a name; leaving it unfilled
 	// makes that visible rather than printing "map[]".

@@ -169,7 +169,12 @@ func referenceRelations(res compiled, byID map[string]compiled, find func(kind, 
 }
 
 func resolveReference(res compiled, from map[string]any, ref Reference, byID map[string]compiled, find func(kind, name, own, ns string) (compiled, bool)) (Relation, bool) {
+	// A reference that KEEPS its name is a string; a resolved one is `{<kind>: <id>}`,
+	// two levels because a kind and an id are two facts. Both read as one value here.
 	val, _ := from[ref.Field].(string)
+	if val == "" {
+		val = refID(from[ref.Field])
+	}
 	if val == "" {
 		return Relation{}, false
 	}
@@ -189,8 +194,8 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 	verb = strings.ReplaceAll(verb, "/", " ")
 
 	if !ref.ByName {
-		// a resolved reference carries "<kind>/<id>", whatever the kind is
-		to, ok := byID[val[strings.Index(val, "/")+1:]]
+		// a resolved reference is `{<kind>: <id>}`, whatever the kind is
+		to, ok := byID[val]
 		if !ok {
 			return Relation{}, false
 		}

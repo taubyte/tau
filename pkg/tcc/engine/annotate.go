@@ -400,6 +400,16 @@ func OnlyWhen(attr string, vals ...string) Option {
 type RefSpec struct {
 	Group  string
 	Prefix string
+
+	// FlatValue keeps a resolved reference as one string, `<prefix><id>`, instead of the
+	// two levels it is: a kind and an id. It exists for v1 alone, whose consumers read
+	// `libraries/<id>` off the compiled object and would have to be changed together
+	// with it — a frozen wire format, declared rather than assumed.
+	//
+	// Everything else nests, because a value that packs two facts is a value every
+	// reader splits back apart by hand, and because "/" belongs between levels of the
+	// object and nowhere else.
+	FlatValue bool
 	// Inbound reverses the DIRECTION of the relationship. A reference is normally
 	// declared by the thing that depends on the target — a function names the module it
 	// is built from, and the arrow runs function -> module. Some run the other way: a
@@ -440,6 +450,10 @@ func ByName() RefOpt { return func(s *RefSpec) { s.ByName = true } }
 // KindFrom marks a reference whose target KIND is read from a sibling attribute — the
 // Key() of the switch the author picked. See RefSpec.KindFrom.
 func KindFrom(field string) RefOpt { return func(s *RefSpec) { s.KindFrom = field } }
+
+// FlatValue keeps a resolved reference as `<prefix><id>` in one string — v1's wire
+// format, and nothing else's. See RefSpec.FlatValue.
+func FlatValue() RefOpt { return func(s *RefSpec) { s.FlatValue = true } }
 
 // Prefix sets the RefSpec key prefix.
 func Prefix(p string) RefOpt {

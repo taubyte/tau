@@ -49,6 +49,7 @@ var (
 	Path             = engine.Path
 	Prefix           = engine.Prefix
 	Ref              = engine.Ref
+	FlatValue        = engine.FlatValue
 	RepoBranch       = engine.RepoBranch
 	RepoName         = engine.RepoName
 	Required         = engine.Required

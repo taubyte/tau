@@ -94,7 +94,7 @@ var TaubyteRessources = []*Node{
 				StringSlice("http-methods", Path("trigger", "methods"), Tag("methods"), NoAccessors(), NoStructField()), // TO IMPLEMENT
 				StringSlice("http-domains", Path("trigger", "domains"), Compat("domains"), RequiredWhen("type", "http", "https"), Tag("domains"), Ref("domains"), InSection("http"), Doc("Domains", "Domains that route to this function. Each must name a defined domain.")),
 				StringSlice("http-paths", Path("trigger", "paths"), RequiredWhen("type", "http", "https"), Tag("paths"), InSection("http"), Doc("Paths", "URL path patterns that route to this function (http/https trigger).")),
-				String("source", Required(), Ref("libraries", Prefix("libraries/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"libraries/<name>\" to build from a defined library.")),
+				String("source", Required(), Ref("libraries", Prefix("libraries/"), FlatValue()), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"libraries/<name>\" to build from a defined library.")),
 				Duration("timeout", Path("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
 				Bytes("memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory the function may use, as a human string (e.g. \"32MB\").")),
 				String("call", Path("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM module.")),
@@ -170,7 +170,7 @@ var TaubyteRessources = []*Node{
 	DefineGroup("smartops",
 		DefineIter(
 			TaubyteAttributes(
-				String("source", Required(), Ref("libraries", Prefix("libraries/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"libraries/<name>\" to build from a defined library.")),
+				String("source", Required(), Ref("libraries", Prefix("libraries/"), FlatValue()), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"libraries/<name>\" to build from a defined library.")),
 				Duration("timeout", Path("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
 				Bytes("memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory the smartop may use, as a human string (e.g. \"32MB\").")),
 				String("call", Path("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM module.")),

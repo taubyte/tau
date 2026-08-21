@@ -153,6 +153,22 @@ func collect(scope map[string]any, path string) []compiled {
 	return out
 }
 
+// refID reads a resolved reference: `{<kind>: <id>}`, two levels because a kind and an
+// id are two facts. It used to be one string a caller split on "/" — which is a consumer
+// parsing a compiled value, and the same "/" that has no business inside one.
+func refID(v any) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	for _, id := range m {
+		if s, ok := id.(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
 func (r compiled) str(key string) string {
 	s, _ := r.fields[key].(string)
 	return s

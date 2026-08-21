@@ -40,9 +40,9 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 	// anyone else's — which is the whole claim: this is config, not a picture of it.
 	q := resource(t, flat, "queue", "checkout_reserve")
 	assert.Equal(t, q["max-attempts"], 4)
-	dead, _ := q["dead-letter"].(string)
-	assert.Assert(t, dead != "" && dead != "queue/checkout_failed",
-		"the reference resolved like any other: %q", dead)
+	dead, _ := q["dead-letter"].(map[string]any)
+	assert.Assert(t, dead != nil && dead["queue"] != "" && dead["queue"] != "checkout_failed",
+		"the reference resolved like any other: %v", q["dead-letter"])
 
 	// AND THE ACCESS IT IMPLIES IS ON THE RESOURCE THAT DECLARES IT — the entry an author
 	// would have written, on the function, naming the queue it receives from.

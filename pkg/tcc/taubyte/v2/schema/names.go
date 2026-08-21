@@ -1,8 +1,6 @@
 package schema
 
 import (
-	"strings"
-
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
@@ -66,7 +64,7 @@ func ReachableNames(obj map[string]any) map[string]Reachable {
 		}
 
 		name := res.str(at + "-name")
-		zoneRef := res.str(at + "-zone")
+		zoneRef := refID(res.fields[at+"-zone"])
 		if zoneRef == "" {
 			// the cloud's own zone: the project's label is a pure function of its id,
 			// so the knowable part is computed rather than left to a caller
@@ -77,7 +75,7 @@ func ReachableNames(obj map[string]any) map[string]Reachable {
 			out[res.id] = r
 			continue
 		}
-		zoneID := zoneRef[strings.Index(zoneRef, "/")+1:]
+		zoneID := zoneRef
 		r := Reachable{Name: name, Zone: zoneID}
 		if a := apex[zoneID]; a != "" {
 			r.Fqdn = a

@@ -163,6 +163,22 @@ compiles into a shape nothing can merge.
 `Path(...)` is where the value is **read from**, `Tag(...)` is where it is **written
 to**. Two independent knobs; don't collapse them.
 
+### A resolved reference is two levels, not one string
+
+`model: model/opus` compiles to `model: {model: <id>}` — the kind is the key, the id is
+the value. It used to be `"model/<id>"`, a kind and an id packed into one value that every
+consumer split apart by hand, with the same `/` in it that has no business inside a key.
+
+That is also what stopped `agent.model` being destroyed. The attribute and the generated
+access group for kind `model` both want the name `model`; a scalar and a subtree at one
+name is a collision `Flat()` resolved by dropping the scalar. Nested, the reference IS a
+subtree — `model.model` — so there is nothing to resolve, and an access block written at
+`model.opus` sits beside it.
+
+`FlatValue()` on a `Ref` keeps the old one-string form. v1 declares it on its two
+`source` refs, because its consumers read `libraries/<id>` off the compiled object; nothing
+else should.
+
 ### `Tag(x)` on an attribute already named `x` deletes the field
 
 `applyInstanceOps` step 5 does `sel.Move(a.Name, tag)`, and `Move` is

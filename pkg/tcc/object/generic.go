@@ -213,6 +213,11 @@ func (o *object[T]) Delete(name string) {
 	delete(o.children, name)
 }
 
+// DeleteValue drops the value and keeps the subtree. See the interface.
+func (o *object[T]) DeleteValue(name string) {
+	delete(o.data, name)
+}
+
 func (o *object[T]) Move(from, to string) error {
 	if _, ok := o.data[from]; !ok {
 		return ErrNotExist

@@ -224,16 +224,23 @@ func buildIdToNameMap(ct transform.Context[object.Refrence], o object.Object[obj
 //
 // A missing/nil value is a no-op, matching decompile/pass2.
 func invertRefAttr(sel object.Selector[object.Refrence], ra refAttr, getMap func(string) map[string]string) error {
-	val, err := sel.Get(ra.wireKey)
-	if err != nil || val == nil {
+	holder, key, err := refHolder(sel, ra.segments)
+	var val any
+	if err == nil {
+		val = holder.Get(key)
+	}
+	if err != nil {
 		return nil
 	}
 	m := getMap(ra.spec.Group)
 
 	if ra.spec.Prefix == "" {
+		if val == nil {
+			return nil
+		}
 		ids, ok := val.([]string)
 		if !ok {
-			return fmt.Errorf("%s is not a []string", ra.wireKey)
+			return fmt.Errorf("%s is not a []string", ra.name())
 		}
 		names := make([]string, 0, len(ids))
 		for _, id := range ids {
@@ -243,22 +250,44 @@ func invertRefAttr(sel object.Selector[object.Refrence], ra refAttr, getMap func
 			}
 			names = append(names, name)
 		}
-		return sel.Set(ra.wireKey, names)
-	}
-
-	s, ok := val.(string)
-	if !ok {
-		return fmt.Errorf("%s is not a string", ra.wireKey)
-	}
-	if !strings.HasPrefix(s, ra.spec.Prefix) || len(s) <= len(ra.spec.Prefix) {
+		holder.Set(key, names)
 		return nil
 	}
-	id := strings.TrimPrefix(s, ra.spec.Prefix)
+
+	if ra.spec.FlatValue {
+		s, ok := val.(string)
+		if !ok {
+			return fmt.Errorf("%s is not a string", ra.name())
+		}
+		if !strings.HasPrefix(s, ra.spec.Prefix) || len(s) <= len(ra.spec.Prefix) {
+			return nil
+		}
+		name, ok := m[strings.TrimPrefix(s, ra.spec.Prefix)]
+		if !ok {
+			return fmt.Errorf("%s ID %s not found", ra.spec.Group, strings.TrimPrefix(s, ra.spec.Prefix))
+		}
+		holder.Set(key, object.Refrence(ra.spec.Prefix+name))
+		return nil
+	}
+
+	// A resolved reference is `{<kind>: <id>}` — two levels, because a kind and an id
+	// are two facts. Authored it is one string, `<kind>/<name>`, which is the address a
+	// person writes; that is what goes back.
+	nested, nErr := holder.Child(key).Object()
+	if nErr != nil {
+		return nil
+	}
+	id, gErr := nested.GetString(ra.spec.Group)
+	if gErr != nil || id == "" {
+		return nil
+	}
 	name, ok := m[id]
 	if !ok {
 		return fmt.Errorf("%s ID %s not found", ra.spec.Group, id)
 	}
-	return sel.Set(ra.wireKey, ra.spec.Prefix+name)
+	holder.Delete(key)
+	holder.Set(key, object.Refrence(ra.spec.Prefix+name))
+	return nil
 }
 
 // decompileApps inverts the CompileDriver's container id-promotion: it swaps each

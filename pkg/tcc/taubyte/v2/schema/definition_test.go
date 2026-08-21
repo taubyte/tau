@@ -113,7 +113,8 @@ func TestFunctionHasNoTrigger(t *testing.T) {
 }
 
 // `libraries` -> `modules` carries into the reference form: a source of
-// "module/<name>" resolves to "module/<id>" against the compiled index.
+// "module/<name>" resolves against the compiled index — and compiles to `{module: <id>}`,
+// two levels, because a kind and an id are two facts rather than one string to split.
 func TestModuleSourceResolves(t *testing.T) {
 	flat := compileBasic(t)
 	modID := ""
@@ -123,7 +124,7 @@ func TestModuleSourceResolves(t *testing.T) {
 	assert.Assert(t, modID != "", "no module compiled")
 
 	fn := namedResource(t, resources(t, flat, "function"), "checkout")
-	assert.Equal(t, fn["source"], "module/"+modID)
+	assert.DeepEqual(t, fn["source"], map[string]any{"module": modID})
 }
 
 // A queue's dead-letter is a ref to another queue, so a typo is a compile error
@@ -135,9 +136,10 @@ func TestQueueDeadLetterResolves(t *testing.T) {
 	var dl string
 	for id, v := range queues {
 		q := v.(map[string]any)
-		if s, ok := q["dead-letter"].(string); ok && s != "" {
-			dl = strings.TrimPrefix(s, "queue/")
-			assert.Assert(t, dl != s, "dead-letter lost its queues/ prefix")
+		if m, ok := q["dead-letter"].(map[string]any); ok {
+			s, _ := m["queue"].(string)
+			assert.Assert(t, s != "", "dead-letter is not keyed by the kind it points at: %v", m)
+			dl = s
 			assert.Assert(t, dl != id, "a queue must not dead-letter to itself")
 		}
 	}
@@ -159,8 +161,7 @@ func TestConnectorCredentialsResolve(t *testing.T) {
 	}
 	for _, v := range resources(t, flat, "connector") {
 		conn := v.(map[string]any)
-		assert.Equal(t, conn["credentials"], "secret/"+secretID,
-			"connector %q", conn["name"])
+		assert.DeepEqual(t, conn["credentials"], map[string]any{"secret": secretID})
 	}
 }
 
@@ -196,8 +197,9 @@ func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 	orders := namedResource(t, dbs, "orders")
 	assert.Equal(t, orders["engine-kind"], "postgres")
 	assert.Equal(t, orders["engine-host"], "db.example.com:5432")
-	assert.Assert(t, strings.HasPrefix(orders["engine-credentials"].(string), "secret/"),
-		"credentials resolve to a secret id, never a value")
+	creds, _ := orders["engine-credentials"].(map[string]any)
+	assert.Assert(t, creds != nil && creds["secret"] != "",
+		"credentials resolve to a secret id, never a value: %v", orders["engine-credentials"])
 	_, borrowed := orders["engine-distributed-size"]
 	assert.Assert(t, !borrowed)
 
@@ -265,7 +267,9 @@ func TestAccessIsPerTarget(t *testing.T) {
 
 	// nesting did NOT cost the resource its own compile passes
 	assert.Equal(t, nested(fn, "execution", "timeout"), int64(20000000000), "scalars still parse")
-	assert.Assert(t, strings.HasPrefix(fn["source"].(string), "module/Qm"), "refs still resolve")
+	src, _ := fn["source"].(map[string]any)
+	assert.Assert(t, src != nil && strings.HasPrefix(src["module"].(string), "Qm"),
+		"refs still resolve: %v", fn["source"])
 
 	// and a verb the kind does not implement is refused at load
 	fs := afero.NewMemMapFs()
@@ -300,7 +304,8 @@ func TestGatewayRoute(t *testing.T) {
 	// not have there.
 	assert.Equal(t, gw["host-kind"], "zone")
 	assert.Equal(t, gw["host-name"], "shop")
-	assert.Assert(t, strings.HasPrefix(gw["host-zone"].(string), "zone/"),
+	zoneRef, _ := gw["host-zone"].(map[string]any)
+	assert.Assert(t, zoneRef != nil && zoneRef["zone"] != "",
 		"the zone resolves to a compiled zone id")
 	assert.Equal(t, gw["certificate-source"], "generated", "generated unless it is provided")
 
@@ -805,8 +810,9 @@ func TestWorkloadVariables(t *testing.T) {
 	assert.Equal(t, vars["LOG_LEVEL"].(map[string]any)["value"], "info")
 
 	// a secret is a REFERENCE: the value never enters the config
-	from := vars["STRIPE_KEY"].(map[string]any)["secret"].(string)
-	assert.Assert(t, strings.HasPrefix(from, "secret/Qm"), "got %q, want a resolved secret id", from)
+	from, _ := vars["STRIPE_KEY"].(map[string]any)["secret"].(map[string]any)
+	assert.Assert(t, from != nil && strings.HasPrefix(from["secret"].(string), "Qm"),
+		"got %v, want a resolved secret id", vars["STRIPE_KEY"])
 	_, literal := vars["STRIPE_KEY"].(map[string]any)["value"]
 	assert.Assert(t, !literal)
 
