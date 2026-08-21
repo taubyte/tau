@@ -880,20 +880,20 @@ var V2Resources = []*Node{
 			Resource("zone", "Zone", "Zone", "zone"),
 		)),
 
-	// A gateway is a NAME and the policy at that name. It does NOT list its routes:
-	// routes name the gateway they attach to, and the gateway says whose routes it
-	// accepts.
+	// A gateway is a NAME, the policy at that name, and ONE route. That last part is
+	// the limitation to know about, and this comment used to describe the opposite.
 	//
-	// That direction is the Kubernetes Gateway API's, deliberately. An HTTPRoute names
-	// its parent through `parentRefs`, and the Gateway's listener carries
-	// `allowedRoutes` to permit the attachment, so an infrastructure team owns the
-	// gateway and application teams add routes without editing a file they do not own
-	// — and many routes merge onto one gateway. The alternative, a gateway listing its
-	// routes, makes every new path a change to someone else's config.
+	// The intended shape is the Kubernetes Gateway API's: an HTTPRoute names its parent
+	// through `parentRefs` and the Gateway's listener carries `allowedRoutes`, so an
+	// infrastructure team owns the gateway and application teams add routes without
+	// editing a file they do not own — and many routes merge onto one gateway.
 	// https://gateway-api.sigs.k8s.io/reference/api-types/httproute/
 	//
-	// It also matches this DSL's own cross-scope shape: a reference from the source
-	// plus a ceiling declared by the target is exactly connection-plus-grant.
+	// What is here is the other thing: the route is embedded, so a site with five paths
+	// is five gateway documents repeating host, certificate, cors and rate-limit, with
+	// nothing saying which of them owns the name. `route as a named object` in
+	// omissions.go is that gap; mounting one gateway beneath another is the workaround
+	// and it does not resolve the policy duplication.
 	//
 	// `fqdn` is optional, and that is what collapsed the old `domains` kind into this
 	// one: a named gateway answers on the internet, an unnamed one is reachable only
@@ -1418,7 +1418,7 @@ var V2Resources = []*Node{
 					Doc("Concurrency", "How many runs may be in flight at once. Absent means unlimited.")),
 			),
 			Nested(stepsGroup()),
-			GroupDoc("An ordered pipeline of functions with retries. It runs on queues and an entity — nothing new is deployed to serve it."), Icon("workflow"), Category("trigger"),
+			GroupDoc("An ordered pipeline of functions with retries. It lowers into one queue per step; nothing new is deployed to serve it. There is no run state yet — see omissions."), Icon("workflow"), Category("trigger"),
 			secIdentity, secAccess,
 			Section("run", "Run", "Ceilings on one run and on all of them."),
 			Section("steps", "Steps", "What runs, in order."),

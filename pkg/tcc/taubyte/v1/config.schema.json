@@ -985,6 +985,32 @@
     },
     "Storage": {
       "description": "Object or streaming storage served to the project's peers.",
+      "oneOf": [
+        {
+          "properties": {
+            "object": {
+              "required": [
+                "size"
+              ]
+            }
+          },
+          "required": [
+            "object"
+          ]
+        },
+        {
+          "properties": {
+            "streaming": {
+              "required": [
+                "size"
+              ]
+            }
+          },
+          "required": [
+            "streaming"
+          ]
+        }
+      ],
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",

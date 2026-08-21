@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
@@ -349,11 +350,29 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 			})
 			continue
 		}
-		props.set(name, map[string]any{
+		group := map[string]any{
 			"type":                 "object",
 			"description":          groupDoc(node.Children[0]),
 			"additionalProperties": g.objectSchema(node.Children[0], nil, ""),
-		})
+		}
+		// A KEY CAN HOLD BOTH. A kind and an attribute may be called the same thing —
+		// `model` is a kind, and an agent has a `model` — so the attribute's own
+		// properties sit under that key beside the group's entries. JSON Schema says
+		// exactly this: `properties` names the declared ones, `additionalProperties`
+		// governs every other key. Overwriting instead published a schema in which the
+		// authored resource was invalid, while the compiler accepted it.
+		if prev, had := props.get(name); had {
+			existing, ok := prev.(map[string]any)
+			if !ok {
+				existing = nil
+			}
+			for k, v := range existing {
+				if _, taken := group[k]; !taken {
+					group[k] = v
+				}
+			}
+		}
+		props.set(name, group)
 	}
 	out := map[string]any{"type": "object", "properties": props}
 	if title != "" {
@@ -387,7 +406,214 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 	if len(required) > 0 {
 		out["required"] = required
 	}
+	// A SWITCH IS A CLOSED CHOICE, so say so in the standard keywords. A required field
+	// whose path runs through an Either — a storage's `size`, under `object` or
+	// `streaming` — cannot be named in `required`, because the property it names does
+	// not exist at a static path. It rode a vendor marker alone, which meant the
+	// published schema accepted a storage with no size at all while the compiler
+	// refused it: the two disagreed about the same document.
+	//
+	// `oneOf` expresses exactly what the vocabulary means — one branch, and that
+	// branch's own required fields — and rides alongside the flat properties rather
+	// than replacing them.
+	switch cs := g.branchConstraints(iter); len(cs) {
+	case 0:
+	case 1:
+		out["oneOf"] = cs[0]
+	default:
+		// ONE oneOf PER SWITCH. A proxy chooses a host (generated|zone) AND a forward
+		// target, which are two independent choices — flattening both into one oneOf
+		// means a valid document matches two branches and "exactly one" rejects it.
+		all := make([]any, 0, len(cs))
+		for _, branches := range cs {
+			all = append(all, map[string]any{"oneOf": branches})
+		}
+		out["allOf"] = all
+	}
 	return out
+}
+
+// branchConstraints expands every Either switch on this kind into one alternative per
+// option, carrying the fields that are required under it.
+func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
+	// group required attributes by the switch they sit under: the path up to the
+	// Either, and the options it offers
+	type switchAt struct {
+		prefix  []string
+		options []string
+	}
+	var order []string
+	switches := map[string]*switchAt{}
+	under := map[string]map[string][]string{} // switch key -> option -> required leaves
+
+	for _, a := range iter.Attributes {
+		if noStructField(a) || a.Captures {
+			continue
+		}
+		at := -1
+		var opts []string
+		for i, seg := range a.Path {
+			if fm, ok := seg.(engine.FiniteMatcher); ok {
+				at, opts = i, fm.Values()
+				break
+			}
+		}
+		if at < 0 || len(opts) == 0 || at+1 >= len(a.Path) {
+			continue // no switch, or the switch IS the leaf (that is the Captures attr)
+		}
+		// Required in EVERY branch, or required in the ones a RequiredWhen names. The
+		// second is the same statement said conditionally: `engine-host` is required
+		// when the engine is postgres or mysql, which is "required inside those
+		// branches" and nothing else.
+		want := opts
+		if !a.Required {
+			cond, ok := a.Meta["requiredWhen"].(engine.ConditionSpec)
+			if !ok || cond.Field != capturingAttr(iter, a.Path, at) {
+				continue
+			}
+			want = nil
+			for _, o := range opts {
+				if slices.Contains(cond.In, o) {
+					want = append(want, o)
+				}
+			}
+			if len(want) == 0 {
+				continue
+			}
+		}
+		var prefix, leaf []string
+		for _, seg := range a.Path[:at] {
+			str, ok := seg.(string)
+			if !ok {
+				return nil
+			}
+			prefix = append(prefix, str)
+		}
+		for _, seg := range a.Path[at+1:] {
+			str, ok := seg.(string)
+			if !ok {
+				return nil
+			}
+			leaf = append(leaf, str)
+		}
+		// THE SWITCH'S OPTIONS ARE THE ONES IT CAPTURES, not the ones this field
+		// happens to list. A database's `engine` is distributed|postgres|mysql, and
+		// `engine-host` is declared over the external two alone — so grouping by the
+		// field's own Either would publish a oneOf with no `distributed` branch and
+		// reject a perfectly good distributed database.
+		all := capturedOptions(iter, a.Path, at)
+		if len(all) == 0 {
+			all = opts
+		}
+		key := strings.Join(prefix, "/") + "\x00" + strings.Join(all, "|")
+		if _, seen := switches[key]; !seen {
+			switches[key] = &switchAt{prefix: prefix, options: all}
+			under[key] = map[string][]string{}
+			order = append(order, key)
+		}
+		for _, opt := range want {
+			under[key][opt] = append(under[key][opt], strings.Join(leaf, "/"))
+		}
+	}
+
+	var out [][]any
+	for _, key := range order {
+		sw := switches[key]
+		var branches []any
+		for _, opt := range sw.options {
+			// the branch itself has to be present, and whatever is required inside it
+			inner := map[string]any{"required": []string{opt}}
+			if leaves := under[key][opt]; len(leaves) > 0 {
+				branch := map[string]any{}
+				for _, leaf := range leaves {
+					markNested(branch, strings.Split(leaf, "/"))
+				}
+				inner["properties"] = map[string]any{opt: branch}
+			}
+			branches = append(branches, nest(sw.prefix, inner))
+		}
+		out = append(out, branches)
+	}
+	return out
+}
+
+// capturedOptions is the full alternative set a switch offers, read off the attribute
+// that captures it.
+func capturedOptions(iter *engine.Node, path []engine.StringMatch, depth int) []string {
+	for _, a := range iter.Attributes {
+		if !a.Captures || len(a.Path) != depth+1 || !samePrefix(a.Path, path, depth) {
+			continue
+		}
+		if fm, ok := a.Path[depth].(engine.FiniteMatcher); ok {
+			return fm.Values()
+		}
+	}
+	return nil
+}
+
+// samePrefix reports whether two paths agree on every segment before the switch. A
+// proxy has two switches at the same DEPTH — host and forward — so depth alone finds
+// whichever was declared first and hands one switch the other's alternatives.
+func samePrefix(a, b []engine.StringMatch, depth int) bool {
+	if len(a) < depth || len(b) < depth {
+		return false
+	}
+	for i := 0; i < depth; i++ {
+		x, ok1 := a[i].(string)
+		y, ok2 := b[i].(string)
+		if !ok1 || !ok2 || x != y {
+			return false
+		}
+	}
+	return true
+}
+
+// capturingAttr names the Captures() attribute that decides this switch: the sibling
+// whose path holds the same Either at the same depth. It is the same question the
+// decompiler asks to know which branch to write into.
+func capturingAttr(iter *engine.Node, path []engine.StringMatch, depth int) string {
+	for _, a := range iter.Attributes {
+		if !a.Captures || len(a.Path) != depth+1 || !samePrefix(a.Path, path, depth) {
+			continue
+		}
+		if _, isEither := a.Path[depth].(engine.FiniteMatcher); isEither {
+			return a.Name
+		}
+	}
+	return ""
+}
+
+// nest wraps a constraint so it applies at a path rather than at the document root.
+func nest(prefix []string, inner map[string]any) map[string]any {
+	for i := len(prefix) - 1; i >= 0; i-- {
+		inner = map[string]any{
+			"required":   []string{prefix[i]},
+			"properties": map[string]any{prefix[i]: inner},
+		}
+	}
+	return inner
+}
+
+// markNested records that the leaf at segs is required, creating the levels above it.
+func markNested(at map[string]any, segs []string) {
+	if len(segs) == 1 {
+		req, _ := at["required"].([]string)
+		at["required"] = append(req, segs[0])
+		return
+	}
+	props, _ := at["properties"].(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+		at["properties"] = props
+	}
+	child, _ := props[segs[0]].(map[string]any)
+	if child == nil {
+		child = map[string]any{}
+		props[segs[0]] = child
+	}
+	req, _ := at["required"].([]string)
+	at["required"] = append(req, segs[0])
+	markNested(child, segs[1:])
 }
 
 // attrSchema is the leaf schema for one attribute: its base type plus every
@@ -409,6 +635,8 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 		s["type"] = "boolean"
 	case engine.TypeInt:
 		s["type"] = "integer"
+	case engine.TypeFloat:
+		s["type"] = "number"
 	default: // string (incl. Duration/Bytes, authored as human strings)
 		s["type"] = "string"
 	}
