@@ -58,7 +58,7 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	// editor creates a document it is asked to write into, so placing the entry anyway
 	// produced an empty function with a queue block and no code, and the compile failed
 	// with "required attribute 'id'" against a file nobody wrote.
-	adds = onlyOnWhatExists(c.compileRoot, authored.Flat(), docs, adds)
+	adds = onlyOnWhatExists(c.compileRoot, c.layout, authored.Flat(), docs, adds)
 
 	// A NAME A LOWERING TAKES MUST BE FREE. Writing a produced resource over an authored
 	// one replaced somebody's config with the compiler's, and the compile carried on: the
@@ -81,6 +81,10 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	if err != nil {
 		return nil, nil, err
 	}
+	// THE SAME SCHEMA, unchanged. What a lowering produces is config: a produced
+	// resource is validated by the definition an authored one is, and a produced SCOPE
+	// by the definition an authored scope is — which is exactly what Lowerable hands
+	// over, so there is no second schema for the second pass to compile against.
 	lowered, err := New(c.project, c.compileRoot, append(c.viewOptions(), WithVirtual(view, "/"))...)
 	if err != nil {
 		return nil, nil, err

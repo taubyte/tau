@@ -25,7 +25,7 @@ import (
 //
 // The interpreter owns the mechanism and knows nothing about what any kind means. A
 // vocabulary DECLARES its lowering as data — which kind, one per resource or one per
-// element of a list, what the derived resource is called — and this file expands it.
+// element of a list, what the derived resource is called — and this file carries it out.
 // The alternative, a hook the vocabulary fills with Go code, was the first cut: it put
 // a `switch kind { case "workflow": … }` inside the schema package, which makes
 // lowering something one vocabulary does rather than something tcc offers.
@@ -44,14 +44,14 @@ import (
 type Lowering struct {
 	into    string
 	perEach string
-	name    string
-	why     string
+	name    Term
+	why     Term
 	// when: a field that has to be set for this to be produced at all
-	when string
+	when Term
 	// acts: this part does what the source resource DECLARES — the tools an agent may
 	// reach are reached by its loop
 	acts   bool
-	set    map[string]string
+	set    map[string]Term
 	writes []write
 }
 
@@ -64,12 +64,20 @@ type Lowering struct {
 // back off. None of that is the interpreter's business. What IS its business is smaller
 // and says the same thing: put this value in that field.
 type write struct {
-	value string
-	// which resource, as templates. Empty kind means the one the lowering produced.
-	onKind, onName, onScope string
+	value Term
+	// which resource. The KIND is a plain name — a kind is one of the vocabulary's own
+	// and is checked against them at build time — while the name and the scope are terms.
+	// Empty kind means the one the lowering produced.
+	onKind          string
+	onName, onScope Term
 	// where inside it: nested group keys, entry names, and finally the field. Every
-	// segment is a template.
-	path []string
+	// segment is a term.
+	path []Term
+	// atProduced: the path starts by naming the resource THIS lowering produced — its
+	// kind, then its name. Neither is a value a lowering can state, because neither
+	// exists until the plan has run; saying it structurally is what replaced a pair of
+	// `{into}`/`{produced}` tokens threaded through a resolver.
+	atProduced bool
 }
 
 type (
@@ -83,10 +91,9 @@ type (
 //
 //	Into("queue",
 //	    PerEach("steps"),
-//	    Named("{name}_{each.name}"),
-//	    Carries("work waiting for step {each.name}"),
-//	    Sets("max-attempts", "{each.attempts}"),
-//	    LinksTo("function", "{each.run}", "invokes", InScope("{each.namespace}")),
+//	    Named(Concat(Attr("name"), Text("_"), Each("name"))),
+//	    Carries(Concat(Text("work waiting for step "), Each("name"))),
+//	    Sets("max-attempts", Each("attempts")),
 //	)
 //
 // The kind has to be one the vocabulary really has: lowering into something undeclared
@@ -106,8 +113,8 @@ func Into(kind string, opts ...LoweringOption) Lowering {
 // A field being set, and nothing else. Not an expression: a lowering a reader cannot
 // evaluate in their head is a lowering that has to be run to be understood.
 func When[T string | engine.AKey](field T) LoweringOption {
-	name := fieldName(field)
-	return func(l *Lowering) { l.when = name }
+	read := Attr(field)
+	return func(l *Lowering) { l.when = read }
 }
 
 // Acts marks the part that does what the SOURCE declares.
@@ -130,32 +137,41 @@ func PerEach(list string) LoweringOption {
 	return func(l *Lowering) { l.perEach = list }
 }
 
-// Named is what the derived resource is called, as a template over the source's fields
-// and — under PerEach — the element's. `{name}` is the source, `{each.name}` the
-// element, `{each.next.name}` the element after it. A template rather than a closure,
-// so a lowering can be printed.
-func Named(tmpl string) LoweringOption {
-	return func(l *Lowering) { l.name = tmpl }
+// Named is what the derived resource is called: `Attr(f)` is a field of the source,
+// `Each(f)` one of the element, `Next(f)` one of the element after it, and `Concat` puts
+// them together with the `Text` between them.
+//
+// A TERM rather than a closure, so a lowering can be printed — and a term rather than a
+// string, so what it is made of survives being written down. `Concat(Attr("name"),
+// Text("_"), Each("name"))` and `"{name}_{each.name}"` produce the same name; only the
+// first one can be read backwards, because only the first one still knows which
+// underscore it wrote.
+func Named(t Term) LoweringOption {
+	return func(l *Lowering) { l.name = t }
 }
 
-// Carries is one line saying what this derived resource holds, same syntax as Named.
+// Carries is one line saying what this derived resource holds, built from the same terms.
 // It is documentation with a job: it is what a reader sees when they ask what a
 // construct became.
-func Carries(tmpl string) LoweringOption {
-	return func(l *Lowering) { l.why = tmpl }
+func Carries(t Term) LoweringOption {
+	return func(l *Lowering) { l.why = t }
 }
 
 // Sets gives the derived resource one of its own fields. Without these a plan is a list
 // of names: nothing downstream can tell a queue that retries four times from one that
 // retries once, and — the reason this is not optional — a lowering cannot NEST, because
 // the next lowering down has no values to read.
-func Sets[T string | engine.AKey](field T, tmpl string) LoweringOption {
+//
+// A term that reads exactly one field — `Each("attempts")`, not a Concat — CARRIES that
+// value rather than building a string out of it, which is what lets a scalar keep its
+// type on the way through and what lets the value be read back out again.
+func Sets[T string | engine.AKey](field T, value Term) LoweringOption {
 	name := fieldName(field)
 	return func(l *Lowering) {
 		if l.set == nil {
-			l.set = map[string]string{}
+			l.set = map[string]Term{}
 		}
-		l.set[name] = tmpl
+		l.set[name] = value
 	}
 }
 
@@ -170,8 +186,8 @@ func fieldName[T string | engine.AKey](field T) string { return engine.FieldName
 //
 // Writes puts a value into a resource, at the path an author would have written it at:
 //
-//	Writes("receive", On("function", "{each.run}", "{each.namespace}"),
-//	    At("queue", "{name}_{each.name}", "ops"))
+//	Writes(Text("receive"), On("function", Each("run"), Each("namespace")),
+//	    At(Text("queue"), Concat(Attr("name"), Text("_"), Each("name")), Text("ops")))
 //
 // It says nothing about what that means. Whether those three segments are an access
 // entry, a routing table or something no vocabulary has invented yet is the vocabulary's
@@ -180,7 +196,7 @@ func fieldName[T string | engine.AKey](field T) string { return engine.FieldName
 // Two rules, both from the schema rather than from a convention here: a value goes into a
 // LIST by being appended when it is not already there, and into a scalar only when the
 // field is empty. Whichever it is, an author's own value is never replaced.
-func Writes(value string, opts ...WriteOption) LoweringOption {
+func Writes(value Term, opts ...WriteOption) LoweringOption {
 	w := write{value: value}
 	for _, o := range opts {
 		o(&w)
@@ -194,7 +210,7 @@ func Writes(value string, opts ...WriteOption) LoweringOption {
 //
 // The scope is optional and says where the name resolves: absolute from the root with a
 // leading slash, and otherwise relative to where the lowered resource lives.
-func On(kind, name string, scope ...string) WriteOption {
+func On(kind string, name Term, scope ...Term) WriteOption {
 	return func(w *write) {
 		w.onKind, w.onName = kind, name
 		if len(scope) > 0 {
@@ -204,20 +220,118 @@ func On(kind, name string, scope ...string) WriteOption {
 }
 
 // At is the path inside that resource: the keys of whatever it is nested in, and last the
-// field itself. Every segment is a template.
-func At(path ...string) WriteOption {
+// field itself. Every segment is a term, because a segment can be a fixed key or something
+// read off the config — AtProduced (below) is how a write points back at what this same
+// lowering made, when the path needs to start there.
+func At(path ...Term) WriteOption {
 	return func(w *write) { w.path = path }
+}
+
+// AtProduced is At(...) for a path that begins by NAMING the resource this lowering
+// produced: its kind, then its name, then whatever these segments say.
+//
+//	Writes(Text("receive"), On("function", Each("run")), AtProduced(Text("ops")))
+//
+// It is how a lowering wires something that already exists to the thing it just made,
+// and it exists because neither the kind nor the name is a value a lowering can state.
+// Both are the PLAN's, held in a local by the time a write is filled in, and this option
+// says "start there" so the plan can put its own two strings in front — rather than the
+// lowering stating two placeholder tokens for a resolver to substitute back.
+func AtProduced(path ...Term) WriteOption {
+	return func(w *write) {
+		w.path, w.atProduced = path, true
+	}
 }
 
 // Lowers declares that a kind lowers into others. Declared on the kind's iterator,
 // beside Verbs() and Resource(), because it is a statement about the kind.
 //
 //	Lowers(
-//	    Into("queue", PerEach("steps"), Named("{name}_{each.name}"), …),
-//	    Into("entity", Named("{name}_run"), …),
+//	    Into("queue", PerEach("steps"), Named(Concat(Attr("name"), Text("_"), Each("name"))), …),
+//	    Into("entity", Named(Concat(Attr("name"), Text("_run"))), …),
 //	)
 func Lowers(into ...Lowering) engine.NodeOption {
 	return engine.GroupAnnotate("lowers", into)
+}
+
+// Lowerable declares that what this kind lowers into does not sit BESIDE it: the source
+// becomes a SCOPE of its own, named after the resource, and everything its Lowers()
+// produces is placed inside it.
+//
+//	DefineGroup("workflow", resource(…,
+//	    Lowerable(scopeShape()),          // the node this vocabulary declares its scopes with
+//	    Lowers(Into("queue", …)),
+//	))
+//
+// IT TAKES THE SHAPE, NOT A NAME, and the shape is the one the vocabulary already uses
+// for a scope somebody writes. That is the whole point: what a lowering synthesizes has
+// to BE a scope — loaded by the same definition, indexed by the same footprint, resolved
+// through by the same outward name walk — and the only way to guarantee that is to hand
+// over the definition itself rather than a string the interpreter would have to look up
+// and hope matched. The interpreter reads the kind off the node's own Match and the
+// document off the layout, and learns no word of this vocabulary either way.
+//
+// This replaces an earlier reading of the same idea — nest the produced resources as a
+// hidden child group inside the source's own document, reusing the produced KIND's node
+// as the child's shape. It does not work, and the reason is worth keeping: a nested
+// resource is not indexed (index.go walks the root's groups one level deep), so nothing
+// could find a produced resource by name — not the `Ref()` a queue carries at
+// `dead_letter`, and not the access entry the lowering itself writes onto the step's
+// function. Hiding a resource from the name space is not the same wish as giving it an
+// address of its own, and only the second one was ever wanted.
+//
+// What this buys, all of it out of machinery that already exists:
+//
+//   - THE ADDRESS READS AS THE SOURCE'S. A workflow's queues live at
+//     `namespace/checkout/queue/*.yaml`, not as flat `checkout_*` siblings.
+//   - A NAME A LOWERING TAKES CANNOT COLLIDE with one somebody wrote, because it is not
+//     in the same scope any more. What can still collide is the scope's own name against
+//     an authored scope of that name, which `free` reports like any other.
+//   - A REFERENCE BETWEEN TWO PRODUCED RESOURCES RESOLVES BY ITSELF. Names resolve in the
+//     authoring scope and then outward, so a produced queue naming its produced
+//     dead-letter queue is an ordinary bare-name reference through the ordinary index.
+//     Nothing had to be given a second shape to avoid the resolver.
+func Lowerable(scope *engine.Node) engine.NodeOption {
+	return engine.GroupAnnotate("lowerable", scope)
+}
+
+// scopeShapeOf reads the scope shape a kind declared with Lowerable, or nil.
+func scopeShapeOf(iter *engine.Node) *engine.Node {
+	if iter == nil {
+		return nil
+	}
+	n, _ := iter.Meta["lowerable"].(*engine.Node)
+	return n
+}
+
+// scopeKindOf is what that shape is CALLED — its own group key, which is the kind the
+// synthesized scope is filed under. Read off the node rather than passed beside it, so
+// the shape and its name cannot disagree.
+func scopeKindOf(iter *engine.Node) string {
+	shape := scopeShapeOf(iter)
+	if shape == nil {
+		return ""
+	}
+	kind, _ := shape.Match.(string)
+	return kind
+}
+
+// scopeLeafOf is the document a produced scope keeps its own fields in, read off the
+// shape rather than off the layout.
+//
+// This is the second thing handing over a NODE buys, after the guarantee that the
+// definition is the real one: a scope is a directory, and which file inside it holds the
+// scope's own id is a fact the shape already states with Leaf(...). Asking the layout
+// would have been asking a second time, and the two answers were different — the layout's
+// leaf is the PROJECT's document, and a produced scope written to `namespace/checkout/
+// project.yaml` is a directory the loader reads as having no document at all, which it
+// reports as `required attribute 'id'` against a file nobody wrote.
+func scopeLeafOf(iter *engine.Node) string {
+	shape := scopeShapeOf(iter)
+	if shape == nil || len(shape.Children) == 0 {
+		return ""
+	}
+	return engine.LeafOf(shape.Children[0])
 }
 
 // DeclaredWrite is one value a lowering says it will put somewhere, read off the schema
@@ -229,10 +343,16 @@ type DeclaredWrite struct {
 	From, Into string
 	// OnKind is the kind of the resource written into; empty means the produced one.
 	OnKind string
-	// Path is where inside it, and Value what goes there. Both as declared, templates
-	// and all.
-	Path  []string
-	Value string
+	// Path is where inside it, and Value what goes there. Both as DECLARED — terms, not
+	// the strings they will become, so a consumer can ask a segment whether it is a fixed
+	// key or something the plan fills in instead of scanning it for punctuation.
+	//
+	// A path that starts at what the lowering produced arrives here with the two segments
+	// the plan would put in front already in it: the kind, which is known statically and
+	// is text, and the name, which is the lowering's own Named term. So a consumer sees
+	// one shape and never has to know that a write can begin somewhere implicit.
+	Path  []Term
+	Value Term
 }
 
 // DeclaredWrites is every value every lowering in a schema writes.
@@ -247,9 +367,13 @@ func DeclaredWrites(root *engine.Node) []DeclaredWrite {
 		}
 		for _, l := range LoweringsOf(iter) {
 			for _, w := range l.writes {
+				path := []Term{}
+				if w.atProduced {
+					path = append(path, Text(l.into), l.name)
+				}
 				out = append(out, DeclaredWrite{
 					From: from, Into: l.into, OnKind: w.onKind,
-					Path: append([]string{}, w.path...), Value: w.value,
+					Path: append(path, w.path...), Value: w.value,
 				})
 			}
 		}
@@ -270,6 +394,12 @@ func LoweringsOf(n *engine.Node) []Lowering {
 // UsesLowering reports whether any kind in the schema declares a lowering.
 func UsesLowering(root *engine.Node) bool {
 	return eachIter(root, func(iter *engine.Node) bool { return len(LoweringsOf(iter)) > 0 })
+}
+
+// UsesLoweringScopes reports whether any kind puts what it lowers into a scope of its
+// own — i.e. whether anything here declares Lowerable.
+func UsesLoweringScopes(root *engine.Node) bool {
+	return eachIter(root, func(iter *engine.Node) bool { return scopeShapeOf(iter) != nil })
 }
 
 // Derived is one resource a lowered resource becomes.
@@ -313,7 +443,7 @@ type Derived struct {
 	Of     string         // "<kind>/<name>" of the resource it was lowered from
 	Scope  string         // the namespace that resource lives in
 	Why    string         // one line: what this one carries
-	Fields map[string]any // its own values, expanded from Set
+	Fields map[string]any // its own values, from Set
 	Writes []Written      // the values it puts into resources, templates filled in
 
 	// Source is the AUTHORED config responsible for this, and it is the reason a
@@ -331,6 +461,13 @@ type Derived struct {
 
 	// Acts marks the part that does what the source declares. See Acts().
 	Acts bool
+
+	// Scoping marks the one derived resource that is the SCOPE the others were placed
+	// in, produced because its source declares Lowerable. It is a resource like any
+	// other — recorded, indexed, decompiled away with the rest — and this says which
+	// one it is, so a consumer drawing what a construct became can draw the box rather
+	// than a sibling of the things inside it.
+	Scoping bool
 }
 
 // Source points at the authored config a derived resource came from.
@@ -373,8 +510,7 @@ func (d Derived) Trail() string {
 	return trail + " > " + d.Kind + "/" + d.Name
 }
 
-// Resolved is a Link with its template expanded.
-// Written is one write with its templates filled in: a value, the resource it goes into,
+// Written is one write with its terms filled in: a value, the resource it goes into,
 // and where inside that resource it goes.
 type Written struct {
 	Value string
@@ -515,9 +651,7 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 	var out []Derived
 	walkResources(root, scope, "", func(kind string, iter *engine.Node, id, name string, res map[string]any, at string) {
 		src := Source{Kind: kind, Name: name, ID: id, Scope: at}
-		for _, l := range LoweringsOf(iter) {
-			out = append(out, plan(root, l, kind, name, id, res, at, src, nil)...)
-		}
+		out = append(out, from(root, iter, kind, name, id, res, at, src, nil)...)
 	})
 
 	// A lowering may lower again: what a construct becomes can itself be a construct.
@@ -560,29 +694,7 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 // and a cycle has to end in a message rather than a hang.
 const MaxLoweringDepth = 8
 
-// soleReference reports the raw value of a template that is exactly one reference —
-// `{memory/size}` — and nothing else. A template that BUILDS a string ("{name}_failed")
-// has no single value behind it, and one that names nothing has none at all.
-func soleReference(tmpl string, res, each, next map[string]any) (any, bool) {
-	if len(tmpl) < 3 || tmpl[0] != '{' || tmpl[len(tmpl)-1] != '}' || strings.Contains(tmpl[1:len(tmpl)-1], "{") {
-		return nil, false
-	}
-	key := tmpl[1 : len(tmpl)-1]
-	src := res
-	if rest, ok := strings.CutPrefix(key, "each.next."); ok {
-		src, key = next, rest
-	} else if rest, ok := strings.CutPrefix(key, "each."); ok {
-		src, key = each, rest
-	}
-	if src == nil {
-		return nil, false
-	}
-	// The key is a field's identity — its own key, joined — so it addresses a level per
-	// segment, exactly as lookup reads it.
-	return fieldAt(src, key)
-}
-
-// setFor expands a lowering's fields and puts any SCALAR back into the form an author
+// setFor fills in a lowering's fields and puts any SCALAR back into the form an author
 // writes. A compiled value is the wire form — a Duration is nanoseconds, a Bytes is a
 // count — and a lowering copies from a compiled resource into a document that is
 // supposed to be authorable. Copying `size` straight through produced
@@ -592,8 +704,8 @@ func soleReference(tmpl string, res, each, next map[string]any) (any, bool) {
 //
 // The inverse is the same one decompile uses — the scalar term carries both directions
 // — so there is no second table of "how do I turn nanoseconds back into 20s".
-func setFor(root *engine.Node, into string, fields map[string]string, res, each, next map[string]any) map[string]any {
-	out := set(fields, res, each, next)
+func setFor(root *engine.Node, into string, fields map[string]Term, e env) map[string]any {
+	out := set(fields, e)
 	if len(out) == 0 {
 		return out
 	}
@@ -610,12 +722,16 @@ func setFor(root *engine.Node, into string, fields map[string]string, res, each,
 		if !isScalar {
 			continue
 		}
-		// Format reads the WIRE value — nanoseconds, a byte count — and `expand` has
-		// already turned everything into a string. So a scalar field takes the raw
-		// value straight from the source, which is only meaningful when the template is
-		// one reference and nothing else: "{memory/size}" is a value being carried,
-		// "{name}_x" is a string being built.
-		raw, ok := soleReference(fields[a.Name], res, each, next)
+		// Format reads the WIRE value — nanoseconds, a byte count — and filling a term in
+		// has already turned everything into a string. So a scalar field takes the raw
+		// value straight from the source, which is only meaningful when the term reads one
+		// field and states nothing else: `Attr(Key("memory","size"))` is a value being
+		// carried, a Concat is a string being built. That used to be a question about a
+		// template's punctuation; it is a question about the term now.
+		if _, sole := fields[a.Name].Sole(); !sole {
+			continue
+		}
+		raw, ok := fields[a.Name].value(e)
 		if !ok {
 			continue
 		}
@@ -639,22 +755,68 @@ func setFor(root *engine.Node, into string, fields map[string]string, res, each,
 	return out
 }
 
+// from is everything one resource lowers into, placed where its kind says it goes: in a
+// scope of its own when it declares Lowerable, beside it otherwise.
+//
+// THE SCOPE IS PRODUCED ONLY WHEN SOMETHING GOES INTO IT. A lowering every part of which
+// is gated on a field nobody set produces nothing, and an empty scope is a directory that
+// says a construct exists where none does — visible in a graph, in a decompile and in the
+// index, with nothing in it.
+func from(root, iter *engine.Node, kind, name, id string, res map[string]any, at string, src Source, via []string) []Derived {
+	ls := LoweringsOf(iter)
+	if len(ls) == 0 {
+		return nil
+	}
+
+	into, container := at, scopeKindOf(iter)
+	if container != "" && name != "" {
+		into = within(at, name)
+	}
+
+	var out []Derived
+	for _, l := range ls {
+		out = append(out, plan(root, l, kind, name, id, res, into, src, via)...)
+	}
+	if len(out) == 0 || into == at {
+		return out
+	}
+	// The scope FIRST, so what goes in it is never placed before the document that
+	// holds it — the same reason resources are written before the entries that land
+	// on them.
+	return append([]Derived{{
+		Kind: container, Name: name, Of: kind + "/" + name, Scope: at,
+		ID:      derivedID(id, container, name),
+		Why:     "what " + kind + "/" + name + " becomes",
+		Source:  src,
+		Via:     via,
+		Scoping: true,
+	}}, out...)
+}
+
 func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[string]any, scope string, src Source, via []string) []Derived {
 	// What a thing is CALLED is the schema's word, and a list element uses it too.
 	_, nameField := engine.IdentityOf(root)
-	if l.when != "" {
-		if v, ok := lookup(l.when, res, nil, nil); !ok || v == "" {
+	if !l.when.Empty() {
+		if v, ok := l.when.fill(env{res: res}); !ok || v == "" {
 			return nil
 		}
 	}
 	of := kind + "/" + name
 
 	if l.perEach == "" {
+		// This env carries no scope and nothing about what the lowering produced: a name
+		// that read its own scope, or pointed at AtProduced, would be circular — both only
+		// exist once this Derived does. A Scope() used inside a Named() here just stays
+		// visible as `{scope}`, the same "printed, not resolved" fallback show() gives any
+		// term it cannot fill.
+		e := env{res: res}
 		return []Derived{{
-			Kind: l.into, Name: expand(l.name, res, nil, nil), Of: of, Scope: scope,
-			ID:  derivedID(srcID, l.into, l.name),
-			Why: expand(l.why, res, nil, nil), Fields: setFor(root, l.into, l.set, res, nil, nil),
-			Writes: writes(l.writes, l.into, expand(l.name, res, nil, nil), res, nil, nil), Source: src, Via: via, Acts: l.acts,
+			Kind: l.into, Name: l.name.show(e), Of: of, Scope: scope,
+			// The id is hung off the lowering's own name AS DECLARED — the term, printed —
+			// so a rename of the source does not re-key what it produced.
+			ID:  derivedID(srcID, l.into, l.name.String()),
+			Why: l.why.show(e), Fields: setFor(root, l.into, l.set, e),
+			Writes: writes(l.writes, l.into, l.name.show(e), scope, e), Source: src, Via: via, Acts: l.acts,
 		}}
 	}
 
@@ -678,11 +840,12 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 		if part == "" {
 			part = at.Path // no name of its own: its position is the only handle
 		}
+		e := env{res: res, each: el, next: next}
 		out = append(out, Derived{
-			Kind: l.into, Name: expand(l.name, res, el, next), Of: of, Scope: scope,
+			Kind: l.into, Name: l.name.show(e), Of: of, Scope: scope,
 			ID:  derivedID(srcID, l.into, part),
-			Why: expand(l.why, res, el, next), Fields: setFor(root, l.into, l.set, res, el, next),
-			Writes: writes(l.writes, l.into, expand(l.name, res, el, next), res, el, next), Source: at, Via: via, Acts: l.acts,
+			Why: l.why.show(e), Fields: setFor(root, l.into, l.set, e),
+			Writes: writes(l.writes, l.into, l.name.show(e), scope, e), Source: at, Via: via, Acts: l.acts,
 		})
 	}
 	return out
@@ -702,7 +865,7 @@ func derivedID(srcID, kind, part string) string {
 	return id
 }
 
-// nest expands the derived resources that are themselves of a lowering kind, carrying
+// nest lowers again the derived resources that are themselves of a lowering kind, carrying
 // the trail down so the innermost one still names what the author wrote.
 func nest(root *engine.Node, parents []Derived, depth int) []Derived {
 	if depth >= MaxLoweringDepth || len(parents) == 0 {
@@ -712,8 +875,7 @@ func nest(root *engine.Node, parents []Derived, depth int) []Derived {
 	var out []Derived
 	for _, p := range parents {
 		iter := iterOfKind(root, p.Kind)
-		ls := LoweringsOf(iter)
-		if len(ls) == 0 {
+		if len(LoweringsOf(iter)) == 0 {
 			continue
 		}
 		res := p.Fields
@@ -722,9 +884,7 @@ func nest(root *engine.Node, parents []Derived, depth int) []Derived {
 		}
 		res[nameField] = p.Name
 		via := append(append([]string{}, p.Via...), p.Kind+"/"+p.Name)
-		for _, l := range ls {
-			out = append(out, plan(root, l, p.Kind, p.Name, p.ID, res, p.Scope, p.Source, via)...)
-		}
+		out = append(out, from(root, iter, p.Kind, p.Name, p.ID, res, p.Scope, p.Source, via)...)
 	}
 	return append(out, nest(root, out, depth+1)...)
 }
@@ -751,60 +911,85 @@ func iterOfKind(root *engine.Node, kind string) *engine.Node {
 	return found
 }
 
-// set expands the derived resource's own fields.
-func set(fields map[string]string, res, each, next map[string]any) map[string]any {
+// set fills in the derived resource's own fields.
+func set(fields map[string]Term, e env) map[string]any {
 	if len(fields) == 0 {
 		return nil
 	}
 	out := make(map[string]any, len(fields))
-	for k, tmpl := range fields {
-		out[k] = expand(tmpl, res, each, next)
+	for k, t := range fields {
+		out[k] = t.show(e)
 	}
 	return out
 }
 
-// links expands each declared link. One whose name template cannot be filled is
-// DROPPED rather than emitted half-written: a step with no `on-error` has no failure
+// writes fills in each declared write. One whose value or target cannot be filled is
+// DROPPED rather than emitted half-written: a step with no `on_error` has no failure
 // edge, and that is the common case rather than a mistake.
+//
 // into/produced are the kind and name of the resource this lowering makes, which a write
 // needs when it points AT it: a value written into somebody else's resource that names
-// this one has to name it, and only the plan knows what it ended up called.
-func writes(ws []write, into, produced string, res, each, next map[string]any) []Written {
-	self := strings.NewReplacer("{into}", into, "{produced}", produced)
+// this one has to name it, and only the plan knows what it ended up called. They are
+// STRINGS the plan is holding, put in front of a path that says it starts there —
+// AtProduced — and never terms a lowering could have stated.
+func writes(ws []write, into, produced, scope string, e env) []Written {
+	// ProducedScope() is WHERE WHAT THIS LOWERING PRODUCED LIVES, absolute from the
+	// project root — the one fact a write into somebody else's resource cannot work out
+	// for itself once Lowerable moves the produced resources into a scope of their own. An
+	// entry on a function at the root that names a queue two levels in has to say so, and
+	// only the plan knows where the queue ended up.
+	//
+	// ABSOLUTE, not relative: the resource an entry lands on may be in the source's scope
+	// (a step's function, which the author wrote) or in the produced scope (an agent's
+	// loop, which the same lowering made), and one spelling has to be right from both.
+	//
+	// Empty when nothing was scoped, which drops the write entirely — so a vocabulary
+	// that declares no Lowerable writes exactly what it wrote before.
+	if scope != "" {
+		e.scope = "/" + scope
+	}
 	out := make([]Written, 0, len(ws))
 	for _, w := range ws {
-		value := expand(self.Replace(w.value), res, each, next)
 		// A value that cannot be filled is a write that does not happen: the last step
 		// has no next, so there is no queue for it to send to. Dropped, not written
-		// half-finished.
-		if value == "" || strings.ContainsAny(value, "{}") {
+		// half-finished. It used to be said by looking for a leftover brace in the
+		// filled-in string, which also dropped a value that legitimately contained one;
+		// a term simply reports that a part of it had nothing behind it.
+		value, ok := w.value.fill(e)
+		if !ok || value == "" {
 			continue
 		}
 
 		on := End{}
 		if w.onKind != "" {
-			name := expand(self.Replace(w.onName), res, each, next)
-			if name == "" || strings.ContainsAny(name, "{}") {
+			name, ok := w.onName.fill(e)
+			if !ok || name == "" {
 				continue
 			}
-			scope := expand(w.onScope, res, each, next)
-			if strings.ContainsAny(scope, "{}") {
-				scope = "" // an unfillable scope is the absent one: wherever it lives
-			}
-			on = End{Kind: w.onKind, Name: name, Scope: scope}
+			// an unfillable scope is the absent one: wherever it lives
+			at, _ := w.onScope.fill(e)
+			on = End{Kind: w.onKind, Name: name, Scope: at}
 		}
 
-		path := make([]string, 0, len(w.path))
-		ok := true
+		path := make([]string, 0, len(w.path)+2)
+		// A path that starts at what this lowering produced starts at two strings the
+		// plan is already holding. Assigned, not substituted.
+		if w.atProduced {
+			if into == "" || produced == "" {
+				continue
+			}
+			path = append(path, into, produced)
+		}
+		whole := true
 		for _, seg := range w.path {
-			filled := expand(self.Replace(seg), res, each, next)
-			if filled == "" || strings.ContainsAny(filled, "{}") {
-				ok = false
+			filled, ok := seg.fill(e)
+			if !ok || filled == "" {
+				whole = false
 				break
 			}
 			path = append(path, filled)
 		}
-		if !ok || len(path) == 0 {
+		if !whole || len(path) == 0 {
 			continue
 		}
 
@@ -816,113 +1001,24 @@ func writes(ws []write, into, produced string, res, each, next map[string]any) [
 	return out
 }
 
-// expand fills `{field}` from the resource and `{each.field}` from the list element.
-// A name that cannot be filled is left as it was written, so a broken template shows up
-// as a visible `{typo}` in the plan rather than as a silently empty name.
-func expand(tmpl string, res, each, next map[string]any) string {
-	var b strings.Builder
-	for {
-		open := strings.IndexByte(tmpl, '{')
-		if open < 0 {
-			b.WriteString(tmpl)
-			return b.String()
-		}
-		close := strings.IndexByte(tmpl[open:], '}')
-		if close < 0 {
-			b.WriteString(tmpl)
-			return b.String()
-		}
-		close += open
-		b.WriteString(tmpl[:open])
-		key := tmpl[open+1 : close]
-		if v, ok := lookup(key, res, each, next); ok && v != "" {
-			b.WriteString(v)
-		} else {
-			// left as written, so an unfilled template is visible in the plan as
-			// `{typo}` rather than as a silently shortened name
-			b.WriteString(tmpl[open : close+1])
-		}
-		tmpl = tmpl[close+1:]
-	}
-}
-
-// fieldAt reads a value by its key, walking a level per segment.
-func fieldAt(src map[string]any, key string) (any, bool) {
-	segs := strings.Split(key, "/")
-	for _, seg := range segs[:len(segs)-1] {
-		next, ok := src[seg].(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		src = next
-	}
-	v, ok := src[segs[len(segs)-1]]
-	return v, ok
-}
-
-func lookup(key string, res, each, next map[string]any) (string, bool) {
-	src := res
-	// `{each.next.x}` is the FOLLOWING element's x. An ordered list whose elements can
-	// only see themselves lowers into independent things; a chain — step, then the next
-	// step — is most of the reason a list is ordered in the first place, and without
-	// this the vocabulary would have to make the author write the order twice.
-	//
-	// It stops at one step. Arbitrary navigation is a query language, and the shapes
-	// that need it (a branch, a join) need more than a template anyway.
-	if rest, ok := strings.CutPrefix(key, "each.next."); ok {
-		if next == nil {
-			return "", false
-		}
-		src, key = next, rest
-	} else if rest, ok := strings.CutPrefix(key, "each."); ok {
-		if each == nil {
-			return "", false
-		}
-		src, key = each, rest
-	}
-	// A field's identity is its key, joined — so `memory/embedder/name` addresses three
-	// levels of the compiled resource, not a flat entry that happens to have slashes.
-	v, ok := fieldAt(src, key)
-	if !ok {
-		return "", false
-	}
-	switch t := v.(type) {
-	case string:
-		return t, true
-	case int:
-		return strconv.Itoa(t), true
-	case int64:
-		return strconv.FormatInt(t, 10), true
-	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64), true
-	case bool:
-		return strconv.FormatBool(t), true
-	case map[string]any:
-		// A SINGLE-VALUED OBJECT READS AS ITS VALUE. One level holding one scalar is a
-		// value that was given a name — a resolved reference is exactly that, `{kind:
-		// id}` — and a template or a When asking for the field means the value, not the
-		// shape it is stored in. Anything with more in it is a block, and falls through.
-		if len(t) != 1 {
-			break
-		}
-		for _, only := range t {
-			if s, ok := only.(string); ok {
-				return s, true
-			}
-		}
-	}
-	// A field that is a block or a list has no place in a name; leaving it unfilled
-	// makes that visible rather than printing "map[]".
-	return "", false
-}
-
 // walkResources visits every compiled resource, carrying the kind's iterator node so a
 // caller can read its annotations, and the scope it was authored in. The scope
 // container is read off the schema (containerKey), never named here.
 func walkResources(root *engine.Node, scope map[string]any, at string, fn func(kind string, iter *engine.Node, id, name string, res map[string]any, at string)) {
+	walkGroups(root, root.Children, scope, at, fn)
+}
+
+// walkGroups is the walk itself. The ROOT is carried through unchanged and only the group
+// list descends, because what a resource's name is called and which group is the scope
+// container are the ROOT's answers: this used to recurse on a synthetic
+// `&Node{Children: …}`, which carries no Meta, so `IdentityOf` returned "" and every
+// resource inside a namespace was walked with an empty name. Nothing noticed while the
+// name was only used for provenance — templates read the resource map directly — and it
+// became visible the moment the name decided WHERE what a resource lowers into goes.
+func walkGroups(root *engine.Node, groups []*engine.Node, scope map[string]any, at string, fn func(kind string, iter *engine.Node, id, name string, res map[string]any, at string)) {
 	container := containerKey(root)
 	_, nameField := engine.IdentityOf(root)
-	for _, g := range root.Children {
+	for _, g := range groups {
 		key, _ := g.Match.(string)
 		if key == "" || len(g.Children) == 0 {
 			continue
@@ -943,7 +1039,7 @@ func walkResources(root *engine.Node, scope map[string]any, at string, fn func(k
 				if name != "" {
 					child = strings.TrimPrefix(at+"/"+name, "/")
 				}
-				walkResources(&engine.Node{Children: iter.Children}, res, child, fn)
+				walkGroups(root, iter.Children, res, child, fn)
 				continue
 			}
 			// A compiled resource is KEYED by its id and does not carry it as a field,
@@ -1010,33 +1106,31 @@ func unknownInputs(root, iter *engine.Node, l Lowering) []string {
 
 	var unknown []string
 	seen := map[string]bool{}
-	check := func(tmpl string) {
-		for _, key := range templateKeys(tmpl) {
-			// what the lowering produces, which the plan fills in
-			if key == "into" || key == "produced" {
+	// A term reports the fields it reads and nothing else, so there is no list of names
+	// to skip: what the plan fills in — where it put what it produced — is not a field
+	// read and never turns up here. That list used to be three strings, and a fourth
+	// would have had to be remembered.
+	check := func(t Term) {
+		for _, r := range t.Reads() {
+			scope := has
+			if r.Origin == OfElement || r.Origin == OfNextElement {
+				scope = each
+			}
+			if scope[r.Field] || seen[r.String()] {
 				continue
 			}
-			field, scope := key, has
-			if rest, ok := strings.CutPrefix(key, "each.next."); ok {
-				field, scope = rest, each
-			} else if rest, ok := strings.CutPrefix(key, "each."); ok {
-				field, scope = rest, each
-			}
-			if scope[field] || seen[key] {
-				continue
-			}
-			seen[key] = true
-			unknown = append(unknown, "{"+key+"}")
+			seen[r.String()] = true
+			unknown = append(unknown, r.String())
 		}
 	}
 
 	check(l.name)
 	check(l.why)
-	if l.when != "" && !has[l.when] {
-		unknown = append(unknown, l.when)
+	if !l.when.Empty() && !has[l.when.Field()] {
+		unknown = append(unknown, l.when.Field())
 	}
-	for _, tmpl := range l.set {
-		check(tmpl)
+	for _, t := range l.set {
+		check(t)
 	}
 	for _, w := range l.writes {
 		check(w.value)
@@ -1084,24 +1178,6 @@ func loweringCycles(root *engine.Node) []string {
 	return slices.Compact(found)
 }
 
-// templateKeys is every `{…}` in a template.
-func templateKeys(tmpl string) []string {
-	var out []string
-	for {
-		open := strings.IndexByte(tmpl, '{')
-		if open < 0 {
-			return out
-		}
-		close := strings.IndexByte(tmpl[open:], '}')
-		if close < 0 {
-			return out
-		}
-		close += open
-		out = append(out, tmpl[open+1:close])
-		tmpl = tmpl[close+1:]
-	}
-}
-
 // CheckLowerings verifies at BUILD time that every lowering names a kind the
 // vocabulary has and fills a name. A lowering into a kind nobody declared is a plan
 // that cannot be carried out, and finding that when someone runs the compiler is
@@ -1116,6 +1192,26 @@ func CheckLowerings(root *engine.Node) []string {
 
 	var problems []string
 	eachIter(root, func(iter *engine.Node) bool {
+		// A SCOPE A LOWERING PRODUCES HAS TO BE ONE. The shape is handed over rather
+		// than named so that what is synthesized is loaded, indexed and resolved
+		// through by the same definition an authored scope is — and that is only true
+		// if the node handed over is the root's OWN container. A copy of it, or a
+		// resource kind's node, would compile a plan that reads fine and produces a
+		// directory nothing can load.
+		if shape := scopeShapeOf(iter); shape != nil {
+			key, _ := shape.Match.(string)
+			switch {
+			case key == "":
+				problems = append(problems, "a lowering scope has no key")
+			case findGroup(root, key) != shape:
+				problems = append(problems, "the lowering scope "+key+" is not this schema's own "+key)
+			case len(shape.Children) == 0 || !shape.Children[0].Group:
+				problems = append(problems, "the lowering scope "+key+" holds no resources of its own, so nothing could be placed in it")
+			}
+			if len(LoweringsOf(iter)) == 0 {
+				problems = append(problems, "a kind declares a lowering scope and lowers into nothing")
+			}
+		}
 		for _, l := range LoweringsOf(iter) {
 			switch {
 			case l.into == "":
@@ -1123,7 +1219,7 @@ func CheckLowerings(root *engine.Node) []string {
 			case !kinds[l.into]:
 				problems = append(problems, "lowering into "+l.into+", which is not a kind")
 			}
-			if strings.TrimSpace(l.name) == "" {
+			if l.name.Empty() {
 				problems = append(problems, "lowering into "+l.into+" produces no name")
 			}
 			// A lowering has to produce a resource that could actually EXIST. A kind's
@@ -1137,10 +1233,15 @@ func CheckLowerings(root *engine.Node) []string {
 				problems = append(problems, "lowering into "+l.into+" leaves "+missing+" unset, which that kind requires")
 			}
 			// EVERY INPUT MUST EXIST ON THE SHELL. A lowering is a function of the
-			// resource it lowers, so its templates name that resource's fields — and a
-			// name that is not one is not an error anywhere else: expand leaves an
-			// unfilled `{each.attemps}` in the value, which travels into a derived
-			// resource and looks like config.
+			// resource it lowers, so its terms name that resource's fields — and a name
+			// that is not one is not an error anywhere else: a field nothing has resolves
+			// to nothing, is left showing as `{each.attemps}` in the value, and travels
+			// into a derived resource looking like config.
+			//
+			// A term makes the STRUCTURE of a reference unrepresentable-if-wrong — there
+			// is no missing brace and no misspelt `each.` prefix to make any more — and
+			// this is what still catches the other half, a field name that is simply not
+			// one. Both are found here, with no config in the room.
 			//
 			// It is also what makes the lowering reversible in the way that matters:
 			// what the shell becomes is computed from the shell's own attributes, all

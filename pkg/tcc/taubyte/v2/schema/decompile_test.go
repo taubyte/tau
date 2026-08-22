@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+	"github.com/taubyte/tau/pkg/tcc/interp"
 	"github.com/taubyte/tau/pkg/tcc/interp/decompile"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"gotest.tools/v3/assert"
@@ -132,10 +133,20 @@ func TestDecompileAllTheWayWritesWhatWasLowered(t *testing.T) {
 	assert.NilError(t, d.Decompile(first))
 
 	for _, r := range plan {
-		path := "/" + r.Kind + "/" + r.Name + ".yaml"
+		path := documentOf(r)
 		_, err := out.Stat(path)
 		assert.NilError(t, err, "%s is what a lowering produced and was not written", path)
 	}
+
+	// and it is written WHERE THE SOURCE PUT IT. A workflow is a scope for what it
+	// becomes, so the queues are inside it — as files a person could read as belonging
+	// to `checkout`, which is the whole reason the scope exists.
+	for _, name := range []string{"checkout_reserve", "checkout_charge", "checkout_failed"} {
+		_, err := out.Stat("/namespace/checkout/queue/" + name + ".yaml")
+		assert.NilError(t, err)
+	}
+	_, err = out.Stat("/namespace/checkout/scope.yaml")
+	assert.NilError(t, err, "the scope a lowering produced has no document of its own")
 
 	// what somebody wrote is still there too: all the way is everything, not only the
 	// generated half
@@ -147,6 +158,24 @@ func TestDecompileAllTheWayWritesWhatWasLowered(t *testing.T) {
 	_, _, err = c.Compile(context.Background())
 	assert.ErrorContains(t, err, "has to be renamed",
 		"the generated depth compiled, which would make it look like a repository")
+}
+
+// documentOf is where a planned resource's document lives, built the way any consumer
+// has to build it: off the layout this vocabulary states, never off a rule spelled out
+// again here. A produced SCOPE is a directory with the leaf document inside it; anything
+// else is one file, under the scope directories it sits in.
+func documentOf(r interp.Derived) string {
+	l := schema.LayoutOf()
+	path := ""
+	for _, level := range strings.Split(r.Scope, "/") {
+		if level != "" {
+			path += "/" + strings.ReplaceAll(l.Scope, "{name}", level)
+		}
+	}
+	if r.Scoping {
+		return path + "/" + strings.ReplaceAll(l.Scope, "{name}", r.Name) + "/" + l.Leaf + ".yaml"
+	}
+	return path + "/" + strings.NewReplacer("{kind}", r.Kind, "{name}", r.Name).Replace(l.Resource)
 }
 
 func compileFor(t *testing.T, opt schema.Option) schema.Object {
@@ -191,6 +220,14 @@ func TestGeneratedDocumentsCompile(t *testing.T) {
 	assert.Assert(t, len(plan) > 0, "the fixture has to lower something for this to mean anything")
 	for _, d := range plan {
 		assert.Assert(t, d.ID != "", "%s/%s has no id to be stored under", d.Kind, d.Name)
+		// A produced SCOPE is looked for where scopes are: it is a container, and
+		// Resources() lists what is IN one rather than the one — the same reason an
+		// authored namespace is not in that list either.
+		if d.Scoping {
+			assert.Assert(t, scopeExists(obj.Flat(), d.Scope, d.Name),
+				"the scope %s/%s is planned and is not in the compiled object", d.Kind, d.Name)
+			continue
+		}
 		assert.Assert(t, hasResource(obj.Flat(), d.Kind, d.Name),
 			"%s/%s is planned and is not in the compiled object", d.Kind, d.Name)
 	}

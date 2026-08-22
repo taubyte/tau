@@ -29,17 +29,28 @@ var (
 	DefineList      = engine.DefineList
 
 	// The lowering terms. They live in interp rather than engine because the
-	// interpreter is what expands them; they are re-exported here so a vocabulary
+	// interpreter is what carries them out; they are re-exported here so a vocabulary
 	// reads in one language.
-	Lowers           = interp.Lowers
-	Into             = interp.Into
-	PerEach          = interp.PerEach
-	Acts             = interp.Acts
-	Named            = interp.Named
-	Carries          = interp.Carries
-	Writes           = interp.Writes
-	On               = interp.On
-	At               = interp.At
+	Lowers     = interp.Lowers
+	Lowerable  = interp.Lowerable
+	Into       = interp.Into
+	PerEach    = interp.PerEach
+	Acts       = interp.Acts
+	Named      = interp.Named
+	Carries    = interp.Carries
+	Writes     = interp.Writes
+	On         = interp.On
+	At         = interp.At
+	AtProduced = interp.AtProduced
+
+	// The VALUE terms — what a lowering says a name, a field or a written value is made
+	// of. `Attr` is the resource being lowered, `Each` the element, `Next` the one after
+	// it, `Scope` where the produced resources were put, `Text` fixed text and `Concat`
+	// several of those in a row. Attr/Each/Next are generic over the key spelling, so
+	// they are functions below rather than values here.
+	Text             = interp.Text
+	Concat           = interp.Concat
+	Scope            = interp.Scope
 	Doc              = engine.Doc
 	Either           = engine.Either
 	AnswersAt        = engine.AnswersAt
@@ -52,6 +63,7 @@ var (
 	Generated        = engine.Generated
 	GroupAnnotate    = engine.GroupAnnotate
 	GroupDoc         = engine.GroupDoc
+	HttpMethods      = engine.HttpMethods
 	Icon             = engine.Icon
 	IsCID            = engine.IsCID
 	IsFqdn           = engine.IsFqdn
@@ -99,9 +111,17 @@ func Key(segments ...string) AKey { return engine.Key(segments...) }
 func When[T string | AKey](field T) interp.LoweringOption { return interp.When(field) }
 
 // Sets names one of the produced kind's attributes, by key.
-func Sets[T string | AKey](field T, tmpl string) interp.LoweringOption {
-	return interp.Sets(field, tmpl)
+func Sets[T string | AKey](field T, value interp.Term) interp.LoweringOption {
+	return interp.Sets(field, value)
 }
+
+// Attr, Each and Next name an attribute a lowering READS — of the resource being lowered,
+// of the element it iterates, and of the element after that one. They take the same two
+// spellings every other term that names an attribute takes, a plain key or Key(...)
+// segments, so they are generic and cannot be re-exported as values.
+func Attr[T string | AKey](field T) interp.Term { return interp.Attr(field) }
+func Each[T string | AKey](field T) interp.Term { return interp.Each(field) }
+func Next[T string | AKey](field T) interp.Term { return interp.Next(field) }
 
 func String[T string | AKey](name T, o ...engine.Option) *Attribute { return engine.String(name, o...) }
 func StringSlice[T string | AKey](name T, o ...engine.Option) *Attribute {

@@ -110,6 +110,7 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	out = append(out, checkHostWorlds(all)...)
 	out = append(out, checkHandlerPorts(all)...)
 	out = append(out, checkVolumeWriters(all)...)
+	out = append(out, checkAccessDuplicates(all)...)
 	out = append(out, checkWorkflows(all)...)
 	// The record of what the compile produced sits BESIDE the project, so it is read
 	// from the object rather than from the project inside it.
@@ -632,12 +633,12 @@ func checkWorkflows(all []compiled) []Finding {
 // then its parents.
 func startedBy(all []compiled, target compiled) bool {
 	for _, res := range all {
-		for name, e := range res.block(target.kind) {
-			if name != target.name {
-				continue
-			}
+		for label, e := range res.block(target.kind) {
 			entry, ok := e.(map[string]any)
 			if !ok {
+				continue
+			}
+			if entryName(label, entry) != target.name {
 				continue
 			}
 			for _, scope := range scopeChain(res.scope, field(entry, "namespace")) {
@@ -776,17 +777,18 @@ func checkVolumeWriters(all []compiled) []Finding {
 	writers := map[string][]compiled{}
 
 	for _, res := range all {
-		for target, e := range res.block("volume") {
+		for label, e := range res.block("volume") {
 			entry, ok := e.(map[string]any)
 			if !ok || !mountsForWriting(entry) {
 				continue
 			}
-			writers[volumeKey(all, target, field(entry, "namespace"), res.scope)] = append(
-				writers[volumeKey(all, target, field(entry, "namespace"), res.scope)], res)
+			name := entryName(label, entry)
+			writers[volumeKey(all, name, field(entry, "namespace"), res.scope)] = append(
+				writers[volumeKey(all, name, field(entry, "namespace"), res.scope)], res)
 
 			if n := res.int("limits/max_instances"); n > 1 {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-					fmt.Sprintf("mounts volume %q for writing and may run %d instances", target, n),
+					fmt.Sprintf("mounts volume %q for writing and may run %d instances", name, n),
 					"A volume is leased to one writer. Either the ceiling comes down to 1, or the volume is mounted read-only and something else owns the writes."})
 			}
 		}
@@ -808,6 +810,56 @@ func checkVolumeWriters(all []compiled) []Finding {
 		out = append(out, Finding{Broken, "volume", name, "",
 			"is mounted for writing by " + strings.Join(names, " and "),
 			"A volume has one writer. The others are asking for a lease that is already held, and which of them starts is a race."})
+	}
+	return out
+}
+
+// checkAccessDuplicates: two entries in one resource's own access group that resolve to
+// the SAME target are two labels for one fact — `accessName` exists precisely so two
+// entries CAN share a target's real name across namespaces, but nothing stops the author
+// writing two different labels for the same one by mistake, and a map has no order an
+// author controls: whichever entry's ops the compiler visits last silently wins, and the
+// document reads as if both grants apply.
+func checkAccessDuplicates(all []compiled) []Finding {
+	byName := map[string]compiled{}
+	for _, res := range all {
+		byName[res.kind+"\x00"+res.scope+"\x00"+res.name] = res
+	}
+	find := func(kind, name, own, ns string) (compiled, bool) {
+		for _, scope := range scopeChain(own, ns) {
+			if r, ok := byName[kind+"\x00"+scope+"\x00"+name]; ok {
+				return r, true
+			}
+		}
+		return compiled{}, false
+	}
+
+	var out []Finding
+	for _, res := range all {
+		for _, kind := range Kinds() {
+			labelsOf := map[string][]string{} // target id -> the labels that reach it
+			for label, e := range res.block(kind) {
+				entry, ok := e.(map[string]any)
+				if !ok {
+					continue
+				}
+				name := entryName(label, entry)
+				to, found := find(kind, name, res.scope, field(entry, accessScope))
+				if !found {
+					continue // unresolvable is checkReachable's business, not this one's
+				}
+				labelsOf[to.id] = append(labelsOf[to.id], label)
+			}
+			for _, labels := range labelsOf {
+				if len(labels) < 2 {
+					continue
+				}
+				sort.Strings(labels)
+				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+					fmt.Sprintf("reaches the same %s under %d different names: %s", kind, len(labels), strings.Join(labels, ", ")),
+					"Two entries that resolve to one resource are two labels for one fact, and only one of them is doing anything — whichever the compiler visits last silently wins. Keep one."})
+			}
+		}
 	}
 	return out
 }
@@ -954,20 +1006,28 @@ func CheckLoweredOps(root *Node) []string {
 	for _, w := range interp.DeclaredWrites(root) {
 		// An access entry is <kind>/<name>/<ops>; anything else a lowering writes is an
 		// ordinary field and has no verb to check.
-		if len(w.Path) != 3 || w.Path[2] != ops {
+		if len(w.Path) != 3 {
 			continue
 		}
-		kind := w.Path[0]
-		if kind == "{into}" {
-			kind = w.Into // the resource this lowering produced
+		if last, fixed := w.Path[2].Literal(); !fixed || last != ops {
+			continue
 		}
-		if strings.ContainsAny(kind, "{}") {
-			continue // a kind the plan fills in; nothing static to check
+		// The kind is a fixed segment or it is nothing static to check. It used to be
+		// the string "{into}" here, which this had to know by heart; a write that lands
+		// on what its own lowering produced arrives with the produced KIND already in
+		// it, because that one is known without any config.
+		kind, fixed := w.Path[0].Literal()
+		if !fixed {
+			continue
 		}
-		if _, ok := EffectOf(kind, w.Value); !ok {
+		op, fixed := w.Value.Literal()
+		if !fixed {
+			continue // a value the plan fills in is not a verb anybody wrote
+		}
+		if _, ok := EffectOf(kind, op); !ok {
 			problems = append(problems, fmt.Sprintf(
 				"%s lowers into %s and asks for %q on a %s, which does not do that; it has %s",
-				w.From, w.Into, w.Value, kind, strings.Join(opNames(kind), ", ")))
+				w.From, w.Into, op, kind, strings.Join(opNames(kind), ", ")))
 		}
 	}
 	sort.Strings(problems)

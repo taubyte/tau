@@ -77,8 +77,29 @@ func TestIndexResolvesANameInItsOwnScope(t *testing.T) {
 
 // A workflow's queues are not written by anybody, and something still has to find them
 // by name: a lowered resource is a resource, so it is indexed like one.
+//
+// AND IT IS INDEXED WHERE IT LIVES. A workflow is a scope for what it becomes, so its
+// queues answer under that scope's id and not at the project root — which is the whole
+// reason `checkout_reserve` cannot collide with a queue somebody wrote, and the reason
+// its dead-letter reference resolves to a sibling with no help from anything.
 func TestIndexCoversWhatALoweringProduced(t *testing.T) {
 	idx, project := compileIndex(t)
-	value := link(t, idx, "projects/"+project+"/queue/checkout_reserve/links")
-	assert.Assert(t, strings.HasPrefix(value, "branches/main/projects/"+project+"/queue/"))
+
+	// the scope itself is indexed by name, the way an authored namespace is — which is
+	// what turns the written `/checkout` on an access entry into the id below
+	checkout := link(t, idx, "projects/"+project+"/namespace/checkout/links")
+	nsID := checkout[strings.LastIndex(checkout, "/")+1:]
+	assert.Assert(t, nsID != "")
+
+	for _, name := range []string{"checkout_reserve", "checkout_charge", "checkout_failed"} {
+		value := link(t, idx, "projects/"+project+"/namespace/"+nsID+"/queue/"+name+"/links")
+		assert.Assert(t, strings.HasPrefix(value,
+			"branches/main/projects/"+project+"/namespace/"+nsID+"/queue/"),
+			"%s is indexed at %s", name, value)
+	}
+
+	// and NOT at the project root, where the queues somebody wrote are
+	_, atRoot := idx["projects/"+project+"/queue/checkout_reserve/links"]
+	assert.Assert(t, !atRoot, "a produced queue is still indexed beside the authored ones")
+	link(t, idx, "projects/"+project+"/queue/orders/links")
 }

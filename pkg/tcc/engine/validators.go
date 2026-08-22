@@ -156,21 +156,24 @@ func IsFqdn() Option {
 	}
 }
 
-// httpMethods is the closed set IsHttpMethod accepts (case-insensitively at
-// runtime, canonical uppercase for the introspectable enum).
-var httpMethods = []string{"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
+// HttpMethods is the closed set IsHttpMethod accepts (case-insensitively at
+// runtime, canonical uppercase for the introspectable enum). Exported so a
+// vocabulary can build the slice-valued sibling IsHttpMethod has no shape for
+// (engine.InSet-family validators are scalar-only) without a second copy of
+// the set to drift from this one.
+var HttpMethods = []string{"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
 
 func IsHttpMethod() Option {
 	return func(a *Attribute) {
 		Validator(func(s string) error {
-			if slices.Contains(httpMethods, strings.ToUpper(s)) {
+			if slices.Contains(HttpMethods, strings.ToUpper(s)) {
 				return nil
 			}
 			return errors.New("invalid http method")
 		})(a)
 		// Dual-write the permitted set so a generator can emit an enum/union. The
 		// runtime check stays case-insensitive; the enum documents canonical casing.
-		Annotate("enum", append([]string(nil), httpMethods...))(a)
+		Annotate("enum", append([]string(nil), HttpMethods...))(a)
 		Annotate("enumString", true)(a)
 	}
 }

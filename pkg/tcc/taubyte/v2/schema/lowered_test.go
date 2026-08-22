@@ -84,12 +84,19 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 
 	workflow := idOf(t, flat, "workflow", "checkout")
 	made, added := schema.Became(flat, workflow)
-	assert.Equal(t, len(made), 3, "one queue per step, and the one they fail into")
+	assert.Equal(t, len(made), 4, "one queue per step, the one they fail into, and the scope holding them")
+
+	kinds := map[string]int{}
 	for _, id := range made {
 		assert.Equal(t, rec.Resources[id].From, workflow)
-		assert.Equal(t, rec.Resources[id].Kind, "queue")
 		assert.Assert(t, rec.Produced(id))
+		kinds[rec.Resources[id].Kind]++
 	}
+	// THE SCOPE IS RECORDED LIKE ANYTHING ELSE IT PRODUCED. It has to be: decompiling to
+	// what somebody wrote has to take the directory back out too, or the next compile
+	// finds an authored namespace it did not write and refuses to produce into it.
+	assert.Equal(t, kinds["queue"], 3)
+	assert.Equal(t, kinds["namespace"], 1)
 
 	// ...and the entries it put on resources somebody else wrote, which is the other half
 	// of what has to be taken back off.
@@ -107,9 +114,9 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	assert.Equal(t, len(alsoNone), 0)
 }
 
-// A LOWERABLE RESOURCE IN A NAMESPACE produces into that namespace. Scope arithmetic is
-// where a path builder goes wrong, and it goes wrong silently: a resource placed one
-// level up is a resource in the wrong namespace, and it compiles.
+// A LOWERABLE RESOURCE IN A NAMESPACE produces into a namespace of its own, INSIDE that
+// one. Scope arithmetic is where a path builder goes wrong, and it goes wrong silently: a
+// resource placed one level up is a resource in the wrong namespace, and it compiles.
 func TestLoweringInsideANamespace(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -126,9 +133,14 @@ func TestLoweringInsideANamespace(t *testing.T) {
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 
+	// the scope the workflow became sits inside the one it was written in, and its
+	// queues are in that — never one level up, which is where a path builder puts them
+	assert.Assert(t, scopeExists(obj.Flat(), "shop", "ship"))
+	assert.Assert(t, !scopeExists(obj.Flat(), "", "ship"), "the scope was placed at the root")
+
 	for _, r := range schema.Resources(rootOf(obj.Flat())) {
 		if r.Kind == "queue" && r.Name == "ship_pack" {
-			assert.Equal(t, r.Scope, "shop")
+			assert.Equal(t, r.Scope, "shop/ship")
 			return
 		}
 	}
@@ -250,6 +262,33 @@ func idOf(t *testing.T, flat map[string]any, kind, name string) string {
 	return ""
 }
 
+// scopeExists reports whether a scope of this name sits at this path. Scopes are the one
+// thing Resources() does not list — it lists what is inside them — so a question about a
+// scope is asked of the container itself.
+func scopeExists(flat map[string]any, at, name string) bool {
+	scope := rootOf(flat)
+	levels := append([]string{}, strings.Split(at, "/")...)
+	levels = append(levels, name)
+	for _, level := range levels {
+		if level == "" {
+			continue
+		}
+		found := false
+		container, _ := scope["namespace"].(map[string]any)
+		for _, v := range container {
+			m, _ := v.(map[string]any)
+			if n, _ := m["name"].(string); n == level {
+				scope, found = m, true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 func rootOf(flat map[string]any) map[string]any {
 	if root, ok := flat["object"].(map[string]any); ok {
 		return root
@@ -359,4 +398,76 @@ func TestSessionAddressesNestedScopes(t *testing.T) {
 	scope, ok := s.ResourceAt("/namespace/shop/namespace/eu/scope.yaml")
 	assert.Assert(t, ok)
 	assert.DeepEqual(t, scope, []string{"namespace", "shop", "namespace", "eu"})
+}
+
+// A NAME A LOWERING TAKES IS NOT A NAME AN AUTHOR CAN LOSE. A workflow is a scope for
+// what it becomes, so a queue somebody wrote at the root and a queue the compiler wrote
+// inside `checkout` are two resources that never meet — the collision that used to be a
+// refused compile is not a collision at all any more.
+//
+// What CAN still collide is the scope's own name, and that one has to be said: a
+// namespace an author wrote is theirs, and producing into it would put the compiler's
+// resources in somebody's directory.
+func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
+	free := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(free, "../fixtures/basic", "/"))
+	assert.NilError(t, afero.WriteFile(free, "/queue/checkout_reserve.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ4Aa\n"+
+			"description: a queue a person wrote, with the name a workflow also produces\n"), 0o644))
+
+	c, err := schema.New(schema.WithVirtual(free, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err, "an authored queue was refused for a name it no longer shares")
+
+	scopes := map[string]bool{}
+	for _, r := range schema.Resources(rootOf(obj.Flat())) {
+		if r.Kind == "queue" && r.Name == "checkout_reserve" {
+			scopes[r.Scope] = true
+		}
+	}
+	assert.Assert(t, scopes[""] && scopes["checkout"],
+		"both queues called checkout_reserve should exist, in different scopes: %v", scopes)
+
+	// the scope itself, which IS taken
+	taken := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(taken, "../fixtures/basic", "/"))
+	assert.NilError(t, afero.WriteFile(taken, "/namespace/checkout/scope.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ4Ab\n"), 0o644))
+
+	c, err = schema.New(schema.WithVirtual(taken, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "namespace/checkout is written here AND is what workflow/checkout becomes")
+}
+
+// A REFERENCE BETWEEN TWO PRODUCED RESOURCES RESOLVES BY ITSELF. A queue carries a
+// `dead_letter` that is a Ref like any other, and the queue it names is one the same
+// lowering made — so it resolves the way a bare name always resolves: in the scope it is
+// written in, which is the scope the lowering produced. Nothing needed a second shape to
+// dodge the index, which was the first answer and the wrong one.
+func TestAProducedReferenceResolvesInTheProducedScope(t *testing.T) {
+	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	flat := obj.Flat()
+
+	failed := idOf(t, flat, "queue", "checkout_failed")
+	for _, name := range []string{"checkout_reserve", "checkout_charge"} {
+		q := resource(t, flat, "queue", name)
+		dead, _ := q["dead_letter"].(map[string]any)
+		assert.Equal(t, dead["name"], failed,
+			"%s's dead-letter reference did not resolve to the queue beside it: %v", name, dead)
+	}
+
+	// AND WHAT REACHES IN SAYS WHERE. The step's function was written outside that scope,
+	// so its entry names the queue and the namespace it is in — an author writing the
+	// same thing by hand would have had to write both.
+	fn := resource(t, flat, "function", "reserve_stock")
+	queues, _ := fn["queue"].(map[string]any)
+	entry, _ := queues["checkout_reserve"].(map[string]any)
+	assert.Assert(t, entry != nil, "%v", queues)
+	assert.Equal(t, entry["namespace"], "/checkout")
+	assert.DeepEqual(t, entry["ops"], []string{"receive"})
 }

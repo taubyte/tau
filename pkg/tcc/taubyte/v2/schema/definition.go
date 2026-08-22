@@ -78,6 +78,29 @@ func attachAccess() {
 	}
 }
 
+// attachLowerable hands every kind that LOWERS the shape of the scope what it produces
+// goes into. Attached here rather than written beside each `Lowers(...)` for the same
+// reason the access groups are: the shape is the container, the container holds every
+// kind, and a kind naming it while the vocabulary is still being built is a cycle Go
+// refuses to compile.
+//
+// EVERY KIND THAT LOWERS, not a list of them. The rule is one sentence — what a
+// construct becomes lives inside it — and a list is the thing that is wrong the day a
+// twenty-sixth kind starts lowering. What it buys, on this vocabulary's own resources:
+// `workflow/checkout` puts its three queues in a namespace called `checkout`, so
+// `checkout_reserve` cannot collide with a queue somebody wrote, and the dead-letter
+// queue the others point at is a sibling they resolve by bare name.
+func attachLowerable(scope *Node) {
+	for _, g := range V2Resources {
+		if len(g.Children) == 0 {
+			continue
+		}
+		if iter := g.Children[0]; len(interp.LoweringsOf(iter)) > 0 {
+			Lowerable(scope)(iter)
+		}
+	}
+}
+
 // identityAttributes is the identity block on its own, for the scope container,
 // which is a directory rather than a thing an edge can point at.
 func identityAttributes() []*Attribute {
@@ -157,7 +180,7 @@ var hostWorlds = []string{"handler", "authorizer", "gateway-transformer", "proxy
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	return commonAttributes(append([]*Attribute{
 		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
-			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream.")),
+			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream. gateway-router: takes a parsed HTTP request, decides which route or function should handle it. proxy-router: takes bytes on a stream, decides which target should receive the connection.")),
 		// WHERE THE CODE COMES FROM, as a block. Absent means this resource's own
 		// repository — the common case writes nothing at all, which is what "." used to
 		// say with a character. `module` names one of the project's modules, with the
@@ -434,7 +457,7 @@ func hostAttributes(section string) []*Attribute {
 		// other way, and an arrow from here would say the gateway reaches the zone.
 		String(Key("host", "zone", "in", "namespace"), IsNamespacePath(), InSection(section),
 			Doc("Namespace", "Where that zone lives. Omitted means this resource's own scope, then its parents.")),
-		String(Key("host", "zone", "in", "name"), IsVariableName(), Ref("zone", Inbound()), RequiredWhen(Key("host", "kind"), "zone"), InSection(section), ShowWhen(Key("host", "kind"), "zone"),
+		String(Key("host", "zone", "in", "name"), Path("host", Either("generated", "zone"), "in", "name"), IsVariableName(), Ref("zone", Inbound()), RequiredWhen(Key("host", "kind"), "zone"), InSection(section), ShowWhen(Key("host", "kind"), "zone"),
 			Doc("Zone", "The zone this name lives in, as \"zone/<name>\". Only for a zone you own; a generated name has no zone to choose.")),
 	}
 }
@@ -697,7 +720,7 @@ var V2Resources = []*Node{
 			commonAttributes(
 				String(Key("engine", "kind"), Path("engine", Either(databaseEngines...)), Captures(), Field("Engine"), InSection("engine"),
 					Doc("Engine", "Which engine backs this database. distributed is tau's own, replicated across the swarm; the rest are external systems reached over the network.")),
-				Bytes(Key("engine", "distributed", "size"), RequiredWhen(Key("engine", "kind"), "distributed"), InSection("engine"), ShowWhen(Key("engine", "kind"), "distributed"),
+				Bytes(Key("engine", "distributed", "size"), Path("engine", Either(databaseEngines...), "size"), RequiredWhen(Key("engine", "kind"), "distributed"), InSection("engine"), ShowWhen(Key("engine", "kind"), "distributed"),
 					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
 
 				// An external engine carries its OWN connection. There is no reference
@@ -1000,7 +1023,7 @@ var V2Resources = []*Node{
 				// prefix without it.
 				Bool(Key("route", "strip_prefix"), InSection("route"),
 					Doc("Strip Prefix", "Remove the matched path prefix before handing the request on. A website mounted anywhere but / usually wants this.")),
-				StringSlice(Key("route", "methods"), InSection("route"), Doc("Methods", "HTTP methods answered. Omit for any. GET/HEAD/OPTIONS read, the rest write.")),
+				StringSlice(Key("route", "methods"), EachInSet(HttpMethods...), InSection("route"), Doc("Methods", "HTTP methods answered. Omit for any. GET/HEAD/OPTIONS read, the rest write.")),
 
 				// the switch: which kind handles it, and where that resource lives
 				String(Key("route", "handler", "kind"), Path("route", "handler", Either(handlerKinds...)), Captures(), Field("HandlerKind"), InSection("handler"), Doc("Handler", "Which kind serves this path (the key selects the handler block).")),
@@ -1016,7 +1039,7 @@ var V2Resources = []*Node{
 				Bool(Key("cors", "allow_self"), InSection("policy"),
 					Doc("Allow Own Origin", "Allow the origin this gateway itself answers on. The only way to say it when the name is generated.")),
 				StringSlice(Key("cors", "origins"), InSection("policy"), Doc("CORS Origins", "Origins allowed by CORS.")),
-				StringSlice(Key("cors", "methods"), InSection("policy"), Doc("CORS Methods", "Methods allowed by CORS.")),
+				StringSlice(Key("cors", "methods"), EachInSet(HttpMethods...), InSection("policy"), Doc("CORS Methods", "Methods allowed by CORS.")),
 				Int(Key("rate_limit", "rpm"), InSection("policy"), Doc("Rate Limit", "Requests per minute.")),
 				Int(Key("rate_limit", "burst"), InSection("policy"), Doc("Burst", "Requests allowed above the sustained rate.")),
 				String(Key("rate_limit", "key"), InSection("policy"), Doc("Rate Limit Key", "What the limit is counted per: \"ip\" or \"header:<name>\".")),
@@ -1317,7 +1340,9 @@ var V2Resources = []*Node{
 					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
 				String(Key("inference", "remote", "credentials", "name"), IsVariableName(), Ref("secret"), RequiredWhen(Key("inference", "kind"), "remote"), InSection("model"),
 					Doc("Credentials", "Secret holding the provider credential, as \"secret/<name>\". It lives here rather than on each caller, so rotating it is one edit.")),
-				String(Key("inference", "local", "name"), IsVariableName(), RequiredWhen(Key("inference", "kind"), "local"), InSection("model"),
+				String(Key("inference", "local", "namespace"), IsNamespacePath(), InSection("model"),
+					Doc("Namespace", "Where that application lives. Omitted means this resource's own scope, then its parents.")),
+				String(Key("inference", "local", "name"), IsVariableName(), Ref("application"), RequiredWhen(Key("inference", "kind"), "local"), InSection("model"),
 					Doc("Workload", "The application in this project that serves this model.")),
 				String(Key("inference", "local", "port"), IsVariableName(), InSection("model"),
 					Doc("Port", "Which of that workload's named ports inference is reached on.")),
@@ -1435,27 +1460,29 @@ var V2Resources = []*Node{
 					// The loop is what CALLS the tools this agent declares, so opened,
 					// the box reads model-and-memory-and-tools around it.
 					Acts(),
-					Named("{name}_infer"),
-					Carries("the loop: call the model, run a tool, decide again"),
-					Sets(Key("source", "tau"), "agent"),
-					Sets(Key("execution", "call"), "infer"),
-					Sets(Key("execution", "timeout"), "5m"),
-					Sets(Key("execution", "memory"), "128MB"),
-					Sets("implements", "handler"),
+					Named(Concat(Attr("name"), Text("_infer"))),
+					Carries(Text("the loop: call the model, run a tool, decide again")),
+					Sets(Key("source", "tau"), Text("agent")),
+					Sets(Key("execution", "call"), Text("infer")),
+					Sets(Key("execution", "timeout"), Text("5m")),
+					Sets(Key("execution", "memory"), Text("128MB")),
+					Sets("implements", Text("handler")),
 				),
 
 				// Only when there is an embedder to fill it: an agent that remembers
 				// nothing gets no index rather than an empty one.
 				Into("vector",
 					When(Key("memory", "embedder", "name")),
-					Named("{name}_memory"),
-					Carries("what {name} remembers"),
-					Sets("dimensions", "{memory/dimensions}"),
-					Sets(Key("size"), "{memory/size}"),
+					Named(Concat(Attr("name"), Text("_memory"))),
+					Carries(Concat(Text("what "), Attr("name"), Text(" remembers"))),
+					// One term, one field: the value is CARRIED, so the vector's size is
+					// the agent's own byte count and comes back out again as `2GB`.
+					Sets("dimensions", Attr(Key("memory", "dimensions"))),
+					Sets(Key("size"), Attr(Key("memory", "size"))),
 					// The loop is what searches it, and that is an entry on the loop:
 					// `vector: { <name>_memory: { ops: [search] } }`, exactly what an
 					// author would have written.
-					Reaches("search", From("function", "{name}_infer")),
+					Reaches("search", From("function", Concat(Attr("name"), Text("_infer")))),
 				),
 			),
 			Resource("agent", "Agent", "Agent", "agent"),
@@ -1486,7 +1513,7 @@ var V2Resources = []*Node{
 					Doc("Concurrency", "How many runs may be in flight at once. Absent means unlimited.")),
 			),
 			Nested(stepsGroup()),
-			GroupDoc("An ordered pipeline of functions with retries. It lowers into one queue per step; nothing new is deployed to serve it. There is no run state yet — see omissions."), Icon("workflow"), Category("trigger"),
+			GroupDoc("An ordered pipeline of functions with retries. Each step runs as its own queue; nothing new has to be deployed to serve it. There is no run state to inspect yet."), Icon("workflow"), Category("trigger"),
 			secIdentity, secAccess,
 			Section("run", "Run", "Ceilings on one run and on all of them."),
 			Section("steps", "Steps", "What runs, in order."),
@@ -1511,16 +1538,21 @@ var V2Resources = []*Node{
 				// share whichever number was written last.
 				Into("queue",
 					PerEach("steps"),
-					Named("{name}_{each.name}"),
-					Carries("work waiting for step {each.name}"),
-					Sets("max_attempts", "{each.attempts}"),
-					Sets(Key("dead_letter", "name"), "{name}_failed"),
+					// THE NAME STATES ITS PARTS. `{name}_{each.name}` produced the same
+					// `checkout_reserve` and could not be read backwards — recovering
+					// `reserve` meant guessing which underscore was the separator. This
+					// says which one, so the step's name is carried by the queue's and a
+					// shell does not have to store it twice.
+					Named(Concat(Attr("name"), Text("_"), Each("name"))),
+					Carries(Concat(Text("work waiting for step "), Each("name"))),
+					Sets("max_attempts", Each("attempts")),
+					Sets(Key("dead_letter", "name"), Concat(Attr("name"), Text("_failed"))),
 
 					// WHO CONSUMES IT. A queue nothing receives from is a queue nothing
 					// happens in, so the step's function is named as its consumer — the
 					// `receive` half of the queue's own verbs, in the direction work
 					// actually travels.
-					Reaches("receive", From("function", "{each.run}", "{each.namespace}")),
+					Reaches("receive", From("function", Each("run"), Each("namespace"))),
 
 					// WHAT MAKES IT A PIPELINE — and it starts at the FUNCTION, not at
 					// the queue. A queue does not hand work to another queue; the
@@ -1528,26 +1560,26 @@ var V2Resources = []*Node{
 					// when it is done, and an edge drawn queue-to-queue describes
 					// something that cannot happen.
 					//
-					// The last step has no next, the template cannot be filled, and the
-					// link is dropped — which is exactly right, because that is where the
-					// run ends.
+					// The last step has no next, so Next("name") has nothing behind it,
+					// and the write is dropped — which is exactly right, because that is
+					// where the run ends.
 					Reaches("send",
-						From("function", "{each.run}", "{each.namespace}"),
-						To("queue", "{name}_{each.next.name}")),
+						From("function", Each("run"), Each("namespace")),
+						To("queue", Concat(Attr("name"), Text("_"), Next("name")))),
 
 					// Same origin for a step that names somewhere other than the failure
 					// queue to go when it has used up its attempts.
 					Reaches("send",
-						From("function", "{each.run}", "{each.namespace}"),
-						To("queue", "{name}_{each.on_error}")),
+						From("function", Each("run"), Each("namespace")),
+						To("queue", Concat(Attr("name"), Text("_"), Each("on_error")))),
 				),
 
 				// The end of the line, with NO CONSUMER — deliberately. A dead-letter
 				// queue is where a run stops so a person can look at it; something
 				// draining it automatically would be the retry that already happened.
 				Into("queue",
-					Named("{name}_failed"),
-					Carries("runs that gave up, kept for a person to look at - nothing consumes this"),
+					Named(Concat(Attr("name"), Text("_failed"))),
+					Carries(Text("runs that gave up, kept for a person to look at - nothing consumes this")),
 				),
 
 				// AND NOTHING ELSE. There is no store for the run's state, because the
@@ -1675,11 +1707,17 @@ func namespacesGroup(depth int) *Node {
 				interp.Indexes(len(V2Resources), byName)))
 }
 
-var _ = func() any { attachAccess(); attachIndexes(); return nil }()
+// scopeShape is the container as it really is, built once: it is both what the root
+// holds and what a lowering is handed when it produces a scope of its own, and those two
+// have to be the SAME node or a produced scope would be loaded by a definition nothing
+// else uses.
+var scopeShape = namespacesGroup(MaxNamespaceDepth)
+
+var _ = func() any { attachAccess(); attachIndexes(); attachLowerable(scopeShape); return nil }()
 
 var v2Root = Root(
 	rootAttributes(),
-	append(append([]*Node{}, V2Resources...), namespacesGroup(MaxNamespaceDepth))...,
+	append(append([]*Node{}, V2Resources...), scopeShape)...,
 ).With(Singular("Project"), Leaf("project"), Strict(),
 	// A resource is stored under its `id` and called by the name of the document it was
 	// written in — the interpreter's two field names, which are this vocabulary's to

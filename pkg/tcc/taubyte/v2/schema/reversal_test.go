@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/taubyte/tau/pkg/tcc/interp"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"gopkg.in/yaml.v3"
@@ -20,26 +21,43 @@ import (
 // copy whole, moves a line here. Without it that is a silent change, and the field it
 // moves is one a shell has already dropped.
 func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
-	assert.DeepEqual(t, schema.Carriages("workflow"), []interp.Carriage{
-		// a step's attempts becomes its queue's max-attempts, whole
-		{Field: "attempts", In: "steps", Into: "queue", As: "max_attempts"},
-		// and its run is the NAME of the resource everything about this step is written
-		// into — the function — so the name comes back from there
-		{Field: "run", In: "steps", Into: "queue", As: ">"},
-	})
+	got := schema.Carriages("workflow")
+	assert.Equal(t, len(got), 3, "got %v", got)
 
-	// A step's NAME is read too — into `{name}_{each.name}` — and is not here, because
-	// composition is one-way: recovering `reserve` from `checkout_reserve` means knowing
-	// where to split a name that may contain an underscore itself. So it stays in the
-	// shell, along with everything the lowering never reads.
+	// a step's attempts becomes its queue's max-attempts, whole
+	assert.DeepEqual(t, got[0], interp.Carriage{
+		Field: "attempts", In: "steps", Into: "queue", As: "max_attempts",
+	}, cmpopts.IgnoreUnexported(interp.Term{}, interp.Carriage{}))
+	assert.Assert(t, !got[0].Composed())
+
+	// A step's NAME is COMPOSED into the name of the queue it becomes, and comes back
+	// anyway. That is the whole of what the typed terms bought: `{name}_{each.name}` was
+	// a string that had already been concatenated, so recovering `reserve` from
+	// `checkout_reserve` meant guessing which underscore was the separator — and the
+	// guess is wrong the moment either half contains one. `Concat(Attr("name"),
+	// Text("_"), Each("name"))` still knows which underscore it wrote, so the prefix is
+	// filled in, its length is the cut, and nothing is guessed.
+	assert.Equal(t, got[1].Field, "name")
+	assert.Equal(t, got[1].In, "steps")
+	assert.Equal(t, got[1].As, "@", "it lands in the name of the queue this step became")
+	assert.Assert(t, got[1].Composed())
+	assert.Equal(t, got[1].Before.String(), "{name}_", "what stands before it, as declared")
+	assert.Equal(t, got[1].After.String(), "")
+
+	// and its run is the NAME of the resource everything about this step is written
+	// into — the function — so the name comes back from there
+	assert.DeepEqual(t, got[2], interp.Carriage{
+		Field: "run", In: "steps", Into: "queue", As: ">",
+	}, cmpopts.IgnoreUnexported(interp.Term{}, interp.Carriage{}))
+
 	remainder := map[string]bool{}
 	for _, f := range schema.Remainder("workflow") {
 		remainder[f] = true
 	}
-	for _, kept := range []string{"steps/name", "timeout", "concurrency", "description"} {
+	for _, kept := range []string{"timeout", "concurrency", "description"} {
 		assert.Assert(t, remainder[kept], "%s comes back from nothing, so a shell has to keep it", kept)
 	}
-	for _, carried := range []string{"steps/attempts", "steps/run"} {
+	for _, carried := range []string{"steps/attempts", "steps/run", "steps/name"} {
 		assert.Assert(t, !remainder[carried], "%s is carried, so a shell storing it stores it twice", carried)
 	}
 }
@@ -57,6 +75,7 @@ func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 
 	var authored struct {
 		Steps []struct {
+			Name     string `yaml:"name"`
 			Run      string `yaml:"run"`
 			Attempts int    `yaml:"attempts"`
 		} `yaml:"steps"`
@@ -71,6 +90,9 @@ func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 		at := "steps/" + strconv.Itoa(i)
 		want[at+"/run"] = s.Run
 		want[at+"/attempts"] = strconv.Itoa(s.Attempts)
+		// the composed one: the queue is called `checkout_reserve`, and `reserve` is what
+		// is left once the prefix the lowering declared is taken off it
+		want[at+"/name"] = s.Name
 	}
 	assert.DeepEqual(t, got, want)
 }

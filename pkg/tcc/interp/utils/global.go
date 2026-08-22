@@ -57,11 +57,17 @@ func (g *global) scopes(ct transform.Context[object.Refrence], o object.Object[o
 	for _, app := range oapps.Children() {
 		sel := oapps.Child(app)
 		oapp, _ := sel.Object()
-		oapp, err := g.wrapped.Process(ct.Fork(oapp), oapp)
+		inner := ct.Fork(oapp)
+		oapp, err := g.wrapped.Process(inner, oapp)
 		if err != nil {
 			return fmt.Errorf("processing scope %s failed with %w", app, err)
 		}
-		if err := g.scopes(ct, oapp); err != nil {
+		// THE CHAIN, not the parent again. Descending with the OUTER context gave a
+		// resource two scopes deep the path of a resource one scope deep — the name
+		// index is keyed by the scopes above a resource, so `shop/ship`'s queues were
+		// looked up under `ship` and answered "not indexed" for a reference to a
+		// sibling sitting right beside them.
+		if err := g.scopes(inner, oapp); err != nil {
 			return fmt.Errorf("inside %s: %w", app, err)
 		}
 		sel.Add(oapp)

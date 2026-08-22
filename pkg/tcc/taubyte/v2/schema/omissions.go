@@ -77,23 +77,6 @@ var Omissions = []Omission{
 			"compare one field — and it is the fourth thing waiting on that pass.",
 	},
 	{
-		Name:    "reaching two resources that share a name in different namespaces",
-		State:   Open,
-		Decided: Forced,
-		Why: "An access entry is KEYED by the target's name, and a yaml mapping cannot hold the " +
-			"same key twice. So a function in /shop can reach its own `sessions` cache or eu's, " +
-			"never both — `caches: { sessions: …, sessions: { namespace: eu } }` is not a document " +
-			"that parses. The keyed shape is what made per-target fields possible (ops, timeout, " +
-			"deliver) and it is worth more than this case costs, but the limit is real and it is " +
-			"invisible until someone hits it: this repo's own fixture claimed to reach both for " +
-			"weeks, in its description, while declaring one.",
-		Instead: "name the two resources differently, or reach the far one through a function in " +
-			"its own namespace.",
-		Unblocks: "an authored key that is not the target's name — an arbitrary label with `name` " +
-			"as a field under it. That is a bigger change than it looks: the key is what every " +
-			"consumer reads a target from today.",
-	},
-	{
 		Name:    "spelling out a generated name inside the config",
 		State:   Open,
 		Decided: Forced,

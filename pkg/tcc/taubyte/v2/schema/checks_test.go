@@ -324,8 +324,8 @@ func TestLoweredOpsAreVerbsOfTheirTarget(t *testing.T) {
 	bad := schema.Root(nil, schema.DefineGroup("workflow",
 		schema.DefineIter(nil, schema.Lowers(
 			schema.Into("queue",
-				schema.Named("x"),
-				schema.Reaches("consume", schema.From("function", "f")),
+				schema.Named(schema.Text("x")),
+				schema.Reaches("consume", schema.From("function", schema.Text("f"))),
 			),
 		))))
 	problems := schema.CheckLoweredOps(bad)

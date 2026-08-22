@@ -109,12 +109,13 @@ func accessRelations(res compiled, find func(kind, name, own, ns string) (compil
 		if !ok || len(OpsOf(kind)) == 0 {
 			continue
 		}
-		for target, e := range entries {
+		for label, e := range entries {
 			entry, ok := e.(map[string]any)
 			if !ok {
 				continue
 			}
-			to, found := find(kind, target, res.scope, field(entry, AccessEntryShape().Namespace))
+			name := entryName(label, entry)
+			to, found := find(kind, name, res.scope, field(entry, AccessEntryShape().Namespace))
 			if !found {
 				continue // an unresolvable target is the audit's business, not this one's
 			}

@@ -243,7 +243,8 @@ func TestPipe_UnwrapGate(t *testing.T) {
 		engine.Resource("queue", "Queue", "Queue", "queue"))))
 	lowers := engine.Root(id, engine.DefineGroup("workflow", engine.DefineIter(id,
 		engine.Resource("workflow", "Workflow", "Workflow", "workflow"),
-		interp.Lowers(interp.Into("queue", interp.Named("{name}_work"))))))
+		interp.Lowers(interp.Into("queue",
+			interp.Named(interp.Concat(interp.Attr("name"), interp.Text("_work"))))))))
 
 	assert.Assert(t, !interp.UsesIndexing(lowers))
 	assert.Equal(t, len((&Decompiler{compileRoot: plain}).pipe(interp.Lowered{})), 2)

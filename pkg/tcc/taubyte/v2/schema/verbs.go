@@ -204,6 +204,14 @@ func accessGroups() []*Node {
 		verbs := opNames(kind)
 		out = append(out, DefineGroup(kind,
 			DefineIter(append([]*Attribute{
+				// Filed under a label, which is the target's own name in the common
+				// case — that is what lets an entry be written `sessions: {ops:
+				// [get]}` with nothing else. `name` is there for the one case that
+				// needs it: this resource has to reach two DIFFERENT resources that
+				// happen to share a name in different namespaces, which the label
+				// alone cannot hold twice. Set it only then; a lowering never does.
+				String(accessName, IsVariableName(), InSection("access"),
+					Doc("Name", "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.")),
 				String(accessScope, IsNamespacePath(), InSection("access"),
 					Doc("Namespace", "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.")),
 				StringSlice(accessOps, Required(), AreVerbsOf(kind), InSection("access"),
@@ -217,10 +225,20 @@ func accessGroups() []*Node {
 				// No Resource(...): an access entry is data under its parent, not a
 				// kind. That descriptor would emit a generated type for it and would
 				// mark the group as something a scope walk cares about.
-				GroupDoc(fmt.Sprintf("A %s this resource reaches, and what it may do to it.", kind)),
+				GroupDoc(fmt.Sprintf("%s this resource reaches, and what it may do to it.", article(kind))),
 			)))
 	}
 	return out
+}
+
+// article prefixes a kind with the grammatically correct capitalized indefinite
+// article — every kind here is a common noun, so this is cheaper than a table of
+// exceptions and stays correct the day a vowel-initial kind is added.
+func article(kind string) string {
+	if kind != "" && strings.ContainsRune("aeiouAEIOU", rune(kind[0])) {
+		return "An " + kind
+	}
+	return "A " + kind
 }
 
 // REACHING IS THIS VOCABULARY'S IDEA, so the term for it lives here.
@@ -232,8 +250,9 @@ func accessGroups() []*Node {
 // vocabulary too. So Reaches expands into interp.Writes, using the shape this vocabulary
 // already declares for an entry.
 //
-//	Reaches("receive", From("function", "{each.run}", "{each.namespace}"))
-//	Reaches("send", From("function", "{each.run}"), To("queue", "{name}_{each.next.name}"))
+//	Reaches("receive", From("function", Each("run"), Each("namespace")))
+//	Reaches("send", From("function", Each("run")),
+//	    To("queue", Concat(Attr("name"), Text("_"), Next("name"))))
 //
 // The op has to be one the target's kind declares; CheckVerbs says so at build time.
 func Reaches(op string, opts ...ReachOption) interp.LoweringOption {
@@ -242,17 +261,35 @@ func Reaches(op string, opts ...ReachOption) interp.LoweringOption {
 		o(&r)
 	}
 	return func(l *interp.Lowering) {
-		to := interp.At(r.toKind, r.toName, accessOps)
-		if r.toKind == "" {
-			// the derived resource itself is what is reached; the accessor's entry names
-			// it by the kind and name the lowering produced, which the plan fills in
-			to = interp.At("{into}", "{produced}", accessOps)
-		}
-		on := []interp.WriteOption{to}
+		var on []interp.WriteOption
 		if r.fromKind != "" {
 			on = append(on, interp.On(r.fromKind, r.fromName, r.fromScope))
 		}
-		interp.Writes(op, on...)(l)
+		// WHERE THE ENTRY POINTS. An entry names its target by kind and name, and the
+		// target is either one the lowering NAMED — To(...) — or the resource the
+		// lowering itself produced, which is what naming none means. The second case is
+		// not a pair of values this vocabulary could state: neither the kind nor the name
+		// exists until the plan has run, so the path says it starts there and the
+		// interpreter puts its own two strings in front.
+		at := func(field string) interp.WriteOption {
+			if r.toKind == "" {
+				return interp.AtProduced(interp.Text(field))
+			}
+			return interp.At(interp.Text(r.toKind), r.toName, interp.Text(field))
+		}
+		interp.Writes(interp.Text(op), append(on, at(accessOps))...)(l)
+
+		// AND WHERE IT IS. An entry names its target and says where to look, and a
+		// lowering that puts what it produces in a scope of its own is the one case
+		// where the answer is not "here, then outward": the accessor may be the
+		// function an author wrote outside that scope. Scope() is what the plan hands
+		// over, absolute from the project root, and it is empty — so this write does
+		// not happen — for a vocabulary that scopes nothing.
+		//
+		// A namespace the AUTHOR wrote on the entry is not replaced: a value goes into
+		// a scalar only when the field is empty, which is the same rule every other
+		// thing a lowering writes follows.
+		interp.Writes(interp.Scope(), append(on, at(accessScope))...)(l)
 	}
 }
 
@@ -260,15 +297,20 @@ func Reaches(op string, opts ...ReachOption) interp.LoweringOption {
 type ReachOption func(*reach)
 
 type reach struct {
-	op                            string
-	fromKind, fromName, fromScope string
-	toKind, toName, toScope       string
+	op string
+	// The KINDS are plain names — a kind is one of this vocabulary's own — while what is
+	// named and where it lives are terms, because both are read off the resource being
+	// lowered.
+	fromKind            string
+	fromName, fromScope interp.Term
+	toKind              string
+	toName, toScope     interp.Term
 }
 
 // From is the side that DECLARES — the accessor, which is where the entry lands. A queue
 // does not hand work to another queue: the function that consumed the first one is what
 // sends to the second, and that function is what declares both.
-func From(kind, name string, scope ...string) ReachOption {
+func From(kind string, name interp.Term, scope ...interp.Term) ReachOption {
 	return func(r *reach) {
 		r.fromKind, r.fromName = kind, name
 		if len(scope) > 0 {
@@ -278,8 +320,10 @@ func From(kind, name string, scope ...string) ReachOption {
 }
 
 // To is the side being reached. Omitted means the resource the lowering produced, which
-// is the usual shape: something new, reached by something that already exists.
-func To(kind, name string, scope ...string) ReachOption {
+// is the usual shape: something new, reached by something that already exists. That
+// absence is the whole statement — there is no term for "what I produced", because
+// neither its kind nor its name is a value this vocabulary could write down.
+func To(kind string, name interp.Term, scope ...interp.Term) ReachOption {
 	return func(r *reach) {
 		r.toKind, r.toName = kind, name
 		if len(scope) > 0 {
@@ -363,27 +407,39 @@ func opNames(kind string) []string {
 // host and no path stuffed into it. Not a full URL grammar — what this catches is the
 // mistakes that are unambiguous, the way IsDatabaseHost did.
 func IsURL() engine.Option {
-	return Validator(func(u string) error {
-		if u == "" {
+	return func(a *engine.Attribute) {
+		Validator(func(u string) error {
+			if u == "" {
+				return nil
+			}
+			parsed, err := url.Parse(u)
+			if err != nil {
+				return fmt.Errorf("%q is not a URL: %w", u, err)
+			}
+			if parsed.Scheme != "https" && parsed.Scheme != "http" {
+				return fmt.Errorf("%q needs an https:// (or http://) scheme", u)
+			}
+			if parsed.Host == "" {
+				return fmt.Errorf("%q names no host", u)
+			}
 			return nil
-		}
-		parsed, err := url.Parse(u)
-		if err != nil {
-			return fmt.Errorf("%q is not a URL: %w", u, err)
-		}
-		if parsed.Scheme != "https" && parsed.Scheme != "http" {
-			return fmt.Errorf("%q needs an https:// (or http://) scheme", u)
-		}
-		if parsed.Host == "" {
-			return fmt.Errorf("%q names no host", u)
-		}
-		return nil
-	})
+		})(a)
+		// "uri" is the standard registered JSON Schema format for exactly this
+		// shape — every string this validator accepts also satisfies it.
+		engine.Annotate("format", "uri")(a)
+	}
 }
+
+// namespacePathPattern mirrors namespacePathChecker's own grammar exactly: empty,
+// the bare project root "/", or an optional leading "/" then "/"-joined segments,
+// each a name starting with a letter or underscore (never a digit) and never
+// trailing in "/".
+const namespacePathPattern = `^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$`
 
 func IsNamespacePath() engine.Option {
 	return func(a *engine.Attribute) {
 		engine.Annotate("namespacePath", true)(a)
+		engine.Annotate("pattern", namespacePathPattern)(a)
 		namespacePathChecker()(a)
 	}
 }
@@ -624,21 +680,23 @@ func InboundBlocks() []string {
 	return out
 }
 
-// AccessShape is how an access entry is written: the field holding the ops, and the one
-// holding the target's namespace. Read off the schema rather than assumed, so a consumer
-// recognises an access block without knowing that the word is "ops".
+// AccessShape is how an access entry is written: the field holding the ops, the one
+// holding the target's namespace, and the one that can override the entry's own label as
+// its identity. Read off the schema rather than assumed, so a consumer recognises an
+// access block without knowing that the word is "ops".
 type AccessShape struct {
 	Ops       string
 	Namespace string
+	Name      string
 }
 
 // AccessEntryShape reports it, by looking at the access group the vocabulary attaches to
 // every reachable kind: the attribute carrying that kind's verb enum is the ops field.
 func AccessEntryShape() AccessShape {
-	return AccessShape{Ops: accessOps, Namespace: accessScope}
+	return AccessShape{Ops: accessOps, Namespace: accessScope, Name: accessName}
 }
 
-// The two fields an access entry is written with, in this vocabulary's words. Said once
+// The three fields an access entry is written with, in this vocabulary's words. Said once
 // and used everywhere it matters: accessGroups declares them, Reaches writes at them, and
 // the audit reads them. Deriving them by walking the schema was a way of not repeating
 // them, and it made the vocabulary unable to state its own shape while it was being
@@ -646,7 +704,33 @@ func AccessEntryShape() AccessShape {
 const (
 	accessOps   = "ops"
 	accessScope = "namespace"
+
+	// accessName OVERRIDES an entry's own label as the target's identity. An access
+	// group is keyed by the target's name because that made per-target fields
+	// possible without a `name:` line in the common case — but the key cannot hold
+	// two entries that share it, so two resources named the same thing in different
+	// namespaces could never both be reached from one accessor (omissions.go,
+	// "reaching two resources that share a name in different namespaces").
+	//
+	// Optional, and additive: every existing document, where the label already IS
+	// the name, keeps meaning exactly what it means today. Only an author who needs
+	// two entries pointed at the same literal name writes this — a different label
+	// per entry, `name` naming the one target both entries would otherwise collide
+	// on. A lowering never sets it: it produces one entry per target and the target's
+	// own name is free to use as the label, the same as it always was.
+	accessName = "name"
 )
+
+// entryName is an access entry's real identity: what `name` says, or the label it is
+// filed under when `name` says nothing. Every consumer that resolves an access entry to
+// a resource reads it this way, so "the key is the name" stays true in the common case
+// without being the only way to say it.
+func entryName(label string, entry map[string]any) string {
+	if n := field(entry, accessName); n != "" {
+		return n
+	}
+	return label
+}
 
 // Layout is where a resource's document lives, as templates a consumer fills in. The
 // engine walks these directories; a consumer that hardcodes the same rule is a second
@@ -654,13 +738,18 @@ const (
 type Layout struct {
 	Resource string // "{kind}/{name}.yaml"
 	Scope    string // "{container}/{name}"
-	Leaf     string // the document a scope keeps its own fields in
+	// Leaf is the document a SCOPE keeps its own fields in, without the extension —
+	// `namespace/shop/scope.yaml`. It said so already and answered with the PROJECT's
+	// document, which nothing had noticed because nothing read it; a lowering that
+	// produces a scope reads it, and wrote `namespace/checkout/project.yaml` — a
+	// directory the loader sees as having no document at all.
+	Leaf string
 }
 
 func LayoutOf() Layout {
 	return Layout{
 		Resource: "{kind}/{name}.yaml",
 		Scope:    scopeContainer + "/{name}",
-		Leaf:     engine.LeafOf(CompileRoot()),
+		Leaf:     engine.ContainerDoc(GenerationRoot(), scopeContainer),
 	}
 }

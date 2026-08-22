@@ -402,16 +402,61 @@ vocabulary declares what it becomes, in terms:
 Lowers(
     Into("queue",
         PerEach("steps"),
-        Named("{name}_{each.name}"),
-        Sets("max-attempts", "{each.attempts}"),
+        Named(Concat(Attr("name"), Text("_"), Each("name"))),
+        Sets("max-attempts", Each("attempts")),
         // who reaches it, and with which of the target kind's own verbs
-        Reaches("receive", From("function", "{each.run}", "{each.namespace}")),
+        Reaches("receive", From("function", Each("run"), Each("namespace"))),
         Reaches("send",
-            From("function", "{each.run}", "{each.namespace}"),
-            To("queue", "{name}_{each.next.name}")),
+            From("function", Each("run"), Each("namespace")),
+            To("queue", Concat(Attr("name"), Text("_"), Next("name")))),
     ),
 )
 ```
+
+**A VALUE IS A TERM, NOT A TEMPLATE.** `Attr(f)` is a field of the resource being lowered,
+`Each(f)` one of the element `PerEach` names, `Next(f)` one of the element after it,
+`Text` is fixed text, `Scope()` is where the produced resources were put, and `Concat`
+puts several in a row. They take the same key spellings everything else does, so a nested
+field is `Attr(Key("memory","size"))` and the `/` between levels is the engine's to write
+— §4 holds here too, which `"{memory/size}"` quietly did not.
+
+Three things follow, and the third is why it was worth doing:
+
+- the STRUCTURE of a reference cannot be mistyped — there is no brace to leave off and no
+  `each.` prefix to misspell. A wrong FIELD name is still a string, and is still caught by
+  `CheckLowerings` at build time, which is stronger than Go could be: it is checked against
+  the attributes the kind actually declares.
+- nothing is substituted. What a lowering produced — its kind and its name — is not a term
+  and never was a value: a write that lands on it says so by naming no other target
+  (`AtProduced`, which `Reaches` uses when `To(...)` is omitted), and the interpreter puts
+  its own two strings in front of the path.
+- **a composed value can be read BACKWARDS.** `"{name}_{each.name}"` produced
+  `checkout_reserve` and could not be undone — recovering `reserve` meant guessing which
+  underscore was the separator, so `reversal.go` declared composition one-way and every
+  composed field stayed in the shell. `Concat(Attr("name"), Text("_"), Each("name"))` still
+  knows which underscore it wrote: the parts around the composed one are filled in, their
+  lengths are the cut, and `my_build_run_tests` gives back `run_tests` and not
+  `build_run_tests`. Invertibility is a property the DSL states.
+
+**A SOURCE IS A SCOPE FOR WHAT IT BECOMES.** `Lowerable(shape)` on a kind says that its
+lowering produces into a namespace named after the resource, not beside it:
+`workflow/checkout` becomes `namespace/checkout/queue/*.yaml`. It takes the SHAPE — the
+container node this vocabulary already declares — rather than a name, and
+`CheckLowerings` refuses anything that is not the root's own container, because what is
+synthesized has to be loaded, indexed and resolved through by the same definition an
+authored scope is. `attachLowerable` hangs it off every kind that declares `Lowers()`,
+the way `attachAccess` and `attachIndexes` do, for the same reason.
+
+Three things fall out of it, none of which needed a new mechanism:
+
+- a name a lowering takes cannot collide with one somebody wrote — different scopes;
+- a produced queue's `dead_letter` is an ordinary `Ref()` resolving to the sibling queue
+  beside it, because a bare name resolves in the scope it is written in;
+- what reaches in says where: `Scope()` is the produced scope, absolute from the project
+  root, so `Reaches(...)` writes `namespace:` on the entry beside the ops.
+
+What it costs: two lowering sources with the same name in one scope now collide on the
+scope, reported as *"namespace/x is produced twice, by agent/x and by workflow/x"*.
 
 **COMPILING IS LOWERING.** `Compile` returns the configuration as it RUNS — the queues
 are in the object, because nothing runs a workflow. `Authored` is the compile of what was

@@ -41,6 +41,17 @@ type granted struct {
 	value string
 	from  string // the authored resource whose lowering wrote it
 	scope string // where that resource lives, for finding its compiled id
+
+	// scopes is where the name might resolve, innermost first — the scope a lowering
+	// produced INTO, then outward to the one its source was written in. Filled by
+	// placements and collapsed to the single `scope` above by onlyOnWhatExists, which
+	// is the first point that knows what exists.
+	//
+	// It is the same outward walk a reference does, and it is needed for the same
+	// reason: with Lowerable, one lowering writes onto resources on both sides of the
+	// scope it made — a step's function, which the author wrote outside, and an
+	// agent's loop, which the lowering made inside.
+	scopes []string
 }
 
 // placements is everything a project's lowerings produce, in a stable order.
@@ -50,7 +61,7 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 
 	for _, d := range LoweringPlan(root, obj) {
 		docs = append(docs, placement{
-			at:   address(layout, d.Scope, d.Kind, d.Name),
+			at:   placeAt(root, layout, d),
 			tree: authored(root, d),
 			id:   d.ID, kind: d.Kind, name: d.Name, scope: d.Scope,
 			from: d.Source.ID, part: d.Source.Path, src: d.Source.String(), depth: len(d.Via),
@@ -64,27 +75,62 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 			// from the root with a leading slash, and otherwise relative to where the
 			// resource being lowered lives. Taking it as absolute put `eu` at the root,
 			// which is a resource in the wrong namespace and compiles.
-			scope := within(d.Scope, w.On.Scope)
 			adds = append(adds, granted{
-				at:    address(layout, scope, w.On.Kind, w.On.Name),
-				on:    End{Kind: w.On.Kind, Name: w.On.Name, Scope: scope},
-				path:  w.Path,
-				value: w.Value,
-				from:  d.Source.ID, scope: scope,
+				on:     End{Kind: w.On.Kind, Name: w.On.Name},
+				path:   w.Path,
+				value:  w.Value,
+				from:   d.Source.ID,
+				scopes: outward(d.Scope, d.Source.Scope, w.On.Scope),
 			})
 		}
 	}
 
-	sort.SliceStable(docs, func(i, j int) bool { return strings.Join(docs[i].at, "/") < strings.Join(docs[j].at, "/") })
-	sort.SliceStable(adds, func(i, j int) bool {
-		if a, b := strings.Join(adds[i].at, "/"), strings.Join(adds[j].at, "/"); a != b {
-			return a < b
-		}
-		a := strings.Join(adds[i].path, "/") + "\x00" + adds[i].value
-		b := strings.Join(adds[j].path, "/") + "\x00" + adds[j].value
-		return a < b
+	sort.SliceStable(docs, func(i, j int) bool {
+		return strings.Join(docs[i].at, "/") < strings.Join(docs[j].at, "/")
 	})
 	return docs, adds
+}
+
+// placeAt is where a derived resource's document goes. A produced SCOPE is the one that
+// is not addressed as a resource: it is a directory with the document the layout names
+// inside it, exactly as an authored scope is, because it has to be loaded by the same
+// definition the vocabulary handed to Lowerable.
+func placeAt(root *engine.Node, layout Layout, d Derived) []string {
+	if !d.Scoping {
+		return address(layout, d.Scope, d.Kind, d.Name)
+	}
+	at := scopeDirs(layout, within(d.Scope, d.Name))
+	if leaf := scopeLeafOf(iterOfKind(root, d.Source.Kind)); leaf != "" {
+		at = append(at, leaf)
+	}
+	return at
+}
+
+// outward is where a name a lowering wrote might resolve, innermost first: the scope it
+// produced into, then each scope above it up to the one its source was written in. An
+// ABSOLUTE name resolves in one place and gets one candidate.
+//
+// The same rule references already follow — here, then up — and it is what lets one
+// lowering write onto the function an author put outside the scope it made AND onto the
+// loop it made inside, with neither of them spelling out where the other is.
+func outward(produced, source, named string) []string {
+	if strings.HasPrefix(named, "/") {
+		return []string{within(produced, named)}
+	}
+	var out []string
+	for at := produced; ; {
+		out = append(out, within(at, named))
+		if at == source || at == "" {
+			break
+		}
+		cut := strings.LastIndex(at, "/")
+		if cut < 0 {
+			at = ""
+			continue
+		}
+		at = at[:cut]
+	}
+	return out
 }
 
 // within reads a scope a lowering named: absolute from the root with a leading slash,
@@ -105,14 +151,21 @@ func within(base, scope string) string {
 // address is the document address of a resource, by the vocabulary's own layout: the
 // scope directories, then the kind, then the name. The same segments an editor walks.
 func address(layout Layout, scope, kind, name string) []string {
-	var out []string
-	if scope != "" {
-		for _, level := range strings.Split(scope, "/") {
-			out = append(out, strings.Split(fill(layout.Scope, "", level), "/")...)
-		}
-	}
+	out := scopeDirs(layout, scope)
 	for _, seg := range strings.Split(fill(layout.Resource, kind, name), "/") {
 		out = append(out, strings.TrimSuffix(seg, ".yaml"))
+	}
+	return out
+}
+
+// scopeDirs is the directories a scope path walks through, by the vocabulary's layout.
+func scopeDirs(layout Layout, scope string) []string {
+	if scope == "" {
+		return nil
+	}
+	var out []string
+	for _, level := range strings.Split(scope, "/") {
+		out = append(out, strings.Split(fill(layout.Scope, "", level), "/")...)
 	}
 	return out
 }
@@ -121,16 +174,20 @@ func fill(tmpl, kind, name string) string {
 	return strings.NewReplacer("{kind}", kind, "{name}", name).Replace(tmpl)
 }
 
-// onlyOnWhatExists drops an entry whose accessor is nowhere — not in the project, and not
-// among the resources this lowering produces. What it names is wrong, and saying so is
-// the audit's job; writing to it here would answer a bad name by creating the resource it
-// named.
+// onlyOnWhatExists RESOLVES each entry's accessor and drops the ones that are nowhere —
+// not in the project, and not among the resources this lowering produces. What such an
+// entry names is wrong, and saying so is the audit's job; writing to it here would answer
+// a bad name by creating the resource it named.
 //
 // The produced half is not an afterthought: an agent's loop is generated, and the entry
 // saying it searches the memory the same lowering generated lands ON it. Checking only
 // what was written silently deleted that, and the agent's memory became a resource
 // nothing reaches.
-func onlyOnWhatExists(root *engine.Node, flat map[string]any, docs []placement, adds []granted) []granted {
+//
+// Resolving is HERE rather than in placements because this is the first point that knows
+// what exists — both halves of it. Each entry arrives with the scopes its name could
+// resolve in, innermost first, and leaves with the one it did.
+func onlyOnWhatExists(root *engine.Node, layout Layout, flat map[string]any, docs []placement, adds []granted) []granted {
 	if inner, ok := flat[ProjectKey].(map[string]any); ok {
 		flat = inner
 	}
@@ -169,9 +226,26 @@ func onlyOnWhatExists(root *engine.Node, flat map[string]any, docs []placement, 
 
 	out := adds[:0]
 	for _, g := range adds {
-		if exists[g.scope+"\x00"+g.on.Kind+"\x00"+g.on.Name] {
+		for _, scope := range g.scopes {
+			if !exists[scope+"\x00"+g.on.Kind+"\x00"+g.on.Name] {
+				continue
+			}
+			g.scope, g.on.Scope = scope, scope
+			g.at = address(layout, scope, g.on.Kind, g.on.Name)
 			out = append(out, g)
+			break
 		}
 	}
+	// A TOTAL order, and it has to be taken here: the address an entry is sorted by is
+	// only known once its name has resolved, and the order values are written in decides
+	// what a list ends up holding.
+	sort.SliceStable(out, func(i, j int) bool {
+		if a, b := strings.Join(out[i].at, "/"), strings.Join(out[j].at, "/"); a != b {
+			return a < b
+		}
+		a := strings.Join(out[i].path, "/") + "\x00" + out[i].value
+		b := strings.Join(out[j].path, "/") + "\x00" + out[j].value
+		return a < b
+	})
 	return out
 }
