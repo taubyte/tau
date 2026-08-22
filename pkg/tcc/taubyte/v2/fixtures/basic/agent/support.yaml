@@ -1,0 +1,26 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Za
+description: answers questions about an order - its tools ARE its access block, there is no second list, so what it can do is a graph query
+model:
+    name: opus
+instructions: You answer questions about orders. Look the order up before you answer, and never guess an order number.
+memory:
+    embedder:
+        name: embed
+    dimensions: 1536
+    size: 2GB
+limits:
+    steps: 8
+    concurrent: 4
+egress: [api.anthropic.com]
+database:
+    orders:
+        ops: [query]
+cache:
+    orders:
+        ops: [get]
+function:
+    checkout:
+        ops: [invoke]
+storage:
+    receipts:
+        ops: [get, list]
