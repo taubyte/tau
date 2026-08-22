@@ -17,9 +17,19 @@ func Annotate(key string, val any) Option {
 // The engine itself treats them exactly as strings; the ScalarSpec is inert data
 // the driver (Parse/Format) and tcc-gen (GoType) read, so each scalar's meaning
 // lives in one place instead of a switch in every consumer.
+// durationPattern mirrors time.ParseDuration's own grammar (a signed sequence of
+// decimal numbers, each with an optional fraction and a unit — ns/us/µs/ms/s/m/h —
+// or the bare "0"), so a JSON Schema validator can reject the same malformed
+// strings the load-time durationValidator does, without pulling in a registered
+// "duration" FORMAT keyword — that name is ISO-8601 ("P3Y6M4DT12H30M5S"), a
+// different grammar entirely, and a validator that enforces known formats would
+// reject every valid tau duration under that name.
+const durationPattern = `^[-+]?(([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$`
+
 func Duration[T string | AKey](name T, opts ...Option) *Attribute {
 	return String(name, append(opts,
 		Annotate("scalar", ScalarSpec{ID: "duration", GoType: "uint64", Parse: parseDuration, Format: formatDuration}),
+		Annotate("pattern", durationPattern),
 		durationValidator(),
 	)...)
 }

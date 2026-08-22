@@ -6,6 +6,7 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "readOnly": true,
           "title": "ID",
           "type": "string",
           "x-tau-generated": "cid",
@@ -110,6 +111,7 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "readOnly": true,
           "title": "ID",
           "type": "string",
           "x-tau-generated": "cid",
@@ -225,6 +227,7 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "readOnly": true,
           "title": "ID",
           "type": "string",
           "x-tau-generated": "cid",
@@ -339,6 +342,7 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "readOnly": true,
           "title": "ID",
           "type": "string",
           "x-tau-generated": "cid",
@@ -511,6 +515,7 @@
           "properties": {
             "timeout": {
               "description": "Maximum execution time, as a human string (e.g. \"30s\").",
+              "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
               "title": "Timeout",
               "type": "string",
               "x-tau-scalar": "duration",
@@ -610,6 +615,7 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "readOnly": true,
           "title": "ID",
           "type": "string",
           "x-tau-generated": "cid",
@@ -713,6 +719,7 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "readOnly": true,
           "title": "ID",
           "type": "string",
           "x-tau-generated": "cid",
@@ -825,6 +832,7 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "readOnly": true,
           "title": "ID",
           "type": "string",
           "x-tau-generated": "cid",
@@ -880,6 +888,7 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "readOnly": true,
           "title": "ID",
           "type": "string",
           "x-tau-generated": "cid",
@@ -930,6 +939,7 @@
           "properties": {
             "timeout": {
               "description": "Maximum execution time, as a human string (e.g. \"30s\").",
+              "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
               "title": "Timeout",
               "type": "string",
               "x-tau-scalar": "duration",
@@ -1015,6 +1025,7 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "readOnly": true,
           "title": "ID",
           "type": "string",
           "x-tau-generated": "cid",
@@ -1094,6 +1105,7 @@
           "properties": {
             "ttl": {
               "description": "Time-to-live for streamed entries, as a human string (e.g. \"1h\") (streaming storage).",
+              "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
               "title": "Time-To-Live",
               "type": "string",
               "x-tau-scalar": "duration",
@@ -1143,6 +1155,7 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "readOnly": true,
           "title": "ID",
           "type": "string",
           "x-tau-generated": "cid",
@@ -1271,6 +1284,7 @@
     "id": {
       "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
       "format": "cid",
+      "readOnly": true,
       "title": "ID",
       "type": "string",
       "x-tau-generated": "cid",

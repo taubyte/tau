@@ -384,6 +384,9 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 	if ic, ok := iter.Meta["icon"].(string); ok && ic != "" {
 		out[g.ext+"icon"] = ic // semantic glyph hint; the consumer maps it to its icon set
 	}
+	if cat, ok := iter.Meta["category"].(string); ok && cat != "" {
+		out[g.ext+"category"] = cat // what the kind is FOR; see Category() — no consumer hardcodes this
+	}
 	// Display sections: a presentation overlay a UI/CLI reads to render fields in
 	// human sections. It rides ALONGSIDE properties (which stay faithful to the
 	// authored nesting) — each field carries <ext>section, and this registry gives
@@ -666,9 +669,23 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok && sc.ID != "" {
 		s[g.ext+"scalar"] = sc.ID // e.g. "duration" ("20s"), "bytes" ("32GB")
 	}
-	if gn, ok := a.Meta["generated"].(string); ok && gn != "" {
+	gn, generated := a.Meta["generated"].(string)
+	if generated && gn != "" {
 		// Minted, not authored: render read-only and fill via Session.generate.
 		s[g.ext+"generated"] = gn
+	}
+	dv, derived := a.Meta["derived"].(string)
+	if derived && dv != "" {
+		// Computed, not authored: render read-only and fill via Session.derive.
+		s[g.ext+"derived"] = dv
+		if from, ok := a.Meta["derivedFrom"].([]string); ok && len(from) > 0 {
+			s[g.ext+"derived-from"] = from
+		}
+	}
+	if (generated && gn != "") || (derived && dv != "") {
+		// Standard keyword, so generic tooling greys the field out without
+		// needing to understand either vendor marker above.
+		s["readOnly"] = true
 	}
 	if e, ok := a.Meta["enum"].([]string); ok && a.Type != engine.TypeStringSlice {
 		s["enum"] = e
