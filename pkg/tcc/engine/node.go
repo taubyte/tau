@@ -718,6 +718,11 @@ func claimedUnder(n *Node, key string) map[string]bool {
 // are keys of the resource's own document).
 func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, strict bool, claimed ...map[string]bool) error {
 	list, _ := query.List()
+	// A resource-container has two channels below one instance: directories are the
+	// resources it contains, while keys in its leaf document are the nested data of
+	// the resource itself. A plain resource only has the latter and a plain container
+	// only the former, so they never needed to be told apart before.
+	hybrid := n.Group && n.Nested
 
 	// A KEY AN ATTRIBUTE DECLARED IS NOT AN ENTRY OF THE GROUP THAT SHARES ITS NAME.
 	//
@@ -785,29 +790,43 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 
 	for _, itm := range n.Children {
 		if itm.Sequence {
-			if err := loadSequence(itm, obj, query, strict); err != nil {
+			at := query
+			if hybrid && itm.Nested {
+				at = query.Get(leaf)
+			}
+			if err := loadSequence(itm, obj, at, strict); err != nil {
 				return err
 			}
 			continue
 		}
-		for _, l := range list {
-			// Only a GROUP keeps its own fields in a leaf document, so only a group
-			// reserves that name. A nested resource reads its attributes from its own
-			// document root and has no leaf at all — skipping the name there deleted a
-			// legitimate child group, silently.
-			if n.Group && l == leaf {
-				continue
-			}
-			if err := processChild(itm, l, query.Get(l)); err != nil {
-				return err
+		if !hybrid || !itm.Nested {
+			for _, l := range list {
+				// Only a GROUP keeps its own fields in a leaf document, so only a group
+				// reserves that name. A nested resource reads its attributes from its own
+				// document root and has no leaf at all — skipping the name there deleted a
+				// legitimate child group, silently.
+				if n.Group && l == leaf {
+					continue
+				}
+				if err := processChild(itm, l, query.Get(l)); err != nil {
+					return err
+				}
 			}
 		}
-		for _, l := range configList {
-			if inFS[l] || (n.Group && l == leaf) {
-				continue
-			}
-			if err := processChild(itm, l, query.Get(leaf).Get(l)); err != nil {
-				return err
+		if !hybrid || itm.Nested {
+			for _, l := range configList {
+				// Filesystem entries take precedence — for the child that READS them.
+				// Under a hybrid node the directory belongs to the resource group and the
+				// document key to the kind's own group, so letting the directory suppress
+				// the document key dropped the block in silence: an agent declaring
+				// `function: {checkout: {ops: [invoke]}}` that lowers into a function of
+				// its own kept the function and lost the tool.
+				if (inFS[l] && !(hybrid && itm.Nested)) || (n.Group && l == leaf) {
+					continue
+				}
+				if err := processChild(itm, l, query.Get(leaf).Get(l)); err != nil {
+					return err
+				}
 			}
 		}
 	}

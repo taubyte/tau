@@ -180,6 +180,15 @@ func DefineIter(attrs []*Attribute, extra ...any) *Node {
 func Nested(children ...*Node) NodeOption {
 	return func(n *Node) {
 		n.Nested = true
+		// Keep which children belong to the instance's OWN document on the child too.
+		// Most resources have only that kind of child, so the distinction used to be
+		// implicit in the parent being a leaf resource. A resource that is also a
+		// container has both: nested data in its leaf document and resource groups in
+		// directories below it. Marking the former lets the shared loader and dumper
+		// route both without knowing what any group is called.
+		for _, child := range children {
+			child.Nested = true
+		}
 		n.Children = append(n.Children, children...)
 	}
 }

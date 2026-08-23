@@ -24,18 +24,19 @@ type placement struct {
 	tree map[string]any // the resource as it would have been written
 	// what it came from, kept for the provenance the compiled object carries
 	id, kind, name, scope string
-	// scoping marks the one that IS the scope the others were placed in. A scope is
-	// addressed by its NAME wherever a name is resolved, so what may take its name is a
-	// different question from what may take a resource's.
-	scoping bool
-	from    string // the authored resource's id
-	part    string // where inside it — "steps/0"
+	from                  string // the authored resource's id
+	part                  string // where inside it — "steps/0"
 	// src is that resource as a person would look for it — "workflow/checkout
 	// (steps/0)". The id says which resource; only this says which STEP, and a
 	// collision between two parts of one lowering has the same id on both sides.
 	src   string
 	depth int // how many lowerings deep this one is
 }
+
+// relocation moves an authored lowerable resource's document into the leaf of the
+// container shape used by the second pass. It is a copy in the in-memory overlay; the
+// repository and its authored flat document are untouched.
+type relocation struct{ from, to []string }
 
 // granted is one value a lowering puts into a resource somebody else wrote.
 type granted struct {
@@ -59,12 +60,12 @@ type granted struct {
 }
 
 // scopeKinds is what KIND of scope each scope path is — `shop` is a namespace, `checkout`
-// is the group a workflow became — keyed by the path of names the rest of the lowering
+// is the workflow that became a container — keyed by the path of names the rest of the lowering
 // speaks in.
 //
 // It exists because a document address is not a path of names: a scope is a DIRECTORY
 // named after the container it belongs to, so `shop/checkout` is
-// `namespace/shop/group/checkout` on disk and nothing in the name path says which is
+// `namespace/shop/workflow/checkout` on disk and nothing in the name path says which is
 // which. The scope path stays names everywhere else — that is what a reference resolves
 // through, and a name has no kind — and only addressing asks this.
 //
@@ -103,8 +104,14 @@ func scopeKinds(root *engine.Node, obj map[string]any, plan []Derived) map[strin
 	walk(obj, "")
 
 	for _, d := range plan {
-		if d.Scoping {
-			out[within(d.Scope, d.Name)] = d.Kind
+		kind, name, ok := strings.Cut(d.Of, "/")
+		if !ok || loweredShapeOf(iterOfKind(root, kind)) == nil {
+			continue
+		}
+		// A lowerable source puts every direct product in the scope named after
+		// itself. The source is that scope; there is no fourth produced resource.
+		if d.Scope == name || strings.HasSuffix(d.Scope, "/"+name) {
+			out[d.Scope] = kind
 		}
 	}
 	return out
@@ -113,7 +120,7 @@ func scopeKinds(root *engine.Node, obj map[string]any, plan []Derived) map[strin
 // placements is everything a project's lowerings produce, in a stable order, and what
 // kind of scope each scope path is — which is what turns a path of names into a document
 // address.
-func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placement, []granted, map[string]string) {
+func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placement, []granted, map[string]string, []relocation) {
 	var docs []placement
 	var adds []granted
 
@@ -124,7 +131,7 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 		docs = append(docs, placement{
 			at:   placeAt(root, layout, d, kinds),
 			tree: authored(root, d),
-			id:   d.ID, kind: d.Kind, name: d.Name, scope: d.Scope, scoping: d.Scoping,
+			id:   d.ID, kind: d.Kind, name: d.Name, scope: d.Scope,
 			from: d.Source.ID, part: d.Source.Path, src: d.Source.String(), depth: len(d.Via),
 		})
 
@@ -149,22 +156,34 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 	sort.SliceStable(docs, func(i, j int) bool {
 		return strings.Join(docs[i].at, "/") < strings.Join(docs[j].at, "/")
 	})
-	return docs, adds, kinds
+	return docs, adds, kinds, relocations(root, obj, layout, kinds)
 }
 
-// placeAt is where a derived resource's document goes. A produced SCOPE is the one that
-// is not addressed as a resource: it is a directory with the document the layout names
-// inside it, exactly as an authored scope is, because it has to be loaded by the same
-// definition the vocabulary handed to Lowerable.
+// placeAt is where a derived resource's document goes. When the produced kind is itself
+// lowerable, it already has the compiled container shape and its fields go in that
+// shape's leaf; every other resource remains a flat document.
 func placeAt(root *engine.Node, layout Layout, d Derived, kinds map[string]string) []string {
-	if !d.Scoping {
-		return address(layout, d.Scope, d.Kind, d.Name, kinds)
+	return loweredAddress(root, layout, d.Scope, d.Kind, d.Name, kinds)
+}
+
+func relocations(root *engine.Node, obj map[string]any, layout Layout, kinds map[string]string) []relocation {
+	if inner, ok := obj[ProjectKey].(map[string]any); ok {
+		obj = inner
 	}
-	at := scopeDirs(layout, within(d.Scope, d.Name), kinds)
-	if leaf := scopeLeafOf(iterOfKind(root, d.Source.Kind)); leaf != "" {
-		at = append(at, leaf)
-	}
-	return at
+	var out []relocation
+	walkResources(root, obj, "", func(kind string, iter *engine.Node, _, name string, _ map[string]any, scope string) {
+		if loweredShapeOf(iter) == nil {
+			return
+		}
+		out = append(out, relocation{
+			from: address(layout, scope, kind, name, kinds),
+			to:   loweredAddress(root, layout, scope, kind, name, kinds),
+		})
+	})
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.Join(out[i].to, "/") < strings.Join(out[j].to, "/")
+	})
+	return out
 }
 
 // outward is where a name a lowering wrote might resolve, innermost first: the scope it
@@ -215,6 +234,14 @@ func address(layout Layout, scope, kind, name string, kinds map[string]string) [
 	out := scopeDirs(layout, scope, kinds)
 	for _, seg := range strings.Split(fill(layout.Resource, kind, name), "/") {
 		out = append(out, strings.TrimSuffix(seg, ".yaml"))
+	}
+	return out
+}
+
+func loweredAddress(root *engine.Node, layout Layout, scope, kind, name string, kinds map[string]string) []string {
+	out := address(layout, scope, kind, name, kinds)
+	if leaf := loweredLeafOf(iterOfKind(root, kind)); leaf != "" {
+		out = append(out, leaf)
 	}
 	return out
 }
@@ -301,7 +328,7 @@ func onlyOnWhatExists(root *engine.Node, layout Layout, flat map[string]any, doc
 				continue
 			}
 			g.scope, g.on.Scope = scope, scope
-			g.at = address(layout, scope, g.on.Kind, g.on.Name, kinds)
+			g.at = loweredAddress(root, layout, scope, g.on.Kind, g.on.Name, kinds)
 			out = append(out, g)
 			break
 		}

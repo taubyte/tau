@@ -738,7 +738,7 @@ func entryName(label string, entry map[string]any) string {
 type Layout struct {
 	Resource string // "{kind}/{name}.yaml"
 	// Scope takes the kind as well as the name, because there is more than one kind of
-	// scope: `namespace/shop` is one an author wrote and `group/checkout` is one a
+	// scope: `namespace/shop` is one an author wrote and `workflow/checkout` is one a
 	// lowering produced, and a consumer filling this in says which. It named the
 	// container outright until the second kind arrived.
 	Scope string // "{kind}/{name}"

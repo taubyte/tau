@@ -72,7 +72,6 @@ var (
 	MinInt           = engine.MinInt
 	Nested           = engine.Nested
 	NoAccessors      = engine.NoAccessors
-	NotAuthored      = engine.NotAuthored
 	NoGetter         = engine.NoGetter
 	NoSetter         = engine.NoSetter
 	NoStructField    = engine.NoStructField

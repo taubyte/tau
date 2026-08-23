@@ -109,8 +109,8 @@ export function setCategories(kinds: { group: string; category: string; icon?: s
 }
 
 // WHAT KIND OF SCOPE EACH SCOPE IS, from tcc's own walk of the compiled object. There is
-// more than one — a `namespace` an author wrote and the `group` a lowering made for what
-// a construct becomes — and they are drawn and addressed differently, so the page asks
+// more than one — a `namespace` an author wrote and a lowered resource in its container
+// role — and they are drawn and addressed differently, so the page asks
 // rather than assuming the one it happens to have heard of.
 let SCOPE_KIND: Record<string, string> = {};
 
@@ -151,7 +151,7 @@ export function setShapes(s: Shapes): void {
  * A SCOPE DIRECTORY IS NAMED AFTER ITS KIND. The layout says `{kind}/{name}` because
  * there is more than one kind of scope, and a scope PATH is names — so each level is
  * looked up rather than assumed, and `shop/checkout` becomes
- * `namespace/shop/group/checkout`.
+ * `namespace/shop/workflow/checkout`.
  */
 export function fileOf(n: { kind: string; name: string; scope: string; home?: string }): string {
   const scope = n.home ?? n.scope;
@@ -272,11 +272,11 @@ export function buildGraph(
 
   // Which produced resources came from which authored one. The compiler recorded it;
   // grouping is all that is left to do here.
-  const producedBy = new Map<string, { id: string; kind: string; name: string; at: string; scoping: boolean }[]>();
+  const producedBy = new Map<string, { id: string; kind: string; name: string; at: string }[]>();
   for (const [id, p] of Object.entries(lowered.produced)) {
     producedBy.set(p.from, [
       ...(producedBy.get(p.from) ?? []),
-      { id, kind: p.kind, name: p.name, at: p.at, scoping: p.scoping },
+      { id, kind: p.kind, name: p.name, at: p.at },
     ]);
   }
   // The part of the authored resource each one came from — "steps/0" — read off the
@@ -321,13 +321,6 @@ export function buildGraph(
 
     for (const d of made) {
       if (byId.has(d.id)) continue;
-      // A SCOPE IS A PLACE, NOT A THING. The record of what a lowering produced holds
-      // both, and it has to: decompile takes the directory back out with the queues
-      // inside it. Drawing is the other question — Scopes() is separate from Resources()
-      // for exactly this reason — and a place is drawn by the box that IS it. This is
-      // that box, so the rule the source got ten lines up applies here too: what a box
-      // is does not get a second card inside it.
-      if (d.scoping) continue;
       const part = partName(from, d.at);
       if (!open && !shows) continue; // nothing to show, and nothing to reserve
       const node: Node = {

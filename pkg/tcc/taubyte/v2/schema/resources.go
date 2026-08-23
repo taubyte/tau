@@ -51,8 +51,8 @@ func Resources(obj map[string]any) []Instance {
 	return out
 }
 
-// Scopes is every SCOPE in a compiled project — a `namespace` somebody wrote, or the
-// `group` a lowering made for what a construct became — as the same Instance a resource
+// Scopes is every scope in a compiled project — a namespace somebody wrote, or a
+// lowerable resource in its compiled container role — as the same Instance a resource
 // is reported as, in a stable order. Its Scope is the one HOLDING it, so a scope at the
 // root reports "".
 //
@@ -63,7 +63,7 @@ func Resources(obj map[string]any) []Instance {
 // THE KIND IS WHY THIS EXISTS. A scope path is a path of NAMES — `shop/checkout` — which
 // is what a reference resolves through and what everything downstream reads, and a name
 // carries no kind. A DOCUMENT address does: a scope is a directory named after the
-// container it belongs to, so the same path is `namespace/shop/group/checkout` on disk.
+// container it belongs to, so the same path is `namespace/shop/workflow/checkout` on disk.
 // LayoutOf().Scope says `{kind}/{name}`, and this is where a consumer gets the `{kind}` —
 // rather than keeping its own list of which kinds are scopes, which is the hole §8c is
 // about.

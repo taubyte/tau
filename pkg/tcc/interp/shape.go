@@ -69,8 +69,7 @@ func UsesIndexing(root *engine.Node) bool {
 }
 
 // ContainerKeys returns the config keys of every group whose instances are SCOPES — a
-// top-level group whose iterator is itself a group with children and which carries no
-// Resource descriptor — in the order the vocabulary declares them. Empty when the schema
+// top-level group whose iterator is itself a group with children — in the order the vocabulary declares them. Empty when the schema
 // declares none. It is the same structural test the generator uses (tools/tcc-gen
 // containerKey), kept in sync so "applications" is declared only in the schema, never
 // restated here.
@@ -92,9 +91,6 @@ func ContainerKeys(root *engine.Node) []string {
 			continue
 		}
 		iter := g.Children[0]
-		if _, ok := iter.Meta["resource"].([4]string); ok {
-			continue
-		}
 		if iter.Group && len(iter.Children) > 0 {
 			if key, _ := g.Match.(string); key != "" {
 				out = append(out, key)
@@ -102,4 +98,83 @@ func ContainerKeys(root *engine.Node) []string {
 		}
 	}
 	return out
+}
+
+// ownGroups is the child groups a kind declares for ITSELF — what `Nested(...)` attached:
+// its access blocks, its ports, its variables. For an ordinary resource that is all of
+// them. For a kind that is ALSO a container it is the half that is not the resource groups
+// it holds, and telling the two apart matters at every walk: what is nested is data
+// belonging to the instance, and what is held is a resource the scope walk visits on its
+// own. Walking the held ones as nested data ran every projection over them twice.
+func ownGroups(iter *engine.Node) []*engine.Node {
+	if iter == nil || !iter.Nested {
+		return nil
+	}
+	out := make([]*engine.Node, 0, len(iter.Children))
+	for _, child := range iter.Children {
+		if child.Nested {
+			out = append(out, child)
+		}
+	}
+	return out
+}
+
+// HeldResource is the same question asked by a CONSUMER walking a compiled object: an
+// entry filed under `kind` inside a resource is either something that resource declares
+// for itself — an access entry, keyed by the label of what it reaches — or a resource the
+// container HOLDS, when that kind is a container as well as a resource. Both land at the
+// one key, and a consumer that guessed would report an agent's tool as a function it
+// contains.
+func HeldResource(root *engine.Node, kind, key string) bool {
+	if root == nil {
+		return false
+	}
+	idField, _ := engine.IdentityOf(root)
+	return heldUnder(root.Children, idField, kind, key)
+}
+
+// heldUnder answers the same question from the other side: walking the entries a kind
+// declares for ITSELF at some key, which of them are actually resources the container
+// holds at that key. It looks the resource group up by the key it shares.
+func heldUnder(groups []*engine.Node, idField, key, entry string) bool {
+	for _, g := range groups {
+		if k, _ := g.Match.(string); k != key || len(g.Children) == 0 {
+			continue
+		}
+		return keyedByIdentity(g.Children[0], idField, entry)
+	}
+	return false
+}
+
+// keyedByIdentity answers, of one entry under a group key, whether it is a RESOURCE the
+// scope holds rather than an entry the holder declares for itself.
+//
+// The two land at one key and nothing else separates them: a kind's name is what an
+// access block is filed under and what a resource group is called, so a container that is
+// also a resource has `function: {<produced id>: …, checkout: {ops: […]}}` — the loop it
+// became beside the tool it reaches.
+//
+// THE IDENTITY IS THE WHOLE ANSWER, and it is not a new rule. A compiled resource is
+// keyed by the id the schema names (engine.Identity, which is what RenameById keyed it
+// by); an entry is keyed by a label the author chose and never had one. decompile's
+// `strip` already states exactly this and relies on it — "an id is the one key nothing
+// else in the tree is keyed by" — so this asks the schema's own validator for that field
+// rather than inventing a second test.
+//
+// A vocabulary that puts no validator on its identity keeps the walk it had: nothing can
+// be told apart, and nothing in such a schema merges two things at one key either.
+func keyedByIdentity(iter *engine.Node, idField, key string) bool {
+	if iter == nil {
+		return false
+	}
+	if _, ok := iter.Meta["resource"].([4]string); !ok {
+		return true
+	}
+	for _, attr := range iter.Attributes {
+		if attr.Name != idField || attr.Validator == nil {
+			continue
+		}
+		return attr.Validator(key) == nil
+	}
+	return true
 }

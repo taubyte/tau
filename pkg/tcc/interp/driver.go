@@ -42,7 +42,7 @@ func (d *CompileDriver) Process(ct transform.Context[object.Refrence], o object.
 
 	// Groups: resources (project scope), the applications container (id-promote
 	// each app, then recurse into its scope), and env-keyed map groups (clouds).
-	if err := d.processGroups(ctRoot, o, d.root.Children); err != nil {
+	if err := d.processGroups(ctRoot, o, d.root.Children, false); err != nil {
 		return nil, err
 	}
 
@@ -50,21 +50,25 @@ func (d *CompileDriver) Process(ct transform.Context[object.Refrence], o object.
 }
 
 // processGroups runs each group at the given scope (project root or an app).
-func (d *CompileDriver) processGroups(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], groups []*engine.Node) error {
+func (d *CompileDriver) processGroups(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], groups []*engine.Node, mixed bool) error {
 	for _, g := range groups {
-		if err := d.processGroup(ct, scope, g); err != nil {
+		if err := d.processGroup(ct, scope, g, mixed); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], g *engine.Node) error {
+func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], g *engine.Node, mixed bool) error {
 	groupKey, _ := g.Match.(string)
 	if len(g.Children) == 0 {
 		return nil
 	}
+	if g.Sequence {
+		return nil
+	}
 	iter := g.Children[0]
+	_, isResource := iter.Meta["resource"].([4]string)
 
 	// An env-keyed promotion owns the whole projection for this group: select the
 	// entry keyed by env[spec.EnvVar], hoist its fields to root scalars, drop the
@@ -93,10 +97,21 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 			if err != nil {
 				return fmt.Errorf("fetching %s/%s failed with %w", groupKey, instName, err)
 			}
-			if _, err := utils.RenameById(sel, instName, idField, nameField); err != nil {
+			if isResource {
+				if err := applyInstanceOps(sel, iter.Attributes); err != nil {
+					return fmt.Errorf("%s %s: %w", groupKey, instName, err)
+				}
+			}
+			id, err := utils.RenameById(sel, instName, idField, nameField)
+			if err != nil {
 				return fmt.Errorf("promoting %s %s failed with %w", groupKey, instName, err)
 			}
-			if err := d.processGroups(ct.Fork(instObj), instObj, iter.Children); err != nil {
+			if isResource {
+				if err := utils.IndexById(ct, groupKey, instName, id, nameField); err != nil {
+					return fmt.Errorf("indexing %s %s failed with %w", groupKey, instName, err)
+				}
+			}
+			if err := d.processGroups(ct.Fork(instObj), instObj, iter.Children, isResource && iter.Nested); err != nil {
 				return err
 			}
 		}
@@ -105,7 +120,6 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 
 	// A resource group: per-instance attribute projections, then id-promotion,
 	// then (for Resource groups) the name->id index.
-	_, isResource := iter.Meta["resource"].([4]string)
 	// WHICH ATTRIBUTE IS THE IDENTITY is the schema's to say (engine.Identity, on the
 	// root): a group whose iterator declares it is keyed by it, and the document's own
 	// name becomes the resource's.
@@ -113,6 +127,16 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 	promote := idField != "" && hasAttr(iter, idField)
 	for _, instName := range groupObj.Children() {
 		sel := groupObj.Child(instName)
+		if mixed {
+			idValue, idErr := sel.Get(idField)
+			hasID := idErr == nil && idValue != nil
+			// A hybrid container merges its own nested entry map with the contained
+			// resource group of the same key. Before promotion the id field tells the
+			// two apart: nested entries have none; contained resources do.
+			if g.Nested == hasID {
+				continue
+			}
+		}
 		if err := applyInstanceOps(sel, iter.Attributes); err != nil {
 			return fmt.Errorf("%s %s: %w", groupKey, instName, err)
 		}
@@ -139,7 +163,7 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 			if err != nil {
 				return fmt.Errorf("fetching %s/%s failed with %w", groupKey, instName, err)
 			}
-			if err := d.processGroups(ct, instObj, iter.Children); err != nil {
+			if err := d.processGroups(ct, instObj, iter.Children, false); err != nil {
 				return err
 			}
 		}

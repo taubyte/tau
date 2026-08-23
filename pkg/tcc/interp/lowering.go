@@ -1,7 +1,6 @@
 package interp
 
 import (
-	"fmt"
 	"slices"
 	"sort"
 	"strconv"
@@ -255,136 +254,30 @@ func Lowers(into ...Lowering) engine.NodeOption {
 	return engine.GroupAnnotate("lowers", into)
 }
 
-// Lowerable declares that what this kind lowers into does not sit BESIDE it: the source
-// becomes a SCOPE of its own, named after the resource, and everything its Lowers()
-// produces is placed inside it.
+// Lowerable declares the two shapes of one kind: before lowering it is an ordinary
+// authored resource; after lowering the SAME resource is a container for what it became.
 //
-//	DefineGroup("workflow", resource(…,
-//	    Lowerable(groupShape),            // a node this vocabulary declares a scope with
-//	    Lowers(Into("queue", …)),
+//	DefineGroup("workflow", Lowerable(
+//	    DefineIter(attrs, Lowers(Into("queue", …))),
+//	    DefineIterGroup(attrs, resourceGroups...).With(Leaf("scope")),
 //	))
 //
-// IT TAKES THE SHAPE, NOT A NAME. What a lowering synthesizes has to BE a scope — loaded
-// by a real definition, indexed by the same footprint, resolved through by the same
-// outward name walk — and the only way to guarantee that is to hand over the definition
-// itself rather than a string the interpreter would have to look up and hope matched. The
-// interpreter reads the kind off the node's own Match and the document off its Leaf, and
-// learns no word of this vocabulary either way.
-//
-// ANY SCOPE THIS VOCABULARY DECLARES, not the one an author writes in. Handing over the
-// vocabulary's authored scope is what v2 did first, and it worked and said the wrong
-// thing: a workflow's queues landed in something that COMPILED as a namespace, so the
-// object, the index and every picture of it called the inside of a construct a tenant.
-// What was wanted was the namespace's behaviour, which is entirely its SHAPE — a group
-// whose iterator is itself a group over the resource groups — so a second kind with that
-// shape gets all of it and none of the name. ContainerKeys finds every such kind and the
-// whole interpreter walks them alike; this only has to be one of them.
-//
-// This replaces an earlier reading of the same idea — nest the produced resources as a
-// hidden child group inside the source's own document, reusing the produced KIND's node
-// as the child's shape. It does not work, and the reason is worth keeping: a nested
-// resource is not indexed (index.go walks the root's groups one level deep), so nothing
-// could find a produced resource by name — not the `Ref()` a queue carries at
-// `dead_letter`, and not the access entry the lowering itself writes onto the step's
-// function. Hiding a resource from the name space is not the same wish as giving it an
-// address of its own, and only the second one was ever wanted.
-//
-// What this buys, all of it out of machinery that already exists:
-//
-//   - THE ADDRESS READS AS THE SOURCE'S. A workflow's queues live at
-//     `namespace/checkout/queue/*.yaml`, not as flat `checkout_*` siblings.
-//   - A NAME A LOWERING TAKES CANNOT COLLIDE with one somebody wrote, because it is not
-//     in the same scope any more. What can still collide is the scope's own name against
-//     an authored scope of that name, which `free` reports like any other.
-//   - A REFERENCE BETWEEN TWO PRODUCED RESOURCES RESOLVES BY ITSELF. Names resolve in the
-//     authoring scope and then outward, so a produced queue naming its produced
-//     dead-letter queue is an ordinary bare-name reference through the ordinary index.
-//     Nothing had to be given a second shape to avoid the resolver.
-func Lowerable(scope *engine.Node) engine.NodeOption {
-	return engine.GroupAnnotate("lowerable", scope)
-}
-
-// NotAuthoredKinds is every kind in the schema that nobody may write — engine.NotAuthored
-// on the kind, read back over the root's own groups.
-func NotAuthoredKinds(root *engine.Node) []string {
-	var out []string
-	for _, g := range root.Children {
-		key, _ := g.Match.(string)
-		if key == "" || len(g.Children) == 0 {
-			continue
-		}
-		if engine.NotAuthoredOf(g.Children[0]) {
-			out = append(out, key)
-		}
-	}
-	return out
-}
-
-// refuseAuthored is what makes engine.NotAuthored binding rather than advisory: the first
-// document of such a kind found in what somebody wrote, named where they can find it.
-//
-// WITHOUT IT THE DECLARATION IS A CONVENTION. The key IS in the schema, so the strict-key
-// check accepts it happily, and an authored `group/checkout` compiles into exactly the
-// shape a lowering produces and then fights it for the name.
-//
-// It runs on the AUTHORED object, before the lowered view exists — the second compile
-// reads the same schema over a layer that has these documents in it by design, so a check
-// that ran on the result could not tell the compiler's own work from an author's.
-func refuseAuthored(root *engine.Node, flat map[string]any) error {
-	kinds := NotAuthoredKinds(root)
-	if len(kinds) == 0 {
+// The authored node is returned so the declaration can sit directly inside
+// DefineGroup. The compiled shape is carried as schema data until c.lower builds the
+// second-pass root; Authored and every authoring consumer therefore see only before.
+func Lowerable(before, after *engine.Node) *engine.Node {
+	if before == nil {
 		return nil
 	}
-	containers := ContainerKeys(root)
-	_, nameField := engine.IdentityOf(root)
-	if inner, ok := flat[ProjectKey].(map[string]any); ok {
-		flat = inner
+	if before.Meta == nil {
+		before.Meta = map[string]any{}
 	}
-
-	var found error
-	var walk func(scope map[string]any, at string)
-	walk = func(scope map[string]any, at string) {
-		for _, kind := range kinds {
-			instances, ok := scope[kind].(map[string]any)
-			if !ok {
-				continue
-			}
-			for _, v := range instances {
-				res, _ := v.(map[string]any)
-				name, _ := res[nameField].(string)
-				where := kind + "/" + name
-				if at != "" {
-					where = at + "/" + where
-				}
-				if found == nil {
-					found = fmt.Errorf("interp: %s is written here, and %s is a kind only a lowering produces", where, kind)
-				}
-			}
-		}
-		for _, container := range containers {
-			instances, ok := scope[container].(map[string]any)
-			if !ok {
-				continue
-			}
-			for _, v := range instances {
-				res, ok := v.(map[string]any)
-				if !ok {
-					continue
-				}
-				name, _ := res[nameField].(string)
-				if name == "" {
-					continue
-				}
-				walk(res, within(at, name))
-			}
-		}
-	}
-	walk(flat, "")
-	return found
+	before.Meta["lowerable"] = after
+	return before
 }
 
-// scopeShapeOf reads the scope shape a kind declared with Lowerable, or nil.
-func scopeShapeOf(iter *engine.Node) *engine.Node {
+// loweredShapeOf reads the after shape a kind declared with Lowerable, or nil.
+func loweredShapeOf(iter *engine.Node) *engine.Node {
 	if iter == nil {
 		return nil
 	}
@@ -392,34 +285,96 @@ func scopeShapeOf(iter *engine.Node) *engine.Node {
 	return n
 }
 
-// scopeKindOf is what that shape is CALLED — its own group key, which is the kind the
-// synthesized scope is filed under. Read off the node rather than passed beside it, so
-// the shape and its name cannot disagree.
-func scopeKindOf(iter *engine.Node) string {
-	shape := scopeShapeOf(iter)
-	if shape == nil {
-		return ""
-	}
-	kind, _ := shape.Match.(string)
-	return kind
+// loweredLeafOf is the document the same resource keeps its fields in after becoming a
+// container. The authored form remains one flat document and has no leaf.
+func loweredLeafOf(iter *engine.Node) string {
+	return engine.LeafOf(loweredShapeOf(iter))
 }
 
-// scopeLeafOf is the document a produced scope keeps its own fields in, read off the
-// shape rather than off the layout.
+// at is one node reached at one lowering depth: what a rewrite produces depends on
+// nothing else, which is what makes the walk below memoizable.
+type nodeAt struct {
+	node  *engine.Node
+	depth int
+}
+
+// LoweredRoot is the schema Compile's SECOND pass reads, and the only place the after
+// shape of a Lowerable kind is ever selected. Every before-node is replaced by its
+// after-node, at the same key, so `workflow` stays `workflow` and gains the container
+// role — the authored root, and therefore every editor, JSON Schema and completion list,
+// is untouched.
 //
-// This is the second thing handing over a NODE buys, after the guarantee that the
-// definition is the real one: a scope is a directory, and which file inside it holds the
-// scope's own id is a fact the shape already states with Leaf(...). Asking the layout
-// would have been asking a second time, and the two answers were different — the layout's
-// leaf is the PROJECT's document, and a produced scope written to `namespace/checkout/
-// project.yaml` is a directory the loader reads as having no document at all, which it
-// reports as `required attribute 'id'` against a file nobody wrote.
-func scopeLeafOf(iter *engine.Node) string {
-	shape := scopeShapeOf(iter)
-	if shape == nil || len(shape.Children) == 0 {
-		return ""
+// THE CAP IS THE NESTING CAP. An after shape holds the vocabulary's resource groups,
+// which include the lowering kinds themselves, so expanding it without a bound is a
+// cyclic node graph — and interp's schema walks have no visited set (see
+// MaxNamespaceDepth for the same reason). A lowering may lower again up to
+// MaxLoweringDepth, and the shape reaches exactly that far.
+//
+// IT SHARES WHAT IT DOES NOT CHANGE. Most of a vocabulary has no lowering under it at
+// all, and rebuilding those subtrees anyway is not free: v2's tree copied whole took 1.2
+// SECONDS, on every compile, which the explorer does on every keystroke. A subtree with
+// no Lowerable node in it comes back as itself, so only the spine down to each lowering
+// kind is new — the same structural-sharing rule a persistent tree uses, and the reason
+// the memo is keyed by depth as well as by node.
+func LoweredRoot(root *engine.Node) *engine.Node {
+	memo, open := map[nodeAt]*engine.Node{}, map[nodeAt]bool{}
+	var rewrite func(*engine.Node, int) *engine.Node
+	rewrite = func(n *engine.Node, depth int) *engine.Node {
+		if n == nil {
+			return nil
+		}
+		key := nodeAt{n, depth}
+		if done, ok := memo[key]; ok {
+			return done
+		}
+		// A schema is a finite tree and the depth rises on every swap, so this cannot
+		// re-enter at the same depth. Saying so out loud costs one map entry and turns a
+		// vocabulary that got that wrong into a shape that stops expanding rather than a
+		// stack that runs out.
+		if open[key] {
+			return n
+		}
+		open[key] = true
+		defer delete(open, key)
+
+		base, before := n, (*engine.Node)(nil)
+		if after := loweredShapeOf(n); after != nil && depth < MaxLoweringDepth {
+			before, base = n, after
+			depth++
+		}
+
+		children := make([]*engine.Node, len(base.Children))
+		untouched := before == nil
+		for i, child := range base.Children {
+			children[i] = rewrite(child, depth)
+			if children[i] != child {
+				untouched = false
+			}
+		}
+		if untouched {
+			return n
+		}
+
+		out := *base
+		// The after shape carries the SHAPE and the kind carries everything else it is —
+		// its resource descriptor, its index footprint, its verbs, its documentation. A
+		// second copy of any of that would be a second place to change it.
+		out.Meta = make(map[string]any, len(base.Meta))
+		for _, from := range []*engine.Node{before, base} {
+			if from == nil {
+				continue
+			}
+			for k, v := range from.Meta {
+				if k != "lowerable" { // the before shape's annotation, and this is past it
+					out.Meta[k] = v
+				}
+			}
+		}
+		out.Children = children
+		memo[key] = &out
+		return &out
 	}
-	return engine.LeafOf(shape.Children[0])
+	return rewrite(root, 0)
 }
 
 // DeclaredWrite is one value a lowering says it will put somewhere, read off the schema
@@ -487,7 +442,7 @@ func UsesLowering(root *engine.Node) bool {
 // UsesLoweringScopes reports whether any kind puts what it lowers into a scope of its
 // own — i.e. whether anything here declares Lowerable.
 func UsesLoweringScopes(root *engine.Node) bool {
-	return eachIter(root, func(iter *engine.Node) bool { return scopeShapeOf(iter) != nil })
+	return eachIter(root, func(iter *engine.Node) bool { return loweredShapeOf(iter) != nil })
 }
 
 // Derived is one resource a lowered resource becomes.
@@ -549,13 +504,6 @@ type Derived struct {
 
 	// Acts marks the part that does what the source declares. See Acts().
 	Acts bool
-
-	// Scoping marks the one derived resource that is the SCOPE the others were placed
-	// in, produced because its source declares Lowerable. It is a resource like any
-	// other — recorded, indexed, decompiled away with the rest — and this says which
-	// one it is, so a consumer drawing what a construct became can draw the box rather
-	// than a sibling of the things inside it.
-	Scoping bool
 }
 
 // Source points at the authored config a derived resource came from.
@@ -843,8 +791,8 @@ func setFor(root *engine.Node, into string, fields map[string]Term, e env) map[s
 	return out
 }
 
-// from is everything one resource lowers into, placed where its kind says it goes: in a
-// scope of its own when it declares Lowerable, beside it otherwise.
+// from is everything one resource lowers into, placed where its kind says it goes: inside
+// the source itself when it declares Lowerable, beside it otherwise.
 //
 // THE SCOPE IS PRODUCED ONLY WHEN SOMETHING GOES INTO IT. A lowering every part of which
 // is gated on a field nobody set produces nothing, and an empty scope is a directory that
@@ -856,8 +804,8 @@ func from(root, iter *engine.Node, kind, name, id string, res map[string]any, at
 		return nil
 	}
 
-	into, container := at, scopeKindOf(iter)
-	if container != "" && name != "" {
+	into := at
+	if loweredShapeOf(iter) != nil && name != "" {
 		into = within(at, name)
 	}
 
@@ -865,20 +813,7 @@ func from(root, iter *engine.Node, kind, name, id string, res map[string]any, at
 	for _, l := range ls {
 		out = append(out, plan(root, l, kind, name, id, res, into, src, via)...)
 	}
-	if len(out) == 0 || into == at {
-		return out
-	}
-	// The scope FIRST, so what goes in it is never placed before the document that
-	// holds it — the same reason resources are written before the entries that land
-	// on them.
-	return append([]Derived{{
-		Kind: container, Name: name, Of: kind + "/" + name, Scope: at,
-		ID:      derivedID(id, container, name),
-		Why:     "what " + kind + "/" + name + " becomes",
-		Source:  src,
-		Via:     via,
-		Scoping: true,
-	}}, out...)
+	return out
 }
 
 func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[string]any, scope string, src Source, via []string) []Derived {
@@ -1294,16 +1229,15 @@ func CheckLowerings(root *engine.Node) []string {
 		// ContainerKeys uses and the same one a consumer sees as `container` on the
 		// kind, which is what makes this a check about SHAPE rather than about which
 		// group it is: any kind the vocabulary declares as a scope will do, and v2
-		// hands over `group` rather than `namespace` for exactly that reason.
-		if shape := scopeShapeOf(iter); shape != nil {
-			key, _ := shape.Match.(string)
+		// takes on the container role rather than borrowing another kind's.
+		if shape := loweredShapeOf(iter); shape != nil {
 			switch {
-			case key == "":
-				problems = append(problems, "a lowering scope has no key")
-			case findGroup(root, key) != shape:
-				problems = append(problems, "the lowering scope "+key+" is not this schema's own "+key)
-			case len(shape.Children) == 0 || !shape.Children[0].Group:
-				problems = append(problems, "the lowering scope "+key+" holds no resources of its own, so nothing could be placed in it")
+			case !shape.Group:
+				problems = append(problems, "a lowered shape is not a group, so it cannot hold resources of its own")
+			case len(shape.Children) == 0:
+				problems = append(problems, "a lowered shape holds no resources of its own, so nothing could be placed in it")
+			case engine.LeafOf(shape) == "":
+				problems = append(problems, "a lowered shape names no leaf document for the source's own fields")
 			}
 			if len(LoweringsOf(iter)) == 0 {
 				problems = append(problems, "a kind declares a lowering scope and lowers into nothing")

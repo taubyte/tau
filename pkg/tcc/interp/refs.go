@@ -21,12 +21,13 @@ import (
 // key the store identically (app -> project -> root scope walk). Resolution runs
 // after the CompileDriver, so the index is complete before any ref is read.
 func ResolveRefs(root *engine.Node) transform.Transformer[object.Refrence] {
-	_, nameField := engine.IdentityOf(root)
-	return utils.Global(ContainerKeys(root), &resolveRefs{groups: root.Children, nameField: nameField})
+	idField, nameField := engine.IdentityOf(root)
+	return utils.Global(ContainerKeys(root), &resolveRefs{groups: root.Children, idField: idField, nameField: nameField})
 }
 
 type resolveRefs struct {
-	groups []*engine.Node
+	groups  []*engine.Node
+	idField string
 	// what the schema calls a resource's name: a reference is resolved through the
 	// name->id index, and that index is keyed by it
 	nameField string
@@ -69,7 +70,7 @@ func refHolder(sel object.Selector[object.Refrence], segs []string) (object.Obje
 }
 
 func (r *resolveRefs) Process(ct transform.Context[object.Refrence], scope object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	if err := resolveGroups(ct, scope, r.groups, r.nameField); err != nil {
+	if err := resolveGroups(ct, scope, r.groups, r.idField, r.nameField); err != nil {
 		return nil, err
 	}
 	return scope, nil
@@ -79,7 +80,7 @@ func (r *resolveRefs) Process(ct transform.Context[object.Refrence], scope objec
 // then recurses into a nested resource's own groups with the SAME context — a nested
 // group is data inside the resource, not a scope, so a reference written there
 // resolves against the index of the scope the resource was authored in.
-func resolveGroups(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], groups []*engine.Node, nameField string) error {
+func resolveGroups(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], groups []*engine.Node, idField, nameField string) error {
 	for _, g := range groups {
 		groupKey, _ := g.Match.(string)
 		if len(g.Children) == 0 {
@@ -100,20 +101,28 @@ func resolveGroups(ct transform.Context[object.Refrence], scope object.Object[ob
 		}
 
 		for _, instName := range groupObj.Children() {
+			if !keyedByIdentity(iter, idField, instName) {
+				continue
+			}
 			sel := groupObj.Child(instName)
 			for _, ra := range refs {
 				if err := resolveRefAttr(ct, sel, ra, nameField); err != nil {
 					return err
 				}
 			}
-			if !iter.Nested {
+			// Only the groups the kind declares for ITSELF. A container's resource groups
+			// are scopes and the scope walk visits them; descending into them here
+			// resolved every reference in them twice, and the second pass read a name it
+			// had already turned into an id.
+			own := ownGroups(iter)
+			if len(own) == 0 {
 				continue
 			}
 			instObj, err := sel.Object()
 			if err != nil {
 				return fmt.Errorf("fetching %s/%s failed with %w", groupKey, instName, err)
 			}
-			if err := resolveGroups(ct, instObj, iter.Children, nameField); err != nil {
+			if err := resolveGroups(ct, instObj, own, idField, nameField); err != nil {
 				return err
 			}
 		}

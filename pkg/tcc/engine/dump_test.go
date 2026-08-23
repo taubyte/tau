@@ -474,7 +474,7 @@ func TestDumpChild_WithNonGroupError(t *testing.T) {
 	err = obj.Child("functions").Add(funcs)
 	assert.NilError(t, err)
 
-	err = instance.dumpChild(child, obj, query)
+	err = instance.dumpChild(child, obj, query, false)
 	assert.ErrorContains(t, err, "non-group child")
 }
 
@@ -499,7 +499,7 @@ func TestDumpChild_WithUnsupportedMatchType(t *testing.T) {
 
 	obj := object.New[object.Refrence]()
 
-	err = instance.dumpChild(child, obj, query)
+	err = instance.dumpChild(child, obj, query, false)
 	assert.ErrorContains(t, err, "unsupported child match type")
 }
 

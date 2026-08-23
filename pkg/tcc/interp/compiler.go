@@ -76,13 +76,6 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 	if err != nil || !UsesLowering(c.compileRoot) {
 		return obj, validations, err
 	}
-	// A KIND NOBODY MAY WRITE HAS TO BE REFUSED WHERE IT WAS WRITTEN. This is the only
-	// point that still knows the difference: below it the lowered view holds documents of
-	// exactly that kind, put there by this compiler, and telling the two apart afterwards
-	// means asking which file they came from.
-	if err := refuseAuthored(c.compileRoot, obj.Flat()); err != nil {
-		return nil, nil, err
-	}
 	return c.lower(ctx, obj, validations)
 }
 

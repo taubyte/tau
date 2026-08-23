@@ -51,10 +51,11 @@ const (
 // into path segments, each announced by the container's own key.
 //
 // EACH LEVEL SAYS WHAT IT IS. This wrote `namespace` in front of every id, which was true
-// while a namespace was the only kind of scope there was; a scope a lowering produces is a
-// `group`, and announcing it as a namespace would key its resources under a path no
-// reader could rebuild — the group itself is indexed as `group/<name>`, so its contents
-// have to be found under `group/<id>` too.
+// while a namespace was the only kind of scope there was; a scope a lowering makes is the
+// SOURCE, in its container role, so its level is announced by the source's own kind.
+// Announcing it as a namespace would key its resources under a path no reader could
+// rebuild — `workflow/checkout` is indexed as `workflow/<name>`, so what is inside it has
+// to be found under `workflow/<id>` too.
 func scopeSegments(scope interp.ScopeChain) []string {
 	var out []string
 	for _, level := range scope {

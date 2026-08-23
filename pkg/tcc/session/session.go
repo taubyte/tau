@@ -119,18 +119,10 @@ type IdentifiedLayout interface {
 //
 // Branching on Container is right; branching on a kind's NAME is what this
 // exists to remove.
-// NotAuthored is the second thing to branch on, and it is not the same question as
-// Container: it says nobody WRITES one of these — the compiler produces them. Such a
-// kind is addressable, editable-looking and real in every other way (a file inside one
-// resolves to a resource address like any other), so it stays in this list; what a
-// consumer must not do is offer it as something to create.
-//
-//	"which kinds can I create as resources"  — filter out Container AND NotAuthored
 type Kind struct {
-	Name        string `json:"name"`
-	Group       string `json:"group"`
-	Container   bool   `json:"container"`
-	NotAuthored bool   `json:"notAuthored,omitempty"`
+	Name      string `json:"name"`
+	Group     string `json:"group"`
+	Container bool   `json:"container"`
 }
 
 // Generator mints values for the DSL's generated fields (a resource id), so

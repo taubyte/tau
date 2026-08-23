@@ -313,6 +313,9 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 	lookup := makeLookup(config, configRoot)
 
 	for _, id := range groupObj.Children() {
+		if !keyedByIdentity(gi.iter, gi.idField, id) {
+			continue
+		}
 		instObj, err := groupObj.Child(id).Object()
 		if err != nil {
 			return nil, fmt.Errorf("fetching %s object for %s failed with %w", gi.groupKey, id, err)

@@ -38,6 +38,10 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (d 
 			return nil, err
 		}
 	}
+	if d.asLowered && interp.UsesLoweringScopes(compileRoot) {
+		d.compileRoot = interp.LoweredRoot(compileRoot)
+		project = engine.SchemaDefinition(d.compileRoot)
+	}
 
 	d.engine, err = engine.New(project, d.seerOptions...)
 	if err != nil {

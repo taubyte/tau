@@ -333,32 +333,6 @@ func Singular(goName string) NodeOption {
 	return GroupAnnotate("singular", goName)
 }
 
-// NotAuthored says that instances of this kind are never WRITTEN: something the compiler
-// does produces them, and nothing else does.
-//
-//	DefineGroup("group", DefineIterGroup(…).With(NotAuthored(), …))
-//
-// It is a statement about who a kind BELONGS to, which is why it is here beside Singular
-// and Leaf rather than with the lowering terms: everything that shows a vocabulary to a
-// person reads it — the JSON Schema an editor validates against, the kinds a session
-// offers, a completion list — and each of those would otherwise carry its own list of
-// what not to offer. The interpreter is what makes it binding, by refusing a document of
-// such a kind found in a project.
-//
-// It does NOT mean the kind is absent from the vocabulary. It is a real kind: it compiles,
-// it is indexed, it is decompiled, and an address inside it resolves. Only the writing of
-// one is not a person's to do.
-func NotAuthored() NodeOption { return GroupAnnotate("notAuthored", true) }
-
-// NotAuthoredOf reads that back off a group's iterator.
-func NotAuthoredOf(iter *Node) bool {
-	if iter == nil {
-		return false
-	}
-	b, _ := iter.Meta["notAuthored"].(bool)
-	return b
-}
-
 // Indexed declares that a group takes part in the index, and at which position. The
 // index accumulates buckets shared across scopes, so the ORDER groups are visited in is
 // part of what comes out — and it is a fact about a vocabulary, not about the driver

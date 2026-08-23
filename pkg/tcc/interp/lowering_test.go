@@ -357,63 +357,37 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 // testVerbs is a verb set the way a vocabulary declares one: the generic layer asks it
 // for the names and knows nothing else about a verb.
 
-// A LOWERING SOURCE CAN BE A SCOPE, and Lowerable takes the SHAPE that scope has rather
-// than its name. The shape has to be the schema's OWN container, because what is
-// synthesized is loaded, indexed and resolved through by that definition — a copy of it,
-// or a resource kind's node, is a plan that reads fine and produces a directory nothing
-// can load. CheckLowerings says so at build time, which is where a vocabulary author can
-// see it without writing any config at all.
-func TestLowerableTakesTheSchemasOwnScope(t *testing.T) {
-	scope := engine.DefineGroup("stage_of",
-		engine.DefineIterGroup([]*engine.Attribute{engine.String("id", engine.Required())},
-			engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{engine.String("id")}))).
-			With(engine.Leaf("scope")))
-
-	// `jobs` is the ONE node the root holds for that key, so handing it over is the
-	// mistake the first cut of this made: reuse the produced kind's own definition.
+// Lowerable carries two shapes of the SAME kind. CheckLowerings rejects an after shape
+// that cannot act as a container, without requiring a second group in the vocabulary.
+func TestLowerableTakesBeforeAndAfterShapes(t *testing.T) {
 	jobs := engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{engine.String("id")}))
-
-	build := func(handed *engine.Node, held ...*engine.Node) *engine.Node {
-		return engine.Root(
-			[]*engine.Attribute{engine.String("id")},
-			append([]*engine.Node{
-				jobs,
-				engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{engine.String("id")},
-					interp.Lowers(interp.Into("job", interp.Named(interp.Concat(interp.Attr("name"), interp.Text("-run"))))),
-					interp.Lowerable(handed))),
-			}, held...)...,
-		).With(engine.Identity("id", "name"))
+	build := func(after *engine.Node) *engine.Node {
+		before := engine.DefineIter([]*engine.Attribute{engine.String("id")},
+			interp.Lowers(interp.Into("job", interp.Named(interp.Concat(interp.Attr("name"), interp.Text("-run"))))))
+		return engine.Root([]*engine.Attribute{engine.String("id")}, jobs,
+			engine.DefineGroup("pipeline", interp.Lowerable(before, after))).
+			With(engine.Identity("id", "name"))
 	}
 
-	// the node handed over IS the one the root holds: nothing to say
-	assert.DeepEqual(t, interp.CheckLowerings(build(scope, scope)), []string(nil))
-
-	// a look-alike built beside it, which would be loaded by a definition nothing else
-	// uses — the exact mistake handing over a name instead of a node cannot catch
-	twin := engine.DefineGroup("stage_of",
-		engine.DefineIterGroup([]*engine.Attribute{engine.String("id", engine.Required())}).With(engine.Leaf("scope")))
-	assert.DeepEqual(t, interp.CheckLowerings(build(twin, scope)),
-		[]string{"the lowering scope stage_of is not this schema's own stage_of"})
-
-	// and the PRODUCED KIND's own node, which is what the first cut of Lowerable reused:
-	// a scope that holds nothing is one nothing could be placed in
-	assert.DeepEqual(t, interp.CheckLowerings(build(jobs)),
-		[]string{"the lowering scope job holds no resources of its own, so nothing could be placed in it"})
+	valid := engine.DefineIterGroup([]*engine.Attribute{engine.String("id")}, jobs).With(engine.Leaf("scope"))
+	assert.DeepEqual(t, interp.CheckLowerings(build(valid)), []string(nil))
+	assert.DeepEqual(t, interp.CheckLowerings(build(engine.DefineIter([]*engine.Attribute{engine.String("id")}))),
+		[]string{"a lowered shape is not a group, so it cannot hold resources of its own"})
+	assert.DeepEqual(t, interp.CheckLowerings(build(engine.DefineIterGroup([]*engine.Attribute{engine.String("id")}))),
+		[]string{"a lowered shape holds no resources of its own, so nothing could be placed in it"})
 }
 
-// WHAT A LOWERING PRODUCES GOES INSIDE ITS SOURCE. The scope is produced like any other
-// resource — it has a derived id, it is recorded, and it is what the plan places the rest
-// in — and `{scope}` is how a value written into somebody ELSE's resource says where the
-// produced one ended up.
+// WHAT A LOWERING PRODUCES GOES INSIDE ITS SOURCE. The source's own id and kind identify
+// the container; only the job receives a derived id.
 func TestLowerableProducesAScope(t *testing.T) {
-	scope := engine.DefineGroup("inside",
-		engine.DefineIterGroup([]*engine.Attribute{
+	after := engine.DefineIterGroup([]*engine.Attribute{
+		engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
+		engine.String("name"), engine.String("runner"),
+	},
+		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		},
-			engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
-				engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-			}, engine.Resource("job", "Job", "Job", "job")))).
-			With(engine.Leaf("scope")))
+		}, engine.Resource("job", "Job", "Job", "job")))).
+		With(engine.Leaf("scope"))
 
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
@@ -421,7 +395,7 @@ func TestLowerableProducesAScope(t *testing.T) {
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
 			engine.String("feeds"),
 		}, engine.Resource("job", "Job", "Job", "job"))),
-		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
+		engine.DefineGroup("pipeline", interp.Lowerable(engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required()),
 			engine.String("name"),
 			engine.String("runner"),
@@ -433,9 +407,7 @@ func TestLowerableProducesAScope(t *testing.T) {
 				// a value into a resource OUTSIDE the produced scope, which therefore has
 				// to say where the produced one is
 				interp.Writes(interp.Scope(), interp.On("job", interp.Attr("runner")), interp.At(interp.Text("feeds"))),
-			)),
-			interp.Lowerable(scope))),
-		scope,
+			))), after)),
 	).With(engine.Leaf("project"), engine.Identity("id", "name"))
 
 	fs := afero.NewMemMapFs()
@@ -444,19 +416,13 @@ func TestLowerableProducesAScope(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/job/worker.yaml", []byte("id: two\n"), 0o644))
 
 	c, err := interp.New(engine.SchemaDefinition(root), root, interp.WithVirtual(fs, "/"),
-		interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml", Scope: "inside/{name}"}))
+		interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml", Scope: "{kind}/{name}"}))
 	assert.NilError(t, err)
 
 	authored, _, err := c.Authored(context.Background())
 	assert.NilError(t, err)
 	plan := interp.LoweringPlan(root, authored.Flat())
-	assert.Equal(t, len(plan), 2, "the job, and the scope it goes in: %v", plan)
-
-	made := byName(t, plan, "build")
-	assert.Assert(t, made.Scoping, "the scope is not marked as one")
-	assert.Equal(t, made.Kind, "inside")
-	assert.Equal(t, made.Scope, "", "the scope itself sits where its source was written")
-	assert.Assert(t, made.ID != "", "a produced scope with no id could not be stored")
+	assert.Equal(t, len(plan), 1, "only the job is produced: %v", plan)
 
 	job := byName(t, plan, "build-run")
 	assert.Equal(t, job.Scope, "build", "what a pipeline becomes lives inside it")
@@ -468,9 +434,10 @@ func TestLowerableProducesAScope(t *testing.T) {
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 	flat, _ := obj.Flat()[interp.ProjectKey].(map[string]any)
-	scopes, _ := flat["inside"].(map[string]any)
+	scopes, _ := flat["pipeline"].(map[string]any)
 	assert.Equal(t, len(scopes), 1, "the produced scope is not in the object: %v", flat)
-	for _, v := range scopes {
+	for id, v := range scopes {
+		assert.Equal(t, id, "one", "the source's authored id is the scope id")
 		one, _ := v.(map[string]any)
 		assert.Equal(t, one["name"], "build")
 		jobs, _ := one["job"].(map[string]any)

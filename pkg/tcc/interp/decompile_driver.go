@@ -60,9 +60,15 @@ func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o objec
 	//     carry (the walk is key-agnostic).
 	containers := ContainerKeys(d.root)
 	idField, nameField := engine.IdentityOf(d.root)
+	resourceContainers := map[string]bool{}
+	for _, key := range containers {
+		if group := findGroup(d.root, key); group != nil && len(group.Children) > 0 {
+			_, resourceContainers[key] = group.Children[0].Meta["resource"].([4]string)
+		}
+	}
 	pipe := []transform.Transformer[object.Refrence]{
-		utils.Global(containers, &decompileRefs{groups: d.root.Children, nameField: nameField}),
-		&decompileApps{containers: containers, idField: idField, nameField: nameField},
+		utils.Global(containers, &decompileRefs{groups: d.root.Children, idField: idField, nameField: nameField}),
+		&decompileApps{containers: containers, resources: resourceContainers, idField: idField, nameField: nameField},
 	}
 	for _, key := range decompileOrder(d.root) {
 		g := findGroup(d.root, key)
@@ -70,7 +76,8 @@ func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o objec
 			continue
 		}
 		pipe = append(pipe, utils.Global(containers, &decompileResource{
-			groupKey: key, iter: g.Children[0], idField: idField, nameField: nameField,
+			groupKey: key, iter: g.Children[0], groups: d.root.Children,
+			idField: idField, nameField: nameField,
 		}))
 	}
 	return transform.Pipe(ct, o, pipe...)
@@ -83,7 +90,8 @@ func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o objec
 // is empty on decompile — with the same app-local-then-project-root scope the old
 // decompile/pass2/common.go used.
 type decompileRefs struct {
-	groups []*engine.Node
+	groups  []*engine.Node
+	idField string
 	// nameField is what this vocabulary calls the name of a resource, from the schema:
 	// inverting a reference means finding the resource an id belongs to and writing what
 	// it is CALLED, and the word for that is not this package's.
@@ -107,13 +115,15 @@ func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope obj
 		// of its own to invert. A container's children are SCOPES, and the scope walk
 		// already visits those: descending into them here inverted every id twice, and
 		// the second pass looked up a name as though it were an id and failed.
+		// A kind that is BOTH a resource and a container carries both kinds of child, so
+		// the test is per-child rather than on the iterator.
 		nested := map[string][]refAttr{}
 		for _, child := range iter.Children {
 			if !iter.Nested {
 				break
 			}
 			key, _ := child.Match.(string)
-			if key == "" || len(child.Children) == 0 {
+			if key == "" || len(child.Children) == 0 || !child.Nested {
 				continue
 			}
 			if inner := collectRefAttrs(child.Children[0].Attributes); len(inner) > 0 {
@@ -144,6 +154,9 @@ func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope obj
 		}
 
 		for _, instName := range groupObj.Children() {
+			if !keyedByIdentity(iter, r.idField, instName) {
+				continue
+			}
 			sel := groupObj.Child(instName)
 			for _, ra := range refs {
 				if err := invertRefAttr(sel, ra, getMap); err != nil {
@@ -166,6 +179,11 @@ func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope obj
 					return nil, fmt.Errorf("fetching %s/%s/%s failed with %w", groupKey, instName, key, err)
 				}
 				for _, entryName := range entries.Children() {
+					// Under a container that is also a resource this key holds both: skip
+					// the ones that are resources it holds, which the scope walk inverts.
+					if heldUnder(r.groups, r.idField, key, entryName) {
+						continue
+					}
 					entry := entries.Child(entryName)
 					for _, ra := range inner {
 						if err := invertRefAttr(entry, ra, getMap); err != nil {
@@ -291,6 +309,7 @@ func invertRefAttr(sel object.Selector[object.Refrence], ra refAttr, getMap func
 // walks that follow handle each app's nested resources via utils.Global.
 type decompileApps struct {
 	containers         []string
+	resources          map[string]bool
 	idField, nameField string
 }
 
@@ -312,6 +331,9 @@ func (a *decompileApps) Process(ct transform.Context[object.Refrence], o object.
 					return nil, fmt.Errorf("renaming inside %s failed with %w", id, err)
 				}
 			}
+			if a.resources[container] {
+				continue // it is also a resource; decompileResource performs this inverse
+			}
 			if _, err := utils.RenameByName(sel, a.idField, a.nameField); err != nil {
 				return nil, fmt.Errorf("renaming scope %s failed with %w", id, err)
 			}
@@ -325,8 +347,12 @@ func (a *decompileApps) Process(ct transform.Context[object.Refrence], o object.
 // projections. Wrapped in utils.Global so it covers the project scope and every
 // application scope, exactly like the passes it replaces.
 type decompileResource struct {
-	groupKey           string
-	iter               *engine.Node
+	groupKey string
+	iter     *engine.Node
+	// groups is the vocabulary's top-level groups, for the one question a nested walk
+	// has to ask under a container that is also a resource: is this entry at this key an
+	// entry the kind declares, or a resource the container holds?
+	groups             []*engine.Node
 	idField, nameField string
 }
 
@@ -339,6 +365,9 @@ func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o ob
 		return nil, fmt.Errorf("fetching %s failed with %w", ri.groupKey, err)
 	}
 	for _, key := range groupObj.Children() {
+		if !keyedByIdentity(ri.iter, ri.idField, key) {
+			continue
+		}
 		sel := groupObj.Child(key)
 		// A NESTED GROUP's entries carry the same wire projections the resource's own
 		// attributes do — an access entry's `timeout` is nanoseconds on the wire and a
@@ -353,7 +382,7 @@ func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o ob
 			if err != nil {
 				return nil, fmt.Errorf("fetching %s %s failed with %w", ri.groupKey, key, err)
 			}
-			if err := applyNestedInverse(inst, ri.iter.Children); err != nil {
+			if err := applyNestedInverse(inst, ri.iter.Children, ri.groups, ri.idField); err != nil {
 				return nil, fmt.Errorf("%s %s: %w", ri.groupKey, key, err)
 			}
 		}
@@ -368,10 +397,17 @@ func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o ob
 // variables — and undoes the wire projections on each entry. An entry is not a resource:
 // it is keyed by a name the author chose and never had an id, so there is no key swap to
 // invert, only the scalar and rename work.
-func applyNestedInverse(inst object.Object[object.Refrence], groups []*engine.Node) error {
-	for _, g := range groups {
+//
+// ONLY THE KIND'S OWN. A kind that is also a container carries both: the groups it
+// declares for itself, and the resource groups it holds because it is a scope. Those are
+// resources, walked by the scope walk, and inverting them here as well ran every scalar
+// through its codec twice — a `timeout` already back to "5m" and read again as
+// nanoseconds, reported as "timeout is not an integer". Nested() marks the ones that are
+// the kind's, which is the same marker the loader routes by.
+func applyNestedInverse(inst object.Object[object.Refrence], children, groups []*engine.Node, idField string) error {
+	for _, g := range children {
 		key, _ := g.Match.(string)
-		if key == "" || len(g.Children) == 0 {
+		if key == "" || len(g.Children) == 0 || !g.Nested {
 			continue
 		}
 		// A list compiles to one ordered VALUE rather than to children, so there is
@@ -388,6 +424,11 @@ func applyNestedInverse(inst object.Object[object.Refrence], groups []*engine.No
 		}
 		iter := g.Children[0]
 		for _, name := range groupObj.Children() {
+			// One key, two things: skip the resources the container holds here, which
+			// the scope walk inverts as the resources they are.
+			if heldUnder(groups, idField, key, name) {
+				continue
+			}
 			sel := groupObj.Child(name)
 			for _, a := range iter.Attributes {
 				if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok {

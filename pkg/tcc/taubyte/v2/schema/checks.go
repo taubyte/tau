@@ -130,12 +130,11 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	return out
 }
 
-// scopeGroups is every group whose instances are SCOPES, read off this vocabulary's own
-// root rather than listed here — there are two of them (`namespace` and `group`) and a
-// list would be one place to forget the third.
+// scopeGroups is every group whose instances are scopes in the COMPILED shape. A
+// lowerable kind joins namespace here without becoming another vocabulary kind.
 func scopeGroups() map[string]bool {
 	out := map[string]bool{}
-	for _, key := range interp.ContainerKeys(CompileRoot()) {
+	for _, key := range interp.ContainerKeys(kindRootNode()) {
 		out[key] = true
 	}
 	return out
@@ -145,8 +144,12 @@ func scopeGroups() map[string]bool {
 // Scopes nest, so this recurses on them rather than assuming depth.
 func collect(scope map[string]any, path string) []compiled {
 	scopes := scopeGroups()
+	groups := compiledGroups()
 	var out []compiled
 	for group, val := range scope {
+		if !groups[group] {
+			continue
+		}
 		instances, ok := val.(map[string]any)
 		if !ok {
 			continue
@@ -156,12 +159,24 @@ func collect(scope map[string]any, path string) []compiled {
 			if !ok {
 				continue
 			}
+			// ONE KEY, TWO THINGS. Inside a kind that is also a container, `function`
+			// holds both the loop it became and the function it reaches — the produced
+			// resource keyed by its id, the access entry by the target's label. Asking tcc
+			// which is which is the point of the walk living here: a consumer guessing
+			// would report an agent's tool as something it contains.
+			if !interp.HeldResource(kindRootNode(), group, id) {
+				continue
+			}
 			name, _ := res["name"].(string)
+			if name == "" {
+				continue
+			}
 			if scopes[group] {
-				child := path
-				if name != "" {
-					child = strings.TrimPrefix(path+"/"+name, "/")
+				if isResourceKind(group) {
+					out = append(out, compiled{kind: group, name: name, scope: path, id: id, fields: res})
 				}
+				child := path
+				child = strings.TrimPrefix(path+"/"+name, "/")
 				out = append(out, collect(res, child)...)
 				continue
 			}
@@ -169,6 +184,29 @@ func collect(scope map[string]any, path string) []compiled {
 		}
 	}
 	return out
+}
+
+func compiledGroups() map[string]bool {
+	out := map[string]bool{}
+	for _, group := range KindRoot() {
+		key, _ := group.Match.(string)
+		if key != "" {
+			out[key] = true
+		}
+	}
+	return out
+}
+
+func isResourceKind(kind string) bool {
+	for _, group := range KindRoot() {
+		key, _ := group.Match.(string)
+		if key != kind || len(group.Children) == 0 {
+			continue
+		}
+		_, ok := group.Children[0].Meta["resource"].([4]string)
+		return ok
+	}
+	return false
 }
 
 // at reads a value nested under a key — a reference is a block, so its id sits at

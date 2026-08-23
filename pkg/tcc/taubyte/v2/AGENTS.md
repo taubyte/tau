@@ -15,7 +15,7 @@ rich enough; if something seems impossible, you are using it wrong. Every time t
 looked like an engine limitation it turned out to be a construct not yet found.
 
 When it really is a missing primitive — say so, name the SHAPE the generic layer is
-missing, and add it in the generic layer's own language. `Lowerable`, `NotAuthored` and
+missing, and add it in the generic layer's own language. `Lowerable`, `LoweredRoot` and
 `ContainerKeys` are what that looks like: none of them knows a kind, each replaced a
 "there is exactly one of these" assumption rather than carving out a special case. A term
 in `engine` or `interp` that names a v2 kind is the thing this rule is really against.
@@ -272,8 +272,8 @@ review notes — the rule is that no attribute path may START with a kind name.
   (`namespacesGroup(MaxNamespaceDepth)`).
 - ~~**More than one walked container.**~~ Fixed 2026-08-22, because a second one was
   needed: `ContainerKeys` (`interp/shape.go`) answers with EVERY top-level group whose
-  iterator is a group and which carries no `Resource(...)`, and `utils.Global` walks the
-  project root plus all of them. It used to answer with the first, and a second scope
+  iterator is a group — including a kind that is a resource AND a container, which is what
+  a lowered `workflow` is — and `utils.Global` walks the project root plus all of them. It used to answer with the first, and a second scope
   compiled, indexed its own names and then resolved no references at all — which reads
   like the reference being wrong rather than like half the walk being missing.
 
@@ -446,56 +446,77 @@ Three things follow, and the third is why it was worth doing:
   lengths are the cut, and `my_build_run_tests` gives back `run_tests` and not
   `build_run_tests`. Invertibility is a property the DSL states.
 
-**A SOURCE IS A SCOPE FOR WHAT IT BECOMES.** `Lowerable(shape)` on a kind says that its
-lowering produces into a scope named after the resource, not beside it:
-`workflow/checkout` becomes `group/checkout/queue/*.yaml`. It takes the SHAPE — a
-container node this vocabulary declares — rather than a name, and `CheckLowerings`
-refuses anything that is not the root's own group by that key, because the directory a
-produced scope is written to is named from that node's `Match` and `Leaf` and is loaded
-by whatever the root holds there. `attachLowerable` hangs it off every kind that declares
-`Lowers()`, the way `attachAccess` and `attachIndexes` do, for the same reason.
+**A SOURCE BECOMES A GROUP, AND A GROUP IS A DIRECTORY THAT IS ALSO A SCOPE.** That is
+the whole of it, and it is not a new idea: `namespace` is one, v1's `application` was one,
+and a kind that LOWERS becomes one. `layout.go` already said the mechanism out loud — *"a
+container's instances are directories, each with the document its `Leaf()` names; every
+other resource is one file"* — so what a lowered `workflow` needs is that layout and
+nothing else: its own fields in `workflow/checkout/scope.yaml`, the queues it produced in
+`workflow/checkout/queue/*.yaml`.
 
-Three things fall out of it, none of which needed a new mechanism:
+**ONE KIND, TWO SHAPES, ONE PER PASS.** `Lowerable(before, after)` states both:
+
+```go
+DefineGroup("workflow", Lowerable(
+    DefineIter(attrs, Lowers(Into("queue", …))),                       // authored: one flat file
+    DefineIterGroup(attrs, resourceGroups...).With(Leaf("scope")),     // lowered: a directory
+))
+```
+
+`Authored()` reads the before shape and so does every authoring consumer — the JSON
+Schema, the session's kind list, completion. `interp.LoweredRoot` selects the after shape,
+and `c.lower()` is the ONLY caller: the second pass writes the authored document into the
+container's leaf and its produced children into the kind-named directories beside it, then
+compiles that. The compiled resource is still `kind: workflow` at its own id. `KindRoot()`
+is that root for a consumer reading a compiled object; `CompileRoot()` stays the authored
+one. A kind never has to be leaf and container at once, which is the framing that made
+this look impossible.
+
+Four things fall out, none of which needed a new mechanism:
 
 - a name a lowering takes cannot collide with one somebody wrote — different scopes;
 - a produced queue's `dead_letter` is an ordinary `Ref()` resolving to the sibling queue
   beside it, because a bare name resolves in the scope it is written in;
 - what reaches in says where: `Scope()` is the produced scope, absolute from the project
   root, so `Reaches(...)` writes `namespace:` on the entry beside the ops (that key is the
-  access block's field name, not the kind of scope it points into).
+  access block's field name, not the kind of scope it points into);
+- **there is no fourth produced resource.** The scope is the source, so nothing is
+  recorded as produced for it and nothing draws a card for a box that IS the scope.
 
 What it costs: two scopes in one place cannot share a NAME, whatever kind each is — every
 name resolution in tcc walks a chain of scope names, so an authored `namespace/checkout`
-and a produced `group/checkout` are one name with two directories behind it. Reported as
-*"namespace/checkout is written here AND is the scope workflow/checkout becomes"*, and two
-lowering sources with the same name still collide on the scope the same way.
+and the scope `workflow/checkout` becomes are one name with two directories behind it.
+Reported as *"namespace/checkout is written here AND is the scope workflow/checkout
+becomes"*.
 
-**A GROUP IS NOT A NAMESPACE, AND THAT IS THE WHOLE POINT.** The shape handed over is
-`groupShape`, a second container kind, and it exists because the two facts a produced
-scope needs come apart:
+**ONE KEY, TWO THINGS, AND THE IDENTITY TELLS THEM APART.** This is the part that bites,
+and it is forced by §5: an access block is authored at the top level of a resource's own
+document under the KIND it reaches, and a scope's resource groups are keyed by kind too.
+So a container that is also a resource has `function:` meaning both — `agent/support`
+holds `{<id>: {name: support_infer}}`, the loop it became, beside `{checkout: {ops:
+[invoke]}}`, the tool it reaches.
 
-- everything it must DO is structure — indexed, addressable, a bare `Ref()` inside it
-  resolving outward — and structure is what the two kinds share, so the interpreter walks
-  them with one mechanism (`interp.ContainerKeys`, plural, over every group whose iterator
-  is itself a group carrying no `Resource(...)`);
-- everything it must not BE is the name. An authored `/shop/eu` is a line somebody drew;
-  `checkout` is the inside of a construct nobody wrote, and compiling it as a namespace
-  makes the object, the index, the decompiled tree and every picture say the author wrote
-  one.
+Both halves are needed and neither may read the other's:
 
-So `group` carries its own `Singular`, `Icon`, `Category` and index position, holds groups
-(a lowering may lower again) and holds no namespaces. **Nobody writes one**:
-`engine.NotAuthored()` on the kind, enforced by the compile on what was AUTHORED — below
-that point the lowered layer holds documents of exactly that kind by design. Consumers
-read the same declaration: it is absent from the JSON Schema an editor validates against,
-and `session.Kind.NotAuthored` says "never offer this as something to create". Declaring
-it without enforcing it would be a convention, and the strict-key check would accept
-`group/checkout/scope.yaml` from a repository without a word.
+- **loading** routes by where a child is authored. `Nested(...)` marks a group as the
+  kind's OWN — its access blocks, its variables, its steps — and under a container those
+  are read from the `Leaf()` document while everything else is read from the directories.
+  A key one of them claims is not an entry of the directory group sharing its name, which
+  is `claimedUnder`'s rule one level out.
+- **walking** routes by the identity the schema names. A resource is keyed by its `id`; an
+  entry is keyed by the label of what it reaches and never had one. `interp.HeldResource`
+  is that question for a consumer, and decompile's `strip` already leaned on the same fact
+  — *"an id is the one key nothing else in the tree is keyed by"*.
+
+Get either wrong and it is SILENT in both directions: letting the directory win dropped
+the agent's declared tools, and walking the held resources as nested data ran every scalar
+through its codec twice.
 
 Two knock-on facts a vocabulary has to know: `IndexCtx.Scope` is a CHAIN whose levels each
 name their container (`ScopeChain`, with `IDs()` for a vocabulary that has one kind of
 scope), and `LayoutOf().Scope` is `{kind}/{name}` rather than one container's name —
-`schema.ScopeKinds(obj)` is where a consumer gets the `{kind}` for each level.
+`schema.ScopeKinds(obj)` is where a consumer gets the `{kind}` for each level, and it
+answers `workflow` for `checkout` and `namespace` for `shop` in the same project.
 
 **COMPILING IS LOWERING.** `Compile` returns the configuration as it RUNS — the queues
 are in the object, because nothing runs a workflow. `Authored` is the compile of what was
@@ -569,8 +590,8 @@ Three properties of the shape, each a decision rather than an inheritance:
 - **The scope is its ids, and each level says what KIND of scope it is.** The key and the
   value it holds are built from the same segments; a scope is itself indexed by name,
   which is what turns a written `/shop/eu` into those ids. `<scope-kind>` was the literal
-  `namespace` until a lowering started producing a `group`, and a level indexed under the
-  wrong word is a subtree no reader can rebuild the path to.
+  `namespace` until a lowering made a scope of the source's own kind, and a level indexed
+  under the wrong word is a subtree no reader can rebuild the path to.
 - **No commit in the value.** The branch is in it and the reader resolves the branch to
   the release it is serving, which is what the trailing `links` bucket is for.
 

@@ -54,8 +54,8 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 		return nil, nil, errors.New("interp: this schema declares lowerings but no layout, so nothing can be lowered — see WithLayout")
 	}
 
-	docs, adds, scopeKinds := placements(c.compileRoot, authored.Flat(), c.layout)
-	if len(docs) == 0 {
+	docs, adds, scopeKinds, moves := placements(c.compileRoot, authored.Flat(), c.layout)
+	if len(docs) == 0 && len(moves) == 0 {
 		return authored, validations, nil
 	}
 	// AN ENTRY NEVER INVENTS THE RESOURCE IT LANDS ON. A step naming a function that does
@@ -69,7 +69,7 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	// one replaced somebody's config with the compiler's, and the compile carried on: the
 	// audit reported the collision afterwards, against an object that had already lost
 	// the file it was reporting about.
-	if err := free(c.compileRoot, authored.Flat(), docs); err != nil {
+	if err := free(c.compileRoot, authored.Flat(), docs, scopeKinds); err != nil {
 		return nil, nil, err
 	}
 
@@ -82,15 +82,15 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 		}
 	}
 
-	view, added, err := c.view(docs, adds)
+	view, added, err := c.view(moves, docs, adds)
 	if err != nil {
 		return nil, nil, err
 	}
-	// THE SAME SCHEMA, unchanged. What a lowering produces is config: a produced
-	// resource is validated by the definition an authored one is, and a produced SCOPE
-	// by the definition an authored scope is — which is exactly what Lowerable hands
-	// over, so there is no second schema for the second pass to compile against.
-	lowered, err := New(c.project, c.compileRoot, append(c.viewOptions(), WithVirtual(view, "/"))...)
+	// The vocabulary is the same and the SHAPE is deliberately not: Lowerable carries
+	// the authored leaf iterator and its compiled container iterator. Only this second
+	// pass selects the latter, so editors and Authored never see compiler-only children.
+	loweredRoot := LoweredRoot(c.compileRoot)
+	lowered, err := New(engine.SchemaDefinition(loweredRoot), loweredRoot, append(c.viewOptions(), WithVirtual(view, "/"))...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -102,7 +102,7 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	// `ops: [receive]` by hand and a lowering that grants the same op are one entry, and
 	// a record claiming the compiler put it there would have decompile delete somebody's
 	// config on the way back out.
-	if err := record(obj, recordOf(c.compileRoot, obj, docs, added)); err != nil {
+	if err := record(obj, recordOf(loweredRoot, obj, docs, added)); err != nil {
 		return nil, nil, err
 	}
 	return obj, moreValidations, nil
@@ -110,7 +110,7 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 
 // free reports the first name a lowering takes that is not its to take: one an author
 // already used, or one another part of the same lowering already produced.
-func free(root *engine.Node, flat map[string]any, docs []placement) error {
+func free(root *engine.Node, flat map[string]any, docs []placement, kinds map[string]string) error {
 	// Keyed by the SOURCE as a person would look for it, not by the resource's id: two
 	// steps of one workflow that produce the same name have the same id on both sides,
 	// so "by X and by X" named the collision and not the two things causing it.
@@ -119,18 +119,27 @@ func free(root *engine.Node, flat map[string]any, docs []placement) error {
 	// a chain of scope NAMES — the by-name index is keyed by them, and so is the outward
 	// walk a bare reference does — so two scopes of the same name in one place are one
 	// scope to every one of them, whatever the compiled object calls each. Keyed without
-	// the kind for exactly that reason: a produced `group/checkout` beside an authored
-	// `namespace/checkout` is not two things that never meet, it is one name with two
-	// directories behind it.
-	scopes := map[string]string{}
+	// the kind for exactly that reason: the scope `workflow/checkout` becomes, beside an
+	// authored `namespace/checkout`, is not two things that never meet — it is one name
+	// with two directories behind it.
+	scopes := map[string]placement{}
 	for _, d := range docs {
 		key := d.scope + "\x00" + d.kind + "\x00" + d.name
 		if by, clash := taken[key]; clash {
 			return fmt.Errorf("interp: %s/%s is produced twice, by %s and by %s", d.kind, d.name, by, d.src)
 		}
 		taken[key] = d.src
-		if d.scoping {
-			scopes[d.scope+"\x00"+d.name] = d.src
+		if kind := kinds[d.scope]; loweredShapeOf(iterOfKind(root, kind)) != nil {
+			cut := strings.LastIndex(d.scope, "/")
+			parent, name := "", d.scope
+			if cut >= 0 {
+				parent, name = d.scope[:cut], d.scope[cut+1:]
+			}
+			key := parent + "\x00" + name
+			if by, clash := scopes[key]; clash && by.from != d.from {
+				return fmt.Errorf("interp: the scope %s is produced twice, by %s and by %s", d.scope, sourceLabel(by), sourceLabel(d))
+			}
+			scopes[key] = d
 		}
 	}
 
@@ -157,7 +166,7 @@ func free(root *engine.Node, flat map[string]any, docs []placement) error {
 					err = fmt.Errorf("interp: %s/%s is written here AND is what %s becomes; one of them has to be renamed", group, name, by)
 				}
 				if by, clash := scopes[at+"\x00"+name]; clash && slices.Contains(containers, group) && err == nil {
-					err = fmt.Errorf("interp: %s/%s is written here AND is the scope %s becomes; two scopes in one place cannot share a name", group, name, by)
+					err = fmt.Errorf("interp: %s/%s is written here AND is the scope %s becomes; two scopes in one place cannot share a name", group, name, sourceLabel(by))
 				}
 				child := name
 				if at != "" {
@@ -174,10 +183,17 @@ func free(root *engine.Node, flat map[string]any, docs []placement) error {
 	return err
 }
 
+func sourceLabel(p placement) string {
+	if cut := strings.Index(p.src, " ("); cut >= 0 {
+		return p.src[:cut]
+	}
+	return p.src
+}
+
 // view is the project with everything a lowering produces in it, in memory. The files on
 // disk are never opened for writing — a compiler that edited its input is one nobody could
 // trust with a repository.
-func (c *Compiler) view(docs []placement, adds []granted) (afero.Fs, []granted, error) {
+func (c *Compiler) view(moves []relocation, docs []placement, adds []granted) (afero.Fs, []granted, error) {
 	base := c.baseFs
 	if c.basePath != "" {
 		base = afero.NewBasePathFs(base, c.basePath)
@@ -187,9 +203,35 @@ func (c *Compiler) view(docs []placement, adds []granted) (afero.Fs, []granted, 
 		return nil, nil, err
 	}
 
+	// Read the authored flat documents before removing them from the private view. A
+	// fresh seer is built afterwards so its path cache sees the new directory shape.
+	sourceSeer, err := yaseer.New(yaseer.VirtualFS(view, "/"))
+	if err != nil {
+		return nil, nil, err
+	}
+	trees := make([]any, len(moves))
+	for i, move := range moves {
+		if err := at(sourceSeer, move.from).Value(&trees[i]); err != nil {
+			return nil, nil, fmt.Errorf("reading lowerable source at %s: %w", strings.Join(move.from, "/"), err)
+		}
+		file := "/" + strings.Join(move.from, "/") + ".yaml"
+		if err := view.Remove(file); err != nil && !os.IsNotExist(err) {
+			return nil, nil, fmt.Errorf("relocating lowerable source at %s: %w", strings.Join(move.from, "/"), err)
+		}
+	}
+
 	seer, err := yaseer.New(yaseer.VirtualFS(view, "/"))
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Put each authored lowerable source in the leaf document of its compiled container
+	// shape. This is a copy in the overlay: the flat authored file stays in the repository
+	// and is still what the first pass reads next time.
+	for i, move := range moves {
+		if err := at(seer, move.to).Set(trees[i]).Commit(); err != nil {
+			return nil, nil, fmt.Errorf("placing lowerable source at %s: %w", strings.Join(move.to, "/"), err)
+		}
 	}
 
 	// The resources FIRST, all of them, and only then the entries: an entry can land on
@@ -232,22 +274,34 @@ func (c *Compiler) viewOptions() []Option {
 	return out
 }
 
-// overlay is a writable layer over a read-only project. Every directory the project has
-// is created in the layer first: afero's copy-on-write cannot make a directory that
-// exists only in the base, and a lowering writes into directories the author already
-// has.
+// overlay is a private in-memory copy of the project. Lowering turns a flat source
+// document into a DIRECTORY in this view — the same name, a different shape — and a
+// copy-on-write filesystem cannot express that: it has no whiteout, so the base file
+// stays visible under the directory the layer grew. Copying is what makes the rewrite
+// private, and the repository is still never opened for writing.
+//
+// It was a copy-on-write layer that created only the directories. The cost of copying is
+// the project's yaml, which is text a compiler is about to parse anyway; the cost of not
+// copying is a compiler that cannot reshape a document, which is the whole of this.
 func overlay(base afero.Fs) (afero.Fs, error) {
 	layer := afero.NewMemMapFs()
 	err := afero.Walk(base, "/", func(path string, info os.FileInfo, err error) error {
-		if err != nil || info == nil || !info.IsDir() {
-			return nil // a file the walk cannot read is the compile's problem, not this one's
+		if err != nil || info == nil {
+			return err
 		}
-		return layer.MkdirAll(path, 0o755)
+		if info.IsDir() {
+			return layer.MkdirAll(path, info.Mode())
+		}
+		body, err := afero.ReadFile(base, path)
+		if err != nil {
+			return err
+		}
+		return afero.WriteFile(layer, path, body, info.Mode())
 	})
 	if err != nil {
 		return nil, err
 	}
-	return afero.NewCopyOnWriteFs(afero.NewReadOnlyFs(base), layer), nil
+	return layer, nil
 }
 
 // listAt reports whether the attribute a path ends at holds a LIST, which is the schema's

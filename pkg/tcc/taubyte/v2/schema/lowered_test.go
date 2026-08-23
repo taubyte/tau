@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
 	"github.com/taubyte/tau/pkg/tcc/jsonschema"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -86,7 +87,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 
 	workflow := idOf(t, flat, "workflow", "checkout")
 	made, added := schema.Became(flat, workflow)
-	assert.Equal(t, len(made), 4, "one queue per step, the one they fail into, and the scope holding them")
+	assert.Equal(t, len(made), 3, "one queue per step and the one they fail into")
 
 	kinds := map[string]int{}
 	for _, id := range made {
@@ -94,16 +95,8 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 		assert.Assert(t, rec.Produced(id))
 		kinds[rec.Resources[id].Kind]++
 	}
-	// THE SCOPE IS RECORDED LIKE ANYTHING ELSE IT PRODUCED. It has to be: decompiling to
-	// what somebody wrote has to take the directory back out too, or the next compile
-	// finds an authored scope it did not write and refuses to produce into it.
-	//
-	// And it is a GROUP. What a workflow becomes behaves like a namespace — indexed,
-	// addressable, resolving a bare name outward — and is not one: a namespace is a line
-	// somebody drew, this is the inside of a construct, and a record calling it a
-	// namespace is the object saying the author wrote something they did not.
 	assert.Equal(t, kinds["queue"], 3)
-	assert.Equal(t, kinds["group"], 1)
+	assert.Equal(t, kinds["group"], 0)
 	assert.Equal(t, kinds["namespace"], 0)
 
 	// ...and the entries it put on resources somebody else wrote, which is the other half
@@ -122,35 +115,33 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	assert.Equal(t, len(alsoNone), 0)
 }
 
-// WHAT A LOWERING BECOMES IS A GROUP, AND A GROUP IS NOT A NAMESPACE. It behaves like
-// one — indexed, addressable, a bare reference inside it resolving outward — because that
-// behaviour is entirely the SHAPE, which it shares. What it does not share is the name:
-// an authored `/shop/eu` is a line somebody drew and `checkout` is the inside of a
-// workflow, and anything that calls the second one a namespace is telling a reader the
-// author wrote something they did not.
-//
-// The other half is that nobody can write one. The kind is real to the compiler and to
-// the index; it is not in the document an editor validates, not offered as something to
-// create, and refused if it turns up in a repository.
-func TestWhatALoweringBecomesIsAGroupAndNobodyWritesOne(t *testing.T) {
+// GROUP IS A ROLE, NOT A KIND. Authored workflow/agent stay leaf resources in the editor
+// schema; the compiled kind root presents those same kinds as containers.
+func TestWhatALoweringBecomesKeepsItsKindAndTakesTheContainerRole(t *testing.T) {
 	obj := compileFor(t, schema.WithLocal("../fixtures/basic"))
 
 	kinds := schema.ScopeKinds(obj.Flat())
-	assert.Equal(t, kinds["checkout"], "group", "what workflow/checkout became: %v", kinds)
-	assert.Equal(t, kinds["support"], "group", "what agent/support became: %v", kinds)
+	assert.Equal(t, kinds["checkout"], "workflow", "what workflow/checkout became: %v", kinds)
+	assert.Equal(t, kinds["support"], "agent", "what agent/support became: %v", kinds)
 	assert.Equal(t, kinds["shop"], "namespace", "an authored scope changed kind: %v", kinds)
 
-	// tcc's own answer about the vocabulary, which is where every consumer gets it: the
-	// group is a container like the namespace, and unlike it, nobody authors one.
 	byGroup := map[string]schema.Kind{}
 	s, err := schema.NewSession(afero.NewMemMapFs(), "/")
 	assert.NilError(t, err)
 	for _, k := range s.Kinds() {
 		byGroup[k.Group] = k
 	}
-	assert.Assert(t, byGroup["group"].Container, "the produced scope is not a container: %v", byGroup["group"])
-	assert.Assert(t, byGroup["group"].NotAuthored, "nothing says a group is not a person's to write")
-	assert.Assert(t, !byGroup["namespace"].NotAuthored, "an authored namespace was marked unwritable")
+	assert.Assert(t, !byGroup["workflow"].Container, "the authored workflow leaked its compiled shape")
+	assert.Assert(t, !byGroup["agent"].Container, "the authored agent leaked its compiled shape")
+
+	compiled := map[string]engine.GroupInfo{}
+	for _, kind := range engine.Groups(schema.KindRoot()) {
+		compiled[kind.Group] = kind
+	}
+	assert.Assert(t, compiled["workflow"].Container)
+	assert.Assert(t, compiled["agent"].Container)
+	_, invented := compiled["group"]
+	assert.Assert(t, !invented, "group became a vocabulary kind again")
 
 	// ...so it is not in the document an editor validates against either.
 	js, err := jsonschema.GenerateJSONSchema(schema.GenerationRoot(), jsonschema.JSONSchemaOptions{})
@@ -159,10 +150,56 @@ func TestWhatALoweringBecomesIsAGroupAndNobodyWritesOne(t *testing.T) {
 		Properties map[string]any `json:"properties"`
 	}
 	assert.NilError(t, json.Unmarshal(js, &doc))
-	_, offered := doc.Properties["group"]
-	assert.Assert(t, !offered, "the JSON Schema offers a kind nobody may author")
+	_, offered := doc.Properties["workflow"]
+	assert.Assert(t, offered, "the JSON Schema lost the authored workflow kind")
+	_, group := doc.Properties["group"]
+	assert.Assert(t, !group, "the JSON Schema invented a group kind")
 	_, namespace := doc.Properties["namespace"]
 	assert.Assert(t, namespace, "the authored scope went missing from the schema")
+}
+
+// A CONTAINER THAT IS ALSO A RESOURCE KEEPS WHAT IT REACHES, and what it reaches shares
+// a key with what it holds.
+//
+// An agent's tools ARE its access block, so `agent/support` declares `function:
+// {checkout: {ops: [invoke]}}` — and its lowering produces `function/support_infer`, the
+// loop. Once the agent takes the container shape both are at the key `function` in one
+// compiled resource: the loop keyed by its id, the tool by the label of what it reaches.
+//
+// The two are told apart by the identity the schema names, which is the same rule
+// decompile's strip already leans on. Getting it wrong is SILENT in both directions — the
+// directory suppressed the document key and the tool simply vanished, and an agent whose
+// declared tools are gone is an agent that reaches nothing, in the object, in the graph
+// and at deploy.
+func TestAContainerKeepsWhatItReachesBesideWhatItHolds(t *testing.T) {
+	obj := compileFor(t, schema.WithLocal("../fixtures/basic"))
+	flat := obj.Flat()
+
+	agent := resource(t, flat, "agent", "support")
+	functions, _ := agent["function"].(map[string]any)
+	assert.Assert(t, functions != nil, "the agent declares no function access at all: %v", agent)
+
+	tool, _ := functions["checkout"].(map[string]any)
+	assert.Assert(t, tool != nil, "the agent lost the tool it declared: %v", functions)
+	assert.DeepEqual(t, tool["ops"], []string{"invoke"})
+
+	// ...and the loop it became is under the same key, as a resource with a name
+	loop := idOf(t, flat, "function", "support_infer")
+	held, _ := functions[loop].(map[string]any)
+	assert.Assert(t, held != nil, "the loop is not held inside the agent: %v", functions)
+	assert.Equal(t, held["name"], "support_infer")
+
+	// Nothing that walks the object may report the tool as something the agent holds.
+	for _, r := range schema.Resources(rootOf(flat)) {
+		assert.Assert(t, !(r.Scope == "support" && r.Name == "checkout"),
+			"an access entry was reported as a resource inside the agent")
+	}
+
+	// The other access blocks are untouched: they share no key with anything produced.
+	for key, target := range map[string]string{"database": "orders", "cache": "orders", "storage": "receipts"} {
+		block, _ := agent[key].(map[string]any)
+		assert.Assert(t, block != nil && block[target] != nil, "%s/%s went missing: %v", key, target, agent[key])
+	}
 }
 
 // A LOWERABLE RESOURCE IN A NAMESPACE produces into a scope of its own, INSIDE that
@@ -439,11 +476,10 @@ func TestSessionAddressesNestedScopes(t *testing.T) {
 // inside `checkout` are two resources that never meet — the collision that used to be a
 // refused compile is not a collision at all any more.
 //
-// The scope's own name cannot collide with a namespace either, now that what a lowering
-// produces is a `group`: an authored `namespace/checkout` and the group `checkout` are
-// two different kinds and never meet. What is refused instead is writing a `group` at
-// all — the kind is the compiler's, and a document of it in a repository is refused where
-// it was written rather than fought over afterwards.
+// The scope's own name can still collide with an authored scope, and that is reported
+// where it happens. What needs no rule at all any more is somebody hand-writing into the
+// compiler's space: a workflow is one flat document in the authored schema, so a
+// directory where that document belongs is refused by the shape itself.
 func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	free := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(free, "../fixtures/basic", "/"))
@@ -468,9 +504,9 @@ func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	// THE SCOPE'S NAME IS STILL TAKEN, and being a different KIND of scope does not
 	// untake it. Every name resolution in tcc walks a chain of scope NAMES — the by-name
 	// index is keyed by them and so is the outward walk a bare reference does — so an
-	// authored `namespace/checkout` and a produced `group/checkout` are one name with two
-	// directories behind it, and which of them a reference means is not a question the
-	// compiler should be answering by accident.
+	// authored `namespace/checkout` and the scope `workflow/checkout` becomes are one name
+	// with two directories behind it, and which of them a reference means is not a
+	// question the compiler should be answering by accident.
 	taken := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(taken, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(taken, "/namespace/checkout/scope.yaml", []byte(
@@ -481,18 +517,20 @@ func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	_, _, err = c.Compile(context.Background())
 	assert.ErrorContains(t, err, "namespace/checkout is written here AND is the scope workflow/checkout becomes")
 
-	// WRITING THE COMPILER'S KIND IS REFUSED WHERE IT WAS WRITTEN, whatever it is called.
-	// The key is in the schema, so nothing else would have said no: the document would
-	// have compiled into exactly the shape a lowering produces.
+	// WRITING INTO THE COMPILER'S SPACE NEEDS NO RULE. The container shape belongs to the
+	// second pass; the authored schema says a workflow is one flat document, so a
+	// directory where that document belongs is not a kind the compiler has to defend —
+	// it is a document that does not load, reported at the file.
 	written := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(written, "../fixtures/basic", "/"))
-	assert.NilError(t, afero.WriteFile(written, "/group/mine/scope.yaml", []byte(
-		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ4Ac\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(written, "/workflow/checkout/queue/mine.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ4Ac\n"+
+			"description: a queue written by hand inside what a workflow becomes\n"), 0o644))
 
 	c, err = schema.New(schema.WithVirtual(written, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
-	assert.ErrorContains(t, err, "group/mine is written here, and group is a kind only a lowering produces")
+	assert.ErrorContains(t, err, "required attribute 'id'")
 }
 
 // A REFERENCE BETWEEN TWO PRODUCED RESOURCES RESOLVES BY ITSELF. A queue carries a

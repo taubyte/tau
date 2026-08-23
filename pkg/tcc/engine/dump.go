@@ -33,7 +33,7 @@ func (s *instance) Dump(obj object.Object[object.Refrence]) error {
 
 	// Process children
 	for _, child := range n.Children {
-		if err := s.dumpChild(child, obj, query); err != nil {
+		if err := s.dumpChild(child, obj, query, false); err != nil {
 			return err
 		}
 	}
@@ -42,7 +42,23 @@ func (s *instance) Dump(obj object.Object[object.Refrence]) error {
 	return s.seer.Sync()
 }
 
-func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], query *yaseer.Query) error {
+// ONE KEY, TWO THINGS, AND THE IDENTITY TELLS THEM APART.
+//
+// A kind that is both a resource and a container has group keys that hold both: the
+// entries it declares for ITSELF — an access block, keyed by the label of what it
+// reaches — and the resources it HOLDS because it is a scope. A resource carries the
+// identity the schema names (engine.Identity); an entry never has one, because an entry
+// is not a resource and was never keyed by an id. That is the only fact needed, and it is
+// the same one RenameById keyed the resource by on the way in.
+//
+// Nothing else in a schema has this shape, so the split is asked for only under such a
+// node — `mixed` below — and every other dump is byte-identical to what it was.
+func (s *instance) heldResource(entry object.Object[object.Refrence]) bool {
+	idField, _ := IdentityOf(s.schema.root)
+	return idField != "" && entry.Get(idField) != nil
+}
+
+func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], query *yaseer.Query, mixed bool) error {
 	groupName, ok := child.Match.(string)
 	if !ok {
 		// Handle StringMatchAll or other matchers
@@ -89,6 +105,9 @@ func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], qu
 			if err != nil {
 				return fmt.Errorf("fetching %s/%s failed: %w", groupName, name, err)
 			}
+			if mixed && !s.heldResource(resObj) {
+				continue // an entry the holder declares for itself; dumpNested writes it
+			}
 
 			// Create document: {groupName}/{name}.yaml
 			docQuery := query.Get(groupName).Get(name).Document()
@@ -121,6 +140,9 @@ func (s *instance) dumpNested(n *Node, obj object.Object[object.Refrence], query
 		return nil
 	}
 	for _, child := range n.Children {
+		if !child.Nested {
+			continue
+		}
 		groupName, ok := child.Match.(string)
 		if !ok || len(child.Children) == 0 {
 			continue
@@ -145,10 +167,14 @@ func (s *instance) dumpNested(n *Node, obj object.Object[object.Refrence], query
 		}
 
 		iter := child.Children[0]
+		mixed := n.Group && n.Nested
 		for _, name := range groupObj.Children() {
 			entry, err := groupObj.Child(name).Object()
 			if err != nil {
 				return fmt.Errorf("fetching %s/%s failed: %w", groupName, name, err)
+			}
+			if mixed && s.heldResource(entry) {
+				continue // a resource the container holds; dumpChild writes its own document
 			}
 			if err := s.dumpAttributes(iter, entry, query.Get(groupName).Get(name)); err != nil {
 				return fmt.Errorf("dumping %s/%s failed: %w", groupName, name, err)
@@ -175,13 +201,22 @@ func (s *instance) dumpApplications(iterGroupNode *Node, appsObj object.Object[o
 		if err := s.dumpAttributes(iterGroupNode, appObj, appConfigQuery); err != nil {
 			return fmt.Errorf("dumping scope %s failed: %w", appName, err)
 		}
+		// A container may also be a resource. Its own nested groups belong in the
+		// same leaf document as its attributes; only the non-nested child groups are
+		// directories holding resources inside it.
+		if err := s.dumpNested(iterGroupNode, appObj, appConfigQuery); err != nil {
+			return fmt.Errorf("dumping scope %s nested data failed: %w", appName, err)
+		}
 		if err := appConfigQuery.Commit(); err != nil {
 			return fmt.Errorf("committing application %s config failed: %w", appName, err)
 		}
 
 		// Write application resources
 		for _, resourceNode := range resourceNodes {
-			if err := s.dumpChild(resourceNode, appObj, query.Get(appName)); err != nil {
+			if resourceNode.Nested {
+				continue
+			}
+			if err := s.dumpChild(resourceNode, appObj, query.Get(appName), iterGroupNode.Group && iterGroupNode.Nested); err != nil {
 				return fmt.Errorf("dumping application %s resources failed: %w", appName, err)
 			}
 		}

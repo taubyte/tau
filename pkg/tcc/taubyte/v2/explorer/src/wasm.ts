@@ -96,11 +96,6 @@ export interface LoweredProject {
       kind: string;
       name: string;
       scope: string;
-      /** A PLACE rather than a thing — the scope the rest were placed in. Recorded
-       *  like anything else the source produced (decompile has to take the directory
-       *  back out too), but a reader draws every produced resource EXCEPT this one:
-       *  a place is drawn by the box that IS it, not by a second card inside it. */
-      scoping: boolean;
     }
   >;
   /** Every value a lowering wrote into a resource somebody DID write: a path and a value. */
@@ -120,7 +115,7 @@ export interface CompileOk {
    * Every SCOPE, which is a different question from every resource: `resources` lists
    * what is INSIDE a scope, on purpose. A scope path is a path of names and a document
    * address is a path of directories named after the KIND — `shop/checkout` is
-   * `namespace/shop/group/checkout` — and there is more than one kind of scope, so this
+   * `namespace/shop/workflow/checkout` — and there is more than one kind of scope, so this
    * is where the kind comes from rather than from a page assuming one.
    */
   scopes?: Instance[];

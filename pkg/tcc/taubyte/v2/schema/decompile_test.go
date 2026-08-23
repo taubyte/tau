@@ -143,30 +143,33 @@ func TestDecompileAllTheWayWritesWhatWasLowered(t *testing.T) {
 		assert.NilError(t, err, "%s is what a lowering produced and was not written", path)
 	}
 
-	// and it is written WHERE THE SOURCE PUT IT. A workflow is a scope for what it
-	// becomes, so the queues are inside it — as files a person could read as belonging
-	// to `checkout`, which is the whole reason the scope exists.
-	//
-	// UNDER `group`, not under `namespace`. The directory is the kind, so what a reader
-	// opens says which of the two this is before they have read a line of it.
+	// and it is written INSIDE THE SOURCE, under the source's own kind. A workflow that
+	// has lowered IS the scope its queues are in, so the directory a reader opens is
+	// `workflow/checkout` — not a manufactured kind beside it, and not a namespace.
 	for _, name := range []string{"checkout_reserve", "checkout_charge", "checkout_failed"} {
-		_, err := out.Stat("/group/checkout/queue/" + name + ".yaml")
+		_, err := out.Stat("/workflow/checkout/queue/" + name + ".yaml")
 		assert.NilError(t, err)
 	}
-	_, err = out.Stat("/group/checkout/scope.yaml")
-	assert.NilError(t, err, "the scope a lowering produced has no document of its own")
+	// The workflow's own fields moved into the container's leaf, which is what taking
+	// the container shape MEANS: one document for the fields, directories for what it
+	// holds — the same layout v1's application has.
+	_, err = out.Stat("/workflow/checkout/scope.yaml")
+	assert.NilError(t, err, "the workflow that became a container has no document of its own")
+	_, err = out.Stat("/workflow/checkout.yaml")
+	assert.Assert(t, err != nil, "the flat authored document was written beside the container it became")
 	_, err = out.Stat("/namespace/checkout/scope.yaml")
 	assert.Assert(t, err != nil, "what a workflow became was written as a namespace")
+	_, err = out.Stat("/group/checkout/scope.yaml")
+	assert.Assert(t, err != nil, "what a workflow became was written as a kind of its own")
 
-	// what somebody wrote is still there too: all the way is everything, not only the
-	// generated half
-	_, err = out.Stat("/workflow/checkout.yaml")
-	assert.NilError(t, err)
-
+	// AND IT STILL DOES NOT COMPILE, which is the half that matters. Nothing guards it
+	// any more — there is no kind to refuse — and nothing has to: the authored schema
+	// says a workflow is one flat document, so a directory where that document belongs is
+	// refused by the shape itself, at the file, without a rule written for the occasion.
 	c, err := schema.New(schema.WithVirtual(out, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
-	assert.ErrorContains(t, err, "only a lowering produces",
+	assert.ErrorContains(t, err, "required attribute 'id'",
 		"the generated depth compiled, which would make it look like a repository")
 }
 
@@ -190,9 +193,6 @@ func documentOf(r interp.Derived, kinds map[string]string) string {
 		}
 		at = strings.TrimPrefix(at+"/"+level, "/")
 		path += dir(at, level)
-	}
-	if r.Scoping {
-		return path + dir(strings.TrimPrefix(at+"/"+r.Name, "/"), r.Name) + "/" + l.Leaf + ".yaml"
 	}
 	return path + "/" + strings.NewReplacer("{kind}", r.Kind, "{name}", r.Name).Replace(l.Resource)
 }
@@ -239,14 +239,6 @@ func TestGeneratedDocumentsCompile(t *testing.T) {
 	assert.Assert(t, len(plan) > 0, "the fixture has to lower something for this to mean anything")
 	for _, d := range plan {
 		assert.Assert(t, d.ID != "", "%s/%s has no id to be stored under", d.Kind, d.Name)
-		// A produced SCOPE is looked for where scopes are: it is a container, and
-		// Resources() lists what is IN one rather than the one — the same reason an
-		// authored namespace is not in that list either.
-		if d.Scoping {
-			assert.Assert(t, scopeExists(obj.Flat(), d.Scope, d.Name),
-				"the scope %s/%s is planned and is not in the compiled object", d.Kind, d.Name)
-			continue
-		}
 		assert.Assert(t, hasResource(obj.Flat(), d.Kind, d.Name),
 			"%s/%s is planned and is not in the compiled object", d.Kind, d.Name)
 	}

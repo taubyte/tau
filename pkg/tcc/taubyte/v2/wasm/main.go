@@ -147,7 +147,6 @@ func compileFn(_ js.Value, args []js.Value) any {
 	for id, p := range rec.Resources {
 		made[id] = map[string]any{
 			"from": p.From, "at": p.At, "kind": p.Kind, "name": p.Name, "scope": p.Scope,
-			"scoping": p.Scoping,
 		}
 	}
 	granted := []map[string]any{}
@@ -204,7 +203,7 @@ func compileFn(_ js.Value, args []js.Value) any {
 	// AND WHAT THE SCOPES ARE, which is a different question from what resources there
 	// are: Resources() lists what is INSIDE a scope, on purpose. A scope path is a path
 	// of NAMES and a document address is a path of DIRECTORIES named after the kind —
-	// `shop/checkout` is `namespace/shop/group/checkout` — so a consumer filling in
+	// `shop/checkout` is `namespace/shop/workflow/checkout` — so a consumer filling in
 	// LayoutOf().Scope's `{kind}` asks here rather than assuming every level is the one
 	// container it happens to know about.
 	scopes := []map[string]any{}
@@ -290,7 +289,7 @@ func shapesFn(js.Value, []js.Value) any {
 	// resources, relations and names — and a shape nobody reads is a second definition
 	// waiting to disagree with the first.
 	kinds := map[string]any{}
-	for _, g := range schema.GenerationRoot() {
+	for _, g := range schema.KindRoot() {
 		key, _ := g.Match.(string)
 		if key == "" || len(g.Children) == 0 {
 			continue
@@ -376,11 +375,6 @@ func kindsFn(js.Value, []js.Value) any {
 			"group": name, "singular": singular, "container": iter.Group,
 			"category": category, "doc": doc, "icon": icon, "fields": fields,
 			"reach": reach,
-			// Nobody writes one of these; the compiler produces them. There are two
-			// container kinds now — the namespace an author draws and the group a
-			// lowering makes — and this is what tells them apart without a page
-			// knowing either name.
-			"notAuthored": engine.NotAuthoredOf(iter),
 		})
 	}
 	return toJS(out)
