@@ -37,7 +37,7 @@ let placedFor: Graph | null = null;
 let layoutSeq = 0;
 let selection: Selection = null;
 let current = Object.keys(files).sort()[0];
-let tab: "graph" | "review" | "compiled" | "vocabulary" | "omitted" = "graph";
+let tab: "graph" | "review" | "compiled" | "lowered" | "vocabulary" | "omitted" = "graph";
 
 const app = document.getElementById("app")!;
 
@@ -166,6 +166,7 @@ function header(error: string | null): HTMLElement {
     ["graph", "Graph"],
     ["review", "Review"],
     ["compiled", "Compiled object"],
+    ["lowered", "Lowered filesystem"],
     ["vocabulary", "Vocabulary & verbs"],
     ["omitted", "What is not here"],
   ] as const) {
@@ -243,11 +244,20 @@ function generatedDocument(kind: string, name: string): string {
 }
 
 // A real directory tree, because the layout IS part of the DSL: a resource is a file
-// under its kind's directory, and a namespace is a directory with a namespace.yaml and
+// under its kind's directory, and a namespace is a directory with a meta.yaml and
 // resource directories of its own.
-function fileTree(): HTMLElement {
+//
+// Generic over WHICH paths — the authored tree and the lowered filesystem below are the
+// same shape of thing, read off two different path lists, so one tree builder draws both
+// rather than a second implementation that could disagree with the first about a kind's
+// icon or a directory's sort order.
+interface Dir {
+  dirs: Map<string, Dir>;
+  files: [string, string][];
+}
+function buildDirTree(paths: string[]): Dir {
   const root: Dir = { dirs: new Map(), files: [] };
-  for (const path of Object.keys(files).sort()) {
+  for (const path of paths.slice().sort()) {
     const parts = path.split("/");
     let node = root;
     for (const seg of parts.slice(0, -1)) {
@@ -256,13 +266,9 @@ function fileTree(): HTMLElement {
     }
     node.files.push([parts[parts.length - 1], path]);
   }
-  return dirEl(root);
+  return root;
 }
-interface Dir {
-  dirs: Map<string, Dir>;
-  files: [string, string][];
-}
-function dirEl(d: Dir): HTMLElement {
+function dirEl(d: Dir, current: string | null, onPick: (path: string) => void): HTMLElement {
   const wrap = document.createElement("div");
   for (const [name, child] of [...d.dirs].sort(([a], [b]) => a.localeCompare(b))) {
     const line = document.createElement("div");
@@ -277,26 +283,72 @@ function dirEl(d: Dir): HTMLElement {
     wrap.appendChild(line);
     const kids = document.createElement("div");
     kids.className = "kids";
-    kids.appendChild(dirEl(child));
+    kids.appendChild(dirEl(child, current, onPick));
     wrap.appendChild(kids);
   }
   for (const [name, path] of d.files) {
     const line = document.createElement("div");
     line.className = "file" + (path === current ? " on" : "");
     line.textContent = name;
-    line.onclick = () => {
-      current = path;
-      generated = null; // back to a file you can edit
-      // The tree and the graph are two views of one resource, so selecting in
-      // either selects in both. A file with no node — a namespace's own document —
-      // clears the selection rather than leaving one pointing somewhere else.
-      const node = graph?.nodes.find((n) => fileOf(n) === path);
-      selection = node ? { id: node.id, mode: "blast" } : null;
-      render();
-      // the graph highlights the pick itself; there is no scroll position to chase
-    };
+    line.onclick = () => onPick(path);
     wrap.appendChild(line);
   }
+  return wrap;
+}
+function fileTree(): HTMLElement {
+  return dirEl(buildDirTree(Object.keys(files)), current, (path) => {
+    current = path;
+    generated = null; // back to a file you can edit
+    // The tree and the graph are two views of one resource, so selecting in
+    // either selects in both. A file with no node — a namespace's own document —
+    // clears the selection rather than leaving one pointing somewhere else.
+    const node = graph?.nodes.find((n) => fileOf(n) === path);
+    selection = node ? { id: node.id, mode: "blast" } : null;
+    render();
+    // the graph highlights the pick itself; there is no scroll position to chase
+  });
+}
+
+// WHICH lowered file is open. The page's, like `current` — it survives a recompile
+// (the same path usually still exists) and resets only when it stops existing.
+let loweredCurrent: string | null = null;
+
+// THE LOWERED FILESYSTEM: what the second pass actually wrote, as files — not the
+// compiled object's shape of them, the yaml. tcc renders none of this by hand; every
+// byte here is what a real compile produced, so this tab is not the graph again in a
+// different skin, it is proof the graph is drawing a lowering that is really there.
+function loweredFsPane(result: CompileOk): HTMLElement {
+  const wrap = div("lowered-cols");
+  const paths = Object.keys(result.loweredFiles ?? {});
+  if (!paths.length) {
+    wrap.appendChild(
+      sectionTitle("nothing lowered", "this project's config declares no lowering, or nothing in it lowers yet"),
+    );
+    return wrap;
+  }
+  if (!loweredCurrent || !paths.includes(loweredCurrent)) loweredCurrent = paths.sort()[0];
+  const picked = loweredCurrent;
+
+  const treeCol = div("pane lowered-tree");
+  treeCol.appendChild(sectionTitle("the lowered filesystem", `${paths.length} files — what compiling actually wrote`));
+  const tree = div("tree");
+  tree.appendChild(
+    dirEl(buildDirTree(paths), picked, (path) => {
+      loweredCurrent = path;
+      render();
+    }),
+  );
+  treeCol.appendChild(tree);
+  wrap.appendChild(treeCol);
+
+  const viewCol = div("pane lowered-view");
+  viewCol.appendChild(sectionTitle(picked, "lowered — not in your repository, and not editable"));
+  const pre = document.createElement("pre");
+  pre.className = "lowered-yaml";
+  pre.textContent = result.loweredFiles?.[picked] ?? "";
+  viewCol.appendChild(pre);
+  wrap.appendChild(viewCol);
+
   return wrap;
 }
 
@@ -316,6 +368,10 @@ function mainPane(result: CompileOk | { error: string }): HTMLElement {
   }
   if (tab === "review") {
     pane.appendChild(reviewPane(result as CompileOk));
+    return pane;
+  }
+  if (tab === "lowered") {
+    pane.appendChild(loweredFsPane(result as CompileOk));
     return pane;
   }
   if (tab === "compiled") {

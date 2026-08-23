@@ -123,6 +123,12 @@ export interface CompileOk {
   relations?: Relation[];
   /** The project as it RUNS, and what in it nobody wrote. */
   lowered?: LoweredProject;
+  /**
+   * Every document the second pass actually wrote, by path: a relocated source's own
+   * leaf document, and each produced child, exactly as read back — not the compiled
+   * object's shape of them, the yaml. Empty for a project that lowers nothing.
+   */
+  loweredFiles?: Record<string, string>;
   /** The project's label in a cloud's generated zone — derived from its id. */
   projectLabel?: string;
   object: Compiled;

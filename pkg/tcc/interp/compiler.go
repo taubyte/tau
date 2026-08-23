@@ -36,6 +36,13 @@ type Compiler struct {
 	baseFs   afero.Fs
 	basePath string
 	layout   Layout
+
+	// loweredView is the in-memory filesystem the last Compile lowered over — nil until
+	// lower() runs, and nil again for a project that declares no lowering. It is the
+	// compile's own working copy, kept rather than rebuilt, so a caller asking "what did
+	// this actually write" sees the same documents the compile read back, not a second
+	// guess at them. See LoweredFS.
+	loweredView afero.Fs
 }
 
 var DefaultBranch = "main"
@@ -77,6 +84,14 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 		return obj, validations, err
 	}
 	return c.lower(ctx, obj, validations)
+}
+
+// LoweredFS is the in-memory filesystem the last Compile lowered over — every document a
+// lowering relocated or produced, exactly as the second pass read it back. nil before a
+// Compile runs, and nil after one for a project that declares no lowering: there is
+// nothing here Authored did not already show.
+func (c *Compiler) LoweredFS() afero.Fs {
+	return c.loweredView
 }
 
 // Authored is the configuration AS IT WAS WRITTEN, with no lowering applied. It is what

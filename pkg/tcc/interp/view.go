@@ -86,6 +86,7 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	if err != nil {
 		return nil, nil, err
 	}
+	c.loweredView = view
 	// The vocabulary is the same and the SHAPE is deliberately not: Lowerable carries
 	// the authored leaf iterator and its compiled container iterator. Only this second
 	// pass selects the latter, so editors and Authored never see compiler-only children.

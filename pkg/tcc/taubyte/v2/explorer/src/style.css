@@ -71,6 +71,17 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
 .tree .file { padding: .12rem .3rem; border-radius: 4px; cursor: pointer; }
 .tree .file::before { content: "\2022"; margin-right: .45em; color: var(--mut); opacity: .5; }
 .tree .file:hover { background: var(--code); }
+
+/* the lowered filesystem tab: a second tree, beside what it holds */
+.lowered-cols { display: grid; grid-template-columns: 260px 1fr; gap: 1rem; min-height: 0; align-items: start; }
+.lowered-tree { border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.lowered-tree .st { padding: .8rem 1rem 0; }
+.lowered-view { min-width: 0; }
+.lowered-yaml {
+  margin: 0; padding: 1rem; border-radius: 8px; background: var(--code);
+  font-size: .8rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+  max-height: 70vh; overflow: auto;
+}
 .tree .file.on { background: var(--fg); color: var(--bg); }
 .tree .file.on::before { color: var(--bg); opacity: .7; }
 

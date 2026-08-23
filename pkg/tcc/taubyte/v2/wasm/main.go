@@ -105,6 +105,25 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	lowered := loweredObj.Flat()
 
+	// THE LOWERED FILESYSTEM ITSELF — every document the second pass actually wrote, not
+	// the compiled object's shape of it: a relocated source's own leaf document, and each
+	// produced child, exactly as read back. Nil for a project that lowers nothing, which
+	// LoweredFS says by returning nil rather than an empty filesystem.
+	loweredFiles := map[string]any{}
+	if fs := c.LoweredFS(); fs != nil {
+		afero.Walk(fs, "/", func(path string, info os.FileInfo, err error) error {
+			if err != nil || info == nil || info.IsDir() {
+				return err
+			}
+			body, err := afero.ReadFile(fs, path)
+			if err != nil {
+				return err
+			}
+			loweredFiles[strings.TrimPrefix(path, "/")] = string(body)
+			return nil
+		})
+	}
+
 	// The project's label in a cloud's generated zone is a pure function of its id, so
 	// it can be shown rather than guessed at. Only the cloud's own fqdn is unknown
 	// here, and that stays unknown.
@@ -137,6 +156,7 @@ func compileFn(_ js.Value, args []js.Value) any {
 		})
 	}
 	out["findings"] = found
+	out["loweredFiles"] = loweredFiles
 
 	// WHAT NOBODY WROTE, and where it came from. The page draws the project as it was
 	// WRITTEN — that is what an author is editing — and asks for the lowered one only
