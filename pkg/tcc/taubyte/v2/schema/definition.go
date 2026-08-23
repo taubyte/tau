@@ -177,7 +177,7 @@ var secNetwork = Section("network", "Network", "How this workload is reached, an
 // The honest limit: this is the config's word for it, not the artifact's. If the build
 // can read the world out of the component's WIT imports, that is the better source and
 // this becomes the thing checked against it rather than the thing believed.
-var hostWorlds = []string{"handler", "authorizer", "gateway-transformer", "proxy-transformer", "gateway-router", "proxy-router"}
+var hostWorlds = []string{"handler", "authorizer", "instance-validator", "gateway-transformer", "proxy-transformer", "gateway-router", "proxy-router"}
 
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	return commonAttributes(append([]*Attribute{
@@ -386,6 +386,50 @@ func pullSecret() []*Attribute {
 			Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with. Omit for a public registry.")),
 	}
 }
+
+// instanceAttributes is how a store says it holds MANY instances rather than one, and
+// who decides whether a given instance may exist.
+//
+// THE BLOCK'S PRESENCE IS THE DECLARATION. There is no `multi: true` beside it: writing
+// `instances:` at all is what says there is more than one, and a second field repeating
+// it is a fact stated twice that two edits can disagree about. And the validator is not
+// optional inside it — the instance NAME is the caller's, so a store that holds many and
+// names nobody to admit them has no point at which the project gets to say no.
+//
+// It replaces v1's `match`/`regex`, which was this capability spelled as a lookup: the
+// data plane knew only a name and walked every config regex-matching it
+// (services/hoarder/helpers.go). That made every store a pattern, gave the pattern no
+// owner, and answered "may this instance exist" with "does this string match".
+//
+// The shape is the AUTHORIZER's, deliberately (§9, the one modelling rule): the target
+// owns the policy. The store names a function; the caller names only the instance it
+// wants. And a validator is not a kind — what makes it one is the host interface it is
+// built against, which is why `instance-validator` is a word in hostWorlds and not a
+// group of its own.
+//
+// What the validator RETURNS — the instance's ttl, its size, whatever the SDK exposes —
+// is not modelled here and must not be: config declares which function decides, and the
+// parameters are the decision's, at run time.
+func instanceAttributes() []*Attribute {
+	return []*Attribute{
+		// THE SWITCH IS WHAT MAKES THE VALIDATOR MANDATORY. A required field inside an
+		// optional block cannot be said any other way: Required() fires whether or not
+		// the block is there (verified — every resource with no `instances:` failed),
+		// and there is no sibling with a default to hang a RequiredWhen on. A Captures()
+		// switch answers "was this block written, and with which key", which is exactly
+		// the question, and it is the same shape `engine.kind` and the gateway's
+		// `routing` already use.
+		String(Key("instances", "admission"), Path("instances", Either("validator")), Captures(), InSection("instances"),
+			Doc("Admission", "How a new instance is let in. validator: a function decides.")),
+		String(Key("instances", "validator", "namespace"), Path("instances", Either("validator"), "namespace"), IsNamespacePath(), InSection("instances"),
+			Doc("Validator Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
+		String(Key("instances", "validator", "name"), Path("instances", Either("validator"), "name"), IsVariableName(), Ref("function", ByName()),
+			RequiredWhen(Key("instances", "admission"), "validator"), InSection("instances"),
+			Doc("Validator", "A function called before an instance is opened or created: it decides whether that instance may exist, and returns the parameters it gets.")),
+	}
+}
+
+var secInstances = Section("instances", "Instances", "Whether this holds one instance or many, and who admits a new one.")
 
 // handlerKinds are what may serve a route. Closed, because it is the Either() a
 // handler's kind switches on: a key outside this set is a compile error rather than
@@ -662,8 +706,7 @@ var V2Resources = []*Node{
 	DefineGroup("cache",
 		resource(
 			commonAttributes(
-				String("match", RequiredUnless("useRegex"), InSection("keys"), Doc("Match", "Key or key-pattern this cache serves.")),
-				Bool(Key("regex"), InSection("keys"), Doc("Use Regex", "Treat match as a regular expression instead of a literal prefix.")),
+				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
 				String(Key("reach", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Local", []string{"host"}, []string{"all", "host"}, [2]string{"host", "all"}), NoAccessors(), InSection("keys"), Doc("Network Access", "Which peers may reach this cache: all, subnet, or host.")),
 				Bytes(Key("size"), Required(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
 				Duration(Key("ttl"), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
@@ -676,7 +719,8 @@ var V2Resources = []*Node{
 			),
 			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"),
 			secIdentity, secAccess,
-			Section("keys", "Keys", "Key matching, capacity, and reachability."),
+			Section("keys", "Keys", "Capacity, lifetime, and reachability."),
+			secInstances,
 			Section("encryption", "Encryption", "Encryption at rest."),
 			Ops(ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")),
 			Resource("cache", "Cache", "Cache", "cache"),
@@ -757,10 +801,13 @@ var V2Resources = []*Node{
 				// Path("engine","distributed","size") makes the same claim and is equally
 				// unenforced. Recorded in omissions.go.
 				String(Key("engine", "tls"), Path("engine", Either(externalDatabaseEngines...), "tls"), InSet("verify-full", "require", "disable"), InSection("engine"), ShowWhen(Key("engine", "kind"), externalDatabaseEngines...),
-					Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included."))),
+					Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included.")),
+				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
+			),
 			GroupDoc("A database: tau's own distributed engine, or an external server reached over the network."), Icon("database"), Category("data"),
 			secIdentity, secAccess,
 			Section("engine", "Engine", "Which engine backs it, and its settings."),
+			secInstances,
 			Ops(ReadOp("query"), WriteOp("exec")), // exec is write: the host cannot classify arbitrary SQL
 			Resource("database", "Database", "Database", "database"),
 		)),
@@ -778,8 +825,7 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				String("type", Path(Either("object", "streaming")), Captures(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
-				String("match", RequiredUnless("useRegex"), InSection("storage"), Doc("Match", "Key or key-pattern this storage serves.")),
-				Bool(Key("regex"), InSection("storage"), Doc("Use Regex", "Treat match as a regular expression instead of a literal prefix.")),
+				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
 				String(Key("reach", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Public", []string{"all"}, []string{"all", "subnet", "host"}, [2]string{"all", "subnet"}), NoAccessors(), InSection("reach"), Doc("Network Access", "Which peers may reach this storage: all, subnet, or host.")),
 				Bool(Key("object", "versioning"), NoSetter(), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
 				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
@@ -787,7 +833,8 @@ var V2Resources = []*Node{
 			),
 			GroupDoc("Object or streaming storage, content-addressed, served to the project's peers."), Icon("bucket"), Category("data"),
 			secIdentity, secAccess,
-			Section("storage", "Storage", "Storage kind, key matching, and capacity."),
+			Section("storage", "Storage", "Storage kind and capacity."),
+			secInstances,
 			Section("reach", "Reachability", "Which peers may reach this."),
 			Ops(ReadOp("get"), ReadOp("list"), ReadOp("head"), WriteOp("put"), WriteOp("delete")),
 			Resource("storage", "Storage", "Storage", "storage"),
@@ -847,10 +894,12 @@ var V2Resources = []*Node{
 
 				Bytes(Key("size"), Required(), InSection("index"),
 					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\"). An index is the vectors plus their neighbour graph, so it is larger than the vectors alone.")),
+				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
 			),
 			GroupDoc("Nearest-neighbour search over embeddings. What an agent remembers, and what a retrieval step searches."), Icon("vector"), Category("data"),
 			secIdentity, secAccess,
 			Section("index", "Index", "The width of a vector, how closeness is measured, and how much of it there may be."),
+			secInstances,
 			Ops(ReadOp("search"), WriteOp("upsert"), WriteOp("delete")),
 			Resource("vector", "Vector", "Vector", "vector"),
 		)),

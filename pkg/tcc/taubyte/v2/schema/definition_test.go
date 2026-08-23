@@ -235,7 +235,7 @@ func TestNamespaceScope(t *testing.T) {
 	assert.Equal(t, nested(fn, "execution", "call"), "notify")
 
 	kv := only(t, shop["cache"].(map[string]any))
-	assert.Equal(t, kv["match"], "sessions")
+	assert.Equal(t, kv["name"], "sessions")
 
 	app := namedResource(t, resources(t, compileBasic(t), "application"), "api")
 	assert.Equal(t, app["image"], "ghcr.io/acme/api:1.4", "applications is a compute kind, not a scope")
@@ -378,7 +378,7 @@ func TestNamespacesNest(t *testing.T) {
 
 	// a third `sessions`, two levels down, distinct from both above it
 	kv := only(t, eu["cache"].(map[string]any))
-	assert.Equal(t, kv["match"], "sessions")
+	assert.Equal(t, kv["name"], "sessions")
 	assert.Equal(t, nested(kv, "size"), int64(2000000))
 }
 

@@ -2,4 +2,7 @@ id: QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco
 object:
     versioning: true
     size: 1GB
-match: receipts
+instances:
+    validator:
+        namespace: /shop
+        name: may_open
