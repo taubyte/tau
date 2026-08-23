@@ -406,25 +406,13 @@ func (t Term) fill(e env) (string, bool) {
 	return s, true
 }
 
-// show is the term filled in, with any part that could NOT be filled left looking exactly
-// as it was declared. A field a resource does not carry shows up in the plan as a visible
-// `{each.attempts}` rather than as a silently shortened name.
-//
-// It is RENDERING, not resolution: every part is resolved by the switch in value(), and a
-// part that resolved to nothing is printed by String(). Nothing here reads a `{` back.
-func (t Term) show(e env) string {
-	if t.origin == OfJoin {
-		var b strings.Builder
-		for _, p := range t.parts {
-			b.WriteString(p.show(e))
-		}
-		return b.String()
-	}
-	if s, ok := t.fill(e); ok {
-		return s
-	}
-	return t.String()
-}
+// There is no `show(env)` — a term filled in with its unfillable parts left PRINTED. It
+// existed, and every value it produced was a lie in the shape of config: a `Sets` whose
+// element had no such field wrote the literal `{each.x}` into the compiled resource, and
+// a `Named` that could not fill produced `checkout_{each.name}` as a resource's address.
+// A term either fills or it does not, and what happens then is the CALLER's decision:
+// set() drops the field, writes() drops the write, and lower() refuses a produced
+// resource with no name. String() stays what it always was — output for a diagnostic.
 
 // scalarString is a compiled value as a name can carry it.
 func scalarString(v any) (string, bool) {

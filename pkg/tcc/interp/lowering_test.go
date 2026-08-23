@@ -2,6 +2,7 @@ package interp_test
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -450,4 +451,131 @@ func TestLowerableProducesAScope(t *testing.T) {
 		one, _ := v.(map[string]any)
 		assert.Equal(t, one["feeds"], "/build")
 	}
+}
+
+// THE DIAGNOSTIC FORM IS NOT A VALUE. `{each.x}` is how a term PRINTS — it is what
+// CheckLowerings shows a vocabulary author who named a field the shell does not have —
+// and for a while it was also what a field got SET to when the element had nothing behind
+// it. A produced resource came back holding `note: "{each.nodefault}"`, which reads as
+// config, compiles, and is a string nobody wrote.
+//
+// The sibling path never did this: a write whose value cannot be filled is dropped. A
+// field is the same question and gets the same answer, so what a produced resource holds
+// is only ever values that came from somewhere.
+func TestLoweringNeverWritesTheDiagnosticForm(t *testing.T) {
+	root := engine.Root(
+		[]*engine.Attribute{engine.String("id")},
+		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
+			engine.String("note"), engine.String("note2"), engine.Float("factor"),
+		}, engine.Resource("job", "Job", "Job", "job"))),
+		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required()),
+			engine.String("name"),
+		},
+			engine.Nested(engine.DefineList("stages", []*engine.Attribute{
+				engine.String("name", engine.Required()),
+				engine.String("outcome", engine.Default("failed")),
+				engine.Float("weight", engine.Default(2.5)),
+				engine.String("nodefault"),
+			})),
+			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
+			interp.Lowers(interp.Into("job",
+				interp.PerEach("stages"),
+				interp.Named(interp.Concat(interp.Attr("name"), interp.Text("-"), interp.Each("name"))),
+				interp.Carries(interp.Concat(interp.Text("stage "), interp.Each("name"))),
+				interp.Sets("note", interp.Each("outcome")),
+				interp.Sets("factor", interp.Each("weight")),
+				interp.Sets("note2", interp.Each("nodefault")), // nothing behind it
+			)),
+		)),
+	).With(engine.Leaf("project"), engine.Identity("id", "name"))
+
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml", []byte("id: root\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/pipeline/build.yaml",
+		[]byte("id: one\nstages:\n    - name: compile\n"), 0o644))
+
+	c, err := interp.New(engine.SchemaDefinition(root), root, interp.WithVirtual(fs, "/"),
+		interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml"}))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+
+	// POSITIVELY: nothing anywhere in the compiled object is a printed term. Asserting
+	// that one field is absent would pass again the day a second field leaks.
+	var walk func(path string, v any)
+	walk = func(path string, v any) {
+		switch t2 := v.(type) {
+		case map[string]any:
+			for k, child := range t2 {
+				walk(path+"/"+k, child)
+			}
+		case []any:
+			for i, child := range t2 {
+				walk(path+"/"+strconv.Itoa(i), child)
+			}
+		case []string:
+			for i, s := range t2 {
+				walk(path+"/"+strconv.Itoa(i), s)
+			}
+		case string:
+			assert.Assert(t, !strings.Contains(t2, "{"),
+				"a printed term escaped into the compiled object at %s: %q", path, t2)
+		}
+	}
+	walk("", obj.Flat())
+
+	// and the fields that DID have something behind them are all there, in wire form
+	plan := interp.LoweringPlan(root, obj.Flat())
+	assert.Equal(t, len(plan), 1, "%v", plan)
+	assert.DeepEqual(t, plan[0].Fields, map[string]any{"note": "failed", "factor": "2.5"})
+}
+
+// A NAME IS AN ADDRESS. The same leak in `Named(...)` did not put a string in a field, it
+// put one in the resource's address — `build-{each.label}` is a file nobody could author,
+// a key the by-name index would hand back, and nothing can refer to it. Refused before
+// anything is written, and reported against what somebody wrote: the pipeline, and the
+// stage inside it.
+func TestALoweringWhoseNameCannotBeFilledIsRefused(t *testing.T) {
+	root := engine.Root(
+		[]*engine.Attribute{engine.String("id")},
+		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
+		}, engine.Resource("job", "Job", "Job", "job"))),
+		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required()),
+			engine.String("name"),
+		},
+			engine.Nested(engine.DefineList("stages", []*engine.Attribute{
+				engine.String("name", engine.Required()),
+				engine.String("label"), // optional, and the name reads it
+			})),
+			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
+			interp.Lowers(interp.Into("job",
+				interp.PerEach("stages"),
+				interp.Named(interp.Concat(interp.Attr("name"), interp.Text("-"), interp.Each("label"))),
+			)),
+		)),
+	).With(engine.Leaf("project"), engine.Identity("id", "name"))
+
+	compile := func(stages string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml", []byte("id: root\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/pipeline/build.yaml", []byte("id: one\nstages:\n"+stages), 0o644))
+		c, err := interp.New(engine.SchemaDefinition(root), root, interp.WithVirtual(fs, "/"),
+			interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml"}))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	err := compile("    - name: compile\n")
+	assert.Assert(t, err != nil, "a job addressed build-{each.label} was produced anyway")
+	assert.Assert(t, strings.Contains(err.Error(), "pipeline/build (stages/0)"), err)
+	assert.Assert(t, strings.Contains(err.Error(), "job"), err)
+	assert.Assert(t, !strings.Contains(err.Error(), "{each."), "the message is prose, not the leak itself: %v", err)
+
+	// with something behind it, the same lowering compiles
+	assert.NilError(t, compile("    - name: compile\n      label: cc\n"))
 }

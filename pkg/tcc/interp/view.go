@@ -58,6 +58,22 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	if len(docs) == 0 && len(moves) == 0 {
 		return authored, validations, nil
 	}
+	// A PRODUCED RESOURCE MUST HAVE A NAME, and a name is its ADDRESS: it is the file it
+	// goes in, the key the by-name index takes, and what a reference to it is written as.
+	// A `Named(...)` reading a field the element does not carry used to leave the term
+	// PRINTED in that address — `checkout_{each.name}` — which is a resource nothing can
+	// refer to and a path nobody could have authored. Dropping it silently is no better:
+	// what the source becomes would be short by one, and the audit would report about an
+	// object that had already lost it. So it is refused here, before anything is written,
+	// the way a name that is not free is — and reported against what somebody WROTE, which
+	// is the resource and, for a list, the element inside it.
+	for _, d := range docs {
+		if d.name == "" {
+			return nil, nil, fmt.Errorf("interp: %s lowers into a %s whose name could not be filled in; every field its name reads has to have a value",
+				d.src, d.kind)
+		}
+	}
+
 	// AN ENTRY NEVER INVENTS THE RESOURCE IT LANDS ON. A step naming a function that does
 	// not exist is a fault the audit reports against the workflow that named it — but the
 	// editor creates a document it is asked to write into, so placing the entry anyway

@@ -559,6 +559,10 @@ Rules that came out of getting each of these wrong first:
   have, or cycles. Whether an op is one the target kind DECLARES is not among them and
   cannot be: the generic layer knows a value goes at a path and has no word for a verb.
   That check is this vocabulary's — `CheckLoweredOps`, over `interp.DeclaredWrites`.
+- **The printed form of a term is a DIAGNOSTIC, never a value.** `{each.x}` is how a term
+  reads in an error; a term that cannot fill drops the field, drops the write, and refuses
+  the name. Rendering one into the compiled object put a string nobody wrote where config
+  goes, and into a produced resource's address.
 - **Templates never grow a calculator.** A step counts `attempts`, not `retries`, so the
   queue's `max-attempts` is a copy. If a lowering needs arithmetic, the field is named
   wrong.

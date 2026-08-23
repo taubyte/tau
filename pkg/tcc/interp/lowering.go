@@ -829,17 +829,17 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 	if l.perEach == "" {
 		// This env carries no scope and nothing about what the lowering produced: a name
 		// that read its own scope, or pointed at AtProduced, would be circular — both only
-		// exist once this Derived does. A Scope() used inside a Named() here just stays
-		// visible as `{scope}`, the same "printed, not resolved" fallback show() gives any
-		// term it cannot fill.
+		// exist once this Derived does. A Scope() used inside a Named() here fills with
+		// nothing, so the name is EMPTY and the compile refuses it by name (see lower()).
 		e := env{res: res}
+		named, _ := l.name.fill(e)
 		return []Derived{{
-			Kind: l.into, Name: l.name.show(e), Of: of, Scope: scope,
+			Kind: l.into, Name: named, Of: of, Scope: scope,
 			// The id is hung off the lowering's own name AS DECLARED — the term, printed —
 			// so a rename of the source does not re-key what it produced.
 			ID:  derivedID(srcID, l.into, l.name.String()),
-			Why: l.why.show(e), Fields: setFor(root, l.into, l.set, e),
-			Writes: writes(l.writes, l.into, l.name.show(e), scope, e), Source: src, Via: via, Acts: l.acts,
+			Why: describe(l.why, e), Fields: setFor(root, l.into, l.set, e),
+			Writes: writes(l.writes, l.into, named, scope, e), Source: src, Via: via, Acts: l.acts,
 		}}
 	}
 
@@ -864,11 +864,12 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 			part = at.Path // no name of its own: its position is the only handle
 		}
 		e := env{res: res, each: el, next: next}
+		named, _ := l.name.fill(e)
 		out = append(out, Derived{
-			Kind: l.into, Name: l.name.show(e), Of: of, Scope: scope,
+			Kind: l.into, Name: named, Of: of, Scope: scope,
 			ID:  derivedID(srcID, l.into, part),
-			Why: l.why.show(e), Fields: setFor(root, l.into, l.set, e),
-			Writes: writes(l.writes, l.into, l.name.show(e), scope, e), Source: at, Via: via, Acts: l.acts,
+			Why: describe(l.why, e), Fields: setFor(root, l.into, l.set, e),
+			Writes: writes(l.writes, l.into, named, scope, e), Source: at, Via: via, Acts: l.acts,
 		})
 	}
 	return out
@@ -934,14 +935,39 @@ func iterOfKind(root *engine.Node, kind string) *engine.Node {
 	return found
 }
 
-// set fills in the derived resource's own fields.
+// describe is what Carries() says about this derived resource: prose for a human. A
+// description that cannot be filled in WHOLE is dropped rather than shown half-written —
+// it is not config, nothing reads it back and no resource carries it, so an empty line
+// costs a reader a sentence while a `{each.x}` in it costs them the belief that the rest
+// of what they are reading is real.
+func describe(why Term, e env) string {
+	s, _ := why.fill(e)
+	return s
+}
+
+// set fills in the derived resource's own fields. A field whose value cannot be filled is
+// DROPPED, exactly as writes() drops a write it cannot address: a term that resolved to
+// nothing has nothing to put there, and the printed form — `{each.attempts}` — is a
+// DIAGNOSTIC. Setting a field to it wrote a string nobody authored into a resource that
+// then compiles and deploys, which is worse than the field being absent.
+//
+// Absent is also what the rest of the machinery already reasons about: CheckLowerings
+// refuses at build time a lowering that leaves a REQUIRED field of the produced kind
+// unset, so a field that can go missing here is an optional one.
 func set(fields map[string]Term, e env) map[string]any {
 	if len(fields) == 0 {
 		return nil
 	}
 	out := make(map[string]any, len(fields))
 	for k, t := range fields {
-		out[k] = t.show(e)
+		v, ok := t.fill(e)
+		if !ok {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
