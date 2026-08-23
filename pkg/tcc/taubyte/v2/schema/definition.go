@@ -372,7 +372,7 @@ func certificateSecret(section string) []*Attribute {
 	return []*Attribute{
 		String(Key("certificate", "secret", "namespace"), IsNamespacePath(), InSection(section), ShowWhen(Key("certificate", "source"), "provided"),
 			Doc("Certificate Secret Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-		String(Key("certificate", "secret", "name"), IsVariableName(), Ref("secret"),
+		String(Key("certificate", "secret", "name"), IsVariableName(), Ref("secret", Inbound()),
 			RequiredWhen(Key("certificate", "source"), "provided"), Field("CertSecret"), InSection(section), ShowWhen(Key("certificate", "source"), "provided"),
 			Doc("Certificate Secret", "Secret holding the certificate chain and its private key. The key never goes in git.")),
 	}
@@ -382,7 +382,7 @@ func pullSecret() []*Attribute {
 	return []*Attribute{
 		String(Key("image_pull_secret", "namespace"), IsNamespacePath(), InSection("code"),
 			Doc("Image Pull Secret Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-		String(Key("image_pull_secret", "name"), IsVariableName(), Ref("secret"), InSection("code"),
+		String(Key("image_pull_secret", "name"), IsVariableName(), Ref("secret", Inbound()), InSection("code"),
 			Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with. Omit for a public registry.")),
 	}
 }
@@ -671,7 +671,7 @@ var V2Resources = []*Node{
 				// same field be either, and the safe reading was the one nothing enforced.
 				String(Key("encryption", "key", "namespace"), IsNamespacePath(), InSection("encryption"),
 					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret"), NoAccessors(), InSection("encryption"),
+				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret", Inbound()), NoAccessors(), InSection("encryption"),
 					Doc("Encryption Key", "Secret holding the key entries are encrypted with, as \"secret/<name>\".")),
 			),
 			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"),
@@ -734,7 +734,7 @@ var V2Resources = []*Node{
 					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
 				String(Key("engine", "credentials", "namespace"), IsNamespacePath(), InSection("engine"),
 					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-				String(Key("engine", "credentials", "name"), IsVariableName(), Path("engine", Either(externalDatabaseEngines...), "credentials", "name"), RequiredWhen(Key("engine", "kind"), externalDatabaseEngines...), Ref("secret"), InSection("engine"),
+				String(Key("engine", "credentials", "name"), IsVariableName(), Path("engine", Either(externalDatabaseEngines...), "credentials", "name"), RequiredWhen(Key("engine", "kind"), externalDatabaseEngines...), Ref("secret", Inbound()), InSection("engine"),
 					Doc("Credentials", "Secret holding the credentials to connect with, as \"secret/<name>\".")),
 
 				// SAFE BY DEFAULT, EXPLICIT TO WEAKEN: absent means verify-full, and an
@@ -867,7 +867,10 @@ var V2Resources = []*Node{
 			),
 			GroupDoc("A named reference to a secret value held outside git. The config never carries the value."), Icon("key"), Category("data"),
 			secIdentity, secAccess,
-			Ops(ReadOp("get")), // there is no write verb from a workload, ever
+			// There is no write verb from a workload, ever — so an arrow INTO a secret
+			// draws a flow that cannot happen. What moves is the value, from the secret
+			// to whoever named it, which is what Arrives states.
+			Ops(Arrives(ReadOp("get"))),
 			Resource("secret", "Secret", "Secret", "secret"),
 		)),
 
@@ -1340,7 +1343,7 @@ var V2Resources = []*Node{
 					Doc("Endpoint", "Base URL of the provider, e.g. \"https://api.anthropic.com\".")),
 				String(Key("inference", "remote", "credentials", "namespace"), IsNamespacePath(), InSection("model"),
 					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-				String(Key("inference", "remote", "credentials", "name"), IsVariableName(), Ref("secret"), RequiredWhen(Key("inference", "kind"), "remote"), InSection("model"),
+				String(Key("inference", "remote", "credentials", "name"), IsVariableName(), Ref("secret", Inbound()), RequiredWhen(Key("inference", "kind"), "remote"), InSection("model"),
 					Doc("Credentials", "Secret holding the provider credential, as \"secret/<name>\". It lives here rather than on each caller, so rotating it is one edit.")),
 				String(Key("inference", "local", "namespace"), IsNamespacePath(), InSection("model"),
 					Doc("Namespace", "Where that application lives. Omitted means this resource's own scope, then its parents.")),
@@ -1618,7 +1621,7 @@ var V2Resources = []*Node{
 			commonAttributes(
 				String("type", Required(), InSection("identity"), Doc("Type", "Which external system events are received from, e.g. \"kafka\", \"s3\", \"slack\".")),
 				String(Key("credentials", "namespace"), IsNamespacePath(), InSection("identity"), Doc("Credentials Namespace", "Where that secret lives. Omitted means this connector's own scope, then its parents.")),
-				String(Key("credentials", "name"), IsVariableName(), Ref("secret"), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials.")),
+				String(Key("credentials", "name"), IsVariableName(), Ref("secret", Inbound()), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials.")),
 				Bool("polls", InSection("identity"), Doc("Polls", "This connector holds a live connection to the external system and emits events from it. Exactly one node in the cloud runs it.")),
 			),
 			GroupDoc("An external system events are received from: credentials, and the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
@@ -1871,7 +1874,7 @@ func variablesGroup() *Node {
 				Doc("Value", "A literal, stored in git and readable by anyone who can read the repo. For anything that is not a secret.")),
 			String(Key("secret", "namespace"), IsNamespacePath(), InSection("config"),
 				Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-			String(Key("secret", "name"), IsVariableName(), Ref("secret"), InSection("config"),
+			String(Key("secret", "name"), IsVariableName(), Ref("secret", Inbound()), InSection("config"),
 				Doc("From Secret", "Take the value from this secret, as \"secret/<name>\". Only the reference is in git.")),
 
 			// An environment variable has a size limit and no structure, so a

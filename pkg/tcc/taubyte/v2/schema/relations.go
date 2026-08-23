@@ -98,10 +98,12 @@ func Relations(obj map[string]any) []Relation {
 
 // accessRelations: what a resource asked to do to another, one per verb.
 //
-// A DELIVERED verb is turned around here. `receive` on a queue and `subscribe` on a
+// AN INBOUND VERB IS TURNED AROUND HERE. `receive` on a queue and `subscribe` on a
 // channel are declared by the consumer, and the work travels the other way — drawn from
 // the declaration, a queue worker has two arrows out and none in, which reads as a
-// workload nothing ever starts.
+// workload nothing ever starts. `get` on a secret is the same shape without the push:
+// the value is DELIVERED to the workload that named it, and nothing writes into a
+// secret, so an arrow pointing at one draws a flow that cannot happen.
 func accessRelations(res compiled, find func(kind, name, own, ns string) (compiled, bool)) []Relation {
 	var out []Relation
 	for kind, val := range res.fields {
@@ -122,7 +124,7 @@ func accessRelations(res compiled, find func(kind, name, own, ns string) (compil
 			for _, op := range ops(entry) {
 				effect, _ := EffectOf(kind, op)
 				r := Relation{From: res.id, To: to.id, Kind: kind, Verb: op, Effect: effect, Class: Use}
-				if delivered(kind, op) {
+				if inbound(kind, op) {
 					r.From, r.To = to.id, res.id
 				}
 				out = append(out, r)
@@ -132,10 +134,14 @@ func accessRelations(res compiled, find func(kind, name, own, ns string) (compil
 	return out
 }
 
-func delivered(kind, op string) bool {
+// inbound reports whether this verb's edge points at the DECLARER. Two ways to say it,
+// one question: a delivered verb is pushed by the platform and therefore arrives, and a
+// verb marked Arrives travels toward the declarer without anything being pushed — a
+// secret's value is fetched by the workload and still moves secret -> workload.
+func inbound(kind, op string) bool {
 	for _, v := range OpsOf(kind) {
-		if v.Name == op && v.Delivered {
-			return true
+		if v.Name == op {
+			return v.Delivered || v.Inbound
 		}
 	}
 	return false
@@ -223,5 +229,13 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 	if ref.Serves {
 		class, verb = Handoff, "serves"
 	}
-	return Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: class}, true
+	r := Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: class}
+	// Direction is a property of the REFERENCE, not of how its value happens to be
+	// stored. This branch used to drop Inbound on the floor, so `Ref(k, ByName(),
+	// Inbound())` compiled, read back true from References(), and drew the arrow the
+	// wrong way round — a term that means nothing in half the cases it is legal in.
+	if ref.Inbound {
+		r.From, r.To = to.id, res.id
+	}
+	return r, true
 }

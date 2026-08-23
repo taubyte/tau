@@ -45,6 +45,23 @@ type Verb struct {
 	// on no others.
 	Delivered bool
 
+	// Inbound reverses the DIRECTION of the edge this verb draws: the arrow runs from
+	// the target TOWARD the resource that declared the access, because that is the way
+	// what the verb moves actually travels.
+	//
+	// It is the access-block twin of RefSpec.Inbound, and it is the same fact — "the
+	// action goes toward the declarer" — so a consumer asks it once. Direction is the
+	// whole claim an edge makes, which is why it is declared here rather than guessed
+	// from the effect class: plenty of reads are a workload reaching out.
+	//
+	// SEPARATE FROM Delivered on purpose. Delivered says the PLATFORM pushes, and three
+	// other things hang off that: the `deliver` port/path block on every access entry of
+	// the kind, the reachability check that counts a workload as consuming, and the
+	// broken-container finding for a receiver with no port. A secret is none of those —
+	// nothing is posted to a port — but its value still travels TO the workload, and
+	// that half is Inbound.
+	Inbound bool
+
 	// Mounted marks a verb that attaches a FILESYSTEM to the workload. Like Delivered
 	// it exists because the verb alone is not the whole statement: "this container may
 	// mount that volume" does not say where, and a database in a container is entirely
@@ -55,6 +72,11 @@ type Verb struct {
 
 // Mounts marks a verb as attaching a filesystem, which gives its access entry a path.
 func Mounts(v Verb) Verb { v.Mounted = true; return v }
+
+// Arrives marks a verb whose edge points AT the declarer: the value travels from the
+// target to the workload that asked for it. See Verb.Inbound — and Ref's Inbound(),
+// which states the same fact about a reference.
+func Arrives(v Verb) Verb { v.Inbound = true; return v }
 
 // Read/Write/Admin name a verb and its effect class in one term, so a verb cannot be
 // declared without one.

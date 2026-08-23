@@ -6,10 +6,14 @@ export type Effect = "read" | "write" | "admin";
 export interface Verb {
   name: string;
   effect: Effect;
-  // the platform hands the work over, rather than the resource going to get it —
-  // which is the difference between an arrow that points at a queue and one that
-  // comes out of it
+  // the platform hands the work over, rather than the resource going to get it — a
+  // container consuming one of these needs a port for the items to land on
   delivered: boolean;
+  // which way the edge points: true when the action travels TOWARD the resource that
+  // declared it, which is the difference between an arrow that points at a queue and
+  // one that comes out of it. Every delivered verb is inbound; a secret's `get` is
+  // inbound without being pushed — the value moves out of the secret either way.
+  inbound: boolean;
 }
 export interface KindVerbs {
   kind: string;

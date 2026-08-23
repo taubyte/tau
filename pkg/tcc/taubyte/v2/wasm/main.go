@@ -268,8 +268,10 @@ func schemaFn(js.Value, []js.Value) any {
 	return js.Global().Get("JSON").Call("parse", string(b))
 }
 
-// verbs() -> [{kind, verbs: [{name, effect, delivered}]}] — read back off each kind's own Ops()
-// declaration, so the UI cannot show a verb the compiler would reject.
+// verbs() -> [{kind, verbs: [{name, effect, delivered, inbound}]}] — read back off each
+// kind's own Ops() declaration, so the UI cannot show a verb the compiler would reject.
+// `delivered` and `inbound` are two facts, not one: delivered says the platform PUSHES
+// (so a container needs a port), inbound says the edge points at the declarer.
 func verbsFn(js.Value, []js.Value) any {
 	kinds := schema.Kinds()
 	out := make([]map[string]any, 0, len(kinds))
@@ -277,7 +279,10 @@ func verbsFn(js.Value, []js.Value) any {
 		ops := schema.OpsOf(kind)
 		vs := make([]map[string]any, 0, len(ops))
 		for _, v := range ops {
-			vs = append(vs, map[string]any{"name": v.Name, "effect": v.Effect, "delivered": v.Delivered})
+			vs = append(vs, map[string]any{
+				"name": v.Name, "effect": v.Effect,
+				"delivered": v.Delivered, "inbound": v.Delivered || v.Inbound,
+			})
 		}
 		out = append(out, map[string]any{"kind": kind, "verbs": vs})
 	}

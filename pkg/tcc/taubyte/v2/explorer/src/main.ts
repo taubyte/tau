@@ -504,18 +504,25 @@ function detail(): HTMLElement {
   const ins = graph.arrows.filter((a) => of(a.to) === n.of);
   const line = (a: { verb: string; effect: string }, other: string) =>
     `<li><span class="verb ${a.effect}">${esc(a.verb)}</span> ${esc(other)}</li>`;
+  // THE COLUMNS ARE THE ARROW, NOT OWNERSHIP. An edge points the way the action goes,
+  // which is not always away from the resource that declared it: a queue delivers to its
+  // worker, and a secret delivers its value to whoever named it. Headed "uses"/"used by"
+  // the panel read those backwards and called a secret six things read unreachable —
+  // the view contradicting the direction the vocabulary states. "reaches"/"reached by"
+  // is the wording the legend and the hint below already use, and it stays true
+  // whichever way an edge runs.
   d.innerHTML = `
     <h3>${esc(n.kind)}/${esc(n.name)}${n.scope ? ` <span class="c">in ${esc(n.scope)}</span>` : ""}${
       n.copies ? ` <span class="c">one resource, ${n.copies} boxes</span>` : ""
     }</h3>
     <div class="two">
-      <div><h4>uses</h4><ul>${
+      <div><h4>reaches</h4><ul>${
         outs.map((a) => line(a, `${graph!.byId.get(a.to)!.kind}/${graph!.byId.get(a.to)!.name}`)).join("") ||
         "<li class='hint'>nothing</li>"
       }</ul></div>
-      <div><h4>used by</h4><ul>${
+      <div><h4>reached by</h4><ul>${
         ins.map((a) => line(a, `${graph!.byId.get(a.from)!.kind}/${graph!.byId.get(a.from)!.name}`)).join("") ||
-        "<li class='hint'>nothing — unreachable</li>"
+        "<li class='hint'>nothing</li>"
       }</ul></div>
     </div>
     <p class="hint">showing ${selection.mode === "blast" ? "what this reaches" : "what reaches this"}</p>`;
