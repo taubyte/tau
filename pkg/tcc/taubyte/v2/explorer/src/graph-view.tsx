@@ -50,6 +50,14 @@ interface ResourceData extends Record<string, unknown> {
   picked: boolean;
   /** Nothing authored this: it is what a lowered resource becomes. */
   derived: boolean;
+  /** `kind/name` of the resource this was lowered from, for what the mark says. */
+  derivedOf?: string;
+  /**
+   * A PART of a resource the author DID write — one element of a list, wearing the
+   * name the author gave it. It stands on the closed face of a box, where the reader
+   * is looking at what was written, so it is drawn like anything else authored.
+   */
+  part: boolean;
   /** This resource IS the box around it, so it is drawn as a point. */
   anchor: boolean;
   /** How many boxes this one resource has, when it is drawn beside each of its users. */
@@ -71,10 +79,21 @@ function ResourceNode({ data }: NodeProps) {
       </div>
     );
   }
+  // WHAT A LOWERING PRODUCED. On the open face this node IS the produced resource — a
+  // real compiled queue, indexed and deployed like any other. On the closed face the
+  // same node stands for the STEP somebody wrote (`part`), which is authored, so the
+  // mark belongs to one face and not the other.
+  const generated = d.derived && !d.part;
   return (
     <div
-      className={`rf-node ${d.category}${d.faded ? " faded" : ""}${d.picked ? " picked" : ""}${d.derived ? " derived" : ""}`}
-      title={d.derived ? "not authored — what a workflow becomes" : undefined}
+      className={`rf-node ${d.category}${d.faded ? " faded" : ""}${d.picked ? " picked" : ""}${d.part ? " part" : ""}${generated ? " gen" : ""}`}
+      title={
+        d.part
+          ? "written — one step of what this box is"
+          : generated
+          ? `generated — what ${d.derivedOf ?? "a lowered resource"} compiles into. Real config, and nobody wrote it, so it opens read-only.`
+          : undefined
+      }
     >
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <span className="rf-glyph">
@@ -92,6 +111,9 @@ function ResourceNode({ data }: NodeProps) {
           ×{d.copies}
         </span>
       ) : null}
+      {/* A produced resource is as real as an authored one, so it is not drawn any
+          fainter. What it is not is EDITABLE, and that is what the tag says. */}
+      {generated ? <span className="rf-gen">gen</span> : null}
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </div>
   );
@@ -139,9 +161,10 @@ function ScopeNode({ data }: NodeProps) {
 
 // The internet. Not a resource and never part of the model — it is drawn so that
 // ingress arrives from somewhere visible instead of from the edge of the canvas.
-function InternetNode() {
+function InternetNode({ data }: NodeProps) {
+  const d = data as { picked?: boolean };
   return (
-    <div className="rf-internet">
+    <div className={`rf-internet${d.picked ? " picked" : ""}`}>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <IconWorld size={16} stroke={1.7} />
       <span>the internet</span>
@@ -153,9 +176,10 @@ function InternetNode() {
 // The cloud's own zone: what answers a generated name. Not a resource in any project,
 // so like the internet it is drawn rather than compiled — but it IS in the path, and a
 // diagram that skips it makes a generated name look like it resolves by magic.
-function CloudZoneNode() {
+function CloudZoneNode({ data }: NodeProps) {
+  const d = data as { picked?: boolean };
   return (
-    <div className="rf-internet rf-cloudzone">
+    <div className={`rf-internet rf-cloudzone${d.picked ? " picked" : ""}`}>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <IconWorldWww size={16} stroke={1.7} />
       <span>the cloud's zone</span>
@@ -288,10 +312,24 @@ export function GraphView({
     // The ingress path is drawn, not compiled, so it is not in arrows — and a gateway
     // selected without the zone that answers for it is missing the step that makes its
     // name work. Both directions: pick the zone, see what it answers for.
+    //
+    // WHICH zone answers is `answeredById`, or the cloud's own when nothing in the
+    // project answers — the same expression main.ts builds the ingress path from. The
+    // cloud's zone used to be left out of this walk entirely, so picking it faded the
+    // whole graph and lit nothing: the one node whose entire meaning is "these names
+    // resolve here" could not show which ones.
     for (const n of graph.nodes) {
-      if (!n.answeredById) continue;
-      if (n.of === picked) reached.add(n.answeredById);
-      if (of(n.answeredById) === picked) reached.add(n.id);
+      if (!n.fqdn) continue;
+      const zone = n.answeredById || CLOUD_ZONE;
+      if (n.of === picked) reached.add(zone);
+      if (of(zone) === picked) reached.add(n.id);
+      // Everything with a name is reachable from the internet through its zone.
+      if (picked === INTERNET) {
+        reached.add(zone);
+        reached.add(n.id);
+      }
+      // The path in is one path: a zone in the radius keeps the hop that feeds it.
+      if (reached.has(zone)) reached.add(INTERNET);
     }
     // ...and a copy is lit when the resource is.
     const byResource = new Set([...reached].map(of));
@@ -348,7 +386,7 @@ export function GraphView({
         height: placed.cloudZone.h,
         draggable: false,
         selectable: false,
-        data: {},
+        data: { picked: selection?.id === CLOUD_ZONE },
       });
     }
 
@@ -361,7 +399,7 @@ export function GraphView({
         height: placed.internet.h,
         draggable: false,
         selectable: false,
-        data: {},
+        data: { picked: selection?.id === INTERNET },
       });
     }
 
@@ -396,7 +434,13 @@ export function GraphView({
           // One resource, several boxes. The count is on every one of them, because a
           // copy with nothing to say it is a copy reads as another resource.
           copies: n.copies,
+          // A node standing for a PART of a resource says so by wearing that
+          // resource's look (`looksLike`) instead of a kind of its own — which is
+          // exactly the case where the author DID write this, so it takes no
+          // generated mark at all.
+          part: !!n.looksLike,
           derived: !!n.derived,
+          derivedOf: n.derived?.of,
           anchor: !!n.anchor,
         } satisfies ResourceData,
       });
@@ -423,6 +467,10 @@ export function GraphView({
       const route = placed.routes.get(hopKey(from, to));
       if (!route) return null;
       const fits = label ? route.len > label.length * 5.5 : false;
+      // A hop is lit on the same rule as every other edge — both ends in the radius —
+      // rather than dimming the whole ingress path the moment anything is selected.
+      // That blanket dim hid the one thing picking a zone is asking about.
+      const faded = lit !== null && (!lit.has(from) || !lit.has(to));
       return {
         id: hopKey(from, to),
         source: from,
@@ -430,9 +478,9 @@ export function GraphView({
         type: "routed",
         data: { route },
         label: fits ? label : undefined,
-        className: "rf-edge exposed",
+        className: `rf-edge exposed${faded ? " faded" : ""}`,
         markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: ink.internet },
-        style: { stroke: "var(--internet)", strokeWidth: 1.6, opacity: lit ? 0.15 : 1 },
+        style: { stroke: "var(--internet)", strokeWidth: 1.6, opacity: faded ? 0.15 : 1 },
       };
     };
 

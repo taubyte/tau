@@ -254,6 +254,13 @@ code.om.open { color: var(--internet); }
   background: color-mix(in srgb, var(--internet) 8%, var(--card));
   color: var(--internet);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 600;
+  cursor: pointer;
+}
+/* Drawn, not compiled — but still something you can ask about, so it takes the same
+   ring every picked box takes. Without it the click had no visible anchor at all. */
+.rf-internet.picked {
+  border-style: solid; border-width: 2px; border-color: var(--acc); color: var(--acc);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 22%, transparent);
 }
 
 /* review */
@@ -295,16 +302,27 @@ code.om.open { color: var(--internet); }
 }
 .chip b { color: var(--fg); }
 
-/* A resource nothing authored: what a workflow lowers into. Dashed, because the
-   difference between "you wrote this" and "this is what yours becomes" is the whole
-   point of showing it at all. */
-.rf-node.derived {
-  border-style: dashed;
-  background: transparent;
+/* WHAT A LOWERING PRODUCED, drawn as the configuration it is.
+   COMPILING IS LOWERING: the queues a workflow becomes are in the compiled object,
+   indexed, referenced and deployed exactly like anything an author typed. They used to
+   be dashed, unfilled and italic — a ghost treatment that says "sketch", which is the
+   view telling the reader the config is less real than it is.
+   The one honest difference survives, as a MARK rather than a degradation: nobody wrote
+   this, so nobody edits it and its document opens read-only. An accent rail says so at
+   any zoom; the `gen` tag says it in words, in the same pill the copy count uses. */
+.rf-node.gen::before {
+  content: ""; position: absolute; left: 0; top: 5px; bottom: 5px; width: 3px;
+  border-radius: 0 3px 3px 0; background: var(--mut);
 }
-.rf-node.derived .rf-name {
-  font-style: italic;
+.rf-gen {
+  position: absolute; bottom: -6px; right: -6px;
+  padding: 0 4px; border-radius: 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px; font-weight: 700; line-height: 14px; letter-spacing: .04em;
+  color: var(--bg); background: var(--mut);
 }
+.rf-node.picked .rf-gen { background: var(--acc); }
+.rf-node.picked.gen::before { background: var(--acc); }
 
 /* A frame's label is a handle: the box IS its resource, so clicking the box has to pick
    it. React Flow's edge layer sits above the nodes, so the label says it takes clicks. */
@@ -327,7 +345,7 @@ code.om.open { color: var(--internet); }
 }
 
 /* A step: what the author wrote, so it is drawn like anything else authored — solid,
-   readable — and never with the derived treatment. */
+   readable, and with no generated mark on it. */
 .rf-node.part { border-color: var(--trigger); }
 .rf-node.part .rf-glyph { color: var(--trigger); }
 .rf-flip {

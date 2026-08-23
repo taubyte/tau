@@ -7,7 +7,7 @@ import { kindIconMarkup } from "./icons";
 import { editorHost, onEditorChange, showFile } from "./editor";
 import type { Finding } from "./wasm";
 import type { Selection } from "./graph-view";
-import { CLOUD_ZONE, place, type Placed } from "./layout";
+import { CLOUD_ZONE, INTERNET, place, type Placed } from "./layout";
 
 // The example project is the SAME tree the Go tests compile
 // (pkg/tcc/taubyte/v2/fixtures/basic), pulled in raw at build time. One example,
@@ -495,7 +495,13 @@ function detail(): HTMLElement {
     }</p>`;
     return d;
   }
-  const n = graph.byId.get(selection.id)!;
+  // NOT EVERY NODE ON THE CANVAS IS A RESOURCE. The internet and the cloud's own zone
+  // are drawn rather than compiled — they are in the path, so a picture without them
+  // makes a generated name look like it resolves by magic — and neither is in the
+  // model. This used to dereference the lookup straight away, so clicking either one
+  // threw before `cols` was ever appended and the whole page went blank.
+  const n = graph.byId.get(selection.id);
+  if (!n) return ingressDetail(d, selection.id);
   // A resource drawn beside each of its users has one box per user, and each box holds
   // one of the arrows. The panel is about the RESOURCE, so it asks what a box IS: filter
   // by n.id and a secret six things read would report one.
@@ -529,6 +535,56 @@ function detail(): HTMLElement {
   return d;
 }
 
+// WHAT A NODE THAT IS NOT A RESOURCE IS. The internet and the cloud's own zone are on
+// the canvas because they are steps in the path a request takes, not because anything
+// in the project declares them — so there is no file to open and no blast radius to
+// walk. What they DO have is the set of names that pass through them, which is the
+// question anyone clicking them is asking, and it comes straight off the graph.
+function ingressDetail(d: HTMLElement, id: string): HTMLElement {
+  // Anything else that is not in the model at all: say so plainly rather than dressing
+  // it up as one of the two nodes this pane knows how to explain.
+  if (id !== CLOUD_ZONE && id !== INTERNET) {
+    d.innerHTML = `<p class="hint">Nothing on the graph answers to that any more.</p>`;
+    return d;
+  }
+  const named = [...new Map((graph?.nodes ?? []).map((n) => [n.of, n])).values()].filter((n) => n.fqdn);
+  // Which zone answers a name is `answeredById`, or the cloud's own when nothing in
+  // the project answers — the same expression the ingress path is built from. The
+  // internet is upstream of every one of them.
+  const answers =
+    id === INTERNET ? named : named.filter((n) => (n.answeredById || CLOUD_ZONE) === id);
+  const what =
+    id === CLOUD_ZONE
+      ? {
+          title: "the cloud's zone",
+          why: `Not a resource in this project, and nothing here declares it: the cloud's own
+                zone is <b>generated</b> for the cloud that runs the project, which is why it has
+                no document to open. It is drawn because it is a real step in the path — a
+                generated name resolves <i>here</i>, and a picture that skips it makes that
+                name look like it works by magic.`,
+          none: "Nothing here compiled a generated name, so the cloud's zone answers for nothing.",
+        }
+      : {
+          title: "the internet",
+          why: `Not a resource and never part of the model. It is drawn so that traffic from
+                outside arrives from somewhere visible rather than from the edge of the canvas.`,
+          none: "Nothing compiled an fqdn, so nothing answers from the internet.",
+        };
+  d.innerHTML = `
+    <h3>${esc(what.title)} <span class="c">drawn, not compiled</span></h3>
+    <p class="hint">${what.why}</p>
+    <h4>${id === CLOUD_ZONE ? "answers for" : "reaches"}</h4>
+    <ul>${
+      answers
+        .map(
+          (n) =>
+            `<li><code>${esc(n.fqdn!)}</code> <span class="c">${esc(n.kind)}/${esc(n.name)}</span></li>`,
+        )
+        .join("") || `<li class="hint">${esc(what.none)}</li>`
+    }</ul>`;
+  return d;
+}
+
 // The review: what the graph says, for the person signing off on it rather than the
 // person writing it. Every row is derived from the compiled object, and clicking one
 // selects that resource on the graph — a finding you cannot locate is half a finding.
@@ -542,7 +598,13 @@ function reviewPane(result: CompileOk): HTMLElement {
   // which was the same reasoning written twice and would have drifted the first time a
   // kind changed.
   const findings = result.findings ?? [];
-  const exposure = graph.nodes
+  // ONE ROW PER RESOURCE, NOT PER BOX. A much-reached sink is drawn beside each of its
+  // users, so `graph.nodes` holds six boxes for one secret — and a pane that counts
+  // boxes reports six secrets where the project declares one. Every reader here asks
+  // what a box IS (`of`), which is the same rule the detail panel and the findings
+  // already follow.
+  const resources = [...new Map(graph.nodes.map((n) => [n.of, n])).values()];
+  const exposure = resources
     // fqdn alone is the filter — see the ingress build in render(). A zone never gets
     // one: it is the column here (zone: below), not a row.
     .filter((n) => n.fqdn)
@@ -558,7 +620,7 @@ function reviewPane(result: CompileOk): HTMLElement {
         .filter((x): x is NonNullable<typeof x> => !!x)
         .map((t) => `${t.kind}/${t.name}${t.scope ? ` in ${t.scope}` : ""}`),
     }));
-  const counts = [...graph.nodes.reduce((m, n) => m.set(n.kind, (m.get(n.kind) ?? 0) + 1), new Map<string, number>())]
+  const counts = [...resources.reduce((m, n) => m.set(n.kind, (m.get(n.kind) ?? 0) + 1), new Map<string, number>())]
     .map(([kind, n]) => ({ kind, n }))
     .sort((a, b) => b.n - a.n || a.kind.localeCompare(b.kind));
 
@@ -588,7 +650,7 @@ function reviewPane(result: CompileOk): HTMLElement {
   for (const f of findings) list.appendChild(findingRow(f));
   wrap.appendChild(list);
 
-  wrap.appendChild(sectionTitle("inventory", `${graph.nodes.length} resources`));
+  wrap.appendChild(sectionTitle("inventory", `${resources.length} resources`));
   const inv = div("inventory");
   inv.innerHTML = counts
     .map(
