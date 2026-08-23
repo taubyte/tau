@@ -1618,7 +1618,7 @@ var V2Resources = []*Node{
 					// CONSUMED BY THE STEP'S DRIVER, never by the author's function. The
 					// function is invoked BY the driver and knows nothing about queues:
 					// that is the whole of what this composition changed.
-					Reaches("receive", From("worker", Concat(Attr("name"), Text("_"), Each("name")))),
+					Reaches("receive", From("function", Concat(Attr("name"), Text("_"), Each("name")))),
 				),
 
 				// ONE DRIVER PER STEP — platform code, the way an agent's loop is. Its
@@ -1627,15 +1627,19 @@ var V2Resources = []*Node{
 				// granted, publish that the step finished. Fail and the queue redelivers;
 				// exhaust and the queue's dead-letter moves the run.
 				//
-				// A WORKER, not a function: it is fed by a queue, runs to completion and
-				// listens for nothing, which is what this vocabulary means by worker. A
-				// function advertises request-and-answer, which the driver is not.
+				// A FUNCTION. A function here declares no trigger — what may reach it is
+				// an inbound edge — and a queue delivery is one, which is why a wasm
+				// consumer needs no port and no path: it is dispatched, and the call IS
+				// the delivery (deliverAttributes says so about containers by saying it
+				// about their absence). `worker` is the kind whose runtime TIER is
+				// authored, wasm or container, and a program the runtime itself ships
+				// has no tier to choose.
 				//
 				// It carries the step's NAME and no suffix. The kind is part of a
 				// resource's identity everywhere here — the index, the layout, a
-				// collision — so `queue/checkout_reserve` and `worker/checkout_reserve`
+				// collision — so `queue/checkout_reserve` and `function/checkout_reserve`
 				// are the step's mailbox and the step's machine, said once each.
-				Into("worker",
+				Into("function",
 					PerEach("steps"),
 					Named(Concat(Attr("name"), Text("_"), Each("name"))),
 					Carries(Concat(Text("step "), Each("name"), Text(": receive, run, hand on"))),
@@ -1653,21 +1657,21 @@ var V2Resources = []*Node{
 					// bare name resolves outward from the produced scope, which walks up to
 					// the project root and finds what they wrote.
 					Reaches("invoke",
-						From("worker", Concat(Attr("name"), Text("_"), Each("name"))),
+						From("function", Concat(Attr("name"), Text("_"), Each("name"))),
 						To("function", Each("run"), Each("namespace"))),
 
 					// FORWARD PROGRESS: the driver's ONE send. The last step has no next,
 					// so the term cannot fill and the write is dropped — which is exactly
 					// where the run ends.
 					Reaches("send",
-						From("worker", Concat(Attr("name"), Text("_"), Each("name"))),
+						From("function", Concat(Attr("name"), Text("_"), Each("name"))),
 						To("queue", Concat(Attr("name"), Text("_"), Next("name")))),
 
 					// THE RUN, NARRATED. Every driver publishes that its step finished;
 					// the last step's event is the run finishing, and which step is last
 					// is on the shell.
 					Reaches("publish",
-						From("worker", Concat(Attr("name"), Text("_"), Each("name"))),
+						From("function", Concat(Attr("name"), Text("_"), Each("name"))),
 						To("channel", Concat(Attr("name"), Text("_events")))),
 				),
 

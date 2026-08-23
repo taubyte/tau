@@ -50,7 +50,7 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 	// AND THE ACCESS IT IMPLIES IS ON THE RESOURCE THAT DECLARES IT — the entry an author
 	// would have written, on the step's DRIVER, naming the queue it receives from. The
 	// driver is produced in the same scope, so the whole pipeline is inside the box.
-	drv := resource(t, flat, "worker", "checkout_reserve")
+	drv := resource(t, flat, "function", "checkout_reserve")
 	queues, _ := drv["queue"].(map[string]any)
 	assert.Assert(t, queues != nil, "the driver declares no queue access at all: %v", drv)
 	entry, _ := queues["checkout_reserve"].(map[string]any)
@@ -103,7 +103,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 		kinds[rec.Resources[id].Kind]++
 	}
 	assert.Equal(t, kinds["queue"], 3)
-	assert.Equal(t, kinds["worker"], 2, "a driver per step")
+	assert.Equal(t, kinds["function"], 2, "a driver per step")
 	assert.Equal(t, kinds["channel"], 1)
 	assert.Equal(t, kinds["group"], 0)
 	assert.Equal(t, kinds["namespace"], 0)
@@ -114,9 +114,9 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	for _, g := range added {
 		byWhat[strings.Join(g.Path, "/")+" "+g.Value] = g.On
 	}
-	assert.Equal(t, byWhat["queue/checkout_reserve/ops receive"], idOf(t, flat, "worker", "checkout_reserve"))
-	assert.Equal(t, byWhat["queue/checkout_charge/ops send"], idOf(t, flat, "worker", "checkout_reserve"))
-	assert.Equal(t, byWhat["queue/checkout_charge/ops receive"], idOf(t, flat, "worker", "checkout_charge"))
+	assert.Equal(t, byWhat["queue/checkout_reserve/ops receive"], idOf(t, flat, "function", "checkout_reserve"))
+	assert.Equal(t, byWhat["queue/checkout_charge/ops send"], idOf(t, flat, "function", "checkout_reserve"))
+	assert.Equal(t, byWhat["queue/checkout_charge/ops receive"], idOf(t, flat, "function", "checkout_charge"))
 	// and the one write that lands on something the AUTHOR wrote: where a start goes
 	assert.Equal(t, byWhat["entry/start/name checkout_reserve"], idOf(t, flat, "workflow", "checkout"))
 
@@ -273,7 +273,7 @@ func TestTwoLoweringsWriteIntoOneProducedResource(t *testing.T) {
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 
-	drv := resource(t, obj.Flat(), "worker", "retry_first")
+	drv := resource(t, obj.Flat(), "function", "retry_first")
 	queues, _ := drv["queue"].(map[string]any)
 	assert.Assert(t, queues != nil, "the driver declares no queue access at all: %v", drv)
 
@@ -577,7 +577,7 @@ func TestAProducedReferenceResolvesInTheProducedScope(t *testing.T) {
 	// AND WHAT REACHES IN SAYS WHERE. The driver and its queue are both in the produced
 	// scope, so the entry names it — an author writing the same thing by hand would have
 	// had to write the namespace too.
-	drv := resource(t, flat, "worker", "checkout_reserve")
+	drv := resource(t, flat, "function", "checkout_reserve")
 	queues, _ := drv["queue"].(map[string]any)
 	entry, _ := queues["checkout_reserve"].(map[string]any)
 	assert.Assert(t, entry != nil, "%v", queues)

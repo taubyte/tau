@@ -27,7 +27,7 @@ func TestProducedTwiceNamesTheStep(t *testing.T) {
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
-	assert.ErrorContains(t, err, "queue/w_s is produced twice")
+	assert.ErrorContains(t, err, "function/w_s is produced twice")
 	assert.ErrorContains(t, err, "steps/0", "the error must say which step: %v", err)
 	assert.ErrorContains(t, err, "steps/1", "the error must say which step: %v", err)
 	assert.ErrorContains(t, err, "workflow/w", "and which resource to go and edit: %v", err)

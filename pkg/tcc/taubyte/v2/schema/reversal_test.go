@@ -51,7 +51,7 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 
 	// The step's name lands in the DRIVER's name too, and the driver is what its queue
 	// writes into — one step, two produced resources, the same name in both.
-	assert.Assert(t, by["name steps -> worker/@"].Composed(), "the driver is named for the step: %v", got)
+	assert.Assert(t, by["name steps -> function/@"].Composed(), "the driver is named for the step: %v", got)
 	assert.Assert(t, by["name steps -> queue/>"].Composed(), "the queue names its consumer: %v", got)
 
 	// and where failure goes comes back from the queue's dead-letter, which is where the

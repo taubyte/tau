@@ -883,8 +883,8 @@ func TestWorkflowLowers(t *testing.T) {
 	// functions at the root that the pipeline's every edge has to leave the frame to
 	// reach. It carries the step's name and no suffix — the kind is already part of a
 	// resource's identity here.
-	assert.Assert(t, got["worker/checkout_reserve"] != "", "one driver per step: %v", got)
-	assert.Assert(t, got["worker/checkout_charge"] != "")
+	assert.Assert(t, got["function/checkout_reserve"] != "", "one driver per step: %v", got)
+	assert.Assert(t, got["function/checkout_charge"] != "")
 	// completion has an address
 	assert.Assert(t, got["channel/checkout_events"] != "", "the run says when a step finished: %v", got)
 
@@ -915,22 +915,22 @@ func TestWorkflowLowers(t *testing.T) {
 	// A queue nothing receives from is a queue nothing happens in — and what receives is
 	// the step's DRIVER, produced beside it, never the author's function: the function is
 	// invoked and knows no queues at all.
-	assert.Equal(t, writes["worker/checkout_reserve queue/checkout_reserve/ops"], "receive")
+	assert.Equal(t, writes["function/checkout_reserve queue/checkout_reserve/ops"], "receive")
 
 	// FORWARD PROGRESS IS ONE GRANT. The driver sends to exactly one queue — the next
 	// step's — so "which of these means next" is not a question anybody has to answer by
 	// reading names. The last step has no next and the write is dropped.
-	assert.Equal(t, writes["worker/checkout_reserve queue/checkout_charge/ops"], "send")
-	assert.Equal(t, writes["worker/checkout_charge queue/checkout_charge/ops"], "receive")
+	assert.Equal(t, writes["function/checkout_reserve queue/checkout_charge/ops"], "send")
+	assert.Equal(t, writes["function/checkout_charge queue/checkout_charge/ops"], "receive")
 	for k, v := range writes {
-		assert.Assert(t, !strings.HasPrefix(k, "worker/checkout_charge queue/") || v != "send",
+		assert.Assert(t, !strings.HasPrefix(k, "function/checkout_charge queue/") || v != "send",
 			"the last step sends nowhere: %s", k)
 	}
 
 	// AND THE WORK ITSELF IS AN INVOKE, out to the function the author wrote. It is the
 	// one edge per step that leaves the box, and it is an ownership boundary: their
 	// function is theirs, and other things may call it too.
-	assert.Equal(t, writes["worker/checkout_reserve function/reserve_stock/ops"], "invoke")
+	assert.Equal(t, writes["function/checkout_reserve function/reserve_stock/ops"], "invoke")
 
 	// THE AUTHOR'S FUNCTION GAINS NOTHING. It used to carry the whole pipeline as grants
 	// — receive from its own queue, send to the next — which is the pipeline stated a

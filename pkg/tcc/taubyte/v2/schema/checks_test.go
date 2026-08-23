@@ -299,7 +299,7 @@ func TestAuditReportsALoweringFaultAgainstItsSource(t *testing.T) {
 	assert.Equal(t, f.Kind, "workflow", "the finding names what the author wrote")
 	assert.Equal(t, f.Name, "checkout")
 	assert.Assert(t, strings.Contains(f.Detail, "steps/0"), "and which step: %s", f.Detail)
-	assert.Assert(t, strings.Contains(f.Detail, "worker/checkout_reserve"), "and which part of the lowering: %s", f.Detail)
+	assert.Assert(t, strings.Contains(f.Detail, "function/checkout_reserve"), "and which part of the lowering: %s", f.Detail)
 }
 
 func findOne(t *testing.T, found []schema.Finding, contains string) schema.Finding {
