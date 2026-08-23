@@ -466,7 +466,7 @@ func TestSessionAddressesNestedScopes(t *testing.T) {
 	assert.DeepEqual(t, back, deep)
 
 	// ...and the scope itself is addressable, which is where its own fields live
-	scope, ok := s.ResourceAt("/namespace/shop/namespace/eu/scope.yaml")
+	scope, ok := s.ResourceAt("/namespace/shop/namespace/eu/meta.yaml")
 	assert.Assert(t, ok)
 	assert.DeepEqual(t, scope, []string{"namespace", "shop", "namespace", "eu"})
 }
@@ -509,7 +509,7 @@ func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	// question the compiler should be answering by accident.
 	taken := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(taken, "../fixtures/basic", "/"))
-	assert.NilError(t, afero.WriteFile(taken, "/namespace/checkout/scope.yaml", []byte(
+	assert.NilError(t, afero.WriteFile(taken, "/namespace/checkout/meta.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ4Ab\n"), 0o644))
 
 	c, err = schema.New(schema.WithVirtual(taken, "/"), schema.WithBranch("main"))

@@ -153,13 +153,13 @@ func TestDecompileAllTheWayWritesWhatWasLowered(t *testing.T) {
 	// The workflow's own fields moved into the container's leaf, which is what taking
 	// the container shape MEANS: one document for the fields, directories for what it
 	// holds — the same layout v1's application has.
-	_, err = out.Stat("/workflow/checkout/scope.yaml")
+	_, err = out.Stat("/workflow/checkout/meta.yaml")
 	assert.NilError(t, err, "the workflow that became a container has no document of its own")
 	_, err = out.Stat("/workflow/checkout.yaml")
 	assert.Assert(t, err != nil, "the flat authored document was written beside the container it became")
-	_, err = out.Stat("/namespace/checkout/scope.yaml")
+	_, err = out.Stat("/namespace/checkout/meta.yaml")
 	assert.Assert(t, err != nil, "what a workflow became was written as a namespace")
-	_, err = out.Stat("/group/checkout/scope.yaml")
+	_, err = out.Stat("/group/checkout/meta.yaml")
 	assert.Assert(t, err != nil, "what a workflow became was written as a kind of its own")
 
 	// AND IT STILL DOES NOT COMPILE, which is the half that matters. Nothing guards it

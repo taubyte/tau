@@ -32,7 +32,7 @@ every construct. `functions` alone answers most questions.
 | Authored | Loaded by |
 |---|---|
 | `function/checkout.yaml` — a resource, one flat file, `id` at the document root | `DefineGroup("functions", DefineIter(attrs…))` |
-| `namespace/shop/namespace.yaml` + `namespace/shop/functions/*.yaml` — a scope | `DefineGroup("namespace", DefineIterGroup(attrs, groups…).With(Leaf("scope")))` |
+| `namespace/shop/meta.yaml` + `namespace/shop/functions/*.yaml` — a scope | `DefineGroup("namespace", DefineIterGroup(attrs, groups…).With(Leaf("meta")))` |
 | `clouds:` as a map inside the project's `project.yaml` | `DefineGroup("clouds", DefineIter(attrs…))` |
 
 A **resource** (`DefineIter`, `Group == false`) reads its attributes from the
@@ -41,9 +41,10 @@ the child walk at `:529`. Passing a `*Node` to `DefineIter` compiles and is sile
 dropped.
 
 A **container** (`DefineIterGroup`, `Group == true`) walks children, but reads its own
-attributes from the `config` leaf (`node.go:486`). In a directory that is
-the document the group NAMES with `Leaf(...)` — `namespace.yaml` in v2, `config.yaml`
-when a group names none; in a flat document it is a literal key by that name. This is why a
+attributes from its leaf (`node.go:486`). In a directory that is
+the document the group NAMES with `Leaf(...)` — `meta.yaml` in v2, `config.yaml` in v1,
+and nothing at all when a group names none; in a flat document it is a literal key by that
+name. This is why a
 container instance cannot be a flat `shop.yaml` with `id` at the root — the resulting
 error is `required attribute 'id'`, and that error is **correct**.
 
@@ -451,7 +452,7 @@ the whole of it, and it is not a new idea: `namespace` is one, v1's `application
 and a kind that LOWERS becomes one. `layout.go` already said the mechanism out loud — *"a
 container's instances are directories, each with the document its `Leaf()` names; every
 other resource is one file"* — so what a lowered `workflow` needs is that layout and
-nothing else: its own fields in `workflow/checkout/scope.yaml`, the queues it produced in
+nothing else: its own fields in `workflow/checkout/meta.yaml`, the queues it produced in
 `workflow/checkout/queue/*.yaml`.
 
 **ONE KIND, TWO SHAPES, ONE PER PASS.** `Lowerable(before, after)` states both:
@@ -459,7 +460,7 @@ nothing else: its own fields in `workflow/checkout/scope.yaml`, the queues it pr
 ```go
 DefineGroup("workflow", Lowerable(
     DefineIter(attrs, Lowers(Into("queue", …))),                       // authored: one flat file
-    DefineIterGroup(attrs, resourceGroups...).With(Leaf("scope")),     // lowered: a directory
+    DefineIterGroup(attrs, resourceGroups...).With(Leaf("meta")),      // lowered: a directory
 ))
 ```
 

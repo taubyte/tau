@@ -259,7 +259,7 @@ func Lowers(into ...Lowering) engine.NodeOption {
 //
 //	DefineGroup("workflow", Lowerable(
 //	    DefineIter(attrs, Lowers(Into("queue", …))),
-//	    DefineIterGroup(attrs, resourceGroups...).With(Leaf("scope")),
+//	    DefineIterGroup(attrs, resourceGroups...).With(Leaf("meta")),
 //	))
 //
 // The authored node is returned so the declaration can sit directly inside

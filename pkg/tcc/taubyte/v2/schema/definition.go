@@ -84,7 +84,7 @@ func attachAccess() {
 
 // attachLowerable gives every kind that lowers its two shapes. Authored, it is the flat
 // resource already declared in V2Resources. Compiled, that SAME kind and identity is a
-// container over the resource groups, with its own authored fields in scope.yaml.
+// container over the resource groups, with its own authored fields in meta.yaml.
 //
 // This runs after V2Resources exists because the after shape contains those groups. It
 // is still one rule over every lowering kind, not a workflow/agent list.
@@ -96,7 +96,7 @@ func attachLowerable() {
 		if iter := g.Children[0]; len(interp.LoweringsOf(iter)) > 0 {
 			children := append([]*Node{}, iter.Children...)
 			children = append(children, V2Resources...)
-			after := DefineIterGroup(iter.Attributes, children...).With(Leaf("scope"))
+			after := DefineIterGroup(iter.Attributes, children...).With(Leaf("meta"))
 			after.Nested = iter.Nested
 			g.Children[0] = Lowerable(iter, after)
 		}
@@ -1691,15 +1691,18 @@ func namespacesGroup(depth int) *Node {
 	return DefineGroup(scopeContainer,
 		DefineIterGroup(identityAttributes(), children...).
 			With(Singular("Namespace"),
-				// namespace/shop/scope.yaml.
+				// namespace/shop/meta.yaml — the document this scope's own fields live
+				// in, kept distinct from the kind-named directories beside it that hold
+				// what it contains.
 				//
 				// NOT "namespace", which is what it was called while the kinds were
 				// plural. With singular kinds the nested namespaces live in a child
 				// group ALSO called `namespace`, at the same level — and a leaf whose
 				// name collides with a child group is skipped as the leaf and never
-				// walked as a group, which is the same silent drop that made `config`
-				// unusable. A leaf must not be named after any child of its own group.
-				Leaf("scope"),
+				// walked as a group. A leaf must not be named after any child of its own
+				// group, which is why no kind name can serve here and `meta` — not a
+				// kind, and not a thing anyone deploys — can.
+				Leaf("meta"),
 				GroupDoc("A named scope holding resources, and namespaces, of its own. Names resolve here first, then in the parent."),
 				secIdentity,
 				Icon("apps"),

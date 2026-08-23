@@ -743,7 +743,7 @@ type Layout struct {
 	// container outright until the second kind arrived.
 	Scope string // "{kind}/{name}"
 	// Leaf is the document a SCOPE keeps its own fields in, without the extension —
-	// `namespace/shop/scope.yaml`. It said so already and answered with the PROJECT's
+	// `namespace/shop/meta.yaml`. It said so already and answered with the PROJECT's
 	// document, which nothing had noticed because nothing read it; a lowering that
 	// produces a scope reads it, and wrote `namespace/checkout/project.yaml` — a
 	// directory the loader sees as having no document at all.
