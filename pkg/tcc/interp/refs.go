@@ -22,7 +22,7 @@ import (
 // after the CompileDriver, so the index is complete before any ref is read.
 func ResolveRefs(root *engine.Node) transform.Transformer[object.Refrence] {
 	_, nameField := engine.IdentityOf(root)
-	return utils.Global(containerKey(root), &resolveRefs{groups: root.Children, nameField: nameField})
+	return utils.Global(ContainerKeys(root), &resolveRefs{groups: root.Children, nameField: nameField})
 }
 
 type resolveRefs struct {

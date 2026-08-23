@@ -101,12 +101,26 @@ export interface Graph {
 // exactly the failure the whole "the config is the architecture" claim is about.
 let CATEGORY: Record<string, string> = {};
 let ICON: Record<string, string> = {};
-
 export function setCategories(kinds: { group: string; category: string; icon?: string; container?: boolean }[]) {
   CATEGORY = Object.fromEntries(kinds.map((k) => [k.group, k.category || "other"]));
   // The icon is declared on the kind too — Icon(...) in definition.go — so it comes
   // from the same place and drifts for the same reason if it is copied anywhere else.
   ICON = Object.fromEntries(kinds.map((k) => [k.group, k.icon || ""]));
+}
+
+// WHAT KIND OF SCOPE EACH SCOPE IS, from tcc's own walk of the compiled object. There is
+// more than one — a `namespace` an author wrote and the `group` a lowering made for what
+// a construct becomes — and they are drawn and addressed differently, so the page asks
+// rather than assuming the one it happens to have heard of.
+let SCOPE_KIND: Record<string, string> = {};
+
+export function setScopes(scopes: { kind: string; name: string; scope: string }[]) {
+  SCOPE_KIND = Object.fromEntries(scopes.map((s) => [s.scope ? `${s.scope}/${s.name}` : s.name, s.kind]));
+}
+
+/** What kind of scope this path is, or "" when nothing there says. */
+export function scopeKindOf(path: string): string {
+  return SCOPE_KIND[path] ?? "";
 }
 
 export function categoryOf(kind: string): string {
@@ -131,11 +145,25 @@ export function setShapes(s: Shapes): void {
   SHAPES = s;
 }
 
-/** Where a resource's document lives, from the layout tcc reports. */
+/**
+ * Where a resource's document lives, from the layout tcc reports.
+ *
+ * A SCOPE DIRECTORY IS NAMED AFTER ITS KIND. The layout says `{kind}/{name}` because
+ * there is more than one kind of scope, and a scope PATH is names — so each level is
+ * looked up rather than assumed, and `shop/checkout` becomes
+ * `namespace/shop/group/checkout`.
+ */
 export function fileOf(n: { kind: string; name: string; scope: string; home?: string }): string {
   const scope = n.home ?? n.scope;
+  let at = "";
   const dirs = scope
-    ? scope.split("/").map((s) => SHAPES.layout.scope.replace("{name}", s)).join("/") + "/"
+    ? scope
+        .split("/")
+        .map((s) => {
+          at = at ? `${at}/${s}` : s;
+          return SHAPES.layout.scope.replace("{kind}", scopeKindOf(at)).replace("{name}", s);
+        })
+        .join("/") + "/"
     : "";
   return dirs + SHAPES.layout.resource.replace("{kind}", n.kind).replace("{name}", n.name);
 }
@@ -244,9 +272,12 @@ export function buildGraph(
 
   // Which produced resources came from which authored one. The compiler recorded it;
   // grouping is all that is left to do here.
-  const producedBy = new Map<string, { id: string; kind: string; name: string; at: string }[]>();
+  const producedBy = new Map<string, { id: string; kind: string; name: string; at: string; scoping: boolean }[]>();
   for (const [id, p] of Object.entries(lowered.produced)) {
-    producedBy.set(p.from, [...(producedBy.get(p.from) ?? []), { id, kind: p.kind, name: p.name, at: p.at }]);
+    producedBy.set(p.from, [
+      ...(producedBy.get(p.from) ?? []),
+      { id, kind: p.kind, name: p.name, at: p.at, scoping: p.scoping },
+    ]);
   }
   // The part of the authored resource each one came from — "steps/0" — read off the
   // resource itself, because the compiler addressed it that way.
@@ -290,6 +321,13 @@ export function buildGraph(
 
     for (const d of made) {
       if (byId.has(d.id)) continue;
+      // A SCOPE IS A PLACE, NOT A THING. The record of what a lowering produced holds
+      // both, and it has to: decompile takes the directory back out with the queues
+      // inside it. Drawing is the other question — Scopes() is separate from Resources()
+      // for exactly this reason — and a place is drawn by the box that IS it. This is
+      // that box, so the rule the source got ten lines up applies here too: what a box
+      // is does not get a second card inside it.
+      if (d.scoping) continue;
       const part = partName(from, d.at);
       if (!open && !shows) continue; // nothing to show, and nothing to reserve
       const node: Node = {
@@ -364,6 +402,16 @@ export function buildGraph(
   const nodesOut = splitSinks(nodes, live2, byId);
 
   const scopes = [...new Set(nodesOut.map((n) => n.scope))].filter(Boolean).sort();
+  // A SCOPE IS A FRAME TOO, and it says what KIND of scope it is — read off the compiled
+  // object, never assumed. The label used to be the word `namespace`, written here, which
+  // was true until a lowering started producing a scope of its own: a workflow's queues
+  // sat in a box labelled "namespace · checkout", telling a reader the author had drawn a
+  // namespace they never wrote. Only the scopes a lowering did not already frame get one.
+  for (const s of scopes) {
+    if (frames.has(s)) continue;
+    const kind = scopeKindOf(s);
+    frames.set(s, kind ? `${kind} · ${s}` : s);
+  }
   return { nodes: nodesOut, arrows: live2, byId, scopes, frames };
 }
 

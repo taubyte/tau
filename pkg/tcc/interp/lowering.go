@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"fmt"
 	"slices"
 	"sort"
 	"strconv"
@@ -259,17 +260,25 @@ func Lowers(into ...Lowering) engine.NodeOption {
 // produces is placed inside it.
 //
 //	DefineGroup("workflow", resource(…,
-//	    Lowerable(scopeShape()),          // the node this vocabulary declares its scopes with
+//	    Lowerable(groupShape),            // a node this vocabulary declares a scope with
 //	    Lowers(Into("queue", …)),
 //	))
 //
-// IT TAKES THE SHAPE, NOT A NAME, and the shape is the one the vocabulary already uses
-// for a scope somebody writes. That is the whole point: what a lowering synthesizes has
-// to BE a scope — loaded by the same definition, indexed by the same footprint, resolved
-// through by the same outward name walk — and the only way to guarantee that is to hand
-// over the definition itself rather than a string the interpreter would have to look up
-// and hope matched. The interpreter reads the kind off the node's own Match and the
-// document off the layout, and learns no word of this vocabulary either way.
+// IT TAKES THE SHAPE, NOT A NAME. What a lowering synthesizes has to BE a scope — loaded
+// by a real definition, indexed by the same footprint, resolved through by the same
+// outward name walk — and the only way to guarantee that is to hand over the definition
+// itself rather than a string the interpreter would have to look up and hope matched. The
+// interpreter reads the kind off the node's own Match and the document off its Leaf, and
+// learns no word of this vocabulary either way.
+//
+// ANY SCOPE THIS VOCABULARY DECLARES, not the one an author writes in. Handing over the
+// vocabulary's authored scope is what v2 did first, and it worked and said the wrong
+// thing: a workflow's queues landed in something that COMPILED as a namespace, so the
+// object, the index and every picture of it called the inside of a construct a tenant.
+// What was wanted was the namespace's behaviour, which is entirely its SHAPE — a group
+// whose iterator is itself a group over the resource groups — so a second kind with that
+// shape gets all of it and none of the name. ContainerKeys finds every such kind and the
+// whole interpreter walks them alike; this only has to be one of them.
 //
 // This replaces an earlier reading of the same idea — nest the produced resources as a
 // hidden child group inside the source's own document, reusing the produced KIND's node
@@ -293,6 +302,85 @@ func Lowers(into ...Lowering) engine.NodeOption {
 //     Nothing had to be given a second shape to avoid the resolver.
 func Lowerable(scope *engine.Node) engine.NodeOption {
 	return engine.GroupAnnotate("lowerable", scope)
+}
+
+// NotAuthoredKinds is every kind in the schema that nobody may write — engine.NotAuthored
+// on the kind, read back over the root's own groups.
+func NotAuthoredKinds(root *engine.Node) []string {
+	var out []string
+	for _, g := range root.Children {
+		key, _ := g.Match.(string)
+		if key == "" || len(g.Children) == 0 {
+			continue
+		}
+		if engine.NotAuthoredOf(g.Children[0]) {
+			out = append(out, key)
+		}
+	}
+	return out
+}
+
+// refuseAuthored is what makes engine.NotAuthored binding rather than advisory: the first
+// document of such a kind found in what somebody wrote, named where they can find it.
+//
+// WITHOUT IT THE DECLARATION IS A CONVENTION. The key IS in the schema, so the strict-key
+// check accepts it happily, and an authored `group/checkout` compiles into exactly the
+// shape a lowering produces and then fights it for the name.
+//
+// It runs on the AUTHORED object, before the lowered view exists — the second compile
+// reads the same schema over a layer that has these documents in it by design, so a check
+// that ran on the result could not tell the compiler's own work from an author's.
+func refuseAuthored(root *engine.Node, flat map[string]any) error {
+	kinds := NotAuthoredKinds(root)
+	if len(kinds) == 0 {
+		return nil
+	}
+	containers := ContainerKeys(root)
+	_, nameField := engine.IdentityOf(root)
+	if inner, ok := flat[ProjectKey].(map[string]any); ok {
+		flat = inner
+	}
+
+	var found error
+	var walk func(scope map[string]any, at string)
+	walk = func(scope map[string]any, at string) {
+		for _, kind := range kinds {
+			instances, ok := scope[kind].(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, v := range instances {
+				res, _ := v.(map[string]any)
+				name, _ := res[nameField].(string)
+				where := kind + "/" + name
+				if at != "" {
+					where = at + "/" + where
+				}
+				if found == nil {
+					found = fmt.Errorf("interp: %s is written here, and %s is a kind only a lowering produces", where, kind)
+				}
+			}
+		}
+		for _, container := range containers {
+			instances, ok := scope[container].(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, v := range instances {
+				res, ok := v.(map[string]any)
+				if !ok {
+					continue
+				}
+				name, _ := res[nameField].(string)
+				if name == "" {
+					continue
+				}
+				walk(res, within(at, name))
+			}
+		}
+	}
+	walk(flat, "")
+	return found
 }
 
 // scopeShapeOf reads the scope shape a kind declared with Lowerable, or nil.
@@ -1002,8 +1090,8 @@ func writes(ws []write, into, produced, scope string, e env) []Written {
 }
 
 // walkResources visits every compiled resource, carrying the kind's iterator node so a
-// caller can read its annotations, and the scope it was authored in. The scope
-// container is read off the schema (containerKey), never named here.
+// caller can read its annotations, and the scope it was authored in. Which groups ARE
+// scopes is read off the schema (ContainerKeys), never named here.
 func walkResources(root *engine.Node, scope map[string]any, at string, fn func(kind string, iter *engine.Node, id, name string, res map[string]any, at string)) {
 	walkGroups(root, root.Children, scope, at, fn)
 }
@@ -1016,7 +1104,7 @@ func walkResources(root *engine.Node, scope map[string]any, at string, fn func(k
 // name was only used for provenance — templates read the resource map directly — and it
 // became visible the moment the name decided WHERE what a resource lowers into goes.
 func walkGroups(root *engine.Node, groups []*engine.Node, scope map[string]any, at string, fn func(kind string, iter *engine.Node, id, name string, res map[string]any, at string)) {
-	container := containerKey(root)
+	containers := ContainerKeys(root)
 	_, nameField := engine.IdentityOf(root)
 	for _, g := range groups {
 		key, _ := g.Match.(string)
@@ -1034,7 +1122,7 @@ func walkGroups(root *engine.Node, groups []*engine.Node, scope map[string]any, 
 				continue
 			}
 			name, _ := res[nameField].(string)
-			if key == container {
+			if slices.Contains(containers, key) {
 				child := at
 				if name != "" {
 					child = strings.TrimPrefix(at+"/"+name, "/")
@@ -1194,10 +1282,19 @@ func CheckLowerings(root *engine.Node) []string {
 	eachIter(root, func(iter *engine.Node) bool {
 		// A SCOPE A LOWERING PRODUCES HAS TO BE ONE. The shape is handed over rather
 		// than named so that what is synthesized is loaded, indexed and resolved
-		// through by the same definition an authored scope is — and that is only true
-		// if the node handed over is the root's OWN container. A copy of it, or a
-		// resource kind's node, would compile a plan that reads fine and produces a
-		// directory nothing can load.
+		// through by the same definition an authored scope is, and two things have to
+		// hold for that.
+		//
+		// THE NODE IS THE ROOT'S OWN GROUP BY THAT KEY. Its key and its Leaf are read
+		// off the node handed over, and the directory they describe is loaded by
+		// whatever group the ROOT has under that key — so a copy, however identical,
+		// is a plan that reads fine and may be describing something else.
+		//
+		// AND IT IS A CONTAINER. `shape.Children[0].Group` is the same structural test
+		// ContainerKeys uses and the same one a consumer sees as `container` on the
+		// kind, which is what makes this a check about SHAPE rather than about which
+		// group it is: any kind the vocabulary declares as a scope will do, and v2
+		// hands over `group` rather than `namespace` for exactly that reason.
 		if shape := scopeShapeOf(iter); shape != nil {
 			key, _ := shape.Match.(string)
 			switch {

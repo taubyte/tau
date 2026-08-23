@@ -24,8 +24,12 @@ type placement struct {
 	tree map[string]any // the resource as it would have been written
 	// what it came from, kept for the provenance the compiled object carries
 	id, kind, name, scope string
-	from                  string // the authored resource's id
-	part                  string // where inside it — "steps/0"
+	// scoping marks the one that IS the scope the others were placed in. A scope is
+	// addressed by its NAME wherever a name is resolved, so what may take its name is a
+	// different question from what may take a resource's.
+	scoping bool
+	from    string // the authored resource's id
+	part    string // where inside it — "steps/0"
 	// src is that resource as a person would look for it — "workflow/checkout
 	// (steps/0)". The id says which resource; only this says which STEP, and a
 	// collision between two parts of one lowering has the same id on both sides.
@@ -54,16 +58,73 @@ type granted struct {
 	scopes []string
 }
 
-// placements is everything a project's lowerings produce, in a stable order.
-func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placement, []granted) {
+// scopeKinds is what KIND of scope each scope path is — `shop` is a namespace, `checkout`
+// is the group a workflow became — keyed by the path of names the rest of the lowering
+// speaks in.
+//
+// It exists because a document address is not a path of names: a scope is a DIRECTORY
+// named after the container it belongs to, so `shop/checkout` is
+// `namespace/shop/group/checkout` on disk and nothing in the name path says which is
+// which. The scope path stays names everywhere else — that is what a reference resolves
+// through, and a name has no kind — and only addressing asks this.
+//
+// Both halves are here: the scopes the project already has, walked off the compiled
+// object, and the ones this compile is about to produce, overlaid from the plan.
+func scopeKinds(root *engine.Node, obj map[string]any, plan []Derived) map[string]string {
+	containers := ContainerKeys(root)
+	_, nameField := engine.IdentityOf(root)
+	out := map[string]string{}
+
+	var walk func(scope map[string]any, at string)
+	walk = func(scope map[string]any, at string) {
+		for _, key := range containers {
+			instances, ok := scope[key].(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, v := range instances {
+				res, ok := v.(map[string]any)
+				if !ok {
+					continue
+				}
+				name, _ := res[nameField].(string)
+				if name == "" {
+					continue
+				}
+				child := within(at, name)
+				out[child] = key
+				walk(res, child)
+			}
+		}
+	}
+	if inner, ok := obj[ProjectKey].(map[string]any); ok {
+		obj = inner
+	}
+	walk(obj, "")
+
+	for _, d := range plan {
+		if d.Scoping {
+			out[within(d.Scope, d.Name)] = d.Kind
+		}
+	}
+	return out
+}
+
+// placements is everything a project's lowerings produce, in a stable order, and what
+// kind of scope each scope path is — which is what turns a path of names into a document
+// address.
+func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placement, []granted, map[string]string) {
 	var docs []placement
 	var adds []granted
 
-	for _, d := range LoweringPlan(root, obj) {
+	plan := LoweringPlan(root, obj)
+	kinds := scopeKinds(root, obj, plan)
+
+	for _, d := range plan {
 		docs = append(docs, placement{
-			at:   placeAt(root, layout, d),
+			at:   placeAt(root, layout, d, kinds),
 			tree: authored(root, d),
-			id:   d.ID, kind: d.Kind, name: d.Name, scope: d.Scope,
+			id:   d.ID, kind: d.Kind, name: d.Name, scope: d.Scope, scoping: d.Scoping,
 			from: d.Source.ID, part: d.Source.Path, src: d.Source.String(), depth: len(d.Via),
 		})
 
@@ -88,18 +149,18 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 	sort.SliceStable(docs, func(i, j int) bool {
 		return strings.Join(docs[i].at, "/") < strings.Join(docs[j].at, "/")
 	})
-	return docs, adds
+	return docs, adds, kinds
 }
 
 // placeAt is where a derived resource's document goes. A produced SCOPE is the one that
 // is not addressed as a resource: it is a directory with the document the layout names
 // inside it, exactly as an authored scope is, because it has to be loaded by the same
 // definition the vocabulary handed to Lowerable.
-func placeAt(root *engine.Node, layout Layout, d Derived) []string {
+func placeAt(root *engine.Node, layout Layout, d Derived, kinds map[string]string) []string {
 	if !d.Scoping {
-		return address(layout, d.Scope, d.Kind, d.Name)
+		return address(layout, d.Scope, d.Kind, d.Name, kinds)
 	}
-	at := scopeDirs(layout, within(d.Scope, d.Name))
+	at := scopeDirs(layout, within(d.Scope, d.Name), kinds)
 	if leaf := scopeLeafOf(iterOfKind(root, d.Source.Kind)); leaf != "" {
 		at = append(at, leaf)
 	}
@@ -150,8 +211,8 @@ func within(base, scope string) string {
 
 // address is the document address of a resource, by the vocabulary's own layout: the
 // scope directories, then the kind, then the name. The same segments an editor walks.
-func address(layout Layout, scope, kind, name string) []string {
-	out := scopeDirs(layout, scope)
+func address(layout Layout, scope, kind, name string, kinds map[string]string) []string {
+	out := scopeDirs(layout, scope, kinds)
 	for _, seg := range strings.Split(fill(layout.Resource, kind, name), "/") {
 		out = append(out, strings.TrimSuffix(seg, ".yaml"))
 	}
@@ -159,13 +220,22 @@ func address(layout Layout, scope, kind, name string) []string {
 }
 
 // scopeDirs is the directories a scope path walks through, by the vocabulary's layout.
-func scopeDirs(layout Layout, scope string) []string {
+//
+// A LEVEL IS ADDRESSED BY ITS KIND, not by the fact that it is a scope. The layout's
+// scope template used to name one container outright (`namespace/{name}`), which was the
+// whole truth while a vocabulary had one kind of scope; it is `{kind}/{name}` now and each
+// level says which. A level whose kind is unknown is not addressable, and there is no
+// default to fall back on — guessing one would write a produced group's queues into some
+// other scope's directory, which loads and compiles and is a different project.
+func scopeDirs(layout Layout, scope string, kinds map[string]string) []string {
 	if scope == "" {
 		return nil
 	}
 	var out []string
+	at := ""
 	for _, level := range strings.Split(scope, "/") {
-		out = append(out, strings.Split(fill(layout.Scope, "", level), "/")...)
+		at = within(at, level)
+		out = append(out, strings.Split(fill(layout.Scope, kinds[at], level), "/")...)
 	}
 	return out
 }
@@ -187,7 +257,7 @@ func fill(tmpl, kind, name string) string {
 // Resolving is HERE rather than in placements because this is the first point that knows
 // what exists — both halves of it. Each entry arrives with the scopes its name could
 // resolve in, innermost first, and leaves with the one it did.
-func onlyOnWhatExists(root *engine.Node, layout Layout, flat map[string]any, docs []placement, adds []granted) []granted {
+func onlyOnWhatExists(root *engine.Node, layout Layout, flat map[string]any, docs []placement, adds []granted, kinds map[string]string) []granted {
 	if inner, ok := flat[ProjectKey].(map[string]any); ok {
 		flat = inner
 	}
@@ -231,7 +301,7 @@ func onlyOnWhatExists(root *engine.Node, layout Layout, flat map[string]any, doc
 				continue
 			}
 			g.scope, g.on.Scope = scope, scope
-			g.at = address(layout, scope, g.on.Kind, g.on.Name)
+			g.at = address(layout, scope, g.on.Kind, g.on.Name, kinds)
 			out = append(out, g)
 			break
 		}

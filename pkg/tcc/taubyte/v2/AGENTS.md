@@ -14,6 +14,12 @@ it rather than trusting the prose.
 rich enough; if something seems impossible, you are using it wrong. Every time this
 looked like an engine limitation it turned out to be a construct not yet found.
 
+When it really is a missing primitive — say so, name the SHAPE the generic layer is
+missing, and add it in the generic layer's own language. `Lowerable`, `NotAuthored` and
+`ContainerKeys` are what that looks like: none of them knows a kind, each replaced a
+"there is exactly one of these" assumption rather than carving out a special case. A term
+in `engine` or `interp` that names a v2 kind is the thing this rule is really against.
+
 `tools/tcc-gen` is the exception — it carries `--dsl v1|v2` to select the vocabulary.
 
 **Read `taubyte/v1/schema/definition.go` first.** It is a complete worked example of
@@ -264,10 +270,12 @@ review notes — the rule is that no attribute path may START with a kind name.
   cyclic node graph, and `interp/shape.go`'s `eachIterIn` has no visited set — it
   recurses until the stack dies. Declare the depth instead
   (`namespacesGroup(MaxNamespaceDepth)`).
-- **More than one walked container.** `containerKey` (`interp/shape.go`) returns the
-  **first** top-level group whose iterator is a group **and which carries no
-  `Resource(...)`**, and `utils.Global` walks the project root plus that one. A second
-  scope silently gets no ref resolution.
+- ~~**More than one walked container.**~~ Fixed 2026-08-22, because a second one was
+  needed: `ContainerKeys` (`interp/shape.go`) answers with EVERY top-level group whose
+  iterator is a group and which carries no `Resource(...)`, and `utils.Global` walks the
+  project root plus all of them. It used to answer with the first, and a second scope
+  compiled, indexed its own names and then resolved no references at all — which reads
+  like the reference being wrong rather than like half the walk being missing.
 
 ### What NOT to do instead
 
@@ -439,13 +447,13 @@ Three things follow, and the third is why it was worth doing:
   `build_run_tests`. Invertibility is a property the DSL states.
 
 **A SOURCE IS A SCOPE FOR WHAT IT BECOMES.** `Lowerable(shape)` on a kind says that its
-lowering produces into a namespace named after the resource, not beside it:
-`workflow/checkout` becomes `namespace/checkout/queue/*.yaml`. It takes the SHAPE — the
-container node this vocabulary already declares — rather than a name, and
-`CheckLowerings` refuses anything that is not the root's own container, because what is
-synthesized has to be loaded, indexed and resolved through by the same definition an
-authored scope is. `attachLowerable` hangs it off every kind that declares `Lowers()`,
-the way `attachAccess` and `attachIndexes` do, for the same reason.
+lowering produces into a scope named after the resource, not beside it:
+`workflow/checkout` becomes `group/checkout/queue/*.yaml`. It takes the SHAPE — a
+container node this vocabulary declares — rather than a name, and `CheckLowerings`
+refuses anything that is not the root's own group by that key, because the directory a
+produced scope is written to is named from that node's `Match` and `Leaf` and is loaded
+by whatever the root holds there. `attachLowerable` hangs it off every kind that declares
+`Lowers()`, the way `attachAccess` and `attachIndexes` do, for the same reason.
 
 Three things fall out of it, none of which needed a new mechanism:
 
@@ -453,10 +461,41 @@ Three things fall out of it, none of which needed a new mechanism:
 - a produced queue's `dead_letter` is an ordinary `Ref()` resolving to the sibling queue
   beside it, because a bare name resolves in the scope it is written in;
 - what reaches in says where: `Scope()` is the produced scope, absolute from the project
-  root, so `Reaches(...)` writes `namespace:` on the entry beside the ops.
+  root, so `Reaches(...)` writes `namespace:` on the entry beside the ops (that key is the
+  access block's field name, not the kind of scope it points into).
 
-What it costs: two lowering sources with the same name in one scope now collide on the
-scope, reported as *"namespace/x is produced twice, by agent/x and by workflow/x"*.
+What it costs: two scopes in one place cannot share a NAME, whatever kind each is — every
+name resolution in tcc walks a chain of scope names, so an authored `namespace/checkout`
+and a produced `group/checkout` are one name with two directories behind it. Reported as
+*"namespace/checkout is written here AND is the scope workflow/checkout becomes"*, and two
+lowering sources with the same name still collide on the scope the same way.
+
+**A GROUP IS NOT A NAMESPACE, AND THAT IS THE WHOLE POINT.** The shape handed over is
+`groupShape`, a second container kind, and it exists because the two facts a produced
+scope needs come apart:
+
+- everything it must DO is structure — indexed, addressable, a bare `Ref()` inside it
+  resolving outward — and structure is what the two kinds share, so the interpreter walks
+  them with one mechanism (`interp.ContainerKeys`, plural, over every group whose iterator
+  is itself a group carrying no `Resource(...)`);
+- everything it must not BE is the name. An authored `/shop/eu` is a line somebody drew;
+  `checkout` is the inside of a construct nobody wrote, and compiling it as a namespace
+  makes the object, the index, the decompiled tree and every picture say the author wrote
+  one.
+
+So `group` carries its own `Singular`, `Icon`, `Category` and index position, holds groups
+(a lowering may lower again) and holds no namespaces. **Nobody writes one**:
+`engine.NotAuthored()` on the kind, enforced by the compile on what was AUTHORED — below
+that point the lowered layer holds documents of exactly that kind by design. Consumers
+read the same declaration: it is absent from the JSON Schema an editor validates against,
+and `session.Kind.NotAuthored` says "never offer this as something to create". Declaring
+it without enforcing it would be a convention, and the strict-key check would accept
+`group/checkout/scope.yaml` from a repository without a word.
+
+Two knock-on facts a vocabulary has to know: `IndexCtx.Scope` is a CHAIN whose levels each
+name their container (`ScopeChain`, with `IDs()` for a vocabulary that has one kind of
+scope), and `LayoutOf().Scope` is `{kind}/{name}` rather than one container's name —
+`schema.ScopeKinds(obj)` is where a consumer gets the `{kind}` for each level.
 
 **COMPILING IS LOWERING.** `Compile` returns the configuration as it RUNS — the queues
 are in the object, because nothing runs a workflow. `Authored` is the compile of what was
@@ -512,8 +551,8 @@ blocks, because a rule that holds for all of them is not twenty-five lines each 
 can be forgotten when the twenty-sixth arrives.
 
 ```
-projects/<pid>[/namespace/<nsid>]…/<kind>/<name>/links
-    -> branches/<b>/projects/<pid>[/namespace/<nsid>]…/<kind>/<rid>
+projects/<pid>[/<scope-kind>/<sid>]…/<kind>/<name>/links
+    -> branches/<b>/projects/<pid>[/<scope-kind>/<sid>]…/<kind>/<rid>
 ```
 
 It answers the question every v2 edge asks. A compiled resource carries its target's
@@ -527,9 +566,11 @@ Three properties of the shape, each a decision rather than an inheritance:
 - **The kind is in the key.** v1's by-name index has none, so a consumer picks its own
   kind out by reading the resource type from each value — a consumer parsing this
   vocabulary's address space, which §8c forbids.
-- **The scope is its ids**, so the key and the value it holds are built from the same
-  segments. A namespace is itself indexed by name, which is what turns a written
-  `/shop/eu` into those ids.
+- **The scope is its ids, and each level says what KIND of scope it is.** The key and the
+  value it holds are built from the same segments; a scope is itself indexed by name,
+  which is what turns a written `/shop/eu` into those ids. `<scope-kind>` was the literal
+  `namespace` until a lowering started producing a `group`, and a level indexed under the
+  wrong word is a subtree no reader can rebuild the path to.
 - **No commit in the value.** The branch is in it and the reader resolves the branch to
   the release it is serving, which is what the trailing `links` bucket is for.
 

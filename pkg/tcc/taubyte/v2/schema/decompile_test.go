@@ -127,13 +127,18 @@ func TestDecompileAllTheWayWritesWhatWasLowered(t *testing.T) {
 	plan := schema.LoweringPlan(first.Flat())
 	assert.Assert(t, len(plan) > 0, "the fixture must lower something for this to mean anything")
 
+	// Asked BEFORE the decompile: it rewrites the object it is handed — ids back to
+	// names, the envelope unwrapped — so a question about the compiled shape has to be
+	// asked while it is still the compiled shape.
+	kinds := schema.ScopeKinds(first.Flat())
+
 	out := afero.NewMemMapFs()
 	d, err := schema.NewDecompiler(decompile.WithVirtual(out, "/"), schema.WithAsLowered())
 	assert.NilError(t, err)
 	assert.NilError(t, d.Decompile(first))
 
 	for _, r := range plan {
-		path := documentOf(r)
+		path := documentOf(r, kinds)
 		_, err := out.Stat(path)
 		assert.NilError(t, err, "%s is what a lowering produced and was not written", path)
 	}
@@ -141,12 +146,17 @@ func TestDecompileAllTheWayWritesWhatWasLowered(t *testing.T) {
 	// and it is written WHERE THE SOURCE PUT IT. A workflow is a scope for what it
 	// becomes, so the queues are inside it — as files a person could read as belonging
 	// to `checkout`, which is the whole reason the scope exists.
+	//
+	// UNDER `group`, not under `namespace`. The directory is the kind, so what a reader
+	// opens says which of the two this is before they have read a line of it.
 	for _, name := range []string{"checkout_reserve", "checkout_charge", "checkout_failed"} {
-		_, err := out.Stat("/namespace/checkout/queue/" + name + ".yaml")
+		_, err := out.Stat("/group/checkout/queue/" + name + ".yaml")
 		assert.NilError(t, err)
 	}
-	_, err = out.Stat("/namespace/checkout/scope.yaml")
+	_, err = out.Stat("/group/checkout/scope.yaml")
 	assert.NilError(t, err, "the scope a lowering produced has no document of its own")
+	_, err = out.Stat("/namespace/checkout/scope.yaml")
+	assert.Assert(t, err != nil, "what a workflow became was written as a namespace")
 
 	// what somebody wrote is still there too: all the way is everything, not only the
 	// generated half
@@ -156,7 +166,7 @@ func TestDecompileAllTheWayWritesWhatWasLowered(t *testing.T) {
 	c, err := schema.New(schema.WithVirtual(out, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
-	assert.ErrorContains(t, err, "has to be renamed",
+	assert.ErrorContains(t, err, "only a lowering produces",
 		"the generated depth compiled, which would make it look like a repository")
 }
 
@@ -164,16 +174,25 @@ func TestDecompileAllTheWayWritesWhatWasLowered(t *testing.T) {
 // has to build it: off the layout this vocabulary states, never off a rule spelled out
 // again here. A produced SCOPE is a directory with the leaf document inside it; anything
 // else is one file, under the scope directories it sits in.
-func documentOf(r interp.Derived) string {
+//
+// A SCOPE DIRECTORY IS NAMED AFTER ITS KIND, and a scope PATH is names, so the two are
+// not the same string: `checkout` is a group and `shop` is a namespace, and `kinds` — from
+// schema.ScopeKinds — is how a consumer asks which without keeping a list of its own.
+func documentOf(r interp.Derived, kinds map[string]string) string {
 	l := schema.LayoutOf()
-	path := ""
+	dir := func(at, name string) string {
+		return "/" + strings.NewReplacer("{kind}", kinds[at], "{name}", name).Replace(l.Scope)
+	}
+	path, at := "", ""
 	for _, level := range strings.Split(r.Scope, "/") {
-		if level != "" {
-			path += "/" + strings.ReplaceAll(l.Scope, "{name}", level)
+		if level == "" {
+			continue
 		}
+		at = strings.TrimPrefix(at+"/"+level, "/")
+		path += dir(at, level)
 	}
 	if r.Scoping {
-		return path + "/" + strings.ReplaceAll(l.Scope, "{name}", r.Name) + "/" + l.Leaf + ".yaml"
+		return path + dir(strings.TrimPrefix(at+"/"+r.Name, "/"), r.Name) + "/" + l.Leaf + ".yaml"
 	}
 	return path + "/" + strings.NewReplacer("{kind}", r.Kind, "{name}", r.Name).Replace(l.Resource)
 }

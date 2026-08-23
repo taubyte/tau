@@ -133,7 +133,7 @@ func compileFn(_ js.Value, args []js.Value) any {
 	for _, f := range findings {
 		found = append(found, map[string]any{
 			"severity": string(f.Severity), "kind": f.Kind, "name": f.Name,
-			"scope": f.Scope, "title": f.Title, "detail": f.Detail,
+			"scope": f.Scope, "title": f.Title, "detail": f.Detail, "id": f.ID,
 		})
 	}
 	out["findings"] = found
@@ -147,6 +147,7 @@ func compileFn(_ js.Value, args []js.Value) any {
 	for id, p := range rec.Resources {
 		made[id] = map[string]any{
 			"from": p.From, "at": p.At, "kind": p.Kind, "name": p.Name, "scope": p.Scope,
+			"scoping": p.Scoping,
 		}
 	}
 	granted := []map[string]any{}
@@ -199,6 +200,20 @@ func compileFn(_ js.Value, args []js.Value) any {
 		})
 	}
 	out["resources"] = res
+
+	// AND WHAT THE SCOPES ARE, which is a different question from what resources there
+	// are: Resources() lists what is INSIDE a scope, on purpose. A scope path is a path
+	// of NAMES and a document address is a path of DIRECTORIES named after the kind —
+	// `shop/checkout` is `namespace/shop/group/checkout` — so a consumer filling in
+	// LayoutOf().Scope's `{kind}` asks here rather than assuming every level is the one
+	// container it happens to know about.
+	scopes := []map[string]any{}
+	for _, s := range schema.Scopes(flatObj) {
+		scopes = append(scopes, map[string]any{
+			"id": s.ID, "kind": s.Kind, "name": s.Name, "scope": s.Scope, "fields": s.Fields,
+		})
+	}
+	out["scopes"] = scopes
 
 	// EVERY RELATIONSHIP BETWEEN TWO RESOURCES, already resolved: a name is resolved
 	// against a scope, and a consumer that does its own resolving is one that will
@@ -361,6 +376,11 @@ func kindsFn(js.Value, []js.Value) any {
 			"group": name, "singular": singular, "container": iter.Group,
 			"category": category, "doc": doc, "icon": icon, "fields": fields,
 			"reach": reach,
+			// Nobody writes one of these; the compiler produces them. There are two
+			// container kinds now — the namespace an author draws and the group a
+			// lowering makes — and this is what tells them apart without a page
+			// knowing either name.
+			"notAuthored": engine.NotAuthoredOf(iter),
 		})
 	}
 	return toJS(out)

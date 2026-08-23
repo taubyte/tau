@@ -28,7 +28,7 @@ import (
 // populated the name->id index — a group's names only resolve once it is indexed.
 func AttachAll(root *engine.Node) transform.Transformer[object.Refrence] {
 	_, nameField := engine.IdentityOf(root)
-	return utils.Global(containerKey(root), &attachAll{groups: root.Children, nameField: nameField})
+	return utils.Global(ContainerKeys(root), &attachAll{groups: root.Children, nameField: nameField})
 }
 
 type attachAll struct {

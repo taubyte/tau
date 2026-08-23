@@ -211,6 +211,14 @@ func GenerateJSONSchema(root []*engine.Node, opts JSONSchemaOptions) ([]byte, er
 			continue
 		}
 		iter := node.Children[0]
+		// A KIND NOBODY MAY WRITE IS NOT PART OF THE DOCUMENT THIS VALIDATES. This
+		// schema is what an editor checks a person's config against and what a
+		// completion list is built from, and a kind the compiler produces is neither
+		// offered nor accepted there — it is real everywhere else (it compiles, it is
+		// indexed, it decompiles), and writing one is what is not a person's to do.
+		if engine.NotAuthoredOf(iter) {
+			continue
+		}
 		if spec, ok := resourceSpec(iter); ok {
 			defs[spec] = g.objectSchema(iter, nil, spec)
 			props.set(name, resourceMap(spec, name))

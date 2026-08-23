@@ -38,7 +38,12 @@ import (
 // in rather than assumed here.
 type Layout struct {
 	Resource string // "{kind}/{name}.yaml"
-	Scope    string // "namespace/{name}"
+	// Scope takes `{kind}` too, because a scope is a directory named after the CONTAINER
+	// it belongs to and a vocabulary may declare more than one: "{kind}/{name}" addresses
+	// an authored namespace and the group a lowering produced with one template. A
+	// vocabulary with a single kind of scope may still write it out — "namespace/{name}"
+	// means the same thing there — but it stops being true the day it declares a second.
+	Scope string // "{kind}/{name}"
 }
 
 // lower compiles the project again over the lowered view, and records beside the result
@@ -49,7 +54,7 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 		return nil, nil, errors.New("interp: this schema declares lowerings but no layout, so nothing can be lowered — see WithLayout")
 	}
 
-	docs, adds := placements(c.compileRoot, authored.Flat(), c.layout)
+	docs, adds, scopeKinds := placements(c.compileRoot, authored.Flat(), c.layout)
 	if len(docs) == 0 {
 		return authored, validations, nil
 	}
@@ -58,7 +63,7 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	// editor creates a document it is asked to write into, so placing the entry anyway
 	// produced an empty function with a queue block and no code, and the compile failed
 	// with "required attribute 'id'" against a file nobody wrote.
-	adds = onlyOnWhatExists(c.compileRoot, c.layout, authored.Flat(), docs, adds)
+	adds = onlyOnWhatExists(c.compileRoot, c.layout, authored.Flat(), docs, adds, scopeKinds)
 
 	// A NAME A LOWERING TAKES MUST BE FREE. Writing a produced resource over an authored
 	// one replaced somebody's config with the compiler's, and the compile carried on: the
@@ -110,14 +115,26 @@ func free(root *engine.Node, flat map[string]any, docs []placement) error {
 	// steps of one workflow that produce the same name have the same id on both sides,
 	// so "by X and by X" named the collision and not the two things causing it.
 	taken := map[string]string{}
+	// A SCOPE IS TAKEN BY NAME, WHATEVER KIND IT IS. Everything that resolves a name walks
+	// a chain of scope NAMES — the by-name index is keyed by them, and so is the outward
+	// walk a bare reference does — so two scopes of the same name in one place are one
+	// scope to every one of them, whatever the compiled object calls each. Keyed without
+	// the kind for exactly that reason: a produced `group/checkout` beside an authored
+	// `namespace/checkout` is not two things that never meet, it is one name with two
+	// directories behind it.
+	scopes := map[string]string{}
 	for _, d := range docs {
 		key := d.scope + "\x00" + d.kind + "\x00" + d.name
 		if by, clash := taken[key]; clash {
 			return fmt.Errorf("interp: %s/%s is produced twice, by %s and by %s", d.kind, d.name, by, d.src)
 		}
 		taken[key] = d.src
+		if d.scoping {
+			scopes[d.scope+"\x00"+d.name] = d.src
+		}
 	}
 
+	containers := ContainerKeys(root)
 	_, nameField := engine.IdentityOf(root)
 	var walk func(scope map[string]any, at string)
 	var err error
@@ -138,6 +155,9 @@ func free(root *engine.Node, flat map[string]any, docs []placement) error {
 				}
 				if by, clash := taken[at+"\x00"+group+"\x00"+name]; clash && err == nil {
 					err = fmt.Errorf("interp: %s/%s is written here AND is what %s becomes; one of them has to be renamed", group, name, by)
+				}
+				if by, clash := scopes[at+"\x00"+name]; clash && slices.Contains(containers, group) && err == nil {
+					err = fmt.Errorf("interp: %s/%s is written here AND is the scope %s becomes; two scopes in one place cannot share a name", group, name, by)
 				}
 				child := name
 				if at != "" {

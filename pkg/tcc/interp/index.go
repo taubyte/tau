@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp/utils"
@@ -23,13 +24,42 @@ import (
 // their declared order, over the project scope and every scope inside it; for each
 // resource work out its identity and hand it to the vocabulary; write what comes back.
 
+// ScopeLevel is one scope between the project root and a resource: the KIND of container
+// it was found in, and its own id.
+//
+// The kind is here because a vocabulary may declare more than one kind of scope — one an
+// author writes, one a lowering synthesizes — and a chain of ids alone cannot tell them
+// apart. An index key that announces every level with the same word says a produced scope
+// is a namespace, which is the one thing it is not.
+type ScopeLevel struct{ Kind, ID string }
+
+// ScopeChain is where a resource lives: the chain of scopes from the project root down to
+// it, outermost first, and empty at the root.
+//
+// ONE FIELD, TWO READINGS. A vocabulary that has one kind of scope wants the ids and
+// nothing else, and reads IDs(); one that has more asks each level what it is. A second
+// field carrying the same fact in a second shape is the thing that drifts.
+type ScopeChain []ScopeLevel
+
+// IDs is the chain as v1 has always read it: the scope ids joined by "/", empty at the
+// root.
+func (s ScopeChain) IDs() string {
+	out := make([]string, 0, len(s))
+	for _, level := range s {
+		out = append(out, level.ID)
+	}
+	return strings.Join(out, "/")
+}
+
 // IndexCtx is what the driver knows about one resource when it asks what to index. No
 // tau types: a path is the vocabulary's to compute, from these.
 type IndexCtx struct {
-	// Branch is the compile branch, Project the project's id, Scope where this resource
-	// lives: the ids of the scopes between the project root and it, joined by "/", and
-	// empty at the root. A vocabulary whose scopes cannot hold scopes reads one id.
-	Branch, Project, Scope string
+	// Branch is the compile branch, Project the project's id.
+	Branch, Project string
+	// Scope is where this resource lives: the scopes between the project root and it,
+	// outermost first, and empty at the root. A vocabulary whose scopes cannot hold
+	// scopes reads one level.
+	Scope ScopeChain
 	// Kind, ID and Name are the resource itself.
 	Kind, ID, Name string
 	// Obj is the compiled instance: wire keys, references already resolved.
@@ -196,7 +226,7 @@ func (d *IndexDriver) Process(ct transform.Context[object.Refrence], o object.Ob
 	// Build the pass4-shaped pipe: each group is Sub("object")+Global so the
 	// context path (root, project-object-subtree[, app]) and the project-then-apps
 	// accumulation order are byte-for-byte what the hand-written passes produced.
-	container := containerKey(d.root)
+	containers := ContainerKeys(d.root)
 	groups := indexedGroups(d.root)
 	pipe := make([]transform.Transformer[object.Refrence], 0, len(groups))
 	for _, key := range groups {
@@ -206,10 +236,10 @@ func (d *IndexDriver) Process(ct transform.Context[object.Refrence], o object.Ob
 		}
 		idField, nameField := engine.IdentityOf(d.root)
 		gi := &groupIndexer{
-			groupKey: key, iter: g.Children[0], branch: d.branch, container: container,
+			groupKey: key, iter: g.Children[0], branch: d.branch, containers: containers,
 			idField: idField, nameField: nameField,
 		}
-		pipe = append(pipe, utils.Sub(utils.Global(container, gi), ProjectKey))
+		pipe = append(pipe, utils.Sub(utils.Global(containers, gi), ProjectKey))
 	}
 
 	return transform.Pipe(ct, o, pipe...)
@@ -235,7 +265,7 @@ type groupIndexer struct {
 	groupKey           string
 	iter               *engine.Node
 	branch             string
-	container          string
+	containers         []string
 }
 
 func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
@@ -253,9 +283,9 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 		return nil, fmt.Errorf("config root is not an object")
 	}
 
-	scope := ""
+	var scope ScopeChain
 	if configRoot != config {
-		scope = scopeOf(configRoot, config, gi.container)
+		scope = scopeOf(configRoot, config, gi.containers)
 	}
 
 	groupObj, err := config.Child(gi.groupKey).Object()
@@ -312,7 +342,7 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 			}
 		}
 
-		if err := emitAttrValidations(ct, instObj, gi.iter.Attributes, projectId, scope); err != nil {
+		if err := emitAttrValidations(ct, instObj, gi.iter.Attributes, projectId, scope.IDs()); err != nil {
 			return nil, err
 		}
 	}
@@ -333,31 +363,37 @@ func appendLink(index object.Object[object.Refrence], key, val string) {
 	index.Set(key, links)
 }
 
-// scopeOf is where a scope sits: the ids from the project root down to it, joined by
-// "/". It walks DOWN because the reverse lookup it replaced asked the root's container
-// for the name of the object it had been handed, and an object is a direct child of
-// that container only at the first level. v1's applications cannot hold applications,
-// so one level was the whole tree; v2's namespaces nest, and everything two deep was
-// indexed as though it sat at the project root — under a scope of "", against the same
-// keys the root's own resources use.
-func scopeOf(from, target object.Object[object.Refrence], container string) string {
-	scopes, err := from.Child(container).Object()
-	if err != nil {
-		return ""
-	}
-	for _, id := range scopes.Children() {
-		scope, err := scopes.Child(id).Object()
+// scopeOf is where a scope sits: the chain from the project root down to it, each level
+// carrying the container it was found in and its own id. It walks DOWN because the
+// reverse lookup it replaced asked the root's container for the name of the object it had
+// been handed, and an object is a direct child of that container only at the first level.
+// v1's applications cannot hold applications, so one level was the whole tree; v2's
+// namespaces nest, and everything two deep was indexed as though it sat at the project
+// root — under a scope of "", against the same keys the root's own resources use.
+//
+// Every container is searched at every level, because a scope of one kind holds scopes of
+// the other: an authored namespace holds the scope a lowering made inside it.
+func scopeOf(from, target object.Object[object.Refrence], containers []string) ScopeChain {
+	for _, container := range containers {
+		scopes, err := from.Child(container).Object()
 		if err != nil {
 			continue
 		}
-		if scope == target {
-			return id
-		}
-		if under := scopeOf(scope, target, container); under != "" {
-			return id + "/" + under
+		for _, id := range scopes.Children() {
+			scope, err := scopes.Child(id).Object()
+			if err != nil {
+				continue
+			}
+			here := ScopeLevel{Kind: container, ID: id}
+			if scope == target {
+				return ScopeChain{here}
+			}
+			if under := scopeOf(scope, target, containers); len(under) > 0 {
+				return append(ScopeChain{here}, under...)
+			}
 		}
 	}
-	return ""
+	return nil
 }
 
 // makeLookup builds the (group, id) resolver with pass4's app-local-then-global

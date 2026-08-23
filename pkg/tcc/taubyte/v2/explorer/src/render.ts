@@ -8,7 +8,7 @@ export function jsonTree(value: unknown, label: string, openDepth = 2, depth = 0
     leaf.className = "row leaf";
     leaf.innerHTML =
       `<span class="k">${esc(label)}</span><span class="p">:</span> ` +
-      `<span class="${scalarClass(value)}">${esc(fmtScalar(value))}</span>`;
+      `<span class="${scalarClass(value)}">${esc(fmtScalar(value, label))}</span>`;
     return leaf;
   }
 
@@ -48,14 +48,49 @@ function scalarClass(v: unknown) {
 }
 
 // Durations and sizes compile to raw integers. Showing the human form beside the
-// number is the difference between a page you can read and a wall of digits.
-function fmtScalar(v: unknown): string {
-  if (typeof v === "number" && Number.isInteger(v) && v >= 1_000_000) {
-    if (v % 1_000_000 === 0 && v <= 1_000_000_000_000) {
-      const ns = humanDuration(v);
-      if (ns) return `${v}  (${ns})`;
+// number is the difference between a page you can read and a wall of digits. WHICH
+// field is which is not this file's to guess — Duration()/Bytes() already tag it
+// on the schema (x-scalar) — so a field is read once, off tcc's own schema(), not
+// inferred from how big a number happens to be, which would as happily call a
+// price or a count a duration.
+let scalarsByField: Map<string, string> | null = null;
+
+function scalarOf(field: string): string | undefined {
+  if (!scalarsByField && window.tccV2) {
+    scalarsByField = new Map();
+    collectScalars(window.tccV2.schema(), scalarsByField);
+  }
+  return scalarsByField?.get(field);
+}
+
+// Walks the whole JSON Schema tree looking for `properties` maps, wherever they
+// sit ($defs, oneOf branches, array items) — schema-shape-agnostic, so a new
+// section or nesting level needs no change here.
+function collectScalars(node: unknown, out: Map<string, string>): void {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const v of node) collectScalars(v, out);
+    return;
+  }
+  const obj = node as Record<string, unknown>;
+  const props = obj.properties;
+  if (props && typeof props === "object") {
+    for (const [key, sub] of Object.entries(props as Record<string, unknown>)) {
+      const scalar = (sub as Record<string, unknown> | null)?.["x-scalar"];
+      if (typeof scalar === "string") out.set(key, scalar);
     }
-    return `${v}  (${humanBytes(v)})`;
+  }
+  for (const v of Object.values(obj)) collectScalars(v, out);
+}
+
+function fmtScalar(v: unknown, field: string): string {
+  if (typeof v === "number" && Number.isInteger(v)) {
+    const scalar = scalarOf(field);
+    if (scalar === "duration") {
+      const human = humanDuration(v);
+      return human ? `${v}  (${human})` : String(v);
+    }
+    if (scalar === "bytes") return `${v}  (${humanBytes(v)})`;
   }
   return typeof v === "string" ? `"${v}"` : String(v);
 }

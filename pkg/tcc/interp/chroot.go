@@ -24,5 +24,5 @@ func (a *chroot) Process(ct transform.Context[object.Refrence], o object.Object[
 // chrootEnvelope wraps the whole project (project scope) so a sibling can sit beside it.
 // The caller gates it on whether anything needs one.
 func chrootEnvelope() transform.Transformer[object.Refrence] {
-	return utils.Global("", &chroot{})
+	return utils.Global(nil, &chroot{})
 }

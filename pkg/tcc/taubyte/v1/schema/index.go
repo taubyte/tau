@@ -31,7 +31,7 @@ import (
 // mine is the value every bucket accumulates: this resource's own TNS path. Five of the
 // six footprints below link something to it, and the sixth reserves a key for one.
 func mine(ic interp.IndexCtx) (string, error) {
-	p, err := methods.IndexValue(ic.Branch, ic.Project, ic.Scope, ic.ID, common.PathVariable(ic.Kind))
+	p, err := methods.IndexValue(ic.Branch, ic.Project, ic.Scope.IDs(), ic.ID, common.PathVariable(ic.Kind))
 	if err != nil {
 		return "", err
 	}
@@ -61,7 +61,7 @@ func byName(cap *Cap) interp.Indexer {
 		if cap.ByName == nil {
 			return "", fmt.Errorf("capability %q carries no by-name path", cap.Name)
 		}
-		p, err := cap.ByName(ic.Project, ic.Scope, ic.Name, common.PathVariable(ic.Kind))
+		p, err := cap.ByName(ic.Project, ic.Scope.IDs(), ic.Name, common.PathVariable(ic.Kind))
 		if err != nil {
 			return "", err
 		}
@@ -76,7 +76,7 @@ func byScope(cap *Cap) interp.Indexer {
 		if cap.ScopePath == nil {
 			return "", fmt.Errorf("capability %q carries no scope path", cap.Name)
 		}
-		p, err := cap.ScopePath(ic.Project, ic.Scope)
+		p, err := cap.ScopePath(ic.Project, ic.Scope.IDs())
 		if err != nil {
 			return "", err
 		}

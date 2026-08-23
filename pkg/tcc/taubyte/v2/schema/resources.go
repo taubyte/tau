@@ -1,6 +1,9 @@
 package schema
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // WHAT RESOURCES A COMPILED PROJECT HOLDS, and where each one lives.
 //
@@ -45,5 +48,77 @@ func Resources(obj map[string]any) []Instance {
 		}
 		return out[i].Name < out[j].Name
 	})
+	return out
+}
+
+// Scopes is every SCOPE in a compiled project — a `namespace` somebody wrote, or the
+// `group` a lowering made for what a construct became — as the same Instance a resource
+// is reported as, in a stable order. Its Scope is the one HOLDING it, so a scope at the
+// root reports "".
+//
+// It is the one thing Resources() does not list: that lists what is INSIDE a scope, on
+// purpose, because a scope is a place rather than a thing an edge points at. Asking for
+// the places is a different question, and this is it.
+//
+// THE KIND IS WHY THIS EXISTS. A scope path is a path of NAMES — `shop/checkout` — which
+// is what a reference resolves through and what everything downstream reads, and a name
+// carries no kind. A DOCUMENT address does: a scope is a directory named after the
+// container it belongs to, so the same path is `namespace/shop/group/checkout` on disk.
+// LayoutOf().Scope says `{kind}/{name}`, and this is where a consumer gets the `{kind}` —
+// rather than keeping its own list of which kinds are scopes, which is the hole §8c is
+// about.
+func Scopes(obj map[string]any) []Instance {
+	root := obj
+	if inner, ok := obj["object"].(map[string]any); ok {
+		root = inner
+	}
+	containers := scopeGroups()
+
+	var out []Instance
+	var walk func(scope map[string]any, at string)
+	walk = func(scope map[string]any, at string) {
+		for group, val := range scope {
+			if !containers[group] {
+				continue
+			}
+			instances, ok := val.(map[string]any)
+			if !ok {
+				continue
+			}
+			for id, v := range instances {
+				res, ok := v.(map[string]any)
+				if !ok {
+					continue
+				}
+				name, _ := res["name"].(string)
+				if name == "" {
+					continue
+				}
+				out = append(out, Instance{ID: id, Kind: group, Name: name, Scope: at, Fields: res})
+				walk(res, strings.TrimPrefix(at+"/"+name, "/"))
+			}
+		}
+	}
+	walk(root, "")
+
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Scope != out[j].Scope {
+			return out[i].Scope < out[j].Scope
+		}
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+// ScopeKinds is what KIND of scope each scope path is, which is what fills in
+// LayoutOf().Scope's `{kind}` for every level of a path.
+func ScopeKinds(obj map[string]any) map[string]string {
+	out := map[string]string{}
+	for _, s := range Scopes(obj) {
+		out[strings.TrimPrefix(s.Scope+"/"+s.Name, "/")] = s.Kind
+	}
 	return out
 }

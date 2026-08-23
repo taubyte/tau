@@ -72,9 +72,10 @@ func (v2Layout) Kinds() []session.Kind {
 			continue
 		}
 		out = append(out, session.Kind{
-			Name:      strings.ToLower(g.Singular),
-			Group:     g.Group,
-			Container: g.Container,
+			Name:        strings.ToLower(g.Singular),
+			Group:       g.Group,
+			Container:   g.Container,
+			NotAuthored: g.NotAuthored,
 		})
 	}
 	return out

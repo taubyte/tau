@@ -43,6 +43,11 @@ type Finding struct {
 	Scope    string // namespace path, "" at the project root
 	Title    string
 	Detail   string
+	// ID is the compiled resource this finding is about, so a caller holding the
+	// compiled object can point back at it directly rather than re-resolving
+	// Kind/Name/Scope into an id itself. "" when there genuinely is none to point at —
+	// an unresolved reference, or two candidates for one slot with no single winner.
+	ID string
 }
 
 func (f Finding) String() string {
@@ -125,9 +130,21 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	return out
 }
 
+// scopeGroups is every group whose instances are SCOPES, read off this vocabulary's own
+// root rather than listed here — there are two of them (`namespace` and `group`) and a
+// list would be one place to forget the third.
+func scopeGroups() map[string]bool {
+	out := map[string]bool{}
+	for _, key := range interp.ContainerKeys(CompileRoot()) {
+		out[key] = true
+	}
+	return out
+}
+
 // collect walks the compiled object into a flat list, carrying each resource's scope.
-// Namespaces nest, so this recurses on the scope container rather than assuming depth.
+// Scopes nest, so this recurses on them rather than assuming depth.
 func collect(scope map[string]any, path string) []compiled {
+	scopes := scopeGroups()
 	var out []compiled
 	for group, val := range scope {
 		instances, ok := val.(map[string]any)
@@ -140,7 +157,7 @@ func collect(scope map[string]any, path string) []compiled {
 				continue
 			}
 			name, _ := res["name"].(string)
-			if group == scopeContainer {
+			if scopes[group] {
 				child := path
 				if name != "" {
 					child = strings.TrimPrefix(path+"/"+name, "/")
@@ -277,12 +294,12 @@ func checkReachable(all []compiled, byKind map[string][]compiled) []Finding {
 		if consumes(res) {
 			out = append(out, Finding{Note, res.kind, res.name, res.scope,
 				"nothing fronts it, and nothing needs to",
-				"It is started by work arriving rather than by a request. Listed so the absence is a decision you can see rather than one you have to remember."})
+				"It is started by work arriving rather than by a request. Listed so the absence is a decision you can see rather than one you have to remember.", res.id})
 			continue
 		}
 		out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 			"nothing reaches it",
-			"No gateway route and no proxy names it, and it consumes nothing. It runs and answers no one."})
+			"No gateway route and no proxy names it, and it consumes nothing. It runs and answers no one.", res.id})
 	}
 	return out
 }
@@ -371,7 +388,7 @@ func checkPortsAreFed(all []compiled) []Finding {
 			}
 			out = append(out, Finding{Check, res.kind, res.name, res.scope,
 				fmt.Sprintf("port %q is declared and nothing reaches it", port),
-				"No ingress names it, no probe polls it and nothing is delivered to it. Either something should target this port by name, or the workload is not listening on what it says it is."})
+				"No ingress names it, no probe polls it and nothing is delivered to it. Either something should target this port by name, or the workload is not listening on what it says it is.", res.id})
 		}
 	}
 	return out
@@ -411,7 +428,7 @@ func checkDelivery(all []compiled) []Finding {
 				}
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("receives from %s/%s and declares no deliver port", group, target),
-					"A container has no host ABI, so each item has to be posted to a port it declared. Without deliver.port nothing arrives and the workload idles."})
+					"A container has no host ABI, so each item has to be posted to a port it declared. Without deliver.port nothing arrives and the workload idles.", res.id})
 			}
 		}
 	}
@@ -432,7 +449,7 @@ func checkVariables(all []compiled) []Finding {
 				if p, _ := entry["path"].(string); p == "" {
 					out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 						fmt.Sprintf("variable %q is delivered as a file and names no path", name),
-						"A file has to be mounted somewhere the workload can open it."})
+						"A file has to be mounted somewhere the workload can open it.", res.id})
 				}
 			}
 			_, literal := entry["value"]
@@ -441,11 +458,11 @@ func checkVariables(all []compiled) []Finding {
 			case literal && secret:
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("variable %q has both a value and a secret", name),
-					"One or the other: a literal is in git, a secret reference is not. With both, which one the workload gets is whatever the runtime happens to prefer."})
+					"One or the other: a literal is in git, a secret reference is not. With both, which one the workload gets is whatever the runtime happens to prefer.", res.id})
 			case !literal && !secret:
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("variable %q has neither a value nor a secret", name),
-					"The name is declared and nothing is behind it, so the workload reads an empty string."})
+					"The name is declared and nothing is behind it, so the workload reads an empty string.", res.id})
 			}
 		}
 	}
@@ -471,7 +488,7 @@ func checkMountedSites(all []compiled) []Finding {
 		}
 		out = append(out, Finding{Check, res.kind, res.name, res.scope,
 			fmt.Sprintf("serves a website at %q and does not strip the prefix", path),
-			fmt.Sprintf("The site receives %s/... and was almost certainly built for /, so every page is a file it does not have. Set route.strip-prefix, or build the site with %s as its base.", path, path)})
+			fmt.Sprintf("The site receives %s/... and was almost certainly built for /, so every page is a file it does not have. Set route.strip-prefix, or build the site with %s as its base.", path, path), res.id})
 	}
 	return out
 }
@@ -480,7 +497,8 @@ func checkMountedSites(all []compiled) []Finding {
 // says which world it was built against. Comparing the two is what turns "compiles
 // clean, fails on live traffic" into an error at compile.
 func checkHostWorlds(all []compiled) []Finding {
-	world := map[string]string{} // "scope\x00name" -> declared world
+	// "scope\x00name" -> declared world and the function's own compiled id.
+	world := map[string]struct{ w, id string }{}
 	for _, res := range all {
 		if res.kind != "function" {
 			continue
@@ -489,7 +507,7 @@ func checkHostWorlds(all []compiled) []Finding {
 		if w == "" {
 			w = "handler"
 		}
-		world[res.scope+"\x00"+res.name] = w
+		world[res.scope+"\x00"+res.name] = struct{ w, id string }{w, res.id}
 	}
 
 	// A use names a function and expects one world of it.
@@ -534,35 +552,36 @@ func checkHostWorlds(all []compiled) []Finding {
 
 	var out []Finding
 	for _, u := range uses {
-		got, known := lookupWorld(world, u.name, u.own, u.ns)
+		found, known := lookupWorld(world, u.name, u.own, u.ns)
 		if !known {
 			// The entry's KEY is the function's name, and a key is not a value — no
 			// Ref() resolves it, so a typo here compiles clean and the transformer or
 			// authorizer simply never runs. Silent, and in the authorizer's case
-			// silently unguarded.
+			// silently unguarded. Nothing compiled answers to this name, so there is no
+			// id to point at either.
 			out = append(out, Finding{Broken, "function", u.name, u.ns,
 				fmt.Sprintf("is named as a %s by %s, and does not exist", u.wants, u.where),
-				"The name is the key of the entry, and a key is not a reference the compiler resolves — so this one names nothing and the step never runs."})
+				"The name is the key of the entry, and a key is not a reference the compiler resolves — so this one names nothing and the step never runs.", ""})
 			continue
 		}
-		if got == u.wants {
+		if found.w == u.wants {
 			continue
 		}
 		out = append(out, Finding{Broken, "function", u.name, u.ns,
-			fmt.Sprintf("is used as a %s by %s, and implements %s", u.wants, u.where, got),
-			"Those are different host interfaces. The function will be handed a world it was not built to read, which compiles clean and fails on live traffic."})
+			fmt.Sprintf("is used as a %s by %s, and implements %s", u.wants, u.where, found.w),
+			"Those are different host interfaces. The function will be handed a world it was not built to read, which compiles clean and fails on live traffic.", found.id})
 	}
 	return out
 }
 
 // lookupWorld resolves a named function the way every name is resolved.
-func lookupWorld(world map[string]string, name, own, ns string) (string, bool) {
+func lookupWorld(world map[string]struct{ w, id string }, name, own, ns string) (struct{ w, id string }, bool) {
 	for _, scope := range scopeChain(own, ns) {
 		if w, ok := world[scope+"\x00"+name]; ok {
 			return w, true
 		}
 	}
-	return "", false
+	return struct{ w, id string }{}, false
 }
 
 // checkWorkflows: what only a workflow can get wrong. A step naming a function that
@@ -581,14 +600,14 @@ func checkWorkflows(all []compiled) []Finding {
 		if !startedBy(all, res) {
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 				"nothing starts it, so its first step is never fed",
-				"A workflow does not run itself. Something has to declare `start` on it — a cron, a function, or a route — the same way anything else in this vocabulary is reached."})
+				"A workflow does not run itself. Something has to declare `start` on it — a cron, a function, or a route — the same way anything else in this vocabulary is reached.", res.id})
 		}
 
 		steps := res.elements("steps")
 		if len(steps) == 0 {
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 				"has no steps, so it lowers to nothing and starting it does nothing",
-				"A workflow IS its steps: with none, the queues and the entity it would become are not created and a start has nowhere to go."})
+				"A workflow IS its steps: with none, the queues and the entity it would become are not created and a start has nowhere to go.", res.id})
 			continue
 		}
 
@@ -612,7 +631,7 @@ func checkWorkflows(all []compiled) []Finding {
 				}
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("step %q runs after %q AND is where %q sends failure", name, field(other, "name"), field(other, "name")),
-					"It would run when the step before it succeeded and when it failed, which is not what a compensation step is for. A line has one order and no branch: give the handler its own workflow, or let failure land in the dead-letter queue."})
+					"It would run when the step before it succeeded and when it failed, which is not what a compensation step is for. A line has one order and no branch: give the handler its own workflow, or let failure land in the dead-letter queue.", res.id})
 			}
 		}
 
@@ -621,7 +640,7 @@ func checkWorkflows(all []compiled) []Finding {
 			if target := field(step, "on_error"); target != "" && !named[target] {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("step %q sends failure to %q, which is not a step of this workflow", name, target),
-					"On error the run would jump to a step that does not exist, which is the same as having no handler at all — except it reads like it has one."})
+					"On error the run would jump to a step that does not exist, which is the same as having no handler at all — except it reads like it has one.", res.id})
 			}
 		}
 	}
@@ -672,10 +691,10 @@ func checkLoweringCollisions(root map[string]any, produced interp.Lowered, all [
 			if res.kind+"/"+res.name != d.Of {
 				continue
 			}
-			if _, taken := authored[d.Kind+"\x00"+res.scope+"\x00"+d.Name]; taken {
+			if collision, taken := authored[d.Kind+"\x00"+res.scope+"\x00"+d.Name]; taken {
 				out = append(out, Finding{Broken, d.Kind, d.Name, res.scope,
 					fmt.Sprintf("is authored here AND is what %s becomes", d.Of),
-					"A transpiled resource takes the name too, and both would be the same key. Rename one — the authored one is the one you can see."})
+					"A transpiled resource takes the name too, and both would be the same key. Rename one — the authored one is the one you can see.", collision.id})
 			}
 		}
 	}
@@ -725,7 +744,7 @@ func checkLoweredLinks(root map[string]any, all []compiled) []Finding {
 			out = append(out, Finding{Broken, d.Source.Kind, d.Source.Name, d.Source.Scope,
 				fmt.Sprintf("%s %s/%s, which does not exist", w.Value, w.On.Kind, w.On.Name),
 				"Found in what this becomes rather than in what you wrote: " + d.Trail() +
-					". The name is carried through the lowering unchanged, so fixing it where it is written fixes this."})
+					". The name is carried through the lowering unchanged, so fixing it where it is written fixes this.", d.Source.ID})
 		}
 	}
 	return out
@@ -789,7 +808,7 @@ func checkVolumeWriters(all []compiled) []Finding {
 			if n := res.int("limits/max_instances"); n > 1 {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("mounts volume %q for writing and may run %d instances", name, n),
-					"A volume is leased to one writer. Either the ceiling comes down to 1, or the volume is mounted read-only and something else owns the writes."})
+					"A volume is leased to one writer. Either the ceiling comes down to 1, or the volume is mounted read-only and something else owns the writes.", res.id})
 			}
 		}
 	}
@@ -803,13 +822,22 @@ func checkVolumeWriters(all []compiled) []Finding {
 		for _, w := range ws {
 			names = append(names, w.kind+"/"+w.name)
 		}
-		name := key
+		name, scope := key, ""
 		if cut := strings.LastIndex(key, "\x00"); cut >= 0 {
-			name = key[cut+1:]
+			scope, name = key[:cut], key[cut+1:]
 		}
-		out = append(out, Finding{Broken, "volume", name, "",
+		// The key IS the volume's resolved scope and name — the same identity
+		// volumeKey used to group the writers — so its compiled id is one lookup away.
+		id := ""
+		for _, res := range all {
+			if res.kind == "volume" && res.name == name && res.scope == scope {
+				id = res.id
+				break
+			}
+		}
+		out = append(out, Finding{Broken, "volume", name, scope,
 			"is mounted for writing by " + strings.Join(names, " and "),
-			"A volume has one writer. The others are asking for a lease that is already held, and which of them starts is a race."})
+			"A volume has one writer. The others are asking for a lease that is already held, and which of them starts is a race.", id})
 	}
 	return out
 }
@@ -857,7 +885,7 @@ func checkAccessDuplicates(all []compiled) []Finding {
 				sort.Strings(labels)
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("reaches the same %s under %d different names: %s", kind, len(labels), strings.Join(labels, ", ")),
-					"Two entries that resolve to one resource are two labels for one fact, and only one of them is doing anything — whichever the compiler visits last silently wins. Keep one."})
+					"Two entries that resolve to one resource are two labels for one fact, and only one of them is doing anything — whichever the compiler visits last silently wins. Keep one.", res.id})
 			}
 		}
 	}
@@ -922,7 +950,7 @@ func checkHandlerPorts(all []compiled) []Finding {
 			}
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 				fmt.Sprintf("names port %q on a %s", port, kind),
-				fmt.Sprintf("A %s does not listen on ports — only a container workload does — so there is nothing for this name to refer to.", kind)})
+				fmt.Sprintf("A %s does not listen on ports — only a container workload does — so there is nothing for this name to refer to.", kind), res.id})
 		}
 	}
 	return out
@@ -958,9 +986,13 @@ func checkTransformerWorlds(all []compiled) []Finding {
 		if len(w) < 2 {
 			continue
 		}
+		// worlds is keyed by name alone, with no scope — a real pre-existing gap this
+		// finding already had (two functions of this name in different namespaces would
+		// be conflated). Not fixed here: an id would have the same ambiguity a scope-blind
+		// lookup would, so "" is the honest answer rather than a guess.
 		out = append(out, Finding{Broken, "function", name, "",
 			"is a transformer on both a gateway and a proxy",
-			"Those are different host interfaces — one is handed a parsed HTTP request, the other bytes on a stream — so one of the two uses is being handed a world the function cannot read."})
+			"Those are different host interfaces — one is handed a parsed HTTP request, the other bytes on a stream — so one of the two uses is being handed a world the function cannot read.", ""})
 	}
 	return out
 }
@@ -973,7 +1005,7 @@ func checkExternal(all []compiled, r Resolver) []Finding {
 			if err := r.ZoneDelegated(fqdn); err != nil {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("zone %q does not answer here", fqdn),
-					err.Error()})
+					err.Error(), res.id})
 			}
 		}
 		if image := res.str("image"); image != "" {
@@ -983,7 +1015,7 @@ func checkExternal(all []compiled, r Resolver) []Finding {
 			if err := r.ImagePullable(image, res.at("image_pull_secret", "name")); err != nil {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("image %q cannot be pulled", image),
-					err.Error()})
+					err.Error(), res.id})
 			}
 		}
 	}

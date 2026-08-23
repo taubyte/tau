@@ -49,6 +49,14 @@ type Provenance struct {
 	Name string `json:"name"`
 	// Scope is the namespace it was placed in.
 	Scope string `json:"scope,omitempty"`
+	// Scoping marks the one produced resource that is a PLACE rather than a thing — the
+	// group or namespace holding what else a lowering made. The source is not swapped
+	// out for it: `workflow/checkout` still compiles at its own id, and this is one of
+	// what it produced, same as the queues. It has to be recorded like the rest —
+	// decompiling to what somebody wrote has to take the directory back out too — but a
+	// reader drawing a box per produced resource still has to skip this one: a place is
+	// drawn by the box that IS it, not by a second card inside that box.
+	Scoping bool `json:"scoping,omitempty"`
 }
 
 // Granted is one value a lowering wrote into a resource somebody DID write.
@@ -113,6 +121,7 @@ func LoweredOf(flat map[string]any) Lowered {
 			out.Resources[id] = Provenance{
 				From: str(m, "from"), At: str(m, "at"),
 				Kind: str(m, "kind"), Name: str(m, "name"), Scope: str(m, "scope"),
+				Scoping: boolOf(m, "scoping"),
 			}
 		}
 	}
@@ -151,6 +160,11 @@ func str(m map[string]any, key string) string {
 	return s
 }
 
+func boolOf(m map[string]any, key string) bool {
+	b, _ := m[key].(bool)
+	return b
+}
+
 // recordOf is what the compile just did, in the terms the object records: ids, because a
 // name is only unique in a scope and an object outlives the names in it.
 //
@@ -161,7 +175,7 @@ func str(m map[string]any, key string) string {
 func recordOf(root *engine.Node, obj Object, docs []placement, adds []granted) Lowered {
 	l := Lowered{Resources: make(map[string]Provenance, len(docs))}
 	for _, d := range docs {
-		l.Resources[d.id] = Provenance{From: d.from, At: d.part, Kind: d.kind, Name: d.name, Scope: d.scope}
+		l.Resources[d.id] = Provenance{From: d.from, At: d.part, Kind: d.kind, Name: d.name, Scope: d.scope, Scoping: d.scoping}
 	}
 
 	// Scopes nest, and a name is only unique inside one: keyed without the scope, an
@@ -234,6 +248,9 @@ func record(obj Object, l Lowered) error {
 		one.Set("name", p.Name)
 		if p.Scope != "" {
 			one.Set("scope", p.Scope)
+		}
+		if p.Scoping {
+			one.Set("scoping", true)
 		}
 		if err := resources.Child(id).Add(one); err != nil {
 			return err

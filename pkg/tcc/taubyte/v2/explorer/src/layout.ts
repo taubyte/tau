@@ -107,7 +107,11 @@ function dotFor(nodes: Node[], arrows: Arrow[], ingress: Ingress[], frames: Map<
   const emit = (scope: string, depth: number): string => {
     const pad = "  ".repeat(depth);
     const body = [
-      `${pad}  label=${q(frames.get(scope) ?? `namespace · ${scope}`)};`,
+      // graph.ts frames every scope now, and the label it puts there names the KIND of
+      // scope the config says it is. The fallback is only for a caller that hands this
+      // function scopes frames does not know about — never a kind's name, which is
+      // exactly what this file is not supposed to know.
+      `${pad}  label=${q(frames.get(scope) ?? scope)};`,
       // room between a namespace's border and the resources inside it, so an edge
       // crossing the boundary has somewhere to be that is not on top of the dashes
       `${pad}  margin=16;`,

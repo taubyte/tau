@@ -92,12 +92,12 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 	assert.Equal(t, len(compilePipe(full, Env{"branch": "main"})), 5)
 }
 
-// containerKey derives the nested-container config key structurally (a top-level
+// ContainerKeys derives the nested-container config keys structurally (a top-level
 // group whose iterator is itself a group with children and no Resource
 // descriptor), so "applications" need never be restated in the interpreter.
 func TestContainerKey_DerivesNestedContainer(t *testing.T) {
 	// No container group -> "".
-	assert.Equal(t, containerKey(mkRoot(mkResGroup("widgets", nil, nil))), "")
+	assert.Equal(t, len(ContainerKeys(mkRoot(mkResGroup("widgets", nil, nil)))), 0)
 
 	// Container: iterator is a group with children and carries no Resource meta.
 	appIter := &engine.Node{
@@ -109,7 +109,7 @@ func TestContainerKey_DerivesNestedContainer(t *testing.T) {
 		mkResGroup("widgets", nil, nil),
 		&engine.Node{Group: true, Match: "applications", Children: []*engine.Node{appIter}},
 	)
-	assert.Equal(t, containerKey(root), "applications")
+	assert.DeepEqual(t, ContainerKeys(root), []string{"applications"})
 
 	// Ref/index nested only inside the container are still detected (the predicates
 	// recurse into container iterators).

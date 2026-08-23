@@ -1,6 +1,6 @@
 import "./style.css";
 import { loadTcc, type CompileOk, type Kind, type KindVerbs, type Omission } from "./wasm";
-import { buildGraph, categoryOf, fileOf, iconOf, setCategories, setShapes, type Graph } from "./graph";
+import { buildGraph, categoryOf, fileOf, iconOf, setCategories, setScopes, setShapes, type Graph } from "./graph";
 import { esc, jsonRoot } from "./render";
 import { graphHost, renderGraph } from "./graph-mount";
 import { kindIconMarkup } from "./icons";
@@ -100,6 +100,10 @@ function render() {
   lastResult = compile();
   generatedFiles = null; // the config changed, so what it produces did too
   if (!("error" in lastResult)) {
+    // WHICH SCOPES THERE ARE AND WHAT KIND EACH IS, before the graph is built: a frame's
+    // label and a document's path both need it, and both used to say `namespace` because
+    // that was the only kind of scope there was.
+    setScopes(lastResult.scopes ?? []);
     graph = buildGraph(
       lastResult.resources ?? [],
       lastResult.relations ?? [],
@@ -114,8 +118,10 @@ function render() {
     // internet -> zone -> resource. The zone is a real resource when the name lives in
     // one the project declares, and the cloud's own otherwise. Presentation only: none
     // of it is in the model.
+    // fqdn alone is the filter: it comes from tcc's ReachableNames, which a zone never
+    // populates for itself (it states its fqdn directly, it doesn't resolve one).
     const ingress = g.nodes
-      .filter((n) => n.fqdn && n.kind !== "zone")
+      .filter((n) => n.fqdn)
       .map((n) => ({ zone: n.answeredById || CLOUD_ZONE, to: n.id, name: n.fqdn! }));
     place(g.nodes, g.arrows, ingress, g.frames).then((p) => {
       if (seq !== layoutSeq) return;
@@ -226,7 +232,10 @@ function generatedDocument(kind: string, name: string): string {
     const out = window.tccV2?.generated(files, { branch: "main" });
     generatedFiles = out && !("error" in out) ? out : {};
   }
-  const suffix = `${kind}/${name}.yaml`;
+  // Same path fileOf builds for a real resource — layout.resource from tcc, not a
+  // guessed template — with no scope so it matches by suffix below regardless of where
+  // the decompiler nested it.
+  const suffix = fileOf({ kind, name, scope: "" });
   for (const [path, body] of Object.entries(generatedFiles)) {
     if (path === suffix || path.endsWith("/" + suffix)) return body;
   }
@@ -471,9 +480,9 @@ function reviewPane(result: CompileOk): HTMLElement {
   // kind changed.
   const findings = result.findings ?? [];
   const exposure = graph.nodes
-    // a zone carries an fqdn and answers nothing itself: it is what RESOLVES the names
-    // below, which is the column rather than a row
-    .filter((n) => n.fqdn && n.kind !== "zone")
+    // fqdn alone is the filter — see the ingress build in render(). A zone never gets
+    // one: it is the column here (zone: below), not a row.
+    .filter((n) => n.fqdn)
     .map((n) => ({
       id: n.id,
       kind: n.kind,
@@ -560,8 +569,11 @@ function findingRow(f: Finding): HTMLElement {
   row.innerHTML =
     `<span class="sev">${f.severity}</span>` +
     `<div><b><code>${esc(where)}</code> ${esc(f.title)}</b><p>${esc(f.detail)}</p></div>`;
-  // tcc names the resource, not a compiled id, so the node is found by identity
-  const node = graph?.nodes.find((n) => n.kind === f.kind && n.name === f.name && n.scope === f.scope.replace(/^\//, ""));
+  // f.id is the compiled resource this finding is about (empty when there is none to
+  // point at). A much-reached sink is drawn once per user, and every copy carries the
+  // same `of` — so this matches on `of`, not `id`, the way every other node lookup here
+  // that starts from a real resource id does (see the `of` helpers in graph-view.tsx).
+  const node = f.id ? graph?.nodes.find((n) => n.of === f.id) : undefined;
   if (node) {
     row.classList.add("clickable");
     row.onclick = () => pickFromReview(node.id);

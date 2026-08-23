@@ -986,7 +986,7 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 
 	layout := schema.LayoutOf()
 	assert.Equal(t, layout.Resource, "{kind}/{name}.yaml")
-	assert.Equal(t, layout.Scope, "namespace/{name}")
+	assert.Equal(t, layout.Scope, "{kind}/{name}")
 }
 
 // A NAME IS THREE PLACES GLUED: the label a resource chose, the zone that answers for

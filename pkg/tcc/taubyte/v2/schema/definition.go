@@ -84,10 +84,17 @@ func attachAccess() {
 // kind, and a kind naming it while the vocabulary is still being built is a cycle Go
 // refuses to compile.
 //
+// THE SHAPE IS `group`, NOT `namespace`. It was the namespace container, which made a
+// workflow's queues land in something that compiled as a namespace and read as one —
+// "namespace · checkout" over a box holding steps nobody wrote. What was wanted was the
+// namespace's BEHAVIOUR: indexed, addressable, a bare `Ref()` inside it resolving
+// outward. That is structure, and `group` has the same structure; what it does not have
+// is the name, so nothing calls the inside of a construct a tenant any more.
+//
 // EVERY KIND THAT LOWERS, not a list of them. The rule is one sentence — what a
 // construct becomes lives inside it — and a list is the thing that is wrong the day a
 // twenty-sixth kind starts lowering. What it buys, on this vocabulary's own resources:
-// `workflow/checkout` puts its three queues in a namespace called `checkout`, so
+// `workflow/checkout` puts its three queues in a group called `checkout`, so
 // `checkout_reserve` cannot collide with a queue somebody wrote, and the dead-letter
 // queue the others point at is a sibling they resolve by bare name.
 func attachLowerable(scope *Node) {
@@ -1684,7 +1691,7 @@ const scopeContainer = "namespace"
 func namespacesGroup(depth int) *Node {
 	children := append([]*Node{}, V2Resources...)
 	if depth > 1 {
-		children = append(children, namespacesGroup(depth-1))
+		children = append(children, namespacesGroup(depth-1), groupsGroup(depth-1))
 	}
 	return DefineGroup(scopeContainer,
 		DefineIterGroup(identityAttributes(), children...).
@@ -1707,17 +1714,71 @@ func namespacesGroup(depth int) *Node {
 				interp.Indexes(len(V2Resources), byName)))
 }
 
-// scopeShape is the container as it really is, built once: it is both what the root
-// holds and what a lowering is handed when it produces a scope of its own, and those two
-// have to be the SAME node or a produced scope would be loaded by a definition nothing
-// else uses.
-var scopeShape = namespacesGroup(MaxNamespaceDepth)
+// groupContainer is the OTHER kind of scope, and the whole point of it is that it is
+// another kind. A lowering puts what a construct becomes inside a scope named after the
+// source — `workflow/checkout` becomes `group/checkout/queue/*.yaml` — and that scope has
+// to BEHAVE like a namespace: indexed, addressable, resolving a bare `Ref()` written
+// inside it the ordinary outward way. It must not BE one. An authored `/shop/eu` and the
+// box a workflow turns into are different things: one is a tenant somebody drew a line
+// around, the other is the inside of a construct, and a reader who is shown "namespace ·
+// checkout" has been told the author wrote a namespace they did not write.
+//
+// Everything that makes it behave like a namespace is STRUCTURE, and it is the same
+// structure: a group whose iterator is itself a group holding the resource groups. tcc
+// reads that shape (interp.ContainerKeys) and treats both identically — one walk, one
+// index footprint, one addressing rule — so nothing here is a second mechanism.
+// Everything that makes it a different thing is IDENTITY: its own key, its own icon, its
+// own line in the vocabulary.
+const groupContainer = "group"
 
-var _ = func() any { attachAccess(); attachIndexes(); attachLowerable(scopeShape); return nil }()
+func groupsGroup(depth int) *Node {
+	children := append([]*Node{}, V2Resources...)
+	// A group holds groups because a lowering may lower again: what a workflow becomes can
+	// itself be a construct with an inside of its own. It holds no NAMESPACES — a tenant
+	// is something an author draws, and nothing produces one.
+	if depth > 1 {
+		children = append(children, groupsGroup(depth-1))
+	}
+	return DefineGroup(groupContainer,
+		DefineIterGroup(identityAttributes(), children...).
+			With(Singular("Group"),
+				// group/checkout/scope.yaml — the same document a namespace keeps its own
+				// fields in, for the same reason, and it may not be named after any child
+				// group of its own (see the namespace's Leaf).
+				Leaf("scope"),
+				GroupDoc("The inside of a construct: what a workflow, an agent or anything else that lowers becomes, held together under the name of the resource it came from."),
+				secIdentity,
+				// Not the namespace's `apps`. Two things that read the same in a picture
+				// are one thing to the reader, and telling them apart is the reason this
+				// kind exists at all.
+				Icon("package"),
+				// Its own category, for the same reason: a namespace is not a category of
+				// anything, and this is where a construct's parts live.
+				Category("structure"),
+				// NOBODY WRITES ONE. The key is in the schema, so the strict-key check
+				// would accept `group/checkout/scope.yaml` from a repository and compile it
+				// into the very shape a lowering produces — and then collide with it. This
+				// is what refuses it, at the compile, naming the document.
+				NotAuthored(),
+				// Looked up by name like everything else, after the namespace, so the
+				// order buckets accumulate in stays something stated.
+				interp.Indexes(len(V2Resources)+1, byName)))
+}
+
+// scopeShape and groupShape are the two containers as they really are, built once each.
+// A shape handed to Lowerable has to BE the node the root holds — CheckLowerings refuses
+// anything else — because what a lowering synthesizes is loaded, indexed and resolved
+// through by that definition and no other.
+var (
+	scopeShape = namespacesGroup(MaxNamespaceDepth)
+	groupShape = groupsGroup(MaxNamespaceDepth)
+)
+
+var _ = func() any { attachAccess(); attachIndexes(); attachLowerable(groupShape); return nil }()
 
 var v2Root = Root(
 	rootAttributes(),
-	append(append([]*Node{}, V2Resources...), scopeShape)...,
+	append(append([]*Node{}, V2Resources...), scopeShape, groupShape)...,
 ).With(Singular("Project"), Leaf("project"), Strict(),
 	// A resource is stored under its `id` and called by the name of the document it was
 	// written in — the interpreter's two field names, which are this vocabulary's to

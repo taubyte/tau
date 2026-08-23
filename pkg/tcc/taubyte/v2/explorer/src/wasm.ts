@@ -58,6 +58,9 @@ export interface Finding {
   scope: string;
   title: string;
   detail: string;
+  /** The compiled resource this is about, empty when there genuinely is none — an
+   *  unresolved reference, or two candidates for one slot with no single winner. */
+  id: string;
 }
 
 /** One compiled resource. What a resource is, and where it lives, is decided by tcc. */
@@ -85,7 +88,21 @@ export interface Relation {
 /** What a compile produced that nobody wrote. From tcc — see interp/lowered.go. */
 export interface LoweredProject {
   /** Every produced resource, by its compiled id, and the authored resource it came from. */
-  produced: Record<string, { from: string; at: string; kind: string; name: string; scope: string }>;
+  produced: Record<
+    string,
+    {
+      from: string;
+      at: string;
+      kind: string;
+      name: string;
+      scope: string;
+      /** A PLACE rather than a thing — the scope the rest were placed in. Recorded
+       *  like anything else the source produced (decompile has to take the directory
+       *  back out too), but a reader draws every produced resource EXCEPT this one:
+       *  a place is drawn by the box that IS it, not by a second card inside it. */
+      scoping: boolean;
+    }
+  >;
   /** Every value a lowering wrote into a resource somebody DID write: a path and a value. */
   granted: { on: string; path: string[]; value: string; from: string }[];
   /** The project AS IT RUNS: the same shapes as the authored one, because it is one. */
@@ -99,6 +116,14 @@ export interface CompileOk {
   names?: Record<string, { name: string; zone: string; fqdn: string; generated: boolean }>;
   /** Every resource in the project, found by tcc: a walk that needs the schema. */
   resources?: Instance[];
+  /**
+   * Every SCOPE, which is a different question from every resource: `resources` lists
+   * what is INSIDE a scope, on purpose. A scope path is a path of names and a document
+   * address is a path of directories named after the KIND — `shop/checkout` is
+   * `namespace/shop/group/checkout` — and there is more than one kind of scope, so this
+   * is where the kind comes from rather than from a page assuming one.
+   */
+  scopes?: Instance[];
   /** Every relationship between two resources, already resolved and already directed. */
   relations?: Relation[];
   /** The project as it RUNS, and what in it nobody wrote. */

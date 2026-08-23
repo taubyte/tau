@@ -1,14 +1,14 @@
 :root {
   --bg: #fbfbfa; --fg: #1a1a18; --mut: #6f6e69; --line: #e2e0da; --card: #fff;
   --code: #f4f3ef; --acc: #b4531f;
-  --read: #2563eb; --write: #be123c;
+  --read: #2563eb; --write: #be123c; --admin: #9333ea;
   --internet: #7c3aed; --trigger: #0891b2; --compute: #0f766e; --data: #b45309; --code-cat: #64748b;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #141418; --fg: #e9e7e2; --mut: #97948c; --line: #2b2b32; --card: #1c1c21;
     --code: #212127; --acc: #e8905a;
-    --read: #7cadf5; --write: #f4788f;
+    --read: #7cadf5; --write: #f4788f; --admin: #c084fc;
     --internet: #b191f7; --trigger: #56c7de; --compute: #4fd0c1; --data: #e0a458; --code-cat: #9aa5b4;
   }
 }

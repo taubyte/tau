@@ -26,5 +26,5 @@ func (a *chrootUnwrap) Process(ct transform.Context[object.Refrence], o object.O
 
 // unwrapEnvelope reverses chrootEnvelope. The caller gates it on UsesIndexing.
 func unwrapEnvelope() transform.Transformer[object.Refrence] {
-	return utils.Global("", &chrootUnwrap{})
+	return utils.Global(nil, &chrootUnwrap{})
 }

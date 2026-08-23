@@ -58,18 +58,18 @@ func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o objec
 	//   - the per-resource inverse in the fixed pass3 order, applications first so
 	//     the resource walks that follow can iterate apps by whatever key they now
 	//     carry (the walk is key-agnostic).
-	container := containerKey(d.root)
+	containers := ContainerKeys(d.root)
 	idField, nameField := engine.IdentityOf(d.root)
 	pipe := []transform.Transformer[object.Refrence]{
-		utils.Global(container, &decompileRefs{groups: d.root.Children, nameField: nameField}),
-		&decompileApps{container: container, idField: idField, nameField: nameField},
+		utils.Global(containers, &decompileRefs{groups: d.root.Children, nameField: nameField}),
+		&decompileApps{containers: containers, idField: idField, nameField: nameField},
 	}
 	for _, key := range decompileOrder(d.root) {
 		g := findGroup(d.root, key)
 		if g == nil || len(g.Children) == 0 {
 			continue
 		}
-		pipe = append(pipe, utils.Global(container, &decompileResource{
+		pipe = append(pipe, utils.Global(containers, &decompileResource{
 			groupKey: key, iter: g.Children[0], idField: idField, nameField: nameField,
 		}))
 	}
@@ -290,32 +290,31 @@ func invertRefAttr(sel object.Selector[object.Refrence], ra refAttr, getMap func
 // mirroring decompile/pass3/applications.go. It does NOT recurse — the per-resource
 // walks that follow handle each app's nested resources via utils.Global.
 type decompileApps struct {
-	container          string
+	containers         []string
 	idField, nameField string
 }
 
 func (a *decompileApps) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	if a.container == "" {
-		return o, nil
-	}
-	apps, err := o.Child(a.container).Object()
-	if err == object.ErrNotExist {
-		return o, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("fetching %s failed with %w", a.container, err)
-	}
-	for _, id := range apps.Children() {
-		sel := apps.Child(id)
-		// Innermost first: a scope may hold scopes, and renaming this one before its
-		// children would move the subtree out from under the walk.
-		if inner, err := sel.Object(); err == nil {
-			if _, err := a.Process(ct, inner); err != nil {
-				return nil, fmt.Errorf("renaming inside %s failed with %w", id, err)
-			}
+	for _, container := range a.containers {
+		apps, err := o.Child(container).Object()
+		if err == object.ErrNotExist {
+			continue
 		}
-		if _, err := utils.RenameByName(sel, a.idField, a.nameField); err != nil {
-			return nil, fmt.Errorf("renaming scope %s failed with %w", id, err)
+		if err != nil {
+			return nil, fmt.Errorf("fetching %s failed with %w", container, err)
+		}
+		for _, id := range apps.Children() {
+			sel := apps.Child(id)
+			// Innermost first: a scope may hold scopes — of either kind — and renaming
+			// this one before its children would move the subtree out from under the walk.
+			if inner, err := sel.Object(); err == nil {
+				if _, err := a.Process(ct, inner); err != nil {
+					return nil, fmt.Errorf("renaming inside %s failed with %w", id, err)
+				}
+			}
+			if _, err := utils.RenameByName(sel, a.idField, a.nameField); err != nil {
+				return nil, fmt.Errorf("renaming scope %s failed with %w", id, err)
+			}
 		}
 	}
 	return o, nil

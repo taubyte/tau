@@ -34,6 +34,9 @@ type GroupInfo struct {
 	Group     string
 	Singular  string
 	Container bool
+	// NotAuthored: nobody writes one of these — the compiler produces them. See
+	// NotAuthored() in annotate.go.
+	NotAuthored bool
 }
 
 // Groups lists every top-level group the DSL declares (resources, the container,
@@ -57,6 +60,7 @@ func Groups(root []*Node) []GroupInfo {
 			if _, all := iter.Match.(StringMatchAll); all && iter.Group {
 				info.Container = true
 			}
+			info.NotAuthored = NotAuthoredOf(iter)
 		}
 		out = append(out, info)
 	}

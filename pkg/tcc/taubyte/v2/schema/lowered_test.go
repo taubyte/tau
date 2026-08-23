@@ -2,12 +2,14 @@ package schema_test
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/interp"
+	"github.com/taubyte/tau/pkg/tcc/jsonschema"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"gotest.tools/v3/assert"
 )
@@ -94,9 +96,15 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	}
 	// THE SCOPE IS RECORDED LIKE ANYTHING ELSE IT PRODUCED. It has to be: decompiling to
 	// what somebody wrote has to take the directory back out too, or the next compile
-	// finds an authored namespace it did not write and refuses to produce into it.
+	// finds an authored scope it did not write and refuses to produce into it.
+	//
+	// And it is a GROUP. What a workflow becomes behaves like a namespace — indexed,
+	// addressable, resolving a bare name outward — and is not one: a namespace is a line
+	// somebody drew, this is the inside of a construct, and a record calling it a
+	// namespace is the object saying the author wrote something they did not.
 	assert.Equal(t, kinds["queue"], 3)
-	assert.Equal(t, kinds["namespace"], 1)
+	assert.Equal(t, kinds["group"], 1)
+	assert.Equal(t, kinds["namespace"], 0)
 
 	// ...and the entries it put on resources somebody else wrote, which is the other half
 	// of what has to be taken back off.
@@ -114,7 +122,50 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	assert.Equal(t, len(alsoNone), 0)
 }
 
-// A LOWERABLE RESOURCE IN A NAMESPACE produces into a namespace of its own, INSIDE that
+// WHAT A LOWERING BECOMES IS A GROUP, AND A GROUP IS NOT A NAMESPACE. It behaves like
+// one — indexed, addressable, a bare reference inside it resolving outward — because that
+// behaviour is entirely the SHAPE, which it shares. What it does not share is the name:
+// an authored `/shop/eu` is a line somebody drew and `checkout` is the inside of a
+// workflow, and anything that calls the second one a namespace is telling a reader the
+// author wrote something they did not.
+//
+// The other half is that nobody can write one. The kind is real to the compiler and to
+// the index; it is not in the document an editor validates, not offered as something to
+// create, and refused if it turns up in a repository.
+func TestWhatALoweringBecomesIsAGroupAndNobodyWritesOne(t *testing.T) {
+	obj := compileFor(t, schema.WithLocal("../fixtures/basic"))
+
+	kinds := schema.ScopeKinds(obj.Flat())
+	assert.Equal(t, kinds["checkout"], "group", "what workflow/checkout became: %v", kinds)
+	assert.Equal(t, kinds["support"], "group", "what agent/support became: %v", kinds)
+	assert.Equal(t, kinds["shop"], "namespace", "an authored scope changed kind: %v", kinds)
+
+	// tcc's own answer about the vocabulary, which is where every consumer gets it: the
+	// group is a container like the namespace, and unlike it, nobody authors one.
+	byGroup := map[string]schema.Kind{}
+	s, err := schema.NewSession(afero.NewMemMapFs(), "/")
+	assert.NilError(t, err)
+	for _, k := range s.Kinds() {
+		byGroup[k.Group] = k
+	}
+	assert.Assert(t, byGroup["group"].Container, "the produced scope is not a container: %v", byGroup["group"])
+	assert.Assert(t, byGroup["group"].NotAuthored, "nothing says a group is not a person's to write")
+	assert.Assert(t, !byGroup["namespace"].NotAuthored, "an authored namespace was marked unwritable")
+
+	// ...so it is not in the document an editor validates against either.
+	js, err := jsonschema.GenerateJSONSchema(schema.GenerationRoot(), jsonschema.JSONSchemaOptions{})
+	assert.NilError(t, err)
+	var doc struct {
+		Properties map[string]any `json:"properties"`
+	}
+	assert.NilError(t, json.Unmarshal(js, &doc))
+	_, offered := doc.Properties["group"]
+	assert.Assert(t, !offered, "the JSON Schema offers a kind nobody may author")
+	_, namespace := doc.Properties["namespace"]
+	assert.Assert(t, namespace, "the authored scope went missing from the schema")
+}
+
+// A LOWERABLE RESOURCE IN A NAMESPACE produces into a scope of its own, INSIDE that
 // one. Scope arithmetic is where a path builder goes wrong, and it goes wrong silently: a
 // resource placed one level up is a resource in the wrong namespace, and it compiles.
 func TestLoweringInsideANamespace(t *testing.T) {
@@ -264,29 +315,12 @@ func idOf(t *testing.T, flat map[string]any, kind, name string) string {
 
 // scopeExists reports whether a scope of this name sits at this path. Scopes are the one
 // thing Resources() does not list — it lists what is inside them — so a question about a
-// scope is asked of the container itself.
+// scope is asked of Scopes(), which is the vocabulary's own answer and knows there is
+// more than one KIND of scope.
 func scopeExists(flat map[string]any, at, name string) bool {
-	scope := rootOf(flat)
-	levels := append([]string{}, strings.Split(at, "/")...)
-	levels = append(levels, name)
-	for _, level := range levels {
-		if level == "" {
-			continue
-		}
-		found := false
-		container, _ := scope["namespace"].(map[string]any)
-		for _, v := range container {
-			m, _ := v.(map[string]any)
-			if n, _ := m["name"].(string); n == level {
-				scope, found = m, true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
+	want := strings.TrimPrefix(at+"/"+name, "/")
+	_, ok := schema.ScopeKinds(flat)[want]
+	return ok
 }
 
 func rootOf(flat map[string]any) map[string]any {
@@ -405,9 +439,11 @@ func TestSessionAddressesNestedScopes(t *testing.T) {
 // inside `checkout` are two resources that never meet — the collision that used to be a
 // refused compile is not a collision at all any more.
 //
-// What CAN still collide is the scope's own name, and that one has to be said: a
-// namespace an author wrote is theirs, and producing into it would put the compiler's
-// resources in somebody's directory.
+// The scope's own name cannot collide with a namespace either, now that what a lowering
+// produces is a `group`: an authored `namespace/checkout` and the group `checkout` are
+// two different kinds and never meet. What is refused instead is writing a `group` at
+// all — the kind is the compiler's, and a document of it in a repository is refused where
+// it was written rather than fought over afterwards.
 func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	free := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(free, "../fixtures/basic", "/"))
@@ -429,7 +465,12 @@ func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	assert.Assert(t, scopes[""] && scopes["checkout"],
 		"both queues called checkout_reserve should exist, in different scopes: %v", scopes)
 
-	// the scope itself, which IS taken
+	// THE SCOPE'S NAME IS STILL TAKEN, and being a different KIND of scope does not
+	// untake it. Every name resolution in tcc walks a chain of scope NAMES — the by-name
+	// index is keyed by them and so is the outward walk a bare reference does — so an
+	// authored `namespace/checkout` and a produced `group/checkout` are one name with two
+	// directories behind it, and which of them a reference means is not a question the
+	// compiler should be answering by accident.
 	taken := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(taken, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(taken, "/namespace/checkout/scope.yaml", []byte(
@@ -438,7 +479,20 @@ func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	c, err = schema.New(schema.WithVirtual(taken, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
-	assert.ErrorContains(t, err, "namespace/checkout is written here AND is what workflow/checkout becomes")
+	assert.ErrorContains(t, err, "namespace/checkout is written here AND is the scope workflow/checkout becomes")
+
+	// WRITING THE COMPILER'S KIND IS REFUSED WHERE IT WAS WRITTEN, whatever it is called.
+	// The key is in the schema, so nothing else would have said no: the document would
+	// have compiled into exactly the shape a lowering produces.
+	written := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(written, "../fixtures/basic", "/"))
+	assert.NilError(t, afero.WriteFile(written, "/group/mine/scope.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ4Ac\n"), 0o644))
+
+	c, err = schema.New(schema.WithVirtual(written, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "group/mine is written here, and group is a kind only a lowering produces")
 }
 
 // A REFERENCE BETWEEN TWO PRODUCED RESOURCES RESOLVES BY ITSELF. A queue carries a

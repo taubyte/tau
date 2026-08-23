@@ -86,15 +86,21 @@ func TestIndexCoversWhatALoweringProduced(t *testing.T) {
 	idx, project := compileIndex(t)
 
 	// the scope itself is indexed by name, the way an authored namespace is — which is
-	// what turns the written `/checkout` on an access entry into the id below
-	checkout := link(t, idx, "projects/"+project+"/namespace/checkout/links")
+	// what turns the written `/checkout` on an access entry into the id below.
+	//
+	// UNDER ITS OWN KIND. What a workflow becomes is a `group`, not a `namespace`, and the
+	// key says so at every level: a reader resolving `group/checkout` to an id and then
+	// asking for what is in it builds the same path this wrote.
+	checkout := link(t, idx, "projects/"+project+"/group/checkout/links")
 	nsID := checkout[strings.LastIndex(checkout, "/")+1:]
 	assert.Assert(t, nsID != "")
+	_, asNamespace := idx["projects/"+project+"/namespace/checkout/links"]
+	assert.Assert(t, !asNamespace, "the scope a workflow became is indexed as a namespace")
 
 	for _, name := range []string{"checkout_reserve", "checkout_charge", "checkout_failed"} {
-		value := link(t, idx, "projects/"+project+"/namespace/"+nsID+"/queue/"+name+"/links")
+		value := link(t, idx, "projects/"+project+"/group/"+nsID+"/queue/"+name+"/links")
 		assert.Assert(t, strings.HasPrefix(value,
-			"branches/main/projects/"+project+"/namespace/"+nsID+"/queue/"),
+			"branches/main/projects/"+project+"/group/"+nsID+"/queue/"),
 			"%s is indexed at %s", name, value)
 	}
 

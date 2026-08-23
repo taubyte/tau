@@ -225,6 +225,7 @@ const CATEGORY_COLOR: Record<string, string> = {
 const EDGE_COLOR: Record<string, string> = {
   read: "var(--read)",
   write: "var(--write)",
+  admin: "var(--admin)",
   ref: "var(--mut)",
   policy: "var(--acc)",
 };
@@ -253,6 +254,7 @@ export function GraphView({
     () => ({
       read: cssVar("--read"),
       write: cssVar("--write"),
+      admin: cssVar("--admin"),
       ref: cssVar("--mut"),
       policy: cssVar("--acc"),
       internet: cssVar("--internet"),
@@ -326,7 +328,10 @@ export function GraphView({
         selectable: !!frameOwner.get(s.scope),
         draggable: false,
         data: {
-          label: graph.frames.get(s.scope) ?? `namespace · ${s.scope}`,
+          // graph.ts frames every scope now (see Graph.frames), with the KIND of scope
+          // the config says it is — the fallback is only for a scope it somehow missed,
+          // never a guess at what to call it.
+          label: graph.frames.get(s.scope) ?? s.scope,
           faded: false,
           flip: frameOwner.get(s.scope),
           flipped: frameOwner.has(s.scope) && flippedIds.has(frameOwner.get(s.scope)!),
@@ -380,10 +385,11 @@ export function GraphView({
           kind: n.kind,
           icon: iconOf(n.looksLike ?? n.kind),
           name: n.name,
-          // The frame's own name is internal — `@checkout` is a layout key, not a
-          // place — and a node wearing it read as "queue, in namespace @CHECKOUT".
-          // Inside a box, the box says where you are.
-          scope: n.scope.includes("@") ? "" : n.scope,
+          // A namespace and a workflow are both frames (graph.ts's own model) — the
+          // box already carries its own label, so a node inside one repeats nothing.
+          // Ask graph.frames rather than sniffing the scope string for tcc's `@name`
+          // convention, which is graph.ts's own internal key, not a fact this file owns.
+          scope: graph.frames.has(n.scope) ? "" : n.scope,
           category: categoryOf(n.looksLike ?? n.kind),
           faded: lit !== null && !lit.has(n.id),
           picked: !!selection && (graph.byId.get(selection.id)?.of ?? selection.id) === n.of,

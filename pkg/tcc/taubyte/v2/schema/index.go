@@ -47,15 +47,18 @@ const (
 	linksSegment    = "links"
 )
 
-// scopeSegments turns the interpreter's scope — the ids from the project root down,
-// joined — into path segments, each announced by the container's own key.
-func scopeSegments(scope string) []string {
-	if scope == "" {
-		return nil
-	}
+// scopeSegments turns the interpreter's scope — the chain from the project root down —
+// into path segments, each announced by the container's own key.
+//
+// EACH LEVEL SAYS WHAT IT IS. This wrote `namespace` in front of every id, which was true
+// while a namespace was the only kind of scope there was; a scope a lowering produces is a
+// `group`, and announcing it as a namespace would key its resources under a path no
+// reader could rebuild — the group itself is indexed as `group/<name>`, so its contents
+// have to be found under `group/<id>` too.
+func scopeSegments(scope interp.ScopeChain) []string {
 	var out []string
-	for _, id := range strings.Split(scope, "/") {
-		out = append(out, scopeContainer, id)
+	for _, level := range scope {
+		out = append(out, level.Kind, level.ID)
 	}
 	return out
 }

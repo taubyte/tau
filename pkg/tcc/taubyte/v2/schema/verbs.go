@@ -737,7 +737,11 @@ func entryName(label string, entry map[string]any) string {
 // copy of it.
 type Layout struct {
 	Resource string // "{kind}/{name}.yaml"
-	Scope    string // "{container}/{name}"
+	// Scope takes the kind as well as the name, because there is more than one kind of
+	// scope: `namespace/shop` is one an author wrote and `group/checkout` is one a
+	// lowering produced, and a consumer filling this in says which. It named the
+	// container outright until the second kind arrived.
+	Scope string // "{kind}/{name}"
 	// Leaf is the document a SCOPE keeps its own fields in, without the extension —
 	// `namespace/shop/scope.yaml`. It said so already and answered with the PROJECT's
 	// document, which nothing had noticed because nothing read it; a lowering that
@@ -749,7 +753,7 @@ type Layout struct {
 func LayoutOf() Layout {
 	return Layout{
 		Resource: "{kind}/{name}.yaml",
-		Scope:    scopeContainer + "/{name}",
+		Scope:    "{kind}/{name}",
 		Leaf:     engine.ContainerDoc(GenerationRoot(), scopeContainer),
 	}
 }

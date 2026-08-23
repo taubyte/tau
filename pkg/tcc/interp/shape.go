@@ -5,7 +5,7 @@ import "github.com/taubyte/tau/pkg/tcc/engine"
 // This file holds the generic "schema shape" queries the interpreter uses to stay
 // schema-driven: it inspects the injected root's DSL annotations rather than
 // restating v1's fixed shape. The compiler uses the usesX predicates to select
-// which passes to run; containerKey derives the nested-container config key so
+// which passes to run; ContainerKeys derives the nested-container config keys so
 // "applications" is declared only in the schema, never here.
 
 // eachIter calls fn for every group iterator reachable from root — each top-level
@@ -68,12 +68,25 @@ func UsesIndexing(root *engine.Node) bool {
 	})
 }
 
-// containerKey returns the config key of the nested container group — the top-level
-// group whose iterator is itself a group with children and carries no Resource
-// descriptor (the applications container) — or "" if the schema declares none. This
-// is the same structural test the generator uses (tools/tcc-gen containerKey), kept
-// in sync so "applications" is declared only in the schema, never restated here.
-func containerKey(root *engine.Node) string {
+// ContainerKeys returns the config keys of every group whose instances are SCOPES — a
+// top-level group whose iterator is itself a group with children and which carries no
+// Resource descriptor — in the order the vocabulary declares them. Empty when the schema
+// declares none. It is the same structural test the generator uses (tools/tcc-gen
+// containerKey), kept in sync so "applications" is declared only in the schema, never
+// restated here.
+//
+// PLURAL, AND THAT IS THE POINT. This answered with the FIRST such group, and everything
+// downstream — reference resolution, the index, decompile, the lowering walk — was handed
+// that one key and walked only it. One container was the whole truth while a scope was
+// something an author writes; it stopped being true the moment a lowering could
+// synthesize a scope of a DIFFERENT kind (interp.Lowerable). A vocabulary declaring a
+// second one used to compile clean and then resolve no names inside it, which reads as
+// the reference being wrong rather than as half the walk being missing.
+//
+// The order is the declaration order, and it is load-bearing for the same reason the
+// order of indexed groups is: buckets accumulate across scopes as they are visited.
+func ContainerKeys(root *engine.Node) []string {
+	var out []string
 	for _, g := range root.Children {
 		if len(g.Children) == 0 {
 			continue
@@ -83,9 +96,10 @@ func containerKey(root *engine.Node) string {
 			continue
 		}
 		if iter.Group && len(iter.Children) > 0 {
-			key, _ := g.Match.(string)
-			return key
+			if key, _ := g.Match.(string); key != "" {
+				out = append(out, key)
+			}
 		}
 	}
-	return ""
+	return out
 }
