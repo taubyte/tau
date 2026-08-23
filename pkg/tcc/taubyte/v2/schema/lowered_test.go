@@ -3,7 +3,6 @@ package schema_test
 import (
 	"context"
 	"encoding/json"
-	"sort"
 	"strings"
 	"testing"
 
@@ -49,13 +48,21 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 		"the reference resolved like any other: %v", q["dead_letter"])
 
 	// AND THE ACCESS IT IMPLIES IS ON THE RESOURCE THAT DECLARES IT — the entry an author
-	// would have written, on the function, naming the queue it receives from.
-	fn := resource(t, flat, "function", "reserve_stock")
-	queues, _ := fn["queue"].(map[string]any)
-	assert.Assert(t, queues != nil, "the function declares no queue access at all: %v", fn)
+	// would have written, on the step's DRIVER, naming the queue it receives from. The
+	// driver is produced in the same scope, so the whole pipeline is inside the box.
+	drv := resource(t, flat, "worker", "checkout_reserve")
+	queues, _ := drv["queue"].(map[string]any)
+	assert.Assert(t, queues != nil, "the driver declares no queue access at all: %v", drv)
 	entry, _ := queues["checkout_reserve"].(map[string]any)
-	assert.Assert(t, entry != nil, "nothing says this function receives from its step's queue: %v", queues)
+	assert.Assert(t, entry != nil, "nothing says this driver receives from its step's queue: %v", queues)
 	assert.DeepEqual(t, entry["ops"], []string{"receive"})
+
+	// THE AUTHOR'S FUNCTION KNOWS NO QUEUES. It is invoked by the driver; the pipeline
+	// used to be stated a second time as grants on it, outside the workflow, where the
+	// first copy could not be seen beside it.
+	fn := resource(t, flat, "function", "reserve_stock")
+	_, hasQueues := fn["queue"]
+	assert.Assert(t, !hasQueues, "the step's function carries queue access it should know nothing about: %v", fn)
 }
 
 // THE FILES ARE NOT TOUCHED. The view a lowering is applied to is in memory; a compiler
@@ -87,7 +94,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 
 	workflow := idOf(t, flat, "workflow", "checkout")
 	made, added := schema.Became(flat, workflow)
-	assert.Equal(t, len(made), 3, "one queue per step and the one they fail into")
+	assert.Equal(t, len(made), 6, "a queue and a driver per step, the one they fail into, and the events channel")
 
 	kinds := map[string]int{}
 	for _, id := range made {
@@ -96,6 +103,8 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 		kinds[rec.Resources[id].Kind]++
 	}
 	assert.Equal(t, kinds["queue"], 3)
+	assert.Equal(t, kinds["worker"], 2, "a driver per step")
+	assert.Equal(t, kinds["channel"], 1)
 	assert.Equal(t, kinds["group"], 0)
 	assert.Equal(t, kinds["namespace"], 0)
 
@@ -105,9 +114,11 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	for _, g := range added {
 		byWhat[strings.Join(g.Path, "/")+" "+g.Value] = g.On
 	}
-	assert.Equal(t, byWhat["queue/checkout_reserve/ops receive"], idOf(t, flat, "function", "reserve_stock"))
-	assert.Equal(t, byWhat["queue/checkout_charge/ops send"], idOf(t, flat, "function", "reserve_stock"))
-	assert.Equal(t, byWhat["queue/checkout_charge/ops receive"], idOf(t, flat, "function", "charge_card"))
+	assert.Equal(t, byWhat["queue/checkout_reserve/ops receive"], idOf(t, flat, "worker", "checkout_reserve"))
+	assert.Equal(t, byWhat["queue/checkout_charge/ops send"], idOf(t, flat, "worker", "checkout_reserve"))
+	assert.Equal(t, byWhat["queue/checkout_charge/ops receive"], idOf(t, flat, "worker", "checkout_charge"))
+	// and the one write that lands on something the AUTHOR wrote: where a start goes
+	assert.Equal(t, byWhat["entry/start/name checkout_reserve"], idOf(t, flat, "workflow", "checkout"))
 
 	// A resource that becomes nothing has no record and answers with nothing.
 	none, alsoNone := schema.Became(flat, idOf(t, flat, "function", "checkout"))
@@ -211,6 +222,7 @@ func TestLoweringInsideANamespace(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/namespace/shop/workflow/ship.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zq\n"+
 			"description: pack it, then hand it over\n"+
+			"start: pack\n"+
 			"steps:\n"+
 			"    - name: pack\n"+
 			"      run: notify\n"+
@@ -235,75 +247,83 @@ func TestLoweringInsideANamespace(t *testing.T) {
 	t.Fatal("queue/ship_pack is not in the compiled object")
 }
 
-// TWO OPS ON ONE TARGET ARE BOTH KEPT. A step whose failure goes back to its own queue
-// makes its function both receive from that queue and send to it — two entries at one
-// address. Written one at a time, the second silently replaced the first, and what was
-// lost is the `receive`: the queue keeps its work and nothing consumes it, which is a
-// deadlock that compiles.
-func TestTwoOpsOnOneTargetMerge(t *testing.T) {
+// TWO LOWERINGS WRITE INTO ONE PRODUCED RESOURCE, AND BOTH SURVIVE. A step becomes a
+// queue and a driver, and the entries the driver ends up with come from BOTH: the queue's
+// lowering says the driver receives from it, the driver's own says it sends to the next
+// one and invokes the step's function. Written one at a time into the same document, the
+// second silently replaced the first — and what was lost is the `receive`: the queue keeps
+// its work and nothing consumes it, which is a deadlock that compiles.
+func TestTwoLoweringsWriteIntoOneProducedResource(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/workflow/retry.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zr\n"+
-			"description: a step that sends its failures back to itself\n"+
+			"description: two steps, so the first driver both receives and sends\n"+
+			"start: first\n"+
 			"steps:\n"+
-			"    - name: again\n"+
+			"    - name: first\n"+
 			"      run: charge_card\n"+
 			"      attempts: 2\n"+
-			"      on_error: again\n"), 0o644))
+			"    - name: second\n"+
+			"      run: reserve_stock\n"+
+			"      attempts: 1\n"), 0o644))
 
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 
-	fn := resource(t, obj.Flat(), "function", "charge_card")
-	queues, _ := fn["queue"].(map[string]any)
-	entry, _ := queues["retry_again"].(map[string]any)
-	assert.Assert(t, entry != nil, "the function declares nothing about its own queue: %v", queues)
-	ops, _ := entry["ops"].([]string)
-	sort.Strings(ops)
-	assert.DeepEqual(t, ops, []string{"receive", "send"})
+	drv := resource(t, obj.Flat(), "worker", "retry_first")
+	queues, _ := drv["queue"].(map[string]any)
+	assert.Assert(t, queues != nil, "the driver declares no queue access at all: %v", drv)
+
+	mine, _ := queues["retry_first"].(map[string]any)
+	assert.Assert(t, mine != nil, "the queue's own lowering did not say who consumes it: %v", queues)
+	assert.DeepEqual(t, mine["ops"], []string{"receive"})
+
+	next, _ := queues["retry_second"].(map[string]any)
+	assert.Assert(t, next != nil, "the driver's own lowering did not say where work goes next: %v", queues)
+	assert.DeepEqual(t, next["ops"], []string{"send"})
+
+	fns, _ := drv["function"].(map[string]any)
+	ran, _ := fns["charge_card"].(map[string]any)
+	assert.Assert(t, ran != nil, "and nothing says it invokes the step's function: %v", fns)
+	assert.DeepEqual(t, ran["ops"], []string{"invoke"})
 }
 
-// AN AUTHORED ENTRY SURVIVES a lowering that adds another op to the same target. The
-// author's access is theirs; a compiler that replaced it would be taking away something
-// somebody wrote.
-func TestAnAuthoredEntryIsNotReplaced(t *testing.T) {
+// WHAT THE AUTHOR WROTE IS THEIRS. A lowering writes onto one resource somebody else
+// wrote — the shell itself, where it records that starting this workflow means sending to
+// the start step's queue. A value goes into a scalar only when the field is empty, so an
+// author who wrote it themselves keeps what they wrote; a compiler that replaced it would
+// be taking away a line, and decompile would hand back a document they never authored.
+func TestAnAuthoredValueIsNotReplaced(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/workflow/hand.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zs\n"+
-			"description: one step, whose function already sends to the queue it will receive from\n"+
+			"description: one step, and an entry the author filled in themselves\n"+
+			"start: only\n"+
+			"entry:\n"+
+			"    start:\n"+
+			"        name: somewhere_else\n"+
 			"steps:\n"+
 			"    - name: only\n"+
-			"      run: relay_hand\n"+
+			"      run: charge_card\n"+
 			"      attempts: 1\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/function/relay_hand.yaml", []byte(
-		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zt\n"+
-			"description: sends to the queue it also receives from, and said so itself\n"+
-			"source: \".\"\n"+
-			"execution:\n"+
-			"    call: relay\n"+
-			"    timeout: 5s\n"+
-			"    memory: 16MB\n"+
-			"queue:\n"+
-			"    hand_only:\n"+
-			"        ops: [send]\n"), 0o644))
 
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 
-	fn := resource(t, obj.Flat(), "function", "relay_hand")
-	queues, _ := fn["queue"].(map[string]any)
-	entry, _ := queues["hand_only"].(map[string]any)
-	assert.Assert(t, entry != nil, "%v", queues)
-	ops, _ := entry["ops"].([]string)
-	sort.Strings(ops)
-	// the author wrote send; the lowering added receive
-	assert.DeepEqual(t, ops, []string{"receive", "send"})
+	wf := resource(t, obj.Flat(), "workflow", "hand")
+	entry, _ := wf["entry"].(map[string]any)
+	start, _ := entry["start"].(map[string]any)
+	assert.Assert(t, start != nil, "the record is not there at all: %v", wf["entry"])
+	assert.Equal(t, start["name"], "somewhere_else", "the lowering overwrote what the author wrote")
+	// and the fields they left empty are filled in beside it
+	assert.Equal(t, start["kind"], "queue")
+	assert.Equal(t, start["as"], "send")
 }
 
 // COMPILING TWICE GIVES THE SAME OBJECT. Ids are derived, names are templated, and the
@@ -376,6 +396,7 @@ func TestAnAuthoredOpIsNotRecordedAsGranted(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/workflow/hand.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zs\n"+
 			"description: one step, whose function already declared the receive\n"+
+			"start: only\n"+
 			"steps:\n"+
 			"    - name: only\n"+
 			"      run: relay_own\n"+
@@ -553,13 +574,24 @@ func TestAProducedReferenceResolvesInTheProducedScope(t *testing.T) {
 			"%s's dead-letter reference did not resolve to the queue beside it: %v", name, dead)
 	}
 
-	// AND WHAT REACHES IN SAYS WHERE. The step's function was written outside that scope,
-	// so its entry names the queue and the namespace it is in — an author writing the
-	// same thing by hand would have had to write both.
-	fn := resource(t, flat, "function", "reserve_stock")
-	queues, _ := fn["queue"].(map[string]any)
+	// AND WHAT REACHES IN SAYS WHERE. The driver and its queue are both in the produced
+	// scope, so the entry names it — an author writing the same thing by hand would have
+	// had to write the namespace too.
+	drv := resource(t, flat, "worker", "checkout_reserve")
+	queues, _ := drv["queue"].(map[string]any)
 	entry, _ := queues["checkout_reserve"].(map[string]any)
 	assert.Assert(t, entry != nil, "%v", queues)
 	assert.Equal(t, entry["namespace"], "/checkout")
 	assert.DeepEqual(t, entry["ops"], []string{"receive"})
+
+	// AND WHAT REACHES OUT DOES NOT. The function a step runs was written at the project
+	// root, so the driver's entry for it carries NO namespace and the bare name resolves
+	// outward — up out of the produced scope, the same walk every other bare name does.
+	// Writing the produced scope there would have named a function that is not in it.
+	fns, _ := drv["function"].(map[string]any)
+	out, _ := fns["reserve_stock"].(map[string]any)
+	assert.Assert(t, out != nil, "the driver does not say it invokes the step's function: %v", fns)
+	_, saidWhere := out["namespace"]
+	assert.Assert(t, !saidWhere, "the entry names a namespace the function is not in: %v", out)
+	assert.DeepEqual(t, out["ops"], []string{"invoke"})
 }

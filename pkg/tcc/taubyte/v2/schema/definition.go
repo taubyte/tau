@@ -1565,8 +1565,15 @@ var V2Resources = []*Node{
 					Doc("Timeout", "Ceiling on one whole run, as a human string (e.g. \"1h\"). Absent means a run may take as long as its steps do.")),
 				Int("concurrency", MinInt(1), InSection("run"),
 					Doc("Concurrency", "How many runs may be in flight at once. Absent means unlimited.")),
+
+				// WHERE A START LANDS. Required, because a pipeline whose first step is
+				// "the one written first" makes the order of a list load-bearing in a
+				// way nothing else here does, and because `entry` below has to name
+				// something. checkWorkflows verifies it is a step of this workflow.
+				String("start", Required(), IsVariableName(), InSection("run"),
+					Doc("Start", "The step a start lands on.")),
 			),
-			Nested(stepsGroup()),
+			Nested(stepsGroup(), entryGroup()),
 			GroupDoc("An ordered pipeline of functions with retries. Each step runs as its own queue; nothing new has to be deployed to serve it. There is no run state to inspect yet."), Icon("workflow"), Category("trigger"),
 			secIdentity, secAccess,
 			Section("run", "Run", "Ceilings on one run and on all of them."),
@@ -1586,7 +1593,7 @@ var V2Resources = []*Node{
 			// past the same step is the one thing this must not do, and an entity is the
 			// only kind here that fences it.
 			Lowers(
-				// One queue PER STEP: a queue is where a retry budget lives, and the
+				// ONE QUEUE PER STEP: a queue is where a retry budget lives, and the
 				// budget is the step's — `reserve` may be worth four attempts and
 				// `charge` exactly one. Sharing a queue would make the whole pipeline
 				// share whichever number was written last.
@@ -1600,40 +1607,93 @@ var V2Resources = []*Node{
 					Named(Concat(Attr("name"), Text("_"), Each("name"))),
 					Carries(Concat(Text("work waiting for step "), Each("name"))),
 					Sets("max_attempts", Each("attempts")),
-					Sets(Key("dead_letter", "name"), Concat(Attr("name"), Text("_failed"))),
 
-					// WHO CONSUMES IT. A queue nothing receives from is a queue nothing
-					// happens in, so the step's function is named as its consumer — the
-					// `receive` half of the queue's own verbs, in the direction work
-					// actually travels.
-					Reaches("receive", From("function", Each("run"), Each("namespace"))),
+					// EXHAUSTION IS ROUTED, NOT GRANTED, and the queue's own mechanism
+					// does it: dead-lettering fires exactly when attempts run out, which
+					// is the one moment no code of this step is running. A step naming
+					// another step lands in that step's queue; the default lands in the
+					// terminal one.
+					Sets(Key("dead_letter", "name"), Concat(Attr("name"), Text("_"), Each("on_error"))),
 
-					// WHAT MAKES IT A PIPELINE — and it starts at the FUNCTION, not at
-					// the queue. A queue does not hand work to another queue; the
-					// function that consumed this one sends to the next step's queue
-					// when it is done, and an edge drawn queue-to-queue describes
-					// something that cannot happen.
-					//
-					// The last step has no next, so Next("name") has nothing behind it,
-					// and the write is dropped — which is exactly right, because that is
+					// CONSUMED BY THE STEP'S DRIVER, never by the author's function. The
+					// function is invoked BY the driver and knows nothing about queues:
+					// that is the whole of what this composition changed.
+					Reaches("receive", From("worker", Concat(Attr("name"), Text("_"), Each("name")))),
+				),
+
+				// ONE DRIVER PER STEP — platform code, the way an agent's loop is. Its
+				// program IS the forward-progress contract: receive one item, invoke the
+				// function it was granted, send what came back to the queue it was
+				// granted, publish that the step finished. Fail and the queue redelivers;
+				// exhaust and the queue's dead-letter moves the run.
+				//
+				// A WORKER, not a function: it is fed by a queue, runs to completion and
+				// listens for nothing, which is what this vocabulary means by worker. A
+				// function advertises request-and-answer, which the driver is not.
+				//
+				// It carries the step's NAME and no suffix. The kind is part of a
+				// resource's identity everywhere here — the index, the layout, a
+				// collision — so `queue/checkout_reserve` and `worker/checkout_reserve`
+				// are the step's mailbox and the step's machine, said once each.
+				Into("worker",
+					PerEach("steps"),
+					Named(Concat(Attr("name"), Text("_"), Each("name"))),
+					Carries(Concat(Text("step "), Each("name"), Text(": receive, run, hand on"))),
+					Sets(Key("source", "tau"), Text("step")),
+					Sets(Key("execution", "call"), Text("step")),
+					// FIXED, and not the run's timeout. This bounds one delivery — receive,
+					// invoke, hand on — and what the invoke may take is the callee's own
+					// execution/timeout. Copying the run's ceiling here would say a single
+					// step of a 24h run may sit for 24h, which is a different claim.
+					Sets(Key("execution", "timeout"), Text("1h")),
+					Sets(Key("execution", "memory"), Text("64MB")),
+
+					// THE STEP'S OWN FUNCTION, request-and-answer. `To` carries the step's
+					// namespace: written, it is where the author said to look; absent, the
+					// bare name resolves outward from the produced scope, which walks up to
+					// the project root and finds what they wrote.
+					Reaches("invoke",
+						From("worker", Concat(Attr("name"), Text("_"), Each("name"))),
+						To("function", Each("run"), Each("namespace"))),
+
+					// FORWARD PROGRESS: the driver's ONE send. The last step has no next,
+					// so the term cannot fill and the write is dropped — which is exactly
 					// where the run ends.
 					Reaches("send",
-						From("function", Each("run"), Each("namespace")),
+						From("worker", Concat(Attr("name"), Text("_"), Each("name"))),
 						To("queue", Concat(Attr("name"), Text("_"), Next("name")))),
 
-					// Same origin for a step that names somewhere other than the failure
-					// queue to go when it has used up its attempts.
-					Reaches("send",
-						From("function", Each("run"), Each("namespace")),
-						To("queue", Concat(Attr("name"), Text("_"), Each("on_error")))),
+					// THE RUN, NARRATED. Every driver publishes that its step finished;
+					// the last step's event is the run finishing, and which step is last
+					// is on the shell.
+					Reaches("publish",
+						From("worker", Concat(Attr("name"), Text("_"), Each("name"))),
+						To("channel", Concat(Attr("name"), Text("_events")))),
 				),
 
 				// The end of the line, with NO CONSUMER — deliberately. A dead-letter
 				// queue is where a run stops so a person can look at it; something
 				// draining it automatically would be the retry that already happened.
+				//
+				// WHERE A START LANDS is recorded here, on the shell itself. Performing
+				// `start` on a workflow means sending to the start step's queue, and that
+				// is a fact about this kind that no consumer may be asked to work out
+				// from a naming convention. It is written as an ordinary value, so
+				// decompile takes it back off with everything else a lowering added.
 				Into("queue",
 					Named(Concat(Attr("name"), Text("_failed"))),
 					Carries(Text("runs that gave up, kept for a person to look at - nothing consumes this")),
+					Writes(Text("queue"), On("workflow", Attr("name")), At(Text("entry"), Text("start"), Text("kind"))),
+					Writes(Concat(Attr("name"), Text("_"), Attr("start")), On("workflow", Attr("name")), At(Text("entry"), Text("start"), Text("name"))),
+					Writes(Text("send"), On("workflow", Attr("name")), At(Text("entry"), Text("start"), Text("as"))),
+				),
+
+				// COMPLETION HAS AN ADDRESS. One event per step; an authored consumer
+				// subscribes, and nothing has to.
+				Into("channel",
+					Named(Concat(Attr("name"), Text("_events"))),
+					Carries(Text("one event per step completion; the last step's is the run finishing")),
+					Sets("match", Concat(Attr("name"), Text("_events"))),
 				),
 
 				// AND NOTHING ELSE. There is no store for the run's state, because the
@@ -1642,15 +1702,6 @@ var V2Resources = []*Node{
 				// which step it is at. A pipeline needs no second place to write that
 				// down, and the second place is what would have to be kept in agreement
 				// with the first.
-				//
-				// It briefly lowered into an `entity` for exactly that job, which was
-				// wrong twice: an entity is a code-bearing compute instance — source,
-				// entrypoint, timeout and memory, none of which a workflow has to give
-				// it — so it was a resource nobody could instantiate, and it was
-				// answering a question the queue had already answered. CheckLowerings
-				// now refuses a lowering that leaves a required field unset, so that
-				// particular mistake is a build failure rather than a plan that reads
-				// fine.
 				//
 				// What is genuinely missing is run HISTORY — what ran, when, and what it
 				// returned — which is a database and a decision, not a queue. Recorded
@@ -1834,6 +1885,30 @@ func CompileRoot() *Node { return v2Root }
 // program. Every field here is one the ENGINE can carry — a list element does not get
 // the interpreter's passes, so `retries` is an integer rather than a Duration and a
 // step names its function with the namespace+name pair used everywhere else.
+// terminalStep is the name a step's on_error takes when nothing is written: not a step,
+// but the terminal queue `{workflow}_failed`. checkWorkflows knows it for the same reason
+// the lowering does — it is the one on_error value that names no step and is still right.
+const terminalStep = "failed"
+
+// entryGroup is where an operation ON a lowered kind is actually carried out, keyed by the
+// operation. `start` on a workflow is a send to the start step's queue; a consumer reads
+// that here rather than knowing that a workflow becomes queues and how they are named.
+//
+// Nothing authors it. A lowering writes it, which means the record of that write is what
+// takes it back off again — so decompile returns the document somebody wrote, with no
+// second mechanism to teach.
+func entryGroup() *Node {
+	return DefineGroup("entry",
+		DefineIter([]*Attribute{
+			String("kind", InSection("entry"),
+				Doc("Kind", "The kind of resource the operation lands on.")),
+			String("name", InSection("entry"),
+				Doc("Name", "Which resource of that kind, in the scope this became.")),
+			String("as", InSection("entry"),
+				Doc("As", "Which of that kind's own operations carries it out.")),
+		}, GroupDoc("Where an operation on this resource is carried out, keyed by the operation.")))
+}
+
 func stepsGroup() *Node {
 	return DefineList("steps", []*Attribute{
 		String("name", Required(), IsVariableName(), InSection("steps"),
@@ -1853,8 +1928,13 @@ func stepsGroup() *Node {
 		// with it.
 		Int("attempts", MinInt(1), Default(1), InSection("steps"),
 			Doc("Attempts", "How many times this step is run before it has failed. 1 means no retry. The delay between attempts is the queue's, not the step's.")),
-		String("on_error", IsVariableName(), InSection("steps"),
-			Doc("On Error", "Another step to run when this one has exhausted its retries. Omitted means the run fails there.")),
+		// DEFAULTED, and the default is not cosmetic. This fills the produced queue's
+		// dead_letter, which is what happens the moment attempts run out — the moment
+		// no code of this step is running. Without a value the write is dropped, the
+		// terminal queue is produced with nothing pointing at it, and where an
+		// exhausted run goes becomes something the executor has to invent.
+		String("on_error", IsVariableName(), Default(terminalStep), InSection("steps"),
+			Doc("On Error", "Another step to run when this one has exhausted its attempts. The default sends the run to the {workflow}_failed queue, where a person picks it up.")),
 	}, GroupDoc("One step: a function, how often it is retried, and where failure goes."))
 }
 

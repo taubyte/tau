@@ -308,10 +308,24 @@ func Reaches(op string, opts ...ReachOption) interp.LoweringOption {
 		// over, absolute from the project root, and it is empty — so this write does
 		// not happen — for a vocabulary that scopes nothing.
 		//
+		// UNLESS `To` SAID WHERE. Scope() is the produced scope, which is right for the
+		// two directions that existed when this was written — an author's resource
+		// reaching in, and a produced resource reaching its sibling — and wrong for the
+		// third: a produced resource reaching a resource the AUTHOR wrote, which does
+		// not live in the produced scope. `To(kind, name, scope)` already took that
+		// term and this already dropped it on the floor. When it is there it is what
+		// gets written; when it cannot fill, nothing is written and the bare name
+		// resolves outward from the produced scope — which walks up to the root and
+		// finds the author's resource, the same walk every other bare name does.
+		//
 		// A namespace the AUTHOR wrote on the entry is not replaced: a value goes into
 		// a scalar only when the field is empty, which is the same rule every other
 		// thing a lowering writes follows.
-		interp.Writes(interp.Scope(), append(on, at(accessScope))...)(l)
+		where := interp.Scope()
+		if r.toKind != "" && !r.toScope.Empty() {
+			where = r.toScope
+		}
+		interp.Writes(where, append(on, at(accessScope))...)(l)
 	}
 }
 

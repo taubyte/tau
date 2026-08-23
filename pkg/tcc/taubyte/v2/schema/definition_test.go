@@ -878,6 +878,16 @@ func TestWorkflowLowers(t *testing.T) {
 	assert.Assert(t, got["queue/checkout_charge"] != "")
 	assert.Assert(t, got["queue/checkout_failed"] != "", "somewhere for a step that gave up")
 
+	// AND ONE DRIVER PER STEP, which is what makes the box readable when it is opened:
+	// the queues are wired to something that lives in there with them, rather than to
+	// functions at the root that the pipeline's every edge has to leave the frame to
+	// reach. It carries the step's name and no suffix — the kind is already part of a
+	// resource's identity here.
+	assert.Assert(t, got["worker/checkout_reserve"] != "", "one driver per step: %v", got)
+	assert.Assert(t, got["worker/checkout_charge"] != "")
+	// completion has an address
+	assert.Assert(t, got["channel/checkout_events"] != "", "the run says when a step finished: %v", got)
+
 	// NO store for the run's state: the state is the message, and which queue it is in
 	// is which step it is at. It briefly lowered into an entity, which is a code-bearing
 	// kind whose code nothing was setting — a resource nobody could instantiate.
@@ -885,16 +895,14 @@ func TestWorkflowLowers(t *testing.T) {
 		assert.Assert(t, !strings.HasPrefix(k, "entity/"), "a workflow needs no entity: %v", got)
 	}
 
+	// EVERY WRITE THE PLAN CARRIES, keyed by what it lands on and where. That the value
+	// is a verb and the path an access entry is this vocabulary's reading of it — the
+	// compiler carries a value at a path and nothing else.
+	writes := map[string]string{}
 	for _, d := range plan {
-		if d.Name != "checkout_reserve" {
+		if d.Of != "workflow/checkout" {
 			continue
 		}
-		assert.Equal(t, d.Of, "workflow/checkout")
-
-		// WHAT IT IMPLIES IS AN ENTRY SOMEBODY ELSE CARRIES: a value at a path, on the
-		// function that runs the step. That the value is a verb and the path an access
-		// entry is this vocabulary's reading of it — the compiler carries a write.
-		writes := map[string]string{}
 		for _, w := range d.Writes {
 			on := "self"
 			if w.On.Kind != "" {
@@ -902,17 +910,45 @@ func TestWorkflowLowers(t *testing.T) {
 			}
 			writes[on+" "+strings.Join(w.Path, "/")] = w.Value
 		}
-		// a queue nothing receives from is a queue nothing happens in
-		assert.Equal(t, writes["function/reserve_stock queue/checkout_reserve/ops"], "receive")
-		// ...and the chain is what makes it a pipeline. It is written on the FUNCTION: a
-		// queue does not hand work to another queue, the function that consumed this one
-		// sends on, and an entry on the queue would describe something that cannot
-		// happen.
-		assert.Equal(t, writes["function/reserve_stock queue/checkout_charge/ops"], "send")
+	}
 
-		// The dead-letter queue is NOT here: it is the `dead-letter` field, which is
-		// already config. A second statement of it was the whole reason the arrow
-		// between two queues read as unexplained.
+	// A queue nothing receives from is a queue nothing happens in — and what receives is
+	// the step's DRIVER, produced beside it, never the author's function: the function is
+	// invoked and knows no queues at all.
+	assert.Equal(t, writes["worker/checkout_reserve queue/checkout_reserve/ops"], "receive")
+
+	// FORWARD PROGRESS IS ONE GRANT. The driver sends to exactly one queue — the next
+	// step's — so "which of these means next" is not a question anybody has to answer by
+	// reading names. The last step has no next and the write is dropped.
+	assert.Equal(t, writes["worker/checkout_reserve queue/checkout_charge/ops"], "send")
+	assert.Equal(t, writes["worker/checkout_charge queue/checkout_charge/ops"], "receive")
+	for k, v := range writes {
+		assert.Assert(t, !strings.HasPrefix(k, "worker/checkout_charge queue/") || v != "send",
+			"the last step sends nowhere: %s", k)
+	}
+
+	// AND THE WORK ITSELF IS AN INVOKE, out to the function the author wrote. It is the
+	// one edge per step that leaves the box, and it is an ownership boundary: their
+	// function is theirs, and other things may call it too.
+	assert.Equal(t, writes["worker/checkout_reserve function/reserve_stock/ops"], "invoke")
+
+	// THE AUTHOR'S FUNCTION GAINS NOTHING. It used to carry the whole pipeline as grants
+	// — receive from its own queue, send to the next — which is the pipeline stated a
+	// second time, on resources outside the workflow, where the first copy could not be
+	// seen next to it.
+	for k := range writes {
+		assert.Assert(t, !strings.HasPrefix(k, "function/reserve_stock ") && !strings.HasPrefix(k, "function/charge_card "),
+			"the step's own function was written into: %s", k)
+	}
+
+	// The dead-letter queue is NOT an entry: it is the queue's own `dead_letter` field,
+	// which is already config, and it fires at the one moment no code of the step is
+	// running. A second statement of it was the whole reason the arrow between two
+	// queues read as unexplained.
+	for _, d := range plan {
+		if d.Kind != "queue" || d.Name != "checkout_reserve" {
+			continue
+		}
 		assert.Equal(t, d.Fields["dead_letter/name"], "checkout_failed")
 		for _, w := range d.Writes {
 			assert.Assert(t, !strings.Contains(strings.Join(w.Path, "/"), "checkout_failed"),

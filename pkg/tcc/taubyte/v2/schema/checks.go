@@ -673,9 +673,29 @@ func checkWorkflows(all []compiled) []Finding {
 			}
 		}
 
+		// A start has to land on a step of THIS workflow: it is what the lowering writes
+		// into the entry record, and a name that is not a step is a queue that was never
+		// produced.
+		if start := res.str("start"); start != "" && !named[start] {
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				fmt.Sprintf("starts at %q, which is not a step of this workflow", start),
+				"A start lands on the named step's queue. Naming something else means a start goes to a queue that was never produced.", res.id})
+		}
+
+		// A step called `failed` collides with the terminal queue — both become
+		// `{workflow}_failed` — which the lowering refuses, correctly, with a name
+		// collision nobody can read back to this. Said here instead, where it is about
+		// the config somebody wrote.
+		if named[terminalStep] {
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				fmt.Sprintf("has a step called %q, which is the name of its own terminal queue", terminalStep),
+				"Every step becomes {workflow}_{step}, and runs that gave up land in {workflow}_failed. Call the step something else.", res.id})
+		}
+
 		for _, step := range steps {
 			name := field(step, "name")
-			if target := field(step, "on_error"); target != "" && !named[target] {
+			// the default names no step on purpose: it is the terminal queue
+			if target := field(step, "on_error"); target != "" && target != terminalStep && !named[target] {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("step %q sends failure to %q, which is not a step of this workflow", name, target),
 					"On error the run would jump to a step that does not exist, which is the same as having no handler at all — except it reads like it has one.", res.id})
@@ -784,8 +804,49 @@ func checkLoweredLinks(root map[string]any, all []compiled) []Finding {
 				"Found in what this becomes rather than in what you wrote: " + d.Trail() +
 					". The name is carried through the lowering unchanged, so fixing it where it is written fixes this.", d.Source.ID})
 		}
+
+		// AND SO DOES THE RESOURCE IT POINTS AT. An access entry is `<kind>/<label>/ops`
+		// on the accessor, so the target is in the write's PATH rather than in what it
+		// writes into — and when the accessor is itself produced (a driver reaching the
+		// function a step named), the path is the ONLY place a misspelling shows. It used
+		// to be caught by accident, back when the entry landed on the author's own
+		// function and the missing name was the accessor.
+		for _, w := range d.Writes {
+			if len(w.Path) != 3 || w.Path[2] != accessOps {
+				continue
+			}
+			kind, name := w.Path[0], w.Path[1]
+			if derived[kind+"\x00"+name] || !isResourceKind(kind) {
+				continue
+			}
+			// the entry says where to look, and a bare name resolves outward from the
+			// scope the accessor is in
+			scope := d.Scope
+			if ns := entryScopeOf(d.Writes, kind, name); ns != "" {
+				scope = ns
+			}
+			if lookupName(exists, kind+"\x00"+name, scope) {
+				continue
+			}
+			out = append(out, Finding{Broken, d.Source.Kind, d.Source.Name, d.Source.Scope,
+				fmt.Sprintf("%s %s/%s, which does not exist", w.Value, kind, name),
+				"Found in what this becomes rather than in what you wrote: " + d.Trail() +
+					". The name is carried through the lowering unchanged, so fixing it where it is written fixes this.", d.Source.ID})
+		}
 	}
 	return out
+}
+
+// entryScopeOf is the namespace a lowering wrote on the same access entry, when it wrote
+// one: the pair of writes that make an entry are `<kind>/<label>/ops` and
+// `<kind>/<label>/namespace`, and only the second says where the name resolves.
+func entryScopeOf(writes []interp.Written, kind, name string) string {
+	for _, w := range writes {
+		if len(w.Path) == 3 && w.Path[0] == kind && w.Path[1] == name && w.Path[2] == accessScope {
+			return w.Value
+		}
+	}
+	return ""
 }
 
 // lookupName is lookupWorld's question without the world: does this key exist in this

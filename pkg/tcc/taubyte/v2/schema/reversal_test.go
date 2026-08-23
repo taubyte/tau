@@ -22,13 +22,18 @@ import (
 // moves is one a shell has already dropped.
 func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	got := schema.Carriages("workflow")
-	assert.Equal(t, len(got), 3, "got %v", got)
+	by := map[string]interp.Carriage{}
+	for _, c := range got {
+		by[c.Field+" "+c.In+" -> "+c.Into+"/"+c.As] = c
+	}
+	assert.Equal(t, len(got), 6, "got %v", got)
 
 	// a step's attempts becomes its queue's max-attempts, whole
-	assert.DeepEqual(t, got[0], interp.Carriage{
+	attempts := by["attempts steps -> queue/max_attempts"]
+	assert.DeepEqual(t, attempts, interp.Carriage{
 		Field: "attempts", In: "steps", Into: "queue", As: "max_attempts",
 	}, cmpopts.IgnoreUnexported(interp.Term{}, interp.Carriage{}))
-	assert.Assert(t, !got[0].Composed())
+	assert.Assert(t, !attempts.Composed())
 
 	// A step's NAME is COMPOSED into the name of the queue it becomes, and comes back
 	// anyway. That is the whole of what the typed terms bought: `{name}_{each.name}` was
@@ -37,18 +42,23 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	// guess is wrong the moment either half contains one. `Concat(Attr("name"),
 	// Text("_"), Each("name"))` still knows which underscore it wrote, so the prefix is
 	// filled in, its length is the cut, and nothing is guessed.
-	assert.Equal(t, got[1].Field, "name")
-	assert.Equal(t, got[1].In, "steps")
-	assert.Equal(t, got[1].As, "@", "it lands in the name of the queue this step became")
-	assert.Assert(t, got[1].Composed())
-	assert.Equal(t, got[1].Before.String(), "{name}_", "what stands before it, as declared")
-	assert.Equal(t, got[1].After.String(), "")
+	name := by["name steps -> queue/@"]
+	assert.Equal(t, name.Field, "name")
+	assert.Equal(t, name.In, "steps")
+	assert.Assert(t, name.Composed())
+	assert.Equal(t, name.Before.String(), "{name}_", "what stands before it, as declared")
+	assert.Equal(t, name.After.String(), "")
 
-	// and its run is the NAME of the resource everything about this step is written
-	// into — the function — so the name comes back from there
-	assert.DeepEqual(t, got[2], interp.Carriage{
-		Field: "run", In: "steps", Into: "queue", As: ">",
-	}, cmpopts.IgnoreUnexported(interp.Term{}, interp.Carriage{}))
+	// The step's name lands in the DRIVER's name too, and the driver is what its queue
+	// writes into — one step, two produced resources, the same name in both.
+	assert.Assert(t, by["name steps -> worker/@"].Composed(), "the driver is named for the step: %v", got)
+	assert.Assert(t, by["name steps -> queue/>"].Composed(), "the queue names its consumer: %v", got)
+
+	// and where failure goes comes back from the queue's dead-letter, which is where the
+	// lowering put it
+	onError := by["on_error steps -> queue/dead_letter/name"]
+	assert.Equal(t, onError.Field, "on_error")
+	assert.Assert(t, onError.Composed())
 
 	remainder := map[string]bool{}
 	for _, f := range schema.Remainder("workflow") {
@@ -57,9 +67,15 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	for _, kept := range []string{"timeout", "concurrency", "description"} {
 		assert.Assert(t, remainder[kept], "%s comes back from nothing, so a shell has to keep it", kept)
 	}
-	for _, carried := range []string{"steps/attempts", "steps/run", "steps/name"} {
+	for _, carried := range []string{"steps/attempts", "steps/name", "steps/on_error"} {
 		assert.Assert(t, !remainder[carried], "%s is carried, so a shell storing it stores it twice", carried)
 	}
+	// `run` is NOT carried any more, and that is the composition's doing: it used to be
+	// the NAME of the resource the lowering wrote into, back when a step's entries landed
+	// on the author's own function. The driver is what they land on now, and the function
+	// is named in the write's PATH instead — which a carriage does not read. A shell keeps
+	// it, which is what a shell is for.
+	assert.Assert(t, remainder["steps/run"], "run comes back from nothing now: %v", schema.Remainder("workflow"))
 }
 
 // AND THE VALUES REALLY COME BACK — checked against the fixture's own document, read off
@@ -88,8 +104,9 @@ func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 	want := map[string]string{}
 	for i, s := range authored.Steps {
 		at := "steps/" + strconv.Itoa(i)
-		want[at+"/run"] = s.Run
 		want[at+"/attempts"] = strconv.Itoa(s.Attempts)
+		// defaulted, and it comes back from the queue's dead-letter
+		want[at+"/on_error"] = "failed"
 		// the composed one: the queue is called `checkout_reserve`, and `reserve` is what
 		// is left once the prefix the lowering declared is taken off it
 		want[at+"/name"] = s.Name

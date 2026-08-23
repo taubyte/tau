@@ -1,5 +1,6 @@
 id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zb
 description: reserve the stock, then charge. a failed charge lands in checkout_failed for a person - putting the stock back automatically is a compensation branch, which a line cannot hold
+start: reserve
 timeout: 1h
 concurrency: 50
 steps:
