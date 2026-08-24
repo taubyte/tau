@@ -161,14 +161,19 @@ func referenceRelations(res compiled, byID map[string]compiled, find func(kind, 
 			}
 			continue
 		}
-		// the entries of a nested group carry references of their own, and a list's
-		// entries are ordered, so the verb says which one
-		for i, el := range res.elements(ref.In) {
-			r, ok := resolveReference(res, el, ref, byID, find)
+		// THE ENTRIES OF A NESTED GROUP CARRY REFERENCES OF THEIR OWN, and there are two
+		// kinds of entry: a list's, which are ORDERED, and a named group's, which are
+		// KEYED. Both compile — one to a []any, one to a map — and only the first was
+		// walked, so every `variables: {NAME: {secret: {name: …}}}` drew no arrow at all
+		// on six kinds while the schema said out loud that naming a secret there is a use
+		// of it. What tells them apart is what the entry is CALLED: a position has no
+		// name, so the verb numbers it; a named entry says its own name.
+		for _, e := range entriesOf(res, ref.In) {
+			r, ok := resolveReference(res, e.fields, ref, byID, find)
 			if !ok {
 				continue
 			}
-			r.Verb = ref.In + " #" + strconv.Itoa(i+1)
+			r.Verb = ref.In + " " + e.label
 			out = append(out, r)
 		}
 	}
@@ -238,4 +243,41 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 		r.From, r.To = to.id, res.id
 	}
 	return r, true
+}
+
+// entry is one member of a nested group, with what to call it: `#2` for a position in a
+// list, the key itself for a named entry.
+type entry struct {
+	label  string
+	fields map[string]any
+}
+
+// entriesOf walks a nested group whichever shape it compiled to. A DefineList lands as an
+// ordered []any and a DefineGroup as a map keyed by name; sorted, because a relation list
+// that reorders between two compiles of the same project is a diff nobody made.
+func entriesOf(res compiled, in string) []entry {
+	switch held := fieldValue(res.fields, in).(type) {
+	case []any:
+		out := make([]entry, 0, len(held))
+		for i, it := range held {
+			if m, ok := it.(map[string]any); ok {
+				out = append(out, entry{label: "#" + strconv.Itoa(i+1), fields: m})
+			}
+		}
+		return out
+	case map[string]any:
+		names := make([]string, 0, len(held))
+		for name := range held {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		out := make([]entry, 0, len(names))
+		for _, name := range names {
+			if m, ok := held[name].(map[string]any); ok {
+				out = append(out, entry{label: name, fields: m})
+			}
+		}
+		return out
+	}
+	return nil
 }

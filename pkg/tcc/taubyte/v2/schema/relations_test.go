@@ -110,3 +110,35 @@ func TestRelationsTurnDeliveredVerbsAround(t *testing.T) {
 	}
 	assert.Assert(t, found)
 }
+
+// A NAMED ENTRY'S REFERENCE IS AN EDGE, and it says which entry it came from.
+//
+// A reference declared inside a nested group was only ever walked when the group was an
+// ordered LIST, so every `variables: {NAME: {secret: {name: …}}}` drew nothing on any of
+// the six kinds that carry a variables block — while the schema said out loud that naming
+// a secret there is a use of it. Silent, and the drawing was the only place it would have
+// shown: nothing else reads that reference.
+func TestANamedEntryReferenceDrawsAnEdge(t *testing.T) {
+	obj := compiledExample(t)
+	byID := map[string]schema.Instance{}
+	for _, r := range schema.Resources(obj) {
+		byID[r.ID] = r
+	}
+
+	var found []string
+	for _, rel := range schema.Relations(obj) {
+		if byID[rel.From].Kind != "secret" || byID[rel.To].Kind != "application" {
+			continue
+		}
+		if !strings.HasPrefix(rel.Verb, "variables ") {
+			continue // the same secret is also read directly and pulls an image
+		}
+		found = append(found, byID[rel.From].Name+" -"+rel.Verb+"-> "+byID[rel.To].Name)
+	}
+
+	// The arrow runs FROM the secret, because that reference is Inbound(): a secret's
+	// value travels out of it, and there is no verb that writes one from a workload. The
+	// entry is named by the author, so the edge is named by the entry rather than by a
+	// position, which a map does not have.
+	assert.DeepEqual(t, found, []string{"stripe -variables STRIPE_KEY-> api"})
+}
