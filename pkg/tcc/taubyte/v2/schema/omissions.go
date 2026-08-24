@@ -174,18 +174,16 @@ var Omissions = []Omission{
 			"a count in git.",
 	},
 	{
-		Name:    "workflows",
-		State:   Open,
-		Decided: ByDefault,
-		Why: "Two claims were run together here, and only one of them is this package's to make. " +
-			"FORCED: a workflow engine built beside entities is a second fence over the same " +
-			"state, and the mechanism — epoch, journal, timer, suspend — is most of the entity's " +
-			"already. PRODUCT, and not decided here: whether a workflow-shaped surface ships at " +
-			"all. Plenty of buyers shop for that noun; `durable: true` on an entity is a different " +
-			"sale even when it is the same machinery.",
-		Instead: "entities with `durable: true` — the epoch fence, journal and timer are the entity's own.",
-		Unblocks: "an owner call on the surface. If it ships, it is a library and a CLI over entities, " +
-			"never a second execution engine and never a step-function language.",
+		Name:    "a workflow engine of its own, beside entities",
+		State:   Never,
+		Decided: Forced,
+		Why: "The kind exists and it LOWERS: a queue and a driver per step, a terminal queue, and " +
+			"the run's state travelling in the message. What is refused is the other reading — a " +
+			"workflow ENGINE built beside entities, with its own epoch, journal, timer and " +
+			"suspend. That is a second fence over the same state, and the mechanism is most of " +
+			"the entity's already.",
+		Instead: "the composition, plus entities with `durable: true` where a run needs a fence: " +
+			"the epoch, journal and timer are the entity's own.",
 	},
 	{
 		Name:    "domains",
@@ -346,24 +344,6 @@ var Omissions = []Omission{
 			"compensation path.",
 		Unblocks: "Catch, which is the same shape as Choice — a branch out of the line — and, for " +
 			"history, a database and a decision about what is worth writing down.",
-	},
-	{
-		Name:    "emitting what a workflow lowers into",
-		State:   Open,
-		Decided: ByOwner,
-		Why: "tcc computes the plan — the queues, the entity, and the wiring between them — and " +
-			"stops there. It does not write those resources into the compiled object, so nothing " +
-			"downstream can provision them yet.",
-		Instead: "the plan, which is enough to draw, audit and cost, and which the explorer shows.",
-		Unblocks: "three decisions, none of them code, plus one requirement. The id is settled: " +
-			"a derived resource's id is a pure function of its source's id, the kind, and the " +
-			"part (engine.DeriveResourceID), so the same config compiles to the same id forever " +
-			"and a rename of the source does not re-key what it produced. Left: whether a derived " +
-			"queue counts against the project's quota. What `tau graph` shows — the workflow, or " +
-			"what it became. What happens on the collision an audit check already reports. And " +
-			"the requirement: whatever is emitted carries where it came from, because tcc " +
-			"DECOMPILES — a compiled project holding three queues nobody wrote has to go back to " +
-			"yaml as a workflow, not as three queue documents.",
 	},
 	{
 		Name:    "an agent's instructions as a file",

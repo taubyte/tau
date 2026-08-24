@@ -111,7 +111,13 @@ func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 	want := map[string]string{}
 	for i, s := range authored.Steps {
 		at := "steps/" + strconv.Itoa(i)
-		want[at+"/attempts"] = strconv.Itoa(s.Attempts)
+		// a step that writes no attempts still carries the default, and the default is
+		// what the queue was built with, so it is what comes back
+		attempts := s.Attempts
+		if attempts == 0 {
+			attempts = 1
+		}
+		want[at+"/attempts"] = strconv.Itoa(attempts)
 		// defaulted, and it comes back from the queue's dead-letter
 		want[at+"/on_error"] = "failed"
 		// the composed one: the queue is called `checkout_reserve`, and `reserve` is what

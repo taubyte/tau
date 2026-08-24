@@ -793,3 +793,20 @@ func LayoutOf() Layout {
 		Leaf:     engine.ContainerDoc(GenerationRoot(), scopeContainer),
 	}
 }
+
+// NotNamed refuses one reserved word as a value, where the reason is local to the field
+// rather than to the project: a workflow's steps each become `{workflow}_{step}`, and
+// runs that gave up land in `{workflow}_failed`, so a step called `failed` is two
+// resources with one name. The lowering refuses that collision too, correctly, but with
+// an error about produced names that reads a long way from the line that caused it.
+//
+// A declaration, not a check, because there is nothing to look up: the word is fixed and
+// the field is one value.
+func NotNamed(reserved string) engine.Option {
+	return Validator(func(s string) error {
+		if s == reserved {
+			return fmt.Errorf("%q is reserved here: it is the name of the queue a run that gave up lands in", reserved)
+		}
+		return nil
+	})
+}

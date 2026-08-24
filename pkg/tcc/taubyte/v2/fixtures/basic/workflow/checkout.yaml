@@ -14,6 +14,8 @@ steps:
           interval: 5s
           factor: 2
           ceiling: 1m
+    - name: settle
+      wait: 30s
     - name: charge
       call:
           function: charge_card

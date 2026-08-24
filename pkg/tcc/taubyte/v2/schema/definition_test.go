@@ -876,6 +876,7 @@ func TestWorkflowLowers(t *testing.T) {
 	}
 	assert.Assert(t, got["queue/checkout_reserve"] != "", "one queue per step: %v", got)
 	assert.Assert(t, got["queue/checkout_charge"] != "")
+	assert.Assert(t, got["queue/checkout_settle"] != "", "a wait is a step, so it becomes a queue and a driver like any other: %v", got)
 	assert.Assert(t, got["queue/checkout_failed"] != "", "somewhere for a step that gave up")
 
 	// AND ONE DRIVER PER STEP, which is what makes the box readable when it is opened:
@@ -885,6 +886,7 @@ func TestWorkflowLowers(t *testing.T) {
 	// resource's identity here.
 	assert.Assert(t, got["function/checkout_reserve"] != "", "one driver per step: %v", got)
 	assert.Assert(t, got["function/checkout_charge"] != "")
+	assert.Assert(t, got["function/checkout_settle"] != "")
 	// AND NOTHING ELSE. A channel was produced here so that finishing had an address,
 	// and nothing authored asked for it — which is the rule everywhere else in this
 	// vocabulary, and what every durable engine in the market does: step history for
@@ -926,7 +928,7 @@ func TestWorkflowLowers(t *testing.T) {
 	// FORWARD PROGRESS IS ONE GRANT. The driver sends to exactly one queue — the next
 	// step's — so "which of these means next" is not a question anybody has to answer by
 	// reading names. The last step has no next and the write is dropped.
-	assert.Equal(t, writes["function/checkout_reserve queue/checkout_charge/ops"], "send")
+	assert.Equal(t, writes["function/checkout_reserve queue/checkout_settle/ops"], "send")
 	assert.Equal(t, writes["function/checkout_charge queue/checkout_charge/ops"], "receive")
 	for k, v := range writes {
 		assert.Assert(t, !strings.HasPrefix(k, "function/checkout_charge queue/") || v != "send",

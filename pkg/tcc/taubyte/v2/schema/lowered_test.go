@@ -94,7 +94,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 
 	workflow := idOf(t, flat, "workflow", "checkout")
 	made, added := schema.Became(flat, workflow)
-	assert.Equal(t, len(made), 5, "a queue and a driver per step, and the one they fail into")
+	assert.Equal(t, len(made), 7, "a queue and a driver per step, and the one they fail into")
 
 	kinds := map[string]int{}
 	for _, id := range made {
@@ -102,8 +102,8 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 		assert.Assert(t, rec.Produced(id))
 		kinds[rec.Resources[id].Kind]++
 	}
-	assert.Equal(t, kinds["queue"], 3)
-	assert.Equal(t, kinds["function"], 2, "a driver per step")
+	assert.Equal(t, kinds["queue"], 4)
+	assert.Equal(t, kinds["function"], 3, "a driver per step, whatever the step does")
 	assert.Equal(t, kinds["channel"], 0, "nothing authored asked for a channel")
 	assert.Equal(t, kinds["group"], 0)
 	assert.Equal(t, kinds["namespace"], 0)
@@ -115,7 +115,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 		byWhat[strings.Join(g.Path, "/")+" "+g.Value] = g.On
 	}
 	assert.Equal(t, byWhat["queue/checkout_reserve/ops receive"], idOf(t, flat, "function", "checkout_reserve"))
-	assert.Equal(t, byWhat["queue/checkout_charge/ops send"], idOf(t, flat, "function", "checkout_reserve"))
+	assert.Equal(t, byWhat["queue/checkout_settle/ops send"], idOf(t, flat, "function", "checkout_reserve"))
 	assert.Equal(t, byWhat["queue/checkout_charge/ops receive"], idOf(t, flat, "function", "checkout_charge"))
 	// and the one write that lands on something the AUTHOR wrote: where a start goes
 	assert.Equal(t, byWhat["entry/start/name checkout_reserve"], idOf(t, flat, "workflow", "checkout"))
@@ -599,4 +599,46 @@ func TestAProducedReferenceResolvesInTheProducedScope(t *testing.T) {
 	_, saidWhere := out["namespace"]
 	assert.Assert(t, !saidWhere, "the entry names a namespace the function is not in: %v", out)
 	assert.DeepEqual(t, out["ops"], []string{"invoke"})
+}
+
+// A STEP'S DRIVER CAN FIND ITS OWN STEP, and that is what makes a field the driver reads
+// carried rather than inert.
+//
+// `wait`, `call/input` and `call/result` are copied onto no produced resource, on purpose:
+// the shell keeps its steps, so copying them would be the same fact in two places for two
+// edits to disagree about. What makes them reachable instead is the record — a produced
+// driver's provenance says which resource it came from and WHERE INSIDE IT, so a consumer
+// holding the compiled object walks `from` to the workflow and `at` to the element. If
+// that ever stops being true, the fields become decoration and this test is what says so.
+func TestADriverCanFindTheStepItCameFrom(t *testing.T) {
+	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	flat := obj.Flat()
+
+	rec := interp.LoweredOf(flat)
+	prov, ok := rec.Resources[idOf(t, flat, "function", "checkout_settle")]
+	assert.Assert(t, ok, "the driver is not recorded as produced at all")
+	assert.Equal(t, prov.From, idOf(t, flat, "workflow", "checkout"), "it does not say what it came from")
+	assert.Equal(t, prov.At, "steps/1", "it does not say where inside")
+
+	// and walking that join reaches the step, with the field only the driver reads
+	wf := resource(t, flat, "workflow", "checkout")
+	steps, _ := wf["steps"].([]any)
+	assert.Assert(t, len(steps) > 1)
+	step, _ := steps[1].(map[string]any)
+	assert.Equal(t, step["name"], "settle")
+	assert.Equal(t, step["wait"], "30s", "the duration the driver has to apply is not there: %v", step)
+
+	// the same join carries what a call is handed and where its answer goes
+	first, _ := steps[0].(map[string]any)
+	call, _ := first["call"].(map[string]any)
+	assert.Equal(t, call["input"], "order.lines")
+	assert.Equal(t, call["result"], "reservation")
+
+	// and a step that waits invokes nothing: the driver holds no function grant at all
+	drv := resource(t, flat, "function", "checkout_settle")
+	_, invokes := drv["function"]
+	assert.Assert(t, !invokes, "a wait step's driver was granted a call: %v", drv["function"])
 }

@@ -1555,13 +1555,13 @@ var V2Resources = []*Node{
 		)),
 
 	// A state machine over things that already exist. Steps run in the order written;
-	// each names a function, may be retried, and may hand off to another step when it
+	// each does one thing, may be retried, and may hand off to another step when it
 	// finally fails.
 	//
 	// IT LOWERS. A workflow is not a component — nothing in the substrate runs
-	// "workflows". Each step becomes a queue with the step's retry budget, failures
-	// land in a dead-letter queue, and the run's own state lives in an entity, which is
-	// the only kind here that gives a single writer per key. Every one of those is a
+	// "workflows". Each step becomes a queue holding its work and a DRIVER consuming it,
+	// failures land in a dead-letter queue, and the run's own state is the message that
+	// travels between them. Every one of those is a
 	// primitive this vocabulary already has and the platform already runs, which is
 	// what makes a workflow a compile-time construct rather than a new subsystem to
 	// operate. See Lowers() below, and interp/lowering.go for the expansion.
@@ -1595,15 +1595,6 @@ var V2Resources = []*Node{
 			// THE LOWERING, declared rather than computed. tcc expands it (interp/
 			// lowering.go); this says what a workflow becomes and nothing about how.
 			//
-			// One queue PER STEP rather than one for the workflow, because a queue is
-			// where a retry budget lives and the budget is the step's: `reserve` may be
-			// worth three attempts and `charge` exactly one. Sharing a queue would make
-			// the whole pipeline share whichever number was written last.
-			//
-			// An ENTITY for the run rather than a row in a database, because a run is
-			// the definition of a single-writer key — two nodes advancing the same run
-			// past the same step is the one thing this must not do, and an entity is the
-			// only kind here that fences it.
 			Lowers(
 				// ONE QUEUE PER STEP: a queue is where a retry budget lives, and the
 				// budget is the step's — `reserve` may be worth four attempts and
@@ -1928,23 +1919,31 @@ func entryGroup() *Node {
 
 func stepsGroup() *Node {
 	return DefineList("steps", []*Attribute{
-		String("name", Required(), IsVariableName(), InSection("steps"),
+		String("name", Required(), IsVariableName(), NotNamed(terminalStep), InSection("steps"),
 			Doc("Step", "What this step is called. Another step's on-error names it, the queue it becomes is named after it, and a start names one.")),
 
 		// WHAT THE STEP RUNS, as a block rather than a bare name, because a step has
 		// more to say about its call than which function: what it is handed, and where
 		// the answer is kept.
 		//
-		// THIS IS NOT A TYPE SWITCH YET, and the reason is an engine fault rather than a
-		// decision: a `Captures()` branch key inside a list element does not survive
-		// decompile. A resource's attributes are written back through their declared
-		// paths, so a matcher path has no authored key and is skipped — `storage` proves
-		// it, compiling `type: object` and decompiling to `object:` with no `type` in
-		// sight. A list element is written back as DATA, so the captured key lands in the
-		// yaml and the next compile refuses it as unknown. Until that is fixed a step is
-		// a call and only a call; `wait`, `choice` and `map` are the branches this block
-		// makes room for.
-		String(Key("call", "function"), Path("call", "function"), Required(), IsVariableName(), Ref("function", ByName()), InSection("steps"),
+		// WHICH KEY IS PRESENT IS THE TYPE. There is no `type:` field beside these and no
+		// Either() capturing one — a step that opens `call:` is a call and a step that
+		// opens `wait:` is a wait, and materialising that a second time is the same fact
+		// twice for two edits to disagree about.
+		//
+		// It is also what a captured branch key cannot do here. A resource's attributes
+		// are written back through their declared paths, so a matcher path has no
+		// authored key and decompile skips it — `storage` compiles `type: object` and
+		// decompiles to `object:` with no `type` in sight. A list element is written back
+		// as DATA, so a captured key would land in the yaml and the next compile would
+		// refuse it as unknown. Plain keys have no such half: what compiles is what was
+		// written.
+		//
+		// What that costs is the declaration refusing a step that opens two of them, so
+		// checkWorkflows says it instead — the one place in this vocabulary where a
+		// mutual exclusion is a check rather than an Either(), and the reason is written
+		// here so nobody 'fixes' it into one.
+		String(Key("call", "function"), Path("call", "function"), IsVariableName(), Ref("function", ByName()), InSection("steps"),
 			Doc("Function", "The function this step runs.")),
 		String(Key("call", "namespace"), Path("call", "namespace"), IsNamespacePath(), InSection("steps"),
 			Doc("Namespace", "Path to the namespace holding the function, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
@@ -1960,6 +1959,12 @@ func stepsGroup() *Node {
 			Doc("Input", "What the function is handed, as an expression over the run's state, e.g. \"order.lines\". Omitted hands it the whole state.")),
 		String(Key("call", "result"), Path("call", "result"), IsVariableName(), InSection("steps"),
 			Doc("Result", "Where the function's answer is kept in the run's state, by name. Omitted means the answer replaces the state.")),
+
+		// A STEP THAT ONLY WAITS. Not a Duration(): scalar codecs do not run inside a
+		// list element (§2a), so this is carried as the human string it was written as
+		// and the driver parses it — which is where the delay is applied anyway.
+		String(Key("wait"), Path("wait"), InSection("steps"),
+			Doc("Wait", "Pause for this long, then carry on: a human string (e.g. \"30s\", \"1h\"). A step waits or calls, never both.")),
 
 		// ATTEMPTS, not retries. "3 retries" is three or four runs depending on who is
 		// reading, and the number lands in a queue's `max_attempts`, which counts runs —

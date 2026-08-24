@@ -653,6 +653,29 @@ func checkWorkflows(all []compiled) []Finding {
 		for _, step := range steps {
 			named[field(step, "name")] = true
 		}
+
+		// WHICH KEY IS PRESENT IS THE TYPE, so exactly one of them has to be. This is the
+		// one mutual exclusion in this vocabulary that is a check rather than an Either()
+		// — see the comment on stepsGroup: a captured branch key is the only projection
+		// that happens inside a list element, and decompile skips elements precisely
+		// because it assumes none does, so the switch would compile and then fail to
+		// write itself back.
+		for _, step := range steps {
+			name := field(step, "name")
+			// a step element nests, so the call's fields are a level down
+			_, calls := fieldValue(step, "call/function").(string)
+			_, waits := fieldValue(step, "wait").(string)
+			switch {
+			case calls && waits:
+				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+					fmt.Sprintf("step %q both calls a function and waits", name),
+					"A step does one thing. Give the wait a step of its own, before or after the one that calls.", res.id})
+			case !calls && !waits:
+				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+					fmt.Sprintf("step %q does nothing: it neither calls nor waits", name),
+					"A step is what it opens: `call:` to run a function, `wait:` to pause. With neither, the run passes through it and the queue it became is never consumed.", res.id})
+			}
+		}
 		// A step that is BOTH the next in the line and somebody's error target runs on
 		// success as well as on failure, which is almost never what a compensation step
 		// is for: "put the stock back" after a charge that WORKED. The line has one
@@ -680,16 +703,6 @@ func checkWorkflows(all []compiled) []Finding {
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 				fmt.Sprintf("starts at %q, which is not a step of this workflow", start),
 				"A start lands on the named step's queue. Naming something else means a start goes to a queue that was never produced.", res.id})
-		}
-
-		// A step called `failed` collides with the terminal queue — both become
-		// `{workflow}_failed` — which the lowering refuses, correctly, with a name
-		// collision nobody can read back to this. Said here instead, where it is about
-		// the config somebody wrote.
-		if named[terminalStep] {
-			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-				fmt.Sprintf("has a step called %q, which is the name of its own terminal queue", terminalStep),
-				"Every step becomes {workflow}_{step}, and runs that gave up land in {workflow}_failed. Call the step something else.", res.id})
 		}
 
 		for _, step := range steps {
