@@ -691,3 +691,45 @@ func TestAnAgentCanHandOffToAnotherAgent(t *testing.T) {
 	}
 	assert.Assert(t, handoff, "nothing draws the handoff")
 }
+
+// AN MCP SERVER IS A TOOL REGISTRY, so an agent names one the way it names any other
+// tool: an access entry, with the verbs the protocol itself uses. Before `mcp` declared
+// ops there was no access block for the kind at all, so the only way to reach one was out
+// through its own gateway route — leaving the cloud to call something inside it.
+func TestAnAgentCanUseAnMcpServer(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+	assert.NilError(t, afero.WriteFile(fs, "/mcp/orders.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zw\n"+
+			"description: the order tools, as an MCP server\n"+
+			"function:\n    checkout:\n        ops: [invoke]\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/agent/shopper.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zx\n"+
+			"description: an agent whose tools come from an MCP server\n"+
+			"model:\n    name: opus\n"+
+			"instructions: help with orders\n"+
+			"limits:\n    steps: 6\n"+
+			"mcp:\n    orders:\n        ops: [list, call]\n"), 0o644))
+
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+
+	shopper := resource(t, obj.Flat(), "agent", "shopper")
+	servers, _ := shopper["mcp"].(map[string]any)
+	entry, _ := servers["orders"].(map[string]any)
+	assert.Assert(t, entry != nil, "the agent declares no MCP access: %v", shopper["mcp"])
+	assert.DeepEqual(t, entry["ops"], []string{"list", "call"})
+
+	// and a verb the kind does not declare is refused, which is what Ops() is for
+	assert.NilError(t, afero.WriteFile(fs, "/agent/shopper.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zx\n"+
+			"model:\n    name: opus\n"+
+			"limits:\n    steps: 6\n"+
+			"mcp:\n    orders:\n        ops: [subscribe]\n"), 0o644))
+	c, err = schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "subscribe")
+}

@@ -356,18 +356,6 @@ var Omissions = []Omission{
 		Unblocks: "the same shape a variable's `as: file` wants: a path into the resource's repository.",
 	},
 	{
-		Name:    "an MCP server as an agent's tools",
-		State:   Open,
-		Decided: ByOwner,
-		Why: "An agent's tools are the functions it declares access to, which is the whole design — " +
-			"one grant path, and the target's authorizer sees it. But `mcp` declares no ops, so an " +
-			"agent cannot name one, and an MCP server IS a tool registry. Reaching it through its " +
-			"gateway route means leaving the cloud to call something inside it, which is the " +
-			"mistake the stream kind exists to stop.",
-		Instead:  "functions, named one by one.",
-		Unblocks: "ops on `mcp` — `tools` to list and `call` to invoke — which is a small addition and a real decision.",
-	},
-	{
 		Name:    "authenticated MCP",
 		State:   Blocked,
 		Decided: Forced,

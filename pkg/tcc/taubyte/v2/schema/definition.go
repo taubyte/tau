@@ -1331,6 +1331,23 @@ var V2Resources = []*Node{
 			GroupDoc("An MCP server grouping functions as tools. Stateless Streamable HTTP; subscriptions are declined in v1."), Icon("plug"), Category("internet"),
 			secIdentity, secAccess,
 			Section("tools", "Tools", "tools/list caching."),
+
+			// WHAT REACHES AN MCP SERVER, and the verbs are the protocol's own methods:
+			// `tools/list` asks what there is and `tools/call` runs one. An agent naming
+			// this kind is the point — an MCP server IS a tool registry, and an agent's
+			// tools are what it declares access to, so without these an agent could only
+			// reach one by leaving the cloud through its own gateway route to call
+			// something that lives inside it.
+			//
+			// `call` is a WRITE and `list` is a READ, which is the same reading `invoke`
+			// gets on a function: asking what tools exist reveals a catalogue, running
+			// one may do anything the tool can.
+			//
+			// Two the protocol has and this does not: `resources/read` and `prompts/get`.
+			// Neither has a field on this kind yet — an mcp groups functions, and nothing
+			// here declares a resource or a prompt to serve — so a verb for them would
+			// grant access to something nobody can publish.
+			Ops(ReadOp("list"), WriteOp("call")),
 			Resource("mcp", "MCP", "MCP", "mcp"),
 		)),
 
