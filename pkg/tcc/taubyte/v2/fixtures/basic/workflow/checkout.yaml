@@ -5,8 +5,17 @@ timeout: 1h
 concurrency: 50
 steps:
     - name: reserve
-      run: reserve_stock
+      call:
+          function: reserve_stock
+          input: order.lines
+          result: reservation
       attempts: 4
+      backoff:
+          interval: 5s
+          factor: 2
+          ceiling: 1m
     - name: charge
-      run: charge_card
+      call:
+          function: charge_card
+          input: reservation
       attempts: 1

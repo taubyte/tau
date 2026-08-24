@@ -26,7 +26,7 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	for _, c := range got {
 		by[c.Field+" "+c.In+" -> "+c.Into+"/"+c.As] = c
 	}
-	assert.Equal(t, len(got), 6, "got %v", got)
+	assert.Equal(t, len(got), 9, "got %v", got)
 
 	// a step's attempts becomes its queue's max-attempts, whole
 	attempts := by["attempts steps -> queue/max_attempts"]
@@ -70,12 +70,15 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	for _, carried := range []string{"steps/attempts", "steps/name", "steps/on_error"} {
 		assert.Assert(t, !remainder[carried], "%s is carried, so a shell storing it stores it twice", carried)
 	}
-	// `run` is NOT carried any more, and that is the composition's doing: it used to be
-	// the NAME of the resource the lowering wrote into, back when a step's entries landed
-	// on the author's own function. The driver is what they land on now, and the function
-	// is named in the write's PATH instead — which a carriage does not read. A shell keeps
-	// it, which is what a shell is for.
-	assert.Assert(t, remainder["steps/run"], "run comes back from nothing now: %v", schema.Remainder("workflow"))
+	// The function a step calls is NOT carried, and that is the composition's doing: it
+	// used to be the NAME of the resource the lowering wrote into, back when a step's
+	// entries landed on the author's own function. The driver is what they land on now,
+	// and the function is named in the write's PATH instead — which a carriage does not
+	// read. A shell keeps it, which is what a shell is for; so are the two fields that
+	// only the driver reads, `input` and `result`, which no produced resource carries.
+	for _, kept := range []string{"steps/call/function", "steps/call/input", "steps/call/result"} {
+		assert.Assert(t, remainder[kept], "%s comes back from nothing: %v", kept, schema.Remainder("workflow"))
+	}
 }
 
 // AND THE VALUES REALLY COME BACK — checked against the fixture's own document, read off
@@ -92,8 +95,12 @@ func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 	var authored struct {
 		Steps []struct {
 			Name     string `yaml:"name"`
-			Run      string `yaml:"run"`
 			Attempts int    `yaml:"attempts"`
+			Backoff  struct {
+				Interval string  `yaml:"interval"`
+				Factor   float64 `yaml:"factor"`
+				Ceiling  string  `yaml:"ceiling"`
+			} `yaml:"backoff"`
 		} `yaml:"steps"`
 	}
 	body, err := os.ReadFile("../fixtures/basic/workflow/checkout.yaml")
@@ -110,6 +117,12 @@ func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 		// the composed one: the queue is called `checkout_reserve`, and `reserve` is what
 		// is left once the prefix the lowering declared is taken off it
 		want[at+"/name"] = s.Name
+		// and the schedule, which comes back off the queue that enforces it
+		if s.Backoff.Interval != "" {
+			want[at+"/backoff/interval"] = s.Backoff.Interval
+			want[at+"/backoff/ceiling"] = s.Backoff.Ceiling
+			want[at+"/backoff/factor"] = strconv.FormatFloat(s.Backoff.Factor, 'f', -1, 64)
+		}
 	}
 	assert.DeepEqual(t, got, want)
 }

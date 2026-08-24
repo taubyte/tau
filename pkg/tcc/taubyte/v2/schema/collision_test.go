@@ -19,7 +19,7 @@ func TestProducedTwiceNamesTheStep(t *testing.T) {
 		"/function/a.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nsource: \".\"\nexecution:\n    call: a\n    timeout: 10s\n    memory: 16MB\n",
 		"/function/b.yaml": "id: QmTaCZBnrxvJm5xkLQKN4o3TFhBqHfLYCUuCkFTGiT8s8t\nsource: \".\"\nexecution:\n    call: b\n    timeout: 10s\n    memory: 16MB\n",
 		// two steps called the same thing, so both derive queue/w_s
-		"/workflow/w.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zb\nstart: s\nsteps:\n    - name: s\n      run: a\n    - name: s\n      run: b\n",
+		"/workflow/w.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zb\nstart: s\nsteps:\n    - name: s\n      call:\n          function: a\n    - name: s\n      call:\n          function: b\n",
 	} {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(body), 0644))
 	}

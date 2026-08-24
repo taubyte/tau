@@ -225,7 +225,8 @@ func TestLoweringInsideANamespace(t *testing.T) {
 			"start: pack\n"+
 			"steps:\n"+
 			"    - name: pack\n"+
-			"      run: notify\n"+
+			"      call:\n"+
+			"          function: notify\n"+
 			"      attempts: 2\n"), 0o644))
 
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -262,10 +263,12 @@ func TestTwoLoweringsWriteIntoOneProducedResource(t *testing.T) {
 			"start: first\n"+
 			"steps:\n"+
 			"    - name: first\n"+
-			"      run: charge_card\n"+
+			"      call:\n"+
+			"          function: charge_card\n"+
 			"      attempts: 2\n"+
 			"    - name: second\n"+
-			"      run: reserve_stock\n"+
+			"      call:\n"+
+			"          function: reserve_stock\n"+
 			"      attempts: 1\n"), 0o644))
 
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -308,7 +311,8 @@ func TestAnAuthoredValueIsNotReplaced(t *testing.T) {
 			"        name: somewhere_else\n"+
 			"steps:\n"+
 			"    - name: only\n"+
-			"      run: charge_card\n"+
+			"      call:\n"+
+			"          function: charge_card\n"+
 			"      attempts: 1\n"), 0o644))
 
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -399,7 +403,8 @@ func TestAnAuthoredOpIsNotRecordedAsGranted(t *testing.T) {
 			"start: only\n"+
 			"steps:\n"+
 			"    - name: only\n"+
-			"      run: relay_own\n"+
+			"      call:\n"+
+			"          function: relay_own\n"+
 			"      attempts: 1\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/function/relay_own.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zu\n"+

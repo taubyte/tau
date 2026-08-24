@@ -952,6 +952,18 @@ var V2Resources = []*Node{
 			commonAttributes(
 				Duration("visibility_timeout", Default("30s"), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
 				Int("max_attempts", Default(5), InSection("delivery"), Doc("Max Attempts", "Deliveries before the item moves to the dead-letter queue.")),
+
+				// HOW REDELIVERY IS SPACED. The queue owns it because the queue is what
+				// redelivers — a workflow step's `backoff` is copied onto the queue it
+				// becomes, and every other queue user gets the same three fields for
+				// free. Absent means the visibility timeout alone governs, which is what
+				// happened before these existed.
+				Duration(Key("retry", "interval"), InSection("delivery"),
+					Doc("Retry Interval", "Delay before a failed delivery becomes deliverable again. Absent means the visibility timeout alone governs.")),
+				Float(Key("retry", "factor"), InSection("delivery"),
+					Doc("Retry Factor", "Multiplier applied to the interval per further attempt: the delay for attempt n is interval times factor^(n-1), capped by the ceiling. Absent or 1 means a fixed interval.")),
+				Duration(Key("retry", "ceiling"), InSection("delivery"),
+					Doc("Retry Ceiling", "The delay never grows past this. Absent means it is not capped.")),
 				// A REFERENCE IS A BLOCK. The kind is on the Ref, so writing it into the
 				// value is the same fact twice; and `<kind>/<name>` has nowhere to say
 				// WHICH namespace, so it silently means "somewhere up from here". Same
@@ -1607,6 +1619,10 @@ var V2Resources = []*Node{
 					Named(Concat(Attr("name"), Text("_"), Each("name"))),
 					Carries(Concat(Text("work waiting for step "), Each("name"))),
 					Sets("max_attempts", Each("attempts")),
+					// the schedule, onto the kind that enforces it. Unset fields drop.
+					Sets(Key("retry", "interval"), Each(Key("backoff", "interval"))),
+					Sets(Key("retry", "factor"), Each(Key("backoff", "factor"))),
+					Sets(Key("retry", "ceiling"), Each(Key("backoff", "ceiling"))),
 
 					// EXHAUSTION IS ROUTED, NOT GRANTED, and the queue's own mechanism
 					// does it: dead-lettering fires exactly when attempts run out, which
@@ -1658,7 +1674,7 @@ var V2Resources = []*Node{
 					// the project root and finds what they wrote.
 					Reaches("invoke",
 						From("function", Concat(Attr("name"), Text("_"), Each("name"))),
-						To("function", Each("run"), Each("namespace"))),
+						To("function", Each(Key("call", "function")), Each(Key("call", "namespace")))),
 
 					// FORWARD PROGRESS: the driver's ONE send. The last step has no next,
 					// so the term cannot fill and the write is dropped — which is exactly
@@ -1916,22 +1932,61 @@ func entryGroup() *Node {
 func stepsGroup() *Node {
 	return DefineList("steps", []*Attribute{
 		String("name", Required(), IsVariableName(), InSection("steps"),
-			Doc("Step", "What this step is called. Another step's on-error names it, and the run's state is keyed by it.")),
-		String("namespace", IsNamespacePath(), InSection("steps"),
+			Doc("Step", "What this step is called. Another step's on-error names it, the queue it becomes is named after it, and a start names one.")),
+
+		// WHAT THE STEP RUNS, as a block rather than a bare name, because a step has
+		// more to say about its call than which function: what it is handed, and where
+		// the answer is kept.
+		//
+		// THIS IS NOT A TYPE SWITCH YET, and the reason is an engine fault rather than a
+		// decision: a `Captures()` branch key inside a list element does not survive
+		// decompile. A resource's attributes are written back through their declared
+		// paths, so a matcher path has no authored key and is skipped — `storage` proves
+		// it, compiling `type: object` and decompiling to `object:` with no `type` in
+		// sight. A list element is written back as DATA, so the captured key lands in the
+		// yaml and the next compile refuses it as unknown. Until that is fixed a step is
+		// a call and only a call; `wait`, `choice` and `map` are the branches this block
+		// makes room for.
+		String(Key("call", "function"), Path("call", "function"), Required(), IsVariableName(), Ref("function", ByName()), InSection("steps"),
+			Doc("Function", "The function this step runs.")),
+		String(Key("call", "namespace"), Path("call", "namespace"), IsNamespacePath(), InSection("steps"),
 			Doc("Namespace", "Path to the namespace holding the function, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
-		String("run", Required(), IsVariableName(), Ref("function", ByName()), InSection("steps"),
-			Doc("Function", "The function this step invokes.")),
+
+		// WHAT IT IS HANDED AND WHERE THE ANSWER GOES. Every declarative peer has these
+		// two — ASL's Arguments/Output, Google Cloud Workflows' args/result, Conductor's
+		// input parameters — and without them a pipeline past the trivial case has to
+		// reshape its message inside the functions, which puts wiring in code.
+		//
+		// `input` is an EXPRESSION, parsed where it is written. `result` is a NAME: it
+		// says where in the run's state the answer is kept, and a name is not computed.
+		String(Key("call", "input"), Path("call", "input"), IsExpression(), InSection("steps"),
+			Doc("Input", "What the function is handed, as an expression over the run's state, e.g. \"order.lines\". Omitted hands it the whole state.")),
+		String(Key("call", "result"), Path("call", "result"), IsVariableName(), InSection("steps"),
+			Doc("Result", "Where the function's answer is kept in the run's state, by name. Omitted means the answer replaces the state.")),
 
 		// ATTEMPTS, not retries. "3 retries" is three or four runs depending on who is
-		// reading, and the number lands in a queue's `max-attempts`, which counts runs
-		// — so the config counts what the thing it becomes counts, and the lowering is
-		// a copy rather than arithmetic. Templates must not grow a calculator.
+		// reading, and the number lands in a queue's `max_attempts`, which counts runs —
+		// so the config counts what the thing it becomes counts, and the lowering is a
+		// copy rather than arithmetic. Templates must not grow a calculator.
 		//
 		// Not a duration either: what a step may TAKE is the function's own
 		// execution/timeout, and a second ceiling here would be a number that disagrees
 		// with it.
 		Int("attempts", MinInt(1), Default(1), InSection("steps"),
-			Doc("Attempts", "How many times this step is run before it has failed. 1 means no retry. The delay between attempts is the queue's, not the step's.")),
+			Doc("Attempts", "How many times this step is run before it has failed. 1 means no retry.")),
+
+		// HOW THE ATTEMPTS ARE SPACED. Strings rather than Durations for the same reason
+		// as `wait`, and the queue's own Duration fields parse them: this is copied onto
+		// the kind that enforces it, which is where redelivery lives. No defaults — a
+		// step that says nothing produces a queue with no retry block, which is the
+		// honest reading of "no backoff".
+		String(Key("backoff", "interval"), InSection("steps"),
+			Doc("Backoff Interval", "Delay before a failed attempt is redelivered, e.g. \"5s\". Omitted means the queue's visibility timeout alone governs.")),
+		Float(Key("backoff", "factor"), InSection("steps"),
+			Doc("Backoff Factor", "Multiplier applied to the interval per further attempt. Omitted or 1 means a fixed interval.")),
+		String(Key("backoff", "ceiling"), InSection("steps"),
+			Doc("Backoff Ceiling", "The delay never grows past this, e.g. \"5m\". Omitted means no ceiling.")),
+
 		// DEFAULTED, and the default is not cosmetic. This fills the produced queue's
 		// dead_letter, which is what happens the moment attempts run out — the moment
 		// no code of this step is running. Without a value the write is dropped, the
@@ -1939,7 +1994,7 @@ func stepsGroup() *Node {
 		// exhausted run goes becomes something the executor has to invent.
 		String("on_error", IsVariableName(), Default(terminalStep), InSection("steps"),
 			Doc("On Error", "Another step to run when this one has exhausted its attempts. The default sends the run to the {workflow}_failed queue, where a person picks it up.")),
-	}, GroupDoc("One step: a function, how often it is retried, and where failure goes."))
+	}, GroupDoc("One step: what it does, how often it is attempted and how those attempts are spaced, and where failure goes."))
 }
 
 func transformersGroup() *Node {

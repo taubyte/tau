@@ -283,7 +283,7 @@ func TestAuditVolumeWriters(t *testing.T) {
 // the step, and which part of the lowering failed — or a generated-config diagnostic is
 // worth nothing.
 func TestAuditReportsALoweringFaultAgainstItsSource(t *testing.T) {
-	const wf = "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nstart: reserve\nsteps:\n    - name: reserve\n      run: %s\n      attempts: 2\n"
+	const wf = "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nstart: reserve\nsteps:\n    - name: reserve\n      call:\n          function: %s\n      attempts: 2\n"
 
 	found := auditDocs(t, nil, map[string]string{
 		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nsource: \".\"\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",

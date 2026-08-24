@@ -1008,9 +1008,9 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 
 	// and one that lives on the ENTRIES of a nested group, not on the resource — the
 	// distinction that stopped every resource pointing at a function of its own name
-	step := find("workflow", "run")
+	step := find("workflow", "call/function")
 	assert.Equal(t, step.In, "steps")
-	assert.Equal(t, step.Namespace, "namespace")
+	assert.Equal(t, step.Namespace, "call/namespace")
 
 	// the inbound blocks are derived from the references, not listed anywhere
 	assert.DeepEqual(t, schema.InboundBlocks(), []string{"forward", "route/handler", "route/router", "router", "serve"})
