@@ -3,6 +3,7 @@ package schema_test
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"testing"
 
@@ -629,7 +630,16 @@ func TestADriverCanFindTheStepItCameFrom(t *testing.T) {
 	assert.Assert(t, len(steps) > 1)
 	step, _ := steps[1].(map[string]any)
 	assert.Equal(t, step["name"], "settle")
-	assert.Equal(t, step["wait"], "30s", "the duration the driver has to apply is not there: %v", step)
+	assert.Equal(t, step["wait"], "30s", "the duration is not on the step: %v", step)
+
+	// and it is not left as a string for somebody to parse: it lands on the queue's own
+	// `delay`, which is a Duration, so tcc converts it and the pause is a property of
+	// the thing that does the holding
+	q := resource(t, flat, "queue", "checkout_settle")
+	assert.Equal(t, q["delay"], int64(30000000000))
+	before := resource(t, flat, "queue", "checkout_reserve")
+	_, delayed := before["delay"]
+	assert.Assert(t, !delayed, "a step that does not wait produced a delayed queue: %v", before)
 
 	// the same join carries what a call is handed and where its answer goes
 	first, _ := steps[0].(map[string]any)
@@ -732,4 +742,55 @@ func TestAnAgentCanUseAnMcpServer(t *testing.T) {
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
 	assert.ErrorContains(t, err, "subscribe")
+}
+
+// A CONVERSATION THAT OUTLIVES ONE INVOCATION. Vector memory is not conversation state —
+// one is what the agent recalls, the other is where a thread's turns live — and an agent
+// had nowhere to keep the second. It needs no new kind: an `entity` is a single-writer,
+// durably-stored compute instance addressed BY NAME, which is one instance per
+// conversation and a fence around each.
+func TestAnAgentWithSessionsGetsAnEntity(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+	assert.NilError(t, afero.WriteFile(fs, "/agent/chat.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zy\n"+
+			"description: an agent that remembers the conversation\n"+
+			"model:\n    name: opus\n"+
+			"instructions: be helpful\n"+
+			"sessions:\n    size: 64MB\n"+
+			"limits:\n    steps: 6\n"), 0o644))
+
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	flat := obj.Flat()
+
+	// the ceiling is carried onto the kind that enforces it, as a byte count like any
+	// other — not as the string it was written as
+	sessions := resource(t, flat, "entity", "chat_sessions")
+	assert.Equal(t, sessions["size"], int64(64000000))
+	assert.Equal(t, nested(sessions, "source", "tau"), "agent")
+
+	// and the loop is what reads and writes it
+	loop := resource(t, flat, "function", "chat_infer")
+	entities, _ := loop["entity"].(map[string]any)
+	entry, _ := entities["chat_sessions"].(map[string]any)
+	assert.Assert(t, entry != nil, "the loop cannot reach the sessions it was given: %v", loop["entity"])
+	ops, _ := entry["ops"].([]string)
+	sort.Strings(ops)
+	assert.DeepEqual(t, ops, []string{"call", "get"})
+
+	// AN AGENT WITHOUT THE CEILING GETS NO INSTANCE, rather than an empty one — the same
+	// rule the vector already follows for an agent that names no embedder.
+	assert.NilError(t, afero.WriteFile(fs, "/agent/stateless.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zz\n"+
+			"model:\n    name: opus\n"+
+			"limits:\n    steps: 2\n"), 0o644))
+	c, err = schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err = c.Compile(context.Background())
+	assert.NilError(t, err)
+	assert.Assert(t, !hasResource(obj.Flat(), "entity", "stateless_sessions"),
+		"an agent that declared no sessions was given one anyway")
 }

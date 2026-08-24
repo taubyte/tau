@@ -26,7 +26,7 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	for _, c := range got {
 		by[c.Field+" "+c.In+" -> "+c.Into+"/"+c.As] = c
 	}
-	assert.Equal(t, len(got), 9, "got %v", got)
+	assert.Equal(t, len(got), 10, "got %v", got)
 
 	// a step's attempts becomes its queue's max-attempts, whole
 	attempts := by["attempts steps -> queue/max_attempts"]
@@ -53,6 +53,11 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	// writes into — one step, two produced resources, the same name in both.
 	assert.Assert(t, by["name steps -> function/@"].Composed(), "the driver is named for the step: %v", got)
 	assert.Assert(t, by["name steps -> queue/>"].Composed(), "the queue names its consumer: %v", got)
+
+	// A WAIT COMES BACK AS THE STRING IT WAS WRITTEN AS. It is carried onto the queue's
+	// `delay`, which is a Duration — so tcc parses "30s" going in and formats it going
+	// out, and the step never held a number.
+	assert.Assert(t, !by["wait steps -> queue/delay"].Composed())
 
 	// and where failure goes comes back from the queue's dead-letter, which is where the
 	// lowering put it
@@ -95,6 +100,7 @@ func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 	var authored struct {
 		Steps []struct {
 			Name     string `yaml:"name"`
+			Wait     string `yaml:"wait"`
 			Attempts int    `yaml:"attempts"`
 			Backoff  struct {
 				Interval string  `yaml:"interval"`
@@ -123,6 +129,9 @@ func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 		// the composed one: the queue is called `checkout_reserve`, and `reserve` is what
 		// is left once the prefix the lowering declared is taken off it
 		want[at+"/name"] = s.Name
+		if s.Wait != "" {
+			want[at+"/wait"] = s.Wait
+		}
 		// and the schedule, which comes back off the queue that enforces it
 		if s.Backoff.Interval != "" {
 			want[at+"/backoff/interval"] = s.Backoff.Interval
@@ -143,6 +152,12 @@ func TestAgentValuesReadBackInAuthoredForm(t *testing.T) {
 	assert.NilError(t, err)
 
 	got := schema.ReadBack(schema.LoweringPlan(obj.Flat()), schema.Carriages("agent"))
+	// the loop's ceiling and the session's are carried onto what they became, and both
+	// come back in the form they were written in — tcc's own scalar inverse
+	assert.Equal(t, got["limits/timeout"], "5m0s")
+	assert.Equal(t, got["sessions/size"], "64MB")
+	delete(got, "limits/timeout")
+	delete(got, "sessions/size")
 
 	var authored struct {
 		Memory struct {

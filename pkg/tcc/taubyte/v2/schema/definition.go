@@ -966,6 +966,14 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				Duration("visibility_timeout", Default("30s"), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
+
+				// HOW LONG AN ITEM WAITS BEFORE ANYONE MAY HAVE IT. Every queue gets it —
+				// it is SQS's DelaySeconds and it is useful on its own — and it is also
+				// what a workflow's `wait` step becomes: a step that pauses is a queue
+				// that holds its work back, so the pause is a property of the thing that
+				// does the holding rather than a string some driver parses.
+				Duration(Key("delay"), InSection("delivery"),
+					Doc("Delay", "How long an item waits before it becomes deliverable at all, as a human string (e.g. \"30s\"). Absent means immediately.")),
 				Int("max_attempts", Default(5), InSection("delivery"), Doc("Max Attempts", "Deliveries before the item moves to the dead-letter queue.")),
 
 				// HOW REDELIVERY IS SPACED. The queue owns it because the queue is what
@@ -1530,10 +1538,33 @@ var V2Resources = []*Node{
 				Bytes(Key("memory", "size"), Default("1GB"), InSection("memory"),
 					Doc("Memory Size", "How much the agent may remember, as a human string.")),
 
+				// SESSIONS. A conversation that outlives one invocation needs somewhere to
+				// live, and this vocabulary already has the shape: an `entity` is a
+				// single-writer, durably-stored compute instance addressed BY NAME, which
+				// is one instance per conversation and a fence around each. Declaring a
+				// ceiling is what turns it on, the way naming an embedder turns memory
+				// on: an agent with no sessions is stateless per call, which is what
+				// every agent here has been until now.
+				//
+				// A size and nothing else. Retention, compaction and what a turn keeps
+				// are the loop's business at run time, and a field for any of them would
+				// be a promise nothing in this vocabulary performs.
+				Bytes(Key("sessions", "size"), InSection("sessions"),
+					Doc("Session Size", "How much one conversation may keep, as a human string (e.g. \"64MB\"). Naming it is what gives this agent sessions; without it every invocation starts cold.")),
+
 				Int(Key("limits", "steps"), MinInt(1), Required(), InSection("limits"),
 					Doc("Max Steps", "How many times this agent may call a tool and decide again in one invocation. Required: an agent with no ceiling is a loop that spends money until someone notices.")),
 				Int(Key("limits", "concurrent"), MinInt(1), InSection("limits"),
 					Doc("Concurrent", "How many invocations may run at once.")),
+
+				// HOW LONG ONE INVOCATION MAY TAKE, end to end. The step ceiling bounds
+				// how many times the loop may decide again; this bounds the wall clock,
+				// and the two are different ways to run away. Defaulted, because the
+				// value is carried onto the loop this agent becomes and a produced
+				// workload has to have one — it used to be five minutes written into the
+				// lowering, which is a number no author could see or change.
+				Duration(Key("limits", "timeout"), Default("5m"), InSection("limits"),
+					Doc("Timeout", "Ceiling on one whole invocation, as a human string (e.g. \"5m\"). Counts the model calls, the tools and the waiting between them.")),
 				egressAttribute(),
 			),
 			Nested(variablesGroup()),
@@ -1541,6 +1572,7 @@ var V2Resources = []*Node{
 			secIdentity, secAccess, secConfig, secNetwork, secLimits,
 			Section("model", "Model", "Which model answers, and what it is told."),
 			Section("memory", "Memory", "What it remembers, and how wide the vectors are."),
+			Section("sessions", "Sessions", "What one conversation keeps between invocations."),
 			Ops(WriteOp("invoke")),
 
 			// AN AGENT LOWERS, like a workflow: nothing in the substrate runs "agents".
@@ -1562,9 +1594,28 @@ var V2Resources = []*Node{
 					Carries(Text("the loop: call the model, run a tool, decide again")),
 					Sets(Key("source", "tau"), Text("agent")),
 					Sets(Key("execution", "call"), Text("infer")),
-					Sets(Key("execution", "timeout"), Text("5m")),
+					Sets(Key("execution", "timeout"), Attr(Key("limits", "timeout"))),
 					Sets(Key("execution", "memory"), Text("128MB")),
 					Sets("implements", Text("handler")),
+				),
+
+				// ONE CONVERSATION, KEPT. Only when a ceiling says so: an agent with no
+				// sessions gets no instance rather than an empty one. The entity is a
+				// class and the runtime addresses an instance of it per conversation,
+				// which is what "addressed by name" already means — so a thread is a
+				// name, and the single writer per name is the fence around it.
+				Into("entity",
+					When(Key("sessions", "size")),
+					Named(Concat(Attr("name"), Text("_sessions"))),
+					Carries(Concat(Text("one conversation with "), Attr("name"), Text(", kept between invocations"))),
+					Sets(Key("source", "tau"), Text("agent")),
+					Sets(Key("execution", "call"), Text("session")),
+					Sets(Key("execution", "timeout"), Text("5m")),
+					Sets(Key("execution", "memory"), Text("64MB")),
+					Sets(Key("size"), Attr(Key("sessions", "size"))),
+					// the loop is what reads and writes it
+					Reaches("get", From("function", Concat(Attr("name"), Text("_infer")))),
+					Reaches("call", From("function", Concat(Attr("name"), Text("_infer")))),
 				),
 
 				// Only when there is an embedder to fill it: an agent that remembers
@@ -1643,6 +1694,10 @@ var V2Resources = []*Node{
 					Carries(Concat(Text("work waiting for step "), Each("name"))),
 					Sets("max_attempts", Each("attempts")),
 					// the schedule, onto the kind that enforces it. Unset fields drop.
+					// a step that waits is a queue that holds its work back, and the
+					// human string the step was written with is parsed by the queue's own
+					// Duration — tcc converts it, nothing downstream has to
+					Sets(Key("delay"), Each(Key("wait"))),
 					Sets(Key("retry", "interval"), Each(Key("backoff", "interval"))),
 					Sets(Key("retry", "factor"), Each(Key("backoff", "factor"))),
 					Sets(Key("retry", "ceiling"), Each(Key("backoff", "ceiling"))),

@@ -899,8 +899,11 @@ func TestWorkflowLowers(t *testing.T) {
 	// NO store for the run's state: the state is the message, and which queue it is in
 	// is which step it is at. It briefly lowered into an entity, which is a code-bearing
 	// kind whose code nothing was setting — a resource nobody could instantiate.
-	for k := range got {
-		assert.Assert(t, !strings.HasPrefix(k, "entity/"), "a workflow needs no entity: %v", got)
+	for _, d := range plan {
+		if d.Of != "workflow/checkout" {
+			continue
+		}
+		assert.Assert(t, d.Kind != "entity", "a workflow needs no entity: %v", got)
 	}
 
 	// EVERY WRITE THE PLAN CARRIES, keyed by what it lands on and where. That the value
