@@ -642,3 +642,52 @@ func TestADriverCanFindTheStepItCameFrom(t *testing.T) {
 	_, invokes := drv["function"]
 	assert.Assert(t, !invokes, "a wait step's driver was granted a call: %v", drv["function"])
 }
+
+// AN AGENT NAMES ANOTHER AGENT, which is the whole of what the market calls a handoff:
+// the settled pattern everywhere is that a sub-agent is a tool, and in this vocabulary a
+// tool is an access entry, so it should already work. It did not.
+//
+// A kind that lowers becomes a CONTAINER, and its after shape was given every resource
+// group there is — including its own. So inside `agent/triage` the key `agent:` was two
+// things at once: the access entry naming the agent it hands off to, and a directory of
+// agents contained within it. The walk took the entry for a resource and stopped at
+// `promoting agent support failed with id is not a string`. The second reading cannot
+// exist — a lowering never produces a resource of the kind it is lowering — so the
+// kind's own group is not in its own after shape, and the key means the one thing it can.
+func TestAnAgentCanHandOffToAnotherAgent(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+	assert.NilError(t, afero.WriteFile(fs, "/agent/triage.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zv\n"+
+			"description: hands the question to the agent that can answer it\n"+
+			"model:\n    name: opus\n"+
+			"instructions: route the question\n"+
+			"limits:\n    steps: 4\n"+
+			"agent:\n    support:\n        ops: [invoke]\n"), 0o644))
+
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+
+	// the entry survives as an entry, beside the loop the agent lowered into
+	triage := resource(t, obj.Flat(), "agent", "triage")
+	agents, _ := triage["agent"].(map[string]any)
+	entry, _ := agents["support"].(map[string]any)
+	assert.Assert(t, entry != nil, "the handoff is not there at all: %v", triage["agent"])
+	assert.DeepEqual(t, entry["ops"], []string{"invoke"})
+
+	// and it is a USE, so the graph draws it like any other
+	byID := map[string]schema.Instance{}
+	for _, r := range schema.Resources(obj.Flat()) {
+		byID[r.ID] = r
+	}
+	var handoff bool
+	for _, rel := range schema.Relations(obj.Flat()) {
+		if byID[rel.From].Name == "triage" && byID[rel.To].Name == "support" {
+			handoff = true
+			assert.Equal(t, rel.Verb, "invoke")
+		}
+	}
+	assert.Assert(t, handoff, "nothing draws the handoff")
+}

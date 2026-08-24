@@ -95,7 +95,22 @@ func attachLowerable() {
 		}
 		if iter := g.Children[0]; len(interp.LoweringsOf(iter)) > 0 {
 			children := append([]*Node{}, iter.Children...)
-			children = append(children, V2Resources...)
+			// EVERY KIND BUT ITS OWN. A lowering never produces a resource of the kind
+			// it is lowering — an agent inside an agent is recursion, which this
+			// vocabulary refuses elsewhere too — and including the group anyway is what
+			// broke the one thing an agent most obviously does: name ANOTHER AGENT as a
+			// tool. `agent: {support: {ops: [invoke]}}` is an access entry, and with the
+			// kind's own group in its own after shape the same key was also a directory
+			// of contained agents, so the walk tried to promote the entry as a resource
+			// and stopped at `id is not a string`. One key, two things (§8b) — and here
+			// the second thing cannot exist.
+			own, _ := g.Match.(string)
+			for _, r := range V2Resources {
+				if key, _ := r.Match.(string); key == own {
+					continue
+				}
+				children = append(children, r)
+			}
 			after := DefineIterGroup(iter.Attributes, children...).With(Leaf("meta"))
 			after.Nested = iter.Nested
 			g.Children[0] = Lowerable(iter, after)
