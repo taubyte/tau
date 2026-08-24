@@ -104,11 +104,17 @@ require (
 	gopkg.in/ini.v1 v1.67.0
 )
 
+require github.com/expr-lang/expr v1.17.8
+
 require (
+	cel.dev/expr v0.25.1 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/google/nftables v0.3.0 // indirect
 	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
 	github.com/mdlayher/socket v0.5.0 // indirect
+	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 )
 
 require (
