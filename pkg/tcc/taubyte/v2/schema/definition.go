@@ -1682,13 +1682,6 @@ var V2Resources = []*Node{
 					Reaches("send",
 						From("function", Concat(Attr("name"), Text("_"), Each("name"))),
 						To("queue", Concat(Attr("name"), Text("_"), Next("name")))),
-
-					// THE RUN, NARRATED. Every driver publishes that its step finished;
-					// the last step's event is the run finishing, and which step is last
-					// is on the shell.
-					Reaches("publish",
-						From("function", Concat(Attr("name"), Text("_"), Each("name"))),
-						To("channel", Concat(Attr("name"), Text("_events")))),
 				),
 
 				// The end of the line, with NO CONSUMER — deliberately. A dead-letter
@@ -1708,15 +1701,19 @@ var V2Resources = []*Node{
 					Writes(Text("send"), On("workflow", Attr("name")), At(Text("entry"), Text("start"), Text("as"))),
 				),
 
-				// COMPLETION HAS AN ADDRESS. One event per step; an authored consumer
-				// subscribes, and nothing has to.
-				Into("channel",
-					Named(Concat(Attr("name"), Text("_events"))),
-					Carries(Text("one event per step completion; the last step's is the run finishing")),
-					Sets("match", Concat(Attr("name"), Text("_events"))),
-				),
-
-				// AND NOTHING ELSE. There is no store for the run's state, because the
+				// AND NO EVENTS CHANNEL. One was produced here — a channel per workflow,
+				// every driver publishing that its step had finished — and nothing
+				// authored asked for it, which is the rule this vocabulary already holds
+				// everywhere else: a produced resource nobody asked for is an empty
+				// promise. It has no precedent either. Every durable engine records step
+				// history for its own replay and its own UI; NONE of them stands up an
+				// application-facing completion bus by default. Step Functions emits
+				// execution status to EventBridge at the WORKFLOW level, opt-in;
+				// Cloudflare's subscriptions are instance-level; Conductor's listener is
+				// opt-in; where a per-step signal exists at all it is a hook the author
+				// attaches. Recorded in omissions.go with the shape it would take.
+				//
+				// AND NOTHING ELSE EITHER. There is no store for the run's state, because the
 				// run's state is the MESSAGE: what the run carries travels with it from
 				// one step's queue to the next, and which queue it is sitting in IS
 				// which step it is at. A pipeline needs no second place to write that

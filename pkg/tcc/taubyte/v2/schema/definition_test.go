@@ -885,8 +885,14 @@ func TestWorkflowLowers(t *testing.T) {
 	// resource's identity here.
 	assert.Assert(t, got["function/checkout_reserve"] != "", "one driver per step: %v", got)
 	assert.Assert(t, got["function/checkout_charge"] != "")
-	// completion has an address
-	assert.Assert(t, got["channel/checkout_events"] != "", "the run says when a step finished: %v", got)
+	// AND NOTHING ELSE. A channel was produced here so that finishing had an address,
+	// and nothing authored asked for it — which is the rule everywhere else in this
+	// vocabulary, and what every durable engine in the market does: step history for
+	// replay and a UI, never an application-facing bus by default.
+	for k := range got {
+		assert.Assert(t, !strings.HasPrefix(k, "channel/"),
+			"a workflow produced a channel nobody asked for: %v", got)
+	}
 
 	// NO store for the run's state: the state is the message, and which queue it is in
 	// is which step it is at. It briefly lowered into an entity, which is a code-bearing

@@ -94,7 +94,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 
 	workflow := idOf(t, flat, "workflow", "checkout")
 	made, added := schema.Became(flat, workflow)
-	assert.Equal(t, len(made), 6, "a queue and a driver per step, the one they fail into, and the events channel")
+	assert.Equal(t, len(made), 5, "a queue and a driver per step, and the one they fail into")
 
 	kinds := map[string]int{}
 	for _, id := range made {
@@ -104,7 +104,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	}
 	assert.Equal(t, kinds["queue"], 3)
 	assert.Equal(t, kinds["function"], 2, "a driver per step")
-	assert.Equal(t, kinds["channel"], 1)
+	assert.Equal(t, kinds["channel"], 0, "nothing authored asked for a channel")
 	assert.Equal(t, kinds["group"], 0)
 	assert.Equal(t, kinds["namespace"], 0)
 

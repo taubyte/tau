@@ -45,6 +45,26 @@ type Omission struct {
 
 var Omissions = []Omission{
 	{
+		Name:    "a completion feed a workflow publishes without being asked",
+		State:   Open,
+		Decided: ByDefault,
+		Why: "A workflow produced a channel and had every step's driver publish into it, so that " +
+			"finishing had an address. Nothing authored asked for it, and a produced resource " +
+			"nobody asked for is an empty promise — the same rule that keeps an entity out of an " +
+			"agent with no sessions block. The market says the same: every durable engine records " +
+			"step history for its own replay and its own UI, and none of them stands up an " +
+			"application-facing bus by default. Step Functions emits execution status to " +
+			"EventBridge at the WORKFLOW level and opt-in, Cloudflare's subscriptions are " +
+			"instance-level rather than per step, Conductor's listener is opt-in, and where a " +
+			"per-step signal exists it is a hook the author attaches.",
+		Instead: "a last step that publishes to a channel somebody wrote, which is the same event " +
+			"with an author behind it.",
+		Unblocks: "a field that turns it on, plus a way to gate the drivers' publish grants with it. " +
+			"When() decides whether a lowering PRODUCES, and the grants live on the per-step " +
+			"driver, so gating the channel today would leave every driver granted publish on a " +
+			"channel that was never made.",
+	},
+	{
 		Name:    "an external port, on a workload or on a proxy",
 		State:   Never,
 		Decided: ByOwner,
