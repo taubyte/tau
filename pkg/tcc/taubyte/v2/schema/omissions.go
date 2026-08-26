@@ -45,6 +45,25 @@ type Omission struct {
 
 var Omissions = []Omission{
 	{
+		Name:    "a spend ceiling on an agent",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "`limits.steps` was justified as the thing that stops a loop spending money until " +
+			"somebody notices, and it does not bound money. It bounds DECISIONS: every turn " +
+			"re-sends the conversation, so the context grows as the loop runs, the cost of a step " +
+			"grows with it, and the total is superlinear in the number of steps — the same " +
+			"`steps: 8` costs wildly different amounts depending on how large the conversation " +
+			"got. The model's own `max_tokens` does not close it either: that caps one response, " +
+			"not the input and not the run.",
+		Instead: "the step ceiling, which bounds how long a loop may go on rather than what it may " +
+			"spend doing so.",
+		Unblocks: "a decision that the capability is worth its support cost. The field it would be " +
+			"is `limits.tokens`, per invocation: the loop can enforce it from what every model " +
+			"response already returns, and tokens are portable in a way a currency figure is not " +
+			"— prices move, cached and output tokens are billed differently, and a local model " +
+			"has no price at all.",
+	},
+	{
 		Name:    "a handoff, as distinct from an invoke",
 		State:   Open,
 		Decided: ByOwner,

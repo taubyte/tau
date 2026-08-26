@@ -170,9 +170,23 @@ var sourceShape = StringShape([]string{"."}, []string{"module/", "tau/"})
 // doing the same is not — and the guest HTTP client is exactly as real as the
 // container's socket. A sandbox is the sharpest case: it exists to run code somebody
 // else wrote, and it was the one kind with no way to say where that code may call.
+// WHAT THIS WORKLOAD MAY REACH THAT NOTHING ELSE SAYS.
+//
+// A host a declared REFERENCE already names is reachable without being listed here. An
+// agent naming `model/opus` may dial the endpoint that model declares; a database naming
+// an external engine may reach its host; a connector may reach what it connects to. The
+// alternative was tried in the fixture and is the reason this sentence exists: the agent
+// listed `api.anthropic.com` while the model it names already declared
+// `https://api.anthropic.com`, which is the same fact in two resources — and the day
+// somebody rotates the model's endpoint, every agent naming it keeps an egress entry for
+// a host that is no longer the one being dialled. One place to rotate a model is the whole
+// reason that kind exists.
+//
+// So this list is for the hosts NOTHING in the config names: an API a function calls with
+// a URL it built itself, a webhook, a third party with no resource of its own.
 func egressAttribute() *Attribute {
 	return StringSlice("egress", InSection("network"),
-		Doc("Egress", "Hosts this workload may reach. Layered on top of the node-wide deny floor, which it can never widen. Absent means the floor alone."))
+		Doc("Egress", "Hosts this workload may reach that nothing else in the project names. A host declared by something this resource references — a model's endpoint, an external database's host — is already reachable and does not belong here. Layered on the node-wide deny floor, which it can never widen; absent means the floor alone."))
 }
 
 var secNetwork = Section("network", "Network", "How this workload is reached, and what it may reach.")
@@ -1558,8 +1572,13 @@ var V2Resources = []*Node{
 				Bytes(Key("sessions", "size"), InSection("sessions"),
 					Doc("Session Size", "How much one conversation may keep, as a human string (e.g. \"64MB\"). Naming it is what gives this agent sessions; without it every invocation starts cold.")),
 
+				// REQUIRED, and it bounds DECISIONS. It is not a spend ceiling and no
+				// longer claims to be one: every turn re-sends the conversation, so what
+				// a step costs grows as the loop runs and the total is superlinear in
+				// this number. What bounds money is a token ceiling, which is recorded in
+				// omissions.go rather than half-promised here.
 				Int(Key("limits", "steps"), MinInt(1), Required(), InSection("limits"),
-					Doc("Max Steps", "How many times this agent may call a tool and decide again in one invocation. Required: an agent with no ceiling is a loop that spends money until someone notices.")),
+					Doc("Max Steps", "How many times this agent may call a tool and decide again in one invocation. Required: an agent with no ceiling is a loop that runs until something else stops it.")),
 				Int(Key("limits", "concurrent"), MinInt(1), InSection("limits"),
 					Doc("Concurrent", "How many invocations may run at once.")),
 

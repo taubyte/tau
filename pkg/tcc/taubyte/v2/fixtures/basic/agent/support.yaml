@@ -13,7 +13,6 @@ sessions:
 limits:
     steps: 8
     concurrent: 4
-egress: [api.anthropic.com]
 database:
     orders:
         ops: [query]
