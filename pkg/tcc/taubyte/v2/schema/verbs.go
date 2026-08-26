@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -243,7 +244,7 @@ func accessGroups() []*Node {
 				// them. An entry is that place.
 				Duration("timeout", InSection("access"),
 					Doc("Timeout", "How long one operation on it may take before it is given up on.")),
-			}, append(deliverAttributes(kind), mountAttributes(kind)...)...),
+			}, append(deliverAttributes(kind), append(mountAttributes(kind), toolsAttributes(kind)...)...)...),
 				// No Resource(...): an access entry is data under its parent, not a
 				// kind. That descriptor would emit a generated type for it and would
 				// mark the group as something a scope walk cares about.
@@ -598,6 +599,59 @@ func mountAttributes(kind string) []*Attribute {
 			Doc("Mount Path", "Absolute path inside the workload where this filesystem appears, e.g. \"/var/lib/postgresql/data\".")),
 	}
 }
+
+// toolsAttributes bounds an entry to some of what the target offers, rather than all of
+// it. It exists for `mcp` and for nothing else yet, because an MCP server is the one kind
+// here whose surface is a CATALOGUE: `call` on it means "any tool this server advertises",
+// and the set is the target's to change. The day its owner adds `refund`, every accessor
+// that asked for `call` silently gained it — which is the one direction §9 does not want
+// access to move on its own.
+//
+// It is `ops` one level down, and it narrows the same way: the caller states an upper
+// bound and the target's authorizer still decides. A name nobody offers grants nothing, so
+// a stale or misspelled entry fails closed rather than open — the opposite of the hazard
+// it removes.
+//
+// Not §5 smuggling, and the reason is specific: an mcp's catalogue IS its own access block
+// — the functions it declares access to are the tools it advertises — so a member here is
+// a reference to something this project's config names, not structure hidden in a string.
+// That is also why it takes NAMES ONLY. A pattern (`get_*`) would be a grammar in a
+// string, it would match tools that do not exist yet, and it would put back exactly the
+// silent widening this is here to stop.
+//
+// It bounds BOTH verbs. `call` may name only what is listed, and `list` answers with the
+// intersection — an agent told about tools it may not run spends its step ceiling
+// discovering that.
+func toolsAttributes(kind string) []*Attribute {
+	if kind != "mcp" {
+		return nil
+	}
+	return []*Attribute{
+		StringSlice("tools", EachIsName(), InSection("access"),
+			Doc("Tools", "Which of the server's tools this entry is for, by name. Omitted means every tool it advertises, including ones added later.")),
+	}
+}
+
+// EachIsName is IsVariableName for a list: every member has to be a name somebody could
+// have written on a resource. It is the pair EachInSet already forms — check every member
+// rather than the slice, because a scalar validator handed a []string fails at LOAD, in
+// the user's yaml, with "invalid type passed to validator" and no useful location.
+//
+// What it refuses is what makes a bound a bound: `get_*` is a grammar in a string, it
+// names tools that do not exist yet, and it is the silent widening the list is here to
+// stop.
+func EachIsName() engine.Option {
+	return Validator(func(in []string) error {
+		for _, v := range in {
+			if !nameRegex.MatchString(v) {
+				return fmt.Errorf("%q is not a name: a bound lists tools one by one, and never a pattern", v)
+			}
+		}
+		return nil
+	})
+}
+
+var nameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 
 // References is every place this vocabulary points at another resource: fields that
 // resolve to an id, fields that keep a name, and blocks whose target kind the author

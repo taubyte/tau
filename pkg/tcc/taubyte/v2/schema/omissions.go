@@ -45,6 +45,32 @@ type Omission struct {
 
 var Omissions = []Omission{
 	{
+		Name:    "a handoff, as distinct from an invoke",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "An agent naming another agent is a tool call: the parent keeps the answer, and the " +
+			"sub-agent returns a value. A HANDOFF is the other thing — control transfers and the " +
+			"target owns the final response — and it is a real capability boundary rather than a " +
+			"calling convention, which is the test a verb has to pass here. A target can sensibly " +
+			"grant one and refuse the other: a calculator takes `invoke` and has no business " +
+			"fronting a conversation, while a specialist may accept conversations it then owns " +
+			"verbatim and refuse to have its words paraphrased by a loop it never vetted. And the " +
+			"enforceable half cannot be faked by the caller: relaying an answer is mechanics, but " +
+			"the PLATFORM re-binding a conversation's future turns to the target is a platform " +
+			"act, and performing it under an `invoke` grant is the authorizer being told the " +
+			"wrong operation.",
+		Instead: "`invoke`, with the parent keeping the response. A parent that relays it verbatim " +
+			"is doing mechanics, which needs no verb.",
+		Unblocks: "where the conversation LIVES after a transfer. Sessions are one entity per agent, " +
+			"so a handoff either re-binds the thread to the target's entity and starts it cold or " +
+			"copies context into it, and nothing in this vocabulary can say which yet. Shipping " +
+			"the verb first is how the market got 'handoffs lose context'; a `handoff` op the loop " +
+			"treats as an invoke would be a capability nothing performs, which is the defect the " +
+			"deleted `auth: oauth` field is remembered for. The shape when it lands: a second " +
+			"WriteOp on `agent`, an ordinary access entry, handed to the target's authorizer like " +
+			"any other op.",
+	},
+	{
 		Name:    "a completion feed a workflow publishes without being asked",
 		State:   Open,
 		Decided: ByDefault,

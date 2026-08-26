@@ -155,8 +155,10 @@ func TestAgentValuesReadBackInAuthoredForm(t *testing.T) {
 	// the loop's ceiling and the session's are carried onto what they became, and both
 	// come back in the form they were written in — tcc's own scalar inverse
 	assert.Equal(t, got["limits/timeout"], "5m0s")
+	assert.Equal(t, got["limits/memory"], "128MB")
 	assert.Equal(t, got["sessions/size"], "64MB")
 	delete(got, "limits/timeout")
+	delete(got, "limits/memory")
 	delete(got, "sessions/size")
 
 	var authored struct {

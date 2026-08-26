@@ -732,6 +732,37 @@ func TestAnAgentCanUseAnMcpServer(t *testing.T) {
 	assert.Assert(t, entry != nil, "the agent declares no MCP access: %v", shopper["mcp"])
 	assert.DeepEqual(t, entry["ops"], []string{"list", "call"})
 
+	// AND AN ENTRY MAY BOUND ITSELF to some of the catalogue. `call` on a server means
+	// any tool it advertises, and the set is the target's to change — so the day its
+	// owner adds one, every accessor that asked for `call` silently gained it. A bound
+	// narrows: a name nobody offers grants nothing, so it fails closed.
+	assert.NilError(t, afero.WriteFile(fs, "/agent/bounded.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ2Ab\n"+
+			"model:\n    name: opus\n"+
+			"limits:\n    steps: 6\n"+
+			"mcp:\n    orders:\n        ops: [list, call]\n        tools: [get_order, refund]\n"), 0o644))
+	c, err = schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err = c.Compile(context.Background())
+	assert.NilError(t, err)
+	bounded := resource(t, obj.Flat(), "agent", "bounded")
+	servers, _ = bounded["mcp"].(map[string]any)
+	entry, _ = servers["orders"].(map[string]any)
+	assert.DeepEqual(t, entry["tools"], []string{"get_order", "refund"})
+
+	// A PATTERN IS NOT A NAME. It would match tools that do not exist yet, which is the
+	// widening the bound exists to stop, and it is a grammar in a string besides.
+	assert.NilError(t, afero.WriteFile(fs, "/agent/bounded.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ2Ab\n"+
+			"model:\n    name: opus\n"+
+			"limits:\n    steps: 6\n"+
+			"mcp:\n    orders:\n        ops: [call]\n        tools: [\"get_*\"]\n"), 0o644))
+	c, err = schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "never a pattern")
+	assert.NilError(t, fs.Remove("/agent/bounded.yaml"))
+
 	// and a verb the kind does not declare is refused, which is what Ops() is for
 	assert.NilError(t, afero.WriteFile(fs, "/agent/shopper.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zx\n"+

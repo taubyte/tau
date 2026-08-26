@@ -1535,7 +1535,13 @@ var V2Resources = []*Node{
 					Doc("Embedding Model", "The model that turns what this agent sees into vectors, as \"model/<name>\". Naming it is what turns memory on.")),
 				Int(Key("memory", "dimensions"), MinInt(1), RequiredWhen(Key("memory", "embedder", "name")), InSection("memory"),
 					Doc("Dimensions", "The width the embedding model produces — 1536 for text-embedding-3-small. Fixed once there is anything in memory.")),
-				Bytes(Key("memory", "size"), Default("1GB"), InSection("memory"),
+				// NO DEFAULT, and required only when there is memory to size. A default
+				// here fired for every agent, so one that names no embedder compiled
+				// claiming a gigabyte of memory it does not have — a value that is
+				// misleading when the branch is not taken, which is the one thing §7
+				// says not to give a default to. `sessions.size` beside it is the same
+				// shape done right.
+				Bytes(Key("memory", "size"), RequiredWhen(Key("memory", "embedder", "name")), InSection("memory"),
 					Doc("Memory Size", "How much the agent may remember, as a human string.")),
 
 				// SESSIONS. A conversation that outlives one invocation needs somewhere to
@@ -1565,6 +1571,8 @@ var V2Resources = []*Node{
 				// lowering, which is a number no author could see or change.
 				Duration(Key("limits", "timeout"), Default("5m"), InSection("limits"),
 					Doc("Timeout", "Ceiling on one whole invocation, as a human string (e.g. \"5m\"). Counts the model calls, the tools and the waiting between them.")),
+				Bytes(Key("limits", "memory"), Default("128MB"), InSection("limits"),
+					Doc("Memory", "How much memory the loop may use, as a human string (e.g. \"128MB\"). An agent handing large tool results between the model and its tools needs more than one juggling short answers.")),
 				egressAttribute(),
 			),
 			Nested(variablesGroup()),
@@ -1595,7 +1603,7 @@ var V2Resources = []*Node{
 					Sets(Key("source", "tau"), Text("agent")),
 					Sets(Key("execution", "call"), Text("infer")),
 					Sets(Key("execution", "timeout"), Attr(Key("limits", "timeout"))),
-					Sets(Key("execution", "memory"), Text("128MB")),
+					Sets(Key("execution", "memory"), Attr(Key("limits", "memory"))),
 					Sets("implements", Text("handler")),
 				),
 
