@@ -11,7 +11,7 @@
 //     domains/paths. ".notes/v2/resources.md" §1.3, §1.5.
 //   - smartops is deleted. Policy is `authorizers` (request-scoped, per-edge);
 //     limits are platform-enforced at dispatch. "resources.md" Deletions.
-//   - `databases` -> `kv`, `libraries` -> `module`. `database` beside `sql` is a
+//   - `databases` -> `kv`, `libraries` -> `component`. `database` beside `sql` is a
 //     permanent support cost.
 //   - `notification.email` is deleted: inert since it was added, read nowhere.
 //   - The scope container is `namespaces`, not `applications`. `applications` was
@@ -24,7 +24,7 @@
 // Still absent, but no longer for want of a shape — DefineList arrived with the
 // transformer chain, so what is left is the modelling: the `route` embed's per-path
 // rules (headers/redirects/rewrites/status), `connector.params`, `domain` DNS records,
-// and per-edge modifiers (mount, timeout, retry, via). See omissions.go.
+// and per-edge modifiers (mount, timeout, retry, via).
 package schema
 
 import (
@@ -143,25 +143,6 @@ var secIdentity = Section("identity", "Identity", "Resource identity and metadat
 //	code     — a build artifact
 func Category(name string) NodeOption { return GroupAnnotate("category", name) }
 
-// sourceShape: a code source is "." (inline), "module/<name>", or "tau/<name>" — the
-// runtime's OWN code.
-//
-// The third form arrived with the first lowering that produces a workload. An agent
-// becomes a function whose loop — call the model, hand it the tools it may reach, run
-// one, decide again, stop at the ceiling — is the same program for every agent, and
-// belongs to the platform rather than to the author's repository. It has to be
-// EXPRESSIBLE, because a lowering that set a source no document could legally contain
-// would be generating config that does not compile.
-//
-// It is not an extension point: `tau/` names something the runtime ships, so the set is
-// closed by what exists rather than by what an author can write. An agent whose loop
-// were the author's code would be a `function`.
-//
-// PLURAL, like every other kind. It was `module` alone, which meant one directory in
-// a project read `module/` while its nineteen siblings read `functions/`, `caches/`,
-// `queues/` — a rule with one exception is a rule everybody has to remember.
-var sourceShape = StringShape([]string{"."}, []string{"module/", "tau/"})
-
 // egressAttribute is the per-workload ALLOWLIST of hosts a workload may reach,
 // layered on top of the node-wide deny floor (pkg/netguard) which it can never widen.
 //
@@ -209,46 +190,27 @@ var secNetwork = Section("network", "Network", "How this workload is reached, an
 var hostWorlds = []string{"handler", "authorizer", "instance-validator", "gateway-transformer", "proxy-transformer", "gateway-router", "proxy-router"}
 
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
-	return commonAttributes(append([]*Attribute{
+	base := []*Attribute{
 		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
 			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream. gateway-router: takes a parsed HTTP request, decides which route or function should handle it. proxy-router: takes bytes on a stream, decides which target should receive the connection.")),
-		// WHERE THE CODE COMES FROM, as a block. Absent means this resource's own
-		// repository — the common case writes nothing at all, which is what "." used to
-		// say with a character. `module` names one of the project's modules, with the
-		// namespace it lives in beside it. `tau` names a program the RUNTIME ships, and
-		// is not an extension point: the set is closed by what exists.
-		//
-		// It was one string — "." or "module/<name>" or "tau/<name>" — which is a kind
-		// packed into a value with no room to say which namespace, and three shapes a
-		// reader has to parse.
-		String(Key("source", "namespace"), IsNamespacePath(), InSection("code"),
-			Doc("Module Namespace", "Where that module lives. Omitted means this resource's own scope, then its parents.")),
-		String(Key("source", "module"), IsVariableName(), Ref("module"), InSection("code"),
-			Doc("Module", "A module of this project to build from. Omitted, with no tau either, means this resource's own code.")),
-		String(Key("source", "tau"), IsVariableName(), InSection("code"),
-			Doc("Runtime Program", "A program the runtime itself ships. Not for authors: a lowering sets it.")),
+	}
+	// A workload's code: this repository by default, one of the project's own
+	// components, a platform-shipped program, or another repository entirely. It was
+	// three attributes and one string before that — "." or "module/<name>" or
+	// "tau/<name>", a kind packed into a value with no room to say which namespace.
+	base = append(base, contentSource("code", "component", "builtin", "git")...)
+	base = append(base,
 		String(Key("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
 		Duration(Key("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
 		Bytes(Key("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory this workload may use, as a human string (e.g. \"32MB\").")),
 		cpuLimit(),
 		egressAttribute(),
-	}, attrs...)...)
+	)
+	return commonAttributes(append(base, attrs...)...)
 }
 
 var secCode = Section("code", "Code", "The workload's code source and entrypoint.")
 var secLimits = Section("limits", "Limits", "Runtime resource limits.")
-
-// gitSource is the repository block shared by `module` and `website`. git-provider
-// stays Either("github") — GitLab lands as a second facade, not a provider
-// abstraction; generalize on the third (resources.md, Extensibility).
-func gitSource() []*Attribute {
-	return []*Attribute{
-		String(Key("source", "branch"), RepoBranch(), InSection("source"), Doc("Branch", "Git branch to build from.")),
-		String(Key("source", "kind"), Path("source", Either("github")), Captures(), Field("Provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
-		String(Key("source", "github", "id"), Required(), Field("RepoID"), NoAccessors(), InSection("source"), Doc("Repository ID", "GitHub repository numeric id.")),
-		String(Key("source", "github", "fullname"), Required(), RepoName(), Field("RepoName"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
-	}
-}
 
 var secSource = Section("source", "Source", "Where the code is sourced from.")
 
@@ -546,7 +508,7 @@ var externalDatabaseEngines = []string{"postgres", "mysql"}
 var databaseEngines = append([]string{"distributed"}, externalDatabaseEngines...)
 
 // A kind declares Ops() when something can reach it. A kind without them is not a
-// target: nothing "uses" a cron, a zone or a module — a cron fires, a zone answers
+// target: nothing "uses" a cron, a zone or a component — a cron fires, a zone answers
 // DNS, a module is built into a workload and named by its source. Their absence is
 // the statement, not an oversight.
 //
@@ -684,14 +646,12 @@ var V2Resources = []*Node{
 			Resource("cron", "Cron", "Cron", "cron"),
 		)),
 
-	DefineGroup("module",
+	DefineGroup("component",
 		resource(
-			commonAttributes(append(
-				[]*Attribute{String(Key("source", "path"), InSection("source"), Doc("Path", "Subpath within the repository that holds the code."))},
-				gitSource()...)...),
-			GroupDoc("A WASM / Component Model artifact built from a git repository, referenced as a workload source."), Icon("book"), Category("code"),
+			commonAttributes(contentSource("source", "git")...),
+			GroupDoc("A WASM component built from source, referenced as a workload's code. Component Model: it declares its imports and exports in WIT."), Icon("book"), Category("code"),
 			secIdentity, secAccess, secSource,
-			Resource("module", "Module", "Module", "module"),
+			Resource("component", "Component", "Component", "component"),
 		)),
 
 	// Build -> zip -> hoarder -> serve, unchanged. What left: domains, paths and
@@ -713,7 +673,7 @@ var V2Resources = []*Node{
 	// app" switch, Vercel's rewrites.
 	DefineGroup("website",
 		resource(
-			commonAttributes(append(gitSource(),
+			commonAttributes(append(contentSource("source", "git"),
 				String(Key("serve", "index"), Default("index.html"), InSection("serving"),
 					Doc("Index Document", "What a request for a directory returns, e.g. \"/docs/\" -> /docs/index.html.")),
 				String(Key("serve", "mode"), InSet("static", "spa"), Default("static"), InSection("serving"),
@@ -828,7 +788,7 @@ var V2Resources = []*Node{
 				//
 				// The second is a live defect, not a quirk of this field:
 				// Path("engine","distributed","size") makes the same claim and is equally
-				// unenforced. Recorded in omissions.go.
+				// unenforced.
 				String(Key("engine", "tls"), Path("engine", Either(externalDatabaseEngines...), "tls"), InSet("verify-full", "require", "disable"), InSection("engine"), ShowWhen(Key("engine", "kind"), externalDatabaseEngines...),
 					Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included.")),
 				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
@@ -1063,8 +1023,8 @@ var V2Resources = []*Node{
 	//
 	// What is here is the other thing: the route is embedded, so a site with five paths
 	// is five gateway documents repeating host, certificate, cors and rate-limit, with
-	// nothing saying which of them owns the name. `route as a named object` in
-	// omissions.go is that gap; mounting one gateway beneath another is the workaround
+	// nothing saying which of them owns the name. A route as a named object is that
+	// gap; mounting one gateway beneath another is the workaround
 	// and it does not resolve the policy duplication.
 	//
 	// `fqdn` is optional, and that is what collapsed the old `domains` kind into this
@@ -1335,8 +1295,7 @@ var V2Resources = []*Node{
 	//
 	// Deleted rather than completed, because the prerequisite is itself blocked — an
 	// authenticated MCP has to be routed on the `Mcp-Method` / `Mcp-Name` headers and
-	// this vocabulary cannot match on a header yet (omissions.go). The shape it comes
-	// back as is recorded there, so the return is a list entry rather than a redesign.
+	// this vocabulary cannot match on a header yet.
 	//
 	// Thin on purpose: the tools are already functions. Stateless Streamable HTTP,
 	// POST only, no sessions. It compiles to route-table rows that additionally
@@ -1471,7 +1430,6 @@ var V2Resources = []*Node{
 				// the right constraint here rather than a limit worked around: these are
 				// the four every format has, they have ranges worth checking, and a
 				// provider-specific fifth belongs to whoever added the provider.
-				// Recorded in omissions.go.
 				Float(Key("parameters", "temperature"), InSection("parameters"),
 					Doc("Temperature", "How much the model is allowed to vary its answer. 0 is as close to deterministic as a model gets.")),
 				Float(Key("parameters", "top_p"), InSection("parameters"),
@@ -1508,7 +1466,7 @@ var V2Resources = []*Node{
 	// is the one thing worse than a ceiling that is wrong, so it is required.
 	DefineGroup("agent",
 		resource(
-			commonAttributes(
+			commonAttributes(append([]*Attribute{
 				// ONE model, named as a resource. The endpoint, the credential, the wire
 				// format and the parameters are its business, not this agent's — which
 				// is what stopped every agent carrying a copy of the same four facts and
@@ -1522,11 +1480,13 @@ var V2Resources = []*Node{
 				String(Key("model", "name"), IsVariableName(), Ref("model"), Required(), InSection("model"),
 					Doc("Model", "The model this agent answers with.")),
 
-				// The prompt is a string here and a file nowhere, which is the wrong
-				// way round for anything long. Recorded in omissions.go rather than
-				// solved by letting a 40KB system prompt into a yaml document.
-				String("instructions", InSection("model"),
-					Doc("Instructions", "The system prompt. For anything longer than a paragraph, keep it in the workload's own source and leave this empty.")),
+				// A FILENAME, not the prose. A system prompt is pages of text, and a
+				// 40KB string in a yaml document is unreadable, unreviewable line by
+				// line, and mixed in with configuration. What it is relative to is the
+				// agent's `source` — this repository by default — so the same base that
+				// tells a workload where its code is tells an agent where its words are.
+				String("instructions", IsRepoPath(), InSection("model"),
+					Doc("Instructions", "The file holding the system prompt, e.g. \"instructions.md\". Relative to this agent's source.")),
 
 				// MEMORY. Declared here and stored in a vector index, which is what the
 				// lowering produces: an agent that remembers is an agent with somewhere
@@ -1575,8 +1535,8 @@ var V2Resources = []*Node{
 				// REQUIRED, and it bounds DECISIONS. It is not a spend ceiling and no
 				// longer claims to be one: every turn re-sends the conversation, so what
 				// a step costs grows as the loop runs and the total is superlinear in
-				// this number. What bounds money is a token ceiling, which is recorded in
-				// omissions.go rather than half-promised here.
+				// this number. What bounds money is a token ceiling, which this does not
+				// half-promise.
 				Int(Key("limits", "steps"), MinInt(1), Required(), InSection("limits"),
 					Doc("Max Steps", "How many times this agent may call a tool and decide again in one invocation. Required: an agent with no ceiling is a loop that runs until something else stops it.")),
 				Int(Key("limits", "concurrent"), MinInt(1), InSection("limits"),
@@ -1593,10 +1553,13 @@ var V2Resources = []*Node{
 				Bytes(Key("limits", "memory"), Default("128MB"), InSection("limits"),
 					Doc("Memory", "How much memory the loop may use, as a human string (e.g. \"128MB\"). An agent handing large tool results between the model and its tools needs more than one juggling short answers.")),
 				egressAttribute(),
-			),
+				// An agent's content is prose, and it lives where the resource lives:
+				// this repository by default, a path in it, or another repository.
+				// `component` and `builtin` are not branches here — an agent is not built.
+			}, contentSource("source", "git")...)...),
 			Nested(variablesGroup()),
 			GroupDoc("An LLM loop with tools. What it may call is what it declares access to — there is no second list."), Icon("agent"), Category("compute"),
-			secIdentity, secAccess, secConfig, secNetwork, secLimits,
+			secIdentity, secAccess, secConfig, secNetwork, secLimits, secSource,
 			Section("model", "Model", "Which model answers, and what it is told."),
 			Section("memory", "Memory", "What it remembers, and how wide the vectors are."),
 			Section("sessions", "Sessions", "What one conversation keeps between invocations."),
@@ -1619,7 +1582,7 @@ var V2Resources = []*Node{
 					Acts(),
 					Named(Concat(Attr("name"), Text("_infer"))),
 					Carries(Text("the loop: call the model, run a tool, decide again")),
-					Sets(Key("source", "tau"), Text("agent")),
+					Sets(Key("source", "builtin"), Text("agent")),
 					Sets(Key("execution", "call"), Text("infer")),
 					Sets(Key("execution", "timeout"), Attr(Key("limits", "timeout"))),
 					Sets(Key("execution", "memory"), Attr(Key("limits", "memory"))),
@@ -1635,7 +1598,7 @@ var V2Resources = []*Node{
 					When(Key("sessions", "size")),
 					Named(Concat(Attr("name"), Text("_sessions"))),
 					Carries(Concat(Text("one conversation with "), Attr("name"), Text(", kept between invocations"))),
-					Sets(Key("source", "tau"), Text("agent")),
+					Sets(Key("source", "builtin"), Text("agent")),
 					Sets(Key("execution", "call"), Text("session")),
 					Sets(Key("execution", "timeout"), Text("5m")),
 					Sets(Key("execution", "memory"), Text("64MB")),
@@ -1678,8 +1641,8 @@ var V2Resources = []*Node{
 	//
 	// LINEAR, for now, and that is a real limit rather than a simplification: there is
 	// no Choice, no Parallel, no Map. Those are the shapes that make Step Functions
-	// what it is, and each needs something the list element cannot hold yet.
-	// omissions.go records which.
+	// what it is, and each needs something the list element cannot hold yet: a
+	// condition is an expression, and Parallel and Map are lists inside a list.
 	DefineGroup("workflow",
 		resource(
 			commonAttributes(
@@ -1764,7 +1727,7 @@ var V2Resources = []*Node{
 					PerEach("steps"),
 					Named(Concat(Attr("name"), Text("_"), Each("name"))),
 					Carries(Concat(Text("step "), Each("name"), Text(": receive, run, hand on"))),
-					Sets(Key("source", "tau"), Text("step")),
+					Sets(Key("source", "builtin"), Text("step")),
 					Sets(Key("execution", "call"), Text("step")),
 					// FIXED, and not the run's timeout. This bounds one delivery — receive,
 					// invoke, hand on — and what the invoke may take is the callee's own
@@ -1816,7 +1779,7 @@ var V2Resources = []*Node{
 				// execution status to EventBridge at the WORKFLOW level, opt-in;
 				// Cloudflare's subscriptions are instance-level; Conductor's listener is
 				// opt-in; where a per-step signal exists at all it is a hook the author
-				// attaches. Recorded in omissions.go with the shape it would take.
+				// attaches.
 				//
 				// AND NOTHING ELSE EITHER. There is no store for the run's state, because the
 				// run's state is the MESSAGE: what the run carries travels with it from
@@ -1826,8 +1789,7 @@ var V2Resources = []*Node{
 				// with the first.
 				//
 				// What is genuinely missing is run HISTORY — what ran, when, and what it
-				// returned — which is a database and a decision, not a queue. Recorded
-				// in omissions.go.
+				// returned — which is a database and a decision, not a queue.
 			),
 			Resource("workflow", "Workflow", "Workflow", "workflow"),
 		)),

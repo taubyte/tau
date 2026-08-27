@@ -31,7 +31,6 @@ func main() {
 	// Computing a derived value is the engine's, so a consumer asks rather than
 	// reimplementing the derivation it just read about.
 	api.Set("derive", js.FuncOf(deriveFn))
-	api.Set("omissions", js.FuncOf(omissionsFn))
 	// The shapes a consumer cannot infer: where a document lives, and which fields a kind
 	// derives. Read off the schema, so a graph, a CLI or a console handles a vocabulary
 	// it has never seen.
@@ -285,19 +284,6 @@ func verbsFn(js.Value, []js.Value) any {
 			})
 		}
 		out = append(out, map[string]any{"kind": kind, "verbs": vs})
-	}
-	return toJS(out)
-}
-
-// omissions() -> what the vocabulary deliberately does NOT have, and why. Served
-// beside kinds() because a closed enum is only honest if its closure is legible.
-func omissionsFn(js.Value, []js.Value) any {
-	out := make([]map[string]any, 0, len(schema.Omissions))
-	for _, o := range schema.Omissions {
-		out = append(out, map[string]any{
-			"name": o.Name, "state": string(o.State),
-			"why": o.Why, "instead": o.Instead, "unblocks": o.Unblocks,
-		})
 	}
 	return toJS(out)
 }

@@ -720,9 +720,9 @@ func collectReferences(kind string, iter *engine.Node, in string, out *[]Referen
 			Serves: spec.Serves, In: in,
 		}
 		// THE NAMESPACE BESIDE IT: the sibling called `namespace` under the same
-		// parent. `authorizer/name` -> `authorizer/namespace`, and `source/module` ->
+		// parent. `authorizer/name` -> `authorizer/namespace`, and `source/component` ->
 		// `source/namespace` — which the old rule missed, because it trimmed a "name"
-		// suffix the field does not have and looked for `source/modulenamespace`. A
+		// suffix the field does not have and looked for `source/componentnamespace`. A
 		// reference whose namespace is not found resolves outward from the declarer's
 		// own scope and quietly finds a different resource.
 		parent := ""
@@ -799,8 +799,7 @@ const (
 	// group is keyed by the target's name because that made per-target fields
 	// possible without a `name:` line in the common case — but the key cannot hold
 	// two entries that share it, so two resources named the same thing in different
-	// namespaces could never both be reached from one accessor (omissions.go,
-	// "reaching two resources that share a name in different namespaces").
+	// namespaces could never both be reached from one accessor.
 	//
 	// Optional, and additive: every existing document, where the label already IS
 	// the name, keeps meaning exactly what it means today. Only an author who needs

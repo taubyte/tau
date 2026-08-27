@@ -139,7 +139,7 @@ func TestARouterCanLiveInAnotherNamespace(t *testing.T) {
 //
 // Seventeen of them had only a name: the conversion added `{name}` and stopped. Three
 // more had a namespace the discovery could not see, because it looked for the sibling by
-// trimming a "name" suffix that `source/module` does not have.
+// trimming a "name" suffix that `source/component` does not have.
 func TestEveryReferenceCanSayWhere(t *testing.T) {
 	var missing []string
 	for _, r := range schema.References() {

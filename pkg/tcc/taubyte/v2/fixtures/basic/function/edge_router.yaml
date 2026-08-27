@@ -2,7 +2,7 @@ id: QmPZ9XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuR
 description: decides where a request goes - a gateway with one of these has no static routes at all
 implements: gateway-router
 source:
-    module: paylib
+    component: paylib
 execution:
     call: route
     timeout: 2s

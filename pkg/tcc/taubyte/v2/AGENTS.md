@@ -202,7 +202,7 @@ breaks: its kind is fixed and it is still where the request goes.
 
 ```yaml
 model:                       source:                    dead-letter:
-    namespace: /shop             module: paylib             name: orders_dead
+    namespace: /shop             component: paylib          name: orders_dead
     name: opus
 ```
 
@@ -302,7 +302,7 @@ recorded in `omissions.go`.)
 
 ```go
 StringSlice("domains", Ref("domains"), …)                    // []name → []id
-String("source", Ref("modules", Prefix("modules/")), …)      // "modules/x" → "modules/<id>"
+String("source", Ref("libraries", Prefix("libraries/")), …)  // v1: "libraries/x" → "libraries/<id>"
 ```
 
 A **scalar** ref needs a `Prefix`; without one `resolveRefAttr` treats the value as a

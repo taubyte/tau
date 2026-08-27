@@ -72,7 +72,7 @@ func TestAuditDelivery(t *testing.T) {
 
 	found = auditDocs(t, nil, map[string]string{
 		"/queue/work.yaml": "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nvisibility_timeout: 30s\n",
-		"/function/f.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nsource: \".\"\nexecution: {call: c, timeout: 1s, memory: 1MB}\nqueue:\n    work:\n        ops: [receive]\n",
+		"/function/f.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\nqueue:\n    work:\n        ops: [receive]\n",
 	})
 	hasNo(t, found, "deliver port")
 }
@@ -131,7 +131,7 @@ func TestAuditOfTheExample(t *testing.T) {
 // A site built for / and mounted at /docs 404s every page while the config reads as
 // correct. Both halves are in the compiled object, so tcc is what can say so.
 func TestAuditMountedWebsite(t *testing.T) {
-	site := "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\nsource:\n    branch: main\n    github:\n        id: \"1\"\n        fullname: acme/docs\n"
+	site := "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\nsource:\n    git: https://github.com/acme/docs\n    branch: main\n"
 	gw := func(extra string) string {
 		return "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /docs\n" + extra + "    handler:\n        website:\n            name: docs\n"
 	}
@@ -156,7 +156,7 @@ func TestWebsiteServingMode(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/website/app.yaml", []byte(
-		"id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\nsource:\n    branch: main\n    github:\n        id: \"1\"\n        fullname: acme/app\nserve:\n    mode: spa\n"), 0o644))
+		"id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\nsource:\n    git: https://github.com/acme/app\n    branch: main\nserve:\n    mode: spa\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
@@ -172,7 +172,7 @@ func TestWebsiteServingMode(t *testing.T) {
 // compile.
 func TestAuditHostWorlds(t *testing.T) {
 	fn := func(world string) string {
-		body := "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nsource: \".\"\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
+		body := "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
 		if world != "" {
 			body += "implements: " + world + "\n"
 		}
@@ -207,7 +207,7 @@ func TestAuditHostWorlds(t *testing.T) {
 // because which kinds have ports is not something the schema can condition on.
 func TestAuditHandlerPorts(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
-		"/website/w.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\nsource:\n    branch: main\n    github:\n        id: \"1\"\n        fullname: acme/w\n",
+		"/website/w.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\nsource:\n    git: https://github.com/acme/w\n    branch: main\n",
 		"/gateway/g.yaml": "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        website:\n            name: w\n            port: http\n",
 	})
 	has(t, found, schema.Broken, "names port \"http\" on a website")
@@ -286,13 +286,13 @@ func TestAuditReportsALoweringFaultAgainstItsSource(t *testing.T) {
 	const wf = "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nstart: reserve\nsteps:\n    - name: reserve\n      call:\n          function: %s\n      attempts: 2\n"
 
 	found := auditDocs(t, nil, map[string]string{
-		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nsource: \".\"\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",
+		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",
 		"/workflow/checkout.yaml": strings.Replace(wf, "%s", "reserve", 1),
 	})
 	hasNo(t, found, "does not exist")
 
 	found = auditDocs(t, nil, map[string]string{
-		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nsource: \".\"\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",
+		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",
 		"/workflow/checkout.yaml": strings.Replace(wf, "%s", "resrve", 1),
 	})
 	f := findOne(t, found, "does not exist")

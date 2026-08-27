@@ -1,5 +1,5 @@
 import "./style.css";
-import { loadTcc, type CompileOk, type Kind, type KindVerbs, type Omission } from "./wasm";
+import { loadTcc, type CompileOk, type Kind, type KindVerbs } from "./wasm";
 import { buildGraph, categoryOf, fileOf, iconOf, setCategories, setScopes, setShapes, type Graph } from "./graph";
 import { esc, jsonRoot } from "./render";
 import { graphHost, renderGraph } from "./graph-mount";
@@ -26,7 +26,6 @@ for (const [path, body] of Object.entries(raw)) {
 
 let verbs: KindVerbs[] = [];
 let kinds: Kind[] = [];
-let omissions: Omission[] = [];
 let graph: Graph | null = null;
 let lastResult: CompileOk | { error: string } | null = null;
 // dot runs asynchronously (it is wasm), so what is drawn is the last layout that
@@ -37,7 +36,7 @@ let placedFor: Graph | null = null;
 let layoutSeq = 0;
 let selection: Selection = null;
 let current = Object.keys(files).sort()[0];
-let tab: "graph" | "review" | "compiled" | "lowered" | "vocabulary" | "omitted" = "graph";
+let tab: "graph" | "review" | "compiled" | "lowered" | "vocabulary" = "graph";
 
 const app = document.getElementById("app")!;
 
@@ -49,7 +48,6 @@ async function main() {
   const tcc = await loadTcc();
   verbs = tcc.verbs();
   kinds = tcc.kinds();
-  omissions = tcc.omissions();
   setCategories(kinds);
   // What this vocabulary's shapes are — which block hands traffic on, which fields name
   // another resource — so the graph draws a vocabulary it has never seen.
@@ -168,7 +166,6 @@ function header(error: string | null): HTMLElement {
     ["compiled", "Compiled object"],
     ["lowered", "Lowered filesystem"],
     ["vocabulary", "Vocabulary & verbs"],
-    ["omitted", "What is not here"],
   ] as const) {
     const b = document.createElement("button");
     b.textContent = label;
@@ -356,10 +353,6 @@ function mainPane(result: CompileOk | { error: string }): HTMLElement {
   const pane = div("pane main");
   if (tab === "vocabulary") {
     pane.appendChild(vocabulary());
-    return pane;
-  }
-  if (tab === "omitted") {
-    pane.appendChild(omitted());
     return pane;
   }
   if ("error" in result) {
@@ -756,43 +749,6 @@ function vocabulary(): HTMLElement {
   return wrap;
 }
 
-// A closed vocabulary is only honest if you can see what it closed out. Every entry
-// here is declared next to the kinds, so "why is there no X" has an answer in the
-// same place the kinds do — and an answer that cannot quietly go stale.
-function omitted(): HTMLElement {
-  const wrap = div("vocab");
-  const label: Record<string, string> = {
-    never: "refused",
-    blocked: "nothing to author yet",
-    open: "owner decision",
-  };
-  for (const state of ["never", "blocked", "open"] as const) {
-    const rows = omissions.filter((o) => o.state === state);
-    if (!rows.length) continue;
-    wrap.appendChild(sectionTitle(label[state], `${rows.length}`));
-    const t = document.createElement("table");
-    t.innerHTML =
-      `<thead><tr><th>not a kind</th><th>why</th><th>${
-        state === "never" ? "instead" : "instead / what unblocks it"
-      }</th></tr></thead><tbody>` +
-      rows
-        .map(
-          (o) =>
-            `<tr><td><code class="om ${o.state}">${esc(o.name)}</code></td><td>${esc(o.why)}</td><td>${
-              [
-                o.instead ? `<b>use</b> ${esc(o.instead)}` : "",
-                o.unblocks ? `<b>needs</b> ${esc(o.unblocks)}` : "",
-              ]
-                .filter(Boolean)
-                .join("<br>") || "&mdash;"
-            }</td></tr>`,
-        )
-        .join("") +
-      "</tbody></table>";
-    wrap.appendChild(t);
-  }
-  return wrap;
-}
 
 function div(cls: string): HTMLElement {
   const d = document.createElement("div");

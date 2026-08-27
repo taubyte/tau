@@ -359,7 +359,19 @@ func parentExists(path []StringMatch, query *yaseer.Query) bool {
 		return false
 	}
 	var v any
-	return pq.Value(&v) == nil && v != nil
+	if pq.Value(&v) != nil || v == nil {
+		return false
+	}
+	// A SCALAR parent is not the case this distinction is for. The error it guards
+	// says "the block is there and names a key the switch does not have", and a
+	// scalar has no keys — `source: agents/support` is a VALUE at the switch's own
+	// key, which is how an optional Either says "the default branch, with an
+	// argument". Only a mapping can be the block that error is about.
+	switch v.(type) {
+	case map[string]any, map[any]any:
+		return true
+	}
+	return false
 }
 
 // isBlank reports a value that carries no information: only strings and lists

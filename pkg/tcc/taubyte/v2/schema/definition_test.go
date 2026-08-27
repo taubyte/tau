@@ -112,19 +112,19 @@ func TestFunctionHasNoTrigger(t *testing.T) {
 	assert.Equal(t, nested(fn, "execution", "memory"), int64(32000000), "32MB parses to bytes")
 }
 
-// `libraries` -> `modules` carries into the reference form: a source of
-// "module/<name>" resolves against the compiled index — and compiles to `{module: <id>}`,
+// `libraries` -> `component` carries into the reference form: a named component
+// resolves against the compiled index — and compiles to `{component: <id>}`,
 // two levels, because a kind and an id are two facts rather than one string to split.
-func TestModuleSourceResolves(t *testing.T) {
+func TestComponentSourceResolves(t *testing.T) {
 	flat := compileBasic(t)
 	modID := ""
-	for id := range resources(t, flat, "module") {
+	for id := range resources(t, flat, "component") {
 		modID = id
 	}
-	assert.Assert(t, modID != "", "no module compiled")
+	assert.Assert(t, modID != "", "no component compiled")
 
 	fn := namedResource(t, resources(t, flat, "function"), "checkout")
-	assert.DeepEqual(t, fn["source"], map[string]any{"module": modID})
+	assert.DeepEqual(t, fn["source"], map[string]any{"kind": "component", "component": modID})
 }
 
 // A queue's dead-letter is a ref to another queue, so a typo is a compile error
@@ -270,7 +270,7 @@ func TestAccessIsPerTarget(t *testing.T) {
 	// nesting did NOT cost the resource its own compile passes
 	assert.Equal(t, nested(fn, "execution", "timeout"), int64(20000000000), "scalars still parse")
 	src, _ := fn["source"].(map[string]any)
-	assert.Assert(t, src != nil && strings.HasPrefix(src["module"].(string), "Qm"),
+	assert.Assert(t, src != nil && strings.HasPrefix(src["component"].(string), "Qm"),
 		"refs still resolve: %v", fn["source"])
 
 	// and a verb the kind does not implement is refused at load
@@ -472,7 +472,7 @@ func TestNamespacesIsolateNames(t *testing.T) {
 //
 // The cost, asserted so it cannot change silently: an access target is a map KEY, so
 // nothing resolves it at compile time. A typo in a target name is not a compile error
-// the way `source: modules/typo` is. See omissions.go.
+// the way a component reference to a name nothing declares is.
 func TestAccessNamesItsScope(t *testing.T) {
 	flat := compileBasic(t)
 
@@ -597,7 +597,7 @@ func TestNamespacePathForms(t *testing.T) {
 		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 		assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(
 			"id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
-				"source: \".\"\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"+
+				"execution: {call: c, timeout: 1s, memory: 1MB}\n"+
 				"cache:\n    orders:\n        namespace: "+bad+"\n        ops: [get]\n"), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
@@ -997,8 +997,8 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 
 	// resolves to an id — the kind is on the Ref, and the namespace is authored beside
 	// the name, so nothing is packed into the value
-	src := find("function", "source/module")
-	assert.Equal(t, src.Kind, "module")
+	src := find("function", "source/component")
+	assert.Equal(t, src.Kind, "component")
 	assert.Equal(t, src.Prefix, "", "a v2 reference carries no kind in its value")
 	assert.Assert(t, !src.ByName)
 

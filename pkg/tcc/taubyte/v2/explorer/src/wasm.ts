@@ -45,13 +45,6 @@ export interface Shapes {
   kinds: Record<string, { derived?: { field: string; derivation: string; from: string[]; label: string }[] }>;
 }
 
-export interface Omission {
-  name: string;
-  state: "never" | "blocked" | "open";
-  why: string;
-  instead: string;
-  unblocks: string;
-}
 export type Compiled = Record<string, unknown>;
 
 /** One cross-resource finding, decided by tcc — see schema/checks.go. */
@@ -154,7 +147,6 @@ interface TccV2 {
   generated(files: Record<string, string>, opts?: { branch?: string }): Record<string, string> | { error: string };
   /** Compute a derived value. The derivation is the engine's, so nobody reimplements it. */
   derive(derivation: string, ...inputs: string[]): string;
-  omissions(): Omission[];
 }
 
 declare global {

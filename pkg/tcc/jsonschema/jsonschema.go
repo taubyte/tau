@@ -788,17 +788,53 @@ func addOnce(list *[]string, v string) {
 // intermediate ordered object schemas as needed (order = first-seen).
 func setNested(props *omap, segs []string, leaf map[string]any) {
 	if len(segs) == 1 {
+		// The same key can be a VALUE or a BLOCK: an optional switch whose default
+		// branch takes one argument is written as a bare value at the switch's own
+		// key (`source: agents/support`), and as a mapping for every other branch.
+		// Whichever side is emitted second finds the other already there.
+		if existing, ok := props.get(segs[0]); ok {
+			if obj := objectMember(existing); obj != nil {
+				props.set(segs[0], map[string]any{"oneOf": []any{leaf, obj}})
+				return
+			}
+		}
 		props.set(segs[0], leaf)
 		return
 	}
 	var node map[string]any
 	if v, ok := props.get(segs[0]); ok {
-		node = v.(map[string]any)
+		if node = objectMember(v); node == nil {
+			node = map[string]any{"type": "object", "properties": newOmap()}
+			props.set(segs[0], map[string]any{"oneOf": []any{v, node}})
+		}
 	} else {
 		node = map[string]any{"type": "object", "properties": newOmap()}
 		props.set(segs[0], node)
 	}
 	setNested(node["properties"].(*omap), segs[1:], leaf)
+}
+
+// objectMember returns the object schema a key already carries: the schema itself
+// when it is one, or the object branch when the key is already a value-or-block
+// choice. nil when the key is only a value — which is what turns it into one.
+func objectMember(v any) map[string]any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	if _, has := m["properties"]; has {
+		return m
+	}
+	if alts, ok := m["oneOf"].([]any); ok {
+		for _, alt := range alts {
+			if am, ok := alt.(map[string]any); ok {
+				if _, has := am["properties"]; has {
+					return am
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // matchPath renders an attribute's authored Path for the dynamic-key marker,

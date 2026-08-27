@@ -410,7 +410,6 @@ func TestAnAuthoredOpIsNotRecordedAsGranted(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/function/relay_own.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zu\n"+
 			"description: says for itself that it receives from the queue its step will make\n"+
-			"source: \".\"\n"+
 			"execution:\n"+
 			"    call: relay\n"+
 			"    timeout: 5s\n"+
@@ -671,7 +670,7 @@ func TestAnAgentCanHandOffToAnotherAgent(t *testing.T) {
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zv\n"+
 			"description: hands the question to the agent that can answer it\n"+
 			"model:\n    name: opus\n"+
-			"instructions: route the question\n"+
+			"instructions: route.md\n"+
 			"limits:\n    steps: 4\n"+
 			"agent:\n    support:\n        ops: [invoke]\n"), 0o644))
 
@@ -717,7 +716,7 @@ func TestAnAgentCanUseAnMcpServer(t *testing.T) {
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zx\n"+
 			"description: an agent whose tools come from an MCP server\n"+
 			"model:\n    name: opus\n"+
-			"instructions: help with orders\n"+
+			"instructions: orders.md\n"+
 			"limits:\n    steps: 6\n"+
 			"mcp:\n    orders:\n        ops: [list, call]\n"), 0o644))
 
@@ -787,7 +786,7 @@ func TestAnAgentWithSessionsGetsAnEntity(t *testing.T) {
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zy\n"+
 			"description: an agent that remembers the conversation\n"+
 			"model:\n    name: opus\n"+
-			"instructions: be helpful\n"+
+			"instructions: help.md\n"+
 			"sessions:\n    size: 64MB\n"+
 			"limits:\n    steps: 6\n"), 0o644))
 
@@ -801,7 +800,7 @@ func TestAnAgentWithSessionsGetsAnEntity(t *testing.T) {
 	// other — not as the string it was written as
 	sessions := resource(t, flat, "entity", "chat_sessions")
 	assert.Equal(t, sessions["size"], int64(64000000))
-	assert.Equal(t, nested(sessions, "source", "tau"), "agent")
+	assert.Equal(t, nested(sessions, "source", "builtin"), "agent")
 
 	// and the loop is what reads and writes it
 	loop := resource(t, flat, "function", "chat_infer")
