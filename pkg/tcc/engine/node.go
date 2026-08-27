@@ -350,11 +350,12 @@ func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
 // document at all. A path whose Either() is at the top level hangs off the document
 // root, which always exists — so a switch with no parent keeps its old behaviour and an
 // unmatched key there is still an error.
-func parentExists(path []StringMatch, query *yaseer.Query) bool {
+func parentExists(n *Node, path []StringMatch, query *yaseer.Query) bool {
 	if len(path) < 2 {
 		return true
 	}
-	pq, _, err := inferPathQuery(path[:len(path)-1], query)
+	parent := path[:len(path)-1]
+	pq, _, err := inferPathQuery(parent, query)
 	if err != nil {
 		return false
 	}
@@ -362,16 +363,54 @@ func parentExists(path []StringMatch, query *yaseer.Query) bool {
 	if pq.Value(&v) != nil || v == nil {
 		return false
 	}
-	// A SCALAR parent is not the case this distinction is for. The error it guards
-	// says "the block is there and names a key the switch does not have", and a
-	// scalar has no keys — `source: agents/support` is a VALUE at the switch's own
-	// key, which is how an optional Either says "the default branch, with an
-	// argument". Only a mapping can be the block that error is about.
 	switch v.(type) {
 	case map[string]any, map[any]any:
 		return true
 	}
+	// A SCALAR sits where the switch's block belongs, and that is legitimate only
+	// when the vocabulary ALSO declares a value at exactly this key — an optional
+	// switch whose default branch takes one argument, written as the value itself
+	// (`source: agents/support`). That attribute reads it and validates it.
+	//
+	// Where nothing claims the bare key there is no such branch, so the scalar is a
+	// mistake — `engine: postgres` where a `postgres:` block belongs — and this is
+	// the error that catches it. Letting the scalar through there compiles a
+	// database with no engine, a gateway with no host and a proxy forwarding to
+	// nothing, all silently, because every field under the branch hangs off a
+	// RequiredWhen that a captured-nothing switch never fires.
+	return !claimsBareKey(n, parent)
+}
+
+// claimsBareKey reports whether some attribute reads a VALUE at exactly this path —
+// the switch's own key rather than a key beneath it.
+func claimsBareKey(n *Node, parent []StringMatch) bool {
+	if n == nil {
+		return false
+	}
+	for _, a := range n.Attributes {
+		if a.Captures || len(a.Path) != len(parent) {
+			continue
+		}
+		same := true
+		for i, seg := range a.Path {
+			lit, ok := seg.(string)
+			if !ok || lit != literalOf(parent[i]) {
+				same = false
+				break
+			}
+		}
+		if same {
+			return true
+		}
+	}
 	return false
+}
+
+// literalOf is the plain-string form of a path segment, or "" for a dynamic one
+// (Either/All), which never equals a literal.
+func literalOf(m StringMatch) string {
+	s, _ := m.(string)
+	return s
 }
 
 // isBlank reports a value that carries no information: only strings and lists
@@ -482,7 +521,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 			// block — not by design, but because the others could not be written.
 			//
 			// The parent tells them apart: if the block exists, some key in it is wrong.
-			if attr.Required || parentExists(attr.Path, query) {
+			if attr.Required || parentExists(n, attr.Path, query) {
 				return errorWithLocation(aq, "attribute %s has an empty key", attr.Name)
 			}
 			continue
