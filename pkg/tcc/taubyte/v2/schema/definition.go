@@ -509,7 +509,7 @@ var databaseEngines = append([]string{"distributed"}, externalDatabaseEngines...
 
 // A kind declares Ops() when something can reach it. A kind without them is not a
 // target: nothing "uses" a cron, a zone or a component — a cron fires, a zone answers
-// DNS, a module is built into a workload and named by its source. Their absence is
+// DNS, a component is built into a workload and named by its source. Their absence is
 // the statement, not an oversight.
 //
 // V2Resources is the v2 resource vocabulary. The enum is closed: tcc's validation,
@@ -1089,6 +1089,12 @@ var V2Resources = []*Node{
 				StringSlice(Key("route", "methods"), EachInSet(HttpMethods...), InSection("route"), Doc("Methods", "HTTP methods answered. Omit for any. GET/HEAD/OPTIONS read, the rest write.")),
 
 				// the switch: which kind handles it, and where that resource lives
+				// ONE HANDLER, AND NO WEIGHT. A route names its target and sends
+				// everything it matches there. The Gateway API gives each backendRef a
+				// `weight`, which is how every canary and blue/green rollout in the
+				// category is expressed, and there is nowhere here to put one — the
+				// handler is a single block, not a list with a per-target field.
+				// Traffic splitting is not expressible in this vocabulary.
 				String(Key("route", "handler", "kind"), Path("route", "handler", Either(handlerKinds...)), Captures(), Field("HandlerKind"), InSection("handler"), Doc("Handler", "Which kind serves this path (the key selects the handler block).")),
 				String(Key("route", "handler", "namespace"), Path("route", "handler", Either(handlerKinds...), "namespace"), InSection("handler"), Doc("Namespace", "Path to the namespace holding the handler, e.g. \"/shop/eu\". Omitted means the project root.")),
 				String(Key("route", "handler", "name"), Path("route", "handler", Either(handlerKinds...), "name"), IsVariableName(), Ref("", KindFrom(Key("route", "handler", "kind")), ByName(), Serves()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
@@ -1297,6 +1303,15 @@ var V2Resources = []*Node{
 	// authenticated MCP has to be routed on the `Mcp-Method` / `Mcp-Name` headers and
 	// this vocabulary cannot match on a header yet.
 	//
+	// THE SHAPE IT COMES BACK AS, so the return is a field and not a redesign: an
+	// `auth` block whose oauth branch requires ONE field, `issuer` — an https
+	// authorization-server identifier — with `scopes` optional. The AUDIENCE is never
+	// authored: it is the canonical URL this server is reached at, which ends in the
+	// cloud's fqdn and so cannot be written here for the same reason a cors origin
+	// cannot; the platform derives it from the gateway route that serves it.
+	// `jwks-uri` is not authored either — it is discovered from the issuer's own
+	// metadata, and a second copy in config is a key source that can go stale.
+	//
 	// Thin on purpose: the tools are already functions. Stateless Streamable HTTP,
 	// POST only, no sessions. It compiles to route-table rows that additionally
 	// predicate on the Mcp-Method / Mcp-Name headers the 2026-07-28 spec mirrors out
@@ -1485,8 +1500,15 @@ var V2Resources = []*Node{
 				// line, and mixed in with configuration. What it is relative to is the
 				// agent's `source` — this repository by default — so the same base that
 				// tells a workload where its code is tells an agent where its words are.
+				//
+				// AND "the resource's own location" IS A TEMPLATE, not a convention:
+				// `LayoutOf().Content` is `{kind}/{name}`, so an agent with no `source`
+				// keeps its words in `agent/<name>/`. A workload's build has a
+				// convention it can fall back on and an agent has no build at all, so
+				// without that field the base was a phrase with no referent and every
+				// consumer would have invented the same rule privately.
 				String("instructions", IsRepoPath(), InSection("model"),
-					Doc("Instructions", "The file holding the system prompt, e.g. \"instructions.md\". Relative to this agent's source.")),
+					Doc("Instructions", "The file holding the system prompt, e.g. \"instructions.md\". Relative to this agent's source, which is this repository at the agent's own location unless it says otherwise.")),
 
 				// MEMORY. Declared here and stored in a vector index, which is what the
 				// lowering produces: an agent that remembers is an agent with somewhere
@@ -1536,7 +1558,11 @@ var V2Resources = []*Node{
 				// longer claims to be one: every turn re-sends the conversation, so what
 				// a step costs grows as the loop runs and the total is superlinear in
 				// this number. What bounds money is a token ceiling, which this does not
-				// half-promise.
+				// half-promise. The field it would be is `limits.tokens`, per
+				// invocation: the loop can enforce it from what every model response
+				// already returns, and tokens are portable in a way a currency figure
+				// is not — prices move, cached and output tokens bill differently, and
+				// a local model has no price at all.
 				Int(Key("limits", "steps"), MinInt(1), Required(), InSection("limits"),
 					Doc("Max Steps", "How many times this agent may call a tool and decide again in one invocation. Required: an agent with no ceiling is a loop that runs until something else stops it.")),
 				Int(Key("limits", "concurrent"), MinInt(1), InSection("limits"),
@@ -1570,7 +1596,7 @@ var V2Resources = []*Node{
 			// resources the platform already runs, so an agent adds a vocabulary and no
 			// component.
 			//
-			// The function's SOURCE is the runtime's own (`tau/agent`), which is the one
+			// The function's SOURCE is the platform's own (`builtin: agent`), the one
 			// thing here an author does not supply: the loop — call the model, hand it
 			// the tools it may reach, run one, decide again, stop at the ceiling — is the
 			// same program for every agent, and the parts that differ are the fields

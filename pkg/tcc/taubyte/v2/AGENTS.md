@@ -262,8 +262,9 @@ review notes — the rule is that no attribute path may START with a kind name.
   (see §2a). Reaching for a new attribute type is still the wrong move.
 - **A validated target NAME on a nested entry.** The entry's key is not a value, so
   nothing resolves or checks it — `Key()` reads the last resolved segment of the
-  attribute's OWN path, never the key its object is filed under. Recorded in
-  omissions.go.
+  attribute's OWN path, never the key its object is filed under. A typo in an access
+  target is not a compile error the way a bad `source` is; the check is owed to the
+  publish-time pass.
 - **Polymorphic refs.** `Ref(group)` binds exactly one group. A target that may be one
   of several kinds is either the `Either` switch of §3 (kind as a key) or one field per
   kind.
@@ -294,7 +295,8 @@ different depending on where it appeared: a handler and an authorizer spell it
 
 (The one accepted exception is `zones.records`, which uses zone-file presentation
 lines — an actual industry interchange format, not an invented grammar. The cost is
-recorded in `omissions.go`.)
+real: the compiler cannot validate a record field by field, complete a type, or point
+at the line that is wrong.)
 
 ---
 
@@ -721,12 +723,21 @@ no, the field is carrying deployment state and belongs somewhere else.
 
 ## 11. Decisions are not yours
 
-`omissions.go` records what the vocabulary deliberately lacks, and carries a `Decided`
-axis — `ByOwner` / `ByDefault` / `Forced`. A technical constraint decides itself. A
-**name**, or whether a capability is worth its support cost, is a product call: mark it
-`ByDefault`, say what would unblock it, and do not write a confident rationale under
-it. `databases` was renamed to `kv` on a rationale that had already expired, and had to
-be reverted.
+A technical constraint decides itself — a list of objects had no representation, and no
+amount of preference changed that. A **name**, or whether a capability is worth its
+support cost, is a product call, and the two are easy to confuse because both read as
+settled once written down.
+
+So say which one you are stating. A constraint goes where it bites — a comment beside
+the field, or better a test, the way `TestDeepNamespaceRefsAreNotResolved` holds the
+scope-walk limit. A product call is the owner's: state the default, say what would
+unblock it, and do not write a confident rationale under it. `databases` was renamed to
+`kv` on a rationale that had already expired, and had to be reverted.
+
+There used to be a register of these (`omissions.go`) and it is gone, because a
+roadmap in a schema rots where nothing checks it: six of its entries were still marked
+blocked on something that had shipped. What an author can act on belongs beside the
+field. What is undecided belongs to the owner, not to a file.
 
 When a shape is refused twice, stop building and ask. Six workarounds in a row cost
 more than one question.

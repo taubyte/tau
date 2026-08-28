@@ -652,9 +652,20 @@ func TestADriverCanFindTheStepItCameFrom(t *testing.T) {
 	assert.Assert(t, !invokes, "a wait step's driver was granted a call: %v", drv["function"])
 }
 
-// AN AGENT NAMES ANOTHER AGENT, which is the whole of what the market calls a handoff:
-// the settled pattern everywhere is that a sub-agent is a tool, and in this vocabulary a
-// tool is an access entry, so it should already work. It did not.
+// AN AGENT NAMES ANOTHER AGENT, which is an INVOKE and not a handoff: the parent keeps
+// the answer and the sub-agent returns a value. The settled pattern everywhere is that
+// a sub-agent is a tool, and in this vocabulary a tool is an access entry, so it should
+// already work. It did not.
+//
+// The distinction is worth keeping straight, because the other thing exists and this
+// vocabulary cannot say it. A HANDOFF transfers control — the target owns the final
+// response, and the platform re-binds the conversation's future turns to it. That is a
+// capability boundary a target can grant or refuse separately from `invoke`, not a
+// calling convention, and what blocks it is that nothing here can say where the
+// conversation LIVES after a transfer: sessions are one entity per agent, so a handoff
+// either re-binds the thread to the target and starts it cold or copies context into
+// it. Shipping the verb before deciding that is how the market got "handoffs lose
+// context".
 //
 // A kind that lowers becomes a CONTAINER, and its after shape was given every resource
 // group there is — including its own. So inside `agent/triage` the key `agent:` was two

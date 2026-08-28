@@ -439,15 +439,65 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 // branchConstraints expands every Either switch on this kind into one alternative per
 // option, carrying the fields that are required under it.
 func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
-	// group required attributes by the switch they sit under: the path up to the
-	// Either, and the options it offers
 	type switchAt struct {
-		prefix  []string
-		options []string
+		prefix   []string
+		options  []string
+		optional bool   // the switch itself may be absent
+		bare     string // JSON type of a VALUE at the switch's own key, "" if none
 	}
 	var order []string
 	switches := map[string]*switchAt{}
 	under := map[string]map[string][]string{} // switch key -> option -> required leaves
+
+	// THE SWITCHES ARE THE Captures() ATTRIBUTES, not the fields that happen to sit
+	// under one. Deriving them from the leaves published a choice only where some
+	// field was required inside a branch, so a switch with nothing required under it
+	// — `source`, whose branches are one value each — was emitted as no constraint at
+	// all, and `source: {}` or `source: {branch: main}` validated against a schema
+	// the compiler refuses. A vocabulary states its switches; this reads them.
+	for _, a := range iter.Attributes {
+		if !a.Captures {
+			continue
+		}
+		at := len(a.Path) - 1
+		if at < 0 {
+			continue
+		}
+		fm, ok := a.Path[at].(engine.FiniteMatcher)
+		if !ok || len(fm.Values()) == 0 {
+			continue
+		}
+		prefix := make([]string, 0, at)
+		for _, seg := range a.Path[:at] {
+			str, ok := seg.(string)
+			if !ok {
+				prefix = nil
+				break
+			}
+			prefix = append(prefix, str)
+		}
+		if prefix == nil {
+			continue
+		}
+		key := strings.Join(prefix, "/") + "\x00" + strings.Join(fm.Values(), "|")
+		if _, seen := switches[key]; seen {
+			continue
+		}
+		switches[key] = &switchAt{
+			prefix:  prefix,
+			options: fm.Values(),
+			// OPTIONAL UNLESS SOMETHING INSIDE A BRANCH IS REQUIRED. The capturing
+			// attribute is not the only thing that can make a switch mandatory: v1's
+			// `git-provider` carries no Required() while `source/github/id` does, so a
+			// v1 library with no `source` block is a compile error. Publishing that
+			// switch as optional hands an editor a schema more permissive than the
+			// compiler — the drift this file exists to close, not to move elsewhere.
+			optional: !a.Required && !requiredUnderBranch(iter, prefix, fm.Values()),
+			bare:     bareValueType(iter, prefix),
+		}
+		under[key] = map[string][]string{}
+		order = append(order, key)
+	}
 
 	for _, a := range iter.Attributes {
 		if noStructField(a) || a.Captures {
@@ -510,9 +560,7 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 		}
 		key := strings.Join(prefix, "/") + "\x00" + strings.Join(all, "|")
 		if _, seen := switches[key]; !seen {
-			switches[key] = &switchAt{prefix: prefix, options: all}
-			under[key] = map[string][]string{}
-			order = append(order, key)
+			continue // no Captures() attribute owns this switch
 		}
 		for _, opt := range want {
 			under[key][opt] = append(under[key][opt], strings.Join(leaf, "/"))
@@ -523,9 +571,20 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 	for _, key := range order {
 		sw := switches[key]
 		var branches []any
+		// The switch's own key holding a VALUE is a branch of its own, and it is the
+		// one an author writes most: `source: agents/support`. Typed, so it is
+		// distinguishable from the block forms — without the type a string satisfies
+		// every branch vacuously (`required` says nothing about a non-object) and a
+		// oneOf that matches four ways rejects a correct document.
+		if sw.bare != "" {
+			branches = append(branches, nest(sw.prefix, map[string]any{"type": sw.bare}))
+		}
 		for _, opt := range sw.options {
 			// the branch itself has to be present, and whatever is required inside it
 			inner := map[string]any{"required": []string{opt}}
+			if sw.bare != "" {
+				inner["type"] = "object"
+			}
 			if leaves := under[key][opt]; len(leaves) > 0 {
 				branch := map[string]any{}
 				for _, leaf := range leaves {
@@ -535,9 +594,69 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 			}
 			branches = append(branches, nest(sw.prefix, inner))
 		}
-		out = append(out, branches)
+		// AN OPTIONAL SWITCH IS ONE THE DOCUMENT MAY NOT MENTION. Without this every
+		// choice reads as mandatory, so a gateway with no `host` — reachable only by
+		// being mounted inside another, which is why the field is optional — compiled
+		// clean and failed the schema published for it.
+		if sw.optional && len(sw.prefix) > 0 {
+			last := len(sw.prefix) - 1
+			branches = append(branches, softNest(sw.prefix[:last],
+				map[string]any{"not": map[string]any{"required": []string{sw.prefix[last]}}}))
+		}
+		if len(branches) > 0 {
+			out = append(out, branches)
+		}
 	}
 	return out
+}
+
+// bareValueType is the JSON type of an attribute reading a VALUE at exactly this
+// path — the switch's own key rather than a key beneath it — or "" when the
+// vocabulary declares none. It is the same question the loader asks in
+// engine.claimsBareKey, answered for the published schema.
+func bareValueType(iter *engine.Node, prefix []string) string {
+	if len(prefix) == 0 {
+		return ""
+	}
+	for _, a := range iter.Attributes {
+		if a.Captures || len(a.Path) != len(prefix) {
+			continue
+		}
+		same := true
+		for i, seg := range a.Path {
+			str, ok := seg.(string)
+			if !ok || str != prefix[i] {
+				same = false
+				break
+			}
+		}
+		if !same {
+			continue
+		}
+		switch a.Type {
+		case engine.TypeBool:
+			return "boolean"
+		case engine.TypeInt:
+			return "integer"
+		case engine.TypeFloat:
+			return "number"
+		case engine.TypeStringSlice:
+			return "array"
+		default:
+			return "string"
+		}
+	}
+	return ""
+}
+
+// softNest wraps inner in `properties` alone, with no `required` — so it says
+// nothing at all about a document that omits the path, which is what an "absent"
+// alternative has to do.
+func softNest(prefix []string, inner map[string]any) map[string]any {
+	for i := len(prefix) - 1; i >= 0; i-- {
+		inner = map[string]any{"properties": map[string]any{prefix[i]: inner}}
+	}
+	return inner
 }
 
 // capturedOptions is the full alternative set a switch offers, read off the attribute
@@ -867,4 +986,39 @@ func cleanMatcher(s string) string {
 		}
 	}
 	return s
+}
+
+// requiredUnderBranch reports whether any attribute is Required() somewhere inside one
+// of this switch's branches — through the Either, or through the branch key written
+// literally, which is how v1 spells it.
+func requiredUnderBranch(iter *engine.Node, prefix []string, options []string) bool {
+	for _, a := range iter.Attributes {
+		if a.Captures || !a.Required || len(a.Path) <= len(prefix) {
+			continue
+		}
+		same := true
+		for i, seg := range prefix {
+			str, ok := a.Path[i].(string)
+			if !ok || str != seg {
+				same = false
+				break
+			}
+		}
+		if !same {
+			continue
+		}
+		switch branch := a.Path[len(prefix)].(type) {
+		case string:
+			if slices.Contains(options, branch) {
+				return true
+			}
+		case engine.FiniteMatcher:
+			for _, v := range branch.Values() {
+				if slices.Contains(options, v) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

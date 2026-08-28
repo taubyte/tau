@@ -1093,3 +1093,64 @@ func nested(res map[string]any, segments ...string) any {
 	}
 	return at[segments[len(segments)-1]]
 }
+
+// A CROSS-NAMESPACE ACCESS COMPILES AND NOTHING AUTHORISES IT.
+//
+// `namespace: /billing` is grammar for naming a sibling scope, which v1 did not have —
+// isolation used to hold because there was no way to write it down. Now there is, and
+// nothing decides whether it is allowed: the connection between two scopes, and the
+// target-side grant meant to bound it, are control-plane objects that do not exist.
+// The check has to live at publish or at runtime.
+//
+// Asserted rather than left in prose, because a security property nothing enforces is
+// one somebody will assume is enforced. The day this fails is the day something DID
+// authorise it, and this test is where to record what.
+func TestACrossNamespaceAccessIsNotAuthorised(t *testing.T) {
+	flat := compileBasic(t)
+	shop := namespace(t, root(t, flat), "shop")
+	notify := namedResource(t, resources(t, shop, "function"), "notify")
+
+	// it reaches the project root's orders cache from inside /shop, by absolute path
+	orders, ok := nestedOK(notify, "cache", "orders")
+	assert.Assert(t, ok, "the cross-scope entry did not compile at all")
+	entry, _ := orders.(map[string]any)
+	assert.Equal(t, entry["namespace"], "/", "the target scope is carried, not resolved away")
+
+	// and nothing anywhere in the compiled object says it was allowed
+	for _, f := range schema.Audit(flat, nil) {
+		assert.Assert(t, !strings.Contains(f.Title, "authoris") && !strings.Contains(f.Title, "authoriz"),
+			"something now authorises a cross-namespace access: %v - record what, and delete this test", f)
+	}
+}
+
+// A RESOURCE'S OWN NAME IS NEVER VALIDATED, and the two ends disagree about it.
+//
+// The name comes from the FILE name and the compile driver sets it without checking,
+// so `paid-tier.yaml` yields `paid-tier` — which IsVariableName() rejects, and which a
+// reference written to it is checked against and fails. Anything that resolves a
+// reference to such a resource cannot reach it, and nothing said so at compile time.
+func TestAResourceNameIsNotValidated(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+	assert.NilError(t, afero.WriteFile(fs, "/function/paid-tier.yaml", []byte(
+		"id: QmWQ7XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuB\n"+
+			"execution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err, "the hyphen is accepted as a name")
+
+	fn := namedResource(t, resources(t, obj.Flat(), "function"), "paid-tier")
+	assert.Equal(t, fn["name"], "paid-tier")
+
+	// ...while a REFERENCE to that same name is checked and refused, which is the
+	// disagreement: one end of the vocabulary can write what the other cannot read.
+	assert.NilError(t, afero.WriteFile(fs, "/gateway/tier.yaml", []byte(
+		"id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\n"+
+			"route:\n    path: /\n    handler:\n        function:\n            name: paid-tier\n"), 0o644))
+	c2, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c2.Compile(context.Background())
+	assert.ErrorContains(t, err, "variable name",
+		"a reference to a name the driver accepted must still be refused - if this changed, the two ends agree now")
+}

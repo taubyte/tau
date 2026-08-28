@@ -611,6 +611,20 @@
     },
     "Library": {
       "description": "A reusable code library backed by a git repository, referenced as a function/smartop source.",
+      "oneOf": [
+        {
+          "properties": {
+            "source": {
+              "required": [
+                "github"
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ]
+        }
+      ],
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -1151,6 +1165,20 @@
     },
     "Website": {
       "description": "A static website built from a git repository and served over one or more domains.",
+      "oneOf": [
+        {
+          "properties": {
+            "source": {
+              "required": [
+                "github"
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ]
+        }
+      ],
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",

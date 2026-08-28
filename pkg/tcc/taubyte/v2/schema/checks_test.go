@@ -370,3 +370,38 @@ func TestPullSecretReachesTheResolver(t *testing.T) {
 	}
 	assert.Equal(t, withSecret, 1, "the audit asked about every image anonymously: %v", r.pulls)
 }
+
+// A lowering may write `source: {builtin: …}`; an author may not. The set is closed by
+// what the runtime ships, so a name an author invents is a workload whose code does
+// not exist — and the compiler cannot tell one from the other by looking at the value,
+// only by asking who wrote the resource.
+func TestAuditAuthoredBuiltin(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+	assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(
+		"id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
+			"source:\n    builtin: does_not_exist\n"+
+			"execution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err, "it compiles - which is the point")
+
+	var found *schema.Finding
+	for _, f := range schema.Audit(obj.Flat(), nil) {
+		if f.Kind == "function" && f.Name == "checkout" {
+			found = &f
+			break
+		}
+	}
+	assert.Assert(t, found != nil, "an authored builtin was not reported")
+	assert.Equal(t, found.Severity, schema.Broken)
+	assert.Assert(t, strings.Contains(found.Title, "does_not_exist"), "%q", found.Title)
+
+	// and the agents and workflow steps the fixture lowers are NOT reported, because
+	// a lowering is exactly who may write it
+	for _, f := range schema.Audit(obj.Flat(), nil) {
+		assert.Assert(t, !strings.Contains(f.Title, "built-in program \"agent\""), "%v", f)
+		assert.Assert(t, !strings.Contains(f.Title, "built-in program \"step\""), "%v", f)
+	}
+}

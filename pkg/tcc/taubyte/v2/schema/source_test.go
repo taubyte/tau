@@ -2,6 +2,8 @@ package schema_test
 
 import (
 	"context"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -60,11 +62,22 @@ func TestSourceSwitchRefuses(t *testing.T) {
 		{"a provider that is not a branch", "source:\n    github:\n        id: \"1\"\n", "unknown key 'github'"},
 		{"git named as a block", "source:\n    git:\n        url: https://x/y\n", "takes a value, not a block"},
 		{"a url with no host", "source:\n    git: acme/pay\n", "no scheme"},
+		{"a url carrying a token", "source:\n    git: https://u:ghp_secret@github.com/a/b\n", "carries a credential"},
+		{"an scp url carrying a token", "source:\n    git: ghp_x:y@github.com:a/b\n", "carries a credential"},
+		{"a good scp url", "source:\n    git: git@github.com:acme/pay\n", ""},
+		{"an scp url naming no repository", "source:\n    git: git@github.com:/\n", "no repository"},
 		{"a path that climbs out", "source: ../elsewhere\n", "climbs out"},
 		{"an absolute path", "source: /etc/passwd\n", "is absolute"},
+		{"the repository root, spelled", "source: \".\"\n", "only dots"},
+		{"a path through a climb", "source: pkg/../etc\n", "climbs out"},
+		{"prose", "source: You answer questions about orders, and never guess.\n", "not a repository path"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := sourceOf(t, tc.doc)
+			if tc.contains == "" {
+				assert.NilError(t, err)
+				return
+			}
 			assert.ErrorContains(t, err, tc.contains)
 		})
 	}
@@ -100,4 +113,45 @@ func TestAScalarWhereABlockBelongsIsStillAnError(t *testing.T) {
 			assert.ErrorContains(t, err, tc.contains)
 		})
 	}
+}
+
+// THE PATTERN AND THE CHECKER ARE ONE GRAMMAR. They were written to mirror each other
+// and drifted in both directions at once — the pattern took `a/../b` the checker
+// refused, the checker took `café/x` and a whole English sentence the pattern refused.
+// An editor validates against the pattern and the compiler enforces the checker, so
+// every disagreement is a document one of them accepts and the other rejects.
+func TestRepoPathPatternAndCheckerAgree(t *testing.T) {
+	pattern := regexp.MustCompile(schema.RepoPathPattern())
+	check := schema.RepoPathChecker()
+
+	for _, p := range []string{
+		// legal
+		"pkg", "pkg/checkout", "a.b/c-d_e", "agents/support", ".github/workflows",
+		"a1/b2/c3", "x.y.z", "-lead", "_under", "..a", "a..",
+		// not
+		"", ".", "..", "...", "/abs", "rel/", "a//b", "a/../b", "../x", "a b",
+		"café/x", "You answer questions about orders, and never guess.",
+		"a\\b", "a?b", "a*b", "a:b", "#c", "a/./b",
+	} {
+		byPattern := p != "" && pattern.MatchString(p)
+		byChecker := check(p) == nil && p != ""
+		assert.Equal(t, byPattern, byChecker,
+			"pattern and checker disagree about %q (pattern=%v checker=%v)", p, byPattern, byChecker)
+	}
+}
+
+// "THE RESOURCE'S OWN LOCATION" HAS TO BE SOMETHING A CONSUMER CAN COMPUTE. `source`
+// omitted means this repository at that location, and an agent's `instructions` is a
+// path against it — so a phrase alone would leave every consumer inventing the same
+// rule privately, which is the second copy Layout exists to prevent.
+func TestAResourcesOwnLocationIsATemplate(t *testing.T) {
+	l := schema.LayoutOf()
+	assert.Equal(t, l.Content, "{kind}/{name}")
+
+	fill := func(tpl, kind, name string) string {
+		return strings.ReplaceAll(strings.ReplaceAll(tpl, "{kind}", kind), "{name}", name)
+	}
+	// the document and the content sit beside each other, which is the whole rule
+	assert.Equal(t, fill(l.Resource, "agent", "support"), "agent/support.yaml")
+	assert.Equal(t, fill(l.Content, "agent", "support"), "agent/support")
 }

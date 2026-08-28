@@ -837,12 +837,24 @@ type Layout struct {
 	// produces a scope reads it, and wrote `namespace/checkout/project.yaml` — a
 	// directory the loader sees as having no document at all.
 	Leaf string
+	// Content is a resource's OWN LOCATION: where its authored content sits when it
+	// does not say. `source` omitted means "this repository, at the resource's own
+	// location", and until this was written down that phrase had no referent — an
+	// agent's `instructions: instructions.md` is a path against a base nothing stated,
+	// so no consumer could resolve it without inventing the same rule privately.
+	//
+	// It is the directory beside the document: `agent/support.yaml` is described by
+	// `agent/support/`. Same template as Scope and a different question — a scope is a
+	// container of resources, this is one resource's files — and they are separate
+	// fields so the day one moves the other does not follow it silently.
+	Content string // "{kind}/{name}"
 }
 
 func LayoutOf() Layout {
 	return Layout{
 		Resource: "{kind}/{name}.yaml",
 		Scope:    "{kind}/{name}",
+		Content:  "{kind}/{name}",
 		Leaf:     engine.ContainerDoc(GenerationRoot(), scopeContainer),
 	}
 }

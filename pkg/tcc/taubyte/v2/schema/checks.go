@@ -119,6 +119,7 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	out = append(out, checkWorkflows(all)...)
 	// The record of what the compile produced sits BESIDE the project, so it is read
 	// from the object rather than from the project inside it.
+	out = append(out, checkAuthoredBuiltins(interp.LoweredOf(obj), all)...)
 	out = append(out, checkLoweringCollisions(root, interp.LoweredOf(obj), all)...)
 	out = append(out, checkLoweredLinks(root, all)...)
 	out = append(out, checkExternal(all, r)...)
@@ -1176,4 +1177,29 @@ func CheckLoweredOps(root *Node) []string {
 	}
 	sort.Strings(problems)
 	return slices.Compact(problems)
+}
+
+// `source: {builtin: …}` NAMES A PROGRAM THE PLATFORM SHIPS, and its doc says it is
+// not for authors: a lowering sets it, and the set is closed by what exists. Nothing
+// performed that. An author could write `builtin: does_not_exist` on an ordinary
+// function and compile clean, producing a workload whose code is a name the platform
+// has never heard of — a value promising something nothing delivers, which is the
+// defect the deleted `auth: oauth` field is remembered for.
+//
+// The check is the one question that separates the two cases and it is already
+// answered: a resource nobody wrote is in the lowering record. So the branch is legal
+// exactly where the compiler itself put it.
+func checkAuthoredBuiltins(low interp.Lowered, all []compiled) []Finding {
+	var out []Finding
+	for _, res := range all {
+		name := res.at("source", "builtin")
+		if name == "" || low.Produced(res.id) {
+			continue
+		}
+		out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+			fmt.Sprintf("names the built-in program %q, which is not an author's to name", name),
+			"`source: {builtin: …}` is how a lowering says a workload's code is the platform's own — the agent loop, a workflow's step driver. The set is closed by what the runtime ships, so a resource somebody wrote can only name something that is not there. Point `source` at this repository, a component, or a git URL.",
+			res.id})
+	}
+	return out
 }

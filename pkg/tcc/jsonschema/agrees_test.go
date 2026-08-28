@@ -57,11 +57,30 @@ func TestSchemaAndCompilerAgree(t *testing.T) {
 		}
 		switches++
 		// one alternative is legitimate — a proxy forwards to an application and to
-		// nothing else — so what is checked is that every branch demands its own key
+		// nothing else — so what is checked is that every branch ASSERTS something:
+		// it demands its own key, or (for an optional switch) it is the alternative
+		// that says the switch is absent. A branch asserting neither accepts every
+		// document and makes the whole choice vacuous.
 		for _, br := range branches {
-			m := br.(map[string]any)
-			assert.Assert(t, m["required"] != nil, "%s has a branch that requires nothing", kind)
+			assert.Assert(t, asserts(br.(map[string]any)),
+				"%s has a branch that asserts nothing", kind)
 		}
 	}
 	assert.Assert(t, switches > 0, "no switch was expressed as a closed choice at all")
+}
+
+// asserts reports whether a oneOf branch constrains anything: `required` for a
+// branch that demands its key, `not` for the alternative that says the switch is
+// absent, or either of those nested under `properties`.
+func asserts(m map[string]any) bool {
+	if m["required"] != nil || m["not"] != nil {
+		return true
+	}
+	props, _ := m["properties"].(map[string]any)
+	for _, v := range props {
+		if child, ok := v.(map[string]any); ok && asserts(child) {
+			return true
+		}
+	}
+	return false
 }
