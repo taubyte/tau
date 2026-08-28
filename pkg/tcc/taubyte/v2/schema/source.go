@@ -43,7 +43,7 @@ func contentSource(section string, branches ...string) []*engine.Attribute {
 		// The bare path, and the switch that reads the block forms. They share the
 		// key: a scalar there is this path, a mapping is one of the branches.
 		String("source", IsRepoPath(), InSection(section),
-			Doc("Source", "Where in this repository the content is, e.g. \"agents/support\". Omitted means the resource's own location.")),
+			Doc("Source", "Where in this repository the content is, e.g. \"agents/support\". \".\" is the repository root. Omitted means the resource's own location.")),
 		String(Key("source", "kind"), Path("source", Either(branches...)), Captures(), Field("Kind"), InSection(section),
 			Doc("Source Kind", "Where the content comes from when it is not this repository.")),
 	}
@@ -79,6 +79,14 @@ func contentSource(section string, branches ...string) []*engine.Attribute {
 // way — `source: "."` was a third spelling beside "absent", and it used to compile.
 const repoPathSegment = `[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*`
 
+// repoPathRoot is the repository root, and it is the one dot-only path that means
+// something. It is NOT a spelling of "absent": absent is the resource's OWN location,
+// LayoutOf().Content, the directory beside its document — so `.` is the only way to
+// say "my content is the whole repository", which is a website or a component in a
+// repository of its own. Refusing it removed a state the vocabulary could express and
+// left nothing in its place.
+const repoPathRoot = "."
+
 // repoPathPattern is the grammar, and repoPathChecker enforces exactly it. They were
 // written to "mirror" each other and did not: the pattern accepted `a/../b` while the
 // checker refused it, and the checker accepted `café/x` and a whole English sentence
@@ -86,7 +94,7 @@ const repoPathSegment = `[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*`
 // enforcing the other disagree about the same document, which is the failure the
 // introspectable pattern exists to prevent — so there is now one grammar, and the
 // checker's only job is to say WHICH rule was broken.
-const repoPathPattern = `^` + repoPathSegment + `(/` + repoPathSegment + `)*$`
+const repoPathPattern = `^(\.|` + repoPathSegment + `(/` + repoPathSegment + `)*)$`
 
 var repoPathRegex = regexp.MustCompile(repoPathPattern)
 
@@ -124,7 +132,8 @@ func repoPathCheck(p string) error {
 		case seg == "..":
 			return fmt.Errorf("path %q climbs out of the repository with ..", p)
 		case strings.Trim(seg, ".") == "":
-			return fmt.Errorf("path %q has a segment that is only dots; write the path to the file", p)
+			return fmt.Errorf("path %q has a segment that is only dots; %q alone is the "+
+				"repository root, and nothing else with a dot in it means anything", p, repoPathRoot)
 		}
 	}
 	return fmt.Errorf("path %q is not a repository path: letters, digits, "+

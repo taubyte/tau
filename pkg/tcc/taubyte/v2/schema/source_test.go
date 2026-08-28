@@ -40,6 +40,7 @@ func TestSourceSwitch(t *testing.T) {
 	}{
 		{"absent means here", "", nil},
 		{"a bare path is this repository", "source: pkg/checkout\n", "pkg/checkout"},
+		{"a single dot is the repository root", "source: \".\"\n", "."},
 		{"another component of this project", "source:\n    component: paylib\n    namespace: /\n",
 			map[string]any{"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv", "namespace": "/"}},
 		{"another repository, by clone URL", "source:\n    git: https://gitlab.com/acme/pay\n    branch: main\n    path: cmd\n",
@@ -68,8 +69,9 @@ func TestSourceSwitchRefuses(t *testing.T) {
 		{"an scp url naming no repository", "source:\n    git: git@github.com:/\n", "no repository"},
 		{"a path that climbs out", "source: ../elsewhere\n", "climbs out"},
 		{"an absolute path", "source: /etc/passwd\n", "is absolute"},
-		{"the repository root, spelled", "source: \".\"\n", "only dots"},
+
 		{"a path through a climb", "source: pkg/../etc\n", "climbs out"},
+		{"a dot with a path after it", "source: ./pkg\n", "only dots"},
 		{"prose", "source: You answer questions about orders, and never guess.\n", "not a repository path"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,10 +128,10 @@ func TestRepoPathPatternAndCheckerAgree(t *testing.T) {
 
 	for _, p := range []string{
 		// legal
-		"pkg", "pkg/checkout", "a.b/c-d_e", "agents/support", ".github/workflows",
+		"pkg", "pkg/checkout", "a.b/c-d_e", "agents/support", ".github/workflows", ".",
 		"a1/b2/c3", "x.y.z", "-lead", "_under", "..a", "a..",
 		// not
-		"", ".", "..", "...", "/abs", "rel/", "a//b", "a/../b", "../x", "a b",
+		"", "..", "...", "/abs", "rel/", "a//b", "a/../b", "../x", "a b",
 		"café/x", "You answer questions about orders, and never guess.",
 		"a\\b", "a?b", "a*b", "a:b", "#c", "a/./b",
 	} {
