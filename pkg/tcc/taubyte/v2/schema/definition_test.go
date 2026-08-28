@@ -1108,19 +1108,21 @@ func nested(res map[string]any, segments ...string) any {
 func TestACrossNamespaceAccessIsNotAuthorised(t *testing.T) {
 	flat := compileBasic(t)
 	shop := namespace(t, root(t, flat), "shop")
-	notify := namedResource(t, resources(t, shop, "function"), "notify")
+	eu := namespace(t, shop, "eu")
+	relay := namedResource(t, resources(t, eu, "function"), "relay")
 
-	// it reaches the project root's orders cache from inside /shop, by absolute path
-	orders, ok := nestedOK(notify, "cache", "orders")
+	// A SIBLING, which is the case v1 could not write down. /shop/eu reaching
+	// /billing walks into a scope that is not its own and not its parent, so no
+	// resolution rule permits it — the grammar does, and nothing else looks.
+	ledger, ok := nestedOK(relay, "database", "ledger")
 	assert.Assert(t, ok, "the cross-scope entry did not compile at all")
-	entry, _ := orders.(map[string]any)
-	assert.Equal(t, entry["namespace"], "/", "the target scope is carried, not resolved away")
+	entry, _ := ledger.(map[string]any)
+	assert.Equal(t, entry["namespace"], "/billing", "the sibling scope is carried, not resolved away")
 
-	// and nothing anywhere in the compiled object says it was allowed
-	for _, f := range schema.Audit(flat, nil) {
-		assert.Assert(t, !strings.Contains(f.Title, "authoris") && !strings.Contains(f.Title, "authoriz"),
-			"something now authorises a cross-namespace access: %v - record what, and delete this test", f)
-	}
+	// It is a NAME rather than an id: nothing resolved it, so nothing could have
+	// checked it either. The day it resolves, something decided this was allowed.
+	_, resolved := entry["name"]
+	assert.Assert(t, !resolved, "the cross-scope target now resolves - what authorised it? record that, and delete this test")
 }
 
 // A RESOURCE'S OWN NAME IS NEVER VALIDATED, and the two ends disagree about it.
@@ -1153,4 +1155,19 @@ func TestAResourceNameIsNotValidated(t *testing.T) {
 	_, _, err = c2.Compile(context.Background())
 	assert.ErrorContains(t, err, "variable name",
 		"a reference to a name the driver accepted must still be refused - if this changed, the two ends agree now")
+}
+
+// `instructions` names a FILE, so the repository root is not a value it can take —
+// `.` is legal on the bare `source`, which names a directory, and legalizing it in a
+// shared grammar put it on every field that grammar reaches.
+func TestInstructionsCannotBeTheRepositoryRoot(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+	assert.NilError(t, afero.WriteFile(fs, "/agent/support.yaml", []byte(
+		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Za\n"+
+			"model:\n    name: opus\ninstructions: \".\"\nlimits: {steps: 4}\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "not a place this field can name")
 }

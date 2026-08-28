@@ -66,13 +66,18 @@ func TestSourceSwitchRefuses(t *testing.T) {
 		{"a url carrying a token", "source:\n    git: https://u:ghp_secret@github.com/a/b\n", "carries a credential"},
 		{"an scp url carrying a token", "source:\n    git: ghp_x:y@github.com:a/b\n", "carries a credential"},
 		{"a good scp url", "source:\n    git: git@github.com:acme/pay\n", ""},
+		{"a good ssh url", "source:\n    git: ssh://git@github.com/acme/pay\n", ""},
+		{"a good ssh url with a port", "source:\n    git: ssh://git@github.com:22/acme/pay\n", ""},
+		{"an scp url with whitespace", "source:\n    git: git@github.com:acme/re po\n", "not a URL"},
 		{"an scp url naming no repository", "source:\n    git: git@github.com:/\n", "no repository"},
 		{"a path that climbs out", "source: ../elsewhere\n", "climbs out"},
 		{"an absolute path", "source: /etc/passwd\n", "is absolute"},
 
 		{"a path through a climb", "source: pkg/../etc\n", "climbs out"},
 		{"a dot with a path after it", "source: ./pkg\n", "only dots"},
+		{"the root as a path inside a repository", "source:\n    git: https://g/x\n    path: \".\"\n", "not a place this field can name"},
 		{"prose", "source: You answer questions about orders, and never guess.\n", "not a repository path"},
+		{"an empty value", "source: \"\"\n", "empty: write a path"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := sourceOf(t, tc.doc)
@@ -117,28 +122,42 @@ func TestAScalarWhereABlockBelongsIsStillAnError(t *testing.T) {
 	}
 }
 
-// THE PATTERN AND THE CHECKER ARE ONE GRAMMAR. They were written to mirror each other
+// THE PATTERN AND THE CHECKER ARE ONE GRAMMAR, with no string excused from the
+// comparison. It carved out "" on both sides, which is the one string they disagreed
+// about — a test that proves agreement by removing the disagreement proves nothing. They were written to mirror each other
 // and drifted in both directions at once — the pattern took `a/../b` the checker
 // refused, the checker took `café/x` and a whole English sentence the pattern refused.
 // An editor validates against the pattern and the compiler enforces the checker, so
 // every disagreement is a document one of them accepts and the other rejects.
 func TestRepoPathPatternAndCheckerAgree(t *testing.T) {
-	pattern := regexp.MustCompile(schema.RepoPathPattern())
-	check := schema.RepoPathChecker()
+	for _, g := range []struct {
+		name    string
+		pattern string
+		check   func(string) error
+	}{
+		{"path", schema.RepoPathPattern(), schema.RepoPathChecker()},
+		{"location", schema.RepoLocationPattern(), schema.RepoLocationChecker()},
+	} {
+		grammarAgrees(t, g.name, regexp.MustCompile(g.pattern), g.check)
+	}
+}
 
+func grammarAgrees(t *testing.T, name string, pattern *regexp.Regexp, check func(string) error) {
+	t.Helper()
 	for _, p := range []string{
 		// legal
 		"pkg", "pkg/checkout", "a.b/c-d_e", "agents/support", ".github/workflows", ".",
+		"a", "z/y/x", "1", "a-b", "_x",
 		"a1/b2/c3", "x.y.z", "-lead", "_under", "..a", "a..",
 		// not
 		"", "..", "...", "/abs", "rel/", "a//b", "a/../b", "../x", "a b",
 		"café/x", "You answer questions about orders, and never guess.",
 		"a\\b", "a?b", "a*b", "a:b", "#c", "a/./b",
 	} {
-		byPattern := p != "" && pattern.MatchString(p)
-		byChecker := check(p) == nil && p != ""
+		byPattern := pattern.MatchString(p)
+		byChecker := check(p) == nil
 		assert.Equal(t, byPattern, byChecker,
-			"pattern and checker disagree about %q (pattern=%v checker=%v)", p, byPattern, byChecker)
+			"%s: pattern and checker disagree about %q (pattern=%v checker=%v)", name, p, byPattern, byChecker)
 	}
 }
 

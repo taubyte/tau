@@ -88,3 +88,28 @@ func TestSchemaAcceptsAnOptionalSwitchLeftOut(t *testing.T) {
 		},
 	})), "a gateway with no host compiles; the schema must accept it")
 }
+
+// A SCALAR WHERE A BLOCK BELONGS is a compile error, and the schema has to say so for
+// a switch with ONE option too. `required` is vacuous on a non-object, so a one-option
+// oneOf matched a bare string exactly once and validated it — the multi-option
+// switches were only rejecting scalars by the accident of matching more than once.
+func TestSchemaRefusesAScalarWhereABlockBelongs(t *testing.T) {
+	r := resolved(t)
+	for _, tc := range []struct {
+		name string
+		doc  map[string]any
+	}{
+		{"a proxy's forward", doc("proxy", "pg", map[string]any{
+			"id": "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR", "protocol": "tcp",
+			"service": "postgres", "forward": "db"})},
+		{"a database's instances", doc("database", "orders", map[string]any{
+			"id":        "QmPChzsSKcAiSFqNqrH7LM4t9GhqfHmi3ihn7C9hNc8Vgd",
+			"engine":    map[string]any{"distributed": map[string]any{"size": "16MB"}},
+			"instances": "alone"})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Assert(t, r.Validate(tc.doc) != nil,
+				"the compiler refuses this and the schema must too")
+		})
+	}
+}

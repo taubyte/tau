@@ -617,7 +617,8 @@
             "source": {
               "required": [
                 "github"
-              ]
+              ],
+              "type": "object"
             }
           },
           "required": [
@@ -1020,7 +1021,8 @@
           },
           "required": [
             "object"
-          ]
+          ],
+          "type": "object"
         },
         {
           "properties": {
@@ -1032,7 +1034,8 @@
           },
           "required": [
             "streaming"
-          ]
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -1171,7 +1174,8 @@
             "source": {
               "required": [
                 "github"
-              ]
+              ],
+              "type": "object"
             }
           },
           "required": [

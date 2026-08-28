@@ -1097,7 +1097,14 @@ var V2Resources = []*Node{
 				// Traffic splitting is not expressible in this vocabulary.
 				String(Key("route", "handler", "kind"), Path("route", "handler", Either(handlerKinds...)), Captures(), Field("HandlerKind"), InSection("handler"), Doc("Handler", "Which kind serves this path (the key selects the handler block).")),
 				String(Key("route", "handler", "namespace"), Path("route", "handler", Either(handlerKinds...), "namespace"), InSection("handler"), Doc("Namespace", "Path to the namespace holding the handler, e.g. \"/shop/eu\". Omitted means the project root.")),
-				String(Key("route", "handler", "name"), Path("route", "handler", Either(handlerKinds...), "name"), IsVariableName(), Ref("", KindFrom(Key("route", "handler", "kind")), ByName(), Serves()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
+				// REQUIRED ONCE THERE IS A HANDLER. `handler: {agent: {}}` named a kind
+				// and no resource, and compiled: a route asserting a target that does
+				// not exist, which is the same thing as a proxy forwarding to nothing.
+				// Not Required() outright, because a gateway whose routing is a router
+				// has no handler block at all — the condition is which branch of the
+				// route's own switch was taken. `stream` says it unconditionally,
+				// because a stream always serves something.
+				String(Key("route", "handler", "name"), Path("route", "handler", Either(handlerKinds...), "name"), RequiredWhen(Key("route", "target"), "handler"), IsVariableName(), Ref("", KindFrom(Key("route", "handler", "kind")), ByName(), Serves()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
 				String(Key("route", "handler", "port"), Path("route", "handler", Either(handlerKinds...), "port"), IsVariableName(), InSection("handler"), Doc("Port", "Which of the handler's ports to reach, by name. A workload listening on more than one has to be told which, and the number is never written here — the platform assigns the external one, and there may be several instances of the workload on one host.")),
 
 				// The name this gateway answers on, whatever it turns out to be. A
@@ -1222,7 +1229,9 @@ var V2Resources = []*Node{
 					Doc("Forward To", "Which kind the connection is forwarded to (the key selects the block).")),
 				String(Key("forward", "namespace"), Path("forward", Either(proxyHandlerKinds...), "namespace"), IsNamespacePath(), InSection("forward"),
 					Doc("Namespace", "Path to the namespace holding the workload, e.g. \"/shop/eu\". Omitted means the project root.")),
-				String(Key("forward", "name"), Path("forward", Either(proxyHandlerKinds...), "name"), IsVariableName(), Ref("", KindFrom(Key("forward", "kind")), ByName(), Serves()), InSection("forward"),
+				// Required once the proxy forwards at all — see the gateway's handler
+				// name. A router-only proxy has no forward block to fill in.
+				String(Key("forward", "name"), Path("forward", Either(proxyHandlerKinds...), "name"), RequiredWhen(Key("routing"), "forward"), IsVariableName(), Ref("", KindFrom(Key("forward", "kind")), ByName(), Serves()), InSection("forward"),
 					Doc("Name", "The workload's name within that namespace.")),
 
 				// THE WORKLOAD'S OWN PORT, by name — the one it binds inside its

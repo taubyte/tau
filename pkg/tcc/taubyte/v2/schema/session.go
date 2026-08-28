@@ -60,6 +60,12 @@ func (v2Layout) RootDoc() string { return engine.LeafOf(CompileRoot()) }
 func (v2Layout) ResourcePath() string { return LayoutOf().Resource }
 func (v2Layout) ScopePath() string    { return LayoutOf().Scope }
 
+// ContentPath is where a resource's authored content sits when `source` does not say —
+// the base an agent's `instructions` is a path against. It travels with the other two
+// because a consumer that has to resolve one of these has to resolve all of them, and
+// a template only reachable from Go is a rule every other consumer reinvents.
+func (v2Layout) ContentPath() string { return LayoutOf().Content }
+
 // Identity is what this vocabulary calls the two fields every resource carries, read off
 // the schema that states it.
 func (v2Layout) Identity() (string, string) { return engine.IdentityOf(CompileRoot()) }

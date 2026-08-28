@@ -405,3 +405,28 @@ func TestAuditAuthoredBuiltin(t *testing.T) {
 		assert.Assert(t, !strings.Contains(f.Title, "built-in program \"step\""), "%v", f)
 	}
 }
+
+// A ROUTE OR A PROXY POINTING AT NOTHING. `handler: {agent: {}}` names a kind and no
+// resource: the branch key is there, so the switch captures, and every field inside it
+// was optional. A router-only gateway or proxy has no such block at all, which is why
+// the name is required by the branch rather than outright.
+func TestATargetWithNoNameIsRefused(t *testing.T) {
+	for _, tc := range []struct{ name, path, doc, contains string }{
+		{"a gateway's handler", "/gateway/ask.yaml",
+			"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\nhost:\n    generated:\n        name: ask\nroute:\n    path: /\n    handler:\n        agent: {}\n",
+			"route/handler/agent/name"},
+		{"a proxy's forward", "/proxy/postgres.yaml",
+			"id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nprotocol: tcp\nservice: postgres\nhost:\n    generated:\n        name: db\nforward:\n    application: {}\n",
+			"forward/application/name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+			assert.NilError(t, afero.WriteFile(fs, tc.path, []byte(tc.doc), 0o644))
+			c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+			assert.NilError(t, err)
+			_, _, err = c.Compile(context.Background())
+			assert.ErrorContains(t, err, tc.contains)
+		})
+	}
+}

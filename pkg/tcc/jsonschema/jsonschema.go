@@ -581,10 +581,13 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 		}
 		for _, opt := range sw.options {
 			// the branch itself has to be present, and whatever is required inside it
-			inner := map[string]any{"required": []string{opt}}
-			if sw.bare != "" {
-				inner["type"] = "object"
-			}
+			// A BLOCK BRANCH IS AN OBJECT, always. `required` says nothing about a
+			// non-object, so without this a scalar satisfies every branch vacuously —
+			// harmless where several branches then match and the oneOf fails, and not
+			// harmless at all where the switch has ONE option: `forward: db` matched
+			// exactly once and validated, while the compiler refuses it. The guard was
+			// written for the bare-value case and the reason applies to every case.
+			inner := map[string]any{"type": "object", "required": []string{opt}}
 			if leaves := under[key][opt]; len(leaves) > 0 {
 				branch := map[string]any{}
 				for _, leaf := range leaves {

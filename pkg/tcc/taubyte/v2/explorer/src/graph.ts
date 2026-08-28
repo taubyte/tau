@@ -139,7 +139,7 @@ export function iconOf(kind: string): string {
 /** What this vocabulary's shapes are, from tcc. Set once, with the kinds. */
 // Empty until tcc answers, which it does before anything is drawn. A default that looked
 // like the taubyte vocabulary would be this file quietly knowing one.
-let SHAPES: Shapes = { kinds: {}, layout: { resource: "", scope: "", leaf: "" } };
+let SHAPES: Shapes = { kinds: {}, layout: { resource: "", scope: "", leaf: "", content: "" } };
 
 export function setShapes(s: Shapes): void {
   SHAPES = s;

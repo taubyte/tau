@@ -42,7 +42,7 @@ func contentSource(section string, branches ...string) []*engine.Attribute {
 	attrs := []*engine.Attribute{
 		// The bare path, and the switch that reads the block forms. They share the
 		// key: a scalar there is this path, a mapping is one of the branches.
-		String("source", IsRepoPath(), InSection(section),
+		String("source", IsRepoLocation(), InSection(section),
 			Doc("Source", "Where in this repository the content is, e.g. \"agents/support\". \".\" is the repository root. Omitted means the resource's own location.")),
 		String(Key("source", "kind"), Path("source", Either(branches...)), Captures(), Field("Kind"), InSection(section),
 			Doc("Source Kind", "Where the content comes from when it is not this repository.")),
@@ -94,9 +94,20 @@ const repoPathRoot = "."
 // enforcing the other disagree about the same document, which is the failure the
 // introspectable pattern exists to prevent — so there is now one grammar, and the
 // checker's only job is to say WHICH rule was broken.
-const repoPathPattern = `^(\.|` + repoPathSegment + `(/` + repoPathSegment + `)*)$`
+const repoPathPattern = `^` + repoPathSegment + `(/` + repoPathSegment + `)*$`
 
-var repoPathRegex = regexp.MustCompile(repoPathPattern)
+// repoLocationPattern is the same grammar plus the root, and it belongs to exactly one
+// field: the bare `source`, where the value is a DIRECTORY in this repository and the
+// root is a place absent does not name. Everywhere else `.` means nothing — a file
+// field cannot be a directory, and `source.git.path` already says omitted is that
+// repository's root, so `.` there is the second spelling F29 refused. One grammar for
+// all of them put the root everywhere the moment it was legal anywhere.
+const repoLocationPattern = `^(\.|` + repoPathSegment + `(/` + repoPathSegment + `)*)$`
+
+var (
+	repoPathRegex     = regexp.MustCompile(repoPathPattern)
+	repoLocationRegex = regexp.MustCompile(repoLocationPattern)
+)
 
 // IsRepoPath checks the SYNTAX of a path inside a repository and nothing else. It
 // does not stat, open or clone anything: the compiler runs over a document, and a
@@ -105,14 +116,38 @@ var repoPathRegex = regexp.MustCompile(repoPathPattern)
 func IsRepoPath() engine.Option {
 	return func(a *engine.Attribute) {
 		engine.Annotate("pattern", repoPathPattern)(a)
-		Validator(repoPathCheck)(a)
+		Validator(func(p string) error { return repoPathCheck(p, false) })(a)
 	}
 }
 
-// repoPathCheck enforces repoPathPattern and says which rule was broken.
-func repoPathCheck(p string) error {
-	if p == "" || repoPathRegex.MatchString(p) {
+// IsRepoLocation is IsRepoPath plus `.`, the repository root. Only the bare `source`
+// takes it: it names a directory, and the root is a place absent does not name.
+func IsRepoLocation() engine.Option {
+	return func(a *engine.Attribute) {
+		engine.Annotate("pattern", repoLocationPattern)(a)
+		Validator(func(p string) error { return repoPathCheck(p, true) })(a)
+	}
+}
+
+// repoPathCheck enforces one of the two patterns and says which rule was broken.
+func repoPathCheck(p string, root bool) error {
+	if root && repoLocationRegex.MatchString(p) {
 		return nil
+	}
+	if repoPathRegex.MatchString(p) {
+		return nil
+	}
+	if p == repoPathRoot {
+		return fmt.Errorf("%q is the repository root, which is not a place this field can name", p)
+	}
+	// THE EMPTY STRING IS NOT A PATH. `source: ""` used to pass here and compile to an
+	// empty value — a fourth state beside absent, `.` and a path, meaning nothing that
+	// anything states. It is what `.` was before it was given the root: a spelling
+	// that survives because a checker let it through, not because it says something.
+	// An attribute nobody wrote never reaches this; an author who wrote an empty value
+	// meant one of the other three.
+	if p == "" {
+		return fmt.Errorf("empty: write a path, \"%s\" for the repository root, or leave it out for this resource's own location", repoPathRoot)
 	}
 	// One grammar, several ways to break it. The regex has already said no;
 	// these say why, in the author's terms rather than the pattern's.
@@ -142,14 +177,20 @@ func repoPathCheck(p string) error {
 
 // RepoPathPattern and RepoPathChecker are the one grammar, exported so a test can pin
 // them to each other. Nothing else needs them — the attribute option carries both.
-func RepoPathPattern() string             { return repoPathPattern }
-func RepoPathChecker() func(string) error { return repoPathCheck }
+func RepoPathPattern() string     { return repoPathPattern }
+func RepoLocationPattern() string { return repoLocationPattern }
+func RepoPathChecker() func(string) error {
+	return func(p string) error { return repoPathCheck(p, false) }
+}
+func RepoLocationChecker() func(string) error {
+	return func(p string) error { return repoPathCheck(p, true) }
+}
 
 // scpLike matches git's other spelling, git@host:owner/repo — a URL to git and not
 // to net/url, which parses it as a path with no host. The trailing group is the
 // repository, so it has to be more than "/": the https branch refuses a URL naming a
 // host and nothing else, and this form was not held to the same rule.
-var scpLike = regexp.MustCompile(`^([^\s/@]+)@([A-Za-z0-9.-]+):(.*)$`)
+var scpLike = regexp.MustCompile(`^([^\s/@]+)@([A-Za-z0-9.-]+):(\S*)$`)
 
 // IsGitURL checks that a clone URL is well-formed and names a host. It does not
 // resolve the host, reach it, or care whether the repository exists — that is the
@@ -191,7 +232,14 @@ func IsGitURL() engine.Option {
 		// field that cannot be fixed by rotating anything else. §10a: config is
 		// portable and templatable, so the identity a clone needs is held beside the
 		// deployment and never written into the document that describes it.
-		if u.User != nil {
+		//
+		// THE PASSWORD, NOT THE USER. `ssh://git@github.com/acme/repo` carries a
+		// username because that is how the transport is spelled — `git` is the SSH
+		// account, the same identity the scp form puts before the `@` and the same
+		// repository either way. Refusing the whole `userinfo` refused every ssh URL
+		// while accepting `git@github.com:acme/repo` beside it, which is one rule
+		// applied to one spelling of one thing.
+		if pw, has := u.User.Password(); has && pw != "" {
 			return fmt.Errorf("%q carries a credential; a repository URL in config names the repository, and the identity is the platform's to hold", s)
 		}
 		if strings.Trim(u.Path, "/") == "" {

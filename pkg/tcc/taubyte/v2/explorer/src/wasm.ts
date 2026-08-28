@@ -40,7 +40,7 @@ export interface Kind {
  */
 export interface Shapes {
   /** Where a document lives, as templates. */
-  layout: { resource: string; scope: string; leaf: string };
+  layout: { resource: string; scope: string; leaf: string; content: string };
   /** Per kind: the fields it DERIVES, which only the engine can compute. */
   kinds: Record<string, { derived?: { field: string; derivation: string; from: string[]; label: string }[] }>;
 }

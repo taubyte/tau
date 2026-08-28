@@ -328,8 +328,9 @@ func shapesFn(js.Value, []js.Value) any {
 
 	layout := schema.LayoutOf()
 	return toJS(map[string]any{
-		"kinds":  kinds,
-		"layout": map[string]any{"resource": layout.Resource, "scope": layout.Scope, "leaf": layout.Leaf},
+		"kinds": kinds,
+		"layout": map[string]any{"resource": layout.Resource, "scope": layout.Scope,
+			"leaf": layout.Leaf, "content": layout.Content},
 	})
 }
 func deriveFn(_ js.Value, args []js.Value) any {
