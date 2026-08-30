@@ -188,7 +188,7 @@ func TestSetAttributes_KeyAttribute(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	query := sr.Query()
 
-	err = setAttributes(node, obj, query)
+	err = setAttributes(node, obj, query, walk{})
 
 	assert.NilError(t, err)
 	assert.Equal(t, obj.Get("keyAttr"), object.Refrence("keyname"))
@@ -219,7 +219,7 @@ func TestSetAttributes_KeyAttributeEmpty(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	query := sr.Query()
 
-	err = setAttributes(node, obj, query)
+	err = setAttributes(node, obj, query, walk{})
 
 	// Should succeed and set the key
 	assert.NilError(t, err)
@@ -247,7 +247,7 @@ func TestSetAttributes_WithDefault(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	query := sr.Query().Get("nonexistent")
 
-	err = setAttributes(node, obj, query)
+	err = setAttributes(node, obj, query, walk{})
 
 	assert.NilError(t, err)
 	assert.Equal(t, obj.Get("attr1"), "default-value")
@@ -283,7 +283,7 @@ func TestSetAttributes_WithValidator(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	query := sr.Query()
 
-	err = setAttributes(node, obj, query)
+	err = setAttributes(node, obj, query, walk{})
 
 	assert.NilError(t, err)
 	assert.Equal(t, obj.Get("attr1"), "valid")
@@ -312,7 +312,7 @@ func TestSetAttributes_WithCompatFallback(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	query := sr.Query()
 
-	err = setAttributes(node, obj, query)
+	err = setAttributes(node, obj, query, walk{})
 
 	assert.NilError(t, err)
 	assert.Equal(t, obj.Get("attr1"), "compat-value")
@@ -339,7 +339,7 @@ func TestSetAttributes_RequiredError(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	query := sr.Query().Get("nonexistent")
 
-	err = setAttributes(node, obj, query)
+	err = setAttributes(node, obj, query, walk{})
 
 	assert.ErrorContains(t, err, "") // Should return error for required attribute
 }
@@ -359,7 +359,7 @@ func TestSetAttributes_NoAttributes(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	query := sr.Query()
 
-	err = setAttributes(node, obj, query)
+	err = setAttributes(node, obj, query, walk{})
 
 	assert.NilError(t, err)
 }
@@ -386,7 +386,7 @@ func TestSetAttributes_NoPathUsesName(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	query := sr.Query().Get("type1").Get("it1")
 
-	err = setAttributes(node, obj, query)
+	err = setAttributes(node, obj, query, walk{})
 
 	assert.NilError(t, err)
 	assert.Equal(t, obj.Get("name"), "it1")

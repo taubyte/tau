@@ -528,3 +528,15 @@ func WireDrop() Option {
 func Resource(schemaPkg, iface, specType, specPkg string) NodeOption {
 	return GroupAnnotate("resource", [4]string{schemaPkg, iface, specType, specPkg})
 }
+
+// PerEnv says this attribute may be written per ENVIRONMENT, as `<key>_<env>` beside
+// the key itself. Marked rather than universal because not every field may vary: an
+// `id` or a `name` is IDENTITY, and two environments of one resource share it — a
+// suffix there would make them two resources wearing one name. Where a field that
+// cannot vary has to differ, the whole resource is written for that environment
+// instead, which is the same rule one segment up the path.
+//
+// The mark is read by the loader (node.go's env-first resolution), by strict mode
+// (which claims the suffixed key so it is not "unknown"), and by whatever emits a
+// schema for an editor — one declaration, three consumers, none of them a list.
+func PerEnv() Option { return Annotate("perEnv", true) }

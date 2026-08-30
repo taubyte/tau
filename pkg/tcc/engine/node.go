@@ -149,6 +149,43 @@ func (n *Node) childrenToSlice() []any {
 // absence: two branches of a switch open at once.
 const ambiguousPath = "ambiguous path"
 
+// walk is what a load carries down that the schema cannot state: the per-compile
+// decisions. `strict` was threaded alone; `env` joins it rather than becoming a
+// second parameter on five signatures.
+type walk struct {
+	strict bool
+	// env is the environment this compile is for, "" for none. A vocabulary that
+	// never sets one is unaffected by every line below that reads it — which is why
+	// per-environment resolution needs no opt-in: v1 passes "" and resolves exactly
+	// as it did.
+	env string
+	// envs is every environment the project DECLARES, and it is a different question
+	// from `env`. One document serves them all, so a document written for three
+	// environments carries all three spellings at once and each compile reads one of
+	// them — which means strict has to know the whole set, or production's compile
+	// rejects preview's line as an unknown key. The set is closed and declared, so
+	// `id_preview` is still a typo and so is `timeout_prevew`.
+	envs []string
+}
+
+// envPath is attr's path with the environment appended to its LAST segment —
+// `execution/memory` for `preview` is `execution/memory_preview`. nil when there is
+// nothing to suffix: no environment, or a path whose last segment is an Either
+// branch, which is a key the document chooses rather than one the schema names.
+func envPath(path []StringMatch, env string) []StringMatch {
+	if env == "" || len(path) == 0 {
+		return nil
+	}
+	last, ok := path[len(path)-1].(string)
+	if !ok {
+		return nil
+	}
+	out := make([]StringMatch, len(path))
+	copy(out, path)
+	out[len(out)-1] = last + "_" + env
+	return out
+}
+
 func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, []string, error) {
 	resolved := make([]string, 0, len(path))
 	var cachedList []string
@@ -469,7 +506,7 @@ func requiredName(attr *Attribute, resolved []string) string {
 	return attr.Name
 }
 
-func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query) error {
+func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, w walk) error {
 	if len(n.Attributes) == 0 {
 		return nil
 	}
@@ -480,7 +517,24 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		if len(attr.Path) == 0 {
 			attr.Path = []StringMatch{attr.Name}
 		}
-		aq, resolved, err := inferPathQuery(attr.Path, query)
+		// THE ENVIRONMENT'S VALUE FIRST. `memory_preview` beside `memory` is the same
+		// field said for one environment, so it is a path tried BEFORE the declared
+		// one — the mirror of Compat below, which is tried after.
+		//
+		// PRESENCE decides, not validity. If something is written at the suffixed key
+		// the attribute reads THERE, and a wrong type or an empty value is reported
+		// against the override's own line, rather than falling back to the base and
+		// deploying a value nobody chose. `resolved` follows, so every message names
+		// the key the author actually wrote.
+		path := attr.Path
+		if attr.Meta["perEnv"] == true {
+			if ep := envPath(path, w.env); ep != nil {
+				if eq, _, eerr := inferPathQuery(ep, query); eerr == nil && hasScalar(eq) {
+					path = ep
+				}
+			}
+		}
+		aq, resolved, err := inferPathQuery(path, query)
 		if err != nil {
 			// AN AMBIGUOUS PATH IS NEVER A MISSING ONE. A switch with two of its
 			// branches open is a conflict, and the compat fallback swallowed it: an
@@ -641,7 +695,7 @@ func CompiledSegments(attr *Attribute) []string {
 // "2" would leave every reader to sort them back — numerically, or "10" lands between
 // "1" and "2" and the pipeline silently runs in the wrong order. So the sequence
 // compiles to ONE ordered value, and the order is the document's.
-func loadSequence[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, strict bool) error {
+func loadSequence[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, w walk) error {
 	name, ok := n.Match.(string)
 	if !ok || len(n.Children) == 0 {
 		return nil
@@ -669,7 +723,7 @@ func loadSequence[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 	iter := n.Children[0]
 	out := make([]any, 0, len(items))
 	for i := range items {
-		el, err := load[T](iter, at.Get(strconv.Itoa(i)), strict)
+		el, err := load[T](iter, at.Get(strconv.Itoa(i)), w)
 		if err != nil {
 			return err
 		}
@@ -685,20 +739,20 @@ func loadSequence[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 	return nil
 }
 
-func load[T ObjectDataType](n *Node, query *yaseer.Query, strict bool, claimed ...map[string]bool) (object.Object[T], error) {
+func load[T ObjectDataType](n *Node, query *yaseer.Query, w walk, claimed ...map[string]bool) (object.Object[T], error) {
 	obj := object.New[T]()
 
 	// Before reading anything: where the vocabulary asks for it, a key this node
 	// cannot read is a mistake rather than an extension. See strict.go — it used to
 	// be dropped in silence, and it still is for a vocabulary that does not opt in.
-	if strict {
-		if err := checkKeys(n, query); err != nil {
+	if w.strict {
+		if err := checkKeys(n, query, w.envs); err != nil {
 			return nil, err
 		}
 	}
 
 	if !n.Group {
-		if err := setAttributes(n, obj, query); err != nil {
+		if err := setAttributes(n, obj, query, w); err != nil {
 			return nil, err
 		}
 		if !n.Nested {
@@ -706,16 +760,16 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query, strict bool, claimed .
 		}
 		// A nested resource's child groups live inside its OWN document, so they
 		// walk the same query: no config leaf, no directory descent.
-		return obj, loadChildren(n, obj, query, strict, claimed...)
+		return obj, loadChildren(n, obj, query, w, claimed...)
 	}
 
 	// file might or might not have config, so we ignore error
-	err := setAttributes(n, obj, query.Get(LeafOf(n)))
+	err := setAttributes(n, obj, query.Get(LeafOf(n)), w)
 	if err != nil && n.hasRequiredAttributes() {
 		return nil, err
 	}
 
-	return obj, loadChildren(n, obj, query, strict, claimed...)
+	return obj, loadChildren(n, obj, query, w, claimed...)
 }
 
 // mergeInto folds one object's values and children into another, leaving what is
@@ -767,7 +821,7 @@ func claimedUnder(n *Node, key string) map[string]bool {
 // loadChildren walks a node's child groups against the document at query. Shared by
 // group nodes (children are entries one level down) and nested resources (children
 // are keys of the resource's own document).
-func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, strict bool, claimed ...map[string]bool) error {
+func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, w walk, claimed ...map[string]bool) error {
 	list, _ := query.List()
 	// A resource-container has two channels below one instance: directories are the
 	// resources it contains, while keys in its leaf document are the nested data of
@@ -824,7 +878,7 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 		if !matched {
 			return nil
 		}
-		cobj, err := load[T](itm, childQuery, strict, claimedUnder(n, l))
+		cobj, err := load[T](itm, childQuery, w, claimedUnder(n, l))
 		if err != nil {
 			return err
 		}
@@ -845,7 +899,7 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 			if hybrid && itm.Nested {
 				at = query.Get(leaf)
 			}
-			if err := loadSequence(itm, obj, at, strict); err != nil {
+			if err := loadSequence(itm, obj, at, w); err != nil {
 				return err
 			}
 			continue

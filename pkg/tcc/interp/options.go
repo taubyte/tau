@@ -53,3 +53,14 @@ func WithLayout(l Layout) Option {
 
 // WithBranch pins the compile branch, which the IndexDriver bakes into index paths.
 func WithBranch(branch string) Option { return WithEnv("branch", branch) }
+
+// WithEnvironments names every environment the project DECLARES. One document serves
+// them all, so it carries every environment's spelling of a field at once and each
+// compile reads one — which means the loader needs the whole set to tell an override
+// from a typo, and WithEnv("environment", …) alone cannot supply it.
+func WithEnvironments(names ...string) Option {
+	return func(c *Compiler) error {
+		c.environments = names
+		return nil
+	}
+}

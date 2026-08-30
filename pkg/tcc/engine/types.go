@@ -33,6 +33,10 @@ func IdentityOf(root *Node) (id, name string) {
 type instance struct {
 	schema *schemaDef
 	seer   *yaseer.Seer
+	// env is the environment this engine resolves for, "" for none, and envs is
+	// every environment the project declares. See NewFor.
+	env  string
+	envs []string
 }
 
 type schemaDef struct {

@@ -27,8 +27,11 @@ type NextValidation = engine.NextValidation
 type Compiler struct {
 	seerOptions []yaseer.Option
 	env         Env
-	compileRoot *engine.Node
-	engine      engine.Engine
+	// environments is every environment the project declares — the closed set of
+	// suffixes a document may carry, which is not the same as the one being compiled.
+	environments []string
+	compileRoot  *engine.Node
+	engine       engine.Engine
 
 	// Where the config is READ from, kept so a lowered view can be layered over it
 	// without the caller having to say twice where the project is. See view.go.
@@ -64,7 +67,9 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c 
 		}
 	}
 
-	c.engine, err = engine.New(project, c.seerOptions...)
+	// The environment travels with the compile, not with the schema: two
+	// environments of one commit are two compiles of one vocabulary.
+	c.engine, err = engine.NewFor(project, c.env["environment"], c.environments, c.seerOptions...)
 	if err != nil {
 		return nil, err
 	}

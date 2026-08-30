@@ -288,6 +288,12 @@ func (c *Compiler) viewOptions() []Option {
 	for k, v := range c.env {
 		out = append(out, WithEnv(k, v))
 	}
+	// The DECLARED environments travel too. The lowered pass reads the same documents
+	// back, so without them it is a compile that does not know preview's spelling of a
+	// field is a field — and the second pass rejects what the first one just read.
+	if len(c.environments) > 0 {
+		out = append(out, WithEnvironments(c.environments...))
+	}
 	return out
 }
 

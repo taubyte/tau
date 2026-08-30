@@ -201,8 +201,13 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	base = append(base, contentSource("code", "component", "builtin", "git")...)
 	base = append(base,
 		String(Key("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
-		Duration(Key("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
-		Bytes(Key("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory this workload may use, as a human string (e.g. \"32MB\").")),
+		// A CEILING IS WHAT AN ENVIRONMENT DIFFERS IN. `timeout_preview: 5s` beside
+		// `timeout: 20s` is the same field said for one environment — the resource is
+		// one resource, with one id and one name, running smaller where it is cheap
+		// to. Identity carries no mark and never will: two environments of a workload
+		// share it, which is what makes them the same workload.
+		Duration(Key("execution", "timeout"), Required(), PerEnv(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
+		Bytes(Key("execution", "memory"), Required(), PerEnv(), InSection("limits"), Doc("Memory", "Maximum memory this workload may use, as a human string (e.g. \"32MB\").")),
 		cpuLimit(),
 		egressAttribute(),
 	)

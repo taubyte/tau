@@ -101,3 +101,9 @@ func WithAsLowered() decompile.Option { return decompile.WithAsLowered() }
 func NewDecompiler(o ...decompile.Option) (*decompile.Decompiler, error) {
 	return decompile.New(TaubyteProject, CompileRoot(), o...)
 }
+
+// WithEnvironments names every environment this project declares — the closed set of
+// suffixes a document may carry. It is not the environment being compiled (that is
+// WithEnvironment): one document serves them all, so production's compile has to know
+// preview's spelling is a field and not a typo.
+func WithEnvironments(names ...string) Option { return interp.WithEnvironments(names...) }
