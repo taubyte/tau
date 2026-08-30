@@ -166,7 +166,7 @@ func Category(name string) NodeOption { return GroupAnnotate("category", name) }
 // So this list is for the hosts NOTHING in the config names: an API a function calls with
 // a URL it built itself, a webhook, a third party with no resource of its own.
 func egressAttribute() *Attribute {
-	return StringSlice("egress", InSection("network"),
+	return StringSlice("egress", PerEnv(), InSection("network"),
 		Doc("Egress", "Hosts this workload may reach that nothing else in the project names. A host declared by something this resource references — a model's endpoint, an external database's host — is already reachable and does not belong here. Layered on the node-wide deny floor, which it can never widen; absent means the floor alone."))
 }
 
@@ -262,7 +262,7 @@ func applicationAttributes() []*Attribute {
 		Int(Key("liveness", "failures"), MinInt(1), Default(3), InSection("network"),
 			Doc("Liveness Failures", "Consecutive failed liveness checks before this instance is replaced.")),
 
-		Bytes(Key("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory per instance.")),
+		Bytes(Key("execution", "memory"), Required(), PerEnv(), InSection("limits"), Doc("Memory", "Maximum memory per instance.")),
 		cpuLimit(),
 		egressAttribute(),
 
@@ -270,9 +270,9 @@ func applicationAttributes() []*Attribute {
 		// bound what it may do, which is a different statement from telling it what to
 		// do: one is a limit the operator owns (cost, blast radius, what the workload
 		// can survive), the other is a number the system would have to fight.
-		Int(Key("limits", "max_instances"), MinInt(1), InSection("limits"),
+		Int(Key("limits", "max_instances"), MinInt(1), PerEnv(), InSection("limits"),
 			Doc("Max Instances", "The most instances the platform may run of this workload. A ceiling it scales within, not a count.")),
-		Int(Key("limits", "concurrency"), MinInt(1), InSection("limits"),
+		Int(Key("limits", "concurrency"), MinInt(1), PerEnv(), InSection("limits"),
 			Doc("Concurrency", "The most simultaneous requests one instance may be given. Cloud Run and Knative call this concurrency; Fly calls it a hard limit. Above it the platform queues or starts another instance, within max-instances.")),
 	)
 }
@@ -349,7 +349,7 @@ func routerAttributes(section, world string, at ...string) []*Attribute {
 func title(s string) string { return strings.ToUpper(s[:1]) + s[1:] }
 
 func cpuLimit() *Attribute {
-	return Int(Key("execution", "cpu"), MinInt(1), InSection("limits"),
+	return Int(Key("execution", "cpu"), MinInt(1), PerEnv(), InSection("limits"),
 		Doc("CPU", "Ceiling in millicores: 1000 is one core, 250 a quarter of one. Absent means no ceiling — it competes for what is free."))
 }
 
@@ -594,10 +594,10 @@ var V2Resources = []*Node{
 			commonAttributes(
 				String("image", Required(), PerEnv(), InSection("code"), Doc("Image", "OCI image the sandbox boots from.")),
 				pullSecret()[0], pullSecret()[1],
-				Duration(Key("lifetime", "idle"), InSection("limits"), Doc("Idle Timeout", "Stop the sandbox after this long with no activity.")),
-				Duration(Key("lifetime", "max"), InSection("limits"), Doc("Max Lifetime", "Hard ceiling on how long a sandbox may live.")),
+				Duration(Key("lifetime", "idle"), PerEnv(), InSection("limits"), Doc("Idle Timeout", "Stop the sandbox after this long with no activity.")),
+				Duration(Key("lifetime", "max"), PerEnv(), InSection("limits"), Doc("Max Lifetime", "Hard ceiling on how long a sandbox may live.")),
 				egressAttribute(),
-				Bytes(Key("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory the sandbox may use.")),
+				Bytes(Key("execution", "memory"), Required(), PerEnv(), InSection("limits"), Doc("Memory", "Maximum memory the sandbox may use.")),
 				cpuLimit(),
 			),
 			Nested(variablesGroup()),
@@ -702,8 +702,8 @@ var V2Resources = []*Node{
 			commonAttributes(
 				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
 				String(Key("reach", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Local", []string{"host"}, []string{"all", "host"}, [2]string{"host", "all"}), NoAccessors(), InSection("keys"), Doc("Network Access", "Which peers may reach this cache: all, subnet, or host.")),
-				Bytes(Key("size"), Required(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
-				Duration(Key("ttl"), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
+				Bytes(Key("size"), Required(), PerEnv(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
+				Duration(Key("ttl"), PerEnv(), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
 				// A REFERENCE, never the material. "key material or reference" let the
 				// same field be either, and the safe reading was the one nothing enforced.
 				String(Key("encryption", "key", "namespace"), IsNamespacePath(), InSection("encryption"),
@@ -760,15 +760,15 @@ var V2Resources = []*Node{
 			commonAttributes(
 				String(Key("engine", "kind"), Path("engine", Either(databaseEngines...)), Captures(), Field("Engine"), InSection("engine"),
 					Doc("Engine", "Which engine backs this database. distributed is tau's own, replicated across the swarm; the rest are external systems reached over the network.")),
-				Bytes(Key("engine", "distributed", "size"), Path("engine", Either(databaseEngines...), "size"), RequiredWhen(Key("engine", "kind"), "distributed"), InSection("engine"), ShowWhen(Key("engine", "kind"), "distributed"),
+				Bytes(Key("engine", "distributed", "size"), Path("engine", Either(databaseEngines...), "size"), RequiredWhen(Key("engine", "kind"), "distributed"), PerEnv(), InSection("engine"), ShowWhen(Key("engine", "kind"), "distributed"),
 					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
 
 				// An external engine carries its OWN connection. There is no reference
 				// to a `connector` here, and that absence is the point — see the note
 				// above this kind.
-				String(Key("engine", "host"), Path("engine", Either(externalDatabaseEngines...), "host"), RequiredWhen(Key("engine", "kind"), externalDatabaseEngines...), InSection("engine"),
+				String(Key("engine", "host"), Path("engine", Either(externalDatabaseEngines...), "host"), RequiredWhen(Key("engine", "kind"), externalDatabaseEngines...), PerEnv(), InSection("engine"),
 					Doc("Host", "Where the external database is reached, as host or host:port.")),
-				String(Key("engine", "database"), Path("engine", Either(externalDatabaseEngines...), "database"), InSection("engine"),
+				String(Key("engine", "database"), Path("engine", Either(externalDatabaseEngines...), "database"), PerEnv(), InSection("engine"),
 					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
 				String(Key("engine", "credentials", "namespace"), IsNamespacePath(), InSection("engine"),
 					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
@@ -794,7 +794,7 @@ var V2Resources = []*Node{
 				// The second is a live defect, not a quirk of this field:
 				// Path("engine","distributed","size") makes the same claim and is equally
 				// unenforced.
-				String(Key("engine", "tls"), Path("engine", Either(externalDatabaseEngines...), "tls"), InSet("verify-full", "require", "disable"), InSection("engine"), ShowWhen(Key("engine", "kind"), externalDatabaseEngines...),
+				String(Key("engine", "tls"), Path("engine", Either(externalDatabaseEngines...), "tls"), InSet("verify-full", "require", "disable"), PerEnv(), InSection("engine"), ShowWhen(Key("engine", "kind"), externalDatabaseEngines...),
 					Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included.")),
 				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
 			),
@@ -822,8 +822,8 @@ var V2Resources = []*Node{
 				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
 				String(Key("reach", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Public", []string{"all"}, []string{"all", "subnet", "host"}, [2]string{"all", "subnet"}), NoAccessors(), InSection("reach"), Doc("Network Access", "Which peers may reach this storage: all, subnet, or host.")),
 				Bool(Key("object", "versioning"), NoSetter(), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
-				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
-				Bytes(Key("size"), Path(Either("object", "streaming"), "size"), Required(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
+				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), PerEnv(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
+				Bytes(Key("size"), Path(Either("object", "streaming"), "size"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
 			),
 			GroupDoc("Object or streaming storage, content-addressed, served to the project's peers."), Icon("bucket"), Category("data"),
 			secIdentity, secAccess,
@@ -845,9 +845,9 @@ var V2Resources = []*Node{
 	DefineGroup("volume",
 		resource(
 			commonAttributes(
-				Bytes(Key("quota"), Required(), InSection("storage"), Doc("Size", "Hard quota for the directory, as a human string (e.g. \"10GB\").")),
-				Duration(Key("checkpoint", "interval"), Default("60s"), InSection("checkpoint"), Doc("Checkpoint Interval", "How often the volume is walked, chunked and uploaded.")),
-				Duration(Key("checkpoint", "rpo_budget"), InSection("checkpoint"), Doc("RPO Budget", "Ceiling on the age of the last committed snapshot before on-budget-exceeded fires.")),
+				Bytes(Key("quota"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Hard quota for the directory, as a human string (e.g. \"10GB\").")),
+				Duration(Key("checkpoint", "interval"), Default("60s"), PerEnv(), InSection("checkpoint"), Doc("Checkpoint Interval", "How often the volume is walked, chunked and uploaded.")),
+				Duration(Key("checkpoint", "rpo_budget"), PerEnv(), InSection("checkpoint"), Doc("RPO Budget", "Ceiling on the age of the last committed snapshot before on-budget-exceeded fires.")),
 				String(Key("checkpoint", "on_budget_exceeded"), InSet("alert", "freeze-writes"), Default("alert"), InSection("checkpoint"), Doc("On Budget Exceeded", "What to do when the committed-snapshot age passes rpo-budget. Nothing happens without a budget to pass.")),
 			),
 			GroupDoc("A single-writer leased directory with full POSIX semantics, checkpointed into the CAS. No RWX; bind mounts are refused."), Icon("drive"), Category("data"),
@@ -886,7 +886,7 @@ var V2Resources = []*Node{
 				String("metric", InSet("cosine", "dot", "euclidean"), Default("cosine"), InSection("index"),
 					Doc("Metric", "How closeness is measured. Match the embedding model: cosine for normalized embeddings, dot where magnitude carries meaning, euclidean for raw distance.")),
 
-				Bytes(Key("size"), Required(), InSection("index"),
+				Bytes(Key("size"), Required(), PerEnv(), InSection("index"),
 					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\"). An index is the vectors plus their neighbour graph, so it is larger than the vectors alone.")),
 				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
 			),
@@ -928,7 +928,7 @@ var V2Resources = []*Node{
 		resource(
 			wasmAttributes(
 				Bool("durable", InSection("coordination"), Doc("Durable", "Journal every host call so an interrupted turn replays deterministically.")),
-				Bytes(Key("size"), InSection("limits"), Doc("Storage", "Per-instance SQL storage ceiling.")),
+				Bytes(Key("size"), PerEnv(), InSection("limits"), Doc("Storage", "Per-instance SQL storage ceiling.")),
 			),
 			Nested(variablesGroup()),
 			GroupDoc("A single-writer, durably-stored compute instance addressed by name. CP: a partition that cannot reach K replicas cannot write."), Icon("cube"), Category("compute"),
@@ -944,7 +944,7 @@ var V2Resources = []*Node{
 	DefineGroup("queue",
 		resource(
 			commonAttributes(
-				Duration("visibility_timeout", Default("30s"), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
+				Duration("visibility_timeout", Default("30s"), PerEnv(), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
 
 				// HOW LONG AN ITEM WAITS BEFORE ANYONE MAY HAVE IT. Every queue gets it —
 				// it is SQS's DelaySeconds and it is useful on its own — and it is also
@@ -1117,12 +1117,12 @@ var V2Resources = []*Node{
 				// half is not knowable when the config is written, so an author cannot
 				// put their own origin in the list below — which made cors usable with
 				// a zone you own and not with the default path.
-				Bool(Key("cors", "allow_self"), InSection("policy"),
+				Bool(Key("cors", "allow_self"), PerEnv(), InSection("policy"),
 					Doc("Allow Own Origin", "Allow the origin this gateway itself answers on. The only way to say it when the name is generated.")),
-				StringSlice(Key("cors", "origins"), InSection("policy"), Doc("CORS Origins", "Origins allowed by CORS.")),
+				StringSlice(Key("cors", "origins"), PerEnv(), InSection("policy"), Doc("CORS Origins", "Origins allowed by CORS.")),
 				StringSlice(Key("cors", "methods"), EachInSet(HttpMethods...), InSection("policy"), Doc("CORS Methods", "Methods allowed by CORS.")),
-				Int(Key("rate_limit", "rpm"), InSection("policy"), Doc("Rate Limit", "Requests per minute.")),
-				Int(Key("rate_limit", "burst"), InSection("policy"), Doc("Burst", "Requests allowed above the sustained rate.")),
+				Int(Key("rate_limit", "rpm"), PerEnv(), InSection("policy"), Doc("Rate Limit", "Requests per minute.")),
+				Int(Key("rate_limit", "burst"), PerEnv(), InSection("policy"), Doc("Burst", "Requests allowed above the sustained rate.")),
 				String(Key("rate_limit", "key"), InSection("policy"), Doc("Rate Limit Key", "What the limit is counted per: \"ip\" or \"header:<name>\".")),
 			),
 			Nested(transformersGroup()),
@@ -1259,11 +1259,11 @@ var V2Resources = []*Node{
 				// rate stays near zero and the count is the resource. Neither is a
 				// substitute for the other, which is why both are here and neither has a
 				// default: a ceiling nobody chose is a ceiling nobody can defend.
-				Int(Key("rate_limit", "connections_per_minute"), MinInt(1), InSection("limits"),
+				Int(Key("rate_limit", "connections_per_minute"), MinInt(1), PerEnv(), InSection("limits"),
 					Doc("Connections / minute", "How fast new connections may be accepted from one source. Absent means unlimited.")),
-				Int(Key("rate_limit", "burst"), MinInt(1), InSection("limits"),
+				Int(Key("rate_limit", "burst"), MinInt(1), PerEnv(), InSection("limits"),
 					Doc("Burst", "Connections allowed above the sustained rate.")),
-				Int(Key("rate_limit", "concurrent"), MinInt(1), InSection("limits"),
+				Int(Key("rate_limit", "concurrent"), MinInt(1), PerEnv(), InSection("limits"),
 					Doc("Concurrent", "How many connections may be open at once from one source. The limit that matters when a protocol holds its socket open.")),
 				String(Key("rate_limit", "key"), InSet("ip", "subnet"), Default("ip"), InSection("limits"),
 					Doc("Counted Per", "ip: each address separately. subnet: per /24 and /64, which is what stops one host with an address range from being many clients.")),
@@ -1336,7 +1336,7 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				String(Key("tools", "cache_scope"), InSet("none", "public", "principal"), Default("none"), InSection("tools"), Doc("Cache Scope", "How widely tools/list may be cached. public is cacheable across the whole swarm.")),
-				Duration(Key("tools", "cache_ttl"), InSection("tools"), Doc("Cache TTL", "How long a cached tools/list stays valid.")),
+				Duration(Key("tools", "cache_ttl"), PerEnv(), InSection("tools"), Doc("Cache TTL", "How long a cached tools/list stays valid.")),
 			),
 			GroupDoc("An MCP server grouping functions as tools. Stateless Streamable HTTP; subscriptions are declined in v1."), Icon("plug"), Category("internet"),
 			secIdentity, secAccess,
@@ -1431,7 +1431,7 @@ var V2Resources = []*Node{
 	DefineGroup("model",
 		resource(
 			commonAttributes(
-				String("identifier", Required(), InSection("model"),
+				String("identifier", Required(), PerEnv(), InSection("model"),
 					Doc("Identifier", "What this model is called where it is served, e.g. \"claude-opus-5\" or \"llama-3.1-70b\". The resource's own name is yours; this one is theirs.")),
 				String("format", InSet("openai", "anthropic", "ollama"), Required(), InSection("model"),
 					Doc("API Format", "The wire format the endpoint speaks. Not the provider: plenty of things that are not OpenAI serve the OpenAI format, and the caller needs the shape of the request.")),
@@ -1442,7 +1442,7 @@ var V2Resources = []*Node{
 				// It did: the port check read this switch's `local` as a resource kind.
 				String(Key("inference", "kind"), Path("inference", Either("remote", "local")), Captures(), InSection("model"),
 					Doc("Inference", "remote: a provider reached over the network. local: a workload in this project serving it (the key selects the block).")),
-				String(Key("inference", "remote", "endpoint"), IsURL(), RequiredWhen(Key("inference", "kind"), "remote"), InSection("model"),
+				String(Key("inference", "remote", "endpoint"), IsURL(), RequiredWhen(Key("inference", "kind"), "remote"), PerEnv(), InSection("model"),
 					Doc("Endpoint", "Base URL of the provider, e.g. \"https://api.anthropic.com\".")),
 				String(Key("inference", "remote", "credentials", "namespace"), IsNamespacePath(), InSection("model"),
 					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
@@ -1459,11 +1459,11 @@ var V2Resources = []*Node{
 				// the right constraint here rather than a limit worked around: these are
 				// the four every format has, they have ranges worth checking, and a
 				// provider-specific fifth belongs to whoever added the provider.
-				Float(Key("parameters", "temperature"), InSection("parameters"),
+				Float(Key("parameters", "temperature"), PerEnv(), InSection("parameters"),
 					Doc("Temperature", "How much the model is allowed to vary its answer. 0 is as close to deterministic as a model gets.")),
-				Float(Key("parameters", "top_p"), InSection("parameters"),
+				Float(Key("parameters", "top_p"), PerEnv(), InSection("parameters"),
 					Doc("Top P", "Nucleus sampling: consider only the most likely tokens summing to this probability.")),
-				Int(Key("parameters", "max_tokens"), MinInt(1), InSection("parameters"),
+				Int(Key("parameters", "max_tokens"), MinInt(1), PerEnv(), InSection("parameters"),
 					Doc("Max Tokens", "Ceiling on one answer. A cost ceiling as much as a length one.")),
 				StringSlice(Key("parameters", "stop"), InSection("parameters"),
 					Doc("Stop Sequences", "Strings that end an answer when the model produces them.")),
@@ -1559,7 +1559,7 @@ var V2Resources = []*Node{
 				// misleading when the branch is not taken, which is the one thing §7
 				// says not to give a default to. `sessions.size` beside it is the same
 				// shape done right.
-				Bytes(Key("memory", "size"), RequiredWhen(Key("memory", "embedder", "name")), InSection("memory"),
+				Bytes(Key("memory", "size"), RequiredWhen(Key("memory", "embedder", "name")), PerEnv(), InSection("memory"),
 					Doc("Memory Size", "How much the agent may remember, as a human string.")),
 
 				// SESSIONS. A conversation that outlives one invocation needs somewhere to
@@ -1585,9 +1585,9 @@ var V2Resources = []*Node{
 				// already returns, and tokens are portable in a way a currency figure
 				// is not — prices move, cached and output tokens bill differently, and
 				// a local model has no price at all.
-				Int(Key("limits", "steps"), MinInt(1), Required(), InSection("limits"),
+				Int(Key("limits", "steps"), MinInt(1), Required(), PerEnv(), InSection("limits"),
 					Doc("Max Steps", "How many times this agent may call a tool and decide again in one invocation. Required: an agent with no ceiling is a loop that runs until something else stops it.")),
-				Int(Key("limits", "concurrent"), MinInt(1), InSection("limits"),
+				Int(Key("limits", "concurrent"), MinInt(1), PerEnv(), InSection("limits"),
 					Doc("Concurrent", "How many invocations may run at once.")),
 
 				// HOW LONG ONE INVOCATION MAY TAKE, end to end. The step ceiling bounds
@@ -1596,9 +1596,9 @@ var V2Resources = []*Node{
 				// value is carried onto the loop this agent becomes and a produced
 				// workload has to have one — it used to be five minutes written into the
 				// lowering, which is a number no author could see or change.
-				Duration(Key("limits", "timeout"), Default("5m"), InSection("limits"),
+				Duration(Key("limits", "timeout"), Default("5m"), PerEnv(), InSection("limits"),
 					Doc("Timeout", "Ceiling on one whole invocation, as a human string (e.g. \"5m\"). Counts the model calls, the tools and the waiting between them.")),
-				Bytes(Key("limits", "memory"), Default("128MB"), InSection("limits"),
+				Bytes(Key("limits", "memory"), Default("128MB"), PerEnv(), InSection("limits"),
 					Doc("Memory", "How much memory the loop may use, as a human string (e.g. \"128MB\"). An agent handing large tool results between the model and its tools needs more than one juggling short answers.")),
 				egressAttribute(),
 				// An agent's content is prose, and it lives where the resource lives:
@@ -1694,9 +1694,9 @@ var V2Resources = []*Node{
 	DefineGroup("workflow",
 		resource(
 			commonAttributes(
-				Duration("timeout", InSection("run"),
+				Duration("timeout", PerEnv(), InSection("run"),
 					Doc("Timeout", "Ceiling on one whole run, as a human string (e.g. \"1h\"). Absent means a run may take as long as its steps do.")),
-				Int("concurrency", MinInt(1), InSection("run"),
+				Int("concurrency", MinInt(1), PerEnv(), InSection("run"),
 					Doc("Concurrency", "How many runs may be in flight at once. Absent means unlimited.")),
 
 				// WHERE A START LANDS. Required, because a pipeline whose first step is
@@ -2184,7 +2184,7 @@ var secTransformers = Section("transformers", "Transformers", "Functions traffic
 func variablesGroup() *Node {
 	return DefineGroup("variables",
 		DefineIter([]*Attribute{
-			String("value", InSection("config"),
+			String("value", PerEnv(), InSection("config"),
 				Doc("Value", "A literal, stored in git and readable by anyone who can read the repo. For anything that is not a secret.")),
 			String(Key("secret", "namespace"), IsNamespacePath(), InSection("config"),
 				Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
