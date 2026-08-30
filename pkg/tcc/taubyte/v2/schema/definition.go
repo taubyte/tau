@@ -62,7 +62,6 @@ func attachAccess() {
 	groups := accessGroups()
 	for _, group := range groups {
 		group.Nested = true
-		GroupAnnotate("accessGroup", true)(group)
 	}
 	authz := authorizerAttributes()
 	for _, g := range V2Resources {
@@ -192,7 +191,7 @@ var hostWorlds = []string{"handler", "authorizer", "instance-validator", "gatewa
 
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	base := []*Attribute{
-		String("implements", InSet(hostWorlds...), Default("handler"), Content(), InSection("code"),
+		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
 			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream. gateway-router: takes a parsed HTTP request, decides which route or function should handle it. proxy-router: takes bytes on a stream, decides which target should receive the connection.")),
 	}
 	// A workload's code: this repository by default, one of the project's own
@@ -201,7 +200,7 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	// "tau/<name>", a kind packed into a value with no room to say which namespace.
 	base = append(base, contentSource("code", "component", "builtin", "git")...)
 	base = append(base,
-		String(Key("execution", "call"), Required(), Content(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
+		String(Key("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
 		// A CEILING IS WHAT AN ENVIRONMENT DIFFERS IN. `timeout_preview: 5s` beside
 		// `timeout: 20s` is the same field said for one environment — the resource is
 		// one resource, with one id and one name, running smaller where it is cheap
@@ -249,7 +248,7 @@ var secSource = Section("source", "Source", "Where the code is sourced from.")
 // harder to read than the thing it builds.
 func applicationAttributes() []*Attribute {
 	out := []*Attribute{
-		String("image", Required(), InSection("code"), Doc("Image", "OCI image reference this workload runs.")),
+		String("image", Required(), PerEnv(), InSection("code"), Doc("Image", "OCI image reference this workload runs.")),
 		pullSecret()[0], pullSecret()[1],
 	}
 	out = append(out, probeAttributes("readiness", "network", "Whether this instance should be given work.")...)
@@ -577,7 +576,7 @@ var V2Resources = []*Node{
 		resource(
 			wasmAttributes(
 				String("runtime", InSet("wasm", "container"), Default("wasm"), InSection("code"), Doc("Runtime", "Which tier runs this worker: wasm or container.")),
-				String("image", RequiredWhen("runtime", "container"), InSection("code"), Doc("Image", "OCI image reference (container runtime only).")),
+				String("image", RequiredWhen("runtime", "container"), PerEnv(), InSection("code"), Doc("Image", "OCI image reference (container runtime only).")),
 				pullSecret()[0], pullSecret()[1],
 			),
 			Nested(variablesGroup()),
@@ -593,7 +592,7 @@ var V2Resources = []*Node{
 	DefineGroup("sandbox",
 		resource(
 			commonAttributes(
-				String("image", Required(), InSection("code"), Doc("Image", "OCI image the sandbox boots from.")),
+				String("image", Required(), PerEnv(), InSection("code"), Doc("Image", "OCI image the sandbox boots from.")),
 				pullSecret()[0], pullSecret()[1],
 				Duration(Key("lifetime", "idle"), InSection("limits"), Doc("Idle Timeout", "Stop the sandbox after this long with no activity.")),
 				Duration(Key("lifetime", "max"), InSection("limits"), Doc("Max Lifetime", "Hard ceiling on how long a sandbox may live.")),
@@ -1530,7 +1529,7 @@ var V2Resources = []*Node{
 				// convention it can fall back on and an agent has no build at all, so
 				// without that field the base was a phrase with no referent and every
 				// consumer would have invented the same rule privately.
-				String("instructions", IsRepoPath(), Content(), InSection("model"),
+				String("instructions", IsRepoPath(), InSection("model"),
 					Doc("Instructions", "The file holding the system prompt, e.g. \"instructions.md\". Relative to this agent's source, which is this repository at the agent's own location unless it says otherwise.")),
 
 				// MEMORY. Declared here and stored in a vector index, which is what the
@@ -1950,7 +1949,7 @@ func namespacesGroup(depth int) *Node {
 
 var scopeShape = namespacesGroup(MaxNamespaceDepth)
 
-var _ = func() any { attachAccess(); attachIndexes(); attachLowerable(); attachPerEnv(); return nil }()
+var _ = func() any { attachAccess(); attachIndexes(); attachLowerable(); return nil }()
 
 var v2Root = Root(
 	rootAttributes(),

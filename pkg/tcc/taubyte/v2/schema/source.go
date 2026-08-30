@@ -42,7 +42,7 @@ func contentSource(section string, branches ...string) []*engine.Attribute {
 	attrs := []*engine.Attribute{
 		// The bare path, and the switch that reads the block forms. They share the
 		// key: a scalar there is this path, a mapping is one of the branches.
-		String("source", IsRepoLocation(), Content(), InSection(section),
+		String("source", IsRepoLocation(), InSection(section),
 			Doc("Source", "Where in this repository the content is, e.g. \"agents/support\". \".\" is the repository root. Omitted means the resource's own location.")),
 		String(Key("source", "kind"), Path("source", Either(branches...)), Captures(), Field("Kind"), InSection(section),
 			Doc("Source Kind", "Where the content comes from when it is not this repository.")),
@@ -51,20 +51,20 @@ func contentSource(section string, branches ...string) []*engine.Attribute {
 		switch b {
 		case "component":
 			attrs = append(attrs,
-				String(Key("source", "component"), Path("source", "component"), IsVariableName(), Ref("component"), Content(), InSection(section),
+				String(Key("source", "component"), Path("source", "component"), IsVariableName(), Ref("component"), InSection(section),
 					Doc("Component", "A component of this project to build from.")),
-				String(Key("source", "namespace"), IsNamespacePath(), Content(), InSection(section), ShowWhen(Key("source", "kind"), "component"),
+				String(Key("source", "namespace"), IsNamespacePath(), InSection(section), ShowWhen(Key("source", "kind"), "component"),
 					Doc("Component Namespace", "Where that component lives. Omitted means this resource's own scope, then its parents.")))
 		case "builtin":
-			attrs = append(attrs, String(Key("source", "builtin"), Path("source", "builtin"), IsVariableName(), Content(), InSection(section),
+			attrs = append(attrs, String(Key("source", "builtin"), Path("source", "builtin"), IsVariableName(), InSection(section),
 				Doc("Built-in Program", "A program the platform itself ships, by name. Not for authors: a lowering sets it, and the set is closed by what exists.")))
 		case "git":
 			attrs = append(attrs,
-				String(Key("source", "git"), Path("source", "git"), IsGitURL(), Content(), InSection(section),
+				String(Key("source", "git"), Path("source", "git"), IsGitURL(), InSection(section),
 					Doc("Repository", "Clone URL of the repository, e.g. \"https://gitlab.com/acme/prompts\". The host is the provider; nothing else names it.")),
-				String(Key("source", "branch"), RepoBranch(), Content(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
+				String(Key("source", "branch"), RepoBranch(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
 					Doc("Branch", "Branch to read. Omitted means the repository's default branch.")),
-				String(Key("source", "path"), IsRepoPath(), Content(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
+				String(Key("source", "path"), IsRepoPath(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
 					Doc("Path", "Where in that repository the content is. Omitted means its root.")))
 		default:
 			panic("contentSource: unknown branch " + b)
