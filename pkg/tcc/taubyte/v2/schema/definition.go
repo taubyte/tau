@@ -62,6 +62,7 @@ func attachAccess() {
 	groups := accessGroups()
 	for _, group := range groups {
 		group.Nested = true
+		GroupAnnotate("accessGroup", true)(group)
 	}
 	authz := authorizerAttributes()
 	for _, g := range V2Resources {
@@ -191,7 +192,7 @@ var hostWorlds = []string{"handler", "authorizer", "instance-validator", "gatewa
 
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	base := []*Attribute{
-		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
+		String("implements", InSet(hostWorlds...), Default("handler"), Content(), InSection("code"),
 			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream. gateway-router: takes a parsed HTTP request, decides which route or function should handle it. proxy-router: takes bytes on a stream, decides which target should receive the connection.")),
 	}
 	// A workload's code: this repository by default, one of the project's own
@@ -200,7 +201,7 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	// "tau/<name>", a kind packed into a value with no room to say which namespace.
 	base = append(base, contentSource("code", "component", "builtin", "git")...)
 	base = append(base,
-		String(Key("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
+		String(Key("execution", "call"), Required(), Content(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
 		// A CEILING IS WHAT AN ENVIRONMENT DIFFERS IN. `timeout_preview: 5s` beside
 		// `timeout: 20s` is the same field said for one environment — the resource is
 		// one resource, with one id and one name, running smaller where it is cheap
@@ -1504,9 +1505,17 @@ var V2Resources = []*Node{
 				// same key: this block, and the access group generated for the kind.
 				// They coexist because a key an attribute declares is not an entry of
 				// the group sharing its name (engine/node.go, claimedUnder).
-				String(Key("model", "namespace"), IsNamespacePath(), InSection("model"),
+				// With the name, because a model in another scope is one answer, not two.
+				String(Key("model", "namespace"), IsNamespacePath(), PerEnv(), InSection("model"),
 					Doc("Model Namespace", "Where that model lives. Omitted means this agent's own scope, then its parents.")),
-				String(Key("model", "name"), IsVariableName(), Ref("model"), Required(), InSection("model"),
+				// MARKED, and it is the one reference that is. A cheaper model in preview
+				// is the most-asked-for difference there is, and a reference genuinely
+				// resolves inside one environment's compile — so "the graph is readable
+				// without picking an environment" is a preference here rather than an
+				// invariant, and this is where it is spent. Every other reference stays
+				// environment-invariant: what a resource is SET to may vary, what it
+				// REACHES may not.
+				String(Key("model", "name"), IsVariableName(), Ref("model"), Required(), PerEnv(), InSection("model"),
 					Doc("Model", "The model this agent answers with.")),
 
 				// A FILENAME, not the prose. A system prompt is pages of text, and a
@@ -1521,7 +1530,7 @@ var V2Resources = []*Node{
 				// convention it can fall back on and an agent has no build at all, so
 				// without that field the base was a phrase with no referent and every
 				// consumer would have invented the same rule privately.
-				String("instructions", IsRepoPath(), InSection("model"),
+				String("instructions", IsRepoPath(), Content(), InSection("model"),
 					Doc("Instructions", "The file holding the system prompt, e.g. \"instructions.md\". Relative to this agent's source, which is this repository at the agent's own location unless it says otherwise.")),
 
 				// MEMORY. Declared here and stored in a vector index, which is what the
@@ -1941,7 +1950,7 @@ func namespacesGroup(depth int) *Node {
 
 var scopeShape = namespacesGroup(MaxNamespaceDepth)
 
-var _ = func() any { attachAccess(); attachIndexes(); attachLowerable(); return nil }()
+var _ = func() any { attachAccess(); attachIndexes(); attachLowerable(); attachPerEnv(); return nil }()
 
 var v2Root = Root(
 	rootAttributes(),

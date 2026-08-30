@@ -796,8 +796,14 @@ func mergeInto[T ObjectDataType](into, from object.Object[T]) {
 // claimedUnder is the set of keys this node's OWN attributes declare inside the child
 // group named `key` — the second segment of every attribute path that starts there. The
 // group must not read those as entries of its own.
-func claimedUnder(n *Node, key string) map[string]bool {
+func claimedUnder(n *Node, key string, envs []string) map[string]bool {
 	var out map[string]bool
+	claim := func(k string) {
+		if out == nil {
+			out = map[string]bool{}
+		}
+		out[k] = true
+	}
 	for _, a := range n.Attributes {
 		if len(a.Path) < 2 {
 			continue
@@ -810,10 +816,27 @@ func claimedUnder(n *Node, key string) map[string]bool {
 		if !ok {
 			continue
 		}
-		if out == nil {
-			out = map[string]bool{}
+		claim(second)
+		// AND ITS ENVIRONMENT SPELLINGS, where a block and an access GROUP share a
+		// name. An agent's `model:` is both — the block naming which model answers,
+		// and the group granting access to models — so what is not claimed here is
+		// walked as an access entry. `model/name` is claimed and `model/name_preview`
+		// was not, which made an override of a marked field read as an entry named
+		// `name_preview` and fail with `required attribute 'ops'`: an error about a
+		// shape the author never wrote.
+		//
+		// Only where the second segment is also the LAST: a suffix lands on the leaf,
+		// so `engine/postgres/host` suffixes `host` and claiming `postgres_preview`
+		// would reserve a branch key nothing writes.
+		if len(a.Path) == 2 && a.Meta["perEnv"] == true {
+			for _, env := range envs {
+				if ep := envPath(a.Path, env); ep != nil {
+					if last, ok := ep[len(ep)-1].(string); ok {
+						claim(last)
+					}
+				}
+			}
 		}
-		out[second] = true
 	}
 	return out
 }
@@ -878,7 +901,7 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 		if !matched {
 			return nil
 		}
-		cobj, err := load[T](itm, childQuery, w, claimedUnder(n, l))
+		cobj, err := load[T](itm, childQuery, w, claimedUnder(n, l, w.envs))
 		if err != nil {
 			return err
 		}

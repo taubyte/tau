@@ -220,6 +220,15 @@ func EffectOf(kind, verb string) (string, bool) {
 //
 // `ops` members are checked against that kind's verb set at load, so an op the kind
 // does not implement is a compile error naming the op and the file.
+// AnAccessGroup marks a node as one of the access groups — the block where a resource
+// says what it may do to another. Read by the per-environment rule, which refuses the
+// whole block: an entry's `ops` is a capability and its `namespace` says which resource
+// the capability is over, so `ops_preview: [put]` would be preview writing where
+// production only reads. It is the same clause as a reference and it needs its own
+// marker because an access target is a map KEY rather than a Ref — the one edge in this
+// vocabulary that nothing resolves at compile time.
+func AnAccessGroup(n *Node) bool { b, _ := n.Meta["accessGroup"].(bool); return b }
+
 func accessGroups() []*Node {
 	kinds := Kinds()
 	out := make([]*Node, 0, len(kinds))
