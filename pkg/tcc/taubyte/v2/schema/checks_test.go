@@ -202,6 +202,50 @@ func TestAuditHostWorlds(t *testing.T) {
 	has(t, found, schema.Broken, "is used as a proxy-transformer")
 }
 
+// EVERY USE OF A FUNCTION IS A PLACE THE AUDIT CAN SEE — and two of them were not
+// being looked at. A per-route router is a second router site beside the gateway-wide
+// one, and an admission validator is the only use of `instance-validator`, the world
+// that exists so a validator need not be a kind. Both compiled clean naming a function
+// built against something else, which is the failure this check exists to prevent.
+func TestAuditHostWorldsReachesEveryUse(t *testing.T) {
+	fn := func(world string) string {
+		b := "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nexecution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n"
+		if world != "" {
+			b += "implements: " + world + "\n"
+		}
+		return b
+	}
+	cacheWith := func(validator string) string {
+		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 32MB\nttl: 24h\ninstances:\n    validator:\n        name: " + validator + "\n"
+	}
+	routeRouter := func(router string) string {
+		return "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nroute:\n    path: /\n    router:\n        name: " + router + "\n"
+	}
+
+	// An admission validator built as a plain handler.
+	found := auditDocs(t, nil, map[string]string{"/function/v.yaml": fn(""), "/cache/c.yaml": cacheWith("v")})
+	has(t, found, schema.Broken, "is used as a instance-validator")
+
+	// Built for the job: no finding.
+	found = auditDocs(t, nil, map[string]string{"/function/v.yaml": fn("instance-validator"), "/cache/c.yaml": cacheWith("v")})
+	hasNo(t, found, "instance-validator")
+
+	// A PER-ROUTE router, which is a different key from the gateway-wide one.
+	found = auditDocs(t, nil, map[string]string{"/function/r.yaml": fn("authorizer"), "/gateway/g.yaml": routeRouter("r")})
+	has(t, found, schema.Broken, "is used as a gateway-router")
+
+	found = auditDocs(t, nil, map[string]string{"/function/r.yaml": fn("gateway-router"), "/gateway/g.yaml": routeRouter("r")})
+	hasNo(t, found, "is used as a")
+
+	// A NAME THAT RESOLVES TO NOTHING COMPILES CLEAN. Ref() drops it rather than
+	// refusing it, on both branches, which is why the audit has to say so.
+	found = auditDocs(t, nil, map[string]string{"/cache/c.yaml": cacheWith("ghost")})
+	has(t, found, schema.Broken, "does not exist")
+
+	found = auditDocs(t, nil, map[string]string{"/gateway/g.yaml": routeRouter("ghost")})
+	has(t, found, schema.Broken, "does not exist")
+}
+
 // Only a container listens on ports. A route naming one on a website points at
 // something that does not exist — the field is on the handler block for every kind
 // because which kinds have ports is not something the schema can condition on.

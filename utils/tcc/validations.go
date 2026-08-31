@@ -9,10 +9,25 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
+// THE VALIDATOR IS THE CONTRACT; THE KEY IS THE VOCABULARY'S OWN WORD.
+//
+// EmitValidation(key, validator) says two different things. `validator` NAMES THE
+// CHECK the compiler is asking this consumer to run — "dns", "project_id" — and that
+// is the seam between a vocabulary and something that knows how to verify. `key` is
+// the vocabulary's own name for the field it came from, which v1 spells `domain` and
+// v2 spells `zone`, because v1 has a `domain` kind and v2 has a `zone`.
+//
+// Matching on the key was therefore a consumer hardcoding a vocabulary — the defect
+// v2's AGENTS.md §8c is about — and it had already bitten: v2 emits Key "zone", this
+// matched Key "domain", so a v2 zone published with NO DNS PROOF AT ALL and said
+// nothing. Both clauses go, not only the one that was wrong: `project_id` agrees
+// today by coincidence of naming, and a rule that holds only while two vocabularies
+// happen to pick the same word is not a rule.
+//
 // ExtractProjectID returns the project ID from validations (no validation performed).
 func ExtractProjectID(validations []engine.NextValidation) (string, error) {
 	for _, validation := range validations {
-		if validation.Validator == "project_id" && validation.Key == "project_id" {
+		if validation.Validator == "project_id" {
 			projectID, ok := validation.Value.(string)
 			if !ok {
 				return "", fmt.Errorf("project ID validation value is not a string: %T", validation.Value)
@@ -48,7 +63,7 @@ func ProcessDNSValidations(
 	dvPublicKey []byte,
 ) error {
 	for _, validation := range validations {
-		if validation.Validator == "dns" && validation.Key == "domain" {
+		if validation.Validator == "dns" {
 			fqdn, ok := validation.Value.(string)
 			if !ok {
 				return fmt.Errorf("DNS validation value is not a string: %T", validation.Value)

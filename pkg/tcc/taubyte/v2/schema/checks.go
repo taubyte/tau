@@ -587,17 +587,37 @@ func checkHostWorlds(all []compiled) []Finding {
 				uses = append(uses, use{n, res.scope, res.at("router", "namespace"), w, res.kind + "/" + res.name + " router"})
 			}
 		}
+		// A ROUTE MAY HAND ITS OWN DECISION TO A ROUTER instead of naming a handler,
+		// and that is a SECOND site — `route/router/name`, beside the gateway-wide
+		// `router/name` above. Both are declared by one helper that takes the world as
+		// an argument (routerAttributes, definition.go:334) and writes it into the
+		// field's own documentation, so the vocabulary states `gateway-router` at both
+		// and only one of them was read.
+		if n := res.at("route", "router", "name"); n != "" && res.kind == "gateway" {
+			uses = append(uses, use{n, res.scope, res.at("route", "router", "namespace"), "gateway-router", res.kind + "/" + res.name + " route router"})
+		}
+		// AN ADMISSION VALIDATOR IS THE ONE WORLD WITH ITS OWN WORD AND NO AUDIT.
+		// `instance-validator` is in hostWorlds precisely so a validator need not be a
+		// kind (instanceAttributes, definition.go:400-408), and instances/validator/name
+		// is its only use site — spliced into four kinds, and read by nothing until now.
+		// The world is not the resource's to vary: whatever holds instances, what admits
+		// one is handed the same thing.
+		if n := res.at("instances", "validator", "name"); n != "" {
+			uses = append(uses, use{n, res.scope, res.at("instances", "validator", "namespace"), "instance-validator", res.kind + "/" + res.name + " instances validator"})
+		}
 	}
 
 	var out []Finding
 	for _, u := range uses {
 		found, known := lookupWorld(world, u.name, u.own, u.ns)
 		if !known {
-			// The entry's KEY is the function's name, and a key is not a value — no
-			// Ref() resolves it, so a typo here compiles clean and the transformer or
-			// authorizer simply never runs. Silent, and in the authorizer's case
-			// silently unguarded. Nothing compiled answers to this name, so there is no
-			// id to point at either.
+			// A NAME THAT RESOLVES TO NOTHING IS DROPPED, NOT REFUSED. Every site here
+			// carries Ref("function", ByName()), and an unresolvable one leaves the
+			// field empty and compiles clean — verified, on each branch. So a typo is
+			// silent in exactly the way it must not be: the transformer never runs, the
+			// route's router never routes, and the authorizer never guards, each of
+			// which reads as working. Nothing compiled answers to this name, so there is
+			// no id to point at either.
 			out = append(out, Finding{Broken, "function", u.name, u.ns,
 				fmt.Sprintf("is named as a %s by %s, and does not exist", u.wants, u.where),
 				"The name is the key of the entry, and a key is not a reference the compiler resolves — so this one names nothing and the step never runs.", ""})

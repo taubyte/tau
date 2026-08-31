@@ -213,6 +213,30 @@ func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 	}
 }
 
+// A FIELD REQUIRED ONLY ON ONE Either() BRANCH IS ENFORCED, and this is where that
+// claim is kept. `engine/distributed/size` says RequiredWhen against a Captures()
+// sibling; that read the branch's CONTENTS rather than its name until 2026-08-18
+// (ENGINE-CHANGES.md #5), so a distributed database with no size compiled clean. The
+// comment beside engine/tls recorded it as a live defect long after it was fixed,
+// which is the reason a constraint belongs in a test and not in prose.
+func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
+	compile := func(engine string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nengine:\n"+engine), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+	assert.ErrorContains(t, compile("    distributed: {}\n"), "required attribute 'engine/distributed/size'")
+	assert.NilError(t, compile("    distributed:\n        size: 1GB\n"))
+	// The other branch owes nothing to the first one's field.
+	assert.ErrorContains(t, compile("    postgres: {}\n"), "required attribute 'engine/postgres/host'")
+}
+
 // The new kinds load at all, with their scalars parsed.
 func TestNewKindsCompile(t *testing.T) {
 	flat := compileBasic(t)
