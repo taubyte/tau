@@ -89,7 +89,7 @@ require (
 	github.com/opencontainers/runtime-spec v1.2.0
 	github.com/pkg/sftp v1.13.9
 	github.com/rs/cors v1.11.1
-	github.com/samyfodil/wazy v0.0.0-20260715030043-46e7bbb52e75
+	github.com/samyfodil/wazy v0.1.5-0.20260830033502-01fe3c3c917f
 	github.com/stretchr/testify v1.11.1
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c
 	github.com/unrolled/secure v1.0.9
