@@ -29,19 +29,13 @@ func (ps *projectsService) Get(ctx context.Context, req *connect.Request[pb.ByPr
 		Id:       prj.Id,
 		Name:     prj.Name,
 		Provider: prj.Provider,
+		// Id is left unset: the repository is named by its clone URL and
+		// RepositoryId can only carry a numeric github id, so there is nothing
+		// truthful to put here until the message changes. An absent field is a
+		// value the reader already handles; a fabricated number is not.
 		Repositories: &pb.ProjectRepos{
-			Config: &pb.ProjectRepo{
-				Id: &pb.RepositoryId{Id: &pb.RepositoryId_Github{
-					Github: int64(prj.Git.Config.Id()),
-				}},
-				ProjectId: prj.Id,
-			},
-			Code: &pb.ProjectRepo{
-				Id: &pb.RepositoryId{Id: &pb.RepositoryId_Github{
-					Github: int64(prj.Git.Code.Id()),
-				}},
-				ProjectId: prj.Id,
-			},
+			Config: &pb.ProjectRepo{ProjectId: prj.Id},
+			Code:   &pb.ProjectRepo{ProjectId: prj.Id},
 		},
 	}), nil
 }

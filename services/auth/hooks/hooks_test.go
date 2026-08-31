@@ -77,7 +77,7 @@ func TestGithubHook_Serialize(t *testing.T) {
 		},
 		GithubId:   456,
 		Secret:     "test-secret",
-		Repository: 789,
+		Repository: "github.com/acme/pay",
 	}
 
 	data := hook.Serialize()
@@ -86,7 +86,7 @@ func TestGithubHook_Serialize(t *testing.T) {
 	assert.Equal(t, data["provider"], "github")
 	assert.Equal(t, data["github_id"], 456)
 	assert.Equal(t, data["secret"], "test-secret")
-	assert.Equal(t, data["repository"], 789)
+	assert.Equal(t, data["repository"], "github.com/acme/pay")
 }
 
 func TestGithubHook_ProviderID(t *testing.T) {
@@ -115,7 +115,7 @@ func TestGithubHook_Delete(t *testing.T) {
 		},
 		GithubId:   456,
 		Secret:     "test-secret",
-		Repository: 789,
+		Repository: "github.com/acme/pay",
 	}
 
 	// First register the hook
@@ -148,7 +148,7 @@ func TestGithubHook_Register(t *testing.T) {
 		},
 		GithubId:   456,
 		Secret:     "test-secret",
-		Repository: 789,
+		Repository: "github.com/acme/pay",
 	}
 
 	err = hook.Register(ctx)
@@ -172,7 +172,7 @@ func TestGithubHook_Register(t *testing.T) {
 	assert.Assert(t, len(repository) > 0)
 
 	// Verify repository hook reference
-	_, err = db.Get(ctx, "/repositories/github/789/hooks/test-hook-123")
+	_, err = db.Get(ctx, "/repositories/github.com/acme/pay/hooks/test-hook-123")
 	assert.NilError(t, err)
 	// The repository hook reference is stored as nil, so we just check there's no error
 }
@@ -228,7 +228,7 @@ func TestFetch(t *testing.T) {
 		},
 		GithubId:   456,
 		Secret:     "test-secret",
-		Repository: 789,
+		Repository: "github.com/acme/pay",
 	}
 
 	err = hook.Register(ctx)
@@ -259,69 +259,6 @@ func TestFetch_InvalidProvider(t *testing.T) {
 
 	// Try to fetch hook with invalid provider
 	_, err = Fetch(ctx, db, "invalid-hook")
-	assert.Assert(t, err != nil)
-	assert.Assert(t, err.Error() != "")
-}
-
-func TestNew(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	data := Data{
-		"id":         "test-hook-123",
-		"provider":   "github",
-		"github_id":  456,
-		"secret":     "test-secret",
-		"repository": 789,
-	}
-
-	hook, err := New(db, data)
-	assert.NilError(t, err)
-	assert.Assert(t, hook != nil)
-
-	// Verify the hook data
-	assert.Equal(t, hook.ID(), "test-hook-123")
-	assert.Equal(t, hook.ProviderID(), "456")
-}
-
-func TestNew_WithMissingData(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	// Test with missing required data
-	data := Data{
-		"id": "test-hook-123",
-		// Missing provider
-	}
-
-	_, err = New(db, data)
-	assert.Assert(t, err != nil)
-	assert.Assert(t, err.Error() != "")
-}
-
-func TestNew_WithInvalidProvider(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	// Test with invalid provider
-	data := Data{
-		"id":       "test-hook-123",
-		"provider": "invalid-provider",
-	}
-
-	_, err = New(db, data)
 	assert.Assert(t, err != nil)
 	assert.Assert(t, err.Error() != "")
 }

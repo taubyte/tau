@@ -3,7 +3,8 @@ package prompt
 import (
 	"errors"
 	"fmt"
-	"strconv"
+
+	"github.com/taubyte/tau/pkg/git/repokey"
 
 	goPrompt "github.com/c-bata/go-prompt"
 	list "github.com/taubyte/tau/tools/taucorder/helpers"
@@ -51,14 +52,14 @@ func getRepo(p Prompt, args []string) error {
 		fmt.Println("Must provide repo id")
 		return errors.New("must provide repo id")
 	}
-	rid, err := strconv.Atoi(args[1])
+	key, err := repokey.Parse("https://" + args[1])
 	if err != nil {
-		return fmt.Errorf("failed converting %d to int with error: %v", rid, err)
+		return fmt.Errorf("`%s` is not a repository key: %v", args[1], err)
 	}
 
-	repo, err := p.AuthClient().Repositories().Github().Get(rid)
+	repo, err := p.AuthClient().Repositories().Github().Get(key.String())
 	if err != nil {
-		return fmt.Errorf("failed getting repo %d with error: %v", rid, err)
+		return fmt.Errorf("failed getting repo %s with error: %v", key, err)
 	}
 
 	fmt.Println(repo)

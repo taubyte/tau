@@ -147,8 +147,8 @@ func TestProjectAndRepositoryAPIOperationsWithSubTests(t *testing.T) {
 	})
 
 	// Test getGithubRepositoryByID with non-existent repo
-	t.Run("getGithubRepositoryByID", func(t *testing.T) {
-		_, err := svc.getGithubRepositoryByID(ctx, 999)
+	t.Run("getRepositoryByID", func(t *testing.T) {
+		_, err := svc.getRepositoryByID(ctx, "github.com/acme/absent")
 		assert.Assert(t, err != nil, "Expected error for non-existent repository")
 	})
 

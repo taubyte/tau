@@ -28,7 +28,7 @@ type Context struct {
 	WorkDir          string
 	Patrick          patrick.Client
 	ContainerClient  *ci.Client
-	ConfigRepoId     int
+	ConfigRepoId     string
 	ConfigPrivateKey string
 	ConfigRepoRoot   string
 	Monkey           monkey.Service

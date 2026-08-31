@@ -8,7 +8,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/tau/core/services/patrick"
-	ifaceTNS "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
 // ReannounceJobs scans pending jobs and pushes forgotten or expired ones back onto the queue.
@@ -67,43 +67,40 @@ func (srv *PatrickService) connectToProject(ctx context.Context, job *patrick.Jo
 	return nil
 }
 
-func (srv *PatrickService) getProjectIDFromJob(job *patrick.Job) (projectID string, err error) {
-	repo, _ := srv.authClient.Repositories().Github().Get(job.Meta.Repository.ID)
-
-	if repo != nil {
-		projectID = repo.Project()
+// getProjectIDFromJob resolves the project a push belongs to.
+//
+// AUTH IS THE ONLY ANSWER. There used to be a fallback here: when auth had no
+// project for the repository, this looked the repository up in the TNS
+// `repositories/<provider>/<id>/…` index and took the project id out of the key
+// BY POSITION. That index is written by the config compiler and is still keyed
+// by the provider's numeric id, while auth is now keyed by the clone URL — so
+// the fallback answers in a different grammar from the question, and a positional
+// read of a variable-depth key returns whatever segment happens to sit at that
+// index. A wrong project id here builds one project's code into another's, so
+// it says it does not know rather than guessing.
+func (srv *PatrickService) getProjectIDFromJob(job *patrick.Job) (string, error) {
+	// URI is the clone URL; SSHURL is the older field the same value used to
+	// arrive in, which Job.Unmarshal promotes. A job built in memory has not
+	// been through that, so the same promotion happens here.
+	uri := job.Meta.Repository.URI
+	if uri == "" {
+		uri = job.Meta.Repository.SSHURL
 	}
 
+	key, err := repokey.Parse(uri)
+	if err != nil {
+		return "", fmt.Errorf("job repository `%s`: %w", uri, err)
+	}
+
+	repo, err := srv.authClient.Repositories().Github().Get(key.String())
+	if err != nil {
+		return "", fmt.Errorf("repository `%s` is not registered with auth: %w", key, err)
+	}
+
+	projectID := repo.Project()
 	if len(projectID) == 0 {
-		repo := job.Meta.Repository
-		queryKey := []string{"repositories", strings.ToLower(repo.Provider), fmt.Sprintf("%d", repo.ID)}
-
-		var resp interface{}
-		resp, err = srv.tnsClient.Lookup(ifaceTNS.Query{Prefix: queryKey, RegEx: false})
-		if err != nil {
-			return
-		}
-
-		respArr, ok := resp.([]string)
-		if !ok || len(respArr) == 0 {
-			err = fmt.Errorf("response from lookup not an array or is empty: `%v`", resp)
-			return
-		}
-
-		for _, key := range respArr {
-			repoInfo := strings.Split(key, "/")
-			if len(repoInfo) <= 4 {
-				continue
-			}
-			projectID = repoInfo[4]
-			if len(projectID) != 0 {
-				break
-			}
-		}
-		if len(projectID) == 0 {
-			err = fmt.Errorf("projectID not found in response from tns for repo %d, got response: %s", repo.ID, resp)
-		}
+		return "", fmt.Errorf("repository `%s` is registered but linked to no project", key)
 	}
 
-	return
+	return projectID, nil
 }

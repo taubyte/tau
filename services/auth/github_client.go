@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
+	"strings"
 
 	"github.com/google/go-github/v71/github"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	cu "github.com/taubyte/tau/services/auth/crypto"
 	"golang.org/x/oauth2"
 )
@@ -16,13 +17,13 @@ import (
 type GitHubClient interface {
 	Cur() *github.Repository
 	Me() *github.User
-	GetByID(id string) error
+	Get(key repokey.Key) error
 	GetCurrentRepository() (*github.Repository, error)
 	CreateRepository(name *string, description *string, private *bool) error
 	CreateDeployKey(name *string, key *string) error
 	CreatePushHook(name *string, url *string, devMode bool) (int64, string, error)
 	ListMyRepos() map[string]RepositoryBasicInfo
-	ShortRepositoryInfo(id string) RepositoryShortInfo
+	ShortRepositoryInfo(key repokey.Key) RepositoryShortInfo
 }
 
 type githubClient struct {
@@ -75,13 +76,32 @@ func (client *githubClient) Me() *github.User {
 	return client.user
 }
 
-func (client *githubClient) GetByID(id string) error {
-	_id, err := strconv.ParseInt(id, 10, 64)
+// Get fetches the repository a key names. It goes through GitHub's owner/name
+// endpoint rather than the numeric-id one because the key is what we hold: the
+// numeric id was the thing being removed, and keeping a lookup that needed it
+// would have meant storing it after all.
+func (client *githubClient) Get(key repokey.Key) error {
+	owner, name, err := ownerName(key)
 	if err != nil {
 		return err
 	}
-	client.current_repository, _, err = client.Repositories.GetByID(client.ctx, _id)
+
+	client.current_repository, _, err = client.Repositories.Get(client.ctx, owner, name)
 	return err
+}
+
+// ownerName splits a key for GitHub's API, which takes exactly one owner and
+// one name. A key may carry a deeper path — a GitLab subgroup does — and this
+// client cannot address that, so it says so rather than silently joining the
+// segments into a name no repository has.
+func ownerName(key repokey.Key) (string, string, error) {
+	if key.Host != "github.com" {
+		return "", "", fmt.Errorf("repository `%s` is not on github.com; this client speaks to GitHub", key)
+	}
+	if key.Owner == "" || strings.Contains(key.Owner, "/") {
+		return "", "", fmt.Errorf("repository `%s` does not have a GitHub owner/name shape", key)
+	}
+	return key.Owner, key.Name, nil
 }
 
 func (client *githubClient) GetCurrentRepository() (*github.Repository, error) {
@@ -186,9 +206,17 @@ func (client *githubClient) ListMyRepos() map[string]RepositoryBasicInfo {
 		_repos, _, err := client.Repositories.ListByAuthenticatedUser(client.ctx, &rlo)
 		if err == nil && len(_repos) > 0 {
 			for _, v := range _repos {
-				repos[fmt.Sprintf("%d", *(v.ID))] = RepositoryBasicInfo{
-					Name: *(v.FullName),
-					URL:  *(v.URL),
+				// The clone URL is the identity, so the listing is keyed by
+				// what a clone URL derives to and not by the id GitHub happens
+				// to have given the repository.
+				key, err := repokey.Parse(v.GetCloneURL())
+				if err != nil {
+					logger.Errorf("skipping repository `%s`: %s", v.GetFullName(), err)
+					continue
+				}
+				repos[key.String()] = RepositoryBasicInfo{
+					Name: v.GetFullName(),
+					URL:  v.GetURL(),
 				}
 			}
 		} else {
@@ -198,15 +226,13 @@ func (client *githubClient) ListMyRepos() map[string]RepositoryBasicInfo {
 	return repos
 }
 
-func (client *githubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
-	_id, err := strconv.ParseInt(id, 10, 64)
+func (client *githubClient) ShortRepositoryInfo(key repokey.Key) RepositoryShortInfo {
+	owner, name, err := ownerName(key)
 	if err != nil {
-		return RepositoryShortInfo{
-			Error: "Incorrect repository ID",
-		}
+		return RepositoryShortInfo{Error: err.Error()}
 	}
 
-	_repoInfo, _, err := client.Repositories.GetByID(client.ctx, _id)
+	_repoInfo, _, err := client.Repositories.Get(client.ctx, owner, name)
 	if err != nil {
 		return RepositoryShortInfo{
 			Error: fmt.Sprintf("Error %s", err),
@@ -214,9 +240,9 @@ func (client *githubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
 	}
 
 	return RepositoryShortInfo{
-		Name:     *(_repoInfo.Name),
-		FullName: *(_repoInfo.FullName),
-		URL:      *(_repoInfo.URL),
-		ID:       id,
+		Name:     _repoInfo.GetName(),
+		FullName: _repoInfo.GetFullName(),
+		URL:      _repoInfo.GetURL(),
+		ID:       key.String(),
 	}
 }

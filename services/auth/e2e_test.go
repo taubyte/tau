@@ -3,12 +3,12 @@
 package auth_test
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/auth/repositories"
@@ -104,14 +104,10 @@ func testHooks(t *testing.T, u *dream.Universe, auth interface{}) {
 	ctx := u.Context()
 
 	hookID := id.Generate()
-	hook, err := hooks.New(u.Auth().KV(), hooks.Data{
-		"id":         hookID,
-		"provider":   "github",
-		"github_id":  12345,
-		"repository": 67890,
-		"secret":     "test_secret_123",
-	})
+	key, err := repokey.Parse("https://github.com/acme/hooked")
 	assert.NilError(t, err)
+
+	hook := hooks.NewGithub(u.Auth().KV(), hookID, 12345, "test_secret_123", key)
 
 	err = hook.Register(ctx)
 	assert.NilError(t, err)
@@ -124,7 +120,7 @@ func testHooks(t *testing.T, u *dream.Universe, auth interface{}) {
 
 	if githubHook, ok := retrievedHook.(*hooks.GithubHook); ok {
 		assert.Equal(t, githubHook.GithubId, 12345)
-		assert.Equal(t, githubHook.Repository, 67890)
+		assert.Equal(t, githubHook.Repository, "github.com/acme/hooked")
 		assert.Equal(t, githubHook.Secret, "test_secret_123")
 	}
 
@@ -140,26 +136,21 @@ func testRepositories(t *testing.T, u *dream.Universe, auth interface{}) {
 	ctx := u.Context()
 
 	// Create a test repository
-	repo, err := repositories.New(u.Auth().KV(), repositories.Data{
-		"id":       12345,
-		"provider": "github",
-		"name":     "test/repo",
-		"project":  "test_project_uuid",
-		"key":      "test_key_123",
-		"url":      "https://github.com/test/repo",
-	})
+	key, err := repokey.Parse("https://github.com/test/repo")
 	assert.NilError(t, err)
+
+	repo := repositories.New(u.Auth().KV(), key, "test_key_123", "test_project_uuid")
 
 	// Register the repository
 	err = repo.Register(ctx)
 	assert.NilError(t, err)
 
 	// Test getting the repository
-	retrievedRepo, err := repositories.Fetch(ctx, u.Auth().KV(), "12345")
+	retrievedRepo, err := repositories.Fetch(ctx, u.Auth().KV(), key)
 	assert.NilError(t, err)
 	assert.Assert(t, retrievedRepo != nil)
-	assert.Equal(t, retrievedRepo.ID(), 12345)
-	assert.Equal(t, retrievedRepo.Provider(), "github")
+	assert.Equal(t, retrievedRepo.ID(), "github.com/test/repo")
+	assert.Equal(t, retrievedRepo.Provider(), "github.com")
 
 	// Access repository data through Serialize() method
 	repoData := retrievedRepo.Serialize()
@@ -167,7 +158,7 @@ func testRepositories(t *testing.T, u *dream.Universe, auth interface{}) {
 	// Note: project field is not stored during registration, only key is stored
 
 	// Test listing repositories
-	repoIDs, err := u.Auth().KV().List(ctx, "/repositories/github/")
+	repoIDs, err := repositories.List(ctx, u.Auth().KV())
 	assert.NilError(t, err)
 	assert.Assert(t, len(repoIDs) > 0)
 
@@ -281,38 +272,25 @@ func testMultipleEntities(t *testing.T, u *dream.Universe) {
 	hookIDs := []string{}
 	for i := 0; i < 3; i++ {
 		hookID := id.Generate()
-		hook, err := hooks.New(u.Auth().KV(), hooks.Data{
-			"id":         hookID,
-			"provider":   "github",
-			"github_id":  int64(1000 + i),
-			"repository": int64(2000 + i),
-			"secret":     "secret_" + hookID[:8],
-		})
+		key, err := repokey.Parse("https://github.com/test/hooked" + string(rune('a'+i)))
 		assert.NilError(t, err)
 
-		err = hook.Register(ctx)
-		assert.NilError(t, err)
+		hook := hooks.NewGithub(u.Auth().KV(), hookID, 1000+i, "secret_"+hookID[:8], key)
+		assert.NilError(t, hook.Register(ctx))
 
 		hookIDs = append(hookIDs, hookID)
 	}
 
 	// Create multiple repositories
-	repoIDs := []int{}
+	repoKeys := []repokey.Key{}
 	for i := 0; i < 3; i++ {
-		repo, err := repositories.New(u.Auth().KV(), repositories.Data{
-			"id":       3000 + i,
-			"provider": "github",
-			"name":     "test/repo" + string(rune('a'+i)),
-			"project":  "project_" + string(rune('a'+i)),
-			"key":      "key_" + string(rune('a'+i)),
-			"url":      "https://github.com/test/repo" + string(rune('a'+i)),
-		})
+		key, err := repokey.Parse("https://github.com/test/repo" + string(rune('a'+i)))
 		assert.NilError(t, err)
 
-		err = repo.Register(ctx)
-		assert.NilError(t, err)
+		repo := repositories.New(u.Auth().KV(), key, "key_"+string(rune('a'+i)), "project_"+string(rune('a'+i)))
+		assert.NilError(t, repo.Register(ctx))
 
-		repoIDs = append(repoIDs, 3000+i)
+		repoKeys = append(repoKeys, key)
 	}
 
 	// Verify all entities were created
@@ -320,7 +298,7 @@ func testMultipleEntities(t *testing.T, u *dream.Universe) {
 	assert.NilError(t, err)
 	assert.Assert(t, len(hookList) >= 3, "Expected at least 3 hooks, got %d", len(hookList))
 
-	repoList, err := u.Auth().KV().List(ctx, "/repositories/github/")
+	repoList, err := repositories.List(ctx, u.Auth().KV())
 	assert.NilError(t, err)
 	assert.Assert(t, len(repoList) >= 3, "Expected at least 3 repositories, got %d", len(repoList))
 
@@ -332,8 +310,8 @@ func testMultipleEntities(t *testing.T, u *dream.Universe) {
 		}
 	}
 
-	for _, repoID := range repoIDs {
-		repo, err := repositories.Fetch(ctx, u.Auth().KV(), fmt.Sprintf("%d", repoID))
+	for _, key := range repoKeys {
+		repo, err := repositories.Fetch(ctx, u.Auth().KV(), key)
 		if err == nil && repo != nil {
 			repo.Delete(ctx)
 		}
@@ -345,14 +323,10 @@ func testCleanupAndIsolation(t *testing.T, u *dream.Universe) {
 
 	// Create test data
 	hookID := id.Generate()
-	hook, err := hooks.New(u.Auth().KV(), hooks.Data{
-		"id":         hookID,
-		"provider":   "github",
-		"github_id":  9999,
-		"repository": 8888,
-		"secret":     "isolation_test_secret",
-	})
+	key, err := repokey.Parse("https://github.com/acme/isolated")
 	assert.NilError(t, err)
+
+	hook := hooks.NewGithub(u.Auth().KV(), hookID, 9999, "isolation_test_secret", key)
 
 	err = hook.Register(ctx)
 	assert.NilError(t, err)

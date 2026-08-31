@@ -7,6 +7,7 @@ import (
 	"github.com/google/go-github/v71/github"
 	"github.com/h2non/gock"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
 	"gotest.tools/v3/assert"
 )
@@ -166,13 +167,22 @@ func TestMockDatabaseIntegration(t *testing.T) {
 func TestGitHubClientErrorHandling(t *testing.T) {
 	defer gock.Off()
 
-	t.Run("test GetByID with invalid ID", func(t *testing.T) {
+	// A key this client cannot address is refused rather than mangled into an
+	// owner/name pair. Both shapes matter: another host is not GitHub's to
+	// serve, and a subgroup has no single owner segment to send.
+	t.Run("test Get with a key GitHub cannot address", func(t *testing.T) {
 		ctx := context.Background()
 		client := &githubClient{ctx: ctx}
 
-		// Test GetByID with invalid ID (should fail parsing)
-		err := client.GetByID("invalid-id")
-		assert.Assert(t, err != nil, "Expected error for invalid ID")
+		for _, cloneURL := range []string{
+			"https://gitlab.com/acme/pay",
+			"https://gitlab.com/acme/team/widget",
+			"https://github.com/pay",
+		} {
+			key, err := repokey.Parse(cloneURL)
+			assert.NilError(t, err)
+			assert.Assert(t, client.Get(key) != nil, "expected refusal for %s", cloneURL)
+		}
 	})
 
 	t.Run("test CreateDeployKey without repository", func(t *testing.T) {
@@ -353,12 +363,14 @@ func TestGitHubClientComprehensiveCoverage(t *testing.T) {
 					"name":      "repo1",
 					"full_name": "testuser/repo1",
 					"url":       "https://api.github.com/repos/testuser/repo1",
+					"clone_url": "https://github.com/testuser/repo1.git",
 				},
 				{
 					"id":        222,
 					"name":      "repo2",
 					"full_name": "testuser/repo2",
 					"url":       "https://api.github.com/repos/testuser/repo2",
+					"clone_url": "https://github.com/testuser/repo2.git",
 				},
 			})
 
@@ -373,14 +385,20 @@ func TestGitHubClientComprehensiveCoverage(t *testing.T) {
 		assert.Assert(t, repos != nil)
 		assert.Equal(t, len(repos), 2)
 
+		// Keyed by what the clone URL derives to, not by GitHub's id.
+		_, ok := repos["github.com/testuser/repo1"]
+		assert.Assert(t, ok, "listing not keyed by canonical key: %v", repos)
+		_, ok = repos["github.com/testuser/repo2"]
+		assert.Assert(t, ok, "listing not keyed by canonical key: %v", repos)
+
 		assert.Assert(t, gock.IsDone())
 	})
 
 	// Test ShortRepositoryInfo with gock
 	t.Run("ShortRepositoryInfo", func(t *testing.T) {
-		// Mock GitHub API response for repository by ID
+		// The lookup goes through owner/name now, not the numeric-id endpoint.
 		gock.New("https://api.github.com").
-			Get("/repositories/12345").
+			Get("/repos/testuser/test-repo").
 			Reply(200).
 			JSON(map[string]interface{}{
 				"id":        12345,
@@ -396,13 +414,16 @@ func TestGitHubClientComprehensiveCoverage(t *testing.T) {
 			ctx:    ctx,
 		}
 
-		// Test with invalid ID
-		info := client.ShortRepositoryInfo("invalid-id")
-		assert.Equal(t, info.Error, "Incorrect repository ID")
+		// A key on another host is refused before any call is made.
+		elsewhere, err := repokey.Parse("https://gitlab.com/testuser/test-repo")
+		assert.NilError(t, err)
+		info := client.ShortRepositoryInfo(elsewhere)
+		assert.Assert(t, info.Error != "")
 
-		// Test with valid ID
-		info = client.ShortRepositoryInfo("12345")
-		assert.Equal(t, info.ID, "12345")
+		key, err := repokey.Parse("https://github.com/testuser/test-repo")
+		assert.NilError(t, err)
+		info = client.ShortRepositoryInfo(key)
+		assert.Equal(t, info.ID, "github.com/testuser/test-repo")
 		assert.Equal(t, info.Name, "test-repo")
 		assert.Equal(t, info.FullName, "testuser/test-repo")
 

@@ -100,12 +100,12 @@ func TestRepositoryRegistrationFlow(t *testing.T) {
 	t.Run("SuccessfulRegistration", func(t *testing.T) {
 		response, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "12345",
+			"id":       "github.com/acme/r12345",
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, response != nil)
 		assert.Assert(t, response["key"] != nil)
-		assert.Equal(t, response["key"], "/repositories/github/12345/key")
+		assert.Equal(t, response["key"], "/repositories/github.com/acme/r12345/key")
 	})
 
 	t.Run("InvalidRepositoryID", func(t *testing.T) {
@@ -127,13 +127,13 @@ func TestRepositoryRegistrationFlow(t *testing.T) {
 	t.Run("DuplicateRegistration", func(t *testing.T) {
 		response1, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "67890",
+			"id":       "github.com/acme/r67890",
 		})
 		assert.NilError(t, err)
 
 		response2, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "67890",
+			"id":       "github.com/acme/r67890",
 		})
 		assert.NilError(t, err)
 		assert.Equal(t, response1["key"], response2["key"])
@@ -148,14 +148,14 @@ func TestRepositoryUnregistrationFlow(t *testing.T) {
 		// First register a repository
 		_, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "11111",
+			"id":       "github.com/acme/r11111",
 		})
 		assert.NilError(t, err)
 
 		// Then unregister it
 		_, err = svc.unregisterRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "11111",
+			"id":       "github.com/acme/r11111",
 		})
 		assert.NilError(t, err)
 	})
@@ -163,13 +163,13 @@ func TestRepositoryUnregistrationFlow(t *testing.T) {
 	t.Run("UnregisterNonExistentRepository", func(t *testing.T) {
 		_, err := svc.unregisterRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "99999",
+			"id":       "github.com/acme/r99999",
 		})
 		assert.Assert(t, err != nil, "Expected error for non-existent repository")
 	})
 
 	t.Run("CompleteRegisterUnregisterFlow", func(t *testing.T) {
-		repoID := "22222"
+		repoID := "github.com/acme/r22222"
 
 		// Register repository
 		_, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
@@ -242,13 +242,13 @@ func TestIntegrationFlow(t *testing.T) {
 
 	t.Run("CompleteWorkflow", func(t *testing.T) {
 		// Register repository
-		repoID := "33333"
+		repoID := "github.com/acme/r33333"
 		response, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
 			"id":       repoID,
 		})
 		assert.NilError(t, err)
-		assert.Equal(t, response["key"], "/repositories/github/33333/key")
+		assert.Equal(t, response["key"], "/repositories/github.com/acme/r33333/key")
 
 		// Register domain
 		domainResponse, err := svc.ApiDomainServiceHandler(context.Background(), nil, map[string]interface{}{
@@ -283,7 +283,7 @@ func TestHTTPStreamHandlers(t *testing.T) {
 	t.Run("RepositoryRegistrationStream", func(t *testing.T) {
 		response, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "12345",
+			"id":       "github.com/acme/r12345",
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, response != nil)
@@ -293,13 +293,13 @@ func TestHTTPStreamHandlers(t *testing.T) {
 	t.Run("RepositoryUnregistrationStream", func(t *testing.T) {
 		_, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "67890",
+			"id":       "github.com/acme/r67890",
 		})
 		assert.NilError(t, err)
 
 		response, err := svc.unregisterRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "67890",
+			"id":       "github.com/acme/r67890",
 		})
 		assert.NilError(t, err)
 		assert.Equal(t, response["status"], "success")
@@ -319,7 +319,7 @@ func TestActualHTTPHandlers(t *testing.T) {
 		mockCtx := &mockHTTPContextWithClient{
 			variables: map[string]interface{}{
 				"provider":     "github",
-				"id":           "11111",
+				"id":           "github.com/acme/r11111",
 				"GithubClient": mockGitHubClient,
 			},
 		}
@@ -333,7 +333,7 @@ func TestActualHTTPHandlers(t *testing.T) {
 		// First register a repository
 		_, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "22222",
+			"id":       "github.com/acme/r22222",
 		})
 		assert.NilError(t, err)
 
@@ -341,7 +341,7 @@ func TestActualHTTPHandlers(t *testing.T) {
 		mockCtx := &mockHTTPContextWithClient{
 			variables: map[string]interface{}{
 				"provider":     "github",
-				"id":           "22222",
+				"id":           "github.com/acme/r22222",
 				"GithubClient": mockGitHubClient,
 			},
 		}
@@ -355,7 +355,7 @@ func TestActualHTTPHandlers(t *testing.T) {
 		// First register a repository
 		_, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "33333",
+			"id":       "github.com/acme/r33333",
 		})
 		assert.NilError(t, err)
 
@@ -363,7 +363,7 @@ func TestActualHTTPHandlers(t *testing.T) {
 		mockCtx := &mockHTTPContextWithClient{
 			variables: map[string]interface{}{
 				"provider":     "github",
-				"id":           "33333",
+				"id":           "github.com/acme/r33333",
 				"GithubClient": mockGitHubClient,
 			},
 		}
@@ -398,7 +398,7 @@ func TestP2PRepositoryHandlers(t *testing.T) {
 	t.Run("RepositoryRegistrationP2P", func(t *testing.T) {
 		response, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "12345",
+			"id":       "github.com/acme/r12345",
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, response != nil)
@@ -408,13 +408,13 @@ func TestP2PRepositoryHandlers(t *testing.T) {
 	t.Run("RepositoryUnregistrationP2P", func(t *testing.T) {
 		_, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "67890",
+			"id":       "github.com/acme/r67890",
 		})
 		assert.NilError(t, err)
 
 		_, err = svc.unregisterRepositoryStream(context.Background(), map[string]interface{}{
 			"provider": "github",
-			"id":       "67890",
+			"id":       "github.com/acme/r67890",
 		})
 		assert.NilError(t, err)
 	})
@@ -425,8 +425,8 @@ func TestP2PRepositoryHandlers(t *testing.T) {
 			params map[string]interface{}
 			expect string
 		}{
-			{"UnsupportedProvider", map[string]interface{}{"provider": "bitbucket", "id": "12345"}, "unsupported provider"},
-			{"MissingProvider", map[string]interface{}{"id": "12345"}, "missing provider"},
+			{"UnsupportedProvider", map[string]interface{}{"provider": "bitbucket", "id": "github.com/acme/r12345"}, "unsupported provider"},
+			{"MissingProvider", map[string]interface{}{"id": "github.com/acme/r12345"}, "missing provider"},
 			{"MissingID", map[string]interface{}{"provider": "github"}, "missing ID"},
 		}
 
@@ -466,7 +466,7 @@ func TestErrorHandling(t *testing.T) {
 			name string
 			id   string
 		}{
-			{"NonExistent", "99999"},
+			{"NonExistent", "github.com/acme/r99999"},
 			{"InvalidID", "invalid-id"},
 			{"EmptyID", ""},
 		}
@@ -515,7 +515,7 @@ func TestRepositoryOperations(t *testing.T) {
 	defer cleanup()
 
 	t.Run("MultipleRepositoryOperations", func(t *testing.T) {
-		repoIDs := []string{"111111", "222222", "333333", "444444", "555555"}
+		repoIDs := []string{"github.com/acme/r111111", "github.com/acme/r222222", "github.com/acme/r333333", "github.com/acme/r444444", "github.com/acme/r555555"}
 
 		for _, repoID := range repoIDs {
 			_, err := svc.registerRepositoryStream(context.Background(), map[string]interface{}{"provider": "github", "id": repoID})
@@ -545,9 +545,9 @@ func TestRepositoryOperations(t *testing.T) {
 
 	t.Run("StreamHandlerScenarios", func(t *testing.T) {
 		testCases := []map[string]interface{}{
-			{"provider": "github", "id": "666666"},
-			{"provider": "github", "id": "777777"},
-			{"provider": "github", "id": "888888"},
+			{"provider": "github", "id": "github.com/acme/r666666"},
+			{"provider": "github", "id": "github.com/acme/r777777"},
+			{"provider": "github", "id": "github.com/acme/r888888"},
 		}
 
 		for _, testCase := range testCases {
@@ -565,8 +565,8 @@ func TestRepositoryOperations(t *testing.T) {
 			{},
 			nil,
 			{"provider": "github"},
-			{"id": "12345"},
-			{"provider": "bitbucket", "id": "12345"},
+			{"id": "github.com/acme/r12345"},
+			{"provider": "bitbucket", "id": "github.com/acme/r12345"},
 		}
 
 		for _, invalidInput := range invalidInputs {

@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/legacy/specs/methods"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/services/monkey/jobs"
 )
 
@@ -36,7 +37,16 @@ func (m *Monkey) RunJob() (err error) {
 	var p *auth.Project
 	repoType := repositorytype.UnknownRepository
 
-	gitRepo, err := m.tryGetGitRepo(ac, repo.ID)
+	// A push carries the clone URL, and that is the repository's identity. It
+	// is derived here through the one grammar rather than reconstructed, so a
+	// job and the auth row it looks up are named by the same function.
+	key, err := repokey.Parse(repo.URI)
+	if err != nil {
+		return fmt.Errorf("job repository `%s`: %w", repo.URI, err)
+	}
+	jobKey := key.String()
+
+	gitRepo, err := m.tryGetGitRepo(ac, jobKey)
 	if err != nil {
 		return fmt.Errorf("run job failed during fetching with %w", err)
 	}
@@ -48,7 +58,11 @@ func (m *Monkey) RunJob() (err error) {
 			return fmt.Errorf("project not found: %s", projectId)
 		}
 
-		switch repo.ID {
+		// The project names its two repositories by canonical key, so the job
+		// has to be matched against them by the same name. The job's clone URL
+		// is what carries it — Repository.ID is still the provider's number and
+		// names nothing the project stores.
+		switch jobKey {
 		case p.Git.Code.Id():
 			repoType = repositorytype.CodeRepository
 		case p.Git.Config.Id():

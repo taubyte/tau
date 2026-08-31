@@ -52,12 +52,12 @@ var (
 
 func (m *Monkey) tryGetGitRepo(
 	ac auth.Client,
-	repoID int,
+	repoID string,
 ) (gitRepo auth.GithubRepository, err error) {
 	for i := 0; i < GetGitRepoMaxRetries; i++ {
 		gitRepo, err = ac.Repositories().Github().Get(repoID)
 		if err != nil {
-			return gitRepo, fmt.Errorf("fetching repository %d from auth failed with %w", repoID, err)
+			return gitRepo, fmt.Errorf("fetching repository %s from auth failed with %w", repoID, err)
 		}
 
 		deployKey := gitRepo.PrivateKey()

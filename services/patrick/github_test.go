@@ -38,8 +38,17 @@ func createTestSetup(devMode bool) *testSetup {
 	ctx := newMockHTTPContext()
 
 	authClient := &mockAuthClient{
-		repos: map[int]mockRepo{
-			12345: {projectID: "project-456"},
+		// Keyed by what each webhook fixture's clone URL derives to. Auth is now
+		// the only thing that answers "which project is this push for", so a
+		// repository a payload names has to be registered here or the push is
+		// refused — which is the point.
+		repos: map[string]mockRepo{
+			testJobRepoKey:                                   {projectID: "project-456"},
+			"github.com/taubyte/tb_test_project":             {projectID: "project-456"},
+			"github.com/taubyte-test/tb_code_testproject":    {projectID: "project-456"},
+			"github.com/taubyte-test/tb_website_testwebsite": {projectID: "project-456"},
+			"github.com/taubyte-test/tb_library_testLibrary": {projectID: "project-456"},
+			"github.com/taubyte-test/tb_testproject":         {projectID: "project-456"},
 		},
 		hooks: mockHooks{hooks: make(map[string]mockAuthHook)},
 	}

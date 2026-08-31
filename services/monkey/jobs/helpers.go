@@ -34,7 +34,10 @@ func (c Context) storeLogFile(file *os.File) (string, error) {
 }
 
 func (c Context) fetchConfigSshUrl() (sshString string, err error) {
-	tnsPath := specs.NewTnsPath([]string{"resolve", "repo", "github", strconv.Itoa(c.ConfigRepoId)})
+	// Auth files this index under the segments of the canonical key, so it is
+	// read back the same way. The literal "github" is gone with the numeric id:
+	// the host is the first segment of the key, and the host is the provider.
+	tnsPath := specs.NewTnsPath(append([]string{"resolve", "repo"}, strings.Split(c.ConfigRepoId, "/")...))
 	tnsObj, err := c.Tns.Fetch(tnsPath)
 	// TODO: This should return
 	if err != nil {

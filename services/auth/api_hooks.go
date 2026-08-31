@@ -9,6 +9,7 @@ import (
 	"github.com/taubyte/tau/p2p/streams"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/auth/repositories"
@@ -58,8 +59,13 @@ func (srv *AuthService) apiHookServiceHandler(ctx context.Context, st streams.Co
 }
 
 /******* REPOS ********/
-func (srv *AuthService) getGithubRepositoryByID(ctx context.Context, id int) (cr.Response, error) {
-	repo, err := repositories.Fetch(ctx, srv.db, fmt.Sprintf("%d", id))
+func (srv *AuthService) getRepositoryByID(ctx context.Context, id string) (cr.Response, error) {
+	key, err := repokey.Parse("https://" + id)
+	if err != nil {
+		return nil, err
+	}
+
+	repo, err := repositories.Fetch(ctx, srv.db, key)
 	if err != nil {
 		return nil, err
 	}
@@ -67,13 +73,18 @@ func (srv *AuthService) getGithubRepositoryByID(ctx context.Context, id int) (cr
 	return cr.Response(repo.Serialize()), nil
 }
 
+// listRepo asks the store for the keys rather than slicing them out of a raw
+// listing. The old code listed the prefix and took SEGMENT 3, which was the
+// numeric id only because the key had a fixed depth; under a canonical key
+// segment 3 is the OWNER, and for a repository with several hooks the same
+// owner is returned once per row. It survived that in the old shape only
+// because a numeric id happened to sit at that position and duplicates were
+// deduped — neither of which is a property to build on.
 func (srv *AuthService) listRepo(ctx context.Context) (cr.Response, error) {
-	repoList, err := srv.db.List(ctx, "/repositories/github/")
+	ids, err := repositories.List(ctx, srv.db)
 	if err != nil {
 		return nil, fmt.Errorf("failed gettting repo with error: %w", err)
 	}
-
-	ids := extractIdFromKey(repoList, "/", 3)
 
 	return cr.Response{"ids": ids}, nil
 }
@@ -92,11 +103,11 @@ func (srv *AuthService) apiGitRepositoryServiceHandler(ctx context.Context, st s
 		}
 		switch provider {
 		case "github":
-			hook_id, err := maps.Int(body, "id")
+			id, err := maps.String(body, "id")
 			if err != nil {
 				return nil, err
 			}
-			return srv.getGithubRepositoryByID(ctx, hook_id)
+			return srv.getRepositoryByID(ctx, id)
 		default:
 			return nil, errors.New("Repository provider `" + provider + "` not supported.")
 		}
@@ -150,6 +161,16 @@ func (srv *AuthService) createProjectStream(ctx context.Context, body command.Bo
 		return nil, fmt.Errorf("missing code repository ID parameter: %w", err)
 	}
 
+	configKey, err := repokey.Parse("https://" + configRepoID)
+	if err != nil {
+		return nil, fmt.Errorf("config repository: %w", err)
+	}
+
+	codeKey, err := repokey.Parse("https://" + codeRepoID)
+	if err != nil {
+		return nil, fmt.Errorf("code repository: %w", err)
+	}
+
 	// Generate a new project ID
 	projectID := common.GetNewProjectID()
 
@@ -158,8 +179,8 @@ func (srv *AuthService) createProjectStream(ctx context.Context, body command.Bo
 		"id":       projectID,
 		"name":     name,
 		"provider": "github",
-		"config":   configRepoID,
-		"code":     codeRepoID,
+		"config":   configKey.String(),
+		"code":     codeKey.String(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project object: %w", err)
@@ -171,14 +192,10 @@ func (srv *AuthService) createProjectStream(ctx context.Context, body command.Bo
 	}
 
 	// Link repositories to project
-	repo_key := fmt.Sprintf("/repositories/github/%s", configRepoID)
-	if err = srv.db.Put(ctx, repo_key+"/project", []byte(projectID)); err != nil {
-		return nil, err
-	}
-
-	repo_key = fmt.Sprintf("/repositories/github/%s", codeRepoID)
-	if err = srv.db.Put(ctx, repo_key+"/project", []byte(projectID)); err != nil {
-		return nil, err
+	for _, key := range []repokey.Key{configKey, codeKey} {
+		if err = srv.db.Put(ctx, "/repositories/"+key.String()+"/project", []byte(projectID)); err != nil {
+			return nil, err
+		}
 	}
 
 	return cr.Response{
@@ -225,10 +242,15 @@ func (srv *AuthService) registerRepositoryStream(ctx context.Context, body comma
 		return nil, fmt.Errorf("missing repository ID parameter: %w", err)
 	}
 
+	key, err := repokey.Parse("https://" + repoID)
+	if err != nil {
+		return nil, err
+	}
+
 	// For p2p streams (internal service communication), we can register repositories
 	// without external GitHub API calls since services trust each other
 	// Use the main function with nil client to skip GitHub API verification
-	response, err := srv.registerGitHubRepository(ctx, nil, repoID)
+	response, err := srv.registerGitHubRepository(ctx, nil, key)
 	if err != nil {
 		return nil, fmt.Errorf("repository registration failed: %w", err)
 	}
@@ -254,10 +276,15 @@ func (srv *AuthService) unregisterRepositoryStream(ctx context.Context, body com
 		return nil, fmt.Errorf("missing repository ID parameter: %w", err)
 	}
 
+	key, err := repokey.Parse("https://" + repoID)
+	if err != nil {
+		return nil, err
+	}
+
 	// For p2p streams (internal service communication), we can unregister repositories
 	// without external GitHub API calls
 	// Use the main function with nil client to skip GitHub API verification
-	err = srv.unregisterGitHubRepository(ctx, nil, repoID)
+	err = srv.unregisterGitHubRepository(ctx, nil, key)
 	if err != nil {
 		return nil, fmt.Errorf("repository unregistration failed: %w", err)
 	}

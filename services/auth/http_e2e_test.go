@@ -10,6 +10,7 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/auth/repositories"
@@ -226,14 +227,10 @@ func testStreamAPIEndpoints(t *testing.T, u *dream.Universe) {
 
 func testHooksStreamAPI(t *testing.T, u *dream.Universe, ctx context.Context) {
 	hookID := id.Generate()
-	hook, err := hooks.New(u.Auth().KV(), hooks.Data{
-		"id":         hookID,
-		"provider":   "github",
-		"github_id":  99999,
-		"repository": 88888,
-		"secret":     "stream_test_secret",
-	})
+	key, err := repokey.Parse("https://github.com/test/stream-hooked")
 	assert.NilError(t, err)
+
+	hook := hooks.NewGithub(u.Auth().KV(), hookID, 99999, "stream_test_secret", key)
 
 	err = hook.Register(ctx)
 	assert.NilError(t, err)
@@ -246,25 +243,20 @@ func testHooksStreamAPI(t *testing.T, u *dream.Universe, ctx context.Context) {
 }
 
 func testRepositoriesStreamAPI(t *testing.T, u *dream.Universe, ctx context.Context) {
-	repo, err := repositories.New(u.Auth().KV(), repositories.Data{
-		"id":       99999,
-		"provider": "github",
-		"name":     "test/stream-repo",
-		"project":  "stream_test_project",
-		"key":      "stream_test_key",
-		"url":      "https://github.com/test/stream-repo",
-	})
+	key, err := repokey.Parse("https://github.com/test/stream-repo")
 	assert.NilError(t, err)
+
+	repo := repositories.New(u.Auth().KV(), key, "stream_test_key", "stream_test_project")
 
 	err = repo.Register(ctx)
 	assert.NilError(t, err)
 	defer repo.Delete(ctx)
 
-	retrievedRepo, err := repositories.Fetch(ctx, u.Auth().KV(), "99999")
+	retrievedRepo, err := repositories.Fetch(ctx, u.Auth().KV(), key)
 	assert.NilError(t, err)
 	assert.Assert(t, retrievedRepo != nil)
-	assert.Equal(t, retrievedRepo.ID(), 99999)
-	assert.Equal(t, retrievedRepo.Provider(), "github")
+	assert.Equal(t, retrievedRepo.ID(), "github.com/test/stream-repo")
+	assert.Equal(t, retrievedRepo.Provider(), "github.com")
 }
 
 func TestAuthServiceIntegration_Dreaming(t *testing.T) {
@@ -323,25 +315,16 @@ func testServiceIntegration(t *testing.T, u *dream.Universe, auth interface{}) {
 func testCompleteWorkflow(t *testing.T, u *dream.Universe, ctx context.Context) {
 	projectID := "integration_test_project"
 
-	repo1, err := repositories.New(u.Auth().KV(), repositories.Data{
-		"id":       11111,
-		"provider": "github",
-		"name":     "test/config-repo",
-		"project":  projectID,
-		"key":      "config_repo_key",
-		"url":      "https://github.com/test/config-repo",
-	})
+	key1, err := repokey.Parse("https://github.com/test/config-repo")
 	assert.NilError(t, err)
 
-	repo2, err := repositories.New(u.Auth().KV(), repositories.Data{
-		"id":       22222,
-		"provider": "github",
-		"name":     "test/code-repo",
-		"project":  projectID,
-		"key":      "code_repo_key",
-		"url":      "https://github.com/test/code-repo",
-	})
+	// A subgroup, so the whole workflow — register, hook reverse index, fetch,
+	// hook listing, delete — runs once over a four-segment key too.
+	key2, err := repokey.Parse("https://gitlab.com/test/team/code-repo")
 	assert.NilError(t, err)
+
+	repo1 := repositories.New(u.Auth().KV(), key1, "config_repo_key", projectID)
+	repo2 := repositories.New(u.Auth().KV(), key2, "code_repo_key", projectID)
 
 	err = repo1.Register(ctx)
 	assert.NilError(t, err)
@@ -351,23 +334,8 @@ func testCompleteWorkflow(t *testing.T, u *dream.Universe, ctx context.Context) 
 	assert.NilError(t, err)
 	defer repo2.Delete(ctx)
 
-	hook1, err := hooks.New(u.Auth().KV(), hooks.Data{
-		"id":         id.Generate(),
-		"provider":   "github",
-		"github_id":  11111,
-		"repository": 11111,
-		"secret":     "hook1_secret",
-	})
-	assert.NilError(t, err)
-
-	hook2, err := hooks.New(u.Auth().KV(), hooks.Data{
-		"id":         id.Generate(),
-		"provider":   "github",
-		"github_id":  22222,
-		"repository": 22222,
-		"secret":     "hook2_secret",
-	})
-	assert.NilError(t, err)
+	hook1 := hooks.NewGithub(u.Auth().KV(), id.Generate(), 11111, "hook1_secret", key1)
+	hook2 := hooks.NewGithub(u.Auth().KV(), id.Generate(), 22222, "hook2_secret", key2)
 
 	err = hook1.Register(ctx)
 	assert.NilError(t, err)
@@ -377,11 +345,11 @@ func testCompleteWorkflow(t *testing.T, u *dream.Universe, ctx context.Context) 
 	assert.NilError(t, err)
 	defer hook2.Delete(ctx)
 
-	retrievedRepo1, err := repositories.Fetch(ctx, u.Auth().KV(), "11111")
+	retrievedRepo1, err := repositories.Fetch(ctx, u.Auth().KV(), key1)
 	assert.NilError(t, err)
 	assert.Assert(t, retrievedRepo1 != nil)
 
-	retrievedRepo2, err := repositories.Fetch(ctx, u.Auth().KV(), "22222")
+	retrievedRepo2, err := repositories.Fetch(ctx, u.Auth().KV(), key2)
 	assert.NilError(t, err)
 	assert.Assert(t, retrievedRepo2 != nil)
 

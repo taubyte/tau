@@ -76,8 +76,8 @@ func TestAuthProjects_Dreaming(t *testing.T) {
 	}()
 	defer server.Shutdown(ctx)
 
-	projectID := createFakeProject(t, u, "fake-project", 1, "fake-user", "1", "2")
-	projectID2 := createFakeProject(t, u, "fake-project-2", 1, "fake-user", "3", "4")
+	projectID := createFakeProject(t, u, "fake-project", 1, "fake-user", "github.com/acme/config", "github.com/acme/code")
+	projectID2 := createFakeProject(t, u, "fake-project-2", 1, "fake-user", "github.com/acme/config2", "github.com/acme/code2")
 
 	t.Parallel()
 

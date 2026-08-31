@@ -112,7 +112,7 @@ func TestRepositoryHookErrorHandling(t *testing.T) {
 	assert.Assert(t, err != nil, "Expected error for non-existent hook")
 
 	// Test getGithubRepositoryByID with non-existent repo
-	_, err = svc.getGithubRepositoryByID(ctx, 999)
+	_, err = svc.getRepositoryByID(ctx, "github.com/acme/absent")
 	assert.Assert(t, err != nil, "Expected error for non-existent repository")
 
 	// Test apiHookServiceHandler with get action
@@ -141,7 +141,7 @@ func TestRepositoryHookErrorHandlingForNonExistentEntities(t *testing.T) {
 	assert.Assert(t, err != nil, "Expected error for non-existent hook")
 
 	// Test getGithubRepositoryByID with non-existent repo
-	_, err = svc.getGithubRepositoryByID(ctx, 999)
+	_, err = svc.getRepositoryByID(ctx, "github.com/acme/absent")
 	assert.Assert(t, err != nil, "Expected error for non-existent repository")
 }
 

@@ -2,34 +2,50 @@ package repositories
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
+	"strings"
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/services/auth/hooks"
 )
 
-var (
-	GitProviders = []string{"github"}
-	logger       = log.Logger("tau.auth.service.api.repositories")
-)
+var logger = log.Logger("tau.auth.service.api.repositories")
 
-func (r *githubRepository) Serialize() Data {
+// A repository's rows live under its canonical key:
+//
+//	/repositories/github.com/acme/pay/key
+//	/repositories/github.com/acme/pay/project
+//	/repositories/github.com/acme/pay/hooks/<hook uuid>
+//
+// The key is VARIABLE DEPTH — `host/owner/name` is three segments and a GitLab
+// subgroup is four — so nothing here may count segments to find a boundary.
+// Everything below either anchors on the fixed suffix or is handed a Key.
+const prefix = "/repositories/"
+
+func root(key repokey.Key) string {
+	return prefix + key.String()
+}
+
+// keyRow is the row that says a repository exists. It is also what tells a
+// listing which of the descendants under the prefix are repositories rather
+// than the /project and /hooks/<uuid> rows filed beside them.
+const keyRow = "/key"
+
+func (r *repository) Serialize() Data {
 	return Data{
-		"id":       r.id,
-		"provider": r.provider,
+		"id":       r.key.String(),
+		"provider": r.key.Host,
 		"project":  r.project,
-		"key":      r.key,
+		"key":      r.deployKey,
 	}
 }
 
-func (r *githubRepository) Delete(ctx context.Context) (err error) {
+func (r *repository) Delete(ctx context.Context) (err error) {
 	for _, h := range r.Hooks(ctx) {
-		err = h.Delete(ctx)
-		if err != nil {
+		if err = h.Delete(ctx); err != nil {
 			logger.Errorf("Failed to delete hook %s: %v", h.ID(), err)
 		}
 	}
@@ -39,34 +55,35 @@ func (r *githubRepository) Delete(ctx context.Context) (err error) {
 		return fmt.Errorf("failed to create batch: %w", err)
 	}
 
-	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.id)
-	err = batch.Delete(repo_key)
-	if err != nil {
+	if err = batch.Delete(root(r.key) + keyRow); err != nil {
 		return fmt.Errorf("failed to batch delete repository key: %w", err)
 	}
 
-	err = batch.Commit()
-	if err != nil {
+	// The project link goes with the repository. Leaving it behind kept an
+	// unregistered repository listed as part of its project, which is the same
+	// kind of half-deleted state the hook reverse index below guards against.
+	if err = batch.Delete(root(r.key) + "/project"); err != nil {
+		return fmt.Errorf("failed to batch delete repository project link: %w", err)
+	}
+
+	if err = batch.Commit(); err != nil {
 		return fmt.Errorf("failed to commit repository deletion batch: %w", err)
 	}
 
 	return nil
 }
 
-func (r *githubRepository) Register(ctx context.Context) (err error) {
+func (r *repository) Register(ctx context.Context) (err error) {
 	batch, err := r.kv.Batch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create batch: %w", err)
 	}
 
-	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.id)
-	err = batch.Put(repo_key, []byte(r.key))
-	if err != nil {
+	if err = batch.Put(root(r.key)+keyRow, []byte(r.deployKey)); err != nil {
 		return fmt.Errorf("failed to batch repository key: %w", err)
 	}
 
-	err = batch.Commit()
-	if err != nil {
+	if err = batch.Commit(); err != nil {
 		r.Delete(ctx)
 		return fmt.Errorf("failed to commit repository registration batch: %w", err)
 	}
@@ -74,20 +91,20 @@ func (r *githubRepository) Register(ctx context.Context) (err error) {
 	return nil
 }
 
-func (r *githubRepository) Hooks(ctx context.Context) []hooks.Hook {
-	keys, err := r.kv.List(ctx, fmt.Sprintf("/repositories/github/%d/hooks/", r.id))
+var hookID = regexp.MustCompile("/hooks/([^/]+)$")
+
+func (r *repository) Hooks(ctx context.Context) []hooks.Hook {
+	keys, err := r.kv.List(ctx, root(r.key)+"/hooks/")
 	if err != nil {
 		return nil
 	}
 
 	hks := make([]hooks.Hook, 0)
-	re := regexp.MustCompile("/hooks/([^/]+)$")
 	for _, k := range keys {
-		m := re.FindStringSubmatch(k)
+		m := hookID.FindStringSubmatch(k)
 		logger.Debugf("repo.Hooks match:%s", m)
 		if len(m) > 1 {
-			hook_id := m[1]
-			h, err := hooks.Fetch(ctx, r.kv, hook_id)
+			h, err := hooks.Fetch(ctx, r.kv, m[1])
 			if err == nil {
 				hks = append(hks, h)
 			} else {
@@ -98,68 +115,40 @@ func (r *githubRepository) Hooks(ctx context.Context) []hooks.Hook {
 	return hks
 }
 
-func Exist(ctx context.Context, kv kvdb.KVDB, id string) bool {
-	for _, p := range GitProviders {
-		ret, err := kv.Get(ctx, fmt.Sprintf("/repositories/%s/%s/key", p, id))
-		if err == nil && ret != nil {
-			return true
-		}
-	}
-	return false
-}
-
-func ExistOn(ctx context.Context, kv kvdb.KVDB, provider, id string) bool {
-	ret, err := kv.Get(ctx, fmt.Sprintf("/repositories/%s/%s/key", provider, id))
+// Exist reports whether a repository is registered. It takes the key rather
+// than probing a list of providers for it: the host is in the key, so there is
+// nothing left to guess at.
+func Exist(ctx context.Context, kv kvdb.KVDB, key repokey.Key) bool {
+	ret, err := kv.Get(ctx, root(key)+keyRow)
 	return err == nil && ret != nil
 }
 
-func Provider(ctx context.Context, kv kvdb.KVDB, id string) (string, error) {
-	var err error
-	var ret []byte
-	for _, p := range GitProviders {
-		ret, err = kv.Get(ctx, fmt.Sprintf("/repositories/%s/%s/key", p, id))
-		if err == nil && ret != nil {
-			return p, nil
-		}
-	}
-	return "", fmt.Errorf("Repository with ID = `%s` does not exist! error: %w", id, err)
-}
-
-func fetchGithub(ctx context.Context, kv kvdb.KVDB, id int) (Repository, error) {
-	repo_key := fmt.Sprintf("/repositories/github/%d", id)
-
-	key, err := kv.Get(ctx, repo_key+"/key")
+// List returns the canonical key of every registered repository.
+//
+// It matches the /key row rather than listing the prefix, because a bare list
+// returns every descendant — the /project row and one row per hook — and a
+// caller stripping the prefix off those gets `acme/pay/project` and
+// `acme/pay/hooks/<uuid>` back as if they were repositories.
+func List(ctx context.Context, kv kvdb.KVDB) ([]string, error) {
+	rows, err := kv.ListRegEx(ctx, prefix, regexp.QuoteMeta(keyRow)+"$")
 	if err != nil {
 		return nil, err
 	}
 
-	projectId, _ := kv.Get(ctx, repo_key+"/project")
-	return New(kv, Data{
-		"id":       id,
-		"provider": "github",
-		"project":  string(projectId),
-		"key":      string(key),
-	})
-
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, strings.TrimSuffix(strings.TrimPrefix(row, prefix), keyRow))
+	}
+	return ids, nil
 }
 
-func Fetch(ctx context.Context, kv kvdb.KVDB, id string) (Repository, error) {
-	provider, err := Provider(ctx, kv, id)
+func Fetch(ctx context.Context, kv kvdb.KVDB, key repokey.Key) (Repository, error) {
+	deployKey, err := kv.Get(ctx, root(key)+keyRow)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("repository `%s` is not registered: %w", key, err)
 	}
 
-	switch provider {
-	case "github":
-		_id, err := strconv.Atoi(id)
-		if err != nil {
-			return nil, errors.New("Github repository id must be an int. Parsing returned: " + err.Error())
-		}
-		repo, err := fetchGithub(ctx, kv, _id)
-		if err != nil {
-			return nil, errors.New("Failed fetching github with: " + err.Error())
-		}
-		return repo, nil
-	}
-	return nil, errors.New("unknown/unsupported git provider " + provider)
+	project, _ := kv.Get(ctx, root(key)+"/project")
+
+	return New(kv, key, string(deployKey), string(project)), nil
 }

@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"testing"
 
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/spore-drive/config"
 	"github.com/taubyte/tau/pkg/spore-drive/config/fixtures"
 	"github.com/taubyte/tau/services/auth/hooks"
@@ -61,28 +61,16 @@ func getMockService(ctx context.Context) (*Service, error) {
 	return s, nil
 }
 
-func registerFakeRepoHelper(t *testing.T, u *dream.Universe, _repo_id int64, kpriv string, hook_githubid int64, secret string) string {
+func registerFakeRepoHelper(t *testing.T, u *dream.Universe, repoID string, kpriv string, hook_githubid int64, secret string) string {
 	authKV := u.Auth().KV()
 	ctx := context.Background()
 
-	repo, err := repositories.New(authKV, repositories.Data{
-		"id":       _repo_id,
-		"provider": "github",
-		"key":      kpriv,
-	})
+	key, err := repokey.Parse("https://" + repoID)
 	assert.NilError(t, err)
 
-	assert.NilError(t, repo.Register(ctx))
+	assert.NilError(t, repositories.New(authKV, key, kpriv, "").Register(ctx))
 
-	hook, err := hooks.New(authKV, hooks.Data{
-		"id":         id.Generate("github", hook_githubid),
-		"provider":   "github",
-		"github_id":  hook_githubid,
-		"repository": _repo_id,
-		"secret":     secret,
-	})
-	assert.NilError(t, err)
-
+	hook := hooks.NewGithub(authKV, id.Generate("github", hook_githubid), int(hook_githubid), secret, key)
 	assert.NilError(t, hook.Register(ctx))
 
 	return hook.ID()
@@ -103,27 +91,20 @@ func createFakeProject(t *testing.T, u *dream.Universe, projectName string, gitu
 
 	assert.NilError(t, authKV.Put(ctx, "/projects/"+projectID+"/repositories/config", []byte(configRepoID)))
 
-	assert.NilError(t, authKV.Put(ctx, fmt.Sprintf("/repositories/github/%s/project", configRepoID), []byte(projectID)))
+	assert.NilError(t, authKV.Put(ctx, "/repositories/"+configRepoID+"/project", []byte(projectID)))
 
 	assert.NilError(t, authKV.Put(ctx, "/projects/"+projectID+"/repositories/code", []byte(codeRepoID)))
 
-	assert.NilError(t, authKV.Put(ctx, fmt.Sprintf("/repositories/github/%s/project", codeRepoID), []byte(projectID)))
+	assert.NilError(t, authKV.Put(ctx, "/repositories/"+codeRepoID+"/project", []byte(projectID)))
 
-	configRepoIDInt, err := strconv.ParseInt(configRepoID, 10, 64)
-	assert.NilError(t, err)
-	registerFakeRepoHelper(t, u, configRepoIDInt, "fake-deploy-priv-key", 101, "fake-hook-secret")
-
-	codeRepoIDInt, err := strconv.ParseInt(codeRepoID, 10, 64)
-	assert.NilError(t, err)
-	registerFakeRepoHelper(t, u, codeRepoIDInt, "fake-deploy-priv-key", 101, "fake-hook-secret")
+	registerFakeRepoHelper(t, u, configRepoID, "fake-deploy-priv-key", 101, "fake-hook-secret")
+	registerFakeRepoHelper(t, u, codeRepoID, "fake-deploy-priv-key", 101, "fake-hook-secret")
 
 	return
 }
 
 func registerFakeRepo(t *testing.T, u *dream.Universe, repoID string) string {
-	_repoID, err := strconv.ParseInt(repoID, 10, 64)
-	assert.NilError(t, err)
-	return registerFakeRepoHelper(t, u, _repoID, "fake-deploy-priv-key", 101, "fake-hook-secret")
+	return registerFakeRepoHelper(t, u, repoID, "fake-deploy-priv-key", 101, "fake-hook-secret")
 }
 
 func injectFakeStaticCert(t *testing.T, u *dream.Universe, domain string, cert []byte) {

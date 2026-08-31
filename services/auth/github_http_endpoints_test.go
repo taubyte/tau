@@ -158,19 +158,22 @@ func TestGitHubHTTPEndpointsWithFixtures(t *testing.T) {
 		mockCtx := &mockHTTPContextWithComplexVars{
 			variables: map[string]interface{}{
 				"config": map[string]interface{}{
-					"id": "test-config-id",
+					"id": "github.com/acme/config",
 				},
 				"code": map[string]interface{}{
-					"id": "test-code-id",
+					// A subgroup, so the variable-depth case goes through the
+					// route variable and out the other side intact.
+					"id": "gitlab.com/acme/team/code",
 				},
 				"project": "test-project-name",
 			},
 		}
 
-		configID, codeID, projectName, err := extractProjectVariables(mockCtx)
+		config, code, projectName, err := extractProjectVariables(mockCtx)
 		assert.NilError(t, err)
-		assert.Equal(t, configID, "test-config-id")
-		assert.Equal(t, codeID, "test-code-id")
+		assert.Equal(t, config.String(), "github.com/acme/config")
+		assert.Equal(t, code.String(), "gitlab.com/acme/team/code")
+		assert.Equal(t, code.Owner, "acme/team")
 		assert.Equal(t, projectName, "test-project-name")
 	})
 

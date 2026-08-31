@@ -245,16 +245,16 @@ func TestGitHubCoreFunctionsWithFixtures(t *testing.T) {
 
 	// Test 1: Register GitHub repository
 	t.Run("registerGitHubRepository", func(t *testing.T) {
-		repoID := "12345"
+		repoID := repoKey(t, "github.com/acme/pay")
 		response, err := svc.registerGitHubRepository(ctx, mockGitHubClient, repoID)
 		assert.NilError(t, err)
 		assert.Assert(t, response != nil)
-		assert.Equal(t, response.Key, fmt.Sprintf("/repositories/github/%s/key", repoID))
+		assert.Equal(t, response.Key, "/repositories/github.com/acme/pay/key")
 	})
 
 	// Test 2: Unregister GitHub repository
 	t.Run("unregisterGitHubRepository", func(t *testing.T) {
-		repoID := "12345"
+		repoID := repoKey(t, "github.com/acme/pay")
 		// First register a repository to unregister
 		_, err := svc.registerGitHubRepository(ctx, mockGitHubClient, repoID)
 		assert.NilError(t, err)
@@ -268,8 +268,8 @@ func TestGitHubCoreFunctionsWithFixtures(t *testing.T) {
 	t.Run("newGitHubProject", func(t *testing.T) {
 		projectID := "test-new-project"
 		projectName := "Test New Project"
-		configID := "test-config-repo"
-		codeID := "test-code-repo"
+		configID := repoKey(t, "github.com/acme/config")
+		codeID := repoKey(t, "github.com/acme/code")
 
 		ctx := context.Background()
 
@@ -297,12 +297,12 @@ func TestGitHubCoreFunctionsWithFixtures(t *testing.T) {
 
 		// Test case 2: Test with some repository data in database
 		// This will test the database lookup and project fetching logic
-		repoID := "test-repo-123"
+		repoID := "github.com/acme/linked"
 		projectID := "test-project-123"
-		repoKey := fmt.Sprintf("/repositories/github/%s/project", repoID)
+		repoLink := "/repositories/" + repoID + "/project"
 
 		// Add some test data to the database
-		err = svc.db.Put(ctx, repoKey, []byte(projectID))
+		err = svc.db.Put(ctx, repoLink, []byte(projectID))
 		assert.NilError(t, err)
 
 		// Also add the project data
@@ -401,10 +401,10 @@ func TestGitHubCoreFunctionsWithFixtures(t *testing.T) {
 		// Create a real GitHub client instance to test method error paths
 		// We won't call the actual GitHub API, just test the error handling logic
 
-		// Test GetByID with invalid ID (tests strconv.ParseInt error)
+		// Get refuses a key it cannot turn into a GitHub owner/name pair.
 		client := &githubClient{}
-		err := client.GetByID("invalid-id")
-		assert.Assert(t, err != nil, "Expected error for invalid ID")
+		err := client.Get(repoKey(t, "gitlab.com/acme/team/widget"))
+		assert.Assert(t, err != nil, "Expected refusal for a non-GitHub key")
 
 		// Test GetCurrentRepository with nil repository
 		_, err = client.GetCurrentRepository()
@@ -550,7 +550,7 @@ func TestGitHubCoreFunctionsWithFixtures(t *testing.T) {
 		assert.Assert(t, repos != nil, "Expected map from mock implementation")
 
 		// Test ShortRepositoryInfo
-		_ = mockGitHubClient.ShortRepositoryInfo("test-id")
+		_ = mockGitHubClient.ShortRepositoryInfo(repoKey(t, "github.com/acme/pay"))
 		// We're just testing that the function exists and can be called
 	})
 }
