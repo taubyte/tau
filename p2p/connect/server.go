@@ -1,0 +1,187 @@
+package connect
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"slices"
+	"sync"
+	"time"
+
+	gostream "github.com/libp2p/go-libp2p-gostream"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
+)
+
+// DefaultPrefaceTimeout is how long a freshly accepted stream has to start
+// speaking HTTP/2. Without it a peer can open streams and stay silent, and
+// each one parks a goroutine until the peer goes away: net/http reads the
+// cleartext-HTTP/2 preface with no deadline of its own, and the ten seconds
+// http2 then allows for the rest of it only start counting once the first
+// bytes land.
+const DefaultPrefaceTimeout = 10 * time.Second
+
+// ErrProtocolTaken is returned by Listen when the host already answers on the
+// protocol. libp2p would let the second listener silently replace the first.
+var ErrProtocolTaken = errors.New("protocol already has a stream handler")
+
+// ServerOption adjusts a Server before it starts accepting.
+type ServerOption func(*Server)
+
+// WithPrefaceTimeout replaces DefaultPrefaceTimeout. Zero lets a silent
+// stream wait forever, which is only reasonable when something else already
+// bounds who can open one.
+func WithPrefaceTimeout(d time.Duration) ServerOption {
+	return func(s *Server) { s.prefaceTimeout = d }
+}
+
+// Server answers ConnectRPC on one libp2p protocol.
+type Server struct {
+	listener net.Listener
+	http     *http.Server
+
+	prefaceTimeout time.Duration
+
+	done     chan struct{}
+	errMu    sync.Mutex
+	serveErr error
+}
+
+// Listen registers id on h and serves handler over every stream opened on it.
+// The listener is bound before Listen returns, so a protocol that is already
+// taken is an error here rather than a service that never receives anything.
+// Serving stops when ctx ends, or on Close or Shutdown.
+func Listen(ctx context.Context, h host.Host, id protocol.ID, handler http.Handler, opts ...ServerOption) (*Server, error) {
+	if h == nil {
+		return nil, errors.New("no host to listen on")
+	}
+	if handler == nil {
+		return nil, errors.New("no handler to serve")
+	}
+	if id == "" {
+		return nil, errors.New("no protocol to listen on")
+	}
+	if slices.Contains(h.Mux().Protocols(), id) {
+		return nil, fmt.Errorf("listening on %s: %w", id, ErrProtocolTaken)
+	}
+
+	s := &Server{prefaceTimeout: DefaultPrefaceTimeout, done: make(chan struct{})}
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	l, err := gostream.Listen(h, id)
+	if err != nil {
+		return nil, fmt.Errorf("listening on %s: %w", id, err)
+	}
+	s.listener = &serverListener{Listener: l, prefaceTimeout: s.prefaceTimeout}
+
+	s.http = &http.Server{
+		Handler:     handler,
+		Protocols:   h2(),
+		BaseContext: func(net.Listener) context.Context { return ctx },
+		ConnContext: carryRemotePeer,
+	}
+
+	go s.serve()
+	go s.watch(ctx)
+
+	return s, nil
+}
+
+// serve runs until the server is asked to stop, or until the listener dies
+// for some other reason worth remembering.
+func (s *Server) serve() {
+	defer close(s.done)
+	if err := s.http.Serve(s.listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		s.errMu.Lock()
+		s.serveErr = err
+		s.errMu.Unlock()
+	}
+}
+
+// watch ties the server's life to the context it was started with.
+func (s *Server) watch(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		s.Close()
+	case <-s.done:
+	}
+}
+
+// Addr is the host's peer id: that is the only address a libp2p listener has.
+func (s *Server) Addr() net.Addr { return s.listener.Addr() }
+
+// Close drops the listener and every stream on it at once. It is safe to
+// call more than once, and to call on a server that is already draining, to
+// stop waiting for it.
+func (s *Server) Close() error { return s.http.Close() }
+
+// Shutdown stops accepting and waits for the calls already in flight, or for
+// ctx to end.
+func (s *Server) Shutdown(ctx context.Context) error { return s.http.Shutdown(ctx) }
+
+// Done closes once the server has stopped serving, however it stopped.
+func (s *Server) Done() <-chan struct{} { return s.done }
+
+// Err reports why the server stopped, if it stopped for a reason other than
+// being asked to.
+func (s *Server) Err() error {
+	s.errMu.Lock()
+	defer s.errMu.Unlock()
+	return s.serveErr
+}
+
+// serverListener hands net/http a conn that remembers which peer opened it
+// and that will not wait forever for that peer's first word.
+type serverListener struct {
+	net.Listener
+	prefaceTimeout time.Duration
+}
+
+func (l *serverListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+
+	sc := &serverConn{Conn: c}
+	if s, ok := c.(interface{ Conn() network.Conn }); ok {
+		sc.remote = s.Conn().RemotePeer()
+	}
+
+	if l.prefaceTimeout > 0 {
+		// A conn that will not take a deadline is still a usable conn; it
+		// just cannot be held to this.
+		if err := c.SetReadDeadline(time.Now().Add(l.prefaceTimeout)); err == nil {
+			sc.deadlined = true
+		}
+	}
+
+	return sc, nil
+}
+
+type serverConn struct {
+	net.Conn
+	remote    peer.ID
+	deadlined bool
+	spoke     sync.Once
+}
+
+// RemotePeerID is the libp2p peer on the far end, read off the stream when it
+// was accepted rather than off anything the peer sent.
+func (c *serverConn) RemotePeerID() peer.ID { return c.remote }
+
+// Read lifts the preface deadline as soon as the peer says anything at all.
+// From there http2's own preface timeout takes over.
+func (c *serverConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 && c.deadlined {
+		c.spoke.Do(func() { c.Conn.SetReadDeadline(time.Time{}) })
+	}
+	return n, err
+}
