@@ -1,0 +1,16 @@
+id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG
+name: v2envs
+description: several deployments - the table, a shadow inside one, and the keys a document suffixes for them
+environments:
+    production:
+        branches: [main, master]
+        regions: [eu-west, eu-central]
+        shadows:
+            # its own release over production's state, so no regions of its own to place
+            ab:
+                branches: [main]
+    staging:
+        branches: ["release/*"]
+        regions: [us-east]
+    preview:
+        branches: ["*"]

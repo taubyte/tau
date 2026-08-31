@@ -1,0 +1,6 @@
+id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB
+description: sized per deployment - preview keeps less, and keeps it for less long
+size: 128MB
+size_preview: 8MB
+ttl: 24h
+ttl_preview: 1h

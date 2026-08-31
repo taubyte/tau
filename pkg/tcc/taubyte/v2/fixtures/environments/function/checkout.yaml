@@ -1,0 +1,10 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Za
+description: one document, four deployments - what production runs is the unsuffixed line
+execution:
+    call: checkout
+    timeout: 30s
+    timeout_preview: 5s
+    timeout_ab: 45s
+    memory: 64MB
+    memory_preview: 16MB
+    memory_staging: 32MB
