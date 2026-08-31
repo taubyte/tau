@@ -33,9 +33,8 @@ func IdentityOf(root *Node) (id, name string) {
 type instance struct {
 	schema *schemaDef
 	seer   *yaseer.Seer
-	// env is the environment this engine resolves for, "" for none, and envs is
-	// every environment the project declares. See NewFor.
-	env  string
+	// envs is every environment the project declares — the closed set of suffixes a
+	// document may carry. WHICH one is being read is an argument to ProcessFor.
 	envs []string
 }
 
@@ -53,7 +52,12 @@ type Engine interface {
 	Schema() Schema
 	Parse() (object.Object[SeerRef], error)           // load linked to seer
 	Process() (object.Object[object.Refrence], error) // load & process
-	Dump(obj object.Object[object.Refrence]) error    // dump object to filesystem using engine's seer and sync
+	// ProcessFor is Process as one ENVIRONMENT reads it: marked attributes take their
+	// `<key>_<env>` spelling where the document writes one. An argument rather than
+	// instance state, because one branch feeds several deployments and they share the
+	// parsed documents.
+	ProcessFor(env string) (object.Object[object.Refrence], error)
+	Dump(obj object.Object[object.Refrence]) error // dump object to filesystem using engine's seer and sync
 }
 
 type Type int

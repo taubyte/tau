@@ -67,9 +67,9 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c 
 		}
 	}
 
-	// The environment travels with the compile, not with the schema: two
-	// environments of one commit are two compiles of one vocabulary.
-	c.engine, err = engine.NewFor(project, c.env["environment"], c.environments, c.seerOptions...)
+	// The DECLARED set travels with the engine because the loader needs it whichever
+	// environment is being read. WHICH one is read is an argument to CompileFor.
+	c.engine, err = engine.NewFor(project, c.environments, c.seerOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -84,11 +84,16 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c 
 // second call to remember: a caller who forgot one would be holding an object that is
 // missing the resources it needs, and nothing about it would say so.
 func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error) {
-	obj, validations, err := c.Authored(ctx)
+	return c.CompileFor(ctx, c.env["environment"])
+}
+
+// CompileFor is Compile as one ENVIRONMENT reads it — see AuthoredFor.
+func (c *Compiler) CompileFor(ctx context.Context, env string) (Object, []NextValidation, error) {
+	obj, validations, err := c.AuthoredFor(ctx, env)
 	if err != nil || !UsesLowering(c.compileRoot) {
 		return obj, validations, err
 	}
-	return c.lower(ctx, obj, validations)
+	return c.lowerFor(ctx, env, obj, validations)
 }
 
 // LoweredFS is the in-memory filesystem the last Compile lowered over — every document a
@@ -102,7 +107,15 @@ func (c *Compiler) LoweredFS() afero.Fs {
 // Authored is the configuration AS IT WAS WRITTEN, with no lowering applied. It is what
 // an editor shows and what a lowering is computed from; everything else wants Compile.
 func (c *Compiler) Authored(ctx context.Context) (Object, []NextValidation, error) {
-	obj, err := c.engine.Process()
+	return c.AuthoredFor(ctx, c.env["environment"])
+}
+
+// AuthoredFor is Authored as one ENVIRONMENT reads it. One branch feeds several
+// deployments, so the environment is an argument: the documents are parsed once by the
+// engine this compiler holds and read once per environment, rather than a compiler
+// built per environment re-reading the tree each time.
+func (c *Compiler) AuthoredFor(ctx context.Context, env string) (Object, []NextValidation, error) {
+	obj, err := c.engine.ProcessFor(env)
 	if err != nil {
 		return nil, nil, err
 	}

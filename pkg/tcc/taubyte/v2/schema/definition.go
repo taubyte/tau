@@ -1951,9 +1951,96 @@ var scopeShape = namespacesGroup(MaxNamespaceDepth)
 
 var _ = func() any { attachAccess(); attachIndexes(); attachLowerable(); return nil }()
 
+// ENVIRONMENTS ARE ONE FILE, and they are in the project's own document rather than a
+// directory of their own. They are not resources: nothing reaches an environment, no
+// lowering produces one, and there is no verb to do to it. It is a small table of
+// deployments — which exist, which branches feed each, where each keeps its state —
+// read whole or not at all, and a table read whole belongs in one document.
+//
+// Declaring them in config is also what tells the compiler which environments a
+// document may suffix a key for, so `timeout_prevew` is a typo with the declared names
+// in the message rather than a key nobody reads.
+//
+//	environments:
+//	    production:
+//	        branches: [main, master]
+//	        regions: [eu-west]
+//	        shadows:
+//	            ab:
+//	                branches: [main]
+//	    preview:
+//	        branches: ["*"]
+func environmentsGroup() *Node {
+	return DefineGroup("environments",
+		DefineIter([]*Attribute{
+			environmentBranches(),
+
+			// WHERE THIS ENVIRONMENT'S STATE LIVES. A shadow has no such field, which
+			// is the whole reason shadows are written INSIDE the environment they
+			// shadow rather than pointing at it: the state is not a shadow's to place,
+			// and a shape that cannot say the wrong thing beats a check that catches it.
+			//
+			// Absent means the cloud decides, which is the common case and the one
+			// §10a wants: a region an operator owns is not the project's to name, and
+			// a project that hardcoded one would not survive being dropped on another
+			// cloud. What is authored is a CONSTRAINT — "keep this in the EU" — not a
+			// placement.
+			StringSlice("regions", InSection("deployment"),
+				Doc("Regions", "Where this environment keeps its state, as region names the cloud offers. Absent means the cloud places it.")),
+		},
+			GroupDoc("The deployments of this project: which branches feed each, and where each keeps its state."),
+			Section("deployment", "Deployment", "Which branches feed an environment, and where it keeps its state."),
+			Nested(shadowsGroup())),
+	)
+}
+
+// A SHADOW IS A DEPLOYMENT ATTACHED TO ANOTHER'S STATE. It is its own deployment —
+// its own release, its own compiled artifact, its own address, its own assets — and it
+// shares everything that does not fork with the environment it is written inside:
+// every stateful kind, the secrets, and the TRIGGERS. A shadow starts no scheduler,
+// opens no connector and consumes no queue of its own, because the environment holding
+// it is already doing that.
+//
+// Which is the point: an A/B variant and a frontend tested against production data are
+// both "different code, same data".
+//
+// WRITTEN INSIDE, not pointing at. A `shadows: production` field would be a name to
+// misspell, a reference with no namespace to resolve in, and a place to write `regions`
+// that a shadow may not have. Nested, all three problems are shapes that do not exist.
+//
+// The word is borrowed and narrowed. Elsewhere a shadow deployment gets a COPY of
+// traffic with its answers thrown away and shares nothing; here it is a real deployment
+// sharing the state of the one above it. Both senses mean "attached to that one rather
+// than standing alone", which is the half worth keeping.
+func shadowsGroup() *Node {
+	return DefineGroup("shadows",
+		DefineIter([]*Attribute{
+			environmentBranches(),
+		},
+			GroupDoc("Deployments attached to this environment: their own code and their own address, over its state.")),
+	)
+}
+
+// environmentBranches is the same field on both, because "which branches feed this
+// deployment" is one question whether the deployment stands alone or shadows another.
+//
+// A LIST OF PATTERNS. v1 refused every branch but `main`/`master` from a literal list
+// read in fifty places, so a team whose default branch is `trunk` could not deploy at
+// all and `feature/*` was unrepresentable. A branch is a value here, never a path
+// segment — and `[main, master]` is one environment fed by either, which is what that
+// literal list was trying to say.
+//
+// ONE BRANCH MAY FEED SEVERAL DEPLOYMENTS, and that is not a collision to resolve — it
+// is what a shadow is for. `main` feeds production and every shadow of it that names
+// it: one commit, several deployments, one set of state underneath.
+func environmentBranches() *Attribute {
+	return StringSlice("branches", Required(), InSection("deployment"),
+		Doc("Branches", "Which branches feed this deployment. Globs allowed: [main, master], [\"release/*\"], or [\"*\"] for everything else."))
+}
+
 var v2Root = Root(
 	rootAttributes(),
-	append(append([]*Node{}, V2Resources...), scopeShape)...,
+	append(append([]*Node{}, V2Resources...), scopeShape, environmentsGroup())...,
 ).With(Singular("Project"), Leaf("project"), Strict(),
 	// A resource is stored under its `id` and called by the name of the document it was
 	// written in — the interpreter's two field names, which are this vocabulary's to

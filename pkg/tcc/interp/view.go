@@ -50,6 +50,12 @@ type Layout struct {
 // what was lowered — so the object says which of its resources nobody wrote, and
 // decompile can stop at what somebody did.
 func (c *Compiler) lower(ctx context.Context, authored Object, validations []NextValidation) (Object, []NextValidation, error) {
+	return c.lowerFor(ctx, c.env["environment"], authored, validations)
+}
+
+// lowerFor reads the lowered view as one environment does — the second pass reads the
+// same documents back, so it needs the same environment the first pass did.
+func (c *Compiler) lowerFor(ctx context.Context, env string, authored Object, validations []NextValidation) (Object, []NextValidation, error) {
 	if c.layout.Resource == "" {
 		return nil, nil, errors.New("interp: this schema declares lowerings but no layout, so nothing can be lowered — see WithLayout")
 	}
@@ -111,7 +117,7 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	if err != nil {
 		return nil, nil, err
 	}
-	obj, moreValidations, err := lowered.Authored(ctx)
+	obj, moreValidations, err := lowered.AuthoredFor(ctx, env)
 	if err != nil {
 		return nil, nil, err
 	}
