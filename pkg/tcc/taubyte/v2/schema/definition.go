@@ -190,6 +190,25 @@ var secNetwork = Section("network", "Network", "How this workload is reached, an
 var hostWorlds = []string{"handler", "authorizer", "instance-validator", "gateway-transformer", "proxy-transformer", "gateway-router", "proxy-router"}
 
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
+	return wasmAttributesEntrypoint(Required(), attrs...)
+}
+
+// wasmAttributesEntrypoint is wasmAttributes with the ENTRYPOINT'S DEMAND as an
+// argument, because one of the three kinds that runs a WASM component does not
+// always run one.
+//
+// `worker` carries a `runtime` tier, and a container worker has no exported symbol
+// to call — its entrypoint is the image's. Requiring `execution/call` of it made a
+// legal workload unauthorable, and writing a dummy `call: main` to get past the
+// error compiled an object stating two wasm facts about a container.
+//
+// THE GATE HAD TO BE A PARAMETER RATHER THAN A CONDITION INSIDE THIS HELPER.
+// `RequiredWhen("runtime", …)` written here would name an attribute `function` and
+// `entity` do not have, and a condition naming a field that is not there is simply
+// never true — so the entrypoint would have stopped being required on the two kinds
+// that always need it. That is a check narrowed to fit one caller, which is worse
+// than the error it removes.
+func wasmAttributesEntrypoint(demand AttrOption, attrs ...*Attribute) []*Attribute {
 	base := []*Attribute{
 		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
 			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream. gateway-router: takes a parsed HTTP request, decides which route or function should handle it. proxy-router: takes bytes on a stream, decides which target should receive the connection.")),
@@ -200,7 +219,7 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	// "tau/<name>", a kind packed into a value with no room to say which namespace.
 	base = append(base, contentSource("code", "component", "builtin", "git")...)
 	base = append(base,
-		String(Key("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
+		String(Key("execution", "call"), demand, InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
 		// A CEILING IS WHAT AN ENVIRONMENT DIFFERS IN. `timeout_preview: 5s` beside
 		// `timeout: 20s` is the same field said for one environment — the resource is
 		// one resource, with one id and one name, running smaller where it is cheap
@@ -574,8 +593,20 @@ var V2Resources = []*Node{
 	// where the runtime tier is an authored field (resources.md §1.2).
 	DefineGroup("worker",
 		resource(
-			wasmAttributes(
-				String("runtime", InSet("wasm", "container"), Default("wasm"), InSection("code"), Doc("Runtime", "Which tier runs this worker: wasm or container.")),
+			wasmAttributesEntrypoint(RequiredWhen("runtime", "wasm"),
+				// REQUIRED, WITH NO DEFAULT, and the default is what had to go rather
+				// than a preference that was given up. `RequiredWhen` reads the
+				// discriminator FROM THE DOCUMENT — requiredHere's own comment says an
+				// absent one means the condition cannot hold — so a defaulted `wasm`
+				// would have gated the entrypoint on a value the loader never sees, and
+				// every worker that wrote no `runtime:` line would have stopped being
+				// asked for one. Silently, which is the failure this fix is about.
+				//
+				// The two answers are also different products, the way a database's
+				// `engine` is: one is a component this platform builds and runs, the
+				// other an image somebody else built. A tier that decides which half of
+				// the fields exist is worth one line of saying which.
+				String("runtime", InSet("wasm", "container"), Required(), InSection("code"), Doc("Runtime", "Which tier runs this worker: wasm or container.")),
 				String("image", RequiredWhen("runtime", "container"), PerEnv(), InSection("code"), Doc("Image", "OCI image reference (container runtime only).")),
 				pullSecret()[0], pullSecret()[1],
 			),

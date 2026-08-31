@@ -188,6 +188,52 @@ engine:
 		"and it says which engines there are")
 }
 
+// A CONTAINER WORKER HAS NO ENTRYPOINT TO NAME, and it used to be refused for not
+// naming one. `execution/call` was Required() inside the helper three kinds share,
+// and only `worker` has a tier at all.
+//
+// The tier is Required() with no default, and that is the load-bearing half.
+// RequiredWhen reads the discriminator FROM THE DOCUMENT — an absent one means the
+// condition cannot hold — so `runtime` defaulting to wasm would have gated the
+// entrypoint on a value the loader never sees, and every worker that wrote no
+// `runtime:` line would have quietly stopped being asked for one. This pins all five
+// combinations because the trap here is a check that passes by checking less.
+func TestWorkerEntrypointIsRequiredOnTheWasmTierOnly(t *testing.T) {
+	const head = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"
+	compile := func(body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+		assert.NilError(t, afero.WriteFile(fs, "/worker/probe.yaml", []byte(head+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+	const limits = "execution:\n    timeout: 20s\n    memory: 32MB\n"
+	const wasmLimits = "execution:\n    call: c\n    timeout: 20s\n    memory: 32MB\n"
+
+	assert.ErrorContains(t, compile(limits), "required attribute 'runtime'",
+		"a tier with no default has to be written")
+	assert.NilError(t, compile("runtime: wasm\n"+wasmLimits))
+	assert.ErrorContains(t, compile("runtime: wasm\n"+limits), "required attribute 'execution/call'")
+	assert.NilError(t, compile("runtime: container\nimage: busybox\n"+limits),
+		"a container names an image, not an exported symbol")
+	assert.ErrorContains(t, compile("runtime: container\n"+limits), "required attribute 'image'")
+
+	// The two kinds that are ALWAYS a component keep the unconditional demand. A gate
+	// written inside the shared helper would have named an attribute neither has, and
+	// a condition on a field that is not there is never true.
+	for _, kind := range []string{"function", "entity"} {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+		assert.NilError(t, afero.WriteFile(fs, "/"+kind+"/probe.yaml", []byte(head+limits), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		assert.ErrorContains(t, err, "required attribute 'execution/call'", "kind %q", kind)
+	}
+}
+
 // An external engine carries its own connection; tau's own carries a size and no
 // host at all, so neither borrows the other's fields.
 func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {

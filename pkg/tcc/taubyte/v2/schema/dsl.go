@@ -10,8 +10,13 @@ import (
 // Same list as v1's, minus the terms the v2 vocabulary deletes with smartops and
 // the trigger block (AttachesToAll, DerivedBool, OnlyWhen, SectionWhen).
 type (
-	Node       = engine.Node
-	Attribute  = engine.Attribute
+	Node      = engine.Node
+	Attribute = engine.Attribute
+	// AttrOption is engine.Option under a name that does not collide with this
+	// package's own compiler Option. It is here so a shared attribute helper can
+	// take one caller's demand as an argument — wasmAttributesEntrypoint does,
+	// because a worker's entrypoint is required only on the wasm tier.
+	AttrOption = engine.Option
 	NodeOption = engine.NodeOption
 )
 
