@@ -18,7 +18,7 @@ DREAM_P ?= 4
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-dreaming test-raft test-docker test-containerd test-containers test-all bench-dreaming vm-fixtures test-cli test-cli-cover
+.PHONY: test test-dreaming test-raft test-docker test-containerd test-containers test-all bench-dreaming vm-fixtures test-cli test-cli-cover proto-v2 proto-v2-check
 
 test:
 	go test $(FLAGS) ./...
@@ -89,6 +89,31 @@ vm-fixtures:
 BENCH ?= .
 bench-dreaming:
 	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -run '^$$' -bench '$(BENCH)' -benchmem -timeout 30m $(FLAGS) ./dream/benchmarks
+
+# Regenerate v2's inter-service RPC stubs (protoc-gen-go + protoc-gen-connect-go,
+# both pinned in pkg/v2/proto/buf.gen.yaml) from pkg/v2/proto. Requires buf,
+# protoc-gen-go and protoc-gen-connect-go on PATH at those pinned versions.
+# `go test ./pkg/v2/proto/...` (already part of `test` above) fails if the
+# committed gen/ output drifts from this; run it directly with proto-v2-check.
+#
+# `buf generate` hard-errors on a module with zero .proto files ("had no
+# .proto files") — and a fresh clone hits exactly that until a service's
+# first .proto lands, since this tree ships tooling only (see the commit
+# that added it). tools/protogen.Check already treats "no sources" as its
+# own case rather than shelling out to buf (pkg/v2/proto/drift_test.go
+# passes today, at zero files, for the same reason); this target mirrors
+# that same scan (any *.proto below pkg/v2/proto, excluding gen/ wherever
+# it appears, not just at the top) so `make proto-v2` degrades the same way
+# instead of failing the build for having nothing to do yet.
+proto-v2:
+	@if find pkg/v2/proto \( -name gen -type d \) -prune -o -name '*.proto' -print | grep -q .; then \
+		cd pkg/v2/proto && buf generate; \
+	else \
+		echo "pkg/v2/proto: no .proto sources yet — nothing to generate"; \
+	fi
+
+proto-v2-check:
+	go test $(FLAGS) ./tools/protogen/... ./pkg/v2/proto/...
 
 # Enterprise-build targets live in the ee submodule and are pulled in when it's
 # checked out (a no-op for an OSS-only tree). Run `make help-ee` for the list.
