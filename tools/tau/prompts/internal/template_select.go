@@ -2,7 +2,6 @@ package main
 
 import (
 	functionSpec "github.com/taubyte/tau/legacy/specs/function"
-	smartopsSpec "github.com/taubyte/tau/legacy/specs/smartops"
 	websiteSpec "github.com/taubyte/tau/legacy/specs/website"
 	"github.com/taubyte/tau/tools/tau/flags"
 	"github.com/taubyte/tau/tools/tau/i18n/printer"
@@ -17,7 +16,7 @@ var templateTypeFlag = &cli.StringFlag{
 
 func GetTemplateType(ctx *cli.Context) string {
 	if !ctx.IsSet(templateTypeFlag.Name) {
-		selected, err := prompts.SelectInterface([]string{functionSpec.PathVariable.String(), websiteSpec.PathVariable.String(), smartopsSpec.PathVariable.String()}, "Template type:", "")
+		selected, err := prompts.SelectInterface([]string{functionSpec.PathVariable.String(), websiteSpec.PathVariable.String()}, "Template type:", "")
 		if err != nil {
 			panic(err)
 		}
@@ -45,15 +44,6 @@ var TemplateCommand = &cli.Command{
 				return err
 			}
 			templateMap, err = templates.Get().Function(language)
-			if err != nil {
-				return err
-			}
-		case smartopsSpec.PathVariable.String():
-			language, err := prompts.GetOrSelectLanguage(ctx)
-			if err != nil {
-				return err
-			}
-			templateMap, err = templates.Get().SmartOps(language)
 			if err != nil {
 				return err
 			}

@@ -152,8 +152,6 @@ func CompileFor(u *dream.Universe, params ...interface{}) error {
 	switch resource := resourceIface.(type) {
 	case *structureSpec.Function:
 		err = ctx.function(resource)
-	case *structureSpec.SmartOp:
-		err = ctx.smartops(resource)
 	case *structureSpec.Library:
 		err = ctx.library(resource)
 	case *structureSpec.Website:

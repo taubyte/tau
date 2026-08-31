@@ -14,7 +14,6 @@ import (
 	resolver "github.com/taubyte/tau/pkg/vm/resolvers/taubyte"
 	source "github.com/taubyte/tau/pkg/vm/sources/taubyte"
 	counterSrv "github.com/taubyte/tau/services/substrate/components/counters"
-	smartops "github.com/taubyte/tau/services/substrate/components/smartops"
 )
 
 func New(ctx context.Context, ops ...option) (MockedSubstrate, error) {
@@ -48,11 +47,6 @@ func New(ctx context.Context, ops ...option) (MockedSubstrate, error) {
 	service.counters, err = counterSrv.New(service)
 	if err != nil {
 		return nil, fmt.Errorf("starting counter service failed with: %w", err)
-	}
-
-	service.smartOps, err = smartops.New(service)
-	if err != nil {
-		return nil, fmt.Errorf("starting smartops service failed with: %w", err)
 	}
 
 	backends := []vm.Backend{

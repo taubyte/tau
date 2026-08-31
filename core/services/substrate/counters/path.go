@@ -11,7 +11,6 @@ type Path interface {
 	Failed() path
 	Join(toJoin string) path
 	Memory() path
-	SmartOp(smartOpId string) path
 	String() string
 	Success() path
 	SuccessColdStartMetricPaths() (countPath string, timePath string)
@@ -60,10 +59,6 @@ func (c path) Execution() path {
 
 func (c path) ColdStart() path {
 	return join(c, coldStart)
-}
-
-func (c path) SmartOp(smartOpId string) path {
-	return c.Join(smartOpId).Join(smartOpId)
 }
 
 /***************************** Common Paths For Getting From Database ****************************/

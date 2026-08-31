@@ -14,6 +14,5 @@ const (
 	success = "s"
 
 	coldStart = "cs"
-	smartOp   = "so"
 	execution = "e"
 )

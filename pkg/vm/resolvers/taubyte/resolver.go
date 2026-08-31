@@ -12,7 +12,6 @@ import (
 	functionSpec "github.com/taubyte/tau/legacy/specs/function"
 	librarySpec "github.com/taubyte/tau/legacy/specs/library"
 	"github.com/taubyte/tau/legacy/specs/methods"
-	smartOpSpec "github.com/taubyte/tau/legacy/specs/smartops"
 )
 
 type resolver struct {
@@ -44,13 +43,12 @@ func (s *resolver) Lookup(ctx vm.Context, name string) (ma.Multiaddr, error) {
 		return multiAddr, nil
 	} else if s.tns != nil {
 		switch moduleType {
-		case functionSpec.PathVariable.String(), smartOpSpec.PathVariable.String(), librarySpec.PathVariable.String(): // supported module types
+		case functionSpec.PathVariable.String(), librarySpec.PathVariable.String(): // supported module types
 			if splitAddressLen != 2 {
 				return nil, fmt.Errorf(
-					"invalid local module name got `%s` expected <%s|%s|%s>/<name>",
+					"invalid local module name got `%s` expected <%s|%s>/<name>",
 					name,
 					functionSpec.PathVariable.String(),
-					smartOpSpec.PathVariable.String(),
 					librarySpec.PathVariable.String(),
 				)
 			}

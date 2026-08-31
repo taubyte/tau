@@ -38,7 +38,6 @@ type Client interface {
 	Library() StructureIface[*structureSpec.Library]
 	Messaging() StructureIface[*structureSpec.Messaging]
 	Service() StructureIface[*structureSpec.Service]
-	SmartOp() StructureIface[*structureSpec.SmartOp]
 	Storage() StructureIface[*structureSpec.Storage]
 	Website() StructureIface[*structureSpec.Website]
 

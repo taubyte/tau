@@ -38,13 +38,5 @@ func New(srv storageIface.Service, hoarderClient hoarderIface.Client, storageCon
 	}
 	_store.instanceCtx, _store.instanceCtxC = context.WithCancel(srv.Node().Context())
 
-	val, err := _store.SmartOps()
-	if err != nil || val > 0 {
-		if err != nil {
-			return nil, fmt.Errorf("running smartops for `%s` failed with: %s", storageError(storageContext), err)
-		}
-		return nil, fmt.Errorf("exited: %d", val)
-	}
-
 	return _store, nil
 }

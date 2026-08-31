@@ -19,7 +19,6 @@ type NodeService struct {
 	tns          tns.Client
 	vm           vm.Service
 	httpSrv      http.Service
-	nodeSmartOps substrate.SmartOpsService
 	nodeCounters substrate.CounterService
 
 	branch string
@@ -28,12 +27,11 @@ type NodeService struct {
 
 func MockNodeService(node peer.Node, ctx context.Context) substrate.Service {
 	s := &NodeService{
-		node:         node,
-		tns:          &TestClient{},
-		vm:           &TestVm{},
-		nodeSmartOps: &TestSmartOps{},
-		branch:       "master",
-		ctx:          ctx,
+		node:   node,
+		tns:    &TestClient{},
+		vm:     &TestVm{},
+		branch: "master",
+		ctx:    ctx,
 	}
 
 	s.nodeCounters, _ = counters.New(s)
@@ -63,10 +61,6 @@ func (s *NodeService) Vm() vm.Service {
 
 func (s *NodeService) Tns() tns.Client {
 	return s.tns
-}
-
-func (s *NodeService) SmartOps() substrate.SmartOpsService {
-	return s.nodeSmartOps
 }
 
 func (s *NodeService) Context() context.Context {

@@ -72,7 +72,7 @@ func TestCommandSendNoGoroutineLeak(t *testing.T) {
 	srv := NewTestService(sender)
 	matcher := &iface.MatchDefinition{Project: "leak-test-project", Protocol: protocol}
 
-	st, err := stream.New(srv, ctx, &structureSpec.Service{Id: "leak-test-service"}, "", matcher, p2pClient)
+	st, err := stream.New(srv, ctx, &structureSpec.Service{Id: "leak-test-service"}, matcher, p2pClient)
 	if err != nil {
 		t.Fatal(err)
 	}

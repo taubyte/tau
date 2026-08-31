@@ -58,11 +58,3 @@ type Serviceable interface {
 	Name() string
 	Close()
 }
-
-type ServiceResource interface {
-	Application() string
-	Config() *structureSpec.Service
-	Context() context.Context
-	SmartOps(smartOps []string) (uint32, error)
-	Type() uint32
-}

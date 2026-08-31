@@ -16,10 +16,6 @@ func (t *templates) Function(language string) (map[string]TemplateInfo, error) {
 	return t.codeMap(path.Join(templateFunctionsFolder, language))
 }
 
-func (t *templates) SmartOps(language string) (map[string]TemplateInfo, error) {
-	return t.codeMap(path.Join(templateSmartOpsFolder, language))
-}
-
 func (t *templates) codeMap(templatePath string) (map[string]TemplateInfo, error) {
 	dirs, err := os.ReadDir(templatePath)
 	if err != nil {
@@ -53,7 +49,7 @@ func (t *templates) codeMap(templatePath string) (map[string]TemplateInfo, error
 }
 
 // CodeTemplates lists the code templates of a code-backed resource kind, looked
-// up by the kind's own directory name (functions, smartops, ...).
+// up by the kind's own directory name (functions, libraries, ...).
 func (t *templates) CodeTemplates(dir, language string) (map[string]TemplateInfo, error) {
 	return t.codeMap(path.Join(templateCodeFolder, dir, language))
 }

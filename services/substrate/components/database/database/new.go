@@ -25,14 +25,6 @@ func New(srv substrate.Service, hoarderClient hoarderIface.Client, dbContext ifa
 	}
 	db.instanceCtx, db.instanceCtxC = context.WithCancel(srv.Node().Context())
 
-	val, err := db.SmartOps()
-	if err != nil {
-		return nil, err
-	}
-	if val > 0 {
-		return nil, fmt.Errorf("exited: %d", val)
-	}
-
 	return db, nil
 }
 
@@ -44,14 +36,6 @@ func Open(srv substrate.Service, dbContext iface.Context, kv iface.KV) (iface.Da
 		keystore:  kv,
 	}
 	db.instanceCtx, db.instanceCtxC = context.WithCancel(srv.Node().Context())
-
-	val, err := db.SmartOps()
-	if err != nil {
-		return nil, err
-	}
-	if val > 0 {
-		return nil, fmt.Errorf("exited: %d", val)
-	}
 
 	return db, nil
 }

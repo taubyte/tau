@@ -15,14 +15,13 @@ type MockedSubstrate interface {
 }
 
 type mockedSubstrate struct {
-	node     peer.Node
-	tns      tns.Client
-	vm       vm.Service
-	http     httpSrv.Service
-	smartOps substrate.SmartOpsService
-	ctx      context.Context
-	ctxC     context.CancelFunc
-	branch   string
+	node   peer.Node
+	tns    tns.Client
+	vm     vm.Service
+	http   httpSrv.Service
+	ctx    context.Context
+	ctxC   context.CancelFunc
+	branch string
 
 	// TODO: Should be removed
 	counters substrate.CounterService

@@ -101,15 +101,6 @@ func TestGetByNameBasic_Dreaming(t *testing.T) {
 		return
 	}
 
-	if !(testStructure[*structureSpec.SmartOp]{
-		t:                t,
-		expectedGlobal:   1,
-		expectedRelative: 1,
-		iface:            tns.SmartOp(),
-	}).runGetIdTest() {
-		return
-	}
-
 	if !(testStructure[*structureSpec.Storage]{
 		t:                t,
 		expectedGlobal:   2,

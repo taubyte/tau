@@ -61,7 +61,7 @@ func (srv *Service) Stream(ctx context.Context, projectID, applicationID, protoc
 		Protocol:    protocol,
 	}
 
-	foundService, serviceApplication, err := srv.LookupService(matcher)
+	foundService, _, err := srv.LookupService(matcher)
 	if err != nil {
 		return nil, err
 	}
@@ -71,5 +71,5 @@ func (srv *Service) Stream(ctx context.Context, projectID, applicationID, protoc
 		return nil, fmt.Errorf("getting p2p client failed with: %w", err)
 	}
 
-	return stream.New(srv, ctx, foundService, serviceApplication, matcher, p2pClient)
+	return stream.New(srv, ctx, foundService, matcher, p2pClient)
 }

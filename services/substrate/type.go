@@ -61,10 +61,6 @@ func (s *Service) Counter() iface.CounterService {
 	return s.components.counters
 }
 
-func (s *Service) SmartOps() iface.SmartOpsService {
-	return s.components.smartops
-}
-
 func (s *Service) Tns() tns.Client {
 	return s.tns
 }

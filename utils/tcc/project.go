@@ -112,15 +112,6 @@ func addResource(prj projectLib.Project, res interface{}) error {
 		}
 		return iFace.SetWithStruct(true, v)
 
-	case *structureSpec.SmartOp:
-		id := generateId(v.Id)
-		v.SetId(id)
-		iFace, err := prj.SmartOps(v.Name, "")
-		if err != nil {
-			return fmt.Errorf("open smart-op `%s` failed: %w", v.Name, err)
-		}
-		return iFace.SetWithStruct(true, v)
-
 	case *structureSpec.Website:
 		id := generateId(v.Id)
 		v.SetId(id)

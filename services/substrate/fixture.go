@@ -4,13 +4,8 @@
 package substrate
 
 import (
-	_ "embed"
-	"fmt"
-	"strings"
-
 	commonIface "github.com/taubyte/tau/core/common"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	orbit "github.com/taubyte/tau/pkg/vm-orbit/satellite/vm"
 
 	"github.com/taubyte/tau/dream"
 
@@ -22,7 +17,6 @@ import (
 
 func init() {
 	dream.RegisterFixture("attachDomain", pushDomain)
-	dream.RegisterFixture("attachPlugin", injectPlugin)
 }
 
 func pushDomain(u *dream.Universe, params ...interface{}) error {
@@ -77,45 +71,6 @@ func pushDomain(u *dream.Universe, params ...interface{}) error {
 	err = commonTest.RegisterTestDomain(u.Context(), auth)
 	if err != nil {
 		return err
-	}
-
-	return nil
-}
-
-func injectPlugin(u *dream.Universe, params ...interface{}) error {
-	if err := u.Provides(
-		"auth",
-		"patrick",
-		"monkey",
-		"hoarder",
-		"tns",
-	); err != nil {
-		return err
-	}
-
-	ctx := u.Context()
-	node := u.Substrate()
-	srv, ok := node.(*Service)
-	if !ok {
-		return fmt.Errorf("node service %#v is not type %v", node, srv)
-	}
-
-	if len(params) > 0 {
-		pluginList, ok := params[0].(string)
-		if !ok {
-			return fmt.Errorf("expected param 1 to be comma separated string list")
-		}
-
-		plugins := strings.SplitAfter(pluginList, ",")
-
-		for _, path := range plugins {
-			plugin, err := orbit.Load(path, ctx)
-			if err != nil {
-				return fmt.Errorf("loading plugin from `%s` failed with: %w", path, err)
-			}
-
-			srv.orbitals = append(srv.orbitals, plugin)
-		}
 	}
 
 	return nil

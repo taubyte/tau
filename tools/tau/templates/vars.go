@@ -6,7 +6,6 @@ import (
 
 	functionSpec "github.com/taubyte/tau/legacy/specs/function"
 	librarySpec "github.com/taubyte/tau/legacy/specs/library"
-	smartOpSpec "github.com/taubyte/tau/legacy/specs/smartops"
 	websiteSpec "github.com/taubyte/tau/legacy/specs/website"
 )
 
@@ -18,5 +17,4 @@ var (
 	templateLibraryFolder    = path.Join(templateRepositoryFolder, librarySpec.PathVariable.String())
 	templateCodeFolder       = path.Join(templateRepositoryFolder, "code")
 	templateFunctionsFolder  = path.Join(templateCodeFolder, functionSpec.PathVariable.String())
-	templateSmartOpsFolder   = path.Join(templateCodeFolder, smartOpSpec.PathVariable.String())
 )

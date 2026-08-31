@@ -46,17 +46,6 @@ func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Respo
 
 	res = make(response.Response)
 	ev := instance.SDK().CreateP2PEvent(cmd, res)
-	if len(f.config.SmartOps) > 0 {
-		val, err := f.SmartOps()
-		if err != nil || val > 0 {
-			if err != nil {
-				return t, nil, fmt.Errorf("running smart ops failed with: %s", err)
-			}
-
-			res.Set("code", val)
-			return t, res, fmt.Errorf("exited: %d", val)
-		}
-	}
 
 	return time.Now(), res, f.Call(instance, ev.Id)
 }
