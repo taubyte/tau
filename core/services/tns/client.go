@@ -3,7 +3,7 @@ package tns
 import (
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/core/kvdb"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 type Query struct {

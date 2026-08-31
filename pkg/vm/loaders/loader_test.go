@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
 	"github.com/taubyte/tau/pkg/vm/backend/dfs"
 	fixtures "github.com/taubyte/tau/pkg/vm/fixtures/wasm"
 	loaders "github.com/taubyte/tau/pkg/vm/loaders"

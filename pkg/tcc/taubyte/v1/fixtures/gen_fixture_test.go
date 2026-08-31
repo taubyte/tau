@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
+	projectSchema "github.com/taubyte/tau/legacy/schema/project"
 )
 
 func TestFixture(t *testing.T) {

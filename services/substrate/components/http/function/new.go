@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/services/substrate/components/http"
 	"github.com/taubyte/tau/core/services/tns"
-	"github.com/taubyte/tau/pkg/specs/extract"
+	"github.com/taubyte/tau/legacy/specs/extract"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/runtime/cache"
 )

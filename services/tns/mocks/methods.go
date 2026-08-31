@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/core/services/tns"
-	"github.com/taubyte/tau/pkg/specs/common"
-	"github.com/taubyte/tau/pkg/specs/methods"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	"github.com/taubyte/tau/legacy/specs/common"
+	"github.com/taubyte/tau/legacy/specs/methods"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 func (m *mockTns) Push(_path []string, data interface{}) error {

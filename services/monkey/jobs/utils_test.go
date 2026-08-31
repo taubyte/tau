@@ -19,9 +19,9 @@ import (
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
+	"github.com/taubyte/tau/legacy/specs/methods"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/git"
-	"github.com/taubyte/tau/pkg/specs/methods"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"

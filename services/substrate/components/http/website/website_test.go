@@ -3,7 +3,7 @@ package website
 import (
 	"testing"
 
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
+	matcherSpec "github.com/taubyte/tau/legacy/specs/matcher"
 )
 
 var paths = []string{"/", "/entry", "/entry/go", "/entry/go/noentry", "/go/entry", "/golang"}

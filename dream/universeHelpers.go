@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	commonIface "github.com/taubyte/tau/core/common"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	peer "github.com/taubyte/tau/p2p/peer"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	"golang.org/x/exp/slices"
 )
 

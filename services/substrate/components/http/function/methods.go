@@ -3,7 +3,7 @@ package function
 import (
 	"github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/vm"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 const WasmMemorySizeLimit = uint64(vm.MemoryPageSize) * uint64(vm.MemoryLimitPages)

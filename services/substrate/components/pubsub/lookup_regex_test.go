@@ -3,8 +3,8 @@ package pubsub
 import (
 	"testing"
 
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/p2p/peer"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"github.com/taubyte/tau/services/substrate/components/structure"
 	"gotest.tools/v3/assert"

@@ -3,8 +3,8 @@ package prompts
 import (
 	"strings"
 
+	"github.com/taubyte/tau/legacy/specs/builders/wasm"
 	"github.com/taubyte/tau/pkg/cli/common"
-	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	"github.com/taubyte/tau/tools/tau/flags"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/exp/slices"

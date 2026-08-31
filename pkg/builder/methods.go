@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	specs "github.com/taubyte/tau/legacy/specs/builders"
 	ci "github.com/taubyte/tau/pkg/containers"
-	specs "github.com/taubyte/tau/pkg/specs/builders"
 	"github.com/taubyte/tau/utils/multihash"
 )
 

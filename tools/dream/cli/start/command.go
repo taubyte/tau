@@ -1,7 +1,7 @@
 package start
 
 import (
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/tools/dream/cli/common"
 	"github.com/urfave/cli/v2"
 )

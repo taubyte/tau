@@ -7,8 +7,8 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/services/substrate/components"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	peer "github.com/taubyte/tau/p2p/peer"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
 type Context struct {

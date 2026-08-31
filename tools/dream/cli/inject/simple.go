@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/clients/http/dream/inject"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	specs "github.com/taubyte/tau/pkg/specs/common"
+	specs "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/tools/dream/cli/command"
 	"github.com/taubyte/tau/tools/dream/cli/common"
 	"github.com/urfave/cli/v2"

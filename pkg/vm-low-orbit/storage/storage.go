@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/go-sdk/errno"
 	"github.com/taubyte/tau/core/services/substrate/components/storage"
 	common "github.com/taubyte/tau/core/vm"
-	storageSpecs "github.com/taubyte/tau/pkg/specs/storage"
+	storageSpecs "github.com/taubyte/tau/legacy/specs/storage"
 )
 
 func (f *Factory) storageGet(ctx context.Context,

@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	tnsIface "github.com/taubyte/tau/core/services/tns"
-	specsCommon "github.com/taubyte/tau/pkg/specs/common"
-	"github.com/taubyte/tau/pkg/specs/methods"
+	specsCommon "github.com/taubyte/tau/legacy/specs/common"
+	"github.com/taubyte/tau/legacy/specs/methods"
 )
 
 // Publish publishes the compiled object and indexes to TNS

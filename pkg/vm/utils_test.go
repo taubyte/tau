@@ -10,7 +10,7 @@ import (
 	wazy "github.com/samyfodil/wazy"
 	wazyapi "github.com/samyfodil/wazy/api"
 	"github.com/taubyte/tau/core/vm"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
 	fixtures "github.com/taubyte/tau/pkg/vm/fixtures/wasm"
 	sources "github.com/taubyte/tau/pkg/vm/sources/taubyte"
 	"github.com/taubyte/tau/pkg/vm/test_utils"

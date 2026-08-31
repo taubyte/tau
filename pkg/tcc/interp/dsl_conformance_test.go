@@ -6,7 +6,7 @@ import (
 
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/utils/mapstructure"
 	"gotest.tools/v3/assert"
 )

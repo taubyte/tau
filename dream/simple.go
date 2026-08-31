@@ -13,8 +13,8 @@ import (
 	patrickIface "github.com/taubyte/tau/core/services/patrick"
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/p2p/keypair"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 

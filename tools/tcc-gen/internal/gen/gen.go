@@ -23,8 +23,8 @@ import (
 // diff). structPrefix scopes the structureSpec struct files, which are fully
 // generated and adopted in place, so they get a strict byte-exact check.
 const (
-	schemaPrefix   = "pkg/schema/"
-	structPrefix   = "pkg/specs/structure/"
+	schemaPrefix   = "legacy/schema/"
+	structPrefix   = "legacy/specs/structure/"
 	tsGenPath      = "pkg/tcc/clients/js/src/gen/schema.ts"
 	jsonSchemaPath = "pkg/tcc/taubyte/v1/config.schema.json"
 )
@@ -38,7 +38,7 @@ func byteExact(rel string) bool {
 }
 
 // Generate returns a map of repo-relative path -> gofmt'd file content: the
-// pkg/schema accessor files plus the pkg/specs/structure struct proposals.
+// legacy/schema accessor files plus the legacy/specs/structure struct proposals.
 func Generate(root []*engine.Node) (map[string][]byte, error) {
 	rs, err := Resources(root)
 	if err != nil {

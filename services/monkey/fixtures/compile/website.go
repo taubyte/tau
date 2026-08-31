@@ -9,8 +9,8 @@ import (
 	"github.com/otiai10/copy"
 	"github.com/pterm/pterm"
 	iface "github.com/taubyte/tau/core/builders"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	builder "github.com/taubyte/tau/pkg/builder"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/jobs"
 )
 

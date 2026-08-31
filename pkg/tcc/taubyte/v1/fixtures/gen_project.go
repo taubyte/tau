@@ -1,7 +1,7 @@
 package fixtures
 
 import (
-	"github.com/taubyte/tau/pkg/schema/project"
+	"github.com/taubyte/tau/legacy/schema/project"
 )
 
 func Project() (project.Project, error) {

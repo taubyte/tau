@@ -3,7 +3,7 @@ package structure
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/pkg/specs/methods"
+	"github.com/taubyte/tau/legacy/specs/methods"
 )
 
 func (c *Structure[T]) list(branch, commit, projectId, appId string) (map[string]T, string, string, error) { //(o map[string]T, commit string, branch string, err error)

@@ -5,7 +5,7 @@ import (
 	"regexp"
 
 	dv "github.com/taubyte/domain-validation"
-	domainSpec "github.com/taubyte/tau/pkg/specs/domain"
+	domainSpec "github.com/taubyte/tau/legacy/specs/domain"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 

@@ -3,7 +3,7 @@ package test_utils
 import (
 	"os"
 
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/pkg/vm/context"
 	"github.com/taubyte/tau/services/tns/mocks"
 	"github.com/taubyte/tau/utils/id"

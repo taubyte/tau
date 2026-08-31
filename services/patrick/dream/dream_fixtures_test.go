@@ -11,7 +11,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/helpers"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/utils/maps"
 	"gotest.tools/v3/assert"
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 )
 

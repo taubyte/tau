@@ -11,7 +11,7 @@ import (
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	_ "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
 	_ "github.com/taubyte/tau/services/tns/dream"
 	"gotest.tools/v3/assert"

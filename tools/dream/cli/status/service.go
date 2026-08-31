@@ -8,7 +8,7 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	client "github.com/taubyte/tau/clients/http/dream"
 	"github.com/taubyte/tau/dream"
-	specs "github.com/taubyte/tau/pkg/specs/common"
+	specs "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/tools/dream/cli/command"
 	"github.com/urfave/cli/v2"
 )

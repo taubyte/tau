@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	iface "github.com/taubyte/tau/core/services/substrate/components"
-	spec "github.com/taubyte/tau/pkg/specs/common"
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
+	spec "github.com/taubyte/tau/legacy/specs/common"
+	matcherSpec "github.com/taubyte/tau/legacy/specs/matcher"
 )
 
 // Close safely clears the cache and releases resources.

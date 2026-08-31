@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 func TestMessagingItem_Project(t *testing.T) {

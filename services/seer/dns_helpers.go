@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"github.com/taubyte/tau/core/services/tns"
-	domainSpecs "github.com/taubyte/tau/pkg/specs/domain"
+	domainSpecs "github.com/taubyte/tau/legacy/specs/domain"
 )
 
 func (h *dnsHandler) fetchDomainTnsPathSlice(name string) ([]string, error) {

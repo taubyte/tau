@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/taubyte/tau/core/vm"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 func TestShouldRetire(t *testing.T) {

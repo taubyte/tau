@@ -1,9 +1,9 @@
 package main
 
 import (
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	smartopsSpec "github.com/taubyte/tau/pkg/specs/smartops"
-	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
+	smartopsSpec "github.com/taubyte/tau/legacy/specs/smartops"
+	websiteSpec "github.com/taubyte/tau/legacy/specs/website"
 	"github.com/taubyte/tau/tools/tau/flags"
 	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/prompts"

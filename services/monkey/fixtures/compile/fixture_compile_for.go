@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/dream"
-	spec "github.com/taubyte/tau/pkg/specs/common"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	spec "github.com/taubyte/tau/legacy/specs/common"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 func init() {

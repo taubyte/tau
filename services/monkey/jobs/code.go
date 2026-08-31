@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/core/builders"
+	projectSchema "github.com/taubyte/tau/legacy/schema/project"
 	build "github.com/taubyte/tau/pkg/builder"
 	"github.com/taubyte/tau/pkg/git"
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 )
 
 func (c code) handle() error {

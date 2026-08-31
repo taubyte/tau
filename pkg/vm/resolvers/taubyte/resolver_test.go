@@ -7,8 +7,8 @@ import (
 	gocontext "context"
 
 	"github.com/taubyte/tau/core/vm"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	"github.com/taubyte/tau/pkg/specs/methods"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
+	"github.com/taubyte/tau/legacy/specs/methods"
 	"github.com/taubyte/tau/services/tns/mocks"
 
 	"github.com/taubyte/tau/pkg/vm/context"

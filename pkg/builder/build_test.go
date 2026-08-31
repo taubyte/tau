@@ -10,8 +10,8 @@ import (
 
 	"github.com/otiai10/copy"
 	"github.com/taubyte/tau/core/builders"
+	"github.com/taubyte/tau/legacy/specs/builders/wasm"
 	"github.com/taubyte/tau/pkg/git"
-	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	"gotest.tools/v3/assert"
 )
 

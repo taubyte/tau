@@ -13,13 +13,13 @@ import (
 
 // V2 DOES NOT IMPORT v1's ADDRESS SPACE, and this is what keeps that true.
 //
-// `pkg/specs/` is v1's answer to where everything lives: path variables, TNS key
+// `legacy/specs/` is v1's answer to where everything lives: path variables, TNS key
 // builders, the resource structs, the parser that reads a key back. It is 98 files and
 // most of the platform imports it. None of it is v2's, and v2 states its own — the
 // segment constants at the top of index.go say so in as many words, and they are the
-// only mention of pkg/specs anywhere under this tree.
+// only mention of it anywhere under this tree.
 //
-// The rule is AGENTS.md §8c — no consumer hardcodes the vocabulary — and pkg/specs is
+// The rule is AGENTS.md §8c — no consumer hardcodes the vocabulary — and legacy/specs is
 // that defect at scale: a second copy of an address space the schema already declares,
 // which drifts the first time one of them changes. `pkg/schema/` is the same thing one
 // layer up: v1's generated accessors, frozen with v1.
@@ -34,8 +34,8 @@ import (
 // an import.
 func TestV2ImportsNoneOfV1sAddressSpace(t *testing.T) {
 	const (
-		v1specs  = "github.com/taubyte/tau/pkg/specs"
-		v1schema = "github.com/taubyte/tau/pkg/schema"
+		v1specs  = "github.com/taubyte/tau/legacy/specs"
+		v1schema = "github.com/taubyte/tau/legacy/schema"
 	)
 	root, err := filepath.Abs("..")
 	assert.NilError(t, err)

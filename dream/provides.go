@@ -7,7 +7,7 @@ import (
 	"unicode"
 
 	servicesIface "github.com/taubyte/tau/core/services"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	"golang.org/x/exp/slices"
 )
 

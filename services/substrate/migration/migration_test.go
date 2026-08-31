@@ -19,9 +19,9 @@ import (
 	coreKvdb "github.com/taubyte/tau/core/kvdb"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	mh "github.com/taubyte/tau/utils/multihash"
 )
 

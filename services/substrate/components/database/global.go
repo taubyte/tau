@@ -3,7 +3,7 @@ package database
 import (
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	iface "github.com/taubyte/tau/core/services/substrate/components/database"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	dbpkg "github.com/taubyte/tau/services/substrate/components/database/database"
 	kv "github.com/taubyte/tau/services/substrate/components/database/kv"
 	mh "github.com/taubyte/tau/utils/multihash"

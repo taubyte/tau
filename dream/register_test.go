@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	commonIface "github.com/taubyte/tau/core/common"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 )
 
 // A service registered from an init() may not be pre-seeded from

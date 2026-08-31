@@ -4,8 +4,8 @@ import (
 	"sync"
 	"testing"
 
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 )
 
 // A remoteKV handle is shared across goroutines in production (substrate caches

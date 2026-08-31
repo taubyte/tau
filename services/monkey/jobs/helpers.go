@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
+	specs "github.com/taubyte/tau/legacy/specs/common"
+	"github.com/taubyte/tau/legacy/specs/methods"
 	"github.com/taubyte/tau/pkg/git"
-	specs "github.com/taubyte/tau/pkg/specs/common"
-	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/tau/utils/maps"
 )
 

@@ -99,7 +99,7 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			m = &StructModel{
 				Spec:       d.Spec,
 				Fields:     commonFields(root),
-				SpecImport: "github.com/taubyte/tau/pkg/specs/" + d.SpecPkg,
+				SpecImport: "github.com/taubyte/tau/legacy/specs/" + d.SpecPkg,
 				SpecAlias:  alias,
 			}
 			if e, ok := iter.Meta["embeds"].([]string); ok {

@@ -15,11 +15,11 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	dreamCommon "github.com/taubyte/tau/dream/common"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/p2p/peer"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	tauhttp "github.com/taubyte/tau/pkg/http"
 	httpauth "github.com/taubyte/tau/pkg/http/auth"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/services/common/httpsvc"
 
 	dns "github.com/miekg/dns"

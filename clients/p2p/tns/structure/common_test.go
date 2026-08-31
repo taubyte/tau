@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/taubyte/tau/core/services/tns"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 var (

@@ -13,9 +13,9 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
+	spec "github.com/taubyte/tau/legacy/specs/common"
+	"github.com/taubyte/tau/legacy/specs/methods"
 	"github.com/taubyte/tau/p2p/peer"
-	spec "github.com/taubyte/tau/pkg/specs/common"
-	"github.com/taubyte/tau/pkg/specs/methods"
 	service "github.com/taubyte/tau/services/patrick"
 	"gotest.tools/v3/assert"
 

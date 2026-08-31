@@ -10,8 +10,8 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	matcherSpec "github.com/taubyte/tau/legacy/specs/matcher"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"github.com/taubyte/tau/utils/id"
 )

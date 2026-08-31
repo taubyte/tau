@@ -3,8 +3,8 @@ package dream
 import (
 	"time"
 
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/p2p/peer"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
 func init() {

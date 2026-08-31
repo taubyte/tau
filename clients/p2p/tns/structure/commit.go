@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/core/services/tns"
-	"github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/legacy/specs/common"
 )
 
 func (c *Structure[T]) Commit(projectId string, branches ...string) (commit, branch string, err error) {

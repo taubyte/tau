@@ -2,7 +2,7 @@ package database
 
 import (
 	iface "github.com/taubyte/tau/core/services/substrate/components/database"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 func (db *Database) DBContext() iface.Context {

@@ -4,8 +4,8 @@ import (
 	"github.com/taubyte/tau/clients/p2p/hoarder"
 	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/p2p/peer"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
 func init() {

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"regexp"
 
-	spec "github.com/taubyte/tau/pkg/specs/common"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	spec "github.com/taubyte/tau/legacy/specs/common"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 func (s *Service) fetchConfig(project, application, matcher string) (*structureSpec.Database, string, string, error) {

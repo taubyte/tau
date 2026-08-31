@@ -2,7 +2,7 @@ package kill
 
 import (
 	client "github.com/taubyte/tau/clients/http/dream"
-	"github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/tools/dream/cli/command"
 	"github.com/urfave/cli/v2"
 )

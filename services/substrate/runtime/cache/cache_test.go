@@ -14,10 +14,10 @@ import (
 	"github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
+	matcherSpec "github.com/taubyte/tau/legacy/specs/matcher"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/p2p/peer"
 	http "github.com/taubyte/tau/pkg/http"
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
 // Mock implementations for testing

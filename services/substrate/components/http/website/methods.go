@@ -2,7 +2,7 @@ package website
 
 import (
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 func (w *Website) Service() commonIface.ServiceComponent {

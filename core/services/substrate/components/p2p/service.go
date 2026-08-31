@@ -7,9 +7,9 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/core/services/substrate/components"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/p2p/streams/command/response"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
 type Command interface {

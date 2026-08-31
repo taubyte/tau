@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/afero"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	projectLib "github.com/taubyte/tau/legacy/schema/project"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/utils/id"
 )
 

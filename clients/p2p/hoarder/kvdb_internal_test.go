@@ -7,9 +7,9 @@ import (
 	"time"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 )
 
 // The routing helpers touch only the sticky/replica state, so they're testable

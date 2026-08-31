@@ -1,6 +1,6 @@
 package database
 
-import structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+import structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 
 type Database interface {
 	KV() KV

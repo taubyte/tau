@@ -1,8 +1,8 @@
 package validate
 
 import (
+	schemaCommon "github.com/taubyte/tau/legacy/schema/common"
 	"github.com/taubyte/tau/pkg/cli/i18n"
-	schemaCommon "github.com/taubyte/tau/pkg/schema/common"
 )
 
 func Time(s string) error {

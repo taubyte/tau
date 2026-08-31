@@ -7,7 +7,7 @@ import (
 	authClient "github.com/taubyte/tau/clients/p2p/auth"
 	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/core/services/auth"
-	"github.com/taubyte/tau/pkg/specs/methods"
+	"github.com/taubyte/tau/legacy/specs/methods"
 	"github.com/taubyte/tau/services/monkey/jobs"
 )
 

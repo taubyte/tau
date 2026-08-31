@@ -4,8 +4,8 @@ import (
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/services/tns/mocks"
 
-	"github.com/taubyte/tau/pkg/specs/common"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
+	"github.com/taubyte/tau/legacy/specs/common"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
 	resolvers "github.com/taubyte/tau/pkg/vm/resolvers/taubyte"
 )
 

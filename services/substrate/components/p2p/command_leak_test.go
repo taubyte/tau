@@ -8,6 +8,7 @@ import (
 
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	keypair "github.com/taubyte/tau/p2p/keypair"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/streams"
@@ -15,7 +16,6 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	peerService "github.com/taubyte/tau/p2p/streams/service"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/p2p/stream"
 )
 

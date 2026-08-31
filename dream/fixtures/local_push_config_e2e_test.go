@@ -14,8 +14,8 @@ import (
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	specs "github.com/taubyte/tau/pkg/specs/methods"
+	projectLib "github.com/taubyte/tau/legacy/schema/project"
+	specs "github.com/taubyte/tau/legacy/specs/methods"
 	"github.com/taubyte/tau/utils"
 	"gotest.tools/v3/assert"
 

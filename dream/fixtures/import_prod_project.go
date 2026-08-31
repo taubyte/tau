@@ -11,7 +11,7 @@ import (
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/helpers"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 )
 
 // TODO: We have importProdProject and attachProdProject, and push Specific, this all needs to be cleaned up

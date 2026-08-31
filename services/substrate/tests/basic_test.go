@@ -13,7 +13,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	tcc "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"

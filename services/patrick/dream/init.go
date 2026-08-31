@@ -8,9 +8,9 @@ import (
 	iface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/common"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/raft"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	patrick "github.com/taubyte/tau/services/patrick"
 )

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	iface "github.com/taubyte/tau/core/services/substrate/components"
-	"github.com/taubyte/tau/pkg/specs/methods"
+	"github.com/taubyte/tau/legacy/specs/methods"
 )
 
 // TODO: This should return a cid.Cid

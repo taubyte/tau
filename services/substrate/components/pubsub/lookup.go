@@ -6,8 +6,8 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
+	matcherSpec "github.com/taubyte/tau/legacy/specs/matcher"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/function"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/websocket"

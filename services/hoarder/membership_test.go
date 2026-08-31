@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 )
 
 // drain empties a buffered trigger channel between assertions.

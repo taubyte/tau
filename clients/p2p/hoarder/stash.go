@@ -5,10 +5,10 @@ import (
 	"io"
 
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 	streamClient "github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/p2p/streams/command/response"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 )
 
 // Stash pushes a CID's bytes to a hoarder. Protocol: send the stash command,

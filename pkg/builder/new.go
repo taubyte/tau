@@ -8,9 +8,9 @@ import (
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	iface "github.com/taubyte/tau/core/builders"
+	"github.com/taubyte/tau/legacy/specs/builders"
+	specs "github.com/taubyte/tau/legacy/specs/builders/common"
 	ci "github.com/taubyte/tau/pkg/containers"
-	"github.com/taubyte/tau/pkg/specs/builders"
-	specs "github.com/taubyte/tau/pkg/specs/builders/common"
 	"gopkg.in/yaml.v3"
 )
 

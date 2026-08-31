@@ -12,7 +12,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/taubyte/tau/core/services/tns"
-	specs "github.com/taubyte/tau/pkg/specs/common"
+	specs "github.com/taubyte/tau/legacy/specs/common"
 	pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 	"github.com/taubyte/tau/services/common"
 )

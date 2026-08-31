@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 )
 
 type Option func(*Multiverse) error

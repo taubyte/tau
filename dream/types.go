@@ -7,8 +7,8 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/kvdb"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/p2p/peer"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
 type UniverseState int

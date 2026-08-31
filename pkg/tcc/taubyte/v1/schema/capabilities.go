@@ -1,8 +1,8 @@
 package schema
 
 import (
-	"github.com/taubyte/tau/pkg/specs/common"
-	"github.com/taubyte/tau/pkg/specs/methods"
+	"github.com/taubyte/tau/legacy/specs/common"
+	"github.com/taubyte/tau/legacy/specs/methods"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 

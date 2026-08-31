@@ -4,8 +4,8 @@ package structure
 
 import (
 	"github.com/taubyte/tau/core/services/tns"
-	commonSpec "github.com/taubyte/tau/pkg/specs/common"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	commonSpec "github.com/taubyte/tau/legacy/specs/common"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 type Structure[T structureSpec.Structure] struct {

@@ -17,8 +17,8 @@ import (
 	"github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/core/services/tns"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	peer "github.com/taubyte/tau/p2p/peer"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
 func (u *Universe) Name() string {

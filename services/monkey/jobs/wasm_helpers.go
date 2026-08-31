@@ -1,11 +1,11 @@
 package jobs
 
 import (
-	"github.com/taubyte/tau/pkg/schema/functions"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	"github.com/taubyte/tau/pkg/schema/smartops"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	smartOpSpec "github.com/taubyte/tau/pkg/specs/smartops"
+	"github.com/taubyte/tau/legacy/schema/functions"
+	projectLib "github.com/taubyte/tau/legacy/schema/project"
+	"github.com/taubyte/tau/legacy/schema/smartops"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
+	smartOpSpec "github.com/taubyte/tau/legacy/specs/smartops"
 )
 
 func buildTodoFromConfig(projectIface projectLib.Project) ([]Op, error) {

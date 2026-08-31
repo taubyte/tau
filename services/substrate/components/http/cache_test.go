@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/core/services/substrate/components"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/p2p/peer"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 )
 

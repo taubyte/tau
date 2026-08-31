@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/core/vm"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	librarySpec "github.com/taubyte/tau/pkg/specs/library"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
+	librarySpec "github.com/taubyte/tau/legacy/specs/library"
 )
 
 func (f *Function) moduleName() (string, error) {

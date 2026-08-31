@@ -21,7 +21,7 @@ import (
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/core/services/tns"
 	dreamPkg "github.com/taubyte/tau/dream"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	commonAuth "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/utils/maps"
 )

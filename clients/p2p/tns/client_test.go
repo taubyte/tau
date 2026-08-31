@@ -11,7 +11,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	iface "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	"gotest.tools/v3/assert"
 )
 

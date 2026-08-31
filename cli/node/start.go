@@ -12,12 +12,12 @@ import (
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	"github.com/taubyte/tau/core/services"
 	seerIface "github.com/taubyte/tau/core/services/seer"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/pkg/config"
 	httpService "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/sensors"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/services/common/httpsvc"
 	slices "github.com/taubyte/tau/utils/slices/string"
 )

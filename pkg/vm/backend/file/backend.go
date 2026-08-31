@@ -12,7 +12,7 @@ import (
 	"github.com/h2non/filetype"
 	"github.com/h2non/filetype/matchers"
 	"github.com/taubyte/tau/core/vm"
-	"github.com/taubyte/tau/pkg/specs/builders/wasm"
+	"github.com/taubyte/tau/legacy/specs/builders/wasm"
 	"github.com/taubyte/tau/pkg/vm/backend/errors"
 
 	ma "github.com/multiformats/go-multiaddr"

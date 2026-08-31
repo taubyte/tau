@@ -10,7 +10,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/tau/clients/p2p/seer/usage"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 )
 
 // heartbeat is what a hoarder broadcasts on MembersTopic every

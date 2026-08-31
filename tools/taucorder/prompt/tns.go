@@ -9,7 +9,7 @@ import (
 	"github.com/taubyte/tau/core/services/tns"
 
 	goPrompt "github.com/c-bata/go-prompt"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	list "github.com/taubyte/tau/tools/taucorder/helpers"
 )
 

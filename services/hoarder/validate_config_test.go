@@ -6,7 +6,7 @@ import (
 
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	ifaceTns "github.com/taubyte/tau/core/services/tns"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 // fakeTns embeds tns.Client and overrides only the two typed accessors

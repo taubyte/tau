@@ -9,7 +9,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 )
 
 // reconcileMsg is a change notification: reconcile Hash now. Meta is embedded so

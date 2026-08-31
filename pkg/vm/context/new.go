@@ -4,7 +4,7 @@ import (
 	gocontext "context"
 
 	"github.com/taubyte/tau/core/vm"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 )
 
 func New(ctx gocontext.Context, options ...Option) (vm.Context, error) {

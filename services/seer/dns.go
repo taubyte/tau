@@ -12,7 +12,7 @@ import (
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/miekg/dns"
-	"github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/legacy/specs/common"
 )
 
 type dnsHandler struct {

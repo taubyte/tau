@@ -1,8 +1,8 @@
 package api
 
 import (
+	"github.com/taubyte/tau/legacy/specs/common"
 	httpIface "github.com/taubyte/tau/pkg/http"
-	"github.com/taubyte/tau/pkg/specs/common"
 )
 
 func (srv *Service) validServices() {

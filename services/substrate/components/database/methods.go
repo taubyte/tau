@@ -6,7 +6,7 @@ import (
 
 	"github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/database"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	"github.com/taubyte/tau/services/substrate/components/database/common"
 	db "github.com/taubyte/tau/services/substrate/components/database/database"
 )

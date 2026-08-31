@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/taubyte/tau/core/services/substrate/components"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
 	"github.com/taubyte/tau/services/substrate/runtime"

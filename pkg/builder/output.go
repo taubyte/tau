@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/core/builders"
-	spec "github.com/taubyte/tau/pkg/specs/builders"
-	"github.com/taubyte/tau/pkg/specs/builders/wasm"
+	spec "github.com/taubyte/tau/legacy/specs/builders"
+	"github.com/taubyte/tau/legacy/specs/builders/wasm"
 	"github.com/taubyte/tau/utils/bundle"
 )
 

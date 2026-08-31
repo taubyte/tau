@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/pterm/pterm"
-	"github.com/taubyte/tau/pkg/specs/methods"
+	"github.com/taubyte/tau/legacy/specs/methods"
 	"github.com/taubyte/tau/services/monkey/jobs"
 )
 

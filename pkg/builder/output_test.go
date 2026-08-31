@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/taubyte/tau/core/builders"
-	"github.com/taubyte/tau/pkg/specs/builders/common"
+	"github.com/taubyte/tau/legacy/specs/builders/common"
 	"gotest.tools/v3/assert"
 )
 

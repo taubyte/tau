@@ -6,10 +6,10 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
+	matcherSpec "github.com/taubyte/tau/legacy/specs/matcher"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/p2p/streams/command/response"
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
 func (f *Function) Commit() string {

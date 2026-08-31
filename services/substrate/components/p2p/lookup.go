@@ -5,8 +5,8 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
-	spec "github.com/taubyte/tau/pkg/specs/common"
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
+	spec "github.com/taubyte/tau/legacy/specs/common"
+	matcherSpec "github.com/taubyte/tau/legacy/specs/matcher"
 	"github.com/taubyte/tau/services/substrate/components/p2p/common"
 	"github.com/taubyte/tau/services/substrate/components/p2p/function"
 )

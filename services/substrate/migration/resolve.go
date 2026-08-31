@@ -7,7 +7,7 @@ import (
 
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	mh "github.com/taubyte/tau/utils/multihash"
 )
 

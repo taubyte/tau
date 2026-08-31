@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/core/services/tns"
-	"github.com/taubyte/tau/pkg/specs/methods"
+	"github.com/taubyte/tau/legacy/specs/methods"
 )
 
 func (s *simpleClient) Project(projectID string, branches ...string) (interface{}, error) {

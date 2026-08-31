@@ -25,7 +25,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	"github.com/taubyte/tau/dream/api"
 	_ "github.com/taubyte/tau/dream/fixtures"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	_ "github.com/taubyte/tau/services/tns/dream"
 	tcc "github.com/taubyte/tau/utils/tcc"
 )

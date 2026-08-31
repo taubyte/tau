@@ -3,8 +3,8 @@ package function
 import (
 	"testing"
 
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	matcherSpec "github.com/taubyte/tau/legacy/specs/matcher"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 )
 

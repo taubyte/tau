@@ -4,7 +4,7 @@ package node
 
 import (
 	eenode "github.com/taubyte/tau/ee/node"
-	"github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/legacy/specs/common"
 )
 
 // Registers ee services into the node registry in enterprise (-tags ee) builds.

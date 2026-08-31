@@ -1,7 +1,7 @@
 package database
 
 import (
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 type Context struct {

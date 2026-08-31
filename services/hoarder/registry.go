@@ -8,7 +8,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 	mh "github.com/taubyte/tau/utils/multihash"
 )
 

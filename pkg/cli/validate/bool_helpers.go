@@ -3,7 +3,7 @@ package validate
 import (
 	"strconv"
 
-	"github.com/taubyte/tau/pkg/schema/common"
+	"github.com/taubyte/tau/legacy/schema/common"
 )
 
 func IsAny(val string, tests ...func(val string) bool) bool {

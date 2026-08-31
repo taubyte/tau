@@ -11,8 +11,8 @@ import (
 	"github.com/otiai10/copy"
 	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/core/builders"
-	wasmSpec "github.com/taubyte/tau/pkg/specs/builders/wasm"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	wasmSpec "github.com/taubyte/tau/legacy/specs/builders/wasm"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/services/monkey/jobs"
 )
 

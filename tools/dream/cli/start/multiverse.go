@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/api"
 	"github.com/taubyte/tau/dream/mcp"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	vmLogger "github.com/taubyte/tau/pkg/vm/logger"
 	"github.com/taubyte/tau/services/substrate/runtime"
 	"github.com/urfave/cli/v2"

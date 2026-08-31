@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
-	spec "github.com/taubyte/tau/pkg/specs/common"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	spec "github.com/taubyte/tau/legacy/specs/common"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/p2p/stream"
 )
 

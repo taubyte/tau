@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/core/services/tns"
-	"github.com/taubyte/tau/pkg/specs/common"
-	"github.com/taubyte/tau/pkg/specs/methods"
+	"github.com/taubyte/tau/legacy/specs/common"
+	"github.com/taubyte/tau/legacy/specs/methods"
 )
 
 func (c *Structure[T]) getById(branches []string, commit, projectId, appId, resourceId string) (resource T, err error) {

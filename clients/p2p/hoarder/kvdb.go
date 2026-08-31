@@ -10,10 +10,10 @@ import (
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	coreKvdb "github.com/taubyte/tau/core/kvdb"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	"github.com/taubyte/tau/pkg/kvdb"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	"github.com/taubyte/tau/utils/maps"
 )
 

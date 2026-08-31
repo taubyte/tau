@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	commonSpec "github.com/taubyte/tau/pkg/specs/common"
+	commonSpec "github.com/taubyte/tau/legacy/specs/common"
 )
 
 // TODO: Need to verify which vars need to be exported

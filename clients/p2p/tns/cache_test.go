@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/clients/p2p/tns/common"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	"gotest.tools/v3/assert"
 )
 

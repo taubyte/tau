@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
 	fixtures "github.com/taubyte/tau/pkg/vm/fixtures/wasm"
 	"github.com/taubyte/tau/pkg/vm/test_utils"
 	"gotest.tools/v3/assert"

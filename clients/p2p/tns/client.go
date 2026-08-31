@@ -12,9 +12,9 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/utils/mapstructure"
 
-	spec "github.com/taubyte/tau/pkg/specs/common"
-	"github.com/taubyte/tau/pkg/specs/extract"
-	"github.com/taubyte/tau/pkg/specs/methods"
+	spec "github.com/taubyte/tau/legacy/specs/common"
+	"github.com/taubyte/tau/legacy/specs/extract"
+	"github.com/taubyte/tau/legacy/specs/methods"
 	"github.com/taubyte/tau/utils/maps"
 
 	srvCommon "github.com/taubyte/tau/services/common"

@@ -16,7 +16,7 @@ import (
 	patrickCore "github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"gotest.tools/v3/assert"
 

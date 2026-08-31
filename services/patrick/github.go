@@ -18,7 +18,7 @@ import (
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"gopkg.in/go-playground/webhooks.v5/github"
 
-	commonSpec "github.com/taubyte/tau/pkg/specs/common"
+	commonSpec "github.com/taubyte/tau/legacy/specs/common"
 )
 
 // GitHub webhook handlers

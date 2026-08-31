@@ -13,8 +13,8 @@ import (
 
 	"github.com/alecthomas/units"
 
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	cliPrompts "github.com/taubyte/tau/pkg/cli/prompts"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/tools/tau/cli/commands/build"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	"github.com/taubyte/tau/tools/tau/config"

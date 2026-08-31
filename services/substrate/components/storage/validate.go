@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 )
 
 func (s *Service) validateCommit(hash, projectId string) (bool, string, string, error) {

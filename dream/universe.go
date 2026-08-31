@@ -13,8 +13,8 @@ import (
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 	peer "github.com/taubyte/tau/p2p/peer"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/utils"
 	"golang.org/x/exp/slices"
 

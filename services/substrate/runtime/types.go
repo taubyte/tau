@@ -8,7 +8,7 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/vm"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 )

@@ -15,12 +15,12 @@ import (
 
 	hoarder_client "github.com/taubyte/tau/clients/p2p/hoarder"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 	con "github.com/taubyte/tau/p2p/streams"
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/p2p/streams/command/response"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	"github.com/taubyte/tau/pkg/config"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	multihash "github.com/taubyte/tau/utils/multihash"
 
 	peer "github.com/taubyte/tau/p2p/peer"

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/taubyte/tau/pkg/specs/builders/wasm"
-	commonSpec "github.com/taubyte/tau/pkg/specs/common"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
+	"github.com/taubyte/tau/legacy/specs/builders/wasm"
+	commonSpec "github.com/taubyte/tau/legacy/specs/common"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
 	"github.com/taubyte/tau/tools/tau/common"
 	"github.com/taubyte/tau/tools/tau/config"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"

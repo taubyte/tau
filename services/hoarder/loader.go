@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/core/kvdb"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 )
 
 // dataRebroadcastSec is the CRDT rebroadcast interval for a loaded instance's

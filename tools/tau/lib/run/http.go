@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/core/vm"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	vmWaz "github.com/taubyte/tau/pkg/vm"
 	"github.com/taubyte/tau/pkg/vm/backend/file"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"

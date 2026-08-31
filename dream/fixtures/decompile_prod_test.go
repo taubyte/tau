@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
-	specs "github.com/taubyte/tau/pkg/specs/methods"
+	specs "github.com/taubyte/tau/legacy/specs/methods"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	_ "github.com/taubyte/tau/services/tns/dream"
 	"github.com/taubyte/tau/utils/maps"

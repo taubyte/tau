@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 	"gotest.tools/v3/assert"
 )
 

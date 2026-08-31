@@ -27,7 +27,7 @@ import (
 	"github.com/taubyte/tau/p2p/keypair"
 	"github.com/taubyte/tau/p2p/peer"
 
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 )
 
 func getDNSRecords(domain string, dnsServer string) ([]net.IP, error) {

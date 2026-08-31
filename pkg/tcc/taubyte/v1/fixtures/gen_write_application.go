@@ -1,8 +1,8 @@
 package fixtures
 
 import (
-	appSchema "github.com/taubyte/tau/pkg/schema/application"
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
+	appSchema "github.com/taubyte/tau/legacy/schema/application"
+	projectSchema "github.com/taubyte/tau/legacy/schema/project"
 )
 
 func writeApplication(name string, project projectSchema.Project) error {

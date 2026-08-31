@@ -2,8 +2,8 @@ package components
 
 import (
 	"github.com/taubyte/tau/core/services/substrate"
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	matcherSpec "github.com/taubyte/tau/legacy/specs/matcher"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 type ServiceComponent interface {

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	ifaceTns "github.com/taubyte/tau/core/services/tns"
-	spec "github.com/taubyte/tau/pkg/specs/common"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
+	spec "github.com/taubyte/tau/legacy/specs/common"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 )
 
 // assetSweepLoop ensures every build asset published in TNS is stash-

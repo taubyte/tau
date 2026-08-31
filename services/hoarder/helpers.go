@@ -7,7 +7,7 @@ import (
 	"regexp"
 
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 )
 
 // errNoConfigMatch marks the one DEFINITIVE validateConfig outcome: TNS answered

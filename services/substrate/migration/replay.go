@@ -13,7 +13,7 @@ import (
 	"github.com/ipfs/go-cid"
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
-	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
+	storageSpec "github.com/taubyte/tau/legacy/specs/storage"
 )
 
 // replayInstance moves one instance: replay every local key through the

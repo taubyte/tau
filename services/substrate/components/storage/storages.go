@@ -5,8 +5,8 @@ import (
 	"regexp"
 
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
-	spec "github.com/taubyte/tau/pkg/specs/common"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	spec "github.com/taubyte/tau/legacy/specs/common"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/storage/common"
 )
 

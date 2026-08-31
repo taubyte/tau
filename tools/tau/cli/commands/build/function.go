@@ -8,7 +8,7 @@ import (
 	"path"
 
 	"github.com/taubyte/tau/core/builders"
-	"github.com/taubyte/tau/pkg/specs/builders/wasm"
+	"github.com/taubyte/tau/legacy/specs/builders/wasm"
 	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/urfave/cli/v2"

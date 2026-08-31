@@ -8,10 +8,10 @@ import (
 
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	"github.com/taubyte/tau/pkg/specs/common"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	"github.com/taubyte/tau/pkg/specs/methods"
-	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
+	"github.com/taubyte/tau/legacy/specs/common"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
+	"github.com/taubyte/tau/legacy/specs/methods"
+	websiteSpec "github.com/taubyte/tau/legacy/specs/website"
 )
 
 var (

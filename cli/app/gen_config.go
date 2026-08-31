@@ -23,7 +23,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	commonSpecs "github.com/taubyte/tau/legacy/specs/common"
 
 	"github.com/pterm/pterm"
 

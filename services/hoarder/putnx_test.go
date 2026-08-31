@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 	"github.com/taubyte/tau/p2p/streams/command"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	"github.com/taubyte/tau/utils/maps"
 )
 

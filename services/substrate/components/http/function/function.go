@@ -13,7 +13,7 @@ import (
 	"github.com/taubyte/tau/clients/p2p/seer/usage"
 	"github.com/taubyte/tau/core/services/substrate/components"
 	httpComp "github.com/taubyte/tau/core/services/substrate/components/http"
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
+	matcherSpec "github.com/taubyte/tau/legacy/specs/matcher"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
 	"github.com/taubyte/tau/services/substrate/runtime"

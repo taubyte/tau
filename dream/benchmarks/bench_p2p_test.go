@@ -15,7 +15,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	nodeIface "github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/dream"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	"github.com/taubyte/tau/services/substrate/components/p2p"
 	tcc "github.com/taubyte/tau/utils/tcc"

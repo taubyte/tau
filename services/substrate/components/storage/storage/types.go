@@ -7,8 +7,8 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/p2p/peer"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
 var _ storageIface.Storage = &Store{}

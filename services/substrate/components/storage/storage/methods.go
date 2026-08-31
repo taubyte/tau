@@ -16,7 +16,7 @@ import (
 
 	"github.com/alecthomas/units"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
-	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
+	storageSpec "github.com/taubyte/tau/legacy/specs/storage"
 	readerUtils "github.com/taubyte/tau/utils/readerutil"
 )
 

@@ -3,8 +3,8 @@ package builders
 import (
 	"io"
 
+	"github.com/taubyte/tau/legacy/specs/builders"
 	ci "github.com/taubyte/tau/pkg/containers"
-	"github.com/taubyte/tau/pkg/specs/builders"
 )
 
 type Builder interface {

@@ -9,7 +9,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	"github.com/taubyte/tau/dream"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
+	hoarderSpecs "github.com/taubyte/tau/legacy/specs/hoarder"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"

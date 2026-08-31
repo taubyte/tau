@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/taubyte/tau/core/vm"
-	spec "github.com/taubyte/tau/pkg/specs/common"
+	spec "github.com/taubyte/tau/legacy/specs/common"
 )
 
 func (f *Factory) selfApplicationSize(ctx context.Context, module vm.Module, applicationSizePtr uint32) uint32 {

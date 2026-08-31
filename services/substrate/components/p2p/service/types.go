@@ -5,7 +5,7 @@ import (
 
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
 	"github.com/taubyte/tau/core/services/substrate/smartops"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 )
 
 var _ smartops.EventCaller = &Service{}

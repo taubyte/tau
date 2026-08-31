@@ -8,11 +8,11 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
-	"github.com/taubyte/tau/pkg/specs/extract"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	librarySpec "github.com/taubyte/tau/pkg/specs/library"
-	"github.com/taubyte/tau/pkg/specs/methods"
-	smartOpSpec "github.com/taubyte/tau/pkg/specs/smartops"
+	"github.com/taubyte/tau/legacy/specs/extract"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
+	librarySpec "github.com/taubyte/tau/legacy/specs/library"
+	"github.com/taubyte/tau/legacy/specs/methods"
+	smartOpSpec "github.com/taubyte/tau/legacy/specs/smartops"
 )
 
 type resolver struct {

@@ -6,7 +6,7 @@ import (
 	"runtime"
 
 	"github.com/otiai10/copy"
-	wasmSpec "github.com/taubyte/tau/pkg/specs/builders/wasm"
+	wasmSpec "github.com/taubyte/tau/legacy/specs/builders/wasm"
 )
 
 // copyTemplateConfig copies the vendored <lang> "common" build scaffold

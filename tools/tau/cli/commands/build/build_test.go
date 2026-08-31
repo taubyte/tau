@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/taubyte/tau/core/builders"
+	specsbuilders "github.com/taubyte/tau/legacy/specs/builders"
 	ci "github.com/taubyte/tau/pkg/containers"
-	specsbuilders "github.com/taubyte/tau/pkg/specs/builders"
 	"github.com/taubyte/tau/tools/tau/testutil"
 	"gotest.tools/v3/assert"
 )

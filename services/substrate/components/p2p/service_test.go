@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/taubyte/tau/dream"
+	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	"github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/substrate/components/structure"
 	"gotest.tools/v3/assert"

@@ -6,8 +6,8 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/taubyte/tau/legacy/specs/builders"
 	ci "github.com/taubyte/tau/pkg/containers"
-	"github.com/taubyte/tau/pkg/specs/builders"
 )
 
 // builder wraps the methods of the Builder interface

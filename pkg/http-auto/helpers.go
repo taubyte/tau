@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/core/services/tns"
-	domainSpecs "github.com/taubyte/tau/pkg/specs/domain"
-	"github.com/taubyte/tau/pkg/specs/extract"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
+	domainSpecs "github.com/taubyte/tau/legacy/specs/domain"
+	"github.com/taubyte/tau/legacy/specs/extract"
+	functionSpec "github.com/taubyte/tau/legacy/specs/function"
+	websiteSpec "github.com/taubyte/tau/legacy/specs/website"
 	"github.com/taubyte/tau/utils/maps"
 )
 
