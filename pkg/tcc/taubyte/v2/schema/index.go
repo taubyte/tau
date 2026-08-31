@@ -19,7 +19,7 @@ import (
 // One footprint, therefore, and it is the answer to that question:
 //
 //	byName   projects/<pid>[/<scope>/<nsid>]…/<kind>/<name>/links
-//	         -> branches/<b>/projects/<pid>[/<scope>/<nsid>]…/<kind>/<rid>
+//	         -> branches/<encoded-branch>/projects/<pid>[/<scope>/<nsid>]…/<kind>/<rid>
 //
 // Three things about the shape, each of which is a decision:
 //
@@ -64,6 +64,109 @@ func scopeSegments(scope interp.ScopeChain) []string {
 	return out
 }
 
+// A BRANCH IS THE ONLY FREE-FORM SEGMENT IN THESE PATHS, and git lets it hold a `/`.
+//
+// Everything else a key or a value is built from is already a name something constrains:
+// a kind is a group key, a name is `IsVariableName()`, an id and a project are CIDs. None
+// of them can spell a `/`, so a `/` in those paths means one level down and nothing else.
+// A branch obeys no such rule — `release/1.2` and `renovate/some-dep-1.2.3` are ordinary
+// ref names — and joined raw it turns one segment into two. §4 of AGENTS.md is this same
+// rule seen from the schema side: a key holding a `/` is a key pretending to be a path.
+//
+// The damage is not a mangled branch, it is a value that parses as NOTHING. A reader of
+// this address space matches `branches/(?P<branch>[^/]+)/…projects/` (v1's, in
+// pkg/specs/extract, is exactly that regex), and against `branches/release/1.2/projects/…`
+// the whole match fails: no branch, no project, no resource, and no error either — an
+// empty result that reads as "this path names nothing".
+//
+// SO THE BRANCH IS PERCENT-ENCODED, and only `/` and `%` are ever escaped:
+//
+//	main                 -> main
+//	feature/x            -> feature%2Fx
+//	release/1.2          -> release%2F1.2
+//	fix/100%-coverage    -> fix%2F100%25-coverage
+//
+// Why this rather than the alternatives:
+//
+//   - A SUBSTITUTE CHARACTER — `release~1.2` — reads better and looks free, because `~`
+//     is one of the handful git's ref rules forbid. But it is an encoding that only works
+//     while its input is a valid ref, and the way it fails when it is not is silently, in
+//     the direction of the wrong resource. Percent encoding is total: it round-trips any
+//     string, whatever put it there.
+//   - `%` MUST be escaped too, or the encoding is not reversible even in principle:
+//     `a%2Fb` is itself a legal branch name (`git check-ref-format` accepts it), so
+//     leaving `%` alone makes it the same segment as `a/b`.
+//   - NOT `url.PathEscape`. It escapes far more than these two — a UTF-8 branch comes out
+//     as `%C3%A9` noise — and which characters those are is the standard library's policy
+//     rather than ours. What goes into a persisted index has to be frozen here.
+//   - Hex or base64 over the whole branch round-trips as well and costs the legibility
+//     that is the reason a TNS path is a path. Under this encoding the branches almost
+//     every project has are untouched: `main` is `main`.
+//
+// The encoded form also needs nothing from the reader's grammar: `%2F` is not a `/`, so
+// `[^/]+` takes the whole segment, and decoding it is one call rather than a new parser.
+
+// branchEscape introduces an escape, and is therefore itself escaped.
+const branchEscape = '%'
+
+// EncodeBranch turns a branch into one path segment.
+//
+// Exported because this is only half a round trip: whatever resolves a value out of the
+// index has to DecodeBranch what it reads there, and it lives beside the encoder so the
+// two cannot drift apart.
+func EncodeBranch(branch string) string {
+	if !strings.ContainsAny(branch, "/%") {
+		return branch
+	}
+	// byte-wise deliberately: only these two ASCII bytes are escaped and every other
+	// byte is copied through, so a multi-byte rune survives as the bytes it is made of.
+	var out strings.Builder
+	out.Grow(len(branch) + 4)
+	for i := 0; i < len(branch); i++ {
+		switch c := branch[i]; c {
+		case '/', branchEscape:
+			fmt.Fprintf(&out, "%%%02X", c)
+		default:
+			out.WriteByte(c)
+		}
+	}
+	return out.String()
+}
+
+// DecodeBranch reverses EncodeBranch.
+//
+// It is STRICT — `%` introduces `%2F` or `%25` and nothing else — because the encoded
+// form is what the index is keyed by. A permissive decoder that read `%6Dain` as `main`
+// would make that a second spelling of a branch, one no lookup ever finds; refusing it
+// says so where it can be seen instead.
+func DecodeBranch(segment string) (string, error) {
+	if !strings.ContainsRune(segment, branchEscape) {
+		return segment, nil
+	}
+	var out strings.Builder
+	out.Grow(len(segment))
+	for i := 0; i < len(segment); i++ {
+		c := segment[i]
+		if c != branchEscape {
+			out.WriteByte(c)
+			continue
+		}
+		if i+2 >= len(segment) {
+			return "", fmt.Errorf("decoding branch %q: %q is a truncated escape", segment, segment[i:])
+		}
+		switch escape := segment[i : i+3]; escape {
+		case "%2F":
+			out.WriteByte('/')
+		case "%25":
+			out.WriteByte(branchEscape)
+		default:
+			return "", fmt.Errorf("decoding branch %q: %q is not an escape this encoding produces — only %%2F and %%25, uppercase", segment, escape)
+		}
+		i += 2
+	}
+	return out.String(), nil
+}
+
 // byName: this resource, under what it is called, in the scope it is in.
 func byName(ic interp.IndexCtx) ([]interp.IndexEntry, error) {
 	if ic.Project == "" {
@@ -80,7 +183,7 @@ func byName(ic interp.IndexCtx) ([]interp.IndexEntry, error) {
 	key := append([]string{projectsSegment, ic.Project}, where...)
 	key = append(key, ic.Kind, ic.Name, linksSegment)
 
-	value := append([]string{branchesSegment, ic.Branch, projectsSegment, ic.Project}, where...)
+	value := append([]string{branchesSegment, EncodeBranch(ic.Branch), projectsSegment, ic.Project}, where...)
 	value = append(value, ic.Kind, ic.ID)
 
 	return []interp.IndexEntry{interp.Link(strings.Join(key, "/"), strings.Join(value, "/"))}, nil
