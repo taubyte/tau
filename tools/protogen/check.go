@@ -3,6 +3,12 @@
 // result, byte for byte, against what is already committed under its gen/
 // directory. It is the buf equivalent of tools/tcc-gen's TestNoDrift — the
 // same shape, for the other generator this repo runs by hand.
+//
+// A byte diff alone cannot see every version drift: protoc-gen-go stamps
+// its own version into what it generates, so a stale copy shows up as a
+// diff on its own, but protoc-gen-connect-go stamps nothing — see
+// pluginPins in plugins.go. checkPluginVersions asks each pinned plugin
+// directly, via --version, rather than relying on that accident.
 package protogen
 
 import (
@@ -49,7 +55,9 @@ type Result struct {
 // A module with no .proto sources yet is not run through buf at all (buf
 // generate hard-errors on an empty module); Check instead requires gen/ to
 // be equally empty, which still catches a stale gen/ tree left behind after
-// every .proto in a module was removed.
+// every .proto in a module was removed. For the same reason, checkPluginVersions
+// only runs once there is source to generate from — there is nothing to pin
+// a toolchain version against otherwise.
 func Check(repoRoot, protoDir string) (Result, error) {
 	absDir := filepath.Join(repoRoot, protoDir)
 
@@ -62,6 +70,9 @@ func Check(repoRoot, protoDir string) (Result, error) {
 	if hasSource {
 		if _, err := lookBuf(); err != nil {
 			return Result{}, fmt.Errorf("buf not found on PATH (required to check %s): %w", protoDir, err)
+		}
+		if err := checkPluginVersions(repoRoot, absDir); err != nil {
+			return Result{}, fmt.Errorf("plugin version check for %s: %w", protoDir, err)
 		}
 
 		scratch, err := os.MkdirTemp("", "protogen-check-")

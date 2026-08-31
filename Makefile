@@ -95,8 +95,22 @@ bench-dreaming:
 # protoc-gen-go and protoc-gen-connect-go on PATH at those pinned versions.
 # `go test ./pkg/v2/proto/...` (already part of `test` above) fails if the
 # committed gen/ output drifts from this; run it directly with proto-v2-check.
+#
+# `buf generate` hard-errors on a module with zero .proto files ("had no
+# .proto files") — and a fresh clone hits exactly that until a service's
+# first .proto lands, since this tree ships tooling only (see the commit
+# that added it). tools/protogen.Check already treats "no sources" as its
+# own case rather than shelling out to buf (pkg/v2/proto/drift_test.go
+# passes today, at zero files, for the same reason); this target mirrors
+# that same scan (any *.proto below pkg/v2/proto, excluding gen/ wherever
+# it appears, not just at the top) so `make proto-v2` degrades the same way
+# instead of failing the build for having nothing to do yet.
 proto-v2:
-	cd pkg/v2/proto && buf generate
+	@if find pkg/v2/proto \( -name gen -type d \) -prune -o -name '*.proto' -print | grep -q .; then \
+		cd pkg/v2/proto && buf generate; \
+	else \
+		echo "pkg/v2/proto: no .proto sources yet — nothing to generate"; \
+	fi
 
 proto-v2-check:
 	go test $(FLAGS) ./tools/protogen/... ./pkg/v2/proto/...

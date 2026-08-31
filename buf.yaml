@@ -10,6 +10,17 @@ version: v2
 # reason. pkg/sensors/proto is deliberately not listed: it has its own
 # buf.yaml and has never needed to import across modules, so it stays
 # independent rather than joining a workspace it doesn't use.
+#
+# A bare `buf lint`/`buf build`/`buf generate` run from the repo root walks
+# every module above and fails outright ("had no .proto files") on an OSS
+# clone: the submodule is unpopulated, and pkg/v2/proto has no schema
+# committed yet either (see pkg/v2/proto/buf.gen.yaml's own doc). This is
+# accepted, not fixed, because nothing in this repo's tooling ever invokes
+# buf that way — every module is driven individually, cd'd into first
+# (`make proto-v2` for pkg/v2/proto, each proto tree's own generate.sh for
+# the rest), which is unaffected by any other module's state. A developer
+# who runs a bare `buf lint` by hand will hit it; that is buf's own
+# workspace behavior, not a bug in this file.
 modules:
   - path: pkg/spore-drive/proto
   - path: pkg/taucorder/proto

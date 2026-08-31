@@ -3,6 +3,7 @@ package protogen
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -41,7 +42,11 @@ plugins:
 
 // newModule lays out a minimal buf module (one .proto, a buf.gen.yaml with
 // only protoc-gen-go — no network, no connect-go needed to exercise Check's
-// own plumbing) under repoRoot/protoDir and returns both.
+// own plumbing) under repoRoot/protoDir, plus a go.mod pinning
+// google.golang.org/protobuf to whatever version protoc-gen-go on PATH
+// actually reports — checkPluginVersions now runs as part of Check, and a
+// go.mod pinned to a version this test made up would fail it for reasons
+// that have nothing to do with what each test is actually exercising.
 func newModule(t *testing.T) (repoRoot, protoDir string) {
 	t.Helper()
 	root := t.TempDir()
@@ -56,7 +61,29 @@ func newModule(t *testing.T) (repoRoot, protoDir string) {
 	if err := os.WriteFile(filepath.Join(abs, "testpkg", "v1", "ping.proto"), []byte(testProto), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	writeGoModPinningInstalledProtocGenGo(t, root)
 	return root, dir
+}
+
+// writeGoModPinningInstalledProtocGenGo writes root/go.mod requiring
+// google.golang.org/protobuf at whatever version protoc-gen-go on PATH
+// reports via --version, so checkPluginVersions passes against whatever
+// toolchain a given test run actually has, rather than a version hardcoded
+// in test source that would drift out from under it.
+func writeGoModPinningInstalledProtocGenGo(t *testing.T, root string) {
+	t.Helper()
+	path, err := exec.LookPath("protoc-gen-go")
+	if err != nil {
+		t.Skip("protoc-gen-go not on PATH; skipping tests that need real generation")
+	}
+	version, err := pluginVersion(path)
+	if err != nil {
+		t.Fatalf("protoc-gen-go --version: %v", err)
+	}
+	mod := "module fake\n\ngo 1.26\n\nrequire google.golang.org/protobuf v" + version + "\n"
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(mod), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // generateInto runs the real buf toolchain against dir and lands its output
