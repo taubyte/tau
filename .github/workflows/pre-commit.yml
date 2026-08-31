@@ -66,6 +66,15 @@ jobs:
       run: |
         mkdir -p ~/.ssh
         ssh-keyscan github.com >> ~/.ssh/known_hosts
+    - name: Install buf toolchain
+      # Pinned to what pkg/v2/proto/buf.gen.yaml documents (matching the
+      # google.golang.org/protobuf and connectrpc.com/connect versions in
+      # go.mod) so `go test ./...` can run pkg/v2/proto's drift check
+      # (tools/protogen), the same way it already runs tools/tcc-gen's.
+      run: |
+        go install github.com/bufbuild/buf/cmd/buf@v1.62.1
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+        go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.18.1
     - name: Run Go tests with retries
       env:
         TEST_GIT_TOKEN: ${{ secrets.TEST_GIT_TOKEN }}

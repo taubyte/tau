@@ -1,0 +1,45 @@
+# v2's inter-service RPC stubs: ConnectRPC (connectrpc.com/connect, already a
+# direct require) served over libp2p streams via go-libp2p-gostream — the
+# shape pkg/raft/transport.go already runs in production for the raft
+# consensus transport. No browser client: this is server-to-server only, so
+# unlike pkg/taucorder/proto and pkg/spore-drive/proto there is no
+# protoc-gen-es/connect-es pair here.
+#
+# One tree, one package per v2 service — <service>/v1/<service>.proto,
+# package <service>.v1 — the same split pkg/spore-drive/proto uses for its
+# independent domains (config/drive/health/mock), not taucorder's one shared
+# package across every file. v2's services are independent bounded contexts
+# owned separately, so each versions and breaking-checks on its own; nothing
+# here forces them to move together the way one shared package would.
+# Cross-service types (a repository key, a peer id, an environment — v2's
+# own, never legacy's pkg/specs address space: see pkg/tcc/taubyte/v2's
+# boundary test) belong in common/v1/common.proto, package common.v1,
+# imported by each service the way drive.proto imports config.proto.
+#
+# Plugin versions are pinned to what the module already vends at runtime
+# (google.golang.org/protobuf and connectrpc.com/connect, go.mod), not to
+# whatever happens to be on a given machine's PATH — see the version comment
+# in each plugin's `local:` line. Install them with:
+#
+#   go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+#   go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.18.1
+#
+# Regenerate with `make proto-v2` from the repo root, or `buf generate` from
+# this directory. `go test ./pkg/v2/proto/...` (part of the ordinary `go test
+# ./...` sweep, so CI runs it too) fails loudly if the committed gen/ tree
+# drifts from what those plugins produce — see drift_test.go.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/taubyte/tau/pkg/v2/proto/gen
+plugins:
+  # pinned to v1.36.11 — the google.golang.org/protobuf version in go.mod
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  # pinned to v1.18.1 — the connectrpc.com/connect version in go.mod
+  - local: protoc-gen-connect-go
+    out: gen
+    opt: paths=source_relative
