@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -15,13 +16,136 @@ type (
 	Session        = session.Session
 	CompileOptions = session.CompileOptions
 	Kind           = session.Kind
+	FieldIssue     = session.FieldIssue
 )
 
-// bindings wires the generic session to THIS DSL: how to compile it, and how its
-// documents are laid out — which is also what says where a lowering's documents go.
+// bindings wires the generic session to THIS DSL: how to compile it, how to check one
+// field of it without compiling, how its documents are laid out — which is also what
+// says where a lowering's documents go — and how the values nobody authors are minted.
+//
+// The session's core is DSL-agnostic and every one of these is optional, which means an
+// unset one is not an error anywhere: an unwired FieldValidator makes ValidateField
+// accept whatever it is handed, and an unwired Generator makes Generate return "no
+// generator wired". Both read as "this vocabulary has no rule" rather than as a missing
+// binding, so both were silently true here.
+//
+// Completer is the one that stays unset, and deliberately — see v2FieldValidator.
 var bindings = session.Bindings{
-	CompilerFor: v2CompilerFor,
-	Layout:      v2Layout{},
+	CompilerFor:    v2CompilerFor,
+	FieldValidator: v2FieldValidator{},
+	Layout:         v2Layout{},
+	Generator:      v2Generator{},
+}
+
+// v2FieldValidator runs this vocabulary's declared per-value checks — the same ones the
+// compiler runs at load — against one field, with no compile. It is the live-editing
+// path: what a CLI or an editor asks between keystrokes.
+//
+// NO COMPLETER IS WIRED, and that is what keeps this honest rather than an omission.
+// Wiring one also switches on the session's reference check, which resolves a bare name
+// against "the resource's own application, then the root" — v1's scope rule. THIS
+// vocabulary's is scopeChain: a reference is a block, and the `namespace` beside the
+// name is what says where to look, absolutely (`/billing`), relatively (`eu`) or by
+// walking outward when it is absent. Reporting a RefGroup here made the session reject
+// `authorizer: {name: tier_check, namespace: /shop}` in cache/orders.yaml — config that
+// compiles — with `no function named "tier_check" in scope`. A check that rejects valid
+// config is worse than no check, so the reference half waits until the session can be
+// told the scope; completion of fixed values waits with it rather than shipping a field
+// that quietly answers "no suggestions" for every reference in the vocabulary.
+type v2FieldValidator struct{}
+
+// ValidateField checks one value against the field's declared type and validator. Two
+// things it does before asking the engine, both consequences of what THIS vocabulary
+// declares rather than of anything generic:
+//
+// A KEY THAT IS BOTH A VALUE AND A BLOCK. `source` is a bare path in this repository OR
+// one of the block forms (source.go), so a mapping there is not a string that came out
+// wrong — it is the other branch, whose leaves are validated at their own paths. Passing
+// the block to the scalar attribute called every `source: {component: paylib}` in the
+// fixtures a bad string.
+//
+// A LIST ARRIVES AS []any. A yaml sequence decodes to []any and the compile path coerces
+// it before any validator sees it; here the value comes straight off the document, so a
+// validator declared over []string — EachInSet, on every method list — answered "invalid
+// type passed to validator" for `methods: [POST]`. Same coercion, same place in the
+// order, so the check that runs is the declared one.
+func (v v2FieldValidator) ValidateField(group string, field []string, value any) error {
+	if _, isBlock := value.(map[string]any); isBlock && v.holdsBlock(group, field) {
+		return nil
+	}
+	return engine.ValidateField(GenerationRoot(), group, field, stringList(value))
+}
+
+// holdsBlock reports whether the vocabulary declares fields BENEATH this one, which is
+// what makes a mapping at it a block rather than a mistyped value. Read off the same
+// field list partial validation walks, so a second key that grows a block form needs
+// nothing here.
+func (v v2FieldValidator) holdsBlock(group string, field []string) bool {
+	for _, f := range v.Fields(group) {
+		if len(f) <= len(field) {
+			continue
+		}
+		if slices.Equal(f[:len(field)], field) {
+			return true
+		}
+	}
+	return false
+}
+
+// stringList gives a decoded yaml sequence the type its validator declares. A sequence
+// holding anything else is left alone, so "array of strings" is still what the engine
+// says about it.
+func stringList(value any) any {
+	raw, ok := value.([]any)
+	if !ok {
+		return value
+	}
+	out := make([]string, 0, len(raw))
+	for _, e := range raw {
+		s, ok := e.(string)
+		if !ok {
+			return value
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func (v2FieldValidator) Fields(group string) [][]string {
+	return engine.CheckFields(GenerationRoot(), group)
+}
+
+// RequiredFields projects the vocabulary's required fields — the conditional ones
+// included — into the session's terms, so the session never has to look a discriminator
+// up by name.
+func (v2FieldValidator) RequiredFields(group string) []session.RequiredField {
+	src := engine.RequiredFields(GenerationRoot(), group)
+	out := make([]session.RequiredField, 0, len(src))
+	for _, r := range src {
+		rf := session.RequiredField{
+			FieldRef: session.FieldRef{Path: r.Path, Compat: r.Compat, AnyOf: r.AnyOf},
+			WhenIn:   r.WhenIn,
+			Unless:   r.Unless,
+		}
+		if r.When != nil {
+			rf.When = &session.FieldRef{Path: r.When.Path, Compat: r.When.Compat}
+		}
+		out = append(out, rf)
+	}
+	return out
+}
+
+// v2Generator mints the values nobody authors: a resource's id. It is the whole reason a
+// consumer does not carry its own "how do I make an id" — and the two that did carry one
+// disagreed about it.
+type v2Generator struct{}
+
+func (v2Generator) GeneratedBy(group string, field []string) string {
+	return engine.GeneratedBy(GenerationRoot(), group, field)
+}
+
+func (v2Generator) Generate(kind string, seed ...any) (string, error) {
+	return engine.Generate(kind, seed...)
 }
 
 // NewSession opens an editable session over the config under dir in fs, bound to this
