@@ -9,7 +9,6 @@ import (
 	librarySpec "github.com/taubyte/tau/legacy/specs/library"
 	messagingSpec "github.com/taubyte/tau/legacy/specs/messaging"
 	serviceSpec "github.com/taubyte/tau/legacy/specs/service"
-	smartOpSpec "github.com/taubyte/tau/legacy/specs/smartops"
 	storageSpec "github.com/taubyte/tau/legacy/specs/storage"
 	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
 	websiteSpec "github.com/taubyte/tau/legacy/specs/website"
@@ -41,10 +40,6 @@ func (c *Client) Messaging() tns.StructureIface[*structureSpec.Messaging] {
 
 func (c *Client) Service() tns.StructureIface[*structureSpec.Service] {
 	return structure.New[*structureSpec.Service](c, serviceSpec.PathVariable)
-}
-
-func (c *Client) SmartOp() tns.StructureIface[*structureSpec.SmartOp] {
-	return structure.New[*structureSpec.SmartOp](c, smartOpSpec.PathVariable)
 }
 
 func (c *Client) Storage() tns.StructureIface[*structureSpec.Storage] {

@@ -25,6 +25,10 @@ func (f *Function) Project() string {
 	return f.matcher.Project
 }
 
+func (f *Function) Application() string {
+	return f.matcher.Application
+}
+
 func (f *Function) HandleMessage(msg iface.Message) (t time.Time, err error) {
 	instance, err := f.Instantiate(f.instanceCtx)
 	if err != nil {

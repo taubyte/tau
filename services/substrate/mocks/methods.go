@@ -3,7 +3,6 @@ package mocks
 import (
 	"context"
 
-	"github.com/pkg/errors"
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
@@ -17,14 +16,6 @@ func (m *mockedSubstrate) Node() peer.Node {
 
 func (m *mockedSubstrate) Close() error {
 	err := m.vm.Close()
-	if err0 := m.smartOps.Close(); err0 != nil {
-		if err != nil {
-			err = errors.New(err.Error() + ":::" + err0.Error())
-		} else {
-			err = err0
-		}
-	}
-
 	m.ctxC()
 	return err
 }
@@ -43,10 +34,6 @@ func (m *mockedSubstrate) Tns() tns.Client {
 
 func (m *mockedSubstrate) Counter() substrate.CounterService {
 	return m.counters
-}
-
-func (m *mockedSubstrate) SmartOps() substrate.SmartOpsService {
-	return m.smartOps
 }
 
 // TODO: Add functionality to attach plugins

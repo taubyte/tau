@@ -51,11 +51,6 @@ func (c resourceContext) get() (resource interface{}, err error) {
 		return
 	}
 
-	resource, err = tns.SmartOp().Relative(c.projectId, c.applicationId, c.branch).GetById(c.resourceId)
-	if err == nil {
-		return
-	}
-
 	return
 }
 

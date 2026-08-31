@@ -10,7 +10,6 @@ import (
 	http "github.com/taubyte/tau/services/substrate/components/http"
 	p2p "github.com/taubyte/tau/services/substrate/components/p2p"
 	pubSub "github.com/taubyte/tau/services/substrate/components/pubsub"
-	smartOps "github.com/taubyte/tau/services/substrate/components/smartops"
 	storage "github.com/taubyte/tau/services/substrate/components/storage"
 )
 
@@ -29,11 +28,6 @@ func (srv *Service) attachNodes(cfg config.Config) (err error) {
 	// Needs to happen first, as others depend on it
 	if err = srv.attachNodeCounters(); err != nil {
 		return attachNodesError("counters", err)
-	}
-
-	// Needs to happen second, as others depend on it
-	if err = srv.attachNodeSmartOps(); err != nil {
-		return attachNodesError("smartops", err)
 	}
 
 	if err = srv.attachNodePubSub(); err != nil {
@@ -86,10 +80,5 @@ func (srv *Service) attachNodeP2P() (err error) {
 
 func (srv *Service) attachNodeCounters() (err error) {
 	srv.components.counters, err = counters.New(srv)
-	return
-}
-
-func (srv *Service) attachNodeSmartOps() (err error) {
-	srv.components.smartops, err = smartOps.New(srv)
 	return
 }

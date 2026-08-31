@@ -30,7 +30,6 @@ require (
 	github.com/spf13/afero v1.11.0
 	github.com/taubyte/domain-validation v1.0.1
 	github.com/taubyte/go-sdk v0.3.9
-	github.com/taubyte/go-sdk-smartops v0.1.3
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.51.0
@@ -57,7 +56,6 @@ require (
 	github.com/cockroachdb/pebble/v2 v2.1.5
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/containerd/containerd v1.7.33
-	github.com/ethereum/go-ethereum v1.12.0
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/go-git/go-billy/v5 v5.9.0
 	github.com/go-webauthn/webauthn v0.17.2
@@ -69,7 +67,6 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/h2non/gock v1.2.0
 	github.com/hashicorp/go-hclog v1.6.3
-	github.com/hashicorp/go-plugin v1.4.10
 	github.com/hashicorp/raft v1.7.3
 	github.com/ipfs/boxo v0.41.0
 	github.com/ipfs/go-ds-pebble v0.5.11
@@ -204,7 +201,6 @@ require (
 	github.com/hashicorp/go-msgpack/v2 v2.1.2 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
-	github.com/hashicorp/yamux v0.0.0-20180604194846-3520598351bb // indirect
 	github.com/holiman/uint256 v1.2.2-0.20230321075855-87b91420868c // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/ipfs/bbloom v0.1.0 // indirect

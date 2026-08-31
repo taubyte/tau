@@ -64,8 +64,6 @@ func TestConfigJobEmptyResources_Dreaming(t *testing.T) {
 	assert.Equal(t, len(globalLibraries), 0, "project should have no libraries")
 	_, globalMessaging := getter.Messaging("")
 	assert.Equal(t, len(globalMessaging), 0, "project should have no messaging")
-	_, globalSmartOps := getter.SmartOps("")
-	assert.Equal(t, len(globalSmartOps), 0, "project should have no smartops")
 	_, globalDomains := getter.Domains("")
 	assert.Equal(t, len(globalDomains), 0, "project should have no domains")
 

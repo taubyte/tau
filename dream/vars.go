@@ -143,18 +143,6 @@ var FixtureMap = map[string]FixtureDefinition{
 		ImportRef:   "dream-test/fixtures",
 		Internal:    true,
 	},
-	"attachPlugin": {
-		Description: "inject a plugin binary built using VM-Orbit",
-		ImportRef:   "substrate",
-		Variables: []FixtureVariable{
-			{
-				Name:        "paths",
-				Description: "comma separated list of binary paths",
-				Alias:       "p",
-				Required:    true,
-			},
-		},
-	},
 	"pushSpecific": {
 		Description: "pushes specific repos",
 		ImportRef:   "patrick",

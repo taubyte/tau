@@ -18,7 +18,6 @@ type components struct {
 	storage  storageIface.Service
 	p2p      p2pIface.Service
 	counters iface.CounterService
-	smartops iface.SmartOpsService
 }
 
 func (c *components) config() []tbPlugins.Option {
@@ -37,5 +36,4 @@ func (c *components) close() {
 	c.storage.Close()
 	c.p2p.Close()
 	c.counters.Close()
-	c.smartops.Close()
 }

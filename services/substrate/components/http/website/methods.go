@@ -53,6 +53,10 @@ func (w *Website) Project() string {
 	return w.project
 }
 
+func (w *Website) Application() string {
+	return w.application
+}
+
 // Fulfill Serviceable interface, used to ensure TVM.New() fails if using a website
 func (w *Website) Structure() *structureSpec.Function {
 	return nil

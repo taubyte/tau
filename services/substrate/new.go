@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"time"
 
@@ -15,9 +14,6 @@ import (
 	"github.com/taubyte/tau/core/vm"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	tbPlugins "github.com/taubyte/tau/pkg/vm-low-orbit"
-	smartopsPlugins "github.com/taubyte/tau/pkg/vm-ops-orbit"
-	orbit "github.com/taubyte/tau/pkg/vm-orbit/satellite/vm"
-	seer "github.com/taubyte/tau/pkg/yaseer"
 	protocolCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/substrate/migration"
 )
@@ -79,39 +75,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 
 	if err = tbPlugins.Initialize(ctx, srv.components.config()...); err != nil {
 		return nil, fmt.Errorf("initializing Taubyte plugins failed with: %w", err)
-	}
-
-	if err = smartopsPlugins.Initialize(
-		ctx,
-		smartopsPlugins.SmartOpNode(srv.components.smartops),
-	); err != nil {
-		return nil, fmt.Errorf("initializing Taubyte smartops-plugins failed with: %w", err)
-	}
-
-	// Get/Load all plugins
-	pluginDir := "/tb/plugins/"
-	seer, err := seer.New(seer.SystemFS(pluginDir))
-	if err != nil {
-		if !cfg.DevMode() {
-			return nil, fmt.Errorf("creating systemFS seer for `%s` failed with %w", pluginDir, err)
-		}
-	} else {
-		var plugConfig []string
-		if _, err := os.Stat("/tb/plugins/plugins.yaml"); err == nil {
-			if err = seer.Get("plugins").Document().Get(cfg.Shape()).Value(&plugConfig); err != nil {
-				return nil, fmt.Errorf("seer get plugins from shape `%s` failed with: %w", cfg.Shape(), err)
-			}
-
-			for _, name := range plugConfig {
-				pluginName := pluginDir + name
-				plugin, err := orbit.Load(pluginName, ctx)
-				if err != nil {
-					return nil, fmt.Errorf("loading plugin `%s` failed with: %w", name, err)
-				}
-
-				srv.orbitals = append(srv.orbitals, plugin)
-			}
-		}
 	}
 
 	if cfg.Http() == nil {

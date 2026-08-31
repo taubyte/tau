@@ -53,13 +53,12 @@ func (m *mockServiceComponent) CheckTns(matcher components.MatchDefinition) ([]c
 }
 
 // Implement substrate.Service interface (minimal implementation)
-func (m *mockServiceComponent) Vm() vm.Service                      { return nil }
-func (m *mockServiceComponent) Counter() substrate.CounterService   { return nil }
-func (m *mockServiceComponent) SmartOps() substrate.SmartOpsService { return nil }
-func (m *mockServiceComponent) Orbitals() []vm.Plugin               { return nil }
-func (m *mockServiceComponent) Dev() bool                           { return false }
-func (m *mockServiceComponent) Verbose() bool                       { return false }
-func (m *mockServiceComponent) Context() context.Context            { return context.Background() }
+func (m *mockServiceComponent) Vm() vm.Service                    { return nil }
+func (m *mockServiceComponent) Counter() substrate.CounterService { return nil }
+func (m *mockServiceComponent) Orbitals() []vm.Plugin             { return nil }
+func (m *mockServiceComponent) Dev() bool                         { return false }
+func (m *mockServiceComponent) Verbose() bool                     { return false }
+func (m *mockServiceComponent) Context() context.Context          { return context.Background() }
 
 // Implement services.Service interface
 func (m *mockServiceComponent) Node() peer.Node { return nil }
@@ -95,7 +94,6 @@ func (m *mockTnsClient) Function() tns.StructureIface[*structureSpec.Function]  
 func (m *mockTnsClient) Library() tns.StructureIface[*structureSpec.Library]     { return nil }
 func (m *mockTnsClient) Messaging() tns.StructureIface[*structureSpec.Messaging] { return nil }
 func (m *mockTnsClient) Service() tns.StructureIface[*structureSpec.Service]     { return nil }
-func (m *mockTnsClient) SmartOp() tns.StructureIface[*structureSpec.SmartOp]     { return nil }
 func (m *mockTnsClient) Storage() tns.StructureIface[*structureSpec.Storage]     { return nil }
 func (m *mockTnsClient) Website() tns.StructureIface[*structureSpec.Website]     { return nil }
 func (m *mockTnsClient) Stats() tns.Stats                                        { return nil }
@@ -1474,9 +1472,6 @@ func (m *mockTnsClientWithNonStringCid) Messaging() tns.StructureIface[*structur
 	return nil
 }
 func (m *mockTnsClientWithNonStringCid) Service() tns.StructureIface[*structureSpec.Service] {
-	return nil
-}
-func (m *mockTnsClientWithNonStringCid) SmartOp() tns.StructureIface[*structureSpec.SmartOp] {
 	return nil
 }
 func (m *mockTnsClientWithNonStringCid) Storage() tns.StructureIface[*structureSpec.Storage] {
