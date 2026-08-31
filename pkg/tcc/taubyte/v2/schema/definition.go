@@ -779,21 +779,19 @@ var V2Resources = []*Node{
 				// author who wants credentials on the wire in the clear has to write
 				// `disable` and see the word.
 				//
-				// It is not Required(), and not RequiredWhen either, because NEITHER
-				// expresses "required only on this Either branch" — both were tried:
+				// It is not Required(), which would fire on `distributed` too — a branch
+				// that opens no socket and has no wire to protect. RequiredWhen would
+				// express it, and is deliberately not used: a value here is a WEAKENING,
+				// so the safe state has to be the one an author reaches by writing
+				// nothing. Demanding the field would make "explicit" the only way to get
+				// the default, which is how `disable` ends up typed by someone clearing
+				// an error.
 				//
-				//   Required()                        fires on `distributed` too, which
-				//                                     opens no socket
-				//   RequiredWhen(Key("engine", "kind"), …)    never fires at all, because
-				//                                     the engine kind is a Captures() attribute
-				//                                     and RequiredWhen reads a sibling's
-				//                                     DOCUMENT value, which for a Key is
-				//                                     the branch's contents rather than
-				//                                     its name
-				//
-				// The second is a live defect, not a quirk of this field:
-				// Path("engine","distributed","size") makes the same claim and is equally
-				// unenforced.
+				// (This comment used to say RequiredWhen "never fires at all" against a
+				// Captures() sibling, and called that a live defect. It was one, and it
+				// was fixed on 2026-08-18 — requiredHere reads the matched branch, which
+				// is ENGINE-CHANGES.md #5. `engine/distributed/size` is enforced: a
+				// distributed database with no size is refused, and there is a test.)
 				String(Key("engine", "tls"), Path("engine", Either(externalDatabaseEngines...), "tls"), InSet("verify-full", "require", "disable"), PerEnv(), InSection("engine"), ShowWhen(Key("engine", "kind"), externalDatabaseEngines...),
 					Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included.")),
 				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],

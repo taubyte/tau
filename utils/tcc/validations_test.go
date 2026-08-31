@@ -216,3 +216,37 @@ func TestProcessDNSValidations_MultipleValidations(t *testing.T) {
 	err := ProcessDNSValidations(validations, generatedDomainRegExp, true, []byte("fake-key"))
 	assert.NilError(t, err)
 }
+
+// A VOCABULARY'S OWN WORD FOR A FIELD IS NOT THIS CONSUMER'S TO KNOW. v1 emits
+// EmitValidation("domain","dns") and v2 emits EmitValidation("zone","dns") — one
+// check, two vocabularies, because one has a `domain` kind and the other a `zone`.
+// This matched the key as well as the validator, so a v2 zone published with no DNS
+// proof and nothing said so.
+//
+// Proved without a network round trip: a non-string value is an error only the
+// matched branch can produce, so reaching it IS the assertion.
+func TestDNSValidationIsSelectedByItsValidatorNotItsKey(t *testing.T) {
+	for _, key := range []string{"domain", "zone", "whatever-the-next-vocabulary-calls-it"} {
+		err := ProcessDNSValidations([]engine.NextValidation{
+			engine.NewNextValidation(key, 42, "dns", map[string]any{"project": "QmTestProject123"}),
+		}, regexp.MustCompile(`^x$`), true, nil)
+		assert.ErrorContains(t, err, "not a string", "key %q was skipped", key)
+	}
+
+	// A different check is still a different check.
+	err := ProcessDNSValidations([]engine.NextValidation{
+		engine.NewNextValidation("zone", 42, "project_id", map[string]any{"project": "QmTestProject123"}),
+	}, regexp.MustCompile(`^x$`), true, nil)
+	assert.NilError(t, err)
+}
+
+// Same rule on the other predicate. It agrees with both vocabularies today only
+// because both happen to spell the key "project_id", which is a coincidence and not
+// a contract.
+func TestProjectIDValidationIsSelectedByItsValidatorNotItsKey(t *testing.T) {
+	id, err := ExtractProjectID([]engine.NextValidation{
+		engine.NewNextValidation("id", "QmTestProject123", "project_id", map[string]any{}),
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, id, "QmTestProject123")
+}
