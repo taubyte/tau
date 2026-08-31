@@ -1,5 +1,5 @@
 // Package gen projects the tcc schema DSL (pkg/tcc/taubyte/v1/schema) into the
-// mechanical pkg/schema/<resource> accessor files. It writes to an output dir
+// mechanical legacy/schema/<resource> accessor files. It writes to an output dir
 // for review and can diff its output against the existing hand-written files.
 package gen
 
@@ -51,7 +51,7 @@ func Generate(root []*engine.Node) (map[string][]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			out[filepath.Join("pkg", "schema", r.Package, f)] = b
+			out[filepath.Join("legacy", "schema", r.Package, f)] = b
 		}
 	}
 	structs, err := Structs(root)
@@ -63,7 +63,7 @@ func Generate(root []*engine.Node) (map[string][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		out[filepath.Join("pkg", "specs", "structure", strings.ToLower(m.Spec)+".go")] = b
+		out[filepath.Join("legacy", "specs", "structure", strings.ToLower(m.Spec)+".go")] = b
 	}
 	ts, err := GenerateTS(schema.CompileRoot())
 	if err != nil {

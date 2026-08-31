@@ -15,12 +15,12 @@ import (
 // at adoption. Two things ARE derived: uint64 duration/size types and the
 // mapstructure tag for compat-aliased fields.
 
-// StructModel is the template model for one pkg/specs/structure/<res>.go file.
+// StructModel is the template model for one legacy/specs/structure/<res>.go file.
 type StructModel struct {
 	Spec       string   // structureSpec type name, e.g. "Function"
 	Fields     []Field  // DSL-derived fields (common + resource + derived + SmartOps)
 	Embeds     []string // embedded interface types, e.g. "Basic", "Indexer", "Wasm"
-	SpecImport string   // pkg/specs import path for the method delegates
+	SpecImport string   // legacy/specs import path for the method delegates
 	SpecAlias  string   // its import alias, e.g. "functionSpec"
 	Methods    []string // full method source (GetName/SetId/<addressing>/GetId)
 	Skipped    []string

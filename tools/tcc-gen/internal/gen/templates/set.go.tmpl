@@ -3,7 +3,7 @@
 
 package {{.Package}}
 
-import "github.com/taubyte/tau/pkg/schema/basic"
+import "github.com/taubyte/tau/legacy/schema/basic"
 {{range .Setters}}
 {{if .Doc}}{{.Doc}}
 {{end}}func {{.Name}}(value {{.GoType}}) basic.Op {

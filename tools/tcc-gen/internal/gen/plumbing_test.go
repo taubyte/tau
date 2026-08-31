@@ -12,7 +12,7 @@ import (
 
 func TestWriteTo(t *testing.T) {
 	dir := t.TempDir()
-	rel := filepath.Join("pkg", "schema", "foo", "set.go")
+	rel := filepath.Join("legacy", "schema", "foo", "set.go")
 	files := map[string][]byte{rel: []byte("package foo\n")}
 
 	if err := WriteTo(dir, files); err != nil {
@@ -32,7 +32,7 @@ func TestWriteTo(t *testing.T) {
 // non-schema file that must be skipped.
 func TestCheck(t *testing.T) {
 	root := t.TempDir()
-	realDir := filepath.Join(root, "pkg", "schema", "foo")
+	realDir := filepath.Join(root, "legacy", "schema", "foo")
 	if err := os.MkdirAll(realDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -43,11 +43,11 @@ func TestCheck(t *testing.T) {
 
 	gen := map[string][]byte{
 		// same file: generated has A + C — extra C, missing B
-		filepath.Join("pkg", "schema", "foo", "set.go"): []byte("package foo\nfunc A() {}\nfunc C() {}\n"),
+		filepath.Join("legacy", "schema", "foo", "set.go"): []byte("package foo\nfunc A() {}\nfunc C() {}\n"),
 		// no real counterpart on disk: everything is "extra in generated"
-		filepath.Join("pkg", "schema", "bar", "set.go"): []byte("package bar\nfunc D() {}\n"),
+		filepath.Join("legacy", "schema", "bar", "set.go"): []byte("package bar\nfunc D() {}\n"),
 		// struct path: byte-checked; no on-disk counterpart -> byte diff
-		filepath.Join("pkg", "specs", "structure", "foo.go"): []byte("package structureSpec\ntype Foo struct{}\n"),
+		filepath.Join("legacy", "specs", "structure", "foo.go"): []byte("package structureSpec\ntype Foo struct{}\n"),
 	}
 
 	diffs, err := Check(root, gen)
@@ -60,7 +60,7 @@ func TestCheck(t *testing.T) {
 		byRel[d.Rel] = d
 	}
 
-	foo := byRel[filepath.Join("pkg", "schema", "foo", "set.go")]
+	foo := byRel[filepath.Join("legacy", "schema", "foo", "set.go")]
 	if got := strings.Join(foo.ExtraInGen, ","); got != "C" {
 		t.Errorf("foo extra-in-gen = %q, want C", got)
 	}
@@ -68,24 +68,24 @@ func TestCheck(t *testing.T) {
 		t.Errorf("foo missing-in-gen = %q, want B", got)
 	}
 
-	bar := byRel[filepath.Join("pkg", "schema", "bar", "set.go")]
+	bar := byRel[filepath.Join("legacy", "schema", "bar", "set.go")]
 	if got := strings.Join(bar.ExtraInGen, ","); got != "D" {
 		t.Errorf("bar (no real file) extra-in-gen = %q, want D", got)
 	}
 
-	if d, ok := byRel[filepath.Join("pkg", "specs", "structure", "foo.go")]; !ok || !d.BytesDiffer {
+	if d, ok := byRel[filepath.Join("legacy", "specs", "structure", "foo.go")]; !ok || !d.BytesDiffer {
 		t.Error("struct file with no on-disk counterpart must be flagged as a byte diff")
 	}
 }
 
 func TestPrintReport(t *testing.T) {
 	gen := map[string][]byte{
-		filepath.Join("pkg", "schema", "a", "set.go"):      nil,
-		filepath.Join("pkg", "schema", "b", "set.go"):      nil,
-		filepath.Join("pkg", "specs", "structure", "a.go"): nil, // struct files are now checked
+		filepath.Join("legacy", "schema", "a", "set.go"):      nil,
+		filepath.Join("legacy", "schema", "b", "set.go"):      nil,
+		filepath.Join("legacy", "specs", "structure", "a.go"): nil, // struct files are now checked
 	}
 	diffs := []Diff{{
-		Rel:          filepath.Join("pkg", "schema", "b", "set.go"),
+		Rel:          filepath.Join("legacy", "schema", "b", "set.go"),
 		ExtraInGen:   []string{"X"},
 		MissingInGen: []string{"Y"},
 	}}
@@ -95,9 +95,9 @@ func TestPrintReport(t *testing.T) {
 	out := buf.String()
 
 	for _, want := range []string{
-		"OK    " + filepath.Join("pkg", "schema", "a", "set.go"),
-		"DIFF  " + filepath.Join("pkg", "schema", "b", "set.go"),
-		"OK    " + filepath.Join("pkg", "specs", "structure", "a.go"),
+		"OK    " + filepath.Join("legacy", "schema", "a", "set.go"),
+		"DIFF  " + filepath.Join("legacy", "schema", "b", "set.go"),
+		"OK    " + filepath.Join("legacy", "specs", "structure", "a.go"),
 		"only in generated: [X]",
 		"only in hand-written: [Y]",
 		"3 generated files checked, 1 with differences",

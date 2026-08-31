@@ -10,14 +10,14 @@ import (
 // the DSL's Resource(...) annotation (no hardcoded table): only the irregular
 // facts are declared; the rest derives.
 type descriptor struct {
-	Package     string // pkg/schema/<dir> accessor package
+	Package     string // legacy/schema/<dir> accessor package
 	Iface       string // exported accessor interface, e.g. "Database" ("SmartOps")
 	Struct      string // private impl struct, e.g. "database" ("smartOps")
 	Recv        string // method receiver letter, e.g. "d"
 	Noun        string // WrapError noun + open.go local var, e.g. "database"
 	FolderConst string // common.<X>Folder constant name
 	Spec        string // structureSpec type name, e.g. "Database" ("SmartOp")
-	SpecPkg     string // pkg/specs/<dir> addressing-helper package
+	SpecPkg     string // legacy/specs/<dir> addressing-helper package
 }
 
 // descriptorFor builds the descriptor for a resource from the Resource(...)

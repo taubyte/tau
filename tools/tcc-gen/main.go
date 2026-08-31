@@ -1,9 +1,9 @@
-// Command tcc-gen generates the mechanical pkg/schema/<resource> accessor files
+// Command tcc-gen generates the mechanical legacy/schema/<resource> accessor files
 // from the tcc schema DSL (pkg/tcc/taubyte/v1/schema/definition.go), which is the
 // single source of truth for resource fields.
 //
 //	tcc-gen [--out DIR]   write generated files under DIR (default: a temp dir)
-//	tcc-gen --check       diff generated accessors against the current pkg/schema
+//	tcc-gen --check       diff generated accessors against the current legacy/schema
 //	tcc-gen --wasm [--out DIR]  build the browser wasm module + wasm_exec.js
 //	                      (default out: pkg/tcc/clients/js/assets)
 //	tcc-gen --ts [--out DIR]    generate the TypeScript schema interfaces
@@ -33,11 +33,11 @@ import (
 func main() {
 	app := &cli.App{
 		Name:  "tcc-gen",
-		Usage: "generate pkg/schema accessors from the tcc schema DSL",
+		Usage: "generate legacy/schema accessors from the tcc schema DSL",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "out", Usage: "output directory (default: a temp dir)"},
 			&cli.StringFlag{Name: "root", Usage: "repo root (default: autodetected from cwd)"},
-			&cli.BoolFlag{Name: "check", Usage: "diff generated accessors against pkg/schema and report drift"},
+			&cli.BoolFlag{Name: "check", Usage: "diff generated accessors against legacy/schema and report drift"},
 			&cli.BoolFlag{Name: "wasm", Usage: "build the browser wasm module (GOOS=js) + wasm_exec.js into --out"},
 			&cli.BoolFlag{Name: "ts", Usage: "generate the TypeScript schema (interfaces) into --out"},
 			&cli.StringFlag{Name: "dsl", Value: "v1", Usage: "which vocabulary to generate from: v1 or v2"},

@@ -14,7 +14,7 @@ type Accessor struct {
 	Doc    string // optional doc comment line, e.g. "// Deprecated: use Protocol."
 }
 
-// Resource is the template model for one pkg/schema/<pkg> package.
+// Resource is the template model for one legacy/schema/<pkg> package.
 type Resource struct {
 	descriptor
 	Setters []Accessor
