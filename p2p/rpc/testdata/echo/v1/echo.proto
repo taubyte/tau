@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+// Package echo.v1 exists only to exercise the four ConnectRPC stream shapes
+// over a libp2p stream. It is a test fixture; nothing outside p2p/rpc's
+// tests should import it.
+package echo.v1;
+
+option go_package = ".";
+
+message EchoRequest {
+  bytes payload = 1;
+  // count asks a streaming method for this many responses.
+  int32 count = 2;
+}
+
+message EchoResponse {
+  bytes payload = 1;
+  int32 index = 2;
+  // note carries whatever the method wants to say in words: a peer id, a
+  // checksum, an error detail.
+  string note = 3;
+}
+
+service EchoService {
+  // Unary echoes the payload back.
+  rpc Unary(EchoRequest) returns (EchoResponse);
+  // Countdown sends count responses, pausing between them so a client can
+  // prove it received one while the server was still parked before the next.
+  rpc Countdown(EchoRequest) returns (stream EchoResponse);
+  // Absorb reads every request and answers with the sha256 of the payloads.
+  rpc Absorb(stream EchoRequest) returns (EchoResponse);
+  // Volley answers each request as it arrives.
+  rpc Volley(stream EchoRequest) returns (stream EchoResponse);
+  // Whoami reports the peer the handler believes is calling.
+  rpc Whoami(EchoRequest) returns (EchoResponse);
+  // Fail always returns a connect error.
+  rpc Fail(EchoRequest) returns (EchoResponse);
+  // Park blocks until its context ends and reports how it ended.
+  rpc Park(EchoRequest) returns (EchoResponse);
+}
