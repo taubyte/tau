@@ -1,0 +1,173 @@
+package repokey_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/taubyte/tau/pkg/git/repokey"
+)
+
+// ONE REPOSITORY, ONE KEY. Each group is a list of legal spellings of a single
+// repository; every member has to produce the same key, because the whole point
+// of the package is that an index built by one consumer is readable by another.
+func TestEverySpellingOfOneRepositoryIsOneKey(t *testing.T) {
+	for want, spellings := range map[string][]string{
+		"github.com/acme/pay": {
+			"https://github.com/acme/pay",
+			"https://github.com/acme/pay.git",
+			"https://github.com/acme/pay/",
+			"https://github.com/Acme/Pay.GIT",
+			"HTTPS://GitHub.COM/acme/pay",
+			"https://github.com:443/acme/pay",
+			"https://git@github.com/acme/pay",
+			"http://github.com:80/acme/pay",
+			// the pair the package had to decide
+			"ssh://git@github.com/acme/pay",
+			"ssh://git@github.com:22/acme/pay",
+			"git@github.com:acme/pay",
+			"git@github.com:/acme/pay",
+			"git@github.com:acme/pay.git",
+			"git://github.com:9418/acme/pay",
+		},
+		// A GitLab subgroup nests, so the owner is the whole path above the
+		// repository and not just the group.
+		"gitlab.com/acme/team/widget": {
+			"https://gitlab.com/acme/team/widget",
+			"git@gitlab.com:acme/team/widget.git",
+			"ssh://git@gitlab.com/acme/team/widget",
+		},
+		// A self-hosted host on a non-default port keeps it: that is a different
+		// server, not a different spelling.
+		"git.acme.internal:2222/team/repo": {
+			"ssh://git@git.acme.internal:2222/team/repo",
+			"ssh://git.acme.internal:2222/team/repo.git",
+		},
+		// A bare repository at a host's root has no owner.
+		"g/x": {"https://g/x", "https://g/x.git", "git@g:x"},
+	} {
+		for _, s := range spellings {
+			got, err := repokey.String(s)
+			if err != nil {
+				t.Fatalf("%q: %v", s, err)
+			}
+			if got != want {
+				t.Fatalf("%q keyed as %q, want %q", s, got, want)
+			}
+		}
+	}
+}
+
+// THE SCP FORM HAS NO PORT — git's rule, not a choice made here. Everything after
+// the first ":" is the path, so this names a repository called `22/acme/pay` and
+// reading it as a port would file it under a key a clone never fetches.
+func TestScpFormHasNoPort(t *testing.T) {
+	k, err := repokey.Parse("git@github.com:22/acme/pay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k.String() != "github.com/22/acme/pay" {
+		t.Fatalf("scp form read a port: %q", k)
+	}
+	if u, err := repokey.String("ssh://git@github.com:22/acme/pay"); err != nil || u != "github.com/acme/pay" {
+		t.Fatalf("ssh form: %q %v", u, err)
+	}
+}
+
+func TestParts(t *testing.T) {
+	for _, tc := range []struct {
+		url, host, owner, name, full, ns string
+	}{
+		{"https://github.com/Acme/Pay.git", "github.com", "acme", "pay", "acme/pay", "acme"},
+		{"git@gitlab.com:acme/team/widget", "gitlab.com", "acme/team", "widget", "acme/team/widget", "acme"},
+		{"https://g/x", "g", "", "x", "x", ""},
+		{"ssh://git@h:2222/a/b", "h:2222", "a", "b", "a/b", "a"},
+		{"http://[::1]/a/b", "[::1]", "a", "b", "a/b", "a"},
+	} {
+		k, err := repokey.Parse(tc.url)
+		if err != nil {
+			t.Fatalf("%q: %v", tc.url, err)
+		}
+		if k.Host != tc.host || k.Owner != tc.owner || k.Name != tc.name {
+			t.Fatalf("%q -> %+v, want host=%q owner=%q name=%q", tc.url, k, tc.host, tc.owner, tc.name)
+		}
+		if k.FullName() != tc.full {
+			t.Fatalf("%q full name %q, want %q", tc.url, k.FullName(), tc.full)
+		}
+		if k.Namespace() != tc.ns {
+			t.Fatalf("%q namespace %q, want %q", tc.url, k.Namespace(), tc.ns)
+		}
+	}
+}
+
+// The refusals, each with the substring a caller's own test pins. A key that is
+// not derivable is a URL that is not legal, which is the property that lets one
+// function be both the validator and the index.
+func TestRefusals(t *testing.T) {
+	for _, tc := range []struct{ url, contains string }{
+		{"", "names no repository"},
+		{"acme/pay", "no scheme"},
+		{"https://u:ghp_secret@github.com/a/b", "carries a credential"},
+		{"ghp_x:y@github.com:a/b", "carries a credential"},
+		{"git@github.com:acme/re po", "not a URL"},
+		{"https://github.com/acme/re po", "whitespace"},
+		{"git@github.com:/", "no repository"},
+		{"https://github.com", "no repository"},
+		{"https://github.com/", "no repository"},
+		{"https://github.com/acme/.git", "no repository"},
+		{"https://:8080/x", "names no host"},
+		{"file:///srv/repo", "not a git transport"},
+		{"local://x/y", "not a git transport"},
+		{"https://github.com/a//b", "empty path segment"},
+		{"https://github.com/a/../b", "does not climb"},
+		{"https://github.com/./b", "does not climb"},
+	} {
+		err := repokey.Valid(tc.url)
+		if err == nil {
+			t.Fatalf("%q was accepted", tc.url)
+		}
+		if !strings.Contains(err.Error(), tc.contains) {
+			t.Fatalf("%q: error %q does not mention %q", tc.url, err, tc.contains)
+		}
+	}
+}
+
+// Valid and Parse are one function: a string has a key exactly when it validates.
+// Two readings of one grammar is the defect the package exists to prevent, so the
+// property is asserted rather than assumed.
+func TestValidAndParseAreOneGrammar(t *testing.T) {
+	for _, s := range []string{
+		"", "https://github.com/acme/pay", "git@github.com:acme/pay", "acme/pay",
+		"https://u:p@h/a/b", "ssh://git@h:22/a/b", "file:///x", "https://h/a//b",
+		"https://h/", "git@h:/", "https://h/x.git", "not a url at all",
+	} {
+		_, perr := repokey.Parse(s)
+		verr := repokey.Valid(s)
+		if (perr == nil) != (verr == nil) {
+			t.Fatalf("%q: Parse=%v Valid=%v", s, perr, verr)
+		}
+	}
+}
+
+// A key is idempotent under its own grammar in the shapes that matter: whatever a
+// spelling produces, re-deriving from the canonical https URL gives it back. This
+// is what a consumer relies on when it stores a key and later re-derives one from
+// a webhook payload's clone URL.
+func TestKeyIsStableUnderReDerivation(t *testing.T) {
+	for _, s := range []string{
+		"git@github.com:Acme/Pay.git",
+		"ssh://git@gitlab.com:22/acme/team/widget",
+		"https://github.com:443/acme/pay/",
+	} {
+		first, err := repokey.String(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		again, err := repokey.String("https://" + first)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if again != first {
+			t.Fatalf("%q keyed %q, re-deriving gave %q", s, first, again)
+		}
+	}
+}
