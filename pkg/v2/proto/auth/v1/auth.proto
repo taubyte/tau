@@ -54,7 +54,6 @@ syntax = "proto3";
 // how large the store gets, so it has no such case to make and stays unary.
 package auth.v1;
 
-option go_package = ".";
 
 // Empty is the response for a call whose only interesting outcome is whether
 // it errored — ConnectRPC already carries that as a status, so a payload
