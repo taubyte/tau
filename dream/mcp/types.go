@@ -9,8 +9,8 @@ type Project struct {
 	ID       string                 `json:"id"`
 	Name     string                 `json:"name"`
 	Provider string                 `json:"provider"`
-	Code     int                    `json:"code"`
-	Config   int                    `json:"config"`
+	Code     string                 `json:"code"`
+	Config   string                 `json:"config"`
 	Registry map[string]interface{} `json:"registry"`
 	Assets   map[string]string      `json:"assets"` // resourceID -> assetPtr
 }
@@ -96,8 +96,8 @@ type ProjectInfo struct {
 	ID       string                 `json:"id"`
 	Name     string                 `json:"name"`
 	Provider string                 `json:"provider"`
-	Code     int                    `json:"code"`
-	Config   int                    `json:"config"`
+	Code     string                 `json:"code"`
+	Config   string                 `json:"config"`
 	Registry map[string]interface{} `json:"registry"`
 	Assets   map[string]string      `json:"assets"` // resourceID -> assetPtr
 }

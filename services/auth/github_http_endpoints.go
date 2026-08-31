@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/taubyte/tau/pkg/git/repokey"
 	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/auth/repositories"
 	protocolCommon "github.com/taubyte/tau/services/common"
@@ -22,13 +23,29 @@ func getGithubClientFromContext(ctx http.Context) (GitHubClient, error) {
 	return v.(GitHubClient), nil
 }
 
-func extractProjectVariables(ctx http.Context) (configID, codeID, projectName string, err error) {
+// repositoryKey derives the canonical key a route variable names. The route
+// carries the key itself — `github.com/acme/pay` — so it is put back through
+// the one grammar rather than trusted as already canonical: a caller may spell
+// it with different case, and the store has exactly one spelling.
+func repositoryKey(id string) (repokey.Key, error) {
+	key, err := repokey.Parse("https://" + id)
+	if err != nil {
+		return repokey.Key{}, fmt.Errorf("repository `%s` is not a clone-URL key: %w", id, err)
+	}
+	return key, nil
+}
+
+func extractProjectVariables(ctx http.Context) (config, code repokey.Key, projectName string, err error) {
 	ctxVars := ctx.Variables()
 	config_repo, err := maps.InterfaceToStringKeys(ctxVars["config"])
 	if err != nil {
 		return
 	}
+	var configID string
 	if configID, err = maps.String(config_repo, "id"); err != nil {
+		return
+	}
+	if config, err = repositoryKey(configID); err != nil {
 		return
 	}
 
@@ -36,7 +53,11 @@ func extractProjectVariables(ctx http.Context) (configID, codeID, projectName st
 	if err != nil {
 		return
 	}
+	var codeID string
 	if codeID, err = maps.String(code_repo, "id"); err != nil {
+		return
+	}
+	if code, err = repositoryKey(codeID); err != nil {
 		return
 	}
 
@@ -58,13 +79,13 @@ func (srv *AuthService) newGitHubProjectHTTPHandler(ctx http.Context) (interface
 		return nil, err
 	}
 
-	configID, codeID, projectName, err := extractProjectVariables(ctx)
+	config, code, projectName, err := extractProjectVariables(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	projectID := protocolCommon.GetNewProjectID(projectName, time.Now().Unix(), rand.Intn(1000000000))
-	return srv.newGitHubProject(ctx.Request().Context(), client, projectID, projectName, configID, codeID)
+	return srv.newGitHubProject(ctx.Request().Context(), client, projectID, projectName, config, code)
 }
 
 func (srv *AuthService) importGitHubProjectHTTPHandler(ctx http.Context) (interface{}, error) {
@@ -73,7 +94,7 @@ func (srv *AuthService) importGitHubProjectHTTPHandler(ctx http.Context) (interf
 		return nil, err
 	}
 
-	configID, codeID, projectName, err := extractProjectVariables(ctx)
+	config, code, projectName, err := extractProjectVariables(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +106,7 @@ func (srv *AuthService) importGitHubProjectHTTPHandler(ctx http.Context) (interf
 		return nil, err
 	}
 
-	return srv.newGitHubProject(ctx.Request().Context(), client, projectID, projectName, configID, codeID)
+	return srv.newGitHubProject(ctx.Request().Context(), client, projectID, projectName, config, code)
 }
 
 func (srv *AuthService) registerGitHubUserRepositoryHTTPHandler(ctx http.Context) (interface{}, error) {
@@ -105,7 +126,11 @@ func (srv *AuthService) registerGitHubUserRepositoryHTTPHandler(ctx http.Context
 	if err != nil {
 		return nil, fmt.Errorf("parsing github repository ID failed with %w", err)
 	}
-	response, err := srv.registerGitHubRepository(ctx.Request().Context(), client, repoId)
+	key, err := repositoryKey(repoId)
+	if err != nil {
+		return nil, err
+	}
+	response, err := srv.registerGitHubRepository(ctx.Request().Context(), client, key)
 	return response, err
 }
 
@@ -115,28 +140,28 @@ func (srv *AuthService) getGitHubUserRepositoryHTTPHandler(ctx http.Context) (in
 	if err != nil {
 		return nil, err
 	}
-	provider, err := maps.String(ctxVars, "provider")
-	if err != nil {
-		return nil, err
-	}
-
 	repoId, err := maps.String(ctxVars, "id")
 	if err != nil {
 		return nil, fmt.Errorf("parsing github repository ID failed with %w", err)
 	}
 
-	if !srv.devMode && !repoAccess(client, repoId) {
-		return nil, fmt.Errorf("repository %s not found", repoId)
+	key, err := repositoryKey(repoId)
+	if err != nil {
+		return nil, err
+	}
+
+	if !srv.devMode && !repoAccess(client, key) {
+		return nil, fmt.Errorf("repository %s not found", key)
 	}
 
 	requestCtx := ctx.Request().Context()
-	if !repositories.ExistOn(requestCtx, srv.db, provider, repoId) {
-		return nil, fmt.Errorf("repository %s not found", repoId)
+	if !repositories.Exist(requestCtx, srv.db, key) {
+		return nil, fmt.Errorf("repository %s not found", key)
 	}
 
-	repo, err := repositories.Fetch(requestCtx, srv.db, repoId)
+	repo, err := repositories.Fetch(requestCtx, srv.db, key)
 	if err != nil {
-		return nil, fmt.Errorf("fetching repository %s failed with %w", repoId, err)
+		return nil, fmt.Errorf("fetching repository %s failed with %w", key, err)
 	}
 
 	hks := make([]string, 0)
@@ -166,7 +191,12 @@ func (srv *AuthService) unregisterGitHubUserRepositoryHTTPHandler(ctx http.Conte
 		return nil, fmt.Errorf("parsing github repository ID failed with %w", err)
 	}
 
-	err = srv.unregisterGitHubRepository(ctx.Request().Context(), client, repoId)
+	key, err := repositoryKey(repoId)
+	if err != nil {
+		return nil, err
+	}
+
+	err = srv.unregisterGitHubRepository(ctx.Request().Context(), client, key)
 
 	return nil, err
 }
@@ -263,7 +293,7 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 
 	srv.http.PUT(&http.RouteDefinition{
 		Hosts: hosts,
-		Path:  "/repository/{provider}/{id}",
+		Path:  "/repository/{provider}/{id:.*}",
 		Vars: http.Variables{
 			Required: []string{"provider", "id"},
 		},
@@ -277,7 +307,7 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 
 	srv.http.DELETE(&http.RouteDefinition{
 		Hosts: hosts,
-		Path:  "/repository/{provider}/{id}",
+		Path:  "/repository/{provider}/{id:.*}",
 		Vars: http.Variables{
 			Required: []string{"provider", "id"},
 		},
@@ -291,7 +321,7 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 
 	srv.http.GET(&http.RouteDefinition{
 		Hosts: hosts,
-		Path:  "/repository/{provider}/{id}",
+		Path:  "/repository/{provider}/{id:.*}",
 		Vars: http.Variables{
 			Required: []string{"provider", "id"},
 		},

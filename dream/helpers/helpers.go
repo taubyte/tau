@@ -37,7 +37,7 @@ func RegisterTestProject(ctx context.Context, authClient auth.Client) (err error
 	}
 
 	// Register project with auth
-	err = authClient.Projects().Create(ProjectName, fmt.Sprintf("%d", ConfigRepo.ID), fmt.Sprintf("%d", CodeRepo.ID))
+	err = authClient.Projects().Create(ProjectName, ConfigRepo.Key().String(), CodeRepo.Key().String())
 	if err != nil {
 		return err
 	}
@@ -65,14 +65,14 @@ func RegisterTestRepositories(ctx context.Context, authClient auth.Client, repos
 				}
 			}
 
-			_, err = authClient.Repositories().Github().Get(repo.ID)
+			_, err = authClient.Repositories().Github().Get(repo.Key().String())
 			if err == nil {
 				// repository already registered
 				break
 			}
 
 			// try to register
-			_, err = authClient.Repositories().Github().Register(fmt.Sprintf("%d", repo.ID))
+			_, err = authClient.Repositories().Github().Register(repo.Key().String())
 			if err == nil {
 				break
 			}

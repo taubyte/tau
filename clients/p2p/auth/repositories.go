@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/utils/maps"
 )
 
-func (r RepositoryCommon) Id() int {
+func (r RepositoryCommon) Id() string {
 	return r.id
 }
 
@@ -35,7 +35,7 @@ func (r *GithubRepositories) New(obj map[string]interface{}) (iface.GithubReposi
 
 	repo.Name, _ = maps.String(obj, "name")
 
-	repo.id, err = maps.Int(obj, "id")
+	repo.id, err = maps.String(obj, "id")
 	if err != nil {
 		return nil, err
 	}
@@ -50,11 +50,11 @@ func (r *GithubRepositories) New(obj map[string]interface{}) (iface.GithubReposi
 	return &repo, nil
 }
 
-func (r *GithubRepositories) Get(id int) (iface.GithubRepository, error) {
-	logger.Debugf("Getting Github Repository `%d`", id)
-	defer logger.Debugf("Getting Github Repository `%d` done", id)
+func (r *GithubRepositories) Get(key string) (iface.GithubRepository, error) {
+	logger.Debugf("Getting Github Repository `%s`", key)
+	defer logger.Debugf("Getting Github Repository `%s` done", key)
 
-	response, err := r.client.Send("repositories", command.Body{"action": "get", "provider": "github", "id": id}, r.peers...)
+	response, err := r.client.Send("repositories", command.Body{"action": "get", "provider": "github", "id": key}, r.peers...)
 	if err != nil {
 		return nil, err
 	}

@@ -32,7 +32,7 @@ func (m *mockNode) PubSubPublish(ctx context.Context, topic string, data []byte)
 
 type mockAuthClient struct {
 	auth.Client
-	repos map[int]mockRepo
+	repos map[string]mockRepo
 	hooks mockHooks
 }
 
@@ -49,8 +49,8 @@ func (r mockRepo) PrivateKey() string {
 	return "mock-key"
 }
 
-func (r mockRepo) Id() int {
-	return 12345
+func (r mockRepo) Id() string {
+	return testJobRepoKey
 }
 
 func (m *mockAuthClient) Repositories() auth.Repositories {
@@ -88,7 +88,7 @@ func (m *mockAuthHook) Bitbucket() (*auth.BitbucketHook, error) {
 
 type mockRepositories struct {
 	auth.Repositories
-	repos map[int]mockRepo
+	repos map[string]mockRepo
 }
 
 func (m mockRepositories) Github() auth.GithubRepositories {
@@ -97,10 +97,10 @@ func (m mockRepositories) Github() auth.GithubRepositories {
 
 type mockGithubRepos struct {
 	auth.GithubRepositories
-	repos map[int]mockRepo
+	repos map[string]mockRepo
 }
 
-func (m mockGithubRepos) Get(id int) (auth.GithubRepository, error) {
+func (m mockGithubRepos) Get(id string) (auth.GithubRepository, error) {
 	repo, exists := m.repos[id]
 	if !exists {
 		return nil, errors.New("repo not found")
@@ -134,6 +134,10 @@ func (m *mockTNSClient) Lookup(query tns.Query) (interface{}, error) {
 func (m *mockTNSClient) Push(path []string, data interface{}) error {
 	return m.pushError
 }
+
+// testJobRepoKey is what createTestJob's clone URL derives to. It is written
+// out rather than computed so the test pins the key the service will build.
+const testJobRepoKey = "github.com/test/repo"
 
 func createTestJob(id string) *patrick.Job {
 	return &patrick.Job{
@@ -304,31 +308,35 @@ func TestConnectToProject(t *testing.T) {
 			name: "successful connection with auth client",
 			job:  createTestJob("test-job-1"),
 			setupMocks: func(mockDB *mock.KVDB, mockAuth *mockAuthClient, mockTNS *mockTNSClient) {
-				mockAuth.repos[12345] = mockRepo{projectID: "project-123"}
+				mockAuth.repos[testJobRepoKey] = mockRepo{projectID: "project-123"}
 			},
 			expectedError: "",
 		},
 		{
-			name: "successful connection with TNS client",
+			// The TNS index is keyed by the provider's number and auth is keyed
+			// by the clone URL. A TNS answer to a question auth could not answer
+			// is an answer in a different grammar, so there is no longer a
+			// fallback: an unregistered repository is refused by name.
+			name: "repository not registered with auth is refused, not guessed",
 			job:  createTestJob("test-job-2"),
 			setupMocks: func(mockDB *mock.KVDB, mockAuth *mockAuthClient, mockTNS *mockTNSClient) {
 				mockTNS.lookupResponse = []string{"repositories/github/12345/extra/project-456"}
 			},
-			expectedError: "",
+			expectedError: "repository `github.com/test/repo` is not registered with auth",
 		},
 		{
-			name: "TNS lookup error",
+			name: "repository registered but linked to no project",
 			job:  createTestJob("test-job-3"),
 			setupMocks: func(mockDB *mock.KVDB, mockAuth *mockAuthClient, mockTNS *mockTNSClient) {
-				mockTNS.lookupError = errors.New("TNS lookup failed")
+				mockAuth.repos[testJobRepoKey] = mockRepo{projectID: ""}
 			},
-			expectedError: "TNS lookup failed",
+			expectedError: "linked to no project",
 		},
 		{
 			name: "database put error",
 			job:  createTestJob("test-job-4"),
 			setupMocks: func(mockDB *mock.KVDB, mockAuth *mockAuthClient, mockTNS *mockTNSClient) {
-				mockAuth.repos[12345] = mockRepo{projectID: "project-123"}
+				mockAuth.repos[testJobRepoKey] = mockRepo{projectID: "project-123"}
 				mockDB.Close()
 			},
 			expectedError: "failed putting job into project with error",
@@ -339,7 +347,7 @@ func TestConnectToProject(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			factory := mock.New()
 			mockDB, _ := factory.New(nil, "test", 0)
-			mockAuth := &mockAuthClient{repos: make(map[int]mockRepo)}
+			mockAuth := &mockAuthClient{repos: make(map[string]mockRepo)}
 			mockTNS := &mockTNSClient{}
 
 			srv := &PatrickService{
@@ -373,43 +381,48 @@ func TestGetProjectIDFromJob(t *testing.T) {
 			name: "successful auth client lookup",
 			job:  createTestJob("test-job-1"),
 			setupMocks: func(mockAuth *mockAuthClient, mockTNS *mockTNSClient) {
-				mockAuth.repos[12345] = mockRepo{projectID: "project-123"}
+				mockAuth.repos[testJobRepoKey] = mockRepo{projectID: "project-123"}
 			},
 			expectedID:    "project-123",
 			expectedError: "",
 		},
 		{
-			name: "successful TNS lookup",
+			// The old TNS fallback would have answered "project-456" here, from
+			// an index keyed by the provider's number and read by segment
+			// position. Both of those are wrong under a clone-URL key, and a
+			// wrong project id builds one project's code into another's.
+			name: "a TNS answer no longer substitutes for an auth miss",
 			job:  createTestJob("test-job-2"),
 			setupMocks: func(mockAuth *mockAuthClient, mockTNS *mockTNSClient) {
 				mockTNS.lookupResponse = []string{"repositories/github/12345/extra/project-456"}
 			},
-			expectedID:    "project-456",
-			expectedError: "",
+			expectedID:    "",
+			expectedError: "repository `github.com/test/repo` is not registered with auth",
 		},
 		{
-			name: "TNS lookup error",
+			name: "registered with no project is not a project id",
 			job:  createTestJob("test-job-3"),
 			setupMocks: func(mockAuth *mockAuthClient, mockTNS *mockTNSClient) {
-				mockTNS.lookupError = errors.New("TNS lookup failed")
+				mockAuth.repos[testJobRepoKey] = mockRepo{projectID: ""}
 			},
 			expectedID:    "",
-			expectedError: "TNS lookup failed",
+			expectedError: "linked to no project",
 		},
 		{
-			name: "TNS invalid response",
-			job:  createTestJob("test-job-4"),
-			setupMocks: func(mockAuth *mockAuthClient, mockTNS *mockTNSClient) {
-				mockTNS.lookupResponse = "invalid response"
+			name: "a job whose repository is not a clone URL is refused",
+			job: &patrick.Job{
+				Id:   "test-job-4",
+				Meta: patrick.Meta{Repository: patrick.Repository{ID: 12345, Provider: "github"}},
 			},
+			setupMocks:    func(mockAuth *mockAuthClient, mockTNS *mockTNSClient) {},
 			expectedID:    "",
-			expectedError: "response from lookup not an array or is empty",
+			expectedError: "names no repository",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockAuth := &mockAuthClient{repos: make(map[int]mockRepo)}
+			mockAuth := &mockAuthClient{repos: make(map[string]mockRepo)}
 			mockTNS := &mockTNSClient{}
 
 			srv := &PatrickService{

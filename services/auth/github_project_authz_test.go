@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/go-github/v71/github"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"gotest.tools/v3/assert"
 )
 
@@ -23,10 +24,11 @@ func (c *authzClient) Me() *github.User {
 	return &github.User{ID: &c.id, Login: &c.login}
 }
 
-func (c *authzClient) GetByID(id string) error {
+func (c *authzClient) Get(key repokey.Key) error {
+	id := key.String()
 	c.cur = &github.Repository{
 		ID:          &c.id,
-		FullName:    github.Ptr("someone/" + id),
+		FullName:    github.Ptr(key.FullName()),
 		Permissions: map[string]bool{"pull": true, "push": c.writable[id], "admin": c.writable[id]},
 	}
 	return nil
@@ -34,8 +36,17 @@ func (c *authzClient) GetByID(id string) error {
 
 func (c *authzClient) Cur() *github.Repository { return c.cur }
 
-func (c *authzClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
-	return RepositoryShortInfo{ID: id}
+func (c *authzClient) ShortRepositoryInfo(key repokey.Key) RepositoryShortInfo {
+	return RepositoryShortInfo{ID: key.String()}
+}
+
+// repoKey is the canonical key of a repository named in these tests. The
+// repositories are addressed by clone URL now, so the fixtures are too.
+func repoKey(t *testing.T, id string) repokey.Key {
+	t.Helper()
+	key, err := repokey.Parse("https://" + id)
+	assert.NilError(t, err)
+	return key
 }
 
 func newAuthzService(t *testing.T, port int) *AuthService {
@@ -55,10 +66,10 @@ func TestProjectAccessByID(t *testing.T) {
 	ctx := context.Background()
 	svc := newAuthzService(t, 13513)
 
-	victim := &authzClient{id: 1, login: "victim", writable: map[string]bool{"1001": true, "1002": true}}
-	attacker := &authzClient{id: 2, login: "attacker", writable: map[string]bool{"9001": true}}
+	victim := &authzClient{id: 1, login: "victim", writable: map[string]bool{"github.com/victim/config": true, "github.com/victim/code": true}}
+	attacker := &authzClient{id: 2, login: "attacker", writable: map[string]bool{"github.com/attacker/config": true}}
 
-	_, err := svc.newGitHubProject(ctx, victim, "PROJECT_ID_513", "victims-project", "1001", "1002")
+	_, err := svc.newGitHubProject(ctx, victim, "PROJECT_ID_513", "victims-project", repoKey(t, "github.com/victim/config"), repoKey(t, "github.com/victim/code"))
 	assert.NilError(t, err)
 
 	_, err = svc.getGitHubProjectInfo(ctx, attacker, "PROJECT_ID_513")
@@ -82,26 +93,26 @@ func TestProjectImportOverExisting(t *testing.T) {
 	ctx := context.Background()
 	svc := newAuthzService(t, 13514)
 
-	victim := &authzClient{id: 1, login: "victim", writable: map[string]bool{"1001": true, "1002": true}}
-	attacker := &authzClient{id: 2, login: "attacker", writable: map[string]bool{"9001": true, "9002": true}}
+	victim := &authzClient{id: 1, login: "victim", writable: map[string]bool{"github.com/victim/config": true, "github.com/victim/code": true}}
+	attacker := &authzClient{id: 2, login: "attacker", writable: map[string]bool{"github.com/attacker/config": true, "github.com/attacker/code": true}}
 
-	_, err := svc.newGitHubProject(ctx, victim, "PROJECT_ID_513", "victims-project", "1001", "1002")
+	_, err := svc.newGitHubProject(ctx, victim, "PROJECT_ID_513", "victims-project", repoKey(t, "github.com/victim/config"), repoKey(t, "github.com/victim/code"))
 	assert.NilError(t, err)
 
 	// Attacker's own repositories, victim's project id.
-	_, err = svc.newGitHubProject(ctx, attacker, "PROJECT_ID_513", "attackers-project", "9001", "9002")
+	_, err = svc.newGitHubProject(ctx, attacker, "PROJECT_ID_513", "attackers-project", repoKey(t, "github.com/attacker/config"), repoKey(t, "github.com/attacker/code"))
 	assert.Error(t, err, "project not found")
 
 	info, err := svc.getGitHubProjectInfo(ctx, victim, "PROJECT_ID_513")
 	assert.NilError(t, err)
 	assert.Equal(t, info.Project.Name, "victims-project")
-	assert.Equal(t, info.Project.Repositories.Configuration.ID, "1001")
+	assert.Equal(t, info.Project.Repositories.Configuration.ID, "github.com/victim/config")
 
 	_, err = svc.db.Get(ctx, "/projects/PROJECT_ID_513/owners/2")
 	assert.Assert(t, err != nil, "attacker recorded itself as an owner")
 
 	// The victim's repository still points at the victim's project.
-	linked, err := svc.db.Get(ctx, "/repositories/github/1001/project")
+	linked, err := svc.db.Get(ctx, "/repositories/github.com/victim/config/project")
 	assert.NilError(t, err)
 	assert.Equal(t, string(linked), "PROJECT_ID_513")
 }
@@ -112,13 +123,13 @@ func TestNewProjectRequiresRepoAccess(t *testing.T) {
 	ctx := context.Background()
 	svc := newAuthzService(t, 13515)
 
-	attacker := &authzClient{id: 2, login: "attacker", writable: map[string]bool{"9001": true}}
+	attacker := &authzClient{id: 2, login: "attacker", writable: map[string]bool{"github.com/attacker/config": true}}
 
 	// 1002 is readable (public) but not writable by the caller.
-	_, err := svc.newGitHubProject(ctx, attacker, "PROJECT_ID_NEW", "grab", "9001", "1002")
-	assert.Error(t, err, "no access to repository `1002`")
+	_, err := svc.newGitHubProject(ctx, attacker, "PROJECT_ID_NEW", "grab", repoKey(t, "github.com/attacker/config"), repoKey(t, "github.com/victim/code"))
+	assert.Error(t, err, "no access to repository `github.com/victim/code`")
 
-	_, err = svc.db.Get(ctx, "/repositories/github/1002/project")
+	_, err = svc.db.Get(ctx, "/repositories/github.com/victim/code/project")
 	assert.Assert(t, err != nil, "back-reference written despite refusal")
 }
 
@@ -130,6 +141,6 @@ func TestUnregisterRepositoryRequiresAccess(t *testing.T) {
 
 	attacker := &authzClient{id: 2, login: "attacker", writable: map[string]bool{}}
 
-	err := svc.unregisterGitHubRepository(ctx, attacker, "1001")
-	assert.Error(t, err, "no access to repository `1001`")
+	err := svc.unregisterGitHubRepository(ctx, attacker, repoKey(t, "github.com/victim/config"))
+	assert.Error(t, err, "no access to repository `github.com/victim/config`")
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/legacy/specs/common"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/utils/maps"
 
@@ -199,7 +200,12 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 
 	// Try to get projectId from repo
 	if len(projectId) == 0 {
-		_repo, err := auth.Repositories().Github().Get(intRepoId)
+		key, err := repokey.Parse("https://github.com/" + fullname)
+		if err != nil {
+			return fmt.Errorf("repository `%s`: %v", fullname, err)
+		}
+
+		_repo, err := auth.Repositories().Github().Get(key.String())
 		if err != nil {
 			return fmt.Errorf("failed to fetch Repo: %v", err)
 		}

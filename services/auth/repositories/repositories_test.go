@@ -4,409 +4,179 @@ import (
 	"context"
 	"testing"
 
+	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
 	"gotest.tools/v3/assert"
 )
 
-func TestGitHubRepository_Serialize(t *testing.T) {
-	repo := &githubRepository{
-		repositoryCommon: repositoryCommon{
-			provider: "github",
-			project:  "test-project",
-		},
-		id:  123,
-		key: "test-key-123",
-	}
-
-	data := repo.Serialize()
-
-	assert.Equal(t, data["id"], 123)
-	assert.Equal(t, data["provider"], "github")
-	assert.Equal(t, data["project"], "test-project")
-	assert.Equal(t, data["key"], "test-key-123")
-}
-
-func TestGitHubRepository_Register(t *testing.T) {
+func testDB(t *testing.T) kvdb.KVDB {
+	t.Helper()
 	mockKV := mock.New()
-	defer mockKV.Close()
+	t.Cleanup(mockKV.Close)
 
-	ctx := context.Background()
 	db, err := mockKV.New(nil, "test", 5)
 	assert.NilError(t, err)
-	defer db.Close()
+	t.Cleanup(func() { db.Close() })
 
-	repo := &githubRepository{
-		repositoryCommon: repositoryCommon{
-			kv:       db,
-			provider: "github",
-			project:  "test-project",
-		},
-		id:  123,
-		key: "test-key-123",
-	}
-
-	err = repo.Register(ctx)
-	assert.NilError(t, err)
-
-	// Verify the data was stored
-	key, err := db.Get(ctx, "/repositories/github/123/key")
-	assert.NilError(t, err)
-	assert.Equal(t, string(key), "test-key-123")
+	return db
 }
 
-func TestGitHubRepository_Delete(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	ctx := context.Background()
-	db, err := mockKV.New(nil, "test", 5)
+func key(t *testing.T, cloneURL string) repokey.Key {
+	t.Helper()
+	k, err := repokey.Parse(cloneURL)
 	assert.NilError(t, err)
-	defer db.Close()
+	return k
+}
 
-	repo := &githubRepository{
-		repositoryCommon: repositoryCommon{
-			kv:       db,
-			provider: "github",
-			project:  "test-project",
-		},
-		id:  123,
-		key: "test-key-123",
+// Every case below runs against BOTH a three-segment key and a GitLab subgroup,
+// because the key is variable depth and anything that counts segments is only
+// correct for one of them.
+func eachKey(t *testing.T, f func(t *testing.T, k repokey.Key)) {
+	t.Helper()
+	for _, cloneURL := range []string{
+		"https://github.com/acme/pay",
+		"https://gitlab.com/acme/team/widget",
+	} {
+		k := key(t, cloneURL)
+		t.Run(k.String(), func(t *testing.T) { f(t, k) })
 	}
+}
 
-	// First register the repository
-	err = repo.Register(ctx)
-	assert.NilError(t, err)
+func TestSerialize(t *testing.T) {
+	eachKey(t, func(t *testing.T, k repokey.Key) {
+		data := New(testDB(t), k, "test-key-123", "test-project").Serialize()
 
-	// Now delete it
-	err = repo.Delete(ctx)
-	assert.NilError(t, err)
+		assert.Equal(t, data["id"], k.String())
+		assert.Equal(t, data["provider"], k.Host)
+		assert.Equal(t, data["project"], "test-project")
+		assert.Equal(t, data["key"], "test-key-123")
+	})
+}
 
-	// Verify it no longer exists
-	_, err = db.Get(ctx, "/repositories/github/123/key")
-	assert.Assert(t, err != nil)
+func TestRegisterStoresUnderTheCanonicalKey(t *testing.T) {
+	eachKey(t, func(t *testing.T, k repokey.Key) {
+		ctx := context.Background()
+		db := testDB(t)
+
+		assert.NilError(t, New(db, k, "test-key-123", "").Register(ctx))
+
+		stored, err := db.Get(ctx, "/repositories/"+k.String()+"/key")
+		assert.NilError(t, err)
+		assert.Equal(t, string(stored), "test-key-123")
+	})
+}
+
+func TestDeleteRemovesTheKeyAndTheProjectLink(t *testing.T) {
+	eachKey(t, func(t *testing.T, k repokey.Key) {
+		ctx := context.Background()
+		db := testDB(t)
+
+		repo := New(db, k, "test-key-123", "")
+		assert.NilError(t, repo.Register(ctx))
+		assert.NilError(t, db.Put(ctx, "/repositories/"+k.String()+"/project", []byte("proj")))
+
+		assert.NilError(t, repo.Delete(ctx))
+
+		_, err := db.Get(ctx, "/repositories/"+k.String()+"/key")
+		assert.Assert(t, err != nil)
+
+		// A repository that is gone is not still part of a project.
+		_, err = db.Get(ctx, "/repositories/"+k.String()+"/project")
+		assert.Assert(t, err != nil)
+	})
 }
 
 func TestExist(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
+	eachKey(t, func(t *testing.T, k repokey.Key) {
+		ctx := context.Background()
+		db := testDB(t)
 
+		assert.Assert(t, !Exist(ctx, db, k))
+		assert.NilError(t, New(db, k, "test-key-123", "").Register(ctx))
+		assert.Assert(t, Exist(ctx, db, k))
+	})
+}
+
+// Two repositories differing only below the third segment are two repositories.
+// A prefix scheme that stopped at a fixed depth would fuse them.
+func TestSubgroupIsNotItsGroup(t *testing.T) {
 	ctx := context.Background()
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
+	db := testDB(t)
 
-	// Test with non-existent repository
-	exists := Exist(ctx, db, "999")
-	assert.Assert(t, !exists)
+	widget := key(t, "https://gitlab.com/acme/team/widget")
+	assert.NilError(t, New(db, widget, "widget-key", "").Register(ctx))
 
-	// Create a repository
-	repo := &githubRepository{
-		repositoryCommon: repositoryCommon{
-			kv:       db,
-			provider: "github",
-			project:  "test-project",
-		},
-		id:  123,
-		key: "test-key-123",
-	}
-
-	err = repo.Register(ctx)
-	assert.NilError(t, err)
-
-	// Test with existing repository
-	exists = Exist(ctx, db, "123")
-	assert.Assert(t, exists)
+	assert.Assert(t, !Exist(ctx, db, key(t, "https://gitlab.com/acme/team")))
+	assert.Assert(t, !Exist(ctx, db, key(t, "https://gitlab.com/acme/other/widget")))
 }
 
-func TestExistOn(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
+func TestFetchRoundTrip(t *testing.T) {
+	eachKey(t, func(t *testing.T, k repokey.Key) {
+		ctx := context.Background()
+		db := testDB(t)
 
+		_, err := Fetch(ctx, db, k)
+		assert.Assert(t, err != nil)
+
+		assert.NilError(t, New(db, k, "test-key-123", "").Register(ctx))
+		assert.NilError(t, db.Put(ctx, "/repositories/"+k.String()+"/project", []byte("test-project")))
+
+		fetched, err := Fetch(ctx, db, k)
+		assert.NilError(t, err)
+		assert.Equal(t, fetched.ID(), k.String())
+		assert.Equal(t, fetched.Provider(), k.Host)
+		assert.Equal(t, fetched.Serialize()["key"], "test-key-123")
+		assert.Equal(t, fetched.Serialize()["project"], "test-project")
+	})
+}
+
+// The rows filed BESIDE a repository — its project link and one row per hook —
+// live under the same prefix, so a listing that stripped the prefix would report
+// them as repositories. This pins that only the /key rows are returned, and that
+// a repository with hooks is returned exactly once.
+func TestListReturnsRepositoriesAndNotTheRowsBesideThem(t *testing.T) {
 	ctx := context.Background()
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
+	db := testDB(t)
 
-	// Test with non-existent repository
-	exists := ExistOn(ctx, db, "github", "999")
-	assert.Assert(t, !exists)
+	pay := key(t, "https://github.com/acme/pay")
+	widget := key(t, "https://gitlab.com/acme/team/widget")
 
-	// Create a repository
-	repo := &githubRepository{
-		repositoryCommon: repositoryCommon{
-			kv:       db,
-			provider: "github",
-			project:  "test-project",
-		},
-		id:  123,
-		key: "test-key-123",
+	for _, k := range []repokey.Key{pay, widget} {
+		assert.NilError(t, New(db, k, "k", "").Register(ctx))
+		assert.NilError(t, db.Put(ctx, "/repositories/"+k.String()+"/project", []byte("proj")))
+		assert.NilError(t, db.Put(ctx, "/repositories/"+k.String()+"/hooks/hook-a", nil))
+		assert.NilError(t, db.Put(ctx, "/repositories/"+k.String()+"/hooks/hook-b", nil))
 	}
 
-	err = repo.Register(ctx)
+	ids, err := List(ctx, db)
 	assert.NilError(t, err)
 
-	// Test with existing repository
-	exists = ExistOn(ctx, db, "github", "123")
-	assert.Assert(t, exists)
+	seen := map[string]int{}
+	for _, id := range ids {
+		seen[id]++
+	}
+
+	assert.Equal(t, len(ids), 2)
+	assert.Equal(t, seen[pay.String()], 1)
+	assert.Equal(t, seen[widget.String()], 1)
 }
 
-func TestProvider(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
+func TestHooksListingIsScopedToTheRepository(t *testing.T) {
 	ctx := context.Background()
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
+	db := testDB(t)
 
-	// Test with non-existent repository
-	_, err = Provider(ctx, db, "999")
-	assert.Assert(t, err != nil)
-	assert.Assert(t, err.Error() != "")
+	k := key(t, "https://gitlab.com/acme/team/widget")
+	repo := New(db, k, "test-key-123", "")
 
-	// Create a repository
-	repo := &githubRepository{
-		repositoryCommon: repositoryCommon{
-			kv:       db,
-			provider: "github",
-			project:  "test-project",
-		},
-		id:  123,
-		key: "test-key-123",
-	}
-
-	err = repo.Register(ctx)
-	assert.NilError(t, err)
-
-	// Test with existing repository
-	provider, err := Provider(ctx, db, "123")
-	assert.NilError(t, err)
-	assert.Equal(t, provider, "github")
-}
-
-func TestNew(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	data := Data{
-		"id":       123,
-		"provider": "github",
-		"project":  "test-project",
-		"key":      "test-key-123",
-	}
-
-	repo, err := New(db, data)
-	assert.NilError(t, err)
-	assert.Assert(t, repo != nil)
-
-	// Verify the repository data
-	assert.Equal(t, repo.ID(), 123)
-	assert.Equal(t, repo.Provider(), "github")
-}
-
-func TestNew_WithMissingData(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	// Test with missing required data
-	data := Data{
-		"id": 123,
-		// Missing provider, project, key
-	}
-
-	_, err = New(db, data)
-	assert.Assert(t, err != nil)
-	assert.Assert(t, err.Error() != "")
-}
-
-func TestNew_WithInvalidProvider(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	// Test with invalid provider
-	data := Data{
-		"id":       123,
-		"provider": "invalid-provider",
-		"project":  "test-project",
-		"key":      "test-key-123",
-	}
-
-	_, err = New(db, data)
-	assert.Assert(t, err != nil)
-	assert.Assert(t, err.Error() != "")
-}
-
-func TestGitHubRepository_Hooks(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	ctx := context.Background()
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	repo := &githubRepository{
-		repositoryCommon: repositoryCommon{
-			kv:       db,
-			provider: "github",
-			project:  "test-project",
-		},
-		id:  123,
-		key: "test-key-123",
-	}
-
-	// Test with no hooks
 	hooks := repo.Hooks(ctx)
 	assert.Assert(t, hooks != nil)
 	assert.Equal(t, len(hooks), 0)
 
-	// Add some hook data to test the regex matching
-	err = db.Put(ctx, "/repositories/github/123/hooks/hook1", []byte("hook1-data"))
-	assert.NilError(t, err)
-	err = db.Put(ctx, "/repositories/github/123/hooks/hook2", []byte("hook2-data"))
-	assert.NilError(t, err)
+	// hooks.Fetch cannot resolve these, so the slice stays empty — what is being
+	// pinned is that reading them neither panics nor reaches past the prefix.
+	assert.NilError(t, db.Put(ctx, "/repositories/"+k.String()+"/hooks/hook1", []byte("hook1-data")))
+	assert.NilError(t, db.Put(ctx, "/repositories/"+k.String()+"/hooks/hook2", []byte("hook2-data")))
 
-	// Test with hooks (note: this will fail to fetch actual hooks since we don't have the hooks package mocked)
-	hooks = repo.Hooks(ctx)
-	assert.Assert(t, hooks != nil)
-	// The hooks will be empty because hooks.Fetch will fail, but the function should not panic
+	assert.Assert(t, repo.Hooks(ctx) != nil)
 }
-
-func TestFetchGithub(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	ctx := context.Background()
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	// Test with non-existent repository
-	_, err = fetchGithub(ctx, db, 999)
-	assert.Assert(t, err != nil)
-
-	// Create a repository
-	repo := &githubRepository{
-		repositoryCommon: repositoryCommon{
-			kv:       db,
-			provider: "github",
-			project:  "test-project",
-		},
-		id:  123,
-		key: "test-key-123",
-	}
-
-	err = repo.Register(ctx)
-	assert.NilError(t, err)
-
-	// Test with existing repository
-	fetchedRepo, err := fetchGithub(ctx, db, 123)
-	assert.NilError(t, err)
-	assert.Assert(t, fetchedRepo != nil)
-
-	// Verify the fetched data
-	assert.Equal(t, fetchedRepo.ID(), 123)
-	assert.Equal(t, fetchedRepo.Provider(), "github")
-}
-
-func TestFetch(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	ctx := context.Background()
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	// Test with non-existent repository
-	_, err = Fetch(ctx, db, "999")
-	assert.Assert(t, err != nil)
-	assert.Assert(t, err.Error() != "")
-
-	// Create a repository
-	repo := &githubRepository{
-		repositoryCommon: repositoryCommon{
-			kv:       db,
-			provider: "github",
-			project:  "test-project",
-		},
-		id:  123,
-		key: "test-key-123",
-	}
-
-	err = repo.Register(ctx)
-	assert.NilError(t, err)
-
-	// Test with existing repository
-	fetchedRepo, err := Fetch(ctx, db, "123")
-	assert.NilError(t, err)
-	assert.Assert(t, fetchedRepo != nil)
-
-	// Verify the fetched data
-	assert.Equal(t, fetchedRepo.ID(), 123)
-	assert.Equal(t, fetchedRepo.Provider(), "github")
-}
-
-func TestFetch_InvalidID(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	ctx := context.Background()
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	// Test with invalid ID format
-	_, err = Fetch(ctx, db, "invalid-id")
-	assert.Assert(t, err != nil)
-	assert.Assert(t, err.Error() != "")
-}
-
-func TestFetch_UnsupportedProvider(t *testing.T) {
-	mockKV := mock.New()
-	defer mockKV.Close()
-
-	ctx := context.Background()
-	db, err := mockKV.New(nil, "test", 5)
-	assert.NilError(t, err)
-	defer db.Close()
-
-	// Store a repository with unsupported provider
-	err = db.Put(ctx, "/repositories/unsupported/123/key", []byte("test-key"))
-	assert.NilError(t, err)
-
-	// Try to fetch repository with unsupported provider
-	_, err = Fetch(ctx, db, "123")
-	assert.Assert(t, err != nil)
-	assert.Assert(t, err.Error() != "")
-}
-
-func TestGitProviders(t *testing.T) {
-	// Test that GitProviders contains expected values
-	assert.Assert(t, len(GitProviders) > 0)
-
-	// Check that github is included
-	hasGithub := false
-	for _, provider := range GitProviders {
-		if provider == "github" {
-			hasGithub = true
-			break
-		}
-	}
-	assert.Assert(t, hasGithub, "GitProviders should contain 'github'")
-}
-
-// Note: Repository interface doesn't expose Project() or Key() methods
-// These fields are internal to the implementation

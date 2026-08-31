@@ -67,14 +67,14 @@ type Repositories interface {
 
 type GithubRepositories interface {
 	New(obj map[string]interface{}) (GithubRepository, error)
-	Get(id int) (GithubRepository, error)
+	Get(key string) (GithubRepository, error)
 	List() ([]string, error)
 	Register(repoID string) (string, error)
 }
 
 type Repository interface {
 	PrivateKey() string
-	Id() int
+	Id() string
 }
 
 type BitbucketHook struct {

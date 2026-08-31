@@ -3,7 +3,6 @@
 package auth_test
 
 import (
-	"strconv"
 	"testing"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	authIface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/repositories"
@@ -77,18 +77,13 @@ func TestAuthClient_Dreaming(t *testing.T) {
 	}
 
 	/***** INIT *****/
-	repo, err := repositories.New(u.Auth().KV(), repositories.Data{
-		"id":       1,
-		"provider": "github",
-		"name":     "fake/repo",
-		"project":  "fake_project_uuid",
-		"key":      "fake_key",
-		"url":      "fake_url",
-	})
+	key, err := repokey.Parse("https://github.com/fake/repo")
 	if err != nil {
-		t.Error("Repo creation error: ", err)
+		t.Error("Repo key error: ", err)
 		return
 	}
+
+	repo := repositories.New(u.Auth().KV(), key, "fake_key", "fake_project_uuid")
 
 	err = repo.Register(u.Context())
 	if err != nil {
@@ -100,17 +95,7 @@ func TestAuthClient_Dreaming(t *testing.T) {
 
 	hook_id := id.Generate()
 	// now let's create a hook
-	hk, err := hooks.New(u.Auth().KV(), hooks.Data{
-		"id":         hook_id,
-		"provider":   "github",
-		"github_id":  1,
-		"repository": 1,
-		"secret":     "fake_secret",
-	})
-	if err != nil {
-		t.Error("Hook creation error: ", err)
-		return
-	}
+	hk := hooks.NewGithub(u.Auth().KV(), hook_id, 1, "fake_secret", key)
 
 	err = hk.Register(u.Context())
 	if err != nil {
@@ -148,7 +133,7 @@ func TestAuthClient_Dreaming(t *testing.T) {
 
 	/***** REPOS *****/
 
-	repo0, err := auth.Repositories().Github().Get(1)
+	repo0, err := auth.Repositories().Github().Get(key.String())
 	if err != nil {
 		t.Error("Get Repository error: ", err)
 	}
@@ -164,14 +149,10 @@ func TestAuthClient_Dreaming(t *testing.T) {
 
 	}
 
-	testId, err := strconv.Atoi(ids[0])
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	if testId != repo0.Id() {
-		t.Errorf("Id didnt match got %d expected %d", testId, repo0.Id())
+	// The listing returns canonical keys, so it is compared to one directly
+	// rather than parsed back into a number first.
+	if ids[0] != repo0.Id() {
+		t.Errorf("Id didnt match got %s expected %s", ids[0], repo0.Id())
 		return
 	}
 

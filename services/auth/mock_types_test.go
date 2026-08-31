@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	httppkg "github.com/taubyte/tau/pkg/http"
 )
 
@@ -239,12 +240,13 @@ func (m *mockGitHubClient) Me() *github.User {
 	return m.user
 }
 
-func (m *mockGitHubClient) GetByID(id string) error {
-	// Create a mock repository when GetByID is called
+func (m *mockGitHubClient) Get(key repokey.Key) error {
+	// Create a mock repository when Get is called
 	m.currentRepo = &github.Repository{
 		ID:          github.Int64(12345),
-		SSHURL:      github.Ptr("git@github.com:test/test-repo.git"),
-		FullName:    github.Ptr("test/test-repo"),
+		SSHURL:      github.Ptr("git@" + key.Host + ":" + key.FullName() + ".git"),
+		CloneURL:    github.Ptr("https://" + key.String() + ".git"),
+		FullName:    github.Ptr(key.FullName()),
 		Permissions: map[string]bool{"admin": true, "push": true, "pull": true},
 	}
 	return nil
@@ -273,6 +275,6 @@ func (m *mockGitHubClient) ListMyRepos() map[string]RepositoryBasicInfo {
 	return make(map[string]RepositoryBasicInfo)
 }
 
-func (m *mockGitHubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
-	return RepositoryShortInfo{}
+func (m *mockGitHubClient) ShortRepositoryInfo(key repokey.Key) RepositoryShortInfo {
+	return RepositoryShortInfo{ID: key.String()}
 }

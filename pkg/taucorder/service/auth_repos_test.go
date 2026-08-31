@@ -75,7 +75,7 @@ func TestAuthRepos_Dreaming(t *testing.T) {
 	}()
 	defer server.Shutdown(ctx)
 
-	createFakeProject(t, u, "fake-project", 1, "fake-user", "0", "1")
+	createFakeProject(t, u, "fake-project", 1, "fake-user", "github.com/acme/config", "github.com/acme/code")
 	registerFakeRepo(t, u, "2")
 	registerFakeRepo(t, u, "3")
 

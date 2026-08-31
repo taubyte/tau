@@ -28,7 +28,7 @@ type RepositoryCommon struct {
 	project string
 	Name    string
 	Url     string
-	id      int
+	id      string
 }
 
 type GithubRepository struct {
