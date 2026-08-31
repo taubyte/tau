@@ -24,6 +24,6 @@ func NewRuntime(ctx context.Context, config *vm.Config) wazy.Runtime {
 			// stack traces keep function names without it.
 			WithDebugInfoEnabled(false).
 			WithMemoryLimitPages(config.MemoryLimitPages).
-			WithCompilationCache(Cache),
+			WithCompilationCache(Cache()),
 	)
 }
