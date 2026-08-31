@@ -1,0 +1,10 @@
+id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdN
+description: the wasm tier - a component this platform builds, so it has an entrypoint to call
+runtime: wasm
+execution:
+    call: reindex
+    timeout: 5m
+    memory: 128MB
+storage:
+    receipts:
+        ops: [get, list]
