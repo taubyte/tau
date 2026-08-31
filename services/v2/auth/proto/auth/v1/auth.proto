@@ -1,0 +1,287 @@
+syntax = "proto3";
+
+// auth's inter-service surface: what gateway, monkey/build, hoarder and every
+// other v2 service call ON auth over a gostream-carried ConnectRPC connection,
+// once a caller already holds an authenticated stream to a specific peer.
+//
+// TWO HALVES OF AUTH ARE DELIBERATELY NOT HERE.
+//
+//   - The GitHub-token-authenticated surface (`github_http_endpoints.go`,
+//     `domains_http_endpoints.go`: /project/new, /repository/{provider}/{id},
+//     /projects, /me, ...) is a caller-facing HTTP API for a human's or the
+//     CLI's own GitHub OAuth token, not a peer-to-peer call between services. A
+//     `.proto` models inter-service RPC; that surface is unrelated to the
+//     concern this file exists for and stays HTTP.
+//   - `ping` and `stats`/`db` (services/auth/stream.go) are boilerplate every
+//     v2 service registers identically — `services.DBService` in
+//     `core/services/types.go` is the shared interface, and
+//     `pkg/taucorder/proto/taucorder/v1/health.proto` already models the same
+//     concern as one `HealthService` for every service to share. Repeating
+//     `rpc Ping` and `rpc DatabaseStats` here per service is exactly the
+//     duplication a shared health/stats schema exists to avoid — that schema is
+//     not this agent's to invent, so it is left out rather than guessed at.
+//
+// IDENTITY: a repository is named by ONE thing, its canonical clone-URL key
+// (`pkg/git/repokey`: `host/owner/name`, e.g. `github.com/acme/pay`) — never an
+// id GitHub or another provider assigned. There is no `provider` field beside
+// it anywhere below: the host in the key already says which provider serves
+// it, so a second field could only ever agree with the key or lie about it.
+// This is why `repository_key` is spelled that way and not `id` — it is not an
+// opaque handle, it IS the parsed clone URL, and every message that names a
+// repository below carries the same string. Contrast
+// `pkg/taucorder/proto/taucorder/v1/common.proto`'s `RepositoryId { oneof {
+// int64 github = 1; string bitbucket = 2; } }`: a provider-keyed union is
+// what a numeric-id world needs and a clone-URL-keyed one does not — it is the
+// shape this schema exists to not repeat. `GithubHook.provider_hook_id` below
+// is a different number and stays: it is the id GitHub assigned to the
+// *webhook* it created, the provider's to name, not a repository identity.
+//
+// STREAMING: every `List` below is server-streaming; everything else is
+// unary. Today's cbor transport (`p2p/streams/client`) sends one request and
+// resolves on the first peer response — fire-once, first-response-wins — which
+// is what a unary RPC already is, so a lookup, a mutation or a single-value
+// read gains nothing from a stream and stays unary. `List` differs in kind,
+// not just in return arity: `repositories.List` / `projects.List` /
+// `hooks.List` (services/auth/{repositories,projects,hooks}) enumerate an
+// ever-growing store with no pagination and no bound today — every repository
+// or project ever registered on this node, forever — so the handler already
+// materializes the whole slice in memory before the single cbor response can
+// be written. Streaming does not change the request/response shape here so
+// much as remove the requirement that the whole answer exist as one value
+// before the first byte can move: a caller sees ids as they are read, and
+// neither side buffers the full list to send or receive it. `Get` returns one
+// record by a key the caller already has, which is O(1) work regardless of
+// how large the store gets, so it has no such case to make and stays unary.
+package auth.v1;
+
+option go_package = ".";
+
+// Empty is the response for a call whose only interesting outcome is whether
+// it errored — ConnectRPC already carries that as a status, so a payload
+// would only ever restate it. `unregisterRepositoryStream` returns a literal
+// `{"status": "success"}` today (services/auth/stream.go); that string is not
+// carried forward for the same reason.
+message Empty {}
+
+// ───────────────────────────── Projects ─────────────────────────────
+
+message Project {
+  string id = 1;
+  string name = 2;
+  // The two repositories are each named by their own canonical key, which is
+  // why there is no project-level `provider`: v1 carried one (always
+  // "github", asserted even when unset — services/auth/stream.go's
+  // createProjectStream and clients/p2p/auth/projects.go's New) that assumed
+  // both repositories shared a single host. It cannot represent a config
+  // repository and a code repository on two different hosts, and it can only
+  // ever agree with what config_repository_key/code_repository_key already
+  // say or silently disagree with them, so it is not carried forward.
+  string config_repository_key = 3;
+  string code_repository_key = 4;
+}
+
+message ProjectRef {
+  string id = 1;
+}
+
+message CreateProjectRequest {
+  string name = 1;
+  string config_repository_key = 2;
+  string code_repository_key = 3;
+}
+
+// Mirrors createProjectStream's actual response shape: the two repository
+// keys the caller sent are not echoed back.
+message CreateProjectResponse {
+  string id = 1;
+  string name = 2;
+}
+
+service ProjectService {
+  rpc Get(ProjectRef) returns (Project);
+  rpc List(Empty) returns (stream ProjectRef);
+  rpc Create(CreateProjectRequest) returns (CreateProjectResponse);
+}
+
+// ─────────────────────────── Repositories ────────────────────────────
+
+message Repository {
+  string repository_key = 1;
+  // project_id is empty when the repository is registered but not yet linked
+  // to a project (registerRepositoryStream links it separately, in
+  // createProjectStream).
+  string project_id = 2;
+  // deploy_key is the repository's own private deploy key, as
+  // repository.Serialize() (services/auth/repositories/repositories.go)
+  // returns it on Get — `r.deployKey`, read from the `/key` row Fetch loads.
+  // Carried forward unchanged; whether a Get response should keep returning
+  // key material to every caller that can reach this RPC is a security
+  // question for the service rewrite, not a schema question for this agent.
+  string deploy_key = 3;
+}
+
+message RepositoryRef {
+  string repository_key = 1;
+}
+
+service RepositoryService {
+  rpc Get(RepositoryRef) returns (Repository);
+  rpc List(Empty) returns (stream RepositoryRef);
+  // Register returns Empty, not key material and not a path. An earlier
+  // version of this schema modeled the response as
+  // `message RegisterRepositoryResponse { string deploy_key = 1; }`, which
+  // was wrong on inspection: v1's `registerRepositoryStream`
+  // (services/auth/api_hooks.go) answers `{"key": response.Key}`, and
+  // `response.Key` — `RepositoryRegistrationResponse.Key` in
+  // services/auth/github.go's `registerGitHubRepository` — is assigned
+  // exactly once, to `repoKey := "/repositories/" + key.String() + "/key"`.
+  // That is the KV ROW PATH the deploy key is stored under, not the key
+  // itself; the key (`kpriv`) is generated a few lines earlier and handed
+  // to `repositories.New(srv.KV(), key, kpriv, "")`, which stores it and
+  // never returns it. Get and Register genuinely differ here — Get's
+  // `deploy_key` field above really is `r.deployKey` via `Serialize()` — the
+  // v1 code just never goes through `Serialize()` on Register, and the
+  // field name on this RPC was chosen by assuming it did.
+  //
+  // A KV row path is also not something worth forwarding even correctly
+  // named: it is an internal storage detail — literally where a value
+  // lives, not the value or an identifier the store's own grammar
+  // recognizes elsewhere — and a caller on the other side of this RPC can
+  // do nothing with it. Nor does anything today rely on receiving it. v1's
+  // own p2p client wrapper, `clients/p2p/auth/repositories.go`'s
+  // `GithubRepositories.Register`, is commented "registers a GitHub
+  // repository and returns the deployment key" while doing exactly this —
+  // returning the path — and its only caller, `dream/helpers/helpers.go`,
+  // discards the returned string outright (`_, err = ...Register(...)`).
+  // The GitHub-token HTTP register handler
+  // (`github_http_endpoints.go:registerGitHubUserRepositoryHTTPHandler`,
+  // out of scope for this schema) returns the same struct verbatim to a
+  // human or the CLI, so the path leaks to an actual external caller too —
+  // with no code anywhere shown reading it back for anything.
+  //
+  // The caller also already has the one identifier that would be
+  // meaningful to echo: it sent `RepositoryRef.repository_key` as the
+  // request, so a response repeating it back adds nothing. Returning the
+  // real deploy key instead would reopen the same security question already
+  // raised on `Repository.deploy_key` above — key material to every caller
+  // that can reach this RPC — for a value nothing today is shown to need.
+  // Register answering with nothing beyond success/failure is therefore a
+  // deliberate change from v1's behaviour, not a preservation of it: v1's
+  // shape was never a working contract to begin with, only an unread field.
+  rpc Register(RepositoryRef) returns (Empty);
+  rpc Unregister(RepositoryRef) returns (Empty);
+}
+
+// ──────────────────────────────── Hooks ────────────────────────────────
+
+// GithubHook is a webhook GitHub calls for pushes to one repository.
+// `provider_hook_id` is GITHUB'S id for the webhook object itself — distinct
+// from, and unrelated to, repository identity. It is a legitimate
+// provider-native number for the reason repository ids are not: GitHub owns
+// the webhook resource and assigns its id: nothing here could derive it, the
+// way a repository's key is derived from its own clone URL.
+message GithubHook {
+  string id = 1;
+  int64 provider_hook_id = 2;
+  string secret = 3;
+  string repository_key = 4;
+}
+
+// BitbucketHook exists because core/services/auth's Hook interface already
+// declares `Bitbucket() (*BitbucketHook, error)` as an extension point.
+// services/auth/hooks.Fetch has no Bitbucket case yet — Hook.bitbucket is
+// reachable in the schema and unreachable in the running service until one is
+// written.
+message BitbucketHook {
+  string id = 1;
+}
+
+message Hook {
+  oneof hook {
+    GithubHook github = 1;
+    BitbucketHook bitbucket = 2;
+  }
+}
+
+message HookRef {
+  string id = 1;
+}
+
+service HookService {
+  rpc Get(HookRef) returns (Hook);
+  rpc List(Empty) returns (stream HookRef);
+}
+
+// ─────────────────────────────── Domains ───────────────────────────────
+
+message RegisterDomainRequest {
+  string fqdn = 1;
+  string project_id = 2;
+}
+
+message RegisterDomainResponse {
+  string token = 1;
+  string dns_entry = 2;
+  // Always "txt" today (services/auth/stream.go's registerDomainStream); kept
+  // as a field, not a constant, because the caller
+  // (clients/p2p/auth/domains.go) already treats it as one and nothing here
+  // says a future record type cannot exist.
+  string dns_record_type = 3;
+}
+
+service DomainService {
+  rpc Register(RegisterDomainRequest) returns (RegisterDomainResponse);
+}
+
+// ─────────────────────────────── Certificates ───────────────────────────────
+
+// Certificate and cache storage auth keeps on behalf of every node's ACME
+// manager (services/auth/api_acme.go, services/auth/acme/store — the
+// autocert.Cache implementation that turns these calls into Go's
+// golang.org/x/crypto/acme/autocert.Cache interface for a caller elsewhere in
+// the cloud). Two certificate stores exist side by side and neither maps onto
+// the other: an ACME-issued certificate keyed by fqdn (Get/SetCertificate,
+// backed by `/acme/...`) and an operator-injected one, also keyed by fqdn but
+// with its own wildcard-domain fallback on read (Get/SetStaticCertificate,
+// backed by `/static/...`, and clients/p2p/auth/certificates.go's
+// InjectStaticCertificate). GetCache/SetCache/DeleteCache are the third
+// store: autocert's own generic cache, keyed by an opaque name that is
+// sometimes a certificate and sometimes an ACME challenge token, which is why
+// it alone has a delete — autocert deletes challenge tokens once an order
+// completes, and nothing ever deletes an issued or injected certificate by
+// fqdn today, so no such RPC is invented here.
+message Certificate {
+  bytes pem = 1;
+}
+
+message CacheEntry {
+  bytes data = 1;
+}
+
+message FqdnRequest {
+  string fqdn = 1;
+}
+
+message SetCertificateRequest {
+  string fqdn = 1;
+  bytes pem = 2;
+}
+
+message CacheKeyRequest {
+  string key = 1;
+}
+
+message SetCacheRequest {
+  string key = 1;
+  bytes data = 2;
+}
+
+service CertificateService {
+  rpc GetCertificate(FqdnRequest) returns (Certificate);
+  rpc SetCertificate(SetCertificateRequest) returns (Empty);
+  rpc GetStaticCertificate(FqdnRequest) returns (Certificate);
+  rpc SetStaticCertificate(SetCertificateRequest) returns (Empty);
+  rpc GetCache(CacheKeyRequest) returns (CacheEntry);
+  rpc SetCache(SetCacheRequest) returns (Empty);
+  rpc DeleteCache(CacheKeyRequest) returns (Empty);
+}
