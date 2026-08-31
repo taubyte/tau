@@ -30,6 +30,18 @@
 // namespace, the protocol id itself, which is why Advertise lives here rather
 // than beside rpc.Listen: the two strings have to be one string.
 //
+// That order — peerstore first, routing filling in behind it — is the design,
+// and the reason is the clock routing runs on. tau does not ask the DHT
+// directly: p2p/peer wraps it in libp2p's NewBackoffDiscovery, so a lookup
+// that found nothing is answered from that same nothing for a minute
+// (p2p/peer.DiscoveryBackoffMin) before the DHT is asked again. Correctly so —
+// an empty routing table is empty for every caller, and re-asking it in a loop
+// costs the swarm. But it means the routing half cannot be what a caller waits
+// on, and a design that leaned on it would inherit that minute as its
+// worst-case first call. Leaning on the peerstore instead is what removes the
+// dependence: identify has already told this node what its neighbours serve.
+// See DefaultRetryInterval for the one case the ticker is left holding.
+//
 // # Whether clients should be pooled, and where
 //
 // An rpc.Client is an HTTP/2 connection over one libp2p stream, and building

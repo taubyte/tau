@@ -26,11 +26,18 @@ import (
 // peer arrives without one are both ordinary. A peer can be in the peerstore
 // with no event left to fire — it was identified before this Discovery was
 // built, or another component wrote the record. And a routing lookup that came
-// back empty stays empty: the node's discovery is wrapped in libp2p's backoff
-// cache, whose floor is a minute (p2p/peer.DiscoveryBackoffMin), so every
-// FindPeers inside that window is answered instantly from the empty result of
-// the first one. A request parked behind either of those is served by this
-// ticker or by nothing.
+// back empty stays empty for a minute.
+//
+// That minute is a setting of tau's, not something missing from it: p2p/peer
+// wraps the DHT in libp2p's NewBackoffDiscovery, with an exponential backoff
+// whose floor is DiscoveryBackoffMin — sixty seconds — so every FindPeers
+// inside that window is answered instantly from the first one's empty result,
+// without the DHT being asked again. That is the right setting: an empty
+// routing table answers empty for everyone, and asking it in a loop costs the
+// swarm. What it means here is that the routing half can never be what a
+// request waits on, which is why the peerstore is the primary source and
+// routing only fills in behind it. This ticker bounds a peerstore that was a
+// moment behind, and it does not need routing's window to end to do it.
 //
 // So it must stay well under the deadline of the call that is waiting. v1's
 // number was one second against a ten second send timeout, and one second is
@@ -235,7 +242,9 @@ func (d *Discovery) run(sub event.Subscription) {
 	defer d.release()
 	// However the loop stops — including a subscription that closed under it
 	// — everything downstream of it has to stop too, and a request parked in
-	// Peers has to hear that it is waiting for nobody.
+	// Peers has to hear that it is waiting for nobody. Registered last so it
+	// runs first: release below empties the set, and nobody should learn that
+	// the set is empty before learning that there is no loop left to fill it.
 	defer d.cancel()
 
 	d.scan()
@@ -506,20 +515,18 @@ func (d *Discovery) admitFound(ai peer.AddrInfo) {
 	d.reconsider(ai.ID, true)
 }
 
-// release drops the whole set, unprotecting as it goes, and wakes whoever is
-// waiting so they can see that the loop has stopped.
+// release drops the whole set, unprotecting as it goes.
+//
+// It wakes nobody, on purpose. run cancels d.ctx before this runs, and Peers
+// selects on that context, so every parked request has already been told the
+// loop is gone by the time the set is emptied. A wake here would be a second
+// way to say the same thing that could only ever arrive second.
 func (d *Discovery) release() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	for pid := range d.peers {
 		d.dropLocked(pid)
-	}
-	for w := range d.waiters {
-		select {
-		case w.ch <- struct{}{}:
-		default:
-		}
 	}
 }
 
