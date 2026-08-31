@@ -1,4 +1,4 @@
-package connect_test
+package rpc_test
 
 import (
 	"context"
@@ -10,16 +10,16 @@ import (
 	"testing"
 	"time"
 
-	connectrpc "connectrpc.com/connect"
+	"connectrpc.com/connect"
 	libp2p "github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/p2p/connect"
-	echov1 "github.com/taubyte/tau/p2p/connect/testdata/gen/echo/v1"
-	"github.com/taubyte/tau/p2p/connect/testdata/gen/echo/v1/echov1connect"
+	"github.com/taubyte/tau/p2p/rpc"
+	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
+	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
 )
 
 const testProtocol = protocol.ID("/tau/test/echo/v1")
@@ -44,11 +44,11 @@ func newEchoService() *echoService {
 	}
 }
 
-func (s *echoService) Unary(ctx context.Context, req *connectrpc.Request[echov1.EchoRequest]) (*connectrpc.Response[echov1.EchoResponse], error) {
-	return connectrpc.NewResponse(&echov1.EchoResponse{Payload: req.Msg.Payload}), nil
+func (s *echoService) Unary(ctx context.Context, req *connect.Request[echov1.EchoRequest]) (*connect.Response[echov1.EchoResponse], error) {
+	return connect.NewResponse(&echov1.EchoResponse{Payload: req.Msg.Payload}), nil
 }
 
-func (s *echoService) Countdown(ctx context.Context, req *connectrpc.Request[echov1.EchoRequest], stream *connectrpc.ServerStream[echov1.EchoResponse]) error {
+func (s *echoService) Countdown(ctx context.Context, req *connect.Request[echov1.EchoRequest], stream *connect.ServerStream[echov1.EchoResponse]) error {
 	n := int(req.Msg.Count)
 	for i := range n {
 		if i > 0 {
@@ -67,7 +67,7 @@ func (s *echoService) Countdown(ctx context.Context, req *connectrpc.Request[ech
 	return nil
 }
 
-func (s *echoService) Absorb(ctx context.Context, stream *connectrpc.ClientStream[echov1.EchoRequest]) (*connectrpc.Response[echov1.EchoResponse], error) {
+func (s *echoService) Absorb(ctx context.Context, stream *connect.ClientStream[echov1.EchoRequest]) (*connect.Response[echov1.EchoResponse], error) {
 	sum := sha256.New()
 	var total int
 	for stream.Receive() {
@@ -77,13 +77,13 @@ func (s *echoService) Absorb(ctx context.Context, stream *connectrpc.ClientStrea
 	if err := stream.Err(); err != nil {
 		return nil, err
 	}
-	return connectrpc.NewResponse(&echov1.EchoResponse{
+	return connect.NewResponse(&echov1.EchoResponse{
 		Note:  hex.EncodeToString(sum.Sum(nil)),
 		Index: int32(total),
 	}), nil
 }
 
-func (s *echoService) Volley(ctx context.Context, stream *connectrpc.BidiStream[echov1.EchoRequest, echov1.EchoResponse]) error {
+func (s *echoService) Volley(ctx context.Context, stream *connect.BidiStream[echov1.EchoRequest, echov1.EchoResponse]) error {
 	for i := 0; ; i++ {
 		msg, err := stream.Receive()
 		if errors.Is(err, io.EOF) {
@@ -98,30 +98,30 @@ func (s *echoService) Volley(ctx context.Context, stream *connectrpc.BidiStream[
 	}
 }
 
-func (s *echoService) Whoami(ctx context.Context, req *connectrpc.Request[echov1.EchoRequest]) (*connectrpc.Response[echov1.EchoResponse], error) {
+func (s *echoService) Whoami(ctx context.Context, req *connect.Request[echov1.EchoRequest]) (*connect.Response[echov1.EchoResponse], error) {
 	res := &echov1.EchoResponse{
 		// What connect reports as the peer address, verbatim.
 		Payload: []byte(req.Peer().Addr),
 	}
-	id, err := connect.RemotePeer(ctx)
+	id, err := rpc.RemotePeer(ctx)
 	if err != nil {
-		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 	res.Note = id.String()
-	return connectrpc.NewResponse(res), nil
+	return connect.NewResponse(res), nil
 }
 
-func (s *echoService) Fail(ctx context.Context, req *connectrpc.Request[echov1.EchoRequest]) (*connectrpc.Response[echov1.EchoResponse], error) {
-	err := connectrpc.NewError(connectrpc.CodeResourceExhausted, errors.New("the well is dry"))
+func (s *echoService) Fail(ctx context.Context, req *connect.Request[echov1.EchoRequest]) (*connect.Response[echov1.EchoResponse], error) {
+	err := connect.NewError(connect.CodeResourceExhausted, errors.New("the well is dry"))
 	err.Meta().Set("Echo-Reason", "deliberate")
 	return nil, err
 }
 
-func (s *echoService) Park(ctx context.Context, req *connectrpc.Request[echov1.EchoRequest]) (*connectrpc.Response[echov1.EchoResponse], error) {
+func (s *echoService) Park(ctx context.Context, req *connect.Request[echov1.EchoRequest]) (*connect.Response[echov1.EchoResponse], error) {
 	close(s.parked)
 	<-ctx.Done()
 	s.parkErr <- ctx.Err()
-	return nil, connectrpc.NewError(connectrpc.CodeCanceled, ctx.Err())
+	return nil, connect.NewError(connect.CodeCanceled, ctx.Err())
 }
 
 // twoHosts returns two in-process libp2p hosts, dialled to each other over a
@@ -149,9 +149,9 @@ func connectHosts(t testing.TB, from, to host.Host) {
 
 // harness is a running echo server on one host and a client on another.
 type harness struct {
-	server  *connect.Server
+	server  *rpc.Server
 	client  echov1connect.EchoServiceClient
-	conn    *connect.Client
+	conn    *rpc.Client
 	svc     *echoService
 	serverH host.Host
 	clientH host.Host
@@ -163,7 +163,7 @@ func newHarness(t testing.TB) *harness {
 	svc := newEchoService()
 
 	srv := serve(t, h1, svc)
-	conn, err := connect.NewClient(h2, h1.ID(), testProtocol)
+	conn, err := rpc.NewClient(h2, h1.ID(), testProtocol)
 	require.NoError(t, err)
 	t.Cleanup(conn.Close)
 
@@ -177,12 +177,21 @@ func newHarness(t testing.TB) *harness {
 	}
 }
 
-func serve(t testing.TB, h host.Host, svc echov1connect.EchoServiceHandler) *connect.Server {
+func serve(t testing.TB, h host.Host, svc echov1connect.EchoServiceHandler, opts ...rpc.ServerOption) *rpc.Server {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.Handle(echov1connect.NewEchoServiceHandler(svc))
-	srv, err := connect.Listen(t.Context(), h, testProtocol, mux)
+	srv, err := rpc.Listen(t.Context(), h, testProtocol, mux, opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { srv.Close() })
 	return srv
+}
+
+// h2Only is what a client has to speak to reach one of these servers: the
+// same protocol set the package puts on its http.Server, built here because
+// a test outside the package cannot reach that one.
+func h2Only() *http.Protocols {
+	p := new(http.Protocols)
+	p.SetUnencryptedHTTP2(true)
+	return p
 }

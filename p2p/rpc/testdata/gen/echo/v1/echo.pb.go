@@ -5,7 +5,7 @@
 // source: echo/v1/echo.proto
 
 // Package echo.v1 exists only to exercise the four ConnectRPC stream shapes
-// over a libp2p stream. It is a test fixture; nothing outside p2p/connect's
+// over a libp2p stream. It is a test fixture; nothing outside p2p/rpc's
 // tests should import it.
 
 package echov1
@@ -159,8 +159,8 @@ const file_echo_v1_echo_proto_rawDesc = "" +
 	"\x06Volley\x12\x14.echo.v1.EchoRequest\x1a\x15.echo.v1.EchoResponse(\x010\x01\x125\n" +
 	"\x06Whoami\x12\x14.echo.v1.EchoRequest\x1a\x15.echo.v1.EchoResponse\x123\n" +
 	"\x04Fail\x12\x14.echo.v1.EchoRequest\x1a\x15.echo.v1.EchoResponse\x123\n" +
-	"\x04Park\x12\x14.echo.v1.EchoRequest\x1a\x15.echo.v1.EchoResponseB\x97\x01\n" +
-	"\vcom.echo.v1B\tEchoProtoP\x01Z>github.com/taubyte/tau/p2p/connect/testdata/gen/echo/v1;echov1\xa2\x02\x03EXX\xaa\x02\aEcho.V1\xca\x02\bEcho_\\V1\xe2\x02\x14Echo_\\V1\\GPBMetadata\xea\x02\bEcho::V1b\x06proto3"
+	"\x04Park\x12\x14.echo.v1.EchoRequest\x1a\x15.echo.v1.EchoResponseB\x93\x01\n" +
+	"\vcom.echo.v1B\tEchoProtoP\x01Z:github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1;echov1\xa2\x02\x03EXX\xaa\x02\aEcho.V1\xca\x02\bEcho_\\V1\xe2\x02\x14Echo_\\V1\\GPBMetadata\xea\x02\bEcho::V1b\x06proto3"
 
 var (
 	file_echo_v1_echo_proto_rawDescOnce sync.Once

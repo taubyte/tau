@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 // Package echo.v1 exists only to exercise the four ConnectRPC stream shapes
-// over a libp2p stream. It is a test fixture; nothing outside p2p/connect's
+// over a libp2p stream. It is a test fixture; nothing outside p2p/rpc's
 // tests should import it.
 package echo.v1;
 

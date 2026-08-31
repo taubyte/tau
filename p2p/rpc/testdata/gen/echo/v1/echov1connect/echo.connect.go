@@ -3,7 +3,7 @@
 // Source: echo/v1/echo.proto
 
 // Package echo.v1 exists only to exercise the four ConnectRPC stream shapes
-// over a libp2p stream. It is a test fixture; nothing outside p2p/connect's
+// over a libp2p stream. It is a test fixture; nothing outside p2p/rpc's
 // tests should import it.
 package echov1connect
 
@@ -11,7 +11,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/taubyte/tau/p2p/connect/testdata/gen/echo/v1"
+	v1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
 	http "net/http"
 	strings "strings"
 )

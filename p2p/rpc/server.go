@@ -1,4 +1,4 @@
-package connect
+package rpc
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	gostream "github.com/libp2p/go-libp2p-gostream"
@@ -17,26 +18,56 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
-// DefaultPrefaceTimeout is how long a freshly accepted stream has to start
-// speaking HTTP/2. Without it a peer can open streams and stay silent, and
-// each one parks a goroutine until the peer goes away: net/http reads the
-// cleartext-HTTP/2 preface with no deadline of its own, and the ten seconds
-// http2 then allows for the rest of it only start counting once the first
-// bytes land.
+// clientPreface is the greeting a cleartext HTTP/2 client opens with. It is
+// spelled out here because it is the threshold this package's own deadline
+// runs to, and it has to be the same 24 bytes net/http waits for: net/http
+// peeks the whole preface through a bufio.Reader — one conn read at a time,
+// with no deadline of its own — and only hands the conn to http2 once it has
+// all of them. Every timeout http2 owns, firstSettingsTimeout included, is
+// armed on the far side of that handoff.
+const clientPreface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+
+// DefaultPrefaceTimeout is how long a freshly accepted stream has to deliver
+// that preface. Without it a peer can open streams and never finish speaking,
+// and each one parks a goroutine until the peer goes away.
 const DefaultPrefaceTimeout = 10 * time.Second
 
 // ErrProtocolTaken is returned by Listen when the host already answers on the
 // protocol. libp2p would let the second listener silently replace the first.
 var ErrProtocolTaken = errors.New("protocol already has a stream handler")
 
+// ErrServerFieldOwned is returned by Listen when WithHTTPServer sets a field
+// this package needs to keep its promises.
+var ErrServerFieldOwned = errors.New("field is owned by this package")
+
 // ServerOption adjusts a Server before it starts accepting.
 type ServerOption func(*Server)
 
-// WithPrefaceTimeout replaces DefaultPrefaceTimeout. Zero lets a silent
+// WithPrefaceTimeout replaces DefaultPrefaceTimeout. Zero lets an unfinished
 // stream wait forever, which is only reasonable when something else already
 // bounds who can open one.
 func WithPrefaceTimeout(d time.Duration) ServerOption {
 	return func(s *Server) { s.prefaceTimeout = d }
+}
+
+// WithHTTPServer tunes the http.Server before it serves: MaxHeaderBytes,
+// IdleTimeout, ErrorLog, ConnState, and through HTTP2Config the concurrent
+// stream limit and the flow-control windows. Everything net/http and http2
+// bound is reachable here, and nothing has to be mirrored into an option of
+// this package's own.
+//
+// Four fields are not yours to set, because the package's guarantees are made
+// out of them: Handler and Protocols are what keep the pipe HTTP/2-only,
+// BaseContext ties serving to Listen's context and ConnContext is how
+// RemotePeer learns who called. Setting any of them is ErrServerFieldOwned
+// from Listen rather than a silently different pipe.
+//
+// Note that ReadTimeout and WriteTimeout are per stream under HTTP/2, so a
+// number chosen for unary calls will cut off the streaming ones. IdleTimeout
+// is the safer reach: it drops a connection carrying no streams, at the cost
+// of the next call redialling.
+func WithHTTPServer(f func(*http.Server)) ServerOption {
+	return func(s *Server) { s.tune = f }
 }
 
 // Server answers ConnectRPC on one libp2p protocol.
@@ -45,6 +76,7 @@ type Server struct {
 	http     *http.Server
 
 	prefaceTimeout time.Duration
+	tune           func(*http.Server)
 
 	done     chan struct{}
 	errMu    sync.Mutex
@@ -74,23 +106,46 @@ func Listen(ctx context.Context, h host.Host, id protocol.ID, handler http.Handl
 		opt(s)
 	}
 
+	hs := new(http.Server)
+	if s.tune != nil {
+		s.tune(hs)
+		if err := refuseOwnedFields(hs); err != nil {
+			return nil, fmt.Errorf("listening on %s: %w", id, err)
+		}
+	}
+	hs.Handler = handler
+	hs.Protocols = h2()
+	hs.BaseContext = func(net.Listener) context.Context { return ctx }
+	hs.ConnContext = carryRemotePeer
+
 	l, err := gostream.Listen(h, id)
 	if err != nil {
 		return nil, fmt.Errorf("listening on %s: %w", id, err)
 	}
 	s.listener = &serverListener{Listener: l, prefaceTimeout: s.prefaceTimeout}
-
-	s.http = &http.Server{
-		Handler:     handler,
-		Protocols:   h2(),
-		BaseContext: func(net.Listener) context.Context { return ctx },
-		ConnContext: carryRemotePeer,
-	}
+	s.http = hs
 
 	go s.serve()
 	go s.watch(ctx)
 
 	return s, nil
+}
+
+// refuseOwnedFields names the first field WithHTTPServer set that Listen is
+// about to overwrite, so a caller hears about it here instead of wondering
+// later why their handler never runs.
+func refuseOwnedFields(hs *http.Server) error {
+	switch {
+	case hs.Handler != nil:
+		return fmt.Errorf("http.Server.Handler: %w", ErrServerFieldOwned)
+	case hs.Protocols != nil:
+		return fmt.Errorf("http.Server.Protocols: %w", ErrServerFieldOwned)
+	case hs.BaseContext != nil:
+		return fmt.Errorf("http.Server.BaseContext: %w", ErrServerFieldOwned)
+	case hs.ConnContext != nil:
+		return fmt.Errorf("http.Server.ConnContext: %w", ErrServerFieldOwned)
+	}
+	return nil
 }
 
 // serve runs until the server is asked to stop, or until the listener dies
@@ -137,7 +192,7 @@ func (s *Server) Err() error {
 }
 
 // serverListener hands net/http a conn that remembers which peer opened it
-// and that will not wait forever for that peer's first word.
+// and that will not wait forever for that peer to finish its preface.
 type serverListener struct {
 	net.Listener
 	prefaceTimeout time.Duration
@@ -169,19 +224,29 @@ type serverConn struct {
 	net.Conn
 	remote    peer.ID
 	deadlined bool
-	spoke     sync.Once
+
+	toward atomic.Int64 // bytes read toward the preface
+	lifted atomic.Bool
 }
 
 // RemotePeerID is the libp2p peer on the far end, read off the stream when it
 // was accepted rather than off anything the peer sent.
 func (c *serverConn) RemotePeerID() peer.ID { return c.remote }
 
-// Read lifts the preface deadline as soon as the peer says anything at all.
-// From there http2's own preface timeout takes over.
+// Read lifts the preface deadline once the peer has delivered a whole client
+// preface, and not one byte sooner. Lifting it on the first byte would leave
+// a peer that writes some of the preface and stops holding a goroutine with
+// nothing bounding it at all: net/http is still inside its own Peek, and the
+// timeouts http2 would apply do not exist until the peek completes. Counting
+// to the full preface is exact rather than approximate, because net/http caps
+// its own reads at the preface length, so this total reaches it when and only
+// when net/http has what it was waiting for.
 func (c *serverConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
-	if n > 0 && c.deadlined {
-		c.spoke.Do(func() { c.Conn.SetReadDeadline(time.Time{}) })
+	if n > 0 && c.deadlined && !c.lifted.Load() {
+		if c.toward.Add(int64(n)) >= int64(len(clientPreface)) && c.lifted.CompareAndSwap(false, true) {
+			c.Conn.SetReadDeadline(time.Time{})
+		}
 	}
 	return n, err
 }

@@ -1,21 +1,21 @@
-package connect_test
+package rpc_test
 
 import (
 	"context"
 	"sync/atomic"
 	"testing"
 
-	connectrpc "connectrpc.com/connect"
+	"connectrpc.com/connect"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/network"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
-	"github.com/taubyte/tau/p2p/connect"
-	echov1 "github.com/taubyte/tau/p2p/connect/testdata/gen/echo/v1"
-	"github.com/taubyte/tau/p2p/connect/testdata/gen/echo/v1/echov1connect"
 	"github.com/taubyte/tau/p2p/keypair"
 	tpeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
+	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
+	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
 	"github.com/taubyte/tau/p2p/streams"
 	cbclient "github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
@@ -40,7 +40,7 @@ func BenchmarkConnectUnary(b *testing.B) {
 	h1, h2 := twoHosts(b)
 	serve(b, h1, newEchoService())
 
-	conn, err := connect.NewClient(h2, h1.ID(), testProtocol)
+	conn, err := rpc.NewClient(h2, h1.ID(), testProtocol)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -51,13 +51,13 @@ func BenchmarkConnectUnary(b *testing.B) {
 	// Count from before the first call, so the stream every later call rides
 	// on is counted rather than warmed away.
 	before := liveStreams(h2, h1.ID(), testProtocol)
-	if _, err := client.Unary(b.Context(), connectrpc.NewRequest(msg)); err != nil {
+	if _, err := client.Unary(b.Context(), connect.NewRequest(msg)); err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := client.Unary(b.Context(), connectrpc.NewRequest(msg)); err != nil {
+		if _, err := client.Unary(b.Context(), connect.NewRequest(msg)); err != nil {
 			b.Fatal(err)
 		}
 	}

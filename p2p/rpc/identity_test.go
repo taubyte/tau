@@ -1,4 +1,4 @@
-package connect_test
+package rpc_test
 
 import (
 	"context"
@@ -6,26 +6,26 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	connectrpc "connectrpc.com/connect"
+	"connectrpc.com/connect"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/p2p/connect"
-	echov1 "github.com/taubyte/tau/p2p/connect/testdata/gen/echo/v1"
-	"github.com/taubyte/tau/p2p/connect/testdata/gen/echo/v1/echov1connect"
+	"github.com/taubyte/tau/p2p/rpc"
+	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
+	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
 )
 
 // TestRemotePeerIsTheDialler checks both routes to the caller's identity —
-// connect.RemotePeer(ctx) and connect's own req.Peer().Addr — name the host
+// rpc.RemotePeer(ctx) and connect's own req.Peer().Addr — name the host
 // that opened the stream.
 func TestRemotePeerIsTheDialler(t *testing.T) {
 	h := newHarness(t)
 
-	res, err := h.client.Whoami(t.Context(), connectrpc.NewRequest(&echov1.EchoRequest{}))
+	res, err := h.client.Whoami(t.Context(), connect.NewRequest(&echov1.EchoRequest{}))
 	require.NoError(t, err)
 
-	assert.Equal(t, h.clientH.ID().String(), res.Msg.Note, "connect.RemotePeer")
+	assert.Equal(t, h.clientH.ID().String(), res.Msg.Note, "rpc.RemotePeer")
 	assert.Equal(t, h.clientH.ID().String(), string(res.Msg.Payload), "req.Peer().Addr")
 
 	// It is a peer id, not a string that merely looks like one.
@@ -42,14 +42,14 @@ func TestRemotePeerIsPerCaller(t *testing.T) {
 
 	other := newHost(t)
 	connectHosts(t, other, h.serverH)
-	conn, err := connect.NewClient(other, h.serverH.ID(), testProtocol)
+	conn, err := rpc.NewClient(other, h.serverH.ID(), testProtocol)
 	require.NoError(t, err)
 	defer conn.Close()
 	otherClient := echov1connect.NewEchoServiceClient(conn.HTTP(), conn.URL())
 
-	mine, err := h.client.Whoami(t.Context(), connectrpc.NewRequest(&echov1.EchoRequest{}))
+	mine, err := h.client.Whoami(t.Context(), connect.NewRequest(&echov1.EchoRequest{}))
 	require.NoError(t, err)
-	theirs, err := otherClient.Whoami(t.Context(), connectrpc.NewRequest(&echov1.EchoRequest{}))
+	theirs, err := otherClient.Whoami(t.Context(), connect.NewRequest(&echov1.EchoRequest{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, h.clientH.ID().String(), mine.Msg.Note)
@@ -90,7 +90,7 @@ func TestRemotePeerCannotBeForged(t *testing.T) {
 	// server could plausibly have believed.
 	impersonated := newHost(t)
 
-	conn, err := connect.NewClient(h.clientH, h.serverH.ID(), testProtocol)
+	conn, err := rpc.NewClient(h.clientH, h.serverH.ID(), testProtocol)
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -101,7 +101,7 @@ func TestRemotePeerCannotBeForged(t *testing.T) {
 	}}
 	client := echov1connect.NewEchoServiceClient(lying, conn.URL())
 
-	res, err := client.Whoami(t.Context(), connectrpc.NewRequest(&echov1.EchoRequest{}))
+	res, err := client.Whoami(t.Context(), connect.NewRequest(&echov1.EchoRequest{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, h.clientH.ID().String(), res.Msg.Note,
@@ -121,17 +121,17 @@ func TestRemotePeerFailsClosed(t *testing.T) {
 	defer plain.Close()
 
 	client := echov1connect.NewEchoServiceClient(plain.Client(), plain.URL)
-	_, err := client.Whoami(t.Context(), connectrpc.NewRequest(&echov1.EchoRequest{}))
+	_, err := client.Whoami(t.Context(), connect.NewRequest(&echov1.EchoRequest{}))
 	require.Error(t, err)
-	assert.Equal(t, connectrpc.CodeUnauthenticated, connectrpc.CodeOf(err))
-	assert.Contains(t, err.Error(), connect.ErrNoRemotePeer.Error())
+	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
+	assert.Contains(t, err.Error(), rpc.ErrNoRemotePeer.Error())
 }
 
 func TestRemotePeerWithoutAContext(t *testing.T) {
-	_, err := connect.RemotePeer(context.Background())
-	assert.ErrorIs(t, err, connect.ErrNoRemotePeer)
+	_, err := rpc.RemotePeer(context.Background())
+	assert.ErrorIs(t, err, rpc.ErrNoRemotePeer)
 
 	// A value of the wrong shape under some other key is not an identity.
-	_, err = connect.RemotePeer(context.WithValue(context.Background(), struct{}{}, peer.ID("x")))
-	assert.ErrorIs(t, err, connect.ErrNoRemotePeer)
+	_, err = rpc.RemotePeer(context.WithValue(context.Background(), struct{}{}, peer.ID("x")))
+	assert.ErrorIs(t, err, rpc.ErrNoRemotePeer)
 }

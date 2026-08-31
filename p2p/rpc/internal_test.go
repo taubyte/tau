@@ -1,4 +1,4 @@
-package connect
+package rpc
 
 import (
 	"context"
@@ -99,13 +99,24 @@ func TestAcceptPassesItsErrorUp(t *testing.T) {
 	assert.ErrorIs(t, err, want)
 }
 
-// TestReadLiftsThePrefaceDeadlineOnce checks the deadline is cleared by the
-// first byte and not re-cleared afterwards, so http2's own timeouts are left
-// alone.
-func TestReadLiftsThePrefaceDeadlineOnce(t *testing.T) {
+// TestTheDeadlineSurvivesEveryByteButTheLast pins the threshold itself,
+// byte by byte, because every value below it is a hole and the tests that
+// would catch a hole in the open cost a timeout each. net/http will not hand
+// the conn to http2 until it has the whole preface, so lifting the deadline
+// at byte one — or at byte twenty-three — lifts it while nothing at all is
+// bounding the conn.
+func TestTheDeadlineSurvivesEveryByteButTheLast(t *testing.T) {
+	// A read that returns nothing, then the preface one byte at a time, then
+	// one byte past it.
+	reads := [][]byte{{}}
+	for i := range len(clientPreface) {
+		reads = append(reads, []byte{clientPreface[i]})
+	}
+	reads = append(reads, []byte{0})
+
 	cleared := 0
-	inner := &countingDeadlineConn{plainConn: plainConn{reads: [][]byte{{}, []byte("PRI"), []byte("SM")}}}
-	inner.onDeadline = func(d time.Time) { //nolint
+	inner := &countingDeadlineConn{plainConn: plainConn{reads: reads}}
+	inner.onDeadline = func(d time.Time) {
 		if d.IsZero() {
 			cleared++
 		}
@@ -113,18 +124,54 @@ func TestReadLiftsThePrefaceDeadlineOnce(t *testing.T) {
 	sc := &serverConn{Conn: inner, deadlined: true}
 
 	b := make([]byte, 8)
-	n, err := sc.Read(b) // nothing read: deadline stands
+	n, err := sc.Read(b)
 	require.NoError(t, err)
 	require.Zero(t, n)
-	assert.Zero(t, cleared)
+	require.Zero(t, cleared, "a read that returned nothing counted as speaking")
 
-	_, err = sc.Read(b)
-	require.NoError(t, err)
-	assert.Equal(t, 1, cleared)
+	for i := range len(clientPreface) {
+		n, err := sc.Read(b)
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+		if i < len(clientPreface)-1 {
+			require.Zero(t, cleared, "lifted after %d of %d preface bytes", i+1, len(clientPreface))
+		}
+	}
+	assert.Equal(t, 1, cleared, "a whole preface arrived and the deadline is still on")
 
 	_, err = sc.Read(b)
 	require.NoError(t, err)
 	assert.Equal(t, 1, cleared, "the deadline should be lifted once, not on every read")
+}
+
+// TestAPrefaceInOneReadLiftsIt: the byte-at-a-time case above is the
+// adversary's; a peer whose preface lands in a single read is everybody else.
+func TestAPrefaceInOneReadLiftsIt(t *testing.T) {
+	cleared := 0
+	inner := &countingDeadlineConn{plainConn: plainConn{reads: [][]byte{[]byte(clientPreface)}}}
+	inner.onDeadline = func(d time.Time) {
+		if d.IsZero() {
+			cleared++
+		}
+	}
+	sc := &serverConn{Conn: inner, deadlined: true}
+
+	n, err := sc.Read(make([]byte, len(clientPreface)))
+	require.NoError(t, err)
+	require.Equal(t, len(clientPreface), n)
+	assert.Equal(t, 1, cleared)
+}
+
+// TestAConnWithNoDeadlineIsNeverTouched: a conn that would not take a
+// deadline, or a server told not to set one, must not have SetReadDeadline
+// called on it later either.
+func TestAConnWithNoDeadlineIsNeverTouched(t *testing.T) {
+	inner := &countingDeadlineConn{plainConn: plainConn{reads: [][]byte{[]byte(clientPreface)}}}
+	inner.onDeadline = func(time.Time) { t.Fatal("the deadline was cleared on a conn that never had one") }
+	sc := &serverConn{Conn: inner}
+
+	_, err := sc.Read(make([]byte, len(clientPreface)))
+	require.NoError(t, err)
 }
 
 type countingDeadlineConn struct {

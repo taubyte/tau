@@ -1,4 +1,4 @@
-package connect_test
+package rpc_test
 
 import (
 	"context"
@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	connectrpc "connectrpc.com/connect"
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	echov1 "github.com/taubyte/tau/p2p/connect/testdata/gen/echo/v1"
+	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
 )
 
 func TestUnary(t *testing.T) {
@@ -23,7 +23,7 @@ func TestUnary(t *testing.T) {
 
 	for i := range 5 {
 		payload := fmt.Appendf(nil, "round %d", i)
-		res, err := h.client.Unary(t.Context(), connectrpc.NewRequest(&echov1.EchoRequest{Payload: payload}))
+		res, err := h.client.Unary(t.Context(), connect.NewRequest(&echov1.EchoRequest{Payload: payload}))
 		require.NoError(t, err)
 		assert.Equal(t, payload, res.Msg.Payload)
 	}
@@ -41,7 +41,7 @@ func TestServerStreamIsIncremental(t *testing.T) {
 
 	const gateHold = time.Second
 
-	stream, err := h.client.Countdown(t.Context(), connectrpc.NewRequest(&echov1.EchoRequest{
+	stream, err := h.client.Countdown(t.Context(), connect.NewRequest(&echov1.EchoRequest{
 		Payload: []byte("tick"),
 		Count:   3,
 	}))
@@ -145,7 +145,7 @@ func TestClientCancelReachesHandler(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
-		_, err := h.client.Park(ctx, connectrpc.NewRequest(&echov1.EchoRequest{}))
+		_, err := h.client.Park(ctx, connect.NewRequest(&echov1.EchoRequest{}))
 		done <- err
 	}()
 
@@ -167,7 +167,7 @@ func TestClientCancelReachesHandler(t *testing.T) {
 	select {
 	case err := <-done:
 		require.Error(t, err)
-		assert.Equal(t, connectrpc.CodeCanceled, connectrpc.CodeOf(err))
+		assert.Equal(t, connect.CodeCanceled, connect.CodeOf(err))
 	case <-time.After(5 * time.Second):
 		t.Fatal("client call did not return")
 	}
@@ -178,11 +178,11 @@ func TestClientCancelReachesHandler(t *testing.T) {
 func TestHandlerErrorKeepsItsCode(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.client.Fail(t.Context(), connectrpc.NewRequest(&echov1.EchoRequest{}))
+	_, err := h.client.Fail(t.Context(), connect.NewRequest(&echov1.EchoRequest{}))
 	require.Error(t, err)
-	assert.Equal(t, connectrpc.CodeResourceExhausted, connectrpc.CodeOf(err))
+	assert.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
 
-	var cerr *connectrpc.Error
+	var cerr *connect.Error
 	require.True(t, errors.As(err, &cerr))
 	assert.Contains(t, cerr.Message(), "the well is dry")
 	assert.Equal(t, "deliberate", cerr.Meta().Get("Echo-Reason"))

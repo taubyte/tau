@@ -3,7 +3,7 @@
 # The echo fixture is a buf module of its own, the way pkg/sensors/proto is,
 # so it does not enter the workspace at the repo root. It lives under testdata
 # because it is a test fixture: `go build ./...` and `go vet ./...` skip it,
-# and only p2p/connect's tests import it.
+# and only p2p/rpc's tests import it.
 
 set -euo pipefail
 
