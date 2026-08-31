@@ -22,7 +22,7 @@ import (
 // transport) live in rpc_test.go and authz_test.go instead.
 
 func TestRepositoryGet_NotFound(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &repositoryHandler{s}
 
 	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
@@ -31,7 +31,7 @@ func TestRepositoryGet_NotFound(t *testing.T) {
 }
 
 func TestRepositoryGet_BadKey(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &repositoryHandler{s}
 
 	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: ""}))
@@ -40,7 +40,7 @@ func TestRepositoryGet_BadKey(t *testing.T) {
 }
 
 func TestRepositoryGet_Found(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &repositoryHandler{s}
 	key, err := parseRepoKey("github.com/acme/pay")
 	require.NoError(t, err)
@@ -54,7 +54,7 @@ func TestRepositoryGet_Found(t *testing.T) {
 }
 
 func TestRepositoryGet_CarriesProjectLink(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &repositoryHandler{s}
 	key, err := parseRepoKey("github.com/acme/pay")
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestRepositoryGet_CarriesProjectLink(t *testing.T) {
 }
 
 func TestRepositoryRegister_BadKey(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &repositoryHandler{s}
 
 	_, err := h.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: ""}))
@@ -80,7 +80,7 @@ func TestRepositoryRegister_BadKey(t *testing.T) {
 // transport layer — for a context that carries no libp2p-authenticated
 // peer, rather than falling back to trusting anything in the request.
 func TestRepositoryRegister_NoCallerIdentity(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &repositoryHandler{s}
 
 	_, err := h.Register(context.Background(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
@@ -89,7 +89,7 @@ func TestRepositoryRegister_NoCallerIdentity(t *testing.T) {
 }
 
 func TestRepositoryUnregister_BadKey(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &repositoryHandler{s}
 
 	_, err := h.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: ""}))
@@ -98,7 +98,7 @@ func TestRepositoryUnregister_BadKey(t *testing.T) {
 }
 
 func TestRepositoryUnregister_NoCallerIdentity(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &repositoryHandler{s}
 
 	_, err := h.Unregister(context.Background(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))

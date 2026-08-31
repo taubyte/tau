@@ -6,7 +6,6 @@ import (
 	"connectrpc.com/connect"
 	"golang.org/x/crypto/acme/autocert"
 
-	"github.com/taubyte/tau/core/kvdb"
 	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1"
 	"github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1/authv1connect"
 )
@@ -42,6 +41,9 @@ var _ authv1connect.CertificateServiceHandler = (*certificateHandler)(nil)
 
 // GetCertificate reads the ACME-issued certificate for fqdn.
 func (h *certificateHandler) GetCertificate(ctx context.Context, req *connect.Request[authv1.FqdnRequest]) (*connect.Response[authv1.Certificate], error) {
+	if err := requireID("fqdn", req.Msg.GetFqdn()); err != nil {
+		return nil, err
+	}
 	pem, err := getCertRow(ctx, h.s.kv, acmeCertRow(req.Msg.GetFqdn()))
 	if err != nil {
 		return nil, err
@@ -51,6 +53,9 @@ func (h *certificateHandler) GetCertificate(ctx context.Context, req *connect.Re
 
 // SetCertificate stores the ACME-issued certificate for fqdn.
 func (h *certificateHandler) SetCertificate(ctx context.Context, req *connect.Request[authv1.SetCertificateRequest]) (*connect.Response[authv1.Empty], error) {
+	if err := requireID("fqdn", req.Msg.GetFqdn()); err != nil {
+		return nil, err
+	}
 	if err := h.s.kv.Put(ctx, acmeCertRow(req.Msg.GetFqdn()), req.Msg.GetPem()); err != nil {
 		return nil, errInternal("storing certificate: %w", err)
 	}
@@ -62,6 +67,9 @@ func (h *certificateHandler) SetCertificate(ctx context.Context, req *connect.Re
 // fallback services/auth/api_acme.go's getACMEStaticCertificate runs.
 func (h *certificateHandler) GetStaticCertificate(ctx context.Context, req *connect.Request[authv1.FqdnRequest]) (*connect.Response[authv1.Certificate], error) {
 	fqdn := req.Msg.GetFqdn()
+	if err := requireID("fqdn", fqdn); err != nil {
+		return nil, err
+	}
 	pem, err := getCertRow(ctx, h.s.kv, staticCertRow(fqdn))
 	if err != nil {
 		pem, err = getCertRow(ctx, h.s.kv, staticCertRow(wildcardFQDN(fqdn)))
@@ -78,6 +86,9 @@ func (h *certificateHandler) GetStaticCertificate(ctx context.Context, req *conn
 // services/auth/api_acme.go's setACMEStaticCertificate never rewrites what
 // it was given.
 func (h *certificateHandler) SetStaticCertificate(ctx context.Context, req *connect.Request[authv1.SetCertificateRequest]) (*connect.Response[authv1.Empty], error) {
+	if err := requireID("fqdn", req.Msg.GetFqdn()); err != nil {
+		return nil, err
+	}
 	if err := h.s.kv.Put(ctx, staticCertRow(req.Msg.GetFqdn()), req.Msg.GetPem()); err != nil {
 		return nil, errInternal("storing static certificate: %w", err)
 	}
@@ -86,6 +97,9 @@ func (h *certificateHandler) SetStaticCertificate(ctx context.Context, req *conn
 
 // GetCache reads an autocert cache entry by its opaque key.
 func (h *certificateHandler) GetCache(ctx context.Context, req *connect.Request[authv1.CacheKeyRequest]) (*connect.Response[authv1.CacheEntry], error) {
+	if err := requireID("key", req.Msg.GetKey()); err != nil {
+		return nil, err
+	}
 	data, err := getCertRow(ctx, h.s.kv, cacheDataRow(req.Msg.GetKey()))
 	if err != nil {
 		return nil, err
@@ -97,6 +111,9 @@ func (h *certificateHandler) GetCache(ctx context.Context, req *connect.Request[
 // it (services/auth/api_acme.go's setACMECache) that nothing ever read back
 // — CacheEntry has no timestamp field, so it is not carried forward.
 func (h *certificateHandler) SetCache(ctx context.Context, req *connect.Request[authv1.SetCacheRequest]) (*connect.Response[authv1.Empty], error) {
+	if err := requireID("key", req.Msg.GetKey()); err != nil {
+		return nil, err
+	}
 	if err := h.s.kv.Put(ctx, cacheDataRow(req.Msg.GetKey()), req.Msg.GetData()); err != nil {
 		return nil, errInternal("storing cache entry: %w", err)
 	}
@@ -105,6 +122,9 @@ func (h *certificateHandler) SetCache(ctx context.Context, req *connect.Request[
 
 // DeleteCache removes an autocert cache entry.
 func (h *certificateHandler) DeleteCache(ctx context.Context, req *connect.Request[authv1.CacheKeyRequest]) (*connect.Response[authv1.Empty], error) {
+	if err := requireID("key", req.Msg.GetKey()); err != nil {
+		return nil, err
+	}
 	if err := h.s.kv.Delete(ctx, cacheDataRow(req.Msg.GetKey())); err != nil {
 		return nil, errInternal("deleting cache entry: %w", err)
 	}
@@ -116,7 +136,7 @@ func (h *certificateHandler) DeleteCache(ctx context.Context, req *connect.Reque
 // services/auth/api_acme.go's getACMECertificate guards — onto
 // autocert.ErrCacheMiss wrapped in a NotFound, so a client that already
 // knows to check for that sentinel via errors.Is still can.
-func getCertRow(ctx context.Context, kv kvdb.KVDB, row string) ([]byte, error) {
+func getCertRow(ctx context.Context, kv Store, row string) ([]byte, error) {
 	data, err := kv.Get(ctx, row)
 	if err != nil {
 		return nil, errNotFound("%s: %w", row, autocert.ErrCacheMiss)

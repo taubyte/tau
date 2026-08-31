@@ -32,6 +32,9 @@ var _ authv1connect.HookServiceHandler = (*hookHandler)(nil)
 // Get returns a webhook by id.
 func (h *hookHandler) Get(ctx context.Context, req *connect.Request[authv1.HookRef]) (*connect.Response[authv1.Hook], error) {
 	id := req.Msg.GetId()
+	if err := requireID("id", id); err != nil {
+		return nil, err
+	}
 
 	provider, err := fetchHookProvider(ctx, h.s.kv, id)
 	if err != nil {

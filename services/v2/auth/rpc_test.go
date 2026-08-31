@@ -112,7 +112,7 @@ func TestRemotePeerReachesAuthzThroughTheRealTransport(t *testing.T) {
 
 	owner, registered := repositoryOwner(t.Context(), h.Service.kv, key)
 	require.True(t, registered)
-	assert.Equal(t, h.CallerNode.ID(), owner)
+	assert.Equal(t, h.CallerHost.ID(), owner)
 }
 
 // The three tests below inject a store failure AFTER the harness's Service
@@ -127,7 +127,7 @@ func TestRemotePeerReachesAuthzThroughTheRealTransport(t *testing.T) {
 
 func TestRepositoryList_StoreFails(t *testing.T) {
 	h := newWireHarness(t)
-	h.Service.kv = &failingKVDB{KVDB: h.Service.kv, failListRegEx: true}
+	h.Service.kv = &failingKVDB{Store: h.Service.kv, failListRegEx: true}
 
 	stream, err := h.Repositories.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestRepositoryList_StoreFails(t *testing.T) {
 
 func TestProjectList_StoreFails(t *testing.T) {
 	h := newWireHarness(t)
-	h.Service.kv = &failingKVDB{KVDB: h.Service.kv, failListRegEx: true}
+	h.Service.kv = &failingKVDB{Store: h.Service.kv, failListRegEx: true}
 
 	stream, err := h.Projects.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
 	require.NoError(t, err)
@@ -149,7 +149,7 @@ func TestProjectList_StoreFails(t *testing.T) {
 
 func TestHookList_StoreFails(t *testing.T) {
 	h := newWireHarness(t)
-	h.Service.kv = &failingKVDB{KVDB: h.Service.kv, failListRegEx: true}
+	h.Service.kv = &failingKVDB{Store: h.Service.kv, failListRegEx: true}
 
 	stream, err := h.Hooks.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
 	require.NoError(t, err)
@@ -160,7 +160,7 @@ func TestHookList_StoreFails(t *testing.T) {
 
 func TestRegister_StoreFailureIsInternal(t *testing.T) {
 	h := newWireHarness(t)
-	h.Service.kv = &failingKVDB{KVDB: h.Service.kv, failBatch: true}
+	h.Service.kv = &failingKVDB{Store: h.Service.kv, failBatch: true}
 
 	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
 	require.Error(t, err)
@@ -173,7 +173,7 @@ func TestUnregister_StoreFailureIsInternal(t *testing.T) {
 	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
-	h.Service.kv = &failingKVDB{KVDB: h.Service.kv, failBatch: true}
+	h.Service.kv = &failingKVDB{Store: h.Service.kv, failBatch: true}
 
 	_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
 	require.Error(t, err)

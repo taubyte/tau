@@ -1,129 +1,118 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/ipfs/go-log/v2"
+	"connectrpc.com/connect"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
-	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
+	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1"
+	"github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1/authv1connect"
 )
 
-// erroringFactory always fails New, so a store-open failure in New (Service)
-// has a test that reaches it (service-conventions.md §6c(1): "Every error
-// return of New has a test that reaches it").
-type erroringFactory struct{}
+// TestServiceNeedsOnlyAMocknetHostAndAnInMemoryStore is the narrow-dependency
+// rule in its falsifiable form (.notes/v2/service-conventions.md, "The
+// narrowest dependency is a REQUIREMENT"):
+//
+//	Can this service be constructed against mocknet.GenPeer() and an
+//	in-memory store, with nothing else standing up?
+//
+// Everything it needs is written out inline here rather than taken from
+// helpers_test.go, because the point of the test is exactly the list of
+// things it does NOT do: no kvdb.Factory, no DHT, no IPFS DAG, no
+// gossipsub, no temp directory, no config bag, no port. If someone later
+// widens what New takes, this is the test that stops compiling, and it is
+// meant to be read as the spec for the other seven services.
+func TestServiceNeedsOnlyAMocknetHostAndAnInMemoryStore(t *testing.T) {
+	mn := mocknet.New()
+	defer mn.Close()
 
-func (erroringFactory) New(log.StandardLogger, string, int) (kvdb.KVDB, error) {
-	return nil, errors.New("store unavailable")
+	server, err := mn.GenPeer()
+	require.NoError(t, err)
+
+	s, err := New(server, newStore(t), newTestConfig(t))
+	require.NoError(t, err)
+	defer s.Close()
+
+	// And it serves: constructed that way, it answers a real RPC from a
+	// second peer over the real transport.
+	require.NoError(t, s.Start(t.Context()))
+
+	caller, err := mn.GenPeer()
+	require.NoError(t, err)
+	require.NoError(t, mn.LinkAll())
+
+	client, err := rpc.NewClient(caller, server.ID(), Protocol)
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = authv1connect.NewProjectServiceClient(client.HTTP(), client.URL()).
+		Get(t.Context(), connect.NewRequest(&authv1.ProjectRef{Id: "nope"}))
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "the answer came from the handler, not from a transport failure")
 }
-func (erroringFactory) Close() {}
 
-func TestNew_NoNode(t *testing.T) {
-	cfg := newTestConfig(t, nil)
-	_, err := New(t.Context(), cfg)
+func TestNew_NoHost(t *testing.T) {
+	_, err := New(nil, newStore(t), newTestConfig(t))
+	assert.Error(t, err)
+}
+
+func TestNew_NoStore(t *testing.T) {
+	_, err := New(newHost(t, newMocknet(t)), nil, newTestConfig(t))
 	assert.Error(t, err)
 }
 
 func TestNew_EmptyDomainValidationKeys(t *testing.T) {
-	node := newMockNode(t)
+	valid := newTestConfig(t)
 	for _, tc := range []struct {
-		name      string
-		priv, pub []byte
+		name string
+		cfg  Config
 	}{
-		{"both empty", nil, nil},
-		{"private empty", nil, []byte("pub")},
-		{"public empty", []byte("priv"), nil},
+		{"both empty", Config{}},
+		{"private empty", Config{DomainValidation: KeyPair{Public: valid.DomainValidation.Public}}},
+		{"public empty", Config{DomainValidation: KeyPair{Private: valid.DomainValidation.Private}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &testConfig{node: node, dbs: kvdbmock.New(), dvPriv: tc.priv, dvPub: tc.pub}
-			_, err := New(t.Context(), cfg)
+			_, err := New(newHost(t, newMocknet(t)), newStore(t), tc.cfg)
 			assert.Error(t, err)
 		})
 	}
 }
 
-func TestNew_NoDatabaseFactory(t *testing.T) {
-	node := newMockNode(t)
-	priv, pub := testDomainValidationKeys(t)
-	cfg := &testConfig{node: node, dbs: nil, dvPriv: priv, dvPub: pub}
-	_, err := New(t.Context(), cfg)
-	assert.Error(t, err)
-}
-
-func TestNew_StoreOpenFails(t *testing.T) {
-	node := newMockNode(t)
-	priv, pub := testDomainValidationKeys(t)
-	cfg := &testConfig{node: node, dbs: erroringFactory{}, dvPriv: priv, dvPub: pub}
-	_, err := New(t.Context(), cfg)
-	assert.Error(t, err)
-}
-
-func TestNew_OptionFailureClosesTheStoreItAlreadyOpened(t *testing.T) {
-	node := newMockNode(t)
-	closed := false
-	failOpt := Option(func(*Service) error {
+func TestNew_OptionFailure(t *testing.T) {
+	_, err := New(newHost(t, newMocknet(t)), newStore(t), newTestConfig(t), func(*Service) error {
 		return errors.New("deliberate option failure")
 	})
-
-	factory := &closeTrackingFactory{Factory: kvdbmock.New(), closed: &closed}
-	cfg := newTestConfig(t, node)
-	cfg.dbs = factory
-
-	_, err := New(t.Context(), cfg, failOpt)
-	require.Error(t, err)
-	assert.True(t, closed, "New must close the store it opened before an Option failed")
+	assert.Error(t, err)
 }
 
-// closeTrackingFactory wraps a real kvdb.Factory and records whether the one
-// database it opened was closed.
-type closeTrackingFactory struct {
-	kvdb.Factory
-	closed *bool
-}
+// TestNew_BindsNothing is the observable half of service-conventions.md
+// §2a: two Services can be constructed on the SAME host and protocol,
+// because construction opens no listener. Start is what would collide.
+func TestNew_BindsNothing(t *testing.T) {
+	host := newHost(t, newMocknet(t))
 
-func (f *closeTrackingFactory) New(logger log.StandardLogger, path string, rebroadcast int) (kvdb.KVDB, error) {
-	db, err := f.Factory.New(logger, path, rebroadcast)
-	if err != nil {
-		return nil, err
-	}
-	return &closeTrackingKVDB{KVDB: db, closed: f.closed}, nil
-}
-
-type closeTrackingKVDB struct {
-	kvdb.KVDB
-	closed *bool
-}
-
-func (k *closeTrackingKVDB) Close() {
-	*k.closed = true
-	k.KVDB.Close()
-}
-
-func TestNew_DevModeIsAcceptedAndDoesNotBindAnything(t *testing.T) {
-	node := newMockNode(t)
-	cfg := newTestConfig(t, node)
-	cfg.devMode = true
-	s, err := New(t.Context(), cfg)
+	first, err := New(host, newStore(t), newTestConfig(t))
 	require.NoError(t, err)
-	defer s.Close()
-	// Constructing must not have started a listener (service-conventions.md
-	// §2a): nothing here to assert on directly since Service does not
-	// expose its listener state, but a second Service on the SAME node and
-	// protocol succeeding to construct too is the observable half of "New
-	// binds nothing" — Start is what would collide.
-	_, err = New(t.Context(), newTestConfig(t, node))
-	assert.NoError(t, err)
+	defer first.Close()
+
+	second, err := New(host, newStore(t), newTestConfig(t))
+	require.NoError(t, err)
+	defer second.Close()
+
+	require.NoError(t, first.Start(t.Context()))
+	assert.Error(t, second.Start(t.Context()), "the protocol is taken; only the second Start may find that out")
 }
 
 func TestStartAndClose(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 
 	require.NoError(t, s.Start(t.Context()))
 
@@ -139,35 +128,30 @@ func TestStartAndClose(t *testing.T) {
 }
 
 func TestClose_WithoutStart(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	assert.NoError(t, s.Close())
 	assert.NoError(t, s.Close())
 }
 
-func TestClose_NeverClosesTheSharedFactory(t *testing.T) {
-	node := newMockNode(t)
-	factory := kvdbmock.New()
-	cfg := newTestConfig(t, node)
-	cfg.dbs = factory
-
-	s, err := New(t.Context(), cfg)
+// TestClose_LeavesTheInjectedStoreUsable: the store was handed to New by
+// whoever composed the node and is shared with the services composed beside
+// it, so closing this service must not take it down. Store has no Close
+// method (config.go), which makes that structural rather than a promise —
+// this test is the observable half.
+func TestClose_LeavesTheInjectedStoreUsable(t *testing.T) {
+	store := newStore(t)
+	s, err := New(newHost(t, newMocknet(t)), store, newTestConfig(t))
 	require.NoError(t, err)
 	require.NoError(t, s.Close())
 
-	// The factory is still usable after this service closed its own
-	// database from it — Close must never call factory.Close(), which would
-	// tear down every other service's database sharing the same factory
-	// (service-conventions.md §2e).
-	db, err := factory.New(testLogger, "some-other-service", 5)
+	require.NoError(t, store.Put(t.Context(), "/probe", []byte("x")))
+	got, err := store.Get(t.Context(), "/probe")
 	require.NoError(t, err)
-	require.NoError(t, db.Put(t.Context(), "/probe", []byte("x")))
+	assert.Equal(t, []byte("x"), got)
 }
 
 func TestWithServerOptions(t *testing.T) {
-	node := newMockNode(t)
-	s, err := New(t.Context(), newTestConfig(t, node), WithServerOptions(rpc.WithPrefaceTimeout(time.Second)))
-	require.NoError(t, err)
-	defer s.Close()
+	s := newTestService(t, WithServerOptions(rpc.WithPrefaceTimeout(time.Second)))
 
 	assert.Len(t, s.serverOptions, 1, "the ServerOption must reach the Service, for Start to pass to rpc.Listen")
 	require.NoError(t, s.Start(t.Context()))
@@ -179,7 +163,7 @@ func TestWithServerOptions(t *testing.T) {
 // way to make the real rpc.Listen call fail without needing a second
 // listener already bound on the same protocol.
 func TestStart_ListenFails(t *testing.T) {
-	s, _ := newTestService(t, WithServerOptions(rpc.WithHTTPServer(func(hs *http.Server) {
+	s := newTestService(t, WithServerOptions(rpc.WithHTTPServer(func(hs *http.Server) {
 		hs.Handler = http.NewServeMux()
 	})))
 	assert.Error(t, s.Start(t.Context()))
@@ -189,4 +173,35 @@ func TestDescriptor(t *testing.T) {
 	assert.Equal(t, "auth", Descriptor.Name)
 	assert.Equal(t, IngressNone, Descriptor.Ingress)
 	assert.Equal(t, Protocol, Descriptor.Protocol)
+}
+
+// TestStart_RefusedOnceTheFirstListenerIsGone and
+// TestStart_RefusedAfterCloseWithoutStart are the two halves of "Start once"
+// that TestStartAndClose cannot separate: there, each of Start's two guards
+// is standing in front of the other, so removing either one on its own still
+// leaves an error coming back. Neither of the states below is reachable with
+// both guards in place, which is the point — Start's contract is its own,
+// not something inherited from whatever rpc.Listen happens to refuse.
+
+// Once the context Start was given ends, the server closes itself
+// (p2p/rpc's watch) and hands the protocol back to the host — so rpc.Listen
+// would happily bind a second time. Start must not: a Service that already
+// ran is spent.
+func TestStart_RefusedOnceTheFirstListenerIsGone(t *testing.T) {
+	s := newTestService(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	require.NoError(t, s.Start(ctx))
+	cancel()
+	<-s.server.Done()
+
+	assert.Error(t, s.Start(t.Context()), "a spent Service must not quietly start a second listener")
+}
+
+// And a Service closed before it ever served has no listener to collide
+// with, so only the closed flag can refuse it.
+func TestStart_RefusedAfterCloseWithoutStart(t *testing.T) {
+	s := newTestService(t)
+	require.NoError(t, s.Close())
+	assert.Error(t, s.Start(t.Context()))
 }

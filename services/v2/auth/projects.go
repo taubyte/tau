@@ -21,6 +21,9 @@ var _ authv1connect.ProjectServiceHandler = (*projectHandler)(nil)
 // Get returns a project by id.
 func (h *projectHandler) Get(ctx context.Context, req *connect.Request[authv1.ProjectRef]) (*connect.Response[authv1.Project], error) {
 	projectID := req.Msg.GetId()
+	if err := requireID("id", projectID); err != nil {
+		return nil, err
+	}
 	record, err := fetchProject(ctx, h.s.kv, projectID)
 	if err != nil {
 		return nil, errNotFound("%w", err)

@@ -12,54 +12,47 @@ import (
 )
 
 // errStoreFailure is what every fixture in this file returns instead of
-// delegating to the real kvdb.KVDB underneath it — a real error from a real
-// kvdb.KVDB, the same interface any actual backend implements, injected at
+// delegating to the real Store underneath it — a real error from a real
+// store, the same interface any actual backend implements, injected at
 // exactly the seam this package's own error handling exists to catch. None
 // of it narrows or skips a check in the code under test; it exists so the
 // checks that are already there have something to catch.
 var errStoreFailure = errors.New("deliberate store failure")
 
-// failingKVDB wraps a real kvdb.KVDB and fails whichever of Put / Delete /
+// failingKVDB wraps a real Store and fails whichever of Put / Delete /
 // List / ListRegEx / Batch is configured to fail, delegating everything
 // else to the real store underneath.
 type failingKVDB struct {
-	kvdb.KVDB
-	failPut, failDelete, failList, failListRegEx, failBatch bool
+	Store
+	failPut, failDelete, failListRegEx, failBatch bool
 }
 
 func (k *failingKVDB) Put(ctx context.Context, key string, v []byte) error {
 	if k.failPut {
 		return errStoreFailure
 	}
-	return k.KVDB.Put(ctx, key, v)
+	return k.Store.Put(ctx, key, v)
 }
 
 func (k *failingKVDB) Delete(ctx context.Context, key string) error {
 	if k.failDelete {
 		return errStoreFailure
 	}
-	return k.KVDB.Delete(ctx, key)
-}
-
-func (k *failingKVDB) List(ctx context.Context, prefix string) ([]string, error) {
-	if k.failList {
-		return nil, errStoreFailure
-	}
-	return k.KVDB.List(ctx, prefix)
+	return k.Store.Delete(ctx, key)
 }
 
 func (k *failingKVDB) ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error) {
 	if k.failListRegEx {
 		return nil, errStoreFailure
 	}
-	return k.KVDB.ListRegEx(ctx, prefix, regexs...)
+	return k.Store.ListRegEx(ctx, prefix, regexs...)
 }
 
 func (k *failingKVDB) Batch(ctx context.Context) (kvdb.Batch, error) {
 	if k.failBatch {
 		return nil, errStoreFailure
 	}
-	return k.KVDB.Batch(ctx)
+	return k.Store.Batch(ctx)
 }
 
 // failingBatch wraps a real kvdb.Batch and fails its Nth Put-or-Delete call
@@ -90,29 +83,29 @@ func (b *failingBatch) Delete(key string) error {
 
 func (b *failingBatch) Commit() error { return b.real.Commit() }
 
-// batchFailingKVDB wraps a real kvdb.KVDB and returns a failingBatch from
+// batchFailingKVDB wraps a real Store and returns a failingBatch from
 // Batch(), so a store function's Nth batched write — not just batch
 // creation itself — can be made to fail.
 type batchFailingKVDB struct {
-	kvdb.KVDB
+	Store
 	failAt int
 }
 
 func (k *batchFailingKVDB) Batch(ctx context.Context) (kvdb.Batch, error) {
-	real, err := k.KVDB.Batch(ctx)
+	real, err := k.Store.Batch(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return &failingBatch{real: real, failAt: k.failAt}, nil
 }
 
-// putFailsAfter wraps a real kvdb.KVDB and fails the failOn-th direct Put
+// putFailsAfter wraps a real Store and fails the failOn-th direct Put
 // call (1-indexed), succeeding on every other one — for reaching a SECOND
 // write's own error branch in code that makes two structurally identical
 // Put calls in a row (projects.go's Create links two repositories the same
 // way), where the first has to succeed for the second to even run.
 type putFailsAfter struct {
-	kvdb.KVDB
+	Store
 	n, failOn int
 }
 
@@ -121,11 +114,11 @@ func (k *putFailsAfter) Put(ctx context.Context, key string, v []byte) error {
 	if k.n == k.failOn {
 		return errStoreFailure
 	}
-	return k.KVDB.Put(ctx, key, v)
+	return k.Store.Put(ctx, key, v)
 }
 
 func TestRegisterRepository_BatchCreationFails(t *testing.T) {
-	kv := &failingKVDB{KVDB: newTestKV(t), failBatch: true}
+	kv := &failingKVDB{Store: newStore(t), failBatch: true}
 	key, err := parseRepoKey("github.com/acme/pay")
 	require.NoError(t, err)
 
@@ -137,7 +130,7 @@ func TestRegisterRepository_BatchedWriteFails(t *testing.T) {
 	for _, failAt := range []int{1, 2} {
 		key, err := parseRepoKey("github.com/acme/pay")
 		require.NoError(t, err)
-		kv := &batchFailingKVDB{KVDB: newTestKV(t), failAt: failAt}
+		kv := &batchFailingKVDB{Store: newStore(t), failAt: failAt}
 
 		err = registerRepository(t.Context(), kv, key, "QmOwner")
 		assert.Error(t, err, "failAt=%d", failAt)
@@ -145,7 +138,7 @@ func TestRegisterRepository_BatchedWriteFails(t *testing.T) {
 }
 
 func TestDeleteRepository_ListHooksFails(t *testing.T) {
-	kv := &failingKVDB{KVDB: newTestKV(t), failList: true}
+	kv := &failingKVDB{Store: newStore(t), failListRegEx: true}
 	key, err := parseRepoKey("github.com/acme/pay")
 	require.NoError(t, err)
 
@@ -154,7 +147,7 @@ func TestDeleteRepository_ListHooksFails(t *testing.T) {
 }
 
 func TestDeleteRepository_BatchCreationFails(t *testing.T) {
-	kv := &failingKVDB{KVDB: newTestKV(t), failBatch: true}
+	kv := &failingKVDB{Store: newStore(t), failBatch: true}
 	key, err := parseRepoKey("github.com/acme/pay")
 	require.NoError(t, err)
 
@@ -169,7 +162,7 @@ func TestDeleteRepository_BatchedWriteFails(t *testing.T) {
 	// batch.Delete(...); err != nil` line in deleteRepository and
 	// batchDeleteHook is reached, not just the first.
 	for failAt := 1; failAt <= 7; failAt++ {
-		real := newTestKV(t)
+		real := newStore(t)
 		key, err := parseRepoKey("github.com/acme/pay")
 		require.NoError(t, err)
 		require.NoError(t, registerRepository(t.Context(), real, key, "QmOwner"))
@@ -179,7 +172,7 @@ func TestDeleteRepository_BatchedWriteFails(t *testing.T) {
 		require.NoError(t, real.Put(t.Context(), hookGithubRepoRow("hook-1"), []byte(key.String())))
 		require.NoError(t, real.Put(t.Context(), repoHookRow(key, "hook-1"), nil))
 
-		kv := &batchFailingKVDB{KVDB: real, failAt: failAt}
+		kv := &batchFailingKVDB{Store: real, failAt: failAt}
 		err = deleteRepository(t.Context(), kv, key)
 		assert.Error(t, err, "failAt=%d", failAt)
 	}
@@ -187,7 +180,7 @@ func TestDeleteRepository_BatchedWriteFails(t *testing.T) {
 
 func TestBatchDeleteHook_EachOperationFails(t *testing.T) {
 	for failAt := 1; failAt <= 4; failAt++ {
-		real := newTestKV(t)
+		real := newStore(t)
 		realBatch, err := real.Batch(t.Context())
 		require.NoError(t, err)
 
@@ -197,7 +190,7 @@ func TestBatchDeleteHook_EachOperationFails(t *testing.T) {
 }
 
 func TestPutProject_BatchCreationFails(t *testing.T) {
-	kv := &failingKVDB{KVDB: newTestKV(t), failBatch: true}
+	kv := &failingKVDB{Store: newStore(t), failBatch: true}
 	config, err := parseRepoKey("github.com/acme/config")
 	require.NoError(t, err)
 	code, err := parseRepoKey("github.com/acme/code")
@@ -209,7 +202,7 @@ func TestPutProject_BatchCreationFails(t *testing.T) {
 
 func TestPutProject_BatchedWriteFails(t *testing.T) {
 	for failAt := 1; failAt <= 3; failAt++ {
-		kv := &batchFailingKVDB{KVDB: newTestKV(t), failAt: failAt}
+		kv := &batchFailingKVDB{Store: newStore(t), failAt: failAt}
 		config, err := parseRepoKey("github.com/acme/config")
 		require.NoError(t, err)
 		code, err := parseRepoKey("github.com/acme/code")
@@ -221,7 +214,7 @@ func TestPutProject_BatchedWriteFails(t *testing.T) {
 }
 
 func TestLinkRepositoryToProject_Fails(t *testing.T) {
-	kv := &failingKVDB{KVDB: newTestKV(t), failPut: true}
+	kv := &failingKVDB{Store: newStore(t), failPut: true}
 	key, err := parseRepoKey("github.com/acme/pay")
 	require.NoError(t, err)
 
@@ -230,19 +223,19 @@ func TestLinkRepositoryToProject_Fails(t *testing.T) {
 }
 
 func TestListRepositoryKeys_Fails(t *testing.T) {
-	kv := &failingKVDB{KVDB: newTestKV(t), failListRegEx: true}
+	kv := &failingKVDB{Store: newStore(t), failListRegEx: true}
 	_, err := listRepositoryKeys(t.Context(), kv)
 	assert.Error(t, err)
 }
 
 func TestListProjectIDs_Fails(t *testing.T) {
-	kv := &failingKVDB{KVDB: newTestKV(t), failListRegEx: true}
+	kv := &failingKVDB{Store: newStore(t), failListRegEx: true}
 	_, err := listProjectIDs(t.Context(), kv)
 	assert.Error(t, err)
 }
 
 func TestListHookIDs_Fails(t *testing.T) {
-	kv := &failingKVDB{KVDB: newTestKV(t), failListRegEx: true}
+	kv := &failingKVDB{Store: newStore(t), failListRegEx: true}
 	_, err := listHookIDs(t.Context(), kv)
 	assert.Error(t, err)
 }

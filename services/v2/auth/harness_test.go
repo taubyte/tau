@@ -3,19 +3,18 @@ package auth
 import (
 	"testing"
 
+	"github.com/libp2p/go-libp2p/core/host"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
-	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1/authv1connect"
 )
 
-// wireHarness is a running Service on one mock node ("server") reached from
-// a second mock node ("caller") over the real transport — connect-go, over
-// go-libp2p-gostream, over the mocknet p2p/peer.Mock shares
-// (service-conventions.md §0's measurement #1, reconfirmed for this
-// package's own dependency versions before any test here was written on top
-// of it: see helpers_test.go's newMockNode).
+// wireHarness is a running Service on one mocknet host reached from a second
+// one over the real transport — connect-go, over go-libp2p-gostream, over
+// libp2p's mocknet (service-conventions.md §0's measurement #1).
 //
 // This is the ONLY way any test in this package gets a caller identity a
 // handler was not separately told about: rpc.RemotePeer reads a context
@@ -27,8 +26,10 @@ import (
 // "doesn't currently have an exported constructor"), goes through this.
 type wireHarness struct {
 	Service    *Service
-	ServerNode taupeer.Node
-	CallerNode taupeer.Node
+	Store      kvdb.KVDB
+	Mocknet    mocknet.Mocknet
+	ServerHost host.Host
+	CallerHost host.Host
 
 	Projects     authv1connect.ProjectServiceClient
 	Repositories authv1connect.RepositoryServiceClient
@@ -40,11 +41,12 @@ type wireHarness struct {
 func newWireHarness(t testing.TB, opts ...Option) *wireHarness {
 	t.Helper()
 
-	server := newMockNode(t)
-	caller := newMockNode(t)
-	linkMockPeers(t)
+	mn := newMocknet(t)
+	server := newHost(t, mn)
+	caller := newHost(t, mn)
+	store := newStore(t)
 
-	s, err := New(t.Context(), newTestConfig(t, server), opts...)
+	s, err := New(server, store, newTestConfig(t), opts...)
 	require.NoError(t, err)
 	require.NoError(t, s.Start(t.Context()))
 	t.Cleanup(func() { s.Close() })
@@ -53,8 +55,10 @@ func newWireHarness(t testing.TB, opts ...Option) *wireHarness {
 
 	return &wireHarness{
 		Service:      s,
-		ServerNode:   server,
-		CallerNode:   caller,
+		Store:        store,
+		Mocknet:      mn,
+		ServerHost:   server,
+		CallerHost:   caller,
 		Projects:     authv1connect.NewProjectServiceClient(client.HTTP(), client.URL()),
 		Repositories: authv1connect.NewRepositoryServiceClient(client.HTTP(), client.URL()),
 		Hooks:        authv1connect.NewHookServiceClient(client.HTTP(), client.URL()),
@@ -65,22 +69,21 @@ func newWireHarness(t testing.TB, opts ...Option) *wireHarness {
 
 // dialAuth opens a p2p/rpc.Client from from to the harness's server, over
 // the protocol this package's own Service listens on.
-func dialAuth(t testing.TB, from, to taupeer.Node) *rpc.Client {
+func dialAuth(t testing.TB, from, to host.Host) *rpc.Client {
 	t.Helper()
-	c, err := rpc.NewClient(from.Peer(), to.Peer().ID(), Protocol)
+	c, err := rpc.NewClient(from, to.ID(), Protocol)
 	require.NoError(t, err)
 	t.Cleanup(c.Close)
 	return c
 }
 
-// secondCaller links a third node to the harness's server and returns a
+// secondCaller adds a third host to the harness's mocknet and returns a
 // RepositoryServiceClient dialled from it — a second, genuinely different
-// libp2p identity, for proving Unregister/Register deny a peer that is not
-// the one that registered a repository.
-func (h *wireHarness) secondCaller(t testing.TB) (taupeer.Node, authv1connect.RepositoryServiceClient) {
+// libp2p identity, for proving Register and Unregister deny a peer that is
+// not the one that registered a repository.
+func (h *wireHarness) secondCaller(t testing.TB) (host.Host, authv1connect.RepositoryServiceClient) {
 	t.Helper()
-	other := newMockNode(t)
-	linkMockPeers(t)
-	client := dialAuth(t, other, h.ServerNode)
+	other := newHost(t, h.Mocknet)
+	client := dialAuth(t, other, h.ServerHost)
 	return other, authv1connect.NewRepositoryServiceClient(client.HTTP(), client.URL())
 }

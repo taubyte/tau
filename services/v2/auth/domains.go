@@ -21,8 +21,17 @@ var _ authv1connect.DomainServiceHandler = (*domainHandler)(nil)
 
 // minProjectIDLength mirrors services/auth/api_hooks.go's registerDomainStream,
 // which refuses a project id shorter than 8 characters before it even tries
-// to cid.Decode it — a short string can still parse as SOME cid, just not
-// one any project id this platform hands out ever is.
+// to cid.Decode it.
+//
+// IT IS LOAD-BEARING, and cid.Decode does not subsume it. The DNS entry
+// this RPC answers with is `projectID[:minProjectIDLength]`, so a project id
+// shorter than that is an out-of-range slice — a panic, in a handler any
+// authenticated peer can reach. And short CIDs are real, not hypothetical:
+// an identity multihash of nothing, CIDv1, base58btc, is the six-character
+// "z2yYDV", which cid.Decode accepts. Removing this guard therefore does not
+// merely lose a nicer error message, it hands anyone a way to kill the
+// serving goroutine — which is why domains_test.go feeds it exactly that
+// string rather than only a short thing that was never a CID anyway.
 const minProjectIDLength = 8
 
 // Register signs a domain-ownership claim for fqdn against projectID. It
@@ -32,8 +41,8 @@ const minProjectIDLength = 8
 // against the project's own published config, not here at signing time.
 func (h *domainHandler) Register(ctx context.Context, req *connect.Request[authv1.RegisterDomainRequest]) (*connect.Response[authv1.RegisterDomainResponse], error) {
 	fqdn := req.Msg.GetFqdn()
-	if fqdn == "" {
-		return nil, errInvalidArgument("fqdn is required")
+	if err := requireID("fqdn", fqdn); err != nil {
+		return nil, err
 	}
 
 	projectID := req.Msg.GetProjectId()
@@ -46,7 +55,7 @@ func (h *domainHandler) Register(ctx context.Context, req *connect.Request[authv
 		return nil, errInvalidArgument("project_id: %w", err)
 	}
 
-	claim, err := dv.New(dv.FQDN(fqdn), dv.Project(project), dv.PrivateKey(h.s.dvPrivateKey), dv.PublicKey(h.s.dvPublicKey))
+	claim, err := dv.New(dv.FQDN(fqdn), dv.Project(project), dv.PrivateKey([]byte(h.s.cfg.DomainValidation.Private)), dv.PublicKey([]byte(h.s.cfg.DomainValidation.Public)))
 	if err != nil {
 		return nil, errInternal("building domain claim: %w", err)
 	}

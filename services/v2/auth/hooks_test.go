@@ -30,7 +30,7 @@ func putGithubHookFixture(t testing.TB, s *Service, id string, providerHookID in
 }
 
 func TestHookGet_NotFound(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &hookHandler{s}
 
 	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "does-not-exist"}))
@@ -39,7 +39,7 @@ func TestHookGet_NotFound(t *testing.T) {
 }
 
 func TestHookGet_Github(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &hookHandler{s}
 	putGithubHookFixture(t, s, "hook-1", 42, "s3cr3t", "github.com/acme/pay")
 
@@ -59,7 +59,7 @@ func TestHookGet_Github(t *testing.T) {
 // running service (hooks.go's doc, mirroring services/auth/hooks/hooks.go's
 // own Fetch, which has no bitbucket case either).
 func TestHookGet_UnsupportedProvider(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &hookHandler{s}
 	require.NoError(t, s.kv.Put(t.Context(), hookProviderRow("hook-2"), []byte("bitbucket")))
 
@@ -69,7 +69,7 @@ func TestHookGet_UnsupportedProvider(t *testing.T) {
 }
 
 func TestHookGet_CorruptGithubRow(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &hookHandler{s}
 	require.NoError(t, s.kv.Put(t.Context(), hookProviderRow("hook-3"), []byte("github")))
 	require.NoError(t, s.kv.Put(t.Context(), hookGithubIDRow("hook-3"), []byte("not-a-number")))
@@ -86,7 +86,7 @@ func TestHookGet_CorruptGithubRow(t *testing.T) {
 // for hooks does not exist yet, per hooks.go's own doc, so nothing enforces
 // this today beyond fetchGithubHook noticing).
 func TestHookGet_MissingSecretRow(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &hookHandler{s}
 	require.NoError(t, s.kv.Put(t.Context(), hookProviderRow("hook-4"), []byte("github")))
 	require.NoError(t, s.kv.Put(t.Context(), hookGithubIDRow("hook-4"), []byte("1")))
@@ -97,13 +97,25 @@ func TestHookGet_MissingSecretRow(t *testing.T) {
 }
 
 func TestHookGet_MissingRepositoryRow(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &hookHandler{s}
 	require.NoError(t, s.kv.Put(t.Context(), hookProviderRow("hook-5"), []byte("github")))
 	require.NoError(t, s.kv.Put(t.Context(), hookGithubIDRow("hook-5"), []byte("1")))
 	require.NoError(t, s.kv.Put(t.Context(), hookGithubSecretRow("hook-5"), []byte("s3cr3t")))
 
 	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-5"}))
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+}
+
+// TestHookGet_MissingProviderIDRow reaches fetchGithubHook's first row read
+// failing: a hook filed under a provider whose own rows were never written.
+func TestHookGet_MissingProviderIDRow(t *testing.T) {
+	s := newTestService(t)
+	h := &hookHandler{s}
+	require.NoError(t, s.kv.Put(t.Context(), hookProviderRow("hook-6"), []byte("github")))
+
+	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-6"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }

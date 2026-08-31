@@ -115,14 +115,18 @@ func (h *repositoryHandler) Register(ctx context.Context, req *connect.Request[a
 	return connect.NewResponse(&authv1.Empty{}), nil
 }
 
-// Unregister removes a repository and every row it owns — the fix for v1's
-// bug (commit 3a2111da): `Delete` removed only `/key`, leaving `/project`
-// dangling forever, which kept an unregistered repository listed as part of
-// its project. Every hook the repository owns is torn down with it, the
-// same cascade services/auth/github.go's unregisterGitHubRepository ran
-// (delete every repo.Hooks(ctx) entry, then delete the repository), except
-// here it is one batch rather than N+1 separate deletes, so a failure
-// partway through cannot leave some hooks gone and others not.
+// Unregister removes a repository and every row it owns.
+//
+// V1 DOES NOT LEAVE /project DANGLING, and this package should not be read
+// as fixing that: commit 3a2111da deletes it in the same batch as /key
+// (services/auth/repositories/repositories.go:65) and cascades hooks
+// through `for _, h := range r.Hooks(ctx)` in
+// services/auth/github.go's unregisterGitHubRepository. What is actually
+// different here is two things and only two things: the cascade is ONE
+// batch instead of N+1 separate deletes, so a failure partway through
+// cannot leave some hooks gone and others not; and /registered_by — the row
+// that makes this RPC checkable at all — is a v2 row, so v1 has nothing to
+// tear down in its place.
 func (h *repositoryHandler) Unregister(ctx context.Context, req *connect.Request[authv1.RepositoryRef]) (*connect.Response[authv1.Empty], error) {
 	key, err := parseRepoKey(req.Msg.GetRepositoryKey())
 	if err != nil {

@@ -5,7 +5,6 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
@@ -75,7 +74,7 @@ func caller(ctx context.Context) (peer.ID, error) {
 // nothing to authorize" answer, not a "you may not do this" one, and
 // conflating the two would tell an unrelated caller that a key IS registered
 // (just not to them) purely from the shape of the error it gets back.
-func authorizeRepositoryOwner(ctx context.Context, kv kvdb.KVDB, key repokey.Key, by peer.ID) error {
+func authorizeRepositoryOwner(ctx context.Context, kv Store, key repokey.Key, by peer.ID) error {
 	if owner, registered := repositoryOwner(ctx, kv, key); registered && owner != by {
 		return errPermissionDenied("repository %q is registered to another peer", key)
 	}

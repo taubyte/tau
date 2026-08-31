@@ -14,29 +14,18 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p/core/host"
 
-	"github.com/taubyte/tau/core/kvdb"
-	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 )
 
-var logger = log.Logger("tau.v2.auth")
-
-// storeName is what this service's database is called on the shared
-// kvdb.Factory — services/common/names.go's Auth ("auth") carried forward,
-// since it names nothing v1-specific, only this service's own row on a
-// factory every service on the node shares.
-const storeName = "auth"
-
-// Service is auth's whole state: the store and the two secrets
-// (Register/Unregister's authorization and DomainService's signing key) it
-// was constructed with.
+// Service is auth's whole state: the host it answers on, the store it was
+// handed, and the operator's config.
 type Service struct {
-	node          peer.Node
-	kv            kvdb.KVDB
-	dvPrivateKey  []byte
-	dvPublicKey   []byte
+	host host.Host
+	kv   Store
+	cfg  Config
+
 	serverOptions []rpc.ServerOption
 
 	// startMu guards server: Start and Close both read-then-write it, and
@@ -66,52 +55,44 @@ func WithServerOptions(opts ...rpc.ServerOption) Option {
 	}
 }
 
-// New validates, allocates and mounts. It binds nothing — no listener opens
-// until Start — so a Service can be constructed just to be inspected, and a
-// node can construct every service before starting any of them
-// (service-conventions.md §2a).
-func New(ctx context.Context, cfg Config, opts ...Option) (*Service, error) {
-	node := cfg.Node()
-	if node == nil {
-		// v1 falls back to tauConfig.NewNode(...) here on every one of its
-		// four services (services/auth/service.go:36, and identically in
-		// tns, patrick, gateway) — a service that can invent its own libp2p
-		// identity can be started two ways, and one of them is never the
-		// way production starts it (service-conventions.md §2b). v2 does
-		// not carry that fallback forward: a nil Node is an error.
-		return nil, errors.New("auth: config has no node")
+// New validates and allocates. It binds nothing, opens nothing and creates
+// nothing — no listener until Start, and no database ever — so a Service can
+// be constructed just to be inspected, and a node can construct every
+// service before starting any of them (service-conventions.md §2a).
+//
+// Three parameters, not one bag (config.go): the host it answers on, the
+// store it persists into, and what the operator declared. That is the whole
+// dependency, and it is deliberately narrow enough that the answer to "can
+// this be built against mocknet.GenPeer() and an in-memory map, with nothing
+// else standing up?" is yes — which is the falsifiable form of the
+// narrow-dependency rule, and a test in this package rather than a claim
+// here.
+//
+// A nil host is an error rather than a node this service invents for itself.
+// v1 has the same fallback copied across four services —
+// `if srv.node = cfg.Node(); srv.node == nil { tauConfig.NewNode(...) }`
+// (services/auth/service.go:36) — and a service that can invent its own
+// libp2p identity can be started two ways, one of which is never how
+// production starts it (service-conventions.md §2b).
+func New(h host.Host, store Store, cfg Config, opts ...Option) (*Service, error) {
+	if h == nil {
+		return nil, errors.New("auth: no host to answer on")
+	}
+	if store == nil {
+		return nil, errors.New("auth: no store")
+	}
+	if cfg.DomainValidation.Private == "" || cfg.DomainValidation.Public == "" {
+		return nil, errors.New("auth: domain validation needs both halves of a key pair")
 	}
 
-	privateKey, publicKey := cfg.DomainValidation()
-	if len(privateKey) == 0 || len(publicKey) == 0 {
-		return nil, errors.New("auth: domain validation keys cannot be empty")
-	}
-
-	factory := cfg.Databases()
-	if factory == nil {
-		return nil, errors.New("auth: config has no database factory")
-	}
-
-	rebroadcastIntervalSec := 5
-	if cfg.DevMode() {
-		rebroadcastIntervalSec = 1
-	}
-
-	kv, err := factory.New(logger, storeName, rebroadcastIntervalSec)
-	if err != nil {
-		return nil, fmt.Errorf("auth: opening store: %w", err)
-	}
-
-	s := &Service{
-		node:         node,
-		kv:           kv,
-		dvPrivateKey: privateKey,
-		dvPublicKey:  publicKey,
-	}
+	s := &Service{host: h, kv: store, cfg: cfg}
 
 	for _, opt := range opts {
 		if err := opt(s); err != nil {
-			kv.Close()
+			// Nothing to unwind: New owns no resource by the time an
+			// option runs. The first pass had to close a database it had
+			// already opened here, which is the shape injecting the store
+			// removes rather than handles.
 			return nil, fmt.Errorf("auth: option: %w", err)
 		}
 	}
@@ -132,7 +113,7 @@ func (s *Service) Start(ctx context.Context) error {
 		return errors.New("auth: already started")
 	}
 
-	server, err := rpc.Listen(ctx, s.node.Peer(), Protocol, s.mount(), s.serverOptions...)
+	server, err := rpc.Listen(ctx, s.host, Protocol, s.mount(), s.serverOptions...)
 	if err != nil {
 		return fmt.Errorf("auth: listen on %s: %w", Protocol, err)
 	}
@@ -140,12 +121,10 @@ func (s *Service) Start(ctx context.Context) error {
 	return nil
 }
 
-// Close is idempotent and reverses construction order: stop serving, then
-// close the store. It never closes the kvdb.Factory Config handed New — the
-// factory is shared with every other service on the node, and this service
-// only ever owned the one database it opened from it
-// (service-conventions.md §2e: "anything the service constructs, the
-// service closes; anything it was handed, it does not").
+// Close is idempotent and stops the one thing this service started: serving.
+// It does not close the store, and cannot — Store has no Close method
+// (config.go), because the store was handed in by whatever composed the node
+// and is shared with the services composed beside it.
 func (s *Service) Close() error {
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)
@@ -154,7 +133,6 @@ func (s *Service) Close() error {
 			s.closeErr = s.server.Close()
 		}
 		s.startMu.Unlock()
-		s.kv.Close()
 	})
 	return s.closeErr
 }

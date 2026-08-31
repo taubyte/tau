@@ -85,11 +85,13 @@ func TestUnregister_AllowsTheOwner(t *testing.T) {
 	_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
-	// v1's bug (commit 3a2111da): Delete removed only /key, leaving
-	// /project dangling forever. Assert nothing at all survives.
+	// Nothing at all survives: /key, /registered_by, /project and every
+	// hook row. v1 deletes /key and /project too (commit 3a2111da), so what
+	// is being asserted here is the one batch and the v2-only
+	// /registered_by row — see repositories.go's Unregister.
 	parsed, err := parseRepoKey(key)
 	require.NoError(t, err)
-	assertNothingUnderPrefix(t, h.Service.kv, repoRoot(parsed))
+	assertNothingUnderPrefix(t, h.Store, repoRoot(parsed))
 }
 
 // TestUnregister_DeniesAPeerThatDidNotRegisterIt is the task's required
@@ -105,7 +107,7 @@ func TestUnregister_DeniesAPeerThatDidNotRegisterIt(t *testing.T) {
 	require.NoError(t, err)
 
 	otherNode, otherClient := h.secondCaller(t)
-	assert.NotEqual(t, h.CallerNode.ID(), otherNode.ID(), "the denial must come from a genuinely different peer, not the same one twice")
+	assert.NotEqual(t, h.CallerHost.ID(), otherNode.ID(), "the denial must come from a genuinely different peer, not the same one twice")
 
 	_, err = otherClient.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
 	require.Error(t, err)
@@ -125,4 +127,97 @@ func TestUnregister_NotFoundIsNotConflatedWithDenied(t *testing.T) {
 	_, err := h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/never-registered"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+}
+
+// TestRepositoryTakeoverThroughANestedNamespaceIsImpossible is the
+// regression test for the takeover store.go's header describes, driven end
+// to end over the real transport by two genuinely different peers.
+//
+// The attack needs no privilege and no forged identity. Every RPC in it is
+// one the attacker is entitled to make: registering a key nobody has
+// claimed is first-writer-wins by design (authz.go), and unregistering a key
+// you registered is your own business. What made it a takeover was purely
+// the key layout — a repository key spliced into a path raw, so that the
+// victim's rows landed inside the hook reverse index of a SHALLOWER key.
+// Deleting that shallower key took the victim's /registered_by with it, and
+// an unowned key is open to anyone.
+//
+// The three cases differ in how deep the victim sits relative to the
+// reserved word, which is what decides which part of the layout catches
+// them: revert segment() to the identity and the first and third fail
+// immediately, while the second is caught by the anchored listing instead —
+// so the set holds whether the encoding or the anchor is the thing that
+// breaks.
+func TestRepositoryTakeoverThroughANestedNamespaceIsImpossible(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// victim is registered first, by the harness's own caller.
+		victim string
+		// attacker is a DIFFERENT, unclaimed repository whose reserved
+		// sub-namespace the victim's rows used to fall inside.
+		attacker string
+	}{
+		{
+			name:     "the victim's last segment is the reserved word",
+			victim:   "gitlab.com/acme/team/hooks",
+			attacker: "gitlab.com/acme/team",
+		},
+		{
+			name:     "the victim is one segment deeper than the reserved word",
+			victim:   "gitlab.com/acme/team/hooks/widget",
+			attacker: "gitlab.com/acme/team",
+		},
+		{
+			name:     "three segments is already enough",
+			victim:   "gitlab.com/acme/hooks",
+			attacker: "gitlab.com/acme",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newWireHarness(t)
+			victimKey, err := parseRepoKey(tc.victim)
+			require.NoError(t, err)
+
+			_, err = h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			require.NoError(t, err)
+			registered, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			require.NoError(t, err)
+			deployKey := registered.Msg.GetDeployKey()
+			require.NotEmpty(t, deployKey)
+
+			attackerHost, attackerClient := h.secondCaller(t)
+			require.NotEqual(t, h.CallerHost.ID(), attackerHost.ID(), "the attacker must be a genuinely different peer")
+
+			// Head on, the attacker is refused — this much always held.
+			_, err = attackerClient.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			require.Error(t, err)
+			assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+
+			// So it takes the long way round, entirely within its rights.
+			_, err = attackerClient.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.attacker}))
+			require.NoError(t, err, "an unclaimed key is open to any peer; that is not the bug")
+			_, err = attackerClient.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.attacker}))
+			require.NoError(t, err)
+
+			// The victim's registration survives it, whole.
+			after, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			require.NoError(t, err, "the victim's repository must still be registered")
+			assert.Equal(t, deployKey, after.Msg.GetDeployKey(), "and must still hold the same deploy key")
+
+			// Including the row the whole attack was after: ownership.
+			owner, stillRegistered := repositoryOwner(t.Context(), h.Service.kv, victimKey)
+			require.True(t, stillRegistered)
+			assert.Equal(t, h.CallerHost.ID(), owner, "/registered_by is what a deleted victim loses first")
+
+			// So the attacker still cannot have it.
+			_, err = attackerClient.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			require.Error(t, err)
+			assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+
+			// And the owner can still tear down its own repository.
+			_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			require.NoError(t, err)
+			assertNothingUnderPrefix(t, h.Store, repoRoot(victimKey))
+		})
+	}
 }

@@ -11,7 +11,7 @@ import (
 )
 
 func TestCertificate_SetAndGet(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &certificateHandler{s}
 
 	_, err := h.SetCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{
@@ -25,7 +25,7 @@ func TestCertificate_SetAndGet(t *testing.T) {
 }
 
 func TestCertificate_GetMiss(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &certificateHandler{s}
 
 	_, err := h.GetCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{Fqdn: "missing.example.com"}))
@@ -41,7 +41,7 @@ func TestCertificate_GetMiss(t *testing.T) {
 // (certificates.go's package doc), so a static-only certificate must not be
 // visible through GetCertificate.
 func TestCertificate_GetDoesNotFallBackToStatic(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &certificateHandler{s}
 
 	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{
@@ -55,7 +55,7 @@ func TestCertificate_GetDoesNotFallBackToStatic(t *testing.T) {
 }
 
 func TestStaticCertificate_SetAndGet(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &certificateHandler{s}
 
 	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{
@@ -72,7 +72,7 @@ func TestStaticCertificate_SetAndGet(t *testing.T) {
 // certificate of its own falls back to its parent domain's wildcard, the
 // same fallback services/auth/api_acme.go's getACMEStaticCertificate runs.
 func TestStaticCertificate_WildcardFallback(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &certificateHandler{s}
 
 	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{
@@ -86,7 +86,7 @@ func TestStaticCertificate_WildcardFallback(t *testing.T) {
 }
 
 func TestStaticCertificate_Miss(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &certificateHandler{s}
 
 	_, err := h.GetStaticCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{Fqdn: "nowhere.example.com"}))
@@ -95,7 +95,7 @@ func TestStaticCertificate_Miss(t *testing.T) {
 }
 
 func TestCache_SetGetDelete(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &certificateHandler{s}
 
 	_, err := h.SetCache(t.Context(), connect.NewRequest(&authv1.SetCacheRequest{
@@ -116,7 +116,7 @@ func TestCache_SetGetDelete(t *testing.T) {
 }
 
 func TestCache_GetMiss(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &certificateHandler{s}
 
 	_, err := h.GetCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{Key: "never-set"}))
@@ -128,7 +128,7 @@ func TestCache_GetMiss(t *testing.T) {
 // token once an order completes; a second delete (or one racing another
 // node) must not surface as a failure.
 func TestCache_DeleteOfAMissingKeyIsNotAnError(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &certificateHandler{s}
 
 	_, err := h.DeleteCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{Key: "never-set"}))
@@ -141,7 +141,7 @@ func TestCache_DeleteOfAMissingKeyIsNotAnError(t *testing.T) {
 // failingKVDB wraps a real store and only the configured call fails).
 
 func TestSetCertificate_StoreFails(t *testing.T) {
-	s := &Service{kv: &failingKVDB{KVDB: newTestKV(t), failPut: true}}
+	s := &Service{kv: &failingKVDB{Store: newStore(t), failPut: true}}
 	h := &certificateHandler{s}
 
 	_, err := h.SetCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{Fqdn: "example.com", Pem: []byte("x")}))
@@ -150,7 +150,7 @@ func TestSetCertificate_StoreFails(t *testing.T) {
 }
 
 func TestSetStaticCertificate_StoreFails(t *testing.T) {
-	s := &Service{kv: &failingKVDB{KVDB: newTestKV(t), failPut: true}}
+	s := &Service{kv: &failingKVDB{Store: newStore(t), failPut: true}}
 	h := &certificateHandler{s}
 
 	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{Fqdn: "example.com", Pem: []byte("x")}))
@@ -159,7 +159,7 @@ func TestSetStaticCertificate_StoreFails(t *testing.T) {
 }
 
 func TestSetCache_StoreFails(t *testing.T) {
-	s := &Service{kv: &failingKVDB{KVDB: newTestKV(t), failPut: true}}
+	s := &Service{kv: &failingKVDB{Store: newStore(t), failPut: true}}
 	h := &certificateHandler{s}
 
 	_, err := h.SetCache(t.Context(), connect.NewRequest(&authv1.SetCacheRequest{Key: "k", Data: []byte("x")}))
@@ -168,10 +168,80 @@ func TestSetCache_StoreFails(t *testing.T) {
 }
 
 func TestDeleteCache_StoreFails(t *testing.T) {
-	s := &Service{kv: &failingKVDB{KVDB: newTestKV(t), failDelete: true}}
+	s := &Service{kv: &failingKVDB{Store: newStore(t), failDelete: true}}
 	h := &certificateHandler{s}
 
 	_, err := h.DeleteCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{Key: "k"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+}
+
+// TestEveryWireIdIsRefusedEmpty covers store.go's one grammar precondition
+// at every edge that can break it: an id that reaches a row builder empty
+// encodes to an empty segment, which go-datastore then cleans away
+// entirely, moving a boundary. Each RPC below turns a caller-supplied string
+// straight into a key, so each one has to refuse the empty string itself —
+// the repository RPCs are absent from the list because repokey.Parse
+// already refuses it for them (repositories_test.go).
+func TestEveryWireIdIsRefusedEmpty(t *testing.T) {
+	store := newStore(t)
+	s, err := New(newHost(t, newMocknet(t)), store, newTestConfig(t))
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	certs := &certificateHandler{s}
+
+	for name, call := range map[string]func() error{
+		"CertificateService.GetCertificate": func() error {
+			_, err := certs.GetCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{}))
+			return err
+		},
+		"CertificateService.SetCertificate": func() error {
+			_, err := certs.SetCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{Pem: []byte("pem")}))
+			return err
+		},
+		"CertificateService.GetStaticCertificate": func() error {
+			_, err := certs.GetStaticCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{}))
+			return err
+		},
+		"CertificateService.SetStaticCertificate": func() error {
+			_, err := certs.SetStaticCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{Pem: []byte("pem")}))
+			return err
+		},
+		"CertificateService.GetCache": func() error {
+			_, err := certs.GetCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{}))
+			return err
+		},
+		"CertificateService.SetCache": func() error {
+			_, err := certs.SetCache(t.Context(), connect.NewRequest(&authv1.SetCacheRequest{Data: []byte("d")}))
+			return err
+		},
+		"CertificateService.DeleteCache": func() error {
+			_, err := certs.DeleteCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{}))
+			return err
+		},
+		"HookService.Get": func() error {
+			_, err := (&hookHandler{s}).Get(t.Context(), connect.NewRequest(&authv1.HookRef{}))
+			return err
+		},
+		"ProjectService.Get": func() error {
+			_, err := (&projectHandler{s}).Get(t.Context(), connect.NewRequest(&authv1.ProjectRef{}))
+			return err
+		},
+		"DomainService.Register": func() error {
+			_, err := (&domainHandler{s}).Register(t.Context(), connect.NewRequest(&authv1.RegisterDomainRequest{ProjectId: testProjectID(t)}))
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := call()
+			require.Error(t, err)
+			assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+		})
+	}
+
+	// And nothing reached the store: an empty id must leave no row behind,
+	// least of all one a later listing has to reason about.
+	rows, err := store.List(t.Context(), "/")
+	require.NoError(t, err)
+	assert.Empty(t, rows)
 }

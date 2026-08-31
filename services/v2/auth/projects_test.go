@@ -15,7 +15,7 @@ import (
 // connect.ServerStream and is covered in rpc_test.go.
 
 func TestProjectGet_NotFound(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &projectHandler{s}
 
 	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.ProjectRef{Id: "does-not-exist"}))
@@ -24,7 +24,7 @@ func TestProjectGet_NotFound(t *testing.T) {
 }
 
 func TestProjectCreate_And_Get(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &projectHandler{s}
 
 	res, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
@@ -54,7 +54,7 @@ func TestProjectCreate_And_Get(t *testing.T) {
 }
 
 func TestProjectCreate_EmptyName(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &projectHandler{s}
 
 	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
@@ -67,7 +67,7 @@ func TestProjectCreate_EmptyName(t *testing.T) {
 }
 
 func TestProjectCreate_BadConfigKey(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &projectHandler{s}
 
 	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
@@ -80,7 +80,7 @@ func TestProjectCreate_BadConfigKey(t *testing.T) {
 }
 
 func TestProjectCreate_BadCodeKey(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &projectHandler{s}
 
 	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
@@ -98,7 +98,7 @@ func TestProjectCreate_BadCodeKey(t *testing.T) {
 // (projects.go's Create doc explains why this package does not add that
 // requirement).
 func TestProjectCreate_RepositoriesNeedNotBeRegistered(t *testing.T) {
-	s, _ := newTestService(t)
+	s := newTestService(t)
 	h := &projectHandler{s}
 
 	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
@@ -115,7 +115,7 @@ func TestProjectCreate_RepositoriesNeedNotBeRegistered(t *testing.T) {
 // (store_failures_test.go), not a narrowed check.
 
 func TestProjectCreate_PutProjectFails(t *testing.T) {
-	s := &Service{kv: &batchFailingKVDB{KVDB: newTestKV(t), failAt: 1}}
+	s := &Service{kv: &batchFailingKVDB{Store: newStore(t), failAt: 1}}
 	h := &projectHandler{s}
 
 	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
@@ -126,7 +126,7 @@ func TestProjectCreate_PutProjectFails(t *testing.T) {
 }
 
 func TestProjectCreate_LinkingConfigFails(t *testing.T) {
-	s := &Service{kv: &putFailsAfter{KVDB: newTestKV(t), failOn: 1}}
+	s := &Service{kv: &putFailsAfter{Store: newStore(t), failOn: 1}}
 	h := &projectHandler{s}
 
 	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
@@ -137,7 +137,7 @@ func TestProjectCreate_LinkingConfigFails(t *testing.T) {
 }
 
 func TestProjectCreate_LinkingCodeFails(t *testing.T) {
-	s := &Service{kv: &putFailsAfter{KVDB: newTestKV(t), failOn: 2}}
+	s := &Service{kv: &putFailsAfter{Store: newStore(t), failOn: 2}}
 	h := &projectHandler{s}
 
 	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
