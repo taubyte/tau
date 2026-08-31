@@ -18,7 +18,6 @@ import (
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
-	"github.com/taubyte/tau/pkg/tcc/jsonschema"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -256,11 +255,14 @@ func compileFn(_ js.Value, args []js.Value) any {
 }
 
 // schema() -> the Draft 2020-12 JSON Schema for the whole v2 DSL.
+//
+// The document's identity and its vendor prefix are the DSL's, so they are asked
+// for rather than restated here: a second set of options in a client is a second
+// answer to what this schema IS, and this one drifted — it left ExtPrefix empty,
+// which the emitter reads as the generic "x-", so the page and every Go reader of
+// a tau schema disagreed about the name of the same key.
 func schemaFn(js.Value, []js.Value) any {
-	b, err := jsonschema.GenerateJSONSchema(schema.GenerationRoot(), jsonschema.JSONSchemaOptions{
-		Title:       "tau v2 configuration",
-		Description: "The v2 DSL and its constraints.",
-	})
+	b, err := schema.JSONSchema()
 	if err != nil {
 		return errResult(err.Error())
 	}
