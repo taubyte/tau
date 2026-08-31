@@ -113,10 +113,10 @@ message Repository {
   string project_id = 2;
   // deploy_key is the repository's own private deploy key, as
   // repository.Serialize() (services/auth/repositories/repositories.go)
-  // returns it today on both Get and Register. Carried forward unchanged;
-  // whether a Get response should keep returning key material to every
-  // caller that can reach this RPC is a security question for the service
-  // rewrite, not a schema question for this agent.
+  // returns it on Get — `r.deployKey`, read from the `/key` row Fetch loads.
+  // Carried forward unchanged; whether a Get response should keep returning
+  // key material to every caller that can reach this RPC is a security
+  // question for the service rewrite, not a schema question for this agent.
   string deploy_key = 3;
 }
 
@@ -124,14 +124,51 @@ message RepositoryRef {
   string repository_key = 1;
 }
 
-message RegisterRepositoryResponse {
-  string deploy_key = 1;
-}
-
 service RepositoryService {
   rpc Get(RepositoryRef) returns (Repository);
   rpc List(Empty) returns (stream RepositoryRef);
-  rpc Register(RepositoryRef) returns (RegisterRepositoryResponse);
+  // Register returns Empty, not key material and not a path. An earlier
+  // version of this schema modeled the response as
+  // `message RegisterRepositoryResponse { string deploy_key = 1; }`, which
+  // was wrong on inspection: v1's `registerRepositoryStream`
+  // (services/auth/api_hooks.go) answers `{"key": response.Key}`, and
+  // `response.Key` — `RepositoryRegistrationResponse.Key` in
+  // services/auth/github.go's `registerGitHubRepository` — is assigned
+  // exactly once, to `repoKey := "/repositories/" + key.String() + "/key"`.
+  // That is the KV ROW PATH the deploy key is stored under, not the key
+  // itself; the key (`kpriv`) is generated a few lines earlier and handed
+  // to `repositories.New(srv.KV(), key, kpriv, "")`, which stores it and
+  // never returns it. Get and Register genuinely differ here — Get's
+  // `deploy_key` field above really is `r.deployKey` via `Serialize()` — the
+  // v1 code just never goes through `Serialize()` on Register, and the
+  // field name on this RPC was chosen by assuming it did.
+  //
+  // A KV row path is also not something worth forwarding even correctly
+  // named: it is an internal storage detail — literally where a value
+  // lives, not the value or an identifier the store's own grammar
+  // recognizes elsewhere — and a caller on the other side of this RPC can
+  // do nothing with it. Nor does anything today rely on receiving it. v1's
+  // own p2p client wrapper, `clients/p2p/auth/repositories.go`'s
+  // `GithubRepositories.Register`, is commented "registers a GitHub
+  // repository and returns the deployment key" while doing exactly this —
+  // returning the path — and its only caller, `dream/helpers/helpers.go`,
+  // discards the returned string outright (`_, err = ...Register(...)`).
+  // The GitHub-token HTTP register handler
+  // (`github_http_endpoints.go:registerGitHubUserRepositoryHTTPHandler`,
+  // out of scope for this schema) returns the same struct verbatim to a
+  // human or the CLI, so the path leaks to an actual external caller too —
+  // with no code anywhere shown reading it back for anything.
+  //
+  // The caller also already has the one identifier that would be
+  // meaningful to echo: it sent `RepositoryRef.repository_key` as the
+  // request, so a response repeating it back adds nothing. Returning the
+  // real deploy key instead would reopen the same security question already
+  // raised on `Repository.deploy_key` above — key material to every caller
+  // that can reach this RPC — for a value nothing today is shown to need.
+  // Register answering with nothing beyond success/failure is therefore a
+  // deliberate change from v1's behaviour, not a preservation of it: v1's
+  // shape was never a working contract to begin with, only an unread field.
+  rpc Register(RepositoryRef) returns (Empty);
   rpc Unregister(RepositoryRef) returns (Empty);
 }
 
