@@ -2,10 +2,10 @@ package schema
 
 import (
 	"fmt"
-	"net/url"
 	"regexp"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
@@ -186,65 +186,19 @@ func RepoLocationChecker() func(string) error {
 	return func(p string) error { return repoPathCheck(p, true) }
 }
 
-// scpLike matches git's other spelling, git@host:owner/repo — a URL to git and not
-// to net/url, which parses it as a path with no host. The trailing group is the
-// repository, so it has to be more than "/": the https branch refuses a URL naming a
-// host and nothing else, and this form was not held to the same rule.
-var scpLike = regexp.MustCompile(`^([^\s/@]+)@([A-Za-z0-9.-]+):(\S*)$`)
-
-// IsGitURL checks that a clone URL is well-formed and names a host. It does not
-// resolve the host, reach it, or care whether the repository exists — that is the
-// platform's at publish, with credentials this compiler does not have.
+// IsGitURL checks that a clone URL is well-formed and names a host, by DERIVING
+// ITS CANONICAL KEY and reporting whether that worked. The grammar itself — both
+// spellings git accepts, the credential refusal, the host, the path — lives in
+// pkg/git/repokey, because the compiler is not the only thing that reads a clone
+// URL: the auth store, the sources index and a webhook adapter all have to agree
+// with it on which repository a URL names. It used to be a second copy of the
+// parser here, and a second copy of a grammar is a grammar that drifts — the same
+// failure the repo-path pattern and its checker already had.
+//
+// So a string this accepts is exactly a string that has a key. It resolves
+// nothing: the host is not looked up, not reached, and the repository is not
+// checked to exist. That is the platform's at publish, with credentials this
+// compiler does not have.
 func IsGitURL() engine.Option {
-	return Validator(func(s string) error {
-		if s == "" {
-			return fmt.Errorf("names no repository; write the clone URL, e.g. https://gitlab.com/acme/repo")
-		}
-		if m := scpLike.FindStringSubmatch(s); m != nil {
-			// `git@host:owner/repo`. The part before `@` is the SSH ACCOUNT, which is
-			// identity and not a secret — until it carries a `:`, at which point it is
-			// a user and a password and the same objection applies as to the URL form.
-			if strings.Contains(m[1], ":") {
-				return fmt.Errorf("%q carries a credential; a repository URL in config names the repository, and the identity is the platform's to hold", s)
-			}
-			// The same rule the URL branch enforces, which this form was not held to.
-			if strings.Trim(m[3], "/") == "" {
-				return fmt.Errorf("%q names a host but no repository", s)
-			}
-			return nil
-		}
-		u, err := url.Parse(s)
-		if err != nil {
-			return fmt.Errorf("not a URL: %w", err)
-		}
-		switch u.Scheme {
-		case "https", "http", "ssh", "git":
-		case "":
-			return fmt.Errorf("%q has no scheme; write the clone URL, e.g. https://gitlab.com/acme/repo", s)
-		default:
-			return fmt.Errorf("scheme %q is not a git transport", u.Scheme)
-		}
-		if u.Host == "" {
-			return fmt.Errorf("%q names no host", s)
-		}
-		// A TOKEN IN TRACKED CONFIG. `https://user:ghp_xxx@github.com/acme/repo` is a
-		// working clone URL and a secret in git, and it is the one shape of this
-		// field that cannot be fixed by rotating anything else. §10a: config is
-		// portable and templatable, so the identity a clone needs is held beside the
-		// deployment and never written into the document that describes it.
-		//
-		// THE PASSWORD, NOT THE USER. `ssh://git@github.com/acme/repo` carries a
-		// username because that is how the transport is spelled — `git` is the SSH
-		// account, the same identity the scp form puts before the `@` and the same
-		// repository either way. Refusing the whole `userinfo` refused every ssh URL
-		// while accepting `git@github.com:acme/repo` beside it, which is one rule
-		// applied to one spelling of one thing.
-		if pw, has := u.User.Password(); has && pw != "" {
-			return fmt.Errorf("%q carries a credential; a repository URL in config names the repository, and the identity is the platform's to hold", s)
-		}
-		if strings.Trim(u.Path, "/") == "" {
-			return fmt.Errorf("%q names a host but no repository", s)
-		}
-		return nil
-	})
+	return Validator(repokey.Valid)
 }
