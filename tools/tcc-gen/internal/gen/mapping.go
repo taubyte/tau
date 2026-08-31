@@ -8,7 +8,7 @@ import (
 )
 
 // The mapping rules turn one DSL *engine.Attribute into the exported Go accessor
-// (name + type + body) that pkg/schema hand-writes today. See the plan file for
+// (name + type + body) that legacy/schema hand-writes today. See the plan file for
 // the derivation of every rule below.
 
 // commonAttrs are the attributes every resource group shares — the DSL's

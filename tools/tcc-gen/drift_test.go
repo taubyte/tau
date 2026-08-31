@@ -12,7 +12,7 @@ import (
 // TestNoDrift fails if the committed generated files are out of sync with what
 // tcc-gen produces from the current DSL — the go-test equivalent of
 // `tcc-gen --check`. It byte-compares the structureSpec structs and the TS
-// schema, and name-set compares the pkg/schema accessors (custom.go supplements
+// schema, and name-set compares the legacy/schema accessors (custom.go supplements
 // live in their own files, so they don't register as drift). Regenerate and
 // adopt (`go run ./tools/tcc-gen --out <dir>` then copy in) to fix.
 func TestNoDrift(t *testing.T) {

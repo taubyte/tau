@@ -3,7 +3,7 @@
 
 package {{.Package}}
 
-import "github.com/taubyte/tau/pkg/schema/basic"
+import "github.com/taubyte/tau/legacy/schema/basic"
 
 func Yaml(name, application string, yamlData []byte) (Getter, error) {
 	resource, err := basic.Yaml(yamlData)
