@@ -15,8 +15,6 @@ import (
 	"github.com/taubyte/tau/pkg/vm-low-orbit/globals"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/helpers"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/http/client"
-	"github.com/taubyte/tau/pkg/vm-low-orbit/i2mv/fifo"
-	"github.com/taubyte/tau/pkg/vm-low-orbit/i2mv/memoryView"
 	p2pClient "github.com/taubyte/tau/pkg/vm-low-orbit/p2p"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/self"
 
@@ -77,8 +75,6 @@ func (p *plugin) New(instance vm.Instance) (vm.PluginInstance, error) {
 			self.New(instance, helperMethods),
 			globals.New(instance, p.databaseNode, helperMethods),
 			rand.New(instance, helperMethods),
-			memoryView.New(instance, helperMethods),
-			fifo.New(instance, helperMethods),
 		},
 	}, nil
 }
