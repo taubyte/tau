@@ -1580,6 +1580,59 @@ var V2Resources = []*Node{
 			Resource("stream", "Stream", "Stream", "stream"),
 		)),
 
+	// AN N:N BUS WITH NO REWIND, and that is the only thing separating it from
+	// `stream` — not the shape. Both fan out to everyone attached. A stream backed by
+	// Kafka or by NATS JetStream is a LOG: it has offsets, consumer groups and replay,
+	// so a subscriber that was not there still gets what it missed. A message put on a
+	// bus and not received is gone. Durability is the whole distinction, and it is why
+	// there are two kinds rather than one with a flag: a flag would make "can I replay
+	// this?" a property somebody edits, when it is a property of what the thing IS.
+	//
+	// (NATS is on both sides of that line and the halves are easy to swap: JetStream is
+	// NATS's PERSISTENCE layer and belongs to `stream`; core NATS is the ephemeral n:n
+	// bus and is this shape.)
+	//
+	// IT HAS NO ENGINE AXIS, and the absence is the statement. Every engine a `stream`
+	// can name is a durable log; giving a bus the same key would let somebody write a
+	// bus that rewinds, which is a stream wearing the wrong kind. What backs it is the
+	// swarm, and there is nothing to choose.
+	//
+	// A WEBSOCKET IS AN ADDRESS, NOT A BOOLEAN. v1 spelled it `bridges.websocket.enable`
+	// on the pubsub kind — a flag that turned something on and named nowhere for a
+	// browser to point at, so the URL came out of a host call at run time and existed
+	// nowhere a reader could see. Writing `host:` is what gives this bus a websocket,
+	// and it is the same `host:` a gateway and an L4 proxy already declare: a name
+	// under the cloud's own zone, or one in a zone the project owns. That keeps §10a's
+	// rule — the config never names the cloud it happens to be running in — and it
+	// gives `ReachableNames` something to answer with, which a boolean could not.
+	// A bus with no `host:` is reachable from inside the project and from nowhere else.
+	//
+	// AND IT HAS NO `match`/`regex`. `stream` carries that pair because v1's `messaging`
+	// did; it is a pattern with no owner, and instanceAttributes' own comment says what
+	// is wrong with it — it answers "may this instance exist" with "does this string
+	// match". A bus is the sharpest case, because the thing attaching is a BROWSER: the
+	// instance name is the caller's, so the project has to have a point at which it
+	// says no. That point is `instances:`, the construct every store here already uses.
+	// Converging `stream` onto the same construct is the owner's call and is not done
+	// here.
+	//
+	// The verbs are `stream`'s, and deliberately the same ones: what you DO to a bus is
+	// what you do to a topic, and the kinds differ in what happens afterwards. Two
+	// spellings for one operation would make every cross-cutting query ask twice.
+	DefineGroup("bus",
+		resource(
+			commonAttributes(append(append([]*Attribute{},
+				hostAttributes("websocket")...),
+				instanceAttributes()...)...),
+			GroupDoc("An ephemeral n:n message bus: everything attached gets what is sent, and nothing is kept. Give it a host and a browser can attach over websocket."), Icon("cable"), Category("trigger"),
+			AnswersAt("host"),
+			secIdentity, secAccess,
+			Section("websocket", "Websocket", "The name a browser attaches to, if this bus is reachable from outside."),
+			secInstances,
+			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
+			Resource("bus", "Bus", "Bus", "bus"),
+		)),
+
 	// NO `auth` FIELD. It was `none | oauth`, and `oauth` promised to "validate tokens
 	// minted by a NAMED authorization server" with nowhere to name one — no issuer, no
 	// audience, no keys. A security-shaped claim nothing could honour, which is the

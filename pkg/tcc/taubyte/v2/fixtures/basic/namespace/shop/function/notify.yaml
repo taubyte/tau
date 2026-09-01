@@ -18,3 +18,7 @@ stream:
     orders:
         namespace: /
         ops: [subscribe]
+bus:
+    chat:
+        namespace: /
+        ops: [publish]

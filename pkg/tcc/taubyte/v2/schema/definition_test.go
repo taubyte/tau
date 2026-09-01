@@ -1477,3 +1477,76 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 	_, leaked := shipments["local"]
 	assert.Assert(t, !leaked, "a kafka-backed stream carries no claim about node-local scope")
 }
+
+// A BUS IS A STREAM WITHOUT DURABILITY, AND THE SCHEMA SAYS SO RATHER THAN THE PROSE.
+// Two kinds that fan out to everyone attached will be read as duplicates and merged by
+// somebody unless what separates them is structural, so this pins the three places it
+// is: a bus can name no engine (every engine a stream has is a durable log, and a bus
+// that rewinds is a stream wearing the wrong kind), a bus admits instances by validator
+// where a stream matches a pattern, and a bus has a host — the websocket a browser
+// attaches to — where a stream has none.
+func TestABusIsAStreamWithoutDurability(t *testing.T) {
+	compile := func(path, body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
+			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, path,
+			[]byte("id: QmYb8sCzT9dGqLxKRp7BwVn2jMhFcXPtUdEaWqRk4vNhJ5\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	// A bus needs nothing at all: it is the swarm's, and there is nothing to choose.
+	assert.NilError(t, compile("/bus/chat.yaml", "description: internal only\n"))
+
+	// NO ENGINE AXIS. Every one of a stream's engines is a durable log, so none of them
+	// is a key a bus can write — which is what stops a bus that rewinds existing.
+	for _, engine := range []string{"kafka", "nats", "distributed"} {
+		assert.ErrorContains(t, compile("/bus/chat.yaml", engine+":\n    host: b:9092\n"),
+			"unknown key '"+engine+"'", "a bus must not be able to name %q", engine)
+	}
+
+	// The bus admits instances; the stream matches a pattern. Neither takes the other's.
+	assert.NilError(t, compile("/bus/chat.yaml", "instances:\n    validator:\n        name: f\n"))
+	assert.ErrorContains(t, compile("/bus/chat.yaml", "match: chat\n"), "unknown key 'match'")
+	assert.ErrorContains(t, compile("/stream/s.yaml", "match: o\ndistributed: {}\ninstances:\n    validator:\n        name: f\n"),
+		"unknown key 'instances'")
+
+	// The websocket is an ADDRESS, so it is the same `host:` a gateway declares — and
+	// the bus is what answers on it.
+	assert.NilError(t, compile("/bus/chat.yaml", "host:\n    generated:\n        name: chat\n"))
+	assert.ErrorContains(t, compile("/stream/s.yaml", "match: o\ndistributed: {}\nhost:\n    generated:\n        name: x\n"),
+		"unknown key 'host'")
+	// …and the deleted flag is not a spelling of it.
+	assert.ErrorContains(t, compile("/bus/chat.yaml", "websocket: true\n"), "unknown key 'websocket'")
+
+	chat := namedResource(t, resources(t, compileBasic(t), "bus"), "chat")
+	assert.Equal(t, nested(chat, "host", "kind"), "generated")
+	assert.Equal(t, nested(chat, "host", "name"), "chat")
+	// It answers on a name, so a client is told what to dial rather than guessing.
+	found := false
+	for _, r := range schema.ReachableNames(rootOf(compileBasic(t))) {
+		if r.Name == "chat" && r.Generated {
+			found = true
+		}
+	}
+	assert.Assert(t, found, "a bus with a host has to appear in ReachableNames")
+
+	// The verbs are the stream's, deliberately: what you DO to a bus is what you do to
+	// a topic, and the kinds differ in what happens afterwards.
+	assert.DeepEqual(t, opsOf(t, "bus"), opsOf(t, "stream"))
+	assert.Assert(t, schema.OpsOf("bus")[0].Delivered, "a subscriber is handed the message")
+}
+
+func opsOf(t *testing.T, kind string) []string {
+	t.Helper()
+	var out []string
+	for _, v := range schema.OpsOf(kind) {
+		out = append(out, v.Name+":"+v.Effect)
+	}
+	return out
+}
