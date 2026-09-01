@@ -80,6 +80,18 @@ func tsProp(k string) string {
 	return k
 }
 
+// quotedEnum reports whether an enum's members are STRING literals in the union,
+// read off the attribute's declared type rather than off an opt-in annotation.
+// Only a number is a bare literal in TypeScript; anything else unquoted is a type
+// reference, so `"GET" | ...` emitted as `GET | ...` names nine types that do not
+// exist. The engine's own InSet annotates the string case, but a vocabulary that
+// builds its own set-validator (EachInSet, over a StringSlice) has no reason to
+// know about the annotation — and forgetting it must not produce a union of
+// dangling identifiers.
+func quotedEnum(a *engine.Attribute) bool {
+	return a.Type != engine.TypeInt && a.Type != engine.TypeFloat
+}
+
 // tsWireType is the TS type of a compiled-shape field: its enum union if it has
 // one (same alias the accessor emit declares), else the scalar mapping.
 func tsWireType(spec string, f Field) string {
@@ -154,6 +166,17 @@ func branchOf(a *engine.Attribute) (prefix, alts, suffix []string, ok bool) {
 	return prefix, alts, suffix, ok && len(alts) > 0
 }
 
+// branchSwitch is one switch's discriminator: the TS union naming its
+// alternatives and what to call the argument that picks one.
+type branchSwitch struct{ alias, param string }
+
+// switchAt identifies a switch by WHERE the choice sits — the literal segments
+// before it. A node's readiness/kind and liveness/kind are two switches because
+// they open under two different blocks; a type's engine key and the fields that
+// live under it are one because they share a prefix. NUL joins so no two
+// distinct prefixes can spell the same location.
+func switchAt(prefix []string) string { return strings.Join(prefix, "\x00") }
+
 type tsResource struct {
 	spec   string // e.g. "Function" -> class FunctionConfig, Session.function()
 	group  string // config directory, e.g. "functions"
@@ -210,17 +233,27 @@ func repoShapeOf(groups []*engine.Node) (*repoShape, error) {
 func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enumOrder *[]string) ([]tsField, error) {
 	var out []tsField
 	seen := map[string]bool{}
-	// The discriminator's alternatives name the branch union for the whole
-	// group, so a branched field and the key that selects it share one type.
-	branchAlias, branchParam := "", ""
+	// A node may hold SEVERAL switches — a database's type and each type's
+	// engine, an application's readiness and its liveness — so the discriminator
+	// is looked up per switch, keyed by WHERE the choice sits. One alias per node
+	// gave every switch the last one's name and values, which is how sqlEngine()
+	// came to be typed by the admission key.
+	switches := map[string]branchSwitch{}
 	for _, a := range n.Attributes {
-		if _, alts, _, ok := branchOf(a); ok && a.Captures {
-			branchParam = tsName(structFieldName(group, a))
-			branchAlias = spec + upperFirst(branchParam)
-			if _, exists := enums[branchAlias]; !exists {
-				enums[branchAlias] = tsEnum{name: branchAlias, values: alts, quoted: true}
-				*enumOrder = append(*enumOrder, branchAlias)
-			}
+		prefix, alts, _, ok := branchOf(a)
+		if !ok || !a.Captures {
+			continue
+		}
+		k := switchAt(prefix)
+		if _, dup := switches[k]; dup {
+			continue // first Key() at a location selects it
+		}
+		param := tsName(structFieldName(group, a))
+		alias := spec + upperFirst(param)
+		switches[k] = branchSwitch{alias: alias, param: param}
+		if _, exists := enums[alias]; !exists {
+			enums[alias] = tsEnum{name: alias, values: alts, quoted: true}
+			*enumOrder = append(*enumOrder, alias)
 		}
 	}
 
@@ -252,8 +285,7 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 		if vals, ok := a.Meta["enum"].([]string); ok {
 			alias := spec + upperFirst(fname)
 			if _, exists := enums[alias]; !exists {
-				_, quoted := a.Meta["enumString"].(bool)
-				enums[alias] = tsEnum{name: alias, values: vals, quoted: quoted}
+				enums[alias] = tsEnum{name: alias, values: vals, quoted: quotedEnum(a)}
 				*enumOrder = append(*enumOrder, alias)
 			}
 			typ = alias
@@ -261,17 +293,18 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 		f := tsField{name: fname, typ: typ, path: path}
 		if branched {
 			f.prefix, f.alts, f.suffix = prefix, alts, suffix
-			f.alias, f.param, f.isKey = branchAlias, branchParam, a.Captures
+			sw := switches[switchAt(prefix)]
+			f.alias, f.param, f.isKey = sw.alias, sw.param, a.Captures
 			if f.alias == "" {
 				// A branching field with no Key attribute over the same
 				// alternatives has nothing to name the branch. Rather than
 				// silently drop it — which is how this whole class of field
 				// went unaddressable in the first place — say so.
-				return nil, fmt.Errorf("%s.%s branches over %v but %s declares no Key attribute to select it",
-					group, a.Name, alts, group)
+				return nil, fmt.Errorf("%s.%s branches over %v under %v but %s declares no Key attribute there to select it",
+					group, a.Name, alts, prefix, group)
 			}
 			if a.Captures {
-				f.typ = branchAlias
+				f.typ = sw.alias
 			}
 		}
 		if compat, ok := compatSegs(a); ok {
