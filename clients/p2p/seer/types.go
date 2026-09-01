@@ -6,7 +6,6 @@ import (
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	iface "github.com/taubyte/tau/core/services/seer"
 	client "github.com/taubyte/tau/p2p/streams/client"
-	"github.com/taubyte/tau/pkg/sensors"
 )
 
 var _ iface.Client = &Client{}
@@ -14,7 +13,6 @@ var _ iface.Client = &Client{}
 type Client struct {
 	client   *client.Client
 	services iface.Services
-	sensors  *sensors.Registry
 	peers    []peerCore.ID
 }
 

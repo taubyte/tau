@@ -7,9 +7,7 @@ version: v2
 # Membership here is what gives a module the workspace's shared lint/breaking
 # config below instead of buf's bare defaults — pkg/v2/proto and
 # pkg/spore-drive/proto carry no buf.yaml of their own for exactly that
-# reason. pkg/sensors/proto is deliberately not listed: it has its own
-# buf.yaml and has never needed to import across modules, so it stays
-# independent rather than joining a workspace it doesn't use.
+# reason.
 #
 # A bare `buf lint`/`buf build`/`buf generate` run from the repo root walks
 # every module above and fails outright ("had no .proto files") on an OSS

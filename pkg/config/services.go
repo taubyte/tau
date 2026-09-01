@@ -13,7 +13,6 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/pkg/sensors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -62,13 +61,11 @@ type Config interface {
 	ClientNode() peer.Node
 	SwarmKey() []byte
 	Http() http.Service
-	Sensors() *sensors.Service
 	EnableHTTPS() bool
 	Verbose() bool
 	DevMode() bool
 	Plugins() Plugins
 	DomainValidation() DomainValidation
-	SensorsRegistry() *sensors.Registry
 	Accounts() Accounts
 	Tenancy() Tenancy
 
@@ -77,7 +74,6 @@ type Config interface {
 	SetClientNode(peer.Node)
 	SetDatabases(kvdb.Factory)
 	SetHttp(http.Service)
-	SetSensors(*sensors.Service)
 }
 
 // Option applies a setting during construction and may validate it.
@@ -353,7 +349,6 @@ type config struct {
 	clientNode       peer.Node
 	swarmKey         []byte
 	http             http.Service
-	sensors          *sensors.Service
 	enableHTTPS      bool
 	verbose          bool
 	devMode          bool
@@ -468,7 +463,6 @@ func (c *config) RaftCluster() raft.Cluster          { return c.raftCluster }
 func (c *config) ClientNode() peer.Node              { return c.clientNode }
 func (c *config) SwarmKey() []byte                   { return c.swarmKey }
 func (c *config) Http() http.Service                 { return c.http }
-func (c *config) Sensors() *sensors.Service          { return c.sensors }
 func (c *config) EnableHTTPS() bool                  { return c.enableHTTPS }
 func (c *config) Verbose() bool                      { return c.verbose }
 func (c *config) DevMode() bool                      { return c.devMode }
@@ -482,14 +476,6 @@ func (c *config) SetRaftCluster(rc raft.Cluster) { c.raftCluster = rc }
 func (c *config) SetClientNode(n peer.Node)      { c.clientNode = n }
 func (c *config) SetDatabases(db kvdb.Factory)   { c.databases = db }
 func (c *config) SetHttp(h http.Service)         { c.http = h }
-func (c *config) SetSensors(s *sensors.Service)  { c.sensors = s }
-
-func (c *config) SensorsRegistry() *sensors.Registry {
-	if c.sensors != nil {
-		return c.sensors.Registry()
-	}
-	return nil
-}
 
 func (c *config) validate() error {
 	if c == nil {

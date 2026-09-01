@@ -15,7 +15,7 @@ func (ni *instance) post() (err error) {
 		return err
 	}
 
-	ni.seerClient, err = seer.New(ni.ctx, ni, nil)
+	ni.seerClient, err = seer.New(ni.ctx, ni)
 	if err != nil {
 		return err
 	}
