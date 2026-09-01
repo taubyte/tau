@@ -11,8 +11,10 @@
 //     domains/paths. ".notes/v2/resources.md" §1.3, §1.5.
 //   - smartops is deleted. Policy is `authorizers` (request-scoped, per-edge);
 //     limits are platform-enforced at dispatch. "resources.md" Deletions.
-//   - `databases` -> `kv`, `libraries` -> `component`. `database` beside `sql` is a
-//     permanent support cost.
+//   - `libraries` -> `component`. `databases` stayed `database` and grew a `type`:
+//     kv, document, sql and vector are data models of one kind rather than four kinds,
+//     because what differs between them is the verb set and the engine, both of which
+//     the kind can state.
 //   - `notification.email` is deleted: inert since it was added, read nowhere.
 //   - The scope container is `namespaces`, not `applications`. `applications` was
 //     v1's word for a scope; in v2 it is the container compute kind, and the scope
@@ -29,6 +31,7 @@ package schema
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -523,13 +526,267 @@ func hostAttributes(section string) []*Attribute {
 	}
 }
 
-// externalDatabaseEngines are the database servers reachable over the network, and
-// databaseEngines is those plus tau's own. Closed, because each one is a wire protocol
-// and a driver — adding one is a release, not a config value — and because a closed set
-// is what makes naming a non-database here impossible rather than merely wrong.
-var externalDatabaseEngines = []string{"postgres", "mysql"}
+// A DATABASE ANSWERS TWO QUESTIONS, AND IT USED TO BE ASKED ONE.
+//
+// What DATA MODEL it is — keys and values, documents, SQL, vectors — and WHICH ENGINE
+// backs it. The two are independent: tau's own engine serves all four, and somebody
+// else's Postgres, MySQL or Mongo serves the ones that have an external product. Asking
+// only the second question is what left `kv` unauthorable — a durable key-value store
+// had no word in this vocabulary and the nearest thing was `cache`, whose own
+// documentation says it is not a system of record — while `vector` became a KIND of its
+// own for no reason except that its verbs differ, which is a property of the data model
+// and not of the resource.
+//
+// So the document names the type, and the type block names the engine:
+//
+//	sql:                                kv:
+//	    postgres:                           distributed:
+//	        host: db.example.com                size: 32MB
+//	        credentials: { name: pg }
+//
+// A WRONG PAIR IS UNREPRESENTABLE, which is the property the old shape had and the one
+// thing that could not be given up. `engine: kafka` was refused because the engine is a
+// KEY from a closed set rather than a string or a reference to a `connector`; a document
+// database on Postgres is refused by the same check, because the set of engine keys is
+// declared PER TYPE:
+//
+//	unknown key 'postgres'; valid keys here: distributed, mongo
+//
+// One `engine:` key beside one `type:` key could not have done that — each value is
+// legal on its own and only the pair is wrong, which is a rule somebody has to remember
+// to write and a document that compiles until they do. The cost is that the engine is
+// four keys rather than one (`kv/engine`, `sql/engine`, …), read as `<type>/engine`;
+// that is the same shape `storage` already has, where `object` and `streaming` each own
+// their block.
 
-var databaseEngines = append([]string{"distributed"}, externalDatabaseEngines...)
+// tauEngine is tau's own: pkg/kvdb, a Merkle-CRDT replicated by the storage service. It
+// is the one engine every type has and the only one that needs no external system.
+const tauEngine = "distributed"
+
+// databaseType is one data model. ONE TABLE, because five things read it — the type
+// switch's Either, each type's engine Either, the kind's Ops(), the audit that refuses
+// an op the target's type does not have, and the JSON Schema an editor completes from —
+// and a second list of any of them drifts the day a type is added.
+type databaseType struct {
+	name string
+	// external is the servers that speak this model over the network. Closed for the
+	// same reason the engine key is a key: each one is a wire protocol and a driver,
+	// which is a release rather than a config value. Empty means tau's own engine is
+	// the only thing here that speaks it.
+	external []string
+	// ops is what may be done to a database of this type. THE PER-KIND VERB RULE IS NOT
+	// GIVEN UP BY FOLDING FOUR MODELS INTO ONE KIND: Ops() carries the union, because an
+	// access block is loaded before anything knows which database it names, and
+	// checkDatabaseOps holds every entry to the verbs of the type it actually reaches.
+	ops Verbs
+	// extra is what only this model has to say about itself — a vector's width and
+	// metric. A field every type would carry belongs in databaseType.attributes.
+	extra func(databaseType) []*Attribute
+	doc   string
+}
+
+var databaseTypes = []databaseType{
+	// PERSISTENT, REPLICATED, AND A SYSTEM OF RECORD — which is exactly what `cache` is
+	// not, and the reason this type exists. The engine is pkg/kvdb: writes go to disk,
+	// the storage service holds a replica on more than one node before a write is
+	// acknowledged, and nothing expires. There is no `ttl` here and there will not be
+	// one: an entry that vanishes on its own is what a cache is for, and a record that
+	// deletes itself is not a record.
+	//
+	// WHAT IT DOES NOT PROMISE, because the engine does not: concurrent writes to ONE
+	// key are merged last-writer-wins, so one of them is discarded with no error. There
+	// is no compare-and-swap and no transaction — an `entity` is what serves a
+	// linearizable counter. The rule that falls out is the one AGENTS.md states for
+	// every kvdb layout in this repository: never a key two writers can write
+	// differently; put the discriminator in the key and let the prefix scan be the
+	// index.
+	{
+		name: "kv",
+		ops:  Verbs{ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")},
+		doc:  "Keys and values, kept until something deletes them.",
+	},
+
+	// Documents fetched by id, and asked questions by their fields. tau's own engine for
+	// it is not shipped yet — the same position `sql: distributed` is in, which is
+	// mushql — and the type is declared anyway because what an author writes does not
+	// change when the engine lands.
+	{
+		name:     "document",
+		external: []string{"mongo"},
+		ops:      Verbs{ReadOp("get"), ReadOp("query"), WriteOp("put"), WriteOp("delete")},
+		doc:      "Documents, fetched by id or found by a query over their fields.",
+	},
+
+	// `exec` is a write because the host cannot classify arbitrary SQL.
+	{
+		name:     "sql",
+		external: []string{"postgres", "mysql"},
+		ops:      Verbs{ReadOp("query"), WriteOp("exec")},
+		doc:      "Tables, rows and SQL.",
+	},
+
+	// It was its own KIND until 2026-08-31, on the argument that its verbs are not a
+	// database's — which is true and is a fact about the data model, not about the
+	// resource. `query`/`exec` cannot describe `search`/`upsert`, and they do not have
+	// to: verbs are per TYPE here, and the union an access block may spell is held to
+	// the target's own type by checkDatabaseOps.
+	{
+		name:  "vector",
+		ops:   Verbs{ReadOp("search"), WriteOp("upsert"), WriteOp("delete")},
+		extra: vectorIndexAttributes,
+		doc:   "Embeddings, searched by nearest neighbour. What an agent remembers, and what a retrieval step searches.",
+	},
+}
+
+// engines is every key that may name this type's engine: tau's own first, then whatever
+// external servers speak the model.
+func (t databaseType) engines() []string { return append([]string{tauEngine}, t.external...) }
+
+func databaseTypeNames() []string {
+	out := make([]string, 0, len(databaseTypes))
+	for _, t := range databaseTypes {
+		out = append(out, t.name)
+	}
+	return out
+}
+
+func databaseTypeOf(name string) (databaseType, bool) {
+	for _, t := range databaseTypes {
+		if t.name == name {
+			return t, true
+		}
+	}
+	return databaseType{}, false
+}
+
+// databaseOps is every verb any type declares, deduplicated, in table order — what an
+// access block may spell before anything has resolved which database it names.
+//
+// It PANICS when two types give one verb different effect classes. The effect is the
+// join key every cross-cutting query groups by, so a `delete` that is a write on a kv
+// and a read on a vector would make the union meaningless; catching it here makes it a
+// build failure rather than a report that quietly answers wrong.
+func databaseOps() []Verb {
+	seen := map[string]Verb{}
+	out := []Verb{}
+	for _, t := range databaseTypes {
+		for _, v := range t.ops {
+			if had, ok := seen[v.Name]; ok {
+				if had != v {
+					panic(fmt.Sprintf("database: verb %q is declared two ways: %+v and %+v", v.Name, had, v))
+				}
+				continue
+			}
+			seen[v.Name] = v
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// databaseAttributes is the kind's shape: the type switch, then one block per type.
+func databaseAttributes() []*Attribute {
+	out := []*Attribute{
+		// THE TYPE IS NOT WRITTEN, it is the block that IS written — the same construct
+		// `storage` uses for object-versus-streaming, and the reason a database cannot
+		// be of two types or of none.
+		String("type", Path(Either(databaseTypeNames()...)), Captures(), InSection("engine"),
+			Doc("Type", "Which data model this is. It is the key everything else hangs off: a database is one block named after its type.")),
+	}
+	for _, t := range databaseTypes {
+		out = append(out, t.attributes()...)
+	}
+	return out
+}
+
+func (t databaseType) attributes() []*Attribute {
+	shown := ShowWhen("type", t.name)
+	out := []*Attribute{
+		String(Key(t.name, "engine"), Path(t.name, Either(t.engines()...)), Captures(), InSection("engine"), shown,
+			Doc("Engine", fmt.Sprintf("Which engine backs it: %s. %s is tau's own, replicated across the swarm; the rest are external servers reached over the network.",
+				strings.Join(t.engines(), ", "), tauEngine))),
+
+		// THE SIZE IS TAU'S OWN ENGINE'S, and it is written inside that branch. An
+		// external server's disk is not this project's to declare, and a key nothing
+		// reads is the defect `notification.email` was deleted for.
+		//
+		// The path names `distributed` literally rather than matching the whole engine
+		// set, so `postgres: { size: 1GB }` is an unknown key instead of a number filed
+		// under a branch nobody took. A LITERAL PATH IS ALSO WHAT A LOWERING NEEDS:
+		// interp's authoredPath has no single location for a path with a matcher in it,
+		// so a field an agent's memory sets has to be reachable by fixed segments.
+		Bytes(Key(t.name, "size"), Path(t.name, tauEngine, "size"),
+			RequiredWhen(Key(t.name, "engine"), tauEngine), PerEnv(), InSection("engine"), shown,
+			Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
+	}
+
+	if len(t.external) > 0 {
+		ext := t.external
+		out = append(out,
+			// AN EXTERNAL ENGINE CARRIES ITS OWN CONNECTION. There is no reference to a
+			// `connector` here, and that absence is the point — see the note above the
+			// table. Both halves of the credential reference sit under the engine
+			// branch: they used to be split, the name under the branch and the
+			// namespace outside it, which is one reference authored in two places.
+			String(Key(t.name, "host"), Path(t.name, Either(ext...), "host"),
+				RequiredWhen(Key(t.name, "engine"), ext...), PerEnv(), InSection("engine"), shown,
+				Doc("Host", "Where the external server is reached, as host or host:port.")),
+			String(Key(t.name, "database"), Path(t.name, Either(ext...), "database"), PerEnv(), InSection("engine"), shown,
+				Doc("Database", "The database name within that server. Defaults to this resource's name.")),
+			String(Key(t.name, "credentials", "namespace"), Path(t.name, Either(ext...), "credentials", "namespace"),
+				IsNamespacePath(), InSection("engine"), shown,
+				Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
+			String(Key(t.name, "credentials", "name"), Path(t.name, Either(ext...), "credentials", "name"),
+				IsVariableName(), Ref("secret", Inbound()), RequiredWhen(Key(t.name, "engine"), ext...), InSection("engine"), shown,
+				Doc("Credentials", "Secret holding the credentials to connect with, as \"secret/<name>\".")),
+
+			// SAFE BY DEFAULT, EXPLICIT TO WEAKEN: absent means verify-full, and an
+			// author who wants credentials on the wire in the clear has to write
+			// `disable` and see the word. It is deliberately not RequiredWhen: a value
+			// here is a WEAKENING, so the safe state has to be the one an author reaches
+			// by writing nothing.
+			String(Key(t.name, "tls"), Path(t.name, Either(ext...), "tls"),
+				InSet("verify-full", "require", "disable"), PerEnv(), InSection("engine"), shown,
+				Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included.")),
+		)
+	}
+
+	if t.extra != nil {
+		out = append(out, t.extra(t)...)
+	}
+	return out
+}
+
+// vectorIndexAttributes is what an index needs and no other data model does. It sits in
+// the type block BESIDE the engine key rather than inside it: the width of a vector is
+// the embedding model's, not the engine's, and it stays the same number whichever engine
+// stores it.
+func vectorIndexAttributes(t databaseType) []*Attribute {
+	shown := ShowWhen("type", t.name)
+	return []*Attribute{
+		// DIMENSIONS ARE FIXED AT CREATION and required for every vector database: an
+		// index is built for a width, every vector in it has that width, and changing it
+		// is a new index and a re-embed of everything. A default would be a guess at
+		// which embedding model someone is using.
+		Int(Key(t.name, "dimensions"), MinInt(1), RequiredWhen(Key(t.name, "engine"), t.engines()...),
+			InSection("engine"), shown,
+			Doc("Dimensions", "The width of every vector stored here, which the embedding model decides — 1536 for OpenAI's text-embedding-3-small, 1024 for Cohere v3. Fixed: changing it is a new index and a re-embed.")),
+
+		// NO Default(), AND THAT IS FORCED RATHER THAN PREFERRED. A default fires
+		// whenever the value is absent, whatever the rest of the document says — so
+		// `Default("cosine")` on a field of the vector block writes `metric: cosine`
+		// onto every kv, document and sql database in the project, which is a claim
+		// about a branch nobody took. The vocabulary already had the answer beside it:
+		// `tls` says what omitting it means and defaults nothing.
+		//
+		// The metric has to match how the model was TRAINED, which is why it is named
+		// rather than tuned: cosine for a model trained on normalized embeddings, dot
+		// for one that is not, euclidean where magnitude means something. Getting it
+		// wrong does not error — it just ranks badly.
+		String(Key(t.name, "metric"), InSet("cosine", "dot", "euclidean"), InSection("engine"), shown,
+			Doc("Metric", "How closeness is measured. Omitted means cosine. Match the embedding model: cosine for normalized embeddings, dot where magnitude carries meaning, euclidean for raw distance.")),
+	}
+}
 
 // A kind declares Ops() when something can reach it. A kind without them is not a
 // target: nothing "uses" a cron, a zone or a component — a cron fires, a zone answers
@@ -751,87 +1008,30 @@ var V2Resources = []*Node{
 			Resource("cache", "Cache", "Cache", "cache"),
 		)),
 
-	// A database — a system of record, and the only kind here that is one.
+	// A DATABASE, AND THE ONLY KIND HERE THAT IS A SYSTEM OF RECORD. Four data models
+	// live under it — see databaseTypes above for what the two switches are and why the
+	// wrong pair cannot be written.
 	//
-	// `engine` is the switch, and the two answers are genuinely different products:
-	// `distributed` is tau's own, mushql over CRDT replication, and it is the one that
-	// needs no external system; `connector` is somebody else's Postgres or MySQL,
-	// reached through the connector that already holds its credentials, which is where
-	// every managed database belongs rather than as a second set of fields here.
-	//
-	//	engine:
-	//	    distributed: { size: 1GB }
-	//	  # engine:
-	//	  #   connector: connectors/pg-main
-	// The external engines are a CLOSED set, and this database names one directly
-	// rather than pointing at a `connector`.
-	//
-	// It used to point at one, and `databases/orders` naming `connectors/kafka-orders`
-	// compiled clean — Ref() resolves a name to an id and stops there, so nothing
-	// noticed that Kafka answers no query. The first fix was a `provides` role list on
-	// the connector, which was wrong twice over: it asked the author to restate a fact
-	// about software they did not write (whoever implements the postgres connector
-	// knows it backs a database; the person copying that into yaml can copy it wrong),
-	// and it declared capabilities nothing consumed, which is the inert-field defect
-	// this vocabulary deleted `notification.email` for.
-	//
-	// So the mismatch is made UNREPRESENTABLE rather than detectable. `kafka` is not a
-	// key that can be written here, the same way a non-HTTP kind cannot be a gateway
-	// handler. A database engine is not an extensibility surface — a new one is a new
-	// wire protocol and a new driver, which is a release, not a config value.
-	//
-	// `connectors` keeps the open seam and goes back to meaning one thing: an external
-	// system you RECEIVE EVENTS from.
-	//
-	// The cost, accepted: a Postgres used both as a database and as an event source is
-	// configured twice. They are different credentials and different access anyway, and
-	// one config object meaning two things is what caused this.
+	// `cache` is the one neighbour that is deliberately NOT a type here, and the line
+	// between them is durability rather than shape: a cache entry has a lifetime, losing
+	// one costs a recomputation, and nothing in it is a record. `kv` is the same pair of
+	// verbs over a store that keeps what it is given.
 	DefineGroup("database",
 		resource(
-			commonAttributes(
-				String(Key("engine", "kind"), Path("engine", Either(databaseEngines...)), Captures(), Field("Engine"), InSection("engine"),
-					Doc("Engine", "Which engine backs this database. distributed is tau's own, replicated across the swarm; the rest are external systems reached over the network.")),
-				Bytes(Key("engine", "distributed", "size"), Path("engine", Either(databaseEngines...), "size"), RequiredWhen(Key("engine", "kind"), "distributed"), PerEnv(), InSection("engine"), ShowWhen(Key("engine", "kind"), "distributed"),
-					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
-
-				// An external engine carries its OWN connection. There is no reference
-				// to a `connector` here, and that absence is the point — see the note
-				// above this kind.
-				String(Key("engine", "host"), Path("engine", Either(externalDatabaseEngines...), "host"), RequiredWhen(Key("engine", "kind"), externalDatabaseEngines...), PerEnv(), InSection("engine"),
-					Doc("Host", "Where the external database is reached, as host or host:port.")),
-				String(Key("engine", "database"), Path("engine", Either(externalDatabaseEngines...), "database"), PerEnv(), InSection("engine"),
-					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
-				String(Key("engine", "credentials", "namespace"), IsNamespacePath(), InSection("engine"),
-					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-				String(Key("engine", "credentials", "name"), IsVariableName(), Path("engine", Either(externalDatabaseEngines...), "credentials", "name"), RequiredWhen(Key("engine", "kind"), externalDatabaseEngines...), Ref("secret", Inbound()), InSection("engine"),
-					Doc("Credentials", "Secret holding the credentials to connect with, as \"secret/<name>\".")),
-
-				// SAFE BY DEFAULT, EXPLICIT TO WEAKEN: absent means verify-full, and an
-				// author who wants credentials on the wire in the clear has to write
-				// `disable` and see the word.
-				//
-				// It is not Required(), which would fire on `distributed` too — a branch
-				// that opens no socket and has no wire to protect. RequiredWhen would
-				// express it, and is deliberately not used: a value here is a WEAKENING,
-				// so the safe state has to be the one an author reaches by writing
-				// nothing. Demanding the field would make "explicit" the only way to get
-				// the default, which is how `disable` ends up typed by someone clearing
-				// an error.
-				//
-				// (This comment used to say RequiredWhen "never fires at all" against a
-				// Captures() sibling, and called that a live defect. It was one, and it
-				// was fixed on 2026-08-18 — requiredHere reads the matched branch, which
-				// is ENGINE-CHANGES.md #5. `engine/distributed/size` is enforced: a
-				// distributed database with no size is refused, and there is a test.)
-				String(Key("engine", "tls"), Path("engine", Either(externalDatabaseEngines...), "tls"), InSet("verify-full", "require", "disable"), PerEnv(), InSection("engine"), ShowWhen(Key("engine", "kind"), externalDatabaseEngines...),
-					Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included.")),
+			commonAttributes(append(databaseAttributes(),
 				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
-			),
-			GroupDoc("A database: tau's own distributed engine, or an external server reached over the network."), Icon("database"), Category("data"),
+			)...),
+			GroupDoc("A database: keys and values, documents, tables or vectors — on tau's own replicated engine, or on an external server reached over the network."), Icon("database"), Category("data"),
 			secIdentity, secAccess,
-			Section("engine", "Engine", "Which engine backs it, and its settings."),
+			Section("engine", "Engine", "Which data model it is, which engine backs it, and its settings."),
 			secInstances,
-			Ops(ReadOp("query"), WriteOp("exec")), // exec is write: the host cannot classify arbitrary SQL
+			// THE UNION, and it is not a hole in the per-kind verb rule. An access block
+			// is loaded before anything has resolved which database it names, so this is
+			// the widest set the loader can hold it to; checkDatabaseOps is what holds
+			// the entry to the verbs of the type it actually reaches, over the compiled
+			// object where the target is known. Same seam CheckLoweredOps already uses:
+			// the generic layer carries values at paths and has no word for a verb.
+			Ops(databaseOps()...),
 			Resource("database", "Database", "Database", "database"),
 		)),
 
@@ -885,46 +1085,6 @@ var V2Resources = []*Node{
 			Section("checkpoint", "Checkpoint", "Durability out of band from the write path."),
 			Ops(Mounts(ReadOp("mount-ro")), Mounts(WriteOp("mount-rw"))),
 			Resource("volume", "Volume", "Volume", "volume"),
-		)),
-
-	// Nearest-neighbour search over embeddings: what an agent remembers, what a
-	// retrieval step searches, what a recommender ranks with.
-	//
-	// ITS OWN KIND rather than an engine on `database`, and the vocabulary's own rule
-	// decides it: verbs are per kind, and these are not a database's. A database is
-	// asked a QUERY and answers rows; this is asked for the nearest N to a vector and
-	// answers neighbours with distances. `query`/`exec` cannot describe `search`/
-	// `upsert` — and an engine key that changed which verbs a kind has would break the
-	// one thing Ops() exists to guarantee, that a kind's verb set is a fact about the
-	// kind.
-	//
-	// DIMENSIONS ARE FIXED AT CREATION and required, because they are not a setting: an
-	// index is built for a width, every vector in it has that width, and changing it is
-	// a new index and a re-embed of everything. A default would be a guess at which
-	// embedding model someone is using.
-	DefineGroup("vector",
-		resource(
-			commonAttributes(
-				Int("dimensions", MinInt(1), Required(), InSection("index"),
-					Doc("Dimensions", "The width of every vector stored here, which the embedding model decides — 1536 for OpenAI's text-embedding-3-small, 1024 for Cohere v3. Fixed: changing it is a new index and a re-embed.")),
-
-				// The metric has to match how the model was TRAINED, which is why it is
-				// named rather than tuned: cosine for a model trained on normalized
-				// embeddings, dot for one that is not, euclidean where magnitude means
-				// something. Getting it wrong does not error — it just ranks badly.
-				String("metric", InSet("cosine", "dot", "euclidean"), Default("cosine"), InSection("index"),
-					Doc("Metric", "How closeness is measured. Match the embedding model: cosine for normalized embeddings, dot where magnitude carries meaning, euclidean for raw distance.")),
-
-				Bytes(Key("size"), Required(), PerEnv(), InSection("index"),
-					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\"). An index is the vectors plus their neighbour graph, so it is larger than the vectors alone.")),
-				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
-			),
-			GroupDoc("Nearest-neighbour search over embeddings. What an agent remembers, and what a retrieval step searches."), Icon("vector"), Category("data"),
-			secIdentity, secAccess,
-			Section("index", "Index", "The width of a vector, how closeness is measured, and how much of it there may be."),
-			secInstances,
-			Ops(ReadOp("search"), WriteOp("upsert"), WriteOp("delete")),
-			Resource("vector", "Vector", "Vector", "vector"),
 		)),
 
 	// A declaration and a reference, never a value. The value lives outside git in
@@ -1687,16 +1847,22 @@ var V2Resources = []*Node{
 
 				// Only when there is an embedder to fill it: an agent that remembers
 				// nothing gets no index rather than an empty one.
-				Into("vector",
+				//
+				// A DATABASE OF TYPE `vector`, since 2026-08-31, and the type is not a
+				// term the lowering states: writing anything under `vector/` is what
+				// selects the block, and the switch captures it. Both fields it sets
+				// have LITERAL paths for exactly this reason — interp's authoredPath has
+				// no single authored location for a path with a matcher in it.
+				Into("database",
 					When(Key("memory", "embedder", "name")),
 					Named(Concat(Attr("name"), Text("_memory"))),
 					Carries(Concat(Text("what "), Attr("name"), Text(" remembers"))),
-					// One term, one field: the value is CARRIED, so the vector's size is
+					// One term, one field: the value is CARRIED, so the index's size is
 					// the agent's own byte count and comes back out again as `2GB`.
-					Sets("dimensions", Attr(Key("memory", "dimensions"))),
-					Sets(Key("size"), Attr(Key("memory", "size"))),
+					Sets(Key("vector", "dimensions"), Attr(Key("memory", "dimensions"))),
+					Sets(Key("vector", "size"), Attr(Key("memory", "size"))),
 					// The loop is what searches it, and that is an entry on the loop:
-					// `vector: { <name>_memory: { ops: [search] } }`, exactly what an
+					// `database: { <name>_memory: { ops: [search] } }`, exactly what an
 					// author would have written.
 					Reaches("search", From("function", Concat(Attr("name"), Text("_infer")))),
 				),

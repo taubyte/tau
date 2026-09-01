@@ -1,6 +1,6 @@
 id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
-description: an external postgres - the engine key IS the kind, so naming kafka here is not something the yaml can say
-engine:
+description: an external postgres - the type block names the engines it may have, so naming kafka or mongo here is not something the yaml can say
+sql:
     postgres:
         host: db.example.com:5432
         database: orders

@@ -116,6 +116,7 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	out = append(out, checkHandlerPorts(all)...)
 	out = append(out, checkVolumeWriters(all)...)
 	out = append(out, checkAccessDuplicates(all)...)
+	out = append(out, checkDatabaseOps(all)...)
 	out = append(out, checkWorkflows(all)...)
 	// The record of what the compile produced sits BESIDE the project, so it is read
 	// from the object rather than from the project inside it.
@@ -1022,6 +1023,85 @@ func checkAccessDuplicates(all []compiled) []Finding {
 			}
 		}
 	}
+	return out
+}
+
+// checkDatabaseOps: AN ENTRY MAY ONLY ASK FOR VERBS THE TARGET DATABASE'S TYPE HAS.
+//
+// `database` declares the UNION of its four data models' verb sets, because an access
+// block is loaded long before anything has resolved which database an entry names — so
+// AreVerbsOf can hold `ops` to that union and no further. Left there, the per-kind verb
+// rule would be gone in all but name: `ops: [query]` on a kv store, or `[search]` on a
+// table, would compile and mean nothing at run time.
+//
+// So it is asked HERE, where the target has been resolved and its `type` is a field on
+// it. That is the same seam CheckLoweredOps already uses and for the same reason, stated
+// in AGENTS.md §8b: the generic layer carries values at paths and has no word for a
+// verb, so what a verb MEANS is this vocabulary's to check.
+//
+// It covers what a LOWERING wrote as well as what an author did — a produced database
+// and the entries pointing at it are in the compiled object like everything else, so an
+// agent's memory index being reached with `search` is checked by the same pass that
+// checks a hand-written entry.
+//
+// An entry that resolves to nothing is checkReachable's business, not this one's.
+func checkDatabaseOps(all []compiled) []Finding {
+	byName := map[string]compiled{}
+	for _, res := range all {
+		byName[res.kind+"\x00"+res.scope+"\x00"+res.name] = res
+	}
+
+	var out []Finding
+	for _, res := range all {
+		for label, e := range res.block("database") {
+			entry, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			name := entryName(label, entry)
+			var target compiled
+			found := false
+			for _, scope := range scopeChain(res.scope, field(entry, accessScope)) {
+				if r, ok := byName["database\x00"+scope+"\x00"+name]; ok {
+					target, found = r, true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+			// A target whose type did not compile is a broken database, reported
+			// against the database rather than against everyone who named it.
+			t, known := databaseTypeOf(target.str("type"))
+			if !known {
+				continue
+			}
+			for _, op := range ops(entry) {
+				if slices.Contains(t.ops.Names(), op) {
+					continue
+				}
+				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+					fmt.Sprintf("asks to %s database/%s, which is a %s database and has %s",
+						op, name, t.name, strings.Join(t.ops.Names(), ", ")),
+					fmt.Sprintf("A database's verbs are its TYPE's: %s. Either the op is wrong, or this is the wrong database to be naming.", strings.Join(t.ops.Names(), ", ")),
+					res.id})
+			}
+		}
+	}
+	// A map has no order, so two runs would otherwise report the same faults in
+	// different sequences.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Scope != out[j].Scope {
+			return out[i].Scope < out[j].Scope
+		}
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Title < out[j].Title
+	})
 	return out
 }
 

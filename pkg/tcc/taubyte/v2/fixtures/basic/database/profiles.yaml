@@ -1,0 +1,8 @@
+id: QmZ4gCbmYaFZ4dWJmvNBQKvNAWMYtHqQTHRDprHmxPh6Zk
+description: an external mongo - documents, so the engine set here is not the sql one
+document:
+    mongo:
+        host: mongo.example.com:27017
+        database: profiles
+        credentials:
+            name: stripe

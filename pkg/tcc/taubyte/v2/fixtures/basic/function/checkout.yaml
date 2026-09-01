@@ -22,3 +22,6 @@ secret:
 channel:
     orders:
         ops: [publish]
+database:
+    tokens:
+        ops: [get, put]

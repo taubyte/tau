@@ -33,9 +33,9 @@ func TestALoweringsIdsSurvivedTheMoveToTerms(t *testing.T) {
 	assert.NilError(t, err)
 
 	asWritten := map[string]string{
-		"queue/checkout_failed":  "{name}_failed",
-		"function/support_infer": "{name}_infer",
-		"vector/support_memory":  "{name}_memory",
+		"queue/checkout_failed":   "{name}_failed",
+		"function/support_infer":  "{name}_infer",
+		"database/support_memory": "{name}_memory",
 	}
 
 	seen := 0

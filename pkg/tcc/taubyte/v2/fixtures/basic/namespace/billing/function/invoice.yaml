@@ -10,3 +10,5 @@ cache:
 database:
     ledger:
         ops: [exec]
+    profiles:
+        ops: [get, query]

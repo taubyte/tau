@@ -1,0 +1,7 @@
+id: QmRZ1J1ZmVsGKvBFZoScNoGCzMwrDGHqxYAgqK7QsWpZbb
+description: product documentation the support agent searches; the width is the embedding model's
+vector:
+    dimensions: 1536
+    metric: cosine
+    distributed:
+        size: 512MB

@@ -169,23 +169,47 @@ func TestConnectorCredentialsResolve(t *testing.T) {
 // that is not a database cannot be named as one. This replaced a `provides` role list
 // on the connector, which asked the author to restate a fact about software they did
 // not write — and would have compiled just as happily when they got it wrong.
+//
+// THE SET IS PER TYPE, and that is what keeps a WRONG PAIR unrepresentable rather than
+// merely checkable: a Mongo is not a thing a `sql:` block can name, and a Postgres is
+// not a thing a `document:` block can, because neither is a key that exists there. One
+// `engine:` beside one `type:` would have made both values legal on their own and only
+// the pair wrong — a rule somebody has to remember to write, and a document that
+// compiles until they do.
 func TestDatabaseEngineIsClosed(t *testing.T) {
-	fs := afero.NewMemMapFs()
-	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/database/orders.yaml", []byte(`
-id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
-engine:
-    kafka:
-        host: broker:9092
-`), 0o644))
+	compile := func(body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/database/orders.yaml",
+			[]byte("id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
 
-	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
-	assert.NilError(t, err)
-	_, _, err = c.Compile(context.Background())
+	err := compile("sql:\n    kafka:\n        host: broker:9092\n")
 	assert.ErrorContains(t, err, "unknown key 'kafka'")
 	assert.ErrorContains(t, err, "distributed, mysql, postgres",
-		"and it says which engines there are")
+		"and it says which engines a sql database has")
+
+	// The pair, which is the half a single engine key could not refuse.
+	assert.ErrorContains(t, compile("document:\n    postgres:\n        host: db:5432\n"),
+		"unknown key 'postgres'; valid keys here: distributed, mongo")
+	assert.ErrorContains(t, compile("sql:\n    mongo:\n        host: m:27017\n"),
+		"unknown key 'mongo'; valid keys here: distributed, mysql, postgres")
+	assert.ErrorContains(t, compile("kv:\n    postgres:\n        host: db:5432\n"),
+		"unknown key 'postgres'; valid keys here: distributed")
+
+	// And a data model that is not one of the four is not a block that can be written.
+	assert.ErrorContains(t, compile("graph:\n    distributed:\n        size: 1GB\n"),
+		"unknown key 'graph'")
+	// Two of them at once is the switch refusing, not a winner being picked.
+	assert.ErrorContains(t, compile("kv:\n    distributed:\n        size: 1MB\nsql:\n    distributed:\n        size: 1MB\n"),
+		"ambiguous path: kv and sql each match")
+	// And none at all is a database that is nothing.
+	assert.ErrorContains(t, compile("description: nothing\n"), "attribute type has an empty key")
 }
 
 // A CONTAINER WORKER HAS NO ENTRYPOINT TO NAME, and it used to be refused for not
@@ -235,26 +259,46 @@ func TestWorkerEntrypointIsRequiredOnTheWasmTierOnly(t *testing.T) {
 }
 
 // An external engine carries its own connection; tau's own carries a size and no
-// host at all, so neither borrows the other's fields.
+// host at all, so neither borrows the other's fields. And the TYPE is the block that
+// was written rather than a word anybody typed.
 func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 	flat := compileBasic(t)
 	dbs := resources(t, flat, "database")
 
 	orders := namedResource(t, dbs, "orders")
-	assert.Equal(t, nested(orders, "engine", "kind"), "postgres")
-	assert.Equal(t, nested(orders, "engine", "host"), "db.example.com:5432")
-	engine, _ := orders["engine"].(map[string]any)
-	creds, _ := engine["credentials"].(map[string]any)
+	assert.Equal(t, orders["type"], "sql", "the type is captured from the block that was written")
+	assert.Equal(t, nested(orders, "sql", "engine"), "postgres")
+	assert.Equal(t, nested(orders, "sql", "host"), "db.example.com:5432")
+	sql, _ := orders["sql"].(map[string]any)
+	creds, _ := sql["credentials"].(map[string]any)
 	assert.Assert(t, creds != nil && creds["name"] != "",
-		"credentials resolve to a secret id, never a value: %v", engine)
-	_, borrowed := nestedOK(orders, "engine", "distributed", "size")
-	assert.Assert(t, !borrowed)
+		"credentials resolve to a secret id, never a value: %v", sql)
+	_, borrowed := nestedOK(orders, "sql", "size")
+	assert.Assert(t, !borrowed, "an external server's disk is not this project's to size")
+
+	// A second external engine, with a set of its own: mongo is a document engine and
+	// the fields it carries are the same ones, under its own type's block.
+	profiles := namedResource(t, dbs, "profiles")
+	assert.Equal(t, profiles["type"], "document")
+	assert.Equal(t, nested(profiles, "document", "engine"), "mongo")
+	assert.Equal(t, nested(profiles, "document", "host"), "mongo.example.com:27017")
+
+	// tau's own engine, on the type that exists to have it.
+	tokens := namedResource(t, dbs, "tokens")
+	assert.Equal(t, tokens["type"], "kv")
+	assert.Equal(t, nested(tokens, "kv", "engine"), "distributed")
+	assert.Equal(t, nested(tokens, "kv", "size"), int64(64000000))
+	for _, gone := range []string{"host", "database", "tls", "credentials"} {
+		_, present := nestedOK(tokens, "kv", gone)
+		assert.Assert(t, !present, "a distributed kv has no %q", gone)
+	}
 
 	obj := root(t, flat)
 	ledger := namedResource(t, namespace(t, obj, "billing")["database"].(map[string]any), "ledger")
-	assert.Equal(t, nested(ledger, "engine", "kind"), "distributed")
-	for _, gone := range []string{"engine-host", "engine-credentials", "engine-database"} {
-		_, present := ledger[gone]
+	assert.Equal(t, ledger["type"], "sql")
+	assert.Equal(t, nested(ledger, "sql", "engine"), "distributed")
+	for _, gone := range []string{"host", "credentials", "database"} {
+		_, present := nestedOK(ledger, "sql", gone)
 		assert.Assert(t, !present, "a distributed database has no %q", gone)
 	}
 }
@@ -266,21 +310,47 @@ func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 // comment beside engine/tls recorded it as a live defect long after it was fixed,
 // which is the reason a constraint belongs in a test and not in prose.
 func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
-	compile := func(engine string) error {
+	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
-			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nengine:\n"+engine), 0o644))
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
 		_, _, err = c.Compile(context.Background())
 		return err
 	}
-	assert.ErrorContains(t, compile("    distributed: {}\n"), "required attribute 'engine/distributed/size'")
-	assert.NilError(t, compile("    distributed:\n        size: 1GB\n"))
+	assert.ErrorContains(t, compile("sql:\n    distributed: {}\n"), "required attribute 'sql/distributed/size'")
+	assert.NilError(t, compile("sql:\n    distributed:\n        size: 1GB\n"))
 	// The other branch owes nothing to the first one's field.
-	assert.ErrorContains(t, compile("    postgres: {}\n"), "required attribute 'engine/postgres/host'")
+	assert.ErrorContains(t, compile("sql:\n    postgres: {}\n"), "required attribute 'sql/postgres/host'")
+	// And every type asks the same question of its own block.
+	assert.ErrorContains(t, compile("kv:\n    distributed: {}\n"), "required attribute 'kv/distributed/size'")
+
+	// A vector index is required to state its width, and it is required whichever
+	// engine holds it — an index built at another width is a different index.
+	assert.ErrorContains(t, compile("vector:\n    distributed:\n        size: 1GB\n"),
+		"required attribute 'vector/dimensions'")
+	assert.NilError(t, compile("vector:\n    dimensions: 8\n    distributed:\n        size: 1GB\n"))
+
+	// NO DEFAULT ON `metric`, and this is the constraint that decided it: a default
+	// fires whenever the value is absent, whatever else the document says, so one on a
+	// field of the vector block would write `metric: cosine` onto every kv, sql and
+	// document database in the project. It says what omitting it means instead, the way
+	// `tls` does.
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
+		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nkv:\n    distributed:\n        size: 1MB\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	d := namedResource(t, resources(t, obj.Flat(), "database"), "d")
+	_, leaked := nestedOK(d, "vector", "metric")
+	assert.Assert(t, !leaked, "a kv database carries no claim about a vector metric: %v", d)
 }
 
 // The new kinds load at all, with their scalars parsed.
@@ -483,6 +553,12 @@ func TestEffectClasses(t *testing.T) {
 		{"cache", "watch", schema.Read}, // observes writes it cannot cause
 		{"database", "query", schema.Read},
 		{"database", "exec", schema.Write}, // the host cannot classify arbitrary SQL
+		{"database", "get", schema.Read},   // kv, and document
+		{"database", "put", schema.Write},
+		{"database", "watch", schema.Read},   // kv only, and nothing implements it yet
+		{"database", "search", schema.Read},  // vector
+		{"database", "upsert", schema.Write}, // vector
+		{"database", "delete", schema.Write}, // kv, document AND vector, one effect
 		{"channel", "publish", schema.Write},
 		{"channel", "subscribe", schema.Read},
 		{"function", "invoke", schema.Write},
@@ -811,7 +887,7 @@ func TestCronCarriesItsTimezone(t *testing.T) {
 // never opens a socket.
 func TestExternalDatabaseMustStateItsTransport(t *testing.T) {
 	orders := namedResource(t, resources(t, compileBasic(t), "database"), "orders")
-	assert.Equal(t, nested(orders, "engine", "tls"), "verify-full")
+	assert.Equal(t, nested(orders, "sql", "tls"), "verify-full")
 
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -820,7 +896,7 @@ func TestExternalDatabaseMustStateItsTransport(t *testing.T) {
 		[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/database/x.yaml", []byte(`
 id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
-engine:
+sql:
     postgres:
         host: db.example.com
         credentials:
@@ -831,12 +907,12 @@ engine:
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err, "omitting it is allowed; absent means verify-full")
 	x := namedResource(t, resources(t, obj.Flat(), "database"), "x")
-	_, stated := nestedOK(x, "engine", "tls")
+	_, stated := nestedOK(x, "sql", "tls")
 	assert.Assert(t, !stated, "and it stays absent rather than compiling a value nobody wrote")
 
 	// and tau's own engine is never asked the question
 	ledger := namedResource(t, namespace(t, root(t, compileBasic(t)), "billing")["database"].(map[string]any), "ledger")
-	_, present := nestedOK(ledger, "engine", "tls")
+	_, present := nestedOK(ledger, "sql", "tls")
 	assert.Assert(t, !present, "a distributed database opens no socket")
 }
 
@@ -1240,4 +1316,48 @@ func TestInstructionsCannotBeTheRepositoryRoot(t *testing.T) {
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
 	assert.ErrorContains(t, err, "not a place this field can name")
+}
+
+// THE UNION IS ORDERED AND ITS EFFECTS AGREE ACROSS TYPES. `delete` is a verb of three
+// data models and it is a write in all three; `get` is a read in two; `query` is a read
+// for both sql and document. A verb that meant one class on one type and another class
+// elsewhere would make the union meaningless — the effect is the join key every
+// cross-cutting query groups by — so databaseOps() refuses to build one, and this is
+// what says the table it builds from has not drifted.
+func TestDatabaseVerbsAreTheFourTypesUnioned(t *testing.T) {
+	got := make([]string, 0, 9)
+	for _, v := range schema.OpsOf("database") {
+		got = append(got, v.Name)
+	}
+	assert.DeepEqual(t, got, []string{
+		"get", "list", "watch", "put", "delete", // kv
+		"query",            // document, then sql, which shares it
+		"exec",             // sql
+		"search", "upsert", // vector; its delete is already in the list
+	})
+
+	// And it is declaration order, not sorted: an editor completes in the order the
+	// vocabulary states, and the position of a bucket is not decoration here either.
+	assert.Assert(t, got[0] == "get" && got[len(got)-1] == "upsert")
+}
+
+// `kv` HAS NO `ttl`, AND THAT IS THE STRUCTURAL DIFFERENCE FROM `cache`, not a
+// difference in prose. A cache entry has a lifetime — losing one costs a recomputation
+// — and a record that deletes itself is not a record. The distinction was undermined
+// once already by the two kinds being documented apart and shaped the same, so it is
+// pinned here: the field is not merely undocumented on a kv, it is not a key that can
+// be written.
+func TestADurableKvHasNoLifetime(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
+		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nkv:\n    distributed:\n        size: 1MB\n        ttl: 24h\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "unknown key 'ttl'")
+
+	// …while the cache beside it is where a lifetime belongs, and still takes one.
+	assert.Equal(t, only(t, resources(t, compileBasic(t), "cache"))["ttl"], int64(86400000000000))
 }

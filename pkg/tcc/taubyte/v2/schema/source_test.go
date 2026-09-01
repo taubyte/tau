@@ -100,7 +100,7 @@ func TestAScalarWhereABlockBelongsIsStillAnError(t *testing.T) {
 	const gwID = "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\n"
 	for _, tc := range []struct{ name, path, doc, contains string }{
 		{"a database engine", "/database/orders.yaml",
-			"id: QmPChzsSKcAiSFqNqrH7LM4t9GhqfHmi3ihn7C9hNc8Vgd\nengine: postgres\n", "engine/kind has an empty key"},
+			"id: QmPChzsSKcAiSFqNqrH7LM4t9GhqfHmi3ihn7C9hNc8Vgd\nsql: postgres\n", "sql/engine has an empty key"},
 		{"a model's inference", "/model/opus.yaml",
 			"id: QmPChzsSKcAiSFqNqrH7LM4t9GhqfHmi3ihn7C9hNc8Vgd\nformat: anthropic\nidentifier: x\ninference: remote\n", "inference/kind has an empty key"},
 		{"a gateway's host", "/gateway/ask.yaml",
