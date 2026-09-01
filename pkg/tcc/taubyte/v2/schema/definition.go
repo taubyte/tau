@@ -25,8 +25,8 @@
 //
 // Still absent, but no longer for want of a shape — DefineList arrived with the
 // transformer chain, so what is left is the modelling: the `route` embed's per-path
-// rules (headers/redirects/rewrites/status), `connector.params`, `domain` DNS records,
-// and per-edge modifiers (mount, timeout, retry, via).
+// rules (headers/redirects/rewrites/status), `domain` DNS records, and per-edge
+// modifiers (mount, timeout, retry, via).
 package schema
 
 import (
@@ -158,7 +158,7 @@ func Category(name string) NodeOption { return GroupAnnotate("category", name) }
 //
 // A host a declared REFERENCE already names is reachable without being listed here. An
 // agent naming `model/opus` may dial the endpoint that model declares; a database naming
-// an external engine may reach its host; a connector may reach what it connects to. The
+// an external engine may reach its host, and a stream naming a kafka may reach its broker. The
 // alternative was tried in the fixture and is the reason this sentence exists: the agent
 // listed `api.anthropic.com` while the model it names already declared
 // `https://api.anthropic.com`, which is the same fact in two resources — and the day
@@ -720,7 +720,7 @@ func hostAttributes(section string) []*Attribute {
 //
 // A WRONG PAIR IS UNREPRESENTABLE, which is the property the old shape had and the one
 // thing that could not be given up. `engine: kafka` was refused because the engine is a
-// KEY from a closed set rather than a string or a reference to a `connector`; a document
+// KEY from a closed set rather than a free string; a document
 // database on Postgres is refused by the same check, because the set of engine keys is
 // declared PER TYPE:
 //
@@ -992,10 +992,11 @@ func (t databaseType) attributes() []*Attribute {
 	}
 
 	if len(t.external) > 0 {
-		// AN EXTERNAL ENGINE CARRIES ITS OWN CONNECTION. There is no reference to a
-		// `connector` here, and that absence is the point — see the note above the
-		// table. The three facts every external engine needs are the shared helper's;
-		// the fourth is a database's alone.
+		// AN EXTERNAL ENGINE CARRIES ITS OWN CONNECTION — a host, a credential and a
+		// tls mode, written here. There is no second resource standing between the
+		// database and the server it is, which is what a `connector` was and is why
+		// that kind is gone. The three facts every external engine needs are the
+		// shared helper's; the fourth is a database's alone.
 		out = append(out, externalEngineAttributes(
 			[]StringMatch{t.name}, []string{t.name}, t.external, Key(t.name, "engine"), "engine", shown)...)
 		out = append(out,
@@ -1047,8 +1048,11 @@ func vectorIndexAttributes(t databaseType) []*Attribute {
 //
 // V2Resources is the v2 resource vocabulary. The enum is closed: tcc's validation,
 // completion, JSON-Schema emission and decompilation all need every type's shape at
-// compile time. Openness lives at two seams instead — `connector` for external
-// systems, node.Register for services (resources.md, Extensibility decision).
+// compile time. There is no open KIND any more — `connector.type` was the one free
+// string and the kind is gone. What stays open is a workload's `egress` allowlist plus
+// a `secret`, which is the same openness without asking the author to name a vendor as
+// a resource first, and node.Register for services (resources.md, Extensibility
+// decision).
 var V2Resources = []*Node{
 
 	// ---- compute ----
@@ -1408,10 +1412,10 @@ var V2Resources = []*Node{
 	// specification that exists and has not been given.
 	//
 	// It is written down as deliberately incomplete because this vocabulary DELETES
-	// inert things — `notification.email` for being read nowhere, the connector's
-	// `provides` for asserting a capability nothing consumed — so a kind with nothing
-	// in it either gets removed as inert or gets completed by somebody guessing. This
-	// is the note that stops both.
+	// inert things — `notification.email` for being read nowhere, and `connector` whole
+	// once every case it carried was spelled by a kind already here — so a kind with
+	// nothing in it either gets removed as inert or gets completed by somebody
+	// guessing. This is the note that stops both.
 	//
 	// IT HAS VERBS EVEN THOUGH IT HAS NO ATTRIBUTES, because the vocabulary's own rule
 	// (see V2Resources above) is that a kind with no Ops() is not a target: nothing can
@@ -1840,8 +1844,8 @@ var V2Resources = []*Node{
 	// `stream` resource is looking at the wrong kind — that file is the `channel` kind.
 	//
 	// IT HAS AN ENGINE, and until 2026-08-31 it did not: a stream was always the
-	// swarm's own gossipsub, and the only way to reach Kafka was a `connector` that
-	// consumed it and republished what it read as CloudEvents over that gossipsub.
+	// swarm's own gossipsub, and the only way to reach Kafka was a separate resource
+	// that consumed it and republished what it read as CloudEvents over that gossipsub.
 	// Which throws away every reason to have used Kafka — ordering, durability,
 	// consumer groups and replay all die at the republication, and a subscriber gets
 	// fire-and-forget however the stream was fed. So the engine is a key from a closed
@@ -2515,55 +2519,49 @@ var V2Resources = []*Node{
 			Resource("workflow", "Workflow", "Workflow", "workflow"),
 		)),
 
-	// A SOURCE THAT IS NOT ALREADY SOMETHING ELSE. It holds the credentials, and for
-	// source-like externals it holds the connection too — Lambda's event-source
-	// mapping, where a separate poller joins the source and the invoked compute
-	// never touches it. A connector that holds a live connection runs exactly once
-	// per cloud: a quorum lease with an epoch on every event it emits, so a stale
-	// poller's events are rejected rather than duplicated (resources.md §6).
+	// NO `connector` KIND, and this is the note that stops it coming back by halves.
 	//
-	// IT LOST ITS TWO BIGGEST CASES ON 2026-08-31 AND IT STILL EARNS ITS EXISTENCE.
-	// A Kafka or a NATS is a `stream` ENGINE now, not a connector that consumes one and
-	// republishes it — that bridge threw away ordering, durability and replay, which is
-	// every reason to have used Kafka. A Postgres, MySQL or Mongo is a `database`
-	// engine, and was never a connector: naming one here compiled clean and nothing
-	// noticed that Kafka answers no query, which is why the engine became a key from a
-	// closed set.
+	// It was "a source that is not already something else": a `type` naming an external
+	// system, a `credentials` reference, and `polls` — hold the connection, and exactly
+	// one node in the cloud runs it. It lost Kafka and NATS to `stream.engine` and
+	// Postgres, MySQL and Mongo to `database.engine` on 2026-08-31, and what was left
+	// was argued to still earn the kind. It does not, and every remaining case is
+	// spelled by kinds this vocabulary already has:
 	//
-	// What is left is what neither of those covers, and it is not nothing:
+	//   - AN OBJECT STORE AS A SOURCE — s3, gcs. That is an argument for giving
+	//     `storage` an engine axis, the way `database` and `stream` have one; it was
+	//     never an argument for a second kind that names a storage server.
+	//   - A POLLED VENDOR API. A `cron` fires a `function`, the function polls and
+	//     publishes what it read to a `stream`. Three kinds, all here, and the polling
+	//     logic is the author's — which it was going to be anyway.
+	//   - CREDENTIALS. A workload reaches a `secret` through its access block. That is
+	//     the one construct for it and a second spelling was always a copy.
+	//   - "EXACTLY ONE NODE RUNS IT". That comes from the schedule: a cron fires once,
+	//     wherever it fires. Nothing about it needs a kind to be true.
 	//
-	//   - AN OBJECT STORE AS A SOURCE — s3, gcs. `storage` has no engine axis, so there
-	//     is nowhere else for it to be said.
-	//   - A VENDOR API — slack, stripe, a salesforce. A webhook is an inbound route to a
-	//     function and needs no kind; a POLLED one is the opposite direction and a route
-	//     cannot express it.
-	//   - THE POLLER ITSELF. An `entity` is the same fence — a quorum lease and its
-	//     epoch — but an entity runs the AUTHOR'S code, and what a connector says is
-	//     that the PLATFORM ships the client. `source: builtin` is the only seam for
-	//     that and its own documentation says it is not for authors, so "tau's slack
-	//     poller" has no spelling as an entity today. Decomposing this kind would move
-	//     writing a Slack client from tau to everyone using tau.
-	//   - "EXACTLY ONE NODE RUNS THIS" AS A DECLARED FACT, rather than as an entity with
-	//     an entrypoint, a size and a lease the author has to reason about.
+	// WHAT IS ACTUALLY LEFT is a long-lived HELD socket to a vendor that is not a kafka
+	// or a nats topic — and that is an `application`: a container that runs
+	// continuously, with `egress` naming the host and a `secret` holding the credential.
+	// What `connector` added on top of that was one bit, `polls`, meaning "and only one
+	// copy of it runs". That is a PLACEMENT fact, and placement is already a block on
+	// every kind with a footprint. A kind whose entire remaining content is one
+	// placement bit is one placement bit.
 	//
-	// `type` STAYS OPEN, and that is a decision rather than an oversight: this kind is
-	// one of the vocabulary's two extensibility seams (see V2Resources above), and it is
-	// the one for external systems. Closing it to a set would leave the vocabulary with
-	// no open surface for them at all. Whether the trade is worth taking — a closed set
-	// buys the same refusal `database.engine` and `stream.engine` get, and costs the
-	// seam — is the owner's call, not this file's.
-	DefineGroup("connector",
-		resource(
-			commonAttributes(
-				String("type", Required(), InSection("identity"), Doc("Type", "Which external system events are received from, e.g. \"s3\", \"slack\". A pubsub cluster is a stream's engine and a database server is a database's; neither is written here.")),
-				String(Key("credentials", "namespace"), IsNamespacePath(), InSection("identity"), Doc("Credentials Namespace", "Where that secret lives. Omitted means this connector's own scope, then its parents.")),
-				String(Key("credentials", "name"), IsVariableName(), Ref("secret", Inbound()), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials.")),
-				Bool("polls", InSection("identity"), Doc("Polls", "This connector holds a live connection to the external system and emits events from it. Exactly one node in the cloud runs it.")),
-			),
-			GroupDoc("An external system events are received from, that is not already a stream's engine or a database's: credentials, and the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
-			secIdentity, secAccess,
-			Resource("connector", "Connector", "Connector", "connector"),
-		)),
+	// The other half of the old argument was that the PLATFORM ships the client —
+	// `source: builtin`, closed to authors, so "tau's slack poller" had no spelling.
+	// That only bites if tau ships connector implementations. It does not, none is
+	// planned, and if the author writes the function it never arises.
+	//
+	// WHAT IT COSTS, said out loud: this was one of the vocabulary's two extensibility
+	// seams and the only OPEN one — `connector.type` was a free string on purpose. What
+	// remains open is a workload's `egress` allowlist plus a `secret`, which is the
+	// same openness one construct further out: any workload may reach any host it lists,
+	// and nothing has to name the vendor as a kind first. node.Register still covers
+	// services.
+	//
+	// WHAT WOULD BRING IT BACK is not this kind: it is a singleton placement fact
+	// beside `region`, or tau shipping vendor clients. Both are the owner's calls and
+	// neither is a `connector`.
 }
 
 // rootAttributes is the project root. `notification.email` is deleted: it has been
@@ -2723,9 +2721,9 @@ func environmentsGroup() *Node {
 // A SHADOW IS A DEPLOYMENT ATTACHED TO ANOTHER'S STATE. It is its own deployment —
 // its own release, its own compiled artifact, its own address, its own assets — and it
 // shares everything that does not fork with the environment it is written inside:
-// every stateful kind, the secrets, and the TRIGGERS. A shadow starts no scheduler,
-// opens no connector and consumes no queue of its own, because the environment holding
-// it is already doing that.
+// every stateful kind, the secrets, and the TRIGGERS. A shadow starts no scheduler and
+// consumes no queue of its own, because the environment holding it is already doing
+// that.
 //
 // Which is the point: an A/B variant and a frontend tested against production data are
 // both "different code, same data".

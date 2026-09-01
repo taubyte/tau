@@ -12,8 +12,8 @@ import (
 // The cross-resource checks, run by tcc over the compiled object.
 //
 // Every one of them needs a SECOND resource to answer — is anything in front of this
-// workload, does the port something targets exist, does the connector this database
-// names actually provide a database — and an attribute Validator sees one value at a
+// workload, does the port something targets exist, does the access entry spell a verb
+// the database it names actually has — and an attribute Validator sees one value at a
 // time. That is why they were repeatedly deferred to a hypothetical publish-time pass
 // that nobody owned. They belong here: tcc holds the whole object, so tcc can answer.
 //

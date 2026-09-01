@@ -6,3 +6,6 @@ jitter: 45s
 workflow:
     checkout:
         ops: [start]
+function:
+    poll_mentions:
+        ops: [invoke]

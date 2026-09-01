@@ -149,27 +149,48 @@ func TestQueueDeadLetterResolves(t *testing.T) {
 	assert.Assert(t, exists, "dead-letter %q did not resolve to a compiled queue id", dl)
 }
 
-// A connector's credentials resolve to a secret id — the value never enters the
-// config, only the reference does.
-func TestConnectorCredentialsResolve(t *testing.T) {
+// A CREDENTIAL NEVER ENTERS THE CONFIG, and the two ways of naming one are both here
+// with the difference between them stated, because it is easy to read them as the same
+// thing.
+//
+// This used to be asserted on `connector.credentials` — a field on a kind since
+// deleted. Both halves of what it held survive, in the places they belong:
+//
+//   - A REFERENCE resolves. `stream/shipments` names the secret its kafka authenticates
+//     with, the attribute is a `Ref("secret")`, and what compiles out is the secret's
+//     ID. The name is checked at compile: a secret that is not there is an error.
+//   - AN ACCESS ENTRY does not, and is keyed by the NAME of what it reaches (§8b of
+//     AGENTS.md). `function/poll_mentions` — the poller the fixture's connector became
+//     — reaches `secret/slack` this way, which is how every workload reaches a secret
+//     it reads at run time.
+//
+// The cost of the second is real and is the vocabulary's, not this deletion's: nothing
+// resolves or checks an entry's key, so a typo in one is not a compile error the way a
+// bad `credentials:` was.
+func TestACredentialIsNeverAValue(t *testing.T) {
 	flat := compileBasic(t)
-	// the one the connector actually names, now that the project has more than one
-	secretID := ""
-	for id, v := range resources(t, flat, "secret") {
-		if v.(map[string]any)["name"] == "stripe" {
-			secretID = id
-		}
-	}
-	for _, v := range resources(t, flat, "connector") {
-		conn := v.(map[string]any)
-		assert.DeepEqual(t, conn["credentials"], map[string]any{"name": secretID})
-	}
+
+	// A REFERENCE: the id, not the name, and never the value.
+	shipments := namedResource(t, resources(t, flat, "stream"), "shipments")
+	creds, _ := shipments["credentials"].(map[string]any)
+	id, _ := creds["name"].(string)
+	assert.Assert(t, strings.HasPrefix(id, "Qm"), "a kafka's credentials did not resolve to a secret id: %v", shipments["credentials"])
+	assert.Assert(t, resources(t, flat, "secret")[id] != nil, "%q is not a compiled secret", id)
+
+	// AN ACCESS ENTRY: the name, and the verb the kind declares.
+	poller := namedResource(t, resources(t, flat, "function"), "poll_mentions")
+	secrets, _ := poller["secret"].(map[string]any)
+	entry, _ := secrets["slack"].(map[string]any)
+	assert.Assert(t, entry != nil, "the poller reaches no secret: %v", poller["secret"])
+	assert.DeepEqual(t, entry["ops"], []string{"get"})
+	assert.Assert(t, namedResource(t, resources(t, flat, "secret"), "slack") != nil)
 }
 
 // A database's engine key IS the engine, from a closed set, so an external system
 // that is not a database cannot be named as one. This replaced a `provides` role list
-// on the connector, which asked the author to restate a fact about software they did
-// not write — and would have compiled just as happily when they got it wrong.
+// on the `connector` kind — since deleted whole — which asked the author to restate a
+// fact about software they did not write, and would have compiled just as happily when
+// they got it wrong.
 //
 // THE SET IS PER TYPE, and that is what keeps a WRONG PAIR unrepresentable rather than
 // merely checkable: a Mongo is not a thing a `sql:` block can name, and a Postgres is
@@ -1770,18 +1791,19 @@ func opsOf(t *testing.T, kind string) []string {
 	return out
 }
 
-// THE ASYMMETRY IS DELIBERATE: every ENGINE key is closed and `connector.type` is open.
+// EVERY ENGINE KEY IS CLOSED, AND THERE IS NO LONGER AN OPEN KIND BESIDE THEM.
 //
-// It reads like an oversight — the same word is refused in one place and accepted in
-// another — so it is pinned here with the reason. A closed set is what makes a wrong
-// pair unrepresentable, and it is affordable exactly where the set is knowable: an
-// engine is a wire protocol and a driver tau ships, so adding one is a release. "An
-// external system you receive events from" is not knowable, and `connector` is one of
-// the two seams the vocabulary keeps open on purpose (the other is node.Register).
+// This used to pin an asymmetry: engines closed, `connector.type` open, with the reason
+// each way. Half of it is gone. A closed set is what makes a wrong pair unrepresentable
+// and it is affordable exactly where the set is knowable — an engine is a wire protocol
+// and a driver tau ships, so adding one is a release. "An external system you receive
+// events from" is not knowable, which is why `connector` was open; but every case it
+// carried is now written with kinds that already exist, so the kind is gone and the
+// openness moved one construct out, to a workload's `egress` allowlist and a `secret`.
 //
-// Closing it is a real trade with a real cost and it is the owner's call, not this
-// file's. If it is ever taken, this test is what says so out loud.
-func TestConnectorTypeIsOpenAndEveryEngineIsClosed(t *testing.T) {
+// BOTH HALVES ARE ASSERTED, because a deletion that quietly still loads is the deletion
+// not having happened — the same reason the stream bridges are pinned absent below.
+func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -1796,17 +1818,49 @@ func TestConnectorTypeIsOpenAndEveryEngineIsClosed(t *testing.T) {
 		return err
 	}
 
-	// A system nobody has heard of is a connector, and that is the seam working.
-	for _, kind := range []string{"s3", "slack", "salesforce", "some-vendor-api"} {
-		assert.NilError(t, compile("/connector/c.yaml", "type: "+kind+"\ncredentials:\n    name: k\n"),
-			"connector.type is the open seam: %q", kind)
+	// THE KIND IS GONE, and what that looks like is worth knowing: a directory named
+	// after a kind the vocabulary does not have is walked past, so the document that
+	// used to be the fixture's own connector compiles to NOTHING — no error, and no
+	// resource. Strict keys are a property of a document the loader reads; a directory
+	// nothing reads has no keys to be strict about.
+	stray := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(stray, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(stray, "/connector/c.yaml",
+		[]byte("id: QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn\ntype: slack\npolls: true\n"), 0o644))
+	sc, err := schema.New(schema.WithVirtual(stray, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := sc.Compile(context.Background())
+	assert.NilError(t, err)
+	_, present := rootOf(obj.Flat())["connector"]
+	assert.Assert(t, !present, "a connector still compiles to a resource: %v", rootOf(obj.Flat()))
+
+	// AND IT IS GONE FROM THE VOCABULARY ITSELF, which is the list every consumer walks
+	// — the JSON Schema, completion, the graph. Asserted over V2Resources and over the
+	// root the loader is built from, and NOT over `Kinds()`: that answers with the kinds
+	// declaring Ops, which `connector` never did, so a check there would have passed on
+	// the day the kind was written.
+	for _, g := range schema.V2Resources {
+		name, _ := g.Match.(string)
+		assert.Assert(t, name != "connector", "connector is still a group in V2Resources")
+	}
+	for _, g := range schema.CompileRoot().Children {
+		name, _ := g.Match.(string)
+		assert.Assert(t, name != "connector", "connector is still a group of the compile root")
 	}
 
-	// The same openness nowhere else. An engine is a driver tau ships, so the set is
-	// knowable and the key is closed — which is what makes naming something that
-	// answers nothing impossible rather than merely wrong.
+	// AND THE ENGINES STAY CLOSED, which is the half that did not change. An engine is
+	// a driver tau ships, so the set is knowable and the key is closed — which is what
+	// makes naming something that answers nothing impossible rather than merely wrong.
 	assert.ErrorContains(t, compile("/stream/s.yaml", "match: m\nslack:\n    host: h\n"), "unknown key 'slack'")
 	assert.ErrorContains(t, compile("/database/d.yaml", "sql:\n    s3:\n        host: h\n"), "unknown key 's3'")
+
+	// WHAT STAYS OPEN, and it is one construct further out: a workload names the host
+	// it may reach and the secret it authenticates with, and nothing has to declare the
+	// vendor as a resource first. This is the poller the fixture's connector became.
+	assert.NilError(t, compile("/function/p.yaml",
+		"execution:\n    call: p\n    timeout: 5s\n    memory: 8MB\negress:\n    - some-vendor-api.example.com\nsecret:\n    k:\n        ops: [get]\n"),
+		"a workload reaching an external system needs no kind for it")
 }
 
 // A PLACEHOLDER THAT STAYS A PLACEHOLDER. `log` has no fields of its own on purpose —
