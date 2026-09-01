@@ -121,16 +121,36 @@ func compatSegs(a *engine.Attribute) (segs []string, ok bool) {
 }
 
 // accessorName is the exported Go name: an Accessor() override, else the last
-// plain Path segment title-cased, else the attribute name title-cased.
+// plain Path segment title-cased, else the attribute name.
+//
+// A nested Key() names itself with the "/" that separates the levels of the
+// compiled object (engine/keys.go), so `Key("serve", "kind")` is the attribute
+// named "serve/kind". That is a path, not an identifier: taken as a name it
+// emits `serve/kind` into Go and TypeScript alike, and neither parses. The
+// engine keeps the decomposition on the attribute (Segments), and holds every
+// segment to a bare identifier — so the accessor is the segments title-cased and
+// joined, ServeKind, which is a legal identifier by construction.
 func accessorName(group string, a *engine.Attribute) string {
 	if ov, ok := a.Meta["accessor"].(string); ok && ov != "" {
 		return ov
 	}
-	base := a.Name
 	if segs, ok := plainSegs(a.Path); ok && len(segs) > 0 {
-		base = segs[len(segs)-1]
+		return title(segs[len(segs)-1])
 	}
-	return title(base)
+	if len(a.Segments) > 1 {
+		return joinTitled(a.Segments)
+	}
+	return title(a.Name)
+}
+
+// joinTitled title-cases each segment and joins them: ["serve", "kind"] ->
+// "ServeKind".
+func joinTitled(segs []string) string {
+	parts := make([]string, len(segs))
+	for i, s := range segs {
+		parts[i] = title(s)
+	}
+	return strings.Join(parts, "")
 }
 
 func setBody(segs []string) string {
