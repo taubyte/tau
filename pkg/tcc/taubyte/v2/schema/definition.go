@@ -1343,8 +1343,29 @@ var V2Resources = []*Node{
 			Resource("storage", "Storage", "Storage", "storage"),
 		)),
 
-	// A leased, quota'd local directory whose contents are continuously checkpointed
-	// into the CAS as a snapshot chain. The chain IS the backup product.
+	// A quota'd local directory whose contents are continuously checkpointed into the
+	// CAS as a snapshot chain. The chain IS the backup product.
+	//
+	// IT CAN BE SHARED, AND THE FILESYSTEM IS WHAT ARBITRATES. There is no lease field
+	// here and there never was one: "single-writer" and "leased" were prose asserting a
+	// constraint nothing in the schema expressed, which is the shape this vocabulary
+	// deletes fields for pointed the other way — a claim with no mechanism under it.
+	//
+	// The position, stated so it is not re-argued: POSIX already answers concurrent
+	// access. `flock`, `fcntl` record locks, atomic rename, `O_APPEND` — a filesystem
+	// that offers POSIX semantics offers those, and a workload that needs to coordinate
+	// with another one has them. A lease bolted on above would be a SECOND answer to a
+	// question the layer below already answers, and a weaker one: it is coarser (a
+	// whole directory, where a lock is a byte range), it cannot see the operations it
+	// would be ordering, and a holder still has to use the POSIX primitives correctly
+	// for anything finer than "nobody else at all". So two workloads mounting one
+	// volume read-write is a shape this vocabulary permits, and so is one workload the
+	// platform may run ten instances of. Whether their access is CORRECT is theirs to
+	// arrange, with the tools the filesystem gives them.
+	//
+	// `mount-ro` and `mount-rw` stay two verbs. Read-only and read-write are still
+	// different asks — one of them cannot damage anything — and an accessor saying
+	// which is the same statement every other kind's ops make.
 	//
 	// rpo-budget and on-budget-exceeded exist because RPO is NOT the checkpoint
 	// interval — it is the age of the last fully uploaded, pointer-committed
@@ -1356,13 +1377,26 @@ var V2Resources = []*Node{
 			commonAttributes(
 				Bytes(Key("quota"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Hard quota for the directory, as a human string (e.g. \"10GB\").")),
 				Duration(Key("checkpoint", "interval"), Default("60s"), PerEnv(), InSection("checkpoint"), Doc("Checkpoint Interval", "How often the volume is walked, chunked and uploaded.")),
-				Duration(Key("checkpoint", "rpo_budget"), PerEnv(), InSection("checkpoint"), Doc("RPO Budget", "Ceiling on the age of the last committed snapshot before on-budget-exceeded fires.")),
+				// WHAT A RESTORE ACTUALLY GIVES BACK, WITH MORE THAN ONE WRITER: a
+				// CRASH-CONSISTENT moment, not a quiesced one. A checkpoint walks the
+				// directory, chunks it and uploads it while writers keep writing, so a
+				// snapshot can hold one file from before an operation and its neighbour
+				// from after — the same guarantee a filesystem-level backup of any live
+				// directory has, and the same one a machine that lost power leaves
+				// behind. It is enough for anything that recovers on its own (a journal,
+				// a WAL, a log a reader re-reads) and it is not a consistent point in
+				// time across several writers, which nothing here promises and nothing
+				// here can: quiescing would mean stopping every writer for the length of
+				// a walk. Worth saying beside the budget, because the budget is where an
+				// author reasons about recovery and the old text implied a single writer,
+				// which would have made a restore sound more coherent than it is.
+				Duration(Key("checkpoint", "rpo_budget"), PerEnv(), InSection("checkpoint"), Doc("RPO Budget", "Ceiling on the age of the last committed snapshot before on-budget-exceeded fires. What a snapshot holds is a crash-consistent moment — writers are not stopped for the walk — so a restore gives back what a power cut would.")),
 				String(Key("checkpoint", "on_budget_exceeded"), InSet("alert", "freeze-writes"), Default("alert"), InSection("checkpoint"), Doc("On Budget Exceeded", "What to do when the committed-snapshot age passes rpo-budget. Nothing happens without a budget to pass.")),
 			),
-			GroupDoc("A single-writer leased directory with full POSIX semantics, checkpointed into the CAS. No RWX; bind mounts are refused."), Icon("drive"), Category("data"), Placed(),
+			GroupDoc("A quota'd directory with full POSIX semantics, checkpointed into the CAS. More than one workload may mount it read-write; the filesystem arbitrates. Bind mounts are refused."), Icon("drive"), Category("data"), Placed(),
 			secIdentity, secAccess,
 			Section("storage", "Storage", "Capacity."),
-			Section("checkpoint", "Checkpoint", "Durability out of band from the write path."),
+			Section("checkpoint", "Checkpoint", "Durability out of band from the write path. A snapshot is crash-consistent, not quiesced."),
 			Ops(Mounts(ReadOp("mount-ro")), Mounts(WriteOp("mount-rw"))),
 			Resource("volume", "Volume", "Volume", "volume"),
 		)),
