@@ -1692,10 +1692,10 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 		return err
 	}
 	const conduit = "protocol: pgwire\nserve:\n    application:\n        name: db\n        port: pg\n"
-	const fanout = "match: orders\ndistributed:\n    local: true\n"
+	const fanout = "distributed:\n    local: true\n"
 
 	assert.NilError(t, compile("/channel/sync.yaml", conduit), "a channel names a protocol and one server")
-	assert.NilError(t, compile("/stream/orders.yaml", fanout), "a stream matches a name")
+	assert.NilError(t, compile("/stream/orders.yaml", fanout), "a stream is named by its own name")
 
 	// The other way round is not a document either kind can read, which is what makes a
 	// half-applied swap a failure instead of a silence.
@@ -1704,7 +1704,7 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 	// in map order and reports the first one it does not know, so a body carrying two
 	// of them names a different key run to run.
 	assert.ErrorContains(t, compile("/stream/x.yaml", fanout+"protocol: pgwire\n"), "unknown key 'protocol'")
-	assert.ErrorContains(t, compile("/channel/x.yaml", conduit+"match: orders\n"), "unknown key 'match'")
+	assert.ErrorContains(t, compile("/channel/x.yaml", conduit+"distributed:\n    local: true\n"), "unknown key 'distributed'")
 
 	// And the verbs, which is the other half of what each name means.
 	dial := schema.OpsOf("channel")
@@ -1738,7 +1738,7 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 		assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
 			[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/stream/s.yaml",
-			[]byte("id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz\nmatch: orders\n"+body), 0o644))
+			[]byte("id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
 		_, _, err = c.Compile(context.Background())
@@ -1782,13 +1782,64 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 	assert.Assert(t, !leaked, "a kafka-backed stream carries no claim about node-local scope")
 }
 
+// A STREAM IS NAMED, NOT MATCHED. `match`/`regex` was v1's `messaging` pair and this
+// was the last kind carrying it; what it added over the resource's own name was the
+// ability to DISAGREE with it, and the ability for two streams to both claim one topic
+// with nothing deciding which gets the message but walk order.
+//
+// The replacement is not a new field — it is the name every other part of this
+// vocabulary was already using. So the test is in two halves: the pair is refused, and
+// the name is what everything reaches the stream by.
+func TestAStreamIsNamedNotMatched(t *testing.T) {
+	compile := func(body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/stream/orders.yaml",
+			[]byte("id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	// NEITHER HALF OF THE PAIR LOADS, and a literal spelling is refused with the same
+	// error a pattern is: the field is gone, not narrowed.
+	for _, body := range []string{"distributed: {}\nmatch: orders\n", "distributed: {}\nmatch: ord_*\n", "distributed: {}\nregex: true\n"} {
+		assert.ErrorContains(t, compile(body), "unknown key", "a stream still takes %q", body)
+	}
+
+	// AND NOTHING IS OWED IN ITS PLACE. A stream with an engine and nothing else is a
+	// complete document — `match` was Required(), so this is the half of the deletion
+	// that would be missed if the key were merely made optional.
+	assert.NilError(t, compile("distributed: {}\n"))
+
+	// THE NAME IS THE HANDLE, and it comes from the file rather than from a field: the
+	// fixture writes no `name:` on any stream and every one of them is found by one.
+	flat := compileBasic(t)
+	streams := resources(t, flat, "stream")
+	orders := namedResource(t, streams, "orders")
+	for _, gone := range []string{"match", "regex"} {
+		_, present := orders[gone]
+		assert.Assert(t, !present, "a compiled stream still carries %q: %v", gone, orders)
+	}
+
+	// And it is the name an access block reaches it by — the same string, resolved
+	// through the index rather than matched against a pattern.
+	publisher := namedResource(t, resources(t, flat, "function"), "checkout")
+	published, _ := publisher["stream"].(map[string]any)
+	entry, _ := published["orders"].(map[string]any)
+	assert.Assert(t, entry != nil, "nothing publishes to stream/orders by name: %v", publisher["stream"])
+	assert.DeepEqual(t, entry["ops"], []string{"publish"})
+}
+
 // A BUS IS A STREAM WITHOUT DURABILITY, AND THE SCHEMA SAYS SO RATHER THAN THE PROSE.
 // Two kinds that fan out to everyone attached will be read as duplicates and merged by
 // somebody unless what separates them is structural, so this pins the three places it
 // is: a bus can name no engine (every engine a stream has is a durable log, and a bus
-// that rewinds is a stream wearing the wrong kind), a bus admits instances by validator
-// where a stream matches a pattern, and a bus has a host — the websocket a browser
-// attaches to — where a stream has none.
+// that rewinds is a stream wearing the wrong kind), a bus admits many instances by
+// validator where a stream is one topic named by the resource, and a bus has a host —
+// the websocket a browser attaches to — where a stream has none.
 func TestABusIsAStreamWithoutDurability(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
@@ -1814,16 +1865,23 @@ func TestABusIsAStreamWithoutDurability(t *testing.T) {
 			"unknown key '"+engine+"'", "a bus must not be able to name %q", engine)
 	}
 
-	// The bus admits instances; the stream matches a pattern. Neither takes the other's.
+	// THE BUS ADMITS INSTANCES AND THE STREAM IS ONE TOPIC. Neither takes the other's,
+	// and neither matches a pattern any more: v1's `match`/`regex` is gone from both,
+	// which is what makes "which topic is this?" a name in every kind here.
 	assert.NilError(t, compile("/bus/chat.yaml", "instances:\n    limit: 100\n    validator:\n        name: f\n"))
-	assert.ErrorContains(t, compile("/bus/chat.yaml", "match: chat\n"), "unknown key 'match'")
-	assert.ErrorContains(t, compile("/stream/s.yaml", "match: o\ndistributed: {}\ninstances:\n    validator:\n        name: f\n"),
+	for _, kind := range []string{"/bus/chat.yaml", "/stream/s.yaml"} {
+		for _, pattern := range []string{"match: chat\n", "regex: true\n"} {
+			assert.ErrorContains(t, compile(kind, pattern), "unknown key",
+				"%s still takes %q", kind, pattern)
+		}
+	}
+	assert.ErrorContains(t, compile("/stream/s.yaml", "distributed: {}\ninstances:\n    validator:\n        name: f\n"),
 		"unknown key 'instances'")
 
 	// The websocket is an ADDRESS, so it is the same `host:` a gateway declares — and
 	// the bus is what answers on it.
 	assert.NilError(t, compile("/bus/chat.yaml", "host:\n    generated:\n        name: chat\n"))
-	assert.ErrorContains(t, compile("/stream/s.yaml", "match: o\ndistributed: {}\nhost:\n    generated:\n        name: x\n"),
+	assert.ErrorContains(t, compile("/stream/s.yaml", "distributed: {}\nhost:\n    generated:\n        name: x\n"),
 		"unknown key 'host'")
 	// …and the deleted flag is not a spelling of it.
 	assert.ErrorContains(t, compile("/bus/chat.yaml", "websocket: true\n"), "unknown key 'websocket'")
@@ -1916,7 +1974,7 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 	// AND THE ENGINES STAY CLOSED, which is the half that did not change. An engine is
 	// a driver tau ships, so the set is knowable and the key is closed — which is what
 	// makes naming something that answers nothing impossible rather than merely wrong.
-	assert.ErrorContains(t, compile("/stream/s.yaml", "match: m\nslack:\n    host: h\n"), "unknown key 'slack'")
+	assert.ErrorContains(t, compile("/stream/s.yaml", "slack:\n    host: h\n"), "unknown key 'slack'")
 	assert.ErrorContains(t, compile("/database/d.yaml", "sql:\n    s3:\n        host: h\n"), "unknown key 's3'")
 
 	// WHAT STAYS OPEN, and it is one construct further out: a workload names the host

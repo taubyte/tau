@@ -1,6 +1,5 @@
 id: QmT3nfWpUfmB6VqXhFRb9J3vXsKmDbtHc4dqQuKrGePqLK
 description: the topic lives in somebody else's kafka - ordering and replay survive, which is the whole reason not to bridge it
-match: shipments
 kafka:
     host: broker.example.com:9092
     credentials:

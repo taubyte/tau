@@ -428,10 +428,12 @@ func pullSecret() []*Attribute {
 // So this replaces v1's `match`/`regex`, which was this capability spelled as a lookup:
 // the data plane knew only a name and walked every config regex-matching it
 // (services/hoarder/helpers.go). That made every store a pattern, gave the pattern no
-// owner, and answered "may this instance exist" with "does this string match". None of
-// the data kinds carries that pair any more, and none of them gains it back: a limit
-// bounds HOW MANY instances there are and a validator decides WHICH, and between them
-// there is nothing a pattern was doing that is still wanted.
+// owner, and answered "may this instance exist" with "does this string match". NOTHING
+// IN THIS VOCABULARY CARRIES THAT PAIR ANY MORE — `stream` was the last to hold it, and
+// it went because a topic is named by the resource rather than matched by it — and
+// nothing gains it back: a limit bounds HOW MANY instances there are and a validator
+// decides WHICH, and between them there is nothing a pattern was doing that is still
+// wanted.
 //
 // The shape is the AUTHORIZER's, deliberately (§9, the one modelling rule): the target
 // owns the policy. The store names a function; the caller names only the instance it
@@ -1948,12 +1950,27 @@ var V2Resources = []*Node{
 	// asked for it back; websocket is not lost but rehomed — on a `bus`, attaching a
 	// browser and receiving from now on is the point of the kind rather than a flag on
 	// a different one.
+	//
+	// AND SO IS `match`/`regex`. It was v1's `messaging` pair, carried here because it
+	// was carried there, and this was the last kind holding it. A STREAM IS ITS NAME:
+	// one resource, one topic, spelled `orders` in the file it is written in and
+	// `orders` in every access block that reaches it. That is already the only spelling
+	// anything used — the index is by name, an access entry is keyed by name, and every
+	// fixture wrote `match:` equal to the resource's own name — so what the pair added
+	// over the name was the ability for it to DISAGREE with the name, and for two
+	// streams to both claim one topic with the walk order deciding which got the
+	// message.
+	//
+	// It is the rule `instanceAttributes` already states for a store, one level up: a
+	// name is a key, not a pattern, because a pattern answers "which one" with a SET,
+	// and a set cannot be indexed, cannot be resolved, and cannot be told apart from
+	// another set that overlaps it. What is NOT done here is the other half of that
+	// construct — this kind gains no `instances:` block, because one stream is one topic
+	// and there is no caller-supplied name to admit. Whether a stream should ever hold
+	// many topics is a different question and is the owner's.
 	DefineGroup("stream",
 		resource(
 			commonAttributes(append([]*Attribute{
-				String("match", Required(), Field("Match"), Accessor("StreamMatch"), NoSetter(), InSection("matching"), Doc("Match", "Stream name or pattern this resource matches.")),
-				Bool(Key("regex"), NoSetter(), InSection("matching"), Doc("Use Regex", "Treat match as a regular expression instead of a literal name.")),
-
 				String("engine", Path(Either(streamEngines...)), Captures(), InSection("engine"),
 					Doc("Engine", "Which engine holds the topic: distributed is the swarm's own gossipsub; kafka and nats are external clusters reached over the network.")),
 				Bool("local", Path(tauEngine, "local"), InSection("engine"), ShowWhen("engine", tauEngine),
@@ -1961,7 +1978,6 @@ var V2Resources = []*Node{
 			}, externalEngineAttributes(nil, nil, externalStreamEngines, Key("engine"), "engine", ShowWhen("engine", externalStreamEngines...))...)...),
 			GroupDoc("A pubsub stream: what is published to it reaches every subscriber. On the swarm's own gossipsub, or on an external Kafka or NATS cluster."), Icon("message"), Category("trigger"),
 			secIdentity, secAccess,
-			Section("matching", "Matching", "The name or pattern this stream answers to."),
 			Section("engine", "Engine", "Which engine holds the topic, and its settings."),
 			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
 			Resource("stream", "Stream", "Stream", "stream"),
@@ -1994,14 +2010,14 @@ var V2Resources = []*Node{
 	// gives `ReachableNames` something to answer with, which a boolean could not.
 	// A bus with no `host:` is reachable from inside the project and from nowhere else.
 	//
-	// AND IT HAS NO `match`/`regex`. `stream` carries that pair because v1's `messaging`
-	// did; it is a pattern with no owner, and instanceAttributes' own comment says what
-	// is wrong with it — it answers "may this instance exist" with "does this string
-	// match". A bus is the sharpest case, because the thing attaching is a BROWSER: the
-	// instance name is the caller's, so the project has to have a point at which it
-	// says no. That point is `instances:`, the construct every store here already uses.
-	// Converging `stream` onto the same construct is the owner's call and is not done
-	// here.
+	// AND NEITHER IT NOR `stream` HAS `match`/`regex` ANY MORE. v1's `messaging` carried
+	// that pair, `stream` carried it here because it was inherited, and it is gone from
+	// both: a pattern with no owner, answering "may this instance exist" with "does this
+	// string match". A bus is the sharpest case, because the thing attaching is a
+	// BROWSER: the instance name is the caller's, so the project has to have a point at
+	// which it says no. That point is `instances:`, the construct every store here
+	// already uses, and it is why a bus has that block where a stream — one resource,
+	// one topic, named by its own name — needs none.
 	//
 	// The verbs are `stream`'s, and deliberately the same ones: what you DO to a bus is
 	// what you do to a topic, and the kinds differ in what happens afterwards. Two
