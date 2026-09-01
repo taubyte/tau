@@ -580,3 +580,78 @@ func TestALoweredDatabaseEntryIsCheckedToo(t *testing.T) {
 
 	hasNo(t, schema.Audit(obj.Flat(), nil), "which is a vector database")
 }
+
+// THE CEILING, WHICH ONLY THE AUDIT CAN HOLD. A scope's allowance and a resource's
+// placement are in different documents, so neither the schema nor load time sees both
+// ends — and a widening that compiled silently would mean a child running where its
+// parent said nothing may.
+func TestAuditRegions(t *testing.T) {
+	const proj = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [eu, us]\n"
+	const shopID = "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n"
+	cache := func(region string) string {
+		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\n" + region
+	}
+
+	// A scope may narrow what it inherits, and only narrow it.
+	found := auditDocs(t, nil, map[string]string{
+		"/project.yaml":             proj,
+		"/namespace/shop/meta.yaml": shopID + "regions: [eu, ap]\n",
+	})
+	has(t, found, schema.Broken, `allows region "ap", which the scope above it does not`)
+
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml":             proj,
+		"/namespace/shop/meta.yaml": shopID + "regions: [eu]\n",
+	})
+	hasNo(t, found, "which the scope above it does not")
+
+	// A placement is bounded by the WHOLE chain, not only by the scope it sits in:
+	// `us` is in the project's list and out of shop's, and shop is what applies.
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml":                       proj,
+		"/namespace/shop/meta.yaml":           shopID + "regions: [eu]\n",
+		"/namespace/shop/cache/sessions.yaml": cache("region:\n    auto:\n        name: us\n"),
+	})
+	has(t, found, schema.Broken, `is placed in region "us", which its scope does not allow`)
+
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml":                       proj,
+		"/namespace/shop/meta.yaml":           shopID + "regions: [eu]\n",
+		"/namespace/shop/cache/sessions.yaml": cache("region:\n    auto:\n        name: eu\n"),
+	})
+	hasNo(t, found, "which its scope does not allow")
+
+	// A FAILOVER'S TWO REGIONS ARE CHECKED SEPARATELY, because either half can escape.
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml": proj,
+		"/cache/c.yaml": cache("region:\n    failover:\n        main: eu\n        standby: ap\n"),
+	})
+	has(t, found, schema.Broken, `is placed in region "ap", which its scope does not allow`)
+
+	// …and failing over to the region you are already in is a plan that fails to what
+	// is already gone. The schema says there are two; only this can say they differ.
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml": proj,
+		"/cache/c.yaml": cache("region:\n    failover:\n        main: eu\n        standby: eu\n"),
+	})
+	has(t, found, schema.Broken, "fails over from eu to itself")
+
+	// NO CEILING ANYWHERE IS THE ZERO-CONFIG PROJECT: nothing was declared, so there is
+	// nothing to check a label against and the audit says nothing. This is also where
+	// the typo-catcher stops — `zz` is only wrong against a list somebody wrote.
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n",
+		"/cache/c.yaml": cache("region:\n    auto:\n        name: zz\n"),
+	})
+	hasNo(t, found, "which its scope does not allow")
+
+	// The chain is walked to whichever level last declared one, so a namespace that
+	// declares nothing inherits rather than resetting to the cloud's whole world.
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml":                                    proj,
+		"/namespace/shop/meta.yaml":                        shopID + "regions: [eu]\n",
+		"/namespace/shop/namespace/eu/meta.yaml":           "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\n",
+		"/namespace/shop/namespace/eu/cache/sessions.yaml": cache("region:\n    auto:\n        name: us\n"),
+	})
+	has(t, found, schema.Broken, `is placed in region "us", which its scope does not allow`)
+}

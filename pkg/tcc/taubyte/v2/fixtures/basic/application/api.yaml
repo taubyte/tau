@@ -28,6 +28,10 @@ variables:
     STRIPE_KEY:
         secret:
             name: stripe
+region:
+    failover:
+        main: eu
+        standby: us
 egress: [api.stripe.com]
 cache:
     orders:

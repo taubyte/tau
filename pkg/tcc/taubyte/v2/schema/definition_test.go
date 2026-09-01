@@ -1910,3 +1910,112 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 		assert.ErrorContains(t, err, "unknown key", "an instance name is a key, not a pattern: %q", pattern)
 	}
 }
+
+// EVERY KIND THAT SAYS WHERE IT RUNS, AND THE WHOLE LIST, so a kind joining or leaving
+// it is a deliberate line in a diff rather than a side effect of declaring `Placed()`.
+//
+// The line is a PHYSICAL FOOTPRINT: something that runs, or bytes that sit somewhere.
+// The four kinds a category would have dragged in are what the list is really about —
+// `website` runs no process and its bytes are the CAS's, exactly as a function's wasm
+// is; `model` is an endpoint somebody else operates, or a `local` application carrying
+// its own placement; `channel` is a name two placed workloads meet at; `secret` holds
+// no value. Placing any of them is a second, weaker statement about something already
+// placed.
+func TestRegionIsDeclaredOnKindsWithAFootprint(t *testing.T) {
+	assert.DeepEqual(t, schema.PlacedKinds(), []string{
+		"application", "function", "worker", "sandbox",
+		"cache", "database", "storage", "volume", "log",
+		"entity", "queue", "agent", "workflow",
+	})
+
+	placed := map[string]bool{}
+	for _, kind := range schema.PlacedKinds() {
+		placed[kind] = true
+	}
+	// BOTH SHAPES. V2Resources is what an author writes against; KindRoot is what a
+	// lowered kind becomes, built from a COPY of the iterator's attributes — so a block
+	// attached after that copy is taken exists only in the authored half, and an agent
+	// or a workflow saying where it runs stops compiling in the pass that lowers it.
+	for _, root := range [][]*engine.Node{schema.V2Resources, schema.KindRoot()} {
+		for _, g := range root {
+			kind, _ := g.Match.(string)
+			fields := map[string]bool{}
+			for _, a := range g.Children[0].Attributes {
+				fields[a.Name] = true
+			}
+			for _, f := range []string{"region/policy", "region/name", "region/main", "region/standby"} {
+				assert.Equal(t, fields[f], placed[kind], "%s carries %q; PlacedKinds says %v", kind, f, placed[kind])
+			}
+		}
+	}
+}
+
+// THE PLACEMENT SWITCH, verified against the compiler rather than against the note that
+// designed it. Three branches, `failover`'s two regions spelled by NAME so that "the
+// first one is main" is not a position a reader has to know the significance of, and a
+// `name` on the two branches where a single region means something and nowhere else.
+func TestRegionPlacementIsASwitch(t *testing.T) {
+	compile := func(body string) (map[string]any, error) {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		obj, _, err := c.Compile(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		return namedResource(t, resources(t, obj.Flat(), "cache"), "c"), nil
+	}
+
+	res, err := compile("region:\n    auto:\n        name: eu\n")
+	assert.NilError(t, err)
+	assert.Equal(t, nested(res, "region", "policy"), "auto")
+	assert.Equal(t, nested(res, "region", "name"), "eu")
+
+	// A FIELDLESS BRANCH STILL CAPTURES, so `cdn` needs no filler field to be sayable.
+	res, err = compile("region:\n    cdn: {}\n")
+	assert.NilError(t, err)
+	assert.Equal(t, nested(res, "region", "policy"), "cdn")
+
+	res, err = compile("region:\n    failover:\n        main: eu\n        standby: us\n")
+	assert.NilError(t, err)
+	assert.Equal(t, nested(res, "region", "policy"), "failover")
+	assert.Equal(t, nested(res, "region", "main"), "eu")
+	assert.Equal(t, nested(res, "region", "standby"), "us")
+
+	// AN ABSENT BLOCK IS THE DEFAULT, and it writes nothing: `auto`, anywhere the
+	// allowance permits, is what the common case gets for free.
+	res, err = compile("")
+	assert.NilError(t, err)
+	_, present := res["region"]
+	assert.Assert(t, !present, "an absent region block leaves no keys behind")
+
+	// EXACTLY TWO, AND ONLY TWO. A third has no key to arrive under and a missing one
+	// is a compile error — which is what "the first one is main" costs instead of a
+	// list whose order is load-bearing.
+	_, err = compile("region:\n    failover:\n        main: eu\n")
+	assert.ErrorContains(t, err, "required attribute 'region/failover/standby'")
+	_, err = compile("region:\n    failover:\n        standby: us\n")
+	assert.ErrorContains(t, err, "required attribute 'region/failover/main'")
+	_, err = compile("region:\n    failover:\n        main: eu\n        standby: us\n        third: ap\n")
+	assert.ErrorContains(t, err, "unknown key 'third'")
+
+	// `name` IS ON THE TWO BRANCHES A SINGLE REGION MEANS SOMETHING ON. On failover it
+	// would name neither of the two, so the subset Either() refuses it.
+	_, err = compile("region:\n    failover:\n        main: eu\n        standby: us\n        name: eu\n")
+	assert.ErrorContains(t, err, "unknown key 'name'")
+
+	// EXACTLY ONE BRANCH is a property of the declaration, not a check somebody wrote.
+	_, err = compile("region:\n    auto:\n        name: eu\n    cdn: {}\n")
+	assert.ErrorContains(t, err, "ambiguous path: auto and cdn each match")
+	_, err = compile("region: {}\n")
+	assert.ErrorContains(t, err, "attribute region/policy has an empty key")
+
+	// The ALLOWANCE is a scope's word and never a resource's: a resource may not widen
+	// or narrow what runs under it, because it is one of the things being placed.
+	_, err = compile("regions: [eu]\n")
+	assert.ErrorContains(t, err, "unknown key 'regions'")
+}
