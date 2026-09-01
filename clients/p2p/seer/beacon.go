@@ -24,7 +24,7 @@ func StartNodeBeacon(ctx context.Context, cfg config.Config, node peer.Node, ser
 		return nil
 	}
 
-	sc, err := New(ctx, node, cfg.SensorsRegistry())
+	sc, err := New(ctx, node)
 	if err != nil {
 		return fmt.Errorf("creating seer client failed with: %w", err)
 	}

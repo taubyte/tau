@@ -17,7 +17,6 @@ import (
 	httpService "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/pkg/sensors"
 	"github.com/taubyte/tau/services/common/httpsvc"
 	slices "github.com/taubyte/tau/utils/slices/string"
 )
@@ -75,13 +74,6 @@ func Start(ctx context.Context, serviceConfig config.Config) error {
 		}
 		serviceConfig.SetRaftCluster(raftCluster)
 	}
-
-	// start sensors service
-	sensorsSvc, err := sensors.New(serviceConfig.Node())
-	if err != nil {
-		return fmt.Errorf("new sensors service failed with: %s", err)
-	}
-	serviceConfig.SetSensors(sensorsSvc)
 
 	serviceConfig.SetDatabases(kvdb.New(serviceConfig.Node()))
 

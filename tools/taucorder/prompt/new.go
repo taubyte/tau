@@ -104,7 +104,7 @@ func (p *tcprompt) Run(options ...Option) error {
 		return err
 	}
 
-	p.seerClient, err = seer.New(p.ctx, p.node, nil)
+	p.seerClient, err = seer.New(p.ctx, p.node)
 	if err != nil {
 		return err
 	}
