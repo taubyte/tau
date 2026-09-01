@@ -105,7 +105,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	}
 	assert.Equal(t, kinds["queue"], 4)
 	assert.Equal(t, kinds["function"], 3, "a driver per step, whatever the step does")
-	assert.Equal(t, kinds["channel"], 0, "nothing authored asked for a channel")
+	assert.Equal(t, kinds["stream"], 0, "nothing authored asked for a stream")
 	assert.Equal(t, kinds["group"], 0)
 	assert.Equal(t, kinds["namespace"], 0)
 

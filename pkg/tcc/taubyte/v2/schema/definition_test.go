@@ -97,14 +97,15 @@ func TestFunctionHasNoTrigger(t *testing.T) {
 		assert.Assert(t, !present, "functions carries %q; the trigger block is meant to be deleted, not extended", gone)
 	}
 
-	// `channel` is the one name that survives, and it means the opposite of what it
-	// meant in v1. There it was a TRIGGER — a scalar naming the channel that fired this
-	// function. Here it is an ACCESS BLOCK — entries keyed by channel name, each with
-	// its ops — so the direction is the function declaring what it reaches. The shape is
-	// what tells them apart, so the shape is what this asserts.
-	if ch, present := fn["channel"]; present {
+	// The pubsub kind is the one v1 trigger that survives on a function, and it means
+	// the opposite of what it meant there. In v1 it was a TRIGGER — a scalar naming the
+	// channel that fired this function. Here it is an ACCESS BLOCK — entries keyed by
+	// the stream's name, each with its ops — so the direction is the function declaring
+	// what it reaches. The shape is what tells them apart, so the shape is what this
+	// asserts.
+	if ch, present := fn["stream"]; present {
 		_, isBlock := ch.(map[string]any)
-		assert.Assert(t, isBlock, "functions carries a scalar %q: that is v1's trigger coming back", "channel")
+		assert.Assert(t, isBlock, "functions carries a scalar %q: that is v1's trigger coming back", "stream")
 	}
 
 	assert.Equal(t, nested(fn, "execution", "call"), "checkout")
@@ -559,8 +560,9 @@ func TestEffectClasses(t *testing.T) {
 		{"database", "search", schema.Read},  // vector
 		{"database", "upsert", schema.Write}, // vector
 		{"database", "delete", schema.Write}, // kv, document AND vector, one effect
-		{"channel", "publish", schema.Write},
-		{"channel", "subscribe", schema.Read},
+		{"stream", "publish", schema.Write},
+		{"stream", "subscribe", schema.Read},
+		{"channel", "dial", schema.Write}, // opaque bytes, so it can be anything
 		{"function", "invoke", schema.Write},
 		{"secret", "get", schema.Read},
 	} {
@@ -1033,13 +1035,13 @@ func TestWorkflowLowers(t *testing.T) {
 	assert.Assert(t, got["function/checkout_reserve"] != "", "one driver per step: %v", got)
 	assert.Assert(t, got["function/checkout_charge"] != "")
 	assert.Assert(t, got["function/checkout_settle"] != "")
-	// AND NOTHING ELSE. A channel was produced here so that finishing had an address,
+	// AND NOTHING ELSE. A stream was produced here so that finishing had an address,
 	// and nothing authored asked for it — which is the rule everywhere else in this
 	// vocabulary, and what every durable engine in the market does: step history for
 	// replay and a UI, never an application-facing bus by default.
 	for k := range got {
-		assert.Assert(t, !strings.HasPrefix(k, "channel/"),
-			"a workflow produced a channel nobody asked for: %v", got)
+		assert.Assert(t, !strings.HasPrefix(k, "stream/"),
+			"a workflow produced a stream nobody asked for: %v", got)
 	}
 
 	// NO store for the run's state: the state is the message, and which queue it is in
@@ -1360,4 +1362,57 @@ func TestADurableKvHasNoLifetime(t *testing.T) {
 
 	// …while the cache beside it is where a lifetime belongs, and still takes one.
 	assert.Equal(t, only(t, resources(t, compileBasic(t), "cache"))["ttl"], int64(86400000000000))
+}
+
+// BOTH NAMES, ASSERTED BY MEANING, because the two of them swapped and a half-done swap
+// reads as correct in either direction: `channel` and `stream` are both valid
+// identifiers, so a tree where only one side moved still compiles and still passes any
+// test that names only one of them.
+//
+// So this asserts what each name MEANS. A `channel` is 1:1 — it names a protocol and
+// exactly one workload that answers it, and its verb is `dial`. A `stream` fans out — it
+// matches a name or a pattern, it has no server at all, and its verbs are `publish` and
+// a `subscribe` the platform DELIVERS. Neither document loads against the other kind.
+func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
+	const id = "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEC\n"
+	compile := func(path, body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/application/db.yaml",
+			[]byte("id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nimage: img\nexecution:\n    memory: 1MB\nports:\n    pg:\n        number: 5432\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, path, []byte(id+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+	const conduit = "protocol: pgwire\nserve:\n    application:\n        name: db\n        port: pg\n"
+	const fanout = "match: orders\n"
+
+	assert.NilError(t, compile("/channel/sync.yaml", conduit), "a channel names a protocol and one server")
+	assert.NilError(t, compile("/stream/orders.yaml", fanout), "a stream matches a name")
+
+	// The other way round is not a document either kind can read, which is what makes a
+	// half-applied swap a failure instead of a silence.
+	//
+	// ONE offending key per probe, deliberately: strict mode walks the document's keys
+	// in map order and reports the first one it does not know, so a body carrying two
+	// of them names a different key run to run.
+	assert.ErrorContains(t, compile("/stream/x.yaml", fanout+"protocol: pgwire\n"), "unknown key 'protocol'")
+	assert.ErrorContains(t, compile("/channel/x.yaml", conduit+"match: orders\n"), "unknown key 'match'")
+
+	// And the verbs, which is the other half of what each name means.
+	dial := schema.OpsOf("channel")
+	assert.Equal(t, len(dial), 1)
+	assert.Equal(t, dial[0].Name, "dial")
+	assert.Equal(t, dial[0].Effect, schema.Write)
+	assert.Assert(t, !dial[0].Delivered, "nothing is pushed to a dialler")
+
+	fan := schema.OpsOf("stream")
+	assert.Equal(t, len(fan), 2)
+	assert.Equal(t, fan[0].Name, "subscribe")
+	assert.Assert(t, fan[0].Delivered, "a subscriber is handed the message; it does not go and ask")
+	assert.Equal(t, fan[1].Name, "publish")
+	assert.Equal(t, fan[1].Effect, schema.Write)
 }

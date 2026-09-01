@@ -36,7 +36,7 @@ type Verb struct {
 	Effect string
 	// Delivered marks a verb where the PLATFORM hands the work over, rather than the
 	// resource going and asking for it. `get` on a cache is a call the workload
-	// makes; `receive` on a queue and `subscribe` on a channel are the other
+	// makes; `receive` on a queue and `subscribe` on a stream are the other
 	// direction, and something has to actually arrive.
 	//
 	// It is what makes a consumer's inbound path expressible. A WASM consumer needs
@@ -153,14 +153,14 @@ func OpsOf(kind string) []Verb {
 }
 
 // ServedByRoute reports whether traffic can be handed to this kind — by a gateway route
-// if it is HTTP, by an L4 proxy if it is a raw connection from outside, or by a stream
+// if it is HTTP, by an L4 proxy if it is a raw connection from outside, or by a channel
 // if it is a raw connection from inside the project. It is the OTHER way to be
 // reachable: ops are what one resource does to another, this is how a connection
 // arrives. A kind with neither is not a target at all.
 func ServedByRoute(kind string) bool {
 	// No pluralisation to undo any more: a handler kind IS the kind's name. That
 	// `k+"s"` existed only because the vocabulary named the same thing two ways.
-	for _, k := range append(append(handlerKinds, proxyHandlerKinds...), streamServerKinds...) {
+	for _, k := range append(append(handlerKinds, proxyHandlerKinds...), channelServerKinds...) {
 		if k == kind {
 			return true
 		}
@@ -535,7 +535,7 @@ func authorizerAttributes() []*Attribute {
 var secAuthorizer = Section("authorizer", "Authorizer", "Who decides what a caller may do to this.")
 
 // deliverAttributes answer a question the vocabulary was not asking: with a queue or
-// a channel, WHAT STARTS THE WORK.
+// a stream, WHAT STARTS THE WORK.
 //
 //	queues:
 //	    orders:
@@ -545,7 +545,7 @@ var secAuthorizer = Section("authorizer", "Authorizer", "Who decides what a call
 //	            path: /work
 //
 // A WASM consumer needs none of it. It is dispatched — the call is the delivery, the
-// host ABI is the channel, and there is no port anywhere in the picture.
+// host ABI is the conduit, and there is no port anywhere in the picture.
 //
 // A CONTAINER has no host ABI. It is already running, and an item has to be handed to
 // it over something, so the platform posts each one to a port the workload declared

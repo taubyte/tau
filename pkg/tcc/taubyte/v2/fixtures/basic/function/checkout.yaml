@@ -19,7 +19,7 @@ storage:
 secret:
     stripe:
         ops: [get]
-channel:
+stream:
     orders:
         ops: [publish]
 database:

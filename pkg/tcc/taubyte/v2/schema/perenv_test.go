@@ -23,7 +23,7 @@ import (
 //   - THE ACCESS BLOCK — `ops` is a capability. `ops_preview: [put]` is preview writing
 //     where production reads.
 //   - CONTRACTS — a cron's `schedule` (and `schedule_preview: "0 0 30 2 *"` is the
-//     off-switch somebody would write instead of asking for one), a channel's `match`,
+//     off-switch somebody would write instead of asking for one), a stream's `match`,
 //     a route's `path`, a workflow's `start` and `on_error`, a zone's `records`.
 //   - SHAPES — `database/vector/dimensions` and an agent's `memory/dimensions`: an index built
 //     at another width is not the same index. `agent/sessions/size`, because whether it

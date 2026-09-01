@@ -35,7 +35,7 @@ func TestResourcesAreResourcesOnly(t *testing.T) {
 	}
 
 	// ...and there is exactly one of each, which an access entry drawn as a resource
-	// would break: `orders` is a cache, a channel and a database in this fixture, and
+	// would break: `orders` is a cache, a stream and a database in this fixture, and
 	// every resource that reaches one would add another copy.
 	seen := map[string]bool{}
 	for _, r := range all {
@@ -104,7 +104,7 @@ func TestRelationsTurnDeliveredVerbsAround(t *testing.T) {
 			continue
 		}
 		from, to := byID[rel.From], byID[rel.To]
-		assert.Equal(t, from.Kind, "channel", "subscribe runs from what delivers")
+		assert.Equal(t, from.Kind, "stream", "subscribe runs from what delivers")
 		assert.Equal(t, to.Kind, "function", "...toward what it is delivered to")
 		found = true
 	}

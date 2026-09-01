@@ -42,7 +42,7 @@ type Class string
 const (
 	// Use: one resource acting on another, with a verb it asked for.
 	Use Class = "use"
-	// Handoff: traffic goes there — a route's handler, a proxy's forward, a stream's
+	// Handoff: traffic goes there — a route's handler, a proxy's forward, a channel's
 	// serve.
 	Handoff Class = "handoff"
 	// Policy: a function this resource names to decide something about it.
@@ -99,7 +99,7 @@ func Relations(obj map[string]any) []Relation {
 // accessRelations: what a resource asked to do to another, one per verb.
 //
 // AN INBOUND VERB IS TURNED AROUND HERE. `receive` on a queue and `subscribe` on a
-// channel are declared by the consumer, and the work travels the other way — drawn from
+// stream are declared by the consumer, and the work travels the other way — drawn from
 // the declaration, a queue worker has two arrows out and none in, which reads as a
 // workload nothing ever starts. `get` on a secret is the same shape without the push:
 // the value is DELIVERED to the workload that named it, and nothing writes into a

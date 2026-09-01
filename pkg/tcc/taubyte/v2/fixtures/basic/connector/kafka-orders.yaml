@@ -4,6 +4,6 @@ type: kafka
 polls: true
 credentials:
     name: stripe
-channel:
+stream:
     orders:
         ops: [publish]

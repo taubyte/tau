@@ -7,7 +7,7 @@
 //
 //   - The function trigger block is GONE. A function declares nothing about how it
 //     is reached; reachability is an inbound edge authored on the domain, gateway,
-//     channel, p2p service or cron that reaches it. Same for a website's
+//     stream, channel or cron that reaches it. Same for a website's
 //     domains/paths. ".notes/v2/resources.md" §1.3, §1.5.
 //   - smartops is deleted. Policy is `authorizers` (request-scoped, per-edge);
 //     limits are platform-enforced at dispatch. "resources.md" Deletions.
@@ -458,10 +458,10 @@ var secInstances = Section("instances", "Instances", "Whether this holds one ins
 // could not complain either, because a kind no route can name is not one it checks.
 var handlerKinds = []string{"function", "application", "website", "gateway", "mcp", "agent"}
 
-// streamServerKinds are what may answer a stream. A container gets the bytes on one of
-// its own ports; a function is dispatched with the stream in hand. Both are real, and
+// channelServerKinds are what may answer a channel. A container gets the bytes on one of
+// its own ports; a function is dispatched with the connection in hand. Both are real, and
 // nothing else is: a website is HTTP by definition and a gateway is an ingress.
-var streamServerKinds = []string{"application", "function"}
+var channelServerKinds = []string{"application", "function"}
 
 // proxyHandlerKinds are what may sit behind an L4 proxy. Only a container: a raw
 // connection is held open and streamed, and a function is request-and-answer with no
@@ -1467,33 +1467,45 @@ var V2Resources = []*Node{
 			Resource("proxy", "Proxy", "Proxy", "proxy"),
 		)),
 
-	// Both halves are declared now: the channel edges to its consumer with
-	// `subscribe`, the producer edges back with `publish`. Two statements because
-	// they are two capabilities — collapsing them into `write` erases a real
-	// boundary, and today the publish half is not checked at all (resources.md §5.3).
-	// NOT `messaging`, which was v1's word and named a DOMAIN rather than a thing. Every
-	// other kind is a noun for the thing itself — a database, a queue, a cache — and
-	// nobody says "a messaging". The kind's own field prefix and its documentation
-	// already said `channel`; the name now says it too.
+	// Both halves are declared: it edges to its consumer with `subscribe`, the producer
+	// edges back with `publish`. Two statements because they are two capabilities —
+	// collapsing them into `write` erases a real boundary.
 	//
-	// With the kind called `channel`, `channel: match:` inside `channel/orders.yaml` was
-	// the same word twice, so the two matching fields sit at the document root — which
-	// is where `cache` and `storage` already put the identical pair.
-	DefineGroup("channel",
+	// THE NAME HAS MOVED TWICE AND THIS IS WHY. v1 called it `messaging`, which named a
+	// DOMAIN rather than a thing: every other kind here is a noun for the thing itself
+	// — a database, a queue, a cache — and nobody says "a messaging". It was `channel`
+	// after that, which is a noun and was still wrong in a way that only shows once
+	// there is a second conduit kind beside it: in Go, and in Redis, a channel is
+	// point-to-point with a single receiver, so the word mis-cues fan-out to exactly
+	// the audience that writes Go. `stream` is the industry's word for durable fan-out
+	// — Kinesis Data Streams, NATS JetStream, Redpanda — and `channel` moved to the 1:1
+	// byte conduit below, where it is right.
+	//
+	// The neighbourhood is what the name has to survive: `queue` fans in to one
+	// claimant, `stream` fans out to every subscriber, `bus` fans out and forgets, and
+	// `channel` is two workloads and a socket. Nobody has to be told which is which.
+	//
+	// IMPLEMENTATION NOTE: `services/substrate/components/pubsub/` is v1's home for
+	// this. It is not being renamed, so someone reading `p2p/stream.go` while writing a
+	// `stream` resource is looking at the wrong kind — that file is the `channel` kind.
+	//
+	// With the kind called `stream`, the matching fields sit at the document root —
+	// which is where `cache` and `storage` already put the identical pair.
+	DefineGroup("stream",
 		resource(
 			commonAttributes(
-				Bool("local", InSection("matching"), Doc("Local", "Restrict the channel to the local node / project scope.")),
-				String("match", Required(), Field("Match"), Accessor("ChannelMatch"), NoSetter(), InSection("matching"), Doc("Match", "Channel name or pattern this resource matches.")),
+				Bool("local", InSection("matching"), Doc("Local", "Restrict the stream to the local node / project scope.")),
+				String("match", Required(), Field("Match"), Accessor("StreamMatch"), NoSetter(), InSection("matching"), Doc("Match", "Stream name or pattern this resource matches.")),
 				Bool(Key("regex"), NoSetter(), InSection("matching"), Doc("Use Regex", "Treat match as a regular expression instead of a literal name.")),
-				Bool(Key("bridges", "mqtt", "enable"), Accessor("MQTT"), NoSetter(), InSection("bridges"), Doc("MQTT", "Expose this channel over the MQTT bridge.")),
-				Bool(Key("bridges", "websocket", "enable"), Accessor("WebSocket"), NoSetter(), InSection("bridges"), Doc("WebSocket", "Expose this channel over the WebSocket bridge.")),
+				Bool(Key("bridges", "mqtt", "enable"), Accessor("MQTT"), NoSetter(), InSection("bridges"), Doc("MQTT", "Expose this stream over the MQTT bridge.")),
+				Bool(Key("bridges", "websocket", "enable"), Accessor("WebSocket"), NoSetter(), InSection("bridges"), Doc("WebSocket", "Expose this stream over the WebSocket bridge.")),
 			),
-			GroupDoc("A PubSub channel, optionally bridged to MQTT/WebSocket. It edges to its subscribers; publishers edge to it."), Icon("message"), Category("trigger"),
+			GroupDoc("A pubsub stream, optionally bridged to MQTT/WebSocket. What is published to it reaches every subscriber; it edges to its subscribers, and publishers edge to it."), Icon("message"), Category("trigger"),
 			secIdentity, secAccess,
-			Section("matching", "Matching", "The name or pattern this channel answers to."),
+			Section("matching", "Matching", "The name or pattern this stream answers to."),
 			Section("bridges", "Bridges", "External protocol bridges."),
 			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
-			Resource("channel", "Channel", "Channel", "channel"),
+			Resource("stream", "Stream", "Stream", "stream"),
 		)),
 
 	// NO `auth` FIELD. It was `none | oauth`, and `oauth` promised to "validate tokens
@@ -1552,9 +1564,22 @@ var V2Resources = []*Node{
 
 	// ---- in-project addressing ----
 
-	// The kind v1 called `services`, back with the name it should have had. A STREAM:
-	// a named, ordered, bidirectional byte channel between two workloads inside the
-	// project, carried by libp2p, with no edge in the path.
+	// The kind v1 called `services`, back with a name that says what it is. A CHANNEL:
+	// a named, ordered, bidirectional byte conduit between exactly two workloads inside
+	// the project, carried by libp2p, with no edge in the path.
+	//
+	// `channel` BECAUSE IT IS 1:1, and that is the whole argument for the name. Go's
+	// `chan` is point-to-point with a single receiver per value, which is exactly what
+	// this is and exactly what fan-out is not — so the word that mis-cued the semantics
+	// on the pubsub kind is the right one here. It was called `stream` until
+	// 2026-08-31, and `stream` moved to the fan-out kind because that is the industry's
+	// word for durable fan-out (Kinesis Data Streams, NATS JetStream, Redpanda).
+	//
+	// A NOTE FOR ANYONE READING THE IMPLEMENTATION: v1's directories are now inverted
+	// relative to this vocabulary. `services/substrate/components/p2p/stream.go` is
+	// what this kind describes, and `services/substrate/components/pubsub/` is what the
+	// `stream` kind describes. Those are v1's and v1 is not being renamed; the v2
+	// successors take the names this vocabulary uses.
 	//
 	// It exists because every other inbound path in this vocabulary is an INGRESS. A
 	// gateway route parses HTTP arriving from outside; a proxy accepts a connection
@@ -1567,37 +1592,39 @@ var V2Resources = []*Node{
 	//
 	// THE PROTOCOL IS NAMESPACED BY THE PLATFORM, not by the author. What is written
 	// here is a name inside the project; what goes on the wire has the project's
-	// identity prepended, so two projects that both call a stream `sync` do not meet.
+	// identity prepended, so two projects that both call a channel `sync` do not meet.
 	// An author who could write the full wire protocol could collide with another
 	// tenant on purpose, which is the same reason a proxy authors no port.
 	//
 	// Deliberately thin, and stated as such: v1's whole declaration was one field. What
-	// serves the stream is named here, the way a proxy names what it forwards to,
-	// because a stream nothing answers is a name that dials into a void.
-	DefineGroup("stream",
+	// serves the channel is named here, the way a proxy names what it forwards to,
+	// because a channel nothing answers is a name that dials into a void.
+	//
+	// The icon stays `stream`: an icon is a picture of the thing, and what travels here
+	// is still a stream of bytes whatever the kind is called.
+	DefineGroup("channel",
 		resource(
 			commonAttributes(
-				String("protocol", Required(), IsVariableName(), InSection("stream"),
-					Doc("Protocol", "The name this stream is addressed by within the project, e.g. \"sync\". What goes on the wire has the project's identity prepended, so two projects using the same name never meet.")),
+				String("protocol", Required(), IsVariableName(), InSection("channel"),
+					Doc("Protocol", "The name this channel is addressed by within the project, e.g. \"sync\". What goes on the wire has the project's identity prepended, so two projects using the same name never meet.")),
 
 				// Same shape as a proxy's `forward` and a gateway route's handler: the
 				// resource that answers, by kind, namespace and name.
-				String(Key("serve", "kind"), Path("serve", Either(streamServerKinds...)), Captures(), InSection("stream"),
-					Doc("Served By", "Which kind answers this stream (the key selects the block).")),
-				String(Key("serve", "namespace"), Path("serve", Either(streamServerKinds...), "namespace"), IsNamespacePath(), InSection("stream"),
+				String(Key("serve", "kind"), Path("serve", Either(channelServerKinds...)), Captures(), InSection("channel"),
+					Doc("Served By", "Which kind answers this channel (the key selects the block).")),
+				String(Key("serve", "namespace"), Path("serve", Either(channelServerKinds...), "namespace"), IsNamespacePath(), InSection("channel"),
 					Doc("Namespace", "Path to the namespace holding it, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
-				String(Key("serve", "name"), Path("serve", Either(streamServerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom(Key("serve", "kind")), ByName(), Serves()), InSection("stream"),
+				String(Key("serve", "name"), Path("serve", Either(channelServerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom(Key("serve", "kind")), ByName(), Serves()), InSection("channel"),
 					Doc("Name", "Its name within that namespace.")),
-				String(Key("serve", "port"), Path("serve", Either(streamServerKinds...), "port"), IsVariableName(), InSection("stream"),
-					Doc("Port", "Which of the workload's own named ports the stream is delivered to. Containers only; a function is dispatched, not connected.")),
+				String(Key("serve", "port"), Path("serve", Either(channelServerKinds...), "port"), IsVariableName(), InSection("channel"),
+					Doc("Port", "Which of the workload's own named ports the channel is delivered to. Containers only; a function is dispatched, not connected.")),
 			),
-			GroupDoc("A named byte stream between two workloads inside the project, over libp2p. The way in that is not an ingress."), Icon("stream"), Category("compute"),
+			GroupDoc("A named byte channel between two workloads inside the project, over libp2p. The way in that is not an ingress."), Icon("stream"), Category("compute"),
 			secIdentity, secAccess,
-			Section("stream", "Stream", "The name it answers to, and what answers it."),
+			Section("channel", "Channel", "The name it answers to, and what answers it."),
 			Ops(WriteOp("dial")), // dial is write: what travels is opaque
-			Resource("stream", "Stream", "Stream", "stream"),
+			Resource("channel", "Channel", "Channel", "channel"),
 		)),
-
 	// ---- models ----
 
 	// WHERE INFERENCE HAPPENS, and on whose account. Its own kind because it is its own
@@ -2012,7 +2039,7 @@ var V2Resources = []*Node{
 					Writes(Text("send"), On("workflow", Attr("name")), At(Text("entry"), Text("start"), Text("as"))),
 				),
 
-				// AND NO EVENTS CHANNEL. One was produced here — a channel per workflow,
+				// AND NO EVENTS STREAM. One was produced here — a stream per workflow,
 				// every driver publishing that its step had finished — and nothing
 				// authored asked for it, which is the rule this vocabulary already holds
 				// everywhere else: a produced resource nobody asked for is an empty
