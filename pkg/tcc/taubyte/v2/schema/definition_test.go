@@ -354,6 +354,113 @@ func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 	assert.Assert(t, !leaked, "a kv database carries no claim about a vector metric: %v", d)
 }
 
+// COORDINATED OR NOT IS A FLAG UNDER `distributed`, AND IT IS ONLY THERE. What an
+// author states is what the store has to give them; which shape of raft delivers it —
+// a synchronous replica set, or one master and followers — is a runtime decision and
+// is never in the document.
+//
+// Two things are pinned because both can rot silently. That the flag reaches EVERY
+// type's own `distributed` block, because it is declared once in
+// databaseType.attributes() and a fifth data model gets it by arriving; and that an
+// external engine's block REFUSES it, because a Postgres has whatever consistency
+// Postgres has and a key claiming otherwise is a promise this project cannot keep. The
+// second is the literal path doing its work — `Path(t.name, tauEngine, "crdt")` names
+// the branch rather than matching the engine set, so the wrong branch is an unknown
+// key instead of a boolean filed where nothing reads it.
+func TestDatabaseCRDTIsUnderTheDistributedEngineOnly(t *testing.T) {
+	compile := func(path, body string) (map[string]any, error) {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, path,
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		obj, _, err := c.Compile(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		return obj.Flat(), nil
+	}
+	db := func(body string) (map[string]any, error) { return compile("/database/d.yaml", body) }
+
+	// Every data model, under its own type block, with the type's own extra fields.
+	for _, tc := range []struct{ typ, body string }{
+		{"kv", "kv:\n    distributed:\n        size: 1MB\n        crdt: true\n"},
+		{"document", "document:\n    distributed:\n        size: 1MB\n        crdt: true\n"},
+		{"sql", "sql:\n    distributed:\n        size: 1MB\n        crdt: true\n"},
+		{"vector", "vector:\n    dimensions: 8\n    distributed:\n        size: 1MB\n        crdt: true\n"},
+	} {
+		flat, err := db(tc.body)
+		assert.NilError(t, err, "type %q", tc.typ)
+		d := namedResource(t, resources(t, flat, "database"), "d")
+		assert.Equal(t, nested(d, tc.typ, "crdt"), true, "type %q keeps the flag in its own block", tc.typ)
+	}
+
+	// AND NOWHERE ELSE. An external engine's block does not have the key at all, so
+	// the error is the schema's own list of what is legal there rather than silence.
+	_, err := db("sql:\n    postgres:\n        host: db:5432\n        crdt: true\n")
+	assert.ErrorContains(t, err, "unknown key 'crdt'; valid keys here: credentials, database, host, tls",
+		"a postgres has whatever consistency postgres has")
+	_, err = db("document:\n    mongo:\n        host: m:27017\n        crdt: true\n")
+	assert.ErrorContains(t, err, "unknown key 'crdt'; valid keys here: credentials, database, host, tls")
+
+	// Nor beside the type block, where it would read as a property of the resource
+	// rather than of the engine holding it.
+	_, err = db("crdt: true\nkv:\n    distributed:\n        size: 1MB\n")
+	assert.ErrorContains(t, err, "unknown key 'crdt'")
+
+	// AND NOT ON A `cache`, WHICH HAS NO ENGINE BLOCK TO PUT IT IN. Its `size` and
+	// `ttl` sit at the document root because there is no engine to choose, so there is
+	// no `distributed` branch for this to hang under. Whether a cache should gain one
+	// is the owner's call; this records that today it has neither.
+	_, err = compile("/cache/c.yaml", "size: 1MB\ncrdt: true\n")
+	assert.ErrorContains(t, err, "unknown key 'crdt'")
+	_, err = compile("/cache/c.yaml", "distributed:\n    size: 1MB\n")
+	assert.ErrorContains(t, err, "unknown key 'distributed'")
+}
+
+// WHAT WRITING NOTHING MEANS, and it is the half a boolean cannot say for itself.
+//
+// An absent `crdt` is not in the compiled object at all, so every consumer reads it as
+// Go's zero value: false, the coordinated store. Writing `false` is therefore not a
+// no-op — it is RECORDED, which is what lets an author put the default on the page
+// where the reason for it belongs, and what lets decompile hand it back unchanged
+// instead of deleting a line somebody wrote.
+func TestDatabaseCRDTAbsentIsCoordinated(t *testing.T) {
+	compile := func(body string) map[string]any {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		obj, _, err := c.Compile(context.Background())
+		assert.NilError(t, err)
+		return namedResource(t, resources(t, obj.Flat(), "database"), "d")
+	}
+
+	silent := compile("kv:\n    distributed:\n        size: 1MB\n")
+	_, present := nestedOK(silent, "kv", "crdt")
+	assert.Assert(t, !present, "an unwritten crdt is absent, not false: %v", silent["kv"])
+
+	written := compile("kv:\n    distributed:\n        size: 1MB\n        crdt: false\n")
+	v, present := nestedOK(written, "kv", "crdt")
+	assert.Assert(t, present, "a written false is kept: %v", written["kv"])
+	assert.Equal(t, v, false)
+
+	// And the fixture holds both, on the two resources where the choice is the point:
+	// tokens are the same token however often they are written at once, and a debit
+	// that merges with another debit is a debit nobody made.
+	flat := compileBasic(t)
+	tokens := namedResource(t, resources(t, flat, "database"), "tokens")
+	assert.Equal(t, nested(tokens, "kv", "crdt"), true)
+
+	ledger := namedResource(t, namespace(t, root(t, flat), "billing")["database"].(map[string]any), "ledger")
+	assert.Equal(t, nested(ledger, "sql", "crdt"), false)
+}
+
 // The new kinds load at all, with their scalars parsed.
 func TestNewKindsCompile(t *testing.T) {
 	flat := compileBasic(t)

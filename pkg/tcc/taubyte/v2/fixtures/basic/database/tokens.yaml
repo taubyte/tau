@@ -1,8 +1,9 @@
 id: QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfF
-description: session tokens that must survive a node restart - a cache would be allowed to lose them
+description: session tokens that must survive a node restart - a cache would be allowed to lose them; coordination-free, because a token written twice at once is the same token
 kv:
     distributed:
         size: 64MB
+        crdt: true
 instances:
     validator:
         namespace: /shop
