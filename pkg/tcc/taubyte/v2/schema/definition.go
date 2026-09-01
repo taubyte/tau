@@ -2189,21 +2189,52 @@ var V2Resources = []*Node{
 			Resource("workflow", "Workflow", "Workflow", "workflow"),
 		)),
 
-	// One type for every external system: it holds the credentials, and for
+	// A SOURCE THAT IS NOT ALREADY SOMETHING ELSE. It holds the credentials, and for
 	// source-like externals it holds the connection too — Lambda's event-source
 	// mapping, where a separate poller joins the source and the invoked compute
 	// never touches it. A connector that holds a live connection runs exactly once
 	// per cloud: a quorum lease with an epoch on every event it emits, so a stale
 	// poller's events are rejected rather than duplicated (resources.md §6).
+	//
+	// IT LOST ITS TWO BIGGEST CASES ON 2026-08-31 AND IT STILL EARNS ITS EXISTENCE.
+	// A Kafka or a NATS is a `stream` ENGINE now, not a connector that consumes one and
+	// republishes it — that bridge threw away ordering, durability and replay, which is
+	// every reason to have used Kafka. A Postgres, MySQL or Mongo is a `database`
+	// engine, and was never a connector: naming one here compiled clean and nothing
+	// noticed that Kafka answers no query, which is why the engine became a key from a
+	// closed set.
+	//
+	// What is left is what neither of those covers, and it is not nothing:
+	//
+	//   - AN OBJECT STORE AS A SOURCE — s3, gcs. `storage` has no engine axis, so there
+	//     is nowhere else for it to be said.
+	//   - A VENDOR API — slack, stripe, a salesforce. A webhook is an inbound route to a
+	//     function and needs no kind; a POLLED one is the opposite direction and a route
+	//     cannot express it.
+	//   - THE POLLER ITSELF. An `entity` is the same fence — a quorum lease and its
+	//     epoch — but an entity runs the AUTHOR'S code, and what a connector says is
+	//     that the PLATFORM ships the client. `source: builtin` is the only seam for
+	//     that and its own documentation says it is not for authors, so "tau's slack
+	//     poller" has no spelling as an entity today. Decomposing this kind would move
+	//     writing a Slack client from tau to everyone using tau.
+	//   - "EXACTLY ONE NODE RUNS THIS" AS A DECLARED FACT, rather than as an entity with
+	//     an entrypoint, a size and a lease the author has to reason about.
+	//
+	// `type` STAYS OPEN, and that is a decision rather than an oversight: this kind is
+	// one of the vocabulary's two extensibility seams (see V2Resources above), and it is
+	// the one for external systems. Closing it to a set would leave the vocabulary with
+	// no open surface for them at all. Whether the trade is worth taking — a closed set
+	// buys the same refusal `database.engine` and `stream.engine` get, and costs the
+	// seam — is the owner's call, not this file's.
 	DefineGroup("connector",
 		resource(
 			commonAttributes(
-				String("type", Required(), InSection("identity"), Doc("Type", "Which external system events are received from, e.g. \"kafka\", \"s3\", \"slack\".")),
+				String("type", Required(), InSection("identity"), Doc("Type", "Which external system events are received from, e.g. \"s3\", \"slack\". A pubsub cluster is a stream's engine and a database server is a database's; neither is written here.")),
 				String(Key("credentials", "namespace"), IsNamespacePath(), InSection("identity"), Doc("Credentials Namespace", "Where that secret lives. Omitted means this connector's own scope, then its parents.")),
 				String(Key("credentials", "name"), IsVariableName(), Ref("secret", Inbound()), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials.")),
 				Bool("polls", InSection("identity"), Doc("Polls", "This connector holds a live connection to the external system and emits events from it. Exactly one node in the cloud runs it.")),
 			),
-			GroupDoc("An external system events are received from: credentials, and the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
+			GroupDoc("An external system events are received from, that is not already a stream's engine or a database's: credentials, and the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
 			secIdentity, secAccess,
 			Resource("connector", "Connector", "Connector", "connector"),
 		)),

@@ -1550,3 +1550,42 @@ func opsOf(t *testing.T, kind string) []string {
 	}
 	return out
 }
+
+// THE ASYMMETRY IS DELIBERATE: every ENGINE key is closed and `connector.type` is open.
+//
+// It reads like an oversight — the same word is refused in one place and accepted in
+// another — so it is pinned here with the reason. A closed set is what makes a wrong
+// pair unrepresentable, and it is affordable exactly where the set is knowable: an
+// engine is a wire protocol and a driver tau ships, so adding one is a release. "An
+// external system you receive events from" is not knowable, and `connector` is one of
+// the two seams the vocabulary keeps open on purpose (the other is node.Register).
+//
+// Closing it is a real trade with a real cost and it is the owner's call, not this
+// file's. If it is ever taken, this test is what says so out loud.
+func TestConnectorTypeIsOpenAndEveryEngineIsClosed(t *testing.T) {
+	compile := func(path, body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
+			[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, path,
+			[]byte("id: QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	// A system nobody has heard of is a connector, and that is the seam working.
+	for _, kind := range []string{"s3", "slack", "salesforce", "some-vendor-api"} {
+		assert.NilError(t, compile("/connector/c.yaml", "type: "+kind+"\ncredentials:\n    name: k\n"),
+			"connector.type is the open seam: %q", kind)
+	}
+
+	// The same openness nowhere else. An engine is a driver tau ships, so the set is
+	// knowable and the key is closed — which is what makes naming something that
+	// answers nothing impossible rather than merely wrong.
+	assert.ErrorContains(t, compile("/stream/s.yaml", "match: m\nslack:\n    host: h\n"), "unknown key 'slack'")
+	assert.ErrorContains(t, compile("/database/d.yaml", "sql:\n    s3:\n        host: h\n"), "unknown key 's3'")
+}
