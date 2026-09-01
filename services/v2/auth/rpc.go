@@ -3,7 +3,7 @@ package auth
 import (
 	"net/http"
 
-	"github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1/authv1connect"
+	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
 )
 
 // mount assembles the five generated connect handlers behind one mux, which

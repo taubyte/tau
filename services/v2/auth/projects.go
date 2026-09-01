@@ -7,8 +7,8 @@ import (
 
 	"github.com/taubyte/tau/utils/id"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1/authv1connect"
+	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
 )
 
 // projectHandler implements authv1connect.ProjectServiceHandler. See

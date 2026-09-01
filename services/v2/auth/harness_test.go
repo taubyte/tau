@@ -9,7 +9,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1/authv1connect"
+	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
 )
 
 // wireHarness is a running Service on one mocknet host reached from a second

@@ -6,8 +6,8 @@ import (
 	"connectrpc.com/connect"
 	"golang.org/x/crypto/acme/autocert"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1/authv1connect"
+	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
 )
 
 // certificateHandler implements authv1connect.CertificateServiceHandler. See
