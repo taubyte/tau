@@ -25,3 +25,6 @@ stream:
 database:
     tokens:
         ops: [get, put]
+log:
+    audit:
+        ops: [append]

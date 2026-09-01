@@ -1589,3 +1589,37 @@ func TestConnectorTypeIsOpenAndEveryEngineIsClosed(t *testing.T) {
 	assert.ErrorContains(t, compile("/stream/s.yaml", "match: m\nslack:\n    host: h\n"), "unknown key 'slack'")
 	assert.ErrorContains(t, compile("/database/d.yaml", "sql:\n    s3:\n        host: h\n"), "unknown key 's3'")
 }
+
+// A PLACEHOLDER THAT STAYS A PLACEHOLDER. `log` has no fields of its own on purpose —
+// its shape is owed and has not been given — and the two things that could quietly
+// happen to it are pinned here: somebody deleting it as inert, and somebody completing
+// it by guessing.
+//
+// The verbs are the part that is not a placeholder. `append` alone is the kind's whole
+// claim, and the absence of `put` and `delete` is where "append-only" is STATED rather
+// than described: a record that can be overwritten or removed is not one.
+func TestALogIsAppendOnlyAndOtherwiseUnspecified(t *testing.T) {
+	assert.DeepEqual(t, opsOf(t, "log"), []string{"append:write", "read:read"})
+	for _, gone := range []string{"put", "delete", "exec", "upsert"} {
+		_, has := schema.EffectOf("log", gone)
+		assert.Assert(t, !has, "an append-only log must not declare %q", gone)
+	}
+
+	// Nothing but the common block, so a field arriving here is a decision somebody
+	// took and this is where they are asked to have taken it deliberately.
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/log/a.yaml",
+		[]byte("id: QmPq5xVnB7LtWcHdKzR3JgEyUM8fasNbT2vXrQwCk6hDZm\nretention: 30d\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "unknown key 'retention'",
+		"the shape is owed; a field guessed at here is not it")
+
+	// And it is a real target: something appends to it in the fixture, which is the
+	// difference between a kind and a name nothing can reach.
+	audit := namedResource(t, resources(t, compileBasic(t), "log"), "audit")
+	assert.Equal(t, audit["name"], "audit")
+}

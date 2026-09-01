@@ -1121,6 +1121,42 @@ var V2Resources = []*Node{
 			Resource("volume", "Volume", "Volume", "volume"),
 		)),
 
+	// A DECLARED PLACEHOLDER, AND THAT IS WHAT IT IS RATHER THAN AN UNFINISHED KIND.
+	// An append-only resource: records go on the end and nothing rewrites what is
+	// already there. It has no fields of its own yet — the shape is the owner's to
+	// finish, and inventing a retention, a size or a format here would be guessing at a
+	// specification that exists and has not been given.
+	//
+	// It is written down as deliberately incomplete because this vocabulary DELETES
+	// inert things — `notification.email` for being read nowhere, the connector's
+	// `provides` for asserting a capability nothing consumed — so a kind with nothing
+	// in it either gets removed as inert or gets completed by somebody guessing. This
+	// is the note that stops both.
+	//
+	// IT HAS VERBS EVEN THOUGH IT HAS NO ATTRIBUTES, because the vocabulary's own rule
+	// (see V2Resources above) is that a kind with no Ops() is not a target: nothing can
+	// reach it, so an append-only log nothing can append to is a kind that does not
+	// participate. `append` and `read` are PROVISIONAL, pending the owner's shape.
+	//
+	// `append` alone is the claim the kind makes. There is deliberately no `put` and no
+	// `delete`: a record that can be overwritten or removed is not an append-only log,
+	// and a verb set is the one place this vocabulary states that where every consumer
+	// reads it back.
+	//
+	// `read` is a PULL — the reader goes and asks, with whatever offset or range the
+	// shape turns out to have. A FOLLOW is the other direction and would be a second
+	// verb, a DeliveredOp, the way a bus's `subscribe` is: the platform hands each new
+	// record over as it lands. Which of the two a log has, or whether it has both, is
+	// the owner's call and is not decided here.
+	DefineGroup("log",
+		resource(
+			commonAttributes(),
+			GroupDoc("An append-only log. Records go on the end and nothing rewrites what is there. Its shape is not specified yet."), Icon("list"), Category("data"),
+			secIdentity, secAccess,
+			Ops(WriteOp("append"), ReadOp("read")),
+			Resource("log", "Log", "Log", "log"),
+		)),
+
 	// A declaration and a reference, never a value. The value lives outside git in
 	// the secrets service, keyed <project>/<environment>/<key>, so rotation needs no
 	// push. Read access is an edge with one verb; there is no write verb from a
