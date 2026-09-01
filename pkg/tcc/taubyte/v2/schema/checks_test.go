@@ -216,7 +216,7 @@ func TestAuditHostWorldsReachesEveryUse(t *testing.T) {
 		return b
 	}
 	cacheWith := func(validator string) string {
-		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 32MB\nttl: 24h\ninstances:\n    limit: 0\n    validator:\n        name: " + validator + "\n"
+		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 32MB\nttl: 24h\nconsensus: crdt\ninstances:\n    limit: 0\n    validator:\n        name: " + validator + "\n"
 	}
 	routeRouter := func(router string) string {
 		return "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nroute:\n    path: /\n    router:\n        name: " + router + "\n"
@@ -279,7 +279,7 @@ func TestAuditGhostFunctions(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
 		"/application/a.yaml": appBody + "ports:\n    p:\n        number: 80\n",
 		"/gateway/g.yaml":     "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        application:\n            name: a\n            port: p\ntransformers:\n    - name: ghost\n",
-		"/cache/c.yaml":       "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nauthorizer:\n    name: alsoghost\n",
+		"/cache/c.yaml":       "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\nauthorizer:\n    name: alsoghost\n",
 	})
 	has(t, found, schema.Broken, "is named as a gateway-transformer by gateway/g transformers, and does not exist")
 	has(t, found, schema.Broken, "is named as a authorizer by cache/c authorizer, and does not exist")
@@ -591,7 +591,7 @@ func TestAuditRegions(t *testing.T) {
 	const proj = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [eu, us]\n"
 	const shopID = "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n"
 	cache := func(region string) string {
-		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\n" + region
+		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" + region
 	}
 
 	// A scope may narrow what it inherits, and only narrow it.

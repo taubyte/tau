@@ -985,6 +985,13 @@ func (t databaseType) attributes() []*Attribute {
 		// shape `engine` above has. Neither value has any today, so this is the scalar
 		// choice; a lease timeout or a replica count under `single-writer` is what
 		// would move it, and that is the owner's call rather than this field's.
+		//
+		// TWO VALUES WHERE `cache.consensus` HAS THREE, AND THE MISSING ONE IS
+		// `gossip`. A gossiped write can be dropped outright rather than merged, and a
+		// dropped write in a system of record is a dropped fact that nothing
+		// re-derives. A cache can take that — losing an entry costs a recomputation —
+		// which is why the set is per kind rather than shared, and why this one will
+		// not gain the third value.
 		String(Key(t.name, "consensus"), Path(t.name, tauEngine, "consensus"), Accessor(title(t.name)+"Consensus"),
 			InSet("crdt", "single-writer"), RequiredWhen(Key(t.name, "engine"), tauEngine),
 			InSection("engine"), shown,
@@ -1238,47 +1245,107 @@ var V2Resources = []*Node{
 
 	// ---- data ----
 
-	// A cache. Eventually consistent, AP, and it never gets CAS — an entity is what
-	// serves a linearizable counter. It is NOT a database: entries have a lifetime,
-	// losing one costs a recomputation, and nothing here is a system of record.
+	// A cache. It never gets CAS — an entity is what serves a linearizable counter. It
+	// is NOT a database: entries have a lifetime, losing one costs a recomputation, and
+	// nothing here is a system of record.
+	//
+	// WHERE IT SITS ON THE CAP LINE IS `consensus`'s ANSWER, NOT THE KIND'S. It used to
+	// be the kind's — "eventually consistent, AP" was written here and in the GroupDoc,
+	// and it was true of everything this kind could be. It is not true of a
+	// `single-writer` cache, which costs a round trip and cannot complete a write on the
+	// side of a partition that has lost the holder. The one thing that IS true of all
+	// three is what the rest of this paragraph says: an entry is not a record.
 	DefineGroup("cache",
 		resource(
 			commonAttributes(append(instanceAttributes(),
 				Bytes(Key("size"), Required(), PerEnv(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
 				Duration(Key("ttl"), PerEnv(), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
 
-				// WHERE THE DATA LIVES, AND A CACHE HAS NO CONSENSUS QUESTION TO ASK.
-				// A database chooses what happens to two writes at one key because it
-				// is a system of record and the answer decides whether one of them is
-				// lost. This kind is eventually consistent and AP by definition —
-				// losing an entry costs a recomputation — so there is nothing to
-				// coordinate and no engine axis to hang a choice under. What is left
-				// is one fact: whether every peer keeps its own copy, or the data sits
-				// on one node and the others fetch it.
+				// WHERE THE DATA LIVES. Whether every peer keeps its own copy, or the
+				// data sits on one node and the others fetch it.
 				//
-				// A BOOL, WHERE `database/consensus` IS A REQUIRED ENUM, AND THE
+				// A BOOL, WHERE `consensus` BELOW IS A REQUIRED ENUM, AND THE
 				// DIFFERENCE IS THE POLARITY OF THE ABSENT STATE rather than a taste
-				// for one construct. There, both answers were real and the cheap-
-				// looking default was the expensive one, so an absent value was a
-				// silent choice somebody would get wrong; required removed the
-				// question. Here the absent value is node-local, which is the cheap
-				// answer and the obvious one, and replication is what an author opts
-				// in to. `tls` is the same shape pointed the other way — safe by
+				// for one construct. Here the absent value is node-local, which is the
+				// cheap answer and the obvious one, and replication is what an author
+				// opts in to. `tls` is the same shape pointed the other way — safe by
 				// default, explicit to weaken — and this is safe-and-cheap by default,
-				// explicit to widen. Two kinds, two shapes, because the questions are
-				// not the same question.
+				// explicit to widen.
 				//
 				// NOT WHO MAY READ IT, WHICH IS THE ACCESS BLOCK'S QUESTION and is
 				// answered per resource and per verb by whatever reaches in. A cache
 				// every peer may read can still be stored on one node and fetched over
-				// the network, or replicated so each peer reads locally; the two axes
-				// are independent and all four combinations mean something.
+				// the network, or replicated so each peer reads locally.
 				//
 				// NO MECHANISM AND NO REPLICA COUNT. How copies are kept is the
 				// platform's to change, and a field for something nothing performs is
 				// the inert key this vocabulary deletes things for.
+				//
+				// HOW IT MEETS `consensus`, STATED BECAUSE IT IS NOT SETTLED. The two
+				// are not independent: `crdt` and `gossip` both mean every peer takes
+				// the write where it lands, so both IMPLY a copy per peer, and only
+				// under `single-writer` is "where do the bytes live" still a question
+				// — one holder for writes, with or without replicas to read from. So
+				// this field carries information on one branch of three, and on the
+				// other two it either restates what the value already said or
+				// contradicts it. Whether that makes it redundant, or a second axis
+				// worth keeping for the branch where it bites, is the owner's call.
+				// Neither refusing the pair nor deleting the field is done here: the
+				// first would decide the question in the schema and the second would
+				// drop a field one commit old. It is written down instead.
 				Bool(Key("replicated"), InSection("keys"),
-					Doc("Replicated", "Whether every peer keeps its own copy of this cache. Omitted means the data lives on one node and other peers reach it over the network.")),
+					Doc("Replicated", "Whether every peer keeps its own copy of this cache. Omitted means the data lives on one node and other peers reach it over the network. Only a question under single-writer consensus: crdt and gossip both put a copy on every peer.")),
+
+				// WHAT HAPPENS TO TWO WRITES THAT ARRIVE AT ONE KEY AT ONCE. The same
+				// question `database.consensus` asks, named the same way and answered
+				// from a wider set, and the author never names the mechanism.
+				//
+				//	single-writer  one holder of the key at a time, so a write costs a
+				//	               round trip and nothing is silently discarded
+				//	crdt           every node takes the write the moment it arrives and
+				//	               concurrent writes merge last-writer-wins: nothing is
+				//	               refused and nothing is waited for, and the write that
+				//	               loses the merge is gone with no error
+				//	gossip         the write is taken locally and spread best-effort, so
+				//	               an entry can fail to arrive or be dropped outright
+				//
+				// THREE VALUES WHERE A DATABASE HAS TWO, AND THE DIFFERENCE IS NOT
+				// SLOPPINESS. `gossip` is eventually consistent AND LOSSY: it can drop
+				// an entry that no merge ever saw. That is affordable exactly where
+				// losing an entry costs a recomputation, which is the line this kind's
+				// own GroupDoc already draws — and it is unaffordable in a system of
+				// record, where a dropped write is a dropped fact and no re-derivation
+				// gets it back. So `database` will not gain this value and `cache` has
+				// it because the whole premise of the kind is that a miss is cheap.
+				//
+				// REQUIRED, AND THAT IS WHERE IT PARTS FROM `replicated` ABOVE.
+				// `replicated`'s silence is defensible because absent means nothing
+				// extra happens — the data sits where it was written, which is what
+				// doing nothing gets you. There is no such value here: two writes
+				// arrive at one key whether or not anybody chose, and the store does
+				// one of these three things. A field whose absence still has an answer
+				// is a choice made by silence, and whichever answer the silence carried
+				// would be wrong for somebody who never read the line — `gossip` puts
+				// lossy on every cache nobody thought about, `single-writer` puts a
+				// round trip on all of them. Required removes the question rather than
+				// answering it, which is the same fix `database.consensus` and
+				// `worker.runtime` carry, and the same defect the original `crdt: bool`
+				// had.
+				//
+				// AT THE DOCUMENT ROOT, beside `size` and `ttl`, because this kind has
+				// no engine axis and none is invented for it. A database writes its
+				// consensus inside `<type>/distributed/` because an external Postgres
+				// has whatever consistency Postgres has and a claim on that branch is
+				// one the project cannot honour. Nothing external backs a cache, so
+				// there is no branch the answer could be wrong on.
+				//
+				// NO ALGORITHM, on purpose and by the same rule the database states:
+				// `raft` is the plausible wrong answer and is exactly what this
+				// vocabulary refuses to be told, because how the platform keeps
+				// `single-writer` is its own to change without touching anybody's
+				// config.
+				String(Key("consensus"), InSet("single-writer", "crdt", "gossip"), Required(), InSection("keys"),
+					Doc("Consensus", "What happens to concurrent writes to one key. single-writer: one holder at a time, so a write costs a round trip and nothing is silently discarded. crdt: every node takes the write the moment it arrives and the writes merge last-writer-wins, with nothing refused and nothing waited for. gossip: the write is taken locally and spread best-effort, so an entry may fail to arrive or be dropped — cheapest, and fine where losing one costs a recomputation.")),
 
 				// A REFERENCE, never the material. "key material or reference" let the
 				// same field be either, and the safe reading was the one nothing enforced.
@@ -1287,9 +1354,9 @@ var V2Resources = []*Node{
 				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret", Inbound()), NoAccessors(), InSection("encryption"),
 					Doc("Encryption Key", "Secret holding the key entries are encrypted with, as \"secret/<name>\".")),
 			)...),
-			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"), Placed(),
+			GroupDoc("A key-value cache served to the project's peers, with a lifetime on every entry. Not a system of record: losing an entry costs a recomputation, never a fact."), Icon("bolt"), Category("data"), Placed(),
 			secIdentity, secAccess,
-			Section("keys", "Keys", "Capacity, lifetime, and where the data lives."),
+			Section("keys", "Keys", "Capacity, lifetime, where the data lives, and what happens to two writes at one key."),
 			secInstances,
 			Section("encryption", "Encryption", "Encryption at rest."),
 			Ops(ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")),

@@ -432,26 +432,28 @@ func TestDatabaseConsensusIsUnderTheDistributedEngineOnly(t *testing.T) {
 	_, err = db("consensus: crdt\nkv:\n    distributed:\n        size: 1MB\n")
 	assert.ErrorContains(t, err, "unknown key 'consensus'")
 
-	// AND NOT ON A `cache`, WHICH HAS NO CONSENSUS QUESTION TO ASK. It is eventually
-	// consistent and AP by definition, so there is nothing to coordinate and no engine
-	// branch for this to hang under — its `size` and `ttl` sit at the document root
-	// because there is nothing to choose. What a cache says instead is `replicated`,
-	// which is a different question and has its own test below.
-	_, err = compile("/cache/c.yaml", "size: 1MB\nconsensus: crdt\n")
-	assert.ErrorContains(t, err, "unknown key 'consensus'")
-	_, err = compile("/cache/c.yaml", "distributed:\n    size: 1MB\n")
-	assert.ErrorContains(t, err, "unknown key 'distributed'")
+	// A CACHE ASKS THE SAME QUESTION AT THE DOCUMENT ROOT, because it has no engine
+	// axis to hang it under and none is invented for it. Nothing external backs a
+	// cache, so there is no branch the answer could be wrong on — which is exactly the
+	// reason a database's answer has to be inside one.
+	flat, err := compile("/cache/c.yaml", "size: 1MB\nconsensus: crdt\n")
+	assert.NilError(t, err)
+	assert.Equal(t, namedResource(t, resources(t, flat, "cache"), "c")["consensus"], "crdt")
+	_, err = compile("/cache/c.yaml", "distributed:\n    size: 1MB\n    consensus: crdt\n")
+	assert.ErrorContains(t, err, "unknown key 'distributed'",
+		"a cache has no engine block for this to sit in")
 }
 
-// A CACHE SAYS WHERE ITS DATA LIVES, AND NOTHING ABOUT COORDINATION. The two fields
-// are easy to conflate and they answer different questions, so both halves are pinned:
-// `replicated` is a cache's and a database has no such key, `consensus` is a
-// database's and a cache has no such key (above).
+// A CACHE SAYS WHERE ITS DATA LIVES, WHICH IS NOT WHAT IT SAYS ABOUT COORDINATION.
+// The two fields are easy to conflate and they answer different questions, so both
+// halves are pinned: `replicated` is a cache's and a database has no such key, and
+// `consensus` — which both kinds now have — sits in a different PLACE on each, which
+// the test above holds.
 //
 // THE ABSENT VALUE IS `false`, and unlike `consensus` that is a defensible silence:
-// node-local is the cheap answer and replication is what an author asks for. The
-// compiled object carries no key at all when nothing is written, so a consumer reads
-// Go's zero value and gets the cheap one.
+// node-local is what doing nothing gets you, and replication is what an author asks
+// for. The compiled object carries no key at all when nothing is written, so a
+// consumer reads Go's zero value and gets the cheap one.
 //
 // AND IT IS NOT REACHABILITY. Who may read a cache is the access block another
 // resource writes — per resource and per verb — and this says only where the data
@@ -473,7 +475,7 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 		return obj.Flat(), nil
 	}
 	cache := func(body string) (map[string]any, error) {
-		flat, err := compile("/cache/c.yaml", body)
+		flat, err := compile("/cache/c.yaml", "consensus: single-writer\n"+body)
 		if err != nil {
 			return nil, err
 		}
@@ -507,8 +509,8 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown key 'reach'")
 
 	// A DATABASE HAS NO SUCH KEY. Replication is not the axis a system of record
-	// chooses on — it chooses consensus, and a database that is not replicated is not
-	// something this platform offers.
+	// chooses on — it chooses consensus alone, and a database that is not replicated is
+	// not something this platform offers.
 	_, err = compile("/database/d.yaml", "kv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n        replicated: true\n")
 	assert.ErrorContains(t, err, "unknown key 'replicated'")
 	_, err = compile("/database/d.yaml", "replicated: true\nkv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n")
@@ -517,9 +519,71 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 	// And the fixture carries the opt-in on the cache where it is the point, with the
 	// rest of them silent — so "absent is legal" is held by every other cache in the
 	// project rather than by an assertion about one.
-	flat := compileBasic(t)
-	orders := namedResource(t, resources(t, flat, "cache"), "orders")
+	basic := compileBasic(t)
+	orders := namedResource(t, resources(t, basic, "cache"), "orders")
 	assert.Equal(t, orders["replicated"], true)
+}
+
+// A CACHE SAYS WHAT HAPPENS TO TWO WRITES AT ONE KEY, from a set one wider than a
+// database's — and the extra value is the whole reason the two sets differ.
+//
+// `gossip` is eventually consistent AND LOSSY: an entry can fail to arrive or be
+// dropped, where `crdt` merges concurrent writes and discards the loser and
+// `single-writer` discards nothing. That is affordable exactly where losing an entry
+// costs a recomputation, which is the line this kind's GroupDoc already draws, and it
+// is unaffordable in a system of record — so `database` refuses the value and this
+// kind takes it. Both halves are asserted, because a set that quietly drifted into
+// being the same set on both kinds is the sloppiness this pins against.
+//
+// REQUIRED, WITH NO DEFAULT, for the reason `database.consensus` is: two writes arrive
+// at one key whether or not anybody chose, so there is no value that means "nothing
+// extra happens" the way `replicated`'s absence does. Whichever answer a silence
+// carried would be wrong for somebody who never read the line.
+func TestCacheConsensusIsRequiredAndTakesTheLossyValue(t *testing.T) {
+	compile := func(path, body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, path,
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	// WRITING NOTHING IS REFUSED, and the error names the field.
+	assert.ErrorContains(t, compile("/cache/c.yaml", "size: 1MB\n"), "required attribute 'consensus'")
+	assert.ErrorContains(t, compile("/cache/c.yaml", "size: 1MB\nconsensus:\n"), "required attribute 'consensus'",
+		"the key with nothing after it is the same omission")
+
+	// ALL THREE ANSWERS ARE SAYABLE.
+	for _, v := range []string{"single-writer", "crdt", "gossip"} {
+		assert.NilError(t, compile("/cache/c.yaml", "size: 1MB\nconsensus: "+v+"\n"), "consensus: %q", v)
+	}
+
+	// AND NOTHING ELSE IS — including the algorithm, which is the platform's to change
+	// without touching anybody's config, and the bool this replaced.
+	for _, v := range []string{"raft", "eventual", "true", "single_writer", "gossip "} {
+		assert.ErrorContains(t, compile("/cache/c.yaml", "size: 1MB\nconsensus: \""+v+"\"\n"),
+			"invalid value", "consensus: %q is not one of the three answers", v)
+	}
+
+	// THE SETS DIFFER ON PURPOSE. A database refuses the lossy one: a dropped write in
+	// a system of record is a dropped fact and nothing re-derives it.
+	assert.ErrorContains(t, compile("/database/d.yaml", "kv:\n    distributed:\n        size: 1MB\n        consensus: gossip\n"),
+		"invalid value", "a system of record must not be able to lose a write")
+
+	// And the fixture spends all three, on the caches where each is the point.
+	flat := compileBasic(t)
+	caches := resources(t, flat, "cache")
+	assert.Equal(t, namedResource(t, caches, "orders")["consensus"], "gossip")
+
+	root := rootOf(flat)
+	shop := namespace(t, root, "shop")
+	assert.Equal(t, namedResource(t, shop["cache"].(map[string]any), "sessions")["consensus"], "single-writer")
+	billing := namespace(t, root, "billing")
+	assert.Equal(t, namedResource(t, billing["cache"].(map[string]any), "sessions")["consensus"], "crdt")
 }
 
 // REQUIRED, AND CLOSED — the two halves that leave no answer the schema has not been
@@ -1916,7 +1980,7 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
 			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
-			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\n"+body), 0o644))
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
 		obj, _, err := c.Compile(context.Background())
@@ -2014,7 +2078,7 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
-			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\n"+body), 0o644))
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
 		obj, _, err := c.Compile(context.Background())

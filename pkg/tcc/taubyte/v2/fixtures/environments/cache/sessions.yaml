@@ -4,3 +4,4 @@ size: 128MB
 size_preview: 8MB
 ttl: 24h
 ttl_preview: 1h
+consensus: single-writer

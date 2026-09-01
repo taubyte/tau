@@ -1,8 +1,9 @@
 id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB
-description: read on every checkout from wherever the request landed, so each peer keeps its own copy rather than fetching one over the network
+description: read on every checkout from wherever the request landed, so each peer keeps its own copy - and a peer that misses an entry re-reads it from database/orders, which is what gossip costs here
 size: 32MB
 ttl: 24h
 replicated: true
+consensus: gossip
 authorizer:
     name: tier_check
     namespace: /shop
