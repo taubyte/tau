@@ -1388,7 +1388,7 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 		return err
 	}
 	const conduit = "protocol: pgwire\nserve:\n    application:\n        name: db\n        port: pg\n"
-	const fanout = "match: orders\n"
+	const fanout = "match: orders\ndistributed:\n    local: true\n"
 
 	assert.NilError(t, compile("/channel/sync.yaml", conduit), "a channel names a protocol and one server")
 	assert.NilError(t, compile("/stream/orders.yaml", fanout), "a stream matches a name")
@@ -1415,4 +1415,65 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 	assert.Assert(t, fan[0].Delivered, "a subscriber is handed the message; it does not go and ask")
 	assert.Equal(t, fan[1].Name, "publish")
 	assert.Equal(t, fan[1].Effect, schema.Write)
+}
+
+// A STREAM'S ENGINE IS A KEY FROM A CLOSED SET, and each branch owns its own fields.
+// Same construct a database's engine is, for the same reason: an engine that is a free
+// string or a reference to some other resource compiles when it names something that
+// answers nothing, and the closed key is what makes that unwritable rather than
+// merely detectable.
+//
+// The bridge booleans are gone with it. They are asserted absent rather than left to
+// the comment, because a deleted field that quietly still loads is the deletion not
+// having happened.
+func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
+	compile := func(body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
+			[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/stream/s.yaml",
+			[]byte("id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz\nmatch: orders\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	assert.NilError(t, compile("distributed: {}\n"))
+	assert.NilError(t, compile("distributed:\n    local: true\n"))
+	assert.NilError(t, compile("kafka:\n    host: b:9092\n    credentials:\n        name: k\n"))
+	assert.NilError(t, compile("nats:\n    host: n:4222\n    credentials:\n        name: k\n"))
+
+	// A pubsub-shaped product tau has no client for is not a key that exists.
+	assert.ErrorContains(t, compile("rabbitmq:\n    host: r:5672\n"), "unknown key 'rabbitmq'")
+	// An engine has to be chosen; there is no unstated default.
+	assert.ErrorContains(t, compile("description: nothing\n"), "attribute engine has an empty key")
+	// Two of them is the switch refusing rather than a winner being picked.
+	assert.ErrorContains(t, compile("distributed: {}\nkafka:\n    host: b:9092\n"),
+		"ambiguous path: distributed and kafka each match")
+
+	// Neither branch borrows the other's fields. `local` is a thing the swarm's own
+	// gossipsub does and a Kafka cluster has no notion of; a connection is the reverse.
+	assert.ErrorContains(t, compile("kafka:\n    host: b:9092\n    local: true\n"), "unknown key 'local'")
+	assert.ErrorContains(t, compile("distributed:\n    host: b:9092\n"), "unknown key 'host'")
+	assert.ErrorContains(t, compile("kafka:\n    credentials:\n        name: k\n"), "required attribute 'kafka/host'")
+	assert.ErrorContains(t, compile("kafka:\n    host: b:9092\n"), "required attribute 'kafka/credentials/name'")
+
+	// THE BRIDGES ARE DELETED, not merely undocumented.
+	assert.ErrorContains(t, compile("distributed: {}\nbridges:\n    websocket:\n        enable: true\n"),
+		"unknown key 'bridges'")
+
+	// And the compiled shape: one `engine` key, and the branch's fields flat beside it.
+	flat := compileBasic(t)
+	orders := namedResource(t, resources(t, flat, "stream"), "orders")
+	assert.Equal(t, orders["engine"], "distributed")
+	assert.Equal(t, orders["local"], false)
+	shipments := namedResource(t, resources(t, flat, "stream"), "shipments")
+	assert.Equal(t, shipments["engine"], "kafka")
+	assert.Equal(t, shipments["host"], "broker.example.com:9092")
+	assert.Equal(t, shipments["tls"], "verify-full")
+	_, leaked := shipments["local"]
+	assert.Assert(t, !leaked, "a kafka-backed stream carries no claim about node-local scope")
 }

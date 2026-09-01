@@ -18,6 +18,10 @@ type (
 	// because a worker's entrypoint is required only on the wasm tier.
 	AttrOption = engine.Option
 	NodeOption = engine.NodeOption
+	// StringMatch is a path segment: a literal, or an Either(...) matcher. Re-exported
+	// so a shared attribute helper can be handed the prefix its caller's block hangs
+	// off, rather than each caller spelling the same five attributes again.
+	StringMatch = engine.StringMatch
 )
 
 const GenCID = engine.GenCID

@@ -458,6 +458,15 @@ var secInstances = Section("instances", "Instances", "Whether this holds one ins
 // could not complain either, because a kind no route can name is not one it checks.
 var handlerKinds = []string{"function", "application", "website", "gateway", "mcp", "agent"}
 
+// externalStreamEngines are the pubsub clusters reached over the network, and
+// streamEngines is those plus tau's own. Closed, for the same reason a database's are:
+// each one is a wire protocol and a client library, which is a release rather than a
+// config value, and a closed set is what makes naming a non-pubsub here impossible
+// rather than merely wrong.
+var externalStreamEngines = []string{"kafka", "nats"}
+
+var streamEngines = append([]string{tauEngine}, externalStreamEngines...)
+
 // channelServerKinds are what may answer a channel. A container gets the bytes on one of
 // its own ports; a function is dispatched with the connection in hand. Both are real, and
 // nothing else is: a website is HTTP by definition and a gateway is an ingress.
@@ -559,9 +568,53 @@ func hostAttributes(section string) []*Attribute {
 // that is the same shape `storage` already has, where `object` and `streaming` each own
 // their block.
 
-// tauEngine is tau's own: pkg/kvdb, a Merkle-CRDT replicated by the storage service. It
-// is the one engine every type has and the only one that needs no external system.
+// tauEngine is tau's own. On a database it is pkg/kvdb, a Merkle-CRDT replicated by the
+// storage service; on a stream it is the swarm's own gossipsub. It is the one engine
+// every kind with an engine axis has, and the only one that needs no external system.
 const tauEngine = "distributed"
+
+// externalEngineAttributes is the connection an engine reached over the network carries,
+// and it is ONE helper because a database's Postgres and a stream's Kafka are the same
+// three facts: where it is, which secret opens it, and how the wire is protected. It was
+// written twice before it was written once, and the two copies had already drifted — a
+// database's credential reference had its namespace outside the engine branch and its
+// name inside, which is one reference authored in two places.
+//
+// `at` is the path the engine block hangs off — a database's TYPE block, or nothing at
+// all for a kind whose only axis IS the engine — and `named` is the same prefix for the
+// compiled keys, which need not be the authored path. `switchKey` is the Captures()
+// attribute that says which branch was taken, because "required for an external engine"
+// is a condition on that and nothing else.
+//
+// A field only one caller needs is that caller's to append. A database has a `database`
+// name within the server; a stream has no such thing, and a helper that emitted one
+// anyway would be putting an inert key on every stream.
+func externalEngineAttributes(at []StringMatch, named []string, engines []string, switchKey AKey, section string, shown AttrOption) []*Attribute {
+	key := func(rest ...string) AKey { return Key(append(append([]string{}, named...), rest...)...) }
+	path := func(rest ...string) AttrOption {
+		p := append(append([]StringMatch{}, at...), Either(engines...))
+		for _, r := range rest {
+			p = append(p, r)
+		}
+		return Path(p...)
+	}
+	return []*Attribute{
+		String(key("host"), path("host"), RequiredWhen(switchKey, engines...), PerEnv(), InSection(section), shown,
+			Doc("Host", "Where the external server is reached, as host or host:port.")),
+		String(key("credentials", "namespace"), path("credentials", "namespace"), IsNamespacePath(), InSection(section), shown,
+			Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
+		String(key("credentials", "name"), path("credentials", "name"), IsVariableName(), Ref("secret", Inbound()),
+			RequiredWhen(switchKey, engines...), InSection(section), shown,
+			Doc("Credentials", "Secret holding the credentials to connect with, as \"secret/<name>\".")),
+
+		// SAFE BY DEFAULT, EXPLICIT TO WEAKEN: absent means verify-full, and an author
+		// who wants credentials on the wire in the clear has to write `disable` and see
+		// the word. Deliberately not RequiredWhen: a value here is a WEAKENING, so the
+		// safe state has to be the one an author reaches by writing nothing.
+		String(key("tls"), path("tls"), InSet("verify-full", "require", "disable"), PerEnv(), InSection(section), shown,
+			Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included.")),
+	}
+}
 
 // databaseType is one data model. ONE TABLE, because five things read it — the type
 // switch's Either, each type's engine Either, the kind's Ops(), the audit that refuses
@@ -721,34 +774,15 @@ func (t databaseType) attributes() []*Attribute {
 	}
 
 	if len(t.external) > 0 {
-		ext := t.external
+		// AN EXTERNAL ENGINE CARRIES ITS OWN CONNECTION. There is no reference to a
+		// `connector` here, and that absence is the point — see the note above the
+		// table. The three facts every external engine needs are the shared helper's;
+		// the fourth is a database's alone.
+		out = append(out, externalEngineAttributes(
+			[]StringMatch{t.name}, []string{t.name}, t.external, Key(t.name, "engine"), "engine", shown)...)
 		out = append(out,
-			// AN EXTERNAL ENGINE CARRIES ITS OWN CONNECTION. There is no reference to a
-			// `connector` here, and that absence is the point — see the note above the
-			// table. Both halves of the credential reference sit under the engine
-			// branch: they used to be split, the name under the branch and the
-			// namespace outside it, which is one reference authored in two places.
-			String(Key(t.name, "host"), Path(t.name, Either(ext...), "host"),
-				RequiredWhen(Key(t.name, "engine"), ext...), PerEnv(), InSection("engine"), shown,
-				Doc("Host", "Where the external server is reached, as host or host:port.")),
-			String(Key(t.name, "database"), Path(t.name, Either(ext...), "database"), PerEnv(), InSection("engine"), shown,
-				Doc("Database", "The database name within that server. Defaults to this resource's name.")),
-			String(Key(t.name, "credentials", "namespace"), Path(t.name, Either(ext...), "credentials", "namespace"),
-				IsNamespacePath(), InSection("engine"), shown,
-				Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-			String(Key(t.name, "credentials", "name"), Path(t.name, Either(ext...), "credentials", "name"),
-				IsVariableName(), Ref("secret", Inbound()), RequiredWhen(Key(t.name, "engine"), ext...), InSection("engine"), shown,
-				Doc("Credentials", "Secret holding the credentials to connect with, as \"secret/<name>\".")),
-
-			// SAFE BY DEFAULT, EXPLICIT TO WEAKEN: absent means verify-full, and an
-			// author who wants credentials on the wire in the clear has to write
-			// `disable` and see the word. It is deliberately not RequiredWhen: a value
-			// here is a WEAKENING, so the safe state has to be the one an author reaches
-			// by writing nothing.
-			String(Key(t.name, "tls"), Path(t.name, Either(ext...), "tls"),
-				InSet("verify-full", "require", "disable"), PerEnv(), InSection("engine"), shown,
-				Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included.")),
-		)
+			String(Key(t.name, "database"), Path(t.name, Either(t.external...), "database"), PerEnv(), InSection("engine"), shown,
+				Doc("Database", "The database name within that server. Defaults to this resource's name.")))
 	}
 
 	if t.extra != nil {
@@ -1489,21 +1523,59 @@ var V2Resources = []*Node{
 	// this. It is not being renamed, so someone reading `p2p/stream.go` while writing a
 	// `stream` resource is looking at the wrong kind — that file is the `channel` kind.
 	//
-	// With the kind called `stream`, the matching fields sit at the document root —
-	// which is where `cache` and `storage` already put the identical pair.
+	// IT HAS AN ENGINE, and until 2026-08-31 it did not: a stream was always the
+	// swarm's own gossipsub, and the only way to reach Kafka was a `connector` that
+	// consumed it and republished what it read as CloudEvents over that gossipsub.
+	// Which throws away every reason to have used Kafka — ordering, durability,
+	// consumer groups and replay all die at the republication, and a subscriber gets
+	// fire-and-forget however the stream was fed. So the engine is a key from a closed
+	// set, exactly as it is on a database, and the topic LIVES where the engine says.
+	//
+	//	distributed:                     kafka:
+	//	    local: true                      host: broker:9092
+	//	                                     credentials: { name: k }
+	//
+	// One axis rather than a database's two, so the engine block is the document root's
+	// rather than a type block's. The rule is the one the vocabulary already runs on:
+	// the block you write is named after the choice, and a switch captures which block
+	// that was. `storage` does it for object-versus-streaming and `database` does it
+	// twice.
+	//
+	// `nats` here is JETSTREAM, which is NATS's persistence layer — streams, durable
+	// consumers, replay. Core NATS is the ephemeral n:n bus and is `bus`'s business,
+	// not this kind's. The engine is spelled `nats` rather than `jetstream` because
+	// that is the product an author has credentials for; whether the key should say
+	// `jetstream` instead is the owner's call.
+	//
+	// `local` moves under `distributed`, where it always belonged: "restrict this to
+	// the local node" is a thing the swarm's own gossipsub does and a thing a Kafka
+	// cluster has no notion of, so it must not be a key a kafka-backed stream can
+	// write. The cost of the engine block being required, taken knowingly: the common
+	// case writes `distributed: {}` rather than nothing. Whether an ABSENT engine
+	// should mean tau's own — the way an absent `tls` means verify-full — is the
+	// owner's call; the default here is explicit, because an engine read as "" that a
+	// consumer has to know means distributed is the fallback chain §10 refuses.
+	//
+	// THE BRIDGES ARE GONE. `bridges/mqtt/enable` and `bridges/websocket/enable` were
+	// two booleans bolted onto a pubsub topic. MQTT is deleted outright and nothing has
+	// asked for it back; websocket is not lost but rehomed — on a `bus`, attaching a
+	// browser and receiving from now on is the point of the kind rather than a flag on
+	// a different one.
 	DefineGroup("stream",
 		resource(
-			commonAttributes(
-				Bool("local", InSection("matching"), Doc("Local", "Restrict the stream to the local node / project scope.")),
+			commonAttributes(append([]*Attribute{
 				String("match", Required(), Field("Match"), Accessor("StreamMatch"), NoSetter(), InSection("matching"), Doc("Match", "Stream name or pattern this resource matches.")),
 				Bool(Key("regex"), NoSetter(), InSection("matching"), Doc("Use Regex", "Treat match as a regular expression instead of a literal name.")),
-				Bool(Key("bridges", "mqtt", "enable"), Accessor("MQTT"), NoSetter(), InSection("bridges"), Doc("MQTT", "Expose this stream over the MQTT bridge.")),
-				Bool(Key("bridges", "websocket", "enable"), Accessor("WebSocket"), NoSetter(), InSection("bridges"), Doc("WebSocket", "Expose this stream over the WebSocket bridge.")),
-			),
-			GroupDoc("A pubsub stream, optionally bridged to MQTT/WebSocket. What is published to it reaches every subscriber; it edges to its subscribers, and publishers edge to it."), Icon("message"), Category("trigger"),
+
+				String("engine", Path(Either(streamEngines...)), Captures(), InSection("engine"),
+					Doc("Engine", "Which engine holds the topic: distributed is the swarm's own gossipsub; kafka and nats are external clusters reached over the network.")),
+				Bool("local", Path(tauEngine, "local"), InSection("engine"), ShowWhen("engine", tauEngine),
+					Doc("Local", "Restrict the stream to the local node / project scope. Only tau's own engine has a notion of this.")),
+			}, externalEngineAttributes(nil, nil, externalStreamEngines, Key("engine"), "engine", ShowWhen("engine", externalStreamEngines...))...)...),
+			GroupDoc("A pubsub stream: what is published to it reaches every subscriber. On the swarm's own gossipsub, or on an external Kafka or NATS cluster."), Icon("message"), Category("trigger"),
 			secIdentity, secAccess,
 			Section("matching", "Matching", "The name or pattern this stream answers to."),
-			Section("bridges", "Bridges", "External protocol bridges."),
+			Section("engine", "Engine", "Which engine holds the topic, and its settings."),
 			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
 			Resource("stream", "Stream", "Stream", "stream"),
 		)),
