@@ -1,2 +1,4 @@
 id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv
 name: shop
+description: narrows the project's regions to one - nothing under here leaves the EU
+regions: [eu]

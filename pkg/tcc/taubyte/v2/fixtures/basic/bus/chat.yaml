@@ -4,6 +4,7 @@ host:
     generated:
         name: chat
 instances:
+    limit: 200
     validator:
         namespace: /shop
         name: may_open

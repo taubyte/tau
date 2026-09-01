@@ -1730,7 +1730,7 @@ func TestABusIsAStreamWithoutDurability(t *testing.T) {
 	}
 
 	// The bus admits instances; the stream matches a pattern. Neither takes the other's.
-	assert.NilError(t, compile("/bus/chat.yaml", "instances:\n    validator:\n        name: f\n"))
+	assert.NilError(t, compile("/bus/chat.yaml", "instances:\n    limit: 100\n    validator:\n        name: f\n"))
 	assert.ErrorContains(t, compile("/bus/chat.yaml", "match: chat\n"), "unknown key 'match'")
 	assert.ErrorContains(t, compile("/stream/s.yaml", "match: o\ndistributed: {}\ninstances:\n    validator:\n        name: f\n"),
 		"unknown key 'instances'")
@@ -1841,4 +1841,181 @@ func TestALogIsAppendOnlyAndOtherwiseUnspecified(t *testing.T) {
 	// difference between a kind and a name nothing can reach.
 	audit := namedResource(t, resources(t, compileBasic(t), "log"), "audit")
 	assert.Equal(t, audit["name"], "audit")
+}
+
+// A MULTI-INSTANCE STORE SAYS HOW MANY AND WHO, AND NEITHER IS OPTIONAL.
+//
+// Both hang off the one thing that knows the block was written — the `Captures()`
+// switch on `instances/admission` — so this pins the three answers that shape gives and
+// the two it refuses. A limit with no validator does not compile, because the block
+// still owes its admission branch; a validator with no limit does not compile, because
+// an unbounded store has to be a sentence somebody wrote. `0` is that sentence.
+//
+// And an instance name is a KEY: the pattern pair v1 carried has no spelling here, at
+// the top level or inside the block. A pattern answers "which instance is this?" with a
+// set, which is both ambiguous — two patterns claiming one name — and unindexable.
+func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
+	compile := func(body string) (map[string]any, error) {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
+			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		obj, _, err := c.Compile(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		return namedResource(t, resources(t, obj.Flat(), "cache"), "c"), nil
+	}
+
+	const validator = "    validator:\n        name: f\n"
+
+	res, err := compile("instances:\n    limit: 10\n" + validator)
+	assert.NilError(t, err)
+	assert.Equal(t, nested(res, "instances", "limit"), 10)
+	assert.Equal(t, nested(res, "instances", "admission"), "validator")
+
+	// 0 IS AN ANSWER, not an absent one: no ceiling, said out loud.
+	res, err = compile("instances:\n    limit: 0\n" + validator)
+	assert.NilError(t, err)
+	assert.Equal(t, nested(res, "instances", "limit"), 0)
+
+	// One instance is the absent block, and nothing writes a limit onto it — a
+	// Default() here would put a ceiling on every store that never asked for one.
+	res, err = compile("")
+	assert.NilError(t, err)
+	_, present := res["instances"]
+	assert.Assert(t, !present, "a store with no instances block carries no instance keys")
+
+	// The two refusals, which are what makes the pair a decision rather than a shape.
+	_, err = compile("instances:\n    limit: 10\n")
+	assert.ErrorContains(t, err, "attribute instances/admission has an empty key",
+		"a limit alone does not open the block: something still has to admit an instance")
+	_, err = compile("instances:\n" + validator)
+	assert.ErrorContains(t, err, "required attribute 'instances/limit'",
+		"an unbounded store is a choice, so it has to be written")
+	_, err = compile("instances:\n    limit: -1\n" + validator)
+	assert.ErrorContains(t, err, "value must be >= 0", "a negative ceiling is not a spelling of no ceiling")
+
+	// NO PATTERN, ANYWHERE. v1's pair is not a key of the block and not a key of the
+	// store; an instance is addressed by an exact name or not at all.
+	for _, pattern := range []string{"match: sess_*\n", "regex: true\n"} {
+		_, err = compile(pattern)
+		assert.ErrorContains(t, err, "unknown key", "a store must not match a pattern: %q", pattern)
+		_, err = compile("instances:\n    limit: 10\n    " + pattern + validator)
+		assert.ErrorContains(t, err, "unknown key", "an instance name is a key, not a pattern: %q", pattern)
+	}
+}
+
+// EVERY KIND THAT SAYS WHERE IT RUNS, AND THE WHOLE LIST, so a kind joining or leaving
+// it is a deliberate line in a diff rather than a side effect of declaring `Placed()`.
+//
+// The line is a PHYSICAL FOOTPRINT: something that runs, or bytes that sit somewhere.
+// The four kinds a category would have dragged in are what the list is really about —
+// `website` runs no process and its bytes are the CAS's, exactly as a function's wasm
+// is; `model` is an endpoint somebody else operates, or a `local` application carrying
+// its own placement; `channel` is a name two placed workloads meet at; `secret` holds
+// no value. Placing any of them is a second, weaker statement about something already
+// placed.
+func TestRegionIsDeclaredOnKindsWithAFootprint(t *testing.T) {
+	assert.DeepEqual(t, schema.PlacedKinds(), []string{
+		"application", "function", "worker", "sandbox",
+		"cache", "database", "storage", "volume", "log",
+		"entity", "queue", "agent", "workflow",
+	})
+
+	placed := map[string]bool{}
+	for _, kind := range schema.PlacedKinds() {
+		placed[kind] = true
+	}
+	// BOTH SHAPES. V2Resources is what an author writes against; KindRoot is what a
+	// lowered kind becomes, built from a COPY of the iterator's attributes — so a block
+	// attached after that copy is taken exists only in the authored half, and an agent
+	// or a workflow saying where it runs stops compiling in the pass that lowers it.
+	for _, root := range [][]*engine.Node{schema.V2Resources, schema.KindRoot()} {
+		for _, g := range root {
+			kind, _ := g.Match.(string)
+			fields := map[string]bool{}
+			for _, a := range g.Children[0].Attributes {
+				fields[a.Name] = true
+			}
+			for _, f := range []string{"region/policy", "region/name", "region/main", "region/standby"} {
+				assert.Equal(t, fields[f], placed[kind], "%s carries %q; PlacedKinds says %v", kind, f, placed[kind])
+			}
+		}
+	}
+}
+
+// THE PLACEMENT SWITCH, verified against the compiler rather than against the note that
+// designed it. Three branches, `failover`'s two regions spelled by NAME so that "the
+// first one is main" is not a position a reader has to know the significance of, and a
+// `name` on the two branches where a single region means something and nowhere else.
+func TestRegionPlacementIsASwitch(t *testing.T) {
+	compile := func(body string) (map[string]any, error) {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		obj, _, err := c.Compile(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		return namedResource(t, resources(t, obj.Flat(), "cache"), "c"), nil
+	}
+
+	res, err := compile("region:\n    auto:\n        name: eu\n")
+	assert.NilError(t, err)
+	assert.Equal(t, nested(res, "region", "policy"), "auto")
+	assert.Equal(t, nested(res, "region", "name"), "eu")
+
+	// A FIELDLESS BRANCH STILL CAPTURES, so `cdn` needs no filler field to be sayable.
+	res, err = compile("region:\n    cdn: {}\n")
+	assert.NilError(t, err)
+	assert.Equal(t, nested(res, "region", "policy"), "cdn")
+
+	res, err = compile("region:\n    failover:\n        main: eu\n        standby: us\n")
+	assert.NilError(t, err)
+	assert.Equal(t, nested(res, "region", "policy"), "failover")
+	assert.Equal(t, nested(res, "region", "main"), "eu")
+	assert.Equal(t, nested(res, "region", "standby"), "us")
+
+	// AN ABSENT BLOCK IS THE DEFAULT, and it writes nothing: `auto`, anywhere the
+	// allowance permits, is what the common case gets for free.
+	res, err = compile("")
+	assert.NilError(t, err)
+	_, present := res["region"]
+	assert.Assert(t, !present, "an absent region block leaves no keys behind")
+
+	// EXACTLY TWO, AND ONLY TWO. A third has no key to arrive under and a missing one
+	// is a compile error — which is what "the first one is main" costs instead of a
+	// list whose order is load-bearing.
+	_, err = compile("region:\n    failover:\n        main: eu\n")
+	assert.ErrorContains(t, err, "required attribute 'region/failover/standby'")
+	_, err = compile("region:\n    failover:\n        standby: us\n")
+	assert.ErrorContains(t, err, "required attribute 'region/failover/main'")
+	_, err = compile("region:\n    failover:\n        main: eu\n        standby: us\n        third: ap\n")
+	assert.ErrorContains(t, err, "unknown key 'third'")
+
+	// `name` IS ON THE TWO BRANCHES A SINGLE REGION MEANS SOMETHING ON. On failover it
+	// would name neither of the two, so the subset Either() refuses it.
+	_, err = compile("region:\n    failover:\n        main: eu\n        standby: us\n        name: eu\n")
+	assert.ErrorContains(t, err, "unknown key 'name'")
+
+	// EXACTLY ONE BRANCH is a property of the declaration, not a check somebody wrote.
+	_, err = compile("region:\n    auto:\n        name: eu\n    cdn: {}\n")
+	assert.ErrorContains(t, err, "ambiguous path: auto and cdn each match")
+	_, err = compile("region: {}\n")
+	assert.ErrorContains(t, err, "attribute region/policy has an empty key")
+
+	// The ALLOWANCE is a scope's word and never a resource's: a resource may not widen
+	// or narrow what runs under it, because it is one of the things being placed.
+	_, err = compile("regions: [eu]\n")
+	assert.ErrorContains(t, err, "unknown key 'regions'")
 }

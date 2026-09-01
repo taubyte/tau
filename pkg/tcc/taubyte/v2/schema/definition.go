@@ -405,19 +405,33 @@ func pullSecret() []*Attribute {
 	}
 }
 
-// instanceAttributes is how a store says it holds MANY instances rather than one, and
-// who decides whether a given instance may exist.
+// instanceAttributes is how a store says it holds MANY instances rather than one, how
+// many of them it may hold, and who decides whether a given instance may exist.
 //
 // THE BLOCK'S PRESENCE IS THE DECLARATION. There is no `multi: true` beside it: writing
 // `instances:` at all is what says there is more than one, and a second field repeating
-// it is a fact stated twice that two edits can disagree about. And the validator is not
-// optional inside it — the instance NAME is the caller's, so a store that holds many and
-// names nobody to admit them has no point at which the project gets to say no.
+// it is a fact stated twice that two edits can disagree about — `multi: false` beside a
+// validator and a limit is a document saying both things at once, and something has to
+// pick a winner. A block cannot contradict itself, so nothing has to. And neither field
+// inside it is optional: the instance NAME is the caller's, so a store that holds many
+// and names nobody to admit them has no point at which the project gets to say no, and
+// one that never says how many is unbounded because nobody chose, which is the same
+// defect `database.consensus` is required for.
 //
-// It replaces v1's `match`/`regex`, which was this capability spelled as a lookup: the
-// data plane knew only a name and walked every config regex-matching it
+// AN INSTANCE NAME IS A KEY, NOT A PATTERN. It is written by the caller, matched by
+// nobody, and looked up exactly: one string names one instance. That is what makes the
+// question "which instance is this?" answerable at all — a pattern answers it with a
+// SET, so two patterns can both claim a name and the store that gets the write is
+// whichever the walk reached first, and no index can be built over a key nothing knows
+// the value of until a request arrives.
+//
+// So this replaces v1's `match`/`regex`, which was this capability spelled as a lookup:
+// the data plane knew only a name and walked every config regex-matching it
 // (services/hoarder/helpers.go). That made every store a pattern, gave the pattern no
-// owner, and answered "may this instance exist" with "does this string match".
+// owner, and answered "may this instance exist" with "does this string match". None of
+// the data kinds carries that pair any more, and none of them gains it back: a limit
+// bounds HOW MANY instances there are and a validator decides WHICH, and between them
+// there is nothing a pattern was doing that is still wanted.
 //
 // The shape is the AUTHORIZER's, deliberately (§9, the one modelling rule): the target
 // owns the policy. The store names a function; the caller names only the instance it
@@ -430,13 +444,18 @@ func pullSecret() []*Attribute {
 // parameters are the decision's, at run time.
 func instanceAttributes() []*Attribute {
 	return []*Attribute{
-		// THE SWITCH IS WHAT MAKES THE VALIDATOR MANDATORY. A required field inside an
-		// optional block cannot be said any other way: Required() fires whether or not
-		// the block is there (verified — every resource with no `instances:` failed),
-		// and there is no sibling with a default to hang a RequiredWhen on. A Captures()
-		// switch answers "was this block written, and with which key", which is exactly
-		// the question, and it is the same shape `engine.kind` and the gateway's
-		// `routing` already use.
+		// THE SWITCH IS WHAT MAKES THE REST OF THE BLOCK MANDATORY. A required field
+		// inside an optional block cannot be said any other way: Required() fires
+		// whether or not the block is there (verified — every resource with no
+		// `instances:` failed), and there is no sibling with a default to hang a
+		// RequiredWhen on. A Captures() switch answers "was this block written, and with
+		// which key", which is exactly the question, and it is the same shape
+		// `engine.kind` and the gateway's `routing` already use.
+		//
+		// Both the validator and the limit hang off it, so the two stand or fall
+		// together: this is the only thing in the block that knows it was written, and a
+		// field that stopped naming it would stop being demanded at all rather than
+		// become optional in some softer way.
 		String(Key("instances", "admission"), Path("instances", Either("validator")), Captures(), InSection("instances"),
 			Doc("Admission", "How a new instance is let in. validator: a function decides.")),
 		String(Key("instances", "validator", "namespace"), Path("instances", Either("validator"), "namespace"), IsNamespacePath(), InSection("instances"),
@@ -444,10 +463,156 @@ func instanceAttributes() []*Attribute {
 		String(Key("instances", "validator", "name"), Path("instances", Either("validator"), "name"), IsVariableName(), Ref("function", ByName()),
 			RequiredWhen(Key("instances", "admission"), "validator"), InSection("instances"),
 			Doc("Validator", "A function called before an instance is opened or created: it decides whether that instance may exist, and returns the parameters it gets.")),
+		// HOW MANY, WITH NO DEFAULT AND NO ABSENT STATE. `0` is the answer that means
+		// no ceiling, so an unbounded store is a sentence somebody wrote rather than a
+		// field they never reached — the same reason `database.consensus` is required
+		// and `worker.runtime` has no default. An absent limit reading as unlimited
+		// would put the expensive answer on every store nobody thought about, and this
+		// one is paid for by the cloud in instances that exist because a caller asked.
+		//
+		// NOT `limits/max_instances`, which is on the workload kinds and is a different
+		// number: that one bounds how many COPIES of one workload the platform may run,
+		// and the platform picks the number under it. This bounds how many DISTINCT
+		// named instances a store holds, and the callers pick those.
+		//
+		// PerEnv, because a ceiling is exactly the kind of number a preview deployment
+		// wants smaller — the same reason a cache's `size` is.
+		Int(Key("instances", "limit"), Path("instances", "limit"), MinInt(0),
+			RequiredWhen(Key("instances", "admission"), "validator"), PerEnv(), InSection("instances"),
+			Doc("Limit", "The most instances this may hold at once. 0 means no ceiling — which is a choice, not a default, so it has to be written.")),
 	}
 }
 
-var secInstances = Section("instances", "Instances", "Whether this holds one instance or many, and who admits a new one.")
+var secInstances = Section("instances", "Instances", "Whether this holds one instance or many, how many, and who admits a new one.")
+
+// Placed marks a kind whose instances HAVE A PHYSICAL FOOTPRINT — something that runs,
+// or bytes that sit somewhere — so "where" is a question about the resource itself and
+// not about something it names. attachPlacement gives every one of them the region
+// block below, which is why this is a mark on the kind rather than a list of kinds
+// somewhere else: one rule over whatever declares it, the way Ops() and Category() are.
+//
+// NOT DERIVED FROM `Category()`, and the four exceptions are the argument. A category
+// is what a kind is FOR, which is a coarser question: `website` is compute and runs no
+// process — what its bytes cost is the CAS's, exactly as a function's wasm is;
+// `model` is compute and is an endpoint somebody else operates, or a `local`
+// application that carries its own placement; `channel` is compute and is a name two
+// workloads meet at, each placed on its own; `secret` is data and holds no value — the
+// secrets service does. Placing any of the four would be a second, weaker statement
+// about something already placed elsewhere.
+func Placed() NodeOption { return GroupAnnotate("placed", true) }
+
+// PlacedIter reports whether a kind's iterator declares Placed().
+func PlacedIter(iter *Node) bool { placed, _ := iter.Meta["placed"].(bool); return placed }
+
+// PlacedKinds is every kind that carries the region block, in declaration order. Read
+// back off the schema rather than kept beside it, so there is one answer.
+func PlacedKinds() []string {
+	var out []string
+	for _, g := range V2Resources {
+		if len(g.Children) == 0 || !PlacedIter(g.Children[0]) {
+			continue
+		}
+		if key, _ := g.Match.(string); key != "" {
+			out = append(out, key)
+		}
+	}
+	return out
+}
+
+// attachPlacement hangs the region block off every kind that declared Placed(), once
+// the vocabulary exists. Same shape as attachAccess: a rule that holds for a set of
+// kinds is not four lines repeated in each of them, one of which is forgotten when the
+// next kind arrives.
+//
+// It runs BEFORE attachLowerable, which copies a kind's attributes into the container
+// shape it takes after lowering — an agent or a workflow that gained the block
+// afterwards would carry it only in the shape nobody authors.
+func attachPlacement() {
+	for _, g := range V2Resources {
+		if len(g.Children) == 0 {
+			continue
+		}
+		iter := g.Children[0]
+		if !PlacedIter(iter) {
+			continue
+		}
+		iter.Attributes = append(iter.Attributes, regionAttributes()...)
+		secPlacement(iter)
+	}
+}
+
+// regionAttributes is how a resource says WHERE it may run, within what its scopes
+// allow. Two declarations, kept apart because they answer different questions: this is
+// the PLACEMENT of one resource, and `regions` on the project and on a namespace is the
+// ALLOWANCE — the ceiling everything under that scope is placed within.
+//
+// A REGION NAME IS AN OPAQUE LABEL THE IMPLEMENTATION DEFINES. The vocabulary never
+// enumerates regions, never validates a label against a list it cannot see, and carries
+// no geography: no InSet, no jurisdiction words, no latency targets. It knows the SHAPE
+// — a label, a policy — and the implementation knows the world. An operator MAY define
+// labels that are their provider's own region names, so the mapping can be the identity
+// and the single-cloud case costs nothing.
+//
+// SO NOTHING IN THE SCHEMA CHECKS A LABEL, AND NOTHING CAN. Refusing `eu-wst` needs a
+// list of regions, and the config will never hold one. The audit below catches it
+// wherever a scope declares an allowance to check against — a label outside the ceiling
+// is simply not within it — and where no scope declares one, the only place left that
+// knows is the implementation, at deploy.
+//
+// WHICH IS THE SEAM `EmitValidation` EXISTS FOR, AND IT CANNOT CARRY THIS ONE. That is
+// a limit worth writing down rather than discovering: `emitAttrValidations`
+// (interp/index.go) reads the value with `GetString(a.Name)` and treats a missing key
+// as an error, so an OPTIONAL attribute declaring one fails the compile of every
+// resource that omits it — `region/name is not a string: does not exist`, on a document
+// with no region block at all. And the read is a flat map lookup, so a nested name is
+// not addressable: `region/name` is a level in the compiled object, not a key. Its two
+// existing users are a zone's `fqdn` and the project's `id` — both required, both
+// top-level — which is why neither has been hit.
+//
+// Two things the generic layer is missing, named rather than worked around: an absent
+// optional value has to emit nothing instead of failing, and an attribute's identity
+// has to be read as the PATH it is — the same walk `interp.Attr(Key(...))` and
+// checks.go's `fieldValue` already do. Neither knows a kind. When they land, these four
+// fields take `EmitValidation("region", "region")` and nothing else here changes; the
+// consumer side is a second job, since utils/tcc/validations.go answers `dns` and
+// `project_id` and nothing else.
+//
+// THE POLICY IS THE VOCABULARY'S OWN SWITCH: a closed set of alternative keys, each
+// branch carrying its own fields. `failover` takes EXACTLY TWO, and "the first one is
+// main" is spelled by the field NAMES rather than by a position a reader has to know
+// the significance of — a two-element list would re-derive it from an index, which is
+// the shape §2a warns against. A third region has no key to arrive under, and a missing
+// one is a compile error.
+//
+//	region:                 region:                 region:
+//	    auto:                   cdn:                    failover:
+//	        name: eu                name: eu                main: eu
+//	                                                        standby: us
+//
+// AN ABSENT BLOCK IS `auto` WITH NO PIN, which is what almost every resource wants, so
+// the common case writes nothing at all and the feature costs only the lines that buy
+// something. That is also why the switch is not Required(): a switch inside an optional
+// block is demanded only when the block is there.
+func regionAttributes() []*Attribute {
+	return []*Attribute{
+		String(Key("region", "policy"), Path("region", Either("auto", "cdn", "failover")), Captures(), InSection("placement"),
+			Doc("Placement", "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.")),
+
+		// ONE FIELD ON TWO BRANCHES, because it is one fact: the region this is pinned
+		// to. A subset Either() is the same construct a database's per-type engine key
+		// uses, and it is what keeps `failover` from having a `name` that would mean
+		// neither of its two.
+		String(Key("region", "name"), Path("region", Either("auto", "cdn"), "name"), InSection("placement"),
+			Doc("Region", "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.")),
+
+		String(Key("region", "main"), Path("region", "failover", "main"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), InSection("placement"),
+			Doc("Main", "Where this runs while it can.")),
+		String(Key("region", "standby"), Path("region", "failover", "standby"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), InSection("placement"),
+			Doc("Standby", "Where it runs when the main is gone.")),
+	}
+}
+
+var secPlacement = Section("placement", "Placement", "Where this may run, within what its scopes allow.")
 
 // handlerKinds are what may serve a route. Closed, because it is the Either() a
 // handler's kind switches on: a key outside this set is a compile error rather than
@@ -911,7 +1076,7 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(applicationAttributes()...),
 			Nested(portsGroup(), variablesGroup()),
-			GroupDoc("A long-running container that listens on HTTP. Mount a volume for anything it must keep."), Icon("box"), Category("compute"),
+			GroupDoc("A long-running container that listens on HTTP. Mount a volume for anything it must keep."), Icon("box"), Category("compute"), Placed(),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Resource("application", "Application", "Application", "application"),
 		)),
@@ -927,7 +1092,7 @@ var V2Resources = []*Node{
 		resource(
 			wasmAttributes(),
 			Nested(variablesGroup()),
-			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"),
+			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"), Placed(),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")), // invoke is write: a call may do anything the callee can
 			Resource("function", "Function", "Function", "function"),
@@ -955,7 +1120,7 @@ var V2Resources = []*Node{
 				pullSecret()[0], pullSecret()[1],
 			),
 			Nested(variablesGroup()),
-			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"),
+			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"), Placed(),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")),
 			Resource("worker", "Worker", "Worker", "worker"),
@@ -976,7 +1141,7 @@ var V2Resources = []*Node{
 				cpuLimit(),
 			),
 			Nested(variablesGroup()),
-			GroupDoc("An interactive container with exec and filesystem access, for agent and build sessions."), Icon("terminal"), Category("compute"),
+			GroupDoc("An interactive container with exec and filesystem access, for agent and build sessions."), Icon("terminal"), Category("compute"), Placed(),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("exec"), ReadOp("read"), WriteOp("write")),
 			Resource("sandbox", "Sandbox", "Sandbox", "sandbox"),
@@ -1074,8 +1239,7 @@ var V2Resources = []*Node{
 	// losing one costs a recomputation, and nothing here is a system of record.
 	DefineGroup("cache",
 		resource(
-			commonAttributes(
-				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
+			commonAttributes(append(instanceAttributes(),
 				Bytes(Key("size"), Required(), PerEnv(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
 				Duration(Key("ttl"), PerEnv(), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
 
@@ -1118,8 +1282,8 @@ var V2Resources = []*Node{
 					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
 				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret", Inbound()), NoAccessors(), InSection("encryption"),
 					Doc("Encryption Key", "Secret holding the key entries are encrypted with, as \"secret/<name>\".")),
-			),
-			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"),
+			)...),
+			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"), Placed(),
 			secIdentity, secAccess,
 			Section("keys", "Keys", "Capacity, lifetime, and where the data lives."),
 			secInstances,
@@ -1138,10 +1302,8 @@ var V2Resources = []*Node{
 	// verbs over a store that keeps what it is given.
 	DefineGroup("database",
 		resource(
-			commonAttributes(append(databaseAttributes(),
-				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
-			)...),
-			GroupDoc("A database: keys and values, documents, tables or vectors — on tau's own replicated engine, or on an external server reached over the network."), Icon("database"), Category("data"),
+			commonAttributes(append(databaseAttributes(), instanceAttributes()...)...),
+			GroupDoc("A database: keys and values, documents, tables or vectors — on tau's own replicated engine, or on an external server reached over the network."), Icon("database"), Category("data"), Placed(),
 			secIdentity, secAccess,
 			Section("engine", "Engine", "Which data model it is, which engine backs it, and its settings."),
 			secInstances,
@@ -1166,14 +1328,14 @@ var V2Resources = []*Node{
 
 	DefineGroup("storage",
 		resource(
-			commonAttributes(
+			commonAttributes(append(append([]*Attribute{
 				String("type", Path(Either("object", "streaming")), Captures(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
-				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
+			}, instanceAttributes()...),
 				Bool(Key("object", "versioning"), NoSetter(), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
 				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), PerEnv(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
 				Bytes(Key("size"), Path(Either("object", "streaming"), "size"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
-			),
-			GroupDoc("Object or streaming storage, content-addressed, served to the project's peers."), Icon("bucket"), Category("data"),
+			)...),
+			GroupDoc("Object or streaming storage, content-addressed, served to the project's peers."), Icon("bucket"), Category("data"), Placed(),
 			secIdentity, secAccess,
 			Section("storage", "Storage", "Storage kind and capacity."),
 			secInstances,
@@ -1181,8 +1343,29 @@ var V2Resources = []*Node{
 			Resource("storage", "Storage", "Storage", "storage"),
 		)),
 
-	// A leased, quota'd local directory whose contents are continuously checkpointed
-	// into the CAS as a snapshot chain. The chain IS the backup product.
+	// A quota'd local directory whose contents are continuously checkpointed into the
+	// CAS as a snapshot chain. The chain IS the backup product.
+	//
+	// IT CAN BE SHARED, AND THE FILESYSTEM IS WHAT ARBITRATES. There is no lease field
+	// here and there never was one: "single-writer" and "leased" were prose asserting a
+	// constraint nothing in the schema expressed, which is the shape this vocabulary
+	// deletes fields for pointed the other way — a claim with no mechanism under it.
+	//
+	// The position, stated so it is not re-argued: POSIX already answers concurrent
+	// access. `flock`, `fcntl` record locks, atomic rename, `O_APPEND` — a filesystem
+	// that offers POSIX semantics offers those, and a workload that needs to coordinate
+	// with another one has them. A lease bolted on above would be a SECOND answer to a
+	// question the layer below already answers, and a weaker one: it is coarser (a
+	// whole directory, where a lock is a byte range), it cannot see the operations it
+	// would be ordering, and a holder still has to use the POSIX primitives correctly
+	// for anything finer than "nobody else at all". So two workloads mounting one
+	// volume read-write is a shape this vocabulary permits, and so is one workload the
+	// platform may run ten instances of. Whether their access is CORRECT is theirs to
+	// arrange, with the tools the filesystem gives them.
+	//
+	// `mount-ro` and `mount-rw` stay two verbs. Read-only and read-write are still
+	// different asks — one of them cannot damage anything — and an accessor saying
+	// which is the same statement every other kind's ops make.
 	//
 	// rpo-budget and on-budget-exceeded exist because RPO is NOT the checkpoint
 	// interval — it is the age of the last fully uploaded, pointer-committed
@@ -1194,13 +1377,26 @@ var V2Resources = []*Node{
 			commonAttributes(
 				Bytes(Key("quota"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Hard quota for the directory, as a human string (e.g. \"10GB\").")),
 				Duration(Key("checkpoint", "interval"), Default("60s"), PerEnv(), InSection("checkpoint"), Doc("Checkpoint Interval", "How often the volume is walked, chunked and uploaded.")),
-				Duration(Key("checkpoint", "rpo_budget"), PerEnv(), InSection("checkpoint"), Doc("RPO Budget", "Ceiling on the age of the last committed snapshot before on-budget-exceeded fires.")),
+				// WHAT A RESTORE ACTUALLY GIVES BACK, WITH MORE THAN ONE WRITER: a
+				// CRASH-CONSISTENT moment, not a quiesced one. A checkpoint walks the
+				// directory, chunks it and uploads it while writers keep writing, so a
+				// snapshot can hold one file from before an operation and its neighbour
+				// from after — the same guarantee a filesystem-level backup of any live
+				// directory has, and the same one a machine that lost power leaves
+				// behind. It is enough for anything that recovers on its own (a journal,
+				// a WAL, a log a reader re-reads) and it is not a consistent point in
+				// time across several writers, which nothing here promises and nothing
+				// here can: quiescing would mean stopping every writer for the length of
+				// a walk. Worth saying beside the budget, because the budget is where an
+				// author reasons about recovery and the old text implied a single writer,
+				// which would have made a restore sound more coherent than it is.
+				Duration(Key("checkpoint", "rpo_budget"), PerEnv(), InSection("checkpoint"), Doc("RPO Budget", "Ceiling on the age of the last committed snapshot before on-budget-exceeded fires. What a snapshot holds is a crash-consistent moment — writers are not stopped for the walk — so a restore gives back what a power cut would.")),
 				String(Key("checkpoint", "on_budget_exceeded"), InSet("alert", "freeze-writes"), Default("alert"), InSection("checkpoint"), Doc("On Budget Exceeded", "What to do when the committed-snapshot age passes rpo-budget. Nothing happens without a budget to pass.")),
 			),
-			GroupDoc("A single-writer leased directory with full POSIX semantics, checkpointed into the CAS. No RWX; bind mounts are refused."), Icon("drive"), Category("data"),
+			GroupDoc("A quota'd directory with full POSIX semantics, checkpointed into the CAS. More than one workload may mount it read-write; the filesystem arbitrates. Bind mounts are refused."), Icon("drive"), Category("data"), Placed(),
 			secIdentity, secAccess,
 			Section("storage", "Storage", "Capacity."),
-			Section("checkpoint", "Checkpoint", "Durability out of band from the write path."),
+			Section("checkpoint", "Checkpoint", "Durability out of band from the write path. A snapshot is crash-consistent, not quiesced."),
 			Ops(Mounts(ReadOp("mount-ro")), Mounts(WriteOp("mount-rw"))),
 			Resource("volume", "Volume", "Volume", "volume"),
 		)),
@@ -1235,7 +1431,7 @@ var V2Resources = []*Node{
 	DefineGroup("log",
 		resource(
 			commonAttributes(),
-			GroupDoc("An append-only log. Records go on the end and nothing rewrites what is there. Its shape is not specified yet."), Icon("list"), Category("data"),
+			GroupDoc("An append-only log. Records go on the end and nothing rewrites what is there. Its shape is not specified yet."), Icon("list"), Category("data"), Placed(),
 			secIdentity, secAccess,
 			Ops(WriteOp("append"), ReadOp("read")),
 			Resource("log", "Log", "Log", "log"),
@@ -1274,7 +1470,7 @@ var V2Resources = []*Node{
 				Bytes(Key("size"), PerEnv(), InSection("limits"), Doc("Storage", "Per-instance SQL storage ceiling.")),
 			),
 			Nested(variablesGroup()),
-			GroupDoc("A single-writer, durably-stored compute instance addressed by name. CP: a partition that cannot reach K replicas cannot write."), Icon("cube"), Category("compute"),
+			GroupDoc("A single-writer, durably-stored compute instance addressed by name. CP: a partition that cannot reach K replicas cannot write."), Icon("cube"), Category("compute"), Placed(),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Section("coordination", "Coordination", "Sharding and durability."),
 			Ops(ReadOp("get"), WriteOp("call")),
@@ -1318,7 +1514,7 @@ var V2Resources = []*Node{
 				String(Key("dead_letter", "name"), IsVariableName(), Ref("queue"), InSection("delivery"),
 					Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts.")),
 			),
-			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. Per-key ordering is an entity, not this."), Icon("list"), Category("data"),
+			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. Per-key ordering is an entity, not this."), Icon("list"), Category("data"), Placed(),
 			secIdentity, secAccess,
 			Section("delivery", "Delivery", "Claim, retry and dead-letter behaviour."),
 			Ops(DeliveredOp("receive"), WriteOp("send")),
@@ -2067,7 +2263,7 @@ var V2Resources = []*Node{
 				// `component` and `builtin` are not branches here — an agent is not built.
 			}, contentSource("source", "git")...)...),
 			Nested(variablesGroup()),
-			GroupDoc("An LLM loop with tools. What it may call is what it declares access to — there is no second list."), Icon("agent"), Category("compute"),
+			GroupDoc("An LLM loop with tools. What it may call is what it declares access to — there is no second list."), Icon("agent"), Category("compute"), Placed(),
 			secIdentity, secAccess, secConfig, secNetwork, secLimits, secSource,
 			Section("model", "Model", "Which model answers, and what it is told."),
 			Section("memory", "Memory", "What it remembers, and how wide the vectors are."),
@@ -2184,7 +2380,7 @@ var V2Resources = []*Node{
 					Doc("Start", "The step a start lands on.")),
 			),
 			Nested(stepsGroup(), entryGroup()),
-			GroupDoc("An ordered pipeline of functions with retries. Each step runs as its own queue; nothing new has to be deployed to serve it. There is no run state to inspect yet."), Icon("workflow"), Category("trigger"),
+			GroupDoc("An ordered pipeline of functions with retries. Each step runs as its own queue; nothing new has to be deployed to serve it. There is no run state to inspect yet."), Icon("workflow"), Category("trigger"), Placed(),
 			secIdentity, secAccess,
 			Section("run", "Run", "Ceilings on one run and on all of them."),
 			Section("steps", "Steps", "What runs, in order."),
@@ -2395,6 +2591,20 @@ func rootAttributes() []*Attribute {
 			Doc("Zone Label", "The project's label in a cloud's generated zone, derived from its id. Read-only.")),
 		String("description", Doc("Description", "Free-form, human-readable description of the project.")),
 		StringSlice("tags", WireDrop(), Doc("Tags", "Project-level labels.")),
+
+		// THE CEILING, AND IT IS A SCOPE'S STATEMENT RATHER THAN A RESOURCE'S. A
+		// resource says where it IS placed; a scope says where anything under it may be
+		// placed at all, and the difference is that this one is inherited. Absent means
+		// the parent's, and absent all the way up means every region the cloud has — so
+		// a project that never heard of the feature writes nothing and is bounded by
+		// nothing.
+		//
+		// NARROWING ONLY, which the audit enforces because nothing else can: the rule is
+		// cross-document, so neither the schema nor load time can see both ends of it.
+		// A scope that widened its parent's list would mean a child running where its
+		// parent said nothing may, which is the whole reason the ceiling exists.
+		StringSlice("regions",
+			Doc("Regions", "The regions everything in this project may run in. Absent means every region the cloud has. A scope below may narrow this list and may never widen it.")),
 	}
 }
 
@@ -2432,7 +2642,15 @@ func namespacesGroup(depth int) *Node {
 		children = append(children, namespacesGroup(depth-1))
 	}
 	return DefineGroup(scopeContainer,
-		DefineIterGroup(identityAttributes(), children...).
+		// THE ALLOWANCE, ON THE SCOPE AND NOT IN identityAttributes(). That helper is
+		// shared with every resource, and a resource does not get to widen or narrow
+		// what may run under it — it IS one of the things placed. So the field is
+		// declared here, where the container's own attributes are, and the project root
+		// declares the same one.
+		DefineIterGroup(append(identityAttributes(),
+			StringSlice("regions", InSection("identity"),
+				Doc("Regions", "The regions everything in this namespace may run in. Absent means the parent's. Narrows only; the audit reports a widening."))),
+			children...).
 			With(Singular("Namespace"),
 				// namespace/shop/meta.yaml — the document this scope's own fields live
 				// in, kept distinct from the kind-named directories beside it that hold
@@ -2457,7 +2675,7 @@ func namespacesGroup(depth int) *Node {
 
 var scopeShape = namespacesGroup(MaxNamespaceDepth)
 
-var _ = func() any { attachAccess(); attachIndexes(); attachLowerable(); return nil }()
+var _ = func() any { attachPlacement(); attachAccess(); attachIndexes(); attachLowerable(); return nil }()
 
 // ENVIRONMENTS ARE ONE FILE, and they are in the project's own document rather than a
 // directory of their own. They are not resources: nothing reaches an environment, no

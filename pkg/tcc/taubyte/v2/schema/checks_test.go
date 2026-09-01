@@ -216,7 +216,7 @@ func TestAuditHostWorldsReachesEveryUse(t *testing.T) {
 		return b
 	}
 	cacheWith := func(validator string) string {
-		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 32MB\nttl: 24h\ninstances:\n    validator:\n        name: " + validator + "\n"
+		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 32MB\nttl: 24h\ninstances:\n    limit: 0\n    validator:\n        name: " + validator + "\n"
 	}
 	routeRouter := func(router string) string {
 		return "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nroute:\n    path: /\n    router:\n        name: " + router + "\n"
@@ -285,9 +285,13 @@ func TestAuditGhostFunctions(t *testing.T) {
 	has(t, found, schema.Broken, "is named as a authorizer by cache/c authorizer, and does not exist")
 }
 
-// A volume is leased to ONE writer, and nothing in the declaration says so: access is
-// declared by the accessor, so two workloads can each ask to write and both compile.
-func TestAuditVolumeWriters(t *testing.T) {
+// A VOLUME CAN BE SHARED, so nothing here has anything to say about two workloads
+// mounting one read-write, or about one workload the platform may run ten instances of.
+// This is the audit that used to refuse both, kept as the case with its expectation
+// flipped: POSIX answers concurrent access — flock, fcntl, atomic rename — and a lease
+// above the filesystem would be a second, weaker answer to a question the layer below
+// already answers.
+func TestAVolumeMayBeSharedByManyWriters(t *testing.T) {
 	const vol = "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nquota: 1GB\n"
 	mount := func(op string) string {
 		return appBody + "volume:\n    data:\n        ops: [" + op + "]\n        path: /data\n"
@@ -298,28 +302,26 @@ func TestAuditVolumeWriters(t *testing.T) {
 		"/application/a.yaml": mount("mount-rw"),
 		"/application/b.yaml": strings.Replace(mount("mount-rw"), "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", 1),
 	})
-	has(t, found, schema.Broken, "is mounted for writing by")
+	hasNo(t, found, "mounted for writing")
+	hasNo(t, found, "may run")
 
-	// one writer and one reader is the shape that works
-	found = auditDocs(t, nil, map[string]string{
-		"/volume/data.yaml":   vol,
-		"/application/a.yaml": mount("mount-rw"),
-		"/application/b.yaml": strings.Replace(mount("mount-ro"), "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", 1),
-	})
-	hasNo(t, found, "is mounted for writing by")
-
-	// and the same contradiction inside one resource: ten instances, one lease
 	found = auditDocs(t, nil, map[string]string{
 		"/volume/data.yaml":   vol,
 		"/application/a.yaml": mount("mount-rw") + "limits:\n    max_instances: 10\n",
 	})
-	has(t, found, schema.Broken, "may run 10 instances")
-
-	found = auditDocs(t, nil, map[string]string{
-		"/volume/data.yaml":   vol,
-		"/application/a.yaml": mount("mount-rw") + "limits:\n    max_instances: 1\n",
-	})
 	hasNo(t, found, "instances")
+
+	// The two verbs still mean different things, which is why they stay two verbs.
+	ro, rw := false, false
+	for _, v := range schema.OpsOf("volume") {
+		switch v.Name {
+		case "mount-ro":
+			ro = v.Mounted && v.Effect == schema.Read
+		case "mount-rw":
+			rw = v.Mounted && v.Effect == schema.Write
+		}
+	}
+	assert.Assert(t, ro && rw, "a volume declares a read mount and a write mount: %v", schema.OpsOf("volume"))
 }
 
 // A fault INSIDE a lowering is reported against what the AUTHOR wrote. The broken
@@ -579,4 +581,79 @@ func TestALoweredDatabaseEntryIsCheckedToo(t *testing.T) {
 	assert.DeepEqual(t, loop["database"].(map[string]any)["a_memory"].(map[string]any)["ops"], []string{"search"})
 
 	hasNo(t, schema.Audit(obj.Flat(), nil), "which is a vector database")
+}
+
+// THE CEILING, WHICH ONLY THE AUDIT CAN HOLD. A scope's allowance and a resource's
+// placement are in different documents, so neither the schema nor load time sees both
+// ends — and a widening that compiled silently would mean a child running where its
+// parent said nothing may.
+func TestAuditRegions(t *testing.T) {
+	const proj = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [eu, us]\n"
+	const shopID = "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n"
+	cache := func(region string) string {
+		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\n" + region
+	}
+
+	// A scope may narrow what it inherits, and only narrow it.
+	found := auditDocs(t, nil, map[string]string{
+		"/project.yaml":             proj,
+		"/namespace/shop/meta.yaml": shopID + "regions: [eu, ap]\n",
+	})
+	has(t, found, schema.Broken, `allows region "ap", which the scope above it does not`)
+
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml":             proj,
+		"/namespace/shop/meta.yaml": shopID + "regions: [eu]\n",
+	})
+	hasNo(t, found, "which the scope above it does not")
+
+	// A placement is bounded by the WHOLE chain, not only by the scope it sits in:
+	// `us` is in the project's list and out of shop's, and shop is what applies.
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml":                       proj,
+		"/namespace/shop/meta.yaml":           shopID + "regions: [eu]\n",
+		"/namespace/shop/cache/sessions.yaml": cache("region:\n    auto:\n        name: us\n"),
+	})
+	has(t, found, schema.Broken, `is placed in region "us", which its scope does not allow`)
+
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml":                       proj,
+		"/namespace/shop/meta.yaml":           shopID + "regions: [eu]\n",
+		"/namespace/shop/cache/sessions.yaml": cache("region:\n    auto:\n        name: eu\n"),
+	})
+	hasNo(t, found, "which its scope does not allow")
+
+	// A FAILOVER'S TWO REGIONS ARE CHECKED SEPARATELY, because either half can escape.
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml": proj,
+		"/cache/c.yaml": cache("region:\n    failover:\n        main: eu\n        standby: ap\n"),
+	})
+	has(t, found, schema.Broken, `is placed in region "ap", which its scope does not allow`)
+
+	// …and failing over to the region you are already in is a plan that fails to what
+	// is already gone. The schema says there are two; only this can say they differ.
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml": proj,
+		"/cache/c.yaml": cache("region:\n    failover:\n        main: eu\n        standby: eu\n"),
+	})
+	has(t, found, schema.Broken, "fails over from eu to itself")
+
+	// NO CEILING ANYWHERE IS THE ZERO-CONFIG PROJECT: nothing was declared, so there is
+	// nothing to check a label against and the audit says nothing. This is also where
+	// the typo-catcher stops — `zz` is only wrong against a list somebody wrote.
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n",
+		"/cache/c.yaml": cache("region:\n    auto:\n        name: zz\n"),
+	})
+	hasNo(t, found, "which its scope does not allow")
+
+	// The chain is walked to whichever level last declared one, so a namespace that
+	// declares nothing inherits rather than resetting to the cloud's whole world.
+	found = auditDocs(t, nil, map[string]string{
+		"/project.yaml":                                    proj,
+		"/namespace/shop/meta.yaml":                        shopID + "regions: [eu]\n",
+		"/namespace/shop/namespace/eu/meta.yaml":           "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\n",
+		"/namespace/shop/namespace/eu/cache/sessions.yaml": cache("region:\n    auto:\n        name: us\n"),
+	})
+	has(t, found, schema.Broken, `is placed in region "us", which its scope does not allow`)
 }

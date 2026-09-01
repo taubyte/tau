@@ -1,6 +1,10 @@
 id: QmaozNR7DZHQK1ZcU9p7QdrshMvXqWK6gpu5rmrkPdT3L4
 description: shop's sessions - same NAME as billing's, a different resource
 size: 8MB
+region:
+    auto:
+        name: eu
 instances:
+    limit: 5000
     validator:
         name: may_open

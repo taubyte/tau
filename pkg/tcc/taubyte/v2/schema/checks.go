@@ -114,10 +114,10 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	out = append(out, checkMountedSites(all)...)
 	out = append(out, checkHostWorlds(all)...)
 	out = append(out, checkHandlerPorts(all)...)
-	out = append(out, checkVolumeWriters(all)...)
 	out = append(out, checkAccessDuplicates(all)...)
 	out = append(out, checkDatabaseOps(all)...)
 	out = append(out, checkWorkflows(all)...)
+	out = append(out, checkRegions(root, all)...)
 	// The record of what the compile produced sits BESIDE the project, so it is read
 	// from the object rather than from the project inside it.
 	out = append(out, checkAuthoredBuiltins(interp.LoweredOf(obj), all)...)
@@ -252,8 +252,13 @@ func (r compiled) str(key string) string {
 
 // list reads a StringSlice off the compiled object, which arrives as []string or, when
 // it came through JSON, as []any.
-func (r compiled) list(key string) []string {
-	switch v := fieldValue(r.fields, key).(type) {
+func (r compiled) list(key string) []string { return listAt(r.fields, key) }
+
+// listAt is that read on any object, because a SCOPE is not a compiled resource —
+// only a container that is also a kind ends up in the flat list, so the allowance on a
+// namespace has to be read off the tree.
+func listAt(fields map[string]any, key string) []string {
+	switch v := fieldValue(fields, key).(type) {
 	case []string:
 		return v
 	case []any:
@@ -766,6 +771,148 @@ func startedBy(all []compiled, target compiled) bool {
 // checkLoweringCollisions: a lowered resource takes a name, and an authored resource
 // can already have it. The two would be the same key in the compiled object, and which
 // one wins is not something an author should have to know.
+// scopeAllowance is one scope's own `regions` line, and where it sits.
+type scopeAllowance struct {
+	parent   string // the scope path above this one; "" is the project root
+	kind     string // what KIND of scope it is, for the finding
+	name, id string
+	regions  []string // as declared here; empty means "whatever the parent allows"
+}
+
+// scopeAllowances walks every scope in the compiled object and records the allowance it
+// declares, keyed by the same scope path collect() files resources under.
+//
+// It has to be its own walk: a namespace is a container and NOT a resource kind, so it
+// never appears in `all` — collect only emits an entry for a container that is also a
+// kind, which is what a lowered workflow or agent is. And it walks GENERICALLY, over
+// every group ContainerKeys answers with, because the chain has more than one kind of
+// level: a walk that knew only the word `namespace` would step over `workflow/checkout`
+// and hand what it produced the wrong ceiling.
+func scopeAllowances(root map[string]any) map[string]scopeAllowance {
+	scopes := scopeGroups()
+	out := map[string]scopeAllowance{"": {regions: listAt(root, "regions")}}
+	var walk func(scope map[string]any, path string)
+	walk = func(scope map[string]any, path string) {
+		for group, val := range scope {
+			if !scopes[group] {
+				continue
+			}
+			instances, ok := val.(map[string]any)
+			if !ok {
+				continue
+			}
+			for id, v := range instances {
+				res, ok := v.(map[string]any)
+				if !ok || !interp.HeldResource(kindRootNode(), group, id) {
+					continue
+				}
+				name, _ := res["name"].(string)
+				if name == "" {
+					continue
+				}
+				child := strings.TrimPrefix(path+"/"+name, "/")
+				out[child] = scopeAllowance{parent: path, kind: group, name: name, id: id,
+					regions: listAt(res, "regions")}
+				walk(res, child)
+			}
+		}
+	}
+	walk(root, "")
+	return out
+}
+
+// effectiveAllowance is a scope's own list if it declared one, else the nearest one
+// above it. Nothing anywhere means no ceiling — every region the cloud has.
+func effectiveAllowance(scopes map[string]scopeAllowance, path string) []string {
+	for {
+		s, known := scopes[path]
+		if !known {
+			return nil
+		}
+		if len(s.regions) > 0 {
+			return s.regions
+		}
+		if path == "" {
+			return nil
+		}
+		path = s.parent
+	}
+}
+
+// checkRegions: the ceiling, and the only thing that enforces it.
+//
+// A region name is an opaque label the implementation defines, so the schema cannot
+// refuse one. What it CAN be held to is the project's own statement about itself: a
+// scope narrows the regions it inherits and never widens them, and a resource is placed
+// inside the allowance of the chain it sits in. Both are cross-document — the parent is
+// another file, and so is the scope a resource is placed under — so neither the schema
+// nor load time can see both ends, which is what puts them here.
+//
+// Both are Broken rather than Check. A widening that compiled silently means a child
+// runs where its parent said nothing may, which is the entire point of declaring an
+// allowance; and a placement outside the chain is a resource that has nowhere to run.
+//
+// Where NO scope in a chain declares an allowance there is nothing to check against,
+// and that is the zero-config project: it writes nothing and is bounded by nothing. It
+// is also why this doubles as the typo-catcher — once a ceiling exists, `eu-wst` is
+// simply not within it — and why a project with no ceiling has no typo-catcher at all
+// until the deferred validation regionAttributes describes can be carried.
+func checkRegions(root map[string]any, all []compiled) []Finding {
+	scopes := scopeAllowances(root)
+	var out []Finding
+
+	paths := make([]string, 0, len(scopes))
+	for path := range scopes {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		s := scopes[path]
+		if path == "" || len(s.regions) == 0 {
+			continue
+		}
+		above := effectiveAllowance(scopes, s.parent)
+		if len(above) == 0 {
+			continue
+		}
+		for _, r := range s.regions {
+			if slices.Contains(above, r) {
+				continue
+			}
+			out = append(out, Finding{Broken, s.kind, s.name, s.parent,
+				fmt.Sprintf("allows region %q, which the scope above it does not", r),
+				"A scope narrows the regions it inherits and never widens them: a child may not run where its parent said nothing may.", s.id})
+		}
+	}
+
+	for _, res := range all {
+		allowed := effectiveAllowance(scopes, res.scope)
+		// Every field a label can be written in. They are read by identity — the
+		// attribute's key, joined — so a branch that is not taken simply holds nothing.
+		for _, field := range []string{"region/name", "region/main", "region/standby"} {
+			r := res.str(field)
+			if r == "" || len(allowed) == 0 || slices.Contains(allowed, r) {
+				continue
+			}
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				fmt.Sprintf("is placed in region %q, which its scope does not allow", r),
+				"Placement is bounded by every scope above it. Widen the scope's regions, or place this within them.", res.id})
+		}
+
+		// FAILOVER TAKES TWO REGIONS. That there are exactly two is the declaration's
+		// own property — two named fields, both required on the branch — but that they
+		// are DIFFERENT is not something the schema can say, and a standby equal to its
+		// main is a failover plan that fails to the thing that is already gone.
+		if main, standby := res.str("region/main"), res.str("region/standby"); main != "" && main == standby {
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				"fails over from " + main + " to itself",
+				"Failover takes two regions; the standby exists for when the main is gone.", res.id})
+		}
+	}
+	return out
+}
+
 func checkLoweringCollisions(root map[string]any, produced interp.Lowered, all []compiled) []Finding {
 	// What the compile PRODUCED is not authored, and the object holds both now. Without
 	// this the check reported every generated resource as colliding with itself, which
@@ -913,69 +1060,6 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// checkVolumeWriters: a volume is a SINGLE-WRITER leased directory, and nothing in the
-// declaration says so. Access is declared by the ACCESSOR and the target only bounds it
-// — which is right for every other kind, and for a volume means two workloads can each
-// write `ops: [mount-rw]` and both compile. The second one does not get a degraded
-// mount; it gets a directory another process already holds the lease on.
-//
-// The same statement fails a second way inside ONE resource: a workload with
-// `max-instances: 10` and a rw mount is asking for ten writers to a one-writer
-// filesystem. Nine of them cannot start, and which nine is a race.
-//
-// Both need a second resource to answer — the volume's own kind for one, the workload's
-// ceiling for the other — which is why neither is an attribute validator.
-func checkVolumeWriters(all []compiled) []Finding {
-	var out []Finding
-	writers := map[string][]compiled{}
-
-	for _, res := range all {
-		for label, e := range res.block("volume") {
-			entry, ok := e.(map[string]any)
-			if !ok || !mountsForWriting(entry) {
-				continue
-			}
-			name := entryName(label, entry)
-			writers[volumeKey(all, name, field(entry, "namespace"), res.scope)] = append(
-				writers[volumeKey(all, name, field(entry, "namespace"), res.scope)], res)
-
-			if n := res.int("limits/max_instances"); n > 1 {
-				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-					fmt.Sprintf("mounts volume %q for writing and may run %d instances", name, n),
-					"A volume is leased to one writer. Either the ceiling comes down to 1, or the volume is mounted read-only and something else owns the writes.", res.id})
-			}
-		}
-	}
-
-	for key, ws := range writers {
-		if len(ws) < 2 {
-			continue
-		}
-		sort.Slice(ws, func(i, j int) bool { return ws[i].kind+ws[i].name < ws[j].kind+ws[j].name })
-		names := make([]string, 0, len(ws))
-		for _, w := range ws {
-			names = append(names, w.kind+"/"+w.name)
-		}
-		name, scope := key, ""
-		if cut := strings.LastIndex(key, "\x00"); cut >= 0 {
-			scope, name = key[:cut], key[cut+1:]
-		}
-		// The key IS the volume's resolved scope and name — the same identity
-		// volumeKey used to group the writers — so its compiled id is one lookup away.
-		id := ""
-		for _, res := range all {
-			if res.kind == "volume" && res.name == name && res.scope == scope {
-				id = res.id
-				break
-			}
-		}
-		out = append(out, Finding{Broken, "volume", name, scope,
-			"is mounted for writing by " + strings.Join(names, " and "),
-			"A volume has one writer. The others are asking for a lease that is already held, and which of them starts is a race.", id})
-	}
-	return out
-}
-
 // checkAccessDuplicates: two entries in one resource's own access group that resolve to
 // the SAME target are two labels for one fact — `accessName` exists precisely so two
 // entries CAN share a target's real name across namespaces, but nothing stops the author
@@ -1103,49 +1187,6 @@ func checkDatabaseOps(all []compiled) []Finding {
 		return out[i].Title < out[j].Title
 	})
 	return out
-}
-
-// mountsForWriting reports whether an access entry asks for a mount that writes,
-// read off the volume kind's own verbs rather than by matching the name "mount-rw".
-func mountsForWriting(entry map[string]any) bool {
-	for _, op := range ops(entry) {
-		for _, v := range OpsOf("volume") {
-			if v.Name == op && v.Mounted && v.Effect == Write {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// volumeKey resolves an access target to the volume it actually names, so two writers
-// that spell the same volume differently still collide. Falls back to the written
-// namespace when no volume of that name exists — an unresolvable target is
-// checkReachable's business, not this one's.
-func volumeKey(all []compiled, name, ns, own string) string {
-	scope := strings.TrimPrefix(ns, "/")
-	if ns == "" {
-		scope = own
-	} else if !strings.HasPrefix(ns, "/") && own != "" {
-		scope = own + "/" + ns
-	}
-	for {
-		for _, res := range all {
-			if res.kind == "volume" && res.name == name && res.scope == scope {
-				return scope + "\x00" + name
-			}
-		}
-		if scope == "" || ns != "" {
-			break
-		}
-		cut := strings.LastIndex(scope, "/")
-		if cut < 0 {
-			scope = ""
-			continue
-		}
-		scope = scope[:cut]
-	}
-	return scope + "\x00" + name
 }
 
 // checkHandlerPorts: only a workload that LISTENS has ports. A route naming a port on
