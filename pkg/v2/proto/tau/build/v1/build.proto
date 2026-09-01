@@ -10,7 +10,7 @@ syntax = "proto3";
 // hosts no RPC surface of its own. Its only listener is plain HTTP:
 //   - the GitHub webhook itself (services/patrick/github.go's
 //     githubHookHandler, POST /github/{hook}), signature-verified against a
-//     hook secret it fetches from auth over auth.v1's already-modeled
+//     hook secret it fetches from auth over tau.auth.v1's already-modeled
 //     HookService.Get — not duplicated here.
 //   - the GitHub-OAuth-token-authenticated job API a human or the CLI calls
 //     (services/patrick/api.go's setupJobRoutes: GET /jobs/{projectId},
@@ -24,22 +24,54 @@ syntax = "proto3";
 // frontend answers them by calling into the backend, which is where the
 // queue and the job records actually live.
 //
+// AN EMPTY SURFACE IS A STRONG CLAIM AND IT IS MEANT AS ONE. The frontend is
+// the one process in this service a stranger can reach, so trust across the
+// boundary has to run in exactly one direction: the frontend may ASK the
+// backend, and may never be asked. A p2p listener on the frontend reverses
+// that — every node in the swarm would then be dialling, and believing, a
+// process whose input is an unauthenticated POST body, and the peer identity
+// on the far side of that stream (service-conventions.md §5b) would say
+// "a tau node" while meaning "whatever reached the webhook handler". The
+// emptiness IS the boundary: it is what service-topology.md §2's capability
+// list ("it needs no container runtime, no clone credentials, no build
+// images, no publish rights") reduces to on the wire, since a capability the
+// frontend cannot be asked to exercise is one it does not need to hold.
+//
+// So the file is falsifiable rather than merely asserted: the day the
+// frontend must be CALLED, it needs a package of its own, which is a
+// protocol id of its own (§2d), which is a second listener on the public
+// side — none of which can be reached by adding a `service` block here.
+// That is deliberately more friction than an edit to this file, because it
+// is the change that deserves the review.
+//
+// What a compiled descriptor CANNOT see is which role serves which block —
+// pkg/v2/proto/rules_test.go names that gap rather than pretending to close
+// it, and refuses the capability NAMES (clone, checkout, run/exec a
+// container, push an image, publish) as the nearest mechanical proxy.
+//
 // ONE PACKAGE, TWO `service` BLOCKS, NOT TWO PACKAGES. auth.proto already
 // sets the precedent this follows: one proto package per v2 SERVICE (in
 // service-topology.md's sense — the process that owns a protocol id and a
 // mux), containing as many `service` blocks as the domain has facets; a
 // node's protocol id is derived from the PACKAGE
-// (`rpc.Protocol(...ServiceName)` -> `/<package, dots as slashes>`, e.g.
-// `/build/v1`), so auth.v1 already mounts five `service` blocks
-// (ProjectService, RepositoryService, HookService, DomainService,
-// CertificateService) behind one protocol id and one mux. Splitting
-// QueueService and JobService into their own packages would buy no
-// isolation — both are served by the same backend process on the same
-// listener — and would force either duplicating JobStatus/Job/JobRef or an
-// awkward cross-package import for two facets of one job lifecycle: a job
-// is CREATED through QueueService and OBSERVED/ADMINISTERED through
-// JobService. There is no `build.frontend.v1`/`build.backend.v1` split for
-// the same reason: the frontend serves no RPC of its own to need one.
+// (`rpc.Protocol(...ServiceName)` -> `/<package, dots as slashes>`, so
+// `tau.build.v1` -> `/tau/build/v1`, the row service-conventions.md §2d's
+// table already reserves for this service), so tau.auth.v1 already mounts
+// five `service` blocks (ProjectService, RepositoryService, HookService,
+// DomainService, CertificateService) behind one protocol id and one mux.
+// The `tau.` segment is that rule's anti-collision half and is not optional:
+// `build.v1` would derive `/build/v1`, which is free today only because v1
+// never merged patrick and monkey — `/patrick/v1` and `/monkey/v1` are both
+// live in services/common/names.go, and the next v2 package to be named
+// after a service v1 already runs would take the collision for real, as
+// `auth.v1` did until this file's own commit. Splitting QueueService and
+// JobService into their own packages would buy no isolation — both are
+// served by the same backend process on the same listener — and would force
+// either duplicating JobStatus/Job/JobRef or an awkward cross-package import
+// for two facets of one job lifecycle: a job is CREATED through
+// QueueService and OBSERVED/ADMINISTERED through JobService. There is no
+// `tau.build.frontend.v1`/`tau.build.backend.v1` split for the same reason:
+// the frontend serves no RPC of its own to need one.
 //
 // IDENTITY, as in auth.proto: a repository is named by its canonical
 // clone-URL key alone (pkg/git/repokey: host/owner/name) — never a
@@ -58,6 +90,22 @@ syntax = "proto3";
 // central decision this file exists to encode, so it is argued once, in
 // place, rather than summarized here.
 //
+// FIVE RPCs CROSS FROM FRONTEND TO BACKEND, NOT ONE, and the distinction is
+// what the field lists below turn on rather than a technicality. Enqueue is
+// the only one whose contents a STRANGER authored: an unauthenticated POST
+// to the webhook route decides them, which is why PushEvent carries three
+// fields and re-derives the rest. JobService's four carry a job id or a
+// project id that an authenticated caller was already handed — a different
+// input with a different exposure, so the shape restriction that produced
+// PushEvent does not apply to them and is not imitated there. What does
+// apply to them, and is NOT in this file, is that the backend cannot take
+// the frontend's word for WHO is asking: the identity on a p2p stream is
+// the calling node's (service-conventions.md §5b), and a frontend relaying
+// four HTTP routes is one node relaying many humans. That is authorization,
+// it belongs in the backend's authz.go beside auth's, and a field in these
+// messages would be exactly the identity-the-caller-encodes that §5b exists
+// to refuse.
+//
 // STREAMING, as in auth.proto: List below is server-streaming because it
 // enumerates an unbounded, unpaginated store — both v1's raw job-id stream
 // action (services/patrick/api.go's listHandler, `db.List(ctx, "/jobs/")`
@@ -67,7 +115,7 @@ syntax = "proto3";
 // other RPC here is a single lookup or a single mutation and stays unary,
 // matching today's cbor transport's fire-once, first-response-wins send —
 // the same reasoning auth.proto states once and this file does not repeat.
-package build.v1;
+package tau.build.v1;
 
 // Empty is the response for a call whose only interesting outcome is
 // whether it errored — see auth.proto's Empty for the reasoning, not
@@ -85,7 +133,7 @@ message Empty {}
 //   - `repository_key` — pkg/git/repokey's canonical identity, parsed by
 //     the frontend from the payload's repository URL. Never the numeric
 //     `Repository.ID` v1 sent instead: the backend re-derives clone access
-//     for this key by calling auth.v1's RepositoryService.Get (already
+//     for this key by calling tau.auth.v1's RepositoryService.Get (already
 //     modeled — deploy_key comes back from there), not from a URL or a
 //     credential the frontend hands it. `repository_key` alone is also
 //     enough to reconstruct a clone address, because it already contains
@@ -137,9 +185,11 @@ message PushEvent {
   string commit_sha = 3;
 }
 
-// QueueService.Enqueue is the ONE crossing point from frontend to backend,
-// and the reason PushEvent's doc comment states, at length, everything it
-// deliberately does not carry: this single RPC is the trust boundary
+// QueueService.Enqueue is the crossing that carries a STRANGER'S bytes —
+// not the only crossing, which is JobService's four as well (see the header),
+// but the only one whose arguments an unauthenticated POST decides. That is
+// the reason PushEvent's doc comment states, at length, everything it
+// deliberately does not carry: this single RPC is what
 // service-topology.md §2 draws the entire frontend/backend split around.
 // Keeping it to one small message and one small method is what makes that
 // boundary auditable by reading this file, rather than something a

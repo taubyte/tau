@@ -1,33 +1,28 @@
 package auth
 
-import "github.com/libp2p/go-libp2p/core/protocol"
+import (
+	"github.com/libp2p/go-libp2p/core/protocol"
 
-// Protocol is the libp2p protocol id this service listens on.
+	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
+)
+
+// Protocol is the libp2p protocol id this service listens on: "/" plus the
+// proto package with dots as slashes, walked off the schema rather than
+// typed here (service-conventions.md §2d, rpc.Protocol). Any of the five
+// generated service names gives the same answer, because the id names the
+// package's listener and all five mount behind it.
 //
-// service-conventions.md §2d's rule is mechanical: "/" plus the proto
-// package, dots to slashes — so that the id can never drift from the schema
-// and can never collide with v1, which the doc's own worked example gives as
-// "tau.auth.v1" -> "/tau/auth/v1" alongside v1's live "/auth/v1"
-// (services/common/names.go:5).
-//
-// Applied literally to what is actually committed, it does not hold:
-// pkg/v2/proto/auth/v1/auth.proto declares `package auth.v1;`, not
-// `tau.auth.v1`. Mechanically deriving from that package name gives
-// "/auth/v1" — which IS v1's protocol id, and rpc.Listen on a node running
-// both during the coexistence window would fail with rpc.ErrProtocolTaken
-// (or worse, whichever service listens second would simply never receive
-// anything, which is the exact failure service-conventions.md §2d cites
-// go-libp2p-gostream's protocol registration as silently allowing). This is
-// flagged rather than silently resolved: the fix belongs in the .proto's
-// package declaration, and this agent's brief is to implement the generated
-// interfaces, not edit the schema ("Do not change the proto; if it is wrong,
-// report that rather than editing it"). Until the package is renamed, this
-// constant supplies the "tau/" segment the doc's own anti-collision rule
-// requires, spelled out rather than mechanically walked off
-// authv1connect.ProjectServiceName (which carries the RPC *service* name,
-// "auth.v1.ProjectService" — one of five in this schema — not the proto
-// *package*).
-const Protocol = protocol.ID("/tau/auth/v1")
+// The "tau." prefix in that package is what keeps this off v1's "/auth/v1"
+// (services/common/names.go:5) for the whole span in which both run in one
+// swarm and one binary. It is not decoration: rpc.Listen refuses the second
+// listener with ErrProtocolTaken, and libp2p on its own would have silently
+// let it replace the first. The prefix was missing from the schema when this
+// package was written and this constant carried it by hand, with the drift
+// written out here; pkg/v2/proto's TestTheRulesBufCannotCheck now holds it
+// for every v2 package, reading v1's live ids out of names.go rather than
+// arguing that a collision is impossible.
+var Protocol = rpc.Protocol(authv1connect.ProjectServiceName)
 
 // Ingress states which side of the trust boundary a service is on
 // (service-conventions.md §5a).

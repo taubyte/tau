@@ -52,7 +52,7 @@ syntax = "proto3";
 // neither side buffers the full list to send or receive it. `Get` returns one
 // record by a key the caller already has, which is O(1) work regardless of
 // how large the store gets, so it has no such case to make and stays unary.
-package auth.v1;
+package tau.auth.v1;
 
 
 // Empty is the response for a call whose only interesting outcome is whether

@@ -160,7 +160,7 @@ func idsFromRows(rows []string, prefix, suffix string) ([]string, error) {
 // here; this is exactly what v1's p2p handlers did
 // (services/auth/api_hooks.go: `repokey.Parse("https://" + repoID)`), and it
 // is safe here for the same reason it was safe there: repository_key is
-// documented as carrying the canonical key (pkg/v2/proto/auth/v1/auth.proto's
+// documented as carrying the canonical key (pkg/v2/proto/tau/auth/v1/auth.proto's
 // IDENTITY section), not an arbitrary clone URL, so it never legitimately
 // carries a scheme of its own to collide with the one added here.
 func parseRepoKey(raw string) (repokey.Key, error) {

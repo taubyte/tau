@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1"
+	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
 )
 
 // HookService.Get is covered here as a direct call. .List needs a real

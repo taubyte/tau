@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: auth/v1/auth.proto
+// source: tau/auth/v1/auth.proto
 
 // auth's inter-service surface: what gateway, monkey/build, hoarder and every
 // other v2 service call ON auth over a gostream-carried ConnectRPC connection,
@@ -87,7 +87,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_auth_v1_auth_proto_msgTypes[0]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -99,7 +99,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[0]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -112,7 +112,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{0}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{0}
 }
 
 type Project struct {
@@ -135,7 +135,7 @@ type Project struct {
 
 func (x *Project) Reset() {
 	*x = Project{}
-	mi := &file_auth_v1_auth_proto_msgTypes[1]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -147,7 +147,7 @@ func (x *Project) String() string {
 func (*Project) ProtoMessage() {}
 
 func (x *Project) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[1]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -160,7 +160,7 @@ func (x *Project) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Project.ProtoReflect.Descriptor instead.
 func (*Project) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{1}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Project) GetId() string {
@@ -200,7 +200,7 @@ type ProjectRef struct {
 
 func (x *ProjectRef) Reset() {
 	*x = ProjectRef{}
-	mi := &file_auth_v1_auth_proto_msgTypes[2]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -212,7 +212,7 @@ func (x *ProjectRef) String() string {
 func (*ProjectRef) ProtoMessage() {}
 
 func (x *ProjectRef) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[2]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -225,7 +225,7 @@ func (x *ProjectRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectRef.ProtoReflect.Descriptor instead.
 func (*ProjectRef) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{2}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ProjectRef) GetId() string {
@@ -246,7 +246,7 @@ type CreateProjectRequest struct {
 
 func (x *CreateProjectRequest) Reset() {
 	*x = CreateProjectRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[3]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -258,7 +258,7 @@ func (x *CreateProjectRequest) String() string {
 func (*CreateProjectRequest) ProtoMessage() {}
 
 func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[3]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -271,7 +271,7 @@ func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProjectRequest.ProtoReflect.Descriptor instead.
 func (*CreateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{3}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CreateProjectRequest) GetName() string {
@@ -307,7 +307,7 @@ type CreateProjectResponse struct {
 
 func (x *CreateProjectResponse) Reset() {
 	*x = CreateProjectResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[4]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -319,7 +319,7 @@ func (x *CreateProjectResponse) String() string {
 func (*CreateProjectResponse) ProtoMessage() {}
 
 func (x *CreateProjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[4]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -332,7 +332,7 @@ func (x *CreateProjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProjectResponse.ProtoReflect.Descriptor instead.
 func (*CreateProjectResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{4}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CreateProjectResponse) GetId() string {
@@ -369,7 +369,7 @@ type Repository struct {
 
 func (x *Repository) Reset() {
 	*x = Repository{}
-	mi := &file_auth_v1_auth_proto_msgTypes[5]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -381,7 +381,7 @@ func (x *Repository) String() string {
 func (*Repository) ProtoMessage() {}
 
 func (x *Repository) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[5]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -394,7 +394,7 @@ func (x *Repository) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Repository.ProtoReflect.Descriptor instead.
 func (*Repository) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{5}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Repository) GetRepositoryKey() string {
@@ -427,7 +427,7 @@ type RepositoryRef struct {
 
 func (x *RepositoryRef) Reset() {
 	*x = RepositoryRef{}
-	mi := &file_auth_v1_auth_proto_msgTypes[6]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -439,7 +439,7 @@ func (x *RepositoryRef) String() string {
 func (*RepositoryRef) ProtoMessage() {}
 
 func (x *RepositoryRef) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[6]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -452,7 +452,7 @@ func (x *RepositoryRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepositoryRef.ProtoReflect.Descriptor instead.
 func (*RepositoryRef) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{6}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RepositoryRef) GetRepositoryKey() string {
@@ -480,7 +480,7 @@ type GithubHook struct {
 
 func (x *GithubHook) Reset() {
 	*x = GithubHook{}
-	mi := &file_auth_v1_auth_proto_msgTypes[7]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -492,7 +492,7 @@ func (x *GithubHook) String() string {
 func (*GithubHook) ProtoMessage() {}
 
 func (x *GithubHook) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[7]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -505,7 +505,7 @@ func (x *GithubHook) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GithubHook.ProtoReflect.Descriptor instead.
 func (*GithubHook) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{7}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GithubHook) GetId() string {
@@ -550,7 +550,7 @@ type BitbucketHook struct {
 
 func (x *BitbucketHook) Reset() {
 	*x = BitbucketHook{}
-	mi := &file_auth_v1_auth_proto_msgTypes[8]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -562,7 +562,7 @@ func (x *BitbucketHook) String() string {
 func (*BitbucketHook) ProtoMessage() {}
 
 func (x *BitbucketHook) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[8]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -575,7 +575,7 @@ func (x *BitbucketHook) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BitbucketHook.ProtoReflect.Descriptor instead.
 func (*BitbucketHook) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{8}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *BitbucketHook) GetId() string {
@@ -598,7 +598,7 @@ type Hook struct {
 
 func (x *Hook) Reset() {
 	*x = Hook{}
-	mi := &file_auth_v1_auth_proto_msgTypes[9]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -610,7 +610,7 @@ func (x *Hook) String() string {
 func (*Hook) ProtoMessage() {}
 
 func (x *Hook) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[9]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -623,7 +623,7 @@ func (x *Hook) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hook.ProtoReflect.Descriptor instead.
 func (*Hook) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{9}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Hook) GetHook() isHook_Hook {
@@ -676,7 +676,7 @@ type HookRef struct {
 
 func (x *HookRef) Reset() {
 	*x = HookRef{}
-	mi := &file_auth_v1_auth_proto_msgTypes[10]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -688,7 +688,7 @@ func (x *HookRef) String() string {
 func (*HookRef) ProtoMessage() {}
 
 func (x *HookRef) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[10]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -701,7 +701,7 @@ func (x *HookRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HookRef.ProtoReflect.Descriptor instead.
 func (*HookRef) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{10}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *HookRef) GetId() string {
@@ -721,7 +721,7 @@ type RegisterDomainRequest struct {
 
 func (x *RegisterDomainRequest) Reset() {
 	*x = RegisterDomainRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[11]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -733,7 +733,7 @@ func (x *RegisterDomainRequest) String() string {
 func (*RegisterDomainRequest) ProtoMessage() {}
 
 func (x *RegisterDomainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[11]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -746,7 +746,7 @@ func (x *RegisterDomainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterDomainRequest.ProtoReflect.Descriptor instead.
 func (*RegisterDomainRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{11}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RegisterDomainRequest) GetFqdn() string {
@@ -778,7 +778,7 @@ type RegisterDomainResponse struct {
 
 func (x *RegisterDomainResponse) Reset() {
 	*x = RegisterDomainResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[12]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -790,7 +790,7 @@ func (x *RegisterDomainResponse) String() string {
 func (*RegisterDomainResponse) ProtoMessage() {}
 
 func (x *RegisterDomainResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[12]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -803,7 +803,7 @@ func (x *RegisterDomainResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterDomainResponse.ProtoReflect.Descriptor instead.
 func (*RegisterDomainResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{12}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RegisterDomainResponse) GetToken() string {
@@ -851,7 +851,7 @@ type Certificate struct {
 
 func (x *Certificate) Reset() {
 	*x = Certificate{}
-	mi := &file_auth_v1_auth_proto_msgTypes[13]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -863,7 +863,7 @@ func (x *Certificate) String() string {
 func (*Certificate) ProtoMessage() {}
 
 func (x *Certificate) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[13]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -876,7 +876,7 @@ func (x *Certificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Certificate.ProtoReflect.Descriptor instead.
 func (*Certificate) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{13}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Certificate) GetPem() []byte {
@@ -895,7 +895,7 @@ type CacheEntry struct {
 
 func (x *CacheEntry) Reset() {
 	*x = CacheEntry{}
-	mi := &file_auth_v1_auth_proto_msgTypes[14]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -907,7 +907,7 @@ func (x *CacheEntry) String() string {
 func (*CacheEntry) ProtoMessage() {}
 
 func (x *CacheEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[14]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -920,7 +920,7 @@ func (x *CacheEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheEntry.ProtoReflect.Descriptor instead.
 func (*CacheEntry) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{14}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CacheEntry) GetData() []byte {
@@ -939,7 +939,7 @@ type FqdnRequest struct {
 
 func (x *FqdnRequest) Reset() {
 	*x = FqdnRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[15]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -951,7 +951,7 @@ func (x *FqdnRequest) String() string {
 func (*FqdnRequest) ProtoMessage() {}
 
 func (x *FqdnRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[15]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -964,7 +964,7 @@ func (x *FqdnRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FqdnRequest.ProtoReflect.Descriptor instead.
 func (*FqdnRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{15}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *FqdnRequest) GetFqdn() string {
@@ -984,7 +984,7 @@ type SetCertificateRequest struct {
 
 func (x *SetCertificateRequest) Reset() {
 	*x = SetCertificateRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[16]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -996,7 +996,7 @@ func (x *SetCertificateRequest) String() string {
 func (*SetCertificateRequest) ProtoMessage() {}
 
 func (x *SetCertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[16]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1009,7 +1009,7 @@ func (x *SetCertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCertificateRequest.ProtoReflect.Descriptor instead.
 func (*SetCertificateRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{16}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SetCertificateRequest) GetFqdn() string {
@@ -1035,7 +1035,7 @@ type CacheKeyRequest struct {
 
 func (x *CacheKeyRequest) Reset() {
 	*x = CacheKeyRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[17]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1047,7 +1047,7 @@ func (x *CacheKeyRequest) String() string {
 func (*CacheKeyRequest) ProtoMessage() {}
 
 func (x *CacheKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[17]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1060,7 +1060,7 @@ func (x *CacheKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheKeyRequest.ProtoReflect.Descriptor instead.
 func (*CacheKeyRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{17}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CacheKeyRequest) GetKey() string {
@@ -1080,7 +1080,7 @@ type SetCacheRequest struct {
 
 func (x *SetCacheRequest) Reset() {
 	*x = SetCacheRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[18]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1092,7 +1092,7 @@ func (x *SetCacheRequest) String() string {
 func (*SetCacheRequest) ProtoMessage() {}
 
 func (x *SetCacheRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[18]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1105,7 +1105,7 @@ func (x *SetCacheRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCacheRequest.ProtoReflect.Descriptor instead.
 func (*SetCacheRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{18}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SetCacheRequest) GetKey() string {
@@ -1122,11 +1122,11 @@ func (x *SetCacheRequest) GetData() []byte {
 	return nil
 }
 
-var File_auth_v1_auth_proto protoreflect.FileDescriptor
+var File_tau_auth_v1_auth_proto protoreflect.FileDescriptor
 
-const file_auth_v1_auth_proto_rawDesc = "" +
+const file_tau_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x12auth/v1/auth.proto\x12\aauth.v1\"\a\n" +
+	"\x16tau/auth/v1/auth.proto\x12\vtau.auth.v1\"\a\n" +
 	"\x05Empty\"\x91\x01\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -1159,10 +1159,10 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x06secret\x18\x03 \x01(\tR\x06secret\x12%\n" +
 	"\x0erepository_key\x18\x04 \x01(\tR\rrepositoryKey\"\x1f\n" +
 	"\rBitbucketHook\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"u\n" +
-	"\x04Hook\x12-\n" +
-	"\x06github\x18\x01 \x01(\v2\x13.auth.v1.GithubHookH\x00R\x06github\x126\n" +
-	"\tbitbucket\x18\x02 \x01(\v2\x16.auth.v1.BitbucketHookH\x00R\tbitbucketB\x06\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"}\n" +
+	"\x04Hook\x121\n" +
+	"\x06github\x18\x01 \x01(\v2\x17.tau.auth.v1.GithubHookH\x00R\x06github\x12:\n" +
+	"\tbitbucket\x18\x02 \x01(\v2\x1a.tau.auth.v1.BitbucketHookH\x00R\tbitbucketB\x06\n" +
 	"\x04hook\"\x19\n" +
 	"\aHookRef\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"J\n" +
@@ -1188,103 +1188,103 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\"7\n" +
 	"\x0fSetCacheRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data2\xb6\x01\n" +
-	"\x0eProjectService\x12,\n" +
-	"\x03Get\x12\x13.auth.v1.ProjectRef\x1a\x10.auth.v1.Project\x12-\n" +
-	"\x04List\x12\x0e.auth.v1.Empty\x1a\x13.auth.v1.ProjectRef0\x01\x12G\n" +
-	"\x06Create\x12\x1d.auth.v1.CreateProjectRequest\x1a\x1e.auth.v1.CreateProjectResponse2\xe3\x01\n" +
-	"\x11RepositoryService\x122\n" +
-	"\x03Get\x12\x16.auth.v1.RepositoryRef\x1a\x13.auth.v1.Repository\x120\n" +
-	"\x04List\x12\x0e.auth.v1.Empty\x1a\x16.auth.v1.RepositoryRef0\x01\x122\n" +
-	"\bRegister\x12\x16.auth.v1.RepositoryRef\x1a\x0e.auth.v1.Empty\x124\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data2\xce\x01\n" +
+	"\x0eProjectService\x124\n" +
+	"\x03Get\x12\x17.tau.auth.v1.ProjectRef\x1a\x14.tau.auth.v1.Project\x125\n" +
+	"\x04List\x12\x12.tau.auth.v1.Empty\x1a\x17.tau.auth.v1.ProjectRef0\x01\x12O\n" +
+	"\x06Create\x12!.tau.auth.v1.CreateProjectRequest\x1a\".tau.auth.v1.CreateProjectResponse2\x83\x02\n" +
+	"\x11RepositoryService\x12:\n" +
+	"\x03Get\x12\x1a.tau.auth.v1.RepositoryRef\x1a\x17.tau.auth.v1.Repository\x128\n" +
+	"\x04List\x12\x12.tau.auth.v1.Empty\x1a\x1a.tau.auth.v1.RepositoryRef0\x01\x12:\n" +
+	"\bRegister\x12\x1a.tau.auth.v1.RepositoryRef\x1a\x12.tau.auth.v1.Empty\x12<\n" +
 	"\n" +
-	"Unregister\x12\x16.auth.v1.RepositoryRef\x1a\x0e.auth.v1.Empty2a\n" +
-	"\vHookService\x12&\n" +
-	"\x03Get\x12\x10.auth.v1.HookRef\x1a\r.auth.v1.Hook\x12*\n" +
-	"\x04List\x12\x0e.auth.v1.Empty\x1a\x10.auth.v1.HookRef0\x012\\\n" +
-	"\rDomainService\x12K\n" +
-	"\bRegister\x12\x1e.auth.v1.RegisterDomainRequest\x1a\x1f.auth.v1.RegisterDomainResponse2\xca\x03\n" +
-	"\x12CertificateService\x12<\n" +
-	"\x0eGetCertificate\x12\x14.auth.v1.FqdnRequest\x1a\x14.auth.v1.Certificate\x12@\n" +
-	"\x0eSetCertificate\x12\x1e.auth.v1.SetCertificateRequest\x1a\x0e.auth.v1.Empty\x12B\n" +
-	"\x14GetStaticCertificate\x12\x14.auth.v1.FqdnRequest\x1a\x14.auth.v1.Certificate\x12F\n" +
-	"\x14SetStaticCertificate\x12\x1e.auth.v1.SetCertificateRequest\x1a\x0e.auth.v1.Empty\x129\n" +
-	"\bGetCache\x12\x18.auth.v1.CacheKeyRequest\x1a\x13.auth.v1.CacheEntry\x124\n" +
-	"\bSetCache\x12\x18.auth.v1.SetCacheRequest\x1a\x0e.auth.v1.Empty\x127\n" +
-	"\vDeleteCache\x12\x18.auth.v1.CacheKeyRequest\x1a\x0e.auth.v1.EmptyB\x8d\x01\n" +
-	"\vcom.auth.v1B\tAuthProtoP\x01Z6github.com/taubyte/tau/pkg/v2/proto/gen/auth/v1;authv1\xa2\x02\x03AXX\xaa\x02\aAuth.V1\xca\x02\aAuth\\V1\xe2\x02\x13Auth\\V1\\GPBMetadata\xea\x02\bAuth::V1b\x06proto3"
+	"Unregister\x12\x1a.tau.auth.v1.RepositoryRef\x1a\x12.tau.auth.v1.Empty2q\n" +
+	"\vHookService\x12.\n" +
+	"\x03Get\x12\x14.tau.auth.v1.HookRef\x1a\x11.tau.auth.v1.Hook\x122\n" +
+	"\x04List\x12\x12.tau.auth.v1.Empty\x1a\x14.tau.auth.v1.HookRef0\x012d\n" +
+	"\rDomainService\x12S\n" +
+	"\bRegister\x12\".tau.auth.v1.RegisterDomainRequest\x1a#.tau.auth.v1.RegisterDomainResponse2\x82\x04\n" +
+	"\x12CertificateService\x12D\n" +
+	"\x0eGetCertificate\x12\x18.tau.auth.v1.FqdnRequest\x1a\x18.tau.auth.v1.Certificate\x12H\n" +
+	"\x0eSetCertificate\x12\".tau.auth.v1.SetCertificateRequest\x1a\x12.tau.auth.v1.Empty\x12J\n" +
+	"\x14GetStaticCertificate\x12\x18.tau.auth.v1.FqdnRequest\x1a\x18.tau.auth.v1.Certificate\x12N\n" +
+	"\x14SetStaticCertificate\x12\".tau.auth.v1.SetCertificateRequest\x1a\x12.tau.auth.v1.Empty\x12A\n" +
+	"\bGetCache\x12\x1c.tau.auth.v1.CacheKeyRequest\x1a\x17.tau.auth.v1.CacheEntry\x12<\n" +
+	"\bSetCache\x12\x1c.tau.auth.v1.SetCacheRequest\x1a\x12.tau.auth.v1.Empty\x12?\n" +
+	"\vDeleteCache\x12\x1c.tau.auth.v1.CacheKeyRequest\x1a\x12.tau.auth.v1.EmptyB\xa6\x01\n" +
+	"\x0fcom.tau.auth.v1B\tAuthProtoP\x01Z:github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1;authv1\xa2\x02\x03TAX\xaa\x02\vTau.Auth.V1\xca\x02\vTau\\Auth\\V1\xe2\x02\x17Tau\\Auth\\V1\\GPBMetadata\xea\x02\rTau::Auth::V1b\x06proto3"
 
 var (
-	file_auth_v1_auth_proto_rawDescOnce sync.Once
-	file_auth_v1_auth_proto_rawDescData []byte
+	file_tau_auth_v1_auth_proto_rawDescOnce sync.Once
+	file_tau_auth_v1_auth_proto_rawDescData []byte
 )
 
-func file_auth_v1_auth_proto_rawDescGZIP() []byte {
-	file_auth_v1_auth_proto_rawDescOnce.Do(func() {
-		file_auth_v1_auth_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_auth_v1_auth_proto_rawDesc), len(file_auth_v1_auth_proto_rawDesc)))
+func file_tau_auth_v1_auth_proto_rawDescGZIP() []byte {
+	file_tau_auth_v1_auth_proto_rawDescOnce.Do(func() {
+		file_tau_auth_v1_auth_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_tau_auth_v1_auth_proto_rawDesc), len(file_tau_auth_v1_auth_proto_rawDesc)))
 	})
-	return file_auth_v1_auth_proto_rawDescData
+	return file_tau_auth_v1_auth_proto_rawDescData
 }
 
-var file_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
-var file_auth_v1_auth_proto_goTypes = []any{
-	(*Empty)(nil),                  // 0: auth.v1.Empty
-	(*Project)(nil),                // 1: auth.v1.Project
-	(*ProjectRef)(nil),             // 2: auth.v1.ProjectRef
-	(*CreateProjectRequest)(nil),   // 3: auth.v1.CreateProjectRequest
-	(*CreateProjectResponse)(nil),  // 4: auth.v1.CreateProjectResponse
-	(*Repository)(nil),             // 5: auth.v1.Repository
-	(*RepositoryRef)(nil),          // 6: auth.v1.RepositoryRef
-	(*GithubHook)(nil),             // 7: auth.v1.GithubHook
-	(*BitbucketHook)(nil),          // 8: auth.v1.BitbucketHook
-	(*Hook)(nil),                   // 9: auth.v1.Hook
-	(*HookRef)(nil),                // 10: auth.v1.HookRef
-	(*RegisterDomainRequest)(nil),  // 11: auth.v1.RegisterDomainRequest
-	(*RegisterDomainResponse)(nil), // 12: auth.v1.RegisterDomainResponse
-	(*Certificate)(nil),            // 13: auth.v1.Certificate
-	(*CacheEntry)(nil),             // 14: auth.v1.CacheEntry
-	(*FqdnRequest)(nil),            // 15: auth.v1.FqdnRequest
-	(*SetCertificateRequest)(nil),  // 16: auth.v1.SetCertificateRequest
-	(*CacheKeyRequest)(nil),        // 17: auth.v1.CacheKeyRequest
-	(*SetCacheRequest)(nil),        // 18: auth.v1.SetCacheRequest
+var file_tau_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_tau_auth_v1_auth_proto_goTypes = []any{
+	(*Empty)(nil),                  // 0: tau.auth.v1.Empty
+	(*Project)(nil),                // 1: tau.auth.v1.Project
+	(*ProjectRef)(nil),             // 2: tau.auth.v1.ProjectRef
+	(*CreateProjectRequest)(nil),   // 3: tau.auth.v1.CreateProjectRequest
+	(*CreateProjectResponse)(nil),  // 4: tau.auth.v1.CreateProjectResponse
+	(*Repository)(nil),             // 5: tau.auth.v1.Repository
+	(*RepositoryRef)(nil),          // 6: tau.auth.v1.RepositoryRef
+	(*GithubHook)(nil),             // 7: tau.auth.v1.GithubHook
+	(*BitbucketHook)(nil),          // 8: tau.auth.v1.BitbucketHook
+	(*Hook)(nil),                   // 9: tau.auth.v1.Hook
+	(*HookRef)(nil),                // 10: tau.auth.v1.HookRef
+	(*RegisterDomainRequest)(nil),  // 11: tau.auth.v1.RegisterDomainRequest
+	(*RegisterDomainResponse)(nil), // 12: tau.auth.v1.RegisterDomainResponse
+	(*Certificate)(nil),            // 13: tau.auth.v1.Certificate
+	(*CacheEntry)(nil),             // 14: tau.auth.v1.CacheEntry
+	(*FqdnRequest)(nil),            // 15: tau.auth.v1.FqdnRequest
+	(*SetCertificateRequest)(nil),  // 16: tau.auth.v1.SetCertificateRequest
+	(*CacheKeyRequest)(nil),        // 17: tau.auth.v1.CacheKeyRequest
+	(*SetCacheRequest)(nil),        // 18: tau.auth.v1.SetCacheRequest
 }
-var file_auth_v1_auth_proto_depIdxs = []int32{
-	7,  // 0: auth.v1.Hook.github:type_name -> auth.v1.GithubHook
-	8,  // 1: auth.v1.Hook.bitbucket:type_name -> auth.v1.BitbucketHook
-	2,  // 2: auth.v1.ProjectService.Get:input_type -> auth.v1.ProjectRef
-	0,  // 3: auth.v1.ProjectService.List:input_type -> auth.v1.Empty
-	3,  // 4: auth.v1.ProjectService.Create:input_type -> auth.v1.CreateProjectRequest
-	6,  // 5: auth.v1.RepositoryService.Get:input_type -> auth.v1.RepositoryRef
-	0,  // 6: auth.v1.RepositoryService.List:input_type -> auth.v1.Empty
-	6,  // 7: auth.v1.RepositoryService.Register:input_type -> auth.v1.RepositoryRef
-	6,  // 8: auth.v1.RepositoryService.Unregister:input_type -> auth.v1.RepositoryRef
-	10, // 9: auth.v1.HookService.Get:input_type -> auth.v1.HookRef
-	0,  // 10: auth.v1.HookService.List:input_type -> auth.v1.Empty
-	11, // 11: auth.v1.DomainService.Register:input_type -> auth.v1.RegisterDomainRequest
-	15, // 12: auth.v1.CertificateService.GetCertificate:input_type -> auth.v1.FqdnRequest
-	16, // 13: auth.v1.CertificateService.SetCertificate:input_type -> auth.v1.SetCertificateRequest
-	15, // 14: auth.v1.CertificateService.GetStaticCertificate:input_type -> auth.v1.FqdnRequest
-	16, // 15: auth.v1.CertificateService.SetStaticCertificate:input_type -> auth.v1.SetCertificateRequest
-	17, // 16: auth.v1.CertificateService.GetCache:input_type -> auth.v1.CacheKeyRequest
-	18, // 17: auth.v1.CertificateService.SetCache:input_type -> auth.v1.SetCacheRequest
-	17, // 18: auth.v1.CertificateService.DeleteCache:input_type -> auth.v1.CacheKeyRequest
-	1,  // 19: auth.v1.ProjectService.Get:output_type -> auth.v1.Project
-	2,  // 20: auth.v1.ProjectService.List:output_type -> auth.v1.ProjectRef
-	4,  // 21: auth.v1.ProjectService.Create:output_type -> auth.v1.CreateProjectResponse
-	5,  // 22: auth.v1.RepositoryService.Get:output_type -> auth.v1.Repository
-	6,  // 23: auth.v1.RepositoryService.List:output_type -> auth.v1.RepositoryRef
-	0,  // 24: auth.v1.RepositoryService.Register:output_type -> auth.v1.Empty
-	0,  // 25: auth.v1.RepositoryService.Unregister:output_type -> auth.v1.Empty
-	9,  // 26: auth.v1.HookService.Get:output_type -> auth.v1.Hook
-	10, // 27: auth.v1.HookService.List:output_type -> auth.v1.HookRef
-	12, // 28: auth.v1.DomainService.Register:output_type -> auth.v1.RegisterDomainResponse
-	13, // 29: auth.v1.CertificateService.GetCertificate:output_type -> auth.v1.Certificate
-	0,  // 30: auth.v1.CertificateService.SetCertificate:output_type -> auth.v1.Empty
-	13, // 31: auth.v1.CertificateService.GetStaticCertificate:output_type -> auth.v1.Certificate
-	0,  // 32: auth.v1.CertificateService.SetStaticCertificate:output_type -> auth.v1.Empty
-	14, // 33: auth.v1.CertificateService.GetCache:output_type -> auth.v1.CacheEntry
-	0,  // 34: auth.v1.CertificateService.SetCache:output_type -> auth.v1.Empty
-	0,  // 35: auth.v1.CertificateService.DeleteCache:output_type -> auth.v1.Empty
+var file_tau_auth_v1_auth_proto_depIdxs = []int32{
+	7,  // 0: tau.auth.v1.Hook.github:type_name -> tau.auth.v1.GithubHook
+	8,  // 1: tau.auth.v1.Hook.bitbucket:type_name -> tau.auth.v1.BitbucketHook
+	2,  // 2: tau.auth.v1.ProjectService.Get:input_type -> tau.auth.v1.ProjectRef
+	0,  // 3: tau.auth.v1.ProjectService.List:input_type -> tau.auth.v1.Empty
+	3,  // 4: tau.auth.v1.ProjectService.Create:input_type -> tau.auth.v1.CreateProjectRequest
+	6,  // 5: tau.auth.v1.RepositoryService.Get:input_type -> tau.auth.v1.RepositoryRef
+	0,  // 6: tau.auth.v1.RepositoryService.List:input_type -> tau.auth.v1.Empty
+	6,  // 7: tau.auth.v1.RepositoryService.Register:input_type -> tau.auth.v1.RepositoryRef
+	6,  // 8: tau.auth.v1.RepositoryService.Unregister:input_type -> tau.auth.v1.RepositoryRef
+	10, // 9: tau.auth.v1.HookService.Get:input_type -> tau.auth.v1.HookRef
+	0,  // 10: tau.auth.v1.HookService.List:input_type -> tau.auth.v1.Empty
+	11, // 11: tau.auth.v1.DomainService.Register:input_type -> tau.auth.v1.RegisterDomainRequest
+	15, // 12: tau.auth.v1.CertificateService.GetCertificate:input_type -> tau.auth.v1.FqdnRequest
+	16, // 13: tau.auth.v1.CertificateService.SetCertificate:input_type -> tau.auth.v1.SetCertificateRequest
+	15, // 14: tau.auth.v1.CertificateService.GetStaticCertificate:input_type -> tau.auth.v1.FqdnRequest
+	16, // 15: tau.auth.v1.CertificateService.SetStaticCertificate:input_type -> tau.auth.v1.SetCertificateRequest
+	17, // 16: tau.auth.v1.CertificateService.GetCache:input_type -> tau.auth.v1.CacheKeyRequest
+	18, // 17: tau.auth.v1.CertificateService.SetCache:input_type -> tau.auth.v1.SetCacheRequest
+	17, // 18: tau.auth.v1.CertificateService.DeleteCache:input_type -> tau.auth.v1.CacheKeyRequest
+	1,  // 19: tau.auth.v1.ProjectService.Get:output_type -> tau.auth.v1.Project
+	2,  // 20: tau.auth.v1.ProjectService.List:output_type -> tau.auth.v1.ProjectRef
+	4,  // 21: tau.auth.v1.ProjectService.Create:output_type -> tau.auth.v1.CreateProjectResponse
+	5,  // 22: tau.auth.v1.RepositoryService.Get:output_type -> tau.auth.v1.Repository
+	6,  // 23: tau.auth.v1.RepositoryService.List:output_type -> tau.auth.v1.RepositoryRef
+	0,  // 24: tau.auth.v1.RepositoryService.Register:output_type -> tau.auth.v1.Empty
+	0,  // 25: tau.auth.v1.RepositoryService.Unregister:output_type -> tau.auth.v1.Empty
+	9,  // 26: tau.auth.v1.HookService.Get:output_type -> tau.auth.v1.Hook
+	10, // 27: tau.auth.v1.HookService.List:output_type -> tau.auth.v1.HookRef
+	12, // 28: tau.auth.v1.DomainService.Register:output_type -> tau.auth.v1.RegisterDomainResponse
+	13, // 29: tau.auth.v1.CertificateService.GetCertificate:output_type -> tau.auth.v1.Certificate
+	0,  // 30: tau.auth.v1.CertificateService.SetCertificate:output_type -> tau.auth.v1.Empty
+	13, // 31: tau.auth.v1.CertificateService.GetStaticCertificate:output_type -> tau.auth.v1.Certificate
+	0,  // 32: tau.auth.v1.CertificateService.SetStaticCertificate:output_type -> tau.auth.v1.Empty
+	14, // 33: tau.auth.v1.CertificateService.GetCache:output_type -> tau.auth.v1.CacheEntry
+	0,  // 34: tau.auth.v1.CertificateService.SetCache:output_type -> tau.auth.v1.Empty
+	0,  // 35: tau.auth.v1.CertificateService.DeleteCache:output_type -> tau.auth.v1.Empty
 	19, // [19:36] is the sub-list for method output_type
 	2,  // [2:19] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
@@ -1292,12 +1292,12 @@ var file_auth_v1_auth_proto_depIdxs = []int32{
 	0,  // [0:2] is the sub-list for field type_name
 }
 
-func init() { file_auth_v1_auth_proto_init() }
-func file_auth_v1_auth_proto_init() {
-	if File_auth_v1_auth_proto != nil {
+func init() { file_tau_auth_v1_auth_proto_init() }
+func file_tau_auth_v1_auth_proto_init() {
+	if File_tau_auth_v1_auth_proto != nil {
 		return
 	}
-	file_auth_v1_auth_proto_msgTypes[9].OneofWrappers = []any{
+	file_tau_auth_v1_auth_proto_msgTypes[9].OneofWrappers = []any{
 		(*Hook_Github)(nil),
 		(*Hook_Bitbucket)(nil),
 	}
@@ -1305,17 +1305,17 @@ func file_auth_v1_auth_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_auth_v1_auth_proto_rawDesc), len(file_auth_v1_auth_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_auth_v1_auth_proto_rawDesc), len(file_tau_auth_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   5,
 		},
-		GoTypes:           file_auth_v1_auth_proto_goTypes,
-		DependencyIndexes: file_auth_v1_auth_proto_depIdxs,
-		MessageInfos:      file_auth_v1_auth_proto_msgTypes,
+		GoTypes:           file_tau_auth_v1_auth_proto_goTypes,
+		DependencyIndexes: file_tau_auth_v1_auth_proto_depIdxs,
+		MessageInfos:      file_tau_auth_v1_auth_proto_msgTypes,
 	}.Build()
-	File_auth_v1_auth_proto = out.File
-	file_auth_v1_auth_proto_goTypes = nil
-	file_auth_v1_auth_proto_depIdxs = nil
+	File_tau_auth_v1_auth_proto = out.File
+	file_tau_auth_v1_auth_proto_goTypes = nil
+	file_tau_auth_v1_auth_proto_depIdxs = nil
 }
