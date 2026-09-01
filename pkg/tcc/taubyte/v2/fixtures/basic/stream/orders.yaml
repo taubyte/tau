@@ -1,5 +1,7 @@
 id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz
 match: orders
+distributed:
+    local: false
 function:
     checkout:
         ops: [invoke]

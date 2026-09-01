@@ -23,9 +23,9 @@ import (
 //   - THE ACCESS BLOCK — `ops` is a capability. `ops_preview: [put]` is preview writing
 //     where production reads.
 //   - CONTRACTS — a cron's `schedule` (and `schedule_preview: "0 0 30 2 *"` is the
-//     off-switch somebody would write instead of asking for one), a channel's `match`,
+//     off-switch somebody would write instead of asking for one), a stream's `match`,
 //     a route's `path`, a workflow's `start` and `on_error`, a zone's `records`.
-//   - SHAPES — `vector/dimensions` and an agent's `memory/dimensions`: an index built
+//   - SHAPES — `database/vector/dimensions` and an agent's `memory/dimensions`: an index built
 //     at another width is not the same index. `agent/sessions/size`, because whether it
 //     is written decides whether the lowering produces an entity at all — that is
 //     topology, not sizing.
@@ -47,8 +47,12 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"application/image", "application/limits/concurrency",
 		"application/limits/max_instances", "application/value",
 		"cache/size", "cache/ttl",
-		"database/engine/database", "database/engine/distributed/size",
-		"database/engine/host", "database/engine/tls",
+		"database/document/database", "database/document/host",
+		"database/document/size", "database/document/tls",
+		"database/kv/size",
+		"database/sql/database", "database/sql/host",
+		"database/sql/size", "database/sql/tls",
+		"database/vector/size",
 		"entity/egress", "entity/execution/cpu", "entity/execution/memory",
 		"entity/execution/timeout", "entity/size", "entity/value",
 		"function/egress", "function/execution/cpu", "function/execution/memory",
@@ -66,7 +70,7 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"sandbox/image", "sandbox/lifetime/idle", "sandbox/lifetime/max",
 		"sandbox/value",
 		"storage/size", "storage/streaming/ttl",
-		"vector/size",
+		"stream/host", "stream/tls",
 		"volume/checkpoint/interval", "volume/checkpoint/rpo_budget", "volume/quota",
 		"worker/egress", "worker/execution/cpu",
 		"worker/execution/memory", "worker/execution/timeout", "worker/image",

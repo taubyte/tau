@@ -19,6 +19,12 @@ storage:
 secret:
     stripe:
         ops: [get]
-channel:
+stream:
     orders:
         ops: [publish]
+database:
+    tokens:
+        ops: [get, put]
+log:
+    audit:
+        ops: [append]

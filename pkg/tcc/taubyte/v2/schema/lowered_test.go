@@ -36,7 +36,7 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 	}
 	// the agent's loop and its memory, from the other lowering in the vocabulary
 	assert.Assert(t, hasResource(flat, "function", "support_infer"))
-	assert.Assert(t, hasResource(flat, "vector", "support_memory"))
+	assert.Assert(t, hasResource(flat, "database", "support_memory"))
 
 	// A PRODUCED RESOURCE IS AN ORDINARY RESOURCE. It went through the same pipeline, so
 	// `max-attempts` is a number and its dead-letter reference resolved to an id like
@@ -105,7 +105,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	}
 	assert.Equal(t, kinds["queue"], 4)
 	assert.Equal(t, kinds["function"], 3, "a driver per step, whatever the step does")
-	assert.Equal(t, kinds["channel"], 0, "nothing authored asked for a channel")
+	assert.Equal(t, kinds["stream"], 0, "nothing authored asked for a stream")
 	assert.Equal(t, kinds["group"], 0)
 	assert.Equal(t, kinds["namespace"], 0)
 
@@ -442,7 +442,7 @@ func TestAnEntryLandsOnAProducedResource(t *testing.T) {
 	assert.NilError(t, err)
 
 	loop := resource(t, obj.Flat(), "function", "support_infer")
-	vectors, _ := loop["vector"].(map[string]any)
+	vectors, _ := loop["database"].(map[string]any)
 	assert.Assert(t, vectors != nil, "the loop declares no vector access at all: %v", loop)
 	entry, _ := vectors["support_memory"].(map[string]any)
 	assert.Assert(t, entry != nil, "nothing says the loop searches the memory: %v", vectors)

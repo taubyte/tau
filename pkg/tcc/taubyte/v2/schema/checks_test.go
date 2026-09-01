@@ -474,3 +474,109 @@ func TestATargetWithNoNameIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// THE VERB SET IS THE TYPE'S, AND THE UNION IS ONLY WHAT THE LOADER CAN HOLD IT TO.
+//
+// `database` declares nine verbs because it holds four data models, and an access block
+// is loaded before anything knows which database an entry names. That is not a hole in
+// the per-kind verb rule; it moves the question to where the target is known. This is
+// the test that says so: the same document that COMPILES is the one the audit refuses,
+// so it pins both halves at once — take the check out and the first assertion still
+// passes, which is exactly the failure this is here to catch.
+func TestDatabaseOpsAreItsTypesNotTheUnion(t *testing.T) {
+	const fn = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
+	kv := "id: QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfF\nkv:\n    distributed:\n        size: 1MB\n"
+	vec := "id: QmRZ1J1ZmVsGKvBFZoScNoGCzMwrDGHqxYAgqK7QsWpZbb\nvector:\n    dimensions: 8\n    distributed:\n        size: 1MB\n"
+
+	// A kv store asked to run SQL. Both words are real verbs of the KIND, so nothing
+	// at load has anything to say about it.
+	found := auditDocs(t, nil, map[string]string{
+		"/database/tokens.yaml": kv,
+		"/function/f.yaml":      fn + "database:\n    tokens:\n        ops: [get, query]\n",
+	})
+	has(t, found, schema.Broken, "asks to query database/tokens, which is a kv database and has get, list, watch, put, delete")
+
+	// …and the ops that ARE the type's raise nothing.
+	found = auditDocs(t, nil, map[string]string{
+		"/database/tokens.yaml": kv,
+		"/function/f.yaml":      fn + "database:\n    tokens:\n        ops: [get, list, watch, put, delete]\n",
+	})
+	hasNo(t, found, "which is a kv database")
+
+	// Every type answers for itself, so the check is not a kv special case.
+	found = auditDocs(t, nil, map[string]string{
+		"/database/mem.yaml": vec,
+		"/function/f.yaml":   fn + "database:\n    mem:\n        ops: [search, exec]\n",
+	})
+	has(t, found, schema.Broken, "asks to exec database/mem, which is a vector database and has search, upsert, delete")
+	hasNo(t, found, "asks to search")
+
+	// A TARGET IN ANOTHER SCOPE resolves the way every other reference does, and both
+	// directions matter: a written namespace, and the outward walk a bare name takes.
+	// Without them the check quietly stops applying the moment a project has
+	// namespaces — which is also every project a lowering has produced into, since a
+	// lowered resource lives in a scope of its own.
+	const meta = "id: QmPChzsSKcAiSFqNqrH7LM4t9GhqfHmi3ihn7C9hNc8Vg1\nname: billing\n"
+	found = auditDocs(t, nil, map[string]string{
+		"/namespace/billing/meta.yaml":           meta,
+		"/namespace/billing/database/books.yaml": kv,
+		"/function/f.yaml":                       fn + "database:\n    books:\n        namespace: /billing\n        ops: [search]\n",
+	})
+	has(t, found, schema.Broken, "asks to search database/books, which is a kv database")
+
+	found = auditDocs(t, nil, map[string]string{
+		"/namespace/billing/meta.yaml":       meta,
+		"/namespace/billing/function/g.yaml": fn + "database:\n    tokens:\n        ops: [exec]\n",
+		"/database/tokens.yaml":              kv,
+	})
+	has(t, found, schema.Broken, "asks to exec database/tokens, which is a kv database")
+
+	// A verb NO type declares is refused a level earlier, at load, by the kind's own
+	// enum — so the two halves cover different mistakes rather than overlapping.
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/database/tokens.yaml", []byte(kv), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
+		[]byte(fn+"database:\n    tokens:\n        ops: [fetch]\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, `"fetch" is not something a database does`)
+}
+
+// AND IT COVERS WHAT A LOWERING WROTE. An agent's memory is a vector database nobody
+// authored, reached by a function nobody authored, with an entry nobody authored — and
+// all three are in the compiled object, so the same pass checks them. A lowering that
+// asked for the wrong verb would be a fault in something an author cannot edit, which
+// is the case worth having a test for.
+func TestALoweredDatabaseEntryIsCheckedToo(t *testing.T) {
+	docs := map[string]string{
+		"/secret/k.yaml":   "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n",
+		"/model/opus.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nidentifier: x\nformat: openai\ninference:\n    remote:\n        endpoint: https://api.example.com\n        credentials:\n            name: k\n",
+		"/agent/a.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Za\n" +
+			"model:\n    name: opus\nlimits:\n    steps: 4\n" +
+			"memory:\n    embedder:\n        name: opus\n    dimensions: 8\n    size: 1MB\n",
+	}
+
+	// There IS a lowered entry to check: without this the assertion below passes for
+	// the wrong reason, on a project where nothing produced a database at all.
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	for path, body := range docs {
+		assert.NilError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
+	}
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	memory := resource(t, obj.Flat(), "database", "a_memory")
+	assert.Equal(t, memory["type"], "vector", "the lowering picked the block, not a `type:` line")
+	assert.Equal(t, nested(memory, "vector", "dimensions"), 8)
+	assert.Equal(t, nested(memory, "vector", "size"), int64(1000000))
+	loop := resource(t, obj.Flat(), "function", "a_infer")
+	assert.DeepEqual(t, loop["database"].(map[string]any)["a_memory"].(map[string]any)["ops"], []string{"search"})
+
+	hasNo(t, schema.Audit(obj.Flat(), nil), "which is a vector database")
+}

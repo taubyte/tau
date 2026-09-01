@@ -14,7 +14,11 @@ function:
     relay:
         namespace: eu
         ops: [invoke]
-channel:
+stream:
     orders:
         namespace: /
         ops: [subscribe]
+bus:
+    chat:
+        namespace: /
+        ops: [publish]

@@ -7,12 +7,14 @@
 //
 //   - The function trigger block is GONE. A function declares nothing about how it
 //     is reached; reachability is an inbound edge authored on the domain, gateway,
-//     channel, p2p service or cron that reaches it. Same for a website's
+//     stream, channel or cron that reaches it. Same for a website's
 //     domains/paths. ".notes/v2/resources.md" §1.3, §1.5.
 //   - smartops is deleted. Policy is `authorizers` (request-scoped, per-edge);
 //     limits are platform-enforced at dispatch. "resources.md" Deletions.
-//   - `databases` -> `kv`, `libraries` -> `component`. `database` beside `sql` is a
-//     permanent support cost.
+//   - `libraries` -> `component`. `databases` stayed `database` and grew a `type`:
+//     kv, document, sql and vector are data models of one kind rather than four kinds,
+//     because what differs between them is the verb set and the engine, both of which
+//     the kind can state.
 //   - `notification.email` is deleted: inert since it was added, read nowhere.
 //   - The scope container is `namespaces`, not `applications`. `applications` was
 //     v1's word for a scope; in v2 it is the container compute kind, and the scope
@@ -29,6 +31,7 @@ package schema
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -455,10 +458,19 @@ var secInstances = Section("instances", "Instances", "Whether this holds one ins
 // could not complain either, because a kind no route can name is not one it checks.
 var handlerKinds = []string{"function", "application", "website", "gateway", "mcp", "agent"}
 
-// streamServerKinds are what may answer a stream. A container gets the bytes on one of
-// its own ports; a function is dispatched with the stream in hand. Both are real, and
+// externalStreamEngines are the pubsub clusters reached over the network, and
+// streamEngines is those plus tau's own. Closed, for the same reason a database's are:
+// each one is a wire protocol and a client library, which is a release rather than a
+// config value, and a closed set is what makes naming a non-pubsub here impossible
+// rather than merely wrong.
+var externalStreamEngines = []string{"kafka", "nats"}
+
+var streamEngines = append([]string{tauEngine}, externalStreamEngines...)
+
+// channelServerKinds are what may answer a channel. A container gets the bytes on one of
+// its own ports; a function is dispatched with the connection in hand. Both are real, and
 // nothing else is: a website is HTTP by definition and a gateway is an ingress.
-var streamServerKinds = []string{"application", "function"}
+var channelServerKinds = []string{"application", "function"}
 
 // proxyHandlerKinds are what may sit behind an L4 proxy. Only a container: a raw
 // connection is held open and streamed, and a function is request-and-answer with no
@@ -523,13 +535,292 @@ func hostAttributes(section string) []*Attribute {
 	}
 }
 
-// externalDatabaseEngines are the database servers reachable over the network, and
-// databaseEngines is those plus tau's own. Closed, because each one is a wire protocol
-// and a driver — adding one is a release, not a config value — and because a closed set
-// is what makes naming a non-database here impossible rather than merely wrong.
-var externalDatabaseEngines = []string{"postgres", "mysql"}
+// A DATABASE ANSWERS TWO QUESTIONS, AND IT USED TO BE ASKED ONE.
+//
+// What DATA MODEL it is — keys and values, documents, SQL, vectors — and WHICH ENGINE
+// backs it. The two are independent: tau's own engine serves all four, and somebody
+// else's Postgres, MySQL or Mongo serves the ones that have an external product. Asking
+// only the second question is what left `kv` unauthorable — a durable key-value store
+// had no word in this vocabulary and the nearest thing was `cache`, whose own
+// documentation says it is not a system of record — while `vector` became a KIND of its
+// own for no reason except that its verbs differ, which is a property of the data model
+// and not of the resource.
+//
+// So the document names the type, and the type block names the engine:
+//
+//	sql:                                kv:
+//	    postgres:                           distributed:
+//	        host: db.example.com                size: 32MB
+//	        credentials: { name: pg }
+//
+// A WRONG PAIR IS UNREPRESENTABLE, which is the property the old shape had and the one
+// thing that could not be given up. `engine: kafka` was refused because the engine is a
+// KEY from a closed set rather than a string or a reference to a `connector`; a document
+// database on Postgres is refused by the same check, because the set of engine keys is
+// declared PER TYPE:
+//
+//	unknown key 'postgres'; valid keys here: distributed, mongo
+//
+// One `engine:` key beside one `type:` key could not have done that — each value is
+// legal on its own and only the pair is wrong, which is a rule somebody has to remember
+// to write and a document that compiles until they do. The cost is that the engine is
+// four keys rather than one (`kv/engine`, `sql/engine`, …), read as `<type>/engine`;
+// that is the same shape `storage` already has, where `object` and `streaming` each own
+// their block.
 
-var databaseEngines = append([]string{"distributed"}, externalDatabaseEngines...)
+// tauEngine is tau's own. On a database it is pkg/kvdb, a Merkle-CRDT replicated by the
+// storage service; on a stream it is the swarm's own gossipsub. It is the one engine
+// every kind with an engine axis has, and the only one that needs no external system.
+const tauEngine = "distributed"
+
+// externalEngineAttributes is the connection an engine reached over the network carries,
+// and it is ONE helper because a database's Postgres and a stream's Kafka are the same
+// three facts: where it is, which secret opens it, and how the wire is protected. It was
+// written twice before it was written once, and the two copies had already drifted — a
+// database's credential reference had its namespace outside the engine branch and its
+// name inside, which is one reference authored in two places.
+//
+// `at` is the path the engine block hangs off — a database's TYPE block, or nothing at
+// all for a kind whose only axis IS the engine — and `named` is the same prefix for the
+// compiled keys, which need not be the authored path. `switchKey` is the Captures()
+// attribute that says which branch was taken, because "required for an external engine"
+// is a condition on that and nothing else.
+//
+// A field only one caller needs is that caller's to append. A database has a `database`
+// name within the server; a stream has no such thing, and a helper that emitted one
+// anyway would be putting an inert key on every stream.
+func externalEngineAttributes(at []StringMatch, named []string, engines []string, switchKey AKey, section string, shown AttrOption) []*Attribute {
+	key := func(rest ...string) AKey { return Key(append(append([]string{}, named...), rest...)...) }
+	path := func(rest ...string) AttrOption {
+		p := append(append([]StringMatch{}, at...), Either(engines...))
+		for _, r := range rest {
+			p = append(p, r)
+		}
+		return Path(p...)
+	}
+	return []*Attribute{
+		String(key("host"), path("host"), RequiredWhen(switchKey, engines...), PerEnv(), InSection(section), shown,
+			Doc("Host", "Where the external server is reached, as host or host:port.")),
+		String(key("credentials", "namespace"), path("credentials", "namespace"), IsNamespacePath(), InSection(section), shown,
+			Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
+		String(key("credentials", "name"), path("credentials", "name"), IsVariableName(), Ref("secret", Inbound()),
+			RequiredWhen(switchKey, engines...), InSection(section), shown,
+			Doc("Credentials", "Secret holding the credentials to connect with, as \"secret/<name>\".")),
+
+		// SAFE BY DEFAULT, EXPLICIT TO WEAKEN: absent means verify-full, and an author
+		// who wants credentials on the wire in the clear has to write `disable` and see
+		// the word. Deliberately not RequiredWhen: a value here is a WEAKENING, so the
+		// safe state has to be the one an author reaches by writing nothing.
+		String(key("tls"), path("tls"), InSet("verify-full", "require", "disable"), PerEnv(), InSection(section), shown,
+			Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included.")),
+	}
+}
+
+// databaseType is one data model. ONE TABLE, because five things read it — the type
+// switch's Either, each type's engine Either, the kind's Ops(), the audit that refuses
+// an op the target's type does not have, and the JSON Schema an editor completes from —
+// and a second list of any of them drifts the day a type is added.
+type databaseType struct {
+	name string
+	// external is the servers that speak this model over the network. Closed for the
+	// same reason the engine key is a key: each one is a wire protocol and a driver,
+	// which is a release rather than a config value. Empty means tau's own engine is
+	// the only thing here that speaks it.
+	external []string
+	// ops is what may be done to a database of this type. THE PER-KIND VERB RULE IS NOT
+	// GIVEN UP BY FOLDING FOUR MODELS INTO ONE KIND: Ops() carries the union, because an
+	// access block is loaded before anything knows which database it names, and
+	// checkDatabaseOps holds every entry to the verbs of the type it actually reaches.
+	ops Verbs
+	// extra is what only this model has to say about itself — a vector's width and
+	// metric. A field every type would carry belongs in databaseType.attributes.
+	extra func(databaseType) []*Attribute
+	doc   string
+}
+
+var databaseTypes = []databaseType{
+	// PERSISTENT, REPLICATED, AND A SYSTEM OF RECORD — which is exactly what `cache` is
+	// not, and the reason this type exists. The engine is pkg/kvdb: writes go to disk,
+	// the storage service holds a replica on more than one node before a write is
+	// acknowledged, and nothing expires. There is no `ttl` here and there will not be
+	// one: an entry that vanishes on its own is what a cache is for, and a record that
+	// deletes itself is not a record.
+	//
+	// WHAT IT DOES NOT PROMISE, because the engine does not: concurrent writes to ONE
+	// key are merged last-writer-wins, so one of them is discarded with no error. There
+	// is no compare-and-swap and no transaction — an `entity` is what serves a
+	// linearizable counter. The rule that falls out is the one AGENTS.md states for
+	// every kvdb layout in this repository: never a key two writers can write
+	// differently; put the discriminator in the key and let the prefix scan be the
+	// index.
+	{
+		name: "kv",
+		ops:  Verbs{ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")},
+		doc:  "Keys and values, kept until something deletes them.",
+	},
+
+	// Documents fetched by id, and asked questions by their fields. tau's own engine for
+	// it is not shipped yet — the same position `sql: distributed` is in, which is
+	// mushql — and the type is declared anyway because what an author writes does not
+	// change when the engine lands.
+	{
+		name:     "document",
+		external: []string{"mongo"},
+		ops:      Verbs{ReadOp("get"), ReadOp("query"), WriteOp("put"), WriteOp("delete")},
+		doc:      "Documents, fetched by id or found by a query over their fields.",
+	},
+
+	// `exec` is a write because the host cannot classify arbitrary SQL.
+	{
+		name:     "sql",
+		external: []string{"postgres", "mysql"},
+		ops:      Verbs{ReadOp("query"), WriteOp("exec")},
+		doc:      "Tables, rows and SQL.",
+	},
+
+	// It was its own KIND until 2026-08-31, on the argument that its verbs are not a
+	// database's — which is true and is a fact about the data model, not about the
+	// resource. `query`/`exec` cannot describe `search`/`upsert`, and they do not have
+	// to: verbs are per TYPE here, and the union an access block may spell is held to
+	// the target's own type by checkDatabaseOps.
+	{
+		name:  "vector",
+		ops:   Verbs{ReadOp("search"), WriteOp("upsert"), WriteOp("delete")},
+		extra: vectorIndexAttributes,
+		doc:   "Embeddings, searched by nearest neighbour. What an agent remembers, and what a retrieval step searches.",
+	},
+}
+
+// engines is every key that may name this type's engine: tau's own first, then whatever
+// external servers speak the model.
+func (t databaseType) engines() []string { return append([]string{tauEngine}, t.external...) }
+
+func databaseTypeNames() []string {
+	out := make([]string, 0, len(databaseTypes))
+	for _, t := range databaseTypes {
+		out = append(out, t.name)
+	}
+	return out
+}
+
+func databaseTypeOf(name string) (databaseType, bool) {
+	for _, t := range databaseTypes {
+		if t.name == name {
+			return t, true
+		}
+	}
+	return databaseType{}, false
+}
+
+// databaseOps is every verb any type declares, deduplicated, in table order — what an
+// access block may spell before anything has resolved which database it names.
+//
+// It PANICS when two types give one verb different effect classes. The effect is the
+// join key every cross-cutting query groups by, so a `delete` that is a write on a kv
+// and a read on a vector would make the union meaningless; catching it here makes it a
+// build failure rather than a report that quietly answers wrong.
+func databaseOps() []Verb {
+	seen := map[string]Verb{}
+	out := []Verb{}
+	for _, t := range databaseTypes {
+		for _, v := range t.ops {
+			if had, ok := seen[v.Name]; ok {
+				if had != v {
+					panic(fmt.Sprintf("database: verb %q is declared two ways: %+v and %+v", v.Name, had, v))
+				}
+				continue
+			}
+			seen[v.Name] = v
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// databaseAttributes is the kind's shape: the type switch, then one block per type.
+func databaseAttributes() []*Attribute {
+	out := []*Attribute{
+		// THE TYPE IS NOT WRITTEN, it is the block that IS written — the same construct
+		// `storage` uses for object-versus-streaming, and the reason a database cannot
+		// be of two types or of none.
+		String("type", Path(Either(databaseTypeNames()...)), Captures(), InSection("engine"),
+			Doc("Type", "Which data model this is. It is the key everything else hangs off: a database is one block named after its type.")),
+	}
+	for _, t := range databaseTypes {
+		out = append(out, t.attributes()...)
+	}
+	return out
+}
+
+func (t databaseType) attributes() []*Attribute {
+	shown := ShowWhen("type", t.name)
+	out := []*Attribute{
+		String(Key(t.name, "engine"), Path(t.name, Either(t.engines()...)), Captures(), InSection("engine"), shown,
+			Doc("Engine", fmt.Sprintf("Which engine backs it: %s. %s is tau's own, replicated across the swarm; the rest are external servers reached over the network.",
+				strings.Join(t.engines(), ", "), tauEngine))),
+
+		// THE SIZE IS TAU'S OWN ENGINE'S, and it is written inside that branch. An
+		// external server's disk is not this project's to declare, and a key nothing
+		// reads is the defect `notification.email` was deleted for.
+		//
+		// The path names `distributed` literally rather than matching the whole engine
+		// set, so `postgres: { size: 1GB }` is an unknown key instead of a number filed
+		// under a branch nobody took. A LITERAL PATH IS ALSO WHAT A LOWERING NEEDS:
+		// interp's authoredPath has no single location for a path with a matcher in it,
+		// so a field an agent's memory sets has to be reachable by fixed segments.
+		Bytes(Key(t.name, "size"), Path(t.name, tauEngine, "size"),
+			RequiredWhen(Key(t.name, "engine"), tauEngine), PerEnv(), InSection("engine"), shown,
+			Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
+	}
+
+	if len(t.external) > 0 {
+		// AN EXTERNAL ENGINE CARRIES ITS OWN CONNECTION. There is no reference to a
+		// `connector` here, and that absence is the point — see the note above the
+		// table. The three facts every external engine needs are the shared helper's;
+		// the fourth is a database's alone.
+		out = append(out, externalEngineAttributes(
+			[]StringMatch{t.name}, []string{t.name}, t.external, Key(t.name, "engine"), "engine", shown)...)
+		out = append(out,
+			String(Key(t.name, "database"), Path(t.name, Either(t.external...), "database"), PerEnv(), InSection("engine"), shown,
+				Doc("Database", "The database name within that server. Defaults to this resource's name.")))
+	}
+
+	if t.extra != nil {
+		out = append(out, t.extra(t)...)
+	}
+	return out
+}
+
+// vectorIndexAttributes is what an index needs and no other data model does. It sits in
+// the type block BESIDE the engine key rather than inside it: the width of a vector is
+// the embedding model's, not the engine's, and it stays the same number whichever engine
+// stores it.
+func vectorIndexAttributes(t databaseType) []*Attribute {
+	shown := ShowWhen("type", t.name)
+	return []*Attribute{
+		// DIMENSIONS ARE FIXED AT CREATION and required for every vector database: an
+		// index is built for a width, every vector in it has that width, and changing it
+		// is a new index and a re-embed of everything. A default would be a guess at
+		// which embedding model someone is using.
+		Int(Key(t.name, "dimensions"), MinInt(1), RequiredWhen(Key(t.name, "engine"), t.engines()...),
+			InSection("engine"), shown,
+			Doc("Dimensions", "The width of every vector stored here, which the embedding model decides — 1536 for OpenAI's text-embedding-3-small, 1024 for Cohere v3. Fixed: changing it is a new index and a re-embed.")),
+
+		// NO Default(), AND THAT IS FORCED RATHER THAN PREFERRED. A default fires
+		// whenever the value is absent, whatever the rest of the document says — so
+		// `Default("cosine")` on a field of the vector block writes `metric: cosine`
+		// onto every kv, document and sql database in the project, which is a claim
+		// about a branch nobody took. The vocabulary already had the answer beside it:
+		// `tls` says what omitting it means and defaults nothing.
+		//
+		// The metric has to match how the model was TRAINED, which is why it is named
+		// rather than tuned: cosine for a model trained on normalized embeddings, dot
+		// for one that is not, euclidean where magnitude means something. Getting it
+		// wrong does not error — it just ranks badly.
+		String(Key(t.name, "metric"), InSet("cosine", "dot", "euclidean"), InSection("engine"), shown,
+			Doc("Metric", "How closeness is measured. Omitted means cosine. Match the embedding model: cosine for normalized embeddings, dot where magnitude carries meaning, euclidean for raw distance.")),
+	}
+}
 
 // A kind declares Ops() when something can reach it. A kind without them is not a
 // target: nothing "uses" a cron, a zone or a component — a cron fires, a zone answers
@@ -751,87 +1042,30 @@ var V2Resources = []*Node{
 			Resource("cache", "Cache", "Cache", "cache"),
 		)),
 
-	// A database — a system of record, and the only kind here that is one.
+	// A DATABASE, AND THE ONLY KIND HERE THAT IS A SYSTEM OF RECORD. Four data models
+	// live under it — see databaseTypes above for what the two switches are and why the
+	// wrong pair cannot be written.
 	//
-	// `engine` is the switch, and the two answers are genuinely different products:
-	// `distributed` is tau's own, mushql over CRDT replication, and it is the one that
-	// needs no external system; `connector` is somebody else's Postgres or MySQL,
-	// reached through the connector that already holds its credentials, which is where
-	// every managed database belongs rather than as a second set of fields here.
-	//
-	//	engine:
-	//	    distributed: { size: 1GB }
-	//	  # engine:
-	//	  #   connector: connectors/pg-main
-	// The external engines are a CLOSED set, and this database names one directly
-	// rather than pointing at a `connector`.
-	//
-	// It used to point at one, and `databases/orders` naming `connectors/kafka-orders`
-	// compiled clean — Ref() resolves a name to an id and stops there, so nothing
-	// noticed that Kafka answers no query. The first fix was a `provides` role list on
-	// the connector, which was wrong twice over: it asked the author to restate a fact
-	// about software they did not write (whoever implements the postgres connector
-	// knows it backs a database; the person copying that into yaml can copy it wrong),
-	// and it declared capabilities nothing consumed, which is the inert-field defect
-	// this vocabulary deleted `notification.email` for.
-	//
-	// So the mismatch is made UNREPRESENTABLE rather than detectable. `kafka` is not a
-	// key that can be written here, the same way a non-HTTP kind cannot be a gateway
-	// handler. A database engine is not an extensibility surface — a new one is a new
-	// wire protocol and a new driver, which is a release, not a config value.
-	//
-	// `connectors` keeps the open seam and goes back to meaning one thing: an external
-	// system you RECEIVE EVENTS from.
-	//
-	// The cost, accepted: a Postgres used both as a database and as an event source is
-	// configured twice. They are different credentials and different access anyway, and
-	// one config object meaning two things is what caused this.
+	// `cache` is the one neighbour that is deliberately NOT a type here, and the line
+	// between them is durability rather than shape: a cache entry has a lifetime, losing
+	// one costs a recomputation, and nothing in it is a record. `kv` is the same pair of
+	// verbs over a store that keeps what it is given.
 	DefineGroup("database",
 		resource(
-			commonAttributes(
-				String(Key("engine", "kind"), Path("engine", Either(databaseEngines...)), Captures(), Field("Engine"), InSection("engine"),
-					Doc("Engine", "Which engine backs this database. distributed is tau's own, replicated across the swarm; the rest are external systems reached over the network.")),
-				Bytes(Key("engine", "distributed", "size"), Path("engine", Either(databaseEngines...), "size"), RequiredWhen(Key("engine", "kind"), "distributed"), PerEnv(), InSection("engine"), ShowWhen(Key("engine", "kind"), "distributed"),
-					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
-
-				// An external engine carries its OWN connection. There is no reference
-				// to a `connector` here, and that absence is the point — see the note
-				// above this kind.
-				String(Key("engine", "host"), Path("engine", Either(externalDatabaseEngines...), "host"), RequiredWhen(Key("engine", "kind"), externalDatabaseEngines...), PerEnv(), InSection("engine"),
-					Doc("Host", "Where the external database is reached, as host or host:port.")),
-				String(Key("engine", "database"), Path("engine", Either(externalDatabaseEngines...), "database"), PerEnv(), InSection("engine"),
-					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
-				String(Key("engine", "credentials", "namespace"), IsNamespacePath(), InSection("engine"),
-					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-				String(Key("engine", "credentials", "name"), IsVariableName(), Path("engine", Either(externalDatabaseEngines...), "credentials", "name"), RequiredWhen(Key("engine", "kind"), externalDatabaseEngines...), Ref("secret", Inbound()), InSection("engine"),
-					Doc("Credentials", "Secret holding the credentials to connect with, as \"secret/<name>\".")),
-
-				// SAFE BY DEFAULT, EXPLICIT TO WEAKEN: absent means verify-full, and an
-				// author who wants credentials on the wire in the clear has to write
-				// `disable` and see the word.
-				//
-				// It is not Required(), which would fire on `distributed` too — a branch
-				// that opens no socket and has no wire to protect. RequiredWhen would
-				// express it, and is deliberately not used: a value here is a WEAKENING,
-				// so the safe state has to be the one an author reaches by writing
-				// nothing. Demanding the field would make "explicit" the only way to get
-				// the default, which is how `disable` ends up typed by someone clearing
-				// an error.
-				//
-				// (This comment used to say RequiredWhen "never fires at all" against a
-				// Captures() sibling, and called that a live defect. It was one, and it
-				// was fixed on 2026-08-18 — requiredHere reads the matched branch, which
-				// is ENGINE-CHANGES.md #5. `engine/distributed/size` is enforced: a
-				// distributed database with no size is refused, and there is a test.)
-				String(Key("engine", "tls"), Path("engine", Either(externalDatabaseEngines...), "tls"), InSet("verify-full", "require", "disable"), PerEnv(), InSection("engine"), ShowWhen(Key("engine", "kind"), externalDatabaseEngines...),
-					Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included.")),
+			commonAttributes(append(databaseAttributes(),
 				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
-			),
-			GroupDoc("A database: tau's own distributed engine, or an external server reached over the network."), Icon("database"), Category("data"),
+			)...),
+			GroupDoc("A database: keys and values, documents, tables or vectors — on tau's own replicated engine, or on an external server reached over the network."), Icon("database"), Category("data"),
 			secIdentity, secAccess,
-			Section("engine", "Engine", "Which engine backs it, and its settings."),
+			Section("engine", "Engine", "Which data model it is, which engine backs it, and its settings."),
 			secInstances,
-			Ops(ReadOp("query"), WriteOp("exec")), // exec is write: the host cannot classify arbitrary SQL
+			// THE UNION, and it is not a hole in the per-kind verb rule. An access block
+			// is loaded before anything has resolved which database it names, so this is
+			// the widest set the loader can hold it to; checkDatabaseOps is what holds
+			// the entry to the verbs of the type it actually reaches, over the compiled
+			// object where the target is known. Same seam CheckLoweredOps already uses:
+			// the generic layer carries values at paths and has no word for a verb.
+			Ops(databaseOps()...),
 			Resource("database", "Database", "Database", "database"),
 		)),
 
@@ -887,44 +1121,40 @@ var V2Resources = []*Node{
 			Resource("volume", "Volume", "Volume", "volume"),
 		)),
 
-	// Nearest-neighbour search over embeddings: what an agent remembers, what a
-	// retrieval step searches, what a recommender ranks with.
+	// A DECLARED PLACEHOLDER, AND THAT IS WHAT IT IS RATHER THAN AN UNFINISHED KIND.
+	// An append-only resource: records go on the end and nothing rewrites what is
+	// already there. It has no fields of its own yet — the shape is the owner's to
+	// finish, and inventing a retention, a size or a format here would be guessing at a
+	// specification that exists and has not been given.
 	//
-	// ITS OWN KIND rather than an engine on `database`, and the vocabulary's own rule
-	// decides it: verbs are per kind, and these are not a database's. A database is
-	// asked a QUERY and answers rows; this is asked for the nearest N to a vector and
-	// answers neighbours with distances. `query`/`exec` cannot describe `search`/
-	// `upsert` — and an engine key that changed which verbs a kind has would break the
-	// one thing Ops() exists to guarantee, that a kind's verb set is a fact about the
-	// kind.
+	// It is written down as deliberately incomplete because this vocabulary DELETES
+	// inert things — `notification.email` for being read nowhere, the connector's
+	// `provides` for asserting a capability nothing consumed — so a kind with nothing
+	// in it either gets removed as inert or gets completed by somebody guessing. This
+	// is the note that stops both.
 	//
-	// DIMENSIONS ARE FIXED AT CREATION and required, because they are not a setting: an
-	// index is built for a width, every vector in it has that width, and changing it is
-	// a new index and a re-embed of everything. A default would be a guess at which
-	// embedding model someone is using.
-	DefineGroup("vector",
+	// IT HAS VERBS EVEN THOUGH IT HAS NO ATTRIBUTES, because the vocabulary's own rule
+	// (see V2Resources above) is that a kind with no Ops() is not a target: nothing can
+	// reach it, so an append-only log nothing can append to is a kind that does not
+	// participate. `append` and `read` are PROVISIONAL, pending the owner's shape.
+	//
+	// `append` alone is the claim the kind makes. There is deliberately no `put` and no
+	// `delete`: a record that can be overwritten or removed is not an append-only log,
+	// and a verb set is the one place this vocabulary states that where every consumer
+	// reads it back.
+	//
+	// `read` is a PULL — the reader goes and asks, with whatever offset or range the
+	// shape turns out to have. A FOLLOW is the other direction and would be a second
+	// verb, a DeliveredOp, the way a bus's `subscribe` is: the platform hands each new
+	// record over as it lands. Which of the two a log has, or whether it has both, is
+	// the owner's call and is not decided here.
+	DefineGroup("log",
 		resource(
-			commonAttributes(
-				Int("dimensions", MinInt(1), Required(), InSection("index"),
-					Doc("Dimensions", "The width of every vector stored here, which the embedding model decides — 1536 for OpenAI's text-embedding-3-small, 1024 for Cohere v3. Fixed: changing it is a new index and a re-embed.")),
-
-				// The metric has to match how the model was TRAINED, which is why it is
-				// named rather than tuned: cosine for a model trained on normalized
-				// embeddings, dot for one that is not, euclidean where magnitude means
-				// something. Getting it wrong does not error — it just ranks badly.
-				String("metric", InSet("cosine", "dot", "euclidean"), Default("cosine"), InSection("index"),
-					Doc("Metric", "How closeness is measured. Match the embedding model: cosine for normalized embeddings, dot where magnitude carries meaning, euclidean for raw distance.")),
-
-				Bytes(Key("size"), Required(), PerEnv(), InSection("index"),
-					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\"). An index is the vectors plus their neighbour graph, so it is larger than the vectors alone.")),
-				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
-			),
-			GroupDoc("Nearest-neighbour search over embeddings. What an agent remembers, and what a retrieval step searches."), Icon("vector"), Category("data"),
+			commonAttributes(),
+			GroupDoc("An append-only log. Records go on the end and nothing rewrites what is there. Its shape is not specified yet."), Icon("list"), Category("data"),
 			secIdentity, secAccess,
-			Section("index", "Index", "The width of a vector, how closeness is measured, and how much of it there may be."),
-			secInstances,
-			Ops(ReadOp("search"), WriteOp("upsert"), WriteOp("delete")),
-			Resource("vector", "Vector", "Vector", "vector"),
+			Ops(WriteOp("append"), ReadOp("read")),
+			Resource("log", "Log", "Log", "log"),
 		)),
 
 	// A declaration and a reference, never a value. The value lives outside git in
@@ -1307,33 +1537,136 @@ var V2Resources = []*Node{
 			Resource("proxy", "Proxy", "Proxy", "proxy"),
 		)),
 
-	// Both halves are declared now: the channel edges to its consumer with
-	// `subscribe`, the producer edges back with `publish`. Two statements because
-	// they are two capabilities — collapsing them into `write` erases a real
-	// boundary, and today the publish half is not checked at all (resources.md §5.3).
-	// NOT `messaging`, which was v1's word and named a DOMAIN rather than a thing. Every
-	// other kind is a noun for the thing itself — a database, a queue, a cache — and
-	// nobody says "a messaging". The kind's own field prefix and its documentation
-	// already said `channel`; the name now says it too.
+	// Both halves are declared: it edges to its consumer with `subscribe`, the producer
+	// edges back with `publish`. Two statements because they are two capabilities —
+	// collapsing them into `write` erases a real boundary.
 	//
-	// With the kind called `channel`, `channel: match:` inside `channel/orders.yaml` was
-	// the same word twice, so the two matching fields sit at the document root — which
-	// is where `cache` and `storage` already put the identical pair.
-	DefineGroup("channel",
+	// THE NAME HAS MOVED TWICE AND THIS IS WHY. v1 called it `messaging`, which named a
+	// DOMAIN rather than a thing: every other kind here is a noun for the thing itself
+	// — a database, a queue, a cache — and nobody says "a messaging". It was `channel`
+	// after that, which is a noun and was still wrong in a way that only shows once
+	// there is a second conduit kind beside it: in Go, and in Redis, a channel is
+	// point-to-point with a single receiver, so the word mis-cues fan-out to exactly
+	// the audience that writes Go. `stream` is the industry's word for durable fan-out
+	// — Kinesis Data Streams, NATS JetStream, Redpanda — and `channel` moved to the 1:1
+	// byte conduit below, where it is right.
+	//
+	// The neighbourhood is what the name has to survive: `queue` fans in to one
+	// claimant, `stream` fans out to every subscriber, `bus` fans out and forgets, and
+	// `channel` is two workloads and a socket. Nobody has to be told which is which.
+	//
+	// IMPLEMENTATION NOTE: `services/substrate/components/pubsub/` is v1's home for
+	// this. It is not being renamed, so someone reading `p2p/stream.go` while writing a
+	// `stream` resource is looking at the wrong kind — that file is the `channel` kind.
+	//
+	// IT HAS AN ENGINE, and until 2026-08-31 it did not: a stream was always the
+	// swarm's own gossipsub, and the only way to reach Kafka was a `connector` that
+	// consumed it and republished what it read as CloudEvents over that gossipsub.
+	// Which throws away every reason to have used Kafka — ordering, durability,
+	// consumer groups and replay all die at the republication, and a subscriber gets
+	// fire-and-forget however the stream was fed. So the engine is a key from a closed
+	// set, exactly as it is on a database, and the topic LIVES where the engine says.
+	//
+	//	distributed:                     kafka:
+	//	    local: true                      host: broker:9092
+	//	                                     credentials: { name: k }
+	//
+	// One axis rather than a database's two, so the engine block is the document root's
+	// rather than a type block's. The rule is the one the vocabulary already runs on:
+	// the block you write is named after the choice, and a switch captures which block
+	// that was. `storage` does it for object-versus-streaming and `database` does it
+	// twice.
+	//
+	// `nats` here is JETSTREAM, which is NATS's persistence layer — streams, durable
+	// consumers, replay. Core NATS is the ephemeral n:n bus and is `bus`'s business,
+	// not this kind's. The engine is spelled `nats` rather than `jetstream` because
+	// that is the product an author has credentials for; whether the key should say
+	// `jetstream` instead is the owner's call.
+	//
+	// `local` moves under `distributed`, where it always belonged: "restrict this to
+	// the local node" is a thing the swarm's own gossipsub does and a thing a Kafka
+	// cluster has no notion of, so it must not be a key a kafka-backed stream can
+	// write. The cost of the engine block being required, taken knowingly: the common
+	// case writes `distributed: {}` rather than nothing. Whether an ABSENT engine
+	// should mean tau's own — the way an absent `tls` means verify-full — is the
+	// owner's call; the default here is explicit, because an engine read as "" that a
+	// consumer has to know means distributed is the fallback chain §10 refuses.
+	//
+	// THE BRIDGES ARE GONE. `bridges/mqtt/enable` and `bridges/websocket/enable` were
+	// two booleans bolted onto a pubsub topic. MQTT is deleted outright and nothing has
+	// asked for it back; websocket is not lost but rehomed — on a `bus`, attaching a
+	// browser and receiving from now on is the point of the kind rather than a flag on
+	// a different one.
+	DefineGroup("stream",
 		resource(
-			commonAttributes(
-				Bool("local", InSection("matching"), Doc("Local", "Restrict the channel to the local node / project scope.")),
-				String("match", Required(), Field("Match"), Accessor("ChannelMatch"), NoSetter(), InSection("matching"), Doc("Match", "Channel name or pattern this resource matches.")),
+			commonAttributes(append([]*Attribute{
+				String("match", Required(), Field("Match"), Accessor("StreamMatch"), NoSetter(), InSection("matching"), Doc("Match", "Stream name or pattern this resource matches.")),
 				Bool(Key("regex"), NoSetter(), InSection("matching"), Doc("Use Regex", "Treat match as a regular expression instead of a literal name.")),
-				Bool(Key("bridges", "mqtt", "enable"), Accessor("MQTT"), NoSetter(), InSection("bridges"), Doc("MQTT", "Expose this channel over the MQTT bridge.")),
-				Bool(Key("bridges", "websocket", "enable"), Accessor("WebSocket"), NoSetter(), InSection("bridges"), Doc("WebSocket", "Expose this channel over the WebSocket bridge.")),
-			),
-			GroupDoc("A PubSub channel, optionally bridged to MQTT/WebSocket. It edges to its subscribers; publishers edge to it."), Icon("message"), Category("trigger"),
+
+				String("engine", Path(Either(streamEngines...)), Captures(), InSection("engine"),
+					Doc("Engine", "Which engine holds the topic: distributed is the swarm's own gossipsub; kafka and nats are external clusters reached over the network.")),
+				Bool("local", Path(tauEngine, "local"), InSection("engine"), ShowWhen("engine", tauEngine),
+					Doc("Local", "Restrict the stream to the local node / project scope. Only tau's own engine has a notion of this.")),
+			}, externalEngineAttributes(nil, nil, externalStreamEngines, Key("engine"), "engine", ShowWhen("engine", externalStreamEngines...))...)...),
+			GroupDoc("A pubsub stream: what is published to it reaches every subscriber. On the swarm's own gossipsub, or on an external Kafka or NATS cluster."), Icon("message"), Category("trigger"),
 			secIdentity, secAccess,
-			Section("matching", "Matching", "The name or pattern this channel answers to."),
-			Section("bridges", "Bridges", "External protocol bridges."),
+			Section("matching", "Matching", "The name or pattern this stream answers to."),
+			Section("engine", "Engine", "Which engine holds the topic, and its settings."),
 			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
-			Resource("channel", "Channel", "Channel", "channel"),
+			Resource("stream", "Stream", "Stream", "stream"),
+		)),
+
+	// AN N:N BUS WITH NO REWIND, and that is the only thing separating it from
+	// `stream` — not the shape. Both fan out to everyone attached. A stream backed by
+	// Kafka or by NATS JetStream is a LOG: it has offsets, consumer groups and replay,
+	// so a subscriber that was not there still gets what it missed. A message put on a
+	// bus and not received is gone. Durability is the whole distinction, and it is why
+	// there are two kinds rather than one with a flag: a flag would make "can I replay
+	// this?" a property somebody edits, when it is a property of what the thing IS.
+	//
+	// (NATS is on both sides of that line and the halves are easy to swap: JetStream is
+	// NATS's PERSISTENCE layer and belongs to `stream`; core NATS is the ephemeral n:n
+	// bus and is this shape.)
+	//
+	// IT HAS NO ENGINE AXIS, and the absence is the statement. Every engine a `stream`
+	// can name is a durable log; giving a bus the same key would let somebody write a
+	// bus that rewinds, which is a stream wearing the wrong kind. What backs it is the
+	// swarm, and there is nothing to choose.
+	//
+	// A WEBSOCKET IS AN ADDRESS, NOT A BOOLEAN. v1 spelled it `bridges.websocket.enable`
+	// on the pubsub kind — a flag that turned something on and named nowhere for a
+	// browser to point at, so the URL came out of a host call at run time and existed
+	// nowhere a reader could see. Writing `host:` is what gives this bus a websocket,
+	// and it is the same `host:` a gateway and an L4 proxy already declare: a name
+	// under the cloud's own zone, or one in a zone the project owns. That keeps §10a's
+	// rule — the config never names the cloud it happens to be running in — and it
+	// gives `ReachableNames` something to answer with, which a boolean could not.
+	// A bus with no `host:` is reachable from inside the project and from nowhere else.
+	//
+	// AND IT HAS NO `match`/`regex`. `stream` carries that pair because v1's `messaging`
+	// did; it is a pattern with no owner, and instanceAttributes' own comment says what
+	// is wrong with it — it answers "may this instance exist" with "does this string
+	// match". A bus is the sharpest case, because the thing attaching is a BROWSER: the
+	// instance name is the caller's, so the project has to have a point at which it
+	// says no. That point is `instances:`, the construct every store here already uses.
+	// Converging `stream` onto the same construct is the owner's call and is not done
+	// here.
+	//
+	// The verbs are `stream`'s, and deliberately the same ones: what you DO to a bus is
+	// what you do to a topic, and the kinds differ in what happens afterwards. Two
+	// spellings for one operation would make every cross-cutting query ask twice.
+	DefineGroup("bus",
+		resource(
+			commonAttributes(append(append([]*Attribute{},
+				hostAttributes("websocket")...),
+				instanceAttributes()...)...),
+			GroupDoc("An ephemeral n:n message bus: everything attached gets what is sent, and nothing is kept. Give it a host and a browser can attach over websocket."), Icon("cable"), Category("trigger"),
+			AnswersAt("host"),
+			secIdentity, secAccess,
+			Section("websocket", "Websocket", "The name a browser attaches to, if this bus is reachable from outside."),
+			secInstances,
+			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
+			Resource("bus", "Bus", "Bus", "bus"),
 		)),
 
 	// NO `auth` FIELD. It was `none | oauth`, and `oauth` promised to "validate tokens
@@ -1392,9 +1725,22 @@ var V2Resources = []*Node{
 
 	// ---- in-project addressing ----
 
-	// The kind v1 called `services`, back with the name it should have had. A STREAM:
-	// a named, ordered, bidirectional byte channel between two workloads inside the
-	// project, carried by libp2p, with no edge in the path.
+	// The kind v1 called `services`, back with a name that says what it is. A CHANNEL:
+	// a named, ordered, bidirectional byte conduit between exactly two workloads inside
+	// the project, carried by libp2p, with no edge in the path.
+	//
+	// `channel` BECAUSE IT IS 1:1, and that is the whole argument for the name. Go's
+	// `chan` is point-to-point with a single receiver per value, which is exactly what
+	// this is and exactly what fan-out is not — so the word that mis-cued the semantics
+	// on the pubsub kind is the right one here. It was called `stream` until
+	// 2026-08-31, and `stream` moved to the fan-out kind because that is the industry's
+	// word for durable fan-out (Kinesis Data Streams, NATS JetStream, Redpanda).
+	//
+	// A NOTE FOR ANYONE READING THE IMPLEMENTATION: v1's directories are now inverted
+	// relative to this vocabulary. `services/substrate/components/p2p/stream.go` is
+	// what this kind describes, and `services/substrate/components/pubsub/` is what the
+	// `stream` kind describes. Those are v1's and v1 is not being renamed; the v2
+	// successors take the names this vocabulary uses.
 	//
 	// It exists because every other inbound path in this vocabulary is an INGRESS. A
 	// gateway route parses HTTP arriving from outside; a proxy accepts a connection
@@ -1407,37 +1753,39 @@ var V2Resources = []*Node{
 	//
 	// THE PROTOCOL IS NAMESPACED BY THE PLATFORM, not by the author. What is written
 	// here is a name inside the project; what goes on the wire has the project's
-	// identity prepended, so two projects that both call a stream `sync` do not meet.
+	// identity prepended, so two projects that both call a channel `sync` do not meet.
 	// An author who could write the full wire protocol could collide with another
 	// tenant on purpose, which is the same reason a proxy authors no port.
 	//
 	// Deliberately thin, and stated as such: v1's whole declaration was one field. What
-	// serves the stream is named here, the way a proxy names what it forwards to,
-	// because a stream nothing answers is a name that dials into a void.
-	DefineGroup("stream",
+	// serves the channel is named here, the way a proxy names what it forwards to,
+	// because a channel nothing answers is a name that dials into a void.
+	//
+	// The icon stays `stream`: an icon is a picture of the thing, and what travels here
+	// is still a stream of bytes whatever the kind is called.
+	DefineGroup("channel",
 		resource(
 			commonAttributes(
-				String("protocol", Required(), IsVariableName(), InSection("stream"),
-					Doc("Protocol", "The name this stream is addressed by within the project, e.g. \"sync\". What goes on the wire has the project's identity prepended, so two projects using the same name never meet.")),
+				String("protocol", Required(), IsVariableName(), InSection("channel"),
+					Doc("Protocol", "The name this channel is addressed by within the project, e.g. \"sync\". What goes on the wire has the project's identity prepended, so two projects using the same name never meet.")),
 
 				// Same shape as a proxy's `forward` and a gateway route's handler: the
 				// resource that answers, by kind, namespace and name.
-				String(Key("serve", "kind"), Path("serve", Either(streamServerKinds...)), Captures(), InSection("stream"),
-					Doc("Served By", "Which kind answers this stream (the key selects the block).")),
-				String(Key("serve", "namespace"), Path("serve", Either(streamServerKinds...), "namespace"), IsNamespacePath(), InSection("stream"),
+				String(Key("serve", "kind"), Path("serve", Either(channelServerKinds...)), Captures(), InSection("channel"),
+					Doc("Served By", "Which kind answers this channel (the key selects the block).")),
+				String(Key("serve", "namespace"), Path("serve", Either(channelServerKinds...), "namespace"), IsNamespacePath(), InSection("channel"),
 					Doc("Namespace", "Path to the namespace holding it, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
-				String(Key("serve", "name"), Path("serve", Either(streamServerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom(Key("serve", "kind")), ByName(), Serves()), InSection("stream"),
+				String(Key("serve", "name"), Path("serve", Either(channelServerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom(Key("serve", "kind")), ByName(), Serves()), InSection("channel"),
 					Doc("Name", "Its name within that namespace.")),
-				String(Key("serve", "port"), Path("serve", Either(streamServerKinds...), "port"), IsVariableName(), InSection("stream"),
-					Doc("Port", "Which of the workload's own named ports the stream is delivered to. Containers only; a function is dispatched, not connected.")),
+				String(Key("serve", "port"), Path("serve", Either(channelServerKinds...), "port"), IsVariableName(), InSection("channel"),
+					Doc("Port", "Which of the workload's own named ports the channel is delivered to. Containers only; a function is dispatched, not connected.")),
 			),
-			GroupDoc("A named byte stream between two workloads inside the project, over libp2p. The way in that is not an ingress."), Icon("stream"), Category("compute"),
+			GroupDoc("A named byte channel between two workloads inside the project, over libp2p. The way in that is not an ingress."), Icon("stream"), Category("compute"),
 			secIdentity, secAccess,
-			Section("stream", "Stream", "The name it answers to, and what answers it."),
+			Section("channel", "Channel", "The name it answers to, and what answers it."),
 			Ops(WriteOp("dial")), // dial is write: what travels is opaque
-			Resource("stream", "Stream", "Stream", "stream"),
+			Resource("channel", "Channel", "Channel", "channel"),
 		)),
-
 	// ---- models ----
 
 	// WHERE INFERENCE HAPPENS, and on whose account. Its own kind because it is its own
@@ -1687,16 +2035,22 @@ var V2Resources = []*Node{
 
 				// Only when there is an embedder to fill it: an agent that remembers
 				// nothing gets no index rather than an empty one.
-				Into("vector",
+				//
+				// A DATABASE OF TYPE `vector`, since 2026-08-31, and the type is not a
+				// term the lowering states: writing anything under `vector/` is what
+				// selects the block, and the switch captures it. Both fields it sets
+				// have LITERAL paths for exactly this reason — interp's authoredPath has
+				// no single authored location for a path with a matcher in it.
+				Into("database",
 					When(Key("memory", "embedder", "name")),
 					Named(Concat(Attr("name"), Text("_memory"))),
 					Carries(Concat(Text("what "), Attr("name"), Text(" remembers"))),
-					// One term, one field: the value is CARRIED, so the vector's size is
+					// One term, one field: the value is CARRIED, so the index's size is
 					// the agent's own byte count and comes back out again as `2GB`.
-					Sets("dimensions", Attr(Key("memory", "dimensions"))),
-					Sets(Key("size"), Attr(Key("memory", "size"))),
+					Sets(Key("vector", "dimensions"), Attr(Key("memory", "dimensions"))),
+					Sets(Key("vector", "size"), Attr(Key("memory", "size"))),
 					// The loop is what searches it, and that is an entry on the loop:
-					// `vector: { <name>_memory: { ops: [search] } }`, exactly what an
+					// `database: { <name>_memory: { ops: [search] } }`, exactly what an
 					// author would have written.
 					Reaches("search", From("function", Concat(Attr("name"), Text("_infer")))),
 				),
@@ -1846,7 +2200,7 @@ var V2Resources = []*Node{
 					Writes(Text("send"), On("workflow", Attr("name")), At(Text("entry"), Text("start"), Text("as"))),
 				),
 
-				// AND NO EVENTS CHANNEL. One was produced here — a channel per workflow,
+				// AND NO EVENTS STREAM. One was produced here — a stream per workflow,
 				// every driver publishing that its step had finished — and nothing
 				// authored asked for it, which is the rule this vocabulary already holds
 				// everywhere else: a produced resource nobody asked for is an empty
@@ -1871,21 +2225,52 @@ var V2Resources = []*Node{
 			Resource("workflow", "Workflow", "Workflow", "workflow"),
 		)),
 
-	// One type for every external system: it holds the credentials, and for
+	// A SOURCE THAT IS NOT ALREADY SOMETHING ELSE. It holds the credentials, and for
 	// source-like externals it holds the connection too — Lambda's event-source
 	// mapping, where a separate poller joins the source and the invoked compute
 	// never touches it. A connector that holds a live connection runs exactly once
 	// per cloud: a quorum lease with an epoch on every event it emits, so a stale
 	// poller's events are rejected rather than duplicated (resources.md §6).
+	//
+	// IT LOST ITS TWO BIGGEST CASES ON 2026-08-31 AND IT STILL EARNS ITS EXISTENCE.
+	// A Kafka or a NATS is a `stream` ENGINE now, not a connector that consumes one and
+	// republishes it — that bridge threw away ordering, durability and replay, which is
+	// every reason to have used Kafka. A Postgres, MySQL or Mongo is a `database`
+	// engine, and was never a connector: naming one here compiled clean and nothing
+	// noticed that Kafka answers no query, which is why the engine became a key from a
+	// closed set.
+	//
+	// What is left is what neither of those covers, and it is not nothing:
+	//
+	//   - AN OBJECT STORE AS A SOURCE — s3, gcs. `storage` has no engine axis, so there
+	//     is nowhere else for it to be said.
+	//   - A VENDOR API — slack, stripe, a salesforce. A webhook is an inbound route to a
+	//     function and needs no kind; a POLLED one is the opposite direction and a route
+	//     cannot express it.
+	//   - THE POLLER ITSELF. An `entity` is the same fence — a quorum lease and its
+	//     epoch — but an entity runs the AUTHOR'S code, and what a connector says is
+	//     that the PLATFORM ships the client. `source: builtin` is the only seam for
+	//     that and its own documentation says it is not for authors, so "tau's slack
+	//     poller" has no spelling as an entity today. Decomposing this kind would move
+	//     writing a Slack client from tau to everyone using tau.
+	//   - "EXACTLY ONE NODE RUNS THIS" AS A DECLARED FACT, rather than as an entity with
+	//     an entrypoint, a size and a lease the author has to reason about.
+	//
+	// `type` STAYS OPEN, and that is a decision rather than an oversight: this kind is
+	// one of the vocabulary's two extensibility seams (see V2Resources above), and it is
+	// the one for external systems. Closing it to a set would leave the vocabulary with
+	// no open surface for them at all. Whether the trade is worth taking — a closed set
+	// buys the same refusal `database.engine` and `stream.engine` get, and costs the
+	// seam — is the owner's call, not this file's.
 	DefineGroup("connector",
 		resource(
 			commonAttributes(
-				String("type", Required(), InSection("identity"), Doc("Type", "Which external system events are received from, e.g. \"kafka\", \"s3\", \"slack\".")),
+				String("type", Required(), InSection("identity"), Doc("Type", "Which external system events are received from, e.g. \"s3\", \"slack\". A pubsub cluster is a stream's engine and a database server is a database's; neither is written here.")),
 				String(Key("credentials", "namespace"), IsNamespacePath(), InSection("identity"), Doc("Credentials Namespace", "Where that secret lives. Omitted means this connector's own scope, then its parents.")),
 				String(Key("credentials", "name"), IsVariableName(), Ref("secret", Inbound()), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials.")),
 				Bool("polls", InSection("identity"), Doc("Polls", "This connector holds a live connection to the external system and emits events from it. Exactly one node in the cloud runs it.")),
 			),
-			GroupDoc("An external system events are received from: credentials, and the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
+			GroupDoc("An external system events are received from, that is not already a stream's engine or a database's: credentials, and the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
 			secIdentity, secAccess,
 			Resource("connector", "Connector", "Connector", "connector"),
 		)),

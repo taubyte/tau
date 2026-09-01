@@ -16,6 +16,8 @@ limits:
 database:
     orders:
         ops: [query]
+    knowledge:
+        ops: [search]
 cache:
     orders:
         ops: [get]

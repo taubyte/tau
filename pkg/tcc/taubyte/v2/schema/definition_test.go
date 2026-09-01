@@ -97,14 +97,15 @@ func TestFunctionHasNoTrigger(t *testing.T) {
 		assert.Assert(t, !present, "functions carries %q; the trigger block is meant to be deleted, not extended", gone)
 	}
 
-	// `channel` is the one name that survives, and it means the opposite of what it
-	// meant in v1. There it was a TRIGGER — a scalar naming the channel that fired this
-	// function. Here it is an ACCESS BLOCK — entries keyed by channel name, each with
-	// its ops — so the direction is the function declaring what it reaches. The shape is
-	// what tells them apart, so the shape is what this asserts.
-	if ch, present := fn["channel"]; present {
+	// The pubsub kind is the one v1 trigger that survives on a function, and it means
+	// the opposite of what it meant there. In v1 it was a TRIGGER — a scalar naming the
+	// channel that fired this function. Here it is an ACCESS BLOCK — entries keyed by
+	// the stream's name, each with its ops — so the direction is the function declaring
+	// what it reaches. The shape is what tells them apart, so the shape is what this
+	// asserts.
+	if ch, present := fn["stream"]; present {
 		_, isBlock := ch.(map[string]any)
-		assert.Assert(t, isBlock, "functions carries a scalar %q: that is v1's trigger coming back", "channel")
+		assert.Assert(t, isBlock, "functions carries a scalar %q: that is v1's trigger coming back", "stream")
 	}
 
 	assert.Equal(t, nested(fn, "execution", "call"), "checkout")
@@ -169,23 +170,47 @@ func TestConnectorCredentialsResolve(t *testing.T) {
 // that is not a database cannot be named as one. This replaced a `provides` role list
 // on the connector, which asked the author to restate a fact about software they did
 // not write — and would have compiled just as happily when they got it wrong.
+//
+// THE SET IS PER TYPE, and that is what keeps a WRONG PAIR unrepresentable rather than
+// merely checkable: a Mongo is not a thing a `sql:` block can name, and a Postgres is
+// not a thing a `document:` block can, because neither is a key that exists there. One
+// `engine:` beside one `type:` would have made both values legal on their own and only
+// the pair wrong — a rule somebody has to remember to write, and a document that
+// compiles until they do.
 func TestDatabaseEngineIsClosed(t *testing.T) {
-	fs := afero.NewMemMapFs()
-	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/database/orders.yaml", []byte(`
-id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
-engine:
-    kafka:
-        host: broker:9092
-`), 0o644))
+	compile := func(body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/database/orders.yaml",
+			[]byte("id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
 
-	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
-	assert.NilError(t, err)
-	_, _, err = c.Compile(context.Background())
+	err := compile("sql:\n    kafka:\n        host: broker:9092\n")
 	assert.ErrorContains(t, err, "unknown key 'kafka'")
 	assert.ErrorContains(t, err, "distributed, mysql, postgres",
-		"and it says which engines there are")
+		"and it says which engines a sql database has")
+
+	// The pair, which is the half a single engine key could not refuse.
+	assert.ErrorContains(t, compile("document:\n    postgres:\n        host: db:5432\n"),
+		"unknown key 'postgres'; valid keys here: distributed, mongo")
+	assert.ErrorContains(t, compile("sql:\n    mongo:\n        host: m:27017\n"),
+		"unknown key 'mongo'; valid keys here: distributed, mysql, postgres")
+	assert.ErrorContains(t, compile("kv:\n    postgres:\n        host: db:5432\n"),
+		"unknown key 'postgres'; valid keys here: distributed")
+
+	// And a data model that is not one of the four is not a block that can be written.
+	assert.ErrorContains(t, compile("graph:\n    distributed:\n        size: 1GB\n"),
+		"unknown key 'graph'")
+	// Two of them at once is the switch refusing, not a winner being picked.
+	assert.ErrorContains(t, compile("kv:\n    distributed:\n        size: 1MB\nsql:\n    distributed:\n        size: 1MB\n"),
+		"ambiguous path: kv and sql each match")
+	// And none at all is a database that is nothing.
+	assert.ErrorContains(t, compile("description: nothing\n"), "attribute type has an empty key")
 }
 
 // A CONTAINER WORKER HAS NO ENTRYPOINT TO NAME, and it used to be refused for not
@@ -235,26 +260,46 @@ func TestWorkerEntrypointIsRequiredOnTheWasmTierOnly(t *testing.T) {
 }
 
 // An external engine carries its own connection; tau's own carries a size and no
-// host at all, so neither borrows the other's fields.
+// host at all, so neither borrows the other's fields. And the TYPE is the block that
+// was written rather than a word anybody typed.
 func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 	flat := compileBasic(t)
 	dbs := resources(t, flat, "database")
 
 	orders := namedResource(t, dbs, "orders")
-	assert.Equal(t, nested(orders, "engine", "kind"), "postgres")
-	assert.Equal(t, nested(orders, "engine", "host"), "db.example.com:5432")
-	engine, _ := orders["engine"].(map[string]any)
-	creds, _ := engine["credentials"].(map[string]any)
+	assert.Equal(t, orders["type"], "sql", "the type is captured from the block that was written")
+	assert.Equal(t, nested(orders, "sql", "engine"), "postgres")
+	assert.Equal(t, nested(orders, "sql", "host"), "db.example.com:5432")
+	sql, _ := orders["sql"].(map[string]any)
+	creds, _ := sql["credentials"].(map[string]any)
 	assert.Assert(t, creds != nil && creds["name"] != "",
-		"credentials resolve to a secret id, never a value: %v", engine)
-	_, borrowed := nestedOK(orders, "engine", "distributed", "size")
-	assert.Assert(t, !borrowed)
+		"credentials resolve to a secret id, never a value: %v", sql)
+	_, borrowed := nestedOK(orders, "sql", "size")
+	assert.Assert(t, !borrowed, "an external server's disk is not this project's to size")
+
+	// A second external engine, with a set of its own: mongo is a document engine and
+	// the fields it carries are the same ones, under its own type's block.
+	profiles := namedResource(t, dbs, "profiles")
+	assert.Equal(t, profiles["type"], "document")
+	assert.Equal(t, nested(profiles, "document", "engine"), "mongo")
+	assert.Equal(t, nested(profiles, "document", "host"), "mongo.example.com:27017")
+
+	// tau's own engine, on the type that exists to have it.
+	tokens := namedResource(t, dbs, "tokens")
+	assert.Equal(t, tokens["type"], "kv")
+	assert.Equal(t, nested(tokens, "kv", "engine"), "distributed")
+	assert.Equal(t, nested(tokens, "kv", "size"), int64(64000000))
+	for _, gone := range []string{"host", "database", "tls", "credentials"} {
+		_, present := nestedOK(tokens, "kv", gone)
+		assert.Assert(t, !present, "a distributed kv has no %q", gone)
+	}
 
 	obj := root(t, flat)
 	ledger := namedResource(t, namespace(t, obj, "billing")["database"].(map[string]any), "ledger")
-	assert.Equal(t, nested(ledger, "engine", "kind"), "distributed")
-	for _, gone := range []string{"engine-host", "engine-credentials", "engine-database"} {
-		_, present := ledger[gone]
+	assert.Equal(t, ledger["type"], "sql")
+	assert.Equal(t, nested(ledger, "sql", "engine"), "distributed")
+	for _, gone := range []string{"host", "credentials", "database"} {
+		_, present := nestedOK(ledger, "sql", gone)
 		assert.Assert(t, !present, "a distributed database has no %q", gone)
 	}
 }
@@ -266,21 +311,47 @@ func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 // comment beside engine/tls recorded it as a live defect long after it was fixed,
 // which is the reason a constraint belongs in a test and not in prose.
 func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
-	compile := func(engine string) error {
+	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
-			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nengine:\n"+engine), 0o644))
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
 		_, _, err = c.Compile(context.Background())
 		return err
 	}
-	assert.ErrorContains(t, compile("    distributed: {}\n"), "required attribute 'engine/distributed/size'")
-	assert.NilError(t, compile("    distributed:\n        size: 1GB\n"))
+	assert.ErrorContains(t, compile("sql:\n    distributed: {}\n"), "required attribute 'sql/distributed/size'")
+	assert.NilError(t, compile("sql:\n    distributed:\n        size: 1GB\n"))
 	// The other branch owes nothing to the first one's field.
-	assert.ErrorContains(t, compile("    postgres: {}\n"), "required attribute 'engine/postgres/host'")
+	assert.ErrorContains(t, compile("sql:\n    postgres: {}\n"), "required attribute 'sql/postgres/host'")
+	// And every type asks the same question of its own block.
+	assert.ErrorContains(t, compile("kv:\n    distributed: {}\n"), "required attribute 'kv/distributed/size'")
+
+	// A vector index is required to state its width, and it is required whichever
+	// engine holds it — an index built at another width is a different index.
+	assert.ErrorContains(t, compile("vector:\n    distributed:\n        size: 1GB\n"),
+		"required attribute 'vector/dimensions'")
+	assert.NilError(t, compile("vector:\n    dimensions: 8\n    distributed:\n        size: 1GB\n"))
+
+	// NO DEFAULT ON `metric`, and this is the constraint that decided it: a default
+	// fires whenever the value is absent, whatever else the document says, so one on a
+	// field of the vector block would write `metric: cosine` onto every kv, sql and
+	// document database in the project. It says what omitting it means instead, the way
+	// `tls` does.
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
+		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nkv:\n    distributed:\n        size: 1MB\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	d := namedResource(t, resources(t, obj.Flat(), "database"), "d")
+	_, leaked := nestedOK(d, "vector", "metric")
+	assert.Assert(t, !leaked, "a kv database carries no claim about a vector metric: %v", d)
 }
 
 // The new kinds load at all, with their scalars parsed.
@@ -483,8 +554,15 @@ func TestEffectClasses(t *testing.T) {
 		{"cache", "watch", schema.Read}, // observes writes it cannot cause
 		{"database", "query", schema.Read},
 		{"database", "exec", schema.Write}, // the host cannot classify arbitrary SQL
-		{"channel", "publish", schema.Write},
-		{"channel", "subscribe", schema.Read},
+		{"database", "get", schema.Read},   // kv, and document
+		{"database", "put", schema.Write},
+		{"database", "watch", schema.Read},   // kv only, and nothing implements it yet
+		{"database", "search", schema.Read},  // vector
+		{"database", "upsert", schema.Write}, // vector
+		{"database", "delete", schema.Write}, // kv, document AND vector, one effect
+		{"stream", "publish", schema.Write},
+		{"stream", "subscribe", schema.Read},
+		{"channel", "dial", schema.Write}, // opaque bytes, so it can be anything
 		{"function", "invoke", schema.Write},
 		{"secret", "get", schema.Read},
 	} {
@@ -811,7 +889,7 @@ func TestCronCarriesItsTimezone(t *testing.T) {
 // never opens a socket.
 func TestExternalDatabaseMustStateItsTransport(t *testing.T) {
 	orders := namedResource(t, resources(t, compileBasic(t), "database"), "orders")
-	assert.Equal(t, nested(orders, "engine", "tls"), "verify-full")
+	assert.Equal(t, nested(orders, "sql", "tls"), "verify-full")
 
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -820,7 +898,7 @@ func TestExternalDatabaseMustStateItsTransport(t *testing.T) {
 		[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/database/x.yaml", []byte(`
 id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
-engine:
+sql:
     postgres:
         host: db.example.com
         credentials:
@@ -831,12 +909,12 @@ engine:
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err, "omitting it is allowed; absent means verify-full")
 	x := namedResource(t, resources(t, obj.Flat(), "database"), "x")
-	_, stated := nestedOK(x, "engine", "tls")
+	_, stated := nestedOK(x, "sql", "tls")
 	assert.Assert(t, !stated, "and it stays absent rather than compiling a value nobody wrote")
 
 	// and tau's own engine is never asked the question
 	ledger := namedResource(t, namespace(t, root(t, compileBasic(t)), "billing")["database"].(map[string]any), "ledger")
-	_, present := nestedOK(ledger, "engine", "tls")
+	_, present := nestedOK(ledger, "sql", "tls")
 	assert.Assert(t, !present, "a distributed database opens no socket")
 }
 
@@ -957,13 +1035,13 @@ func TestWorkflowLowers(t *testing.T) {
 	assert.Assert(t, got["function/checkout_reserve"] != "", "one driver per step: %v", got)
 	assert.Assert(t, got["function/checkout_charge"] != "")
 	assert.Assert(t, got["function/checkout_settle"] != "")
-	// AND NOTHING ELSE. A channel was produced here so that finishing had an address,
+	// AND NOTHING ELSE. A stream was produced here so that finishing had an address,
 	// and nothing authored asked for it — which is the rule everywhere else in this
 	// vocabulary, and what every durable engine in the market does: step history for
 	// replay and a UI, never an application-facing bus by default.
 	for k := range got {
-		assert.Assert(t, !strings.HasPrefix(k, "channel/"),
-			"a workflow produced a channel nobody asked for: %v", got)
+		assert.Assert(t, !strings.HasPrefix(k, "stream/"),
+			"a workflow produced a stream nobody asked for: %v", got)
 	}
 
 	// NO store for the run's state: the state is the message, and which queue it is in
@@ -1240,4 +1318,308 @@ func TestInstructionsCannotBeTheRepositoryRoot(t *testing.T) {
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
 	assert.ErrorContains(t, err, "not a place this field can name")
+}
+
+// THE UNION IS ORDERED AND ITS EFFECTS AGREE ACROSS TYPES. `delete` is a verb of three
+// data models and it is a write in all three; `get` is a read in two; `query` is a read
+// for both sql and document. A verb that meant one class on one type and another class
+// elsewhere would make the union meaningless — the effect is the join key every
+// cross-cutting query groups by — so databaseOps() refuses to build one, and this is
+// what says the table it builds from has not drifted.
+func TestDatabaseVerbsAreTheFourTypesUnioned(t *testing.T) {
+	got := make([]string, 0, 9)
+	for _, v := range schema.OpsOf("database") {
+		got = append(got, v.Name)
+	}
+	assert.DeepEqual(t, got, []string{
+		"get", "list", "watch", "put", "delete", // kv
+		"query",            // document, then sql, which shares it
+		"exec",             // sql
+		"search", "upsert", // vector; its delete is already in the list
+	})
+
+	// And it is declaration order, not sorted: an editor completes in the order the
+	// vocabulary states, and the position of a bucket is not decoration here either.
+	assert.Assert(t, got[0] == "get" && got[len(got)-1] == "upsert")
+}
+
+// `kv` HAS NO `ttl`, AND THAT IS THE STRUCTURAL DIFFERENCE FROM `cache`, not a
+// difference in prose. A cache entry has a lifetime — losing one costs a recomputation
+// — and a record that deletes itself is not a record. The distinction was undermined
+// once already by the two kinds being documented apart and shaped the same, so it is
+// pinned here: the field is not merely undocumented on a kv, it is not a key that can
+// be written.
+func TestADurableKvHasNoLifetime(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
+		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nkv:\n    distributed:\n        size: 1MB\n        ttl: 24h\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "unknown key 'ttl'")
+
+	// …while the cache beside it is where a lifetime belongs, and still takes one.
+	assert.Equal(t, only(t, resources(t, compileBasic(t), "cache"))["ttl"], int64(86400000000000))
+}
+
+// BOTH NAMES, ASSERTED BY MEANING, because the two of them swapped and a half-done swap
+// reads as correct in either direction: `channel` and `stream` are both valid
+// identifiers, so a tree where only one side moved still compiles and still passes any
+// test that names only one of them.
+//
+// So this asserts what each name MEANS. A `channel` is 1:1 — it names a protocol and
+// exactly one workload that answers it, and its verb is `dial`. A `stream` fans out — it
+// matches a name or a pattern, it has no server at all, and its verbs are `publish` and
+// a `subscribe` the platform DELIVERS. Neither document loads against the other kind.
+func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
+	const id = "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEC\n"
+	compile := func(path, body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/application/db.yaml",
+			[]byte("id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nimage: img\nexecution:\n    memory: 1MB\nports:\n    pg:\n        number: 5432\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, path, []byte(id+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+	const conduit = "protocol: pgwire\nserve:\n    application:\n        name: db\n        port: pg\n"
+	const fanout = "match: orders\ndistributed:\n    local: true\n"
+
+	assert.NilError(t, compile("/channel/sync.yaml", conduit), "a channel names a protocol and one server")
+	assert.NilError(t, compile("/stream/orders.yaml", fanout), "a stream matches a name")
+
+	// The other way round is not a document either kind can read, which is what makes a
+	// half-applied swap a failure instead of a silence.
+	//
+	// ONE offending key per probe, deliberately: strict mode walks the document's keys
+	// in map order and reports the first one it does not know, so a body carrying two
+	// of them names a different key run to run.
+	assert.ErrorContains(t, compile("/stream/x.yaml", fanout+"protocol: pgwire\n"), "unknown key 'protocol'")
+	assert.ErrorContains(t, compile("/channel/x.yaml", conduit+"match: orders\n"), "unknown key 'match'")
+
+	// And the verbs, which is the other half of what each name means.
+	dial := schema.OpsOf("channel")
+	assert.Equal(t, len(dial), 1)
+	assert.Equal(t, dial[0].Name, "dial")
+	assert.Equal(t, dial[0].Effect, schema.Write)
+	assert.Assert(t, !dial[0].Delivered, "nothing is pushed to a dialler")
+
+	fan := schema.OpsOf("stream")
+	assert.Equal(t, len(fan), 2)
+	assert.Equal(t, fan[0].Name, "subscribe")
+	assert.Assert(t, fan[0].Delivered, "a subscriber is handed the message; it does not go and ask")
+	assert.Equal(t, fan[1].Name, "publish")
+	assert.Equal(t, fan[1].Effect, schema.Write)
+}
+
+// A STREAM'S ENGINE IS A KEY FROM A CLOSED SET, and each branch owns its own fields.
+// Same construct a database's engine is, for the same reason: an engine that is a free
+// string or a reference to some other resource compiles when it names something that
+// answers nothing, and the closed key is what makes that unwritable rather than
+// merely detectable.
+//
+// The bridge booleans are gone with it. They are asserted absent rather than left to
+// the comment, because a deleted field that quietly still loads is the deletion not
+// having happened.
+func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
+	compile := func(body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
+			[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/stream/s.yaml",
+			[]byte("id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz\nmatch: orders\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	assert.NilError(t, compile("distributed: {}\n"))
+	assert.NilError(t, compile("distributed:\n    local: true\n"))
+	assert.NilError(t, compile("kafka:\n    host: b:9092\n    credentials:\n        name: k\n"))
+	assert.NilError(t, compile("nats:\n    host: n:4222\n    credentials:\n        name: k\n"))
+
+	// A pubsub-shaped product tau has no client for is not a key that exists.
+	assert.ErrorContains(t, compile("rabbitmq:\n    host: r:5672\n"), "unknown key 'rabbitmq'")
+	// An engine has to be chosen; there is no unstated default.
+	assert.ErrorContains(t, compile("description: nothing\n"), "attribute engine has an empty key")
+	// Two of them is the switch refusing rather than a winner being picked.
+	assert.ErrorContains(t, compile("distributed: {}\nkafka:\n    host: b:9092\n"),
+		"ambiguous path: distributed and kafka each match")
+
+	// Neither branch borrows the other's fields. `local` is a thing the swarm's own
+	// gossipsub does and a Kafka cluster has no notion of; a connection is the reverse.
+	assert.ErrorContains(t, compile("kafka:\n    host: b:9092\n    local: true\n"), "unknown key 'local'")
+	assert.ErrorContains(t, compile("distributed:\n    host: b:9092\n"), "unknown key 'host'")
+	assert.ErrorContains(t, compile("kafka:\n    credentials:\n        name: k\n"), "required attribute 'kafka/host'")
+	assert.ErrorContains(t, compile("kafka:\n    host: b:9092\n"), "required attribute 'kafka/credentials/name'")
+
+	// THE BRIDGES ARE DELETED, not merely undocumented.
+	assert.ErrorContains(t, compile("distributed: {}\nbridges:\n    websocket:\n        enable: true\n"),
+		"unknown key 'bridges'")
+
+	// And the compiled shape: one `engine` key, and the branch's fields flat beside it.
+	flat := compileBasic(t)
+	orders := namedResource(t, resources(t, flat, "stream"), "orders")
+	assert.Equal(t, orders["engine"], "distributed")
+	assert.Equal(t, orders["local"], false)
+	shipments := namedResource(t, resources(t, flat, "stream"), "shipments")
+	assert.Equal(t, shipments["engine"], "kafka")
+	assert.Equal(t, shipments["host"], "broker.example.com:9092")
+	assert.Equal(t, shipments["tls"], "verify-full")
+	_, leaked := shipments["local"]
+	assert.Assert(t, !leaked, "a kafka-backed stream carries no claim about node-local scope")
+}
+
+// A BUS IS A STREAM WITHOUT DURABILITY, AND THE SCHEMA SAYS SO RATHER THAN THE PROSE.
+// Two kinds that fan out to everyone attached will be read as duplicates and merged by
+// somebody unless what separates them is structural, so this pins the three places it
+// is: a bus can name no engine (every engine a stream has is a durable log, and a bus
+// that rewinds is a stream wearing the wrong kind), a bus admits instances by validator
+// where a stream matches a pattern, and a bus has a host — the websocket a browser
+// attaches to — where a stream has none.
+func TestABusIsAStreamWithoutDurability(t *testing.T) {
+	compile := func(path, body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
+			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, path,
+			[]byte("id: QmYb8sCzT9dGqLxKRp7BwVn2jMhFcXPtUdEaWqRk4vNhJ5\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	// A bus needs nothing at all: it is the swarm's, and there is nothing to choose.
+	assert.NilError(t, compile("/bus/chat.yaml", "description: internal only\n"))
+
+	// NO ENGINE AXIS. Every one of a stream's engines is a durable log, so none of them
+	// is a key a bus can write — which is what stops a bus that rewinds existing.
+	for _, engine := range []string{"kafka", "nats", "distributed"} {
+		assert.ErrorContains(t, compile("/bus/chat.yaml", engine+":\n    host: b:9092\n"),
+			"unknown key '"+engine+"'", "a bus must not be able to name %q", engine)
+	}
+
+	// The bus admits instances; the stream matches a pattern. Neither takes the other's.
+	assert.NilError(t, compile("/bus/chat.yaml", "instances:\n    validator:\n        name: f\n"))
+	assert.ErrorContains(t, compile("/bus/chat.yaml", "match: chat\n"), "unknown key 'match'")
+	assert.ErrorContains(t, compile("/stream/s.yaml", "match: o\ndistributed: {}\ninstances:\n    validator:\n        name: f\n"),
+		"unknown key 'instances'")
+
+	// The websocket is an ADDRESS, so it is the same `host:` a gateway declares — and
+	// the bus is what answers on it.
+	assert.NilError(t, compile("/bus/chat.yaml", "host:\n    generated:\n        name: chat\n"))
+	assert.ErrorContains(t, compile("/stream/s.yaml", "match: o\ndistributed: {}\nhost:\n    generated:\n        name: x\n"),
+		"unknown key 'host'")
+	// …and the deleted flag is not a spelling of it.
+	assert.ErrorContains(t, compile("/bus/chat.yaml", "websocket: true\n"), "unknown key 'websocket'")
+
+	chat := namedResource(t, resources(t, compileBasic(t), "bus"), "chat")
+	assert.Equal(t, nested(chat, "host", "kind"), "generated")
+	assert.Equal(t, nested(chat, "host", "name"), "chat")
+	// It answers on a name, so a client is told what to dial rather than guessing.
+	found := false
+	for _, r := range schema.ReachableNames(rootOf(compileBasic(t))) {
+		if r.Name == "chat" && r.Generated {
+			found = true
+		}
+	}
+	assert.Assert(t, found, "a bus with a host has to appear in ReachableNames")
+
+	// The verbs are the stream's, deliberately: what you DO to a bus is what you do to
+	// a topic, and the kinds differ in what happens afterwards.
+	assert.DeepEqual(t, opsOf(t, "bus"), opsOf(t, "stream"))
+	assert.Assert(t, schema.OpsOf("bus")[0].Delivered, "a subscriber is handed the message")
+}
+
+func opsOf(t *testing.T, kind string) []string {
+	t.Helper()
+	var out []string
+	for _, v := range schema.OpsOf(kind) {
+		out = append(out, v.Name+":"+v.Effect)
+	}
+	return out
+}
+
+// THE ASYMMETRY IS DELIBERATE: every ENGINE key is closed and `connector.type` is open.
+//
+// It reads like an oversight — the same word is refused in one place and accepted in
+// another — so it is pinned here with the reason. A closed set is what makes a wrong
+// pair unrepresentable, and it is affordable exactly where the set is knowable: an
+// engine is a wire protocol and a driver tau ships, so adding one is a release. "An
+// external system you receive events from" is not knowable, and `connector` is one of
+// the two seams the vocabulary keeps open on purpose (the other is node.Register).
+//
+// Closing it is a real trade with a real cost and it is the owner's call, not this
+// file's. If it is ever taken, this test is what says so out loud.
+func TestConnectorTypeIsOpenAndEveryEngineIsClosed(t *testing.T) {
+	compile := func(path, body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
+			[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, path,
+			[]byte("id: QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	// A system nobody has heard of is a connector, and that is the seam working.
+	for _, kind := range []string{"s3", "slack", "salesforce", "some-vendor-api"} {
+		assert.NilError(t, compile("/connector/c.yaml", "type: "+kind+"\ncredentials:\n    name: k\n"),
+			"connector.type is the open seam: %q", kind)
+	}
+
+	// The same openness nowhere else. An engine is a driver tau ships, so the set is
+	// knowable and the key is closed — which is what makes naming something that
+	// answers nothing impossible rather than merely wrong.
+	assert.ErrorContains(t, compile("/stream/s.yaml", "match: m\nslack:\n    host: h\n"), "unknown key 'slack'")
+	assert.ErrorContains(t, compile("/database/d.yaml", "sql:\n    s3:\n        host: h\n"), "unknown key 's3'")
+}
+
+// A PLACEHOLDER THAT STAYS A PLACEHOLDER. `log` has no fields of its own on purpose —
+// its shape is owed and has not been given — and the two things that could quietly
+// happen to it are pinned here: somebody deleting it as inert, and somebody completing
+// it by guessing.
+//
+// The verbs are the part that is not a placeholder. `append` alone is the kind's whole
+// claim, and the absence of `put` and `delete` is where "append-only" is STATED rather
+// than described: a record that can be overwritten or removed is not one.
+func TestALogIsAppendOnlyAndOtherwiseUnspecified(t *testing.T) {
+	assert.DeepEqual(t, opsOf(t, "log"), []string{"append:write", "read:read"})
+	for _, gone := range []string{"put", "delete", "exec", "upsert"} {
+		_, has := schema.EffectOf("log", gone)
+		assert.Assert(t, !has, "an append-only log must not declare %q", gone)
+	}
+
+	// Nothing but the common block, so a field arriving here is a decision somebody
+	// took and this is where they are asked to have taken it deliberately.
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/log/a.yaml",
+		[]byte("id: QmPq5xVnB7LtWcHdKzR3JgEyUM8fasNbT2vXrQwCk6hDZm\nretention: 30d\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "unknown key 'retention'",
+		"the shape is owed; a field guessed at here is not it")
+
+	// And it is a real target: something appends to it in the fixture, which is the
+	// difference between a kind and a name nothing can reach.
+	audit := namedResource(t, resources(t, compileBasic(t), "log"), "audit")
+	assert.Equal(t, audit["name"], "audit")
 }

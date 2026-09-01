@@ -1,5 +1,5 @@
 id: QmPChzsSKcAiSFqNqrH7LM4t9GhqfHmi3ihn7C9hNc8Vgd
 description: the books; a system of record, so a database and not a cache
-engine:
+sql:
     distributed:
         size: 16MB

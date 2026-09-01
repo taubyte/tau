@@ -1,0 +1,9 @@
+id: QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfF
+description: session tokens that must survive a node restart - a cache would be allowed to lose them
+kv:
+    distributed:
+        size: 64MB
+instances:
+    validator:
+        namespace: /shop
+        name: may_open

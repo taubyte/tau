@@ -1,0 +1,9 @@
+id: QmYb8sCzT9dGqLxKRp7BwVn2jMhFcXPtUdEaWqRk4vNhJ5
+description: browsers attach and get what is sent from then on - nothing is replayed, which is why it is not a stream
+host:
+    generated:
+        name: chat
+instances:
+    validator:
+        namespace: /shop
+        name: may_open
