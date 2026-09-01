@@ -646,13 +646,14 @@ var databaseTypes = []databaseType{
 	// one: an entry that vanishes on its own is what a cache is for, and a record that
 	// deletes itself is not a record.
 	//
-	// WHAT IT DOES NOT PROMISE, because the engine does not: concurrent writes to ONE
-	// key are merged last-writer-wins, so one of them is discarded with no error. There
-	// is no compare-and-swap and no transaction — an `entity` is what serves a
-	// linearizable counter. The rule that falls out is the one AGENTS.md states for
-	// every kvdb layout in this repository: never a key two writers can write
-	// differently; put the discriminator in the key and let the prefix scan be the
-	// index.
+	// WHAT `crdt: true` DOES NOT PROMISE, because the engine does not: concurrent
+	// writes to ONE key are merged last-writer-wins, so one of them is discarded with
+	// no error. There is no compare-and-swap and no transaction — an `entity` is what
+	// serves a linearizable counter. The rule that falls out is the one AGENTS.md
+	// states for every kvdb layout in this repository: never a key two writers can
+	// write differently; put the discriminator in the key and let the prefix scan be
+	// the index. It was every distributed database's story until the flag existed; it
+	// is now the story of the ones that ask for it.
 	{
 		name: "kv",
 		ops:  Verbs{ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")},
@@ -771,6 +772,32 @@ func (t databaseType) attributes() []*Attribute {
 		Bytes(Key(t.name, "size"), Path(t.name, tauEngine, "size"),
 			RequiredWhen(Key(t.name, "engine"), tauEngine), PerEnv(), InSection("engine"), shown,
 			Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
+
+		// COORDINATED OR NOT, AND THE AUTHOR NEVER NAMES THE MECHANISM. `crdt: true`
+		// is the coordination-free replication tau already runs — pkg/kvdb, a
+		// Merkle-CRDT, where every node takes a write the moment it arrives and
+		// concurrent writes to one key merge last-writer-wins with nothing refused and
+		// nothing waited for. `crdt: false` is a consistent state holder, and HOW the
+		// platform gets there — raft replicating synchronously, or raft electing one
+		// master and the rest following — is a runtime decision and not a key. An
+		// author states what they need; a `consensus:` field would ask them to pick
+		// the algorithm that delivers it, which is the `provides` role list on
+		// `connector` again: restating a fact about software they did not write, and
+		// compiling just as happily when they get it wrong.
+		//
+		// UNDER `distributed` AND NOWHERE ELSE, for the reason the size is: a Postgres
+		// has whatever consistency Postgres has, so the flag on that branch is a claim
+		// this project cannot honour. The literal path makes `postgres: { crdt: true }`
+		// an unknown key rather than a boolean filed under a branch nobody took.
+		//
+		// THE ABSENT VALUE IS `false`: writing nothing asks for the coordinated store.
+		// On a system of record that is safe-by-default and explicit-to-weaken, the
+		// shape `tls` above has — and it is also the expensive one, since it costs a
+		// round trip on every write. Whether that is the right default is the owner's
+		// call; what would settle it is whether a database nobody has said anything
+		// about should cost consensus or should lose a concurrent write.
+		Bool(Key(t.name, "crdt"), Path(t.name, tauEngine, "crdt"), InSection("engine"), shown,
+			Doc("CRDT", "Replicate without coordination: every node takes a write immediately, and concurrent writes to one key merge last-writer-wins with nothing refused. Omitted means a consistent state holder instead, which costs a round trip on every write.")),
 	}
 
 	if len(t.external) > 0 {
