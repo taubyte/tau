@@ -25,8 +25,8 @@
 //
 // Still absent, but no longer for want of a shape — DefineList arrived with the
 // transformer chain, so what is left is the modelling: the `route` embed's per-path
-// rules (headers/redirects/rewrites/status), `connector.params`, `domain` DNS records,
-// and per-edge modifiers (mount, timeout, retry, via).
+// rules (headers/redirects/rewrites/status), `domain` DNS records, and per-edge
+// modifiers (mount, timeout, retry, via).
 package schema
 
 import (
@@ -158,7 +158,7 @@ func Category(name string) NodeOption { return GroupAnnotate("category", name) }
 //
 // A host a declared REFERENCE already names is reachable without being listed here. An
 // agent naming `model/opus` may dial the endpoint that model declares; a database naming
-// an external engine may reach its host; a connector may reach what it connects to. The
+// an external engine may reach its host, and a stream naming a kafka may reach its broker. The
 // alternative was tried in the fixture and is the reason this sentence exists: the agent
 // listed `api.anthropic.com` while the model it names already declared
 // `https://api.anthropic.com`, which is the same fact in two resources — and the day
@@ -428,10 +428,12 @@ func pullSecret() []*Attribute {
 // So this replaces v1's `match`/`regex`, which was this capability spelled as a lookup:
 // the data plane knew only a name and walked every config regex-matching it
 // (services/hoarder/helpers.go). That made every store a pattern, gave the pattern no
-// owner, and answered "may this instance exist" with "does this string match". None of
-// the data kinds carries that pair any more, and none of them gains it back: a limit
-// bounds HOW MANY instances there are and a validator decides WHICH, and between them
-// there is nothing a pattern was doing that is still wanted.
+// owner, and answered "may this instance exist" with "does this string match". NOTHING
+// IN THIS VOCABULARY CARRIES THAT PAIR ANY MORE — `stream` was the last to hold it, and
+// it went because a topic is named by the resource rather than matched by it — and
+// nothing gains it back: a limit bounds HOW MANY instances there are and a validator
+// decides WHICH, and between them there is nothing a pattern was doing that is still
+// wanted.
 //
 // The shape is the AUTHORIZER's, deliberately (§9, the one modelling rule): the target
 // owns the policy. The store names a function; the caller names only the instance it
@@ -720,7 +722,7 @@ func hostAttributes(section string) []*Attribute {
 //
 // A WRONG PAIR IS UNREPRESENTABLE, which is the property the old shape had and the one
 // thing that could not be given up. `engine: kafka` was refused because the engine is a
-// KEY from a closed set rather than a string or a reference to a `connector`; a document
+// KEY from a closed set rather than a free string; a document
 // database on Postgres is refused by the same check, because the set of engine keys is
 // declared PER TYPE:
 //
@@ -985,6 +987,13 @@ func (t databaseType) attributes() []*Attribute {
 		// shape `engine` above has. Neither value has any today, so this is the scalar
 		// choice; a lease timeout or a replica count under `single-writer` is what
 		// would move it, and that is the owner's call rather than this field's.
+		//
+		// TWO VALUES WHERE `cache.consensus` HAS THREE, AND THE MISSING ONE IS
+		// `gossip`. A gossiped write can be dropped outright rather than merged, and a
+		// dropped write in a system of record is a dropped fact that nothing
+		// re-derives. A cache can take that — losing an entry costs a recomputation —
+		// which is why the set is per kind rather than shared, and why this one will
+		// not gain the third value.
 		String(Key(t.name, "consensus"), Path(t.name, tauEngine, "consensus"), Accessor(title(t.name)+"Consensus"),
 			InSet("crdt", "single-writer"), RequiredWhen(Key(t.name, "engine"), tauEngine),
 			InSection("engine"), shown,
@@ -992,10 +1001,11 @@ func (t databaseType) attributes() []*Attribute {
 	}
 
 	if len(t.external) > 0 {
-		// AN EXTERNAL ENGINE CARRIES ITS OWN CONNECTION. There is no reference to a
-		// `connector` here, and that absence is the point — see the note above the
-		// table. The three facts every external engine needs are the shared helper's;
-		// the fourth is a database's alone.
+		// AN EXTERNAL ENGINE CARRIES ITS OWN CONNECTION — a host, a credential and a
+		// tls mode, written here. There is no second resource standing between the
+		// database and the server it is, which is what a `connector` was and is why
+		// that kind is gone. The three facts every external engine needs are the
+		// shared helper's; the fourth is a database's alone.
 		out = append(out, externalEngineAttributes(
 			[]StringMatch{t.name}, []string{t.name}, t.external, Key(t.name, "engine"), "engine", shown)...)
 		out = append(out,
@@ -1047,8 +1057,11 @@ func vectorIndexAttributes(t databaseType) []*Attribute {
 //
 // V2Resources is the v2 resource vocabulary. The enum is closed: tcc's validation,
 // completion, JSON-Schema emission and decompilation all need every type's shape at
-// compile time. Openness lives at two seams instead — `connector` for external
-// systems, node.Register for services (resources.md, Extensibility decision).
+// compile time. There is no open KIND any more — `connector.type` was the one free
+// string and the kind is gone. What stays open is a workload's `egress` allowlist plus
+// a `secret`, which is the same openness without asking the author to name a vendor as
+// a resource first, and node.Register for services (resources.md, Extensibility
+// decision).
 var V2Resources = []*Node{
 
 	// ---- compute ----
@@ -1234,47 +1247,107 @@ var V2Resources = []*Node{
 
 	// ---- data ----
 
-	// A cache. Eventually consistent, AP, and it never gets CAS — an entity is what
-	// serves a linearizable counter. It is NOT a database: entries have a lifetime,
-	// losing one costs a recomputation, and nothing here is a system of record.
+	// A cache. It never gets CAS — an entity is what serves a linearizable counter. It
+	// is NOT a database: entries have a lifetime, losing one costs a recomputation, and
+	// nothing here is a system of record.
+	//
+	// WHERE IT SITS ON THE CAP LINE IS `consensus`'s ANSWER, NOT THE KIND'S. It used to
+	// be the kind's — "eventually consistent, AP" was written here and in the GroupDoc,
+	// and it was true of everything this kind could be. It is not true of a
+	// `single-writer` cache, which costs a round trip and cannot complete a write on the
+	// side of a partition that has lost the holder. The one thing that IS true of all
+	// three is what the rest of this paragraph says: an entry is not a record.
 	DefineGroup("cache",
 		resource(
 			commonAttributes(append(instanceAttributes(),
 				Bytes(Key("size"), Required(), PerEnv(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
 				Duration(Key("ttl"), PerEnv(), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
 
-				// WHERE THE DATA LIVES, AND A CACHE HAS NO CONSENSUS QUESTION TO ASK.
-				// A database chooses what happens to two writes at one key because it
-				// is a system of record and the answer decides whether one of them is
-				// lost. This kind is eventually consistent and AP by definition —
-				// losing an entry costs a recomputation — so there is nothing to
-				// coordinate and no engine axis to hang a choice under. What is left
-				// is one fact: whether every peer keeps its own copy, or the data sits
-				// on one node and the others fetch it.
+				// WHERE THE DATA LIVES. Whether every peer keeps its own copy, or the
+				// data sits on one node and the others fetch it.
 				//
-				// A BOOL, WHERE `database/consensus` IS A REQUIRED ENUM, AND THE
+				// A BOOL, WHERE `consensus` BELOW IS A REQUIRED ENUM, AND THE
 				// DIFFERENCE IS THE POLARITY OF THE ABSENT STATE rather than a taste
-				// for one construct. There, both answers were real and the cheap-
-				// looking default was the expensive one, so an absent value was a
-				// silent choice somebody would get wrong; required removed the
-				// question. Here the absent value is node-local, which is the cheap
-				// answer and the obvious one, and replication is what an author opts
-				// in to. `tls` is the same shape pointed the other way — safe by
+				// for one construct. Here the absent value is node-local, which is the
+				// cheap answer and the obvious one, and replication is what an author
+				// opts in to. `tls` is the same shape pointed the other way — safe by
 				// default, explicit to weaken — and this is safe-and-cheap by default,
-				// explicit to widen. Two kinds, two shapes, because the questions are
-				// not the same question.
+				// explicit to widen.
 				//
 				// NOT WHO MAY READ IT, WHICH IS THE ACCESS BLOCK'S QUESTION and is
 				// answered per resource and per verb by whatever reaches in. A cache
 				// every peer may read can still be stored on one node and fetched over
-				// the network, or replicated so each peer reads locally; the two axes
-				// are independent and all four combinations mean something.
+				// the network, or replicated so each peer reads locally.
 				//
 				// NO MECHANISM AND NO REPLICA COUNT. How copies are kept is the
 				// platform's to change, and a field for something nothing performs is
 				// the inert key this vocabulary deletes things for.
+				//
+				// HOW IT MEETS `consensus`, STATED BECAUSE IT IS NOT SETTLED. The two
+				// are not independent: `crdt` and `gossip` both mean every peer takes
+				// the write where it lands, so both IMPLY a copy per peer, and only
+				// under `single-writer` is "where do the bytes live" still a question
+				// — one holder for writes, with or without replicas to read from. So
+				// this field carries information on one branch of three, and on the
+				// other two it either restates what the value already said or
+				// contradicts it. Whether that makes it redundant, or a second axis
+				// worth keeping for the branch where it bites, is the owner's call.
+				// Neither refusing the pair nor deleting the field is done here: the
+				// first would decide the question in the schema and the second would
+				// drop a field one commit old. It is written down instead.
 				Bool(Key("replicated"), InSection("keys"),
-					Doc("Replicated", "Whether every peer keeps its own copy of this cache. Omitted means the data lives on one node and other peers reach it over the network.")),
+					Doc("Replicated", "Whether every peer keeps its own copy of this cache. Omitted means the data lives on one node and other peers reach it over the network. Only a question under single-writer consensus: crdt and gossip both put a copy on every peer.")),
+
+				// WHAT HAPPENS TO TWO WRITES THAT ARRIVE AT ONE KEY AT ONCE. The same
+				// question `database.consensus` asks, named the same way and answered
+				// from a wider set, and the author never names the mechanism.
+				//
+				//	single-writer  one holder of the key at a time, so a write costs a
+				//	               round trip and nothing is silently discarded
+				//	crdt           every node takes the write the moment it arrives and
+				//	               concurrent writes merge last-writer-wins: nothing is
+				//	               refused and nothing is waited for, and the write that
+				//	               loses the merge is gone with no error
+				//	gossip         the write is taken locally and spread best-effort, so
+				//	               an entry can fail to arrive or be dropped outright
+				//
+				// THREE VALUES WHERE A DATABASE HAS TWO, AND THE DIFFERENCE IS NOT
+				// SLOPPINESS. `gossip` is eventually consistent AND LOSSY: it can drop
+				// an entry that no merge ever saw. That is affordable exactly where
+				// losing an entry costs a recomputation, which is the line this kind's
+				// own GroupDoc already draws — and it is unaffordable in a system of
+				// record, where a dropped write is a dropped fact and no re-derivation
+				// gets it back. So `database` will not gain this value and `cache` has
+				// it because the whole premise of the kind is that a miss is cheap.
+				//
+				// REQUIRED, AND THAT IS WHERE IT PARTS FROM `replicated` ABOVE.
+				// `replicated`'s silence is defensible because absent means nothing
+				// extra happens — the data sits where it was written, which is what
+				// doing nothing gets you. There is no such value here: two writes
+				// arrive at one key whether or not anybody chose, and the store does
+				// one of these three things. A field whose absence still has an answer
+				// is a choice made by silence, and whichever answer the silence carried
+				// would be wrong for somebody who never read the line — `gossip` puts
+				// lossy on every cache nobody thought about, `single-writer` puts a
+				// round trip on all of them. Required removes the question rather than
+				// answering it, which is the same fix `database.consensus` and
+				// `worker.runtime` carry, and the same defect the original `crdt: bool`
+				// had.
+				//
+				// AT THE DOCUMENT ROOT, beside `size` and `ttl`, because this kind has
+				// no engine axis and none is invented for it. A database writes its
+				// consensus inside `<type>/distributed/` because an external Postgres
+				// has whatever consistency Postgres has and a claim on that branch is
+				// one the project cannot honour. Nothing external backs a cache, so
+				// there is no branch the answer could be wrong on.
+				//
+				// NO ALGORITHM, on purpose and by the same rule the database states:
+				// `raft` is the plausible wrong answer and is exactly what this
+				// vocabulary refuses to be told, because how the platform keeps
+				// `single-writer` is its own to change without touching anybody's
+				// config.
+				String(Key("consensus"), InSet("single-writer", "crdt", "gossip"), Required(), InSection("keys"),
+					Doc("Consensus", "What happens to concurrent writes to one key. single-writer: one holder at a time, so a write costs a round trip and nothing is silently discarded. crdt: every node takes the write the moment it arrives and the writes merge last-writer-wins, with nothing refused and nothing waited for. gossip: the write is taken locally and spread best-effort, so an entry may fail to arrive or be dropped — cheapest, and fine where losing one costs a recomputation.")),
 
 				// A REFERENCE, never the material. "key material or reference" let the
 				// same field be either, and the safe reading was the one nothing enforced.
@@ -1283,9 +1356,9 @@ var V2Resources = []*Node{
 				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret", Inbound()), NoAccessors(), InSection("encryption"),
 					Doc("Encryption Key", "Secret holding the key entries are encrypted with, as \"secret/<name>\".")),
 			)...),
-			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"), Placed(),
+			GroupDoc("A key-value cache served to the project's peers, with a lifetime on every entry. Not a system of record: losing an entry costs a recomputation, never a fact."), Icon("bolt"), Category("data"), Placed(),
 			secIdentity, secAccess,
-			Section("keys", "Keys", "Capacity, lifetime, and where the data lives."),
+			Section("keys", "Keys", "Capacity, lifetime, where the data lives, and what happens to two writes at one key."),
 			secInstances,
 			Section("encryption", "Encryption", "Encryption at rest."),
 			Ops(ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")),
@@ -1408,10 +1481,10 @@ var V2Resources = []*Node{
 	// specification that exists and has not been given.
 	//
 	// It is written down as deliberately incomplete because this vocabulary DELETES
-	// inert things — `notification.email` for being read nowhere, the connector's
-	// `provides` for asserting a capability nothing consumed — so a kind with nothing
-	// in it either gets removed as inert or gets completed by somebody guessing. This
-	// is the note that stops both.
+	// inert things — `notification.email` for being read nowhere, and `connector` whole
+	// once every case it carried was spelled by a kind already here — so a kind with
+	// nothing in it either gets removed as inert or gets completed by somebody
+	// guessing. This is the note that stops both.
 	//
 	// IT HAS VERBS EVEN THOUGH IT HAS NO ATTRIBUTES, because the vocabulary's own rule
 	// (see V2Resources above) is that a kind with no Ops() is not a target: nothing can
@@ -1840,8 +1913,8 @@ var V2Resources = []*Node{
 	// `stream` resource is looking at the wrong kind — that file is the `channel` kind.
 	//
 	// IT HAS AN ENGINE, and until 2026-08-31 it did not: a stream was always the
-	// swarm's own gossipsub, and the only way to reach Kafka was a `connector` that
-	// consumed it and republished what it read as CloudEvents over that gossipsub.
+	// swarm's own gossipsub, and the only way to reach Kafka was a separate resource
+	// that consumed it and republished what it read as CloudEvents over that gossipsub.
 	// Which throws away every reason to have used Kafka — ordering, durability,
 	// consumer groups and replay all die at the republication, and a subscriber gets
 	// fire-and-forget however the stream was fed. So the engine is a key from a closed
@@ -1877,12 +1950,27 @@ var V2Resources = []*Node{
 	// asked for it back; websocket is not lost but rehomed — on a `bus`, attaching a
 	// browser and receiving from now on is the point of the kind rather than a flag on
 	// a different one.
+	//
+	// AND SO IS `match`/`regex`. It was v1's `messaging` pair, carried here because it
+	// was carried there, and this was the last kind holding it. A STREAM IS ITS NAME:
+	// one resource, one topic, spelled `orders` in the file it is written in and
+	// `orders` in every access block that reaches it. That is already the only spelling
+	// anything used — the index is by name, an access entry is keyed by name, and every
+	// fixture wrote `match:` equal to the resource's own name — so what the pair added
+	// over the name was the ability for it to DISAGREE with the name, and for two
+	// streams to both claim one topic with the walk order deciding which got the
+	// message.
+	//
+	// It is the rule `instanceAttributes` already states for a store, one level up: a
+	// name is a key, not a pattern, because a pattern answers "which one" with a SET,
+	// and a set cannot be indexed, cannot be resolved, and cannot be told apart from
+	// another set that overlaps it. What is NOT done here is the other half of that
+	// construct — this kind gains no `instances:` block, because one stream is one topic
+	// and there is no caller-supplied name to admit. Whether a stream should ever hold
+	// many topics is a different question and is the owner's.
 	DefineGroup("stream",
 		resource(
 			commonAttributes(append([]*Attribute{
-				String("match", Required(), Field("Match"), Accessor("StreamMatch"), NoSetter(), InSection("matching"), Doc("Match", "Stream name or pattern this resource matches.")),
-				Bool(Key("regex"), NoSetter(), InSection("matching"), Doc("Use Regex", "Treat match as a regular expression instead of a literal name.")),
-
 				String("engine", Path(Either(streamEngines...)), Captures(), InSection("engine"),
 					Doc("Engine", "Which engine holds the topic: distributed is the swarm's own gossipsub; kafka and nats are external clusters reached over the network.")),
 				Bool("local", Path(tauEngine, "local"), InSection("engine"), ShowWhen("engine", tauEngine),
@@ -1890,7 +1978,6 @@ var V2Resources = []*Node{
 			}, externalEngineAttributes(nil, nil, externalStreamEngines, Key("engine"), "engine", ShowWhen("engine", externalStreamEngines...))...)...),
 			GroupDoc("A pubsub stream: what is published to it reaches every subscriber. On the swarm's own gossipsub, or on an external Kafka or NATS cluster."), Icon("message"), Category("trigger"),
 			secIdentity, secAccess,
-			Section("matching", "Matching", "The name or pattern this stream answers to."),
 			Section("engine", "Engine", "Which engine holds the topic, and its settings."),
 			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
 			Resource("stream", "Stream", "Stream", "stream"),
@@ -1923,14 +2010,14 @@ var V2Resources = []*Node{
 	// gives `ReachableNames` something to answer with, which a boolean could not.
 	// A bus with no `host:` is reachable from inside the project and from nowhere else.
 	//
-	// AND IT HAS NO `match`/`regex`. `stream` carries that pair because v1's `messaging`
-	// did; it is a pattern with no owner, and instanceAttributes' own comment says what
-	// is wrong with it — it answers "may this instance exist" with "does this string
-	// match". A bus is the sharpest case, because the thing attaching is a BROWSER: the
-	// instance name is the caller's, so the project has to have a point at which it
-	// says no. That point is `instances:`, the construct every store here already uses.
-	// Converging `stream` onto the same construct is the owner's call and is not done
-	// here.
+	// AND NEITHER IT NOR `stream` HAS `match`/`regex` ANY MORE. v1's `messaging` carried
+	// that pair, `stream` carried it here because it was inherited, and it is gone from
+	// both: a pattern with no owner, answering "may this instance exist" with "does this
+	// string match". A bus is the sharpest case, because the thing attaching is a
+	// BROWSER: the instance name is the caller's, so the project has to have a point at
+	// which it says no. That point is `instances:`, the construct every store here
+	// already uses, and it is why a bus has that block where a stream — one resource,
+	// one topic, named by its own name — needs none.
 	//
 	// The verbs are `stream`'s, and deliberately the same ones: what you DO to a bus is
 	// what you do to a topic, and the kinds differ in what happens afterwards. Two
@@ -2515,55 +2602,49 @@ var V2Resources = []*Node{
 			Resource("workflow", "Workflow", "Workflow", "workflow"),
 		)),
 
-	// A SOURCE THAT IS NOT ALREADY SOMETHING ELSE. It holds the credentials, and for
-	// source-like externals it holds the connection too — Lambda's event-source
-	// mapping, where a separate poller joins the source and the invoked compute
-	// never touches it. A connector that holds a live connection runs exactly once
-	// per cloud: a quorum lease with an epoch on every event it emits, so a stale
-	// poller's events are rejected rather than duplicated (resources.md §6).
+	// NO `connector` KIND, and this is the note that stops it coming back by halves.
 	//
-	// IT LOST ITS TWO BIGGEST CASES ON 2026-08-31 AND IT STILL EARNS ITS EXISTENCE.
-	// A Kafka or a NATS is a `stream` ENGINE now, not a connector that consumes one and
-	// republishes it — that bridge threw away ordering, durability and replay, which is
-	// every reason to have used Kafka. A Postgres, MySQL or Mongo is a `database`
-	// engine, and was never a connector: naming one here compiled clean and nothing
-	// noticed that Kafka answers no query, which is why the engine became a key from a
-	// closed set.
+	// It was "a source that is not already something else": a `type` naming an external
+	// system, a `credentials` reference, and `polls` — hold the connection, and exactly
+	// one node in the cloud runs it. It lost Kafka and NATS to `stream.engine` and
+	// Postgres, MySQL and Mongo to `database.engine` on 2026-08-31, and what was left
+	// was argued to still earn the kind. It does not, and every remaining case is
+	// spelled by kinds this vocabulary already has:
 	//
-	// What is left is what neither of those covers, and it is not nothing:
+	//   - AN OBJECT STORE AS A SOURCE — s3, gcs. That is an argument for giving
+	//     `storage` an engine axis, the way `database` and `stream` have one; it was
+	//     never an argument for a second kind that names a storage server.
+	//   - A POLLED VENDOR API. A `cron` fires a `function`, the function polls and
+	//     publishes what it read to a `stream`. Three kinds, all here, and the polling
+	//     logic is the author's — which it was going to be anyway.
+	//   - CREDENTIALS. A workload reaches a `secret` through its access block. That is
+	//     the one construct for it and a second spelling was always a copy.
+	//   - "EXACTLY ONE NODE RUNS IT". That comes from the schedule: a cron fires once,
+	//     wherever it fires. Nothing about it needs a kind to be true.
 	//
-	//   - AN OBJECT STORE AS A SOURCE — s3, gcs. `storage` has no engine axis, so there
-	//     is nowhere else for it to be said.
-	//   - A VENDOR API — slack, stripe, a salesforce. A webhook is an inbound route to a
-	//     function and needs no kind; a POLLED one is the opposite direction and a route
-	//     cannot express it.
-	//   - THE POLLER ITSELF. An `entity` is the same fence — a quorum lease and its
-	//     epoch — but an entity runs the AUTHOR'S code, and what a connector says is
-	//     that the PLATFORM ships the client. `source: builtin` is the only seam for
-	//     that and its own documentation says it is not for authors, so "tau's slack
-	//     poller" has no spelling as an entity today. Decomposing this kind would move
-	//     writing a Slack client from tau to everyone using tau.
-	//   - "EXACTLY ONE NODE RUNS THIS" AS A DECLARED FACT, rather than as an entity with
-	//     an entrypoint, a size and a lease the author has to reason about.
+	// WHAT IS ACTUALLY LEFT is a long-lived HELD socket to a vendor that is not a kafka
+	// or a nats topic — and that is an `application`: a container that runs
+	// continuously, with `egress` naming the host and a `secret` holding the credential.
+	// What `connector` added on top of that was one bit, `polls`, meaning "and only one
+	// copy of it runs". That is a PLACEMENT fact, and placement is already a block on
+	// every kind with a footprint. A kind whose entire remaining content is one
+	// placement bit is one placement bit.
 	//
-	// `type` STAYS OPEN, and that is a decision rather than an oversight: this kind is
-	// one of the vocabulary's two extensibility seams (see V2Resources above), and it is
-	// the one for external systems. Closing it to a set would leave the vocabulary with
-	// no open surface for them at all. Whether the trade is worth taking — a closed set
-	// buys the same refusal `database.engine` and `stream.engine` get, and costs the
-	// seam — is the owner's call, not this file's.
-	DefineGroup("connector",
-		resource(
-			commonAttributes(
-				String("type", Required(), InSection("identity"), Doc("Type", "Which external system events are received from, e.g. \"s3\", \"slack\". A pubsub cluster is a stream's engine and a database server is a database's; neither is written here.")),
-				String(Key("credentials", "namespace"), IsNamespacePath(), InSection("identity"), Doc("Credentials Namespace", "Where that secret lives. Omitted means this connector's own scope, then its parents.")),
-				String(Key("credentials", "name"), IsVariableName(), Ref("secret", Inbound()), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials.")),
-				Bool("polls", InSection("identity"), Doc("Polls", "This connector holds a live connection to the external system and emits events from it. Exactly one node in the cloud runs it.")),
-			),
-			GroupDoc("An external system events are received from, that is not already a stream's engine or a database's: credentials, and the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
-			secIdentity, secAccess,
-			Resource("connector", "Connector", "Connector", "connector"),
-		)),
+	// The other half of the old argument was that the PLATFORM ships the client —
+	// `source: builtin`, closed to authors, so "tau's slack poller" had no spelling.
+	// That only bites if tau ships connector implementations. It does not, none is
+	// planned, and if the author writes the function it never arises.
+	//
+	// WHAT IT COSTS, said out loud: this was one of the vocabulary's two extensibility
+	// seams and the only OPEN one — `connector.type` was a free string on purpose. What
+	// remains open is a workload's `egress` allowlist plus a `secret`, which is the
+	// same openness one construct further out: any workload may reach any host it lists,
+	// and nothing has to name the vendor as a kind first. node.Register still covers
+	// services.
+	//
+	// WHAT WOULD BRING IT BACK is not this kind: it is a singleton placement fact
+	// beside `region`, or tau shipping vendor clients. Both are the owner's calls and
+	// neither is a `connector`.
 }
 
 // rootAttributes is the project root. `notification.email` is deleted: it has been
@@ -2723,9 +2804,9 @@ func environmentsGroup() *Node {
 // A SHADOW IS A DEPLOYMENT ATTACHED TO ANOTHER'S STATE. It is its own deployment —
 // its own release, its own compiled artifact, its own address, its own assets — and it
 // shares everything that does not fork with the environment it is written inside:
-// every stateful kind, the secrets, and the TRIGGERS. A shadow starts no scheduler,
-// opens no connector and consumes no queue of its own, because the environment holding
-// it is already doing that.
+// every stateful kind, the secrets, and the TRIGGERS. A shadow starts no scheduler and
+// consumes no queue of its own, because the environment holding it is already doing
+// that.
 //
 // Which is the point: an A/B variant and a frontend tested against production data are
 // both "different code, same data".

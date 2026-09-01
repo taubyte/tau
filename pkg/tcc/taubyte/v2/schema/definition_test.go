@@ -149,27 +149,48 @@ func TestQueueDeadLetterResolves(t *testing.T) {
 	assert.Assert(t, exists, "dead-letter %q did not resolve to a compiled queue id", dl)
 }
 
-// A connector's credentials resolve to a secret id — the value never enters the
-// config, only the reference does.
-func TestConnectorCredentialsResolve(t *testing.T) {
+// A CREDENTIAL NEVER ENTERS THE CONFIG, and the two ways of naming one are both here
+// with the difference between them stated, because it is easy to read them as the same
+// thing.
+//
+// This used to be asserted on `connector.credentials` — a field on a kind since
+// deleted. Both halves of what it held survive, in the places they belong:
+//
+//   - A REFERENCE resolves. `stream/shipments` names the secret its kafka authenticates
+//     with, the attribute is a `Ref("secret")`, and what compiles out is the secret's
+//     ID. The name is checked at compile: a secret that is not there is an error.
+//   - AN ACCESS ENTRY does not, and is keyed by the NAME of what it reaches (§8b of
+//     AGENTS.md). `function/poll_mentions` — the poller the fixture's connector became
+//     — reaches `secret/slack` this way, which is how every workload reaches a secret
+//     it reads at run time.
+//
+// The cost of the second is real and is the vocabulary's, not this deletion's: nothing
+// resolves or checks an entry's key, so a typo in one is not a compile error the way a
+// bad `credentials:` was.
+func TestACredentialIsNeverAValue(t *testing.T) {
 	flat := compileBasic(t)
-	// the one the connector actually names, now that the project has more than one
-	secretID := ""
-	for id, v := range resources(t, flat, "secret") {
-		if v.(map[string]any)["name"] == "stripe" {
-			secretID = id
-		}
-	}
-	for _, v := range resources(t, flat, "connector") {
-		conn := v.(map[string]any)
-		assert.DeepEqual(t, conn["credentials"], map[string]any{"name": secretID})
-	}
+
+	// A REFERENCE: the id, not the name, and never the value.
+	shipments := namedResource(t, resources(t, flat, "stream"), "shipments")
+	creds, _ := shipments["credentials"].(map[string]any)
+	id, _ := creds["name"].(string)
+	assert.Assert(t, strings.HasPrefix(id, "Qm"), "a kafka's credentials did not resolve to a secret id: %v", shipments["credentials"])
+	assert.Assert(t, resources(t, flat, "secret")[id] != nil, "%q is not a compiled secret", id)
+
+	// AN ACCESS ENTRY: the name, and the verb the kind declares.
+	poller := namedResource(t, resources(t, flat, "function"), "poll_mentions")
+	secrets, _ := poller["secret"].(map[string]any)
+	entry, _ := secrets["slack"].(map[string]any)
+	assert.Assert(t, entry != nil, "the poller reaches no secret: %v", poller["secret"])
+	assert.DeepEqual(t, entry["ops"], []string{"get"})
+	assert.Assert(t, namedResource(t, resources(t, flat, "secret"), "slack") != nil)
 }
 
 // A database's engine key IS the engine, from a closed set, so an external system
 // that is not a database cannot be named as one. This replaced a `provides` role list
-// on the connector, which asked the author to restate a fact about software they did
-// not write — and would have compiled just as happily when they got it wrong.
+// on the `connector` kind — since deleted whole — which asked the author to restate a
+// fact about software they did not write, and would have compiled just as happily when
+// they got it wrong.
 //
 // THE SET IS PER TYPE, and that is what keeps a WRONG PAIR unrepresentable rather than
 // merely checkable: a Mongo is not a thing a `sql:` block can name, and a Postgres is
@@ -411,26 +432,28 @@ func TestDatabaseConsensusIsUnderTheDistributedEngineOnly(t *testing.T) {
 	_, err = db("consensus: crdt\nkv:\n    distributed:\n        size: 1MB\n")
 	assert.ErrorContains(t, err, "unknown key 'consensus'")
 
-	// AND NOT ON A `cache`, WHICH HAS NO CONSENSUS QUESTION TO ASK. It is eventually
-	// consistent and AP by definition, so there is nothing to coordinate and no engine
-	// branch for this to hang under — its `size` and `ttl` sit at the document root
-	// because there is nothing to choose. What a cache says instead is `replicated`,
-	// which is a different question and has its own test below.
-	_, err = compile("/cache/c.yaml", "size: 1MB\nconsensus: crdt\n")
-	assert.ErrorContains(t, err, "unknown key 'consensus'")
-	_, err = compile("/cache/c.yaml", "distributed:\n    size: 1MB\n")
-	assert.ErrorContains(t, err, "unknown key 'distributed'")
+	// A CACHE ASKS THE SAME QUESTION AT THE DOCUMENT ROOT, because it has no engine
+	// axis to hang it under and none is invented for it. Nothing external backs a
+	// cache, so there is no branch the answer could be wrong on — which is exactly the
+	// reason a database's answer has to be inside one.
+	flat, err := compile("/cache/c.yaml", "size: 1MB\nconsensus: crdt\n")
+	assert.NilError(t, err)
+	assert.Equal(t, namedResource(t, resources(t, flat, "cache"), "c")["consensus"], "crdt")
+	_, err = compile("/cache/c.yaml", "distributed:\n    size: 1MB\n    consensus: crdt\n")
+	assert.ErrorContains(t, err, "unknown key 'distributed'",
+		"a cache has no engine block for this to sit in")
 }
 
-// A CACHE SAYS WHERE ITS DATA LIVES, AND NOTHING ABOUT COORDINATION. The two fields
-// are easy to conflate and they answer different questions, so both halves are pinned:
-// `replicated` is a cache's and a database has no such key, `consensus` is a
-// database's and a cache has no such key (above).
+// A CACHE SAYS WHERE ITS DATA LIVES, WHICH IS NOT WHAT IT SAYS ABOUT COORDINATION.
+// The two fields are easy to conflate and they answer different questions, so both
+// halves are pinned: `replicated` is a cache's and a database has no such key, and
+// `consensus` — which both kinds now have — sits in a different PLACE on each, which
+// the test above holds.
 //
 // THE ABSENT VALUE IS `false`, and unlike `consensus` that is a defensible silence:
-// node-local is the cheap answer and replication is what an author asks for. The
-// compiled object carries no key at all when nothing is written, so a consumer reads
-// Go's zero value and gets the cheap one.
+// node-local is what doing nothing gets you, and replication is what an author asks
+// for. The compiled object carries no key at all when nothing is written, so a
+// consumer reads Go's zero value and gets the cheap one.
 //
 // AND IT IS NOT REACHABILITY. Who may read a cache is the access block another
 // resource writes — per resource and per verb — and this says only where the data
@@ -452,7 +475,7 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 		return obj.Flat(), nil
 	}
 	cache := func(body string) (map[string]any, error) {
-		flat, err := compile("/cache/c.yaml", body)
+		flat, err := compile("/cache/c.yaml", "consensus: single-writer\n"+body)
 		if err != nil {
 			return nil, err
 		}
@@ -486,8 +509,8 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown key 'reach'")
 
 	// A DATABASE HAS NO SUCH KEY. Replication is not the axis a system of record
-	// chooses on — it chooses consensus, and a database that is not replicated is not
-	// something this platform offers.
+	// chooses on — it chooses consensus alone, and a database that is not replicated is
+	// not something this platform offers.
 	_, err = compile("/database/d.yaml", "kv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n        replicated: true\n")
 	assert.ErrorContains(t, err, "unknown key 'replicated'")
 	_, err = compile("/database/d.yaml", "replicated: true\nkv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n")
@@ -496,9 +519,71 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 	// And the fixture carries the opt-in on the cache where it is the point, with the
 	// rest of them silent — so "absent is legal" is held by every other cache in the
 	// project rather than by an assertion about one.
-	flat := compileBasic(t)
-	orders := namedResource(t, resources(t, flat, "cache"), "orders")
+	basic := compileBasic(t)
+	orders := namedResource(t, resources(t, basic, "cache"), "orders")
 	assert.Equal(t, orders["replicated"], true)
+}
+
+// A CACHE SAYS WHAT HAPPENS TO TWO WRITES AT ONE KEY, from a set one wider than a
+// database's — and the extra value is the whole reason the two sets differ.
+//
+// `gossip` is eventually consistent AND LOSSY: an entry can fail to arrive or be
+// dropped, where `crdt` merges concurrent writes and discards the loser and
+// `single-writer` discards nothing. That is affordable exactly where losing an entry
+// costs a recomputation, which is the line this kind's GroupDoc already draws, and it
+// is unaffordable in a system of record — so `database` refuses the value and this
+// kind takes it. Both halves are asserted, because a set that quietly drifted into
+// being the same set on both kinds is the sloppiness this pins against.
+//
+// REQUIRED, WITH NO DEFAULT, for the reason `database.consensus` is: two writes arrive
+// at one key whether or not anybody chose, so there is no value that means "nothing
+// extra happens" the way `replicated`'s absence does. Whichever answer a silence
+// carried would be wrong for somebody who never read the line.
+func TestCacheConsensusIsRequiredAndTakesTheLossyValue(t *testing.T) {
+	compile := func(path, body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, path,
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	// WRITING NOTHING IS REFUSED, and the error names the field.
+	assert.ErrorContains(t, compile("/cache/c.yaml", "size: 1MB\n"), "required attribute 'consensus'")
+	assert.ErrorContains(t, compile("/cache/c.yaml", "size: 1MB\nconsensus:\n"), "required attribute 'consensus'",
+		"the key with nothing after it is the same omission")
+
+	// ALL THREE ANSWERS ARE SAYABLE.
+	for _, v := range []string{"single-writer", "crdt", "gossip"} {
+		assert.NilError(t, compile("/cache/c.yaml", "size: 1MB\nconsensus: "+v+"\n"), "consensus: %q", v)
+	}
+
+	// AND NOTHING ELSE IS — including the algorithm, which is the platform's to change
+	// without touching anybody's config, and the bool this replaced.
+	for _, v := range []string{"raft", "eventual", "true", "single_writer", "gossip "} {
+		assert.ErrorContains(t, compile("/cache/c.yaml", "size: 1MB\nconsensus: \""+v+"\"\n"),
+			"invalid value", "consensus: %q is not one of the three answers", v)
+	}
+
+	// THE SETS DIFFER ON PURPOSE. A database refuses the lossy one: a dropped write in
+	// a system of record is a dropped fact and nothing re-derives it.
+	assert.ErrorContains(t, compile("/database/d.yaml", "kv:\n    distributed:\n        size: 1MB\n        consensus: gossip\n"),
+		"invalid value", "a system of record must not be able to lose a write")
+
+	// And the fixture spends all three, on the caches where each is the point.
+	flat := compileBasic(t)
+	caches := resources(t, flat, "cache")
+	assert.Equal(t, namedResource(t, caches, "orders")["consensus"], "gossip")
+
+	root := rootOf(flat)
+	shop := namespace(t, root, "shop")
+	assert.Equal(t, namedResource(t, shop["cache"].(map[string]any), "sessions")["consensus"], "single-writer")
+	billing := namespace(t, root, "billing")
+	assert.Equal(t, namedResource(t, billing["cache"].(map[string]any), "sessions")["consensus"], "crdt")
 }
 
 // REQUIRED, AND CLOSED — the two halves that leave no answer the schema has not been
@@ -1607,10 +1692,10 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 		return err
 	}
 	const conduit = "protocol: pgwire\nserve:\n    application:\n        name: db\n        port: pg\n"
-	const fanout = "match: orders\ndistributed:\n    local: true\n"
+	const fanout = "distributed:\n    local: true\n"
 
 	assert.NilError(t, compile("/channel/sync.yaml", conduit), "a channel names a protocol and one server")
-	assert.NilError(t, compile("/stream/orders.yaml", fanout), "a stream matches a name")
+	assert.NilError(t, compile("/stream/orders.yaml", fanout), "a stream is named by its own name")
 
 	// The other way round is not a document either kind can read, which is what makes a
 	// half-applied swap a failure instead of a silence.
@@ -1619,7 +1704,7 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 	// in map order and reports the first one it does not know, so a body carrying two
 	// of them names a different key run to run.
 	assert.ErrorContains(t, compile("/stream/x.yaml", fanout+"protocol: pgwire\n"), "unknown key 'protocol'")
-	assert.ErrorContains(t, compile("/channel/x.yaml", conduit+"match: orders\n"), "unknown key 'match'")
+	assert.ErrorContains(t, compile("/channel/x.yaml", conduit+"distributed:\n    local: true\n"), "unknown key 'distributed'")
 
 	// And the verbs, which is the other half of what each name means.
 	dial := schema.OpsOf("channel")
@@ -1653,7 +1738,7 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 		assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
 			[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/stream/s.yaml",
-			[]byte("id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz\nmatch: orders\n"+body), 0o644))
+			[]byte("id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
 		_, _, err = c.Compile(context.Background())
@@ -1697,13 +1782,64 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 	assert.Assert(t, !leaked, "a kafka-backed stream carries no claim about node-local scope")
 }
 
+// A STREAM IS NAMED, NOT MATCHED. `match`/`regex` was v1's `messaging` pair and this
+// was the last kind carrying it; what it added over the resource's own name was the
+// ability to DISAGREE with it, and the ability for two streams to both claim one topic
+// with nothing deciding which gets the message but walk order.
+//
+// The replacement is not a new field — it is the name every other part of this
+// vocabulary was already using. So the test is in two halves: the pair is refused, and
+// the name is what everything reaches the stream by.
+func TestAStreamIsNamedNotMatched(t *testing.T) {
+	compile := func(body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/stream/orders.yaml",
+			[]byte("id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	// NEITHER HALF OF THE PAIR LOADS, and a literal spelling is refused with the same
+	// error a pattern is: the field is gone, not narrowed.
+	for _, body := range []string{"distributed: {}\nmatch: orders\n", "distributed: {}\nmatch: ord_*\n", "distributed: {}\nregex: true\n"} {
+		assert.ErrorContains(t, compile(body), "unknown key", "a stream still takes %q", body)
+	}
+
+	// AND NOTHING IS OWED IN ITS PLACE. A stream with an engine and nothing else is a
+	// complete document — `match` was Required(), so this is the half of the deletion
+	// that would be missed if the key were merely made optional.
+	assert.NilError(t, compile("distributed: {}\n"))
+
+	// THE NAME IS THE HANDLE, and it comes from the file rather than from a field: the
+	// fixture writes no `name:` on any stream and every one of them is found by one.
+	flat := compileBasic(t)
+	streams := resources(t, flat, "stream")
+	orders := namedResource(t, streams, "orders")
+	for _, gone := range []string{"match", "regex"} {
+		_, present := orders[gone]
+		assert.Assert(t, !present, "a compiled stream still carries %q: %v", gone, orders)
+	}
+
+	// And it is the name an access block reaches it by — the same string, resolved
+	// through the index rather than matched against a pattern.
+	publisher := namedResource(t, resources(t, flat, "function"), "checkout")
+	published, _ := publisher["stream"].(map[string]any)
+	entry, _ := published["orders"].(map[string]any)
+	assert.Assert(t, entry != nil, "nothing publishes to stream/orders by name: %v", publisher["stream"])
+	assert.DeepEqual(t, entry["ops"], []string{"publish"})
+}
+
 // A BUS IS A STREAM WITHOUT DURABILITY, AND THE SCHEMA SAYS SO RATHER THAN THE PROSE.
 // Two kinds that fan out to everyone attached will be read as duplicates and merged by
 // somebody unless what separates them is structural, so this pins the three places it
 // is: a bus can name no engine (every engine a stream has is a durable log, and a bus
-// that rewinds is a stream wearing the wrong kind), a bus admits instances by validator
-// where a stream matches a pattern, and a bus has a host — the websocket a browser
-// attaches to — where a stream has none.
+// that rewinds is a stream wearing the wrong kind), a bus admits many instances by
+// validator where a stream is one topic named by the resource, and a bus has a host —
+// the websocket a browser attaches to — where a stream has none.
 func TestABusIsAStreamWithoutDurability(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
@@ -1729,16 +1865,23 @@ func TestABusIsAStreamWithoutDurability(t *testing.T) {
 			"unknown key '"+engine+"'", "a bus must not be able to name %q", engine)
 	}
 
-	// The bus admits instances; the stream matches a pattern. Neither takes the other's.
+	// THE BUS ADMITS INSTANCES AND THE STREAM IS ONE TOPIC. Neither takes the other's,
+	// and neither matches a pattern any more: v1's `match`/`regex` is gone from both,
+	// which is what makes "which topic is this?" a name in every kind here.
 	assert.NilError(t, compile("/bus/chat.yaml", "instances:\n    limit: 100\n    validator:\n        name: f\n"))
-	assert.ErrorContains(t, compile("/bus/chat.yaml", "match: chat\n"), "unknown key 'match'")
-	assert.ErrorContains(t, compile("/stream/s.yaml", "match: o\ndistributed: {}\ninstances:\n    validator:\n        name: f\n"),
+	for _, kind := range []string{"/bus/chat.yaml", "/stream/s.yaml"} {
+		for _, pattern := range []string{"match: chat\n", "regex: true\n"} {
+			assert.ErrorContains(t, compile(kind, pattern), "unknown key",
+				"%s still takes %q", kind, pattern)
+		}
+	}
+	assert.ErrorContains(t, compile("/stream/s.yaml", "distributed: {}\ninstances:\n    validator:\n        name: f\n"),
 		"unknown key 'instances'")
 
 	// The websocket is an ADDRESS, so it is the same `host:` a gateway declares — and
 	// the bus is what answers on it.
 	assert.NilError(t, compile("/bus/chat.yaml", "host:\n    generated:\n        name: chat\n"))
-	assert.ErrorContains(t, compile("/stream/s.yaml", "match: o\ndistributed: {}\nhost:\n    generated:\n        name: x\n"),
+	assert.ErrorContains(t, compile("/stream/s.yaml", "distributed: {}\nhost:\n    generated:\n        name: x\n"),
 		"unknown key 'host'")
 	// …and the deleted flag is not a spelling of it.
 	assert.ErrorContains(t, compile("/bus/chat.yaml", "websocket: true\n"), "unknown key 'websocket'")
@@ -1770,18 +1913,19 @@ func opsOf(t *testing.T, kind string) []string {
 	return out
 }
 
-// THE ASYMMETRY IS DELIBERATE: every ENGINE key is closed and `connector.type` is open.
+// EVERY ENGINE KEY IS CLOSED, AND THERE IS NO LONGER AN OPEN KIND BESIDE THEM.
 //
-// It reads like an oversight — the same word is refused in one place and accepted in
-// another — so it is pinned here with the reason. A closed set is what makes a wrong
-// pair unrepresentable, and it is affordable exactly where the set is knowable: an
-// engine is a wire protocol and a driver tau ships, so adding one is a release. "An
-// external system you receive events from" is not knowable, and `connector` is one of
-// the two seams the vocabulary keeps open on purpose (the other is node.Register).
+// This used to pin an asymmetry: engines closed, `connector.type` open, with the reason
+// each way. Half of it is gone. A closed set is what makes a wrong pair unrepresentable
+// and it is affordable exactly where the set is knowable — an engine is a wire protocol
+// and a driver tau ships, so adding one is a release. "An external system you receive
+// events from" is not knowable, which is why `connector` was open; but every case it
+// carried is now written with kinds that already exist, so the kind is gone and the
+// openness moved one construct out, to a workload's `egress` allowlist and a `secret`.
 //
-// Closing it is a real trade with a real cost and it is the owner's call, not this
-// file's. If it is ever taken, this test is what says so out loud.
-func TestConnectorTypeIsOpenAndEveryEngineIsClosed(t *testing.T) {
+// BOTH HALVES ARE ASSERTED, because a deletion that quietly still loads is the deletion
+// not having happened — the same reason the stream bridges are pinned absent below.
+func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -1796,17 +1940,49 @@ func TestConnectorTypeIsOpenAndEveryEngineIsClosed(t *testing.T) {
 		return err
 	}
 
-	// A system nobody has heard of is a connector, and that is the seam working.
-	for _, kind := range []string{"s3", "slack", "salesforce", "some-vendor-api"} {
-		assert.NilError(t, compile("/connector/c.yaml", "type: "+kind+"\ncredentials:\n    name: k\n"),
-			"connector.type is the open seam: %q", kind)
+	// THE KIND IS GONE, and what that looks like is worth knowing: a directory named
+	// after a kind the vocabulary does not have is walked past, so the document that
+	// used to be the fixture's own connector compiles to NOTHING — no error, and no
+	// resource. Strict keys are a property of a document the loader reads; a directory
+	// nothing reads has no keys to be strict about.
+	stray := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(stray, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(stray, "/connector/c.yaml",
+		[]byte("id: QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn\ntype: slack\npolls: true\n"), 0o644))
+	sc, err := schema.New(schema.WithVirtual(stray, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := sc.Compile(context.Background())
+	assert.NilError(t, err)
+	_, present := rootOf(obj.Flat())["connector"]
+	assert.Assert(t, !present, "a connector still compiles to a resource: %v", rootOf(obj.Flat()))
+
+	// AND IT IS GONE FROM THE VOCABULARY ITSELF, which is the list every consumer walks
+	// — the JSON Schema, completion, the graph. Asserted over V2Resources and over the
+	// root the loader is built from, and NOT over `Kinds()`: that answers with the kinds
+	// declaring Ops, which `connector` never did, so a check there would have passed on
+	// the day the kind was written.
+	for _, g := range schema.V2Resources {
+		name, _ := g.Match.(string)
+		assert.Assert(t, name != "connector", "connector is still a group in V2Resources")
+	}
+	for _, g := range schema.CompileRoot().Children {
+		name, _ := g.Match.(string)
+		assert.Assert(t, name != "connector", "connector is still a group of the compile root")
 	}
 
-	// The same openness nowhere else. An engine is a driver tau ships, so the set is
-	// knowable and the key is closed — which is what makes naming something that
-	// answers nothing impossible rather than merely wrong.
-	assert.ErrorContains(t, compile("/stream/s.yaml", "match: m\nslack:\n    host: h\n"), "unknown key 'slack'")
+	// AND THE ENGINES STAY CLOSED, which is the half that did not change. An engine is
+	// a driver tau ships, so the set is knowable and the key is closed — which is what
+	// makes naming something that answers nothing impossible rather than merely wrong.
+	assert.ErrorContains(t, compile("/stream/s.yaml", "slack:\n    host: h\n"), "unknown key 'slack'")
 	assert.ErrorContains(t, compile("/database/d.yaml", "sql:\n    s3:\n        host: h\n"), "unknown key 's3'")
+
+	// WHAT STAYS OPEN, and it is one construct further out: a workload names the host
+	// it may reach and the secret it authenticates with, and nothing has to declare the
+	// vendor as a resource first. This is the poller the fixture's connector became.
+	assert.NilError(t, compile("/function/p.yaml",
+		"execution:\n    call: p\n    timeout: 5s\n    memory: 8MB\negress:\n    - some-vendor-api.example.com\nsecret:\n    k:\n        ops: [get]\n"),
+		"a workload reaching an external system needs no kind for it")
 }
 
 // A PLACEHOLDER THAT STAYS A PLACEHOLDER. `log` has no fields of its own on purpose —
@@ -1862,7 +2038,7 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
 			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
-			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\n"+body), 0o644))
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
 		obj, _, err := c.Compile(context.Background())
@@ -1960,7 +2136,7 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
-			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\n"+body), 0o644))
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
 		obj, _, err := c.Compile(context.Background())

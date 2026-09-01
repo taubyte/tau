@@ -309,7 +309,7 @@ String("source", Ref("libraries", Prefix("libraries/")), …)  // v1: "libraries
 
 A **scalar** ref needs a `Prefix`; without one `resolveRefAttr` treats the value as a
 `[]string` and fails with `<attr> is not a []string`. A slice ref takes bare names.
-This one bites even after you have written it down — `Ref("connectors")` on a
+This one bites even after you have written it down — `Ref("libraries")` on a
 `String` compiles fine and fails at runtime.
 
 Names resolve in the authoring scope, then walk up to the project root
