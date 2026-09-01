@@ -5,6 +5,7 @@ kv:
         size: 64MB
         consensus: crdt
 instances:
+    limit: 5000
     validator:
         namespace: /shop
         name: may_open

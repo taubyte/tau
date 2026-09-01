@@ -1,8 +1,10 @@
 id: QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco
+description: one bucket per order and no ceiling on how many - a limit of zero is that answer written down, not a field nobody reached
 object:
     versioning: true
     size: 1GB
 instances:
+    limit: 0
     validator:
         namespace: /shop
         name: may_open

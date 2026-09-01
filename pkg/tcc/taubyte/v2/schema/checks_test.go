@@ -216,7 +216,7 @@ func TestAuditHostWorldsReachesEveryUse(t *testing.T) {
 		return b
 	}
 	cacheWith := func(validator string) string {
-		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 32MB\nttl: 24h\ninstances:\n    validator:\n        name: " + validator + "\n"
+		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 32MB\nttl: 24h\ninstances:\n    limit: 0\n    validator:\n        name: " + validator + "\n"
 	}
 	routeRouter := func(router string) string {
 		return "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nroute:\n    path: /\n    router:\n        name: " + router + "\n"

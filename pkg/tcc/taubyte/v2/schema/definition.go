@@ -405,19 +405,33 @@ func pullSecret() []*Attribute {
 	}
 }
 
-// instanceAttributes is how a store says it holds MANY instances rather than one, and
-// who decides whether a given instance may exist.
+// instanceAttributes is how a store says it holds MANY instances rather than one, how
+// many of them it may hold, and who decides whether a given instance may exist.
 //
 // THE BLOCK'S PRESENCE IS THE DECLARATION. There is no `multi: true` beside it: writing
 // `instances:` at all is what says there is more than one, and a second field repeating
-// it is a fact stated twice that two edits can disagree about. And the validator is not
-// optional inside it — the instance NAME is the caller's, so a store that holds many and
-// names nobody to admit them has no point at which the project gets to say no.
+// it is a fact stated twice that two edits can disagree about — `multi: false` beside a
+// validator and a limit is a document saying both things at once, and something has to
+// pick a winner. A block cannot contradict itself, so nothing has to. And neither field
+// inside it is optional: the instance NAME is the caller's, so a store that holds many
+// and names nobody to admit them has no point at which the project gets to say no, and
+// one that never says how many is unbounded because nobody chose, which is the same
+// defect `database.consensus` is required for.
 //
-// It replaces v1's `match`/`regex`, which was this capability spelled as a lookup: the
-// data plane knew only a name and walked every config regex-matching it
+// AN INSTANCE NAME IS A KEY, NOT A PATTERN. It is written by the caller, matched by
+// nobody, and looked up exactly: one string names one instance. That is what makes the
+// question "which instance is this?" answerable at all — a pattern answers it with a
+// SET, so two patterns can both claim a name and the store that gets the write is
+// whichever the walk reached first, and no index can be built over a key nothing knows
+// the value of until a request arrives.
+//
+// So this replaces v1's `match`/`regex`, which was this capability spelled as a lookup:
+// the data plane knew only a name and walked every config regex-matching it
 // (services/hoarder/helpers.go). That made every store a pattern, gave the pattern no
-// owner, and answered "may this instance exist" with "does this string match".
+// owner, and answered "may this instance exist" with "does this string match". None of
+// the data kinds carries that pair any more, and none of them gains it back: a limit
+// bounds HOW MANY instances there are and a validator decides WHICH, and between them
+// there is nothing a pattern was doing that is still wanted.
 //
 // The shape is the AUTHORIZER's, deliberately (§9, the one modelling rule): the target
 // owns the policy. The store names a function; the caller names only the instance it
@@ -430,13 +444,18 @@ func pullSecret() []*Attribute {
 // parameters are the decision's, at run time.
 func instanceAttributes() []*Attribute {
 	return []*Attribute{
-		// THE SWITCH IS WHAT MAKES THE VALIDATOR MANDATORY. A required field inside an
-		// optional block cannot be said any other way: Required() fires whether or not
-		// the block is there (verified — every resource with no `instances:` failed),
-		// and there is no sibling with a default to hang a RequiredWhen on. A Captures()
-		// switch answers "was this block written, and with which key", which is exactly
-		// the question, and it is the same shape `engine.kind` and the gateway's
-		// `routing` already use.
+		// THE SWITCH IS WHAT MAKES THE REST OF THE BLOCK MANDATORY. A required field
+		// inside an optional block cannot be said any other way: Required() fires
+		// whether or not the block is there (verified — every resource with no
+		// `instances:` failed), and there is no sibling with a default to hang a
+		// RequiredWhen on. A Captures() switch answers "was this block written, and with
+		// which key", which is exactly the question, and it is the same shape
+		// `engine.kind` and the gateway's `routing` already use.
+		//
+		// Both the validator and the limit hang off it, so the two stand or fall
+		// together: this is the only thing in the block that knows it was written, and a
+		// field that stopped naming it would stop being demanded at all rather than
+		// become optional in some softer way.
 		String(Key("instances", "admission"), Path("instances", Either("validator")), Captures(), InSection("instances"),
 			Doc("Admission", "How a new instance is let in. validator: a function decides.")),
 		String(Key("instances", "validator", "namespace"), Path("instances", Either("validator"), "namespace"), IsNamespacePath(), InSection("instances"),
@@ -444,10 +463,27 @@ func instanceAttributes() []*Attribute {
 		String(Key("instances", "validator", "name"), Path("instances", Either("validator"), "name"), IsVariableName(), Ref("function", ByName()),
 			RequiredWhen(Key("instances", "admission"), "validator"), InSection("instances"),
 			Doc("Validator", "A function called before an instance is opened or created: it decides whether that instance may exist, and returns the parameters it gets.")),
+		// HOW MANY, WITH NO DEFAULT AND NO ABSENT STATE. `0` is the answer that means
+		// no ceiling, so an unbounded store is a sentence somebody wrote rather than a
+		// field they never reached — the same reason `database.consensus` is required
+		// and `worker.runtime` has no default. An absent limit reading as unlimited
+		// would put the expensive answer on every store nobody thought about, and this
+		// one is paid for by the cloud in instances that exist because a caller asked.
+		//
+		// NOT `limits/max_instances`, which is on the workload kinds and is a different
+		// number: that one bounds how many COPIES of one workload the platform may run,
+		// and the platform picks the number under it. This bounds how many DISTINCT
+		// named instances a store holds, and the callers pick those.
+		//
+		// PerEnv, because a ceiling is exactly the kind of number a preview deployment
+		// wants smaller — the same reason a cache's `size` is.
+		Int(Key("instances", "limit"), Path("instances", "limit"), MinInt(0),
+			RequiredWhen(Key("instances", "admission"), "validator"), PerEnv(), InSection("instances"),
+			Doc("Limit", "The most instances this may hold at once. 0 means no ceiling — which is a choice, not a default, so it has to be written.")),
 	}
 }
 
-var secInstances = Section("instances", "Instances", "Whether this holds one instance or many, and who admits a new one.")
+var secInstances = Section("instances", "Instances", "Whether this holds one instance or many, how many, and who admits a new one.")
 
 // handlerKinds are what may serve a route. Closed, because it is the Either() a
 // handler's kind switches on: a key outside this set is a compile error rather than
@@ -1074,8 +1110,7 @@ var V2Resources = []*Node{
 	// losing one costs a recomputation, and nothing here is a system of record.
 	DefineGroup("cache",
 		resource(
-			commonAttributes(
-				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
+			commonAttributes(append(instanceAttributes(),
 				Bytes(Key("size"), Required(), PerEnv(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
 				Duration(Key("ttl"), PerEnv(), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
 
@@ -1118,7 +1153,7 @@ var V2Resources = []*Node{
 					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
 				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret", Inbound()), NoAccessors(), InSection("encryption"),
 					Doc("Encryption Key", "Secret holding the key entries are encrypted with, as \"secret/<name>\".")),
-			),
+			)...),
 			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"),
 			secIdentity, secAccess,
 			Section("keys", "Keys", "Capacity, lifetime, and where the data lives."),
@@ -1138,9 +1173,7 @@ var V2Resources = []*Node{
 	// verbs over a store that keeps what it is given.
 	DefineGroup("database",
 		resource(
-			commonAttributes(append(databaseAttributes(),
-				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
-			)...),
+			commonAttributes(append(databaseAttributes(), instanceAttributes()...)...),
 			GroupDoc("A database: keys and values, documents, tables or vectors — on tau's own replicated engine, or on an external server reached over the network."), Icon("database"), Category("data"),
 			secIdentity, secAccess,
 			Section("engine", "Engine", "Which data model it is, which engine backs it, and its settings."),
@@ -1166,13 +1199,13 @@ var V2Resources = []*Node{
 
 	DefineGroup("storage",
 		resource(
-			commonAttributes(
+			commonAttributes(append(append([]*Attribute{
 				String("type", Path(Either("object", "streaming")), Captures(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
-				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
+			}, instanceAttributes()...),
 				Bool(Key("object", "versioning"), NoSetter(), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
 				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), PerEnv(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
 				Bytes(Key("size"), Path(Either("object", "streaming"), "size"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
-			),
+			)...),
 			GroupDoc("Object or streaming storage, content-addressed, served to the project's peers."), Icon("bucket"), Category("data"),
 			secIdentity, secAccess,
 			Section("storage", "Storage", "Storage kind and capacity."),

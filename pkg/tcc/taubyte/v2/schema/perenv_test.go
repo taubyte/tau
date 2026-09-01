@@ -17,6 +17,11 @@ import (
 // not derived: a `size` is a ceiling and `dimensions` is the shape of an index, and no
 // property the schema declares tells them apart.
 //
+// A CEILING is marked, wherever it is spelled — `size`, `max_instances`, and now a
+// store's `instances/limit`. How much a preview deployment may hold is the difference
+// people actually ask for, and lowering it changes what the resource may DO rather than
+// what it IS: an instance that cannot be admitted in preview is still the same store.
+//
 // What is refused, and why, since the refusals are the argument:
 //
 //   - IDENTITY — `id`, `name`. Two environments of one resource are one resource.
@@ -46,13 +51,14 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"application/egress", "application/execution/cpu", "application/execution/memory",
 		"application/image", "application/limits/concurrency",
 		"application/limits/max_instances", "application/value",
-		"cache/size", "cache/ttl",
+		"bus/instances/limit",
+		"cache/instances/limit", "cache/size", "cache/ttl",
 		"database/document/database", "database/document/host",
 		"database/document/size", "database/document/tls",
 		"database/kv/size",
 		"database/sql/database", "database/sql/host",
 		"database/sql/size", "database/sql/tls",
-		"database/vector/size",
+		"database/instances/limit", "database/vector/size",
 		"entity/egress", "entity/execution/cpu", "entity/execution/memory",
 		"entity/execution/timeout", "entity/size", "entity/value",
 		"function/egress", "function/execution/cpu", "function/execution/memory",
@@ -69,7 +75,7 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"sandbox/egress", "sandbox/execution/cpu", "sandbox/execution/memory",
 		"sandbox/image", "sandbox/lifetime/idle", "sandbox/lifetime/max",
 		"sandbox/value",
-		"storage/size", "storage/streaming/ttl",
+		"storage/instances/limit", "storage/size", "storage/streaming/ttl",
 		"stream/host", "stream/tls",
 		"volume/checkpoint/interval", "volume/checkpoint/rpo_budget", "volume/quota",
 		"worker/egress", "worker/execution/cpu",
