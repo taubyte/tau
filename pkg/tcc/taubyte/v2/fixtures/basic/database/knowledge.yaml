@@ -1,7 +1,8 @@
 id: QmRZ1J1ZmVsGKvBFZoScNoGCzMwrDGHqxYAgqK7QsWpZbb
-description: product documentation the support agent searches; the width is the embedding model's
+description: product documentation the support agent searches; the width is the embedding model's, and the answer is re-derivable from the documents, so a merged upsert costs a re-embed and never a fact
 vector:
     dimensions: 1536
     metric: cosine
     distributed:
         size: 512MB
+        consensus: crdt
