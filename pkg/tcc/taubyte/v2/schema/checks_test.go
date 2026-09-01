@@ -485,8 +485,8 @@ func TestATargetWithNoNameIsRefused(t *testing.T) {
 // passes, which is exactly the failure this is here to catch.
 func TestDatabaseOpsAreItsTypesNotTheUnion(t *testing.T) {
 	const fn = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
-	kv := "id: QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfF\nkv:\n    distributed:\n        size: 1MB\n"
-	vec := "id: QmRZ1J1ZmVsGKvBFZoScNoGCzMwrDGHqxYAgqK7QsWpZbb\nvector:\n    dimensions: 8\n    distributed:\n        size: 1MB\n"
+	kv := "id: QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfF\nkv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n"
+	vec := "id: QmRZ1J1ZmVsGKvBFZoScNoGCzMwrDGHqxYAgqK7QsWpZbb\nvector:\n    dimensions: 8\n    distributed:\n        size: 1MB\n        consensus: crdt\n"
 
 	// A kv store asked to run SQL. Both words are real verbs of the KIND, so nothing
 	// at load has anything to say about it.

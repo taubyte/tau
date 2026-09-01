@@ -646,14 +646,14 @@ var databaseTypes = []databaseType{
 	// one: an entry that vanishes on its own is what a cache is for, and a record that
 	// deletes itself is not a record.
 	//
-	// WHAT `crdt: true` DOES NOT PROMISE, because the engine does not: concurrent
+	// WHAT `consensus: crdt` DOES NOT PROMISE, because the engine does not: concurrent
 	// writes to ONE key are merged last-writer-wins, so one of them is discarded with
 	// no error. There is no compare-and-swap and no transaction — an `entity` is what
 	// serves a linearizable counter. The rule that falls out is the one AGENTS.md
 	// states for every kvdb layout in this repository: never a key two writers can
 	// write differently; put the discriminator in the key and let the prefix scan be
-	// the index. It was every distributed database's story until the flag existed; it
-	// is now the story of the ones that ask for it.
+	// the index. It was every distributed database's story until the field existed; it
+	// is now the story of the ones that ask for it by name.
 	{
 		name: "kv",
 		ops:  Verbs{ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")},
@@ -769,35 +769,61 @@ func (t databaseType) attributes() []*Attribute {
 		// under a branch nobody took. A LITERAL PATH IS ALSO WHAT A LOWERING NEEDS:
 		// interp's authoredPath has no single location for a path with a matcher in it,
 		// so a field an agent's memory sets has to be reachable by fixed segments.
-		Bytes(Key(t.name, "size"), Path(t.name, tauEngine, "size"),
+		// `Accessor()` BECAUSE A DECLARED PATH IS ADDRESSED BY ITS LEAF. A generated
+		// client names a field after the last segment of the path it reads, and these
+		// four paths end in the same word, so without an override the four are one
+		// name and three of them are dropped in silence — see
+		// TestNoTwoAttributesCollapseToOneAccessor, which is what holds this for
+		// everything the per-type loop declares. The type is the discriminator, so it
+		// is what the name carries.
+		Bytes(Key(t.name, "size"), Path(t.name, tauEngine, "size"), Accessor(title(t.name)+"Size"),
 			RequiredWhen(Key(t.name, "engine"), tauEngine), PerEnv(), InSection("engine"), shown,
 			Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
 
-		// COORDINATED OR NOT, AND THE AUTHOR NEVER NAMES THE MECHANISM. `crdt: true`
-		// is the coordination-free replication tau already runs — pkg/kvdb, a
-		// Merkle-CRDT, where every node takes a write the moment it arrives and
-		// concurrent writes to one key merge last-writer-wins with nothing refused and
-		// nothing waited for. `crdt: false` is a consistent state holder, and HOW the
-		// platform gets there — raft replicating synchronously, or raft electing one
-		// master and the rest following — is a runtime decision and not a key. An
-		// author states what they need; a `consensus:` field would ask them to pick
-		// the algorithm that delivers it, which is the `provides` role list on
-		// `connector` again: restating a fact about software they did not write, and
-		// compiling just as happily when they get it wrong.
+		// WHAT HAPPENS TO TWO WRITES THAT ARRIVE AT ONE KEY AT ONCE, AND THE AUTHOR
+		// NEVER NAMES THE MECHANISM. `crdt` is the coordination-free replication tau
+		// already runs — pkg/kvdb, a Merkle-CRDT, where every node takes a write the
+		// moment it arrives and concurrent writes to one key merge last-writer-wins
+		// with nothing refused and nothing waited for. `single-writer` is one holder of
+		// the key at a time, so a write costs a round trip and nothing is silently
+		// discarded; HOW the platform gets there — raft replicating synchronously, or
+		// raft electing a master and the rest following — is a runtime decision and
+		// still not a key. Neither value is an algorithm. Both are the answer to what
+		// the store does with the second write, which is the only half of this an
+		// author can be held to.
+		//
+		// THE NAME IS THE QUESTION, NOT ONE OF THE ANSWERS. It was `crdt: bool`, so
+		// `crdt: false` had to say what the database is NOT and the reader had to
+		// supply what it is. `consensus` names the axis and each value answers it,
+		// which is also what makes room for a third answer that is neither.
+		//
+		// REQUIRED, WITH NO DEFAULT — the same fix `worker.runtime` above carries, and
+		// for a stronger reason than that one. A bool has an absent state and it is a
+		// silent choice: absent-means-coordinated is the expensive answer on every
+		// database nobody thought about, and absent-means-crdt is wrong for a ledger.
+		// Whichever way it was set, the author who never read this line got the other
+		// one. Required removes the question instead of answering it — the two answers
+		// are different products the way a database's `engine` is, and a field that
+		// decides whether a concurrent write survives is worth one line of saying
+		// which.
 		//
 		// UNDER `distributed` AND NOWHERE ELSE, for the reason the size is: a Postgres
-		// has whatever consistency Postgres has, so the flag on that branch is a claim
-		// this project cannot honour. The literal path makes `postgres: { crdt: true }`
-		// an unknown key rather than a boolean filed under a branch nobody took.
+		// has whatever consistency Postgres has, so a claim on that branch is one this
+		// project cannot honour. The literal path makes `postgres: { consensus: crdt }`
+		// an unknown key rather than a value filed under a branch nobody took — which
+		// is also why "required" here is RequiredWhen on the engine branch and not
+		// `Required()`: an unconditional one is demanded on every type's block at once
+		// (`shown` is presentation, and the engine does not read it), so a kv database
+		// would owe an `sql/distributed/consensus` too.
 		//
-		// THE ABSENT VALUE IS `false`: writing nothing asks for the coordinated store.
-		// On a system of record that is safe-by-default and explicit-to-weaken, the
-		// shape `tls` above has — and it is also the expensive one, since it costs a
-		// round trip on every write. Whether that is the right default is the owner's
-		// call; what would settle it is whether a database nobody has said anything
-		// about should cost consensus or should lose a concurrent write.
-		Bool(Key(t.name, "crdt"), Path(t.name, tauEngine, "crdt"), InSection("engine"), shown,
-			Doc("CRDT", "Replicate without coordination: every node takes a write immediately, and concurrent writes to one key merge last-writer-wins with nothing refused. Omitted means a consistent state holder instead, which costs a round trip on every write.")),
+		// A BRANCH WITH FIELDS OF ITS OWN WOULD BE AN `Either()` SWITCH INSTEAD, the
+		// shape `engine` above has. Neither value has any today, so this is the scalar
+		// choice; a lease timeout or a replica count under `single-writer` is what
+		// would move it, and that is the owner's call rather than this field's.
+		String(Key(t.name, "consensus"), Path(t.name, tauEngine, "consensus"), Accessor(title(t.name)+"Consensus"),
+			InSet("crdt", "single-writer"), RequiredWhen(Key(t.name, "engine"), tauEngine),
+			InSection("engine"), shown,
+			Doc("Consensus", "What happens to concurrent writes to one key. crdt: every node takes a write the moment it arrives and the writes merge last-writer-wins, with nothing refused and nothing waited for. single-writer: one holder at a time, so a write costs a round trip and nothing is silently discarded.")),
 	}
 
 	if len(t.external) > 0 {
@@ -1050,9 +1076,42 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
-				String(Key("reach", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Local", []string{"host"}, []string{"all", "host"}, [2]string{"host", "all"}), NoAccessors(), InSection("keys"), Doc("Network Access", "Which peers may reach this cache: all, subnet, or host.")),
 				Bytes(Key("size"), Required(), PerEnv(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
 				Duration(Key("ttl"), PerEnv(), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
+
+				// WHERE THE DATA LIVES, AND A CACHE HAS NO CONSENSUS QUESTION TO ASK.
+				// A database chooses what happens to two writes at one key because it
+				// is a system of record and the answer decides whether one of them is
+				// lost. This kind is eventually consistent and AP by definition —
+				// losing an entry costs a recomputation — so there is nothing to
+				// coordinate and no engine axis to hang a choice under. What is left
+				// is one fact: whether every peer keeps its own copy, or the data sits
+				// on one node and the others fetch it.
+				//
+				// A BOOL, WHERE `database/consensus` IS A REQUIRED ENUM, AND THE
+				// DIFFERENCE IS THE POLARITY OF THE ABSENT STATE rather than a taste
+				// for one construct. There, both answers were real and the cheap-
+				// looking default was the expensive one, so an absent value was a
+				// silent choice somebody would get wrong; required removed the
+				// question. Here the absent value is node-local, which is the cheap
+				// answer and the obvious one, and replication is what an author opts
+				// in to. `tls` is the same shape pointed the other way — safe by
+				// default, explicit to weaken — and this is safe-and-cheap by default,
+				// explicit to widen. Two kinds, two shapes, because the questions are
+				// not the same question.
+				//
+				// NOT WHO MAY READ IT, WHICH IS THE ACCESS BLOCK'S QUESTION and is
+				// answered per resource and per verb by whatever reaches in. A cache
+				// every peer may read can still be stored on one node and fetched over
+				// the network, or replicated so each peer reads locally; the two axes
+				// are independent and all four combinations mean something.
+				//
+				// NO MECHANISM AND NO REPLICA COUNT. How copies are kept is the
+				// platform's to change, and a field for something nothing performs is
+				// the inert key this vocabulary deletes things for.
+				Bool(Key("replicated"), InSection("keys"),
+					Doc("Replicated", "Whether every peer keeps its own copy of this cache. Omitted means the data lives on one node and other peers reach it over the network.")),
+
 				// A REFERENCE, never the material. "key material or reference" let the
 				// same field be either, and the safe reading was the one nothing enforced.
 				String(Key("encryption", "key", "namespace"), IsNamespacePath(), InSection("encryption"),
@@ -1062,7 +1121,7 @@ var V2Resources = []*Node{
 			),
 			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"),
 			secIdentity, secAccess,
-			Section("keys", "Keys", "Capacity, lifetime, and reachability."),
+			Section("keys", "Keys", "Capacity, lifetime, and where the data lives."),
 			secInstances,
 			Section("encryption", "Encryption", "Encryption at rest."),
 			Ops(ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")),
@@ -1110,7 +1169,6 @@ var V2Resources = []*Node{
 			commonAttributes(
 				String("type", Path(Either("object", "streaming")), Captures(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
 				instanceAttributes()[0], instanceAttributes()[1], instanceAttributes()[2],
-				String(Key("reach", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Public", []string{"all"}, []string{"all", "subnet", "host"}, [2]string{"all", "subnet"}), NoAccessors(), InSection("reach"), Doc("Network Access", "Which peers may reach this storage: all, subnet, or host.")),
 				Bool(Key("object", "versioning"), NoSetter(), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
 				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), PerEnv(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
 				Bytes(Key("size"), Path(Either("object", "streaming"), "size"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
@@ -1119,7 +1177,6 @@ var V2Resources = []*Node{
 			secIdentity, secAccess,
 			Section("storage", "Storage", "Storage kind and capacity."),
 			secInstances,
-			Section("reach", "Reachability", "Which peers may reach this."),
 			Ops(ReadOp("get"), ReadOp("list"), ReadOp("head"), WriteOp("put"), WriteOp("delete")),
 			Resource("storage", "Storage", "Storage", "storage"),
 		)),
@@ -2076,6 +2133,16 @@ var V2Resources = []*Node{
 					// the agent's own byte count and comes back out again as `2GB`.
 					Sets(Key("vector", "dimensions"), Attr(Key("memory", "dimensions"))),
 					Sets(Key("vector", "size"), Attr(Key("memory", "size"))),
+					// AND THE CONSENSUS, WHICH THE PRODUCED KIND NOW REQUIRES — a
+					// lowering owes every field of what it builds, and this one is
+					// fixed text rather than carried because the agent has no such
+					// field to carry it from. `crdt`: a memory index is derived from
+					// what the loop saw and is re-embeddable from it, so the write a
+					// merge discards costs a re-embed and never a fact — and a loop
+					// writing every turn should not pay a round trip to do it. Giving
+					// the agent its own knob is a different change; what would ask for
+					// one is an agent whose memory IS the record of something.
+					Sets(Key("vector", "consensus"), Text("crdt")),
 					// The loop is what searches it, and that is an entry on the loop:
 					// `database: { <name>_memory: { ops: [search] } }`, exactly what an
 					// author would have written.

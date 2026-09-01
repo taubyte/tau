@@ -3,7 +3,7 @@ description: session tokens that must survive a node restart - a cache would be 
 kv:
     distributed:
         size: 64MB
-        crdt: true
+        consensus: crdt
 instances:
     validator:
         namespace: /shop

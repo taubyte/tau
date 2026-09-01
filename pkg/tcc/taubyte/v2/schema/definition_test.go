@@ -323,7 +323,7 @@ func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 		return err
 	}
 	assert.ErrorContains(t, compile("sql:\n    distributed: {}\n"), "required attribute 'sql/distributed/size'")
-	assert.NilError(t, compile("sql:\n    distributed:\n        size: 1GB\n"))
+	assert.NilError(t, compile("sql:\n    distributed:\n        size: 1GB\n        consensus: crdt\n"))
 	// The other branch owes nothing to the first one's field.
 	assert.ErrorContains(t, compile("sql:\n    postgres: {}\n"), "required attribute 'sql/postgres/host'")
 	// And every type asks the same question of its own block.
@@ -331,9 +331,9 @@ func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 
 	// A vector index is required to state its width, and it is required whichever
 	// engine holds it — an index built at another width is a different index.
-	assert.ErrorContains(t, compile("vector:\n    distributed:\n        size: 1GB\n"),
+	assert.ErrorContains(t, compile("vector:\n    distributed:\n        size: 1GB\n        consensus: crdt\n"),
 		"required attribute 'vector/dimensions'")
-	assert.NilError(t, compile("vector:\n    dimensions: 8\n    distributed:\n        size: 1GB\n"))
+	assert.NilError(t, compile("vector:\n    dimensions: 8\n    distributed:\n        size: 1GB\n        consensus: crdt\n"))
 
 	// NO DEFAULT ON `metric`, and this is the constraint that decided it: a default
 	// fires whenever the value is absent, whatever else the document says, so one on a
@@ -344,7 +344,7 @@ func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
-		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nkv:\n    distributed:\n        size: 1MB\n"), 0o644))
+		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nkv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
@@ -354,20 +354,20 @@ func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 	assert.Assert(t, !leaked, "a kv database carries no claim about a vector metric: %v", d)
 }
 
-// COORDINATED OR NOT IS A FLAG UNDER `distributed`, AND IT IS ONLY THERE. What an
-// author states is what the store has to give them; which shape of raft delivers it —
-// a synchronous replica set, or one master and followers — is a runtime decision and
-// is never in the document.
+// CONSENSUS IS A FIELD OF `distributed`, AND IT IS ONLY THERE. What an author states
+// is what the store has to do with the second of two writes that land on one key;
+// which shape of raft delivers `single-writer` — a synchronous replica set, or one
+// master and followers — is a runtime decision and is never in the document.
 //
-// Two things are pinned because both can rot silently. That the flag reaches EVERY
+// Two things are pinned because both can rot silently. That the field reaches EVERY
 // type's own `distributed` block, because it is declared once in
 // databaseType.attributes() and a fifth data model gets it by arriving; and that an
 // external engine's block REFUSES it, because a Postgres has whatever consistency
 // Postgres has and a key claiming otherwise is a promise this project cannot keep. The
-// second is the literal path doing its work — `Path(t.name, tauEngine, "crdt")` names
-// the branch rather than matching the engine set, so the wrong branch is an unknown
-// key instead of a boolean filed where nothing reads it.
-func TestDatabaseCRDTIsUnderTheDistributedEngineOnly(t *testing.T) {
+// second is the literal path doing its work — `Path(t.name, tauEngine, "consensus")`
+// names the branch rather than matching the engine set, so the wrong branch is an
+// unknown key instead of a value filed where nothing reads it.
+func TestDatabaseConsensusIsUnderTheDistributedEngineOnly(t *testing.T) {
 	compile := func(path, body string) (map[string]any, error) {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -384,51 +384,139 @@ func TestDatabaseCRDTIsUnderTheDistributedEngineOnly(t *testing.T) {
 	}
 	db := func(body string) (map[string]any, error) { return compile("/database/d.yaml", body) }
 
-	// Every data model, under its own type block, with the type's own extra fields.
-	for _, tc := range []struct{ typ, body string }{
-		{"kv", "kv:\n    distributed:\n        size: 1MB\n        crdt: true\n"},
-		{"document", "document:\n    distributed:\n        size: 1MB\n        crdt: true\n"},
-		{"sql", "sql:\n    distributed:\n        size: 1MB\n        crdt: true\n"},
-		{"vector", "vector:\n    dimensions: 8\n    distributed:\n        size: 1MB\n        crdt: true\n"},
+	// Every data model, under its own type block, with the type's own extra fields —
+	// and both answers, since a set of one is a field nobody has to write.
+	for _, tc := range []struct{ typ, body, want string }{
+		{"kv", "kv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n", "crdt"},
+		{"document", "document:\n    distributed:\n        size: 1MB\n        consensus: single-writer\n", "single-writer"},
+		{"sql", "sql:\n    distributed:\n        size: 1MB\n        consensus: single-writer\n", "single-writer"},
+		{"vector", "vector:\n    dimensions: 8\n    distributed:\n        size: 1MB\n        consensus: crdt\n", "crdt"},
 	} {
 		flat, err := db(tc.body)
 		assert.NilError(t, err, "type %q", tc.typ)
 		d := namedResource(t, resources(t, flat, "database"), "d")
-		assert.Equal(t, nested(d, tc.typ, "crdt"), true, "type %q keeps the flag in its own block", tc.typ)
+		assert.Equal(t, nested(d, tc.typ, "consensus"), tc.want, "type %q keeps it in its own block", tc.typ)
 	}
 
 	// AND NOWHERE ELSE. An external engine's block does not have the key at all, so
 	// the error is the schema's own list of what is legal there rather than silence.
-	_, err := db("sql:\n    postgres:\n        host: db:5432\n        crdt: true\n")
-	assert.ErrorContains(t, err, "unknown key 'crdt'; valid keys here: credentials, database, host, tls",
+	_, err := db("sql:\n    postgres:\n        host: db:5432\n        consensus: crdt\n")
+	assert.ErrorContains(t, err, "unknown key 'consensus'; valid keys here: credentials, database, host, tls",
 		"a postgres has whatever consistency postgres has")
-	_, err = db("document:\n    mongo:\n        host: m:27017\n        crdt: true\n")
-	assert.ErrorContains(t, err, "unknown key 'crdt'; valid keys here: credentials, database, host, tls")
+	_, err = db("document:\n    mongo:\n        host: m:27017\n        consensus: crdt\n")
+	assert.ErrorContains(t, err, "unknown key 'consensus'; valid keys here: credentials, database, host, tls")
 
 	// Nor beside the type block, where it would read as a property of the resource
 	// rather than of the engine holding it.
-	_, err = db("crdt: true\nkv:\n    distributed:\n        size: 1MB\n")
-	assert.ErrorContains(t, err, "unknown key 'crdt'")
+	_, err = db("consensus: crdt\nkv:\n    distributed:\n        size: 1MB\n")
+	assert.ErrorContains(t, err, "unknown key 'consensus'")
 
-	// AND NOT ON A `cache`, WHICH HAS NO ENGINE BLOCK TO PUT IT IN. Its `size` and
-	// `ttl` sit at the document root because there is no engine to choose, so there is
-	// no `distributed` branch for this to hang under. Whether a cache should gain one
-	// is the owner's call; this records that today it has neither.
-	_, err = compile("/cache/c.yaml", "size: 1MB\ncrdt: true\n")
-	assert.ErrorContains(t, err, "unknown key 'crdt'")
+	// AND NOT ON A `cache`, WHICH HAS NO CONSENSUS QUESTION TO ASK. It is eventually
+	// consistent and AP by definition, so there is nothing to coordinate and no engine
+	// branch for this to hang under — its `size` and `ttl` sit at the document root
+	// because there is nothing to choose. What a cache says instead is `replicated`,
+	// which is a different question and has its own test below.
+	_, err = compile("/cache/c.yaml", "size: 1MB\nconsensus: crdt\n")
+	assert.ErrorContains(t, err, "unknown key 'consensus'")
 	_, err = compile("/cache/c.yaml", "distributed:\n    size: 1MB\n")
 	assert.ErrorContains(t, err, "unknown key 'distributed'")
 }
 
-// WHAT WRITING NOTHING MEANS, and it is the half a boolean cannot say for itself.
+// A CACHE SAYS WHERE ITS DATA LIVES, AND NOTHING ABOUT COORDINATION. The two fields
+// are easy to conflate and they answer different questions, so both halves are pinned:
+// `replicated` is a cache's and a database has no such key, `consensus` is a
+// database's and a cache has no such key (above).
 //
-// An absent `crdt` is not in the compiled object at all, so every consumer reads it as
-// Go's zero value: false, the coordinated store. Writing `false` is therefore not a
-// no-op — it is RECORDED, which is what lets an author put the default on the page
-// where the reason for it belongs, and what lets decompile hand it back unchanged
-// instead of deleting a line somebody wrote.
-func TestDatabaseCRDTAbsentIsCoordinated(t *testing.T) {
-	compile := func(body string) map[string]any {
+// THE ABSENT VALUE IS `false`, and unlike `consensus` that is a defensible silence:
+// node-local is the cheap answer and replication is what an author asks for. The
+// compiled object carries no key at all when nothing is written, so a consumer reads
+// Go's zero value and gets the cheap one.
+//
+// AND IT IS NOT REACHABILITY. Who may read a cache is the access block another
+// resource writes — per resource and per verb — and this says only where the data
+// sits. `reach: { network: all | subnet | host }` used to be a second, coarser answer
+// to the first question; it is gone, and this pins that it is.
+func TestCacheSaysWhereItsDataLives(t *testing.T) {
+	compile := func(path, body string) (map[string]any, error) {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, path,
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		obj, _, err := c.Compile(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		return obj.Flat(), nil
+	}
+	cache := func(body string) (map[string]any, error) {
+		flat, err := compile("/cache/c.yaml", body)
+		if err != nil {
+			return nil, err
+		}
+		return namedResource(t, resources(t, flat, "cache"), "c"), nil
+	}
+
+	// It is a bool at the document root, beside size and ttl, because there is no
+	// engine block to put it in.
+	c, err := cache("size: 1MB\nreplicated: true\n")
+	assert.NilError(t, err)
+	assert.Equal(t, c["replicated"], true)
+
+	// Absent is node-local, and it is absent from the object rather than written as
+	// false: nothing was said, so nothing is recorded.
+	c, err = cache("size: 1MB\n")
+	assert.NilError(t, err)
+	_, present := c["replicated"]
+	assert.Assert(t, !present, "an unwritten replicated is absent, not false: %v", c)
+
+	// A WRITTEN `false` IS KEPT, so an author who puts the default on the page next to
+	// the reason for it gets it back from decompile rather than losing the line.
+	c, err = cache("size: 1MB\nreplicated: false\n")
+	assert.NilError(t, err)
+	assert.Equal(t, c["replicated"], false)
+
+	// AND THE COARSE REACHABILITY KEY IS GONE, not replaced: the access block is the
+	// only thing that says who may reach a resource.
+	_, err = cache("size: 1MB\nreach:\n    network: all\n")
+	assert.ErrorContains(t, err, "unknown key 'reach'")
+	_, err = compile("/storage/s.yaml", "object:\n    size: 1MB\nreach:\n    network: all\n")
+	assert.ErrorContains(t, err, "unknown key 'reach'")
+
+	// A DATABASE HAS NO SUCH KEY. Replication is not the axis a system of record
+	// chooses on — it chooses consensus, and a database that is not replicated is not
+	// something this platform offers.
+	_, err = compile("/database/d.yaml", "kv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n        replicated: true\n")
+	assert.ErrorContains(t, err, "unknown key 'replicated'")
+	_, err = compile("/database/d.yaml", "replicated: true\nkv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n")
+	assert.ErrorContains(t, err, "unknown key 'replicated'")
+
+	// And the fixture carries the opt-in on the cache where it is the point, with the
+	// rest of them silent — so "absent is legal" is held by every other cache in the
+	// project rather than by an assertion about one.
+	flat := compileBasic(t)
+	orders := namedResource(t, resources(t, flat, "cache"), "orders")
+	assert.Equal(t, orders["replicated"], true)
+}
+
+// REQUIRED, AND CLOSED — the two halves that leave no answer the schema has not been
+// told about. This is the property a boolean could not have: `crdt: bool` had an
+// absent state, and whichever way that state was read it was the wrong answer for
+// somebody who never saw the field. There is no absent state now; there is an error
+// that names the field, at the document that owes it.
+//
+// The other half is the value set. `raft` is the plausible wrong answer — it is what
+// an author reaches for when the field asks about consensus — and it is exactly what
+// this vocabulary refuses to be told, because the algorithm behind `single-writer` is
+// the platform's to change without touching anybody's config.
+//
+// AN EXTERNAL ENGINE STILL OWES NOTHING, which is the half `Required()` could not
+// express: the requirement rides the engine branch, so a postgres compiles clean
+// without it and a kv database is not asked for `sql/distributed/consensus`.
+func TestDatabaseConsensusIsRequiredAndClosed(t *testing.T) {
+	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
@@ -436,29 +524,53 @@ func TestDatabaseCRDTAbsentIsCoordinated(t *testing.T) {
 			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
-		obj, _, err := c.Compile(context.Background())
-		assert.NilError(t, err)
-		return namedResource(t, resources(t, obj.Flat(), "database"), "d")
+		_, _, err = c.Compile(context.Background())
+		return err
 	}
 
-	silent := compile("kv:\n    distributed:\n        size: 1MB\n")
-	_, present := nestedOK(silent, "kv", "crdt")
-	assert.Assert(t, !present, "an unwritten crdt is absent, not false: %v", silent["kv"])
+	// WRITING NOTHING IS REFUSED, on every type, and the error names the field rather
+	// than the resource: the author is told which line to add and where.
+	for _, tc := range []struct{ typ, body string }{
+		{"kv", "kv:\n    distributed:\n        size: 1MB\n"},
+		{"document", "document:\n    distributed:\n        size: 1MB\n"},
+		{"sql", "sql:\n    distributed:\n        size: 1MB\n"},
+		{"vector", "vector:\n    dimensions: 8\n    distributed:\n        size: 1MB\n"},
+	} {
+		assert.ErrorContains(t, compile(tc.body), "required attribute '"+tc.typ+"/distributed/consensus'",
+			"type %q owes an answer", tc.typ)
+	}
 
-	written := compile("kv:\n    distributed:\n        size: 1MB\n        crdt: false\n")
-	v, present := nestedOK(written, "kv", "crdt")
-	assert.Assert(t, present, "a written false is kept: %v", written["kv"])
-	assert.Equal(t, v, false)
+	// Writing the key with nothing after it is the same omission, and is reported as
+	// one rather than compiling an empty string into the object.
+	assert.ErrorContains(t, compile("kv:\n    distributed:\n        size: 1MB\n        consensus:\n"),
+		"required attribute 'kv/distributed/consensus'")
 
-	// And the fixture holds both, on the two resources where the choice is the point:
-	// tokens are the same token however often they are written at once, and a debit
-	// that merges with another debit is a debit nobody made.
+	// A VALUE OUTSIDE THE SET IS REFUSED — including the one that names the algorithm,
+	// which is the mistake the closed set exists to catch: `single-writer` is a
+	// guarantee and raft is one way of keeping it, which is the platform's to change.
+	for _, v := range []string{"raft", "true", "single_writer", "eventual", "crdt "} {
+		assert.ErrorContains(t, compile("kv:\n    distributed:\n        size: 1MB\n        consensus: \""+v+"\"\n"),
+			"invalid value", "consensus: %q is not one of the two answers", v)
+	}
+
+	// AN EXTERNAL ENGINE OWES NOTHING. The requirement rides the engine branch, so
+	// `database/orders` — a postgres — compiles with no answer at all, and a kv
+	// database is never asked for `sql/distributed/consensus` either.
 	flat := compileBasic(t)
-	tokens := namedResource(t, resources(t, flat, "database"), "tokens")
-	assert.Equal(t, nested(tokens, "kv", "crdt"), true)
+	dbs := resources(t, flat, "database")
+	orders := namedResource(t, dbs, "orders")
+	_, present := nestedOK(orders, "sql", "consensus")
+	assert.Assert(t, !present, "an external server's consistency is not this project's to state: %v", orders["sql"])
+
+	// And the fixture holds both answers, on the resources where the choice is the
+	// point: a token is the same token however often it is written at once, a debit
+	// that merges with another debit is a debit nobody made, and an embedding a merge
+	// discards costs a re-embed rather than a fact.
+	assert.Equal(t, nested(namedResource(t, dbs, "tokens"), "kv", "consensus"), "crdt")
+	assert.Equal(t, nested(namedResource(t, dbs, "knowledge"), "vector", "consensus"), "crdt")
 
 	ledger := namedResource(t, namespace(t, root(t, flat), "billing")["database"].(map[string]any), "ledger")
-	assert.Equal(t, nested(ledger, "sql", "crdt"), false)
+	assert.Equal(t, nested(ledger, "sql", "consensus"), "single-writer")
 }
 
 // The new kinds load at all, with their scalars parsed.
