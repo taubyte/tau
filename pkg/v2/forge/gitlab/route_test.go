@@ -108,11 +108,18 @@ func declaredRoutes() []*route {
 // WHERE THE TOWER ENDS, and it ends here rather than at another rung. What must
 // be correct is: sweepShapes returns what the driver really put on the wire;
 // sweptRoutes decides "reached" by r.matches and nothing else; the row below
-// runs the insertion over every position and compares for equality. That is a
+// runs the insertion over every position and compares for EQUALITY. That is a
 // handful of lines in one place, all of them named in this comment, and it is
 // the same exposure as trusting that this file is compiled into the package at
-// all. A further rung would be a closure over the closure with its own
-// invocation to guard, and that regress does not terminate.
+// all.
+//
+// EQUALITY IS LOAD-BEARING AND NOT TIDINESS. Self-attacked, and it worked:
+// weakening it to containment — assert.Subset, "the answer includes the
+// inserted route" — keeps every self-test property and silently drops the real
+// one, and a route this driver ships that nothing reaches then rides along in
+// the answer at exit 0. Measured. That line is the floor; a further rung would
+// be a closure over the closure with its own invocation to guard, and that
+// regress does not terminate.
 
 // describe is how a route is named in a complaint: what it is, and the line
 // that introduced it.
