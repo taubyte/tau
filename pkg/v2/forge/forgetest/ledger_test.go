@@ -192,12 +192,43 @@ import (
 // AND THE MARKER EXEMPTION IS NARROWER THAN IT WAS, NOT GONE. A claim written
 // as a marker's OWN firing — through the reporter the marker was handed,
 // reporting the question it was handed — is still read as the marker firing and
-// is still not in the population. Measured: it is silent. But it is silent only
-// while NO fault reaches it. The moment one does, the failure attributes to the
-// step at the marker's call site, which no proof names, and the fired-unnamed
-// rule fails the build naming the proof — measured too. What is left is a claim
-// no fault in this suite can reach, which is the orphan condition, in the one
-// place the orphan rule cannot see it.
+// is still not in the population. It is silent only while NO fault reaches it:
+// the moment one does, the failure attributes to the step at the marker's call
+// site, which no proof names, and the fired-unnamed rule fails the build naming
+// the proof — measured. What is left is a claim no fault in this suite can
+// reach, which is the orphan condition, in the one place the orphan rule cannot
+// see it.
+//
+// MEASURED AS AN A/B, so the size of it is on the record. One claim, two
+// spellings, in mustReach. As an assertion —
+//
+//	assert.NotContains(t, err.Error(), "ledger-fault-canary", "...")
+//
+// — the orphan rule names it at plumbing.go:103 and the tree is GO_TEST_EXIT=1.
+// As the marker's own firing, `if strings.Contains(err.Error(), canary) { the
+// same Fatalf the marker already makes }`, the tree is GO_TEST_EXIT=0.
+//
+// AND IT IS NOT CLOSABLE BY SHAPE, which is worth stating rather than leaving
+// as an open item somebody will try to close. Every candidate rule was
+// considered against that measurement and each fails:
+//
+//	"a marker's firing may be guarded only by its own parameters" — the
+//	evasion above reads err, which is a parameter. So does every honest
+//	firing. The two are the same shape.
+//
+//	"a marker fires in exactly one place" — costs mustReach a refactor and
+//	buys one token: the smuggled condition moves into the guard of the single
+//	firing, `if err != nil || <the claim>`.
+//
+//	"a marker's firing must be reachable by a fault" — closes it completely,
+//	and is the exact reverse of the argument plumbing.go is built on, which is
+//	that demanding a fault behind "the harness started" produces faults nobody
+//	wants. That is a decision about what this suite's vocabulary IS, and it is
+//	the owner's, not this file's.
+//
+// So the bound is stated instead: the exemption is worth one condition inside
+// three functions of ten lines each, every one of which is read as plumbing by
+// anyone who opens the file it lives in.
 //
 // Nothing in a _test.go file beside this one is in the population either: those
 // are the thing doing the asserting. And the loader is the go command, so a

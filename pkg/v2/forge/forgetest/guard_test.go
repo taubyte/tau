@@ -41,7 +41,7 @@ import (
 // type-checked by the same loader — the ledger's own version of injecting a
 // fault into the fake forge and requiring the suite to catch it.
 //
-// Twenty-two rules and their faults, and a rule may have more than one: a rule
+// Twenty-three rules and their faults, and a rule may have more than one: a rule
 // evaded in four shapes needs four, or the three nobody showed it are three it
 // does not hold against. Hollowed one at a time, all of them fail here.
 //
