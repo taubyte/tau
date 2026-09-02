@@ -498,8 +498,13 @@ type operation struct {
 // keeps working while the forge is unreachable.
 func (r *runner) everyOperation(t tb) []operation {
 	t.Helper()
+	// Every session is bound HERE, on the goroutine and the tb this function was
+	// called with. A require inside one of the closures below would otherwise
+	// fail a subtest from a tb that is not its own.
 	sess := r.session(t, r.s.Writable)
 	admin := r.session(t, r.s.Admin)
+	creator := r.session(t, r.s.Creatable)
+	deleter := r.session(t, r.s.Deletable)
 	const pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIforgetestpublichalf forgetest"
 	const noSuchHandle = forge.Handle("forgetest-no-such-handle")
 
@@ -515,7 +520,7 @@ func (r *runner) everyOperation(t tb) []operation {
 	}
 	if r.s.Expect.Has(forge.CapCreate) {
 		ops = append(ops, operation{"create", func() error {
-			return second(r.session(t, r.s.Creatable).Create(r.ctx, r.s.Creatable, forge.CreateOptions{Description: "forgetest"}))
+			return second(creator.Create(r.ctx, r.s.Creatable, forge.CreateOptions{Description: "forgetest"}))
 		}})
 	}
 	if r.s.Expect.Has(forge.CapDelete) {
@@ -523,7 +528,7 @@ func (r *runner) everyOperation(t tb) []operation {
 		// deletes nothing, and a driver that followed one deleted nothing here
 		// either — the decoy is not a forge.
 		ops = append(ops, operation{"delete", func() error {
-			return r.session(t, r.s.Deletable).Delete(r.ctx, r.s.Deletable)
+			return deleter.Delete(r.ctx, r.s.Deletable)
 		}})
 	}
 	if r.s.Expect.Has(forge.CapDeployKeys) {
@@ -601,6 +606,17 @@ func (r *runner) everyOperation(t tb) []operation {
 //	a hook that lands on another repository CANNOT be reported honestly, no
 //	matter what the driver does. For those the only answer that is not a lie is
 //	a refusal, and that is what is asserted.
+//
+// FIVE OPERATIONS ARE ARMED, AND THEY ARE THE FIVE WHERE THE HOP HAS A
+// CONSEQUENCE THAT CAN BE NAMED. Repository is the only answer with room to
+// resolve the hop; Access is the read that has none; and the three writes are
+// where the hop lands a side effect on a repository the caller never mentioned.
+// The rest are armed by the probe above, at the decoy, which covers every
+// operation there is — a redirect policy is per client and not per method, so
+// the five are where the ANSWER differs and not where the policy does. A
+// removal names a handle the other repository does not hold, so a followed hop
+// is a 404 there rather than a deletion; whoami and list are about no
+// repository at all; and create names one that does not exist yet.
 //
 // The address the redirect points at is the DRIVER'S OWN address for another
 // repository, read back out of what the subject reported. The suite knows no
