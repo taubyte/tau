@@ -262,6 +262,13 @@ func TestASessionRefusesAKeyItWasNotBoundFor(t *testing.T) {
 	require.ErrorAs(t, err, &wh)
 	assert.Contains(t, wh.Error(), "cannot act on")
 
+	// And the authorization question, which is the one a caller ACTS on: a
+	// session walked onto another host's key must not answer it, and must not
+	// answer AccessNone either, because that reads as a verdict.
+	lvl, err := sess.Access(context.Background(), key(t, "https://elsewhere.invalid/acme/pay"))
+	require.ErrorAs(t, err, &wh)
+	assert.Equal(t, AccessNone, lvl, "a refused authorization question still answered a level")
+
 	// A depth this driver cannot address, refused at the session too and not
 	// only at the registry.
 	var ua *UnaddressableError
