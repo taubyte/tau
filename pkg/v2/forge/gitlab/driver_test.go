@@ -345,6 +345,13 @@ func TestRepositoryPassesAnSSHAddressOnAnotherHostThrough(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, key, repo.Key, "the key comes from the http clone URL")
 	assert.Equal(t, "ssh://git@ssh.acme.example:2222/acme/pay.git", repo.SSH)
+	// AND THE OTHER ADDRESS IS THE OTHER ADDRESS. HTTPS is the one a builder
+	// clones with a credential, so a driver that reported the ssh spelling there
+	// would send a token to an address nothing derived a key from — and no key
+	// check can see it, because the two name the same project. Measured before
+	// this line: swapping the two left the whole tree at exit 0.
+	assert.Equal(t, "http://"+host+"/acme/pay.git", repo.HTTPS,
+		"the address a clone spends a credential at is not the one the instance named for it")
 	assert.True(t, repo.Private, "an instance visibility that is not public is not public")
 
 	// And here is the consequence, stated rather than hidden: the two addresses

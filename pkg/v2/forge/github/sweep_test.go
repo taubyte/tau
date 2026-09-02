@@ -140,6 +140,12 @@ type sweepOp struct {
 	// is a defect of its own, and the sweep asserts there is none.
 	offline bool
 
+	// deployment says this operation is answered with the DEPLOYMENT's own
+	// credential, on a client no session can reach. Whose credential a request
+	// spends is the whole point of that placement, so the rows about a session's
+	// credential must not quietly include it.
+	deployment bool
+
 	call func(context.Context, *forge.Registry, *forge.Session, repokey.Key, sweepArgs) (any, error)
 }
 
@@ -239,7 +245,7 @@ var sweepOps = []sweepOp{
 		// request tau makes that HANDS BACK a credential. It is taken through the
 		// registry for that reason — a redirect policy living on one client and
 		// not the other would be invisible from a session.
-		name: "IsActiveMember", caps: []forge.Capability{forge.CapMembership}, pastes: true,
+		name: "IsActiveMember", caps: []forge.Capability{forge.CapMembership}, pastes: true, deployment: true,
 		call: func(ctx context.Context, reg *forge.Registry, s *forge.Session, _ repokey.Key, a sweepArgs) (any, error) {
 			return reg.IsActiveMember(ctx, s.Host(), a.namespace, a.username)
 		},
@@ -267,7 +273,11 @@ var sweepOps = []sweepOp{
 type hop struct {
 	shape      string
 	credential string
-	body       string
+	// carried is whether the header was THERE, which is not the same question as
+	// whether it had anything in it: "Authorization: Bearer " is a header, and it
+	// turns a public read into a 401.
+	carried bool
+	body    string
 }
 
 // wire records every hop, in order, and answers through the transport beneath
@@ -282,7 +292,13 @@ type wire struct {
 
 func (w *wire) RoundTrip(r *http.Request) (*http.Response, error) {
 	w.mu.Lock()
-	w.hops = append(w.hops, hop{shape: shapeOf(r), credential: r.Header.Get("Authorization"), body: bodyOf(r)})
+	_, carried := r.Header["Authorization"]
+	w.hops = append(w.hops, hop{
+		shape:      shapeOf(r),
+		credential: r.Header.Get("Authorization"),
+		carried:    carried,
+		body:       bodyOf(r),
+	})
 	w.mu.Unlock()
 	return w.base.RoundTrip(r)
 }
@@ -797,6 +813,54 @@ func TestNoRequestThisDriverMakesFollowsARedirectOffTheHost(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestAnAnonymousSessionPutsNoCredentialHeaderOnAnyRequest.
+//
+// An anonymous session is a real state — GitHub answers public repositories to
+// nobody in particular — and the driver's own line for it is `if token != ""`
+// around the header. Deleting that guard left the whole tree at exit 0, because
+// the assertion an anonymous test can most easily make reads the header's VALUE:
+// "Authorization: Bearer " is empty by that reading and present by GitHub's, and
+// GitHub answers a present-but-meaningless credential with a 401. The public
+// read then fails as if the repository were gone.
+//
+// So this reads presence, and it reads it on every request the sweep found
+// rather than on one. Whichever operations an anonymous session is allowed to
+// make, none of their hops may carry the header at all.
+func TestAnAnonymousSessionPutsNoCredentialHeaderOnAnyRequest(t *testing.T) {
+	reached := 0
+	for _, op := range sweepOps {
+		t.Run(op.name, func(t *testing.T) {
+			s := newSweepForge(t, op)
+			anon, err := s.reg.For(s.key, forge.Anonymous())
+			require.NoError(t, err)
+
+			got, err := op.call(ctx(), s.reg, anon, s.key, benignArgs)
+			t.Logf("%s -> %v, err = %v", op.name, got, err)
+			if op.deployment {
+				// It never spends the session's credential, so an anonymous
+				// session changes nothing about it — and THAT is this row's
+				// assertion, because a walk that started answering anonymously
+				// would be a walk asking a question it cannot answer.
+				for _, h := range s.wire.sent() {
+					assert.Truef(t, h.carried,
+						"%s stopped spending the deployment's credential on %q", op.name, h.shape)
+				}
+				return
+			}
+			for _, h := range s.wire.sent() {
+				reached++
+				assert.Falsef(t, h.carried,
+					"an anonymous session put an Authorization header on %q; the forge reads that as a credential it was given and refuses the read", h.shape)
+			}
+		})
+	}
+	// The core refuses some operations on an anonymous session before any
+	// request is built — Whoami and Access both do — so this counts the hops
+	// that WERE made, and a table where none of them reach the wire is a table
+	// that read nothing.
+	assert.Positive(t, reached, "no operation reached the wire, so nothing here was read")
 }
 
 // TestEveryConsumerStringStaysInsideOnePathSegment is ONE MECHANISM for the

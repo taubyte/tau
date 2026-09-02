@@ -514,6 +514,47 @@ func TestARepositoryOnAnotherHostIsRefused(t *testing.T) {
 	}
 }
 
+// TestARepositoryReportsBothAddressesTheForgeNamed, and reports each as
+// ITSELF.
+//
+// HTTPS is the address a builder clones WITH A CREDENTIAL and SSH is the one it
+// clones with a key, so a driver that put one where the other belongs sends a
+// token to an address nothing derived a key from. No key check can see that:
+// both spellings name the same repository, the key still comes from clone_url,
+// and every other assertion in this package still passes. Measured before this
+// test: reporting ssh_url as HTTPS left the whole tree at exit 0.
+//
+// The SSH URL here is on another HOST AND PORT, which is the documented
+// passthrough —
+// a forge may legitimately serve SSH elsewhere, nothing clones it with a bearer
+// credential, and this driver reports what it was told rather than inventing
+// agreement.
+func TestARepositoryReportsBothAddressesTheForgeNamed(t *testing.T) {
+	var https, ssh string
+	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		https = "https://" + r.Host + "/acme/pay.git"
+		ssh = "ssh://git@ssh.acme.example:2222/acme/pay.git"
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"full_name":"acme/pay","clone_url":"`+https+`","ssh_url":"`+ssh+`",
+			"default_branch":"main","private":true,"permissions":{"pull":true}}`)
+	}), "acme/pay")
+
+	repo, err := sess.Repository(ctx(), key)
+	require.NoError(t, err)
+	assert.Equal(t, key, repo.Key, "the key comes from the clone URL")
+	assert.Equal(t, https, repo.HTTPS,
+		"the address a clone spends a credential at is not the one the forge named for it")
+	assert.Equal(t, ssh, repo.SSH,
+		"an ssh address the forge serves elsewhere was rewritten or dropped")
+
+	// And the consequence of that passthrough, stated rather than hidden: the
+	// two addresses of one repository derive two keys, because the host is part
+	// of the identity.
+	fromSSH, err := repokey.Parse(repo.SSH)
+	require.NoError(t, err)
+	assert.NotEqual(t, repo.Key, fromSSH)
+}
+
 func TestWhoamiRefusesACredentialBelongingToNobody(t *testing.T) {
 	sess, _ := sessionOn(t, answer(http.StatusOK, `{"id":7}`), "acme/pay")
 	_, err := sess.Whoami(ctx())
@@ -662,6 +703,47 @@ func TestAResourceWithNoIdIsRefused(t *testing.T) {
 	require.NoError(t, err)
 	_, err = sess.RegisterPushHook(ctx(), key, callback, secret)
 	require.Error(t, err)
+}
+
+// TestA404OnAResourceIsNotAVerdictAboutTheRepository is the whole of what
+// classifyResource exists for, and until this test it was a comment.
+//
+// A hook and a deploy key live UNDER a repository, and GitHub answers 404 for a
+// handle that is gone exactly as it answers 404 for a repository that is. Filing
+// the first as *NotFoundError says the host serves no repository acme/site — a
+// repository that is plainly there — and a consumer acting on that deregisters a
+// live project because a hook it was tidying up had already been removed.
+// Measured before this test: routing the removals through classify(err, key)
+// instead left the whole tree at exit 0.
+//
+// THE SPLIT IS ASSERTED IN BOTH DIRECTIONS, because the interesting half is not
+// that a removal is exempt but that a fetch is not. The two POSTs are on the
+// fetch side deliberately: creating a hook under a repository that 404s IS the
+// repository being missing, since the resource does not exist yet to be the
+// subject.
+func TestA404OnAResourceIsNotAVerdictAboutTheRepository(t *testing.T) {
+	sess, key := sessionOn(t, answer(http.StatusNotFound, `{"message":"Not Found"}`), "acme/site")
+	callback, err := url.Parse("https://build.example.invalid/hook")
+	require.NoError(t, err)
+	secret, err := forge.NewSecret()
+	require.NoError(t, err)
+
+	var missing *forge.NotFoundError
+	for name, err := range map[string]error{
+		"removing a deploy key": sess.RemoveDeployKey(ctx(), key, "7"),
+		"removing a hook":       sess.RemovePushHook(ctx(), key, "7"),
+	} {
+		require.Error(t, err, name)
+		assert.NotErrorAsf(t, err, &missing,
+			"%s answered that the host serves no repository %q, which is a repository that is plainly there", name, key)
+	}
+
+	_, err = sess.Repository(ctx(), key)
+	require.ErrorAs(t, err, &missing, "a 404 on the repository itself is the one thing this taxonomy member is for")
+	_, err = sess.InstallDeployKey(ctx(), key, "tau", "ssh-ed25519 AAAA")
+	require.ErrorAs(t, err, &missing, "installing under a repository that is not there is that repository not being there")
+	_, err = sess.RegisterPushHook(ctx(), key, callback, secret)
+	require.ErrorAs(t, err, &missing)
 }
 
 // TestRemovingSomethingWithoutItsHandleIsRefused. An empty handle would build a
