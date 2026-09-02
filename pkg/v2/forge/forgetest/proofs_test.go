@@ -2,6 +2,7 @@ package forgetest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/v2/forge"
@@ -227,6 +228,16 @@ func faultProofs() []proof {
 		"a correctly signed delivery was rejected")
 	add("push-reads-the-base-ref", fake.GitHubLike, []fake.Fault{fake.FaultPushReadsTheBaseRef},
 		"the driver read a push the payload does not describe")
+	// A deletion is spelled as an after of all zeroes, so a driver reading the
+	// commit the ref moved FROM reports an ordinary push of a branch that is
+	// gone. Both complaints are the same misreading, seen twice: once as a
+	// commit that is not the one the payload names, and once as a deletion that
+	// stopped looking like one.
+	add("push-reads-the-commit-it-moved-from", fake.GitHubLike, []fake.Fault{fake.FaultPushReadsTheCommitItMovedFrom},
+		"the driver read a push the payload does not describe",
+		"a ref deletion must be distinguishable from a failure")
+	add("any-delivery-reads-as-a-push", fake.GitHubLike, []fake.Fault{fake.FaultAnyDeliveryReadsAsAPush},
+		"a delivery that is not a push read as one")
 
 	// ─── the questions git answers and the ones a namespace does ───
 
@@ -320,6 +331,56 @@ func subjectProofs() []proof {
 	broken("no-delivery-builder", func(s *Subject) { s.Delivery = nil }, "CapSignatures needs")
 	broken("no-membership-fixtures", func(s *Subject) { s.Member = "" }, "CapMembership needs")
 	broken("no-push-probe-keys", func(s *Subject) { s.PushKey = nil }, "CapPushProbe needs")
+
+	// THE PROBES ARE PART OF THE SUBJECT, AND A PROBE THAT LIES IS A FAULT.
+	//
+	// A driver author wires these up by hand, and several of the suite's
+	// questions are only questions because a probe built what it says it built.
+	// A DeliveryFor that quietly speaks for the hook's own repository turns
+	// "the hook may only speak for its own repository" into a delivery that
+	// was always going to verify; a DeliveryAt that ignores the date turns the
+	// replay window into two more copies of the delivery that already passed.
+	// Neither is a driver being wrong, and both make the suite green for a
+	// reason nobody wrote down — which is the failure mode this whole file is
+	// against.
+
+	add("a-deputy-delivery-that-names-this-very-repository", func(t *testing.T) Subject {
+		s := subjectFor(t, "deputy-names-this-one", fake.GitHubLike)
+		plain := s.Delivery
+		s.DeliveryFor = func(h forge.Hook, _ repokey.Key, ref, commit string) (forge.Delivery, error) {
+			return plain(h, ref, commit)
+		}
+		return s
+	}, "a perfectly signed delivery naming another repository was accepted",
+		"a delivery naming another repository produced a Push beside its error")
+
+	// The other way a deputy can prove nothing: it names another repository and
+	// is signed for nothing, so the core refuses it on the signature and never
+	// reaches the comparison the case exists for.
+	add("a-deputy-delivery-nothing-signed", func(t *testing.T) Subject {
+		s := subjectFor(t, "deputy-unsigned", fake.GitHubLike)
+		deputy := s.DeliveryFor
+		s.DeliveryFor = func(h forge.Hook, other repokey.Key, ref, commit string) (forge.Delivery, error) {
+			stranger, err := forge.NewSecret()
+			if err != nil {
+				return forge.Delivery{}, err
+			}
+			// A handle this forge does not hold, so the secret below is what
+			// signs rather than the wire the forge was actually given.
+			h.Handle, h.Secret = "a-handle-no-forge-holds", stranger
+			return deputy(h, other, ref, commit)
+		}
+		return s
+	}, "the refusal does not say the delivery claimed another repository")
+
+	add("a-dating-builder-that-ignores-the-date", func(t *testing.T) Subject {
+		s := subjectFor(t, "dating-ignores-the-date", fake.GitLabLike)
+		plain := s.Delivery
+		s.DeliveryAt = func(h forge.Hook, ref, commit string, _ time.Time) (forge.Delivery, error) {
+			return plain(h, ref, commit)
+		}
+		return s
+	}, "%s was accepted", "%s produced a Push beside its error")
 
 	add("a-timestamped-scheme-with-no-dating-builder", func(t *testing.T) Subject {
 		s := subjectFor(t, "no-delivery-at", fake.GitLabLike)

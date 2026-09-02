@@ -192,8 +192,7 @@ func (r *runner) pushProbe(t tb) {
 func (r *runner) membership(t tb) {
 	t.Helper()
 	if !r.s.Expect.Has(forge.CapMembership) {
-		ok, err := r.s.Registry.IsActiveMember(r.ctx, r.s.Host, "acme", "someone")
-		assert.False(t, ok) // held by forge: TestAMembershipQuestionNobodyCanAnswerIsNeverANo
+		_, err := r.s.Registry.IsActiveMember(r.ctx, r.s.Host, "acme", "someone")
 		r.absent(t, forge.CapMembership, err)
 		return
 	}
@@ -208,13 +207,6 @@ func (r *runner) membership(t tb) {
 	ok, err = r.s.Registry.IsActiveMember(r.ctx, r.s.Host, r.s.Namespace, r.s.NonMember)
 	mustReach(t, r.note(err), "asking whether the non-member fixture is a member of %q", r.s.Namespace)
 	assert.False(t, ok, "a non-member of %q read as a member", r.s.Namespace)
-
-	// A host with no driver cannot answer, and "could not ask" must not arrive
-	// as "they are not a member".
-	ok, err = r.s.Registry.IsActiveMember(r.ctx, foreignHost, r.s.Namespace, r.s.Member)
-	var nd *forge.NoDriverError
-	assert.ErrorAs(t, r.note(err), &nd) // held by forge: TestAMembershipQuestionNobodyCanAnswerIsNeverANo
-	assert.False(t, ok)                 // held by forge: TestAMembershipQuestionNobodyCanAnswerIsNeverANo
 }
 
 // pushHooks is the suite's other centrepiece: the whole registration-to-delivery
@@ -250,12 +242,10 @@ func (r *runner) pushHooks(t tb) {
 	hook, err := sess.RegisterPushHook(r.ctx, r.s.Admin, callback, secret)
 	mustReach(t, r.note(err), "registering the hook every delivery below is signed for")
 	// Key, scheme, secret and a non-empty handle are stamped by forge.Session
-	// itself, from the argument and from the driver's own Scheme(), so there is
-	// nothing here a driver contributes and nothing a fault could change.
-	require.NotEmpty(t, hook.Handle, "an empty handle is a hook nothing can ever remove") // held by forge: TestRegisterPushHookRefusesEveryUnsafeRegistration
-	assert.Equal(t, r.s.Admin, hook.Key)                                                  // held by forge: TestAHookIsStampedWithWhatItWasAskedFor
-	assert.Equal(t, r.scheme(t), hook.Scheme)                                             // held by forge: TestAHookIsStampedWithWhatItWasAskedFor
-	assert.True(t, hook.Secret.Equal(secret))                                             // held by forge: TestAHookIsStampedWithWhatItWasAskedFor
+	// itself, from the argument and from the driver's own Scheme();
+	// TestAHookIsStampedWithWhatItWasAskedFor and
+	// TestRegisterPushHookRefusesEveryUnsafeRegistration stand on that. What is
+	// the driver's is the handle naming something the forge will answer for.
 	assert.True(t, r.s.HookInstalled(hook.Handle), "the handle names no hook on the forge")
 
 	// The forge must hold EXACTLY the wire string the scheme derives. A driver
@@ -294,8 +284,8 @@ func (r *runner) deliveries(t tb, hook forge.Hook) {
 	reject := func(name string, h forge.Hook, d forge.Delivery) {
 		t.Helper()
 		got, err := r.s.Registry.VerifyPush(h, d)
-		assert.Error(t, r.note(err), "%s was accepted", name)                           // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
-		assert.Equal(t, forge.Push{}, got, "%s produced a Push beside its error", name) // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
+		assert.Error(t, r.note(err), "%s was accepted", name)
+		assert.Equal(t, forge.Push{}, got, "%s produced a Push beside its error", name)
 	}
 
 	if hook.Scheme.BindsBody() {
@@ -331,35 +321,23 @@ func (r *runner) deliveries(t tb, hook forge.Hook) {
 	// The comparison is the core's, between the hook's key and the claim the
 	// driver read. A driver has no way to make this one pass: it never sees the
 	// hook.
-	if assert.ErrorAs(t, r.note(err), &ve, "a perfectly signed delivery naming another repository was accepted") { // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
-		assert.Contains(t, ve.Reason, "claims repository") // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
+	if assert.ErrorAs(t, r.note(err), &ve, "a perfectly signed delivery naming another repository was accepted") {
+		assert.Contains(t, ve.Reason, "claims repository",
+			"the refusal does not say the delivery claimed another repository, so it was refused for some other reason and DeliveryFor proves nothing")
 	}
-	assert.Equal(t, forge.Push{}, got) // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
+	assert.Equal(t, forge.Push{}, got, "a delivery naming another repository produced a Push beside its error")
 
 	// A ref deletion is a legitimate delivery with nothing to build, and it has
 	// its own error so a receiver answers 200 and drops it.
 	deleted, err := r.s.Delivery(hook, ref, deletedOID)
 	mustReach(t, err, "building the delivery that reports a ref deletion")
 	_, err = r.s.Registry.VerifyPush(hook, deleted)
-	assert.ErrorIs(t, r.note(err), forge.ErrRefDeleted, "a ref deletion must be distinguishable from a failure") // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
+	assert.ErrorIs(t, r.note(err), forge.ErrRefDeleted, "a ref deletion must be distinguishable from a failure")
 
 	nonPush, err := r.s.NonPushDelivery(hook)
 	mustReach(t, err, "building a correctly signed delivery that is not a push at all")
 	_, err = r.s.Registry.VerifyPush(hook, nonPush)
-	assert.ErrorIs(t, r.note(err), forge.ErrNotAPush) // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
-
-	// The body cap is enforced before any MAC is computed, so it is asserted on
-	// a registry of the suite's own with a tight one — everything else about
-	// that registry is loosened, so only the cap can be what refuses.
-	tight, err := forge.New(forge.Policy{
-		MaxDeliveryBody:       len(good.Body) - 1,
-		AllowUnboundSchemes:   true,
-		AllowInsecureCallback: true,
-	}, forge.Binding{Host: r.s.Host, Driver: r.driver})
-	mustReach(t, err, "building a registry whose only tight setting is the delivery body cap")
-	oversize, err := tight.VerifyPush(hook, good)
-	assert.Error(t, r.note(err), "a body over the cap was hashed anyway") // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
-	assert.Equal(t, forge.Push{}, oversize)                               // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
+	assert.ErrorIs(t, r.note(err), forge.ErrNotAPush, "a delivery that is not a push read as one")
 
 	if hook.Scheme == forge.SchemeStandardWebhooks {
 		stale, err := r.s.DeliveryAt(hook, ref, commitA, time.Now().Add(-time.Hour))

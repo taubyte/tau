@@ -42,13 +42,33 @@ import (
 //	subject can reach, or one whose deletion nothing would notice, and there is
 //	no way to tell those apart from the outside — which is the whole point.
 //
-// THREE KINDS, AND ONLY ONE OF THEM NEEDS A FAULT. Holding a step to the same
+// TWO KINDS, AND ONLY ONE OF THEM NEEDS A FAULT. Holding a step to the same
 // bar as a claim produces faults nobody wants; letting a claim call itself a
-// step is the same defect this file exists to close, one level up. So the two
-// exemptions are spelled, they are narrow, and each is checked.
+// step is the same defect this file exists to close, one level up. So the one
+// exemption is spelled, it is narrow, and it is checked.
 //
-//	CONTRACT — assert/require/Errorf/Fatalf. A claim about the driver under
-//	test. Needs a fault.
+// THERE WAS A THIRD KIND AND IT WAS AN ESCAPE HATCH. A trailing comment,
+// `// held by forge: TestX`, exempted an assertion from needing a fault on the
+// grounds that pkg/v2/forge produces its value with no driver code in between.
+// The only thing checked was that a test called TestX existed somewhere in that
+// package — never that it held anything, never that the assertion was
+// driver-independent at all. Measured: assert.NotNil on a value three lines
+// older than the assertion passed with the marker and failed without it, under
+// a marker naming a test about registry resolution. Measured the other way: an
+// existing held assertion with its call to the thing under test replaced by a
+// constant left the tree at exit 0. Thirty-four assertions, a fifth of the
+// suite, sat behind it.
+//
+// A comment is not proof, and there is no proof to be had HERE: an assertion
+// whose value the core produces on its own can only be killed by breaking the
+// core, and the core is one package down, concrete, and correctly not
+// substitutable. So the assertions went where the fault that can kill them
+// lives — pkg/v2/forge's own tests, which already held every one of them, and
+// which say so in session_test.go's header. What was left in this suite was a
+// copy that read like a check.
+//
+//	CONTRACT — assert/require/Errorf/Fatalf. A claim about the SUBJECT: the
+//	driver, and the probes its author wired up. Needs a fault.
 //
 //	PLUMBING — mustReach/mustAsk/mustHold. A step the suite takes on its way to
 //	a question; see plumbing.go. Needs no fault, and MUST NOT HAVE ONE: a step a
@@ -74,33 +94,20 @@ import (
 //	  claim in. A proof's complaint and the place it "could not reach" are not
 //	  the same place; when they are, the stop IS the complaint, renamed.
 //
-//	HELD — an assertion carrying `// held by forge: TestX`. The value is
-//	produced by pkg/v2/forge with no driver code between the call and it: a
-//	Session's refusal, a field this package stamps, a comparison the core makes
-//	on its own. No driver can make one fire, so no fault could ever be written
-//	for one — and the fault that CAN break it lives one package down. The
-//	marker names the test there that holds it, and TestX must exist. It is not
-//	an escape hatch for a claim about a driver, and the same rule as plumbing
-//	says so: a held assertion a proof can kill was never held.
-//
 // The population is read out of the source with go/ast rather than kept in a
 // list, because a list is a thing you can forget to add to.
 
-// kind is which of the three an entry is.
+// kind is which of the two an entry is.
 type kind int
 
 const (
 	contract kind = iota
 	plumbing
-	held
 )
 
 func (k kind) String() string {
-	switch k {
-	case plumbing:
+	if k == plumbing {
 		return "plumbing"
-	case held:
-		return "held by forge"
 	}
 	return "a contract assertion"
 }
@@ -112,7 +119,6 @@ type assertion struct {
 	says string // the message literal, which is this assertion's name
 	in   string // "run.go:capabilities", the function it is written in
 	kind kind
-	by   string // for held: the test in pkg/v2/forge that holds it
 }
 
 // fixedArgs is how many arguments each call takes before its message. testify's
@@ -146,9 +152,6 @@ var fixedArgs = map[string]int{
 // marker firing and not an assertion of its own, so the walk steps over them.
 var markers = map[string]bool{"mustReach": true, "mustAsk": true, "mustHold": true}
 
-// heldBy reads `// held by forge: TestX` off the line an assertion is on.
-var heldBy = regexp.MustCompile(`//\s*held by forge:\s*(\w+)`)
-
 // population is every assertion in the suite, read out of the source. Test
 // files are not part of it: this file, and the proofs beside it, are the thing
 // doing the asserting.
@@ -164,11 +167,10 @@ func population(t *testing.T) []assertion {
 		if strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		file, err := parser.ParseFile(fset, name, nil, parser.ParseComments)
+		file, err := parser.ParseFile(fset, name, nil, 0)
 		if err != nil {
 			t.Fatalf("parsing %s: %v", name, err)
 		}
-		marks := marksIn(fset, file)
 		enclosing := ""
 		ast.Inspect(file, func(n ast.Node) bool {
 			if fn, ok := n.(*ast.FuncDecl); ok {
@@ -205,18 +207,8 @@ func population(t *testing.T) []assertion {
 				says: says,
 				in:   enclosing,
 			}
-			// A mark is read anywhere on the call, because a call this suite
-			// writes is routinely three lines long and the marker belongs
-			// beside the claim rather than beside the opening parenthesis.
 			if markers[spelling] {
 				a.kind = plumbing
-			} else {
-				for line := pos.Line; line <= fset.Position(call.End()).Line; line++ {
-					if marks[line] != "" {
-						a.kind, a.by = held, marks[line]
-						break
-					}
-				}
 			}
 			out = append(out, a)
 			return true
@@ -254,19 +246,6 @@ func howItFails(call *ast.CallExpr) (spelling string, at int, ok bool) {
 		}
 	}
 	return "", 0, false
-}
-
-// marksIn is every `// held by forge: TestX` in a file, by the line it is on.
-func marksIn(fset *token.FileSet, file *ast.File) map[int]string {
-	out := map[int]string{}
-	for _, group := range file.Comments {
-		for _, c := range group.List {
-			if g := heldBy.FindStringSubmatch(c.Text); g != nil {
-				out[fset.Position(c.Pos()).Line] = g[1]
-			}
-		}
-	}
-	return out
 }
 
 // trace is where testify writes the assertion's own call site. It is the first

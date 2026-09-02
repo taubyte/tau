@@ -15,13 +15,13 @@ import (
 // same thing cannot be told apart — which is how a self-test case came to pass
 // on an assertion it was not written for.
 //
-// A held assertion is allowed to say nothing, because nothing here can name it
-// anyway: the fault behind it is one package down and so is the test that holds
-// it. Whatever it does say still has to be its own.
+// Nothing is exempt. The exemption used to be "held by forge", and an assertion
+// that says nothing and needs no fault is an assertion nothing at all is known
+// about.
 func TestEveryAssertionSaysWhatItMeans(t *testing.T) {
 	pop := population(t)
 	for _, a := range pop {
-		if a.says == "" && a.kind != held {
+		if a.says == "" {
 			t.Errorf("%s: %s says nothing, so no proof can name it and nothing can know it is load-bearing", a.site, a.call)
 		}
 	}
@@ -50,23 +50,6 @@ func TestEveryPlumbingStepIsOnItsWayToAQuestion(t *testing.T) {
 	for _, bad := range stepsGoingNowhere(t) {
 		t.Errorf("%s: this step is on its way to nothing — no assertion follows it in %s, and %s returns no value a caller could ask a question with",
 			bad.site, bad.fn, bad.fn)
-	}
-}
-
-// TestEveryHeldAssertionNamesATestThatHoldsIt. The marker's whole claim is that
-// the fault behind this assertion lives in pkg/v2/forge and that a named test
-// there is standing on it. A name that has been renamed away, or was never
-// there, is the marker having become a sentence nobody can check.
-func TestEveryHeldAssertionNamesATestThatHoldsIt(t *testing.T) {
-	have := testsInForge(t)
-	for _, a := range population(t) {
-		if a.kind != held {
-			continue
-		}
-		if !have[a.by] {
-			t.Errorf("%s: is marked as held by forge's %s, and pkg/v2/forge has no such test",
-				a.site, a.by)
-		}
 	}
 }
 
@@ -176,8 +159,8 @@ func TestEveryAssertionHasAFaultBehindIt(t *testing.T) {
 		}
 		orphans = append(orphans, a.site+"\t"+a.call+"\t"+a.says)
 	}
-	t.Logf("%d assertions: %d contract, %d plumbing, %d held by forge",
-		len(pop), counts[contract], counts[plumbing], counts[held])
+	t.Logf("%d assertions: %d contract, %d plumbing",
+		len(pop), counts[contract], counts[plumbing])
 	sort.Strings(orphans)
 	if len(orphans) > 0 {
 		t.Errorf("%d of %d contract assertions have no fault behind them:\n%s",
@@ -187,8 +170,8 @@ func TestEveryAssertionHasAFaultBehindIt(t *testing.T) {
 
 // names maps a proof's sayings onto the assertions they name, and refuses a
 // saying that names anything but one contract assertion. A proof that can name
-// a step or a held assertion is a proof saying that assertion IS reachable by a
-// driver fault, which is the one thing its marker claims it is not.
+// a step is a proof saying that step IS reachable by a broken subject, which is
+// the one thing a step claims it is not.
 func names(t *testing.T, pop []assertion, p proof) map[string]bool {
 	t.Helper()
 	out := make(map[string]bool, len(p.says))
@@ -422,30 +405,6 @@ func callsDirectlyIn(body *ast.BlockStmt) []*ast.CallExpr {
 		})
 	}
 	walk(body)
-	return out
-}
-
-// testsInForge is every Test function in pkg/v2/forge, which is what a
-// `held by forge:` marker has to name.
-func testsInForge(t *testing.T) map[string]bool {
-	t.Helper()
-	files, err := filepath.Glob("../*_test.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("pkg/v2/forge's own tests are not beside this package: %v", err)
-	}
-	fset := token.NewFileSet()
-	out := map[string]bool{}
-	for _, name := range files {
-		file, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatalf("parsing %s: %v", name, err)
-		}
-		for _, decl := range file.Decls {
-			if fn, ok := decl.(*ast.FuncDecl); ok && strings.HasPrefix(fn.Name.Name, "Test") {
-				out[fn.Name.Name] = true
-			}
-		}
-	}
 	return out
 }
 

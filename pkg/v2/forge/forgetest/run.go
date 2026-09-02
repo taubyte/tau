@@ -22,9 +22,6 @@ const commitA = "1f0c9d2b3a4e5f60718293a4b5c6d7e8f9012345"
 // deletedOID is git's deletion sentinel.
 const deletedOID = "0000000000000000000000000000000000000000"
 
-// foreignHost is a host no subject is ever bound to.
-const foreignHost = "forge.invalid"
-
 // Run puts a driver through the whole suite. It never skips: a capability the
 // driver does not have is asserted absent, which is a contract of its own.
 func Run(t *testing.T, s Subject) {
@@ -58,11 +55,9 @@ func run(t tb, s Subject) {
 	r := &runner{s: s, ctx: context.Background()}
 	r.preflight(t)
 
-	t.Run("host-is-a-repokey-spelling", r.hostSpelling)
 	t.Run("addressable-refuses-a-depth-it-cannot-address", r.addressableDepth)
-	t.Run("a-key-on-another-host-is-refused", r.foreignKey)
-	t.Run("a-zero-credential-is-refused", r.zeroCredential)
-	t.Run("an-anonymous-session-answers-no-authorization-question", r.anonymous)
+	t.Run("a-zero-credential-is-refused-before-the-driver", r.zeroCredential)
+	t.Run("anonymous-binds", r.anonymous)
 	t.Run("capabilities-are-exactly-what-was-declared", r.capabilities)
 	t.Run("whoami", r.whoami)
 	t.Run("access", r.access)
@@ -182,23 +177,6 @@ func (r *runner) session(t tb, k repokey.Key) *forge.Session {
 
 // ─────────────────────────── the mandatory contract ───────────────────────────
 
-// hostSpelling catches "GitHub.com", a trailing slash and a scheme in the host —
-// each of which yields a driver that is registered and that no key will ever
-// resolve to.
-func (r *runner) hostSpelling(t tb) {
-	t.Helper()
-	// forge.New runs exactly this parse over every binding's host and refuses
-	// the deployment at startup when it does not round-trip, and refuses a
-	// binding whose host disagrees with its driver's own. A Subject that got as
-	// far as running holds a Registry that survived both, so nothing a driver
-	// does can reach these — they are here because a driver author reading the
-	// suite should see the rule, not because the suite can catch it.
-	k, err := repokey.Parse("https://" + r.s.Host + "/owner/name")
-	require.NoError(t, err, "Host() %q is not something a clone URL can be built from", r.s.Host) // held by forge: TestNewRefusesADeploymentThatIsWrong
-	assert.Equal(t, r.s.Host, k.Host)                                                             // held by forge: TestNewRefusesADeploymentThatIsWrong
-	assert.Equal(t, r.s.Host, r.driver.Host())                                                    // held by forge: TestNewRefusesADeploymentThatIsWrong
-}
-
 // addressableDepth is the anti-GitHub assertion: a forge that takes exactly one
 // owner and one name must REFUSE a nested key, before any request, rather than
 // join the segments into a name no repository has.
@@ -211,7 +189,6 @@ func (r *runner) addressableDepth(t tb) {
 	if !r.s.DeepNests {
 		var ua *forge.UnaddressableError
 		require.ErrorAs(t, r.note(err), &ua, "a forge that does not nest must refuse %q", r.s.Deep)
-		assert.Equal(t, r.s.Deep, ua.Key) // held by forge: TestAnUnaddressableKeyIsNamedByTheRefusal
 		assert.Empty(t, r.s.Requests(), "the depth was refused only after a request went out; it must be refused before the wire")
 		return
 	}
@@ -226,55 +203,27 @@ func (r *runner) addressableDepth(t tb) {
 	r.assertRepository(t, repo, r.s.Deep)
 }
 
-func (r *runner) foreignKey(t tb) {
-	t.Helper()
-	foreign, err := repokey.Parse("https://" + foreignHost + "/someone/thing")
-	mustReach(t, err, "parsing a key on a host no driver is bound to")
-
-	var nd *forge.NoDriverError
-	_, err = r.s.Registry.For(foreign, r.s.Credential)
-	require.ErrorAs(t, r.note(err), &nd, "a host with no driver must be *NoDriverError and never a default") // held by forge: TestRegistryResolvesOnlyWhatItWasGiven
-	assert.Equal(t, foreignHost, nd.Host)                                                                    // held by forge: TestRegistryResolvesOnlyWhatItWasGiven
-
-	// And a session already bound cannot be walked onto another host's key.
-	sess := r.session(t, r.s.Writable)
-	var wh *forge.WrongHostError
-	_, err = sess.Access(r.ctx, foreign)
-	require.ErrorAs(t, r.note(err), &wh, "a session must refuse a key on another host") // held by forge: TestASessionRefusesAKeyItWasNotBoundFor
-}
-
 func (r *runner) zeroCredential(t tb) {
 	t.Helper()
-	// Both of these are refused by forge.Registry before the driver's Bind is
-	// reached, so the DRIVER'S OWN half of the contract — Driver.Bind must
-	// refuse a zero Credential with ErrNoCredential — has no route through a
-	// Session at all. It is asked directly, and it is the one assertion here a
-	// driver can fail.
+	// A Session never reaches this: forge.Registry refuses a zero Credential
+	// before Bind is called, and TestAZeroCredentialIsRefusedBeforeAnyDriverSeesIt
+	// stands on that. What is left is the driver's OWN half of the same
+	// contract, which nothing above can ask on its behalf, so it is asked here
+	// directly.
 	require.ErrorIs(t, r.note(second(r.driver.Bind(forge.Credential{}))), forge.ErrNoCredential,
 		"Driver.Bind built a client for a credential nobody filled in")
-
-	_, err := r.s.Registry.For(r.s.Writable, forge.Credential{})
-	require.ErrorIs(t, r.note(err), forge.ErrNoCredential, "a zero credential must never degrade into anonymity") // held by forge: TestAZeroCredentialIsRefusedBeforeAnyDriverSeesIt
-	_, err = r.s.Registry.Host(r.s.Host, forge.Credential{})
-	require.ErrorIs(t, r.note(err), forge.ErrNoCredential) // held by forge: TestAZeroCredentialIsRefusedBeforeAnyDriverSeesIt
 }
 
 func (r *runner) anonymous(t tb) {
 	t.Helper()
 	// Anonymous() reaches the driver's Bind, and that is the half a driver can
 	// get wrong: refusing it at the door turns "read a public repository with no
-	// credential" into an error nobody can act on. Everything after it is
-	// forge.Session's guard, which runs before any driver code.
-	sess, err := r.s.Registry.For(r.s.Writable, forge.Anonymous())
+	// credential" into an error nobody can act on. What an anonymous session
+	// then refuses to answer is forge.Session's guard, which runs before any
+	// driver code and which
+	// TestAnAnonymousSessionAnswersNoAuthorizationQuestion stands on.
+	_, err := r.s.Registry.For(r.s.Writable, forge.Anonymous())
 	require.NoError(t, err, "Anonymous() must bind; it is refused at the question, not at the door")
-	assert.True(t, sess.IsAnonymous()) // held by forge: TestAnAnonymousSessionAnswersNoAuthorizationQuestion
-
-	lvl, err := sess.Access(r.ctx, r.s.Writable)
-	require.ErrorIs(t, r.note(err), forge.ErrAnonymous)                                                     // held by forge: TestAnAnonymousSessionAnswersNoAuthorizationQuestion
-	assert.Equal(t, forge.AccessNone, lvl, "a refused authorization question must still read as no access") // held by forge: TestAnAnonymousSessionAnswersNoAuthorizationQuestion
-
-	_, err = sess.Whoami(r.ctx)
-	require.ErrorIs(t, r.note(err), forge.ErrAnonymous) // held by forge: TestAnAnonymousSessionAnswersNoAuthorizationQuestion
 }
 
 // capabilities compares the COMPUTED set to the declared one for equality, not
@@ -288,8 +237,6 @@ func (r *runner) capabilities(t tb) {
 	assert.True(t, got.Equal(r.s.Expect),
 		"capabilities = %q, want %q", got.String(), r.s.Expect.String())
 
-	require.NoError(t, sess.Require(forge.CapIdentity, forge.CapAccess, forge.CapRepository),
-		"the three mandatory capabilities are not optional") // held by forge: TestTheThreeMandatoryCapabilitiesAreNotOptional
 	for _, c := range allCapabilities {
 		err := sess.Require(c)
 		if r.s.Expect.Has(c) {
@@ -297,10 +244,7 @@ func (r *runner) capabilities(t tb) {
 			continue
 		}
 		var un *forge.UnsupportedError
-		if assert.ErrorAs(t, r.note(err), &un, "Require(%s) must refuse a capability the session lacks", c) {
-			assert.Equal(t, c, un.Capability)  // held by forge: TestARefusalNamesTheHostAsWellAsTheQuestion
-			assert.Equal(t, r.s.Host, un.Host) // held by forge: TestARefusalNamesTheHostAsWellAsTheQuestion
-		}
+		assert.ErrorAs(t, r.note(err), &un, "Require(%s) must refuse a capability the session lacks", c)
 	}
 }
 
@@ -937,10 +881,7 @@ func second[T any](_ T, err error) error { return err }
 func (r *runner) absent(t tb, c forge.Capability, err error) {
 	t.Helper()
 	var un *forge.UnsupportedError
-	if assert.ErrorAs(t, r.note(err), &un, "%s is not declared, so it must be *UnsupportedError and never a zero value", c) {
-		assert.Equal(t, c, un.Capability, "the refusal names the wrong capability") // held by forge: TestARefusalNamesTheHostAsWellAsTheQuestion
-		assert.Equal(t, r.s.Host, un.Host)                                          // held by forge: TestARefusalNamesTheHostAsWellAsTheQuestion
-	}
+	assert.ErrorAs(t, r.note(err), &un, "%s is not declared, so it must be *UnsupportedError and never a zero value", c)
 }
 
 func httpsURL(t tb, s string) *url.URL {
