@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -84,14 +85,26 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 
 // THE DROP PATH IS THE SAME DEFECT ONE BRANCH OVER. begin re-reads a job that
 // has already finished and decides to drop the delivery — and the write that
-// decision makes is an ACK, made after the section closed. A retry in the
+// decision makes is an ACK. Made after the section closed, a retry in the
 // window is deduplicated against the very item the ack then destroys.
 //
-// The gate is on the queue's own keyspace rather than on the job record,
-// because the instant this test needs is the START of the ack: the record has
-// been read, the decision has been taken, and the section that took it has been
-// released.
-func TestARetryBetweenTheDropDecisionAndItsAckSurvives(t *testing.T) {
+// THE OUTCOME CANNOT BE THE NEEDLE HERE, and the first version of this test
+// learned that the expensive way: it asserted only the outcome and passed 2000
+// runs of the exact code it was written to catch. pkg/v2/queue takes its GROUP
+// LOCK before it touches the store — Ack is group.mu.Lock() and then prepare()
+// — so the earliest instant a store gate can fire inside the ack is an instant
+// at which the group lock is already held, and the racer's Push queues up
+// behind it. The push therefore lands AFTER the ack however this package is
+// written, the ack is a real one rather than a deduplicated no-op, and the job
+// comes out correct either way. The harm needs the racer to win a lock a test
+// cannot make it win.
+//
+// So the needle is the fact the outcome rests on: at the instant the ack
+// touches the queue's keyspace, jobLock — the section whose read decided to ack
+// — is still held. A goroutine that can take it is a section that has already
+// closed. The outcome is asserted underneath, because it is what the section is
+// for.
+func TestTheDropDecisionAndItsAckAreOneSection(t *testing.T) {
 	h, gate := gatedHarness(t)
 	id := h.push(t, testRef, testCommit)
 
@@ -99,8 +112,15 @@ func TestARetryBetweenTheDropDecisionAndItsAckSurvives(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, h.cancel(id), "so this delivery is one to drop, not one to run")
 
+	var loose atomic.Bool
 	var retryErr error
-	retried := gate.onFirstUnder(t, queueKeyRoot, func() { retryErr = h.retry(id) })
+	retried := gate.onFirstUnder(t, queueKeyRoot, func() {
+		if jobLock.TryLock() {
+			loose.Store(true)
+			jobLock.Unlock()
+		}
+		retryErr = h.retry(id)
+	})
 
 	require.NoError(t, h.run(context.Background(), d))
 	<-retried
@@ -109,8 +129,11 @@ func TestARetryBetweenTheDropDecisionAndItsAckSurvives(t *testing.T) {
 	rec := h.mustRecord(t, id)
 	ready, claimed := h.work.Depth()
 	open := len(h.store.Keys(openIndexPrefix(testRepo)))
-	t.Logf("status=%s ready=%d claimed=%d openRows=%d", rec.status(), ready, claimed, open)
+	t.Logf("sectionHeldAtTheAck=%v status=%s ready=%d claimed=%d openRows=%d",
+		!loose.Load(), rec.status(), ready, claimed, open)
 
+	require.False(t, loose.Load(),
+		"the ack carries out what the drop decision read, and must be made inside the section that read it")
 	require.Equal(t, buildv1.JobStatus_JobStatusOpen, rec.status())
 	require.Equal(t, 1, ready+claimed,
 		"a reopened job must have an item, not wait out VisibilityTimeout+BuildTimeout")
