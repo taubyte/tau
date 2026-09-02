@@ -306,7 +306,6 @@ func ledgerHarnesses() []harness {
 // nothing and fail; a registry that breaks a harness under "must be silent"
 // complains and fails. That is what makes it safe for the direction to be data.
 type registry struct {
-	what      string
 	rules     []rule
 	complains bool
 }
@@ -317,13 +316,13 @@ type registry struct {
 // harnesses, and over an empty set of rules it names every rule this file
 // declares, which is a complaint in the direction that must be silent.
 func theRulesAsTheyStand() registry {
-	return registry{"the rules as they stand", ledgerRules(), false}
+	return registry{ledgerRules(), false}
 }
 
 // whatBreaksIt is the harness's own fault, in the shape a rule's violating
 // ledger is one.
 func whatBreaksIt(t *testing.T, h harness) registry {
-	return registry{"a registry that breaks it", h.breaks(t), true}
+	return registry{h.breaks(t), true}
 }
 
 // hold runs one harness over one registry. IT IS THE ONLY PLACE A HARNESS IS
@@ -332,7 +331,7 @@ func whatBreaksIt(t *testing.T, h harness) registry {
 // It takes no reporter. The listener is made here and is compared, here,
 // against what the registry it was handed must come to — so "discard" is not
 // something this file can express: there is no argument to write it as, and the
-// only listener there is gets read four lines after it is made. The call the
+// only listener there is gets read two lines after it is made. The call the
 // suite is held by is this one; the call the self-test exercises is this one;
 // proving either proves both.
 func hold(t *testing.T, ran *census, h harness, over registry) {
@@ -349,17 +348,18 @@ func hold(t *testing.T, ran *census, h harness, over registry) {
 // It is deliberately NOT load-bearing and it is a separate function for exactly
 // that reason: Errorf fails the test whatever string it is handed, so a
 // hollowed message is still a red test, and the lines that must be correct stay
-// the five above and no more.
+// the five statements above and no more.
 func (over registry) wrong(h harness, heard *recorder) string {
 	if over.complains {
 		return fmt.Sprintf("%q was run %s and said nothing: it is a loop that does not run what it is given, and hollowing it turns every rule off at once with no rule able to see it happen",
-			h.name, over.what)
+			h.name, theDirection(over.complains))
 	}
-	return fmt.Sprintf("%q %s said:\n%s", h.name, over.what, heard)
+	return fmt.Sprintf("%q %s said:\n%s", h.name, theDirection(over.complains), heard)
 }
 
-// theDirection names one of the two ways a harness is run, for a census entry
-// that has to say WHICH run never happened.
+// theDirection names one of the two ways a harness is run. It is written once
+// and read by both the failure and the census, so a run named in a complaint
+// and the same run named as never having happened are spelled the same.
 func theDirection(complains bool) string {
 	if complains {
 		return "over a registry that breaks it"
@@ -376,8 +376,6 @@ type heldRun struct {
 	complains bool
 }
 
-func (r heldRun) String() string { return string(r.name) + " " + theDirection(r.complains) }
-
 // census is what actually ran, written down INSIDE hold and not by the loop
 // that calls it.
 //
@@ -385,34 +383,44 @@ func (r heldRun) String() string { return string(r.name) + " " + theDirection(r.
 // was carried by an entry in the list — which stays true when the loop goes
 // round `ledgerHarnesses()[1:]`, and stays true when a call reaches past hold
 // to h.run with a listener nobody reads. This asks the other question: did this
-// run actually hold it, both ways. A declared harness with nothing written down
-// is named, and there is no way to write something down except by going through
-// the call that also reads the answer.
+// run actually hold it, both ways.
+//
+// IT COUNTS RATHER THAN TICKING, because a set can be filled in advance.
+// Measured: four lines writing every declared harness into the census before
+// the loop, plus `ledgerHarnesses()[1:]`, hid the deleted LastDeployKeyReadOnly
+// contract at GO_TEST_EXIT=0. hold writes exactly once per call, so a run
+// written down twice is a run somebody recorded without running — and the same
+// count catches a list carrying one harness twice and another not at all, which
+// a membership check calls complete.
 type census struct {
 	mu   sync.Mutex
-	done map[heldRun]bool
+	held map[heldRun]int
 }
 
 func (c *census) write(r heldRun) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.done == nil {
-		c.done = map[heldRun]bool{}
+	if c.held == nil {
+		c.held = map[heldRun]int{}
 	}
-	c.done[r] = true
+	c.held[r]++
 }
 
-// missing is every harness this file declares that this run did not hold in
-// both directions, by the identifier it is declared under and the direction
-// that never happened.
-func (c *census) missing(src *source) []string {
+// unaccounted is every run this file declares that hold did not make exactly
+// once, by the identifier the harness is declared under and the direction.
+func (c *census) unaccounted(src *source) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var out []string
 	for value, ident := range src.harnesses {
 		for _, complains := range []bool{false, true} {
-			if !c.done[heldRun{harnessName(value), complains}] {
-				out = append(out, ident+" "+theDirection(complains))
+			switch n := c.held[heldRun{harnessName(value), complains}]; {
+			case n == 0:
+				out = append(out, fmt.Sprintf("%s %s never happened, so every rule that run would have read is off and nothing above was computed over anything it would have caught",
+					ident, theDirection(complains)))
+			case n > 1:
+				out = append(out, fmt.Sprintf("%s %s was written down %d times and hold writes once per call, so a run was recorded that nothing ran — either the list carries this harness twice, or something wrote into the census by hand",
+					ident, theDirection(complains), n))
 			}
 		}
 	}
@@ -424,9 +432,10 @@ func (c *census) missing(src *source) []string {
 // the one call.
 //
 // There is no second call site. The direction that must be silent and the
-// direction that must complain are the same two lines apart, so a listener
-// nobody reads is not expressible, and the census below names a loop that went
-// round a subset instead of letting it pass.
+// direction that must complain are two calls to the same function, one line
+// apart, so a listener nobody reads is not expressible — and the census below
+// names a loop that went round a subset of the harnesses instead of letting it
+// pass.
 func TestTheLedgerHolds(t *testing.T) {
 	ran := &census{}
 	for _, h := range ledgerHarnesses() {
@@ -435,19 +444,21 @@ func TestTheLedgerHolds(t *testing.T) {
 			hold(t, ran, h, whatBreaksIt(t, h))
 		})
 	}
-	for _, never := range ran.missing(suiteSource(t)) {
-		t.Errorf("%s is declared and this run never held it, so every rule that run would have read is off and nothing above was computed over anything it would have caught", never)
+	for _, wrong := range ran.unaccounted(suiteSource(t)) {
+		t.Errorf("%s", wrong)
 	}
 }
 
-// TestTheCensusNoticesARunThatNeverHappened is the census's own fault, and it is
-// why the loop above cannot be shortened. A census that answers "nothing
-// missing" whatever it is shown is the membership check all over again, so it
-// is shown three things: a run of every declared harness both ways, which it
-// must call complete; the same with one single run taken away, which it must
-// name; and a source declaring a harness nothing ever ran, which it must name
+// TestTheCensusIsNotSatisfiedByAnythingButOneRunEach is the census's own fault,
+// and it is why the loop above cannot be shortened or written into. A census
+// that answers "nothing to report" whatever it is shown is the membership check
+// all over again, so it is shown four things: a run of every declared harness
+// both ways, which it must call complete; the same with one single run taken
+// away, which it must name; the same with one run written down twice, which it
+// must name, because that is what filling the census in advance looks like from
+// here; and a source declaring a harness nothing ever ran, which it must name
 // too.
-func TestTheCensusNoticesARunThatNeverHappened(t *testing.T) {
+func TestTheCensusIsNotSatisfiedByAnythingButOneRunEach(t *testing.T) {
 	src := suiteSource(t)
 	everyRun := func() *census {
 		c := &census{}
@@ -458,22 +469,29 @@ func TestTheCensusNoticesARunThatNeverHappened(t *testing.T) {
 		}
 		return c
 	}
-	if got := everyRun().missing(src); len(got) > 0 {
-		t.Fatalf("a census with every declared harness held both ways reported %v missing, so it names runs that did happen and nothing it says can be read", got)
+	if got := everyRun().unaccounted(src); len(got) > 0 {
+		t.Fatalf("a census with every declared harness held both ways exactly once reported %v, so it names runs that did happen and nothing it says can be read", got)
 	}
 	for value, ident := range src.harnesses {
 		for _, complains := range []bool{false, true} {
-			gone := heldRun{harnessName(value), complains}
+			odd := heldRun{harnessName(value), complains}
+
 			short := &census{}
 			for v := range src.harnesses {
 				for _, c := range []bool{false, true} {
-					if r := (heldRun{harnessName(v), c}); r != gone {
+					if r := (heldRun{harnessName(v), c}); r != odd {
 						short.write(r)
 					}
 				}
 			}
-			if len(short.missing(src)) == 0 {
+			if len(short.unaccounted(src)) == 0 {
 				t.Errorf("%s %s never ran and the census did not notice, so a loop round a subset of the harnesses — or round none of them, or one of the two calls deleted — would pass", ident, theDirection(complains))
+			}
+
+			twice := everyRun()
+			twice.write(odd)
+			if len(twice.unaccounted(src)) == 0 {
+				t.Errorf("%s %s was written down twice and the census did not notice, so writing every run into it before the loop — and then going round a subset — would pass", ident, theDirection(complains))
 			}
 		}
 	}
@@ -481,7 +499,7 @@ func TestTheCensusNoticesARunThatNeverHappened(t *testing.T) {
 
 const harnessNobodyRuns harnessName = "a way of running the rules nothing ever runs"
 `)
-	if len(everyRun().missing(broken)) == 0 {
+	if len(everyRun().unaccounted(broken)) == 0 {
 		t.Fatalf("a harness declared and never run went unnoticed, so declaring one and leaving it out of the list would too")
 	}
 }
