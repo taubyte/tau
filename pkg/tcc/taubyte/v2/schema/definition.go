@@ -815,12 +815,14 @@ var databaseTypes = []databaseType{
 	//
 	// WHAT `consensus: crdt` DOES NOT PROMISE, because the engine does not: concurrent
 	// writes to ONE key are merged last-writer-wins, so one of them is discarded with
-	// no error. There is no compare-and-swap and no transaction — an `entity` is what
-	// serves a linearizable counter. The rule that falls out is the one AGENTS.md
-	// states for every kvdb layout in this repository: never a key two writers can
-	// write differently; put the discriminator in the key and let the prefix scan be
-	// the index. It was every distributed database's story until the field existed; it
-	// is now the story of the ones that ask for it by name.
+	// no error. There is no compare-and-swap and no transaction, and no kind here has
+	// one to offer either: `consensus: single-writer` is as far as this vocabulary
+	// goes, and it ORDERS the writes to a key rather than letting a caller make one
+	// conditional on what is already there. The rule that falls out is the one
+	// AGENTS.md states for every kvdb layout in this repository: never a key two
+	// writers can write differently; put the discriminator in the key and let the
+	// prefix scan be the index. It was every distributed database's story until the
+	// field existed; it is now the story of the ones that ask for it by name.
 	{
 		name: "kv",
 		ops:  Verbs{ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")},
@@ -1247,8 +1249,10 @@ var V2Resources = []*Node{
 
 	// ---- data ----
 
-	// A cache. It never gets CAS — an entity is what serves a linearizable counter. It
-	// is NOT a database: entries have a lifetime, losing one costs a recomputation, and
+	// A cache. It never gets CAS, and the reason is its own verb list rather than
+	// somewhere else to go: they are get, list, watch, put and delete, and nothing in
+	// this vocabulary makes a write conditional on what is already at the key. It is
+	// NOT a database: entries have a lifetime, losing one costs a recomputation, and
 	// nothing here is a system of record.
 	//
 	// WHERE IT SITS ON THE CAP LINE IS `consensus`'s ANSWER, NOT THE KIND'S. It used to
@@ -1607,7 +1611,7 @@ var V2Resources = []*Node{
 				String(Key("dead_letter", "name"), IsVariableName(), Ref("queue"), InSection("delivery"),
 					Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts.")),
 			),
-			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. Per-key ordering is an entity, not this."), Icon("list"), Category("data"), Placed(),
+			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. The order is the queue's: there is one, and it is not one per key."), Icon("list"), Category("data"), Placed(),
 			secIdentity, secAccess,
 			Section("delivery", "Delivery", "Claim, retry and dead-letter behaviour."),
 			Ops(DeliveredOp("receive"), WriteOp("send")),

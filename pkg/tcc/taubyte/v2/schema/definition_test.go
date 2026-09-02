@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -2054,6 +2055,62 @@ func TestThereIsNoEntityKind(t *testing.T) {
 	// refuses a lowering naming a kind that is not there, so the agent's `sessions`
 	// lowering coming back on its own is caught by TestEveryLoweringNamesARealKind and
 	// caught HERE only in the sense that the four lists above are what make it not a kind.
+}
+
+// NO SHIPPED STRING NAMES A KIND THAT IS NOT HERE. Deleting a kind is three tiers and only
+// the first is mechanical: the declaration comes out, everything derived from it follows,
+// and then there is the PROSE — and prose that sent an author somewhere keeps sending them
+// after the somewhere is gone. Three doc strings did exactly that here. `database` and
+// `cache` each said an `entity` was what served a linearizable counter, which was never
+// true of it — its verbs were `get` and `call` — and `queue`'s GroupDoc sent an author
+// there for per-key ordering. Two were Go comments. The third SHIPS.
+//
+// That is the line this draws: a Go comment is read by whoever edits this file and a
+// GroupDoc or a Doc is read by an author who has no way to find out the kind is gone. So
+// the assertion is over the emitted schema — the same strings a console, a CLI and the
+// completion in an editor render — and not over this file.
+//
+// THE LIST IS HAND-WRITTEN, because the set of names this vocabulary does NOT have cannot
+// be derived from the vocabulary. It is the deleted kinds, and adding to it is what a
+// deletion owes.
+func TestNoShippedStringNamesADeletedKind(t *testing.T) {
+	b, err := schema.JSONSchema()
+	assert.NilError(t, err)
+	shipped := string(b)
+
+	// `entities` is here for the same reason `entity` is: the plural was the word the
+	// access-block descriptions were generated from, so it would come back with the kind.
+	for _, gone := range []string{"entity", "entities", "connector", "connectors", "smartops"} {
+		word := regexp.MustCompile(`(?i)\b` + gone + `\b`)
+		hit := word.FindStringIndex(shipped)
+		assert.Assert(t, hit == nil, "the shipped schema still names %q, a kind this vocabulary does not have: %s",
+			gone, excerpt(shipped, hit))
+	}
+
+	// AND THE CHECK IS LIVE, which for a needle-in-a-haystack assertion is the half worth
+	// proving: the same scan finds a kind that IS here, so a silent pass would be a bug in
+	// the scan rather than a clean schema.
+	for _, here := range []string{"queue", "cache", "agent"} {
+		word := regexp.MustCompile(`(?i)\b` + here + `\b`)
+		assert.Assert(t, word.FindStringIndex(shipped) != nil,
+			"the scan cannot find %q, which is a kind this vocabulary has", here)
+	}
+}
+
+// excerpt is the text around a match, so a failure says which sentence rather than that
+// there is one somewhere in 400KB.
+func excerpt(s string, at []int) string {
+	if at == nil {
+		return ""
+	}
+	lo, hi := at[0]-120, at[1]+120
+	if lo < 0 {
+		lo = 0
+	}
+	if hi > len(s) {
+		hi = len(s)
+	}
+	return "…" + s[lo:hi] + "…"
 }
 
 // A PLACEHOLDER THAT STAYS A PLACEHOLDER. `log` has no fields of its own on purpose —
