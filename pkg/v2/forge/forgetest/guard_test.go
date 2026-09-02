@@ -37,46 +37,71 @@ import (
 // type-checked by the same loader — the ledger's own version of injecting a
 // fault into the fake forge and requiring the suite to catch it.
 //
-// WHAT IT STILL DOES NOT COVER, said plainly: deleting a rule outright — its
-// entry, its check and its violation together — removes the check and the thing
-// that guards it in one hunk, and nothing here notices. That is the same
-// exposure as deleting a test, and it is visible in a diff in a way that
-// hollowing one was not.
+// Twenty rules, twenty faults. Hollowed one at a time, all twenty fail here.
+//
+// THREE THINGS OUTSIDE THE RULES ARE HELD TOO, because each of them could
+// disable every rule at once and no rule can see it happen from inside the
+// registry:
+//
+//	the REPORT. obey is the one path a complaint travels, and the self-test
+//	travels it: a loop that hears a rule and drops what it says is hollowing,
+//	one level further out.
+//
+//	the REGISTRY. A rule not in it does not run, so an emptied registry is
+//	every rule turned off and nothing left to notice.
+//	TestEveryRuleTheLedgerDeclaresIsRead asks from outside it, over the rule
+//	names read out of this file's own source with go/types — the same closure
+//	the faults get. Emptying the registry, or dropping one entry, fails there.
+//
+//	the LOADER. If the source cannot be type-checked the ledger fails loudly
+//	rather than computing its rules over a smaller population.
+//
+// WHAT IT STILL DOES NOT COVER, said plainly: deleting a rule OUTRIGHT — its
+// name, its entry, its check and its violation, in one hunk — leaves nothing
+// declared for the registry check to miss. That is the same exposure as
+// deleting a test, and it is four coordinated deletions rather than the one
+// character that used to do it.
 
 // complaint is one thing the ledger has to say. It carries the rule that said
 // it so that a rule proven by the self-test is proven under its own name and
 // not under whichever rule happened to fire.
 type complaint struct {
-	rule string
+	rule ruleName
 	at   string
 	text string
 }
+
+// ruleName is what a rule is called. It is a TYPE so that the ledger can read
+// the rules it declares out of its own source, the way it reads the faults out
+// of the fake forge's — a registry is a list, and a list is a thing somebody
+// can shorten without anything noticing.
+type ruleName string
 
 func (c complaint) String() string { return c.at + ": " + c.text }
 
 // The rules, by name. A name is what a failure is reported under and what the
 // self-test proves, so they are written once.
 const (
-	ruleSaysNothing        = "an assertion that says nothing"
-	ruleSayingsCollide     = "a saying some other assertion also says"
-	ruleStepGoesNowhere    = "a step on its way to nothing"
-	ruleEmptyPopulation    = "a population with nothing in it"
-	ruleUnknownSaying      = "a proof naming words no assertion says"
-	ruleAmbiguousSaying    = "a proof naming words several assertions say"
-	ruleSayingNamesAStep   = "a proof naming a step as though it were a claim"
-	ruleUnknownStop        = "a proof stopping words no step says"
-	ruleAmbiguousStop      = "a proof stopping words several places say"
-	ruleStopNamesAClaim    = "a proof stopping a claim"
-	ruleStopIsTheComplaint = "a stop in the function the proof is about"
-	ruleProofPassed        = "a proof the suite does not fail"
-	ruleFailureFromNowhere = "a failure from outside the population"
-	ruleUnplaceable        = "a failure no single assertion claims"
-	ruleFiredUnnamed       = "an assertion that fires unnamed"
-	ruleStopDidNotStop     = "a stop that is not a capability refusal"
-	ruleNamedDidNotFire    = "an assertion named and not firing"
-	ruleProofProvesNothing = "a proof that complains about nothing"
-	ruleOrphan             = "a contract assertion with no fault behind it"
-	ruleStrandedFault      = "a fault with no proof in front of it"
+	ruleSaysNothing        ruleName = "an assertion that says nothing"
+	ruleSayingsCollide     ruleName = "a saying some other assertion also says"
+	ruleStepGoesNowhere    ruleName = "a step on its way to nothing"
+	ruleEmptyPopulation    ruleName = "a population with nothing in it"
+	ruleUnknownSaying      ruleName = "a proof naming words no assertion says"
+	ruleAmbiguousSaying    ruleName = "a proof naming words several assertions say"
+	ruleSayingNamesAStep   ruleName = "a proof naming a step as though it were a claim"
+	ruleUnknownStop        ruleName = "a proof stopping words no step says"
+	ruleAmbiguousStop      ruleName = "a proof stopping words several places say"
+	ruleStopNamesAClaim    ruleName = "a proof stopping a claim"
+	ruleStopIsTheComplaint ruleName = "a stop in the function the proof is about"
+	ruleProofPassed        ruleName = "a proof the suite does not fail"
+	ruleFailureFromNowhere ruleName = "a failure from outside the population"
+	ruleUnplaceable        ruleName = "a failure no single assertion claims"
+	ruleFiredUnnamed       ruleName = "an assertion that fires unnamed"
+	ruleStopDidNotStop     ruleName = "a stop that is not a capability refusal"
+	ruleNamedDidNotFire    ruleName = "an assertion named and not firing"
+	ruleProofProvesNothing ruleName = "a proof that complains about nothing"
+	ruleOrphan             ruleName = "a contract assertion with no fault behind it"
+	ruleStrandedFault      ruleName = "a fault with no proof in front of it"
 )
 
 // ledger is everything the rules are read over: the suite's own source, the
@@ -91,7 +116,7 @@ type ledger struct {
 
 // rule is a check and the fault behind it.
 type rule struct {
-	name     string
+	name     ruleName
 	check    func(*ledger) []complaint
 	violates func(*testing.T) *ledger
 }
@@ -121,6 +146,21 @@ func ledgerRules() []rule {
 	}
 }
 
+// obey reads the rules over a ledger and reports what they have to say. It is
+// the ONE path a failure travels, and the self-test below travels it too: a
+// rule that complains into a loop which drops what it says is a rule nobody
+// hears, and that is hollowing one level further out than hollowing the rule.
+func obey(t interface{ Errorf(string, ...any) }, l *ledger, rules []rule) int {
+	said := 0
+	for _, r := range rules {
+		for _, c := range r.check(l) {
+			t.Errorf("%s: %s", c.rule, c)
+			said++
+		}
+	}
+	return said
+}
+
 // TestTheSuiteObeysTheLedger is the ledger read over the suite as it stands.
 func TestTheSuiteObeysTheLedger(t *testing.T) {
 	l := theLedger(t)
@@ -128,38 +168,79 @@ func TestTheSuiteObeysTheLedger(t *testing.T) {
 	for _, a := range l.pop {
 		counts[a.kind]++
 	}
-	t.Logf("%d assertions: %d contract, %d plumbing", len(l.pop), counts[contract], counts[plumbing])
+	t.Logf("%d cases: %d contract, %d plumbing", len(l.pop), counts[contract], counts[plumbing])
 	t.Logf("%d proofs against %d faults the fake forge can be told to have", len(l.proofs), len(l.src.faults))
 	for _, r := range ledgerRules() {
-		t.Run(r.name, func(t *testing.T) {
-			for _, c := range r.check(l) {
-				t.Errorf("%s", c)
-			}
-		})
+		t.Run(string(r.name), func(t *testing.T) { obey(t, l, []rule{r}) })
 	}
 }
 
 // TestTheLedgerObeysTheRuleItImposes is the other direction, and it is the one
 // that was missing. Each rule is handed a ledger that breaks it and must say
-// so, under its own name. A rule that has been hollowed says nothing and fails
-// here; a rule added with no violation behind it fails here too.
+// so, under its own name, THROUGH the loop that reports it. A rule that has
+// been hollowed says nothing and fails here; a rule added with no violation
+// behind it fails here too; and so does a reporting loop that hears a rule and
+// drops it.
 func TestTheLedgerObeysTheRuleItImposes(t *testing.T) {
 	for _, r := range ledgerRules() {
-		t.Run(r.name, func(t *testing.T) {
+		t.Run(string(r.name), func(t *testing.T) {
 			if r.violates == nil {
 				t.Fatalf("this rule has no ledger that breaks it, so nothing knows whether it still holds — which is exactly what it accuses an assertion of")
 			}
-			said := r.check(r.violates(t))
-			if len(said) == 0 {
-				t.Fatalf("this rule was handed a ledger that breaks it and said nothing: it is decoration, and hollowing it out would go unnoticed")
-			}
-			for _, c := range said {
+			broken := r.violates(t)
+			for _, c := range r.check(broken) {
 				if c.rule != r.name {
 					t.Errorf("a ledger that breaks %q was answered under %q instead: %s", r.name, c.rule, c)
 				}
 			}
+			heard := &recorder{}
+			if n := obey(heard, broken, []rule{r}); n == 0 || !heard.failed {
+				t.Fatalf("this rule was handed a ledger that breaks it and %d complaints reached the report (failed=%v): it is decoration, and hollowing it — or the loop that reports it — would go unnoticed",
+					n, heard.failed)
+			}
 		})
 	}
+}
+
+// TestEveryRuleTheLedgerDeclaresIsRead closes the registry, which is the last
+// list in this file that a hand maintains. A rule constant no entry carries is
+// a rule nothing runs, and an empty registry is every rule at once — neither is
+// visible from inside the registry, because a rule that is not in it does not
+// run. So this is asked from outside it, over the rule names read out of this
+// file's own source.
+func TestEveryRuleTheLedgerDeclaresIsRead(t *testing.T) {
+	src := suiteSource(t)
+	t.Run("as it stands", func(t *testing.T) {
+		for _, name := range unreadRules(src, ledgerRules()) {
+			t.Errorf("%s is declared and no registry entry reads it, so nothing computes it over anything", name)
+		}
+	})
+	t.Run("one more rule declared than the registry reads", func(t *testing.T) {
+		broken := src.with(t, "ledger_fault_unread_rule_test.go", `package forgetest
+
+const ruleNobodyReads ruleName = "a rule the registry never looks at"
+`)
+		if len(unreadRules(broken, ledgerRules())) == 0 {
+			t.Fatalf("a rule declared and left out of the registry went unnoticed, so shortening the registry — or emptying it — would too")
+		}
+	})
+}
+
+// unreadRules is every rule name this file declares that no registry entry
+// carries, by the identifier it is declared under.
+func unreadRules(src *source, rules []rule) []string {
+	read := map[string]bool{}
+	for _, r := range rules {
+		read[string(r.name)] = true
+	}
+	var out []string
+	for value, ident := range src.rules {
+		if !read[value] {
+			out = append(out, ident)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // theLedger is the suite, its proofs, and what the suite says about each of
@@ -183,6 +264,9 @@ func theLedger(t *testing.T) *ledger {
 		}
 		theOne = l
 	})
+	if theOne == nil {
+		t.Fatalf("the ledger could not be built, and the first test to try said why")
+	}
 	return theOne
 }
 
@@ -250,7 +334,7 @@ func checkEmptyPopulation(l *ledger) []complaint {
 // every proof, filtered to the one rule being read. They are three rules each
 // because a proof can be wrong in three ways about a name, and a rule is the
 // unit the self-test proves.
-func checkNames(only string) func(*ledger) []complaint {
+func checkNames(only ruleName) func(*ledger) []complaint {
 	return func(l *ledger) []complaint {
 		var out []complaint
 		for _, p := range l.proofs {
@@ -261,7 +345,7 @@ func checkNames(only string) func(*ledger) []complaint {
 	}
 }
 
-func checkStops(only string) func(*ledger) []complaint {
+func checkStops(only ruleName) func(*ledger) []complaint {
 	return func(l *ledger) []complaint {
 		var out []complaint
 		for _, p := range l.proofs {
@@ -301,7 +385,7 @@ func checkCollateral(l *ledger) []complaint {
 // checkRun is everything that can only be known by running a proof: what the
 // suite actually said about a subject that is wrong in a named way, against
 // what the proof claims it says.
-func checkRun(only string) func(*ledger) []complaint {
+func checkRun(only ruleName) func(*ledger) []complaint {
 	return func(l *ledger) []complaint {
 		var out []complaint
 		for _, p := range l.proofs {
@@ -439,7 +523,7 @@ func checkStrandedFault(l *ledger) []complaint {
 
 // filterBy keeps the complaints one rule made, so a rule is proven by its own
 // case and not by whatever its neighbour said.
-func filterBy(only string, said []complaint) []complaint {
+func filterBy(only ruleName, said []complaint) []complaint {
 	var out []complaint
 	for _, c := range said {
 		if c.rule == only {

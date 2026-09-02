@@ -34,12 +34,18 @@ import (
 //
 // So the suite's assertions are now themselves a population this file walks.
 //
-//	EVERY CONTRACT ASSERTION MUST BE NAMED BY A PROOF, and a proof is a subject
-//	that is wrong in a named way plus the COMPLETE list of complaints the suite
-//	makes about it. Naming is by message fragment, and a fragment must match
-//	exactly one assertion in the source — so a saying that is a substring of
-//	somebody else's message is a build failure and not a test that passes on the
-//	wrong assertion.
+//	EVERY CONTRACT CASE MUST BE NAMED BY A PROOF, and a proof is a subject that
+//	is wrong in a named way plus the COMPLETE list of complaints the suite makes
+//	about it. Naming is by message fragment, and a fragment must match exactly
+//	one case in the source — so a saying that is a substring of somebody else's
+//	message is a build failure and not a test that passes on the wrong
+//	assertion.
+//
+//	AND EVERY FAULT MUST BE NAMED BY A PROOF, which is the same closure read
+//	backwards and the half that was missing. Demoting an assertion to a step and
+//	deleting the proof that named it left a contract dead, a fault stranded and
+//	the tree at exit 0 — measured. An assertion needs a fault behind it; a fault
+//	needs a proof in front of it; neither direction alone closes the loop.
 //
 //	THE LIST IS EXACT. What fired under a proof must be what the proof names,
 //	no more and no less. That is what makes each named assertion LOAD-BEARING:
@@ -116,6 +122,14 @@ import (
 // this package", and none of them is a call-site spelling. `step` is looked up
 // by name and its absence is a failure of its own; Errorf cannot be renamed and
 // still fail a test; and "outside this package" is not a name at all.
+//
+// WHAT THIS DOES NOT COVER, said plainly. A failure produced by something that
+// is neither a testify-shaped call, a TB failure method nor a marker — a panic,
+// an os.Exit, a t.Skip that hides a question — is not in the population and no
+// rule here is computed over it. Neither is anything in a _test.go file beside
+// this one: those are the thing doing the asserting. And the loader is the go
+// command, so a source this package cannot type-check is a loud failure of the
+// ledger rather than a quietly smaller population.
 
 // kind is which of the two an entry is.
 type kind int
@@ -202,6 +216,11 @@ type source struct {
 	// thing you can forget to add to — which is the whole reason the
 	// population is read out of source too.
 	faults map[string]string
+
+	// rules is every rule name this file DECLARES, read the same way and for
+	// the same reason. A rule constant that no registry entry carries is a rule
+	// nothing reads, and the registry is a list somebody can shorten.
+	rules map[string]string
 }
 
 var (
@@ -264,8 +283,13 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
 			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
-		Dir:     ".",
-		Env:     append(os.Environ(), "GOPROXY=off", "GOWORK=off"),
+		Dir: ".",
+		Env: append(os.Environ(), "GOPROXY=off", "GOWORK=off"),
+		// The test files are type-checked as well, not because they are part of
+		// the population — they are the thing doing the asserting — but because
+		// the ledger's own rule names are declared in them and are read out of
+		// source rather than trusted to a list.
+		Tests:   true,
 		Overlay: overlay,
 	}
 	// The fake forge is loaded beside the suite so its faults can be counted.
@@ -275,21 +299,23 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(pkgs) != 2 {
-		return nil, fmt.Errorf("loading the suite and the fake forge answered %d packages", len(pkgs))
-	}
-	var pkg, faked *packages.Package
+	var pkg, faked, tested *packages.Package
 	for _, p := range pkgs {
-		if p.PkgPath == faultType.PkgPath() {
+		switch {
+		case p.PkgPath == faultType.PkgPath() && p.ID == p.PkgPath:
 			faked = p
+		case p.PkgPath != suitePath:
 			continue
+		case p.ID == p.PkgPath:
+			pkg = p // the suite itself, without its test files
+		case strings.HasSuffix(p.ID, ".test]"):
+			tested = p // the same package WITH them, where the rules are declared
 		}
-		pkg = p
 	}
-	if pkg == nil || faked == nil {
-		return nil, fmt.Errorf("loading the suite and the fake forge answered %v", pkgs)
+	if pkg == nil || faked == nil || tested == nil {
+		return nil, fmt.Errorf("loading the suite, its tests and the fake forge answered %d packages and not the three needed", len(pkgs))
 	}
-	for _, p := range []*packages.Package{pkg, faked} {
+	for _, p := range []*packages.Package{pkg, faked, tested} {
 		if len(p.Errors) > 0 {
 			return nil, fmt.Errorf("%v", p.Errors)
 		}
@@ -301,18 +327,26 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 	if obj == nil {
 		return nil, fmt.Errorf("this package declares no `step` type, which is what marks a marker; see plumbing.go. Without it every step reads as a claim")
 	}
-	faults, err := faultsOf(faked, faultType.Name())
+	faults, err := constantsOf(faked, faultType.Name())
 	if err != nil {
 		return nil, err
 	}
-	return &source{pkg: pkg, reporter: reporterInterface(), step: obj.Type(), faults: faults}, nil
+	rules, err := constantsOf(tested, reflect.TypeOf(ruleName("")).Name())
+	if err != nil {
+		return nil, err
+	}
+	return &source{pkg: pkg, reporter: reporterInterface(), step: obj.Type(), faults: faults, rules: rules}, nil
 }
 
-// faultsOf is every constant of the fake forge's fault type, by value and by
-// the name it is declared under. A fault is a question the fake forge can be
-// told to answer wrongly, and the ledger reads them all so that one nothing
-// proves is visible.
-func faultsOf(pkg *packages.Package, typeName string) (map[string]string, error) {
+// suitePath is this package, taken from a type in it rather than written out.
+var suitePath = reflect.TypeOf(assertion{}).PkgPath()
+
+// constantsOf is every constant of one named string type in a package, by value
+// and by the name it is declared under. It reads the fake forge's faults and
+// this file's own rule names, and for the same reason in both cases: a
+// population kept in a list beside the code is a population somebody forgets to
+// add to, or quietly shortens.
+func constantsOf(pkg *packages.Package, typeName string) (map[string]string, error) {
 	scope := pkg.Types.Scope()
 	obj := scope.Lookup(typeName)
 	if obj == nil {
