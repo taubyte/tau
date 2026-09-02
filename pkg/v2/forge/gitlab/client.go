@@ -569,12 +569,31 @@ func (c *client) RemovePushHook(ctx context.Context, key repokey.Key, h forge.Ha
 // ("", err) when it takes back a key that can push, and a consumer that stored
 // what it was handed and later cleaned up would arrive here with "".
 //
+// A HANDLE SPANNING A "/" IS REFUSED HERE TOO, and here rather than at the
+// route, because a "/" inside a segment is legitimate at the route: it is how
+// this driver addresses acme/team/widget. A handle is not that. It names ONE
+// resource under the ONE collection its route names, so .../deploy_keys/a/b is
+// not a key under .../deploy_keys, and it gets there with no dot segment in it —
+// so the traversal rule the route layer holds does not reach it. The rule lives
+// where the value's SHAPE is known, and that is here.
+//
+// THE DOT-SEGMENT REFUSAL IS HERE TOO, at the door, and again at the route. See
+// addressesItself for what it is and the github driver's IsActiveMember for why
+// a refusal at the route alone is too late: an operation is a sequence, and the
+// last request is not the first one to spend the credential.
+//
 // It does not escape. Escaping is what the route does with every argument it is
 // given, and a second escape here would be one this driver has to remember and
 // the instance would receive doubled.
 func handleSegment(h forge.Handle) (string, error) {
 	if h == "" {
 		return "", errors.New("gitlab: removing a resource needs the handle the instance gave it")
+	}
+	if strings.Contains(string(h), "/") {
+		return "", fmt.Errorf("gitlab: the handle %q spans more than one path segment, and the route it fills has one; the removal would address a resource under a collection nobody named", bounded(string(h)))
+	}
+	if err := addressesItself(string(h)); err != nil {
+		return "", fmt.Errorf("gitlab: the handle names no resource: %w", err)
 	}
 	return string(h), nil
 }
@@ -600,7 +619,11 @@ func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Addre
 	// every clone tau ever runs with this address. So it goes through the same
 	// function a request path's segments go through, over the segments a URL
 	// under this host really has.
-	path := "/" + escapedSegments(keySegments(key)) + ".git"
+	escaped, err := escapedSegments(keySegments(key))
+	if err != nil {
+		return forge.Address{}, err
+	}
+	path := "/" + escaped + ".git"
 	if over == forge.SSH {
 		return forge.Address{
 			URL: "ssh://git@" + c.cfg.host + path,

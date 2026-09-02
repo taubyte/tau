@@ -266,25 +266,35 @@ func mustDriver(t *testing.T, host string, opts ...github.Option) forge.Driver {
 	return d
 }
 
-// THE WALK'S TWO HALVES OF THE QUESTION ARE ESCAPED. A namespace and a username
-// are strings a CONSUMER handed this driver — not keys repokey vouched for and
-// not addresses Addressable checked — and they are pasted into two API paths.
-// "?" and "#" are characters a path gives meaning to and ".." is a segment a
-// server resolves, so either one unescaped turns the one call tau makes with the
-// deployment's app credential into a request nobody composed: an installation
-// lookup against another org, or a membership read that is not a membership read
-// at all.
+// THE WALK'S TWO HALVES OF THE QUESTION ARE ESCAPED, OR THEY ARE REFUSED, and
+// which of the two depends on the string rather than on the caller. A namespace
+// and a username are strings a CONSUMER handed this driver — not keys repokey
+// vouched for and not addresses Addressable checked — and they are pasted into
+// two API paths.
 //
-// Unlike the gitlab driver, there is no ordinary case here — a GitHub login has
-// no "/" in it — so this is entirely about not trusting a string because it
-// arrived through a Go signature. Measured: dropping url.PathEscape from both
-// halves left the whole forge tree at exit 0.
+// "?" and "#" are characters a path gives meaning to, and escaping is the answer
+// to those: they are sent, as themselves, inside one segment. ".." is not a
+// character, it is an INSTRUCTION to whoever resolves the path, and escaping is
+// no answer at all — url.PathEscape("..") is ".." — so it is refused before the
+// deployment's app credential is spent on a request nobody composed. So is a "/",
+// because a GitHub login has none and one hole would be filled with two segments.
+//
+// Unlike the gitlab driver there is no nesting ordinary case here, which is why
+// the "/" rows below are refusals on this driver and the group row is an
+// ordinary case on that one. Measured: dropping url.PathEscape from both halves
+// left the whole forge tree at exit 0, and so did sending "..".
 func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
-	for name, tc := range map[string]struct{ namespace, username string }{
-		"a namespace that would walk out of its path": {"acme/../../user", "alice"},
-		"a namespace carrying a query and a fragment": {"acme?per_page=1#x", "alice"},
-		"a username that would walk out of its path":  {"acme", "../../../user"},
-		"a username carrying a query":                 {"acme", "alice?access_token=x"},
+	for name, tc := range map[string]struct {
+		namespace, username string
+		refused             bool
+	}{
+		"a namespace carrying a query and a fragment": {namespace: "acme?per_page=1#x", username: "alice"},
+		"a username carrying a query":                 {namespace: "acme", username: "alice?access_token=x"},
+		"a namespace that would walk out of its path": {namespace: "acme/../../user", username: "alice", refused: true},
+		"a username that would walk out of its path":  {namespace: "acme", username: "../../../user", refused: true},
+		"a namespace that is a dot segment whole":     {namespace: "..", username: "alice", refused: true},
+		"a username that names the collection":        {namespace: "acme", username: ".", refused: true},
+		"a namespace that nests":                      {namespace: "acme/team", username: "alice", refused: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var sent []string
@@ -301,10 +311,17 @@ func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
 			}))
 
 			ok, err := reg.IsActiveMember(context.Background(), host, tc.namespace, tc.username)
+			t.Logf("the forge received %q", sent)
+			if tc.refused {
+				require.Error(t, err, "a half that names something else was asked anyway")
+				assert.False(t, ok)
+				assert.Emptyf(t, sent, "the refusal is after the request: %q went out carrying the deployment's credential", sent)
+				return
+			}
+
 			require.NoError(t, err)
 			assert.True(t, ok)
 			require.Len(t, sent, 3, "the walk is an installation lookup, a mint and a member read")
-			t.Logf("the forge received %q", sent)
 
 			org := url.PathEscape(tc.namespace)
 			assert.Equal(t, []string{

@@ -753,15 +753,54 @@ func TestRemovingSomethingWithoutItsHandleIsRefused(t *testing.T) {
 
 // An opaque handle is escaped, not parsed. Nothing here knows it is a number,
 // and escaping is what keeps one inside its own path segment.
+//
+// THE HANDLE HERE USED TO BE "../../../user/keys/1", AND THAT WAS THE WRONG
+// PROPERTY. Escaping it produced "..%2F..%2F..%2Fuser%2Fkeys%2F1", one segment
+// on the wire, and this row called that holding — while the ROW IT DID NOT HAVE
+// was the one for a handle escaping cannot save. url.PathEscape("..") is "..".
+// So the escaping is asserted with a handle that really needs escaping and is
+// really a name, and the refusal has a test of its own: see
+// TestAHandleThatNamesSomethingElseIsRefused.
 func TestAHandleIsEscapedRatherThanParsed(t *testing.T) {
 	var path string
 	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
 		path = r.URL.EscapedPath()
 		w.WriteHeader(http.StatusNoContent)
 	})
-	require.NoError(t, c.RemoveDeployKey(context.Background(), key, "../../../user/keys/1"))
-	assert.NotContains(t, path, "../")
-	assert.Contains(t, path, "%2F")
+	require.NoError(t, c.RemoveDeployKey(context.Background(), key, "..%2f..%2fuser?a#b"))
+	assert.Contains(t, path, "..%252f..%252fuser%3Fa%23b",
+		"the handle did not arrive as one escaped segment")
+	assert.NotContains(t, path, "?", "a handle ended the path and the rest became a query")
+}
+
+// TestAHandleThatNamesSomethingElseIsRefused is the row the escaping test above
+// could never be, because escaping is not what answers these.
+//
+// MEASURED ON THE CLEAN TREE: RemoveDeployKey(acme/pay, "..") composed and SENT
+//
+//	DELETE /api/v4/projects/acme%2Fpay/deploy_keys/..
+//
+// which RFC 3986 dot-segment removal — Go's own path.Clean, and every conforming
+// proxy, gateway and origin — resolves to /api/v4/projects/acme%2Fpay: GitLab's
+// delete-project endpoint, reached with the caller's credential, on the project
+// tau was asked to tidy. Go's httptest server answered it with a 307 to exactly
+// that path. "." resolves to the collection, which is the defect
+// TestRemovingSomethingWithoutItsHandleIsRefused was already written against
+// with a different spelling, and "a/b" names a resource under a collection
+// nobody asked about with no dot in it at all.
+func TestAHandleThatNamesSomethingElseIsRefused(t *testing.T) {
+	for _, handle := range []string{"..", ".", "../..", "a/b", "../../attacker?a#b"} {
+		t.Run(handle, func(t *testing.T) {
+			var reached int
+			c, key := stubClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				reached++
+				w.WriteHeader(http.StatusNoContent)
+			})
+			assert.Error(t, c.RemoveDeployKey(context.Background(), key, forge.Handle(handle)))
+			assert.Error(t, c.RemovePushHook(context.Background(), key, forge.Handle(handle)))
+			assert.Equal(t, 0, reached, "a handle naming something else reached the instance")
+		})
+	}
 }
 
 // A refusal from the instance is the caller's, not swallowed into an empty
@@ -1125,12 +1164,24 @@ func TestMembershipSpendsTheDeploymentsCredential(t *testing.T) {
 // Measured: dropping the escaping from both halves left the whole forge tree at
 // exit 0.
 func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
-	for name, tc := range map[string]struct{ namespace, username string }{
-		"a nested subgroup, which is the ordinary case": {"acme/team", "alice"},
-		"a namespace that would walk out of its path":   {"acme/../../projects", "alice"},
-		"a namespace carrying a query and a fragment":   {"acme?admin=1#x", "alice"},
-		"a username that would walk out of its path":    {"acme", "../../../user"},
-		"a username carrying a query":                   {"acme", "alice?private_token=x"},
+	for name, tc := range map[string]struct {
+		namespace, username string
+		refused             bool
+	}{
+		"a nested subgroup, which is the ordinary case": {namespace: "acme/team", username: "alice"},
+		"a namespace carrying a query and a fragment":   {namespace: "acme?admin=1#x", username: "alice"},
+		"a username carrying a query":                   {namespace: "acme", username: "alice?private_token=x"},
+
+		// A "/" IN THE GROUP IS DATA AND A "/" IN THE LOGIN IS NOT, which is the
+		// one place this driver's shape rule differs from the github driver's.
+		// A dot segment is refused in either half, because it is not a character
+		// escaping can carry: it is an instruction to whoever resolves the path,
+		// and url.PathEscape("..") is "..".
+		"a namespace that would walk out of its path": {namespace: "acme/../../projects", username: "alice", refused: true},
+		"a namespace that is a dot segment whole":     {namespace: "..", username: "alice", refused: true},
+		"a username that would walk out of its path":  {namespace: "acme", username: "../../../user", refused: true},
+		"a username that names the collection":        {namespace: "acme", username: ".", refused: true},
+		"a username that nests":                       {namespace: "acme", username: "team/alice", refused: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var sent []string
@@ -1144,9 +1195,14 @@ func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
 			}, Deployment(forge.Token("deployment")))
 
 			_, err := d.(forge.Memberships).IsActiveMember(context.Background(), tc.namespace, tc.username)
+			t.Logf("the instance received %q", sent)
+			if tc.refused {
+				require.Error(t, err, "a half that names something else was asked anyway")
+				assert.Emptyf(t, sent, "the refusal is after the request: %q went out carrying the deployment's credential", sent)
+				return
+			}
 			require.NoError(t, err)
 			require.Len(t, sent, 2, "the walk is a user lookup and a member read")
-			t.Logf("the instance received %q", sent)
 
 			// The user lookup. The username is a query VALUE, so nothing it
 			// contains may become a second parameter or a path of its own.

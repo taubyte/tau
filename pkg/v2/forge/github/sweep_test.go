@@ -58,6 +58,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -92,19 +93,56 @@ var redirectStatuses = []int{
 // one table drive both the redirect sweep and the escaping sweep.
 type sweepArgs struct{ handle, namespace, username string }
 
-// walkingSpelling is ONE string standing in for every consumer-supplied string,
-// and it carries all three characters a URL path gives meaning to. "/" opens a
-// segment, so an unescaped one addresses a resource under another repository —
-// RemoveDeployKey(acme/pay, "../../attacker/pay/keys/1") deletes another
-// repository's deploy key with the caller's credential. "?" ends the path, so an
-// unescaped one turns the rest into query parameters this driver never wrote.
-// "#" ends the URL, so an unescaped one silently TRUNCATES the request: removing
-// the handle "1#x" removes the resource numbered 1.
+// THE POPULATION IS IN TWO HALVES, AND IT USED TO BE IN ONE. A string a
+// consumer or a forge hands this driver either can be escaped into a name — and
+// then it must be sent, because a forge may legitimately spell a handle with a
+// "%", a "?" or a "#" in it and refusing those would refuse real forges — or it
+// cannot, and then it must be REFUSED before any request leaves. One string
+// standing for both is one property standing for two, and the second one was
+// missing: url.PathEscape("..") is "..", so the escaping sweep watched ".." go
+// out escaped-and-unchanged and called that holding.
 //
-// Because it is one string, one needle decides all three: escaped exactly once,
-// it appears on the wire as url.PathEscape spells it, and it appears that way
-// only if every one of the three survived as itself.
-const walkingSpelling = "../../attacker?a#b"
+// walkingSpelling is the FIRST half: the characters escaping is the answer to.
+// "?" ends a path, so an unescaped one turns the rest into query parameters this
+// driver never wrote; "#" ends a URL, so an unescaped one silently TRUNCATES the
+// request; "%2f" is a "/" the forge decodes after this driver has stopped
+// looking. It is the same spelling walkingSegmentSpelt yields through repokey,
+// so all five slots below carry ONE string and one needle decides all of them.
+//
+// traversalSpellings is the SECOND half, and it is asserted against a different
+// property in a different test: not "it went out escaped" but "no request went
+// out at all". See TestNoStringThisDriverPastesIntoAURLCanMoveThePathItIsIn.
+const walkingSpelling = walkingSegment
+
+// traversalSpellings are the strings that ADDRESS SOMETHING ELSE however
+// perfectly they are escaped, which is the whole of why escaping was never the
+// property.
+//
+// ".." resolves to the parent — DELETE .../repos/acme/site/keys/.. is DELETE
+// .../repos/acme/site, which is delete-a-repository, and Go's own httptest
+// server answered exactly that with a 307 to the cleaned path. "." resolves to
+// the COLLECTION, which is the threat handleSegment was already written
+// against. "../.." escapes to "..%2F..", one segment on the wire and two dot
+// components to anything that decodes before it routes.
+//
+// EVERY SLOT TAKES THESE, because a dot segment is an instruction to a resolver
+// wherever it is put and no forge has a name that is one.
+var traversalSpellings = map[string]string{
+	"a segment that climbs to the parent":         "..",
+	"a segment that names the collection":         ".",
+	"a climb spelled inside one escaped segment":  "../..",
+	"a climb with the rest of a real path behind": "../../attacker?a#b",
+}
+
+// spanningSpellings carry NO DOT AT ALL and still name a resource under a
+// collection nobody asked about: .../keys/a/b is not a key under .../keys. They
+// are a slot's SHAPE rather than the resolver's arithmetic, so they are asked
+// only of a slot that does not nest — see consumerSlot.nests. On this driver
+// nothing nests: Addressable already refuses a key whose owner does, and an
+// organization login and a user login are the same shape.
+var spanningSpellings = map[string]string{
+	"a name that spans two collections": "a/b",
+}
 
 const (
 	// sweepCallback and sweepSecret are FIXED rather than minted, because the
@@ -123,13 +161,49 @@ const (
 
 var (
 	benignArgs = sweepArgs{handle: "7", namespace: namespace, username: member}
-
-	walkingArgs = sweepArgs{
-		handle:    walkingSpelling,
-		namespace: walkingSpelling,
-		username:  walkingSpelling,
-	}
 )
+
+// consumerSlot is one string a CONSUMER hands this driver, named by where it
+// goes and paired with the args that put it there. It is what makes the
+// traversal rows a population rather than three hand-written calls: the same
+// three slots the escaping sweep runs over, driven by a different value.
+type consumerSlot struct {
+	name string
+	// nests says a "/" in this slot is DATA rather than a second segment. It is
+	// false everywhere on this driver and true for the gitlab driver's group,
+	// where acme/team is the ordinary case — which is why the spanning row is a
+	// property of the SLOT and not of the string.
+	nests bool
+	args  func(value string) sweepArgs
+}
+
+var consumerSlots = []consumerSlot{
+	{name: "a resource handle", args: func(v string) sweepArgs {
+		return sweepArgs{handle: v, namespace: namespace, username: member}
+	}},
+	{name: "a membership namespace", args: func(v string) sweepArgs {
+		return sweepArgs{handle: benignArgs.handle, namespace: v, username: member}
+	}},
+	{name: "a membership username", args: func(v string) sweepArgs {
+		return sweepArgs{handle: benignArgs.handle, namespace: namespace, username: v}
+	}},
+}
+
+// spellingsFor is the population one slot is asked about: every dot spelling,
+// and the spanning ones too unless a "/" is a name in this slot.
+func spellingsFor(slot consumerSlot) map[string]string {
+	out := map[string]string{}
+	for name, spelling := range traversalSpellings {
+		out[name] = spelling
+	}
+	if slot.nests {
+		return out
+	}
+	for name, spelling := range spanningSpellings {
+		out[name] = spelling
+	}
+	return out
+}
 
 // sweepOp is one operation a consumer can ask a session for. This list is the
 // only hand-written thing in the file, it is closed against
@@ -1013,7 +1087,9 @@ const walkingSegment = "..%2f..%2fattacker?a#b"
 // repokey really produces this one.
 const walkingSegmentSpelt = "..%252f..%252fattacker%3Fa%23b"
 
-func sweepSlots() []sweepSlot {
+// keySweepSlots are the two halves of the KEY, which reach this driver through
+// repokey rather than from a consumer directly.
+func keySweepSlots() []sweepSlot {
 	return []sweepSlot{
 		{
 			name: "the repository's owner", args: benignArgs,
@@ -1023,22 +1099,15 @@ func sweepSlots() []sweepSlot {
 			name: "the repository's name", args: benignArgs,
 			nameSpelling: walkingSegmentSpelt, value: walkingSegment,
 		},
-		{
-			name:  "a resource handle",
-			args:  sweepArgs{handle: walkingSpelling, namespace: namespace, username: member},
-			value: walkingSpelling,
-		},
-		{
-			name:  "a membership namespace",
-			args:  sweepArgs{handle: benignArgs.handle, namespace: walkingSpelling, username: member},
-			value: walkingSpelling,
-		},
-		{
-			name:  "a membership username",
-			args:  sweepArgs{handle: benignArgs.handle, namespace: namespace, username: walkingSpelling},
-			value: walkingSpelling,
-		},
 	}
+}
+
+func sweepSlots() []sweepSlot {
+	out := keySweepSlots()
+	for _, slot := range consumerSlots {
+		out = append(out, sweepSlot{name: slot.name, args: slot.args(walkingSpelling), value: walkingSpelling})
+	}
+	return out
 }
 
 // TestTheHostileKeyIsOneRepokeyReallyProduces. The two key slots above are
@@ -1147,10 +1216,10 @@ func decodedSegments(t *testing.T, path string) []string {
 // comment warns about — while the https half stayed right was GO_TEST_EXIT=0 on
 // both drivers. An existential check cannot express a universal property.
 //
-// So the verdict is per-URL. Every URL the hostile run composed that DIFFERS
-// from what the benign run composed IN THE SAME POSITION must hold the string
-// itself: a URL the string did not change is a URL it is not in, and one it did
-// change is one it has to be found in.
+// So the verdict is per-URL. Benign and hostile are paired by position, and every
+// URL the hostile run composed that DIFFERS from the benign one in the same
+// position must hold the string itself: a URL the string did not change is a URL
+// it is not in, and one it did change is one it has to be found in.
 func TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment(t *testing.T) {
 	for _, slot := range sweepSlots() {
 		t.Run(slot.name, func(t *testing.T) {
@@ -1254,4 +1323,73 @@ func holdsTheString(t *testing.T, u composedURL, value string) bool {
 		}
 	}
 	return false
+}
+
+// TestNoStringThisDriverPastesIntoAURLCanMoveThePathItIsIn is the OTHER HALF of
+// the property, and the half that was missing. Escaping answers a string that
+// can be made into a name; nothing answers a string that IS an instruction to
+// the resolver, and this driver was sending those.
+//
+// MEASURED ON THE CLEAN TREE, both drivers, RemoveDeployKey and RemovePushHook:
+//
+//	DELETE /api/v3/repos/acme/site/keys/..    path.Clean -> /api/v3/repos/acme/site
+//	DELETE /api/v3/repos/acme/site/keys/.     path.Clean -> /api/v3/repos/acme/site/keys
+//
+// The first is GitHub's delete-a-repository endpoint and the second is the
+// collection. Go's own httptest server answered the first with a 307 to the
+// cleaned path, so this is not a claim about hypothetical proxies: it is what
+// the wire carried.
+//
+// THE ASSERTION IS ABOUT EVERY URL AND NOT ONLY THE REFUSED ONE. IsActiveMember
+// with a hostile username still makes the two requests that come before the one
+// it refuses, so "no request at all" would be false and would have to be
+// weakened per-operation. What holds everywhere is that NOTHING THIS DRIVER
+// COMPOSED CAN BE MOVED BY A RESOLVER — a fixed point under RFC 3986 dot-segment
+// removal, in the escaped spelling an intermediary resolves and in the decoded
+// spelling a server holds. The refusal is then asserted where the string really
+// arrives, so no row passes by the string never having been read.
+func TestNoStringThisDriverPastesIntoAURLCanMoveThePathItIsIn(t *testing.T) {
+	for _, slot := range consumerSlots {
+		t.Run(slot.name, func(t *testing.T) {
+			for name, spelling := range spellingsFor(slot) {
+				t.Run(name, func(t *testing.T) {
+					refused := []string{}
+					for _, op := range sweepOps {
+						s := newSweepForge(t, op)
+						got, err := op.call(ctx(), s.reg, s.sess, s.key, slot.args(spelling))
+						t.Logf("%s -> %v, err = %v", op.name, got, err)
+
+						for _, u := range composed(t, s.wire.sent(), s.drv, got) {
+							assertStaysPut(t, op.name, u)
+						}
+						if op.pastes && err != nil {
+							refused = append(refused, op.name)
+						}
+					}
+					assert.NotEmptyf(t, refused,
+						"no operation refused %q in %s, so this row read nothing", spelling, slot.name)
+					t.Logf("%q in %s is refused by %v", spelling, slot.name, refused)
+				})
+			}
+		})
+	}
+}
+
+// assertStaysPut is the RFC 3986 property, said about one composed URL: a
+// resolver removing dot segments leaves it exactly where this driver put it.
+//
+// BOTH SPELLINGS, because the two resolvers in the chain read different ones.
+// The escaped path is what a conforming proxy, gateway or origin resolves before
+// anything is decoded. The decoded path is what a server holds after the one
+// decode it performs, and it is the spelling that catches "../..", which escapes
+// to "..%2F..": one segment on the wire, two dot components to anything that
+// decodes before it routes.
+func assertStaysPut(t *testing.T, op string, u composedURL) {
+	t.Helper()
+	decoded := strings.Join(decodedSegments(t, u.path), "/")
+	for _, spelling := range []string{u.path, decoded} {
+		assert.Equalf(t, spelling, path.Clean(spelling),
+			"%s composed %v, and removing dot segments from %q moves it to %q: the request addresses something the caller never named",
+			op, u, spelling, path.Clean(spelling))
+	}
 }

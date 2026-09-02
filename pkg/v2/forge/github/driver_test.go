@@ -823,6 +823,41 @@ func TestRemovingSomethingWithoutItsHandleIsRefused(t *testing.T) {
 	assert.Equal(t, 0, reached, "an empty handle reached the forge")
 }
 
+// TestAHandleThatNamesSomethingElseIsRefused is the row above generalized to
+// what it was always about: an empty handle is one spelling of a handle that
+// does not name a resource, and the OTHERS WERE SENT.
+//
+// MEASURED ON THE CLEAN TREE: RemoveDeployKey(acme/site, "..") composed and SENT
+//
+//	DELETE /api/v3/repos/acme/site/keys/..
+//
+// which RFC 3986 dot-segment removal — Go's own path.Clean, and every conforming
+// proxy, gateway and origin — resolves to /api/v3/repos/acme/site: GitHub's
+// delete-a-repository endpoint, reached with the caller's credential, on the
+// repository tau was asked to tidy. Go's own httptest server answered it with a
+// 307 to exactly that path. "." resolves one rung less far, to the COLLECTION,
+// which is the defect the row above is written against; "a/b" names a resource
+// under a collection nobody asked about with no dot in it at all.
+//
+// ESCAPING IS NOT THE ANSWER TO ANY OF THESE, which is why they were sent for
+// six rounds under a function whose job was thought to be escaping:
+// url.PathEscape("..") is "..", because a dot is unreserved.
+func TestAHandleThatNamesSomethingElseIsRefused(t *testing.T) {
+	for _, handle := range []string{"..", ".", "../..", "a/b", "../../attacker?a#b"} {
+		t.Run(handle, func(t *testing.T) {
+			var reached int
+			sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reached++
+				w.WriteHeader(http.StatusNoContent)
+			}), "acme/site")
+
+			assert.Error(t, sess.RemoveDeployKey(ctx(), key, forge.Handle(handle)))
+			assert.Error(t, sess.RemovePushHook(ctx(), key, forge.Handle(handle)))
+			assert.Equal(t, 0, reached, "a handle naming something else reached the forge")
+		})
+	}
+}
+
 // TestTheDeployKeyGoesOutReadOnly reads the request body, because the assertion
 // the suite can make is the one the fixture reports and this one is the wire.
 func TestTheDeployKeyGoesOutReadOnly(t *testing.T) {

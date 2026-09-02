@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -140,12 +141,84 @@ func (rq request) with(query url.Values) request {
 // It escapes literals too: url.PathEscape("projects") is "projects", so the
 // exception would buy nothing and would cost the property — there is no segment
 // here that somebody has to decide about.
-func escapedSegments(segments []string) string {
+//
+// AND ESCAPING WAS NEVER THE PROPERTY, which is the correction. See
+// addressesItself: a segment that is escaped perfectly can still be a segment
+// that names something else, and this function refused nothing.
+func escapedSegments(segments []string) (string, error) {
 	escaped := make([]string, len(segments))
 	for i, s := range segments {
+		if err := addressesItself(s); err != nil {
+			return "", fmt.Errorf("gitlab: %w", err)
+		}
 		escaped[i] = url.PathEscape(s)
 	}
-	return strings.Join(escaped, "/")
+	return strings.Join(escaped, "/"), nil
+}
+
+// addressesItself IS THE PROPERTY ESCAPING DOES NOT GIVE: a segment must still
+// name the place it was put in after a resolver has read it. The github driver
+// in this tree states it in the same place and the same words, because a rule
+// two drivers hold has to be held the same way or the difference between them is
+// a difference nobody can read.
+//
+// url.PathEscape("..") is "..". A dot is unreserved, so escaping leaves a dot
+// segment exactly as it was — and a dot segment is not a name, it is an
+// instruction to whoever resolves the path. RFC 3986 remove_dot_segments is
+// required of every conforming proxy, gateway and origin, and Go's own
+// path.Clean and URL.ResolveReference implement it, so this driver composing
+//
+//	DELETE /api/v4/projects/acme%2Fsite/deploy_keys/..
+//
+// is this driver composing DELETE /api/v4/projects/acme%2Fsite — deleting the
+// project it was asked to tidy — with the caller's credential already attached.
+// "." is the same defect one rung down: it resolves to the COLLECTION, which is
+// the threat handleSegment was already written against.
+//
+// IT IS CHECKED IN BOTH SPELLINGS a segment has on the way to an instance,
+// because the two resolvers in the chain read different ones. The escaped
+// spelling is what an RFC-conforming intermediary resolves before anything is
+// decoded. The raw spelling is what a server holds after the ONE decode it
+// performs, and it is what catches "../..", which escapes to "..%2F.." — a
+// single segment on the wire, and two dot components to anything that decodes
+// before it routes.
+//
+// A "/" INSIDE A SEGMENT IS NOT REFUSED, and on this driver it may not be: the
+// hole under projects/ takes acme/team/widget and the escaping turns it into
+// acme%2Fteam%2Fwidget, which is GitLab's own addressing. What is refused is a
+// COMPONENT of that path that is a dot segment, which no project path has.
+//
+// IT IS NOT AIMED AT ESCAPING, and it must not be. An instance hands back an
+// opaque handle and may legitimately spell one with a "?", a "#" or a "%" in it;
+// those are escaped here and arrive as themselves, and refusing them would
+// refuse real instances. What is refused is the segment that, escaped perfectly,
+// still addresses something the caller never named.
+//
+// The one decode is the doctrine. A server that decodes twice turns "%252e" back
+// into "." and no escaping survives that; it is a defect in the server, and a
+// driver that tried to pre-empt it would be refusing every handle with a percent
+// in it for a spelling nothing conforming produces.
+func addressesItself(segment string) error {
+	if segment == "" {
+		return errors.New("an empty path segment addresses the collection the request is under, so one thing is asked about and all of them are answered")
+	}
+	for _, spelling := range [...]string{segment, url.PathEscape(segment)} {
+		if path.Clean("/"+spelling) == "/"+spelling {
+			continue
+		}
+		return fmt.Errorf("%q is not a name: a resolver removing dot segments does not leave it where this driver put it, so the request would address something the caller never named", bounded(segment))
+	}
+	return nil
+}
+
+// bounded cuts a string SOMEBODY ELSE CHOSE to a length an error may carry, for
+// the reason maxHostString gives: whoever picks how long a log line is picks how
+// much of a disk it costs.
+func bounded(s string) string {
+	if len(s) <= maxHostString {
+		return s
+	}
+	return s[:maxHostString] + "…"
 }
 
 // keySegments is a key's path on this instance, as the segments a URL under the
@@ -205,9 +278,14 @@ func (rq request) url(base *url.URL) (*url.URL, error) {
 		}
 	}
 
+	escaped, err := escapedSegments(segments)
+	if err != nil {
+		return nil, err
+	}
+
 	u := *base
 	u.Path = "/" + strings.Join(segments, "/")
-	u.RawPath = "/" + escapedSegments(segments)
+	u.RawPath = "/" + escaped
 	u.RawQuery = rq.query.Encode()
 	return &u, nil
 }

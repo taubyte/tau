@@ -318,9 +318,22 @@ func handle(id int64) (forge.Handle, error) {
 	return forge.Handle(strconv.FormatInt(id, 10)), nil
 }
 
-// handleSegment refuses an empty handle rather than filling a path's hole with
-// nothing, which addresses the COLLECTION and would answer a removal of one
-// thing with an answer about all of them.
+// handleSegment says what a handle IS: the name of ONE resource under the ONE
+// collection its route names, and therefore ONE path segment.
+//
+// An empty handle addresses the COLLECTION and would answer a removal of one
+// thing with an answer about all of them. A handle spanning a "/" addresses a
+// resource under a collection nobody named — .../keys/a/b is not a key under
+// .../keys — and it does that with no dot segment in it, so the traversal rule
+// the route layer holds does not reach it. The route layer cannot hold this one
+// either: a "/" inside a segment is legitimate there, which is the whole of how
+// GitLab addresses a project, so the rule lives where the value's SHAPE is
+// known and that is here.
+//
+// THE DOT-SEGMENT REFUSAL IS HERE TOO, at the door, and again at the route. See
+// addressesItself for what it is and IsActiveMember for why a refusal at the
+// route alone is too late: an operation is a sequence, and the last request is
+// not the first one to spend the credential.
 //
 // It does not escape. Escaping is what the route does with every argument it is
 // given, and a second escape here would be one this driver has to remember and
@@ -328,6 +341,12 @@ func handle(id int64) (forge.Handle, error) {
 func handleSegment(h forge.Handle) (string, error) {
 	if h == "" {
 		return "", errors.New("forge/github: removing a resource needs the handle the forge gave it")
+	}
+	if strings.Contains(string(h), "/") {
+		return "", fmt.Errorf("forge/github: the handle %q spans more than one path segment, and the route it fills has one; the removal would address a resource under a collection nobody named", bounded(string(h)))
+	}
+	if err := addressesItself(string(h)); err != nil {
+		return "", fmt.Errorf("forge/github: the handle names no resource: %w", err)
 	}
 	return string(h), nil
 }
@@ -356,7 +375,11 @@ func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Addre
 	// and, pasted in raw, would name the repository BEFORE the "#" to every
 	// clone tau ever runs with this address. So it goes through the same
 	// function a request path's segments go through.
-	path := "/" + escapedSegments([]string{key.Owner, key.Name}) + ".git"
+	escaped, err := escapedSegments([]string{key.Owner, key.Name})
+	if err != nil {
+		return forge.Address{}, err
+	}
+	path := "/" + escaped + ".git"
 	if over == forge.SSH {
 		// "git" is the account every GitHub answers ssh on, and it is a host
 		// fact rather than an identity: the key that authenticates is the

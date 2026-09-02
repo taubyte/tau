@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // IsActiveMember reports whether a named human is an active member of a GitLab
@@ -28,6 +29,27 @@ import (
 func (d *memberDriver) IsActiveMember(ctx context.Context, namespace, username string) (bool, error) {
 	if namespace == "" || username == "" {
 		return false, fmt.Errorf("gitlab: a membership question needs both a group and a username")
+	}
+	// A LOGIN IS ONE PATH SEGMENT AND A GROUP IS NOT, which is this driver's
+	// difference from the github one and not an oversight. A GitLab group is
+	// addressed by its full path — acme/team is the ordinary case, and the
+	// escaping turns it into acme%2Fteam — so a "/" there is data. A username is
+	// a login and has none, and a "/" in it would fill one hole of
+	// groups/{}/members/all/{} with two segments. The dot-segment refusal is not
+	// here: that one belongs to every hole of every route and lives where a
+	// string becomes a path. See addressesItself.
+	if strings.Contains(username, "/") {
+		return false, fmt.Errorf("gitlab: the username %q nests, and a login is one path segment", bounded(username))
+	}
+	// AND THE DOT SEGMENTS, HERE RATHER THAN AT THE ROUTE, in both halves. The
+	// route refuses them too, and for this operation that is too late: it is two
+	// round trips, so a group that names something else would be refused only
+	// after the user lookup had already been asked with the deployment's
+	// credential.
+	for what, half := range map[string]string{"group": namespace, "username": username} {
+		if err := addressesItself(half); err != nil {
+			return false, fmt.Errorf("gitlab: the %s of a membership question: %w", what, err)
+		}
 	}
 
 	id, found, err := d.userID(ctx, username)

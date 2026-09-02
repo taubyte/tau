@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -107,6 +108,27 @@ type membershipJSON struct {
 func (m *memberDriver) IsActiveMember(ctx context.Context, namespace, username string) (bool, error) {
 	if namespace == "" || username == "" {
 		return false, errors.New("forge/github: a membership question names a namespace and a username")
+	}
+	// EACH HALF IS ONE PATH SEGMENT. Addressable already refuses a key whose
+	// owner nests, with the sentence "GitHub addresses exactly one owner and one
+	// name"; an organization login and a user login are the same shape, and a
+	// "/" in either would fill one hole of orgs/{}/memberships/{} with two
+	// segments — a question asked about a route nobody named. The dot-segment
+	// refusal is not here: that one belongs to every hole of every route and
+	// lives where a string becomes a path. See addressesItself.
+	for what, half := range map[string]string{"namespace": namespace, "username": username} {
+		if strings.Contains(half, "/") {
+			return false, fmt.Errorf("forge/github: the %s %q nests, and GitHub addresses exactly one organization and one login", what, bounded(half))
+		}
+		// AND THE DOT SEGMENTS, HERE RATHER THAN AT THE ROUTE. The route refuses
+		// them too, and for this operation that is too late: measured, a
+		// username of "." reached the route's refusal only on the THIRD request,
+		// after the installation lookup and after the mint — the one request tau
+		// makes that hands back a credential. A question that cannot be asked
+		// costs nothing here and costs an installation token there.
+		if err := addressesItself(half); err != nil {
+			return false, fmt.Errorf("forge/github: the %s of a membership question: %w", what, err)
+		}
 	}
 
 	assertion, err := m.app.assertion(time.Now())
