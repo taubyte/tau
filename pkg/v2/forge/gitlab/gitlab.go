@@ -276,6 +276,15 @@ func (d *driver) Host() string { return d.cfg.host }
 // registry calls this once per key rather than each method calling it and one
 // method forgetting.
 func (d *driver) Addressable(key repokey.Key) error {
+	// THE HOST FIRST, and it is here rather than left to the registry because
+	// this method is EXPORTED and answers on its own. The registry routes by
+	// host and Session.check compares one before calling this, so a key that
+	// arrives through either has already been through it — but a consumer that
+	// asks a driver directly whether it can address a key on another host was
+	// being told yes. The github driver refuses it here for the same reason.
+	if key.Host != d.cfg.host {
+		return fmt.Errorf("this driver answers for %s", d.cfg.host)
+	}
 	if key.Owner == "" {
 		return errors.New("a GitLab project always lives in a namespace, and this key names a repository at the host root")
 	}

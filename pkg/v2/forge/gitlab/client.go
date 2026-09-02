@@ -385,7 +385,25 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 	if err := c.send(ctx, routeCreateProject.at(), nil, body, &created); err != nil {
 		return forge.Repository{}, err
 	}
-	return c.cfg.repository(created, fmt.Sprintf("project %q", key.FullName()))
+	repo, err := c.cfg.repository(created, fmt.Sprintf("project %q", key.FullName()))
+	if err != nil {
+		return forge.Repository{}, err
+	}
+	// AND THE PROJECT THAT CAME BACK IS THE ONE THAT WAS ASKED FOR. The
+	// namespace was compared before the POST, and that is a different question:
+	// GitLab derives a project's PATH from what it was sent and may not keep it
+	// — it has its own rules about what a path may be — so a project created
+	// under the right group can still be created under the wrong name. Returning
+	// it would file it under a name that does not name it, which means tau holds
+	// a name it does not own and anyone may register. The github driver refuses
+	// the same thing for the same reason.
+	//
+	// The name it became is not quoted: the instance chose that string while
+	// holding the caller's credential.
+	if repo.Key != key {
+		return forge.Repository{}, fmt.Errorf("gitlab: %s was asked to create %q and created a project under a different path", c.cfg.host, key)
+	}
+	return repo, nil
 }
 
 // Delete removes a project.

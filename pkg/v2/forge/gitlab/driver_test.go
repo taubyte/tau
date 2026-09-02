@@ -220,6 +220,14 @@ func TestAddressable(t *testing.T) {
 		require.NoError(t, err)
 		assert.Error(t, d.Addressable(k), "%q uses GitLab's reserved route separator", spelling)
 	}
+
+	// A key on another host. The registry routes by host before it ever calls
+	// this, so nothing in tau reaches here with one — but this method is
+	// exported and answers on its own, and answering "yes, I can address that"
+	// about another instance's repository is an answer nobody should get.
+	elsewhere, err := repokey.Parse("https://gitlab.example/acme/pay.git")
+	require.NoError(t, err)
+	assert.Error(t, d.Addressable(elsewhere), "a driver for gitlab.com said it can address a repository on gitlab.example")
 }
 
 // ─────────────────────────── credentials on the wire ───────────────────────────
@@ -563,6 +571,31 @@ func TestCreateSendsTheNamespaceIdAndNoRepositoryId(t *testing.T) {
 // Asked for read-only, given a key that can push. Whatever the reason, a
 // standing write credential tau issued is the exact thing this interface has no
 // parameter for — so it comes straight back off.
+// TestCreateRefusesAProjectMadeSomewhereElse is the github driver's
+// "asked for X and the forge created Y", which this driver did not have. The
+// namespace comparison above it answers a DIFFERENT question — it is made
+// before the POST, and GitLab derives a project's path from what it was sent
+// under rules of its own, so a project created in the right group can still
+// carry the wrong name.
+func TestCreateRefusesAProjectMadeSomewhereElse(t *testing.T) {
+	var host string
+	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/namespaces/") {
+			answer(t, http.StatusOK, `{"id":42,"full_path":"acme"}`)(w, r)
+			return
+		}
+		answer(t, http.StatusOK, `{"path_with_namespace":"acme/somethingelse",
+			"http_url_to_repo":"http://`+host+`/acme/somethingelse.git",
+			"default_branch":"main","visibility":"private"}`)(w, r)
+	})
+	host = key.Host
+
+	repo, err := c.Create(context.Background(), key, forge.CreateOptions{Private: true})
+	require.Errorf(t, err, "Create returned a project made somewhere else: %q", repo.Key)
+	assert.NotContains(t, err.Error(), "somethingelse",
+		"the name the instance made is a string it chose while holding the caller's credential")
+}
+
 func TestInstallDeployKeyTakesBackAKeyThatCanPush(t *testing.T) {
 	removed := false
 	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
