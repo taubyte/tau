@@ -11,6 +11,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -243,6 +244,56 @@ func mustDriver(t *testing.T, host string, opts ...github.Option) forge.Driver {
 	d, err := github.New(host, opts...)
 	require.NoError(t, err)
 	return d
+}
+
+// THE WALK'S TWO HALVES OF THE QUESTION ARE ESCAPED. A namespace and a username
+// are strings a CONSUMER handed this driver — not keys repokey vouched for and
+// not addresses Addressable checked — and they are pasted into two API paths.
+// "?" and "#" are characters a path gives meaning to and ".." is a segment a
+// server resolves, so either one unescaped turns the one call tau makes with the
+// deployment's app credential into a request nobody composed: an installation
+// lookup against another org, or a membership read that is not a membership read
+// at all.
+//
+// Unlike the gitlab driver, there is no ordinary case here — a GitHub login has
+// no "/" in it — so this is entirely about not trusting a string because it
+// arrived through a Go signature. Measured: dropping url.PathEscape from both
+// halves left the whole forge tree at exit 0.
+func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
+	for name, tc := range map[string]struct{ namespace, username string }{
+		"a namespace that would walk out of its path": {"acme/../../user", "alice"},
+		"a namespace carrying a query and a fragment": {"acme?per_page=1#x", "alice"},
+		"a username that would walk out of its path":  {"acme", "../../../user"},
+		"a username carrying a query":                 {"acme", "alice?access_token=x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var sent []string
+			reg, host := appRegistry(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sent = append(sent, r.URL.EscapedPath()+"?"+r.URL.RawQuery)
+				switch {
+				case strings.HasSuffix(r.URL.EscapedPath(), "/installation"):
+					io.WriteString(w, `{"id":4242}`)
+				case strings.HasSuffix(r.URL.EscapedPath(), "/access_tokens"):
+					io.WriteString(w, `{"token":"ghs_for_the_walk"}`)
+				default:
+					io.WriteString(w, `{"state":"active"}`)
+				}
+			}))
+
+			ok, err := reg.IsActiveMember(context.Background(), host, tc.namespace, tc.username)
+			require.NoError(t, err)
+			assert.True(t, ok)
+			require.Len(t, sent, 3, "the walk is an installation lookup, a mint and a member read")
+			t.Logf("the forge received %q", sent)
+
+			org := url.PathEscape(tc.namespace)
+			assert.Equal(t, []string{
+				"/api/v3/orgs/" + org + "/installation?",
+				"/api/v3/app/installations/4242/access_tokens?",
+				"/api/v3/orgs/" + org + "/memberships/" + url.PathEscape(tc.username) + "?",
+			}, sent, "a half of the question walked out of its own path segment")
+		})
+	}
 }
 
 // TestAMembershipAnswerThisDriverCannotReadIsNotAFalse. The 404 shortcut reads

@@ -781,6 +781,67 @@ func TestMembershipSpendsTheDeploymentsCredential(t *testing.T) {
 	assert.Equal(t, []string{"the-deployment-token", "the-deployment-token"}, seen)
 }
 
+// THE WALK'S TWO HALVES OF THE QUESTION ARE ESCAPED, and on this forge the
+// ORDINARY case is the one that needs it: GitLab groups nest, so a namespace of
+// "acme/team" is one group and GitLab's group endpoints address it by its full
+// path URL-encoded. Unescaped it is /api/v4/groups/acme/team/members/all/7,
+// which is a different route on a real instance and not the group that was
+// asked about — the same defect Addressable exists to keep out of the
+// repository paths, on the one call answered with the deployment's credential.
+//
+// And a namespace or username tau was handed is a string from a consumer, not a
+// key repokey vouched for. "?" and "#" are characters an API path gives meaning
+// to, ".." is a segment a server resolves, and either one unescaped is a
+// membership question answered by a request nobody composed. The id is not
+// checked here: it is this driver's own rendering of an integer.
+//
+// Measured: dropping the escaping from both halves left the whole forge tree at
+// exit 0.
+func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
+	for name, tc := range map[string]struct{ namespace, username string }{
+		"a nested subgroup, which is the ordinary case": {"acme/team", "alice"},
+		"a namespace that would walk out of its path":   {"acme/../../projects", "alice"},
+		"a namespace carrying a query and a fragment":   {"acme?admin=1#x", "alice"},
+		"a username that would walk out of its path":    {"acme", "../../../user"},
+		"a username carrying a query":                   {"acme", "alice?private_token=x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var sent []string
+			d, _ := stub(t, func(w http.ResponseWriter, r *http.Request) {
+				sent = append(sent, r.Method+" "+r.URL.EscapedPath()+"?"+r.URL.RawQuery)
+				if strings.Contains(r.URL.EscapedPath(), "/members/") {
+					answer(t, http.StatusOK, `{"access_level":40,"state":"active"}`)(w, r)
+					return
+				}
+				answer(t, http.StatusOK, `[{"id":7,"state":"active"}]`)(w, r)
+			}, Deployment(forge.Token("deployment")))
+
+			_, err := d.(forge.Memberships).IsActiveMember(context.Background(), tc.namespace, tc.username)
+			require.NoError(t, err)
+			require.Len(t, sent, 2, "the walk is a user lookup and a member read")
+			t.Logf("the instance received %q", sent)
+
+			// The user lookup. The username is a query VALUE, so nothing it
+			// contains may become a second parameter or a path of its own.
+			lookup, err := url.Parse(sent[0][len("GET "):])
+			require.NoError(t, err)
+			assert.Equal(t, "/api/v4/users", lookup.Path, "the user lookup was addressed somewhere else")
+			assert.Equal(t, []string{tc.username}, lookup.Query()["username"],
+				"the username did not survive as one query value")
+			assert.Len(t, lookup.Query(), 1, "the username became a second parameter: %v", lookup.Query())
+
+			// The member read. GitLab addresses a group by its full path
+			// URL-encoded, so every separator in the namespace is %2F and the
+			// path this driver built has exactly the segments it wrote.
+			read, err := url.Parse(sent[1][len("GET "):])
+			require.NoError(t, err)
+			assert.Equal(t, "/api/v4/groups/"+url.PathEscape(tc.namespace)+"/members/all/7", read.EscapedPath(),
+				"the namespace did not stay inside its own path segment")
+			assert.Empty(t, read.RawQuery, "the namespace walked into the query")
+		})
+	}
+}
+
 // ─────────────────────────── plumbing ───────────────────────────
 
 func TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics(t *testing.T) {
