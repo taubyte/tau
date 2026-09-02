@@ -643,9 +643,16 @@ func TestInstallDeployKeySaysSoWhenItCannotTakeOneBack(t *testing.T) {
 	assert.Contains(t, err.Error(), "could not be removed")
 }
 
-// An empty handle is a resource nothing can ever remove, which is how v1 ended
+// TestAnInstallThatNamesNoHandleIsRefused. A resource the instance made and
+// named no id for is a resource nothing can ever remove, which is how v1 ended
 // up with standing credentials it issued and forgot.
-func TestAnEmptyHandleIsRefused(t *testing.T) {
+//
+// IT IS THE INSTALL PATH AND ONLY THE INSTALL PATH. This test used to be called
+// TestAnEmptyHandleIsRefused, which is the name of a property the REMOVAL path
+// has — and did not have here for four rounds, because the name read as if
+// somebody had already checked. A name that describes a class instead of the
+// call it drives is a name that reports coverage it does not have.
+func TestAnInstallThatNamesNoHandleIsRefused(t *testing.T) {
 	c, key := stubClient(t, answer(t, http.StatusCreated, `{}`))
 
 	_, err := c.InstallDeployKey(context.Background(), key, "tau", "ssh-ed25519 AAAA test")
@@ -657,6 +664,27 @@ func TestAnEmptyHandleIsRefused(t *testing.T) {
 	_, err = c.RegisterPushHook(context.Background(), key, callback, "wire")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nothing could ever remove it")
+}
+
+// TestRemovingSomethingWithoutItsHandleIsRefused is the github driver's row of
+// the same name, which this driver did not have: it pasted an empty handle
+// into the route and sent it.
+//
+// Measured before the fix: DELETE /api/v4/projects/acme%2Fpay/deploy_keys/ and
+// .../hooks/ both left the process carrying the caller's credential, both
+// returned nil, and tau was told the key and the hook were removed when nothing
+// had been. An empty last segment addresses the COLLECTION, so a removal of one
+// thing is answered by an answer about all of them.
+func TestRemovingSomethingWithoutItsHandleIsRefused(t *testing.T) {
+	var reached int
+	c, key := stubClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		reached++
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	require.Error(t, c.RemoveDeployKey(context.Background(), key, ""))
+	require.Error(t, c.RemovePushHook(context.Background(), key, ""))
+	assert.Equal(t, 0, reached, "an empty handle reached the instance")
 }
 
 // An opaque handle is escaped, not parsed. Nothing here knows it is a number,

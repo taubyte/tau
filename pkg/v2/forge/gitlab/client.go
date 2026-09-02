@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -460,7 +461,11 @@ func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, p
 }
 
 func (c *client) RemoveDeployKey(ctx context.Context, key repokey.Key, h forge.Handle) error {
-	return c.send(ctx, routeRemoveDeployKey.at(key.FullName(), string(h)), &key, nil, nil)
+	seg, err := handleSegment(h)
+	if err != nil {
+		return err
+	}
+	return c.send(ctx, routeRemoveDeployKey.at(key.FullName(), seg), &key, nil, nil)
 }
 
 // RegisterPushHook registers a webhook for pushes only.
@@ -507,7 +512,37 @@ func (c *client) RegisterPushHook(ctx context.Context, key repokey.Key, callback
 }
 
 func (c *client) RemovePushHook(ctx context.Context, key repokey.Key, h forge.Handle) error {
-	return c.send(ctx, routeRemovePushHook.at(key.FullName(), string(h)), &key, nil, nil)
+	seg, err := handleSegment(h)
+	if err != nil {
+		return err
+	}
+	return c.send(ctx, routeRemovePushHook.at(key.FullName(), seg), &key, nil, nil)
+}
+
+// handleSegment refuses an empty handle rather than filling a path's hole with
+// nothing. An empty last segment addresses the COLLECTION —
+// DELETE /api/v4/projects/acme%2Fpay/deploy_keys/ is the whole set of them —
+// so a removal of ONE thing is answered by an answer about ALL of them, with
+// the caller's credential already spent, and this driver then reports nil to a
+// consumer that will record the key or the hook as gone.
+//
+// It is refused BEFORE the request leaves the process, because a write cannot
+// be undone by checking afterwards. The github driver in this tree states the
+// same refusal in the same place, and two drivers over one interface may not
+// disagree about a threat the layer has written down.
+//
+// REACHABLE WITHOUT A HOSTILE INSTANCE. InstallDeployKey above returns
+// ("", err) when it takes back a key that can push, and a consumer that stored
+// what it was handed and later cleaned up would arrive here with "".
+//
+// It does not escape. Escaping is what the route does with every argument it is
+// given, and a second escape here would be one this driver has to remember and
+// the instance would receive doubled.
+func handleSegment(h forge.Handle) (string, error) {
+	if h == "" {
+		return "", errors.New("gitlab: removing a resource needs the handle the instance gave it")
+	}
+	return string(h), nil
 }
 
 // CloneAddress is the address a clone of one key uses on this instance, and the
