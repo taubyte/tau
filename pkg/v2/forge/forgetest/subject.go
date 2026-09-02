@@ -45,10 +45,10 @@
 // MEASURE IT WITH -coverpkg. Plain -cover counts only the statements a
 // package's OWN tests reach, and the two packages a conformance suite is made
 // of are run by everybody else: pkg/v2/forge/fake is exercised by this
-// package's tests and by consumers', so plain -cover calls it 28.2% where the
-// pinned measurement says 94.2%. This package is nearer its own number (97.2%
-// against 97.6%) only because its tests run the whole suite themselves. One
-// command is true for both, and it names the package being measured:
+// package's tests and by consumers', so plain -cover calls it 28.0% where the
+// pinned measurement says 94.6%. This package reads the same either way
+// (97.6%) only because its tests run the whole suite themselves. One command
+// is true for both, and it names the package being measured:
 //
 //	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/forgetest/... ./pkg/v2/forge/...
 //	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/fake/...      ./pkg/v2/forge/...

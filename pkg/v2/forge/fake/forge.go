@@ -413,12 +413,9 @@ func (c *core) followSameHost(method, loc, token string) error {
 	// the operation goes on against the one it was asked about — the hop was
 	// followed and landed nowhere interesting.
 	c.followed = c.issued[loc]
-	if c.broken {
-		return errUnreachable
-	}
-	if token == badToken {
-		return &forge.CredentialError{Host: c.shape.Host, Reason: "token was revoked"}
-	}
+	// An armed redirect is answered before the outage and before the credential,
+	// which is the order call itself uses: a forge redirects on the address it
+	// was given, and has read neither by then.
 	return nil
 }
 
