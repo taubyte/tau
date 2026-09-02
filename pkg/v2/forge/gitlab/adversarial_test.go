@@ -122,6 +122,32 @@ func TestAdvAccessNeverReadsAFailureAsAVerdict(t *testing.T) {
 	}
 }
 
+// advWebhookSecret is A FIXED VECTOR AND NOT A MINT, and that is what makes the
+// table below a set of forgeries instead of a set of coin flips.
+//
+// Every case in it is DERIVED FROM THE WIRE STRING, and a derivation from a
+// random string sometimes derives the string itself. "x"+wire[1:] IS the honest
+// token whenever a freshly minted wire begins with an "x" — one run in 64,
+// measured here at 8 failures in 400 — and strings.ToLower(wire) is the honest
+// token whenever a wire happens to carry no uppercase letter. Neither failure
+// says anything about security, and a security suite that fails for a reason
+// that is not security teaches its reader to run it again until it is green,
+// which is the one thing this file has to sell.
+//
+// Nothing about arbitrary key material is given up for the determinism: the
+// honest delivery is asserted over a freshly minted secret as well, below.
+const advWebhookSecret = "gitlab-adversarial-hook-secret-#1"
+
+// otherThan is a byte the given one is not, so that a near miss is a forgery BY
+// CONSTRUCTION rather than by luck — belt as well as braces, since the vector
+// above already fixes what wire[0] is.
+func otherThan(b byte) byte {
+	if b == 'x' {
+		return 'y'
+	}
+	return 'x'
+}
+
 // TestAdvNoForgedDeliveryReachesAPush drives the whole VerifyPush path with a
 // real gitlab driver and every wrong token an attacker can present.
 func TestAdvNoForgedDeliveryReachesAPush(t *testing.T) {
@@ -133,40 +159,56 @@ func TestAdvNoForgedDeliveryReachesAPush(t *testing.T) {
 
 	k, err := repokey.Parse("https://gitlab.example.invalid/acme/team/pay")
 	require.NoError(t, err)
-	secret, err := forge.NewSecret()
-	require.NoError(t, err)
+	secret := forge.SecretFrom([]byte(advWebhookSecret))
 	wire, err := forge.SchemeSharedToken.Wire(secret)
 	require.NoError(t, err)
+	t.Logf("the honest wire is %q", wire)
 
 	body := []byte(`{"object_kind":"push","ref":"refs/heads/main",
 		"checkout_sha":"1f0c9d2b3a4e5f60718293a4b5c6d7e8f9012345",
 		"project":{"git_http_url":"https://gitlab.example.invalid/acme/team/pay.git"}}`)
 	hook := forge.Hook{Key: k, Handle: "1", Scheme: forge.SchemeSharedToken, Secret: secret}
 
-	deliver := func(token string) (forge.Push, error) {
-		h := http.Header{}
-		h.Set("X-Gitlab-Event", "Push Hook")
+	deliver := func(h forge.Hook, token string) (forge.Push, error) {
+		header := http.Header{}
+		header.Set("X-Gitlab-Event", "Push Hook")
 		if token != "\x00absent" {
-			h.Set("X-Gitlab-Token", token)
+			header.Set("X-Gitlab-Token", token)
 		}
-		return reg.VerifyPush(hook, forge.Delivery{Header: h, Body: body})
+		return reg.VerifyPush(h, forge.Delivery{Header: header, Body: body})
 	}
 
-	_, err = deliver(wire)
+	_, err = deliver(hook, wire)
 	require.NoError(t, err, "the honest delivery must still pass")
+
+	// And once over key material nobody chose. The table needs a wire whose
+	// content is known; this needs one whose content is not.
+	minted, err := forge.NewSecret()
+	require.NoError(t, err)
+	mintedWire, err := forge.SchemeSharedToken.Wire(minted)
+	require.NoError(t, err)
+	mintedHook := hook
+	mintedHook.Secret = minted
+	_, err = deliver(mintedHook, mintedWire)
+	require.NoError(t, err, "the honest delivery must pass for a freshly minted secret too")
 
 	for name, token := range map[string]string{
 		"absent":            "\x00absent",
 		"empty":             "",
 		"a prefix of it":    wire[:len(wire)-1],
-		"one character off": "x" + wire[1:],
+		"one character off": string(otherThan(wire[0])) + wire[1:],
 		"case folded":       strings.ToLower(wire),
 		"the raw secret":    string(secret.Expose()),
 		"a whsec_ spelling": "whsec_" + wire,
 		"a plausible guess": "glpat-guess",
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := deliver(token)
+			// A case that IS the honest token asserts nothing about a forgery,
+			// and it fails as though a forgery had been accepted. Over a fixed
+			// vector this either always holds or never does, so it is a
+			// statement about the table and not a die roll.
+			require.NotEqual(t, wire, token, "this case is the honest token, not a near miss")
+			_, err := deliver(hook, token)
 			require.Error(t, err, "a delivery presenting %q was accepted", token)
 			assert.NotContains(t, err.Error(), wire, "the error quoted the wire secret")
 			assert.NotContains(t, err.Error(), string(secret.Expose()))
