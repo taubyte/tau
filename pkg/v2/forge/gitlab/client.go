@@ -482,12 +482,22 @@ func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, p
 	return handle, nil
 }
 
+// RemoveDeployKey names NO REPOSITORY to the taxonomy, and that is the whole of
+// the difference between it and InstallDeployKey above. A 404 on
+// .../deploy_keys/{id} is indistinguishable between "no such project" and "no
+// such key" — GitLab answers the same status for both — and calling it
+// *NotFoundError says the instance serves no repository acme/pay about a
+// project that is plainly there, which a consumer acts on by dropping the
+// repository. The two POSTs are on the other side deliberately: installing
+// under a project that 404s IS the project being missing, because the resource
+// does not exist yet to be the subject. The github driver splits the two the
+// same way, held by TestA404OnAResourceIsNotAVerdictAboutTheRepository.
 func (c *client) RemoveDeployKey(ctx context.Context, key repokey.Key, h forge.Handle) error {
 	seg, err := handleSegment(h)
 	if err != nil {
 		return err
 	}
-	return c.send(ctx, routeRemoveDeployKey.at(key.FullName(), seg), &key, nil, nil)
+	return c.send(ctx, routeRemoveDeployKey.at(key.FullName(), seg), nil, nil, nil)
 }
 
 // RegisterPushHook registers a webhook for pushes only.
@@ -533,12 +543,14 @@ func (c *client) RegisterPushHook(ctx context.Context, key repokey.Key, callback
 	return forge.Handle(strconv.FormatInt(registered.ID, 10)), nil
 }
 
+// RemovePushHook names no repository either, for the reason RemoveDeployKey
+// gives.
 func (c *client) RemovePushHook(ctx context.Context, key repokey.Key, h forge.Handle) error {
 	seg, err := handleSegment(h)
 	if err != nil {
 		return err
 	}
-	return c.send(ctx, routeRemovePushHook.at(key.FullName(), seg), &key, nil, nil)
+	return c.send(ctx, routeRemovePushHook.at(key.FullName(), seg), nil, nil, nil)
 }
 
 // handleSegment refuses an empty handle rather than filling a path's hole with

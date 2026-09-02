@@ -414,6 +414,39 @@ func TestNotFoundIsOnlyForARequestThatNamedARepository(t *testing.T) {
 	assert.NotErrorAs(t, err, &missing, "a missing namespace read as a missing repository")
 }
 
+// TestA404OnAResourceIsNotAVerdictAboutTheProject is the github driver's row of
+// the same name, which this driver did not have — and it failed: a 404 from
+// DELETE .../deploy_keys/7 came back as
+// `forge: <host> serves no repository "<host>/acme/pay"` about a project that
+// is plainly there, because both removals handed the key to the taxonomy.
+//
+// THE SPLIT IS ASSERTED IN BOTH DIRECTIONS, because the interesting half is not
+// that a removal is exempt but that a fetch is not. The two POSTs are on the
+// fetch side deliberately: installing under a project that 404s IS the project
+// being missing, since the resource does not exist yet to be the subject.
+func TestA404OnAResourceIsNotAVerdictAboutTheProject(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusNotFound, `{"message":"404 Not Found"}`))
+	callback, err := url.Parse("https://build.example.invalid/hook")
+	require.NoError(t, err)
+
+	var missing *forge.NotFoundError
+	for name, err := range map[string]error{
+		"removing a deploy key": c.RemoveDeployKey(context.Background(), key, "7"),
+		"removing a hook":       c.RemovePushHook(context.Background(), key, "7"),
+	} {
+		require.Error(t, err, name)
+		assert.NotErrorAsf(t, err, &missing,
+			"%s answered that the instance serves no repository %q, which is a project that is plainly there", name, key)
+	}
+
+	_, err = c.Repository(context.Background(), key)
+	require.ErrorAs(t, err, &missing, "a 404 on the project itself is the one thing this taxonomy member is for")
+	_, err = c.InstallDeployKey(context.Background(), key, "tau", "ssh-ed25519 AAAA")
+	require.ErrorAs(t, err, &missing, "installing under a project that is not there is that project not being there")
+	_, err = c.RegisterPushHook(context.Background(), key, callback, "wire")
+	require.ErrorAs(t, err, &missing)
+}
+
 // ─────────────────────────── the key round trip ───────────────────────────
 
 func TestRepositoryRefusesACloneURLItCannotBuildAKeyFrom(t *testing.T) {
@@ -521,11 +554,17 @@ func TestListStopsPagingEventually(t *testing.T) {
 // the instance root came out Owner "" Name "pay", which is a project no other
 // method of this driver would touch and a key nothing downstream could act on.
 //
-// The two entries it must not yield are the two ways an entry is unnameable —
-// a clone URL no key can be derived from, and a key this forge cannot
-// address — and the third is the one that must still arrive, because a
-// listing that skipped everything would pass a test that only counted
-// refusals.
+// The entries it must not yield are every way an entry is unnameable — a clone
+// URL no key can be derived from, and BOTH of the two things Addressable
+// refuses: a project at the instance root and a path segment of "-", which
+// GitLab reserves as a route separator. Both of the latter are here because the
+// filter must be Addressable itself and not a hand-rolled restatement of half
+// of it: with only the root-level entry, replacing the call with
+// `repo.Key.Owner == ""` passes this test and still yields acme/-/widget.
+// Measured — it did.
+//
+// The last entry is the one that must still arrive, because a listing that
+// skipped everything would pass a test that only counted refusals.
 func TestTheListingSkipsWhatThisDriverCouldNotActOn(t *testing.T) {
 	var root string
 	d, base := stub(t, func(w http.ResponseWriter, r *http.Request) {
@@ -533,8 +572,9 @@ func TestTheListingSkipsWhatThisDriverCouldNotActOn(t *testing.T) {
 		fmt.Fprintf(w, `[
 			{"path_with_namespace":"acme/broken","http_url_to_repo":"nonsense"},
 			{"path_with_namespace":"pay","http_url_to_repo":%q},
+			{"path_with_namespace":"acme/-/widget","http_url_to_repo":%q},
 			{"path_with_namespace":"acme/pay","http_url_to_repo":%q,"default_branch":"main"}
-		]`, root+"/pay.git", root+"/acme/pay.git")
+		]`, root+"/pay.git", root+"/acme/-/widget.git", root+"/acme/pay.git")
 	})
 	root = base
 	bound, err := d.Bind(forge.Token("stub-token"))
