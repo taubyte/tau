@@ -277,3 +277,32 @@ func TestACorruptRecordIsInternalOnEveryRead(t *testing.T) {
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(h.cancel(id)))
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(h.retry(id)))
 }
+
+// A row listed and then gone is a store that changed under the listing, not a
+// fault: a job read must not fail because somebody wrote beside it.
+func TestGetSkipsARowThatVanishedBetweenTheListingAndTheRead(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	sink := &attemptSink{s: h.Service, id: id, attempt: 1}
+	require.NoError(t, sink.Asset(t.Context(), "website/home", "cid-a"))
+	h.store.haunt(attemptAssetKey(id, 1, "gone"))
+
+	job, err := h.job(id)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"website/home": "cid-a"}, job.GetAssetCid())
+}
+
+// The record's push is a second entry, so it can fail on its own.
+func TestRetryReportsAPushThatFailsAfterTheRecordWasReopened(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+	require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusFailed, "x"))
+
+	d, err := h.work.Claim()
+	require.NoError(t, err)
+	require.NoError(t, h.work.Ack(d))
+
+	h.store.onBatch(func() { h.store.failBatches(errors.New("log is full")) })
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.retry(id)))
+}

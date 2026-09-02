@@ -288,3 +288,19 @@ func TestTheOnlyWritesAreBatchOps(t *testing.T) {
 
 	var _ []raft.BatchOp = []raft.BatchOp{set("a", nil), del("b")}
 }
+
+// The repair path's push is its own entry too.
+func TestTheRepairPushCanFailOnItsOwn(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	d, err := h.work.Claim()
+	require.NoError(t, err)
+	require.NoError(t, h.work.Ack(d))
+
+	h.store.failBatches(errors.New("log is full"))
+
+	_, err = enqueue(t, h, testRepo, testRef, testCommit)
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+}

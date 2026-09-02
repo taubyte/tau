@@ -143,3 +143,15 @@ func TestTheQueueAndItsDeadLetterAreNamedFromTheDomain(t *testing.T) {
 	require.Equal(t, "build/queue/dead", h.cfg.Queue.DeadLetter)
 	require.NotNil(t, h.dead)
 }
+
+// The transport's own knobs reach rpc.Listen without this package growing an
+// option per knob.
+func TestServerOptionsReachTheListener(t *testing.T) {
+	var configured bool
+	h := newHarness(t, WithServerOptions(rpc.WithHTTPServer(func(*http.Server) {
+		configured = true
+	})))
+
+	require.NoError(t, h.Start(t.Context()))
+	require.True(t, configured, "a ServerOption given to New must reach rpc.Listen")
+}

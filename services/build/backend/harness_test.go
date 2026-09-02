@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +31,29 @@ type fakeStore struct {
 	batchErr    error
 	barrierErr  error
 	beforeBatch func()
+	phantom     []string
+}
+
+// haunt makes Keys report a key that Get will not find — a row deleted between
+// a listing and the read of it, which is an ordinary interleaving on a store
+// several writers share.
+func (s *fakeStore) haunt(keys ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.phantom = append(s.phantom, keys...)
+}
+
+func (s *fakeStore) Keys(prefix string) []string {
+	keys := s.MockCluster.Keys(prefix)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, k := range s.phantom {
+		if strings.HasPrefix(k, prefix) {
+			keys = append(keys, k)
+		}
+	}
+	return keys
 }
 
 func newStore() *fakeStore {

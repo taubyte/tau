@@ -127,8 +127,15 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 
 // invoke runs the job with the claim's deadline over it and this node's cancel
 // registered, so Cancel can stop it in the same process that wrote the record.
+//
+// The bound is applied as a DURATION off this service's own clock, not as an
+// absolute deadline: context.WithDeadline compares against the wall clock, and
+// this service reads whatever clock it was given. In production they are the
+// same clock and the two forms are identical; anywhere they are not — a test
+// that moves time, a node whose clock is being stepped — the absolute form
+// would end a run the instant it started, or never.
 func (s *Service) invoke(ctx context.Context, deadline time.Time, work Work) (err error) {
-	runCtx, cancel := context.WithDeadline(ctx, deadline)
+	runCtx, cancel := context.WithTimeout(ctx, deadline.Sub(s.now()))
 	defer cancel()
 
 	s.runningMu.Lock()
