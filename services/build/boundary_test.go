@@ -148,21 +148,52 @@ func TestTheDialAdaptersImportNeitherRole(t *testing.T) {
 		"dialling auth needs auth's SCHEMA, never auth's service package and the store behind it")
 }
 
-// The public role's half of the same boundary. It is written now rather than
-// with the frontend so that the property is stated in one place for both
-// roles; until that package lands there is nothing to read, and the subtest
-// says so instead of passing quietly.
+// The public role's half of the same boundary, and the half that matters most:
+// this is the one process in build a stranger can reach.
 func TestThePublicRoleServesNoP2PRPC(t *testing.T) {
 	paths, ok := imports(t, "frontend")
-	if !ok {
-		t.Skip("services/build/frontend is not written yet; this check runs the day it is")
-	}
+	require.True(t, ok, "the frontend package must exist")
 
 	requireNoImport(t, paths, backendPkg,
 		"the public role must not import the private one: it would hold the queue's writer")
+	requireNoImport(t, paths, "github.com/taubyte/tau/p2p/rpc",
+		"the public role dials through the interfaces it declares; the pool that speaks p2p lives in clients")
+	requireNoImport(t, paths, "github.com/libp2p/go-libp2p/core/host",
+		"a host is what a p2p listener is mounted on, and this role has none")
+	requireNoImport(t, paths, "github.com/taubyte/tau/legacy",
+		"nothing new imports v1's frozen address space")
+	requireNoImport(t, paths, "github.com/taubyte/tau/services/patrick",
+		"v1 is a base to read, not a dependency")
+	requireNoImport(t, paths, "gopkg.in/go-playground/webhooks.v5",
+		"the library v1 verifies webhooks with is sha1-only and skips the MAC on an empty secret")
 
+	// The mechanical half of service-conventions.md §5a, in the direction the
+	// backend's test runs the other way: a listener added here without touching
+	// the descriptor is caught by the source, not by a convention.
 	for name, src := range sources(t, "frontend") {
 		require.NotContains(t, src, "rpc.Listen(",
 			"%s mounts a p2p listener on the public role; build.proto's header is explicit that it has none", name)
 	}
+
+	// And the positive half: IngressPublic means there IS an ingress.go, and it
+	// is the file a reviewer opens to see every route this cloud exposes.
+	require.Contains(t, sources(t, "frontend"), "ingress.go",
+		"the public role's routes and limits live in ingress.go, as they do in gateway's")
+}
+
+// The provider adapter is a package of its own so that go-github is imported in
+// exactly one place in this tree's build service, and so that a second provider
+// is a sibling package rather than a branch in a shared file.
+func TestTheProviderAdapterIsTheOnlyPlaceThatKnowsAProvider(t *testing.T) {
+	frontendImports, ok := imports(t, "frontend")
+	require.True(t, ok)
+	requireNoImport(t, frontendImports, "github.com/google/go-github",
+		"the frontend knows Identity, not a provider; githubauth is where a provider is known")
+
+	adapterImports, ok := imports(t, filepath.Join("frontend", "githubauth"))
+	require.True(t, ok, "the provider adapter must exist")
+	requireNoImport(t, adapterImports, backendPkg,
+		"the public role's own adapter must not reach the private role")
+	requireNoImport(t, adapterImports, "github.com/taubyte/tau/services/auth",
+		"restating auth's access rule is not importing auth")
 }
