@@ -2301,24 +2301,27 @@ var V2Resources = []*Node{
 				// here fired for every agent, so one that names no embedder compiled
 				// claiming a gigabyte of memory it does not have — a value that is
 				// misleading when the branch is not taken, which is the one thing §7
-				// says not to give a default to. `sessions.size` beside it is the same
-				// shape done right.
+				// says not to give a default to.
 				Bytes(Key("memory", "size"), RequiredWhen(Key("memory", "embedder", "name")), PerEnv(), InSection("memory"),
 					Doc("Memory Size", "How much the agent may remember, as a human string.")),
 
-				// SESSIONS. A conversation that outlives one invocation needs somewhere to
-				// live, and this vocabulary already has the shape: an `entity` is a
-				// single-writer, durably-stored compute instance addressed BY NAME, which
-				// is one instance per conversation and a fence around each. Declaring a
-				// ceiling is what turns it on, the way naming an embedder turns memory
-				// on: an agent with no sessions is stateless per call, which is what
-				// every agent here has been until now.
+				// NO `sessions` BLOCK. It was one field, a per-conversation byte
+				// ceiling, and its Doc said naming it "is what gives this agent
+				// sessions; without it every invocation starts cold" — so the field
+				// was the config deciding whether a conversation is kept, and where.
+				// That is ORCHESTRATION, and orchestration is the runtime's: what a
+				// thread is, where its turns live, when one ends and what survives it
+				// are decisions the loop makes while it runs, not shape a compiler can
+				// give a resource. Memory beside it is the contrast that makes the line
+				// visible: an embedder and a width are a vector index this vocabulary
+				// can BUILD, and a thread is not.
 				//
-				// A size and nothing else. Retention, compaction and what a turn keeps
-				// are the loop's business at run time, and a field for any of them would
-				// be a promise nothing in this vocabulary performs.
-				Bytes(Key("sessions", "size"), InSection("sessions"),
-					Doc("Session Size", "How much one conversation may keep, as a human string (e.g. \"64MB\"). Naming it is what gives this agent sessions; without it every invocation starts cold.")),
+				// So it went the way `notification.email` did, and for the same reason
+				// rather than a related one: nothing here performed it. It comes back
+				// the day the runtime says it reads a ceiling off the compiled agent —
+				// as `limits.sessions`, beside the other ceilings the loop is handed,
+				// and PerEnv() like every other ceiling, which this one was refused
+				// only because it doubled as a switch.
 
 				// REQUIRED, and it bounds DECISIONS. It is not a spend ceiling and no
 				// longer claims to be one: every turn re-sends the conversation, so what
@@ -2354,7 +2357,6 @@ var V2Resources = []*Node{
 			secIdentity, secAccess, secConfig, secNetwork, secLimits, secSource,
 			Section("model", "Model", "Which model answers, and what it is told."),
 			Section("memory", "Memory", "What it remembers, and how wide the vectors are."),
-			Section("sessions", "Sessions", "What one conversation keeps between invocations."),
 			Ops(WriteOp("invoke")),
 
 			// AN AGENT LOWERS, like a workflow: nothing in the substrate runs "agents".
@@ -2379,25 +2381,6 @@ var V2Resources = []*Node{
 					Sets(Key("execution", "timeout"), Attr(Key("limits", "timeout"))),
 					Sets(Key("execution", "memory"), Attr(Key("limits", "memory"))),
 					Sets("implements", Text("handler")),
-				),
-
-				// ONE CONVERSATION, KEPT. Only when a ceiling says so: an agent with no
-				// sessions gets no instance rather than an empty one. The entity is a
-				// class and the runtime addresses an instance of it per conversation,
-				// which is what "addressed by name" already means — so a thread is a
-				// name, and the single writer per name is the fence around it.
-				Into("entity",
-					When(Key("sessions", "size")),
-					Named(Concat(Attr("name"), Text("_sessions"))),
-					Carries(Concat(Text("one conversation with "), Attr("name"), Text(", kept between invocations"))),
-					Sets(Key("source", "builtin"), Text("agent")),
-					Sets(Key("execution", "call"), Text("session")),
-					Sets(Key("execution", "timeout"), Text("5m")),
-					Sets(Key("execution", "memory"), Text("64MB")),
-					Sets(Key("size"), Attr(Key("sessions", "size"))),
-					// the loop is what reads and writes it
-					Reaches("get", From("function", Concat(Attr("name"), Text("_infer")))),
-					Reaches("call", From("function", Concat(Attr("name"), Text("_infer")))),
 				),
 
 				// Only when there is an embedder to fill it: an agent that remembers

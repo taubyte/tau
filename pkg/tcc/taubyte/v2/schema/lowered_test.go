@@ -661,11 +661,11 @@ func TestADriverCanFindTheStepItCameFrom(t *testing.T) {
 // vocabulary cannot say it. A HANDOFF transfers control — the target owns the final
 // response, and the platform re-binds the conversation's future turns to it. That is a
 // capability boundary a target can grant or refuse separately from `invoke`, not a
-// calling convention, and what blocks it is that nothing here can say where the
-// conversation LIVES after a transfer: sessions are one entity per agent, so a handoff
-// either re-binds the thread to the target and starts it cold or copies context into
-// it. Shipping the verb before deciding that is how the market got "handoffs lose
-// context".
+// calling convention, and what blocks it is that a transfer has to say what becomes of
+// the thread, and this vocabulary says nothing about a thread at all — where a
+// conversation lives is the runtime's, so a handoff verb here would name a transfer
+// of something the config cannot see. Shipping it before deciding that is how the
+// market got "handoffs lose context".
 //
 // A kind that lowers becomes a CONTAINER, and its after shape was given every resource
 // group there is — including its own. So inside `agent/triage` the key `agent:` was two
@@ -785,17 +785,23 @@ func TestAnAgentCanUseAnMcpServer(t *testing.T) {
 	assert.ErrorContains(t, err, "subscribe")
 }
 
-// A CONVERSATION THAT OUTLIVES ONE INVOCATION. Vector memory is not conversation state —
-// one is what the agent recalls, the other is where a thread's turns live — and an agent
-// had nowhere to keep the second. It needs no new kind: an `entity` is a single-writer,
-// durably-stored compute instance addressed BY NAME, which is one instance per
-// conversation and a fence around each.
-func TestAnAgentWithSessionsGetsAnEntity(t *testing.T) {
+// AN AGENT DECLARES NO CONVERSATION STATE, and this is the pin that keeps `sessions:`
+// from coming back as a field somebody adds because the word is missing. It was one
+// ceiling that doubled as a switch — writing it turned session storage on — so the
+// config was deciding whether a thread is kept and where it lives, which is
+// orchestration and belongs to the runtime.
+//
+// ASSERTED AS A REJECTION rather than as an absent attribute, because a compile is what
+// an author meets: Strict() answers `unknown key 'sessions'` on the document, which is
+// also what proves nothing quietly drops it. And the count of what an agent BECOMES is
+// asserted whole — two produced resources, the loop and the vector — so a third arriving
+// is a line in a diff rather than a resource nobody ordered.
+func TestAnAgentDeclaresNoConversationState(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/agent/chat.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zy\n"+
-			"description: an agent that remembers the conversation\n"+
+			"description: an agent that would keep the conversation\n"+
 			"model:\n    name: opus\n"+
 			"instructions: help.md\n"+
 			"sessions:\n    size: 64MB\n"+
@@ -803,35 +809,23 @@ func TestAnAgentWithSessionsGetsAnEntity(t *testing.T) {
 
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
-	obj, _, err := c.Compile(context.Background())
-	assert.NilError(t, err)
-	flat := obj.Flat()
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "unknown key 'sessions'")
 
-	// the ceiling is carried onto the kind that enforces it, as a byte count like any
-	// other — not as the string it was written as
-	sessions := resource(t, flat, "entity", "chat_sessions")
-	assert.Equal(t, sessions["size"], int64(64000000))
-	assert.Equal(t, nested(sessions, "source", "builtin"), "agent")
-
-	// and the loop is what reads and writes it
-	loop := resource(t, flat, "function", "chat_infer")
-	entities, _ := loop["entity"].(map[string]any)
-	entry, _ := entities["chat_sessions"].(map[string]any)
-	assert.Assert(t, entry != nil, "the loop cannot reach the sessions it was given: %v", loop["entity"])
-	ops, _ := entry["ops"].([]string)
-	sort.Strings(ops)
-	assert.DeepEqual(t, ops, []string{"call", "get"})
-
-	// AN AGENT WITHOUT THE CEILING GETS NO INSTANCE, rather than an empty one — the same
-	// rule the vector already follows for an agent that names no embedder.
-	assert.NilError(t, afero.WriteFile(fs, "/agent/stateless.yaml", []byte(
-		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zz\n"+
-			"model:\n    name: opus\n"+
-			"limits:\n    steps: 2\n"), 0o644))
+	// WHAT THE FIXTURE'S AGENT BECOMES, whole. `agent/support` names an embedder and a
+	// width, so it lowers into its loop and its vector index and nothing else.
+	assert.NilError(t, fs.Remove("/agent/chat.yaml"))
 	c, err = schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
-	obj, _, err = c.Compile(context.Background())
+	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
-	assert.Assert(t, !hasResource(obj.Flat(), "entity", "stateless_sessions"),
-		"an agent that declared no sessions was given one anyway")
+
+	var became []string
+	for _, d := range schema.LoweringPlan(obj.Flat()) {
+		if strings.HasPrefix(d.Of, "agent/") {
+			became = append(became, d.Kind+"/"+d.Name)
+		}
+	}
+	sort.Strings(became)
+	assert.DeepEqual(t, became, []string{"database/support_memory", "function/support_infer"})
 }

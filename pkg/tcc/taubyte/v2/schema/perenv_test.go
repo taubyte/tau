@@ -30,10 +30,8 @@ import (
 //   - CONTRACTS — a cron's `schedule` (and `schedule_preview: "0 0 30 2 *"` is the
 //     off-switch somebody would write instead of asking for one), a stream's `match`,
 //     a route's `path`, a workflow's `start` and `on_error`, a zone's `records`.
-//   - SHAPES — `database/vector/dimensions` and an agent's `memory/dimensions`: an index built
-//     at another width is not the same index. `agent/sessions/size`, because whether it
-//     is written decides whether the lowering produces an entity at all — that is
-//     topology, not sizing.
+//   - SHAPES — `database/vector/dimensions` and an agent's `memory/dimensions`: an index
+//     built at another width is not the same index.
 //   - RETRY POLICY — `max_attempts`, `retry/*`, a step's `attempts` and `backoff`. How
 //     many times a thing is tried before it is given up on is the same promise in
 //     every environment.
