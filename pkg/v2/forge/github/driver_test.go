@@ -279,6 +279,38 @@ func TestARepositoryWhoseCloneURLNamesNothingIsRefused(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestARepositoryOnAnotherHostIsRefused. The gitlab driver refuses a clone URL
+// on a host other than the one it answers for and calls it not hypothetical —
+// an instance behind a proxy told the wrong external URL emits exactly that.
+// The consequence here is sharper than a misfiled key: HTTPS is the address a
+// builder clones with a credential, so a forge that gets to name it gets to
+// name where that credential is spent, and 169.254.169.254 is a URL like any
+// other.
+func TestARepositoryOnAnotherHostIsRefused(t *testing.T) {
+	for _, elsewhere := range []string{
+		"https://evil.example/acme/pay.git",
+		"http://169.254.169.254/acme/pay.git",
+		"http://127.0.0.1:9/acme/pay.git",
+	} {
+		t.Run(elsewhere, func(t *testing.T) {
+			body := `{"full_name":"acme/pay","clone_url":"` + elsewhere + `",
+				"ssh_url":"ssh://git@evil.example/acme/pay.git",
+				"default_branch":"main","permissions":{"pull":true}}`
+			sess, key := sessionOn(t, answer(http.StatusOK, body), "acme/pay")
+
+			repo, err := sess.Repository(ctx(), key)
+			t.Logf("Repository = %+v, err = %v", repo, err)
+			if err != nil {
+				return
+			}
+			assert.Equal(t, key.Host, repo.Key.Host,
+				"a repository this deployment asked %s about came back keyed to %q", key.Host, repo.Key.Host)
+			assert.True(t, strings.Contains(repo.HTTPS, key.Host),
+				"HTTPS clone address %q is not on the host that was asked", repo.HTTPS)
+		})
+	}
+}
+
 func TestWhoamiRefusesACredentialBelongingToNobody(t *testing.T) {
 	sess, _ := sessionOn(t, answer(http.StatusOK, `{"id":7}`), "acme/pay")
 	_, err := sess.Whoami(ctx())

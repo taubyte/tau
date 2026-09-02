@@ -241,9 +241,22 @@ func (p permissions) access() forge.Access {
 // repository turns GitHub's answer into forge's, deriving the key from the
 // CLONE URL the forge returned rather than echoing the argument. That is what
 // makes a rename, a redirect or a case-folding disagreement visible instead of
-// silently absorbed: GitHub answers a request for a renamed repository with the
-// repository at its new name, and a caller that echoed its own argument would
-// never know.
+// silently absorbed: a caller that echoed its own argument would never know.
+//
+// A CLONE URL ON ANOTHER HOST IS REFUSED, and the gitlab driver refuses the same
+// thing for the same reason — it calls it not hypothetical, because an instance
+// behind a proxy that was told the wrong external URL emits exactly that. Two
+// things go wrong when it is accepted. The key derived from it files the
+// repository under a host this deployment has no driver for, which is a
+// repository nothing can ever act on again; and HTTPS below is the address a
+// builder clones with a credential, so a host that gets to name it gets to name
+// where that credential is spent — 169.254.169.254 included.
+//
+// The SSH URL is passed through unchecked, deliberately and for the reason the
+// gitlab driver states: a forge may legitimately serve SSH on another name or
+// port, which is a good clone address and a different repokey key. Nothing
+// clones it with a bearer credential, so it is a fact reported rather than a
+// place a secret goes.
 func (c *client) repository(r repoJSON) (forge.Repository, error) {
 	if len(r.CloneURL) > maxHostString {
 		return forge.Repository{}, fmt.Errorf("forge/github: %q came back with an implausibly long clone URL", short(r.FullName))
@@ -251,6 +264,9 @@ func (c *client) repository(r repoJSON) (forge.Repository, error) {
 	key, err := repokey.Parse(r.CloneURL)
 	if err != nil {
 		return forge.Repository{}, fmt.Errorf("forge/github: the clone URL of %q is not one this layer can name: %w", short(r.FullName), err)
+	}
+	if key.Host != c.d.host {
+		return forge.Repository{}, fmt.Errorf("forge/github: %s answered with a clone URL on host %q; a key derived from it would name a repository on a host this deployment has no driver for, and the address would be one a clone spends a credential at", c.d.host, short(key.Host))
 	}
 	return forge.Repository{
 		Key:           key,
