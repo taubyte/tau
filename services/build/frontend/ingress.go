@@ -45,10 +45,16 @@ func (s *Service) mount() http.Handler {
 
 	// The four a GitHub-token holder reaches. Each authorizes on the resource
 	// before it acts (authz.go); a denial is a 404.
-	mux.HandleFunc("GET /jobs/{projectId}", s.handleListJobs)
-	mux.HandleFunc("GET /job/{jid}", s.handleGetJob)
-	mux.HandleFunc("POST /cancel/{jid}", s.handleCancelJob)
-	mux.HandleFunc("POST /retry/{jid}", s.handleRetryJob)
+	//
+	// EVERY ONE OF THEM GOES THROUGH admitted(), and none of them could be
+	// mounted here without it: a job handler is a jobHandler and not an
+	// http.HandlerFunc, so the mux does not take one until admitted() has
+	// wrapped it in the rate limits and the bounded path read (jobapi.go). A
+	// fifth job route is admitted the day it compiles.
+	mux.HandleFunc("GET /jobs/{projectId}", s.admitted("projectId", s.handleListJobs))
+	mux.HandleFunc("GET /job/{jid}", s.admitted("jid", s.handleGetJob))
+	mux.HandleFunc("POST /cancel/{jid}", s.admitted("jid", s.handleCancelJob))
+	mux.HandleFunc("POST /retry/{jid}", s.admitted("jid", s.handleRetryJob))
 
 	// No /ping. v1 has one, unauthenticated, and a liveness endpoint is a
 	// decision about what this process will tell the internet about itself

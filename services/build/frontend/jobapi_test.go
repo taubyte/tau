@@ -259,6 +259,39 @@ func TestNoJobRouteSpendsTheCloudOnceForEveryRequest(t *testing.T) {
 	}
 }
 
+// Retry is the one route that CREATES WORK — it queues a build — so it is the
+// one where a cap that was skipped costs more than a read. A tenant holding
+// write access to one of their own repositories must not be able to ask for
+// builds as fast as it can open connections.
+func TestRetryIsUnderTheSameCapsAsEveryOtherJobRoute(t *testing.T) {
+	const flood = 1000
+
+	h := newHarness(t, Config{})
+	queued := 0
+	h.backend.retry = func(string) error { queued++; return nil }
+
+	limited := 0
+	for range flood {
+		if h.do(t, authed(http.MethodPost, "/retry/"+testJobID, testToken)).Code == http.StatusTooManyRequests {
+			limited++
+		}
+	}
+
+	require.Less(t, queued, flood, "a tenant queued one build per request")
+	require.Positive(t, limited, "nothing was ever refused")
+}
+
+// admitted() is the only thing in this package that turns a job route's handler
+// into one the mux will take, and these four lines are that guarantee restated
+// where a reader looks for it rather than only where it is enforced: the day one
+// of them can be mounted directly, this file stops compiling.
+var _ = []jobHandler{
+	(&Service{}).handleGetJob,
+	(&Service{}).handleListJobs,
+	(&Service{}).handleCancelJob,
+	(&Service{}).handleRetryJob,
+}
+
 // The per-caller limiter is keyed by a string the stranger chooses, so a fresh
 // bearer token buys a fresh bucket. Only the unkeyable one can stop that — the
 // same sentence ratelimit.go makes about invented hook ids, on the surface

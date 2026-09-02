@@ -45,15 +45,9 @@ import (
 var jobJSON = protojson.MarshalOptions{UseProtoNames: true}
 
 // handleGetJob is GET /job/{jid}.
-func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request) {
+func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
-
-	token, jobID, err := s.credentials(r, "jid")
-	if err != nil {
-		respond(w, err)
-		return
-	}
 
 	job, err := s.mayTouchJob(ctx, token, jobID)
 	if err != nil {
@@ -79,8 +73,8 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request) {
 // and up to a minute of polling for a claim record, which it needs because in
 // v1 the job record and the running job live in different services. In v2 they
 // do not, so this is one call.
-func (s *Service) handleCancelJob(w http.ResponseWriter, r *http.Request) {
-	s.mutate(w, r, s.backend.Cancel, http.StatusNoContent)
+func (s *Service) handleCancelJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
+	s.mutate(w, r, token, jobID, s.backend.Cancel, http.StatusNoContent)
 }
 
 // handleRetryJob is POST /retry/{jid}.
@@ -91,22 +85,16 @@ func (s *Service) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 // {"retry": jid} — so "retry" on a running job was a lie the caller could not
 // detect. The backend answers that case with a FailedPrecondition, which
 // arrives here as a 409.
-func (s *Service) handleRetryJob(w http.ResponseWriter, r *http.Request) {
-	s.mutate(w, r, s.backend.Retry, http.StatusAccepted)
+func (s *Service) handleRetryJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
+	s.mutate(w, r, token, jobID, s.backend.Retry, http.StatusAccepted)
 }
 
 // mutate is cancel and retry: authorize on the job, then act on it. The two
 // differ by one function and one status code, and writing them twice would be
 // two places for the authorization to be forgotten in.
-func (s *Service) mutate(w http.ResponseWriter, r *http.Request, act func(context.Context, string) error, status int) {
+func (s *Service) mutate(w http.ResponseWriter, r *http.Request, token, jobID string, act func(context.Context, string) error, status int) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
-
-	token, jobID, err := s.credentials(r, "jid")
-	if err != nil {
-		respond(w, err)
-		return
-	}
 
 	if _, err := s.mayTouchJob(ctx, token, jobID); err != nil {
 		respond(w, err)
@@ -130,15 +118,9 @@ func (s *Service) mutate(w http.ResponseWriter, r *http.Request, act func(contex
 // which is inherent to streaming and is handled honestly below rather than
 // hidden: the array is left unterminated, so a caller's json decoder reports a
 // truncated document instead of silently accepting a short list as complete.
-func (s *Service) handleListJobs(w http.ResponseWriter, r *http.Request) {
+func (s *Service) handleListJobs(w http.ResponseWriter, r *http.Request, token, projectID string) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
-
-	token, projectID, err := s.credentials(r, "projectId")
-	if err != nil {
-		respond(w, err)
-		return
-	}
 
 	if err := s.mayTouchProject(ctx, token, projectID); err != nil {
 		respond(w, err)
@@ -146,7 +128,7 @@ func (s *Service) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sent := 0
-	err = s.backend.List(ctx, projectID, func(jobID string) error {
+	err := s.backend.List(ctx, projectID, func(jobID string) error {
 		if sent == 0 {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -177,6 +159,40 @@ func (s *Service) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("]"))
 }
 
+// jobHandler is what a job route's handler is, and THE TWO EXTRA PARAMETERS ARE
+// THE POINT. A job handler is given the credential and the path value rather
+// than reading them, so there is no version of one that fetches them itself and
+// skips what reading them costs. It is not an http.HandlerFunc and the mux will
+// not take it.
+type jobHandler func(w http.ResponseWriter, r *http.Request, token, id string)
+
+// admitted turns a jobHandler into a handler the mux WILL take, and it is the
+// only thing in this package that does.
+//
+// THAT IS THE GUARANTEE, and it is a compile-time one rather than a habit.
+// Every one of the four routes below reaches the cloud, and every one of those
+// reaches costs something before the caller has proven anything — so the check
+// that bounds it must not be a line each handler remembers. Retry is the route that proves why
+// the difference matters: it QUEUES A BUILD, so a copy of this function's three
+// lines missing from it is not a slow read, it is a stranger's tenant asking
+// this cloud for containers as fast as it can open connections. Written as a
+// habit it was missing; written as a type it cannot be.
+//
+// It also puts the path value's name beside the pattern that declares it
+// (ingress.go), so "{jid}" and "jid" are read together instead of a segment
+// apart, and a route whose two spellings disagree is visible where it is
+// mounted.
+func (s *Service) admitted(name string, handle jobHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, id, err := s.credentials(r, name)
+		if err != nil {
+			respond(w, err)
+			return
+		}
+		handle(w, r, token, id)
+	}
+}
+
 // credentials reads the bearer, reads one bounded path value, and admits the
 // request — IN THAT ORDER, and the order is the whole of it.
 //
@@ -191,11 +207,10 @@ func (s *Service) handleListJobs(w http.ResponseWriter, r *http.Request) {
 // the per-caller bucket lives in a map keyed by a string a stranger chooses, so
 // the unkeyable limit has to be what gates the insert.
 //
-// IT IS ONE FUNCTION BECAUSE IT IS ONE DOOR. A job route reaches nothing
-// without a token and an id, and this is the only place either comes from, so a
-// route added later cannot ask the cloud for anything without passing through
-// the admission it also carries. That is the difference between a check every
-// handler remembers and a check no handler can forget.
+// IT IS ONE FUNCTION BECAUSE IT IS ONE DOOR, and admitted() above is what makes
+// it the only one: a job route reaches nothing without a token and an id, this
+// is the only place either comes from, and the mux takes nothing that has not
+// been through it.
 func (s *Service) credentials(r *http.Request, name string) (token, id string, err error) {
 	if token, err = bearer(r); err != nil {
 		return "", "", err
