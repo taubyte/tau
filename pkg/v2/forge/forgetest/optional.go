@@ -24,10 +24,10 @@ func (r *runner) list(t tb) {
 	}
 
 	var seen []forge.Repository
-	require.NoError(t, r.note(sess.ListRepositories(r.ctx, func(repo forge.Repository) bool {
+	mustReach(t, r.note(sess.ListRepositories(r.ctx, func(repo forge.Repository) bool {
 		seen = append(seen, repo)
 		return true
-	})))
+	})), "listing the repositories every question below is about")
 	require.NotEmpty(t, seen, "the listing yielded nothing, and Writable is reachable by this credential")
 
 	found := false
@@ -41,10 +41,11 @@ func (r *runner) list(t tb) {
 
 	// Returning false stops the iteration, and stopping is not an error.
 	calls := 0
-	require.NoError(t, r.note(sess.ListRepositories(r.ctx, func(forge.Repository) bool {
+	mustReach(t, r.note(sess.ListRepositories(r.ctx, func(forge.Repository) bool {
 		calls++
 		return false
-	})))
+	})), "listing again, to find out whether a false from yield stops it")
+
 	assert.Equal(t, 1, calls, "yield returned false and the listing kept going")
 
 	r.s.Break()
@@ -64,7 +65,7 @@ func (r *runner) create(t tb) {
 	}
 
 	repo, err := sess.Create(r.ctx, r.s.Creatable, opts)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "creating the repository whose record is checked below")
 	// The key INCLUDING ITS NAMESPACE is what was asked for. A forge that can
 	// only create under the authenticated account must refuse a namespaced key,
 	// not create the repository somewhere else.
@@ -90,13 +91,14 @@ func (r *runner) delete(t tb) {
 	// is a real rung and this is the method that consumes it.
 	writable := r.session(t, r.s.Writable)
 	lvl, err := writable.Access(r.ctx, r.s.Writable)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "reading what this credential holds on the writable fixture, which decides whether a delete without admin can be asked about")
 	if !lvl.CanAdmin() {
 		assert.Error(t, r.note(writable.Delete(r.ctx, r.s.Writable)),
 			"deleted a repository this credential holds only %s on", lvl)
 	}
 
-	require.NoError(t, r.note(sess.Delete(r.ctx, r.s.Deletable)))
+	assert.NoError(t, r.note(sess.Delete(r.ctx, r.s.Deletable)),
+		"deleting a repository this credential holds admin on failed")
 	_, err = sess.Repository(r.ctx, r.s.Deletable)
 	assert.Error(t, r.note(err), "the repository is still there after a successful delete")
 }
@@ -113,7 +115,7 @@ func (r *runner) deployKeys(t tb) {
 	}
 
 	h, err := sess.InstallDeployKey(r.ctx, r.s.Admin, "forgetest", pub)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "installing the deploy key the questions below are about")
 	require.NotEmpty(t, h, "an empty handle is a key nothing can ever remove")
 	assert.True(t, r.s.DeployKeyInstalled(h), "the handle names no key on the forge")
 
@@ -125,7 +127,8 @@ func (r *runner) deployKeys(t tb) {
 	assert.Error(t, r.note(sess.RemoveDeployKey(r.ctx, r.s.Admin, "forgetest-no-such-handle")),
 		"removing a key that is not there succeeded")
 
-	require.NoError(t, r.note(sess.RemoveDeployKey(r.ctx, r.s.Admin, h)))
+	assert.NoError(t, r.note(sess.RemoveDeployKey(r.ctx, r.s.Admin, h)),
+		"removing the deploy key this driver just installed failed; the handle it answered with names nothing the forge will remove")
 	assert.False(t, r.s.DeployKeyInstalled(h), "the key is still installed after a successful removal")
 }
 
@@ -139,12 +142,12 @@ func (r *runner) cloneAddress(t tb) {
 	}
 
 	https, err := sess.CloneAddress(r.s.Writable, forge.HTTPS)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "asking for the HTTPS clone address a builder would be handed")
 	assert.NotEmpty(t, https.HTTPUsername, "no HTTP username; a token needs an account to be presented as")
 	r.assertAddress(t, https.URL, r.s.Writable, "HTTPS")
 
 	ssh, err := sess.CloneAddress(r.s.Writable, forge.SSH)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "asking for the SSH clone address a builder would be handed")
 	assert.NotEmpty(t, ssh.SSHAccount, "no SSH account; the account before the '@' is a host fact")
 	r.assertAddress(t, ssh.URL, r.s.Writable, "SSH")
 }
@@ -156,7 +159,7 @@ func (r *runner) cloneAddress(t tb) {
 func (r *runner) assertAddress(t tb, spelling string, want repokey.Key, label string) {
 	t.Helper()
 	got, err := repokey.Parse(spelling)
-	if !assert.NoError(t, err, "%s clone address %q does not parse to a key", label, spelling) {
+	if !assert.NoError(t, err, "the %s clone address handed to a builder, %q, does not parse to a key; repokey refuses a URL carrying a credential, so a token spliced into a remote arrives here", label, spelling) {
 		return
 	}
 	assert.Equal(t, want, got,
@@ -174,11 +177,11 @@ func (r *runner) pushProbe(t tb) {
 	}
 
 	ok, err := sess.CanPush(r.ctx, r.s.Admin, r.s.PushKey)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "probing the admin fixture with the git credential that may push")
 	assert.True(t, ok, "a credential that may push read as one that may not")
 
 	ok, err = sess.CanPush(r.ctx, r.s.Admin, r.s.NoPushKey)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "probing the admin fixture with the git credential that may not push")
 	assert.False(t, ok, "a credential that may not push read as one that may")
 
 	missing := r.session(t, r.s.Missing)
@@ -190,28 +193,28 @@ func (r *runner) membership(t tb) {
 	t.Helper()
 	if !r.s.Expect.Has(forge.CapMembership) {
 		ok, err := r.s.Registry.IsActiveMember(r.ctx, r.s.Host, "acme", "someone")
-		assert.False(t, ok)
+		assert.False(t, ok) // held by forge: TestAMembershipQuestionNobodyCanAnswerIsNeverANo
 		r.absent(t, forge.CapMembership, err)
 		return
 	}
 
 	ok, err := r.s.Registry.IsActiveMember(r.ctx, r.s.Host, r.s.Namespace, r.s.Member)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "asking whether the member fixture is a member of %q", r.s.Namespace)
 	assert.True(t, ok, "a member of %q read as a non-member", r.s.Namespace)
 
 	// (false, nil) is the ONLY definitive non-member, and everything else is an
 	// error: a 403 means the app was blocked, which is an operator problem and
 	// not a verdict on the user.
 	ok, err = r.s.Registry.IsActiveMember(r.ctx, r.s.Host, r.s.Namespace, r.s.NonMember)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "asking whether the non-member fixture is a member of %q", r.s.Namespace)
 	assert.False(t, ok, "a non-member of %q read as a member", r.s.Namespace)
 
 	// A host with no driver cannot answer, and "could not ask" must not arrive
 	// as "they are not a member".
 	ok, err = r.s.Registry.IsActiveMember(r.ctx, foreignHost, r.s.Namespace, r.s.Member)
 	var nd *forge.NoDriverError
-	assert.ErrorAs(t, r.note(err), &nd)
-	assert.False(t, ok)
+	assert.ErrorAs(t, r.note(err), &nd) // held by forge: TestAMembershipQuestionNobodyCanAnswerIsNeverANo
+	assert.False(t, ok)                 // held by forge: TestAMembershipQuestionNobodyCanAnswerIsNeverANo
 }
 
 // pushHooks is the suite's other centrepiece: the whole registration-to-delivery
@@ -221,7 +224,7 @@ func (r *runner) pushHooks(t tb) {
 	sess := r.session(t, r.s.Admin)
 	callback := httpsURL(t, "https://build.example.invalid/hooks/forgetest")
 	secret, err := forge.NewSecret()
-	require.NoError(t, err)
+	mustReach(t, err, "minting the secret the hook this whole round trip is about is keyed with")
 
 	if !r.s.Expect.Has(forge.CapPushHooks) || !r.s.Expect.Has(forge.CapSignatures) {
 		_, err := sess.RegisterPushHook(r.ctx, r.s.Admin, callback, secret)
@@ -245,25 +248,29 @@ func (r *runner) pushHooks(t tb) {
 	}
 
 	hook, err := sess.RegisterPushHook(r.ctx, r.s.Admin, callback, secret)
-	require.NoError(t, r.note(err))
-	require.NotEmpty(t, hook.Handle, "an empty handle is a hook nothing can ever remove")
-	assert.Equal(t, r.s.Admin, hook.Key)
-	assert.Equal(t, r.scheme(t), hook.Scheme, "the hook was stamped with a scheme the driver does not register under")
-	assert.True(t, hook.Secret.Equal(secret), "the hook came back with a different secret than it was given")
-	assert.True(t, r.s.HookInstalled(hook.Handle))
+	mustReach(t, r.note(err), "registering the hook every delivery below is signed for")
+	// Key, scheme, secret and a non-empty handle are stamped by forge.Session
+	// itself, from the argument and from the driver's own Scheme(), so there is
+	// nothing here a driver contributes and nothing a fault could change.
+	require.NotEmpty(t, hook.Handle, "an empty handle is a hook nothing can ever remove") // held by forge: TestRegisterPushHookRefusesEveryUnsafeRegistration
+	assert.Equal(t, r.s.Admin, hook.Key)                                                  // held by forge: TestAHookIsStampedWithWhatItWasAskedFor
+	assert.Equal(t, r.scheme(t), hook.Scheme)                                             // held by forge: TestAHookIsStampedWithWhatItWasAskedFor
+	assert.True(t, hook.Secret.Equal(secret))                                             // held by forge: TestAHookIsStampedWithWhatItWasAskedFor
+	assert.True(t, r.s.HookInstalled(hook.Handle), "the handle names no hook on the forge")
 
 	// The forge must hold EXACTLY the wire string the scheme derives. A driver
 	// that re-encodes it registers a hook cleanly and then rejects every
 	// delivery it ever receives.
 	wantWire, err := hook.Scheme.Wire(secret)
-	require.NoError(t, err)
+	mustReach(t, err, "deriving the wire form the forge should have been handed")
 	assert.Equal(t, wantWire, r.s.LastHookWire(), "the forge was given a wire secret the verifier will not key its MAC with")
 
 	r.deliveries(t, hook)
 
 	assert.Error(t, r.note(sess.RemovePushHook(r.ctx, r.s.Admin, "forgetest-no-such-handle")),
 		"removing a hook that is not there succeeded")
-	require.NoError(t, r.note(sess.RemovePushHook(r.ctx, r.s.Admin, hook.Handle)))
+	assert.NoError(t, r.note(sess.RemovePushHook(r.ctx, r.s.Admin, hook.Handle)),
+		"removing the hook this driver just registered failed; the handle it answered with names nothing the forge will remove")
 	assert.False(t, r.s.HookInstalled(hook.Handle), "the hook is still registered after a successful removal")
 }
 
@@ -275,17 +282,20 @@ func (r *runner) deliveries(t tb, hook forge.Hook) {
 	const ref = "refs/heads/main"
 
 	good, err := r.s.Delivery(hook, ref, commitA)
-	require.NoError(t, err, "the subject could not build a signed delivery")
+	mustReach(t, err, "building the correctly signed delivery the round trip is about")
 
 	push, err := r.s.Registry.VerifyPush(hook, good)
 	require.NoError(t, r.note(err), "a correctly signed delivery was rejected")
-	assert.Equal(t, forge.Push{Key: hook.Key, Ref: ref, Commit: commitA}, push)
+	// Ref and Commit are the DRIVER'S reading of the payload — the one thing it
+	// contributes to a verified delivery — so this is not a stamping check.
+	assert.Equal(t, forge.Push{Key: hook.Key, Ref: ref, Commit: commitA}, push,
+		"the driver read a push the payload does not describe")
 
 	reject := func(name string, h forge.Hook, d forge.Delivery) {
 		t.Helper()
 		got, err := r.s.Registry.VerifyPush(h, d)
-		assert.Error(t, r.note(err), "%s was accepted", name)
-		assert.Equal(t, forge.Push{}, got, "%s produced a Push beside its error", name)
+		assert.Error(t, r.note(err), "%s was accepted", name)                           // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
+		assert.Equal(t, forge.Push{}, got, "%s produced a Push beside its error", name) // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
 	}
 
 	if hook.Scheme.BindsBody() {
@@ -300,7 +310,7 @@ func (r *runner) deliveries(t tb, hook forge.Hook) {
 		forge.Delivery{Header: truncateValues(good.Header), Body: good.Body})
 
 	other, err := forge.NewSecret()
-	require.NoError(t, err)
+	mustReach(t, err, "minting a second secret, to sign under one this hook was not registered with")
 	underOther := hook
 	underOther.Secret = other
 	reject("a signature under a different secret", underOther, good)
@@ -315,25 +325,28 @@ func (r *runner) deliveries(t tb, hook forge.Hook) {
 
 	// THE HOOK MAY ONLY SPEAK FOR ITS OWN REPOSITORY.
 	deputy, err := r.s.DeliveryFor(hook, r.s.ReadOnly, ref, commitA)
-	require.NoError(t, err)
+	mustReach(t, err, "building a perfectly signed delivery that speaks for another repository")
 	got, err := r.s.Registry.VerifyPush(hook, deputy)
 	var ve *forge.VerificationError
-	if assert.ErrorAs(t, r.note(err), &ve, "a perfectly signed delivery naming another repository was accepted") {
-		assert.Contains(t, ve.Reason, "claims repository")
+	// The comparison is the core's, between the hook's key and the claim the
+	// driver read. A driver has no way to make this one pass: it never sees the
+	// hook.
+	if assert.ErrorAs(t, r.note(err), &ve, "a perfectly signed delivery naming another repository was accepted") { // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
+		assert.Contains(t, ve.Reason, "claims repository") // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
 	}
-	assert.Equal(t, forge.Push{}, got)
+	assert.Equal(t, forge.Push{}, got) // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
 
 	// A ref deletion is a legitimate delivery with nothing to build, and it has
 	// its own error so a receiver answers 200 and drops it.
 	deleted, err := r.s.Delivery(hook, ref, deletedOID)
-	require.NoError(t, err)
+	mustReach(t, err, "building the delivery that reports a ref deletion")
 	_, err = r.s.Registry.VerifyPush(hook, deleted)
-	assert.ErrorIs(t, r.note(err), forge.ErrRefDeleted, "a ref deletion must be distinguishable from a failure")
+	assert.ErrorIs(t, r.note(err), forge.ErrRefDeleted, "a ref deletion must be distinguishable from a failure") // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
 
 	nonPush, err := r.s.NonPushDelivery(hook)
-	require.NoError(t, err)
+	mustReach(t, err, "building a correctly signed delivery that is not a push at all")
 	_, err = r.s.Registry.VerifyPush(hook, nonPush)
-	assert.ErrorIs(t, r.note(err), forge.ErrNotAPush)
+	assert.ErrorIs(t, r.note(err), forge.ErrNotAPush) // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
 
 	// The body cap is enforced before any MAC is computed, so it is asserted on
 	// a registry of the suite's own with a tight one — everything else about
@@ -343,18 +356,18 @@ func (r *runner) deliveries(t tb, hook forge.Hook) {
 		AllowUnboundSchemes:   true,
 		AllowInsecureCallback: true,
 	}, forge.Binding{Host: r.s.Host, Driver: r.driver})
-	require.NoError(t, err)
+	mustReach(t, err, "building a registry whose only tight setting is the delivery body cap")
 	oversize, err := tight.VerifyPush(hook, good)
-	assert.Error(t, r.note(err), "a body over the cap was hashed anyway")
-	assert.Equal(t, forge.Push{}, oversize)
+	assert.Error(t, r.note(err), "a body over the cap was hashed anyway") // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
+	assert.Equal(t, forge.Push{}, oversize)                               // held by forge: TestVerifyPushRefusesEveryWayADeliveryCanBeWrong
 
 	if hook.Scheme == forge.SchemeStandardWebhooks {
 		stale, err := r.s.DeliveryAt(hook, ref, commitA, time.Now().Add(-time.Hour))
-		require.NoError(t, err)
+		mustReach(t, err, "dating a delivery an hour into the past")
 		reject("a delivery signed an hour ago", hook, stale)
 
 		future, err := r.s.DeliveryAt(hook, ref, commitA, time.Now().Add(time.Hour))
-		require.NoError(t, err)
+		mustReach(t, err, "dating a delivery an hour into the future")
 		reject("a delivery signed an hour from now", hook, future)
 	}
 }

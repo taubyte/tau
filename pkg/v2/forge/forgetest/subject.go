@@ -38,9 +38,19 @@
 // forge being reachable, because nothing here reaches one: a Subject is
 // supplied by the driver's own tests, over httptest or over memory.
 //
-// The suite is itself tested. pkg/v2/forge/fake can be told to be wrong in
-// named ways, and this package's tests assert that each one fails the suite —
-// which is the only way to know that an assertion asserts.
+// The suite is itself tested, and then the test is tested. pkg/v2/forge/fake can
+// be told to be wrong in named ways, and this package's tests assert that each
+// one fails the suite — which is the only way to know that an assertion asserts.
+//
+// AND THE OTHER WAY ROUND, which is the direction the defects kept arriving
+// from: every assertion here must have a FAULT BEHIND IT. An assertion nothing
+// can make fire is decoration, it reads exactly like a check, and three
+// separate rounds added one or deleted a live one with every test still green.
+// So the suite's own assertions are a population the ledger walks, and each one
+// is a claim needing a fault, a STEP that is on its way to a claim, or a value
+// this package does not produce at all — with the test in pkg/v2/forge that
+// holds it named on the line. See ledger_test.go, and plumbing.go for the
+// spelling that tells a step from a claim.
 //
 // MEASURE IT WITH -coverpkg. Plain -cover counts only the statements a
 // package's OWN tests reach, and the two packages a conformance suite is made

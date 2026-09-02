@@ -97,7 +97,7 @@ func (r *runner) preflight(t tb) {
 		t.Fatalf("forgetest: Subject.Expect is the exact capability set and cannot be nil")
 	}
 	if s.Requests == nil || s.Break == nil || s.Unbreak == nil {
-		t.Fatalf("forgetest: Subject needs Requests, Break and Unbreak; without them 'refused before the wire' and 'an outage is not a refusal' are unassertable")
+		t.Fatalf("forgetest: Subject needs Requests, Break and Unbreak; without them a depth refused before any request, and an outage that is not a refusal, are both unassertable")
 	}
 	if s.RedirectOnce == nil {
 		t.Fatalf("forgetest: Subject needs RedirectOnce; without it where a request WENT is unobservable, since a fixture only ever sees the requests that arrived at it")
@@ -176,7 +176,7 @@ func (r *runner) scheme(t tb) forge.Scheme {
 func (r *runner) session(t tb, k repokey.Key) *forge.Session {
 	t.Helper()
 	sess, err := r.s.Registry.For(k, r.s.Credential)
-	require.NoError(t, err, "binding a session for %q", k)
+	mustReach(t, err, "binding a session for %q, which every question below is asked through", k)
 	return sess
 }
 
@@ -187,10 +187,16 @@ func (r *runner) session(t tb, k repokey.Key) *forge.Session {
 // resolve to.
 func (r *runner) hostSpelling(t tb) {
 	t.Helper()
+	// forge.New runs exactly this parse over every binding's host and refuses
+	// the deployment at startup when it does not round-trip, and refuses a
+	// binding whose host disagrees with its driver's own. A Subject that got as
+	// far as running holds a Registry that survived both, so nothing a driver
+	// does can reach these — they are here because a driver author reading the
+	// suite should see the rule, not because the suite can catch it.
 	k, err := repokey.Parse("https://" + r.s.Host + "/owner/name")
-	require.NoError(t, err, "Host() %q is not something a clone URL can be built from", r.s.Host)
-	assert.Equal(t, r.s.Host, k.Host, "Host() is not the spelling repokey derives from a clone URL to it")
-	assert.Equal(t, r.s.Host, r.driver.Host(), "the driver's own Host() disagrees with the Subject")
+	require.NoError(t, err, "Host() %q is not something a clone URL can be built from", r.s.Host) // held by forge: TestNewRefusesADeploymentThatIsWrong
+	assert.Equal(t, r.s.Host, k.Host)                                                             // held by forge: TestNewRefusesADeploymentThatIsWrong
+	assert.Equal(t, r.s.Host, r.driver.Host())                                                    // held by forge: TestNewRefusesADeploymentThatIsWrong
 }
 
 // addressableDepth is the anti-GitHub assertion: a forge that takes exactly one
@@ -198,65 +204,77 @@ func (r *runner) hostSpelling(t tb) {
 // join the segments into a name no repository has.
 func (r *runner) addressableDepth(t tb) {
 	t.Helper()
-	require.NoError(t, r.driver.Addressable(r.s.Writable), "the driver cannot address its own Writable fixture")
+	mustReach(t, r.driver.Addressable(r.s.Writable), "addressing the writable fixture, which the whole suite is run against")
 
 	r.s.Requests()
 	sess, err := r.s.Registry.For(r.s.Deep, r.s.Credential)
 	if !r.s.DeepNests {
 		var ua *forge.UnaddressableError
 		require.ErrorAs(t, r.note(err), &ua, "a forge that does not nest must refuse %q", r.s.Deep)
-		assert.Equal(t, r.s.Deep, ua.Key)
+		assert.Equal(t, r.s.Deep, ua.Key) // held by forge: TestAnUnaddressableKeyIsNamedByTheRefusal
 		assert.Empty(t, r.s.Requests(), "the depth was refused only after a request went out; it must be refused before the wire")
 		return
 	}
 
 	require.NoError(t, err, "a nesting forge must address %q", r.s.Deep)
 	lvl, err := sess.Access(r.ctx, r.s.Deep)
-	require.NoError(t, r.note(err))
-	assert.Equal(t, forge.AccessAdmin, lvl, "Deep must be AccessAdmin so the round trip can run on it")
+	mustReach(t, r.note(err), "reading the grant on the nested fixture")
+	mustHold(t, lvl == forge.AccessAdmin, "a nested fixture this credential holds admin on, which is what the round trip below needs; %q reads as %s", r.s.Deep, lvl)
 
 	repo, err := sess.Repository(r.ctx, r.s.Deep)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "reading the record of the nested fixture")
 	r.assertRepository(t, repo, r.s.Deep)
 }
 
 func (r *runner) foreignKey(t tb) {
 	t.Helper()
 	foreign, err := repokey.Parse("https://" + foreignHost + "/someone/thing")
-	require.NoError(t, err)
+	mustReach(t, err, "parsing a key on a host no driver is bound to")
 
 	var nd *forge.NoDriverError
 	_, err = r.s.Registry.For(foreign, r.s.Credential)
-	require.ErrorAs(t, r.note(err), &nd, "a host with no driver must be *NoDriverError and never a default")
-	assert.Equal(t, foreignHost, nd.Host)
+	require.ErrorAs(t, r.note(err), &nd, "a host with no driver must be *NoDriverError and never a default") // held by forge: TestRegistryResolvesOnlyWhatItWasGiven
+	assert.Equal(t, foreignHost, nd.Host)                                                                    // held by forge: TestRegistryResolvesOnlyWhatItWasGiven
 
 	// And a session already bound cannot be walked onto another host's key.
 	sess := r.session(t, r.s.Writable)
 	var wh *forge.WrongHostError
 	_, err = sess.Access(r.ctx, foreign)
-	require.ErrorAs(t, r.note(err), &wh, "a session must refuse a key on another host")
+	require.ErrorAs(t, r.note(err), &wh, "a session must refuse a key on another host") // held by forge: TestASessionRefusesAKeyItWasNotBoundFor
 }
 
 func (r *runner) zeroCredential(t tb) {
 	t.Helper()
+	// Both of these are refused by forge.Registry before the driver's Bind is
+	// reached, so the DRIVER'S OWN half of the contract — Driver.Bind must
+	// refuse a zero Credential with ErrNoCredential — has no route through a
+	// Session at all. It is asked directly, and it is the one assertion here a
+	// driver can fail.
+	require.ErrorIs(t, r.note(second(r.driver.Bind(forge.Credential{}))), forge.ErrNoCredential,
+		"Driver.Bind built a client for a credential nobody filled in")
+
 	_, err := r.s.Registry.For(r.s.Writable, forge.Credential{})
-	require.ErrorIs(t, r.note(err), forge.ErrNoCredential, "a zero credential must never degrade into anonymity")
+	require.ErrorIs(t, r.note(err), forge.ErrNoCredential, "a zero credential must never degrade into anonymity") // held by forge: TestAZeroCredentialIsRefusedBeforeAnyDriverSeesIt
 	_, err = r.s.Registry.Host(r.s.Host, forge.Credential{})
-	require.ErrorIs(t, r.note(err), forge.ErrNoCredential)
+	require.ErrorIs(t, r.note(err), forge.ErrNoCredential) // held by forge: TestAZeroCredentialIsRefusedBeforeAnyDriverSeesIt
 }
 
 func (r *runner) anonymous(t tb) {
 	t.Helper()
+	// Anonymous() reaches the driver's Bind, and that is the half a driver can
+	// get wrong: refusing it at the door turns "read a public repository with no
+	// credential" into an error nobody can act on. Everything after it is
+	// forge.Session's guard, which runs before any driver code.
 	sess, err := r.s.Registry.For(r.s.Writable, forge.Anonymous())
 	require.NoError(t, err, "Anonymous() must bind; it is refused at the question, not at the door")
-	assert.True(t, sess.IsAnonymous())
+	assert.True(t, sess.IsAnonymous()) // held by forge: TestAnAnonymousSessionAnswersNoAuthorizationQuestion
 
 	lvl, err := sess.Access(r.ctx, r.s.Writable)
-	require.ErrorIs(t, r.note(err), forge.ErrAnonymous)
-	assert.Equal(t, forge.AccessNone, lvl, "a refused authorization question must still read as no access")
+	require.ErrorIs(t, r.note(err), forge.ErrAnonymous)                                                     // held by forge: TestAnAnonymousSessionAnswersNoAuthorizationQuestion
+	assert.Equal(t, forge.AccessNone, lvl, "a refused authorization question must still read as no access") // held by forge: TestAnAnonymousSessionAnswersNoAuthorizationQuestion
 
 	_, err = sess.Whoami(r.ctx)
-	require.ErrorIs(t, r.note(err), forge.ErrAnonymous)
+	require.ErrorIs(t, r.note(err), forge.ErrAnonymous) // held by forge: TestAnAnonymousSessionAnswersNoAuthorizationQuestion
 }
 
 // capabilities compares the COMPUTED set to the declared one for equality, not
@@ -271,7 +289,7 @@ func (r *runner) capabilities(t tb) {
 		"capabilities = %q, want %q", got.String(), r.s.Expect.String())
 
 	require.NoError(t, sess.Require(forge.CapIdentity, forge.CapAccess, forge.CapRepository),
-		"the three mandatory capabilities are not optional")
+		"the three mandatory capabilities are not optional") // held by forge: TestTheThreeMandatoryCapabilitiesAreNotOptional
 	for _, c := range allCapabilities {
 		err := sess.Require(c)
 		if r.s.Expect.Has(c) {
@@ -280,8 +298,8 @@ func (r *runner) capabilities(t tb) {
 		}
 		var un *forge.UnsupportedError
 		if assert.ErrorAs(t, r.note(err), &un, "Require(%s) must refuse a capability the session lacks", c) {
-			assert.Equal(t, c, un.Capability)
-			assert.Equal(t, r.s.Host, un.Host)
+			assert.Equal(t, c, un.Capability)  // held by forge: TestARefusalNamesTheHostAsWellAsTheQuestion
+			assert.Equal(t, r.s.Host, un.Host) // held by forge: TestARefusalNamesTheHostAsWellAsTheQuestion
 		}
 	}
 }
@@ -296,11 +314,11 @@ func (r *runner) whoami(t tb) {
 	t.Helper()
 	sess := r.session(t, r.s.Writable)
 	who, err := sess.Whoami(r.ctx)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "asking who this credential is")
 	assert.NotEmpty(t, who.Login, "Whoami answered with no login; it is the only honest token check there is")
 
 	bad, err := r.s.Registry.For(r.s.Writable, r.s.BadCredential)
-	require.NoError(t, err)
+	mustReach(t, err, "binding a session for the credential this forge refuses")
 	who, err = bad.Whoami(r.ctx)
 	require.Error(t, r.note(err), "a refused credential must be an error and never a zero Identity with a nil error")
 	assert.Equal(t, forge.Identity{}, who, "a failed call returned a value beside its error")
@@ -313,14 +331,14 @@ func (r *runner) access(t tb) {
 	sess := r.session(t, r.s.Writable)
 
 	lvl, err := sess.Access(r.ctx, r.s.Writable)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "reading what this credential holds on the repository it may write")
 	assert.True(t, lvl.CanWrite(), "Writable read as %s", lvl)
 
 	// VISIBILITY IS NOT PERMISSION.
 	lvl, err = sess.Access(r.ctx, r.s.ReadOnly)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "reading what this credential holds on the repository it may only see")
 	assert.Equal(t, forge.AccessRead, lvl, "a readable repository with no grant read as %s", lvl)
-	assert.False(t, lvl.CanWrite())
+	assert.False(t, lvl.CanWrite(), "CanWrite() said yes about a grant that is exactly read")
 
 	// A repository that exists and grants nothing: either answer is honest, and
 	// a zero Access with a nil error and no such repository is not.
@@ -342,22 +360,22 @@ func (r *runner) access(t tb) {
 	// A refused credential is a statement about the credential, not a verdict
 	// on the repository.
 	bad, err := r.s.Registry.For(r.s.Writable, r.s.BadCredential)
-	require.NoError(t, err)
+	mustReach(t, err, "binding a session for the refused credential, to ask it an authorization question")
 	lvl, err = bad.Access(r.ctx, r.s.Writable)
 	require.Error(t, r.note(err), "a refused credential must not read as AccessNone")
-	assert.Equal(t, forge.AccessNone, lvl)
+	assert.Equal(t, forge.AccessNone, lvl, "a refused credential answered a level a caller could act on")
 }
 
 func (r *runner) repository(t tb) {
 	t.Helper()
 	sess := r.session(t, r.s.Writable)
 	repo, err := sess.Repository(r.ctx, r.s.Writable)
-	require.NoError(t, r.note(err))
+	mustReach(t, r.note(err), "reading the record the round trip below is about")
 	r.assertRepository(t, repo, r.s.Writable)
 
 	repo, err = sess.Repository(r.ctx, r.s.Missing)
 	var nf *forge.NotFoundError
-	require.ErrorAs(t, r.note(err), &nf)
+	require.ErrorAs(t, r.note(err), &nf, "a repository that does not exist was described anyway")
 	assert.Equal(t, forge.Repository{}, repo, "a failed Repository returned a value beside its error")
 }
 
@@ -378,7 +396,7 @@ func (r *runner) derivedKey(t tb) {
 	sess := r.session(t, r.s.Moved)
 
 	repo, err := sess.Repository(r.ctx, r.s.Moved)
-	require.NoError(t, r.note(err), "the forge answers for %q, which is now %q", r.s.Moved, r.s.MovedTo)
+	mustReach(t, r.note(err), "reading the repository the forge still answers for under %q, its old name", r.s.Moved)
 	assert.Equal(t, r.s.MovedTo, repo.Key,
 		"Repository answered with the key it was ASKED about, %q; the key must be derived from the clone address the forge returned, which names %q",
 		r.s.Moved, r.s.MovedTo)
@@ -460,7 +478,7 @@ func (r *runner) redirectOffHost(t tb) {
 
 	t.Run("nothing-arrived-at-the-other-host", func(t tb) {
 		for _, got := range d.seen() {
-			t.Errorf("a request went to %q, which is not the host this credential is for: %s %s", d.host(), got.Method, got.URL)
+			t.Errorf("a request arrived at %q, which is not the host this credential is for: %s %s", d.host(), got.Method, got.URL)
 			// EVERY header, not the Authorization one. Go strips Authorization on a
 			// cross-host redirect and strips nothing else, so a forge whose header
 			// is PRIVATE-TOKEN or X-Token hands the credential over where GitHub's
@@ -548,7 +566,7 @@ func (r *runner) everyOperation(t tb) []operation {
 	if r.s.Expect.Has(forge.CapPushHooks) {
 		if r.s.Expect.Has(forge.CapSignatures) {
 			secret, err := forge.NewSecret()
-			require.NoError(t, err)
+			mustReach(t, err, "minting the secret the hook the decoy probe registers is keyed with")
 			callback := httpsURL(t, "https://build.example.invalid/hooks/forgetest")
 			ops = append(ops, operation{"register-push-hook", func() error {
 				return second(admin.RegisterPushHook(r.ctx, r.s.Admin, callback, secret))
@@ -820,11 +838,9 @@ func (r *runner) assertRepository(t tb, repo forge.Repository, want repokey.Key)
 	assert.Equal(t, want, repo.Key, "the forge and the caller disagree about which repository this is")
 	assert.NotEmpty(t, repo.DefaultBranch, "no default branch; a builder has nothing to check out")
 	for label, spelling := range map[string]string{"HTTPS": repo.HTTPS, "SSH": repo.SSH} {
-		if !assert.NotEmpty(t, spelling, "%s clone address is empty", label) {
-			continue
-		}
+		mustHold(t, spelling != "", "reading the %s clone address out of the record for %q", label, repo.Key)
 		got, err := repokey.Parse(spelling)
-		if !assert.NoError(t, err, "%s clone address %q does not parse to a key", label, spelling) {
+		if !assert.NoError(t, err, "the %s clone address in the record, %q, does not parse to a key; repokey refuses a URL carrying a credential, so a token spliced into a record arrives here", label, spelling) {
 			continue
 		}
 		assert.Equal(t, repo.Key, got,
@@ -845,20 +861,24 @@ func (r *runner) outage(t tb) {
 
 	lvl, err := sess.Access(r.ctx, r.s.Writable)
 	require.Error(t, r.note(err), "an unreachable forge answered the authorization question")
-	assert.Equal(t, forge.AccessNone, lvl)
+	assert.Equal(t, forge.AccessNone, lvl, "an unreachable forge answered a level a caller could act on")
 	var nf *forge.NotFoundError
 	assert.False(t, errors.As(err, &nf), "an outage must not read as 'no such repository'")
 
+	// assert and not require for the three below: they are independent
+	// questions, a driver that answers one from a cache is likely to answer all
+	// of them, and a short circuit at the first would leave the other two
+	// unasked by the very subject that proves them.
 	_, err = sess.Whoami(r.ctx)
-	require.Error(t, r.note(err), "an unreachable forge answered Whoami")
+	assert.Error(t, r.note(err), "an unreachable forge answered Whoami")
 
 	_, err = sess.Repository(r.ctx, r.s.Writable)
-	require.Error(t, r.note(err), "an unreachable forge answered Repository")
+	assert.Error(t, r.note(err), "an unreachable forge answered Repository")
 
 	if r.s.Expect.Has(forge.CapMembership) {
 		ok, err := r.s.Registry.IsActiveMember(r.ctx, r.s.Host, r.s.Namespace, r.s.Member)
-		require.Error(t, r.note(err), "an unreachable forge answered a membership question")
-		assert.False(t, ok)
+		assert.Error(t, r.note(err), "an unreachable forge answered a membership question")
+		assert.False(t, ok, "an unreachable forge answered a membership a caller could act on")
 	}
 }
 
@@ -879,9 +899,9 @@ func (r *runner) credentialNeverTravels(t tb) {
 
 	for _, err := range r.errs {
 		msg := err.Error()
-		assert.NotContains(t, msg, r.s.Token, "the credential is in an error string: %s", msg)
+		assert.NotContains(t, msg, r.s.Token, "the live credential is in an error string: %s", msg)
 		if r.s.BadToken != "" {
-			assert.NotContains(t, msg, r.s.BadToken, "the credential is in an error string: %s", msg)
+			assert.NotContains(t, msg, r.s.BadToken, "the refused credential is in an error string: %s", msg)
 		}
 	}
 }
@@ -895,12 +915,11 @@ func (r *runner) assertRequestsStayHome(t tb, reqs []Request) {
 	t.Helper()
 	for _, req := range reqs {
 		u, err := url.Parse(req.URL)
-		if !assert.NoError(t, err, "recorded request URL %q does not parse", req.URL) {
-			continue
-		}
+		mustReach(t, err, "parsing the request URL %q the subject reported", req.URL)
+
 		assert.NotContains(t, req.URL, r.s.Token, "the credential is in a request URL")
 		assert.NotContains(t, u.RawQuery, r.s.Token, "the credential is in a query parameter")
-		assert.Equal(t, r.s.Host, u.Host, "a request went to %q, which is not the host this credential is for", u.Host)
+		assert.Equal(t, r.s.Host, u.Host, "a recorded request went to %q, which is not the host this credential is for", u.Host)
 	}
 }
 
@@ -914,14 +933,14 @@ func (r *runner) absent(t tb, c forge.Capability, err error) {
 	t.Helper()
 	var un *forge.UnsupportedError
 	if assert.ErrorAs(t, r.note(err), &un, "%s is not declared, so it must be *UnsupportedError and never a zero value", c) {
-		assert.Equal(t, c, un.Capability, "the refusal names the wrong capability")
-		assert.Equal(t, r.s.Host, un.Host)
+		assert.Equal(t, c, un.Capability, "the refusal names the wrong capability") // held by forge: TestARefusalNamesTheHostAsWellAsTheQuestion
+		assert.Equal(t, r.s.Host, un.Host)                                          // held by forge: TestARefusalNamesTheHostAsWellAsTheQuestion
 	}
 }
 
 func httpsURL(t tb, s string) *url.URL {
 	t.Helper()
 	u, err := url.Parse(s)
-	require.NoError(t, err)
+	mustReach(t, err, "parsing %q, the callback a hook is registered with", s)
 	return u
 }
