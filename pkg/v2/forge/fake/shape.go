@@ -436,6 +436,21 @@ const (
 	// branch nobody pushed.
 	FaultPushReadsTheBaseRef Fault = "push-reads-the-base-ref"
 
+	// FaultPushReadsTheCommitItMovedFrom reads the wrong commit out of a
+	// verified payload: the object the ref moved FROM rather than the one it
+	// moved to. It is the same class of mistake as reading the base ref, and it
+	// has a second victim — a ref DELETION is spelled as an after of all
+	// zeroes, so a driver reading before instead reports an ordinary push of
+	// the last commit that was there, and tau builds a branch that no longer
+	// exists.
+	FaultPushReadsTheCommitItMovedFrom Fault = "push-reads-the-commit-it-moved-from"
+
+	// FaultAnyDeliveryReadsAsAPush ignores what KIND of event arrived and reads
+	// every delivery as a push. A forge sends pings, tag creations and
+	// membership changes down the same hook; a driver that does not look turns
+	// each of them into a build of whatever the payload happens to leave empty.
+	FaultAnyDeliveryReadsAsAPush Fault = "any-delivery-reads-as-a-push"
+
 	// FaultSignsWithAnotherScheme names one scheme and signs with another,
 	// which is the one webhook mistake this design leaves a driver room to
 	// make: the core owns verification, but the driver owns the claim about

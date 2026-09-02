@@ -504,7 +504,7 @@ func (d dSig) Scheme() forge.Scheme { return d.c.shape.Scheme }
 // Push reads a payload the core has ALREADY verified — the parameter type is
 // the proof — and returns what it CLAIMS. It never decides anything.
 func (d dSig) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
-	if header.Get("X-Fake-Event") != "push" {
+	if header.Get("X-Fake-Event") != "push" && !d.c.shape.faulty(FaultAnyDeliveryReadsAsAPush) {
 		return forge.PushClaim{}, forge.ErrNotAPush
 	}
 	var p payload
@@ -527,7 +527,13 @@ func (d dSig) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim
 		// delivery is genuine and so is the signature; the build is not.
 		ref = p.BaseRef
 	}
-	return forge.PushClaim{Repository: k, Ref: ref, Commit: p.After}, nil
+	commit := p.After
+	if d.c.shape.faulty(FaultPushReadsTheCommitItMovedFrom) {
+		// The object the ref moved FROM. A deletion, whose after is all
+		// zeroes, therefore stops looking like one.
+		commit = p.Before
+	}
+	return forge.PushClaim{Repository: k, Ref: ref, Commit: commit}, nil
 }
 
 type dMem struct{ c *core }
@@ -597,7 +603,11 @@ type payload struct {
 	// one puts right beside the ref that actually moved. It is here so that
 	// reading the wrong one is a fault a driver can have.
 	BaseRef string `json:"base_ref"`
-	After   string `json:"after"`
+	// Before is the object the ref moved from, which every forge carrying an
+	// after carries beside it. Same reason as BaseRef: reading the wrong one is
+	// a mistake a driver can make, so the payload has to offer it.
+	Before string `json:"before"`
+	After  string `json:"after"`
 }
 
 // ─────────────────────────── deliveries ───────────────────────────
@@ -650,6 +660,7 @@ func (f *Forge) deliver(h forge.Hook, names repokey.Key, ref, commit string, at 
 	p.Repository.FullName = names.FullName()
 	p.Ref = ref
 	p.BaseRef = "refs/heads/somewhere-else"
+	p.Before = "9e8d7c6b5a4938271605f4e3d2c1b0a998877665"
 	p.After = commit
 	body, err := json.Marshal(p)
 	if err != nil {
