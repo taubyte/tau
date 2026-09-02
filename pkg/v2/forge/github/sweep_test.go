@@ -1139,6 +1139,18 @@ func decodedSegments(t *testing.T, path string) []string {
 // "../../attacker" with a query and a fragment the driver never wrote — and
 // note that it arrives with the SAME NUMBER OF SEGMENTS, which is why counting
 // separators is not enough and was not enough.
+//
+// AND THE VERDICT IS UNIVERSAL, WHICH IT WAS NOT. It used to be one `held`
+// boolean ORed over every URL an operation composed, so a URL that walked was
+// EXCUSED BY A CORRECTLY-ESCAPED URL BESIDE IT. Measured: making the ssh half of
+// CloneAddress escape the key TWICE — the exact hazard escapedSegments' own
+// comment warns about — while the https half stayed right was GO_TEST_EXIT=0 on
+// both drivers. An existential check cannot express a universal property.
+//
+// So the verdict is per-URL. Every URL the hostile run composed that DIFFERS
+// from what the benign run composed IN THE SAME POSITION must hold the string
+// itself: a URL the string did not change is a URL it is not in, and one it did
+// change is one it has to be found in.
 func TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment(t *testing.T) {
 	for _, slot := range sweepSlots() {
 		t.Run(slot.name, func(t *testing.T) {
@@ -1165,8 +1177,8 @@ func TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment(t *testing
 					require.LessOrEqualf(t, len(urls), len(benign),
 						"%s composed more URLs for a hostile %s than for a benign one", op.name, slot.name)
 
-					held := false
-					for _, u := range urls {
+					changed := []composedURL{}
+					for i, u := range urls {
 						// A REQUEST STILL NAMES ONLY WHAT ITS ROUTE DECLARES.
 						// That is "the string opened nothing of its own" said
 						// against the driver's own routing rather than against a
@@ -1185,34 +1197,36 @@ func TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment(t *testing
 							}
 						}
 
+						// A URL THE HOSTILE STRING DID NOT CHANGE IS A URL IT
+						// IS NOT IN. Create's first request reads who the
+						// credential is and names no repository; the mint in the
+						// middle of the membership walk names only an id the
+						// forge chose. Those are not this row's business, and
+						// pairing by position is what tells them from a URL the
+						// string reached.
+						if i < len(benign) && u.String() == benign[i].String() {
+							continue
+						}
+						changed = append(changed, u)
+
 						// WHERE THE STRING HAS TO BE FOUND: inside one path
 						// segment, or as one whole query value. CONTAINS rather
 						// than EQUALS for the segment, because a clone address
 						// appends ".git" to the last one — which is the one
 						// thing this driver adds to a name after escaping it,
 						// and adding it before would have been the bug.
-						for _, segment := range decodedSegments(t, u.path) {
-							if strings.Contains(segment, slot.value) {
-								held = true
-							}
-						}
-						for _, values := range parsedQuery(t, u.query) {
-							if slices.Contains(values, slot.value) {
-								held = true
-							}
-						}
+						assert.Truef(t, holdsTheString(t, u, slot.value),
+							"%s composed %v out of a hostile %s and it does not hold the string as one path segment or one whole query value, so the string was truncated, re-encoded, or spread across segments",
+							op.name, u, slot.name)
 					}
 
-					if slices.EqualFunc(benign, urls, func(a, b composedURL) bool { return a.String() == b.String() }) {
+					if len(changed) == 0 {
 						// This slot does not reach this operation's URLs, so
 						// there is nothing here for it to have escaped. Some
 						// operation must reach it, and that is asserted below.
 						return
 					}
 					reached = append(reached, op.name)
-					assert.Truef(t, held,
-						"%s changed what it composed for a hostile %s and nothing it composed holds it as one path segment or one query value, so the string was truncated, re-encoded, or spread across segments: %v",
-						op.name, slot.name, urls)
 				})
 			}
 
@@ -1221,4 +1235,23 @@ func TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment(t *testing
 			t.Logf("%s reaches %v", slot.name, reached)
 		})
 	}
+}
+
+// holdsTheString is one composed URL carrying the value WHOLE: inside one path
+// segment, or as one whole query value. It is the needle the sweep above is
+// written against, lifted out of the loop so the verdict can be per-URL rather
+// than per-operation.
+func holdsTheString(t *testing.T, u composedURL, value string) bool {
+	t.Helper()
+	for _, segment := range decodedSegments(t, u.path) {
+		if strings.Contains(segment, value) {
+			return true
+		}
+	}
+	for _, values := range parsedQuery(t, u.query) {
+		if slices.Contains(values, value) {
+			return true
+		}
+	}
+	return false
 }
