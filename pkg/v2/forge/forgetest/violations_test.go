@@ -1,6 +1,8 @@
 package forgetest
 
 import (
+	"go/ast"
+	"go/types"
 	"strings"
 	"testing"
 
@@ -94,6 +96,108 @@ func (r *runner) ledgerFaultOrphan(t tb) {
 }
 `)
 	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
+}
+
+// THE FOUR SHAPES THE WALK WENT ROUND, each as real source in this very
+// package, each an assertion no proof can name.
+//
+// They are violations of the ORPHAN rule and not of a rule of their own,
+// because that is what they are: once the walk reaches them they are ordinary
+// claims about the subject with no fault behind them, and the rule that has
+// always said so says so. Each was measured living in the shared suite with
+// this file's census unchanged and the tree at exit 0.
+
+// violateOrphanInATopLevelLiteral: a function literal is a function literal
+// wherever it is bound, and the walk knew two of the places a name can be bound.
+func violateOrphanInATopLevelLiteral(t *testing.T) *ledger {
+	src := suiteSource(t).with(t, "ledger_fault_orphan_in_a_literal.go", `package forgetest
+
+import "github.com/stretchr/testify/assert"
+
+var ledgerFaultOrphanInALiteral = func(t tb, r *runner) {
+	assert.NotEmpty(t, r.s.Host, "a claim in a top-level function literal that no fault in this suite can kill")
+}
+`)
+	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
+}
+
+// violateOrphanInAMarker: a marker is any function that asks for a step, so a
+// step parameter used to exempt everything written beside it.
+func violateOrphanInAMarker(t *testing.T) *ledger {
+	src := suiteSource(t).with(t, "ledger_fault_orphan_in_a_marker.go", `package forgetest
+
+import "github.com/stretchr/testify/assert"
+
+func ledgerFaultOrphanInAMarker(t tb, r *runner, question step) {
+	mustHold(t, r.s.Host != "", question)
+	assert.NotEmpty(t, r.s.Token, "a claim written inside a marker that no fault in this suite can kill")
+}
+`)
+	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
+}
+
+// violateOrphanThroughAMethodValue: the reporter is never handed over, the
+// METHOD that fails through it is. Nothing about the callee's signature says it
+// can fail a test; everything about the call site does. It is the one violation
+// that cannot be written inside this package — a body here is walked, and the
+// evasion evaporates before the rule can be shown it — so the helper it calls
+// lives in forgetest/outside and nothing else uses it.
+func violateOrphanThroughAMethodValue(t *testing.T) *ledger {
+	src := suiteSource(t).with(t, "ledger_fault_orphan_through_a_method_value.go", `package forgetest
+
+import "github.com/taubyte/tau/pkg/v2/forge/forgetest/outside"
+
+func (r *runner) ledgerFaultOrphanThroughAMethodValue(t tb) {
+	outside.Check(t.Errorf, r.s.Host != "", "a claim reached through a method value that no fault in this suite can kill")
+}
+`)
+	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
+}
+
+// violateOrphanThroughAName: the exemption moved from an import alias to a
+// one-line var, and got cheaper to type than the alias had been.
+func violateOrphanThroughAName(t *testing.T) *ledger {
+	src := suiteSource(t).with(t, "ledger_fault_orphan_through_a_name.go", `package forgetest
+
+import "github.com/stretchr/testify/assert"
+
+var ledgerFaultTruthy = assert.NotEmpty
+
+func (r *runner) ledgerFaultOrphanThroughAName(t tb) {
+	ledgerFaultTruthy(t, r.s.Host, "a claim reached through a func-typed name that no fault in this suite can kill")
+}
+`)
+	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
+}
+
+// violateUnwalkedBody is the real coverage computation over the real source
+// with one ROOT taken away, which is what the walk losing a way in looks like.
+// No source this package can be handed produces an unwalked body while the walk
+// is what it is — that is the point of the third clause — and an unwalked body
+// is precisely the state in which an assertion is not exempt, not counted and
+// not anywhere.
+func violateUnwalkedBody(t *testing.T) *ledger {
+	l := theLedger(t)
+	full := l.src.walk()
+	if len(full.order) == 0 {
+		t.Fatalf("the suite holds no body at all, so the walk cannot be shown one it misses")
+	}
+	short := &walk{byObj: map[types.Object]*callable{}, byLit: map[*ast.FuncLit]*callable{}}
+	for _, c := range full.order[1:] {
+		short.order = append(short.order, c)
+		if c.obj != nil {
+			short.byObj[c.obj] = c
+		}
+		if c.lit != nil {
+			short.byLit[c.lit] = c
+		}
+	}
+	broken := l.but(l.proofs, nil)
+	broken.unwalked = l.src.unwalkedBodies(short)
+	if len(broken.unwalked) == 0 {
+		t.Fatalf("a walk with one of its roots taken away still reaches every body in the suite, so nothing here would notice losing one")
+	}
+	return broken
 }
 
 // violateEmptyPopulation is by hand: no source this package can be handed

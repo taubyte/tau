@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"reflect"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -105,6 +107,7 @@ const (
 	ruleOrphan             ruleName = "a contract assertion with no fault behind it"
 	ruleStrandedFault      ruleName = "a fault with no proof in front of it"
 	ruleFaultDoesNothing   ruleName = "a fault the proof does not need"
+	ruleUnwalkedBody       ruleName = "a body nothing walks"
 )
 
 // ledger is everything the rules are read over: the suite's own source, the
@@ -116,6 +119,13 @@ type ledger struct {
 	proofs []proof
 	said   map[string]*recorder
 
+	// unwalked is every body in the suite that the walk does not enter, by the
+	// site it is written at. It is empty by construction, and it is computed
+	// and carried anyway: "by construction" is a claim about code somebody will
+	// edit, and an assertion in a body nothing walks is in no population and no
+	// rule below is computed over it.
+	unwalked []string
+
 	// without is what the suite says about a proof's subject when ONE of its
 	// faults is taken away and everything else is left alone. It is the
 	// counterfactual the causal rule is read over, and it is recorded here
@@ -124,36 +134,60 @@ type ledger struct {
 	without map[string]map[fake.Fault]*recorder
 }
 
-// rule is a check and the fault behind it.
+// rule is a check and the faults behind it.
+//
+// violates is a LIST because a rule can be evaded in more than one shape, and a
+// shape nothing is shown is a shape nothing holds against. The walk was
+// measured going round four of them at once — a literal bound by a var, a claim
+// written inside a marker, a failure handed over without its reporter, and
+// testify given a shorter name — and each is a case of the orphan rule, not a
+// paraphrase of the others.
 type rule struct {
 	name     ruleName
 	check    func(*ledger) []complaint
-	violates func(*testing.T) *ledger
+	violates []func(*testing.T) *ledger
+}
+
+// breaks is the ledgers that break a rule, written where the rule is declared.
+func breaks(fs ...func(*testing.T) *ledger) []func(*testing.T) *ledger { return fs }
+
+// theShapeOf is what a violation is reported under: its own identifier, read
+// off the function value. A violation added to a rule names itself in the
+// output, so nothing has to keep a label beside it in step.
+func theShapeOf(v func(*testing.T) *ledger) string {
+	name := runtime.FuncForPC(reflect.ValueOf(v).Pointer()).Name()
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		name = name[i+1:]
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(name, "violate"), "-fm")
 }
 
 func ledgerRules() []rule {
 	return []rule{
-		{ruleSaysNothing, checkSaysNothing, violateSaysNothing},
-		{ruleSayingsCollide, checkSayingsCollide, violateSayingsCollide},
-		{ruleStepGoesNowhere, checkStepGoesNowhere, violateStepGoesNowhere},
-		{ruleEmptyPopulation, checkEmptyPopulation, violateEmptyPopulation},
-		{ruleUnknownSaying, checkNames(ruleUnknownSaying), violateUnknownSaying},
-		{ruleAmbiguousSaying, checkNames(ruleAmbiguousSaying), violateAmbiguousSaying},
-		{ruleSayingNamesAStep, checkNames(ruleSayingNamesAStep), violateSayingNamesAStep},
-		{ruleUnknownStop, checkStops(ruleUnknownStop), violateUnknownStop},
-		{ruleAmbiguousStop, checkStops(ruleAmbiguousStop), violateAmbiguousStop},
-		{ruleStopNamesAClaim, checkStops(ruleStopNamesAClaim), violateStopNamesAClaim},
-		{ruleStopIsTheComplaint, checkCollateral, violateStopIsTheComplaint},
-		{ruleProofPassed, checkRun(ruleProofPassed), violateProofPassed},
-		{ruleFailureFromNowhere, checkRun(ruleFailureFromNowhere), violateFailureFromNowhere},
-		{ruleUnplaceable, checkRun(ruleUnplaceable), violateUnplaceable},
-		{ruleFiredUnnamed, checkRun(ruleFiredUnnamed), violateFiredUnnamed},
-		{ruleStopDidNotStop, checkRun(ruleStopDidNotStop), violateStopDidNotStop},
-		{ruleNamedDidNotFire, checkRun(ruleNamedDidNotFire), violateNamedDidNotFire},
-		{ruleProofProvesNothing, checkProofProvesNothing, violateProofProvesNothing},
-		{ruleOrphan, checkOrphan, violateOrphan},
-		{ruleStrandedFault, checkStrandedFault, violateStrandedFault},
-		{ruleFaultDoesNothing, checkFaultDoesNothing, violateFaultDoesNothing},
+		{ruleSaysNothing, checkSaysNothing, breaks(violateSaysNothing)},
+		{ruleSayingsCollide, checkSayingsCollide, breaks(violateSayingsCollide)},
+		{ruleStepGoesNowhere, checkStepGoesNowhere, breaks(violateStepGoesNowhere)},
+		{ruleEmptyPopulation, checkEmptyPopulation, breaks(violateEmptyPopulation)},
+		{ruleUnknownSaying, checkNames(ruleUnknownSaying), breaks(violateUnknownSaying)},
+		{ruleAmbiguousSaying, checkNames(ruleAmbiguousSaying), breaks(violateAmbiguousSaying)},
+		{ruleSayingNamesAStep, checkNames(ruleSayingNamesAStep), breaks(violateSayingNamesAStep)},
+		{ruleUnknownStop, checkStops(ruleUnknownStop), breaks(violateUnknownStop)},
+		{ruleAmbiguousStop, checkStops(ruleAmbiguousStop), breaks(violateAmbiguousStop)},
+		{ruleStopNamesAClaim, checkStops(ruleStopNamesAClaim), breaks(violateStopNamesAClaim)},
+		{ruleStopIsTheComplaint, checkCollateral, breaks(violateStopIsTheComplaint)},
+		{ruleProofPassed, checkRun(ruleProofPassed), breaks(violateProofPassed)},
+		{ruleFailureFromNowhere, checkRun(ruleFailureFromNowhere), breaks(violateFailureFromNowhere)},
+		{ruleUnplaceable, checkRun(ruleUnplaceable), breaks(violateUnplaceable)},
+		{ruleFiredUnnamed, checkRun(ruleFiredUnnamed), breaks(violateFiredUnnamed)},
+		{ruleStopDidNotStop, checkRun(ruleStopDidNotStop), breaks(violateStopDidNotStop)},
+		{ruleNamedDidNotFire, checkRun(ruleNamedDidNotFire), breaks(violateNamedDidNotFire)},
+		{ruleProofProvesNothing, checkProofProvesNothing, breaks(violateProofProvesNothing)},
+		{ruleOrphan, checkOrphan, breaks(violateOrphan,
+			violateOrphanInATopLevelLiteral, violateOrphanInAMarker,
+			violateOrphanThroughAMethodValue, violateOrphanThroughAName)},
+		{ruleStrandedFault, checkStrandedFault, breaks(violateStrandedFault)},
+		{ruleFaultDoesNothing, checkFaultDoesNothing, breaks(violateFaultDoesNothing)},
+		{ruleUnwalkedBody, checkUnwalkedBody, breaks(violateUnwalkedBody)},
 	}
 }
 
@@ -193,24 +227,57 @@ func TestTheSuiteObeysTheLedger(t *testing.T) {
 // behind it fails here too; and so does a reporting loop that hears a rule and
 // drops it.
 func TestTheLedgerObeysTheRuleItImposes(t *testing.T) {
-	for _, r := range ledgerRules() {
+	proveEveryRule(t, nil, ledgerRules())
+}
+
+// proveEveryRule hands each rule every ledger that breaks it and requires the
+// rule to say so, under its own name, THROUGH the loop that reports it.
+//
+// It is a function of the rules it is given so that the thing RUNNING them can
+// itself be handed a rule that breaks it — see the harnesses below. A rule that
+// has been hollowed says nothing and fails here; a rule declared with no
+// violation behind it fails here too; and so does a reporting loop that hears a
+// rule and drops what it says.
+func proveEveryRule(t *testing.T, report reporter, rules []rule) {
+	for _, r := range rules {
 		t.Run(string(r.name), func(t *testing.T) {
-			if r.violates == nil {
-				t.Fatalf("this rule has no ledger that breaks it, so nothing knows whether it still holds — which is exactly what it accuses an assertion of")
+			to := reportTo(report, t)
+			if len(r.violates) == 0 {
+				to.Errorf("%s has no ledger that breaks it, so nothing knows whether it still holds — which is exactly what it accuses an assertion of", r.name)
+				return
 			}
-			broken := r.violates(t)
-			for _, c := range r.check(broken) {
-				if c.rule != r.name {
-					t.Errorf("a ledger that breaks %q was answered under %q instead: %s", r.name, c.rule, c)
-				}
-			}
-			heard := &recorder{}
-			if n := obey(heard, broken, []rule{r}); n == 0 || !heard.failed {
-				t.Fatalf("this rule was handed a ledger that breaks it and %d complaints reached the report (failed=%v): it is decoration, and hollowing it — or the loop that reports it — would go unnoticed",
-					n, heard.failed)
+			for _, violate := range r.violates {
+				t.Run(theShapeOf(violate), func(t *testing.T) {
+					to := reportTo(report, t)
+					broken := violate(t)
+					for _, c := range r.check(broken) {
+						if c.rule != r.name {
+							to.Errorf("a ledger that breaks %q was answered under %q instead: %s", r.name, c.rule, c)
+						}
+					}
+					heard := &recorder{}
+					if n := obey(heard, broken, []rule{r}); n == 0 || !heard.failed {
+						to.Errorf("%s was handed a ledger that breaks it and %d complaints reached the report (failed=%v): it is decoration, and hollowing it — or the loop that reports it — would go unnoticed",
+							r.name, n, heard.failed)
+					}
+				})
 			}
 		})
 	}
+}
+
+// reporter is where a complaint goes. The three things that run the rules take
+// one so that each can be run against a recorder over material that breaks it —
+// a *testing.T when they are held for real, a recorder when they are the thing
+// being held.
+type reporter interface{ Errorf(string, ...any) }
+
+// reportTo is the subtest's own t unless somebody is listening instead.
+func reportTo(report reporter, t *testing.T) reporter {
+	if report == nil {
+		return t
+	}
+	return report
 }
 
 // TestEveryRuleTheLedgerDeclaresIsRead closes the registry, which is the last
@@ -271,6 +338,7 @@ func theLedger(t *testing.T) *ledger {
 			without: map[string]map[fake.Fault]*recorder{},
 		}
 		l.pop = populationOf(l.src)
+		l.unwalked = l.src.unwalkedBodies(l.src.walk())
 		for _, p := range l.proofs {
 			l.said[p.name] = record(p.subject(t, p.faults))
 			if len(p.faults) == 0 {
@@ -544,6 +612,22 @@ func checkStrandedFault(l *ledger) []complaint {
 	return out
 }
 
+// checkUnwalkedBody. Go holds a body in exactly two places — a declaration and
+// a literal — and every one of them has to be inside something this file walks,
+// or the assertions written in it are invisible: not exempt, not counted, not
+// anywhere, and no rule below computed over them. Four shapes were measured
+// doing exactly that, and the fix for each of them was to state where a body
+// can be rather than to add one more place to a list. This is what says the
+// statement still holds.
+func checkUnwalkedBody(l *ledger) []complaint {
+	var out []complaint
+	for _, site := range l.unwalked {
+		out = append(out, complaint{ruleUnwalkedBody, site,
+			"nothing walks this body, so an assertion written in it is in no population, needs no message, no proof and no fault, and nothing anywhere says so"})
+	}
+	return out
+}
+
 // checkFaultDoesNothing is the fault closure made CAUSAL, and causation is the
 // half a list could never be.
 //
@@ -757,9 +841,6 @@ func stepsGoingNowhere(src *source) []stray {
 		ast.Inspect(file, func(n ast.Node) bool {
 			switch v := n.(type) {
 			case *ast.FuncDecl:
-				if src.isMarkerDecl(v) {
-					return false
-				}
 				if src.asserts(v.Body) {
 					if obj := src.pkg.TypesInfo.Defs[v.Name]; obj != nil {
 						asserting[obj] = true
@@ -798,9 +879,6 @@ func stepsGoingNowhere(src *source) []stray {
 			label := "a function literal"
 			switch fn := n.(type) {
 			case *ast.FuncDecl:
-				if src.isMarkerDecl(fn) {
-					return false
-				}
 				body, results, label = fn.Body, fn.Type.Results, fn.Name.Name
 			case *ast.FuncLit:
 				body, results = fn.Body, fn.Type.Results

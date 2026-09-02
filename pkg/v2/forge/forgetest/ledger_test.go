@@ -123,13 +123,79 @@ import (
 // by name and its absence is a failure of its own; Errorf cannot be renamed and
 // still fail a test; and "outside this package" is not a name at all.
 //
-// WHAT THIS DOES NOT COVER, said plainly. A failure produced by something that
-// is neither a testify-shaped call, a TB failure method nor a marker — a panic,
-// an os.Exit, a t.Skip that hides a question — is not in the population and no
-// rule here is computed over it. Neither is anything in a _test.go file beside
-// this one: those are the thing doing the asserting. And the loader is the go
-// command, so a source this package cannot type-check is a loud failure of the
-// ledger rather than a quietly smaller population.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// AND THE WALK WENT ROUND FOUR OF THEM, BECAUSE IT WAS A LIST OF PLACES A BODY
+// HAD BEEN SEEN RATHER THAN THE STATEMENT THAT A BODY IS A BODY.
+//
+// The resolution was by type and the WALK was still by shape. Four measured, all
+// four live in the shared suite, all four with this file's own census unchanged
+// at 144 contract cases and the tree at exit 0, gofmt clean, vet clean:
+//
+//	a package-level `var f = func(t tb, ...) { assert... }`. The walk matched
+//	*ast.FuncDecl and *ast.AssignStmt, and a *ast.ValueSpec is neither, so the
+//	body was never entered at all.
+//
+//	an assertion written inside a MARKER, whose body the walk stepped over
+//	entirely — and a marker is "any function that asks for a step", so adding a
+//	step parameter exempted everything written beside it.
+//
+//	a call into another package handed the METHOD that fails a test rather than
+//	the reporter: outside.Check(t.Errorf, cond, msg). The callee's signature has
+//	no Errorf in it, so nothing about the declaration said it could fail
+//	anything. The same helper taking a reporter was caught.
+//
+//	`var truthy = assert.True`, then truthy(t, cond, msg). The name resolved to
+//	a *types.Var and the walk stopped there. The exemption had moved from an
+//	import alias to a one-line var and got cheaper to type than the alias was.
+//
+// THE CLASS IS "A CALL THAT CAN FAIL THE TEST, HOWEVER IT WAS NAMED OR BOUND",
+// and it is stated in three parts rather than patched in four places:
+//
+//	A BODY IS A BODY WHEREVER IT IS. Go holds one in exactly two places — a
+//	declaration and a literal. Every declaration is walked, markers included; a
+//	literal is walked by the function that contains it, and a literal nothing
+//	contains is walked in its own right, whatever it was bound to or bound into.
+//	That is not a list of binding forms: it is the lexical statement that
+//	nothing is left over, and the ledger reports any body it does not reach.
+//
+//	A MARKER IS A FUNCTION LIKE ANY OTHER. Its OWN failure — a failure made
+//	through the reporter it was handed, reporting the QUESTION it was handed —
+//	is the marker firing, and that one call is the step. Everything else written
+//	in a marker is a claim and is in the population like any other claim.
+//
+//	A VALUE DOES NOT STOP BEING TESTIFY BY BEING GIVEN A SHORTER NAME, and a
+//	failure handed over without its reporter is still a failure. A name is
+//	followed to what it was bound to; a method value of one of the six is a way
+//	to fail the test wherever it is passed or called; and where the binding
+//	cannot be seen at all, Errorf's own shape answers.
+//
+// WHAT THIS DOES NOT COVER, said plainly.
+//
+// A failure produced by something that is neither a testify-shaped call, a TB
+// failure method nor a marker — a panic, an os.Exit, a t.Skip that hides a
+// question — is not in the population and no rule here is computed over it.
+//
+// A value that reaches a call through a struct field, a map, a slice, a channel
+// or a parameter is followed only as far as its TYPE: Errorf's shape is read as
+// a failure, and the other five methods' shapes — func(...any) and func() — are
+// not, because they are the shape of every callback in the language and reading
+// them as failures would make every deferred close a claim.
+//
+// AND THE MARKER EXEMPTION IS NARROWER THAN IT WAS, NOT GONE. A claim written
+// as a marker's OWN firing — through the reporter the marker was handed,
+// reporting the question it was handed — is still read as the marker firing and
+// is still not in the population. Measured: it is silent. But it is silent only
+// while NO fault reaches it. The moment one does, the failure attributes to the
+// step at the marker's call site, which no proof names, and the fired-unnamed
+// rule fails the build naming the proof — measured too. What is left is a claim
+// no fault in this suite can reach, which is the orphan condition, in the one
+// place the orphan rule cannot see it.
+//
+// Nothing in a _test.go file beside this one is in the population either: those
+// are the thing doing the asserting. And the loader is the go command, so a
+// source this package cannot type-check is a loud failure of the ledger rather
+// than a quietly smaller population.
 
 // kind is which of the two an entry is.
 type kind int
@@ -208,7 +274,22 @@ var failing = map[string]bool{
 type source struct {
 	pkg      *packages.Package
 	reporter *types.Interface // anything with an Errorf: testify's TestingT, tb, *testing.T
+	fails    *types.Signature // Errorf's own shape, for a failure whose binding is invisible
 	step     types.Type       // the marker's question type
+
+	// The walk, the bindings and the marker firings are computed once per
+	// source and read by everything below. They are cached here and not
+	// recomputed per question because every rule is read over the same source,
+	// and because a walk that answers differently at two call sites is a walk
+	// with two definitions of what a body is.
+	walkOnce sync.Once
+	theWalk  *walk
+
+	boundOnce sync.Once
+	bound     map[types.Object][]ast.Expr
+
+	firingOnce sync.Once
+	firing     map[*ast.CallExpr]bool
 
 	// faults is every fault the fake forge can be told to have, by the value
 	// it carries and the constant it is declared as. It is read out of that
@@ -335,7 +416,9 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &source{pkg: pkg, reporter: reporterInterface(), step: obj.Type(), faults: faults, rules: rules}, nil
+	report := reporterInterface()
+	return &source{pkg: pkg, reporter: report, fails: report.Method(0).Type().(*types.Signature),
+		step: obj.Type(), faults: faults, rules: rules}, nil
 }
 
 // suitePath is this package, taken from a type in it rather than written out.
@@ -392,20 +475,29 @@ type failure struct {
 	kind     kind
 }
 
-// howItFails resolves a call to its declared function and says whether that
-// function is one of the ways this suite fails, where its message sits, and
-// which of the two kinds it is. It answers by TYPE: an alias, a renamed
-// receiver, a dot-import and a fork are all the same object underneath.
+// howItFails resolves a call and says whether it is one of the ways this suite
+// fails, where its message sits, and which of the two kinds it is.
+//
+// It answers by what a call IS and not by how it reads: an alias, a renamed
+// receiver, a dot-import, a fork, a shorter name given to testify by a var, and
+// a failure handed over without the reporter it belongs to are all the same
+// thing underneath, and each of them was once an exemption nobody had to write
+// down.
 func (s *source) howItFails(call *ast.CallExpr) (failure, bool) {
-	fn, recv := s.callee(call)
-	if fn == nil {
+	// A marker's OWN failure — through the reporter it was handed, reporting
+	// the question it was handed — is the marker firing, and the marker is
+	// already one entry at each of its call sites. It is the one thing excused
+	// from the population, and it is excused by what it says rather than by
+	// which function it is written in: a claim written beside it is a claim.
+	if s.markerFirings()[call] {
 		return failure{}, false
 	}
-	sig, ok := fn.Type().(*types.Signature)
+	fn, recv := s.callee(call)
+	sig, ok := s.signatureOf(call, fn)
 	if !ok {
 		return failure{}, false
 	}
-	spelling := s.spell(call, fn)
+	spelling := s.spell(call)
 
 	// A marker: any function that asks for a step. The question is where its
 	// message is, which is what a step says it was on its way to.
@@ -414,46 +506,324 @@ func (s *source) howItFails(call *ast.CallExpr) (failure, bool) {
 	}
 
 	// A method that fails a TB, on a receiver that can be failed through.
-	if sig.Recv() != nil && failing[fn.Name()] && recv != nil && types.Implements(recv, s.reporter) {
+	if fn != nil && recv != nil && failing[fn.Name()] && types.Implements(recv, s.reporter) {
 		return failure{spelling: spelling, at: messageArg(sig), kind: contract}, true
 	}
 
-	// A leaf assertion: declared outside this package and handed something it
-	// can fail through. This is testify, under whatever name.
-	if fn.Pkg() != nil && fn.Pkg() != s.pkg.Types && takesAReporter(sig, s.reporter) {
+	// Or the thing being called IS a way to fail the test: the same six
+	// methods reached through a name, a field or a value rather than through
+	// the receiver they belong to.
+	if s.isAWayToFail(call.Fun, 0) {
+		return failure{spelling: spelling, at: messageArg(sig), kind: contract}, true
+	}
+
+	// A leaf assertion: a body this package does not hold, handed something it
+	// can fail through. Handed a REPORTER, which is testify under whatever
+	// name; or handed the METHOD that fails one without the reporter it belongs
+	// to, which is a call whose signature says nothing about failing anything
+	// and whose call site says all of it.
+	if fn != nil && fn.Pkg() != nil && fn.Pkg() != s.pkg.Types &&
+		(takesAReporter(sig, s.reporter) || s.handedAWayToFail(call)) {
 		return failure{spelling: spelling, at: messageArg(sig), kind: contract}, true
 	}
 	return failure{}, false
 }
 
 // callee resolves what a call actually calls, and the receiver it is called on.
+// A name bound to a function is followed to that function: a value does not
+// stop being testify by being given a shorter name, and `var truthy =
+// assert.True` was measured moving the exemption from an import alias to a
+// one-line var.
 func (s *source) callee(call *ast.CallExpr) (*types.Func, types.Type) {
 	info := s.pkg.TypesInfo
 	switch fun := ast.Unparen(call.Fun).(type) {
 	case *ast.SelectorExpr:
 		if sel, ok := info.Selections[fun]; ok {
-			fn, _ := sel.Obj().(*types.Func)
-			return fn, info.TypeOf(fun.X)
+			if fn, ok := sel.Obj().(*types.Func); ok {
+				return fn, info.TypeOf(fun.X)
+			}
+			return s.followsTo(sel.Obj(), 0)
 		}
-		fn, _ := info.Uses[fun.Sel].(*types.Func)
-		return fn, nil
+		if fn, ok := info.Uses[fun.Sel].(*types.Func); ok {
+			return fn, nil
+		}
+		return s.followsTo(info.Uses[fun.Sel], 0)
 	case *ast.Ident:
-		fn, _ := info.Uses[fun].(*types.Func)
-		return fn, nil
+		if fn, ok := info.Uses[fun].(*types.Func); ok {
+			return fn, nil
+		}
+		return s.followsTo(info.Uses[fun], 0)
+	}
+	return nil, nil
+}
+
+// followsTo is the function a NAME ultimately calls, read out of what this
+// package binds that name to.
+//
+// A name bound to a function LITERAL resolves to nothing here, on purpose: that
+// literal is a body in this package and is walked in its own right, so the
+// assertion in it is counted where it is written and counting the call as well
+// would count it twice.
+func (s *source) followsTo(obj types.Object, depth int) (*types.Func, types.Type) {
+	v, ok := obj.(*types.Var)
+	if !ok || depth > 4 {
+		return nil, nil
+	}
+	info := s.pkg.TypesInfo
+	for _, bound := range s.bindings()[v] {
+		switch e := ast.Unparen(bound).(type) {
+		case *ast.SelectorExpr:
+			if sel, ok := info.Selections[e]; ok {
+				if fn, ok := sel.Obj().(*types.Func); ok {
+					return fn, info.TypeOf(e.X)
+				}
+				continue
+			}
+			if fn, ok := info.Uses[e.Sel].(*types.Func); ok {
+				return fn, nil
+			}
+			if fn, recv := s.followsTo(info.Uses[e.Sel], depth+1); fn != nil {
+				return fn, recv
+			}
+		case *ast.Ident:
+			if fn, ok := info.Uses[e].(*types.Func); ok {
+				return fn, nil
+			}
+			if fn, recv := s.followsTo(info.Uses[e], depth+1); fn != nil {
+				return fn, recv
+			}
+		}
+	}
+	return nil, nil
+}
+
+// signatureOf is the signature of what a call calls: the resolved function's
+// where there is one, and otherwise the type of the expression being called —
+// which is what answers for a func-typed field, a map entry or anything else
+// whose binding is not visible from here.
+func (s *source) signatureOf(call *ast.CallExpr, fn *types.Func) (*types.Signature, bool) {
+	if fn != nil {
+		if sig, ok := fn.Type().(*types.Signature); ok {
+			return sig, true
+		}
+	}
+	t := s.pkg.TypesInfo.TypeOf(ast.Unparen(call.Fun))
+	if t == nil {
+		return nil, false
+	}
+	sig, ok := t.Underlying().(*types.Signature)
+	return sig, ok
+}
+
+// isAWayToFail reports whether an expression IS one: a reporter, or one of the
+// six methods that fail one, however it is named or bound.
+//
+// outside.Check(t.Errorf, cond, msg) hands the failure over WITHOUT handing the
+// reporter over, and what it is handed to can fail the test as surely as if it
+// had been handed t. A name bound to that method is the same value with a
+// shorter name. Where the binding cannot be seen at all — a struct field, a map
+// entry, another package's var — Errorf's own SHAPE answers, and only Errorf's:
+// the other five are shaped like every callback in the language.
+func (s *source) isAWayToFail(e ast.Expr, depth int) bool {
+	if e == nil || depth > 4 {
+		return false
+	}
+	e = ast.Unparen(e)
+	info := s.pkg.TypesInfo
+
+	// A reporter itself: t, tb, testify's TestingT, anything with an Errorf.
+	if t := info.TypeOf(e); t != nil && types.Implements(t, s.reporter) {
+		return true
+	}
+
+	// A METHOD of one, answered by its name on the interface and never by its
+	// shape — Logf is Errorf's twin in shape, and a step that logs is not a
+	// step that fails.
+	if sel, ok := e.(*ast.SelectorExpr); ok {
+		if m, ok := info.Selections[sel]; ok && m.Kind() == types.MethodVal {
+			fn, ok := m.Obj().(*types.Func)
+			return ok && failing[fn.Name()] && types.Implements(m.Recv(), s.reporter)
+		}
+	}
+
+	// A name this package binds to one of those.
+	if obj := s.objectOf(e); obj != nil {
+		for _, bound := range s.bindings()[obj] {
+			if s.isAWayToFail(bound, depth+1) {
+				return true
+			}
+		}
+	}
+
+	// And the shape, for a value bound somewhere this cannot read.
+	if t := info.TypeOf(e); t != nil {
+		if sig, ok := t.Underlying().(*types.Signature); ok && types.Identical(sig, s.fails) {
+			return true
+		}
+	}
+	return false
+}
+
+// handedAWayToFail reports whether a call is GIVEN one in an argument.
+// takesAReporter reads the callee's signature and cannot see this: a parameter
+// of type func(string, ...any) has no Errorf method, so nothing about the
+// declaration says the call can fail a test, and everything about the argument
+// does.
+func (s *source) handedAWayToFail(call *ast.CallExpr) bool {
+	for _, arg := range call.Args {
+		if s.isAWayToFail(arg, 0) {
+			return true
+		}
+	}
+	return false
+}
+
+// objectOf is what an expression names, where it names anything.
+func (s *source) objectOf(e ast.Expr) types.Object {
+	info := s.pkg.TypesInfo
+	switch v := ast.Unparen(e).(type) {
+	case *ast.SelectorExpr:
+		if sel, ok := info.Selections[v]; ok {
+			return sel.Obj()
+		}
+		return info.Uses[v.Sel]
+	case *ast.Ident:
+		if obj := info.Uses[v]; obj != nil {
+			return obj
+		}
+		return info.Defs[v]
+	}
+	return nil
+}
+
+// bindings is every value a name in this package is given: the right-hand side
+// of the declaration or the assignment that binds it. It is read out of source
+// for the same reason the population is — a name is not a value, and following
+// one to what it was bound to is the difference between reading `var truthy =
+// assert.True` as testify and reading it as nothing at all.
+func (s *source) bindings() map[types.Object][]ast.Expr {
+	s.boundOnce.Do(func() {
+		out := map[types.Object][]ast.Expr{}
+		bind := func(name *ast.Ident, value ast.Expr) {
+			obj := s.pkg.TypesInfo.Defs[name]
+			if obj == nil {
+				obj = s.pkg.TypesInfo.Uses[name]
+			}
+			if obj != nil && value != nil {
+				out[obj] = append(out[obj], value)
+			}
+		}
+		for _, file := range s.pkg.Syntax {
+			ast.Inspect(file, func(n ast.Node) bool {
+				switch v := n.(type) {
+				case *ast.ValueSpec:
+					for i, name := range v.Names {
+						if i < len(v.Values) {
+							bind(name, v.Values[i])
+						}
+					}
+				case *ast.AssignStmt:
+					if len(v.Lhs) != len(v.Rhs) {
+						return true
+					}
+					for i, lhs := range v.Lhs {
+						if id, ok := lhs.(*ast.Ident); ok {
+							bind(id, v.Rhs[i])
+						}
+					}
+				}
+				return true
+			})
+		}
+		s.bound = out
+	})
+	return s.bound
+}
+
+// markerFirings is every call that IS a marker rather than a claim written in
+// one: a failure made through the reporter the marker was handed, reporting the
+// QUESTION it was handed.
+//
+// The walk used to step over a marker's whole body, which meant a step
+// parameter exempted everything written beside it — and a marker is any
+// function that asks for a step, so the exemption cost one parameter. A marker
+// is a function like any other now: its own firing is the step, already one
+// entry at each of its call sites, and every other assertion in it is a claim
+// with a fault to find.
+func (s *source) markerFirings() map[*ast.CallExpr]bool {
+	s.firingOnce.Do(func() {
+		out := map[*ast.CallExpr]bool{}
+		for _, file := range s.pkg.Syntax {
+			ast.Inspect(file, func(n ast.Node) bool {
+				body, sig := s.bodyAndSignature(n)
+				if body == nil || sig == nil {
+					return true
+				}
+				at := s.stepParam(sig)
+				if at < 0 {
+					return true
+				}
+				question := sig.Params().At(at)
+				for _, call := range callsDirectlyIn(body) {
+					fn, recv := s.callee(call)
+					if fn == nil || recv == nil || !failing[fn.Name()] || !types.Implements(recv, s.reporter) {
+						continue
+					}
+					if s.mentions(call, question) {
+						out[call] = true
+					}
+				}
+				return true
+			})
+		}
+		s.firing = out
+	})
+	return s.firing
+}
+
+// mentions reports whether a call names an object anywhere in it.
+func (s *source) mentions(call *ast.CallExpr, obj types.Object) bool {
+	found := false
+	ast.Inspect(call, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && s.pkg.TypesInfo.Uses[id] == obj {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// bodyAndSignature is what a node holds if it holds a function: a declaration
+// and a literal are the two places Go keeps a body, and this answers for both.
+func (s *source) bodyAndSignature(n ast.Node) (*ast.BlockStmt, *types.Signature) {
+	switch v := n.(type) {
+	case *ast.FuncDecl:
+		obj, _ := s.pkg.TypesInfo.Defs[v.Name].(*types.Func)
+		if obj == nil {
+			return nil, nil
+		}
+		sig, _ := obj.Type().(*types.Signature)
+		return v.Body, sig
+	case *ast.FuncLit:
+		sig, _ := s.pkg.TypesInfo.TypeOf(v).(*types.Signature)
+		return v.Body, sig
 	}
 	return nil, nil
 }
 
 // spell is how a call reads where it is written, which is what a failure
 // message should quote back. It is a label and never an identity.
-func (s *source) spell(call *ast.CallExpr, fn *types.Func) string {
-	if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok {
-		if x, ok := ast.Unparen(sel.X).(*ast.Ident); ok {
-			return x.Name + "." + sel.Sel.Name
+func (s *source) spell(call *ast.CallExpr) string {
+	switch fun := ast.Unparen(call.Fun).(type) {
+	case *ast.SelectorExpr:
+		if x, ok := ast.Unparen(fun.X).(*ast.Ident); ok {
+			return x.Name + "." + fun.Sel.Name
 		}
-		return sel.Sel.Name
+		return fun.Sel.Name
+	case *ast.Ident:
+		return fun.Name
 	}
-	return fn.Name()
+	return types.ExprString(call.Fun)
 }
 
 // stepParam is where a marker's question sits, or -1 for a function that asks
@@ -496,18 +866,6 @@ func messageArg(sig *types.Signature) int {
 		return n - 2
 	}
 	return n - 1
-}
-
-// isMarkerDecl reports whether a declared function IS a marker. Its body fails
-// the suite — that is what it is for — but a failure inside a marker is the
-// marker firing and not an assertion of its own, so the walk steps over it.
-func (s *source) isMarkerDecl(fn *ast.FuncDecl) bool {
-	obj, _ := s.pkg.TypesInfo.Defs[fn.Name].(*types.Func)
-	if obj == nil {
-		return false
-	}
-	sig, ok := obj.Type().(*types.Signature)
-	return ok && s.stepParam(sig) >= 0
 }
 
 // called is what a call calls, whatever that is: a function, a method, or a
@@ -559,13 +917,13 @@ func population(t *testing.T) []assertion {
 }
 
 func populationOf(src *source) []assertion {
-	callables, order := src.callables()
-	callers := src.callers(callables, order)
+	w := src.walk()
+	callers := src.callers(w)
 
 	var out []assertion
 	seenStep := map[string]bool{}
-	for _, c := range order {
-		for _, call := range src.assertionsIn(c, callables) {
+	for _, c := range w.order {
+		for _, call := range src.assertionsIn(c, w) {
 			f, _ := src.howItFails(call)
 			site := src.site(call.Pos())
 
@@ -606,13 +964,48 @@ func populationOf(src *source) []assertion {
 	return out
 }
 
-// callables is every function, method and named closure in the suite, in a
-// stable order.
-func (s *source) callables() (map[types.Object]*callable, []*callable) {
-	byObj := map[types.Object]*callable{}
-	var order []*callable
+// walk is every body in the suite and the way in to each of them.
+type walk struct {
+	byObj map[types.Object]*callable
+	byLit map[*ast.FuncLit]*callable
+	order []*callable
+}
+
+// walk is every function, method, named closure and stray literal in the suite,
+// in a stable order — and it is EVERY body, which is the part that was missing.
+//
+// Go holds a body in exactly two places: a declaration and a literal. So:
+//
+//	every declaration is a root, markers included. A marker is a function like
+//	any other and a claim written in one is a claim.
+//
+//	every literal a NAME is bound to is a root, so a case can pass through the
+//	name — that is what makes the nine rows behind one closure nine cases.
+//
+//	every other literal is walked by the function that contains it, and a
+//	literal that nothing contains is a root in its own right, whatever it was
+//	bound to or bound into: a var, a map, a slice, a struct field, an argument.
+//
+// The third clause is not a list of binding forms; it is the lexical statement
+// that nothing is left over, and unwalkedBodies below reports any body it does
+// not reach. A package-level `var f = func(t tb) { assert... }` was measured
+// living in the shared suite with the census unchanged, because the walk knew
+// two of the places a name can be bound and a ValueSpec was neither.
+func (s *source) walk() *walk {
+	s.walkOnce.Do(func() { s.theWalk = s.everyBody() })
+	return s.theWalk
+}
+
+func (s *source) everyBody() *walk {
+	w := &walk{byObj: map[types.Object]*callable{}, byLit: map[*ast.FuncLit]*callable{}}
 	add := func(obj types.Object, name string, body *ast.BlockStmt, sig *types.Signature, lit *ast.FuncLit) {
-		if obj == nil || body == nil || sig == nil || byObj[obj] != nil {
+		if body == nil || sig == nil {
+			return
+		}
+		if obj != nil && w.byObj[obj] != nil {
+			return
+		}
+		if lit != nil && w.byLit[lit] != nil {
 			return
 		}
 		var params []*types.Var
@@ -621,57 +1014,146 @@ func (s *source) callables() (map[types.Object]*callable, []*callable) {
 		}
 		c := &callable{obj: obj, name: name, file: filepath.Base(s.position(body.Pos()).Filename),
 			body: body, params: params, lit: lit}
-		byObj[obj] = c
-		order = append(order, c)
+		if obj != nil {
+			w.byObj[obj] = c
+		}
+		if lit != nil {
+			w.byLit[lit] = c
+		}
+		w.order = append(w.order, c)
+	}
+	bindLit := func(name *ast.Ident, value ast.Expr) {
+		lit, ok := ast.Unparen(value).(*ast.FuncLit)
+		if !ok {
+			return
+		}
+		obj := s.pkg.TypesInfo.Defs[name]
+		if obj == nil {
+			obj = s.pkg.TypesInfo.Uses[name]
+		}
+		sig, _ := s.pkg.TypesInfo.TypeOf(lit).(*types.Signature)
+		add(obj, name.Name, lit.Body, sig, lit)
 	}
 	for _, file := range s.pkg.Syntax {
 		ast.Inspect(file, func(n ast.Node) bool {
 			switch v := n.(type) {
 			case *ast.FuncDecl:
-				if s.isMarkerDecl(v) {
-					return false
-				}
 				obj, _ := s.pkg.TypesInfo.Defs[v.Name].(*types.Func)
 				if obj == nil {
 					return true
 				}
 				sig, _ := obj.Type().(*types.Signature)
 				add(obj, v.Name.Name, v.Body, sig, nil)
+			case *ast.ValueSpec:
+				for i, name := range v.Names {
+					if i < len(v.Values) {
+						bindLit(name, v.Values[i])
+					}
+				}
 			case *ast.AssignStmt:
-				if len(v.Lhs) != 1 || len(v.Rhs) != 1 {
+				if len(v.Lhs) != len(v.Rhs) {
 					return true
 				}
-				lit, ok := v.Rhs[0].(*ast.FuncLit)
-				if !ok {
-					return true
+				for i, lhs := range v.Lhs {
+					if id, ok := lhs.(*ast.Ident); ok {
+						bindLit(id, v.Rhs[i])
+					}
 				}
-				id, ok := v.Lhs[0].(*ast.Ident)
-				if !ok {
-					return true
-				}
-				obj := s.pkg.TypesInfo.Defs[id]
-				if obj == nil {
-					obj = s.pkg.TypesInfo.Uses[id]
-				}
-				sig, _ := s.pkg.TypesInfo.TypeOf(lit).(*types.Signature)
-				add(obj, id.Name, lit.Body, sig, lit)
 			}
 			return true
 		})
 	}
-	return byObj, order
+	// And every literal nothing above reaches, outermost first. This is the
+	// clause that makes the walk complete rather than a list of the places a
+	// body has been bound so far.
+	for {
+		stray := s.aBodyNothingWalks(w)
+		if stray == nil {
+			break
+		}
+		sig, _ := s.pkg.TypesInfo.TypeOf(stray).(*types.Signature)
+		add(nil, "a function literal at "+s.site(stray.Pos()), stray.Body, sig, stray)
+		if w.byLit[stray] == nil {
+			break // a literal with no signature: nothing more to be done with it
+		}
+	}
+	return w
+}
+
+// aBodyNothingWalks is the outermost function literal no root reaches, or nil.
+func (s *source) aBodyNothingWalks(w *walk) *ast.FuncLit {
+	reached := s.reaches(w)
+	var found *ast.FuncLit
+	for _, file := range s.pkg.Syntax {
+		ast.Inspect(file, func(n ast.Node) bool {
+			if found != nil {
+				return false
+			}
+			lit, ok := n.(*ast.FuncLit)
+			if !ok {
+				return true
+			}
+			if reached[lit.Body] {
+				return true
+			}
+			found = lit
+			return false
+		})
+		if found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// reaches is every body the roots enter: their own, and every literal written
+// inside one that is not a root itself.
+func (s *source) reaches(w *walk) map[*ast.BlockStmt]bool {
+	out := map[*ast.BlockStmt]bool{}
+	for _, c := range w.order {
+		out[c.body] = true
+		s.walkOwn(c, w, func(n ast.Node) bool {
+			if lit, ok := n.(*ast.FuncLit); ok {
+				out[lit.Body] = true
+			}
+			return true
+		})
+	}
+	return out
+}
+
+// unwalkedBodies is every body in this package that the given walk does not
+// enter, by the site it is written at. Over the walk above it is empty by
+// construction; it is computed and reported anyway, because "by construction"
+// is a claim about code somebody will edit, and an assertion in a body nothing
+// walks is not exempt, not counted and not anywhere.
+func (s *source) unwalkedBodies(w *walk) []string {
+	reached := s.reaches(w)
+	var out []string
+	for _, file := range s.pkg.Syntax {
+		ast.Inspect(file, func(n ast.Node) bool {
+			body, sig := s.bodyAndSignature(n)
+			if body == nil || sig == nil || reached[body] {
+				return true
+			}
+			out = append(out, s.site(body.Pos()))
+			return true
+		})
+	}
+	sort.Strings(out)
+	return out
 }
 
 // callers is who calls what, which is how a case knows where it came through.
-func (s *source) callers(byObj map[types.Object]*callable, order []*callable) map[*callable][]edge {
+func (s *source) callers(w *walk) map[*callable][]edge {
 	out := map[*callable][]edge{}
-	for _, c := range order {
-		s.walkOwn(c, byObj, func(n ast.Node) bool {
+	for _, c := range w.order {
+		s.walkOwn(c, w, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			if to := byObj[s.called(call)]; to != nil {
+			if to := w.byObj[s.called(call)]; to != nil {
 				out[to] = append(out[to], edge{from: c, to: to, call: call})
 			}
 			return true
@@ -680,26 +1162,22 @@ func (s *source) callers(byObj map[types.Object]*callable, order []*callable) ma
 	return out
 }
 
-// walkOwn walks the part of a callable's body that is ITS OWN: a named closure
-// inside it is walked in its own right and skipped here, and an inline literal
-// is part of the body it is written in.
-func (s *source) walkOwn(c *callable, byObj map[types.Object]*callable, f func(ast.Node) bool) {
+// walkOwn walks the part of a callable's body that is ITS OWN: a literal that
+// is a root in its own right is walked there and skipped here, and every other
+// literal is part of the body it is written in.
+func (s *source) walkOwn(c *callable, w *walk, f func(ast.Node) bool) {
 	ast.Inspect(c.body, func(n ast.Node) bool {
-		if lit, ok := n.(*ast.FuncLit); ok {
-			for _, other := range byObj {
-				if other.lit == lit {
-					return false
-				}
-			}
+		if lit, ok := n.(*ast.FuncLit); ok && lit != c.lit && w.byLit[lit] != nil {
+			return false
 		}
 		return f(n)
 	})
 }
 
 // assertionsIn is every failing call written in a callable's own body.
-func (s *source) assertionsIn(c *callable, byObj map[types.Object]*callable) []*ast.CallExpr {
+func (s *source) assertionsIn(c *callable, w *walk) []*ast.CallExpr {
 	var out []*ast.CallExpr
-	s.walkOwn(c, byObj, func(n ast.Node) bool {
+	s.walkOwn(c, w, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
