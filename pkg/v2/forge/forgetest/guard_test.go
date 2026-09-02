@@ -74,31 +74,84 @@ func TestEveryHeldAssertionNamesATestThatHoldsIt(t *testing.T) {
 // to complain about EXACTLY the assertions the proof names. Exactness is what
 // makes each named assertion load-bearing: delete it and the set no longer
 // matches, which is the self-test noticing.
+//
+// It is also where a STOP is held to what a stop means. A step is exempt from
+// needing a fault, so "respell the claim as a step and move its saying to
+// stops" used to be a free edit that hid a live assertion. It is not free here:
+// a stopped step must have failed because the session refuses a capability,
+// which is the one honest reason the suite can be somewhere it cannot ask its
+// question. Anything else that stopped is a complaint about the subject wearing
+// a step's name.
 func TestEveryProofSaysExactlyWhatItProves(t *testing.T) {
 	pop := population(t)
 	for _, p := range allProofs() {
 		t.Run(p.name, func(t *testing.T) {
 			expected := names(t, pop, p)
-			for site := range stops(t, pop, p) {
+			stopped := stops(t, pop, p)
+			for site := range stopped {
 				expected[site] = true
 			}
+			// A stop is COLLATERAL: the proof's own complaint is somewhere
+			// else, and this step is a place the broken subject kept the suite
+			// out of. A step in the very function the proof is otherwise about
+			// is not collateral — it is where the proof's complaint would have
+			// been, which is what a demoted claim looks like from here.
+			for site := range stopped {
+				for named := range expected {
+					if named == site || stopped[named] {
+						continue
+					}
+					if fnOf(pop, named) == fnOf(pop, site) {
+						t.Errorf("%s is stopped by this proof and %s is named by it, and both are in %s: a step in the function a proof is about is not a step it could not reach, it is the complaint itself wearing a step's name",
+							site, named, fnOf(pop, site))
+					}
+				}
+			}
+
 			rec := record(p.subject(t))
 			if !rec.failed {
 				t.Fatalf("the suite passed a subject that is wrong in a named way")
 			}
 			fired := attribute(t, pop, rec.msgs)
-			for site := range fired {
+			for site, msgs := range fired {
 				if !expected[site] {
 					t.Errorf("%s fired and is not named by this proof: %s\nan assertion that fires unnamed is one whose deletion this proof would not notice",
 						site, sayingAt(pop, site))
+					continue
+				}
+				if !stopped[site] {
+					continue
+				}
+				for _, msg := range msgs {
+					if strings.Contains(msg, refusedCapability) {
+						continue
+					}
+					t.Errorf("%s is listed in this proof's stops and did not stop: it fired because the subject answered wrongly, not because the session refuses a capability.\n%s\nA step this proof can make fire for any other reason was never plumbing — it is a claim, and it belongs in says with a fault behind it.",
+						site, msg)
 				}
 			}
 			for site := range expected {
-				if !fired[site] {
+				if len(fired[site]) == 0 {
 					t.Errorf("%s is named by this proof and did not fire: %s\n%s", site, sayingAt(pop, site), rec.String())
 				}
 			}
 		})
+	}
+}
+
+// TestEveryProofComplainsAboutSomething. stops accounts for what a broken
+// subject PREVENTS; says is what the suite SAYS about it. A proof that only
+// prevents has proved nothing — the fault it injects produced no complaint, and
+// an assertion whose only proof is a proof like that has no fault behind it
+// after all. It is also the shape a demotion leaves behind when the demoted
+// claim was the whole of what a fault was written for.
+func TestEveryProofComplainsAboutSomething(t *testing.T) {
+	pop := population(t)
+	for _, p := range allProofs() {
+		if len(names(t, pop, p)) == 0 {
+			t.Errorf("proof %q names no claim: it stops %v and complains about nothing, so nothing it touches is load-bearing",
+				p.name, p.stops)
+		}
 	}
 }
 
@@ -200,6 +253,17 @@ func stops(t *testing.T, pop []assertion, p proof) map[string]bool {
 		}
 	}
 	return out
+}
+
+// fnOf is the function an assertion is written in, which is how a stop that is
+// collateral is told from one that is the proof's own complaint.
+func fnOf(pop []assertion, site string) string {
+	for _, a := range pop {
+		if a.site == site {
+			return a.in
+		}
+	}
+	return "?"
 }
 
 func sayingAt(pop []assertion, site string) string {

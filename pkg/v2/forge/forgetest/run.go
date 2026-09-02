@@ -819,12 +819,17 @@ func (r *runner) whereItWouldGo(t tb, k repokey.Key, do func() error) string {
 	t.Helper()
 	r.s.Requests()
 	r.s.Break()
-	r.note(do())
+	err := r.note(do())
 	r.s.Unbreak()
+
+	// The outage is what this call is expected to fail on, and it composed its
+	// request before it did. A session that refuses the capability composed
+	// nothing, and that is a different sentence.
+	mustAsk(t, err, "learning the address this operation uses for %q, which is where the redirect it is probed with must point", k)
 
 	reqs := r.s.Requests()
 	mustHold(t, len(reqs) > 0,
-		"learning the address this operation uses for %q, which is where the redirect it is probed with must point", k)
+		"reading back the request the operation on %q composed before the wire was broken", k)
 	return reqs[len(reqs)-1].URL
 }
 

@@ -50,12 +50,29 @@ import (
 //	CONTRACT — assert/require/Errorf/Fatalf. A claim about the driver under
 //	test. Needs a fault.
 //
-//	PLUMBING — mustReach/mustHold. A step the suite takes on its way to a
-//	question; see plumbing.go. Needs no fault, and MUST NOT HAVE ONE: a step a
+//	PLUMBING — mustReach/mustAsk/mustHold. A step the suite takes on its way to
+//	a question; see plumbing.go. Needs no fault, and MUST NOT HAVE ONE: a step a
 //	proof can kill was a claim somebody demoted, and that is a build failure
 //	naming the proof. It must also be ON ITS WAY somewhere — a real assertion
 //	after it in the same function, or a function that returns the value a
 //	caller asks its question with.
+//
+//	THE ONE EXCUSE FOR A STEP THAT FIRES, and the two things that hold it shut.
+//	A proof may list a step it STOPS, because an honest cascade exists: a
+//	Subject declaring a capability its driver has not got turns the next call
+//	into an *UnsupportedError and the suite really did not get there. Left free,
+//	that list was a way to hide a live claim — respell it as a step, move its
+//	saying one list over, tree green. So a stop must now be BOTH:
+//
+//	  a capability refusal — the step's own words must carry
+//	  refusedCapability, which only mustReach and mustAsk emit and only for an
+//	  *UnsupportedError. A step that fired because a driver answered wrongly or
+//	  a probe lied is a complaint about the subject, and a complaint has one
+//	  honest spelling.
+//
+//	  collateral — the step must not be in a function this proof also names a
+//	  claim in. A proof's complaint and the place it "could not reach" are not
+//	  the same place; when they are, the stop IS the complaint, renamed.
 //
 //	HELD — an assertion carrying `// held by forge: TestX`. The value is
 //	produced by pkg/v2/forge with no driver code between the call and it: a
@@ -93,6 +110,7 @@ type assertion struct {
 	site string // "run.go:729", the way a stack frame spells it
 	call string // "assert.Error"
 	says string // the message literal, which is this assertion's name
+	in   string // "run.go:capabilities", the function it is written in
 	kind kind
 	by   string // for held: the test in pkg/v2/forge that holds it
 }
@@ -118,15 +136,15 @@ var fixedArgs = map[string]int{
 	// The suite's own two ways of failing, which carry their message first.
 	"t.Errorf": 0, "t.Fatalf": 0,
 
-	// And the two ways it says a step is not one. Their question is where a
+	// And the three ways it says a step is not one. Their question is where a
 	// message would be, so they read like everything above.
-	"mustReach": 1, "mustHold": 1,
+	"mustReach": 1, "mustAsk": 1, "mustHold": 1,
 }
 
 // markers are the functions that MAKE a step a step. Their own bodies fail the
 // suite — that is what they are for — but a failure inside a marker is the
 // marker firing and not an assertion of its own, so the walk steps over them.
-var markers = map[string]bool{"mustReach": true, "mustHold": true}
+var markers = map[string]bool{"mustReach": true, "mustAsk": true, "mustHold": true}
 
 // heldBy reads `// held by forge: TestX` off the line an assertion is on.
 var heldBy = regexp.MustCompile(`//\s*held by forge:\s*(\w+)`)
@@ -151,9 +169,13 @@ func population(t *testing.T) []assertion {
 			t.Fatalf("parsing %s: %v", name, err)
 		}
 		marks := marksIn(fset, file)
+		enclosing := ""
 		ast.Inspect(file, func(n ast.Node) bool {
-			if fn, ok := n.(*ast.FuncDecl); ok && markers[fn.Name.Name] {
-				return false
+			if fn, ok := n.(*ast.FuncDecl); ok {
+				if markers[fn.Name.Name] {
+					return false
+				}
+				enclosing = filepath.Base(fset.Position(fn.Pos()).Filename) + ":" + fn.Name.Name
 			}
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -181,6 +203,7 @@ func population(t *testing.T) []assertion {
 				site: fmt.Sprintf("%s:%d", filepath.Base(pos.Filename), pos.Line),
 				call: spelling,
 				says: says,
+				in:   enclosing,
 			}
 			// A mark is read anywhere on the call, because a call this suite
 			// writes is routinely three lines long and the marker belongs
@@ -211,7 +234,8 @@ func howItFails(call *ast.CallExpr) (spelling string, at int, ok bool) {
 		if !markers[fn.Name] {
 			return "", 0, false
 		}
-		// mustReach(t, err, question, ...) and mustHold(t, ok, question, ...).
+		// mustReach(t, err, question, ...), mustAsk(t, err, question, ...) and
+		// mustHold(t, ok, question, ...).
 		return fn.Name, 2, true
 	case *ast.SelectorExpr:
 		recv, ok := fn.X.(*ast.Ident)
@@ -250,22 +274,24 @@ func marksIn(fset *token.FileSet, file *ast.File) map[int]string {
 var trace = regexp.MustCompile(`Error Trace:\s+\S*?([^/\s]+\.go:\d+)`)
 
 // attribute turns what the recorder captured into the assertions that produced
-// it. A failure it cannot place is a failure this file cannot reason about, so
-// it says so rather than dropping it.
-func attribute(t *testing.T, pop []assertion, msgs []string) map[string]bool {
+// it, and keeps the words each one said — the ledger reads those words to tell
+// a step the suite could not take from a claim somebody demoted. A failure it
+// cannot place is a failure this file cannot reason about, so it says so rather
+// than dropping it.
+func attribute(t *testing.T, pop []assertion, msgs []string) map[string][]string {
 	t.Helper()
 	bySite := make(map[string]assertion, len(pop))
 	for _, a := range pop {
 		bySite[a.site] = a
 	}
-	fired := make(map[string]bool)
+	fired := make(map[string][]string)
 	for _, msg := range msgs {
 		if g := trace.FindStringSubmatch(msg); g != nil {
 			if _, ok := bySite[g[1]]; !ok {
 				t.Errorf("a failure came from %s, which is not an assertion this file found in the suite's source:\n%s", g[1], msg)
 				continue
 			}
-			fired[g[1]] = true
+			fired[g[1]] = append(fired[g[1]], msg)
 			continue
 		}
 		// No trace: the suite's own Errorf and Fatalf, and the two markers,
@@ -281,7 +307,7 @@ func attribute(t *testing.T, pop []assertion, msgs []string) map[string]bool {
 			t.Errorf("a failure names %d assertions and must name one; it is unattributable, so nothing here can say which assertion is load-bearing:\n%s\n%v", len(hits), msg, hits)
 			continue
 		}
-		fired[hits[0]] = true
+		fired[hits[0]] = append(fired[hits[0]], msg)
 	}
 	return fired
 }
