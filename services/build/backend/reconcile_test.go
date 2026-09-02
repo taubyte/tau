@@ -232,7 +232,7 @@ func TestMendDoesNotDropAnOpenRowItReadAtAnOlderPrefix(t *testing.T) {
 
 	raw, exists := stale.fakeStore.Get(jobRecordKey(id))
 	require.True(t, exists)
-	rec, err := decodeJobRecord(jobRecordKey(id), raw)
+	rec, err := decodeJobRecord(jobRecordKey(id), id, raw)
 	require.NoError(t, err)
 	_, row = stale.fakeStore.Get(openIndexKey(testRepo, id))
 	t.Logf("status=%s openRow=%v barriers=%d", rec.status(), row, n)

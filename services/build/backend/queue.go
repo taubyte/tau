@@ -219,12 +219,18 @@ func (s *Service) projectError(repositoryKey string, err error) error {
 // now the entry point calls this itself, before the body runs, and hands the
 // body the result. A read on its own decides nothing and can write nothing —
 // there is no handle attached to it.
+//
+// AND THE RECORD IT RETURNS IS THE RECORD THE KEY NAMES. decodeJobRecord is
+// handed the id as well as the key, so a row that decodes cleanly and says it
+// is some other job is a corrupt row rather than a record this service goes on
+// to decide a transition on.
 func (s *Service) readRecord(id string) (jobRecord, bool, error) {
-	raw, exists := s.store.Get(jobRecordKey(id))
+	key := jobRecordKey(id)
+	raw, exists := s.store.Get(key)
 	if !exists {
 		return jobRecord{}, false, nil
 	}
-	rec, err := decodeJobRecord(jobRecordKey(id), raw)
+	rec, err := decodeJobRecord(key, id, raw)
 	if err != nil {
 		return jobRecord{}, false, errInternal("%v", err)
 	}

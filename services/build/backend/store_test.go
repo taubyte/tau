@@ -210,19 +210,36 @@ func TestJobRecordRoundTrips(t *testing.T) {
 	raw, err := rec.encode()
 	require.NoError(t, err)
 
-	got, err := decodeJobRecord("k", raw)
+	got, err := decodeJobRecord(jobRecordKey(rec.ID), rec.ID, raw)
 	require.NoError(t, err)
 	require.Equal(t, rec, got)
 }
 
-func TestADecodedRecordMustHaveAnID(t *testing.T) {
-	raw, err := jobRecord{}.encode()
+// A DECODED RECORD MUST BE THE RECORD ITS KEY NAMES, and until the round that
+// made every write name the job it was decided on, nothing compared the two:
+// the key was taken for the error message alone.
+//
+// A row that decodes cleanly and says it belongs to somebody else was handed
+// back as this job's record, and every transition then decided on it — begin
+// composed its entry's key from rec.ID, so a record claiming another job would
+// have been written under another job's key, in a section entered on this one.
+func TestADecodedRecordMustBeTheOneItsKeyNames(t *testing.T) {
+	const id = "0123456789012345678901234567890123456789abc"
+
+	neighbour, err := jobRecord{ID: "a completely different job"}.encode()
 	require.NoError(t, err)
+	_, err = decodeJobRecord(jobRecordKey(id), id, neighbour)
+	require.ErrorContains(t, err, "it says it is job")
+	require.ErrorContains(t, err, "a completely different job")
 
-	_, err = decodeJobRecord("build/job/x/record", raw)
-	require.ErrorContains(t, err, "no id")
+	// A record with no id at all is the same failure and needs no branch of its
+	// own: a job id is never empty (errors.go).
+	anonymous, err := jobRecord{}.encode()
+	require.NoError(t, err)
+	_, err = decodeJobRecord(jobRecordKey(id), id, anonymous)
+	require.ErrorContains(t, err, "it says it is job")
 
-	_, err = decodeJobRecord("build/job/x/record", []byte("not cbor at all"))
+	_, err = decodeJobRecord(jobRecordKey(id), id, []byte("not cbor at all"))
 	require.ErrorContains(t, err, "corrupt")
 }
 

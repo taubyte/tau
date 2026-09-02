@@ -278,13 +278,29 @@ type jobRecord struct {
 
 func (r jobRecord) encode() ([]byte, error) { return cbor.Marshal(r) }
 
-func decodeJobRecord(key string, raw []byte) (jobRecord, error) {
+// decodeJobRecord reads one record back, AND CHECKS THAT IT IS THE RECORD THE
+// KEY NAMES.
+//
+// It took the key for an error message alone until the round that made a write
+// name the job it was decided on, and the omission was the same shape one
+// direction over: a row that decodes cleanly and says it is some other job was
+// handed to the caller as this job's record, and every transition then decided
+// on it — begin composed its entry's key from rec.ID, so a record saying it
+// belonged elsewhere would have been WRITTEN elsewhere. It cannot be now, and
+// the read it came from is refused here instead of quietly renaming it.
+//
+// BOTH THE KEY AND THE ID ARE PASSED, because they are two different things:
+// the key is where this came from and belongs in the message, and the id is
+// what it has to agree with. The one caller has both already. An empty id
+// cannot match a job id (errors.go: 43 base64url characters), so "no id at all"
+// is the same failure and needs no separate branch.
+func decodeJobRecord(key, id string, raw []byte) (jobRecord, error) {
 	var r jobRecord
 	if err := cbor.Unmarshal(raw, &r); err != nil {
 		return jobRecord{}, fmt.Errorf("corrupt job record at %q: %w", key, err)
 	}
-	if r.ID == "" {
-		return jobRecord{}, fmt.Errorf("corrupt job record at %q: no id", key)
+	if r.ID != id {
+		return jobRecord{}, fmt.Errorf("corrupt job record at %q: it says it is job %q", key, r.ID)
 	}
 	return r, nil
 }
