@@ -14,6 +14,13 @@ package gitlab
 // namespace lookup Create makes before it creates, the user lookup the membership
 // walk makes before it reads a member row.
 //
+// WHAT DISCOVERY STILL COULD NOT SEE, AND WHERE THAT IS ANSWERED. Running every
+// operation finds every request some input reaches, and says nothing about a
+// BRANCH no input reaches. That is not answered here, because it cannot be: no
+// sample proves what a program can do. It is answered by the driver's ROUTING
+// TABLE and the closure over it in route_test.go — a path is a route registered
+// by being constructed, and a route the sweep never reached fails by name.
+//
 // THE SECOND HOP DESCRIBES THE PROJECT THAT WAS ASKED ABOUT even though it is
 // served under successor/. A successor that named ITSELF would be caught by
 // whatever key or namespace comparison the driver happens to make — Create makes
@@ -261,7 +268,11 @@ var sweepOps = []sweepOp{
 // attached it to, and a request replayed at a second address is a second hop
 // whatever address that was.
 type sweepHop struct {
-	shape      string
+	shape string
+	// query is the encoded query this request carried. It is recorded apart
+	// from the shape — a page counter is not a different endpoint — and pinned
+	// on its own below, because it is still part of what was asked.
+	query      string
 	credential string
 	// carried is whether a credential header was THERE, which is not the same
 	// question as whether it had anything in it: an empty PRIVATE-TOKEN is a
@@ -286,6 +297,7 @@ func (w *sweepWire) RoundTrip(r *http.Request) (*http.Response, error) {
 	_, bearer := r.Header["Authorization"]
 	w.hops = append(w.hops, sweepHop{
 		shape:      sweepShapeOf(r),
+		query:      r.URL.RawQuery,
 		credential: r.Header.Get("PRIVATE-TOKEN"),
 		carried:    private || bearer,
 		body:       sweepBodyOf(r),
@@ -309,6 +321,27 @@ func (w *sweepWire) shapes() []string {
 		out = append(out, h.shape)
 	}
 	return out
+}
+
+// queries is every request that carried one, as "shape?query".
+func (w *sweepWire) queries() []string {
+	out := []string{}
+	for _, h := range w.sent() {
+		if h.query == "" {
+			continue
+		}
+		out = append(out, h.shape+"?"+h.query)
+	}
+	return out
+}
+
+// parsedQuery is the parameters one request carried, refusing a query this
+// driver could not have composed rather than reading it as none.
+func parsedQuery(t *testing.T, raw string) url.Values {
+	t.Helper()
+	v, err := url.ParseQuery(raw)
+	require.NoErrorf(t, err, "this driver composed a query nothing can read: %q", raw)
+	return v
 }
 
 // bodies is every request that carried one, as "shape\n\tbody".
@@ -387,6 +420,7 @@ type sweepInstance struct {
 type sweepSubject struct {
 	instance *sweepInstance
 	wire     *sweepWire
+	cfg      *config
 	reg      *forge.Registry
 	sess     *forge.Session
 	key      repokey.Key
@@ -394,7 +428,26 @@ type sweepSubject struct {
 
 func newSweepInstance(t *testing.T) *sweepSubject {
 	t.Helper()
+	return newSweepInstanceNaming(t, "", "")
+}
+
+// newSweepInstanceNaming is the same subject with the session's key SPELLED
+// differently in the clone URL it is derived from.
+//
+// The key is parsed rather than built, so a hostile spelling here is a key
+// repokey really produces and not one a test imagined: whatever survives
+// repokey's grammar is exactly the population this driver has to escape. The
+// instance keeps describing the benign project, because what a hostile key is
+// about is the REQUEST this driver composes from it.
+func newSweepInstanceNaming(t *testing.T, ownerSpelling, nameSpelling string) *sweepSubject {
+	t.Helper()
 	in := &sweepInstance{}
+	if ownerSpelling == "" {
+		ownerSpelling = victim
+	}
+	if nameSpelling == "" {
+		nameSpelling = "pay"
+	}
 
 	// The off-host destination is a loopback listener on ANOTHER port, so
 	// "another host" is a real host this file started rather than a name that
@@ -418,12 +471,24 @@ func newSweepInstance(t *testing.T) *sweepSubject {
 	require.NoError(t, err)
 	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true}, forge.Binding{Host: host, Driver: drv})
 	require.NoError(t, err)
-	key, err := repokey.Parse(in.srv.URL + "/" + victim + "/pay.git")
+	key, err := repokey.Parse(in.srv.URL + "/" + ownerSpelling + "/" + nameSpelling)
 	require.NoError(t, err)
 	sess, err := reg.For(key, forge.Token(advToken))
 	require.NoError(t, err)
 
-	return &sweepSubject{instance: in, wire: w, reg: reg, sess: sess, key: key}
+	return &sweepSubject{instance: in, wire: w, cfg: cfgOf(drv), reg: reg, sess: sess, key: key}
+}
+
+// cfgOf is the driver's own configuration, which the route table is matched
+// against. This file is inside the package, so it is a field and not a seam.
+func cfgOf(drv forge.Driver) *config {
+	switch d := drv.(type) {
+	case *driver:
+		return d.cfg
+	case *memberDriver:
+		return d.cfg
+	}
+	panic("gitlab: the sweep was given a driver this package did not build")
 }
 
 // arm points the next arrival of one shape somewhere else. offHost chooses which
@@ -713,6 +778,40 @@ func TestTheSweepPinsEveryRequestBodyThisDriverComposes(t *testing.T) {
 		"a request body this driver composes changed; every field in one is a decision, so read the diff and say which decision this is")
 }
 
+// sweptQueries is every request this driver composes that CARRIES a query,
+// pinned by value.
+//
+// A path says which resource, a body says what to do to it, and a query says
+// which slice of it — and until this list nothing read one. membership=true is
+// the whole contract of the listing: without it the same endpoint answers every
+// public project on the instance, which is a listing whose entries mean
+// something else. per_page and the ordering are what make the pager
+// deterministic, and username is how the membership walk names a human at all.
+var sweptQueries = []string{
+	"GET /api/v4/projects?membership=true&order_by=id&page=1&per_page=100&sort=asc",
+	"GET /api/v4/users?username=" + memberName,
+}
+
+// TestTheSweepPinsEveryQueryThisDriverComposes.
+func TestTheSweepPinsEveryQueryThisDriverComposes(t *testing.T) {
+	found := []string{}
+	for _, op := range sweepOps {
+		s := newSweepInstance(t)
+		_, err := op.call(context.Background(), s.reg, s.sess, s.key, benignArgs)
+		require.NoErrorf(t, err, "%s failed against an instance that answers everything correctly", op.name)
+		found = append(found, s.wire.queries()...)
+	}
+	slices.Sort(found)
+	found = slices.Compact(found)
+	for _, q := range found {
+		t.Log(q)
+	}
+	expect := append([]string(nil), sweptQueries...)
+	slices.Sort(expect)
+	assert.Equal(t, expect, found,
+		"a query this driver composes changed; every parameter in one is a decision, so read the diff and say which decision this is")
+}
+
 // TestEveryCapabilityThisDriverAnswersIsSwept is the closure on the one
 // hand-written list here. A face this driver grows is a capability
 // forge.Session.Capabilities computes from a type assertion, and an operation
@@ -881,48 +980,265 @@ func TestAnAnonymousSessionPutsNoCredentialHeaderOnAnyRequest(t *testing.T) {
 	assert.Positive(t, reached, "no operation reached the wire, so nothing here was read")
 }
 
-// TestEveryConsumerStringStaysInsideOnePathSegment is ONE MECHANISM for the whole
-// population, rather than a test per string somebody remembered.
-//
-// A forge.Handle is opaque — nothing in this package parses or orders one — and
-// the two halves of a membership question are strings a consumer typed. None of
-// the three is a key repokey vouched for or a shape Addressable checked, and they
-// are pasted into API paths.
-//
-// THE ASSERTION IS THE SHAPE AND NOT A NEEDLE. Each operation runs twice, once
-// with benign values and once with walking ones, and the requests must match
-// segment for segment: an unescaped "/" is a segment that appeared, whichever
-// parameter it came from and whether or not anybody wrote a case for it.
-func TestEveryConsumerStringStaysInsideOnePathSegment(t *testing.T) {
-	benign := sweepShapes(t)
-	for _, op := range sweepOps {
-		if op.offline {
-			continue
-		}
-		t.Run(op.name, func(t *testing.T) {
-			s := newSweepInstance(t)
-			got, err := op.call(context.Background(), s.reg, s.sess, s.key, walkingArgs)
-			t.Logf("%s -> %v, err = %v", op.name, got, err)
-			sent := s.wire.shapes()
-			t.Logf("the driver sent %v", sent)
+// ───────────────────────── every string that reaches a URL ─────────────────────────
 
-			require.Lenf(t, sent, len(benign[op.name]),
-				"%s made a different number of requests for a hostile argument than for a benign one", op.name)
-			for i, shape := range sent {
-				assert.Equalf(t, strings.Count(benign[op.name][i], "/"), strings.Count(shape, "/"),
-					"a consumer's string opened %d path segment(s) of its own in %q",
-					strings.Count(shape, "/")-strings.Count(benign[op.name][i], "/"), shape)
-				assert.NotContainsf(t, shape, "../", "a consumer's string walked out of its path segment: %q", shape)
+// A SLOT is one string this driver is handed and pastes into a URL, and the
+// five below are the whole population. The github driver's lane says the same
+// thing in the same place and for the same reason.
+//
+// WHAT COUNTS AS ONE IS WHERE THE STRING GOES, NOT WHERE IT CAME FROM. The
+// previous mechanism swept three — an opaque handle and the two halves of a
+// membership question — on the ground that they are "strings a consumer typed",
+// as against a key "repokey vouched for and Addressable checked". Neither
+// vouching is about a path: repokey splits on "/", refuses whitespace and
+// refuses a segment that IS "." or "..", and says nothing about "?", "#" or
+// "%"; Addressable here refuses a project at the host root and a segment of
+// "-", and says nothing about the characters a URL gives meaning to. A consumer
+// types the clone URL, so the two halves of a key are exactly as
+// consumer-supplied as a handle is.
+//
+// This driver's API paths survived that gap because endpoint() escaped every
+// segment it was given. THE ADDRESS IT HANDS BACK DID NOT: CloneAddress pasted
+// key.FullName() into a clone URL raw, so a project spelled pay%23evil produced
+// the address https://host/acme/pay#evil.git, which every clone tau ran with it
+// would resolve to the project called pay. That is what running this property
+// over composed URLs rather than over requests found.
+type sweepSlot struct {
+	name string
+
+	// The run this slot is hostile in. A key slot is spelled into the clone URL
+	// the session key is parsed from, so what the driver receives is a key
+	// repokey really produces.
+	args          sweepArgs
+	ownerSpelling string
+	nameSpelling  string
+
+	// value is what the slot holds once this layer is done with it, which is
+	// the string that has to survive as one segment.
+	value string
+}
+
+// walkingSegment is what a KEY can carry, and every character in it is one
+// repokey's grammar lets through. "?" ends a path, so an unescaped one turns
+// the rest into query parameters this driver never wrote; "#" ends a URL, so an
+// unescaped one TRUNCATES the request; and "%2f" is a "/" the instance decodes
+// after this driver has stopped looking, which is what makes ".." in front of
+// it a walk into another project rather than a name with dots in it.
+//
+// It has no literal "/" because repokey splits on one, and a test that fed a
+// key an impossible spelling would be arming a population that does not exist.
+const walkingSegment = "..%2f..%2fattacker?a#b"
+
+// walkingSegmentSpelt is how a clone URL writes that segment. The two are
+// asserted to correspond in TestTheHostileKeyIsOneRepokeyReallyProduces rather
+// than assumed.
+const walkingSegmentSpelt = "..%252f..%252fattacker%3Fa%23b"
+
+func sweepSlots() []sweepSlot {
+	return []sweepSlot{
+		{
+			name: "the project's namespace", args: benignArgs,
+			ownerSpelling: walkingSegmentSpelt, value: walkingSegment,
+		},
+		{
+			name: "the project's name", args: benignArgs,
+			nameSpelling: walkingSegmentSpelt, value: walkingSegment,
+		},
+		{
+			name:  "a resource handle",
+			args:  sweepArgs{handle: walkingSpelling, namespace: victim, username: memberName},
+			value: walkingSpelling,
+		},
+		{
+			name:  "a membership group",
+			args:  sweepArgs{handle: benignArgs.handle, namespace: walkingSpelling, username: memberName},
+			value: walkingSpelling,
+		},
+		{
+			name:  "a membership username",
+			args:  sweepArgs{handle: benignArgs.handle, namespace: victim, username: walkingSpelling},
+			value: walkingSpelling,
+		},
+	}
+}
+
+// TestTheHostileKeyIsOneRepokeyReallyProduces. The two key slots above are
+// worth nothing if the spelling they use is one no clone URL yields, so this is
+// the row that says the population is real.
+func TestTheHostileKeyIsOneRepokeyReallyProduces(t *testing.T) {
+	k, err := repokey.Parse("https://h.example/" + walkingSegmentSpelt + "/" + walkingSegmentSpelt)
+	require.NoError(t, err, "repokey refuses the spelling the escaping sweep is written against")
+	t.Logf("key = %s", k)
+	assert.Equal(t, walkingSegment, k.Owner)
+	assert.Equal(t, walkingSegment, k.Name)
+
+	drv, err := New("h.example")
+	require.NoError(t, err)
+	assert.NoError(t, drv.Addressable(k),
+		"this driver refuses the key the escaping sweep is written against, so the sweep would prove nothing")
+}
+
+// composedURL is one URL this driver put a string into: a request it made, or
+// an address it handed back. Both halves are here because a string can leave
+// its place in either of them — a "?" that survived unescaped in a path becomes
+// a query parameter, and a consumer string pasted into a query value can become
+// a second parameter. That second half is not decoration on this driver: the
+// membership walk asks about a username by putting it in a query and nowhere
+// else.
+type composedURL struct {
+	// what is the method, or ADDRESS for a URL that was returned rather than
+	// sent.
+	what  string
+	path  string // escaped
+	query string // encoded
+	// route is the route a request matched, and nil for an address. What a
+	// route declares is what its query may name.
+	route *route
+}
+
+func (c composedURL) String() string {
+	if c.query == "" {
+		return c.what + " " + c.path
+	}
+	return c.what + " " + c.path + "?" + c.query
+}
+
+// composed is every URL one operation put a string into, with each request
+// bound to the route that produced it.
+func composed(t *testing.T, hops []sweepHop, cfg *config, got any) []composedURL {
+	t.Helper()
+	out := []composedURL{}
+	for _, h := range hops {
+		method, path, found := strings.Cut(h.shape, " ")
+		require.Truef(t, found, "%q is not a request shape", h.shape)
+		matched := assertOneRoute(t, cfg, h.shape)
+		var r *route
+		if len(matched) == 1 {
+			r = matched[0]
+		}
+		out = append(out, composedURL{what: method, path: path, query: h.query, route: r})
+	}
+	for _, addr := range addressesIn(got) {
+		u, err := url.Parse(addr.URL)
+		require.NoErrorf(t, err, "this driver handed back an address that is not a URL: %q", addr.URL)
+		out = append(out, composedURL{what: "ADDRESS", path: u.EscapedPath(), query: u.RawQuery})
+	}
+	return out
+}
+
+func addressesIn(got any) []forge.Address {
+	switch v := got.(type) {
+	case forge.Address:
+		return []forge.Address{v}
+	case []forge.Address:
+		return v
+	}
+	return nil
+}
+
+// decodedSegments is a composed path split into the segments an instance will
+// see, each one decoded exactly once.
+func decodedSegments(t *testing.T, path string) []string {
+	t.Helper()
+	out := []string{}
+	for _, segment := range strings.Split(path, "/") {
+		decoded, err := url.PathUnescape(segment)
+		require.NoErrorf(t, err, "this driver composed a segment that is not an encoding: %q", segment)
+		out = append(out, decoded)
+	}
+	return out
+}
+
+// TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment is ONE
+// MECHANISM over the whole population, and the population is discovered the
+// same way the request shapes are: each slot is made hostile ON ITS OWN and
+// every operation is run twice, so whether a slot reaches a given operation's
+// URLs is READ rather than declared.
+//
+// THE ASSERTION IS THE SEGMENT AND NOT A NEEDLE. A path is split and each piece
+// decoded once, which is what the instance on the other end does, and the
+// hostile value must come back out of exactly that. Escaping it correctly is
+// the only way that happens: pasted raw, "..%2f..%2fattacker?a#b" arrives as
+// the segment "../../attacker" with a query and a fragment the driver never
+// wrote — and it arrives with the SAME NUMBER OF SEGMENTS, which is why
+// counting separators is not enough and was not enough.
+func TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment(t *testing.T) {
+	for _, slot := range sweepSlots() {
+		t.Run(slot.name, func(t *testing.T) {
+			reached := []string{}
+
+			for _, op := range sweepOps {
+				t.Run(op.name, func(t *testing.T) {
+					b := newSweepInstance(t)
+					benignGot, benignErr := op.call(context.Background(), b.reg, b.sess, b.key, benignArgs)
+					t.Logf("benign  %s -> %v, err = %v", op.name, benignGot, benignErr)
+					benign := composed(t, b.wire.sent(), b.cfg, benignGot)
+
+					s := newSweepInstanceNaming(t, slot.ownerSpelling, slot.nameSpelling)
+					got, err := op.call(context.Background(), s.reg, s.sess, s.key, slot.args)
+					t.Logf("hostile %s -> %v, err = %v", op.name, got, err)
+					urls := composed(t, s.wire.sent(), s.cfg, got)
+					t.Logf("the driver composed %v", urls)
+
+					// FEWER IS FINE AND MORE IS NOT. A hostile value can make
+					// this driver stop earlier than a benign one — Create's own
+					// "the instance resolved a different namespace" refusal does
+					// exactly that — and that is a refusal rather than a defect.
+					// An EXTRA URL is a request a consumer's string caused.
+					require.LessOrEqualf(t, len(urls), len(benign),
+						"%s composed more URLs for a hostile %s than for a benign one", op.name, slot.name)
+
+					held := false
+					for _, u := range urls {
+						// A REQUEST STILL NAMES ONLY WHAT ITS ROUTE DECLARES.
+						// That is "the string opened nothing of its own" said
+						// against the driver's own routing rather than against a
+						// benign twin.
+						if u.what == "ADDRESS" {
+							assert.Emptyf(t, u.query, "a clone address carries a query: %v", u)
+						} else {
+							require.NotNilf(t, u.route, "%v matched no route", u)
+							for name := range parsedQuery(t, u.query) {
+								assert.Containsf(t, u.route.params, name,
+									"%v carries a query parameter %s %s does not declare, so a string walked out of where it was put",
+									u, u.route.method, u.route.template)
+							}
+						}
+
+						// WHERE THE STRING HAS TO BE FOUND: inside one path
+						// segment, or as one whole query value. CONTAINS rather
+						// than EQUALS for the segment, because a clone address
+						// appends ".git" to the last one — which is the one
+						// thing this driver adds to a name after escaping it,
+						// and adding it before would have been the bug.
+						for _, segment := range decodedSegments(t, u.path) {
+							if strings.Contains(segment, slot.value) {
+								held = true
+							}
+						}
+						for _, values := range parsedQuery(t, u.query) {
+							if slices.Contains(values, slot.value) {
+								held = true
+							}
+						}
+					}
+
+					if slices.EqualFunc(benign, urls, func(a, b composedURL) bool { return a.String() == b.String() }) {
+						// This slot does not reach this operation's URLs, so
+						// there is nothing here for it to have escaped. Some
+						// operation must reach it, and that is asserted below.
+						return
+					}
+					reached = append(reached, op.name)
+					assert.Truef(t, held,
+						"%s changed what it composed for a hostile %s and nothing it composed holds it as one path segment or one query value, so the string was truncated, re-encoded, or spread across segments: %v",
+						op.name, slot.name, urls)
+				})
 			}
-			if !op.pastes {
-				assert.Equal(t, benign[op.name], sent,
-					"%s hands the driver none of these strings, so its requests must not have changed", op.name)
-				return
-			}
-			assert.NotEqualf(t, benign[op.name], sent,
-				"%s is marked as handing the driver a consumer's string and its requests did not change, so this row proves nothing", op.name)
-			assert.Containsf(t, strings.Join(sent, " "), url.PathEscape(walkingSpelling),
-				"%s put a consumer's string on the wire as something other than one escaped path segment, or never put it there at all", op.name)
+
+			assert.NotEmptyf(t, reached,
+				"no operation composed a URL out of %s, so nothing in this row was read", slot.name)
+			t.Logf("%s reaches %v", slot.name, reached)
 		})
 	}
 }
