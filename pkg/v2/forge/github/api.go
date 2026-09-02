@@ -1,0 +1,272 @@
+package github
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+
+	"github.com/taubyte/tau/pkg/git/repokey"
+	"github.com/taubyte/tau/pkg/v2/forge"
+)
+
+const (
+	// maxResponseBody bounds what this driver will decode. A response is a
+	// stranger's bytes even when the stranger is GitHub: an unbounded decode is
+	// an unbounded allocation decided by whoever is answering.
+	maxResponseBody = 8 << 20
+
+	// maxHostString bounds a string a HOST chose before it reaches an error
+	// message. A forge that can pick how long a log line is can pick how much of
+	// a disk it costs, and a clone URL and a full name are both its to write.
+	maxHostString = 256
+
+	// maxDrainOnError is how much of a non-2xx body is read before the
+	// connection is returned to the pool. The body itself is never used — see
+	// the package comment — but reading a little of it is what makes the
+	// connection reusable instead of dropped.
+	maxDrainOnError = 4 << 10
+)
+
+// client is a driver acting as one credential. It is stateless: there is no
+// "current repository", so no method can silently depend on a fetch having
+// happened first, which is the shape v1's client has and the reason its
+// CreateDeployKey has a "no repository selected" error at all.
+type client struct {
+	d     *driver
+	token string
+	http  *http.Client
+}
+
+var (
+	_ forge.Client         = (*client)(nil)
+	_ forge.Lister         = (*client)(nil)
+	_ forge.Creator        = (*client)(nil)
+	_ forge.Deleter        = (*client)(nil)
+	_ forge.DeployKeys     = (*client)(nil)
+	_ forge.PushHooks      = (*client)(nil)
+	_ forge.CloneAddresses = (*client)(nil)
+)
+
+// bind builds the client for one token. The credential is attached by
+// PinnedTransport and by nothing else, so there is no path by which a request
+// this driver builds carries it to a host other than the API host, and no path
+// by which a redirect carries it off one.
+func (d *driver) bind(token string) *client {
+	return &client{
+		d:     d,
+		token: token,
+		http: &http.Client{
+			Transport: forge.PinnedTransport(d.apiHost, d.rt, func(h http.Header) {
+				// An anonymous session binds an empty credential; sending
+				// "Bearer " would turn a public read into a 401.
+				if token != "" {
+					h.Set("Authorization", "Bearer "+token)
+				}
+			}),
+		},
+	}
+}
+
+func (c *client) Host() string { return c.d.host }
+
+// statusError is a non-2xx answer, carrying the request this driver made and
+// the code it got back — and nothing the host chose. Every mapping into the
+// forge taxonomy reads it and only it.
+type statusError struct {
+	Method string
+	Path   string
+	Status int
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("forge/github: %s %s answered %d %s", e.Method, e.Path, e.Status, http.StatusText(e.Status))
+}
+
+// statusOf is the code a failure carried, or 0 when it never reached a
+// response. A caller uses it where ONE status is a definitive answer — a 404 on
+// a membership check — and nowhere else.
+func statusOf(err error) int {
+	var se *statusError
+	if errors.As(err, &se) {
+		return se.Status
+	}
+	return 0
+}
+
+// send issues one request against the API base and decodes a 2xx body into out.
+//
+// path is relative to the base and already escaped. A non-2xx becomes a
+// *statusError; a transport failure stays whatever it was, wrapped, so that an
+// outage can never be pattern-matched into a verdict.
+func (c *client) send(ctx context.Context, method, path string, in, out any) error {
+	u, err := url.Parse(c.d.base + path)
+	if err != nil {
+		return fmt.Errorf("forge/github: %s %s is not a URL: %w", method, path, err)
+	}
+
+	var body io.Reader
+	if in != nil {
+		enc, err := json.Marshal(in)
+		if err != nil {
+			return fmt.Errorf("forge/github: encoding the %s %s request: %w", method, path, err)
+		}
+		body = bytes.NewReader(enc)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
+	if err != nil {
+		return fmt.Errorf("forge/github: building %s %s: %w", method, path, err)
+	}
+	req.Header.Set("Accept", acceptJSON)
+	req.Header.Set("X-GitHub-Api-Version", apiVersion)
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("forge/github: %s %s: %w", method, path, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainOnError))
+		return &statusError{Method: method, Path: path, Status: resp.StatusCode}
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(out); err != nil {
+		return fmt.Errorf("forge/github: %s %s answered a body this driver cannot read: %w", method, path, err)
+	}
+	return nil
+}
+
+// classify maps a failure about ONE REPOSITORY into the taxonomy.
+//
+//	401  the credential was refused. A statement about the credential, never a
+//	     verdict on the repository: a consumer that read it as one would deny a
+//	     legitimate writer whose token merely lapsed.
+//	404  the host serves no such repository — which on GitHub also covers a
+//	     private repository this credential may not see, and those two are
+//	     indistinguishable from outside on every forge.
+//
+// EVERYTHING ELSE STAYS AN ERROR AND IS NOT A VERDICT. A 403 in particular is
+// not "you may not push": on GitHub it is a rate limit, an org that blocked the
+// OAuth app, or SAML enforcement — an operator problem, not an answer about
+// this caller.
+func (c *client) classify(err error, key repokey.Key) error {
+	var se *statusError
+	if !errors.As(err, &se) {
+		return err
+	}
+	switch {
+	case se.Status == http.StatusUnauthorized:
+		return &forge.CredentialError{Host: c.d.host, Reason: "the forge refused this credential"}
+	case se.Status == http.StatusNotFound && key.Name != "":
+		return &forge.NotFoundError{Host: c.d.host, Key: key}
+	}
+	return err
+}
+
+// classifyResource is classify for something UNDER a repository — a hook, a
+// deploy key. A 404 there is the resource and not the repository, and calling
+// it *NotFoundError would say the host serves no repository that is plainly
+// there.
+func (c *client) classifyResource(err error) error {
+	return c.classify(err, repokey.Key{})
+}
+
+// repoPath is the API path for a key. Addressable has already refused a nested
+// or ownerless key, so the two segments are exactly the two GitHub takes; they
+// are escaped anyway, because a path built by concatenation is a path someone
+// will one day feed something else.
+func repoPath(key repokey.Key, tail ...string) string {
+	p := "repos/" + url.PathEscape(key.Owner) + "/" + url.PathEscape(key.Name)
+	for _, t := range tail {
+		p += "/" + t
+	}
+	return p
+}
+
+// repoJSON is what this driver reads out of a repository. Everything else
+// GitHub sends — the numeric id, the node id, the counts, the URLs of its
+// features — is deliberately absent: a field that is not parsed is a field
+// nothing later can come to depend on.
+type repoJSON struct {
+	FullName      string      `json:"full_name"`
+	CloneURL      string      `json:"clone_url"`
+	SSHURL        string      `json:"ssh_url"`
+	DefaultBranch string      `json:"default_branch"`
+	Private       bool        `json:"private"`
+	Permissions   permissions `json:"permissions"`
+}
+
+// permissions is the caller's own grant, which GitHub returns WITH the
+// repository — so the authorization question costs no second request. It is
+// absent for an unauthenticated read, and absent decodes to all-false, which is
+// AccessNone.
+type permissions struct {
+	Admin    bool `json:"admin"`
+	Maintain bool `json:"maintain"`
+	Push     bool `json:"push"`
+	Pull     bool `json:"pull"`
+}
+
+// access maps GitHub's five roles onto tau's four rungs.
+//
+// maintain|push|admin is v1's write predicate, preserved exactly. What is new
+// is the rung below it: PULL IS AccessRead AND NOT AccessWrite. A public
+// repository returns pull:true to every token on earth, and reading that as
+// permission is what let an unrelated caller reach another project's
+// repositories. "triage" is deliberately unread — it grants no push — so it
+// lands on pull, or on nothing.
+func (p permissions) access() forge.Access {
+	switch {
+	case p.Admin:
+		return forge.AccessAdmin
+	case p.Maintain, p.Push:
+		return forge.AccessWrite
+	case p.Pull:
+		return forge.AccessRead
+	}
+	return forge.AccessNone
+}
+
+// repository turns GitHub's answer into forge's, deriving the key from the
+// CLONE URL the forge returned rather than echoing the argument. That is what
+// makes a rename, a redirect or a case-folding disagreement visible instead of
+// silently absorbed: GitHub answers a request for a renamed repository with the
+// repository at its new name, and a caller that echoed its own argument would
+// never know.
+func (c *client) repository(r repoJSON) (forge.Repository, error) {
+	if len(r.CloneURL) > maxHostString {
+		return forge.Repository{}, fmt.Errorf("forge/github: %q came back with an implausibly long clone URL", short(r.FullName))
+	}
+	key, err := repokey.Parse(r.CloneURL)
+	if err != nil {
+		return forge.Repository{}, fmt.Errorf("forge/github: the clone URL of %q is not one this layer can name: %w", short(r.FullName), err)
+	}
+	return forge.Repository{
+		Key:           key,
+		HTTPS:         r.CloneURL,
+		SSH:           r.SSHURL,
+		DefaultBranch: r.DefaultBranch,
+		Private:       r.Private,
+	}, nil
+}
+
+// short truncates a host-chosen string for an error message. It cuts bytes
+// rather than runes because %q renders a broken one as an escape, which is
+// exactly as readable and one fewer thing to get wrong.
+func short(s string) string {
+	if len(s) > maxHostString {
+		return s[:maxHostString] + "..."
+	}
+	return s
+}
