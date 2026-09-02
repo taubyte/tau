@@ -563,6 +563,70 @@ func TestTheWireStringGoesInTheAttributeTheSchemeNames(t *testing.T) {
 	}
 }
 
+// TestTheHookSubscribesToPushesAndNothingElse reads the WHOLE registration body
+// and compares it by value, which is the form the github driver's equivalent
+// takes and the form this one did not.
+//
+// Measured before it existed: flipping enable_ssl_verification to false left the
+// entire forge tree at exit 0, and so did turning on merge_requests_events,
+// issues_events, pipeline_events or repository_update_events, one at a time. The
+// two assertions this driver had — push_events and tag_push_events — are two of
+// eight fields, and the six they left out are the six that matter most. The
+// callback is where a secret-bearing delivery is sent, so an instance told not to
+// verify its certificate is an instance told to hand that delivery to whoever
+// answers; and every extra event is a delivery this deployment then has to have
+// an opinion about, arriving at a callback built for pushes.
+//
+// WHOLE-BODY EQUALITY IS THE POINT rather than eight assertions. A field ADDED
+// here is a value nobody decided, and it fails this too — which per-field
+// assertions cannot do, and which is the property that would have caught the
+// five flags above without anybody predicting which one.
+func TestTheHookSubscribesToPushesAndNothingElse(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		options   []Option
+		attribute string
+	}{
+		{"shared token", nil, "token"},
+		{"standard webhooks", []Option{Signing()}, "signing_token"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			var sent map[string]any
+			c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+				require.NoError(t, decodeInto(r, &sent))
+				answer(t, http.StatusCreated, `{"id":11}`)(w, r)
+			}, testCase.options...)
+
+			callback, err := url.Parse("https://build.example.invalid/hooks/x")
+			require.NoError(t, err)
+			_, err = c.RegisterPushHook(context.Background(), key, callback, "the-wire-string")
+			require.NoError(t, err)
+
+			assert.Equal(t, map[string]any{
+				"url": callback.String(),
+				// The one event this deployment has a handler for.
+				"push_events": true,
+				// A tag push is a different event with the same payload shape,
+				// and it is off because tau builds a branch tip.
+				"tag_push_events": false,
+				// The callback receives a secret-bearing delivery, so the
+				// instance verifies the certificate it is delivering to.
+				"enable_ssl_verification": true,
+				// Written down as false rather than left out. GitLab's defaults
+				// are already these, and relying on a default is how v1 ended up
+				// installing a write deploy key on every repository it ever
+				// registered.
+				"merge_requests_events":    false,
+				"issues_events":            false,
+				"pipeline_events":          false,
+				"repository_update_events": false,
+				// The wire string, in the attribute the scheme names.
+				testCase.attribute: "the-wire-string",
+			}, sent, "the hook this driver registers is not the hook it says it registers")
+		})
+	}
+}
+
 // ─────────────────────────── deletion ───────────────────────────
 
 // ON GITLAB, A NIL FROM Delete MEANS "ACCEPTED FOR DELETION". The API answers
