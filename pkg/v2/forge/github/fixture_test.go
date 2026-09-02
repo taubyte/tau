@@ -108,6 +108,11 @@ type fixture struct {
 	rt   *breakableRT
 	host string
 
+	// renames are the repositories this GitHub answers for under a name they no
+	// longer have. It is written once, before the server is handed out, and
+	// read without the lock for that reason.
+	renames map[string]string
+
 	mu            sync.Mutex
 	repos         map[string]*fRepo
 	hooks         map[string]*fHook
@@ -142,6 +147,21 @@ func newFixture(t *testing.T) *fixture {
 	// seeded: GitHub hides a repository a credential may not see behind the same
 	// 404 it gives one that does not exist, and pretending otherwise here would
 	// test a forge nobody runs.
+
+	// acme/billing was renamed to acme/pay, and this GitHub still answers for
+	// the old name — with the new repository, whose full_name and clone URL say
+	// so. It is the fixture the derivation contract is asserted on: everywhere
+	// else the key asked about and the key answered with are the same string,
+	// so a driver echoing its own argument back is indistinguishable from one
+	// reading the answer.
+	//
+	// IT RESOLVES THE OLD NAME RATHER THAN REDIRECTING TO IT, and it must:
+	// GitHub answers a rename with 301 and this driver follows no redirect at
+	// all (see noRedirect, and the reason it is right), so a 3xx here would
+	// assert that policy a second time instead of asserting derivation. What
+	// the contract says is that the KEY COMES FROM THE ANSWER, and the answer
+	// is what a body says about which repository it describes.
+	f.renames = map[string]string{"acme/billing": "acme/pay"}
 	return f
 }
 
@@ -339,8 +359,12 @@ func (f *fixture) getRepo(w http.ResponseWriter, r *http.Request) {
 	if !f.user(w, r) {
 		return
 	}
+	full := r.PathValue("owner") + "/" + r.PathValue("name")
+	if to, moved := f.renames[full]; moved {
+		full = to
+	}
 	f.mu.Lock()
-	repo, ok := f.repos[r.PathValue("owner")+"/"+r.PathValue("name")]
+	repo, ok := f.repos[full]
 	var body map[string]any
 	if ok {
 		body = f.repoBody(repo)

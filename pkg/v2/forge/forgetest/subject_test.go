@@ -48,6 +48,8 @@ func subjectFor(t *testing.T, name string, sh fake.Shape) Subject {
 		Uncreatable: k.Uncreatable,
 		Deep:        k.Deep,
 		DeepNests:   sh.Nested,
+		Moved:       k.Moved,
+		MovedTo:     k.MovedTo,
 
 		Requests: func() []Request {
 			raw := f.Requests()

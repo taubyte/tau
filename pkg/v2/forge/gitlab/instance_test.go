@@ -36,6 +36,11 @@ type instance struct {
 	host string
 	base string
 
+	// moved are the projects this instance still answers for under a path they
+	// no longer have. It is written before the server is handed out and never
+	// again, so it is read without the lock.
+	moved map[string]string
+
 	mu          sync.Mutex
 	projects    map[string]*proj
 	namespaces  map[string]int64
@@ -142,6 +147,8 @@ type keys struct {
 	Creatable   repokey.Key
 	Uncreatable repokey.Key
 	Deep        repokey.Key
+	Moved       repokey.Key
+	MovedTo     repokey.Key
 }
 
 func newInstance(t *testing.T) *instance {
@@ -174,6 +181,15 @@ func newInstance(t *testing.T) *instance {
 	in.seed("acme/site", "private", forge.AccessAdmin)
 	in.seed("acme/scratch", "private", forge.AccessAdmin)
 	in.seed("acme/team/widget", "private", forge.AccessAdmin)
+
+	// acme/billing was renamed to acme/pay and this instance still answers for
+	// the old path, WITH the project it became — whose http_url_to_repo says
+	// which one that is. It is the only fixture here on which a driver echoing
+	// back the key it was asked about answers differently from one deriving the
+	// key from what the instance said, which is what the conformance suite
+	// asserts on it. Serving it in one hop rather than 301-ing to it keeps that
+	// assertion about derivation instead of about redirect policy.
+	in.moved = map[string]string{"acme/billing": "acme/pay"}
 	return in
 }
 
@@ -202,6 +218,8 @@ func (in *instance) keys(t *testing.T) keys {
 		Creatable:   in.key(t, "acme/fresh"),
 		Uncreatable: in.key(t, "stranger/fresh"),
 		Deep:        in.key(t, "acme/team/widget"),
+		Moved:       in.key(t, "acme/billing"),
+		MovedTo:     in.key(t, "acme/pay"),
 	}
 }
 
@@ -418,6 +436,10 @@ func (in *instance) serveProject(w http.ResponseWriter, r *http.Request, token, 
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "400 Bad request"})
 		return
+	}
+
+	if to, moved := in.moved[full]; moved {
+		full = to
 	}
 
 	in.mu.Lock()

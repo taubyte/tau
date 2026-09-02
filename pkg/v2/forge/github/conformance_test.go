@@ -174,6 +174,11 @@ func (f *fixture) subject(t *testing.T, reg *forge.Registry, extra ...forge.Capa
 		// repository has.
 		Deep:      f.key(t, "acme/team/widget"),
 		DeepNests: false,
+		// acme/billing was renamed to acme/pay and GitHub still answers for it,
+		// with a redirect. A driver that echoes the key it was asked about
+		// answers acme/billing here and is wrong about which repository this is.
+		Moved:   f.key(t, "acme/billing"),
+		MovedTo: f.key(t, "acme/pay"),
 
 		Requests: f.Requests,
 		Break:    f.Break,

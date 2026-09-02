@@ -66,6 +66,7 @@ func run(t tb, s Subject) {
 	t.Run("whoami", r.whoami)
 	t.Run("access", r.access)
 	t.Run("repository-round-trips-the-key", r.repository)
+	t.Run("the-key-is-derived-from-the-forges-answer", r.derivedKey)
 	t.Run("an-outage-is-not-a-refusal", r.outage)
 
 	t.Run("list", r.list)
@@ -111,6 +112,7 @@ func (r *runner) preflight(t tb) {
 		"Writable": s.Writable, "ReadOnly": s.ReadOnly, "NoAccess": s.NoAccess,
 		"Missing": s.Missing, "Admin": s.Admin, "Deletable": s.Deletable,
 		"Creatable": s.Creatable, "Uncreatable": s.Uncreatable, "Deep": s.Deep,
+		"Moved": s.Moved, "MovedTo": s.MovedTo,
 	} {
 		if k.Name == "" {
 			t.Fatalf("forgetest: fixture %s is not set", name)
@@ -121,6 +123,13 @@ func (r *runner) preflight(t tb) {
 	}
 	if !strings.Contains(s.Deep.Owner, "/") {
 		t.Fatalf("forgetest: fixture Deep must have a nested owner, has %q", s.Deep.Owner)
+	}
+	// A Subject whose Moved and MovedTo are one key has opted out of the
+	// derivation assertion without saying so: echoing the argument back and
+	// deriving the key from the answer produce the same value, which is exactly
+	// the blind spot this fixture exists to close.
+	if s.Moved == s.MovedTo {
+		t.Fatalf("forgetest: fixtures Moved and MovedTo are both %q; the forge must answer for one key and answer WITH another, or a driver that echoes its argument is indistinguishable from one that derives", s.Moved)
 	}
 
 	if s.Expect.Has(forge.CapDeployKeys) && (s.LastDeployKeyReadOnly == nil || s.DeployKeyInstalled == nil) {
@@ -344,6 +353,33 @@ func (r *runner) repository(t tb) {
 	var nf *forge.NotFoundError
 	require.ErrorAs(t, r.note(err), &nf)
 	assert.Equal(t, forge.Repository{}, repo, "a failed Repository returned a value beside its error")
+}
+
+// derivedKey is the OTHER half of the round trip, and the half that was
+// missing. Repository's contract is that Key is DERIVED from the clone URL the
+// forge returned and never echoed back from the argument — and on a fixture the
+// forge answers for under its own name, the two are the same string, so a
+// driver doing the forbidden thing produces exactly the answer a correct one
+// does. Moved is the fixture where they differ: the forge still answers for a
+// repository that has been renamed, and answers with the one it became.
+//
+// A rename is not a hypothetical. It is the case that makes a builder clone the
+// address of one repository and file it under the name of another, and it is
+// the case a consumer never sees coming, because the forge reports the move and
+// the driver is the thing that threw the report away.
+func (r *runner) derivedKey(t tb) {
+	t.Helper()
+	sess := r.session(t, r.s.Moved)
+
+	repo, err := sess.Repository(r.ctx, r.s.Moved)
+	require.NoError(t, r.note(err), "the forge answers for %q, which is now %q", r.s.Moved, r.s.MovedTo)
+	assert.Equal(t, r.s.MovedTo, repo.Key,
+		"Repository answered with the key it was ASKED about, %q; the key must be derived from the clone address the forge returned, which names %q",
+		r.s.Moved, r.s.MovedTo)
+
+	// And the whole repository must be the one the forge served, not a value
+	// half taken from the argument.
+	r.assertRepository(t, repo, r.s.MovedTo)
 }
 
 // assertRepository is the round trip: both clone addresses must re-derive the

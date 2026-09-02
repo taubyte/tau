@@ -145,6 +145,12 @@ const (
 	// FaultEchoesKey returns Repository.Key echoed from the argument instead of
 	// derived from the clone URL the forge returned, so a rename, a redirect or
 	// a case-folding disagreement is invisible.
+	//
+	// It is ONE defect. It used to point the clone addresses at another
+	// repository as well, and the suite caught that second defect and reported
+	// it as this one — so the echo the contract actually forbids went unchecked
+	// on every driver while a test said it did not. A fault carrying two
+	// mistakes proves the suite catches the easier one.
 	FaultEchoesKey Fault = "echoes-key"
 
 	// FaultLeaksTokenInError quotes the credential in an error string, which is

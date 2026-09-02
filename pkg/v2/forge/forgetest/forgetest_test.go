@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/v2/forge"
 	"github.com/taubyte/tau/pkg/v2/forge/fake"
 )
@@ -74,9 +75,12 @@ func TestTheSuiteCatchesABrokenDriver(t *testing.T) {
 			saying: "an unreachable forge answered the authorization question",
 		},
 		{
+			// The echo the contract forbids, on the one fixture where it is
+			// visible: a repository the forge answers for under a name it does
+			// not answer WITH.
 			fault:  fake.FaultEchoesKey,
 			shape:  fake.GitHubLike,
-			saying: "clone address names",
+			saying: "must be derived from the clone address the forge returned",
 		},
 		{
 			fault:  fake.FaultLeaksTokenInError,
@@ -164,6 +168,10 @@ func TestASubjectThatCannotBeRunIsFatalAndNotSkipped(t *testing.T) {
 		saying string
 	}{
 		{"no-requests-probe", func(s *Subject) { s.Requests = nil }, "refused before the wire"},
+		{"a-moved-fixture-that-did-not-move", func(s *Subject) {
+			s.Moved = s.MovedTo
+		}, "answer for one key and answer WITH another"},
+		{"no-moved-fixture", func(s *Subject) { s.Moved = repokey.Key{} }, "fixture Moved is not set"},
 		{"no-break-probe", func(s *Subject) { s.Break = nil }, "an outage is not a refusal"},
 		{"no-expect", func(s *Subject) { s.Expect = nil }, "exact capability set"},
 		{"no-registry", func(s *Subject) { s.Registry = nil }, "needs a Registry and a Host"},

@@ -40,6 +40,14 @@ type Keys struct {
 	Deletable   repokey.Key
 	Creatable   repokey.Key
 	Uncreatable repokey.Key
+
+	// Moved is a repository that was RENAMED. This forge still answers for it
+	// and answers WITH MovedTo, the way every real forge keeps an old path
+	// resolving after a rename. It is the only fixture on which echoing the
+	// argument back and deriving the key from the answer produce different
+	// values, which makes it the only one that can assert the difference.
+	Moved   repokey.Key
+	MovedTo repokey.Key
 }
 
 // Membership fixtures.
@@ -71,6 +79,7 @@ type core struct {
 
 	mu       sync.Mutex
 	repos    map[string]*repo
+	aliases  map[string]string
 	hooks    map[forge.Handle]*hookRec
 	deploy   map[forge.Handle]*keyRec
 	seq      int
@@ -111,10 +120,11 @@ func New(sh Shape) *Forge {
 		panic("fake: a shape that signs names no scheme")
 	}
 	c := &core{
-		shape:  sh,
-		repos:  make(map[string]*repo),
-		hooks:  make(map[forge.Handle]*hookRec),
-		deploy: make(map[forge.Handle]*keyRec),
+		shape:   sh,
+		repos:   make(map[string]*repo),
+		aliases: make(map[string]string),
+		hooks:   make(map[forge.Handle]*hookRec),
+		deploy:  make(map[forge.Handle]*keyRec),
 	}
 	c.keys = Keys{
 		Writable: c.seed("acme/pay", true, forge.AccessWrite),
@@ -131,6 +141,12 @@ func New(sh Shape) *Forge {
 	// address one is refusing a repository that genuinely exists rather than
 	// one that happens not to.
 	c.keys.Deep = c.seed("acme/team/widget", true, forge.AccessAdmin)
+
+	// acme/billing was renamed to acme/pay and this forge still answers for the
+	// old name — with the new repository, whose clone addresses say so. Asking
+	// about it is the only question whose answer differs between a driver that
+	// derives the key and one that echoes the argument.
+	c.keys.Moved, c.keys.MovedTo = c.rename("acme/billing", c.keys.Writable), c.keys.Writable
 	return &Forge{c: c}
 }
 
@@ -264,8 +280,21 @@ func (c *core) call(method, path, token string) error {
 	return nil
 }
 
+// rename makes this forge answer for `from` with the repository `to` names, and
+// returns the old key. It is a redirect and not a copy: there is one repository
+// and it has one identity, which is the whole point.
+func (c *core) rename(from string, to repokey.Key) repokey.Key {
+	old := c.parse(from)
+	c.aliases[old.String()] = to.String()
+	return old
+}
+
 func (c *core) lookup(k repokey.Key) (*repo, bool) {
-	r, ok := c.repos[k.String()]
+	name := k.String()
+	if to, moved := c.aliases[name]; moved {
+		name = to
+	}
+	r, ok := c.repos[name]
 	return r, ok
 }
 
@@ -311,12 +340,12 @@ func (c *core) repository(r *repo, asked repokey.Key) forge.Repository {
 	ssh := c.cloneURL(r.key, forge.SSH)
 	key := r.key
 	if c.shape.faulty(FaultEchoesKey) {
-		// The argument is echoed back while the addresses point at the
-		// repository the forge actually served, so the two disagree and only a
-		// re-parse notices.
+		// ONE defect and only one: the argument is echoed back, and the clone
+		// addresses are left saying what the forge actually served. On every
+		// fixture but Moved the two are the same repository, so this is
+		// invisible — which is precisely what makes Moved the fixture the
+		// derivation contract is asserted on.
 		key = asked
-		https = c.cloneURL(c.keys.ReadOnly, forge.HTTPS)
-		ssh = c.cloneURL(c.keys.ReadOnly, forge.SSH)
 	}
 	return forge.Repository{
 		Key:           key,

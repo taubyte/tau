@@ -63,6 +63,12 @@ func subject(t *testing.T, in *instance, name string, driver forge.Driver, polic
 		// nested owner is addressed rather than refused — and the suite then runs
 		// the whole round trip against it.
 		DeepNests: true,
+		// acme/billing is the project this instance answers for and does not
+		// answer as: a driver that echoes the key it was handed calls this
+		// repository acme/billing, which is not what the instance just said it
+		// is.
+		Moved:   fixtures.Moved,
+		MovedTo: fixtures.MovedTo,
 
 		Requests: in.rec.drain,
 		Break:    func() { in.rec.setBroken(true) },

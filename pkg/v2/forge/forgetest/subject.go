@@ -4,12 +4,18 @@
 // IT ASSERTS BEHAVIOUR AND NOT SHAPE. That a driver satisfies forge.Client is
 // the compiler's job and needs no suite; what needs one is that a public
 // repository reads as read and not write, that an outage returns an error and
-// never a definitive no, that a repository key survives a round trip through
-// the forge unchanged, that a delivery whose body moved by one byte is
-// rejected, that a hook can only speak for its own repository, that a
-// capability a driver appears to have is one it can actually perform, and that
-// a credential never turns up in an error string or a URL. Every one of those
-// is a thing a driver can get wrong while compiling perfectly.
+// never a definitive no, that a repository key is DERIVED from the answer the
+// forge gave rather than echoed back from the argument, that a delivery whose
+// body moved by one byte is rejected, that a hook can only speak for its own
+// repository, that a capability a driver appears to have is one it can actually
+// perform, and that a credential never turns up in an error string or a URL.
+// Every one of those is a thing a driver can get wrong while compiling
+// perfectly.
+//
+// ONE OF THEM NEEDS A FIXTURE THAT DISAGREES, and for a long time there was
+// none, so it went unchecked: a key round-tripping unchanged is what an ECHOING
+// driver produces too, and only Moved — a repository the forge answers for
+// under one key and answers WITH under another — tells the two apart.
 //
 // THE SUITE NEVER SKIPS. For each optional capability it runs one of two
 // contracts — the capability's own, or the contract that absence is
@@ -21,6 +27,15 @@
 // The suite is itself tested. pkg/v2/forge/fake can be told to be wrong in
 // named ways, and this package's tests assert that each one fails the suite —
 // which is the only way to know that an assertion asserts.
+//
+// MEASURE IT WITH -coverpkg. Almost every statement in this package runs from
+// the tests of ANOTHER package — the fake's, github's, gitlab's — and plain
+// -cover counts only the ones a package's own tests reach, which reports 77.4%
+// here and 27.5% for the fake and is not what either of them is. The honest
+// command names the package being measured:
+//
+//	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/forgetest/... ./pkg/v2/forge/...
+//	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/fake/...      ./pkg/v2/forge/...
 package forgetest
 
 import (
@@ -91,6 +106,26 @@ type Subject struct {
 	Creatable   repokey.Key
 	Uncreatable repokey.Key
 	Deep        repokey.Key
+
+	// Moved is a key this forge STILL ANSWERS FOR and does not answer AS:
+	// asking about it yields the repository MovedTo names, readable by
+	// Credential. A rename is the usual way a forge comes to have one, and
+	// there are others — a transfer, a case fold, an instance behind a path
+	// rewrite — so HOW the fixture arranges the disagreement is its own
+	// business. A driver that follows no redirect (which is a defensible
+	// policy, and one driver here holds it) needs the answer to arrive in one
+	// hop, so a fixture serves the moved repository rather than pointing at it.
+	//
+	// IT IS THE ONLY FIXTURE THAT CAN ASSERT DERIVATION. forge.Client's own
+	// contract says Repository's Key must be derived from the clone URL the
+	// forge returned and never echoed back from the argument, and on every
+	// other fixture in this Subject the two are the same string — so the
+	// forbidden echo and the required derivation produce identical answers and
+	// the contract is unassertable. The suite therefore REQUIRES them, and
+	// requires them to differ: Moved == MovedTo is a Subject that has quietly
+	// opted out of the assertion.
+	Moved   repokey.Key
+	MovedTo repokey.Key
 
 	// DeepNests says whether this forge addresses a nested owner. When false the
 	// suite requires *forge.UnaddressableError AND that no request was made —
