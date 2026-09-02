@@ -813,10 +813,18 @@ func TestAFaultNamesTheRequestAndNothingTheInstanceWrote(t *testing.T) {
 	assert.NotContains(t, err.Error(), "stub-token", "the credential is in an error string")
 
 	// A status Go has no text for is still a number and nothing else.
+	//
+	// THE NEEDLE IS ANCHORED ON THE WORD BEFORE IT, and that is not fussiness.
+	// This driver renders a failure as `gitlab: <host> answered <method> <path>
+	// with <status>`, and <host> here is 127.0.0.1 and an EPHEMERAL PORT — so a
+	// bare "599" is satisfied by the port whenever the kernel hands out one
+	// containing it. Measured: dropping the number from statusLine's unknown
+	// branch passed 5 runs in 2000, which is a real regression escaping about
+	// one run in 400.
 	c, key = stubClient(t, answer(t, 599, words))
 	_, err = c.Repository(context.Background(), key)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "599")
+	assert.Contains(t, err.Error(), "with 599")
 	assert.NotContains(t, err.Error(), "try again")
 }
 

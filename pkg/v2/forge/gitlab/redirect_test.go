@@ -209,7 +209,12 @@ func TestNoSameHostRedirectIsFollowed(t *testing.T) {
 					require.Error(t, err,
 						"%s followed a %d to %q and answered as if the instance had spoken about the repository tau asked for",
 						op.name, status, s.elsewhere("/victim"))
-					assert.Contains(t, err.Error(), fmt.Sprint(status),
+					// "with " and not the bare number: this driver renders a
+					// failure as `gitlab: <host> answered <method> <path> with
+					// <status>`, and <host> is 127.0.0.1 and an ephemeral port
+					// — which satisfies a needle of three digits often enough
+					// to let a real regression through.
+					assert.Contains(t, err.Error(), "with "+fmt.Sprint(status),
 						"the error must name the 3xx: an operator whose project was renamed has to be able to tell that from an outage")
 					assert.Len(t, sent, 1,
 						"a second request was made, to a location the instance chose, carrying this credential: %v", sent)
