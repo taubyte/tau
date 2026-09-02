@@ -326,10 +326,10 @@ func (h *harness) push(t testing.TB, ref, commit string) string {
 
 func (h *harness) mustRecord(t testing.TB, id string) jobRecord {
 	t.Helper()
-	r, err := h.record(unsectioned, id)
+	r, err := h.record(unsectioned(), id)
 	require.NoError(t, err)
-	require.True(t, r.found, "job %s must exist", id)
-	return r.rec
+	require.True(t, r.Found(), "job %s must exist", id)
+	return r.Value()
 }
 
 // finishNow is a terminal write the way a transition makes one: one section,
@@ -338,12 +338,12 @@ func (h *harness) mustRecord(t testing.TB, id string) jobRecord {
 // section.go refuses — so the fixture does what the code does.
 func (h *harness) finishNow(t testing.TB, id string, status buildv1.JobStatus, reason string, extra ...raft.BatchOp) error {
 	t.Helper()
-	at := jobLock.Lock()
-	defer jobLock.Unlock()
+	sec := jobLock.Enter()
+	defer sec.Leave()
 
-	r, err := h.record(at, id)
+	r, err := h.record(sec, id)
 	require.NoError(t, err)
-	require.True(t, r.found, "job %s must exist", id)
+	require.True(t, r.Found(), "job %s must exist", id)
 	return h.finish(r, status, reason, extra...)
 }
 

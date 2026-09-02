@@ -37,14 +37,15 @@
 //     it decided, and Cancel and Retry answer on rpc goroutines while the claim
 //     loop runs on its own. raft orders their entries and cannot see that the
 //     second decided on a stale read. queue.go's jobLock is that section and
-//     its boundary is stated there. THE SECTION HAS AN IDENTITY (section.go):
-//     a read carries the number of the holding it was taken under and a write
-//     asserts that number is still the one running, because "the write this
-//     read decided is made while the same section is still held" is a fact
-//     about two instants in one execution and five successive scans over this
-//     package's source each missed the next shape of it.
-//     population_test.go is the other half — which functions may write, and
-//     which key they may write — checked at review time. v1 polled a claim
+//     its boundary is stated there. THE SECTION IS A TOKEN (section.go, over
+//     the backend/section package): entering the lock is the only way to get
+//     one, a read of a job record carries the one it was taken under, and EVERY
+//     write takes that read — because "the write this read decided is made
+//     while the same section is still held" is a fact about two instants in one
+//     execution, and six successive scans over this package's source each
+//     missed the next shape of it. population_test.go is the other half —
+//     which functions may write, and which key they may write — checked at
+//     review time. v1 polled a claim
 //     record thirty times at two-second intervals, blocking the request for up
 //     to a minute, and still could not cancel a job that had not been picked
 //     up yet.

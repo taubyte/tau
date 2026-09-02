@@ -78,14 +78,14 @@ func (s *Service) job(id string) (*buildv1.Job, error) {
 		return nil, err
 	}
 
-	r, err := s.record(unsectioned, id)
+	r, err := s.record(unsectioned(), id)
 	if err != nil {
 		return nil, err
 	}
-	if !r.found {
+	if !r.Found() {
 		return nil, errNotFound("no job %s", id)
 	}
-	rec := r.rec
+	rec := r.Value()
 
 	job := &buildv1.Job{
 		Id:            rec.ID,
@@ -184,28 +184,29 @@ func (s *Service) cancel(id string) error {
 		return err
 	}
 
-	at := jobLock.Lock()
-	defer jobLock.Unlock()
+	sec := jobLock.Enter()
+	defer sec.Leave()
 
 	if err := s.lead(); err != nil {
 		return err
 	}
 
-	r, err := s.record(at, id)
+	r, err := s.record(sec, id)
 	if err != nil {
 		return err
 	}
-	if !r.found {
+	if !r.Found() {
 		return errNotFound("no job %s", id)
 	}
-	if r.rec.status() == buildv1.JobStatus_JobStatusCancelled {
+	rec := r.Value()
+	if rec.status() == buildv1.JobStatus_JobStatusCancelled {
 		// Cancelling a cancelled job is the outcome the caller asked for — and
 		// is where a withdrawal whose entry did not land is finished off, the
 		// same way Enqueue's push repairs a record whose push was lost.
 		return s.withdraw(r)
 	}
-	if r.rec.terminal() {
-		return errFailedPrecondition("job %s already finished as %s", id, r.rec.status())
+	if rec.terminal() {
+		return errFailedPrecondition("job %s already finished as %s", id, rec.status())
 	}
 
 	// THE RECORD FIRST, THE WITHDRAWAL SECOND, and the two cannot be one entry
@@ -262,14 +263,15 @@ func (s *Service) withdraw(r reading) error {
 	// that decided this had already been left" is not an item the queue does
 	// not hold, and answering it Unavailable would send the caller round the
 	// cloud looking for a node where the code is different.
-	if err := r.live(); err != nil {
-		return err
+	if err := r.Live(); err != nil {
+		return stale(err)
 	}
-	err := s.work.Remove(r.rec.ID)
+	id := r.Value().ID
+	err := s.work.Remove(id)
 	if err == nil || errors.Is(err, queue.ErrNotFound) || errors.Is(err, queue.ErrClaimed) {
 		return nil
 	}
-	return errUnavailable("withdrawing job %s from the queue: %v", r.rec.ID, err)
+	return errUnavailable("withdrawing job %s from the queue: %v", id, err)
 }
 
 // retry re-queues a finished job.
@@ -294,24 +296,24 @@ func (s *Service) retry(id string) error {
 	// record it read as finished, and released early it would delete the very
 	// row written a line below — leaving a job that reads Open and that nothing
 	// walking the open index will ever look at again.
-	at := jobLock.Lock()
-	defer jobLock.Unlock()
+	sec := jobLock.Enter()
+	defer sec.Leave()
 
 	if err := s.lead(); err != nil {
 		return err
 	}
 
-	r, err := s.record(at, id)
+	r, err := s.record(sec, id)
 	if err != nil {
 		return err
 	}
-	if !r.found {
+	if !r.Found() {
 		return errNotFound("no job %s", id)
 	}
-	if !r.rec.terminal() {
-		return errFailedPrecondition("job %s is %s, not finished", id, r.rec.status())
+	rec := r.Value()
+	if !rec.terminal() {
+		return errFailedPrecondition("job %s is %s, not finished", id, rec.status())
 	}
-	rec := r.rec
 
 	// The retention row was written at the moment the job FINISHED, which is
 	// the timestamp the record still carries — so it has to be read before the
@@ -352,7 +354,7 @@ func (s *Service) retry(id string) error {
 // open but has no record.
 func (s *Service) finish(r reading, status buildv1.JobStatus, reason string, extra ...raft.BatchOp) error {
 	now := s.now()
-	rec := r.rec
+	rec := r.Value()
 	rec.Status = int32(status)
 	rec.UpdatedAt = now.Unix()
 	rec.ClaimedUntil = 0

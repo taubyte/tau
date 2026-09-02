@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
@@ -210,6 +211,13 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 }
 
 // The same rule for the other way a claim stops being ours.
+//
+// SETTLE NOTICES AT ITS BARRIER NOW, not at its ack. The two are the same fact
+// about the same instant — a node that is no longer the leader can neither
+// barrier nor ack — and which of them speaks is decided by the order the
+// section runs in: the barrier comes before the read the outcome is decided on,
+// and the ack comes after it, carrying that read (section.go). What matters
+// here is unchanged and is asserted below: NOTHING IS PUBLISHED.
 func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -220,9 +228,13 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	}
 
 	_, err := h.step(t.Context())
-	require.ErrorIs(t, err, queue.ErrNotLeader)
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+	require.ErrorContains(t, err, "not the leader of "+build.QueueDomain)
 	require.Equal(t, buildv1.JobStatus_JobStatusClaimed, h.status(t, id))
 	require.Empty(t, h.lastCommit(testRepo, testRef))
+
+	_, claimed := h.work.Depth()
+	require.Equal(t, 1, claimed, "and the delivery a follower could not settle comes back")
 }
 
 // A worker that DIED is the case redelivery exists for: the claim expires, the
@@ -380,10 +392,10 @@ func TestANodeWithNoRunnerKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 	require.Equal(t, 1, ready, "the item is left for a node that can run it")
 	require.Equal(t, 0, claimed)
 
-	r, err := s.record(unsectioned, id)
+	r, err := s.record(unsectioned(), id)
 	require.NoError(t, err)
-	require.True(t, r.found)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, r.rec.status())
+	require.True(t, r.Found())
+	require.Equal(t, buildv1.JobStatus_JobStatusOpen, r.Value().status())
 }
 
 func TestStepReportsAStoreThatRefusesTheClaimWrite(t *testing.T) {
@@ -479,9 +491,14 @@ func TestStepReportsEachOfTheStoresRefusals(t *testing.T) {
 	})
 }
 
-// The record read after the ack can fail too, and a failure there must not be
-// mistaken for "nothing to write".
-func TestSettleReportsARecordItCannotReadAfterTheAck(t *testing.T) {
+// The read the outcome is decided on can fail too, and a failure there must not
+// be mistaken for "nothing to write".
+//
+// THE DELIVERY SURVIVES IT. The read comes before the ack now — it is what the
+// ack carries out — so a record nothing can decode costs a redelivery rather
+// than the item: this is the same answer the dead-letter drain gives a corrupt
+// record one queue over, and the item is still bounded by MaxAttempts.
+func TestSettleReportsARecordItCannotRead(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
@@ -491,11 +508,11 @@ func TestSettleReportsARecordItCannotReadAfterTheAck(t *testing.T) {
 	}
 
 	_, err := h.step(t.Context())
-	require.Error(t, err)
+	require.ErrorContains(t, err, "corrupt job record")
 
 	ready, claimed := h.work.Depth()
 	require.Equal(t, 0, ready)
-	require.Equal(t, 0, claimed, "the ack committed before the record could be read")
+	require.Equal(t, 1, claimed, "a record nothing could read must not cost the item that names it")
 }
 
 // A dead-letter entry acknowledged by somebody else between the claim and the
@@ -548,6 +565,27 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 		require.Empty(t, h.runner.seen(), "a job whose section could not barrier must not run")
 		require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id),
 			"and its record must not have moved")
+	})
+
+	t.Run("the settle's section", func(t *testing.T) {
+		h := newHarness(t)
+		id := h.push(t, testRef, testCommit)
+
+		// begin's barrier is taken and the build runs; settle's is refused.
+		h.runner.run = func(context.Context, Work, Sink) error {
+			h.store.failBarrier(errors.New("timed out"))
+			return nil
+		}
+
+		_, err := h.step(t.Context())
+		require.ErrorContains(t, err, "barrier on "+build.QueueDomain)
+
+		h.store.failBarrier(nil)
+		require.Equal(t, buildv1.JobStatus_JobStatusClaimed, h.status(t, id),
+			"a section that could not barrier must not decide the outcome of the run")
+		require.Empty(t, h.lastCommit(testRepo, testRef))
+		_, claimed := h.work.Depth()
+		require.Equal(t, 1, claimed, "and the delivery it did not ack comes back")
 	})
 
 	t.Run("the dead letter drain's section", func(t *testing.T) {

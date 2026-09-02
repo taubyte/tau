@@ -88,32 +88,52 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 // decision makes is an ACK. Made after the section closed, a retry in the
 // window is deduplicated against the very item the ack then destroys.
 //
-// THE HARM ITSELF STILL CANNOT BE RACED INTO EXISTENCE. pkg/v2/queue takes its
-// GROUP LOCK before it touches the store — Ack is group.mu.Lock() and then
-// prepare() — so the earliest instant a store gate can fire inside the ack is
-// one at which the group lock is already held, and the racer's Push queues up
-// behind it. The push lands AFTER the ack however this package is written, the
-// ack is a real one rather than a deduplicated no-op, and the job comes out
-// correct either way. The first version of this test learned that the expensive
-// way: it asserted only the outcome and passed 2000 runs of the exact code it
-// was written to catch.
+// THE RACER IS RELEASED AT THE RECORD READ, WHICH IS WHERE THE DECISION IS
+// TAKEN. Armed inside the ack instead — on the first read of the queue's own
+// keyspace — it reproduces nothing: pkg/v2/queue takes its GROUP LOCK before it
+// touches the store (Ack is group.mu.Lock() and then prepare()), so by then the
+// racer's Push can only queue up behind, the push lands after the ack however
+// this package is written, and the job comes out correct either way. The first
+// version of this test learned that the expensive way: it asserted only the
+// outcome and passed 2000 runs of the exact code it was written to catch.
 //
-// BUT THE HARM IS NO LONGER WHAT THIS FAILS ON. Since the section has an
-// identity (section.go), an ack decided in a section that has been left is
-// REFUSED rather than made — so the mutant that puts the defect back does not
-// destroy an item quietly, it returns an error from run(), and the
+// FROM THE READ, THE RACER CONTENDS FOR THE SECTION rather than for the queue's
+// internals, which is the thing that decides the outcome: the retry blocks on
+// jobLock, and with the ack inside the section that read it gets the lock only
+// after the ack, so its push mints a real item and the job it reopened has one.
+// That is what ready+claimed counts below.
+//
+// AND WHAT THIS STILL CANNOT SEE, said plainly, because the last two rounds
+// each learned it the expensive way. Move the ack into a SECTION OF ITS OWN —
+// the drop decided in one, the ack carrying it out in another — and this test
+// passes: measured, five runs out of five. The window between the two sections
+// holds no store operation for a gate to fire on, and sync.Mutex does not hand
+// the lock to a waiter on the first unlock, so the ack wins the re-entry every
+// time and the outcome is right by scheduling. That shape is refused by the ack
+// taking a READING rather than a section (section.go), is unrepresentable
+// without a second path to queue.Ack, and a second path is what
+// TestEveryQueueWriteIsInsideTheSectionThatDecidedIt enumerates. An outcome
+// test is not the guard for it and is not written as though it were.
+//
+// BUT THE HARM IS NO LONGER WHAT THIS FAILS ON. The ack takes the READ that
+// decided it (section.go), so an ack carried out after that read's section has
+// been left is REFUSED rather than made — the mutant that puts the defect back
+// does not destroy an item quietly, it returns an error from run(), and the
 // require.NoError below is what catches it. That is an outcome, in this
 // package, with no seam in pkg/v2/queue and no lock to win: measured, the
-// Unlock-and-re-Lock form of this defect now fails at that line rather than at
-// the needle. TestTheQueueWritesAreRefusedOutsideTheSectionThatDecidedThem
-// asserts the same thing from the other side, and asserts that the delivery
-// survives.
+// leave-and-re-enter form of this defect fails at that line rather than at the
+// needle. TestTheQueueWritesAreRefusedInsideADifferentLiveSection asserts the
+// same thing from the other side — including while a DIFFERENT section is
+// running, which is the form that reached the ack through a live number — and
+// asserts that the delivery survives.
 //
 // The needle stays anyway, underneath, because it says something the outcome
 // does not: at the instant the ack touches the queue's keyspace, jobLock is
 // still held. It is no longer the only thing holding this test up — and it was
 // never sufficient on its own, because a section released and retaken answers
-// it the same way a section held all along does.
+// it the same way a section held all along does. It asks Held(), which is a
+// bool: the question "is a section running" has an answer nothing can spend,
+// and the old needle TryLocked, which ENTERS a section of its own to find out.
 func TestTheDropDecisionAndItsAckAreOneSection(t *testing.T) {
 	h, gate := gatedHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -122,15 +142,17 @@ func TestTheDropDecisionAndItsAckAreOneSection(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, h.cancel(id), "so this delivery is one to drop, not one to run")
 
+	// The needle, at the instant the ack touches the queue's keyspace.
 	var loose atomic.Bool
-	var retryErr error
-	retried := gate.onFirstUnder(t, queueKeyRoot, func() {
-		if jobLock.TryLock() {
+	gate.onFirstUnder(t, queueKeyRoot, func() {
+		if !jobLock.Held() {
 			loose.Store(true)
-			jobLock.Unlock()
 		}
-		retryErr = h.retry(id)
 	})
+
+	// And the racer, at the read the drop is decided on.
+	var retryErr error
+	retried := gate.onRead(t, jobRecordKey(id), 1, func() { retryErr = h.retry(id) })
 
 	require.NoError(t, h.run(context.Background(), d))
 	<-retried

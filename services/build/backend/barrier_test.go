@@ -41,18 +41,29 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 			"the dead letter's claim, the sweep, and the work queue's claim — all pkg/v2/queue's own")
 	})
 
-	// ONE JOB CLAIMED, BUILT AND SETTLED COSTS TWO MORE, and only ONE of them
-	// is new: begin's lead(). settle's is its own ack, which this path always
-	// made. Per BUILD — minutes of work — against a loop that spends three a
-	// second regardless.
+	// ONE JOB CLAIMED, BUILT AND SETTLED COSTS THREE MORE: begin's lead(),
+	// settle's lead(), and settle's ack.
+	//
+	// SETTLE'S IS THE ONE THIS ROUND ADDED, and it is what "every write carries
+	// the read that decided it" costs. The ack used to be both the section's
+	// barrier and its first write, taken before the read so that the record
+	// below it was read at an applied prefix — and a write taken before the
+	// read cannot carry one, so the ack took a bare section instead and a body
+	// that split the deciding read from the ack across two sections was allowed
+	// to destroy the item. The barrier is now lead(), like every other
+	// section's, and the ack is an ordinary write behind the read.
+	//
+	// PER BUILD — minutes of work — against a loop that spends three a second
+	// regardless. Every other number in this file is unchanged: the identity
+	// itself is atomics, and it replicates nothing.
 	t.Run("a cycle that claims, runs and settles a job", func(t *testing.T) {
 		h := newHarness(t)
 		id := h.push(t, testRef, testCommit)
 
 		n := spent(h, func() { require.True(t, h.mustStep(t)) })
 		t.Logf("barriers=%d", n)
-		require.Equal(t, int64(5), n,
-			"the three above, plus begin's lead() and settle's ack")
+		require.Equal(t, int64(6), n,
+			"the three above, plus begin's lead(), settle's lead() and settle's ack")
 		require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
 	})
 

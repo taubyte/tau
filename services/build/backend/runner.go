@@ -155,29 +155,33 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 // THE REGISTRATION IS INSIDE, not in invoke below, and that is the other half:
 // a cancel serialized AFTER this section must find the run registered, or it
 // would write a terminal record while a build it could have stopped ran on to
-// its own deadline.
+// its own deadline. It goes through register() and carries the read, like every
+// other write here — a map in this process is a write like any other, and
+// "inside the section" was the one claim about it that nothing could see: a
+// registration handed to run() as a closure built here and invoked after this
+// function returns sits inside the span by every measure a scan has.
 //
 // It reports whether the delivery was claimed. Not claimed is not an error — it
 // is a delivery for the caller to ack and drop.
 func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.CancelFunc) (jobRecord, bool, error) {
-	at := jobLock.Lock()
-	defer jobLock.Unlock()
+	sec := jobLock.Enter()
+	defer sec.Leave()
 
 	if err := s.lead(); err != nil {
 		return jobRecord{}, false, err
 	}
-	r, err := s.record(at, d.ID)
+	r, err := s.record(sec, d.ID)
 	if err != nil {
 		return jobRecord{}, false, err
 	}
 	// Cancelled is one of the three terminal states, so this is the cancel case
 	// as much as it is the redelivery case. An item with no record cannot be
 	// identified, let alone built.
-	if !r.found || r.rec.terminal() {
-		return jobRecord{}, false, s.ack(r.at, s.work, d)
+	if !r.Found() || r.Value().terminal() {
+		return jobRecord{}, false, s.ack(r, s.work, d)
 	}
 
-	rec := r.rec
+	rec := r.Value()
 	rec.Status = int32(buildv1.JobStatus_JobStatusClaimed)
 	rec.Attempt++
 	rec.UpdatedAt = s.now().Unix()
@@ -192,15 +196,20 @@ func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.Cance
 		return jobRecord{}, false, fmt.Errorf("claiming job %s: %w", rec.ID, err)
 	}
 
-	s.runningMu.Lock()
-	s.running[rec.ID] = stop
-	s.runningMu.Unlock()
-	return rec, true, nil
+	// THE REGISTRATION IS THE CLAIM'S OTHER HALF and carries the same read, so
+	// it is returned WITH the claim rather than checked here: a refusal is a
+	// section that closed under this body, which run() answers by returning
+	// before it starts a build nothing could stop.
+	return rec, true, s.register(r, stop)
 }
 
 // forget drops this node's cancel for a run that is over. Its counterpart is
-// the registration begin makes inside the claim's section, and run defers it
+// register(), which begin calls inside the claim's section, and run defers this
 // rather than invoke so that the pair is one function's.
+//
+// IT TAKES NO READING, and section.go says why: it is decided by the run being
+// over rather than by a read, it runs outside every section, and the entry it
+// drops is always the one this same goroutine registered.
 func (s *Service) forget(id string) {
 	s.runningMu.Lock()
 	delete(s.running, id)
@@ -235,9 +244,22 @@ func (s *Service) invoke(ctx context.Context, work Work) (err error) {
 // whether it still owned the job only when REPORTING, after it had already
 // stashed assets and pushed keys to tns.
 //
-// IT IS ALSO THE SECTION'S BARRIER, taken inside the lock and before the read:
-// queue.Ack refuses a follower and blocks until everything committed is
-// applied, so the record below is read after it, not before.
+// IT USED TO BE THE SECTION'S BARRIER AS WELL, taken before the read because
+// queue.Ack blocks until everything committed is applied. THE TWO JOBS WANT
+// OPPOSITE ORDERS. A barrier has to come BEFORE the read it protects — this
+// node can regain leadership during a build and hold entries it has not
+// applied, so a record read without one can be a Cancel this run cannot see.
+// A write has to come AFTER the read that decided it, or it names no read at
+// all: an ack taking a bare section took whatever number was running at the
+// instant of the write, and a body that split the deciding read from the ack
+// across two sections was allowed to destroy the item.
+//
+// SO THE BARRIER IS lead(), LIKE EVERY OTHER SECTION'S, and the ack is an
+// ordinary write carrying the read behind it. It costs one replicated entry per
+// settled build — barrier_test.go spends it — and it buys the rule with no
+// exception in it: every write in this package names the read that decided it.
+// The ack still precedes every write this run publishes, which is the whole of
+// what "the commit point" means.
 //
 // THE RECORD IS RE-READ because the whole build happened outside this lock, and
 // three different things can have written it in the meantime. Each is a
@@ -260,21 +282,26 @@ func (s *Service) invoke(ctx context.Context, work Work) (err error) {
 //     reconcile to walk either. So the item goes back, in this section, where
 //     the reopening could not have raced it.
 func (s *Service) settle(d queue.Delivery, runErr error) error {
-	at := jobLock.Lock()
-	defer jobLock.Unlock()
+	sec := jobLock.Enter()
+	defer sec.Leave()
 
-	if err := s.ack(at, s.work, d); err != nil {
+	if err := s.lead(); err != nil {
 		return err
 	}
-
-	r, err := s.record(at, d.ID)
+	r, err := s.record(sec, d.ID)
 	if err != nil {
 		return err
 	}
-	if !r.found || r.rec.terminal() {
+	if err := s.ack(r, s.work, d); err != nil {
+		return err
+	}
+
+	if !r.Found() || r.Value().terminal() {
 		return nil
 	}
-	if r.rec.status() != buildv1.JobStatus_JobStatusClaimed {
+
+	rec := r.Value()
+	if rec.status() != buildv1.JobStatus_JobStatusClaimed {
 		return s.requeue(r)
 	}
 
@@ -290,7 +317,7 @@ func (s *Service) settle(d queue.Delivery, runErr error) error {
 	// and it is read from here rather than from a webhook (build.proto: "read
 	// from its own job history, never from the frontend").
 	return s.finish(r, buildv1.JobStatus_JobStatusSuccess, "",
-		set(refLastKey(r.rec.RepositoryKey, r.rec.Ref), []byte(r.rec.CommitSHA)))
+		set(refLastKey(rec.RepositoryKey, rec.Ref), []byte(rec.CommitSHA)))
 }
 
 // claimDeadline is when this run must be over.
@@ -340,22 +367,22 @@ func (s *Service) drainDeadLetter() (bool, error) {
 		return false, fmt.Errorf("dead letter claim: %w", err)
 	}
 
-	at := jobLock.Lock()
-	defer jobLock.Unlock()
+	sec := jobLock.Enter()
+	defer sec.Leave()
 
 	if err := s.lead(); err != nil {
 		return true, err
 	}
-	r, err := s.record(at, d.ID)
+	r, err := s.record(sec, d.ID)
 	if err != nil {
 		return true, err
 	}
-	if r.found && !r.rec.terminal() {
+	if r.Found() && !r.Value().terminal() {
 		if err := s.finish(r, buildv1.JobStatus_JobStatusFailed, "attempts exhausted"); err != nil {
 			return true, err
 		}
 	}
-	if err := s.ack(r.at, s.dead, d); err != nil {
+	if err := s.ack(r, s.dead, d); err != nil {
 		return true, fmt.Errorf("dead letter %w", err)
 	}
 	return true, nil
