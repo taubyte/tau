@@ -20,6 +20,7 @@ package gitlab
 import (
 	"context"
 	"go/ast"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -27,6 +28,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/packages"
+
+	"github.com/taubyte/tau/pkg/git/repokey"
+	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 // assertOneRoute is the other half of the table: a request that matches no
@@ -197,6 +201,44 @@ func TestThisDriverBuildsAnHTTPRequestInExactlyOnePlace(t *testing.T) {
 		assert.Contains(t, where, "http.go",
 			"the one place a request is built is do, in http.go, and this is not it: %s", where)
 	}
+}
+
+// TestARouteMatchesOnlyWhatWentThroughIt. The route table's closures rest on
+// matching what went out against what was declared, so the two ways that match
+// can be wrong are worth a row: a path that is not under this instance's root
+// belongs to no route, and a request built outside the table is refused rather
+// than issued.
+func TestARouteMatchesOnlyWhatWentThroughIt(t *testing.T) {
+	base, err := url.Parse("https://gitlab.example")
+	require.NoError(t, err)
+
+	assert.False(t, routeCurrentUser.matches(base, http.MethodGet, "/somewhere/else/entirely"),
+		"a path outside the instance root matched a route")
+	assert.False(t, routeCurrentUser.matches(base, http.MethodGet, "api/v4/user"),
+		"a path that is not rooted at the instance root matched a route")
+	assert.False(t, routeCurrentUser.matches(base, http.MethodPost, "/api/v4/user"),
+		"a route matched another method")
+	assert.True(t, routeCurrentUser.matches(base, http.MethodGet, "/api/v4/user"))
+
+	// A request with no route at all names nothing, which is an error and not a
+	// path of empty segments.
+	_, err = request{}.url(base)
+	require.Error(t, err)
+}
+
+// TestACloneAddressOfAKeyWithNoOwner. Addressable refuses such a key, so no
+// session reaches CloneAddress with one — but the method is reachable from a
+// bound client directly, and a path built from an empty owner would carry an
+// empty segment.
+func TestACloneAddressOfAKeyWithNoOwner(t *testing.T) {
+	d, err := New("gitlab.example")
+	require.NoError(t, err)
+	bound, err := d.Bind(forge.Token("tok"))
+	require.NoError(t, err)
+
+	addr, err := bound.(forge.CloneAddresses).CloneAddress(repokey.Key{Host: "gitlab.example", Name: "pay"}, forge.HTTPS)
+	require.NoError(t, err)
+	assert.Equal(t, "https://gitlab.example/pay.git", addr.URL)
 }
 
 // TestARouteIsEscapedByTheOneFunctionThatEscapesSegments. endpoint() used to be

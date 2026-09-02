@@ -596,6 +596,22 @@ func TestCreateRefusesAProjectMadeSomewhereElse(t *testing.T) {
 		"the name the instance made is a string it chose while holding the caller's credential")
 }
 
+// And a create whose answer names no repository at all is the other half of
+// the same refusal: there is nothing to compare the key against.
+func TestCreateRefusesAnAnswerItCannotDeriveAKeyFrom(t *testing.T) {
+	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/namespaces/") {
+			answer(t, http.StatusOK, `{"id":42,"full_path":"acme"}`)(w, r)
+			return
+		}
+		answer(t, http.StatusOK, `{"path_with_namespace":"acme/pay","default_branch":"main"}`)(w, r)
+	})
+
+	_, err := c.Create(context.Background(), key, forge.CreateOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no clone URL")
+}
+
 func TestInstallDeployKeyTakesBackAKeyThatCanPush(t *testing.T) {
 	removed := false
 	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {

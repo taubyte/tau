@@ -182,6 +182,24 @@ func TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics(t *testing.T) {
 	assert.Contains(t, err.Error(), "legacy")
 }
 
+// TestARouteMatchesOnlyWhatWentThroughIt. The route table's closures rest on
+// matching what went out against what was declared, so the two ways that match
+// can be wrong are worth a row.
+func TestARouteMatchesOnlyWhatWentThroughIt(t *testing.T) {
+	base := apiRoot("https://api.github.com/")
+
+	assert.False(t, routeCurrentUser.matches(base, http.MethodGet, "/somewhere/else/entirely"),
+		"a path outside the API root matched a route")
+	assert.False(t, routeCurrentUser.matches(base, http.MethodPost, "/user"),
+		"a route matched another method")
+	assert.True(t, routeCurrentUser.matches(base, http.MethodGet, "/user"))
+
+	// An enterprise instance serves the same table under /api/v3.
+	enterprise := apiRoot("https://github.acme.example/api/v3/")
+	assert.True(t, routeRepository.matches(enterprise, http.MethodGet, "/api/v3/repos/acme/pay"))
+	assert.False(t, routeRepository.matches(enterprise, http.MethodGet, "/repos/acme/pay"))
+}
+
 // TestARouteIsEscapedByTheOneFunctionThatEscapesSegments. The clone address is
 // not a request, so no row about requests reaches it, and both halves of a key
 // used to be escaped there by their own line — one of the five that could be
