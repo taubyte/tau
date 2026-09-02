@@ -73,12 +73,12 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 		require.Equal(t, buildv1.JobStatus_JobStatusFailed, h.status(t, id))
 	})
 
-	// AND THIS IS WHY mend TAKES NONE. A reconcile pass is one barrier for the
-	// whole walk, however many jobs are open — a section's own barrier here
-	// would be one replicated entry per open job per pass, which is the cost
-	// reconcile.go's age gate already exists to avoid, and which at
-	// MaxQueueDepth is an order of magnitude more than the claim loop's whole
-	// budget.
+	// AND THIS IS WHY mend'S BARRIER IS ON THE DELETE BRANCH. A reconcile pass
+	// over live jobs is one barrier for the whole walk, however many are open.
+	// Taken before mend's first read instead, it would be one replicated entry
+	// per open job per pass — the cost reconcile.go's age gate already exists to
+	// avoid, and at MaxQueueDepth an order of magnitude more than the claim
+	// loop's whole budget.
 	t.Run("a reconcile pass over open jobs", func(t *testing.T) {
 		h := newHarness(t)
 		const open = 16
@@ -115,6 +115,36 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 		require.Equal(t, open, ready)
 		require.Equal(t, int64(1+open), n, "one for the pass, and one per push it made")
 	})
+
+	// AND THIS IS WHAT THE DELETE BRANCH ACTUALLY COSTS: one per row that looks
+	// orphaned, paid where the decision is made rather than on every row of
+	// every pass. In steady state there are none of these, which is the whole
+	// difference between the two placements — this number is bounded by the
+	// repair work there is to do, and one-per-read is bounded by the size of the
+	// cloud.
+	t.Run("a reconcile pass over orphaned rows", func(t *testing.T) {
+		h := newHarness(t)
+		const orphans = 4
+		for i := range orphans {
+			h.store.put(t, openIndexKey(testRepo, jobIDOf(t, shaOf(i))), nil)
+		}
+		require.Len(t, h.store.Keys(openIndexPrefix(testRepo)), orphans)
+
+		n := spent(h, func() { require.NoError(t, h.reconcile()) })
+		t.Logf("orphans=%d barriers=%d", orphans, n)
+		require.Empty(t, h.store.Keys(openIndexPrefix(testRepo)))
+		require.Equal(t, int64(1+orphans), n,
+			"one for the pass, and one for each row this pass actually deleted")
+	})
+}
+
+// jobIDOf is the id a push of this commit would mint, for a test that needs a
+// well-formed id without a record behind it.
+func jobIDOf(t *testing.T, commit string) string {
+	t.Helper()
+	key, ok := parseRepositoryKey(testRepo)
+	require.True(t, ok)
+	return jobID(key, testRef, commit)
 }
 
 // shaOf is a distinct full object name per index, so each push is a different

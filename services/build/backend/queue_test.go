@@ -416,6 +416,13 @@ type staleStore struct {
 
 	mu        sync.Mutex
 	unapplied []raft.BatchOp
+
+	// the other way to be behind: not an entry this node has yet to apply, but
+	// a key it still answers from the prefix it HAD applied.
+	behindOn    string
+	behindKey   string
+	behindValue []byte
+	behind      bool
 }
 
 // commitElsewhere is an entry another leader wrote and this node has accepted
@@ -426,6 +433,44 @@ func (s *staleStore) commitElsewhere(ops ...raft.BatchOp) {
 	s.unapplied = append(s.unapplied, ops...)
 }
 
+// behindFrom is the same lag arranged so that it starts AFTER a caller has
+// taken its own barrier rather than before it: from the next LISTING of
+// prefix until the next barrier, key answers with applied — the value it had
+// at the prefix this node has reached — while the store itself has moved on.
+//
+// Writes are not behind. raft.BatchOp has no compare-and-swap, so a delete
+// decided on that read lands on the store as it IS, not as it was read: this
+// node reads the past and writes the present, which is the whole reason a
+// barrier is taken before a read and not after it.
+func (s *staleStore) behindFrom(prefix, key string, applied []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.behindOn, s.behindKey, s.behindValue = prefix, key, applied
+}
+
+func (s *staleStore) Keys(prefix string) []string {
+	keys := s.fakeStore.Keys(prefix)
+
+	s.mu.Lock()
+	if s.behindOn != "" && prefix == s.behindOn {
+		s.behindOn = ""
+		s.behind = true
+	}
+	s.mu.Unlock()
+	return keys
+}
+
+func (s *staleStore) Get(key string) ([]byte, bool) {
+	s.mu.Lock()
+	behind, stale, value := s.behind, s.behindKey, s.behindValue
+	s.mu.Unlock()
+
+	if behind && key == stale {
+		return value, true
+	}
+	return s.fakeStore.Get(key)
+}
+
 func (s *staleStore) Barrier(timeout time.Duration) error {
 	if err := s.fakeStore.Barrier(timeout); err != nil {
 		return err
@@ -433,6 +478,7 @@ func (s *staleStore) Barrier(timeout time.Duration) error {
 	s.mu.Lock()
 	ops := s.unapplied
 	s.unapplied = nil
+	s.behind = false
 	s.mu.Unlock()
 	if len(ops) == 0 {
 		return nil

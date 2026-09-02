@@ -131,21 +131,27 @@ func (s *Service) resume(id string) (bool, error) {
 // EVERY TRANSITION OF A JOB IS READ-MODIFY-WRITE. Enqueue's idempotency, the
 // claim, the settle, a cancel, a retry, the dead-letter drain and reconcile all
 // read the record, decide on what it said, and write it back — and a read is
-// only true until something else writes. Off this process nothing else can: a
-// write commits on the leader alone, so another node deciding this same job has
-// to take leadership first and this node's Batch then does not commit, and
-// every section below takes a Barrier of its own between the lock and its read
-// — begin's and drainDeadLetter's lead(), settle's ack, and the lead() the four
-// rpc-side transitions already made — so a node that has just won an election
-// cannot decide on entries it has not applied. mend is the one section that
-// takes none, and it is NAMED rather than assumed: reconcile.go says why a
-// stale read is harmless there, and barrier_test.go measures what a barrier per
-// open job per pass would have cost. In this process nothing stopped it — Cancel and Retry answer on rpc goroutines while the claim loop
-// runs on its own, and raft ORDERS their two entries without noticing that the
-// second was decided on a read taken before the first — and the store has no
-// compare-and-swap for them to arbitrate with. So they take a lock, which is
-// the same three-part argument pkg/v2/queue makes for its own claim, over the
-// same store, for the same reason.
+// only true until something else writes.
+//
+// NOTHING OFF THIS PROCESS CAN WRITE ONE. A write commits on the leader alone,
+// so another node deciding this same job has to take leadership first and this
+// node's Batch then does not commit — and every section takes a Barrier of its
+// own before the read its writes are decided on, so a node that has just won an
+// election cannot decide on entries it has not applied. begin's and
+// drainDeadLetter's lead(), settle's ack, and the lead() the four rpc-side
+// transitions already made are those barriers. mend's is the one that is not
+// before the section's FIRST read: it triages on a read that decides nothing
+// and takes its barrier on the branch that deletes an open-index row, because
+// taken at the top it would be one replicated entry per open job per pass
+// forever. reconcile.go says why that placement is the safe one and
+// barrier_test.go measures what both placements cost.
+//
+// AND NOTHING IN THIS PROCESS STOPPED IT EITHER. Cancel and Retry answer on rpc
+// goroutines while the claim loop runs on its own, and raft ORDERS their two
+// entries without noticing that the second was decided on a read taken before
+// the first — and the store has no compare-and-swap for them to arbitrate with.
+// So they take a lock, which is the same three-part argument pkg/v2/queue makes
+// for its own claim, over the same store, for the same reason.
 //
 // WHAT IT DOES NOT COVER, said out loud so it is not mistaken for more. It is
 // one process's third of an exclusion whose other two thirds are leadership and
@@ -176,6 +182,13 @@ func (s *Service) resume(id string) (bool, error) {
 // transition holds this across the queue write that pairs with its record write
 // — a push, a withdrawal, an ack — and pkg/v2/queue calls nothing in this
 // package, so the order cannot invert.
+//
+// THAT ORDER IS ALSO WHY THE OUTCOME OF A LOST PAIRING IS HARD TO REPRODUCE.
+// pkg/v2/queue takes its group lock before it touches the store, so an ack
+// already holds it by the time anything a test can hook has run, and a racing
+// push queues up behind rather than landing in front. The harm needs the racer
+// to win that lock; the fact does not. ackpairing_test.go asserts the section
+// itself for exactly that reason, and says so.
 //
 // THE PAIRING IS THE RULE AND NOT AN ILLUSTRATION, and the sentence above was
 // once true of every transition except the one that ran the builds. run acked

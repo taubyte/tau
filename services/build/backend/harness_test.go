@@ -37,6 +37,8 @@ type fakeStore struct {
 	batchErr    error
 	barrierErr  error
 	beforeBatch func()
+	afterKeys   func()
+	keysPrefix  string
 	phantom     []string
 }
 
@@ -53,13 +55,32 @@ func (s *fakeStore) Keys(prefix string) []string {
 	keys := s.MockCluster.Keys(prefix)
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for _, k := range s.phantom {
 		if strings.HasPrefix(k, prefix) {
 			keys = append(keys, k)
 		}
 	}
+	hook := s.afterKeys
+	if hook != nil && prefix == s.keysPrefix {
+		s.afterKeys = nil
+	} else {
+		hook = nil
+	}
+	s.mu.Unlock()
+
+	if hook != nil {
+		hook()
+	}
 	return keys
+}
+
+// onKeys runs hook after the next listing of prefix. reconcile takes its one
+// barrier and then lists, so this is where a test gets between that barrier and
+// the per-row sections underneath it.
+func (s *fakeStore) onKeys(prefix string, hook func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.keysPrefix, s.afterKeys = prefix, hook
 }
 
 func newStore() *fakeStore {
