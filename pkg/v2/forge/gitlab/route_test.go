@@ -422,3 +422,69 @@ func TestARouteIsEscapedByTheOneFunctionThatEscapesSegments(t *testing.T) {
 		return u.EscapedPath()
 	}())
 }
+
+// TestEveryHoleOfEveryRouteRefusesASegmentThatNamesSomethingElse is the
+// BACKSTOP, and it is a different statement from the refusals at the doors.
+//
+// A door refuses so that an operation's LATER requests never happen — measured,
+// the membership walk's refusal at the route came after a token had been minted.
+// This one refuses so that a HOLE ADDED TOMORROW is covered by nothing having
+// been remembered: it runs over the ROUTE TABLE ITSELF, every route this driver
+// declared and every hole in it, so a route registered next round is in this
+// population the moment it is constructed.
+//
+// The benign fill is what proves the row is read: the same route with a real
+// name composes a path, so a failure here is the refusal and not a route that
+// could never be built.
+func TestEveryHoleOfEveryRouteRefusesASegmentThatNamesSomethingElse(t *testing.T) {
+	for _, r := range declaredRoutesForTest() {
+		holes := strings.Count(r.template, hole)
+		if holes == 0 {
+			continue
+		}
+		t.Run(r.method+" "+r.template, func(t *testing.T) {
+			for at := 0; at < holes; at++ {
+				for _, spelling := range []string{"", "..", ".", "../..", "a/.."} {
+					args := make([]string, holes)
+					for i := range args {
+						args[i] = "benign"
+					}
+					args[at] = spelling
+
+					_, err := composeForTest(r.at(args...))
+					assert.Errorf(t, err,
+						"hole %d of %s %s took %q and composed a path anyway", at, r.method, r.template, spelling)
+				}
+			}
+
+			benign := make([]string, holes)
+			for i := range benign {
+				benign[i] = "benign"
+			}
+			_, err := composeForTest(r.at(benign...))
+			assert.NoErrorf(t, err, "%s %s refuses a name, so the refusals above prove nothing", r.method, r.template)
+		})
+	}
+}
+
+// declaredRoutesForTest is the table as this package holds it, under the lock
+// the table is written behind.
+func declaredRoutesForTest() []*route {
+	routesMu.Lock()
+	defer routesMu.Unlock()
+	return append([]*route(nil), routeTable...)
+}
+
+// composeForTest is the URL one request goes to, which is where a segment
+// becomes part of a URL in this driver.
+func composeForTest(rq request) (string, error) {
+	base, err := url.Parse("https://gitlab.example")
+	if err != nil {
+		return "", err
+	}
+	u, err := rq.url(base)
+	if err != nil {
+		return "", err
+	}
+	return u.EscapedPath(), nil
+}
