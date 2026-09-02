@@ -123,6 +123,7 @@ const (
 	ruleStrandedFault      ruleName = "a fault with no proof in front of it"
 	ruleFaultDoesNothing   ruleName = "a fault the proof does not need"
 	ruleUnwalkedBody       ruleName = "a body nothing walks"
+	ruleFailurePutDown     ruleName = "a way to fail put where nothing follows it"
 )
 
 // ledger is everything the rules are read over: the suite's own source, the
@@ -203,6 +204,7 @@ func ledgerRules() []rule {
 		{ruleStrandedFault, checkStrandedFault, breaks(violateStrandedFault)},
 		{ruleFaultDoesNothing, checkFaultDoesNothing, breaks(violateFaultDoesNothing)},
 		{ruleUnwalkedBody, checkUnwalkedBody, breaks(violateUnwalkedBody)},
+		{ruleFailurePutDown, checkFailurePutDown, breaks(violateFailurePutDown)},
 	}
 }
 
@@ -934,6 +936,21 @@ func checkStrandedFault(l *ledger) []complaint {
 // doing exactly that, and the fix for each of them was to state where a body
 // can be rather than to add one more place to a list. This is what says the
 // statement still holds.
+// checkFailurePutDown. A way to fail that is stored rather than handed over is
+// one the walk cannot follow, and at the call site its type says only
+// "callback" — so an assertion made through it is in no population, needs no
+// message, no proof and no fault. Refusing it where it is put down is the whole
+// of what keeps "a value does not stop being testify by being given a shorter
+// name" true of values that are given no name at all.
+func checkFailurePutDown(l *ledger) []complaint {
+	var out []complaint
+	for _, p := range l.src.waysToFailPutDown() {
+		out = append(out, complaint{ruleFailurePutDown, p.site,
+			"a way to fail this test is put in " + p.where + ", where nothing follows it: called from there its type is func(...any) or func(), which is the shape of every callback in the language, so the claim made through it would be in no population and would need no fault. Hand it over, do not store it"})
+	}
+	return out
+}
+
 func checkUnwalkedBody(l *ledger) []complaint {
 	var out []complaint
 	for _, site := range l.unwalked {

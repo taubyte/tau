@@ -508,3 +508,28 @@ func commonRun(a, b string) string {
 	}
 	return run
 }
+
+// violateFailurePutDown: a way to fail is left in a struct field, where the
+// walk cannot follow it and the call site's type says only "callback". Both
+// halves are here — a testify function, which has a message and asserts, and a
+// tb's FailNow, which is shaped like every callback in the language.
+func violateFailurePutDown(t *testing.T) *ledger {
+	src := suiteSource(t).with(t, "ledger_fault_failure_put_down.go", `package forgetest
+
+import "github.com/stretchr/testify/assert"
+
+type ledgerFaultBox struct {
+	check func(assert.TestingT, any, ...any) bool
+	stop  func()
+}
+
+func (r *runner) ledgerFaultThroughAField(t tb) {
+	box := ledgerFaultBox{check: assert.NotEmpty, stop: t.FailNow}
+	box.check(t, r.s.Host, "a claim reached through a struct field, which no fault in this suite can kill")
+	if r.s.Host == "" {
+		box.stop()
+	}
+}
+`)
+	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
+}

@@ -176,11 +176,18 @@ import (
 // failure method nor a marker — a panic, an os.Exit, a t.Skip that hides a
 // question — is not in the population and no rule here is computed over it.
 //
-// A value that reaches a call through a struct field, a map, a slice, a channel
-// or a parameter is followed only as far as its TYPE: Errorf's shape is read as
-// a failure, and the other five methods' shapes — func(...any) and func() — are
-// not, because they are the shape of every callback in the language and reading
-// them as failures would make every deferred close a claim.
+// A value that reaches a call through a struct field, a map, a slice or a
+// channel used to be followed only as far as its TYPE: Errorf's shape was read
+// as a failure and the other five methods' shapes — func(...any) and func() —
+// were not, because those are the shape of every callback in the language and
+// reading them as failures would make every deferred close a claim. Measured,
+// that was reachable: a struct holding assert.NotEmpty and a tb's FailNow,
+// called in a walked body, carried two claims with the census unchanged and the
+// tree at exit 0. It is closed at the other end now — a way to fail may be
+// handed over and may be given a name, but it may not be PUT DOWN in a field,
+// an element, a channel or a caller's hands, where it is still a selector and
+// answers for what it is. See waysToFailPutDown. A PARAMETER was never in this
+// hole: a parameter is followed to what its call sites hand it.
 //
 // AND THE MARKER EXEMPTION IS NARROWER THAN IT WAS, NOT GONE. A claim written
 // as a marker's OWN firing — through the reporter the marker was handed,
@@ -685,6 +692,89 @@ func (s *source) handedAWayToFail(call *ast.CallExpr) bool {
 		}
 	}
 	return false
+}
+
+// putDown is one place a way to fail was left where nothing follows it.
+type putDown struct {
+	site  string
+	where string
+}
+
+// waysToFailPutDown is every one of them: a struct field, a map or a slice
+// element, a channel, or a caller's hands.
+//
+// THIS IS THE OTHER HALF OF "A VALUE DOES NOT STOP BEING TESTIFY BY BEING GIVEN
+// A SHORTER NAME". A name is followed to what it was bound to, and a parameter
+// is followed to what its call sites hand it; both are bindings this package
+// can read. A FIELD IS NOT. At the call site the value's type is func(...any)
+// or func() — the shape of every callback in the language — so reading those
+// shapes as failures would make every deferred close a claim, and reading only
+// Errorf's shape, which is what the walk does, leaves the other five and every
+// testify function invisible.
+//
+// Measured before this existed: a struct holding assert.NotEmpty and a tb's
+// FailNow, built and called in a walked body of a non-test file, carried two
+// claims about the subject — one with a message, one bare — with this file's
+// census unchanged at 183 cases and the tree at GO_TEST_EXIT=0. Neither was in
+// the population, so neither needed a fault, a message or a proof.
+//
+// So it is refused where the value is PUT DOWN rather than guessed at where it
+// is called. There it is still a selector or a name and answers for what it is.
+// A way to fail is handed over, never stored.
+//
+// A REPORTER is not one of these. A call through a tb is answered by its type
+// wherever the tb was kept, so keeping one is followed and is allowed; what is
+// refused is one of the six METHODS, and any function that takes a reporter,
+// left somewhere the walk cannot reach.
+func (s *source) waysToFailPutDown() []putDown {
+	var out []putDown
+	look := func(e ast.Expr, where string) {
+		if e == nil {
+			return
+		}
+		t := s.pkg.TypesInfo.TypeOf(e)
+		if t == nil {
+			return
+		}
+		sig, ok := t.Underlying().(*types.Signature)
+		if !ok {
+			return
+		}
+		if s.isAWayToFail(e, 0) || takesAReporter(sig, s.reporter) {
+			out = append(out, putDown{s.site(e.Pos()), where})
+		}
+	}
+	for _, file := range s.pkg.Syntax {
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.CompositeLit:
+				for _, el := range v.Elts {
+					if kv, ok := el.(*ast.KeyValueExpr); ok {
+						el = kv.Value
+					}
+					look(el, "a struct field, a map entry or a slice element")
+				}
+			case *ast.AssignStmt:
+				for i, lhs := range v.Lhs {
+					switch lhs.(type) {
+					case *ast.SelectorExpr, *ast.IndexExpr:
+						if i < len(v.Rhs) {
+							look(v.Rhs[i], "a field or an element assigned to")
+						}
+					}
+				}
+			case *ast.SendStmt:
+				look(v.Value, "a channel")
+			case *ast.ReturnStmt:
+				for _, e := range v.Results {
+					look(e, "a caller's hands")
+				}
+			}
+			return true
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].site < out[j].site })
+	return out
 }
 
 // objectOf is what an expression names, where it names anything.
