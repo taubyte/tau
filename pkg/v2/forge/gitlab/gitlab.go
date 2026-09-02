@@ -44,7 +44,9 @@
 // # Credentials
 //
 // A caller's credential is bound once, by forge.Registry.For, and spent through
-// forge.PinnedTransport so it can never follow a redirect off this host. The
+// forge.PinnedTransport so it can never reach another host — and this driver
+// follows NO redirect at all, because the hop a pin cannot refuse is the one
+// back onto this host: see noRedirect. The
 // DEPLOYMENT's credential — the one Memberships answers with — is a construction
 // option, held by the driver, and no Session can reach it. A driver built
 // without it does not implement forge.Memberships AT ALL, because it is a
@@ -305,9 +307,10 @@ type memberDriver struct {
 
 // httpClient is one credential's http.Client. The credential is attached by
 // PinnedTransport, which checks EVERY HOP: a 302 to somewhere else gets no
-// header, and cleartext off loopback gets no request at all.
+// header, and cleartext off loopback gets no request at all. And no hop after
+// the first is ever made, because of the line above that one.
 func (c *config) httpClient(cred forge.Credential) *http.Client {
-	return &http.Client{Transport: forge.PinnedTransport(c.host, c.transport, func(h http.Header) {
+	return &http.Client{CheckRedirect: noRedirect, Transport: forge.PinnedTransport(c.host, c.transport, func(h http.Header) {
 		token := string(cred.Expose())
 		if token == "" {
 			// An anonymous session. GitLab answers public projects to nobody in
@@ -323,6 +326,46 @@ func (c *config) httpClient(cred forge.Credential) *http.Client {
 		h.Set("PRIVATE-TOKEN", token)
 	})}
 }
+
+// noRedirect stops at the 3xx instead of replaying the request wherever the
+// answer points. THIS DRIVER FOLLOWS NO REDIRECT AT ALL, which is the rule the
+// github driver in this same tree holds and states, and two drivers over one
+// interface may not disagree about a threat the layer has written down.
+//
+// A PIN CANNOT SEE THIS ONE. PinnedTransport checks the HOST of every hop, and
+// that is the whole of what a pin can decide: a 3xx to another path on the very
+// host the credential is for passes it, and must. GitLab answers exactly that
+// for a project that was renamed or TRANSFERRED, and Go then replays the
+// request — as a GET on 301, 302 and 303, method and body intact on 307 and
+// 308. So without this, a request built for one project is answered by another:
+// the permissions read are that other project's, the hook is installed on it,
+// the deploy key is installed on it, the deletion lands on it — while every
+// value this driver returns still carries the key the CALLER named, because
+// forge.Hook is stamped with the key that was asked about. A transferred path is
+// free to be re-registered by anyone the moment it is transferred, which is what
+// turns a rename into a grant.
+//
+// A WRITE CANNOT BE UNDONE BY CHECKING AFTERWARDS, which is why the refusal is
+// before the second request rather than a re-read after it: by the time a re-fetch
+// could notice, the hook is on somebody else's project and this one is gone. The
+// 301/302/303 rewrite to GET is worse and not better — Delete followed it, read a
+// 200, and reported success having deleted nothing.
+//
+// It is one rule on the client rather than a check per call because it must hold
+// for every request this driver makes, the deployment credential's membership
+// walk included, and because a rule with no host arithmetic in it cannot disagree
+// with the pin. ErrUseLastResponse hands the 3xx to do, which reads it as the
+// non-2xx it is: one error path, and the status is the fact an operator needs.
+//
+// THE CONSEQUENCE IS A PRODUCT DECISION AND IT IS FLAGGED RATHER THAN TAKEN
+// QUIETLY: a project that was renamed or transferred now yields an error naming
+// the 3xx instead of an answer about its successor. Following it is not a
+// milder alternative — it is the defect above — so the choice an owner has is
+// between this error and an explicit, key-comparing "follow one hop and prove
+// it arrived where it was sent", which is a feature nobody has asked for. The
+// github driver took this same direction on the same reasoning, and the two
+// drivers agreeing is worth more than either answer alone.
+func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 // endpoint builds a URL under the API root with every segment path-escaped.
 //

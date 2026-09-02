@@ -67,9 +67,12 @@ func do(ctx context.Context, api *http.Client, host, method string, u *url.URL, 
 
 	resp, err := api.Do(req)
 	if err != nil {
-		// An outage, a refused connection, a redirect PinnedTransport stopped.
+		// An outage, a refused connection, a request the pin refused to make.
 		// It is a plain error and nothing in the taxonomy, so no consumer can
 		// pattern-match it into a verdict.
+		//
+		// A REDIRECT IS NOT HERE. This client follows none, so a 3xx arrives
+		// below as the response it is and fault names its status.
 		return nil, fmt.Errorf("gitlab: %s %s: %w", method, host, err)
 	}
 	defer resp.Body.Close()
