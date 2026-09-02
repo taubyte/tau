@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -38,13 +39,14 @@ import (
 // reproduced rather than merely made likely.
 const window = 100 * time.Millisecond
 
-// readGatedStore fires a hook the first time a given key is read, after the
-// read has answered. Everything else is the harness's store.
+// readGatedStore fires a hook the first time a key it is watching is read,
+// after the read has answered. Everything else is the harness's store.
 type readGatedStore struct {
 	*fakeStore
 
 	mu      sync.Mutex
 	key     string
+	match   func(string) bool
 	hook    func()
 	written func()
 }
@@ -56,13 +58,39 @@ func gated(t *testing.T, h *harness, key string) *readGatedStore {
 	return g
 }
 
+// gatedHarness builds the harness with the gate ALREADY UNDER THE QUEUE, which
+// gated() above cannot do: New opens the queue over the store it was handed, so
+// a wrapper installed afterwards sees the service's reads and none of the
+// queue's.
+func gatedHarness(t *testing.T, opts ...Option) (*harness, *readGatedStore) {
+	t.Helper()
+	store := newStore()
+	g := &readGatedStore{fakeStore: store}
+	return newHarnessOver(t, g, store, opts...), g
+}
+
 // on arms the gate: the next read of its key runs racer on a goroutine of its
 // own and holds the reader for a window, which is the interleaving.
 func (s *readGatedStore) on(t *testing.T, racer func()) <-chan struct{} {
 	t.Helper()
+	return s.arm(func(key string) bool { return key == s.key }, racer)
+}
+
+// onFirstUnder arms the gate on the first read of ANY key under prefix, which
+// is how a test gets between two writes that live in two different keyspaces —
+// a section's read of a job record and the queue write that read decided. The
+// queue's own keys are the only handle a test outside pkg/v2/queue has on the
+// instant its ack begins.
+func (s *readGatedStore) onFirstUnder(t *testing.T, prefix string, racer func()) <-chan struct{} {
+	t.Helper()
+	return s.arm(func(key string) bool { return strings.HasPrefix(key, prefix) }, racer)
+}
+
+func (s *readGatedStore) arm(match func(string) bool, racer func()) <-chan struct{} {
 	done := make(chan struct{})
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.match = match
 	s.hook = func() {
 		go func() {
 			defer close(done)
@@ -126,7 +154,7 @@ func (s *readGatedStore) Get(key string) ([]byte, bool) {
 
 	s.mu.Lock()
 	hook := s.hook
-	if key != s.key {
+	if hook == nil || !s.match(key) {
 		hook = nil
 	} else {
 		s.hook = nil
@@ -212,16 +240,16 @@ func TestACancelIsNotLostToTheClaimThatOverlapsIt(t *testing.T) {
 }
 
 // PAIR 2 — cancel against settle, the same loop goroutine one step later: the
-// build is over, the delivery is acked, the terminal record is being written.
-// settle re-reads exactly so that a cancel is not overwritten, and the re-read
-// is as stale as any other the moment something writes between it and the entry
-// it decided.
+// build is over, the delivery is being acked, the terminal record is being
+// written. settle re-reads exactly so that a cancel is not overwritten, and the
+// re-read is as stale as any other the moment something writes between it and
+// the entry it decided.
 func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
 	// The state settle runs in: the record Claimed by this node, the delivery
-	// acked, the build finished cleanly.
+	// still held, the build finished cleanly.
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	claim := h.mustRecord(t, id)
@@ -229,12 +257,11 @@ func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 	value, err := claim.encode()
 	require.NoError(t, err)
 	require.NoError(t, h.store.Batch([]raft.BatchOp{set(jobRecordKey(id), value)}, time.Second))
-	require.NoError(t, h.work.Ack(d))
 
 	var cancelErr error
 	cancelled := gated(t, h, jobRecordKey(id)).on(t, func() { cancelErr = h.cancel(id) })
 
-	require.NoError(t, h.settle(id, nil))
+	require.NoError(t, h.settle(d, nil))
 	<-cancelled
 
 	requireCancelKept(t, h, id, cancelErr)

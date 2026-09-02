@@ -252,8 +252,21 @@ const (
 
 func newHarness(t testing.TB, opts ...Option) *harness {
 	t.Helper()
-
 	store := newStore()
+	return newHarnessOver(t, store, store, opts...)
+}
+
+// newHarnessOver builds the service over `over`, which may be a wrapper around
+// `store` rather than the store itself.
+//
+// THE QUEUE IS OPENED OVER WHATEVER New WAS GIVEN, so a wrapper installed by
+// assigning Service.store afterwards is under the service and NOT under the
+// queue — which is invisible until a test tries to get between a record read
+// and the queue write it decided, and then simply never fires. Passing it here
+// is the only way both sides are behind one hook.
+func newHarnessOver(t testing.TB, over Store, store *fakeStore, opts ...Option) *harness {
+	t.Helper()
+
 	repos := newRepositories(testRepo)
 	runner := &fakeRunner{}
 	clock := newClock()
@@ -264,7 +277,7 @@ func newHarness(t testing.TB, opts ...Option) *harness {
 		WithRunner(runner),
 	}, opts...)
 
-	s, err := New(h, store, repos, Config{}, opts...)
+	s, err := New(h, over, repos, Config{}, opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 

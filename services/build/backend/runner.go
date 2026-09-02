@@ -83,16 +83,13 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 	runCtx, stop := context.WithTimeout(ctx, deadline.Sub(s.now()))
 	defer stop()
 
+	// BOTH OF THIS FUNCTION'S ACKS ARE INSIDE THE SECTION THAT DECIDED THEM, and
+	// neither is here: begin acks the delivery it drops, settle acks the one it
+	// judges. What is left in between is the build, which is the one thing that
+	// must NOT hold the lock.
 	rec, claimed, err := s.begin(d, deadline, stop)
-	if err != nil {
+	if err != nil || !claimed {
 		return err
-	}
-	if !claimed {
-		// An item with no record cannot be identified, let alone built, and one
-		// whose job has finished — cancelled, or settled by an earlier delivery
-		// — is dropped. This is the one gap between an ack and a terminal
-		// record healing itself.
-		return s.ack(d)
 	}
 	defer s.forget(d.ID)
 
@@ -128,25 +125,22 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 		return fmt.Errorf("job %s abandoned: %w", rec.ID, errShuttingDown)
 	}
 
-	// ACK IS THE COMMIT POINT, and it comes before anything this run produced
-	// is published. It is the only compare-and-swap this service has: the
-	// queue refuses an ack whose delivery it no longer holds, so a node whose
-	// claim expired — or which lost leadership mid-run — learns it here and
-	// PUBLISHES NOTHING. Content-addressed rows already written are harmless;
-	// a pointer written by a node that no longer speaks for the group is not.
-	//
-	// v1 asked whether it still owned the job only when REPORTING, after it had
-	// already stashed assets and pushed keys to tns.
-	if err := s.ack(d); err != nil {
-		return err
-	}
-
-	return s.settle(rec.ID, runErr)
+	return s.settle(d, runErr)
 }
 
 // begin is the claim's own transition, and it is ONE SECTION: the re-read that
-// decides whether this delivery is still worth running, the entry that writes
-// the record Claimed, and the registration that lets Cancel stop the run.
+// decides whether this delivery is still worth running, and then
+// EITHER the entry that writes the record Claimed and the registration that
+// lets Cancel stop the run, OR the ack that drops the delivery.
+//
+// ONE READ, TWO BRANCHES, TWO DIFFERENT WRITES — and that is why the ack is
+// here rather than in run. The drop branch's write IS the ack: the read said
+// this job has finished, and acking is what that read decided. Made after the
+// section closed it was a queue write nothing serialized against a push, and
+// pkg/v2/queue's Push deduplicates against the index row of a claimed item
+// while Ack deletes that very row, so a reopening that landed in the window
+// made a no-op push and this ack destroyed the item it was deduplicated
+// against — a job reading Open with nothing queued for it.
 //
 // RE-READING WAS NEVER ENOUGH ON ITS OWN. It is what makes cancel a record
 // write rather than a message, but a read is only true until something else
@@ -174,9 +168,10 @@ func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.Cance
 		return jobRecord{}, false, err
 	}
 	// Cancelled is one of the three terminal states, so this is the cancel case
-	// as much as it is the redelivery case.
+	// as much as it is the redelivery case. An item with no record cannot be
+	// identified, let alone built.
 	if !found || rec.terminal() {
-		return jobRecord{}, false, nil
+		return jobRecord{}, false, s.ack(d)
 	}
 
 	rec.Status = int32(buildv1.JobStatus_JobStatusClaimed)
@@ -224,22 +219,55 @@ func (s *Service) invoke(ctx context.Context, work Work) (err error) {
 	return s.runner.Run(ctx, work, &attemptSink{s: s, id: work.JobID, attempt: work.Attempt})
 }
 
-// settle writes the terminal record after the ack has committed. The record is
-// re-read because a Cancel may have written it while the run was going, and a
-// cancelled job must not be overwritten with the outcome of the run that was
-// cancelled — and the re-read and the entry it decides are ONE SECTION, because
-// a cancel landing between them is precisely the write the re-read exists to
-// see.
-func (s *Service) settle(id string, runErr error) error {
+// settle ends the delivery and writes what the run decided — THE ACK AND THE
+// RECORD WRITE IT DECIDES, ONE SECTION.
+//
+// ACK IS THE COMMIT POINT, and it comes before anything this run produced is
+// published. It is the only compare-and-swap this service has: the queue
+// refuses an ack whose delivery it no longer holds, so a node whose claim
+// expired — or which lost leadership mid-run — learns it here and PUBLISHES
+// NOTHING. Content-addressed rows already written are harmless; a pointer
+// written by a node that no longer speaks for the group is not. v1 asked
+// whether it still owned the job only when REPORTING, after it had already
+// stashed assets and pushed keys to tns.
+//
+// THE RECORD IS RE-READ because the whole build happened outside this lock, and
+// three different things can have written it in the meantime. Each is a
+// different answer:
+//
+//   - terminal. A Cancel wrote it while the run was going, and a cancelled job
+//     must not be overwritten with the outcome of the run that was cancelled.
+//     Its item is the one the ack just removed, which is correct: the job is
+//     over.
+//   - Claimed, by this run. The ordinary case, and the only one this run's
+//     outcome describes.
+//   - OPEN. Somebody cancelled the job and then retried it while the build ran,
+//     so the record is a NEW attempt that this run knows nothing about — and
+//     the retry's push was deduplicated against the very delivery the ack above
+//     just destroyed (pkg/v2/queue: Push is a no-op for an id the queue holds,
+//     Ack deletes that id's index row). Writing this run's outcome over it
+//     tells the caller its retry failed with the error of the build it
+//     cancelled; leaving it alone but saying nothing leaves a job that reads
+//     Open with no item and, once finish has dropped its open row, nothing for
+//     reconcile to walk either. So the item goes back, in this section, where
+//     the reopening could not have raced it.
+func (s *Service) settle(d queue.Delivery, runErr error) error {
 	jobLock.Lock()
 	defer jobLock.Unlock()
 
-	rec, found, err := s.record(id)
+	if err := s.ack(d); err != nil {
+		return err
+	}
+
+	rec, found, err := s.record(d.ID)
 	if err != nil {
 		return err
 	}
 	if !found || rec.terminal() {
 		return nil
+	}
+	if rec.status() != buildv1.JobStatus_JobStatusClaimed {
+		return s.requeue(rec)
 	}
 
 	if runErr != nil {

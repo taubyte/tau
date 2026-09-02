@@ -168,6 +168,27 @@ func (s *Service) resume(id string) (bool, error) {
 // transition holds this across the queue write that pairs with its record write
 // — a push, a withdrawal, an ack — and pkg/v2/queue calls nothing in this
 // package, so the order cannot invert.
+//
+// THE PAIRING IS THE RULE AND NOT AN ILLUSTRATION, and the sentence above was
+// once true of every transition except the one that ran the builds. run acked
+// its deliveries with no lock held, at both of its exits, and the decision each
+// ack carried out had been taken in a section that had already closed. That is
+// not a lost update between two record writes; it is a queue write and a record
+// write drifting apart. queue.Push is a no-op for an id the queue already
+// holds, and queue.Ack deletes the very index row that dedup reads — so a
+// retry that landed while a build was running made a push that did nothing, and
+// the ack after the build destroyed the item it had been deduplicated against.
+// The caller had been told its retry was accepted; the job had no queue item at
+// all, and once settle had dropped its open row, nothing for reconcile to walk
+// either. Both acks are now inside the section whose read decided them
+// (runner.go), and population_test.go checks that from the WRITE side, because
+// a table keyed by the reading function cannot see a write made by a function
+// that reads nothing.
+//
+// WHAT IS DELIBERATELY OUTSIDE, so that the rule is not read as "everything":
+// the build, and the round trip to auth. A section that held either would hold
+// this lock for an hour, or across a network call to another service — and the
+// whole point of it is that it is only ever held across writes to one store.
 var jobLock sync.Mutex
 
 // create writes a job that does not exist yet: the record, its project index

@@ -293,8 +293,9 @@ type Runner interface {
 	// longer speaks for the group is caught, and it is caught before anything
 	// this run produced is published.
 	//
-	// AN ERROR FROM Run IS TERMINAL — status Failed, then Ack. The queue's
-	// retry exists for a worker that DIED, not for a build that failed;
+	// AN ERROR FROM Run IS TERMINAL — the ack, then status Failed, and both in
+	// one section (runner.go's settle). The queue's retry exists for a worker
+	// that DIED, not for a build that failed;
 	// retrying a compile error five times is waste, and v1's own
 	// MaxJobAttempts=2 counted only REPORTED failures, so a crash was free and
 	// a job that killed its worker retried forever.
