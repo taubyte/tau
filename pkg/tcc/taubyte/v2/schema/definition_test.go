@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -266,10 +267,10 @@ func TestWorkerEntrypointIsRequiredOnTheWasmTierOnly(t *testing.T) {
 		"a container names an image, not an exported symbol")
 	assert.ErrorContains(t, compile("runtime: container\n"+limits), "required attribute 'image'")
 
-	// The two kinds that are ALWAYS a component keep the unconditional demand. A gate
-	// written inside the shared helper would have named an attribute neither has, and
-	// a condition on a field that is not there is never true.
-	for _, kind := range []string{"function", "entity"} {
+	// The kind that is ALWAYS a component keeps the unconditional demand. A gate
+	// written inside the shared helper would have named an attribute it does not
+	// have, and a condition on a field that is not there is never true.
+	for _, kind := range []string{"function"} {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 		assert.NilError(t, afero.WriteFile(fs, "/"+kind+"/probe.yaml", []byte(head+limits), 0o644))
@@ -1151,7 +1152,7 @@ func TestPortsAreNamed(t *testing.T) {
 // a function doing the same is not — while the guest HTTP client is exactly as real as
 // the container's socket.
 func TestEveryWorkloadCanDeclareEgress(t *testing.T) {
-	for _, kind := range []string{"application", "function", "worker", "entity", "sandbox"} {
+	for _, kind := range []string{"application", "function", "worker", "sandbox"} {
 		var found bool
 		for _, g := range schema.CompileRoot().Children {
 			if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
@@ -1272,7 +1273,7 @@ func TestWorkloadVariables(t *testing.T) {
 	assert.Assert(t, !literal)
 
 	// every workload kind can be configured, not just the container one
-	for _, kind := range []string{"application", "function", "worker", "entity", "sandbox"} {
+	for _, kind := range []string{"application", "function", "worker", "sandbox"} {
 		var found bool
 		for _, g := range schema.CompileRoot().Children {
 			if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
@@ -1348,15 +1349,24 @@ func TestWorkflowLowers(t *testing.T) {
 			"a workflow produced a stream nobody asked for: %v", got)
 	}
 
-	// NO store for the run's state: the state is the message, and which queue it is in
-	// is which step it is at. It briefly lowered into an entity, which is a code-bearing
-	// kind whose code nothing was setting — a resource nobody could instantiate.
+	// AND NOTHING ELSE AT ALL, as the WHOLE set rather than as the absence of one kind.
+	// A workflow briefly lowered into a store for the run's state, and this used to be
+	// pinned by naming that kind — which is a guard that goes quiet the day the kind is
+	// deleted, and passes on a tree where a workflow produces some other thing nobody
+	// asked for. There is no store because the state IS the message: which queue it is
+	// in is which step it is at.
+	var produced []string
 	for _, d := range plan {
-		if d.Of != "workflow/checkout" {
-			continue
+		if d.Of == "workflow/checkout" {
+			produced = append(produced, d.Kind+"/"+d.Name)
 		}
-		assert.Assert(t, d.Kind != "entity", "a workflow needs no entity: %v", got)
 	}
+	sort.Strings(produced)
+	assert.DeepEqual(t, produced, []string{
+		"function/checkout_charge", "function/checkout_reserve", "function/checkout_settle",
+		"queue/checkout_charge", "queue/checkout_failed", "queue/checkout_reserve",
+		"queue/checkout_settle",
+	})
 
 	// EVERY WRITE THE PLAN CARRIES, keyed by what it lands on and where. That the value
 	// is a verb and the path an access entry is this vocabulary's reading of it — the
@@ -1985,6 +1995,67 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 		"a workload reaching an external system needs no kind for it")
 }
 
+// ORCHESTRATION IS THE RUNTIME'S, AND `entity` IS WHERE THIS VOCABULARY SAID OTHERWISE.
+// It was a named, durably-stored, single-writer compute instance: a WASM entrypoint, a
+// per-instance storage ceiling, a `durable` bit journalling host calls for replay, and a
+// quorum lease as the fence. Every one of those is HOW something is run, decided while it
+// runs; none is a shape a compiler can hand a deployer. So the kind is gone, and this is
+// what stops it returning.
+//
+// FOUR LISTS AND A COMPILE, and they are ONE CHAIN rather than four independent checks:
+// `CompileRoot`, `KindRoot` and `Kinds` are all derived from `V2Resources`, so today they
+// fail together. Each is named anyway because each is a different consumer's list — the
+// authored vocabulary, the loader's root, the shape a lowered kind compiles in, and the set
+// that declares verbs — and `Lowerable` states a before and an after shape separately, so
+// the lowered root is a place a kind CAN survive its own deletion.
+//
+// `Kinds()` is spelled out because it is the check somebody reaches for first and it is
+// the one that can be vacuous: it answers with the kinds declaring Ops. Here it is live —
+// this kind declared `get` and `call` — and it is a trap on a kind that declared none,
+// which is what the connector guard records.
+//
+// AND A DOCUMENT THAT WOULD HAVE BEEN ONE, because the four lists are the vocabulary's own
+// account of itself and a compile is the author's.
+func TestThereIsNoEntityKind(t *testing.T) {
+	for _, g := range schema.V2Resources {
+		name, _ := g.Match.(string)
+		assert.Assert(t, name != "entity", "entity is still a group in V2Resources")
+	}
+	for _, g := range schema.CompileRoot().Children {
+		name, _ := g.Match.(string)
+		assert.Assert(t, name != "entity", "entity is still a group of the compile root")
+	}
+	for _, g := range schema.KindRoot() {
+		name, _ := g.Match.(string)
+		assert.Assert(t, name != "entity", "entity is still a group of the lowered root")
+	}
+	for _, k := range schema.Kinds() {
+		assert.Assert(t, k != "entity", "entity still declares verbs")
+	}
+
+	// A directory named after a kind the vocabulary does not have is walked past, so this
+	// is SILENT rather than an error — which is exactly why it has to be asserted. Strict
+	// keys are a property of a document the loader reads, and nothing reads this one.
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/entity/counter.yaml", []byte(
+		"id: QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn\n"+
+			"execution:\n    call: tick\n    timeout: 5s\n    memory: 8MB\n"+
+			"durable: true\nsize: 64MB\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	_, present := root(t, obj.Flat())["entity"]
+	assert.Assert(t, !present, "an entity still compiles to a resource: %v", root(t, obj.Flat()))
+
+	// AND NOTHING LOWERS INTO IT, which needs no assertion of its own: the generic check
+	// refuses a lowering naming a kind that is not there, so the agent's `sessions`
+	// lowering coming back on its own is caught by TestEveryLoweringNamesARealKind and
+	// caught HERE only in the sense that the four lists above are what make it not a kind.
+}
+
 // A PLACEHOLDER THAT STAYS A PLACEHOLDER. `log` has no fields of its own on purpose —
 // its shape is owed and has not been given — and the two things that could quietly
 // happen to it are pinned here: somebody deleting it as inert, and somebody completing
@@ -2101,7 +2172,7 @@ func TestRegionIsDeclaredOnKindsWithAFootprint(t *testing.T) {
 	assert.DeepEqual(t, schema.PlacedKinds(), []string{
 		"application", "function", "worker", "sandbox",
 		"cache", "database", "storage", "volume", "log",
-		"entity", "queue", "agent", "workflow",
+		"queue", "agent", "workflow",
 	})
 
 	placed := map[string]bool{}

@@ -57,8 +57,6 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"database/sql/database", "database/sql/host",
 		"database/sql/size", "database/sql/tls",
 		"database/instances/limit", "database/vector/size",
-		"entity/egress", "entity/execution/cpu", "entity/execution/memory",
-		"entity/execution/timeout", "entity/size", "entity/value",
 		"function/egress", "function/execution/cpu", "function/execution/memory",
 		"function/execution/timeout", "function/value",
 		"gateway/cors/allow_self", "gateway/cors/origins",

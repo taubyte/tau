@@ -176,8 +176,8 @@ func egressAttribute() *Attribute {
 var secNetwork = Section("network", "Network", "How this workload is reached, and what it may reach.")
 
 // wasmAttributes is the shared shape of everything that runs a WASM entrypoint —
-// function, worker's wasm half, entity and authorizer. Declared once because the
-// four differ in what points AT them, never in how they run.
+// function, worker's wasm half and authorizer. Declared once because the three
+// differ in what points AT them, never in how they run.
 // hostWorlds are the interfaces a WASM workload can be built against. A function is
 // named in four places that hand it four DIFFERENT worlds, and nothing in the function
 // said which — so a gateway transformer named on a proxy compiled clean and failed on
@@ -197,7 +197,7 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 }
 
 // wasmAttributesEntrypoint is wasmAttributes with the ENTRYPOINT'S DEMAND as an
-// argument, because one of the three kinds that runs a WASM component does not
+// argument, because one of the two kinds that runs a WASM component does not
 // always run one.
 //
 // `worker` carries a `runtime` tier, and a container worker has no exported symbol
@@ -206,11 +206,11 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 // error compiled an object stating two wasm facts about a container.
 //
 // THE GATE HAD TO BE A PARAMETER RATHER THAN A CONDITION INSIDE THIS HELPER.
-// `RequiredWhen("runtime", …)` written here would name an attribute `function` and
-// `entity` do not have, and a condition naming a field that is not there is simply
-// never true — so the entrypoint would have stopped being required on the two kinds
-// that always need it. That is a check narrowed to fit one caller, which is worse
-// than the error it removes.
+// `RequiredWhen("runtime", …)` written here would name an attribute `function` does
+// not have, and a condition naming a field that is not there is simply never true —
+// so the entrypoint would have stopped being required on the kind that always needs
+// it. That is a check narrowed to fit one caller, which is worse than the error it
+// removes.
 func wasmAttributesEntrypoint(demand AttrOption, attrs ...*Attribute) []*Attribute {
 	base := []*Attribute{
 		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
@@ -1529,26 +1529,46 @@ var V2Resources = []*Node{
 			Resource("secret", "Secret", "Secret", "secret"),
 		)),
 
-	// ---- coordination ----
-
-	// A named, durably-stored, single-writer compute instance: the fence is a quorum
-	// lease and its epoch. CP, and the docs say so in the first paragraph — during a
-	// partition the side that cannot reach K replicas cannot complete a write.
-	// `shards` is fixed at creation because it is the lease and replica-set
-	// granularity (resources.md §3.1).
-	DefineGroup("entity",
-		resource(
-			wasmAttributes(
-				Bool("durable", InSection("coordination"), Doc("Durable", "Journal every host call so an interrupted turn replays deterministically.")),
-				Bytes(Key("size"), PerEnv(), InSection("limits"), Doc("Storage", "Per-instance SQL storage ceiling.")),
-			),
-			Nested(variablesGroup()),
-			GroupDoc("A single-writer, durably-stored compute instance addressed by name. CP: a partition that cannot reach K replicas cannot write."), Icon("cube"), Category("compute"), Placed(),
-			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
-			Section("coordination", "Coordination", "Sharding and durability."),
-			Ops(ReadOp("get"), WriteOp("call")),
-			Resource("entity", "Entity", "Entity", "entity"),
-		)),
+	// NO `entity` KIND, and this is the note that stops it coming back as a field at a
+	// time. It was a named, durably-stored, single-writer compute instance — a WASM
+	// entrypoint, a per-instance storage ceiling, a `durable` bit journalling every host
+	// call so an interrupted turn replays, and a quorum lease as the fence. Read as a
+	// list of fields it is defensible. Read as a claim it is not: every one of those
+	// fields describes HOW A RUNTIME RUNS SOMETHING, and none of them is a shape a
+	// compiler can hand to a deployer.
+	//
+	// ORCHESTRATION IS RUNTIME. That is the whole of it. Where a conversation lives, when
+	// a turn is durable, which replica holds the lease this second, what replays after an
+	// interruption — these are decided while the work runs, by the thing running it, and
+	// they change between one invocation and the next. Config states what EXISTS and what
+	// may reach it. A kind whose content is entirely how execution is sequenced is the
+	// vocabulary answering a question it is not the one asked, and the answer goes stale
+	// the moment the runtime picks differently.
+	//
+	// WHAT ARGUED FOR IT, and why each argument moved out:
+	//
+	//   - SESSION STATE. `agent.sessions.size` lowered into one, so a conversation was a
+	//     named instance with a fence around it. A thread is the loop's, at run time —
+	//     see the note where that field stood.
+	//   - A LINEARIZABLE COUNTER. `database` and `cache` each cited this kind as the place
+	//     compare-and-swap lives. It never was: an entity's verbs were `get` and `call`,
+	//     and a safe counter was always code somebody wrote INSIDE one. Those two notes
+	//     pointed at a runtime capability and called it a vocabulary one.
+	//   - PER-KEY ORDERING. `queue`'s doc sent an author here for it. `consensus:
+	//     single-writer` is what orders writes to a key, it is declared on the kinds that
+	//     have it, and a second spelling of the same fact is the parallel table §10 is
+	//     about.
+	//   - "A DURABLE, ADDRESSABLE THING WITH CODE IN IT". That is a `function` with the
+	//     state it reaches declared beside it, which is every other workload here.
+	//
+	// WHAT IT COSTS, said out loud: nothing in this vocabulary now offers compare-and-swap
+	// — no kind declares a conditional-write verb, and none did before either. The
+	// vocabulary is SILENT on it rather than pointing somewhere, which is the honest state
+	// and is why the three notes that pointed here were rewritten rather than repointed.
+	//
+	// WHAT WOULD BRING IT BACK is not this kind: it is a conditional-write verb on a kind
+	// that already stores something, which is one verb and the owner's call. A second
+	// compute kind is not how a counter gets a fence.
 
 	// Claim / visibility-timeout / ack / DLQ — not pop-and-delete. Today's
 	// pkg/raft Queue.Pop deletes before returning, so a consumer that crashes
