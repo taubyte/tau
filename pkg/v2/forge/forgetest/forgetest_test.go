@@ -124,6 +124,14 @@ func TestTheSuiteCatchesABrokenDriver(t *testing.T) {
 			saying: "followed a redirect to",
 		},
 		{
+			// The same hop, on the credential no session holds. Nothing a
+			// session does goes near it, so the only thing that finds this is a
+			// probe armed at every operation rather than at one.
+			fault:  fake.FaultFollowsRedirectOnTheDeploymentCredential,
+			shape:  fake.GitHubLike,
+			saying: "which is not the host this credential is for",
+		},
+		{
 			fault:  fake.FaultFollowsSameHostRedirect,
 			plus:   fake.FaultEchoesKey,
 			shape:  fake.GitHubLike,

@@ -163,19 +163,46 @@ type Subject struct {
 	// RedirectOnce makes the forge answer the NEXT request it is given with a
 	// redirect to loc, once. REQUIRED.
 	//
-	// IT IS THE ONLY WAY THE SUITE CAN SEE WHERE A REQUEST WENT. Requests
-	// reports what a fixture observed, and a fixture observes arrivals: a
-	// request that went to another host arrives nowhere it can report, so
-	// "every recorded request went to Host" is a sentence that cannot fail for
-	// a driver that sent one elsewhere. A forge answering 302 to somewhere else
-	// is the whole threat forge.PinnedTransport exists for — every SDK runs on
-	// an http.Client and an http.Client follows redirects — and against this
-	// probe the suite starts a server of its own at loc and reads what showed
-	// up. A driver must send NOTHING there.
+	// IT IS ARMED ONCE PER OPERATION, not once per run, and every operation
+	// this subject declares gets a turn — the deployment's own credential
+	// included, which rides a client no session can reach. A driver is not one
+	// method, and a redirect policy written at one call site is not a policy the
+	// next call site has.
+	//
+	// THE SUITE ARMS IT WITH TWO KINDS OF loc, AND THEY PROVE DIFFERENT THINGS.
+	//
+	// A HOST NOBODY HERE HOLDS A CREDENTIAL FOR. This is the only way the suite
+	// can see where a request went: Requests reports what a fixture observed,
+	// and a fixture observes arrivals, so a request that went to another host
+	// arrives nowhere it can report and "every recorded request went to Host" is
+	// a sentence that cannot fail for a driver that sent one elsewhere. A forge
+	// answering 302 to somewhere else is the whole threat forge.PinnedTransport
+	// exists for — every SDK runs on an http.Client and an http.Client follows
+	// redirects — so the suite starts a server of its own at loc and reads what
+	// showed up. A driver must send NOTHING there.
+	//
+	// AN ADDRESS ON Host NAMING ANOTHER REPOSITORY, one this subject itself
+	// reported, so the suite invents no URL shapes. The pin permits that hop and
+	// must: a per-hop host check is the whole of what a pin decides, and this is
+	// the host the credential is for. Nothing under a driver refuses it, nothing
+	// over a driver can see it, and what comes back is another repository's
+	// permissions, another repository's hook, another repository's deletion. The
+	// suite reads the ANSWER the operation produced rather than the destination,
+	// because there is nothing wrong with the destination.
+	//
+	// THE STATUS IS THE FIXTURE'S CHOICE AND IT DECIDES WHICH HALF IS REACHED. A
+	// 301, 302 or 303 makes Go rewrite the request to a GET, which reaches the
+	// half where a write reads somebody else's 200 and reports success having
+	// done nothing. A 307 or 308 replays method and body, which reaches the half
+	// where the write actually lands on the repository the redirect named. A
+	// fixture that only ever answers 302 leaves the second half unreached, and a
+	// driver's refusal is the same answer either way — so answering 307 to a
+	// non-GET is strictly more probe for the same fixture.
 	//
 	// A subject that speaks no HTTP implements it by recording the request it
-	// WOULD have sent to loc, which the same subtest reads out of Requests.
-	// Either way the destination is observed rather than assumed.
+	// WOULD have sent to loc, which the same subtest reads out of Requests, and
+	// by acting on the repository loc names. Either way what happened is
+	// observed rather than assumed.
 	RedirectOnce func(loc string)
 
 	// Required when Expect has CapDeployKeys.

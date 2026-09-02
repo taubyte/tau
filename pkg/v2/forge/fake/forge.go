@@ -355,7 +355,10 @@ func (c *core) answerRedirect(method, loc, token string) error {
 		}
 		return c.followSameHost(method, loc, token)
 	}
-	if !c.shape.faulty(FaultFollowsRedirect) {
+	// The deployment's credential rides a client of its own, and a driver can
+	// hold a redirect policy on one client and not the other.
+	onDeployment := c.shape.faulty(FaultFollowsRedirectOnTheDeploymentCredential) && token == deployToken
+	if !c.shape.faulty(FaultFollowsRedirect) && !onDeployment {
 		return fmt.Errorf("fake: %s answered a redirect to %s, which is not this host; the hop was refused", c.shape.Host, loc)
 	}
 

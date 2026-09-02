@@ -218,6 +218,18 @@ const (
 	// defence, and it has its own fault below.
 	FaultFollowsRedirect Fault = "follows-redirect"
 
+	// FaultFollowsRedirectOnTheDeploymentCredential follows a hop off this host
+	// on the one client NO SESSION CAN REACH: the credential the deployment
+	// itself holds, which answers the membership question and nothing else.
+	//
+	// It is a redirect policy written per call site instead of per client, or
+	// written on the client a driver's author was looking at. Every session call
+	// refuses the hop; the membership walk does not, and it is walking with a
+	// credential that speaks for the whole deployment rather than for one user.
+	// A probe that arms one method finds nothing here, which is what it was
+	// added for.
+	FaultFollowsRedirectOnTheDeploymentCredential Fault = "follows-redirect-on-the-deployment-credential"
+
 	// FaultFollowsSameHostRedirect takes a forge's redirect to ANOTHER
 	// REPOSITORY ON THIS HOST and acts on the one the redirect names, while
 	// every value it hands back still describes the one the caller asked about.

@@ -403,40 +403,166 @@ func (r *runner) derivedKey(t tb) {
 // So the suite stops reading a fixture's report and starts a host of its own.
 // RedirectOnce points the forge's next answer at it, and what shows up there is
 // observed rather than inferred. Nothing may.
+//
+// IT ARMS EVERY OPERATION AND NOT ONE. It used to arm Whoami and stop, which
+// asserted that ONE method refuses the hop — and a driver is not one method. It
+// is several clients: a session's, and on some deployments a second one holding
+// the credential the deployment itself owns, which no session can reach and
+// which the membership walk spends. A forge that answers 302 answers it to
+// whichever request arrives, so the probe has to be armed at each of them. A
+// fake told to refuse the hop on Whoami alone and follow it everywhere else
+// passed this suite, which is what that costs.
+//
+// WHAT IT CANNOT ASSERT IS THAT THE PIN IS THERE, and pretending otherwise
+// would be worse than saying so. This asserts the END — no request this driver
+// makes reaches a host its credential is not for, whatever the forge answers,
+// on every operation it has — and not the MEANS. A driver whose http.Client
+// refuses every 3xx, which is what both drivers in this tree do and a defensible
+// policy, never hands the transport an off-host request at all, so removing the
+// pin from it changes nothing observable from out here. Nor can the suite
+// manufacture one: a driver's base URL is fixed when it is built, a key on
+// another host is refused before the wire by forge.Session, and a clone URL on
+// another host is refused by the drivers themselves. Demanding
+// *forge.CredentialLeakError from these calls would not prove the pin either —
+// it would FORBID the stricter policy, by requiring that the hop reach the
+// transport before it is refused.
+//
+// The pin itself is covered where it can be: forge's own tests drive
+// PinnedTransport directly, across hosts, ports and cleartext, and a driver's
+// tests drive the transport its constructor actually installed. That last one is
+// a fact about a driver's construction, and this suite asserts behaviour rather
+// than shape — see the package comment, which says so first.
 func (r *runner) redirectOffHost(t tb) {
 	t.Helper()
-	sess := r.session(t, r.s.Writable)
-
 	d := newDecoy()
 	defer d.close()
 
-	// Everything Requests reports after this belongs to the redirect, which
-	// matters for a subject that answers RedirectOnce by reporting the request
-	// it would have sent rather than by sending one.
-	r.s.Requests()
-	r.s.RedirectOnce(d.url())
+	for _, op := range r.everyOperation(t) {
+		t.Run(op.name, func(t tb) {
+			// Everything Requests reports after this belongs to the redirect,
+			// which matters for a subject that answers RedirectOnce by
+			// reporting the request it would have sent rather than by sending
+			// one.
+			r.s.Requests()
+			r.s.RedirectOnce(d.url())
 
-	_, err := sess.Whoami(r.ctx)
-	assert.Error(t, r.note(err),
-		"the forge answered a redirect to %q and Whoami succeeded anyway, so an answer from another host was taken for the forge's", d.url())
+			assert.Error(t, r.note(op.call()),
+				"the forge answered a redirect to %q and %s succeeded anyway, so an answer from another host was taken for the forge's", d.url(), op.name)
 
-	r.assertRequestsStayHome(t, r.s.Requests())
+			r.assertRequestsStayHome(t, r.s.Requests())
+		})
+	}
 
-	for _, got := range d.seen() {
-		t.Errorf("a request went to %q, which is not the host this credential is for: %s %s", d.host(), got.Method, got.URL)
-		// EVERY header, not the Authorization one. Go strips Authorization on a
-		// cross-host redirect and strips nothing else, so a forge whose header
-		// is PRIVATE-TOKEN or X-Token hands the credential over where GitHub's
-		// spelling would have been dropped — the stdlib's rule is about a name,
-		// and a credential does not care what it is called.
-		for name, values := range got.Header {
-			for _, v := range values {
-				if strings.Contains(v, r.s.Token) {
-					t.Errorf("and it carried the credential there, in %s", name)
+	t.Run("nothing-arrived-at-the-other-host", func(t tb) {
+		for _, got := range d.seen() {
+			t.Errorf("a request went to %q, which is not the host this credential is for: %s %s", d.host(), got.Method, got.URL)
+			// EVERY header, not the Authorization one. Go strips Authorization on a
+			// cross-host redirect and strips nothing else, so a forge whose header
+			// is PRIVATE-TOKEN or X-Token hands the credential over where GitHub's
+			// spelling would have been dropped — the stdlib's rule is about a name,
+			// and a credential does not care what it is called.
+			//
+			// THE ARRIVAL IS THE ASSERTION AND THIS IS THE DETAIL. The suite
+			// knows Token and BadToken, which are a session's; the credential a
+			// DEPLOYMENT holds is one no Subject hands over, so a membership hop
+			// that carried it is caught by having arrived and not by what it
+			// says. Which is the right way round: a request at a host this
+			// credential is not for is already wrong, whatever it carries.
+			for name, values := range got.Header {
+				for _, v := range values {
+					if strings.Contains(v, r.s.Token) {
+						t.Errorf("and it carried the credential there, in %s", name)
+					}
 				}
 			}
 		}
+	})
+}
+
+// operation is one call the suite can make through the interface, named so a
+// failure says which one went somewhere it should not have.
+type operation struct {
+	name string
+	call func() error
+}
+
+// everyOperation is every call this subject can be asked to make that reaches
+// the wire, and only those.
+//
+// A capability the driver does not have is left out on purpose rather than
+// asserted absent here: the refusal comes from forge.Session before any request
+// exists, so there would be no hop to redirect — and arming one that is never
+// taken would leave the forge armed for whatever ran next. Absence has its own
+// contract, asserted where the capability is. CloneAddress is left out for the
+// same reason from the other direction: it talks to nothing, which is why it
+// keeps working while the forge is unreachable.
+func (r *runner) everyOperation(t tb) []operation {
+	t.Helper()
+	sess := r.session(t, r.s.Writable)
+	admin := r.session(t, r.s.Admin)
+	const pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIforgetestpublichalf forgetest"
+	const noSuchHandle = forge.Handle("forgetest-no-such-handle")
+
+	ops := []operation{
+		{"whoami", func() error { return second(sess.Whoami(r.ctx)) }},
+		{"access", func() error { return second(sess.Access(r.ctx, r.s.Writable)) }},
+		{"repository", func() error { return second(sess.Repository(r.ctx, r.s.Writable)) }},
 	}
+	if r.s.Expect.Has(forge.CapList) {
+		ops = append(ops, operation{"list", func() error {
+			return sess.ListRepositories(r.ctx, func(forge.Repository) bool { return true })
+		}})
+	}
+	if r.s.Expect.Has(forge.CapCreate) {
+		ops = append(ops, operation{"create", func() error {
+			return second(r.session(t, r.s.Creatable).Create(r.ctx, r.s.Creatable, forge.CreateOptions{Description: "forgetest"}))
+		}})
+	}
+	if r.s.Expect.Has(forge.CapDelete) {
+		// Deletable, and before the subtest that consumes it: a refused hop
+		// deletes nothing, and a driver that followed one deleted nothing here
+		// either — the decoy is not a forge.
+		ops = append(ops, operation{"delete", func() error {
+			return r.session(t, r.s.Deletable).Delete(r.ctx, r.s.Deletable)
+		}})
+	}
+	if r.s.Expect.Has(forge.CapDeployKeys) {
+		ops = append(ops,
+			operation{"install-deploy-key", func() error {
+				return second(admin.InstallDeployKey(r.ctx, r.s.Admin, "forgetest-decoy", pub))
+			}},
+			operation{"remove-deploy-key", func() error {
+				return admin.RemoveDeployKey(r.ctx, r.s.Admin, noSuchHandle)
+			}})
+	}
+	if r.s.Expect.Has(forge.CapPushHooks) {
+		if r.s.Expect.Has(forge.CapSignatures) {
+			secret, err := forge.NewSecret()
+			require.NoError(t, err)
+			callback := httpsURL(t, "https://build.example.invalid/hooks/forgetest")
+			ops = append(ops, operation{"register-push-hook", func() error {
+				return second(admin.RegisterPushHook(r.ctx, r.s.Admin, callback, secret))
+			}})
+		}
+		ops = append(ops, operation{"remove-push-hook", func() error {
+			return admin.RemovePushHook(r.ctx, r.s.Admin, noSuchHandle)
+		}})
+	}
+	if r.s.Expect.Has(forge.CapPushProbe) {
+		ops = append(ops, operation{"can-push", func() error {
+			return second(admin.CanPush(r.ctx, r.s.Admin, r.s.PushKey))
+		}})
+	}
+	if r.s.Expect.Has(forge.CapMembership) {
+		// THE OTHER CREDENTIAL. Membership is answered by the one the
+		// DEPLOYMENT holds, on a client no session can reach, and a redirect
+		// policy that lives on the session's client and not on that one is a
+		// policy this probe is the only thing standing under.
+		ops = append(ops, operation{"membership", func() error {
+			return second(r.s.Registry.IsActiveMember(r.ctx, r.s.Host, r.s.Namespace, r.s.Member))
+		}})
+	}
+	return ops
 }
 
 // ─────────────────── the hop a credential pin permits ───────────────────
