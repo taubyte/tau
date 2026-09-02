@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"sync"
 
 	"connectrpc.com/connect"
 
@@ -41,6 +42,15 @@ func (h *queueHandler) Enqueue(ctx context.Context, req *connect.Request[buildv1
 // method's are one mechanism — and there is no separate dedup index for the two
 // to disagree about.
 //
+// THE TWO DELIVERIES OVERLAP. A webhook is redelivered when the sender did not
+// see the response, which is the response still being computed, so the second
+// call arrives WHILE the first is in flight rather than after it. That is why
+// the decision and the write it justifies are one section (create) and why the
+// only thing between them is a barrier: read the table, ask auth, write what
+// the FIRST read said, and a delivery that overtakes another puts a finished
+// job back to Open with its attempts rewound and mints it a second queue item —
+// one push, built twice.
+//
 // Every argument here originates in an unauthenticated POST to the frontend
 // (build.proto: "the only one whose contents a STRANGER authored"), so this is
 // the last place the three are looked at before they become a hash and three
@@ -66,25 +76,15 @@ func (s *Service) enqueue(ctx context.Context, p *buildv1.PushEvent) (string, er
 
 	id := jobID(key, p.GetRef(), p.GetCommitSha())
 
+	// A push this service already has is answered without asking auth anything.
+	// NOTHING RESTS ON THIS READ — create reads the same row again at the
+	// moment it writes — so it is a round trip saved and not a decision.
 	existing, found, err := s.record(id)
 	if err != nil {
 		return "", err
 	}
 	if found {
-		// A record that is claimed or finished is answered as it stands: there
-		// is nothing to add and re-pushing would be a second run of a job
-		// somebody is already running.
-		if existing.terminal() || existing.status() == buildv1.JobStatus_JobStatusClaimed {
-			return id, nil
-		}
-		// Open, so the item should be in the queue. Push is a no-op for an id
-		// the queue already holds, which makes this a REPAIR for the one crash
-		// window this design has — a record written whose push never landed —
-		// at the cost of nothing when there is no such window.
-		if err := s.work.Push(id, nil); err != nil {
-			return "", errUnavailable("queue push: %v", err)
-		}
-		return id, nil
+		return id, s.requeue(existing)
 	}
 
 	if err := s.admit(key.String()); err != nil {
@@ -102,20 +102,68 @@ func (s *Service) enqueue(ctx context.Context, p *buildv1.PushEvent) (string, er
 		return "", errFailedPrecondition("repository %q belongs to no project", key)
 	}
 
+	rec, err := s.create(id, key.String(), p.GetRef(), p.GetCommitSha(), projectID)
+	if err != nil {
+		return "", err
+	}
+	return id, s.requeue(rec)
+}
+
+// createLock makes create's read and create's write ONE decision.
+//
+// Enqueue's idempotency is a read of the job table, and a read is only true
+// until something else writes. Off this process nothing else can: a write
+// commits on the leader alone, so another node deciding this same triple has to
+// take leadership first, and this node's Batch then does not commit. In this
+// process nothing stopped it — two deliveries of one push are two goroutines —
+// and the store has no compare-and-swap for them to arbitrate with. So they
+// take a lock, which is the same three-part argument pkg/v2/queue makes for its
+// own claim, over the same store, for the same reason.
+//
+// It is the package's rather than a field on Service because the section it
+// covers is a barrier, a read and one Batch with nothing to wait on inside it,
+// and because a process that runs two Services over two stores runs them as two
+// nodes of one cloud, where one is the leader and the others do not reach here.
+var createLock sync.Mutex
+
+// create writes a job that does not exist yet: the record, its project index
+// row and its open index row, in ONE entry.
+//
+// THE READ IS TAKEN HERE, not by the caller, and behind a barrier — the caller
+// has just been on a round trip to auth, and a node that has become leader
+// during it holds committed entries it has not applied. What comes back is
+// therefore the table as it is at the moment of the write, and a delivery that
+// finds the job already there returns THAT record rather than overwriting it
+// with a fresh one.
+func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) (jobRecord, error) {
+	createLock.Lock()
+	defer createLock.Unlock()
+
+	if err := s.lead(); err != nil {
+		return jobRecord{}, err
+	}
+	existing, found, err := s.record(id)
+	if err != nil {
+		return jobRecord{}, err
+	}
+	if found {
+		return existing, nil
+	}
+
 	now := s.now()
 	rec := jobRecord{
 		ID:            id,
 		Status:        int32(buildv1.JobStatus_JobStatusOpen),
-		RepositoryKey: key.String(),
-		Ref:           p.GetRef(),
-		CommitSHA:     p.GetCommitSha(),
+		RepositoryKey: repositoryKey,
+		Ref:           ref,
+		CommitSHA:     commitSHA,
 		ProjectID:     projectID,
 		CreatedAt:     now.Unix(),
 		UpdatedAt:     now.Unix(),
 	}
 	value, err := rec.encode()
 	if err != nil {
-		return "", errInternal("encoding job %s: %v", id, err)
+		return jobRecord{}, errInternal("encoding job %s: %v", id, err)
 	}
 
 	// ONE Batch: the record, the project index row and the open index row are
@@ -126,18 +174,32 @@ func (s *Service) enqueue(ctx context.Context, p *buildv1.PushEvent) (string, er
 		set(projectIndexKey(projectID, id), nil),
 		set(openIndexKey(rec.RepositoryKey, id), nil),
 	}, s.cfg.Queue.ApplyTimeout); err != nil {
-		return "", errUnavailable("writing job %s: %v", id, err)
+		return jobRecord{}, errUnavailable("writing job %s: %v", id, err)
 	}
+	return rec, nil
+}
 
-	// RECORD FIRST, PUSH SECOND, and the two cannot be fused because
-	// queue.Push does its own Batch. A crash between them leaves a record with
-	// no item, which reconcile repairs and which a redelivered webhook already
-	// answers correctly. The other order leaves an item with no record — an
-	// unidentifiable job nobody can run — which is exactly v1's orphan.
-	if err := s.work.Push(id, nil); err != nil {
-		return "", errUnavailable("queue push: %v", err)
+// requeue gives an open job an item to be claimed by, and is a no-op for one
+// that is claimed or finished — a job somebody is running does not want a
+// second item, and a finished one does not want to be run again.
+//
+// RECORD FIRST, PUSH SECOND, and the two cannot be fused because queue.Push
+// does its own Batch. A crash between them leaves a record with no item, which
+// reconcile repairs and which a redelivered webhook already answers correctly.
+// The other order leaves an item with no record — an unidentifiable job nobody
+// can run — which is exactly v1's orphan.
+//
+// It is OUTSIDE createLock, and safely: Push is a no-op for an id the queue
+// already holds, and an item minted for a job that finished in the meantime is
+// claimed once, found terminal by run's re-read, and acked without building.
+func (s *Service) requeue(rec jobRecord) error {
+	if rec.terminal() || rec.status() == buildv1.JobStatus_JobStatusClaimed {
+		return nil
 	}
-	return id, nil
+	if err := s.work.Push(rec.ID, nil); err != nil {
+		return errUnavailable("queue push: %v", err)
+	}
+	return nil
 }
 
 // admit is the bound on stranger-authored input. Both limits are per this

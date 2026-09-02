@@ -1,9 +1,13 @@
 package backend
 
 import (
+	"context"
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
@@ -303,4 +307,322 @@ func TestTheRepairPushCanFailOnItsOwn(t *testing.T) {
 	_, err = enqueue(t, h, testRepo, testRef, testCommit)
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+}
+
+// gatedRepositories is auth with a hold on the one question this service asks
+// it. Project is a p2p round trip — the only place an Enqueue waits on somebody
+// else — so it is where the state an Enqueue read can go stale under it. The
+// FIRST call blocks in it; every later one answers normally, so the test can
+// drive a second delivery all the way through while the first is still in
+// flight.
+type gatedRepositories struct {
+	*fakeRepositories
+
+	held    atomic.Bool
+	entered chan struct{}
+	release chan struct{}
+}
+
+func newGatedRepositories(keys ...string) *gatedRepositories {
+	return &gatedRepositories{
+		fakeRepositories: newRepositories(keys...),
+		entered:          make(chan struct{}),
+		release:          make(chan struct{}),
+	}
+}
+
+func (g *gatedRepositories) Project(ctx context.Context, key string) (string, error) {
+	if g.held.CompareAndSwap(false, true) {
+		close(g.entered)
+		<-g.release
+	}
+	return g.fakeRepositories.Project(ctx, key)
+}
+
+// A REDELIVERY THAT OVERLAPS THE FIRST DELIVERY IS THE CASE THE IDEMPOTENCY
+// CLAIM HAS TO SURVIVE. GitHub redelivers a webhook whose response it did not
+// see, which is exactly the response that is still being computed — so the two
+// deliveries are CONCURRENT, not sequential, and every sequential test above
+// passes either way.
+//
+// The whole of Enqueue's idempotency is a read of the job table. Between that
+// read and the write it decides, there is a round trip to auth; a delivery that
+// reads an empty table before the round trip and writes after it writes what it
+// decided on a table that is no longer there. What that costs is not a wasted
+// entry: the record goes back to Open with its attempt counter at zero, and the
+// push mints a second queue item because the ack of the first run had removed
+// the queue's own record of the id — so one push is built twice.
+func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) {
+	gate := newGatedRepositories(testRepo)
+	h := newHarness(t, func(s *Service) error { s.repos = gate; return nil })
+
+	type answer struct {
+		id  string
+		err error
+	}
+	overlapped := make(chan answer, 1)
+	go func() {
+		id, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+			RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
+		})
+		overlapped <- answer{id, err}
+	}()
+
+	// The first delivery is now inside the round trip, past whatever it read.
+	<-gate.entered
+
+	id, err := enqueue(t, h, testRepo, testRef, testCommit)
+	require.NoError(t, err)
+	require.True(t, h.mustStep(t), "the second delivery's job must run")
+	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+
+	close(gate.release)
+	got := <-overlapped
+	require.NoError(t, got.err)
+	require.Equal(t, id, got.id, "both deliveries name one job")
+
+	rec := h.mustRecord(t, id)
+	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, rec.status(),
+		"a finished job must not be reopened by a delivery that read the table before it finished")
+	require.Equal(t, uint32(1), rec.Attempt, "the attempt counter must not be rewound")
+
+	ready, claimed := h.work.Depth()
+	require.Zero(t, ready+claimed, "the overlapping delivery must not mint a second item")
+
+	require.False(t, h.mustStep(t), "there is nothing left to claim")
+	require.Len(t, h.runner.seen(), 1, "one push, one build")
+}
+
+// staleStore is a node that has just won an election: it holds entries that are
+// committed and NOT YET APPLIED, so what it reads locally lags until a barrier.
+// raft.MockCluster cannot lag — its Barrier does nothing — so the one thing a
+// barrier is for is invisible without this.
+type staleStore struct {
+	*fakeStore
+
+	mu        sync.Mutex
+	unapplied []raft.BatchOp
+}
+
+// commitElsewhere is an entry another leader wrote and this node has accepted
+// and not yet applied.
+func (s *staleStore) commitElsewhere(ops ...raft.BatchOp) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unapplied = append(s.unapplied, ops...)
+}
+
+func (s *staleStore) Barrier(timeout time.Duration) error {
+	if err := s.fakeStore.Barrier(timeout); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	ops := s.unapplied
+	s.unapplied = nil
+	s.mu.Unlock()
+	if len(ops) == 0 {
+		return nil
+	}
+	return s.fakeStore.MockCluster.Batch(ops, timeout)
+}
+
+// A DELIVERY COMING BACK FROM AUTH MAY HAVE MISSED A TERM. Another node can
+// have taken leadership during the round trip, built the push, finished it and
+// handed leadership back; the entries that say so are committed here and not
+// applied, so a local read does not see them. That is why the write is decided
+// behind a barrier and not on what the delivery read on its way in — the same
+// argument pkg/v2/queue makes before it hands out an item.
+func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
+	gate := newGatedRepositories(testRepo)
+	var store *staleStore
+	h := newHarness(t, func(s *Service) error {
+		store = &staleStore{fakeStore: s.store.(*fakeStore)}
+		s.store = store
+		s.repos = gate
+		return nil
+	})
+
+	key, ok := parseRepositoryKey(testRepo)
+	require.True(t, ok)
+	id := jobID(key, testRef, testCommit)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+			RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
+		})
+		done <- err
+	}()
+	<-gate.entered
+
+	finished := jobRecord{
+		ID:            id,
+		Status:        int32(buildv1.JobStatus_JobStatusSuccess),
+		RepositoryKey: testRepo,
+		Ref:           testRef,
+		CommitSHA:     testCommit,
+		ProjectID:     "project-of-" + testRepo,
+		CreatedAt:     h.clock.now().Unix(),
+		UpdatedAt:     h.clock.now().Unix(),
+		Attempt:       1,
+	}
+	value, err := finished.encode()
+	require.NoError(t, err)
+	store.commitElsewhere(
+		set(jobRecordKey(id), value),
+		set(projectIndexKey(finished.ProjectID, id), nil),
+		set(terminalIndexKey(h.clock.now(), id), nil),
+	)
+	_, visible := store.Get(jobRecordKey(id))
+	require.False(t, visible, "an unapplied entry must not be readable, or this test proves nothing")
+
+	close(gate.release)
+	require.NoError(t, <-done)
+
+	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id),
+		"a job another node finished must not be reopened by the delivery that was away")
+	ready, claimed := h.work.Depth()
+	require.Zero(t, ready+claimed, "and it must not be queued here either")
+}
+
+// recordingStore counts the entries that write a job record, which is how a
+// test says "two deliveries, one write".
+type recordingStore struct {
+	*fakeStore
+
+	mu      sync.Mutex
+	records int
+}
+
+func (s *recordingStore) Batch(ops []raft.BatchOp, timeout time.Duration) error {
+	if err := s.fakeStore.Batch(ops, timeout); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, op := range ops {
+		if op.Set != nil && strings.HasSuffix(op.Set.Key, "/"+recordSegment) {
+			s.records++
+		}
+	}
+	return nil
+}
+
+func (s *recordingStore) written() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.records
+}
+
+// The interleaving one field over: a second delivery reads the job table while
+// the first is BETWEEN its read and its write. Re-reading is not enough on its
+// own — both deliveries would read the same empty table and both would write —
+// so the read and the write it decides are one section, and the second delivery
+// is parked outside it.
+//
+// The hook holds the first delivery inside its entry and waits on a deadline
+// rather than on a signal from the second, because when this is correct the
+// second delivery is parked and has no signal to send. That is the whole point,
+// and it is pkg/v2/queue/exclusive_test.go's shape for the same reason.
+func TestASecondDeliveryCannotDecideWhileTheFirstIsWriting(t *testing.T) {
+	var store *recordingStore
+	h := newHarness(t, func(s *Service) error {
+		store = &recordingStore{fakeStore: s.store.(*fakeStore)}
+		s.store = store
+		return nil
+	})
+
+	writing := make(chan struct{})
+	trying := make(chan struct{})
+	h.store.onBatch(func() {
+		close(writing)
+		select {
+		case <-trying:
+			// The second delivery is in enqueue. Give it time to read.
+			time.Sleep(100 * time.Millisecond)
+		case <-time.After(time.Second):
+			t.Error("the second delivery never started")
+		}
+	})
+
+	var (
+		second    string
+		secondErr error
+		done      = make(chan struct{})
+	)
+	go func() {
+		defer close(done)
+		<-writing
+		close(trying)
+		second, secondErr = h.enqueue(context.Background(), &buildv1.PushEvent{
+			RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
+		})
+	}()
+
+	first, err := enqueue(t, h, testRepo, testRef, testCommit)
+	require.NoError(t, err)
+	<-done
+
+	require.NoError(t, secondErr)
+	require.Equal(t, first, second, "both deliveries name one job")
+	require.Equal(t, 1, store.written(), "two overlapping deliveries, one record write")
+
+	ready, claimed := h.work.Depth()
+	require.Equal(t, 1, ready, "and one item")
+	require.Zero(t, claimed)
+}
+
+// THE DECISION IS REMADE WHEN THE DELIVERY COMES BACK, so everything the state
+// of this node can have become while it was away is answered here rather than
+// written through.
+func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
+	// A leadership flap during the round trip. The Batch would refuse it
+	// anyway; refusing before it is what keeps the answer "ask somebody else"
+	// rather than a store error.
+	t.Run("leadership is gone", func(t *testing.T) {
+		gate := newGatedRepositories(testRepo)
+		h := newHarness(t, func(s *Service) error { s.repos = gate; return nil })
+
+		done := make(chan error, 1)
+		go func() {
+			_, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+				RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
+			})
+			done <- err
+		}()
+
+		<-gate.entered
+		h.store.stepDown()
+		close(gate.release)
+
+		require.Equal(t, connect.CodeUnavailable, connect.CodeOf(<-done))
+		require.Empty(t, h.store.Keys(rootSegment+"/"), "a follower writes nothing")
+	})
+
+	// A row that will not decode is Internal on the way back for the same
+	// reason it is on the way in: minting a second job over it would lose
+	// whatever the first one was.
+	t.Run("the record is there and will not decode", func(t *testing.T) {
+		gate := newGatedRepositories(testRepo)
+		h := newHarness(t, func(s *Service) error { s.repos = gate; return nil })
+
+		key, ok := parseRepositoryKey(testRepo)
+		require.True(t, ok)
+
+		done := make(chan error, 1)
+		go func() {
+			_, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+				RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
+			})
+			done <- err
+		}()
+
+		<-gate.entered
+		h.store.put(t, jobRecordKey(jobID(key, testRef, testCommit)), []byte("not cbor"))
+		close(gate.release)
+
+		require.Equal(t, connect.CodeInternal, connect.CodeOf(<-done))
+		ready, _ := h.work.Depth()
+		require.Zero(t, ready)
+	})
 }
