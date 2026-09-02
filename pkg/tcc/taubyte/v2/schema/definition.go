@@ -1960,6 +1960,19 @@ var V2Resources = []*Node{
 	// that is the product an author has credentials for; whether the key should say
 	// `jetstream` instead is the owner's call.
 	//
+	// WHAT THE KEY BUYS, PLAINLY, because everything above says where the topic LIVES
+	// and nothing says what each answer keeps. `kafka` and `nats` are logs: ordering,
+	// consumer groups, replay, a subscriber that was not there still getting what it
+	// missed — which is why each REQUIRES both a host and a credential, the log being
+	// somebody else's cluster. `distributed` is the swarm's own gossipsub and is none
+	// of that: no offsets, no consumer groups, no replay, delivery to whoever is
+	// subscribed at the time, and it requires nothing at all. So it is the same
+	// delivery a `bus` gives, and saying so HERE is the point — what this key buys is
+	// not that a stream is durable, it is that MOVING the topic onto a log is an engine
+	// block rather than a rewrite of everything that publishes to it. It is on this
+	// kind rather than beside the comparison on `bus` because the axis is this one's,
+	// and §10 says a thing is declared once, on the thing that has it.
+	//
 	// `local` moves under `distributed`, where it always belonged: "restrict this to
 	// the local node" is a thing the swarm's own gossipsub does and a thing a Kafka
 	// cluster has no notion of, so it must not be a key a kafka-backed stream can
@@ -2007,22 +2020,27 @@ var V2Resources = []*Node{
 			Resource("stream", "Stream", "Stream", "stream"),
 		)),
 
-	// AN N:N BUS WITH NO REWIND, and that is the only thing separating it from
-	// `stream` — not the shape. Both fan out to everyone attached. A stream backed by
-	// Kafka or by NATS JetStream is a LOG: it has offsets, consumer groups and replay,
-	// so a subscriber that was not there still gets what it missed. A message put on a
-	// bus and not received is gone. Durability is the whole distinction, and it is why
-	// there are two kinds rather than one with a flag: a flag would make "can I replay
-	// this?" a property somebody edits, when it is a property of what the thing IS.
+	// AN N:N BUS THAT CAN NEVER REWIND, and the "never" is the word doing the work,
+	// because it is a CEILING rather than a state. Both kinds fan out to everyone
+	// attached, and on tau's own engine they deliver identically — a `distributed`
+	// stream keeps nothing either, so DURABILITY IS NOT THE DISTINCTION and saying it
+	// was made this comment disagree with the fixture beside it. What separates them
+	// is what each can BECOME: a stream names an engine, so the same topic moves onto
+	// Kafka or JetStream and IS a log without a line changing in anything that
+	// publishes to it, and a bus names none and cannot be moved. That is why there are
+	// two kinds rather than one with a flag: a flag would make "could this ever be
+	// replayed?" a property somebody edits, when it is a property of what the thing IS.
 	//
 	// (NATS is on both sides of that line and the halves are easy to swap: JetStream is
 	// NATS's PERSISTENCE layer and belongs to `stream`; core NATS is the ephemeral n:n
 	// bus and is this shape.)
 	//
-	// IT HAS NO ENGINE AXIS, and the absence is the statement. Every engine a `stream`
-	// can name is a durable log; giving a bus the same key would let somebody write a
-	// bus that rewinds, which is a stream wearing the wrong kind. What backs it is the
-	// swarm, and there is nothing to choose.
+	// IT HAS NO ENGINE AXIS, and the absence is the statement — but NOT because every
+	// engine a `stream` names is durable. The reason is that a bus has nothing to
+	// choose: a stream's engine key asks "the swarm, or a cluster you hold credentials
+	// for?", and `kafka` and `nats` each require a host AND a credential because the
+	// log is somebody else's machine — while the ephemeral n:n shape is what the swarm
+	// already IS. A key with one legal value states nothing an author can act on.
 	//
 	// A WEBSOCKET IS AN ADDRESS, NOT A BOOLEAN. v1 spelled it `bridges.websocket.enable`
 	// on the pubsub kind — a flag that turned something on and named nowhere for a

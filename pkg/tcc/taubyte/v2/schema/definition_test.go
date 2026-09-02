@@ -1844,14 +1844,20 @@ func TestAStreamIsNamedNotMatched(t *testing.T) {
 	assert.DeepEqual(t, entry["ops"], []string{"publish"})
 }
 
-// A BUS IS A STREAM WITHOUT DURABILITY, AND THE SCHEMA SAYS SO RATHER THAN THE PROSE.
-// Two kinds that fan out to everyone attached will be read as duplicates and merged by
-// somebody unless what separates them is structural, so this pins the three places it
-// is: a bus can name no engine (every engine a stream has is a durable log, and a bus
-// that rewinds is a stream wearing the wrong kind), a bus admits many instances by
-// validator where a stream is one topic named by the resource, and a bus has a host —
-// the websocket a browser attaches to — where a stream has none.
-func TestABusIsAStreamWithoutDurability(t *testing.T) {
+// A BUS IS A STREAM THAT CAN NEVER BECOME A LOG, AND THE SCHEMA SAYS SO RATHER THAN
+// THE PROSE. Two kinds that fan out to everyone attached will be read as duplicates
+// and merged by somebody unless what separates them is structural, so this pins the
+// three places it is: a bus can name no engine at all — not because a stream's
+// engines are all durable, `distributed` keeps nothing either, but because a bus has
+// nothing to choose and so can never be moved onto Kafka or JetStream the way a
+// stream can — a bus admits many instances by validator where a stream is one topic
+// named by the resource, and a bus has a host, the websocket a browser attaches to,
+// where a stream has none.
+//
+// Not one assertion below changed when the reason did, which is the tell that the
+// reason was the only thing wrong: every one of them is about which keys the compiler
+// accepts, and the compiler never believed the durability story.
+func TestABusIsAStreamThatCannotBecomeALog(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -1869,8 +1875,9 @@ func TestABusIsAStreamWithoutDurability(t *testing.T) {
 	// A bus needs nothing at all: it is the swarm's, and there is nothing to choose.
 	assert.NilError(t, compile("/bus/chat.yaml", "description: internal only\n"))
 
-	// NO ENGINE AXIS. Every one of a stream's engines is a durable log, so none of them
-	// is a key a bus can write — which is what stops a bus that rewinds existing.
+	// NO ENGINE AXIS — not one key, `distributed` included, which is the counterexample
+	// the loop below names out loud. A bus has nothing to choose, so what it cannot do
+	// is what a stream can: name a log and move onto it.
 	for _, engine := range []string{"kafka", "nats", "distributed"} {
 		assert.ErrorContains(t, compile("/bus/chat.yaml", engine+":\n    host: b:9092\n"),
 			"unknown key '"+engine+"'", "a bus must not be able to name %q", engine)
