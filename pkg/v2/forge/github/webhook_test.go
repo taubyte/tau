@@ -35,9 +35,24 @@ import (
 )
 
 const (
-	vectorBody   = `{"ref":"refs/heads/main","after":"9b2c1d4e5f60718293a4b5c6d7e8f90123456789","repository":{"full_name":"acme/pay","clone_url":"https://github.com/acme/pay.git"}}`
-	vectorSHA256 = "c211ed3d9ab3d3fb36f56adc2b949dbc017a93b5ed2fdceb9574a27142a38a6a"
-	vectorSHA1   = "6f303bedee1a573ac1265b019c08395788b4ac82"
+	vectorBody = `{"ref":"refs/heads/main","after":"9b2c1d4e5f60718293a4b5c6d7e8f90123456789","repository":{"full_name":"acme/pay","clone_url":"https://github.com/acme/pay.git"}}`
+
+	// vectorWire is what a GitHub would have STORED for this hook, and the
+	// bytes it would key its HMAC with: base64url, unpadded, of
+	// HKDF-SHA256(vectorSecret, salt=none, info="taubyte/forge/webhook/v1/"+
+	// "hub-sha256", 32 bytes).
+	//
+	// It and the two digests below are computed from RFC 5869 and RFC 2104 and
+	// not from this package, which is the only thing that makes them a vector:
+	// a constant read back out of the implementation asserts that the code
+	// agrees with itself and would move, silently, with any change to the
+	// derivation. This set moved once already — the wire used to be base64 of
+	// the Secret itself, and secretDomain is versioned so that changing it
+	// strands old hooks loudly rather than quietly.
+	vectorWire   = "smsN0Dxo7S3_xgA6eSALA2KuvoJ0Lel6q4spT1fXVNU"
+	vectorSHA256 = "d78f4478b137be757b1fe8b3c0ec2b794d80102a63e7e9688e5bd993467bf641"
+	vectorSHA1   = "dc74bac0c8153b1c9208e676bfd23efb42add137"
+
 	vectorCommit = "9b2c1d4e5f60718293a4b5c6d7e8f90123456789"
 	vectorRef    = "refs/heads/main"
 )
@@ -118,13 +133,16 @@ func TestEveryWayASignatureCanBeWrongIsRejected(t *testing.T) {
 	body := []byte(vectorBody)
 
 	// A MAC over a body of the attacker's choosing, computed correctly, under a
-	// key that is not the hook's.
-	otherKey := hmac.New(sha256.New, []byte("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh_"))
+	// key that is not the hook's — the hook's wire with its last byte changed,
+	// so what is being rejected is the key and nothing else about the shape.
+	otherKey := hmac.New(sha256.New, []byte(vectorWire[:len(vectorWire)-1]+"V"))
 	otherKey.Write(body)
 	underWrongKey := hex.EncodeToString(otherKey.Sum(nil))
 
-	// The MAC of a DIFFERENT body, replayed onto this one.
-	otherBody := hmac.New(sha256.New, []byte("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"))
+	// The MAC of a DIFFERENT body, replayed onto this one. It is keyed with the
+	// HOOK'S OWN wire, or this case would be rejected for the wrong key and
+	// assert nothing about the body being bound.
+	otherBody := hmac.New(sha256.New, []byte(vectorWire))
 	otherBody.Write([]byte(`{"ref":"refs/heads/main"}`))
 	ofAnotherBody := hex.EncodeToString(otherBody.Sum(nil))
 
