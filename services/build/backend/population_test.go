@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -40,11 +41,19 @@ import (
 //     So an entry's key must be built where the entry is, and an index-row
 //     write is a column of the table rather than something that falls through
 //     it as neither a record write nor a queue write.
+//   - And a KEY BUILDER checked by its NAME is not checked either. keyBuilder's
+//     own comment said "a call to one of store.go's key builders" and its body
+//     said strings.HasSuffix(name, "Key"); the pairing scan matched the idents
+//     openIndexKey and jobRecordKey. A second builder in store.go returning a
+//     BYTE-IDENTICAL key, called anything, let an open-index row be deleted
+//     alone and a job record be written by a function no scan listed as a
+//     writer. So a builder is now enumerated FROM store.go and classified by
+//     the key it RETURNS, measured by calling it.
 //
 // So the enumeration is mechanical and it is checked. record() is the only
-// reader of jobRecordKey — TestOnlyOneFunctionReadsAJobRecord is that claim —
-// so the calls to it ARE every read of a job record there is, and every one of
-// them is named below with what it is allowed to be.
+// reader of a job record key — TestOnlyOneFunctionReadsAJobRecord is that claim
+// — so the calls to it ARE every read of a job record there is, and every one
+// of them is named below with what it is allowed to be.
 //
 // It reads this package's own source, the way services/build/boundary_test.go
 // reads the two roles' import lists, and for the same reason: this is the kind
@@ -120,12 +129,131 @@ var barrierVerbs = map[string]bool{
 	"Push": true, "Remove": true, "Ack": true, "Nack": true, "Claim": true, "Sweep": true,
 }
 
+// ── WHICH KEY, MEASURED RATHER THAN SPELLED ──────────────────────────────
+//
+// A key builder is enumerated FROM store.go — every declaration in it with no
+// receiver and exactly one string result — and then CLASSIFIED BY THE KEY IT
+// RETURNS, by calling it. Two names that produce one key are one builder as far
+// as every scan in this file is concerned, which is the whole point: the defect
+// was six lines, a second builder with a different name and the same body, and
+// it defeated both the "ends in Key" test and the ident-matching pairing scan.
+//
+// The enumeration is checked against the invocation table, so a builder added
+// to store.go and not invoked here fails rather than going unclassified.
+
+// sampleKeys invokes every builder store.go declares, with one canonical set of
+// inputs so that two builders producing the same key produce the same string.
+func sampleKeys() map[string]string {
+	const (
+		sampleID       = "0123456789012345678901234567890123456789abc"
+		sampleProject  = "project-of-" + testRepo
+		sampleResource = "resource-1"
+	)
+	at := time.Unix(1756000000, 0).UTC()
+
+	return map[string]string{
+		"seg":                seg(sampleID),
+		"stamp":              stamp(1),
+		"jobPrefix":          jobPrefix(sampleID),
+		"jobRecordKey":       jobRecordKey(sampleID),
+		"attemptPrefix":      attemptPrefix(sampleID),
+		"attemptLogKey":      attemptLogKey(sampleID, 1, at),
+		"attemptAssetKey":    attemptAssetKey(sampleID, 1, sampleResource),
+		"projectIndexPrefix": projectIndexPrefix(sampleProject),
+		"projectIndexKey":    projectIndexKey(sampleProject, sampleID),
+		"openIndexPrefix":    openIndexPrefix(testRepo),
+		"openIndexKey":       openIndexKey(testRepo, sampleID),
+		"openIndexRoot":      openIndexRoot(),
+		"refLastKey":         refLastKey(testRepo, testRef),
+		"terminalIndexKey":   terminalIndexKey(at, sampleID),
+	}
+}
+
+// storeDeclares is every builder store.go declares: no receiver, exactly one
+// string result. unseg, parseAttemptKey, parseOpenIndexKey and idFromIndexKey
+// return two or three values and are readers rather than builders; encode,
+// status and terminal have receivers.
+func storeDeclares(t *testing.T) []string {
+	t.Helper()
+
+	var file *ast.File
+	for name, f := range parsePackage(t).Files {
+		if strings.HasSuffix(name, "store.go") {
+			file = f
+		}
+	}
+	require.NotNil(t, file, "store.go is the one file that builds a key")
+
+	var out []string
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv != nil || fn.Body == nil {
+			continue
+		}
+		if fn.Type.Results == nil || len(fn.Type.Results.List) != 1 {
+			continue
+		}
+		result := fn.Type.Results.List[0]
+		if len(result.Names) > 1 {
+			continue
+		}
+		if id, ok := result.Type.(*ast.Ident); ok && id.Name == "string" {
+			out = append(out, fn.Name.Name)
+		}
+	}
+	return out
+}
+
+// classes maps every builder to the key it produces. It fails when store.go and
+// the invocation table above disagree, because a builder nothing calls cannot
+// be classified and an unclassified builder is exactly the hole.
+func classes(t *testing.T) map[string]string {
+	t.Helper()
+	samples := sampleKeys()
+	require.ElementsMatch(t, storeDeclares(t), names(samples),
+		"store.go declares a key builder sampleKeys does not invoke, or invokes one it no longer declares — "+
+			"a builder is classified by the key it RETURNS, so an un-invoked one is unclassified and invisible")
+	return samples
+}
+
+// sameKeyAs is every builder that produces the key `like` produces. A rename is
+// not a second key.
+func sameKeyAs(all map[string]string, like string) map[string]bool {
+	out := map[string]bool{}
+	for name, key := range all {
+		if key == all[like] {
+			out[name] = true
+		}
+	}
+	return out
+}
+
+// wholeKeys are the builders that produce a KEY rather than a prefix or a
+// fragment: rooted at this package's root segment, and not ending at a segment
+// boundary. Those are the only expressions set() and del() may be handed.
+func wholeKeys(all map[string]string) map[string]bool {
+	out := map[string]bool{}
+	for name, key := range all {
+		if strings.HasPrefix(key, rootSegment+"/") && !strings.HasSuffix(key, "/") {
+			out[name] = true
+		}
+	}
+	return out
+}
+
 // indexRowKeys are the rows a LISTING walks: the open index reconcile repairs
 // and MaxOpenPerRepo counts, the project index a caller lists by, the retention
 // index. A write of one is neither a record write nor a queue write, and
-// without a column of its own it was invisible to the table.
-var indexRowKeys = map[string]bool{
-	"openIndexKey": true, "projectIndexKey": true, "terminalIndexKey": true,
+// without a column of its own it was invisible to the table. It is a union of
+// CLASSES, so a second spelling of any of the three is in it.
+func indexRowKeys(all map[string]string) map[string]bool {
+	out := map[string]bool{}
+	for _, like := range []string{"openIndexKey", "projectIndexKey", "terminalIndexKey"} {
+		for name := range sameKeyAs(all, like) {
+			out[name] = true
+		}
+	}
+	return out
 }
 
 // qualify names a declaration the way the tables below do: "Service.cancel",
@@ -348,9 +476,15 @@ func bare(qualified string) string {
 }
 
 // writesRecord reports whether a site's read decides an entry that writes the
-// job record, wherever in the call tree that entry is built.
-func writesRecord(all map[string]funcs, qualified string) bool {
-	return reach(all, bare(qualified), map[string]bool{"record": true})["jobRecordKey"]
+// job record, wherever in the call tree that entry is built. It asks for the
+// KEY rather than for one spelling of it.
+func writesRecord(all map[string]funcs, qualified string, recordKeys map[string]bool) bool {
+	for name := range reach(all, bare(qualified), map[string]bool{"record": true}) {
+		if recordKeys[name] {
+			return true
+		}
+	}
+	return false
 }
 
 // writesQueue reports the same for a queue write that pairs with one.
@@ -364,9 +498,9 @@ func writesQueue(all map[string]funcs, qualified string) bool {
 }
 
 // writesIndex reports the same for a row of one of the listings.
-func writesIndex(all map[string]funcs, qualified string) bool {
+func writesIndex(all map[string]funcs, qualified string, rows map[string]bool) bool {
 	for name := range reach(all, bare(qualified), map[string]bool{"record": true}) {
-		if indexRowKeys[name] {
+		if rows[name] {
 			return true
 		}
 	}
@@ -430,16 +564,24 @@ func barriersBefore(all map[string]funcs, f funcs, limit token.Pos) []string {
 	return out
 }
 
-// record() is the only reader of jobRecordKey, so counting its callers counts
-// every read of a job record in this package. If that stops being true the
-// enumeration below stops being an enumeration.
+// record() is the only reader of a job record KEY — of any builder that
+// produces one, not of the one spelled jobRecordKey — so counting its callers
+// counts every read of a job record in this package. If that stops being true
+// the enumeration below stops being an enumeration.
 func TestOnlyOneFunctionReadsAJobRecord(t *testing.T) {
 	all := pkgFuncs(t)
+	recordKeys := sameKeyAs(classes(t), "jobRecordKey")
 
 	var readers []string
 	for n, f := range all {
-		if n != "jobRecordKey" && f.calls["jobRecordKey"] && f.calls["Get"] {
-			readers = append(readers, n)
+		if recordKeys[n] || !f.calls["Get"] {
+			continue
+		}
+		for builder := range recordKeys {
+			if f.calls[builder] {
+				readers = append(readers, n)
+				break
+			}
 		}
 	}
 	require.ElementsMatch(t, []string{"Service.record"}, readers,
@@ -507,6 +649,9 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 	}
 
 	all := pkgFuncs(t)
+	keys := classes(t)
+	recordKeys, rows := sameKeyAs(keys, "jobRecordKey"), indexRowKeys(keys)
+
 	found := callers(all, "record")
 	delete(found, "Service.record")
 	require.ElementsMatch(t, names(population), names(found),
@@ -517,11 +662,11 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 
 		require.Equal(t, want.section(), f.sectioned(),
 			"%s: the read and the entries it decides must be one section", name)
-		require.Equal(t, want.record, writesRecord(all, name),
+		require.Equal(t, want.record, writesRecord(all, name, recordKeys),
 			"%s: the table and the code disagree about whether this read decides a record write", name)
 		require.Equal(t, want.queue, writesQueue(all, name),
 			"%s: the table and the code disagree about whether this read decides a queue write", name)
-		require.Equal(t, want.index, writesIndex(all, name),
+		require.Equal(t, want.index, writesIndex(all, name, rows),
 			"%s: the table and the code disagree about whether this read decides an index-row write", name)
 
 		if !want.section() {
@@ -676,7 +821,17 @@ func inSectionFrom(all map[string]funcs, fn, call string, seen map[string]bool) 
 // open row and writes no record, on purpose: the record it read is finished or
 // gone, and the row is the only thing left to remove. While that key was a loop
 // variable this scan could not see the entry at all.
+//
+// IT IS THE KEY THAT IS COUNTED, NOT THE SPELLING. This scan matched the idents
+// openIndexKey and jobRecordKey, so a second builder in store.go with the same
+// body and another name moved an open row alone in an entry nothing here saw.
+// Both halves of the pairing are now CLASSES: every builder that returns the
+// key openIndexKey returns, and every builder that returns the key
+// jobRecordKey returns.
 func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
+	keys := classes(t)
+	recordKeys, openRowKeys := sameKeyAs(keys, "jobRecordKey"), sameKeyAs(keys, "openIndexKey")
+
 	// mentions counts a key builder's appearances, and inEntry counts the ones
 	// inside a []raft.BatchOp literal — one replicated entry. A builder named
 	// anywhere else is a key written or deleted on its own.
@@ -684,18 +839,18 @@ func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
 	inEntry := map[string]int{}
 	var pairing, alone []string
 
-	count := func(n ast.Node, into map[string]int) []string {
-		var seen []string
+	count := func(n ast.Node, into map[string]int) (record, openRow bool) {
 		ast.Inspect(n, func(n ast.Node) bool {
 			id, ok := n.(*ast.Ident)
-			if !ok || (id.Name != "openIndexKey" && id.Name != "jobRecordKey") {
+			if !ok || !(recordKeys[id.Name] || openRowKeys[id.Name]) {
 				return true
 			}
 			into[id.Name]++
-			seen = append(seen, id.Name)
+			record = record || recordKeys[id.Name]
+			openRow = openRow || openRowKeys[id.Name]
 			return true
 		})
-		return seen
+		return record, openRow
 	}
 
 	for _, file := range parsePackage(t).Files {
@@ -711,11 +866,11 @@ func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
 				if !ok || !isBatchOps(lit.Type) {
 					return true
 				}
-				named := count(lit, inEntry)
-				if !slices.Contains(named, "openIndexKey") {
+				record, openRow := count(lit, inEntry)
+				if !openRow {
 					return true
 				}
-				if slices.Contains(named, "jobRecordKey") {
+				if record {
 					pairing = append(pairing, qualify(fn))
 				} else {
 					alone = append(alone, qualify(fn))
@@ -748,13 +903,19 @@ func isBatchOps(expr ast.Expr) bool {
 
 // keyBuilder reports whether an expression is a call to one of store.go's key
 // builders — the only expressions that may name a key an entry writes.
-func keyBuilder(expr ast.Expr) bool {
+//
+// IT USED TO SAY THAT AND CHECK strings.HasSuffix(name, "Key"). A name is not a
+// builder: any function anywhere, called anything ending in those three
+// letters, satisfied it. `builders` is the measured set — declared in store.go
+// and returning a whole key rather than a prefix — so this now checks what the
+// sentence above always claimed.
+func keyBuilder(builders map[string]bool, expr ast.Expr) bool {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return false
 	}
 	id, ok := call.Fun.(*ast.Ident)
-	return ok && strings.HasSuffix(id.Name, "Key")
+	return ok && builders[id.Name]
 }
 
 // calleeName is the last segment of whatever a call hangs off: "write" for
@@ -795,6 +956,7 @@ func params(fn *ast.FuncDecl) map[string]int {
 // is the hole, so an opaque key is what fails here.
 func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 	pkg := parsePackage(t)
+	builders := wholeKeys(classes(t))
 
 	// sinks are declarations that take a key as a parameter: the key is built
 	// by their callers instead, and every caller is checked below.
@@ -815,7 +977,7 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 				if verb := calleeName(call.Fun); verb != "set" && verb != "del" {
 					return true
 				}
-				if keyBuilder(call.Args[0]) {
+				if keyBuilder(builders, call.Args[0]) {
 					return true
 				}
 				if id, ok := call.Args[0].(*ast.Ident); ok {
@@ -851,7 +1013,7 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 					seen++
 					for i := range positions {
 						require.Greater(t, len(call.Args), i, "%s calls %s with too few arguments", qualify(fn), sink)
-						require.True(t, keyBuilder(call.Args[i]),
+						require.True(t, keyBuilder(builders, call.Args[i]),
 							"%s passes %s the key %q, which it did not build — the entry %s writes cannot say what it writes",
 							qualify(fn), sink, types.ExprString(call.Args[i]), sink)
 					}
@@ -866,13 +1028,24 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 // The write side, from the other direction: every entry that SETS a job record
 // is written by a function that holds jobLock, or by finish, whose own callers
 // all do.
+//
+// THE ENUMERATION IS BY KEY, NOT BY IDENT. A second builder returning the same
+// key let settle write a job record while this list still read
+// [create, begin, retry, finish].
 func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 	all := pkgFuncs(t)
+	recordKeys := sameKeyAs(classes(t), "jobRecordKey")
 
 	var writers []string
 	for n, f := range all {
-		if n != "jobRecordKey" && n != "Service.record" && f.calls["jobRecordKey"] {
-			writers = append(writers, n)
+		if recordKeys[n] || n == "Service.record" {
+			continue
+		}
+		for builder := range recordKeys {
+			if f.calls[builder] {
+				writers = append(writers, n)
+				break
+			}
 		}
 	}
 	require.ElementsMatch(t,
