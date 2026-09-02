@@ -32,11 +32,13 @@
 // named ways, and this package's tests assert that each one fails the suite —
 // which is the only way to know that an assertion asserts.
 //
-// MEASURE IT WITH -coverpkg. Almost every statement in this package runs from
-// the tests of ANOTHER package — the fake's, github's, gitlab's — and plain
-// -cover counts only the ones a package's own tests reach, which reports 77.4%
-// here and 27.5% for the fake and is not what either of them is. The honest
-// command names the package being measured:
+// MEASURE IT WITH -coverpkg. Plain -cover counts only the statements a
+// package's OWN tests reach, and the two packages a conformance suite is made
+// of are run by everybody else: pkg/v2/forge/fake is exercised by this
+// package's tests and by consumers', so plain -cover calls it 28.2% where the
+// pinned measurement says 94.2%. This package is nearer its own number (97.2%
+// against 97.6%) only because its tests run the whole suite themselves. One
+// command is true for both, and it names the package being measured:
 //
 //	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/forgetest/... ./pkg/v2/forge/...
 //	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/fake/...      ./pkg/v2/forge/...

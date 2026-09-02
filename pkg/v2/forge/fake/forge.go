@@ -282,23 +282,16 @@ func (c *core) record(method, path, token string) {
 // if the credential is refused.
 func (c *core) call(method, path, token string) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.record(method, path, token)
-	if loc := c.redirect; loc != "" {
-		c.redirect = ""
-		if !c.shape.faulty(FaultFollowsRedirect) {
-			return fmt.Errorf("fake: %s answered a redirect to %s, which is not this host; the hop was refused", c.shape.Host, loc)
-		}
-		// The hop, written down where it can be seen. A header the driver set
-		// on the first request is set again on this one.
-		hdr := make(http.Header)
-		if token != "" {
-			hdr.Set("Authorization", "Bearer "+token)
-		}
-		c.requests = append(c.requests, Request{Method: method, URL: loc, Header: hdr})
-		return fmt.Errorf("fake: followed a redirect to %s, and what answered was not this forge", loc)
+	loc := c.redirect
+	c.redirect = ""
+	broken := c.broken
+	c.mu.Unlock()
+
+	if loc != "" {
+		return c.answerRedirect(method, loc, token)
 	}
-	if c.broken {
+	if broken {
 		return errUnreachable
 	}
 	if token == badToken {
@@ -309,6 +302,48 @@ func (c *core) call(method, path, token string) error {
 		return &forge.CredentialError{Host: c.shape.Host, Reason: reason}
 	}
 	return nil
+}
+
+// hopper is the client the one sending fault uses. Its transport is bare, so
+// nothing about the machine this runs on — a proxy in the environment, most of
+// all — can change where the hop goes.
+var hopper = &http.Client{Transport: &http.Transport{}}
+
+// answerRedirect is what this forge does once RedirectOnce armed it: it answers
+// somewhere else, and what happens next is the driver's choice. A correct one
+// refuses the hop, and this says so with an error.
+//
+// FaultFollowsRedirect REALLY SENDS, and it is the only thing in this package
+// that sends anything. It has to: the whole point of that fault is a request
+// arriving somewhere it was not meant to, and an arrival nobody can observe is
+// the defect being modelled rather than a test of it. The credential goes with
+// it, because a header attached by a RoundTripper is attached again on the next
+// hop — which is exactly how a driver that dropped its pinned transport leaks
+// one. loc is whatever armed this, in practice a loopback server the caller
+// started to watch.
+func (c *core) answerRedirect(method, loc, token string) error {
+	if !c.shape.faulty(FaultFollowsRedirect) {
+		return fmt.Errorf("fake: %s answered a redirect to %s, which is not this host; the hop was refused", c.shape.Host, loc)
+	}
+
+	req, err := http.NewRequest(method, loc, nil)
+	if err != nil {
+		return fmt.Errorf("fake: the redirect names %q, which is not a request: %w", loc, err)
+	}
+	hdr := make(http.Header)
+	if token != "" {
+		hdr.Set("Authorization", "Bearer "+token)
+	}
+	req.Header = hdr.Clone()
+	if resp, err := hopper.Do(req); err == nil {
+		resp.Body.Close()
+	}
+
+	// And written down as well, so a Subject reading Requests sees the hop too.
+	c.mu.Lock()
+	c.requests = append(c.requests, Request{Method: method, URL: loc, Header: hdr})
+	c.mu.Unlock()
+	return fmt.Errorf("fake: followed a redirect to %s, and what answered was not this forge", loc)
 }
 
 // rename makes this forge answer for `from` with the repository `to` names, and
