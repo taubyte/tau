@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -94,50 +95,96 @@ func (s Scheme) implemented() bool {
 // that a scheme added later is classified rather than grandfathered.
 func (s Scheme) BindsBody() bool { return s != SchemeSharedToken && s.implemented() }
 
+// secretDomain is the KDF label every scheme's material is derived under. IT IS
+// A WIRE FORMAT — the string a forge stores is derived through it — so it is
+// versioned, and changing it strands every hook registered before the change
+// exactly the way renaming a Scheme would.
+const secretDomain = "taubyte/forge/webhook/v1/"
+
+// material is the DOMAIN SEPARATION, and it is the whole of it: one Secret
+// derives a DIFFERENT 32 bytes under every scheme, because HKDF's info string
+// carries the scheme's name.
+//
+// Without it the derivations collided in two ways that a reviewer found and
+// neither of which is theoretical. SchemeSharedToken's wire string was
+// byte-identical to SchemeHubSHA256's HMAC key — and a shared-token delivery
+// hands its wire string to the callback IN CLEARTEXT, on every delivery, in a
+// header anything that logs headers logs. So one Secret used for a GitLab
+// pre-19.0 hook and a GitHub hook meant that observing ONE GitLab delivery
+// handed you the forging key for the GitHub one. And SchemeHubSHA256 and
+// SchemeBitbucketSHA256 keyed identically, so a MAC captured under either was a
+// valid MAC under the other, in a different header.
+//
+// It also stops the wire string from being a REVERSIBLE ENCODING of the Secret.
+// The old hub wire was base64 of the secret itself, so the string sitting in a
+// forge's webhook settings — a string repository admins configure, support
+// staff paste, and CI logs echo — was the Secret. Now it is a one-way function
+// of it, and a leak of any one scheme's wire string tells you nothing about the
+// others.
+//
+// WHETHER ONE Secret MAY BACK SEVERAL HOOKS AT ALL IS A POLICY QUESTION AND IT
+// IS NOT ANSWERED HERE. Domain separation makes sharing safe ACROSS SCHEMES; it
+// does nothing about two hooks on two repositories under the SAME scheme, which
+// still key identically and where a compromise of one is a compromise of both.
+// The safe habit is one NewSecret per hook, and nothing in this package can
+// enforce that, because the store is the consumer's.
+func (s Scheme) material(secret Secret) ([]byte, error) {
+	if secret.Empty() {
+		return nil, fmt.Errorf("forge: cannot derive a %s wire secret from an empty Secret", s)
+	}
+	if secret.tooShort() {
+		return nil, fmt.Errorf("forge: a %s secret must be at least %d bytes; a shorter key is brute-forceable offline from one captured delivery, after which every push to the repository can be forged", s, SecretSize)
+	}
+	if !s.implemented() {
+		return nil, fmt.Errorf("forge: scheme %q is not implemented", s)
+	}
+	return hkdf.Key(sha256.New, secret.Expose(), nil, secretDomain+string(s), SecretSize)
+}
+
 // Wire is the string a driver hands the forge at registration. IT IS PAIRED
 // WITH THE VERIFIER BY CONSTRUCTION: split them and you get a hook that
 // registers cleanly and rejects every delivery it ever receives, which is a
 // failure that only shows up in production and only as silence.
 //
-// The two derivations differ in what the MAC is keyed with — the wire string's
-// bytes for the hub schemes, the decoded bytes for Standard Webhooks — which is
-// precisely why both live in one file beside verify.
+// Both spellings encode the SAME per-scheme material; they differ only in the
+// alphabet and prefix the receiving forge insists on. What the MAC is then
+// keyed with still differs — the wire string's bytes for the hub schemes, the
+// bytes behind the prefix for Standard Webhooks — which is precisely why Wire
+// and key live in one file beside verify.
 func (s Scheme) Wire(secret Secret) (string, error) {
-	if secret.Empty() {
-		return "", fmt.Errorf("forge: cannot derive a %s wire secret from an empty Secret", s)
+	k, err := s.material(secret)
+	if err != nil {
+		return "", err
 	}
-	if secret.tooShort() {
-		return "", fmt.Errorf("forge: a %s secret must be at least %d bytes; a shorter key is brute-forceable offline from one captured delivery, after which every push to the repository can be forged", s, SecretSize)
-	}
-	switch s {
-	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeSharedToken:
-		return base64.RawURLEncoding.EncodeToString(secret.Expose()), nil
-	case SchemeStandardWebhooks:
+	if s == SchemeStandardWebhooks {
 		// GitLab's own format check is /\Awhsec_[A-Za-z0-9+\/]{43}=\z/, which
-		// is standard base64 of exactly 32 bytes.
-		if len(secret.Expose()) != SecretSize {
-			return "", fmt.Errorf("forge: %s needs a %d-byte secret", s, SecretSize)
-		}
-		return "whsec_" + base64.StdEncoding.EncodeToString(secret.Expose()), nil
-	default:
-		return "", fmt.Errorf("forge: scheme %q is not implemented", s)
+		// is standard base64 of exactly 32 bytes. The derivation produces
+		// exactly SecretSize bytes whatever it was given, so the shape now
+		// holds BY CONSTRUCTION instead of by demanding the stored secret be
+		// that length — which is what used to make this the only scheme that
+		// refused a one-byte secret, and it refused it for the wrong reason.
+		return "whsec_" + base64.StdEncoding.EncodeToString(k), nil
 	}
+	return base64.RawURLEncoding.EncodeToString(k), nil
 }
 
 // key is what the MAC is computed with, given the same Secret Wire was given.
 func (s Scheme) key(secret Secret) ([]byte, error) {
-	wire, err := s.Wire(secret)
-	if err != nil {
-		return nil, err
-	}
 	switch s {
 	case SchemeHubSHA256, SchemeBitbucketSHA256:
 		// The forge stores the wire STRING and keys its HMAC with that
-		// string's bytes. Keying with the raw secret here would verify
-		// nothing any forge ever sends.
+		// string's bytes. Keying with the material here would verify nothing
+		// any forge ever sends. The two schemes no longer collide because the
+		// material behind those strings is derived per scheme.
+		wire, err := s.Wire(secret)
+		if err != nil {
+			return nil, err
+		}
 		return []byte(wire), nil
 	case SchemeStandardWebhooks:
-		return secret.Expose(), nil
+		// The standard keys with the raw bytes BEHIND the whsec_ prefix, which
+		// are exactly this scheme's material.
+		return s.material(secret)
 	default:
 		return nil, fmt.Errorf("forge: scheme %q has no MAC", s)
 	}

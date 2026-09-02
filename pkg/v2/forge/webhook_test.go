@@ -1,6 +1,9 @@
 package forge
 
 import (
+	"crypto/hkdf"
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"strings"
 	"testing"
@@ -31,29 +34,59 @@ var (
 // round trip of Sign through verify would prove only that this file is
 // self-consistent.
 //
-//	wire(hub) = urlsafe-b64-nopad(secret)
-//	           = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
-//	hub       = hex(hmac_sha256(key=wire, msg=body))
-//	wire(swh) = "whsec_" + b64(secret)
-//	swh       = b64(hmac_sha256(key=secret, msg="msg_1.1767225600."+body))
+// They also PIN THE DERIVATION, which is a wire format: a forge stores the
+// string Wire produced, so a change to how it is derived strands every hook
+// registered before it, silently, at the next delivery. The python below is an
+// independent HKDF written on top of hmac alone, so agreeing with it also
+// checks the one convention that is easy to get wrong — RFC 5869's absent salt
+// is HashLen zero bytes, not an empty string.
+//
+//	def hkdf(ikm, info):                        # RFC 5869, L = 32
+//	    prk = hmac(key=b"\x00"*32, msg=ikm)      # Extract
+//	    return hmac(key=prk, msg=info + b"\x01") # Expand, one block
+//
+//	dom       = "taubyte/forge/webhook/v1/"
+//	mat(sc)   = hkdf(secret, dom + sc)
+//	wire(hub) = urlsafe-b64-nopad(mat("hub-sha256"))
+//	hub       = hex(hmac_sha256(key=wire(hub), msg=body))
+//	wire(bit) = urlsafe-b64-nopad(mat("bitbucket-sha256"))
+//	bit       = hex(hmac_sha256(key=wire(bit), msg=body))
+//	wire(tok) = urlsafe-b64-nopad(mat("shared-token"))
+//	wire(swh) = "whsec_" + b64(mat("standard-webhooks"))
+//	swh       = b64(hmac_sha256(key=mat("standard-webhooks"),
+//	                            msg="msg_1.1767225600."+body))
 func TestExternalVectors(t *testing.T) {
 	s := vectorSecret()
 
 	const (
-		hubWire = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
-		swhWire = "whsec_AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
-		hubMAC  = "sha256=547153e250fc71985e64810186fd59498c88e9b038a9d0213435ac53587af97e"
-		swhSig  = "v1,1wB09fVw3gLCvFU9lhmMkSjORo4YsCk9Yc3DMJphfVM="
+		hubWire = "smsN0Dxo7S3_xgA6eSALA2KuvoJ0Lel6q4spT1fXVNU"
+		bitWire = "ftTZCqcUfbgi8yEbedq_urbDDlkbIKJ_e0QCaCfdkWU"
+		tokWire = "XHAEMCpddVHFWlOi0cyi5JLDiCOFQjcyBaVT3D8_mE4"
+		swhWire = "whsec_42kQbrrHtpg9EA+y4tmey46bHSqGj+0Obphd9eGI7Wg="
+		hubMAC  = "sha256=2a129e3e78b14dfa508831af6f82fab659de665cb0387e94f83a8ef8c607c32f"
+		bitMAC  = "sha256=7fd18b990b5e3a7c1ead981a0ab1081030c830d913c6c362fdbc9f98834e10e7"
+		swhSig  = "v1,zFgJIyaQDIBwvg5Tiy2LHNtwfPE3v+PS5htEHIyELho="
 	)
 
-	for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeSharedToken} {
+	// One wire string per scheme, and no two alike. These used to be three
+	// copies of one value, which is what made a shared-token delivery hand out
+	// a hub hook's HMAC key in cleartext.
+	for want, sc := range map[string]Scheme{
+		hubWire: SchemeHubSHA256,
+		bitWire: SchemeBitbucketSHA256,
+		tokWire: SchemeSharedToken,
+		swhWire: SchemeStandardWebhooks,
+	} {
 		w, err := sc.Wire(s)
 		require.NoError(t, err)
-		assert.Equal(t, hubWire, w, "%s wire", sc)
+		assert.Equal(t, want, w, "%s wire", sc)
 	}
-	w, err := SchemeStandardWebhooks.Wire(s)
+
+	// And none of them is the Secret in an alphabet: the string a forge stores
+	// is a one-way function of the secret, not an encoding of it.
+	raw, err := base64.RawURLEncoding.DecodeString(hubWire)
 	require.NoError(t, err)
-	assert.Equal(t, swhWire, w)
+	assert.NotEqual(t, s.Expose(), raw)
 
 	t.Run("hub-sha256", func(t *testing.T) {
 		d := Delivery{Header: http.Header{"X-Hub-Signature-256": {hubMAC}}, Body: vectorBody}
@@ -67,16 +100,16 @@ func TestExternalVectors(t *testing.T) {
 	t.Run("bitbucket-puts-the-same-mac-in-githubs-sha1-header", func(t *testing.T) {
 		// Same construction, different header — which is the whole reason it is
 		// a scheme of its own and not an alias.
-		d := Delivery{Header: http.Header{"X-Hub-Signature": {hubMAC}}, Body: vectorBody}
+		d := Delivery{Header: http.Header{"X-Hub-Signature": {bitMAC}}, Body: vectorBody}
 		require.NoError(t, verify(SchemeBitbucketSHA256, s, d, vectorAt, time.Minute))
 		// And the SAME bytes in the OTHER header do not verify, which is what a
 		// verifier dispatching on header names would get wrong.
-		wrongHeader := Delivery{Header: http.Header{"X-Hub-Signature-256": {hubMAC}}, Body: vectorBody}
+		wrongHeader := Delivery{Header: http.Header{"X-Hub-Signature-256": {bitMAC}}, Body: vectorBody}
 		require.Error(t, verify(SchemeBitbucketSHA256, s, wrongHeader, vectorAt, time.Minute))
 
 		got, err := Sign(SchemeBitbucketSHA256, s, vectorBody, "", vectorAt)
 		require.NoError(t, err)
-		assert.Equal(t, hubMAC, got.Get("X-Hub-Signature"))
+		assert.Equal(t, bitMAC, got.Get("X-Hub-Signature"))
 	})
 
 	t.Run("standard-webhooks", func(t *testing.T) {
@@ -97,7 +130,7 @@ func TestExternalVectors(t *testing.T) {
 	})
 
 	t.Run("shared-token", func(t *testing.T) {
-		d := Delivery{Header: http.Header{"X-Gitlab-Token": {hubWire}}, Body: vectorBody}
+		d := Delivery{Header: http.Header{"X-Gitlab-Token": {tokWire}}, Body: vectorBody}
 		require.NoError(t, verify(SchemeSharedToken, s, d, vectorAt, time.Minute))
 		// It binds nothing: the same token over a different body still matches,
 		// which is exactly why BindsBody is false and the zero Policy refuses it.
@@ -107,13 +140,18 @@ func TestExternalVectors(t *testing.T) {
 
 		got, err := Sign(SchemeSharedToken, s, vectorBody, "", vectorAt)
 		require.NoError(t, err)
-		assert.Equal(t, hubWire, got.Get("X-Gitlab-Token"))
+		assert.Equal(t, tokWire, got.Get("X-Gitlab-Token"))
+		// THIS is the string a delivery hands the callback in cleartext, and
+		// it is no longer any other scheme's HMAC key.
+		hubKey, err := SchemeHubSHA256.key(s)
+		require.NoError(t, err)
+		assert.NotEqual(t, tokWire, string(hubKey))
 	})
 }
 
 func TestVerifyRefusesEveryWrongDelivery(t *testing.T) {
 	s := vectorSecret()
-	const hubMAC = "sha256=547153e250fc71985e64810186fd59498c88e9b038a9d0213435ac53587af97e"
+	const hubMAC = "sha256=2a129e3e78b14dfa508831af6f82fab659de665cb0387e94f83a8ef8c607c32f"
 
 	hub := func(h http.Header, body []byte) error {
 		return verify(SchemeHubSHA256, s, Delivery{Header: h, Body: body}, vectorAt, time.Minute)
@@ -348,4 +386,69 @@ func TestARefusedRefNamesTheRuleAndNotTheRef(t *testing.T) {
 	assert.Equal(t, "the ref is longer than a refname may be",
 		refReason("refs/heads/"+strings.Repeat("a", MaxRefLength)))
 	assert.Equal(t, "the delivery names no ref", refReason(""))
+}
+
+// TestOneSecretIsFourUnrelatedKeys is the domain separation stated as the thing
+// that matters, over EVERY pair rather than the two a reviewer happened to try:
+// nothing one scheme puts on the wire is anything another scheme would accept.
+//
+// The pairing that made it urgent is shared-token against hub: a shared-token
+// delivery replays its wire string in a header, so anything that logs headers
+// logs it, and that string used to BE the HMAC key of a hub hook holding the
+// same Secret.
+func TestOneSecretIsFourUnrelatedKeys(t *testing.T) {
+	s := vectorSecret()
+	all := []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken}
+
+	seen := map[string]string{}
+	note := func(value, what string) {
+		if prior, ok := seen[value]; ok {
+			t.Errorf("%s and %s are the same bytes", prior, what)
+		}
+		seen[value] = what
+	}
+
+	for _, sc := range all {
+		wire, err := sc.Wire(s)
+		require.NoError(t, err)
+		note(wire, string(sc)+" wire")
+
+		material, err := sc.material(s)
+		require.NoError(t, err)
+		require.Len(t, material, SecretSize, "%s material", sc)
+		note(string(material), string(sc)+" material")
+
+		// A MAC key is a scheme's wire bytes or its material, so it must not be
+		// registered twice; what must hold is that it is never ANOTHER
+		// scheme's, which the two notes above already establish.
+		key, err := sc.key(s)
+		if sc == SchemeSharedToken {
+			require.Error(t, err, "a scheme that binds nothing has no MAC")
+			continue
+		}
+		require.NoError(t, err)
+		other := seen[string(key)]
+		assert.Contains(t, other, string(sc), "%s keys with %s", sc, other)
+	}
+
+	// The Secret itself is never on the wire and never a key.
+	note(string(s.Expose()), "the secret")
+	assert.Len(t, seen, 2*len(all)+1)
+}
+
+// TestTheDerivationIsBoundToTheSchemeName. The label is what separates the
+// domains, so a scheme renamed is a scheme whose hooks stop verifying — the
+// same contract Scheme values already carry as stored wire values.
+func TestTheDerivationIsBoundToTheSchemeName(t *testing.T) {
+	s := vectorSecret()
+	want, err := SchemeHubSHA256.material(s)
+	require.NoError(t, err)
+
+	got, err := hkdf.Key(sha256.New, s.Expose(), nil, secretDomain+string(SchemeHubSHA256), SecretSize)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+
+	strayed, err := hkdf.Key(sha256.New, s.Expose(), nil, secretDomain+"hub-sha-256", SecretSize)
+	require.NoError(t, err)
+	assert.NotEqual(t, want, strayed, "a one-character difference in the label is a different key")
 }
