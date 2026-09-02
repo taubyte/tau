@@ -30,11 +30,17 @@
 //     of this loop would take it. So the run context's deadline is the claim
 //     deadline less a margin, capped by the operator's BuildTimeout.
 //
-//  4. CANCEL IS A RECORD WRITE, not a message. A queued job needs no special
-//     case at all, because the claimer re-reads the record before it runs. v1
-//     polled a claim record thirty times at two-second intervals, blocking the
-//     request for up to a minute, and still could not cancel a job that had not
-//     been picked up yet.
+//  4. CANCEL IS A RECORD WRITE, not a message, and A JOB RECORD'S READ AND THE
+//     ENTRY IT DECIDES ARE ONE SECTION. A queued job needs no special case
+//     because the claimer re-reads the record before it runs — but re-reading
+//     is only worth something if nothing writes between the read and the entry
+//     it decided, and Cancel and Retry answer on rpc goroutines while the claim
+//     loop runs on its own. raft orders their entries and cannot see that the
+//     second decided on a stale read. queue.go's jobLock is that section, its
+//     boundary is stated there, and population_test.go is the list of every
+//     place it has to be taken. v1 polled a claim record thirty times at
+//     two-second intervals, blocking the request for up to a minute, and still
+//     could not cancel a job that had not been picked up yet.
 //
 // # What it is built from
 //

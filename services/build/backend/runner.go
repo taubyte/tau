@@ -66,36 +66,35 @@ func (s *Service) step(ctx context.Context) (bool, error) {
 
 // run executes one claimed delivery.
 func (s *Service) run(ctx context.Context, d queue.Delivery) error {
-	// RE-READ THE RECORD BEFORE DOING ANYTHING. This is the whole of what makes
-	// cancel a record write rather than a message, and it is also how the one
-	// gap between an ack and a terminal record heals itself: a redelivered job
-	// that is already finished is acked and dropped.
-	rec, found, err := s.record(d.ID)
+	deadline := s.claimDeadline(d)
+
+	// THE RUN'S CONTEXT IS BUILT BEFORE THE RECORD IS CLAIMED, because its
+	// cancel is what Cancel stops the run with and begin registers it inside
+	// the same section as the claim. Built after, there is a window in which
+	// the record reads Claimed and nothing is registered, and a cancel landing
+	// in it stops nothing.
+	//
+	// The bound is applied as a DURATION off this service's own clock, not as
+	// an absolute deadline: context.WithDeadline compares against the wall
+	// clock, and this service reads whatever clock it was given. In production
+	// they are the same clock and the two forms are identical; anywhere they
+	// are not — a test that moves time, a node whose clock is being stepped —
+	// the absolute form would end a run the instant it started, or never.
+	runCtx, stop := context.WithTimeout(ctx, deadline.Sub(s.now()))
+	defer stop()
+
+	rec, claimed, err := s.begin(d, deadline, stop)
 	if err != nil {
 		return err
 	}
-	switch {
-	case !found:
-		// An item with no record cannot be identified, let alone built.
+	if !claimed {
+		// An item with no record cannot be identified, let alone built, and one
+		// whose job has finished — cancelled, or settled by an earlier delivery
+		// — is dropped. This is the one gap between an ack and a terminal
+		// record healing itself.
 		return s.ack(d)
-	case rec.status() == buildv1.JobStatus_JobStatusCancelled, rec.terminal():
-		return s.ack(d)
 	}
-
-	deadline := s.claimDeadline(d)
-	rec.Status = int32(buildv1.JobStatus_JobStatusClaimed)
-	rec.Attempt++
-	rec.UpdatedAt = s.now().Unix()
-	rec.ClaimedUntil = deadline.UnixNano()
-	rec.Holder = s.host.ID().String()
-
-	value, err := rec.encode()
-	if err != nil {
-		return errInternal("encoding job %s: %v", rec.ID, err)
-	}
-	if err := s.store.Batch([]raft.BatchOp{set(jobRecordKey(rec.ID), value)}, s.cfg.Queue.ApplyTimeout); err != nil {
-		return fmt.Errorf("claiming job %s: %w", rec.ID, err)
-	}
+	defer s.forget(d.ID)
 
 	work := Work{
 		JobID:         rec.ID,
@@ -107,7 +106,7 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 		Attempt:       rec.Attempt,
 	}
 
-	runErr := s.invoke(ctx, deadline, work)
+	runErr := s.invoke(runCtx, work)
 
 	// A SHUTDOWN ABANDONS THE DELIVERY RATHER THAN FAILING THE JOB. Close ends
 	// the loop's context so that a restart does not wait out an hour-long build,
@@ -145,28 +144,74 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 	return s.settle(rec.ID, runErr)
 }
 
-// invoke runs the job with the claim's deadline over it and this node's cancel
-// registered, so Cancel can stop it in the same process that wrote the record.
+// begin is the claim's own transition, and it is ONE SECTION: the re-read that
+// decides whether this delivery is still worth running, the entry that writes
+// the record Claimed, and the registration that lets Cancel stop the run.
 //
-// The bound is applied as a DURATION off this service's own clock, not as an
-// absolute deadline: context.WithDeadline compares against the wall clock, and
-// this service reads whatever clock it was given. In production they are the
-// same clock and the two forms are identical; anywhere they are not — a test
-// that moves time, a node whose clock is being stepped — the absolute form
-// would end a run the instant it started, or never.
-func (s *Service) invoke(ctx context.Context, deadline time.Time, work Work) (err error) {
-	runCtx, cancel := context.WithTimeout(ctx, deadline.Sub(s.now()))
-	defer cancel()
+// RE-READING WAS NEVER ENOUGH ON ITS OWN. It is what makes cancel a record
+// write rather than a message, but a read is only true until something else
+// writes, and Cancel answers on an rpc goroutine while this runs on the claim
+// loop's. Between the read and the entry, a cancel wrote Cancelled, could not
+// withdraw an item this node holds, and found nothing to stop — and then this
+// entry, decided on the read taken before all of it, put the record back to
+// Claimed. The build ran to completion, the job reported Success, and the ref
+// anchor moved to the commit the caller had cancelled. raft ordered the two
+// entries perfectly; ordering is not the property that was missing.
+//
+// THE REGISTRATION IS INSIDE, not in invoke below, and that is the other half:
+// a cancel serialized AFTER this section must find the run registered, or it
+// would write a terminal record while a build it could have stopped ran on to
+// its own deadline.
+//
+// It reports whether the delivery was claimed. Not claimed is not an error — it
+// is a delivery for the caller to ack and drop.
+func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.CancelFunc) (jobRecord, bool, error) {
+	jobLock.Lock()
+	defer jobLock.Unlock()
+
+	rec, found, err := s.record(d.ID)
+	if err != nil {
+		return jobRecord{}, false, err
+	}
+	// Cancelled is one of the three terminal states, so this is the cancel case
+	// as much as it is the redelivery case.
+	if !found || rec.terminal() {
+		return jobRecord{}, false, nil
+	}
+
+	rec.Status = int32(buildv1.JobStatus_JobStatusClaimed)
+	rec.Attempt++
+	rec.UpdatedAt = s.now().Unix()
+	rec.ClaimedUntil = deadline.UnixNano()
+	rec.Holder = s.host.ID().String()
+
+	value, err := rec.encode()
+	if err != nil {
+		return jobRecord{}, false, errInternal("encoding job %s: %v", rec.ID, err)
+	}
+	if err := s.store.Batch([]raft.BatchOp{set(jobRecordKey(rec.ID), value)}, s.cfg.Queue.ApplyTimeout); err != nil {
+		return jobRecord{}, false, fmt.Errorf("claiming job %s: %w", rec.ID, err)
+	}
 
 	s.runningMu.Lock()
-	s.running[work.JobID] = cancel
+	s.running[rec.ID] = stop
 	s.runningMu.Unlock()
-	defer func() {
-		s.runningMu.Lock()
-		delete(s.running, work.JobID)
-		s.runningMu.Unlock()
-	}()
+	return rec, true, nil
+}
 
+// forget drops this node's cancel for a run that is over. Its counterpart is
+// the registration begin makes inside the claim's section, and run defers it
+// rather than invoke so that the pair is one function's.
+func (s *Service) forget(id string) {
+	s.runningMu.Lock()
+	delete(s.running, id)
+	s.runningMu.Unlock()
+}
+
+// invoke runs the job. The context is the claim's, built by run and registered
+// by begin, so that a cancel can never land between the record reading Claimed
+// and there being something to stop.
+func (s *Service) invoke(ctx context.Context, work Work) (err error) {
 	// A runner that panics must not take the loop down with it, and must not
 	// leave the item claimed until its lease expires either: a panic is a
 	// failed build, which is what the recovery turns it into.
@@ -176,14 +221,19 @@ func (s *Service) invoke(ctx context.Context, deadline time.Time, work Work) (er
 		}
 	}()
 
-	return s.runner.Run(runCtx, work, &attemptSink{s: s, id: work.JobID, attempt: work.Attempt})
+	return s.runner.Run(ctx, work, &attemptSink{s: s, id: work.JobID, attempt: work.Attempt})
 }
 
 // settle writes the terminal record after the ack has committed. The record is
 // re-read because a Cancel may have written it while the run was going, and a
 // cancelled job must not be overwritten with the outcome of the run that was
-// cancelled.
+// cancelled — and the re-read and the entry it decides are ONE SECTION, because
+// a cancel landing between them is precisely the write the re-read exists to
+// see.
 func (s *Service) settle(id string, runErr error) error {
+	jobLock.Lock()
+	defer jobLock.Unlock()
+
 	rec, found, err := s.record(id)
 	if err != nil {
 		return err
@@ -246,6 +296,12 @@ func (s *Service) lastCommit(repositoryKey, ref string) string {
 }
 
 // drainDeadLetter marks one exhausted job Failed and acknowledges it.
+//
+// The claim is outside the section; the read, the record and the ack are inside
+// it. A cancel between the read and the write would be overwritten with Failed,
+// and its caller told a build it had stopped failed on its own. The claim needs
+// no protection here — the dead letter's own group lock is what makes it
+// exclusive.
 func (s *Service) drainDeadLetter() (bool, error) {
 	d, err := s.dead.Claim()
 	if errors.Is(err, queue.ErrNoItem) {
@@ -254,6 +310,9 @@ func (s *Service) drainDeadLetter() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("dead letter claim: %w", err)
 	}
+
+	jobLock.Lock()
+	defer jobLock.Unlock()
 
 	rec, found, err := s.record(d.ID)
 	if err != nil {

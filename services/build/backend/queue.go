@@ -77,14 +77,12 @@ func (s *Service) enqueue(ctx context.Context, p *buildv1.PushEvent) (string, er
 	id := jobID(key, p.GetRef(), p.GetCommitSha())
 
 	// A push this service already has is answered without asking auth anything.
-	// NOTHING RESTS ON THIS READ — create reads the same row again at the
-	// moment it writes — so it is a round trip saved and not a decision.
-	existing, found, err := s.record(id)
+	found, err := s.resume(id)
 	if err != nil {
 		return "", err
 	}
 	if found {
-		return id, s.requeue(existing)
+		return id, nil
 	}
 
 	if err := s.admit(key.String()); err != nil {
@@ -102,52 +100,99 @@ func (s *Service) enqueue(ctx context.Context, p *buildv1.PushEvent) (string, er
 		return "", errFailedPrecondition("repository %q belongs to no project", key)
 	}
 
-	rec, err := s.create(id, key.String(), p.GetRef(), p.GetCommitSha(), projectID)
-	if err != nil {
-		return "", err
-	}
-	return id, s.requeue(rec)
+	return id, s.create(id, key.String(), p.GetRef(), p.GetCommitSha(), projectID)
 }
 
-// createLock makes create's read and create's write ONE decision.
+// resume answers a push this service already has, and IS that whole answer: the
+// read that finds the job and the item it puts back are one section, so a
+// cancel that withdrew the item between them cannot have it pushed straight
+// back for a job nobody will ever build.
 //
-// Enqueue's idempotency is a read of the job table, and a read is only true
-// until something else writes. Off this process nothing else can: a write
-// commits on the leader alone, so another node deciding this same triple has to
-// take leadership first, and this node's Batch then does not commit. In this
-// process nothing stopped it — two deliveries of one push are two goroutines —
-// and the store has no compare-and-swap for them to arbitrate with. So they
-// take a lock, which is the same three-part argument pkg/v2/queue makes for its
-// own claim, over the same store, for the same reason.
+// It is a saved round trip and not a decision about the job — create reads the
+// same row again at the moment it writes — but the push it makes is a decision,
+// and that is why the read is behind the lock.
+func (s *Service) resume(id string) (bool, error) {
+	jobLock.Lock()
+	defer jobLock.Unlock()
+
+	if err := s.lead(); err != nil {
+		return false, err
+	}
+	rec, found, err := s.record(id)
+	if err != nil || !found {
+		return false, err
+	}
+	return true, s.requeue(rec)
+}
+
+// jobLock makes a job record's read and the entry that read decides ONE
+// decision, wherever in this package the two appear.
 //
-// It is the package's rather than a field on Service because the section it
-// covers is a barrier, a read and one Batch with nothing to wait on inside it,
-// and because a process that runs two Services over two stores runs them as two
-// nodes of one cloud, where one is the leader and the others do not reach here.
-var createLock sync.Mutex
+// EVERY TRANSITION OF A JOB IS READ-MODIFY-WRITE. Enqueue's idempotency, the
+// claim, the settle, a cancel, a retry, the dead-letter drain and reconcile all
+// read the record, decide on what it said, and write it back — and a read is
+// only true until something else writes. Off this process nothing else can: a
+// write commits on the leader alone, so another node deciding this same job has
+// to take leadership first and this node's Batch then does not commit, and
+// every section below reads behind a Barrier, so a node that has just won an
+// election cannot decide on entries it has not applied. In this process nothing
+// stopped it — Cancel and Retry answer on rpc goroutines while the claim loop
+// runs on its own, and raft ORDERS their two entries without noticing that the
+// second was decided on a read taken before the first — and the store has no
+// compare-and-swap for them to arbitrate with. So they take a lock, which is
+// the same three-part argument pkg/v2/queue makes for its own claim, over the
+// same store, for the same reason.
+//
+// WHAT IT DOES NOT COVER, said out loud so it is not mistaken for more. It is
+// one process's third of an exclusion whose other two thirds are leadership and
+// the barrier, so it is the mechanism only while all three hold:
+//
+//   - every write of a record goes through Store.Batch, which refuses off the
+//     leader. A writer that went around it — a cache, a kvdb, a direct Set —
+//     would be outside this entirely, which is why Store names no Set.
+//   - nothing claims, settles or reconciles off the leader. step() refuses on a
+//     follower and so does every queue write under it. A backend that ran work
+//     somewhere the leader is not would need the STORE to arbitrate.
+//   - the store keeps one writer. Two nodes that both believe they lead cannot
+//     both commit, because the stale one's entry never reaches quorum, so this
+//     lock is never asked to arbitrate across processes. A store without that
+//     property needs a CONDITIONAL WRITE instead, and raft.BatchOp has exactly
+//     two operations, Set and Delete — there is nothing to condition on.
+//
+// It is the package's rather than a field on Service because what it protects
+// is a job table, not a Service: nothing stops two Services from being
+// constructed over one store, and runner_test.go's follower is exactly that.
+// Two locks there would be two unsynchronised writers of one table.
+//
+// LOCK ORDER IS jobLock, THEN pkg/v2/queue's GROUP LOCK, never the reverse. A
+// transition holds this across the queue write that pairs with its record write
+// — a push, a withdrawal, an ack — and pkg/v2/queue calls nothing in this
+// package, so the order cannot invert.
+var jobLock sync.Mutex
 
 // create writes a job that does not exist yet: the record, its project index
-// row and its open index row, in ONE entry.
+// row and its open index row, in ONE entry — and then the item it is to be
+// claimed by.
 //
 // THE READ IS TAKEN HERE, not by the caller, and behind a barrier — the caller
 // has just been on a round trip to auth, and a node that has become leader
 // during it holds committed entries it has not applied. What comes back is
 // therefore the table as it is at the moment of the write, and a delivery that
-// finds the job already there returns THAT record rather than overwriting it
+// finds the job already there requeues THAT record rather than overwriting it
 // with a fresh one.
-func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) (jobRecord, error) {
-	createLock.Lock()
-	defer createLock.Unlock()
+func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) error {
+	jobLock.Lock()
+	defer jobLock.Unlock()
 
 	if err := s.lead(); err != nil {
-		return jobRecord{}, err
+		return err
 	}
 	existing, found, err := s.record(id)
 	if err != nil {
-		return jobRecord{}, err
+		return err
 	}
 	if found {
-		return existing, nil
+		return s.requeue(existing)
 	}
 
 	now := s.now()
@@ -163,7 +208,7 @@ func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) (j
 	}
 	value, err := rec.encode()
 	if err != nil {
-		return jobRecord{}, errInternal("encoding job %s: %v", id, err)
+		return errInternal("encoding job %s: %v", id, err)
 	}
 
 	// ONE Batch: the record, the project index row and the open index row are
@@ -174,9 +219,9 @@ func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) (j
 		set(projectIndexKey(projectID, id), nil),
 		set(openIndexKey(rec.RepositoryKey, id), nil),
 	}, s.cfg.Queue.ApplyTimeout); err != nil {
-		return jobRecord{}, errUnavailable("writing job %s: %v", id, err)
+		return errUnavailable("writing job %s: %v", id, err)
 	}
-	return rec, nil
+	return s.requeue(rec)
 }
 
 // requeue gives an open job an item to be claimed by, and is a no-op for one
@@ -189,9 +234,11 @@ func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) (j
 // The other order leaves an item with no record — an unidentifiable job nobody
 // can run — which is exactly v1's orphan.
 //
-// It is OUTSIDE createLock, and safely: Push is a no-op for an id the queue
-// already holds, and an item minted for a job that finished in the meantime is
-// claimed once, found terminal by run's re-read, and acked without building.
+// IT IS INSIDE jobLock, called only by resume and create, because the push is a
+// decision made on the record that was just read: released first, a cancel
+// could finish the job and withdraw its item between the read and this, and the
+// item would go straight back for a build nobody wants. Push takes the queue's
+// group lock under jobLock, which is the one direction that order runs in.
 func (s *Service) requeue(rec jobRecord) error {
 	if rec.terminal() || rec.status() == buildv1.JobStatus_JobStatusClaimed {
 		return nil

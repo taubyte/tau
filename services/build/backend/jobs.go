@@ -59,6 +59,12 @@ func (h *jobHandler) Retry(ctx context.Context, req *connect.Request[buildv1.Job
 // job assembles one Job: the record, plus every log and asset row across every
 // attempt.
 //
+// IT IS THE ONE READ OF A RECORD THAT DECIDES NO WRITE, so it is the one that
+// takes no jobLock: there is nothing for a concurrent transition to make stale,
+// and serializing every Get behind every build's bookkeeping would buy a
+// consistency this shape does not promise anyway — the rows are listed after
+// the record is read, and one that vanished between the two is skipped below.
+//
 // THE MAPS ARE A READ SHAPE. They are never a stored blob — one entry, one key
 // (root AGENTS.md rule 1) — because a map re-serialized on each write is a
 // read-modify-write, and two writers of it lose entries. Rows are read in
@@ -147,14 +153,24 @@ func (s *Service) list(projectID string, emit func(*buildv1.JobRef) error) error
 }
 
 // cancel writes the terminal record, withdraws the job's queue item and, if
-// this node is the one running the job, stops it.
+// this node is the one running the job, stops it. All four — the read, the
+// record, the withdrawal and the stop — are ONE SECTION under jobLock, and that
+// is what makes the paragraph below true rather than nearly true.
 //
 // THE RECORD IS STILL WHAT CANCELS THE JOB. The withdrawal is bookkeeping on
-// top of it, never the mechanism: a delivery that outran it is dropped anyway,
-// because the claimer re-reads the record before it runs and acks a cancelled
-// one without starting. A job running on ANOTHER backend node needs no
-// forwarding either — its run settles against a record that is already terminal
-// and publishes nothing, and it is bounded by the claim deadline regardless.
+// top of it, never the mechanism, and a delivery that outran it is dropped —
+// but only because the claimer's re-read and the entry that claims on it are
+// one section with THIS one (runner.go's begin). Ordered the other way round
+// the claimer had already re-read, and its entry put the record back to Claimed
+// over the Cancelled this one had just written: a build that ran to completion,
+// reported Success, and advanced the ref anchor to the commit the caller
+// cancelled. Serialized, the claimer either reads the Cancelled record and
+// drops the delivery without starting, or has already registered its run for
+// the stop below.
+//
+// A job running on ANOTHER backend node needs no forwarding either — its run
+// settles against a record that is already terminal and publishes nothing, and
+// it is bounded by the claim deadline regardless.
 //
 // v1 needed three hops for this: the HTTP handler read which monkey was
 // assigned, called that monkey's own p2p service, and monkey then called
@@ -166,6 +182,10 @@ func (s *Service) cancel(id string) error {
 	if err := requireJobID(id); err != nil {
 		return err
 	}
+
+	jobLock.Lock()
+	defer jobLock.Unlock()
+
 	if err := s.lead(); err != nil {
 		return err
 	}
@@ -216,11 +236,25 @@ func (s *Service) cancel(id string) error {
 // the queue does not hold is one already acked, or one whose push never landed.
 // An item a CONSUMER holds is refused by the queue on purpose: that claim is
 // the mutual exclusion, and taking it away would let a retry of this same job
-// be claimed beside the run still going. Its holder's ack is what drops it, and
-// the stopRun a line below is what makes that prompt when the holder is this
-// node. A holder that never acks loses the claim to its deadline instead, and
-// the redelivery is dropped on reading the record — run() acks a job it finds
-// terminal without starting it.
+// be claimed beside the run still going.
+//
+// SWALLOWING ErrClaimed IS ONLY HONEST IF THAT ITEM ALWAYS LEAVES, and it does,
+// by one of three exits — none of which needs anybody to come back to it:
+//
+//   - the holder acks. On this node the stopRun a line below is what makes that
+//     prompt, and it reaches the run because begin registered it inside the
+//     same section this one is running in. On another node the run finishes,
+//     acks, and settles against a record that is already terminal.
+//   - the holder dies, the claim lapses at its deadline, and the redelivery is
+//     dropped on reading the record: begin refuses a job it finds terminal and
+//     run acks it without starting it.
+//   - the redeliveries run out and the item reaches the dead letter, where the
+//     drain finds a terminal record, writes nothing, and acks.
+//
+// Before the section existed the first exit was the claim: stopRun could be
+// called while the run had been decided on and not yet registered, so it was a
+// no-op and the build ran to its own completion. It is the registration inside
+// begin, not this call, that closed that.
 func (s *Service) withdraw(id string) error {
 	err := s.work.Remove(id)
 	if err == nil || errors.Is(err, queue.ErrNotFound) || errors.Is(err, queue.ErrClaimed) {
@@ -245,6 +279,15 @@ func (s *Service) retry(id string) error {
 	if err := requireJobID(id); err != nil {
 		return err
 	}
+
+	// The reopening is ONE SECTION with the read that decided it, down to and
+	// including the push: reconcile deletes the open-index row of a job whose
+	// record it read as finished, and released early it would delete the very
+	// row written a line below — leaving a job that reads Open and that nothing
+	// walking the open index will ever look at again.
+	jobLock.Lock()
+	defer jobLock.Unlock()
+
 	if err := s.lead(); err != nil {
 		return err
 	}
@@ -324,6 +367,12 @@ func (s *Service) finish(rec jobRecord, status buildv1.JobStatus, reason string,
 // stopRun cancels a run this node is holding. It is a no-op for a job running
 // somewhere else or not running at all, which is the common case and not an
 // error: the record write is what cancels those.
+//
+// IT IS CALLED INSIDE cancel's SECTION, and that is what makes it reach a run
+// this node just claimed rather than being a no-op against a window. begin
+// registers the run inside the claim's section, so the two orders are the only
+// two: this one first, and the claim's re-read finds a cancelled record and
+// never starts; the claim first, and the registration is already here.
 func (s *Service) stopRun(id string) {
 	s.runningMu.Lock()
 	cancel, ok := s.running[id]

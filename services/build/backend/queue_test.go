@@ -172,6 +172,20 @@ func TestEnqueueOnALeaderThatCannotBarrierIsUnavailable(t *testing.T) {
 
 // A push for a repository nobody registered is refused BEFORE anything is
 // queued — the admission check on stranger-authored input.
+// LEADERSHIP IS CHECKED INSIDE THE SECTION, not only at the door. A delivery
+// waits on jobLock while another transition holds it across a replicated entry,
+// and leadership can be lost in that wait — so the barrier and the refusal are
+// where the read is, which is the only place they say anything about the read.
+func TestASectionRefusesLeadershipItLostWhileItWaited(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+	h.store.stepDown()
+
+	found, err := h.resume(id)
+	require.False(t, found)
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+}
+
 func TestAPushForAnUnregisteredRepositoryIsRefusedBeforeAnythingIsQueued(t *testing.T) {
 	h := newHarness(t)
 

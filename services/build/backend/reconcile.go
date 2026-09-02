@@ -39,28 +39,50 @@ func (s *Service) reconcile() error {
 		if err != nil {
 			return errInternal("%v", err)
 		}
-
-		rec, found, err := s.record(id)
-		if err != nil {
+		if err := s.mend(key, id, now, cutoff); err != nil {
 			return err
 		}
+	}
+	return nil
+}
 
-		// An index row whose record is gone, or whose record has finished, is
-		// the row that is wrong. Deleting it is what keeps MaxOpenPerRepo
-		// counting real work rather than history.
-		if !found || rec.terminal() {
-			if err := s.store.Batch([]raft.BatchOp{del(key)}, s.cfg.Queue.ApplyTimeout); err != nil {
-				return fmt.Errorf("dropping stale open row %q: %w", key, err)
-			}
-			continue
-		}
+// mend is one row of that walk, and it is ONE SECTION per job rather than one
+// for the whole pass: the listing may be every open job in the cloud, and
+// holding every Cancel and every claim off for the length of it would make a
+// repair pass a stall.
+//
+// THE SECTION IS WHAT MAKES THE DELETE SAFE. Retry reopens a finished job by
+// writing the record and this very row back in one entry; released between the
+// read and the delete, this would drop the row a retry had just written and
+// leave a job that reads Open and that nothing walking the open index will ever
+// look at again — MaxOpenPerRepo stops counting it, and no later pass repairs
+// it, because no later pass can see it. The push has the same shape one state
+// over: decided on a record read as open, it would put an item back for a job a
+// cancel finished in between.
+func (s *Service) mend(key, id string, now time.Time, cutoff time.Duration) error {
+	jobLock.Lock()
+	defer jobLock.Unlock()
 
-		if now.Sub(time.Unix(rec.UpdatedAt, 0)) < cutoff {
-			continue
+	rec, found, err := s.record(id)
+	if err != nil {
+		return err
+	}
+
+	// An index row whose record is gone, or whose record has finished, is the
+	// row that is wrong. Deleting it is what keeps MaxOpenPerRepo counting real
+	// work rather than history.
+	if !found || rec.terminal() {
+		if err := s.store.Batch([]raft.BatchOp{del(key)}, s.cfg.Queue.ApplyTimeout); err != nil {
+			return fmt.Errorf("dropping stale open row %q: %w", key, err)
 		}
-		if err := s.work.Push(id, nil); err != nil {
-			return fmt.Errorf("re-queueing job %s: %w", id, err)
-		}
+		return nil
+	}
+
+	if now.Sub(time.Unix(rec.UpdatedAt, 0)) < cutoff {
+		return nil
+	}
+	if err := s.work.Push(id, nil); err != nil {
+		return fmt.Errorf("re-queueing job %s: %w", id, err)
 	}
 	return nil
 }
