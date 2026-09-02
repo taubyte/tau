@@ -50,6 +50,44 @@ func TestTheRepositoryKeyAndTheRefCannotBeRecut(t *testing.T) {
 	require.NotEqual(t, a, b)
 }
 
+// THE BOUNDARY THAT ACTUALLY MOVES, and it moves on inputs this service's own
+// validators accept — which is what makes it an attack and not an argument.
+//
+//	("github.com/o/n",             "refs/heads/arefs/heads/x", 40 x 'a')
+//	("github.com/o/nrefs/heads/a", "refs/heads/x",             40 x 'a')
+//
+// Both keys are canonical: repokey joins everything above the last segment into
+// Owner, so a key of any depth is a key. Both refs are branch refs, because a
+// ref contains "/" by construction. The sha is fixed-length, so the only
+// boundary either input can slide is the one between the key and the ref — and
+// slid, the two triples are ONE string. A ref is attacker-chosen for any
+// repository an attacker can push to, and Enqueue answers an id it already
+// holds with the job it already made, so an id that can be re-cut is a way to
+// resolve a victim's push onto an attacker's job.
+//
+// The two tests above assert something true and neither reaches this: the
+// separator pair differs under bare concatenation as well, and the key/ref pair
+// compares two inputs that simply differ rather than a RE-CUT of one string.
+func TestATripleRecutAtTheKeyRefBoundaryDoesNotCollide(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	left := struct{ key, ref string }{"github.com/o/n", "refs/heads/arefs/heads/x"}
+	right := struct{ key, ref string }{"github.com/o/nrefs/heads/a", "refs/heads/x"}
+
+	// Unframed the two are indistinguishable, or this test proves nothing.
+	require.Equal(t, left.key+left.ref+sha, right.key+right.ref+sha)
+
+	// And both are triples this service would accept — mustKey is
+	// parseRepositoryKey, which is Enqueue's own check.
+	require.True(t, validRef(left.ref), "%q must be a ref this service builds", left.ref)
+	require.True(t, validRef(right.ref), "%q must be a ref this service builds", right.ref)
+	require.True(t, validCommitSHA(sha))
+
+	require.NotEqual(t,
+		jobID(mustKey(t, left.key), left.ref, sha),
+		jobID(mustKey(t, right.key), right.ref, sha),
+		"a length prefix is what keeps the key/ref boundary from sliding")
+}
+
 func TestAJobIDIsDeterministicAndExactlyOneKeySegment(t *testing.T) {
 	key := mustKey(t, "github.com/acme/pay")
 	sha := strings.Repeat("d", 40)
