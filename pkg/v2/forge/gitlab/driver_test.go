@@ -1,0 +1,812 @@
+package gitlab
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/git/repokey"
+	"github.com/taubyte/tau/pkg/v2/forge"
+)
+
+// stub is one handler answering exactly what a case needs, so the failure paths
+// an honest instance never takes can still be asserted. It is the same shape as
+// the conformance instance and a great deal less of it.
+func stub(t *testing.T, h http.HandlerFunc, opts ...Option) (forge.Driver, string) {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	host := strings.TrimPrefix(srv.URL, "http://")
+	d, err := New(host, append([]Option{BaseURL(srv.URL)}, opts...)...)
+	require.NoError(t, err)
+	return d, srv.URL
+}
+
+func stubClient(t *testing.T, h http.HandlerFunc, opts ...Option) (*client, repokey.Key) {
+	t.Helper()
+	d, base := stub(t, h, opts...)
+	bound, err := d.Bind(forge.Token("stub-token"))
+	require.NoError(t, err)
+	key, err := repokey.Parse(base + "/acme/pay.git")
+	require.NoError(t, err)
+	return bound.(*client), key
+}
+
+func answer(t *testing.T, status int, body string) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Errorf("writing a stub answer: %v", err)
+		}
+	}
+}
+
+// ─────────────────────────── construction ───────────────────────────
+
+// A host that is not the spelling repokey derives from a clone URL is a driver
+// no key will ever resolve to, and the failure is otherwise silent forever.
+func TestNewRefusesAHostThatIsNotARepokeySpelling(t *testing.T) {
+	for _, host := range []string{"", "GitLab.com", "https://gitlab.com", "gitlab.com:443", "gitlab.com/"} {
+		d, err := New(host)
+		assert.Nil(t, d, "a refused host still produced a driver")
+		assert.Error(t, err, "host %q was accepted", host)
+	}
+}
+
+func TestNewDefaultsToTheHostOverHTTPS(t *testing.T) {
+	d, err := New("gitlab.com")
+	require.NoError(t, err)
+	assert.Equal(t, "gitlab.com", d.Host())
+	assert.Equal(t, "https://gitlab.com", d.(*driver).cfg.base.String())
+
+	// And to the procedure every ordinary instance actually performs, which the
+	// zero policy then refuses out loud.
+	assert.Equal(t, forge.SchemeSharedToken, d.(*driver).Scheme())
+}
+
+func TestBaseURLRefusesWhatWouldAimTheCredentialElsewhere(t *testing.T) {
+	for name, raw := range map[string]string{
+		"not a URL":       "://nope",
+		"not a transport": "ftp://gitlab.com",
+		"another host":    "https://gitlab.example",
+		"no host at all":  "https:///gitlab",
+		"no authority":    "https://",
+	} {
+		_, err := New("gitlab.com", BaseURL(raw))
+		assert.Error(t, err, "%s: base URL %q was accepted", name, raw)
+	}
+}
+
+// A relative URL root folds itself into every repository's OWNER, because
+// repokey has no notion of a path prefix and the instance's own clone URLs carry
+// one. Every namespace this driver resolved would then be off by one segment.
+func TestBaseURLRefusesAPathPrefix(t *testing.T) {
+	_, err := New("gitlab.com", BaseURL("https://gitlab.com/gitlab"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "relative URL root")
+
+	// The prefix really does land in the owner, which is why it is refused.
+	k, err := repokey.Parse("https://gitlab.com/gitlab/acme/pay.git")
+	require.NoError(t, err)
+	assert.Equal(t, "gitlab/acme", k.Owner)
+}
+
+func TestDeploymentRefusesACredentialThatCannotAnswer(t *testing.T) {
+	_, err := New("gitlab.com", Deployment(forge.Credential{}))
+	assert.Error(t, err, "an empty deployment credential was installed")
+
+	_, err = New("gitlab.com", Deployment(forge.Anonymous()))
+	assert.Error(t, err, "an anonymous deployment credential was installed")
+}
+
+// A driver without the deployment's credential does not implement
+// forge.Memberships AT ALL — it is a different Go type — so "we could not ask"
+// can never arrive at a caller as "they are not a member".
+func TestMembershipIsATypeAndNotANilCheck(t *testing.T) {
+	plain, err := New("gitlab.com")
+	require.NoError(t, err)
+	_, has := plain.(forge.Memberships)
+	assert.False(t, has, "a driver with no deployment credential claims it can answer membership")
+
+	withCredential, err := New("gitlab.com", Deployment(forge.Token("deployment")))
+	require.NoError(t, err)
+	_, has = withCredential.(forge.Memberships)
+	assert.True(t, has)
+}
+
+// The zero forge.Policy is the strict one, and GitLab's decade-old webhook
+// procedure binds nothing. A deployment gets that instance's weaker webhook
+// authentication only by saying so at the one call site that registers it.
+func TestZeroPolicyRefusesAnUnboundScheme(t *testing.T) {
+	d, err := New("gitlab.com")
+	require.NoError(t, err)
+
+	_, err = forge.New(forge.Policy{}, forge.Binding{Host: "gitlab.com", Driver: d})
+	require.Error(t, err, "the zero policy accepted a driver whose hooks bind nothing")
+	assert.Contains(t, err.Error(), "does not bind the body")
+
+	_, err = forge.New(forge.Policy{AllowUnboundSchemes: true}, forge.Binding{Host: "gitlab.com", Driver: d})
+	assert.NoError(t, err)
+
+	signing, err := New("gitlab.com", Signing())
+	require.NoError(t, err)
+	_, err = forge.New(forge.Policy{}, forge.Binding{Host: "gitlab.com", Driver: signing})
+	assert.NoError(t, err, "the zero policy refused a scheme that binds the body")
+}
+
+func TestBindRefusesAZeroCredential(t *testing.T) {
+	d, err := New("gitlab.com")
+	require.NoError(t, err)
+	bound, err := d.Bind(forge.Credential{})
+	assert.Nil(t, bound)
+	assert.ErrorIs(t, err, forge.ErrNoCredential)
+}
+
+// ─────────────────────────── addressability ───────────────────────────
+
+// Addressable is where a forge states its own naming rules. GitLab's are: a
+// project lives in a namespace, at any depth, and never under the segment
+// GitLab reserves for its own routes.
+func TestAddressable(t *testing.T) {
+	d, err := New("gitlab.com")
+	require.NoError(t, err)
+
+	for _, spelling := range []string{
+		"https://gitlab.com/acme/pay.git",
+		"https://gitlab.com/acme/team/widget.git",
+		"https://gitlab.com/acme/team/sub/deeper/widget.git",
+	} {
+		k, err := repokey.Parse(spelling)
+		require.NoError(t, err)
+		assert.NoError(t, d.Addressable(k), "GitLab nests, and %q was refused", spelling)
+	}
+
+	rootLevel, err := repokey.Parse("https://gitlab.com/pay.git")
+	require.NoError(t, err)
+	assert.Empty(t, rootLevel.Owner)
+	assert.Error(t, d.Addressable(rootLevel), "a repository at the host root is not a GitLab project")
+
+	for _, spelling := range []string{
+		"https://gitlab.com/acme/-/pay.git",
+		"https://gitlab.com/acme/-.git",
+	} {
+		k, err := repokey.Parse(spelling)
+		require.NoError(t, err)
+		assert.Error(t, d.Addressable(k), "%q uses GitLab's reserved route separator", spelling)
+	}
+}
+
+// ─────────────────────────── credentials on the wire ───────────────────────────
+
+func TestCredentialHeaders(t *testing.T) {
+	seen := make(http.Header)
+	record := func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header.Clone()
+		answer(t, http.StatusOK, `{"id":1,"username":"alice"}`)(w, r)
+	}
+
+	c, _ := stubClient(t, record)
+	_, err := c.Whoami(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "stub-token", seen.Get("PRIVATE-TOKEN"))
+	assert.Empty(t, seen.Get("Authorization"), "a personal token was also sent as a Bearer")
+
+	// GitLab has two credential headers for two credential kinds, and
+	// forge.Credential is one opaque string with no kind — so the deployment
+	// says which.
+	c, _ = stubClient(t, record, OAuth())
+	_, err = c.Whoami(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer stub-token", seen.Get("Authorization"))
+	assert.Empty(t, seen.Get("PRIVATE-TOKEN"))
+}
+
+// An anonymous session is a real state — GitLab answers public projects to
+// nobody in particular — and it is not a dropped token, which is
+// forge.ErrNoCredential at Bind.
+func TestAnonymousSessionCarriesNoCredential(t *testing.T) {
+	seen := make(http.Header)
+	var base string
+	d, base := stub(t, func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header.Clone()
+		answer(t, http.StatusOK, `{"path_with_namespace":"acme/public","http_url_to_repo":"`+base+`/acme/public.git","default_branch":"main","visibility":"public"}`)(w, r)
+	})
+
+	bound, err := d.Bind(forge.Anonymous())
+	require.NoError(t, err)
+	key, err := repokey.Parse(base + "/acme/public.git")
+	require.NoError(t, err)
+	_, err = bound.Repository(context.Background(), key)
+	require.NoError(t, err)
+	assert.Empty(t, seen.Get("PRIVATE-TOKEN"))
+	assert.Empty(t, seen.Get("Authorization"))
+}
+
+// ─────────────────────────── the failure taxonomy ───────────────────────────
+
+func TestWhoamiRefusesAnAnswerWithNoUsername(t *testing.T) {
+	c, _ := stubClient(t, answer(t, http.StatusOK, `{"id":1}`))
+	who, err := c.Whoami(context.Background())
+	assert.Error(t, err)
+	assert.Equal(t, forge.Identity{}, who)
+}
+
+func TestWhoamiReportsTheUserIdAsAnOpaqueSubject(t *testing.T) {
+	c, _ := stubClient(t, answer(t, http.StatusOK, `{"id":4242,"username":"alice","email":"a@b.invalid"}`))
+	who, err := c.Whoami(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, forge.Identity{Login: "alice", Subject: "4242", Email: "a@b.invalid"}, who)
+}
+
+// GRAPHQL ANSWERS 200 FOR FAILURES, so the taxonomy's status mapping does not
+// reach it and an errors array has to become an error by hand. It must never
+// become a level.
+func TestAccessTurnsAGraphQLErrorArrayIntoAnError(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusOK, `{"data":null,"errors":[{"message":"Field 'pushCode' doesn't exist"}]}`))
+	level, err := c.Access(context.Background(), key)
+	require.Error(t, err)
+	assert.Equal(t, forge.AccessNone, level)
+	assert.Contains(t, err.Error(), "pushCode")
+}
+
+func TestAccessRefusesAnUnreadableAnswer(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusOK, `not json`))
+	level, err := c.Access(context.Background(), key)
+	require.Error(t, err)
+	assert.Equal(t, forge.AccessNone, level)
+}
+
+func TestOnly401IsAStatementAboutTheCredential(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusUnauthorized, `{"message":"401 Unauthorized"}`))
+	_, err := c.Repository(context.Background(), key)
+	var refused *forge.CredentialError
+	require.ErrorAs(t, err, &refused)
+	assert.NotContains(t, err.Error(), "stub-token", "the credential is in an error string")
+
+	// A 403 is not. GitLab answers it for an archived project, a blocked user, a
+	// missing scope and a permission the caller genuinely lacks, and a consumer
+	// that read it as a verdict would act on the wrong one.
+	c, key = stubClient(t, answer(t, http.StatusForbidden, `{"message":"403 Forbidden"}`))
+	_, err = c.Repository(context.Background(), key)
+	require.Error(t, err)
+	assert.NotErrorAs(t, err, &refused)
+	var missing *forge.NotFoundError
+	assert.NotErrorAs(t, err, &missing)
+}
+
+// A 404 is "no such repository" only where the request named one. GitLab's
+// namespace lookup 404s too, and that is not a statement about a repository.
+func TestNotFoundIsOnlyForARequestThatNamedARepository(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusNotFound, `{"message":"404 Project Not Found"}`))
+	_, err := c.Repository(context.Background(), key)
+	var missing *forge.NotFoundError
+	assert.ErrorAs(t, err, &missing)
+
+	_, err = c.Create(context.Background(), key, forge.CreateOptions{})
+	require.Error(t, err)
+	assert.NotErrorAs(t, err, &missing, "a missing namespace read as a missing repository")
+}
+
+// ─────────────────────────── the key round trip ───────────────────────────
+
+func TestRepositoryRefusesACloneURLItCannotBuildAKeyFrom(t *testing.T) {
+	for name, body := range map[string]string{
+		"no clone URL":     `{"path_with_namespace":"acme/pay","default_branch":"main"}`,
+		"not a URL":        `{"path_with_namespace":"acme/pay","http_url_to_repo":"not a clone url","default_branch":"main"}`,
+		"credential in it": `{"path_with_namespace":"acme/pay","http_url_to_repo":"https://u:p@gitlab.com/acme/pay.git"}`,
+	} {
+		c, key := stubClient(t, answer(t, http.StatusOK, body))
+		repo, err := c.Repository(context.Background(), key)
+		assert.Error(t, err, "%s was accepted", name)
+		assert.Equal(t, forge.Repository{}, repo, "%s produced a Repository beside its error", name)
+	}
+}
+
+// An instance behind a proxy that was told the wrong external URL reports clone
+// URLs on a host this deployment has no driver for. A key derived from one names
+// a repository nothing can ever act on again.
+func TestRepositoryRefusesACloneURLOnAnotherHost(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusOK,
+		`{"path_with_namespace":"acme/pay","http_url_to_repo":"https://gitlab.example/acme/pay.git","default_branch":"main"}`))
+	_, err := c.Repository(context.Background(), key)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no driver for")
+}
+
+// THE SSH ADDRESS IS REPORTED AS THE INSTANCE GAVE IT, unchecked, and this test
+// pins that rather than leaving it accidental. A self-managed GitLab routinely
+// serves SSH on another name or port; that is a perfectly good clone address and
+// a DIFFERENT repokey key, because the host is part of the identity. Inventing
+// agreement here would report an address no clone can use.
+func TestRepositoryPassesAnSSHAddressOnAnotherHostThrough(t *testing.T) {
+	var host string
+	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		answer(t, http.StatusOK, `{"path_with_namespace":"acme/pay","http_url_to_repo":"http://`+host+`/acme/pay.git","ssh_url_to_repo":"ssh://git@ssh.acme.example:2222/acme/pay.git","default_branch":"main","visibility":"private"}`)(w, r)
+	})
+	host = key.Host
+
+	repo, err := c.Repository(context.Background(), key)
+	require.NoError(t, err)
+	assert.Equal(t, key, repo.Key, "the key comes from the http clone URL")
+	assert.Equal(t, "ssh://git@ssh.acme.example:2222/acme/pay.git", repo.SSH)
+	assert.True(t, repo.Private, "an instance visibility that is not public is not public")
+
+	// And here is the consequence, stated rather than hidden: the two addresses
+	// of one repository derive two keys.
+	fromSSH, err := repokey.Parse(repo.SSH)
+	require.NoError(t, err)
+	assert.NotEqual(t, repo.Key, fromSSH)
+}
+
+// GitLab has three visibilities and forge.Repository.Private is a bool.
+// "internal" is not public, so it reads as private — the safe direction for a
+// field that is metadata and never authorization.
+func TestInternalVisibilityIsNotPublic(t *testing.T) {
+	var host string
+	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		answer(t, http.StatusOK, `{"http_url_to_repo":"http://`+host+`/acme/pay.git","default_branch":"main","visibility":"internal"}`)(w, r)
+	})
+	host = key.Host
+
+	repo, err := c.Repository(context.Background(), key)
+	require.NoError(t, err)
+	assert.True(t, repo.Private)
+}
+
+// ─────────────────────────── listing ───────────────────────────
+
+func TestListRefusesAPagerThatNamesItsOwnPageAsSuccessor(t *testing.T) {
+	c, _ := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Next-Page", r.URL.Query().Get("page"))
+		answer(t, http.StatusOK, `[]`)(w, r)
+	})
+	err := c.ListRepositories(context.Background(), func(forge.Repository) bool { return true })
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "successor")
+}
+
+// A pager that keeps naming a next page would otherwise be an unbounded loop
+// inside a call a consumer thinks is one request.
+func TestListStopsPagingEventually(t *testing.T) {
+	c, _ := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		page, err := strconv.Atoi(r.URL.Query().Get("page"))
+		if err != nil {
+			page = 1
+		}
+		w.Header().Set("X-Next-Page", strconv.Itoa(page+1))
+		answer(t, http.StatusOK, `[]`)(w, r)
+	})
+	err := c.ListRepositories(context.Background(), func(forge.Repository) bool { return true })
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to keep paging")
+}
+
+// A listing that quietly drops the entry it could not read is a listing whose
+// absences a consumer cannot interpret.
+func TestListPropagatesAnUnreadableEntry(t *testing.T) {
+	c, _ := stubClient(t, answer(t, http.StatusOK, `[{"path_with_namespace":"acme/pay","http_url_to_repo":"nonsense"}]`))
+	yielded := 0
+	err := c.ListRepositories(context.Background(), func(forge.Repository) bool { yielded++; return true })
+	require.Error(t, err)
+	assert.Zero(t, yielded)
+}
+
+// ─────────────────────────── creation ───────────────────────────
+
+// GitLab's namespace lookup FOLLOWS A REDIRECT FROM A RENAMED PATH, so creating
+// in "acme" after acme was renamed would silently create in whatever it is
+// called now.
+func TestCreateRefusesANamespaceThatResolvedSomewhereElse(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusOK, `{"id":42,"full_path":"acme-holdings"}`))
+	_, err := c.Create(context.Background(), key, forge.CreateOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "somewhere other than where it was asked for")
+}
+
+func TestCreateRefusesANamespaceWithNoId(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusOK, `{"full_path":"acme"}`))
+	_, err := c.Create(context.Background(), key, forge.CreateOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no id for namespace")
+}
+
+func TestCreateSendsTheNamespaceIdAndNoRepositoryId(t *testing.T) {
+	var sent map[string]any
+	var host string
+	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			require.NoError(t, decodeInto(r, &sent))
+			answer(t, http.StatusCreated, `{"path_with_namespace":"acme/pay","http_url_to_repo":"http://`+host+`/acme/pay.git","default_branch":"main","visibility":"private"}`)(w, r)
+			return
+		}
+		answer(t, http.StatusOK, `{"id":42,"full_path":"acme"}`)(w, r)
+	})
+	host = key.Host
+
+	repo, err := c.Create(context.Background(), key, forge.CreateOptions{Description: "pay", Private: true})
+	require.NoError(t, err)
+	assert.Equal(t, key, repo.Key)
+	assert.EqualValues(t, 42, sent["namespace_id"])
+	assert.Equal(t, "pay", sent["path"])
+	assert.Equal(t, "private", sent["visibility"])
+	assert.Equal(t, false, sent["initialize_with_readme"], "an initial commit the caller did not ask for")
+}
+
+// ─────────────────────────── deploy keys ───────────────────────────
+
+// Asked for read-only, given a key that can push. Whatever the reason, a
+// standing write credential tau issued is the exact thing this interface has no
+// parameter for — so it comes straight back off.
+func TestInstallDeployKeyTakesBackAKeyThatCanPush(t *testing.T) {
+	removed := false
+	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			removed = true
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		answer(t, http.StatusCreated, `{"id":9,"can_push":true}`)(w, r)
+	})
+
+	handle, err := c.InstallDeployKey(context.Background(), key, "tau", "ssh-ed25519 AAAA test")
+	require.Error(t, err)
+	assert.Empty(t, handle, "a key that can push was handed back as if it were usable")
+	assert.True(t, removed, "the writable key was left installed")
+	assert.Contains(t, err.Error(), "has been removed")
+}
+
+func TestInstallDeployKeySaysSoWhenItCannotTakeOneBack(t *testing.T) {
+	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			answer(t, http.StatusInternalServerError, `{"message":"500"}`)(w, r)
+			return
+		}
+		answer(t, http.StatusCreated, `{"id":9,"can_push":true}`)(w, r)
+	})
+	_, err := c.InstallDeployKey(context.Background(), key, "tau", "ssh-ed25519 AAAA test")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "could not be removed")
+}
+
+// An empty handle is a resource nothing can ever remove, which is how v1 ended
+// up with standing credentials it issued and forgot.
+func TestAnEmptyHandleIsRefused(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusCreated, `{}`))
+
+	_, err := c.InstallDeployKey(context.Background(), key, "tau", "ssh-ed25519 AAAA test")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nothing could ever remove it")
+
+	callback, err := url.Parse("https://build.example.invalid/hooks")
+	require.NoError(t, err)
+	_, err = c.RegisterPushHook(context.Background(), key, callback, "wire")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nothing could ever remove it")
+}
+
+// An opaque handle is escaped, not parsed. Nothing here knows it is a number,
+// and escaping is what keeps one inside its own path segment.
+func TestAHandleIsEscapedRatherThanParsed(t *testing.T) {
+	var path string
+	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.EscapedPath()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	require.NoError(t, c.RemoveDeployKey(context.Background(), key, "../../../user/keys/1"))
+	assert.NotContains(t, path, "../")
+	assert.Contains(t, path, "%2F")
+}
+
+// A refusal from the instance is the caller's, not swallowed into an empty
+// handle.
+func TestInstallingOnARepositoryTheCredentialCannotAdministerFails(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusForbidden, `{"message":"403 Forbidden"}`))
+
+	handle, err := c.InstallDeployKey(context.Background(), key, "tau", "ssh-ed25519 AAAA test")
+	assert.Error(t, err)
+	assert.Empty(t, handle)
+
+	callback, err := url.Parse("https://build.example.invalid/hooks")
+	require.NoError(t, err)
+	hook, err := c.RegisterPushHook(context.Background(), key, callback, "wire")
+	assert.Error(t, err)
+	assert.Empty(t, hook)
+}
+
+// ─────────────────────────── hooks ───────────────────────────
+
+// One forge, two procedures, two attributes. The driver names the scheme and
+// passes the wire string through; it never derives one and never verifies one.
+func TestTheWireStringGoesInTheAttributeTheSchemeNames(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		options   []Option
+		attribute string
+		other     string
+	}{
+		{"shared token", nil, "token", "signing_token"},
+		{"standard webhooks", []Option{Signing()}, "signing_token", "token"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			var sent map[string]any
+			c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+				require.NoError(t, decodeInto(r, &sent))
+				answer(t, http.StatusCreated, `{"id":11}`)(w, r)
+			}, testCase.options...)
+
+			callback, err := url.Parse("https://build.example.invalid/hooks")
+			require.NoError(t, err)
+			handle, err := c.RegisterPushHook(context.Background(), key, callback, "the-wire-string")
+			require.NoError(t, err)
+			assert.Equal(t, forge.Handle("11"), handle)
+			assert.Equal(t, "the-wire-string", sent[testCase.attribute], "the wire string was not passed through unaltered")
+			assert.Nil(t, sent[testCase.other])
+			assert.Equal(t, true, sent["push_events"])
+			assert.Equal(t, false, sent["tag_push_events"])
+		})
+	}
+}
+
+// ─────────────────────────── deletion ───────────────────────────
+
+// ON GITLAB, A NIL FROM Delete MEANS "ACCEPTED FOR DELETION". The API answers
+// 202 and the removal is asynchronous, and an instance or group configured for
+// delayed deletion keeps the project readable for the retention period. This
+// pins that, because the assumption a GitHub-only integration acquires without
+// noticing is that a successful delete means a subsequent read fails — and
+// acting on that reads a still-live project as a failure of this call.
+func TestDeleteMeansAcceptedAndNotAlwaysGone(t *testing.T) {
+	var host string
+	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			answer(t, http.StatusAccepted, `{"message":"202 Accepted"}`)(w, r)
+			return
+		}
+		answer(t, http.StatusOK, `{"http_url_to_repo":"http://`+host+`/acme/pay.git","default_branch":"main","visibility":"private"}`)(w, r)
+	})
+	host = key.Host
+
+	require.NoError(t, c.Delete(context.Background(), key), "202 Accepted was read as a failure")
+
+	// And the project is still there, which is not this call having failed.
+	_, err := c.Repository(context.Background(), key)
+	assert.NoError(t, err)
+}
+
+// ─────────────────────────── clone addresses ───────────────────────────
+
+func TestCloneAddressCarriesNoCredentialAndNamesTheAccount(t *testing.T) {
+	d, err := New("gitlab.example")
+	require.NoError(t, err)
+	bound, err := d.Bind(forge.Token("secret-token"))
+	require.NoError(t, err)
+	key, err := repokey.Parse("https://gitlab.example/acme/team/widget.git")
+	require.NoError(t, err)
+
+	addresses := bound.(forge.CloneAddresses)
+	https, err := addresses.CloneAddress(key, forge.HTTPS)
+	require.NoError(t, err)
+	assert.Equal(t, "https://gitlab.example/acme/team/widget.git", https.URL)
+	assert.Equal(t, "oauth2", https.HTTPUsername)
+	assert.NotContains(t, https.URL, "secret-token")
+
+	ssh, err := addresses.CloneAddress(key, forge.SSH)
+	require.NoError(t, err)
+	assert.Equal(t, "ssh://git@gitlab.example/acme/team/widget.git", ssh.URL)
+	assert.Equal(t, "git", ssh.SSHAccount)
+
+	// Both re-derive the key they were built from, which is what repokey
+	// refusing a credentialed URL also proves.
+	for _, spelling := range []string{https.URL, ssh.URL} {
+		got, err := repokey.Parse(spelling)
+		require.NoError(t, err)
+		assert.Equal(t, key, got)
+	}
+}
+
+// ─────────────────────────── payloads ───────────────────────────
+
+func TestPushReadsOnlyAPush(t *testing.T) {
+	d, err := New("gitlab.com")
+	require.NoError(t, err)
+	signatures := d.(forge.Signatures)
+
+	// GitLab names the event in prose. A tag push is a different event under a
+	// different name, and nothing in tau builds one.
+	for _, event := range []string{"", "push", "Tag Push Hook", "Merge Request Hook"} {
+		header := make(http.Header)
+		if event != "" {
+			header.Set("X-Gitlab-Event", event)
+		}
+		_, err := signatures.Push(forge.VerifiedBody{}, header)
+		assert.ErrorIs(t, err, forge.ErrNotAPush, "event %q was read as a push", event)
+	}
+
+	pushHeader := make(http.Header)
+	pushHeader.Set("X-Gitlab-Event", "Push Hook")
+	// forge.VerifiedBody's fields are unexported, so the only non-empty one a
+	// driver can ever be handed comes out of Registry.VerifyPush.
+	_, err = signatures.Push(forge.VerifiedBody{}, pushHeader)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, forge.ErrNotAPush)
+}
+
+// The two payload cases a driver can only be handed through the core, so they
+// are asserted through it: a body whose kind disagrees with its header, and one
+// naming no repository.
+func TestVerifyPushRejectsPayloadsThatOnlyLookLikePushes(t *testing.T) {
+	in := newInstance(t)
+	registry, err := forge.New(forge.Policy{AllowUnboundSchemes: true},
+		forge.Binding{Host: in.host, Driver: in.driver(t)})
+	require.NoError(t, err)
+
+	session, err := registry.For(in.keys(t).Admin, forge.Token(goodToken))
+	require.NoError(t, err)
+	callback, err := url.Parse("https://build.example.invalid/hooks")
+	require.NoError(t, err)
+	secret, err := forge.NewSecret()
+	require.NoError(t, err)
+	hook, err := session.RegisterPushHook(context.Background(), in.keys(t).Admin, callback, secret)
+	require.NoError(t, err)
+
+	sign := func(t *testing.T, body string) forge.Delivery {
+		t.Helper()
+		header, err := forge.Sign(hook.Scheme, secret, []byte(body), "msg_1", time.Now())
+		require.NoError(t, err)
+		header.Set("X-Gitlab-Event", "Push Hook")
+		return forge.Delivery{Header: header, Body: []byte(body)}
+	}
+
+	_, err = registry.VerifyPush(hook, sign(t, `{"object_kind":"tag_push","ref":"refs/tags/v1"}`))
+	assert.ErrorIs(t, err, forge.ErrNotAPush, "a header saying push over a body saying otherwise was read as a push")
+
+	_, err = registry.VerifyPush(hook, sign(t, `{"object_kind":"push","ref":"refs/heads/main","project":{"git_http_url":"nonsense"}}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "names no repository")
+}
+
+// ─────────────────────────── membership ───────────────────────────
+
+func TestIsActiveMemberNeedsBothHalvesOfTheQuestion(t *testing.T) {
+	d, err := New("gitlab.com", Deployment(forge.Token("deployment")))
+	require.NoError(t, err)
+	members := d.(forge.Memberships)
+
+	_, err = members.IsActiveMember(context.Background(), "", "alice")
+	assert.Error(t, err)
+	_, err = members.IsActiveMember(context.Background(), "acme", "")
+	assert.Error(t, err)
+}
+
+// (false, nil) is the only definitive non-member. Everything below is one; the
+// case after is not.
+func TestIsActiveMemberSaysNoOnlyWhenItKnows(t *testing.T) {
+	for name, handler := range map[string]http.HandlerFunc{
+		"no such user":      answer(t, http.StatusOK, `[]`),
+		"user with no id":   answer(t, http.StatusOK, `[{"username":"alice"}]`),
+		"a blocked account": answer(t, http.StatusOK, `[{"id":7,"state":"blocked"}]`),
+	} {
+		d, _ := stub(t, handler, Deployment(forge.Token("deployment")))
+		ok, err := d.(forge.Memberships).IsActiveMember(context.Background(), "acme", "alice")
+		assert.NoError(t, err, "%s", name)
+		assert.False(t, ok, "%s", name)
+	}
+
+	// A member row that exists and is not an active membership.
+	for name, body := range map[string]string{
+		"awaiting approval": `{"access_level":30,"state":"awaiting"}`,
+		"no access level":   `{"access_level":0,"state":"active"}`,
+	} {
+		d, _ := stub(t, func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.EscapedPath(), "/members/") {
+				answer(t, http.StatusOK, body)(w, r)
+				return
+			}
+			answer(t, http.StatusOK, `[{"id":7,"state":"active"}]`)(w, r)
+		}, Deployment(forge.Token("deployment")))
+		ok, err := d.(forge.Memberships).IsActiveMember(context.Background(), "acme", "alice")
+		assert.NoError(t, err, "%s", name)
+		assert.False(t, ok, "%s", name)
+	}
+}
+
+// A 403 means the credential was blocked, which is an operator problem and not a
+// verdict on a person — so it is an error and never a false a caller acts on.
+func TestIsActiveMemberErrorsRatherThanDenying(t *testing.T) {
+	for name, handler := range map[string]http.HandlerFunc{
+		"the user lookup was refused":    answer(t, http.StatusForbidden, `{"message":"403 Forbidden"}`),
+		"the user lookup was unreadable": answer(t, http.StatusOK, `not json`),
+	} {
+		d, _ := stub(t, handler, Deployment(forge.Token("deployment")))
+		ok, err := d.(forge.Memberships).IsActiveMember(context.Background(), "acme", "alice")
+		assert.Error(t, err, "%s", name)
+		assert.False(t, ok, "%s", name)
+	}
+
+	for name, handler := range map[string]http.HandlerFunc{
+		"the members lookup was refused": func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.EscapedPath(), "/members/") {
+				answer(t, http.StatusForbidden, `{"message":"403 Forbidden"}`)(w, r)
+				return
+			}
+			answer(t, http.StatusOK, `[{"id":7,"state":"active"}]`)(w, r)
+		},
+		"the members answer was unreadable": func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.EscapedPath(), "/members/") {
+				answer(t, http.StatusOK, `not json`)(w, r)
+				return
+			}
+			answer(t, http.StatusOK, `[{"id":7,"state":"active"}]`)(w, r)
+		},
+	} {
+		d, _ := stub(t, handler, Deployment(forge.Token("deployment")))
+		ok, err := d.(forge.Memberships).IsActiveMember(context.Background(), "acme", "alice")
+		assert.Error(t, err, "%s", name)
+		assert.False(t, ok, "%s", name)
+	}
+}
+
+// The deployment's credential is the one that asks, and it is a different token
+// from any session's.
+func TestMembershipSpendsTheDeploymentsCredential(t *testing.T) {
+	var seen []string
+	d, _ := stub(t, func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("PRIVATE-TOKEN"))
+		if strings.Contains(r.URL.EscapedPath(), "/members/") {
+			answer(t, http.StatusOK, `{"access_level":40,"state":"active"}`)(w, r)
+			return
+		}
+		answer(t, http.StatusOK, `[{"id":7,"state":"active"}]`)(w, r)
+	}, Deployment(forge.Token("the-deployment-token")))
+
+	ok, err := d.(forge.Memberships).IsActiveMember(context.Background(), "acme", "alice")
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, []string{"the-deployment-token", "the-deployment-token"}, seen)
+}
+
+// ─────────────────────────── plumbing ───────────────────────────
+
+func TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusOK, `{}`))
+
+	// A body nothing can encode.
+	err := c.send(context.Background(), http.MethodPost, c.cfg.endpoint("api", "v4", "projects"), nil, make(chan int), nil)
+	assert.Error(t, err)
+
+	// A method that is not one.
+	err = c.send(context.Background(), "not a method", c.cfg.endpoint("api", "v4", "projects"), &key, nil, nil)
+	assert.Error(t, err)
+}
+
+func TestMessageRendersAnInstancesOwnWords(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"message":"404 Project Not Found"}`:             "404 Project Not Found",
+		`{"message":{"path":["has already been taken"]}}`: `{"path":["has already been taken"]}`,
+		`{"error":"invalid_token"}`:                       "invalid_token",
+		`<html>gateway timeout</html>`:                    "<html>gateway timeout</html>",
+		`{}`:                                              "{}",
+	} {
+		assert.Equal(t, want, message([]byte(body)), "body %s", body)
+	}
+
+	long := message([]byte(strings.Repeat("x", 500)))
+	assert.Len(t, []rune(long), 201, "an unrecognised body was pasted whole into an error")
+	assert.True(t, strings.HasSuffix(long, "…"))
+}
+
+// decodeInto reads a request body in a test handler.
+func decodeInto(r *http.Request, out any) error {
+	return json.NewDecoder(r.Body).Decode(out)
+}
