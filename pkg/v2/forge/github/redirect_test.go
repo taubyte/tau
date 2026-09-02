@@ -57,16 +57,21 @@ type mover struct {
 	// installation lookup, and the write each one exists to make is never the
 	// request a redirect is answered to — which is how a per-method policy
 	// walks between the rows.
+	//
+	// A row may also name paths that come AFTER it. Those are served straight
+	// for the opposite reason: so that a hop which IS followed carries the call
+	// all the way to a successful answer, and the row then fails on that answer
+	// rather than on a count. See the token-mint row.
 	answered map[string]bool
 
 	mu      sync.Mutex
 	arrived []string
 }
 
-func newMover(t *testing.T, status int, answered ...string) (*mover, *forge.Registry, *hops, *forge.Session, repokey.Key) {
+func newMover(t *testing.T, status int, answered, andAfterwards []string) (*mover, *forge.Registry, *hops, *forge.Session, repokey.Key) {
 	t.Helper()
 	m := &mover{status: status, answered: map[string]bool{}}
-	for _, p := range answered {
+	for _, p := range append(append([]string(nil), answered...), andAfterwards...) {
 		m.answered[p] = true
 	}
 
@@ -185,9 +190,14 @@ func (m *mover) requests() []string {
 // the operation's own — the create POST, the membership read — and not a
 // prerequisite it shares with another row.
 var movedOps = []struct {
-	name     string
+	name string
+	// answered are this row's PREREQUISITES, and they are also its hop budget:
+	// the forge is expected to see exactly these plus the moved request.
 	answered []string
-	call     func(context.Context, *forge.Registry, *forge.Session, repokey.Key) (any, error)
+	// andAfterwards are served straight but come after the moved request, so
+	// they are not in that budget. Only the mint row has any.
+	andAfterwards []string
+	call          func(context.Context, *forge.Registry, *forge.Session, repokey.Key) (any, error)
 }{
 	{name: "Whoami", call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, _ repokey.Key) (any, error) {
 		return s.Whoami(ctx)
@@ -250,6 +260,27 @@ var movedOps = []struct {
 		},
 	},
 	{
+		// And the middle of the three: the mint. It is a POST carrying the
+		// APP ASSERTION — this deployment's most privileged credential, and the
+		// only request tau makes that HANDS BACK a credential — so a followed
+		// hop replays that assertion, with its "members: read" body intact
+		// under 307 and 308, at whichever installation the forge names, and the
+		// token that comes back is minted for the installation the FORGE chose.
+		// The walk then asks its question with it.
+		//
+		// The membership read is answered afterwards so that a followed hop
+		// runs the walk to a nil error and a verdict, which is what a consumer
+		// would have believed. Measured before this row existed: a noRedirect
+		// that returned nil for a path ending in "/access_tokens" left this
+		// whole package at exit 0.
+		name:          "IsActiveMember at its token mint",
+		answered:      []string{"/api/v3/orgs/" + namespace + "/installation"},
+		andAfterwards: []string{"/api/v3/orgs/" + namespace + "/memberships/" + member},
+		call: func(ctx context.Context, reg *forge.Registry, s *forge.Session, _ repokey.Key) (any, error) {
+			return reg.IsActiveMember(ctx, s.Host(), namespace, member)
+		},
+	},
+	{
 		// And the first of the three, because a policy could as easily follow
 		// there: the installation lookup is what says this deployment's app is
 		// on the namespace at all.
@@ -275,7 +306,7 @@ func TestNoSameHostRedirectIsFollowed(t *testing.T) {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			for _, op := range movedOps {
 				t.Run(op.name, func(t *testing.T) {
-					m, reg, seen, sess, key := newMover(t, status, op.answered...)
+					m, reg, seen, sess, key := newMover(t, status, op.answered, op.andAfterwards)
 					got, err := op.call(ctx(), reg, sess, key)
 					sent := m.requests()
 					t.Logf("%s -> %v, err = %v", op.name, got, err)
