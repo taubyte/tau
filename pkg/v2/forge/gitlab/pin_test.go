@@ -74,9 +74,15 @@ func (p *pinRecorder) RoundTrip(req *http.Request) (*http.Response, error) {
 // credential on the wire in the clear is spent — and the recorder under the pin
 // is what says whether one did. redirectOps is reused deliberately: the rule is
 // a property of the client every method shares, so every method is the unit.
+//
+// THE DRIVER HOLDS A DEPLOYMENT CREDENTIAL, so that the membership rows in that
+// table drive the SECOND client this driver builds. It is a different
+// http.Client, built at construction rather than at Bind, and a wrap dropped
+// from one of the two is a wrap dropped — the test below this one says the same
+// thing once, and this says it per operation.
 func TestACleartextInstanceIsNeverSentTheCredential(t *testing.T) {
 	rec := &pinRecorder{}
-	drv, err := New(pinHost, BaseURL("http://"+pinHost), HTTPTransport(rec))
+	drv, err := New(pinHost, BaseURL("http://"+pinHost), HTTPTransport(rec), Deployment(forge.Token(pinDeploymentToken)))
 	require.NoError(t, err, "BaseURL refused cleartext; if it now does, this test's premise is gone and so is the operator it protects")
 
 	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true}, forge.Binding{Host: pinHost, Driver: drv})
@@ -88,7 +94,7 @@ func TestACleartextInstanceIsNeverSentTheCredential(t *testing.T) {
 
 	for _, op := range redirectOps {
 		t.Run(op.name, func(t *testing.T) {
-			got, err := op.call(context.Background(), sess, key)
+			got, err := op.call(context.Background(), reg, sess, key)
 			t.Logf("%s -> %v, err = %v", op.name, got, err)
 
 			require.Error(t, err, "%s spoke to %s in the clear", op.name, pinHost)
