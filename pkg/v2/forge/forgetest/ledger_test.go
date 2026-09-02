@@ -159,6 +159,9 @@ var (
 	loadOnce sync.Once
 	loaded   *source
 	loadErr  error
+
+	overlaid   sync.Mutex
+	overlaidBy = map[string]*source{}
 )
 
 // suiteSource type-checks the suite's own source. Test files are not part of
@@ -170,19 +173,51 @@ var (
 // deciding which source this reads.
 func suiteSource(t *testing.T) *source {
 	t.Helper()
-	loadOnce.Do(func() { loaded, loadErr = loadSuite() })
+	loadOnce.Do(func() { loaded, loadErr = loadSuite(nil) })
 	if loadErr != nil {
 		t.Fatalf("type-checking the suite's own source, which is the population every rule below is computed over: %v", loadErr)
 	}
 	return loaded
 }
 
-func loadSuite() (*source, error) {
+// with is this same package with one more file in it, type-checked the same
+// way and read by the same rules.
+//
+// It is how a rule that reads the SOURCE gets a fault behind it. The suite
+// proves an assertion by injecting a driver fault and requiring the assertion
+// to fire; a rule about the shape of the source is proven the same way, by
+// showing the ledger a source that violates it and requiring the ledger to say
+// so. A rule whose violating source it stays quiet about is decoration, which
+// is the sentence this whole file is built on.
+func (s *source) with(t *testing.T, name, content string) *source {
+	t.Helper()
+	dir, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("finding the suite's own directory, to show the ledger a source that breaks its rules: %v", err)
+	}
+	path := filepath.Join(dir, name)
+	key := path + "\x00" + content
+
+	overlaid.Lock()
+	defer overlaid.Unlock()
+	if got, ok := overlaidBy[key]; ok {
+		return got
+	}
+	got, err := loadSuite(map[string][]byte{path: []byte(content)})
+	if err != nil {
+		t.Fatalf("type-checking the suite's own source with %s added: %v", name, err)
+	}
+	overlaidBy[key] = got
+	return got
+}
+
+func loadSuite(overlay map[string][]byte) (*source, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
 			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
-		Dir: ".",
-		Env: append(os.Environ(), "GOPROXY=off", "GOWORK=off"),
+		Dir:     ".",
+		Env:     append(os.Environ(), "GOPROXY=off", "GOWORK=off"),
+		Overlay: overlay,
 	}
 	pkgs, err := packages.Load(cfg, ".")
 	if err != nil {
@@ -395,7 +430,10 @@ func (s *source) site(p token.Pos) string {
 // source.
 func population(t *testing.T) []assertion {
 	t.Helper()
-	src := suiteSource(t)
+	return populationOf(suiteSource(t))
+}
+
+func populationOf(src *source) []assertion {
 	var out []assertion
 	for _, file := range src.pkg.Syntax {
 		enclosing := ""
@@ -465,17 +503,18 @@ var trace = regexp.MustCompile(`Error Trace:\s+\S*?([^/\s]+\.go:\d+)`)
 // a step the suite could not take from a claim somebody demoted. A failure it
 // cannot place is a failure this file cannot reason about, so it says so rather
 // than dropping it.
-func attribute(t *testing.T, pop []assertion, msgs []string) map[string][]string {
-	t.Helper()
+func attribute(pop []assertion, msgs []string) (map[string][]string, []complaint) {
 	bySite := make(map[string]assertion, len(pop))
 	for _, a := range pop {
 		bySite[a.site] = a
 	}
+	var said []complaint
 	fired := make(map[string][]string)
 	for _, msg := range msgs {
 		if g := trace.FindStringSubmatch(msg); g != nil {
 			if _, ok := bySite[g[1]]; !ok {
-				t.Errorf("a failure came from %s, which is not an assertion this file found in the suite's source:\n%s", g[1], msg)
+				said = append(said, complaint{ruleFailureFromNowhere, g[1],
+					"a failure came from here, which is not an assertion this file found in the suite's source:\n" + msg})
 				continue
 			}
 			fired[g[1]] = append(fired[g[1]], msg)
@@ -491,12 +530,13 @@ func attribute(t *testing.T, pop []assertion, msgs []string) map[string][]string
 			}
 		}
 		if len(hits) != 1 {
-			t.Errorf("a failure names %d assertions and must name one; it is unattributable, so nothing here can say which assertion is load-bearing:\n%s\n%v", len(hits), msg, hits)
+			said = append(said, complaint{ruleUnplaceable, fmt.Sprintf("%v", hits),
+				fmt.Sprintf("a failure names %d assertions and must name one; it is unattributable, so nothing here can say which assertion is load-bearing:\n%s", len(hits), msg)})
 			continue
 		}
 		fired[hits[0]] = append(fired[hits[0]], msg)
 	}
-	return fired
+	return fired, said
 }
 
 // containsFormat reports whether a rendered message came from this format
