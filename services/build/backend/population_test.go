@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -432,6 +433,87 @@ func inSectionFrom(all map[string]funcs, fn, call string, seen map[string]bool) 
 		}
 	}
 	return true, ""
+}
+
+// mend IS EXEMPT FROM THE BARRIER RULE ON ONE STRUCTURAL FACT, and this is that
+// fact checked rather than asserted: a job record and its open-index row move
+// in the SAME replicated entry, always. That is what makes "this row is listed
+// as open AND its record reads finished" impossible to produce by reading a
+// state that is merely behind — whatever prefix of the log a node has applied,
+// it has applied both halves or neither — so a row in that shape is genuinely
+// orphaned, which is what mend deletes.
+//
+// Split across two entries by some later transition, mend's exemption dies
+// silently and its delete starts dropping rows a live job still needs. This
+// fails instead.
+func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
+		return !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	require.NoError(t, err)
+
+	// mentions counts a key builder's appearances, and inEntry counts the ones
+	// inside a []raft.BatchOp literal — one replicated entry. A builder named
+	// anywhere else is a key written or deleted on its own.
+	mentions := map[string]int{}
+	inEntry := map[string]int{}
+	var pairing []string
+
+	count := func(n ast.Node, into map[string]int) []string {
+		var seen []string
+		ast.Inspect(n, func(n ast.Node) bool {
+			id, ok := n.(*ast.Ident)
+			if !ok || (id.Name != "openIndexKey" && id.Name != "jobRecordKey") {
+				return true
+			}
+			into[id.Name]++
+			seen = append(seen, id.Name)
+			return true
+		})
+		return seen
+	}
+
+	for _, file := range parsed["backend"].Files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil || qualify(fn) == "Service.record" {
+				continue
+			}
+			count(fn.Body, mentions)
+
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				lit, ok := n.(*ast.CompositeLit)
+				if !ok || !isBatchOps(lit.Type) {
+					return true
+				}
+				named := count(lit, inEntry)
+				if slices.Contains(named, "openIndexKey") {
+					pairing = append(pairing, qualify(fn))
+					require.Contains(t, named, "jobRecordKey",
+						"%s writes an open-index row in an entry that does not write the record", qualify(fn))
+				}
+				return true
+			})
+		}
+	}
+
+	require.ElementsMatch(t, []string{"Service.create", "Service.retry", "Service.finish"}, pairing,
+		"the three transitions that move a record and its open row together")
+	require.Equal(t, mentions, inEntry,
+		"a job record key or an open-index row key built outside a []raft.BatchOp literal is half a transition")
+}
+
+// isBatchOps reports whether a composite literal's type is []raft.BatchOp — one
+// replicated entry, which is what Store.Batch takes and the only shape in which
+// this package writes anything.
+func isBatchOps(expr ast.Expr) bool {
+	arr, ok := expr.(*ast.ArrayType)
+	if !ok {
+		return false
+	}
+	sel, ok := arr.Elt.(*ast.SelectorExpr)
+	return ok && sel.Sel.Name == "BatchOp"
 }
 
 // The write side, from the other direction: every entry that SETS a job record
