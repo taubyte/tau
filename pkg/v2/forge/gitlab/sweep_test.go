@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -87,6 +88,21 @@ type sweepArgs struct{ handle, namespace, username string }
 // it appears on the wire as url.PathEscape spells it, and only if every one of
 // the three survived as itself.
 const walkingSpelling = "../../attacker?a#b"
+
+const (
+	// sweepCallback and sweepSecret are FIXED rather than minted, because the
+	// body sweep below pins what this driver composes by value and a freshly
+	// minted secret derives a different wire string every run. Nothing about
+	// arbitrary key material is given up here: the conformance suite signs real
+	// deliveries with real minted secrets, and this file is about the request.
+	sweepCallback = "https://tau.example/hook"
+	sweepSecret   = "gitlab-sweep-hook-secret-0123456789abcdef"
+
+	// sweepDescription is a create option that is neither empty nor the name, so
+	// a driver that dropped it or sent something else in its place is visible in
+	// the body sweep.
+	sweepDescription = "the project tau was asked to make"
+)
 
 var (
 	benignArgs = sweepArgs{handle: "5", namespace: victim, username: memberName}
@@ -155,7 +171,20 @@ var sweepOps = []sweepOp{
 		// named.
 		name: "Create", caps: []forge.Capability{forge.CapCreate},
 		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
-			r, err := s.Create(ctx, k, forge.CreateOptions{Private: true})
+			r, err := s.Create(ctx, k, forge.CreateOptions{Private: true, Description: sweepDescription})
+			return r.Key, err
+		},
+	},
+	{
+		// AND THE OTHER SIDE OF THE ONE BRANCH IN THAT BODY. GitLab has no
+		// boolean here: forge.CreateOptions.Private is mapped onto one of two
+		// visibility strings, so a driver that always sends "private" cannot make
+		// the public project tau asked for and one that always sends "public"
+		// publishes a configuration repository. Both values have to be on the
+		// wire for either to be a fact.
+		name: "Create a public project", caps: []forge.Capability{forge.CapCreate},
+		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
+			r, err := s.Create(ctx, k, forge.CreateOptions{Private: false, Description: sweepDescription})
 			return r.Key, err
 		},
 	},
@@ -180,15 +209,11 @@ var sweepOps = []sweepOp{
 	{
 		name: "RegisterPushHook", caps: []forge.Capability{forge.CapPushHooks, forge.CapSignatures},
 		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
-			secret, err := forge.NewSecret()
+			callback, err := url.Parse(sweepCallback)
 			if err != nil {
 				return nil, err
 			}
-			callback, err := url.Parse("https://tau.example/hook")
-			if err != nil {
-				return nil, err
-			}
-			h, err := s.RegisterPushHook(ctx, k, callback, secret)
+			h, err := s.RegisterPushHook(ctx, k, callback, forge.SecretFrom([]byte(sweepSecret)))
 			return h.Handle, err
 		},
 	},
@@ -232,6 +257,7 @@ var sweepOps = []sweepOp{
 type sweepHop struct {
 	shape      string
 	credential string
+	body       string
 }
 
 // sweepWire records every hop, in order, and answers through the transport
@@ -246,7 +272,11 @@ type sweepWire struct {
 
 func (w *sweepWire) RoundTrip(r *http.Request) (*http.Response, error) {
 	w.mu.Lock()
-	w.hops = append(w.hops, sweepHop{shape: sweepShapeOf(r), credential: r.Header.Get("PRIVATE-TOKEN")})
+	w.hops = append(w.hops, sweepHop{
+		shape:      sweepShapeOf(r),
+		credential: r.Header.Get("PRIVATE-TOKEN"),
+		body:       sweepBodyOf(r),
+	})
 	w.mu.Unlock()
 	if w.base == nil {
 		return http.DefaultTransport.RoundTrip(r)
@@ -268,6 +298,18 @@ func (w *sweepWire) shapes() []string {
 	return out
 }
 
+// bodies is every request that carried one, as "shape\n\tbody".
+func (w *sweepWire) bodies() []string {
+	out := []string{}
+	for _, h := range w.sent() {
+		if h.body == "" {
+			continue
+		}
+		out = append(out, h.shape+"\n\t"+h.body)
+	}
+	return out
+}
+
 func (w *sweepWire) reset() {
 	w.mu.Lock()
 	w.hops = nil
@@ -280,6 +322,38 @@ func (w *sweepWire) reset() {
 // addressed by an encoded full path and whether a consumer's string stayed
 // inside its segment is exactly what the escaping sweep reads here.
 func sweepShapeOf(r *http.Request) string { return r.Method + " " + r.URL.EscapedPath() }
+
+// maxSweepBody is larger than any body this driver composes and small enough
+// that a bug producing an unbounded one is a failure rather than a hang.
+const maxSweepBody = 1 << 20
+
+// sweepBodyOf is what a request carried, read through GetBody so that reading it
+// does not consume the one the driver is about to send. It is re-marshalled from
+// a decode, so what the golden list below pins is the FIELDS AND VALUES and not
+// the order a map happens to render them in.
+func sweepBodyOf(r *http.Request) string {
+	if r.GetBody == nil {
+		return ""
+	}
+	rc, err := r.GetBody()
+	if err != nil {
+		return "<unreadable>"
+	}
+	defer rc.Close()
+	raw, err := io.ReadAll(io.LimitReader(rc, maxSweepBody))
+	if err != nil {
+		return "<unreadable>"
+	}
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return strconv.Quote(string(raw))
+	}
+	canonical, err := json.Marshal(decoded)
+	if err != nil {
+		return strconv.Quote(string(raw))
+	}
+	return string(canonical)
+}
 
 // ─────────────────────────────── the instance ───────────────────────────────
 
@@ -532,6 +606,98 @@ func TestTheSweepDiscoversEveryRequestShapeThisDriverIssues(t *testing.T) {
 	}
 	assert.Equal(t, sweptShapes, found,
 		"the requests this driver makes changed; every property in this file runs over the discovered set, so read the diff and say whether the new one is armed the way the others are")
+}
+
+// sweptBodies is every request this driver composes that CARRIES a body, pinned
+// by value.
+//
+// A path says which resource a request is about; a body says what it asks to be
+// done to it. Measured: enable_ssl_verification could be flipped to false and
+// each of four event flags turned on, one at a time, with the whole tree at exit
+// 0 — and the same held for the create body's visibility and description. The
+// hook body now has a test of its own as well, because that one is the whole
+// authentication of a delivery; this list is what makes the OTHER bodies facts.
+//
+// IT IS THE WHOLE BODY AND NOT A FIELD LIST: a field ADDED here is a value
+// nobody decided, and only equality fails on one. The GraphQL query is in it for
+// the same reason — Access is the authorization question, and which fields it
+// asks for is the answer's meaning.
+var sweptBodies = []string{
+	// THE QUERY IS SPELLED OUT rather than referred to. Writing accessQuery here
+	// would compare the driver with itself, and a golden that moves with what it
+	// pins pins nothing: dropping adminProject from the query — which is the
+	// difference between AccessAdmin and AccessWrite, and so between "may install
+	// a hook" and "may not" — left the whole tree at exit 0 while this list said
+	// accessQuery.
+	"POST /api/graphql\n\t" + sweepJSONOf(map[string]any{
+		"query": "query($fullPath: ID!) {\n" +
+			"  project(fullPath: $fullPath) {\n" +
+			"    userPermissions { pushCode adminProject }\n" +
+			"  }\n" +
+			"}",
+		"variables": map[string]any{"fullPath": victim + "/pay"},
+	}),
+	"POST /api/v4/projects\n\t" + sweepJSONOf(map[string]any{
+		"path": "pay", "name": "pay", "namespace_id": 42,
+		"visibility": "private", "description": sweepDescription,
+		"initialize_with_readme": false,
+	}),
+	"POST /api/v4/projects\n\t" + sweepJSONOf(map[string]any{
+		"path": "pay", "name": "pay", "namespace_id": 42,
+		"visibility": "public", "description": sweepDescription,
+		"initialize_with_readme": false,
+	}),
+	"POST /api/v4/projects/victim%2Fpay/deploy_keys\n\t" + sweepJSONOf(map[string]any{
+		"title": "tau", "key": "ssh-ed25519 AAAAC3Nz", "can_push": false,
+	}),
+	"POST /api/v4/projects/victim%2Fpay/hooks\n\t" + sweepJSONOf(map[string]any{
+		"url": sweepCallback, "push_events": true, "tag_push_events": false,
+		"enable_ssl_verification": true, "merge_requests_events": false,
+		"issues_events": false, "pipeline_events": false,
+		"repository_update_events": false, "token": sweepHookWire(),
+	}),
+}
+
+// sweepJSONOf renders an expected body the same way sweepBodyOf renders a real
+// one, so the two are compared as values rather than as spellings.
+func sweepJSONOf(v map[string]any) string {
+	out, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return string(out)
+}
+
+// sweepHookWire is the string the core derives from sweepSecret under this
+// driver's default scheme. It is derived rather than written down, because a
+// driver that mangled the wire string would otherwise be pinned to its own
+// mangling.
+func sweepHookWire() string {
+	wire, err := forge.SchemeSharedToken.Wire(forge.SecretFrom([]byte(sweepSecret)))
+	if err != nil {
+		panic(err)
+	}
+	return wire
+}
+
+// TestTheSweepPinsEveryRequestBodyThisDriverComposes.
+func TestTheSweepPinsEveryRequestBodyThisDriverComposes(t *testing.T) {
+	found := []string{}
+	for _, op := range sweepOps {
+		s := newSweepInstance(t)
+		_, err := op.call(context.Background(), s.reg, s.sess, s.key, benignArgs)
+		require.NoErrorf(t, err, "%s failed against an instance that answers everything correctly", op.name)
+		found = append(found, s.wire.bodies()...)
+	}
+	slices.Sort(found)
+	found = slices.Compact(found)
+	for _, b := range found {
+		t.Log(b)
+	}
+	expect := append([]string(nil), sweptBodies...)
+	slices.Sort(expect)
+	assert.Equal(t, expect, found,
+		"a request body this driver composes changed; every field in one is a decision, so read the diff and say which decision this is")
 }
 
 // TestEveryCapabilityThisDriverAnswersIsSwept is the closure on the one

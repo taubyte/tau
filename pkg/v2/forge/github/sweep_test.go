@@ -93,6 +93,21 @@ type sweepArgs struct{ handle, namespace, username string }
 // only if every one of the three survived as itself.
 const walkingSpelling = "../../attacker?a#b"
 
+const (
+	// sweepCallback and sweepSecret are FIXED rather than minted, because the
+	// body sweep below pins what this driver composes by value and a freshly
+	// minted secret derives a different wire string every run. Nothing about
+	// arbitrary key material is given up here: the conformance suite signs real
+	// deliveries with real minted secrets, and this file is about the request.
+	sweepCallback = "https://build.example.invalid/hook"
+	sweepSecret   = "github-sweep-hook-secret-0123456789abcdef"
+
+	// sweepDescription is a create option that is neither empty nor the name, so
+	// a driver that dropped it or sent something else in its place is visible in
+	// the body sweep. It was dropped, and nothing said so.
+	sweepDescription = "the repository tau was asked to make"
+)
+
 var (
 	benignArgs = sweepArgs{handle: "7", namespace: namespace, username: member}
 
@@ -161,7 +176,7 @@ var sweepOps = []sweepOp{
 		// is and then posts to /orgs/{owner}/repos.
 		name: "Create under an organization", caps: []forge.Capability{forge.CapCreate},
 		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
-			r, err := s.Create(ctx, k, forge.CreateOptions{Private: true})
+			r, err := s.Create(ctx, k, forge.CreateOptions{Private: true, Description: sweepDescription})
 			return r.Key, err
 		},
 	},
@@ -171,10 +186,15 @@ var sweepOps = []sweepOp{
 		// takes a different endpoint — the one that was armed by nothing for
 		// five rounds, because the only probe that reached Create answered
 		// /api/v3/user with a login the key's owner never was.
+		// It also asks for a PUBLIC repository, so that between the two rows both
+		// values of the option are on the wire: a driver that ignores Private is
+		// a driver that publishes a configuration repository, and one that always
+		// sends true is a driver that cannot make the public one tau was asked
+		// for.
 		name: "Create under the caller's own account", caps: []forge.Capability{forge.CapCreate},
 		owner: login,
 		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
-			r, err := s.Create(ctx, k, forge.CreateOptions{Private: true})
+			r, err := s.Create(ctx, k, forge.CreateOptions{Private: false, Description: sweepDescription})
 			return r.Key, err
 		},
 	},
@@ -199,15 +219,11 @@ var sweepOps = []sweepOp{
 	{
 		name: "RegisterPushHook", caps: []forge.Capability{forge.CapPushHooks, forge.CapSignatures},
 		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
-			secret, err := forge.NewSecret()
+			callback, err := url.Parse(sweepCallback)
 			if err != nil {
 				return nil, err
 			}
-			callback, err := url.Parse("https://build.example.invalid/hook")
-			if err != nil {
-				return nil, err
-			}
-			h, err := s.RegisterPushHook(ctx, k, callback, secret)
+			h, err := s.RegisterPushHook(ctx, k, callback, forge.SecretFrom([]byte(sweepSecret)))
 			return h.Handle, err
 		},
 	},
@@ -251,6 +267,7 @@ var sweepOps = []sweepOp{
 type hop struct {
 	shape      string
 	credential string
+	body       string
 }
 
 // wire records every hop, in order, and answers through the transport beneath
@@ -265,7 +282,7 @@ type wire struct {
 
 func (w *wire) RoundTrip(r *http.Request) (*http.Response, error) {
 	w.mu.Lock()
-	w.hops = append(w.hops, hop{shape: shapeOf(r), credential: r.Header.Get("Authorization")})
+	w.hops = append(w.hops, hop{shape: shapeOf(r), credential: r.Header.Get("Authorization"), body: bodyOf(r)})
 	w.mu.Unlock()
 	return w.base.RoundTrip(r)
 }
@@ -284,6 +301,18 @@ func (w *wire) shapes() []string {
 	return out
 }
 
+// bodies is every request that carried one, as "shape\n\tbody".
+func (w *wire) bodies() []string {
+	out := []string{}
+	for _, h := range w.sent() {
+		if h.body == "" {
+			continue
+		}
+		out = append(out, h.shape+"\n\t"+h.body)
+	}
+	return out
+}
+
 func (w *wire) reset() {
 	w.mu.Lock()
 	w.hops = nil
@@ -296,6 +325,38 @@ func (w *wire) reset() {
 // consumer's string stayed inside its segment is exactly what the escaping
 // sweep reads here.
 func shapeOf(r *http.Request) string { return r.Method + " " + r.URL.EscapedPath() }
+
+// bodyOf is what a request carried, read through GetBody so that reading it
+// does not consume the one the driver is about to send. It is re-marshalled
+// from a decode, so what the golden list below pins is the FIELDS AND VALUES
+// and not the order a struct happens to render them in.
+func bodyOf(r *http.Request) string {
+	if r.GetBody == nil {
+		return ""
+	}
+	rc, err := r.GetBody()
+	if err != nil {
+		return "<unreadable>"
+	}
+	defer rc.Close()
+	raw, err := io.ReadAll(io.LimitReader(rc, maxSweepBody))
+	if err != nil {
+		return "<unreadable>"
+	}
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return strconv.Quote(string(raw))
+	}
+	canonical, err := json.Marshal(decoded)
+	if err != nil {
+		return strconv.Quote(string(raw))
+	}
+	return string(canonical)
+}
+
+// maxSweepBody is larger than any body this driver composes and small enough
+// that a bug producing an unbounded one is a failure rather than a hang.
+const maxSweepBody = 1 << 20
 
 // ─────────────────────────────── the forge ───────────────────────────────
 
@@ -562,6 +623,62 @@ func TestTheSweepDiscoversEveryRequestShapeThisDriverIssues(t *testing.T) {
 	}
 	assert.Equal(t, sweptShapes, found,
 		"the requests this driver makes changed; every property in this file runs over the discovered set, so read the diff and say whether the new one is armed the way the others are")
+}
+
+// sweptBodies is every request this driver composes that CARRIES a body,
+// pinned by value.
+//
+// A path says which resource a request is about; a body says what it asks to be
+// done to it, and until this list nothing read most of one. Measured: the hook's
+// name stopped being "web", the deploy key stopped carrying the title its caller
+// chose, Create stopped sending Private and stopped sending Description — four
+// separate mutations, four times the whole tree at exit 0. A repository created
+// public when the caller asked for private is the sharpest of them, because tau
+// creates configuration repositories.
+//
+// IT IS THE WHOLE BODY AND NOT A FIELD LIST, for the reason the gitlab driver's
+// hook test gives: a field ADDED here is a value nobody decided, and only
+// equality fails on one.
+var sweptBodies = []string{
+	"POST /api/v3/app/installations/4242/access_tokens\n\t" +
+		`{"permissions":{"members":"read"}}`,
+	"POST /api/v3/orgs/acme/repos\n\t" +
+		`{"description":"` + sweepDescription + `","name":"pay","private":true}`,
+	"POST /api/v3/repos/acme/pay/hooks\n\t" +
+		`{"active":true,"config":{"content_type":"json","insecure_ssl":"0","secret":"` + sweepHookWire() + `","url":"` + sweepCallback + `"},"events":["push"],"name":"web"}`,
+	"POST /api/v3/repos/acme/pay/keys\n\t" +
+		`{"key":"ssh-ed25519 AAAAC3Nz","read_only":true,"title":"tau"}`,
+	"POST /api/v3/user/repos\n\t" +
+		`{"description":"` + sweepDescription + `","name":"pay","private":false}`,
+}
+
+// sweepHookWire is the string the core derives from sweepSecret under this
+// driver's scheme. It is derived rather than written down, because a driver that mangled
+// the wire string would otherwise be pinned to its own mangling.
+func sweepHookWire() string {
+	wire, err := forge.SchemeHubSHA256.Wire(forge.SecretFrom([]byte(sweepSecret)))
+	if err != nil {
+		panic(err)
+	}
+	return wire
+}
+
+// TestTheSweepPinsEveryRequestBodyThisDriverComposes.
+func TestTheSweepPinsEveryRequestBodyThisDriverComposes(t *testing.T) {
+	found := []string{}
+	for _, op := range sweepOps {
+		s := newSweepForge(t, op)
+		_, err := op.call(ctx(), s.reg, s.sess, s.key, benignArgs)
+		require.NoErrorf(t, err, "%s failed against a forge that answers everything correctly", op.name)
+		found = append(found, s.wire.bodies()...)
+	}
+	slices.Sort(found)
+	found = slices.Compact(found)
+	for _, b := range found {
+		t.Log(b)
+	}
+	assert.Equal(t, sweptBodies, found,
+		"a request body this driver composes changed; every field in one is a decision, so read the diff and say which decision this is")
 }
 
 // TestEveryCapabilityThisDriverAnswersIsSwept is the closure on the one
