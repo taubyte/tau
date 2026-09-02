@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/taubyte/tau/pkg/v2/forge/fake"
 )
 
 // THE LEDGER IS A PROGRAM, AND IT HAD NO GUARDS OF ITS OWN.
@@ -102,6 +104,7 @@ const (
 	ruleProofProvesNothing ruleName = "a proof that complains about nothing"
 	ruleOrphan             ruleName = "a contract assertion with no fault behind it"
 	ruleStrandedFault      ruleName = "a fault with no proof in front of it"
+	ruleFaultDoesNothing   ruleName = "a fault the proof does not need"
 )
 
 // ledger is everything the rules are read over: the suite's own source, the
@@ -112,6 +115,13 @@ type ledger struct {
 	pop    []assertion
 	proofs []proof
 	said   map[string]*recorder
+
+	// without is what the suite says about a proof's subject when ONE of its
+	// faults is taken away and everything else is left alone. It is the
+	// counterfactual the causal rule is read over, and it is recorded here
+	// rather than computed inside a rule because a rule is a function of the
+	// ledger and of nothing else.
+	without map[string]map[fake.Fault]*recorder
 }
 
 // rule is a check and the fault behind it.
@@ -143,6 +153,7 @@ func ledgerRules() []rule {
 		{ruleProofProvesNothing, checkProofProvesNothing, violateProofProvesNothing},
 		{ruleOrphan, checkOrphan, violateOrphan},
 		{ruleStrandedFault, checkStrandedFault, violateStrandedFault},
+		{ruleFaultDoesNothing, checkFaultDoesNothing, violateFaultDoesNothing},
 	}
 }
 
@@ -254,13 +265,25 @@ func theLedger(t *testing.T) *ledger {
 	t.Helper()
 	ledgerOnce.Do(func() {
 		l := &ledger{
-			src:    suiteSource(t),
-			proofs: allProofs(),
-			said:   map[string]*recorder{},
+			src:     suiteSource(t),
+			proofs:  allProofs(),
+			said:    map[string]*recorder{},
+			without: map[string]map[fake.Fault]*recorder{},
 		}
 		l.pop = populationOf(l.src)
 		for _, p := range l.proofs {
-			l.said[p.name] = record(p.subject(t))
+			l.said[p.name] = record(p.subject(t, p.faults))
+			if len(p.faults) == 0 {
+				continue
+			}
+			// And the same subject once more for each fault, without it. This
+			// is the whole of the causal rule's material: what the suite says
+			// when one named mistake is put back.
+			short := map[fake.Fault]*recorder{}
+			for _, f := range p.faults {
+				short[f] = record(p.subject(t, dropping(p.faults, f)))
+			}
+			l.without[p.name] = short
 		}
 		theOne = l
 	})
@@ -518,6 +541,91 @@ func checkStrandedFault(l *ledger) []complaint {
 			"no proof injects this fault, so the mistake it makes a driver commit is one nothing in this suite is shown to catch; either a proof was deleted, or the assertion it proved was demoted out from under it"})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].at < out[j].at })
+	return out
+}
+
+// checkFaultDoesNothing is the fault closure made CAUSAL, and causation is the
+// half a list could never be.
+//
+// The stranded-fault rule reads the population of faults and requires each one
+// to appear in SOME proof's faults. Appearing in a list is not evidence of
+// anything, and the last defect went straight through the middle of it.
+// Measured, three edits: delete the assertion that the installed deploy key is
+// read-only, delete the two-line proof that named it, and append its fault to
+// the neighbouring proof's list. Every fault still named, every rule still
+// quiet, gofmt clean, vet clean, GO_TEST_EXIT=0 — a driver that installs a
+// WRITABLE deploy key passing the whole conformance suite, with the only trace
+// an unasserted census line moving 183 to 182.
+//
+// So the question is not whether a fault is NAMED but whether it is WHY. Build
+// the same subject without it, run the suite again, and require at least one of
+// the complaints this proof names to stop being made. A fault whose absence the
+// suite cannot tell proves nothing about anything the proof names, and the
+// assertion it was written for has nothing behind it any more.
+//
+// It is asked of each fault ON ITS OWN, over a subject that still has the
+// others, so a proof that honestly needs two faults — a redirect that has to be
+// followed before the record it answers with can be wrong — holds: take either
+// away and a complaint the proof names goes with it.
+func checkFaultDoesNothing(l *ledger) []complaint {
+	var out []complaint
+	for _, p := range l.proofs {
+		if len(p.faults) == 0 {
+			continue
+		}
+		named, _ := names(l.pop, p)
+		with := map[string][]string{}
+		if rec := l.said[p.name]; rec != nil {
+			with, _ = attribute(l.pop, rec.msgs)
+		}
+		for _, f := range distinctFaults(p.faults) {
+			rec, ran := l.without[p.name][f]
+			if !ran || rec == nil {
+				out = append(out, complaint{ruleFaultDoesNothing, p.name,
+					fmt.Sprintf("nothing ran this proof's subject without %s, so whether that fault is why the suite complains was never asked: a fault nothing has been shown to cause is a fault in a list", f)})
+				continue
+			}
+			without, _ := attribute(l.pop, rec.msgs)
+			needed := false
+			for id := range named {
+				if len(with[id]) > 0 && len(without[id]) == 0 {
+					needed = true
+				}
+			}
+			if !needed {
+				out = append(out, complaint{ruleFaultDoesNothing, p.name,
+					fmt.Sprintf("taking %s away leaves every complaint this proof names still being made, so nothing this proof proves is that fault's doing: the fault is in a list and behind no assertion, and whatever it was written for can be deleted with nothing noticing", f)})
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].text < out[j].text })
+	return out
+}
+
+// dropping is a fault list with one fault taken out of it, which is the only
+// difference between the two runs the rule above compares. It removes the fault
+// by VALUE and not by position: a list naming the same fault twice names one
+// mistake, and a subject built without it must not still have it.
+func dropping(faults []fake.Fault, drop fake.Fault) []fake.Fault {
+	var out []fake.Fault
+	for _, f := range faults {
+		if f != drop {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// distinctFaults is the mistakes a proof injects, each asked about once.
+func distinctFaults(faults []fake.Fault) []fake.Fault {
+	seen := map[fake.Fault]bool{}
+	var out []fake.Fault
+	for _, f := range faults {
+		if !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
 	return out
 }
 

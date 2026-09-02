@@ -28,10 +28,19 @@ import (
 // and the only way to make it, which is the point — an assertion quietly
 // reclassified is the defect this whole file exists to close, one level up.
 type proof struct {
-	name    string
-	subject func(t *testing.T) Subject
-	says    []string
-	stops   []string
+	name string
+
+	// subject builds this proof's subject with a GIVEN set of faults, rather
+	// than closing over one. That is what makes the fault closure CAUSAL: the
+	// ledger can build the same subject WITHOUT one of the faults, run the
+	// suite over it again, and ask what stopped being said. A fault that is
+	// merely in a list is evidence of nothing — measured, a fault moved into a
+	// neighbouring proof's list left the whole tree at exit 0 with the
+	// assertion it was written for deleted.
+	subject func(t *testing.T, faults []fake.Fault) Subject
+
+	says  []string
+	stops []string
 
 	// faults is what this proof injects, and it is written down so the ledger
 	// can read the population of FAULTS the way it reads the population of
@@ -54,15 +63,21 @@ func allProofs() []proof {
 func faultProofs() []proof {
 	var out []proof
 	add := func(name string, sh fake.Shape, faults []fake.Fault, says ...string) {
-		shape := sh
-		for _, f := range faults {
-			shape = faulty(shape, f)
-		}
 		out = append(out, proof{
-			name:    name,
-			subject: func(t *testing.T) Subject { return subjectFor(t, "broken", shape) },
-			says:    says,
-			faults:  faults,
+			name: name,
+			// The faults are read off the argument and not off the closure, so
+			// that a subject with one of them taken away is the SAME subject
+			// built the same way, and the difference between the two runs is
+			// the fault and nothing else.
+			subject: func(t *testing.T, fs []fake.Fault) Subject {
+				shape := sh
+				for _, f := range fs {
+					shape = faulty(shape, f)
+				}
+				return subjectFor(t, "broken", shape)
+			},
+			says:   says,
+			faults: faults,
 		})
 	}
 
@@ -361,8 +376,14 @@ func faultProofs() []proof {
 // driver does not have, and every probe the suite cannot run without.
 func subjectProofs() []proof {
 	var out []proof
+	// These proofs inject no fault: the SUBJECT is what is wrong, so there is
+	// nothing to take away and the fault list stays empty. A subject proof given
+	// a fault would be one whose builder ignores it, and the causal rule says so
+	// out loud — taking it away changes nothing the proof claims.
 	add := func(name string, build func(t *testing.T) Subject, says ...string) {
-		out = append(out, proof{name: name, subject: build, says: says})
+		out = append(out, proof{name: name,
+			subject: func(t *testing.T, _ []fake.Fault) Subject { return build(t) },
+			says:    says})
 	}
 
 	// A capability set that does not match the driver, from both directions. A

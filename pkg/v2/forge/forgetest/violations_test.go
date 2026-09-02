@@ -3,6 +3,8 @@ package forgetest
 import (
 	"strings"
 	"testing"
+
+	"github.com/taubyte/tau/pkg/v2/forge/fake"
 )
 
 // THE FAULTS BEHIND THE LEDGER'S OWN RULES.
@@ -27,12 +29,17 @@ import (
 // but is this ledger with a different set of proofs, and whatever the suite is
 // recorded as having said about them.
 func (l *ledger) but(proofs []proof, said map[string]*recorder) *ledger {
-	out := &ledger{src: l.src, pop: l.pop, proofs: proofs, said: map[string]*recorder{}}
+	out := &ledger{src: l.src, pop: l.pop, proofs: proofs,
+		said:    map[string]*recorder{},
+		without: map[string]map[fake.Fault]*recorder{}}
 	for k, v := range l.said {
 		out.said[k] = v
 	}
 	for k, v := range said {
 		out.said[k] = v
+	}
+	for k, v := range l.without {
+		out.without[k] = v
 	}
 	return out
 }
@@ -246,6 +253,78 @@ func violateStrandedFault(t *testing.T) *ledger {
 	}
 	t.Fatalf("every fault in the fake forge is injected by more than one proof, so no single deletion strands one")
 	return nil
+}
+
+// violateFaultDoesNothing is the laundering that started this round, run for
+// real: a proof carrying one more fault than anything it says depends on.
+//
+// It is built out of the suite's own material rather than by hand. A proof that
+// injects a fault is given a SECOND one, taken from another proof, and both
+// runs the rule compares are really recorded — the subject with both, and the
+// subject with the borrowed one taken away. The second is the proof's own run,
+// so every complaint it names is still made, and the borrowed fault is behind
+// none of them. That is a fault moved into a neighbouring proof's list, which
+// is exactly the edit that laundered a live contract out of the suite.
+//
+// The pair is chosen by what it does and not by what it is called: any proof
+// whose complaints survive being given the extra fault will do, and one that
+// does not survive is skipped rather than argued with.
+func violateFaultDoesNothing(t *testing.T) *ledger {
+	l := theLedger(t)
+	for _, p := range l.proofs {
+		if len(p.faults) == 0 || l.said[p.name] == nil {
+			continue
+		}
+		named, _ := names(l.pop, p)
+		if len(named) == 0 {
+			continue
+		}
+		for _, q := range l.proofs {
+			borrowed, ok := aFaultNotIn(q.faults, p.faults)
+			if !ok {
+				continue
+			}
+			more := append(append([]fake.Fault{}, p.faults...), borrowed)
+			said := record(p.subject(t, more))
+			fired, _ := attribute(l.pop, said.msgs)
+			still := false
+			for id := range named {
+				if len(fired[id]) > 0 {
+					still = true
+				}
+			}
+			if !still {
+				continue // the extra fault took this proof's own complaint away
+			}
+			broken := l.but([]proof{{name: p.name, subject: p.subject, says: p.says,
+				stops: p.stops, faults: more}}, map[string]*recorder{p.name: said})
+			runs := map[fake.Fault]*recorder{}
+			for _, f := range more {
+				runs[f] = record(p.subject(t, dropping(more, f)))
+			}
+			broken.without = map[string]map[fake.Fault]*recorder{p.name: runs}
+			return broken
+		}
+	}
+	t.Fatalf("no proof in the suite survives being given a second fault, so the ledger cannot be shown a fault that does nothing")
+	return nil
+}
+
+// aFaultNotIn is a fault one proof injects that another does not, which is what
+// a fault moved into a neighbouring list is.
+func aFaultNotIn(faults, exclude []fake.Fault) (fake.Fault, bool) {
+	for _, f := range faults {
+		found := false
+		for _, e := range exclude {
+			if e == f {
+				found = true
+			}
+		}
+		if !found {
+			return f, true
+		}
+	}
+	return "", false
 }
 
 // ─────────────────────── finding real material to break ───────────────────────
