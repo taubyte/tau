@@ -132,13 +132,52 @@ func (k kind) String() string {
 	return "a contract assertion"
 }
 
-// assertion is one failure-producing call in this suite's own source.
+// assertion is one CASE: a failure-producing call in this suite's own source,
+// reached through one particular chain of call sites.
+//
+// A case and a site are not the same thing, and the ledger used to count the
+// site. reject in optional.go is one closure with two assertion sites shared by
+// nine table rows; assertRepository is one function with five, reached from six
+// places. A proof needed ONE row to fire and the site was proven, so every one
+// of the nine rows and half the six call sites could be deleted with the tree
+// at exit 0 — measured. A table-driven assertion is one site and many
+// contracts.
+//
+// So the unit is the case, the words of a case are its format with the constant
+// arguments of its own call chain substituted in, and a proof names a case by
+// those words. Deleting a row deletes the case, the words its proof names stop
+// existing, and the proof fails saying so.
+//
+// A helper reached from several places therefore has to carry which place it
+// was reached from into what it says — the row's name, the fixture's name, the
+// capability. Where it does not, two cases say the same thing, and that is the
+// collision rule, which fails the build naming both.
 type assertion struct {
-	site string // "run.go:729", the way a stack frame spells it
-	call string // "assert.Error"
-	says string // the message literal, which is this assertion's name
-	in   string // "run.go:capabilities", the function it is written in
-	kind kind
+	id    string // the case: this site, and the chain that reaches it
+	site  string // "run.go:729", the way a stack frame spells it
+	where string // the call site this case comes through, for a human
+	call  string // "assert.Error"
+	says  string // what it says HERE, with this chain's constants filled in
+	in    string // "capabilities", the function it is written in
+	kind  kind
+}
+
+// callable is a function, a method, or a closure a function bound to a name:
+// anything a case can pass through on its way to an assertion.
+type callable struct {
+	obj    types.Object
+	name   string
+	file   string
+	body   *ast.BlockStmt
+	params []*types.Var
+	lit    *ast.FuncLit // set for a named closure, so its parent skips its body
+}
+
+// edge is one call of one callable.
+type edge struct {
+	from *callable
+	to   *callable
+	call *ast.CallExpr
 }
 
 // failing is the set of methods that fail a testing.TB. A receiver can be
@@ -479,44 +518,330 @@ func (s *source) site(p token.Pos) string {
 	return fmt.Sprintf("%s:%d", filepath.Base(pos.Filename), pos.Line)
 }
 
-// population is every assertion in the suite, read out of the type-checked
-// source.
+// population is every CASE in the suite, read out of the type-checked source.
 func population(t *testing.T) []assertion {
 	t.Helper()
 	return populationOf(suiteSource(t))
 }
 
 func populationOf(src *source) []assertion {
+	callables, order := src.callables()
+	callers := src.callers(callables, order)
+
 	var out []assertion
-	for _, file := range src.pkg.Syntax {
-		enclosing := ""
+	seenStep := map[string]bool{}
+	for _, c := range order {
+		for _, call := range src.assertionsIn(c, callables) {
+			f, _ := src.howItFails(call)
+			site := src.site(call.Pos())
+
+			// A step needs no fault, so splitting one into cases buys nothing
+			// and costs the ledger a way to tell two of them apart. One entry,
+			// at the site where it is written.
+			if f.kind == plumbing {
+				if seenStep[site] {
+					continue
+				}
+				seenStep[site] = true
+				out = append(out, assertion{
+					id: site, site: site, call: f.spelling, in: c.name, kind: plumbing,
+					says: literalArg(call, f.at),
+				})
+				continue
+			}
+
+			format := literalArg(call, f.at)
+			var args []ast.Expr
+			if f.at+1 <= len(call.Args) {
+				args = call.Args[f.at+1:]
+			}
+			for _, chain := range src.chainsFor(c, args, callers) {
+				bound, id, where := src.bind(chain), site, ""
+				for _, e := range chain {
+					where = src.site(e.call.Pos())
+					id += " via " + where
+				}
+				out = append(out, assertion{
+					id: id, site: site, where: where, call: f.spelling, in: c.name, kind: contract,
+					says: src.render(format, call, f.at, bound),
+				})
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
+	return out
+}
+
+// callables is every function, method and named closure in the suite, in a
+// stable order.
+func (s *source) callables() (map[types.Object]*callable, []*callable) {
+	byObj := map[types.Object]*callable{}
+	var order []*callable
+	add := func(obj types.Object, name string, body *ast.BlockStmt, sig *types.Signature, lit *ast.FuncLit) {
+		if obj == nil || body == nil || sig == nil || byObj[obj] != nil {
+			return
+		}
+		var params []*types.Var
+		for i := 0; i < sig.Params().Len(); i++ {
+			params = append(params, sig.Params().At(i))
+		}
+		c := &callable{obj: obj, name: name, file: filepath.Base(s.position(body.Pos()).Filename),
+			body: body, params: params, lit: lit}
+		byObj[obj] = c
+		order = append(order, c)
+	}
+	for _, file := range s.pkg.Syntax {
 		ast.Inspect(file, func(n ast.Node) bool {
-			if fn, ok := n.(*ast.FuncDecl); ok {
-				if src.isMarkerDecl(fn) {
+			switch v := n.(type) {
+			case *ast.FuncDecl:
+				if s.isMarkerDecl(v) {
 					return false
 				}
-				enclosing = filepath.Base(src.position(fn.Pos()).Filename) + ":" + fn.Name.Name
+				obj, _ := s.pkg.TypesInfo.Defs[v.Name].(*types.Func)
+				if obj == nil {
+					return true
+				}
+				sig, _ := obj.Type().(*types.Signature)
+				add(obj, v.Name.Name, v.Body, sig, nil)
+			case *ast.AssignStmt:
+				if len(v.Lhs) != 1 || len(v.Rhs) != 1 {
+					return true
+				}
+				lit, ok := v.Rhs[0].(*ast.FuncLit)
+				if !ok {
+					return true
+				}
+				id, ok := v.Lhs[0].(*ast.Ident)
+				if !ok {
+					return true
+				}
+				obj := s.pkg.TypesInfo.Defs[id]
+				if obj == nil {
+					obj = s.pkg.TypesInfo.Uses[id]
+				}
+				sig, _ := s.pkg.TypesInfo.TypeOf(lit).(*types.Signature)
+				add(obj, id.Name, lit.Body, sig, lit)
 			}
+			return true
+		})
+	}
+	return byObj, order
+}
+
+// callers is who calls what, which is how a case knows where it came through.
+func (s *source) callers(byObj map[types.Object]*callable, order []*callable) map[*callable][]edge {
+	out := map[*callable][]edge{}
+	for _, c := range order {
+		s.walkOwn(c, byObj, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			f, ok := src.howItFails(call)
-			if !ok {
-				return true
+			if to := byObj[s.called(call)]; to != nil {
+				out[to] = append(out[to], edge{from: c, to: to, call: call})
 			}
-			out = append(out, assertion{
-				site: src.site(call.Pos()),
-				call: f.spelling,
-				says: literalArg(call, f.at),
-				in:   enclosing,
-				kind: f.kind,
-			})
 			return true
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].site < out[j].site })
 	return out
+}
+
+// walkOwn walks the part of a callable's body that is ITS OWN: a named closure
+// inside it is walked in its own right and skipped here, and an inline literal
+// is part of the body it is written in.
+func (s *source) walkOwn(c *callable, byObj map[types.Object]*callable, f func(ast.Node) bool) {
+	ast.Inspect(c.body, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.FuncLit); ok {
+			for _, other := range byObj {
+				if other.lit == lit {
+					return false
+				}
+			}
+		}
+		return f(n)
+	})
+}
+
+// assertionsIn is every failing call written in a callable's own body.
+func (s *source) assertionsIn(c *callable, byObj map[types.Object]*callable) []*ast.CallExpr {
+	var out []*ast.CallExpr
+	s.walkOwn(c, byObj, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if _, ok := s.howItFails(call); ok {
+			out = append(out, call)
+		}
+		return true
+	})
+	return out
+}
+
+// chainsFor is every way the suite reaches ONE assertion, as a chain of call
+// sites, and it climbs exactly as far as that assertion's WORDS need and no
+// further.
+//
+// The rule is the whole design. An assertion's message may name things its own
+// function was handed — the table row, the fixture, the capability, the label a
+// caller supplied — and until those are constants the ledger cannot tell one
+// case from another. So: while a word is still a parameter somebody else
+// decides, climb to whoever decides it; when nothing is left to decide, stop.
+//
+// Climbing further would be wrong, not merely wasteful. Run calls run from two
+// branches, so climbing to the top multiplies EVERY assertion in the suite by
+// two, and those are not two contracts — it is one suite started two ways. And
+// stopping short would be wrong too: assertRecord is reached through
+// assertRepository, which passes down its own caller's word, so one level
+// leaves six records saying the same thing.
+func (s *source) chainsFor(c *callable, args []ast.Expr, callers map[*callable][]edge) [][]edge {
+	type frame struct {
+		at    *callable
+		chain []edge
+		alias map[types.Object]*types.Var // an argument, and the parameter that still decides it
+	}
+	start := frame{at: c, alias: map[types.Object]*types.Var{}}
+	for _, arg := range args {
+		id, ok := ast.Unparen(arg).(*ast.Ident)
+		if !ok {
+			continue
+		}
+		obj := s.pkg.TypesInfo.Uses[id]
+		if v := paramAt(c, obj); v != nil {
+			start.alias[obj] = v
+		}
+	}
+
+	var out [][]edge
+	queue := []frame{start}
+	for len(queue) > 0 {
+		f := queue[0]
+		queue = queue[1:]
+		if len(f.alias) == 0 || len(callers[f.at]) == 0 || len(f.chain) >= 8 {
+			out = append(out, f.chain)
+			continue
+		}
+		for _, e := range callers[f.at] {
+			next := frame{at: e.from, chain: append(append([]edge{}, f.chain...), e), alias: map[types.Object]*types.Var{}}
+			for obj, param := range f.alias {
+				i := indexOf(f.at.params, param)
+				if i < 0 || i >= len(e.call.Args) {
+					continue
+				}
+				arg := ast.Unparen(e.call.Args[i])
+				if _, ok := constantArg(s.pkg.TypesInfo, arg); ok {
+					continue // decided here; nothing left to climb for
+				}
+				if id, ok := arg.(*ast.Ident); ok {
+					if v := paramAt(e.from, s.pkg.TypesInfo.Uses[id]); v != nil {
+						next.alias[obj] = v
+					}
+				}
+			}
+			queue = append(queue, next)
+		}
+	}
+	return out
+}
+
+func paramAt(c *callable, obj types.Object) *types.Var {
+	v, ok := obj.(*types.Var)
+	if !ok {
+		return nil
+	}
+	for _, p := range c.params {
+		if p == v {
+			return v
+		}
+	}
+	return nil
+}
+
+func indexOf(params []*types.Var, want *types.Var) int {
+	for i, p := range params {
+		if p == want {
+			return i
+		}
+	}
+	return -1
+}
+
+// bind is what the constants along one chain of call sites make of the
+// arguments an assertion's message names. It is how "a delivery signed an hour
+// ago" gets from a table row into the words of the assertion that row is a
+// contract of.
+func (s *source) bind(chain []edge) map[types.Object]string {
+	// Innermost first: each edge decides its callee's parameters, and a
+	// parameter passed straight through is decided one level further out.
+	bound := map[types.Object]string{}
+	alias := map[types.Object]*types.Var{}
+	for _, e := range chain {
+		next := map[types.Object]string{}
+		nextAlias := map[types.Object]*types.Var{}
+		for i, arg := range e.call.Args {
+			if i >= len(e.to.params) {
+				break
+			}
+			param := e.to.params[i]
+			if v, ok := constantArg(s.pkg.TypesInfo, ast.Unparen(arg)); ok {
+				next[param] = v
+				continue
+			}
+			if id, ok := ast.Unparen(arg).(*ast.Ident); ok {
+				if v := paramAt(e.from, s.pkg.TypesInfo.Uses[id]); v != nil {
+					nextAlias[param] = v
+				}
+			}
+		}
+		// What this level decided, written onto whatever was waiting for it.
+		for obj, param := range alias {
+			if v, ok := next[param]; ok {
+				bound[obj] = v
+				continue
+			}
+			if v, ok := nextAlias[param]; ok {
+				nextAlias[obj] = v
+			}
+		}
+		for param, v := range next {
+			bound[param] = v
+		}
+		alias = nextAlias
+	}
+	return bound
+}
+
+// render is what an assertion says in ONE case: its format, with the arguments
+// this chain makes constant written in where their verbs are. An argument the
+// chain does not decide keeps its verb, and containsFormat reads what is left
+// the same way it always has.
+func (s *source) render(format string, call *ast.CallExpr, at int, bound map[types.Object]string) string {
+	args := call.Args
+	if at+1 <= len(args) {
+		args = args[at+1:]
+	} else {
+		args = nil
+	}
+	i := -1
+	return verb.ReplaceAllStringFunc(format, func(v string) string {
+		i++
+		if i >= len(args) {
+			return v
+		}
+		value, ok := constantArg(s.pkg.TypesInfo, args[i])
+		if !ok {
+			if id, ok2 := ast.Unparen(args[i]).(*ast.Ident); ok2 {
+				value, ok = bound[s.pkg.TypesInfo.Uses[id]]
+			}
+		}
+		if !ok {
+			return v
+		}
+		if strings.HasSuffix(v, "q") {
+			return strconv.Quote(value)
+		}
+		return value
+	})
 }
 
 // literalArg is the message a call carries, or "" for a call whose message is
@@ -551,40 +876,46 @@ func constantArg(info *types.Info, arg ast.Expr) (string, bool) {
 // frame, because everything above it is the suite's own stack.
 var trace = regexp.MustCompile(`Error Trace:\s+\S*?([^/\s]+\.go:\d+)`)
 
-// attribute turns what the recorder captured into the assertions that produced
-// it, and keeps the words each one said — the ledger reads those words to tell
-// a step the suite could not take from a claim somebody demoted. A failure it
+// attribute turns what the recorder captured into the CASES that produced it,
+// and keeps the words each one said — the ledger reads those words to tell a
+// step the suite could not take from a claim somebody demoted. A failure it
 // cannot place is a failure this file cannot reason about, so it says so rather
 // than dropping it.
+//
+// The trace names the SITE. Where a site holds one case that is the answer;
+// where it holds several — a helper reached from six places, a closure called
+// by nine table rows — the case is the one whose words the message says, which
+// is why two cases saying the same thing is a build failure.
 func attribute(pop []assertion, msgs []string) (map[string][]string, []complaint) {
-	bySite := make(map[string]assertion, len(pop))
+	atSite := map[string][]assertion{}
 	for _, a := range pop {
-		bySite[a.site] = a
+		atSite[a.site] = append(atSite[a.site], a)
 	}
 	var said []complaint
 	fired := make(map[string][]string)
 	for _, msg := range msgs {
+		candidates := pop
 		if g := trace.FindStringSubmatch(msg); g != nil {
-			if _, ok := bySite[g[1]]; !ok {
+			candidates = atSite[g[1]]
+			if len(candidates) == 0 {
 				said = append(said, complaint{ruleFailureFromNowhere, g[1],
 					"a failure came from here, which is not an assertion this file found in the suite's source:\n" + msg})
 				continue
 			}
-			fired[g[1]] = append(fired[g[1]], msg)
-			continue
+			if len(candidates) == 1 {
+				fired[candidates[0].id] = append(fired[candidates[0].id], msg)
+				continue
+			}
 		}
-		// No trace: the suite's own Errorf and Fatalf, and the markers, which
-		// are placed by their message instead. It has to be exactly one, and
-		// messages are unique, so it is.
 		var hits []string
-		for _, a := range pop {
+		for _, a := range candidates {
 			if a.says != "" && containsFormat(msg, a.says) {
-				hits = append(hits, a.site)
+				hits = append(hits, a.id)
 			}
 		}
 		if len(hits) != 1 {
 			said = append(said, complaint{ruleUnplaceable, fmt.Sprintf("%v", hits),
-				fmt.Sprintf("a failure names %d assertions and must name one; it is unattributable, so nothing here can say which assertion is load-bearing:\n%s", len(hits), msg)})
+				fmt.Sprintf("a failure names %d cases and must name one; it is unattributable, so nothing here can say which one is load-bearing:\n%s", len(hits), msg)})
 			continue
 		}
 		fired[hits[0]] = append(fired[hits[0]], msg)

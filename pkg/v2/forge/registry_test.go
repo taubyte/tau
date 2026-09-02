@@ -644,3 +644,131 @@ func TestErrorsSayWhichQuestionWentUnanswered(t *testing.T) {
 		assert.Contains(t, tc.err.Error(), tc.saying)
 	}
 }
+
+// TestEverySchemeRefusesEveryWayADeliveryCanBeWrong is where the conformance
+// suite's delivery mutations live now, and it is the place the fault that can
+// kill them lives.
+//
+// They used to run in pkg/v2/forge/forgetest, once per driver, as
+// `reject("a body with one byte changed", …)` and six more like it. Nothing a
+// driver or a probe does decides whether VerifyPush refuses a mutated delivery:
+// the core verifies BEFORE any driver code runs, so no fault a conformance
+// suite can inject reaches those assertions, and all seven were individually
+// deletable with the tree at exit 0 — measured. In a driver suite they were
+// decoration, by that suite's own rule; here the code under test is the thing
+// that refuses, so a fault in it fails them by name.
+//
+// It runs every mutation against EVERY scheme this package implements, which
+// the conformance suite could not: a driver has one.
+//
+// A hook with NO SECRET is not one of them, and the absence is deliberate. The
+// suite's row for it only ever asserted a refusal, and refusal there is
+// defended twice — VerifyPush's own guard, and then a MAC that cannot match a
+// key nothing derived — so removing the guard leaves the row green. The subtest
+// above asserts the REASON that guard gives, which is what removing it breaks,
+// and that is the sharper of the two.
+func TestEverySchemeRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
+	k := key(t, "https://"+stubHost+"/acme/pay")
+	body := []byte(`{"anything":true}`)
+	claim := PushClaim{Repository: k, Ref: "refs/heads/main", Commit: strings.Repeat("a", 40)}
+
+	for _, scheme := range []Scheme{
+		SchemeHubSHA256, SchemeStandardWebhooks, SchemeBitbucketSHA256, SchemeSharedToken,
+	} {
+		t.Run(string(scheme), func(t *testing.T) {
+			secret := vectorSecret()
+			// AllowUnboundSchemes so the one scheme that binds nothing is
+			// exercised here rather than refused by policy; the policy refusal
+			// is its own case above.
+			reg, err := New(Policy{AllowUnboundSchemes: true},
+				Binding{Host: stubHost, Driver: &stub{host: stubHost, scheme: scheme, claim: claim}})
+			require.NoError(t, err)
+
+			hook := Hook{Key: k, Handle: "h", Scheme: scheme, Secret: secret}
+			hdr, err := Sign(scheme, secret, body, "msg_1", time.Now())
+			require.NoError(t, err)
+			good := Delivery{Header: hdr, Body: body}
+
+			push, err := reg.VerifyPush(hook, good)
+			require.NoError(t, err, "the correctly signed delivery every mutation below is a mutation OF")
+			require.Equal(t, Push{Key: k, Ref: claim.Ref, Commit: claim.Commit}, push)
+
+			other, err := NewSecret()
+			require.NoError(t, err)
+			underOther := hook
+			underOther.Secret = other
+			wrongScheme := hook
+			wrongScheme.Scheme = otherImplemented(scheme)
+
+			for _, tc := range []struct {
+				name string
+				hook Hook
+				d    Delivery
+				skip bool
+			}{
+				{name: "a body with one byte changed", hook: hook,
+					d:    Delivery{Header: good.Header.Clone(), Body: flipOne(good.Body)},
+					skip: !scheme.BindsBody()},
+				{name: "a body with one byte appended", hook: hook,
+					d:    Delivery{Header: good.Header.Clone(), Body: append(append([]byte(nil), good.Body...), ' ')},
+					skip: !scheme.BindsBody()},
+				{name: "a delivery with no headers at all", hook: hook,
+					d: Delivery{Body: good.Body}},
+				{name: "a delivery whose headers were each truncated by one character", hook: hook,
+					d: Delivery{Header: truncateValues(good.Header), Body: good.Body}},
+				{name: "a signature under a different secret", hook: underOther, d: good},
+				{name: "a hook whose recorded scheme is a different one", hook: wrongScheme, d: good},
+			} {
+				if tc.skip {
+					continue
+				}
+				t.Run(tc.name, func(t *testing.T) {
+					got, err := reg.VerifyPush(tc.hook, tc.d)
+					assert.Error(t, err, "%s was accepted", tc.name)
+					assert.Equal(t, Push{}, got, "%s produced a Push beside its error", tc.name)
+				})
+			}
+		})
+	}
+}
+
+// otherImplemented is any scheme this package implements that is not s, so "the
+// hook was recorded under one procedure and checked under another" can be
+// asserted without naming a forge.
+func otherImplemented(s Scheme) Scheme {
+	for _, candidate := range []Scheme{
+		SchemeHubSHA256, SchemeStandardWebhooks, SchemeBitbucketSHA256, SchemeSharedToken,
+	} {
+		if candidate != s {
+			return candidate
+		}
+	}
+	return s
+}
+
+func flipOne(b []byte) []byte {
+	out := append([]byte(nil), b...)
+	if len(out) > 0 {
+		out[len(out)/2] ^= 0x20
+	}
+	return out
+}
+
+// truncateValues shortens every header value by one character. It is blunt on
+// purpose: this does not know which header carries a given scheme's signature,
+// and every scheme must refuse a delivery whose headers no longer say what they
+// said when it was signed.
+func truncateValues(h http.Header) http.Header {
+	out := make(http.Header, len(h))
+	for k, vs := range h {
+		cut := make([]string, 0, len(vs))
+		for _, v := range vs {
+			if len(v) > 0 {
+				v = v[:len(v)-1]
+			}
+			cut = append(cut, v)
+		}
+		out[k] = cut
+	}
+	return out
+}

@@ -282,12 +282,20 @@ func (f *Forge) NoPushKey() []byte { return []byte("fake-ssh-key-read-only") }
 
 // ─────────────────────────── the shared implementation ───────────────────────────
 
+// identityPath is where this forge answers "who is this credential", and it is
+// named because one fault sends that one request somewhere else.
+const identityPath = "/api/user"
+
 // record writes down what this forge would have sent, and remembers which
 // repository the address is for. The credential goes in an Authorization
 // header, which is where a driver must put it; FaultLeaksTokenInURL puts it
 // where it must not.
 func (c *core) record(method, path, token string, about repokey.Key) {
-	url := "https://" + c.shape.Host + path
+	host := c.shape.Host
+	if path == identityPath && c.shape.faulty(FaultAsksAnotherHostWhoThisIs) {
+		host = "elsewhere.invalid"
+	}
+	url := "https://" + host + path
 	if c.shape.faulty(FaultLeaksTokenInURL) && token != "" {
 		url += "?access_token=" + token
 	}
@@ -561,6 +569,9 @@ func (c *core) repository(r *repo, asked repokey.Key) forge.Repository {
 		branch = ""
 	}
 	key := r.key
+	if c.shape.faulty(FaultTheRecordNamesAnotherRepository) {
+		key = c.parse("acme/elsewhere")
+	}
 	if c.shape.faulty(FaultEchoesKey) {
 		// ONE defect and only one: the argument is echoed back, and the clone
 		// addresses are left saying what the forge actually served. On every

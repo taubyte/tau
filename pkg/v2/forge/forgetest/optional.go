@@ -19,7 +19,7 @@ func (r *runner) list(t tb) {
 	t.Helper()
 	sess := r.session(t, r.s.Writable)
 	if !r.s.Expect.Has(forge.CapList) {
-		r.absent(t, forge.CapList, sess.ListRepositories(r.ctx, func(forge.Repository) bool { return true }))
+		r.absent(t, forge.CapList, sess.ListRepositories(r.ctx, func(forge.Repository) bool { return true }), "ListRepositories")
 		return
 	}
 
@@ -35,7 +35,7 @@ func (r *runner) list(t tb) {
 		if repo.Key == r.s.Writable {
 			found = true
 		}
-		r.assertRepository(t, repo, repo.Key)
+		r.assertRecord(t, repo, "a record the listing yielded")
 	}
 	assert.True(t, found, "the listing omitted %q, which this credential can write", r.s.Writable)
 
@@ -60,7 +60,7 @@ func (r *runner) create(t tb) {
 	opts := forge.CreateOptions{Description: "forgetest", Private: true}
 	if !r.s.Expect.Has(forge.CapCreate) {
 		_, err := sess.Create(r.ctx, r.s.Creatable, opts)
-		r.absent(t, forge.CapCreate, err)
+		r.absent(t, forge.CapCreate, err, "Create")
 		return
 	}
 
@@ -69,7 +69,7 @@ func (r *runner) create(t tb) {
 	// The key INCLUDING ITS NAMESPACE is what was asked for. A forge that can
 	// only create under the authenticated account must refuse a namespaced key,
 	// not create the repository somewhere else.
-	r.assertRepository(t, repo, r.s.Creatable)
+	r.assertRepository(t, repo, r.s.Creatable, "the record of the repository just created")
 
 	_, err = sess.Create(r.ctx, r.s.Creatable, opts)
 	assert.Error(t, r.note(err), "creating the same repository twice succeeded")
@@ -83,7 +83,7 @@ func (r *runner) delete(t tb) {
 	t.Helper()
 	sess := r.session(t, r.s.Deletable)
 	if !r.s.Expect.Has(forge.CapDelete) {
-		r.absent(t, forge.CapDelete, sess.Delete(r.ctx, r.s.Deletable))
+		r.absent(t, forge.CapDelete, sess.Delete(r.ctx, r.s.Deletable), "Delete")
 		return
 	}
 
@@ -109,8 +109,8 @@ func (r *runner) deployKeys(t tb) {
 	const pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIforgetestpublichalf forgetest"
 	if !r.s.Expect.Has(forge.CapDeployKeys) {
 		_, err := sess.InstallDeployKey(r.ctx, r.s.Admin, "forgetest", pub)
-		r.absent(t, forge.CapDeployKeys, err)
-		r.absent(t, forge.CapDeployKeys, sess.RemoveDeployKey(r.ctx, r.s.Admin, "nope"))
+		r.absent(t, forge.CapDeployKeys, err, "InstallDeployKey")
+		r.absent(t, forge.CapDeployKeys, sess.RemoveDeployKey(r.ctx, r.s.Admin, "nope"), "RemoveDeployKey")
 		return
 	}
 
@@ -137,7 +137,7 @@ func (r *runner) cloneAddress(t tb) {
 	sess := r.session(t, r.s.Writable)
 	if !r.s.Expect.Has(forge.CapCloneAddr) {
 		_, err := sess.CloneAddress(r.s.Writable, forge.HTTPS)
-		r.absent(t, forge.CapCloneAddr, err)
+		r.absent(t, forge.CapCloneAddr, err, "CloneAddress")
 		return
 	}
 
@@ -172,7 +172,7 @@ func (r *runner) pushProbe(t tb) {
 	sess := r.session(t, r.s.Admin)
 	if !r.s.Expect.Has(forge.CapPushProbe) {
 		_, err := sess.CanPush(r.ctx, r.s.Admin, []byte("no key"))
-		r.absent(t, forge.CapPushProbe, err)
+		r.absent(t, forge.CapPushProbe, err, "CanPush")
 		return
 	}
 
@@ -193,7 +193,7 @@ func (r *runner) membership(t tb) {
 	t.Helper()
 	if !r.s.Expect.Has(forge.CapMembership) {
 		_, err := r.s.Registry.IsActiveMember(r.ctx, r.s.Host, "acme", "someone")
-		r.absent(t, forge.CapMembership, err)
+		r.absent(t, forge.CapMembership, err, "IsActiveMember")
 		return
 	}
 
@@ -224,9 +224,9 @@ func (r *runner) pushHooks(t tb) {
 		if r.s.Expect.Has(forge.CapPushHooks) {
 			missing = forge.CapSignatures
 		}
-		r.absent(t, missing, err)
+		r.absent(t, missing, err, "RegisterPushHook")
 		if !r.s.Expect.Has(forge.CapPushHooks) {
-			r.absent(t, forge.CapPushHooks, sess.RemovePushHook(r.ctx, r.s.Admin, "nope"))
+			r.absent(t, forge.CapPushHooks, sess.RemovePushHook(r.ctx, r.s.Admin, "nope"), "RemovePushHook")
 		}
 		// A registry with no Signatures face must refuse to read a delivery at
 		// all, rather than read one it cannot have verified the shape of.
@@ -234,7 +234,7 @@ func (r *runner) pushHooks(t tb) {
 			_, err := r.s.Registry.VerifyPush(forge.Hook{
 				Key: r.s.Admin, Handle: "nope", Scheme: forge.SchemeHubSHA256, Secret: secret,
 			}, forge.Delivery{})
-			r.absent(t, forge.CapSignatures, err)
+			r.absent(t, forge.CapSignatures, err, "VerifyPush")
 		}
 		return
 	}
@@ -281,37 +281,27 @@ func (r *runner) deliveries(t tb, hook forge.Hook) {
 	assert.Equal(t, forge.Push{Key: hook.Key, Ref: ref, Commit: commitA}, push,
 		"the driver read a push the payload does not describe")
 
+	// EVERY WAY A DELIVERY CAN BE MALFORMED IS ASSERTED ONE PACKAGE DOWN, in
+	// pkg/v2/forge's TestEverySchemeRefusesEveryWayADeliveryCanBeWrong, and it
+	// belongs there. A flipped byte, a truncated header, a signature under
+	// another secret: the core refuses all of them BEFORE any driver code runs,
+	// so no fault a driver or a probe can carry reaches those assertions. Here
+	// they were seven rows nothing could kill and every one of them was
+	// individually deletable with the tree green; there the code that refuses is
+	// the code under test, and they run against all four schemes instead of
+	// against whichever one this driver happens to use.
+	//
+	// What stays here is what the SUBJECT decides: the correctly signed
+	// delivery, the deputy that names another repository, the deletion
+	// sentinel, the delivery that is not a push, and the dated ones — each of
+	// them built by a probe a driver author wired up, each of them with a fault
+	// behind it in this suite's own table.
 	reject := func(name string, h forge.Hook, d forge.Delivery) {
 		t.Helper()
 		got, err := r.s.Registry.VerifyPush(h, d)
 		assert.Error(t, r.note(err), "%s was accepted", name)
 		assert.Equal(t, forge.Push{}, got, "%s produced a Push beside its error", name)
 	}
-
-	if hook.Scheme.BindsBody() {
-		flipped := forge.Delivery{Header: good.Header.Clone(), Body: flipOne(good.Body)}
-		reject("a body with one byte changed", hook, flipped)
-		longer := forge.Delivery{Header: good.Header.Clone(), Body: append(append([]byte(nil), good.Body...), ' ')}
-		reject("a body with one byte appended", hook, longer)
-	}
-
-	reject("a delivery with no headers at all", hook, forge.Delivery{Body: good.Body})
-	reject("a delivery whose headers were each truncated by one character", hook,
-		forge.Delivery{Header: truncateValues(good.Header), Body: good.Body})
-
-	other, err := forge.NewSecret()
-	mustReach(t, err, "minting a second secret, to sign under one this hook was not registered with")
-	underOther := hook
-	underOther.Secret = other
-	reject("a signature under a different secret", underOther, good)
-
-	empty := hook
-	empty.Secret = forge.Secret{}
-	reject("a hook with no secret", empty, good)
-
-	wrongScheme := hook
-	wrongScheme.Scheme = otherImplementedScheme(hook.Scheme)
-	reject("a hook whose recorded scheme is a different one", wrongScheme, good)
 
 	// THE HOOK MAY ONLY SPEAK FOR ITS OWN REPOSITORY.
 	deputy, err := r.s.DeliveryFor(hook, r.s.ReadOnly, ref, commitA)
@@ -348,46 +338,4 @@ func (r *runner) deliveries(t tb, hook forge.Hook) {
 		mustReach(t, err, "dating a delivery an hour into the future")
 		reject("a delivery signed an hour from now", hook, future)
 	}
-}
-
-// otherImplementedScheme is any scheme this package implements that is not s,
-// so "the hook was recorded under one procedure and checked under another" can
-// be asserted without naming a forge.
-func otherImplementedScheme(s forge.Scheme) forge.Scheme {
-	for _, candidate := range []forge.Scheme{
-		forge.SchemeHubSHA256, forge.SchemeStandardWebhooks,
-		forge.SchemeBitbucketSHA256, forge.SchemeSharedToken,
-	} {
-		if candidate != s {
-			return candidate
-		}
-	}
-	return s
-}
-
-func flipOne(b []byte) []byte {
-	out := append([]byte(nil), b...)
-	if len(out) > 0 {
-		out[len(out)/2] ^= 0x20
-	}
-	return out
-}
-
-// truncateValues shortens every header value by one character. It is blunt on
-// purpose: the suite does not know which header carries this forge's signature,
-// and every scheme must refuse a delivery whose headers no longer say what they
-// said when it was signed.
-func truncateValues(h map[string][]string) map[string][]string {
-	out := make(map[string][]string, len(h))
-	for k, vs := range h {
-		cut := make([]string, 0, len(vs))
-		for _, v := range vs {
-			if len(v) > 0 {
-				v = v[:len(v)-1]
-			}
-			cut = append(cut, v)
-		}
-		out[k] = cut
-	}
-	return out
 }

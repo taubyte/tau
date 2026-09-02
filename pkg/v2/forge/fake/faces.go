@@ -42,7 +42,7 @@ func (b cBase) Whoami(context.Context) (forge.Identity, error) {
 	if b.c.shape.faulty(FaultWhoamiHasNoLogin) {
 		me.Login = ""
 	}
-	if ok, err := b.c.call("GET", "/api/user", b.token); !ok {
+	if ok, err := b.c.call("GET", identityPath, b.token); !ok {
 		if b.c.cached(err) {
 			return me, nil
 		}

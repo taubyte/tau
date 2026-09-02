@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"go/types"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -193,7 +194,7 @@ func checkSaysNothing(l *ledger) []complaint {
 	var out []complaint
 	for _, a := range l.pop {
 		if a.says == "" {
-			out = append(out, complaint{ruleSaysNothing, a.site,
+			out = append(out, complaint{ruleSaysNothing, a.id,
 				a.call + " says nothing, so no proof can name it and nothing can know it is load-bearing"})
 		}
 	}
@@ -211,9 +212,9 @@ func checkSayingsCollide(l *ledger) []complaint {
 				continue
 			}
 			if strings.Contains(b.says, a.says) {
-				out = append(out, complaint{ruleSayingsCollide, a.site,
-					fmt.Sprintf("%q is contained in what %s says, %q, so a proof naming the first would be answered by the second",
-						a.says, b.site, b.says)})
+				out = append(out, complaint{ruleSayingsCollide, a.id,
+					fmt.Sprintf("%q is contained in what %s says, %q, so a proof naming the first would be answered by the second and neither can be named alone",
+						a.says, b.id, b.says)})
 			}
 		}
 	}
@@ -383,16 +384,16 @@ func checkOrphan(l *ledger) []complaint {
 	proven := map[string]bool{}
 	for _, p := range l.proofs {
 		named, _ := names(l.pop, p)
-		for site := range named {
-			proven[site] = true
+		for id := range named {
+			proven[id] = true
 		}
 	}
 	var out []complaint
 	for _, a := range l.pop {
-		if a.kind != contract || proven[a.site] {
+		if a.kind != contract || proven[a.id] {
 			continue
 		}
-		out = append(out, complaint{ruleOrphan, a.site,
+		out = append(out, complaint{ruleOrphan, a.id,
 			fmt.Sprintf("%s %q has no fault behind it: no proof names it, so either nothing can reach it or its deletion would go unnoticed", a.call, a.says)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].at < out[j].at })
@@ -462,12 +463,12 @@ func names(pop []assertion, p proof) (map[string]bool, []complaint) {
 		switch len(hits) {
 		case 1:
 			if hits[0].kind != contract {
-				said = append(said, complaint{ruleSayingNamesAStep, hits[0].site,
+				said = append(said, complaint{ruleSayingNamesAStep, hits[0].id,
 					fmt.Sprintf("proof %q says %q, which is %s — a driver fault can kill it, so it is a claim about the driver and must be spelled as one",
 						p.name, saying, hits[0].kind)})
 				continue
 			}
-			out[hits[0].site] = true
+			out[hits[0].id] = true
 		case 0:
 			said = append(said, complaint{ruleUnknownSaying, p.name,
 				fmt.Sprintf("this proof says %q, which no assertion in the suite says", saying)})
@@ -491,12 +492,12 @@ func stops(pop []assertion, p proof) (map[string]bool, []complaint) {
 		switch len(hits) {
 		case 1:
 			if hits[0].kind == contract {
-				said = append(said, complaint{ruleStopNamesAClaim, hits[0].site,
+				said = append(said, complaint{ruleStopNamesAClaim, hits[0].id,
 					fmt.Sprintf("proof %q stops %q, which is a claim about the driver — a claim this subject makes the suite make belongs in says, where it counts as proof",
 						p.name, saying)})
 				continue
 			}
-			out[hits[0].site] = true
+			out[hits[0].id] = true
 		case 0:
 			said = append(said, complaint{ruleUnknownStop, p.name,
 				fmt.Sprintf("this proof stops %q, which no step in the suite says", saying)})
@@ -521,26 +522,26 @@ func sayingsMatching(pop []assertion, saying string) []assertion {
 func sitesOf(hits []assertion) []string {
 	var out []string
 	for _, h := range hits {
-		out = append(out, h.site)
+		out = append(out, h.id)
 	}
 	return out
 }
 
 // fnOf is the function an assertion is written in, which is how a stop that is
 // collateral is told from one that is the proof's own complaint.
-func fnOf(pop []assertion, site string) string {
+func fnOf(pop []assertion, id string) string {
 	for _, a := range pop {
-		if a.site == site {
+		if a.id == id {
 			return a.in
 		}
 	}
 	return "?"
 }
 
-func sayingAt(pop []assertion, site string) string {
+func sayingAt(pop []assertion, id string) string {
 	for _, a := range pop {
-		if a.site == site {
-			return a.kind.String() + " " + a.call + " " + a.says
+		if a.id == id {
+			return a.kind.String() + " " + a.call + " " + strconv.Quote(a.says)
 		}
 	}
 	return "?"

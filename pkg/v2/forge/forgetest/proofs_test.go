@@ -124,22 +124,110 @@ func faultProofs() []proof {
 
 	add("echoes-key", fake.GitHubLike, []fake.Fault{fake.FaultEchoesKey},
 		"must be derived from the clone address the forge returned",
-		"the forge and the caller disagree about which repository this is",
-		"clone address in the record for")
+		"the forge and the caller disagree about which repository the record the forge answers for a repository that moved is",
+		"clone address in the record the forge answers for a repository that moved for")
+	// Every record the suite reads is a separate contract, and this fault is
+	// wrong in all of them: the listing's, the created one's, the writable
+	// fixture's and the moved one's. Naming one of the four would leave the
+	// other three deletable.
 	add("repository-address-names-another", fake.GitHubLike, []fake.Fault{fake.FaultRepositoryAddressNamesAnother},
-		"clone address in the record for")
+		"clone address in a record the listing yielded for",
+		"clone address in the record of the repository just created for",
+		"clone address in the record of the writable fixture for",
+		"clone address in the record the forge answers for a repository that moved for")
 	add("the-records-address-carries-the-credential", fake.GitHubLike, []fake.Fault{fake.FaultTheRecordsAddressCarriesTheCredential},
-		"clone address in the record, %q, does not parse")
+		"clone address in a record the listing yielded, %q, does not parse",
+		"clone address in the record of the repository just created, %q, does not parse",
+		"clone address in the record of the writable fixture, %q, does not parse",
+		"clone address in the record the forge answers for a repository that moved, %q, does not parse")
 	add("the-record-has-no-default-branch", fake.GitHubLike, []fake.Fault{fake.FaultTheRecordHasNoDefaultBranch},
-		"no default branch")
+		"a record the listing yielded has no default branch",
+		"the record of the repository just created has no default branch",
+		"the record of the writable fixture has no default branch",
+		"the record the forge answers for a repository that moved has no default branch")
 	add("clone-address-names-another", fake.GitHubLike, []fake.Fault{fake.FaultCloneAddressNamesAnother},
-		"clone address handed to a builder for")
+		"the HTTPS clone address handed to a builder for",
+		"the SSH clone address handed to a builder for")
 	add("clone-address-carries-the-credential", fake.GitHubLike, []fake.Fault{fake.FaultCloneAddressCarriesTheCredential},
-		"clone address handed to a builder, %q, does not parse")
+		"the HTTPS clone address handed to a builder, %q, does not parse",
+		"the SSH clone address handed to a builder, %q, does not parse")
 	add("https-address-has-no-username", fake.GitHubLike, []fake.Fault{fake.FaultHTTPSAddressHasNoUsername},
 		"no HTTP username")
 	add("ssh-address-has-no-account", fake.GitHubLike, []fake.Fault{fake.FaultSSHAddressHasNoAccount},
 		"no SSH account")
+
+	// A record whose KEY names a third repository, which is wrong on every
+	// record the suite reads rather than only on the one that moved. On a
+	// nesting forge, so the nested fixture's record is one of them.
+	add("the-record-names-another-repository", fake.GitLabLike, []fake.Fault{fake.FaultTheRecordNamesAnotherRepository},
+		"the listing omitted %q, which this credential can write",
+		"must be derived from the clone address the forge returned",
+		"about which repository the record of the writable fixture is",
+		"about which repository the record of the repository just created is",
+		"about which repository the record of the nested fixture is",
+		"about which repository the record the forge answers for a repository that moved is",
+		"clone address in a record the listing yielded for",
+		"clone address in the record of the repository just created for",
+		"clone address in the record of the writable fixture for",
+		"clone address in the record of the nested fixture for",
+		"clone address in the record the forge answers for a repository that moved for")
+
+	add("asks-another-host-who-this-is", fake.GitHubLike, []fake.Fault{fake.FaultAsksAnotherHostWhoThisIs},
+		"a recorded request went to %q, which is not the host this credential is for, of everything the subject sent",
+		"a recorded request went to %q, which is not the host this credential is for, of the requests an operation made")
+
+	// THE NESTED RECORD IS A RECORD TOO. Each of these is the fault above it
+	// run on a forge that addresses a nested owner, which is the only shape
+	// that reaches the nested fixture's own round trip — without them, the four
+	// questions asked about that record could each be deleted unnoticed.
+	add("a-nesting-forges-record-has-no-default-branch", fake.GitLabLike, []fake.Fault{fake.FaultTheRecordHasNoDefaultBranch},
+		"a record the listing yielded has no default branch",
+		"the record of the repository just created has no default branch",
+		"the record of the writable fixture has no default branch",
+		"the record of the nested fixture has no default branch",
+		"the record the forge answers for a repository that moved has no default branch")
+	add("a-nesting-forges-record-carries-the-credential", fake.GitLabLike, []fake.Fault{fake.FaultTheRecordsAddressCarriesTheCredential},
+		"clone address in a record the listing yielded, %q, does not parse",
+		"clone address in the record of the repository just created, %q, does not parse",
+		"clone address in the record of the writable fixture, %q, does not parse",
+		"clone address in the record of the nested fixture, %q, does not parse",
+		"clone address in the record the forge answers for a repository that moved, %q, does not parse")
+	add("a-nesting-forges-record-address-names-another", fake.GitLabLike, []fake.Fault{fake.FaultRepositoryAddressNamesAnother},
+		"clone address in a record the listing yielded for",
+		"clone address in the record of the repository just created for",
+		"clone address in the record of the writable fixture for",
+		"clone address in the record of the nested fixture for",
+		"clone address in the record the forge answers for a repository that moved for")
+
+	// And the record a FOLLOWED same-host redirect answers with, which no
+	// correct driver ever produces — so the only way to reach the four
+	// questions asked about it is to break the driver twice.
+	add("follows-same-host-redirect+the-record-has-no-default-branch", fake.GitHubLike,
+		[]fake.Fault{fake.FaultFollowsSameHostRedirect, fake.FaultTheRecordHasNoDefaultBranch},
+		"an Access has nowhere to say it is about another repository",
+		"a Handle names no repository",
+		"stamps Hook.Key FROM THE ARGUMENT",
+		"the method was replayed",
+		"is gone: a write was replayed",
+		"deleting a repository this credential holds admin on failed",
+		"a record the listing yielded has no default branch",
+		"the record of the repository just created has no default branch",
+		"the record of the writable fixture has no default branch",
+		"the record the forge answers for a repository that moved has no default branch",
+		"the record a followed same-host redirect answered with has no default branch")
+	add("follows-same-host-redirect+the-records-address-carries-the-credential", fake.GitHubLike,
+		[]fake.Fault{fake.FaultFollowsSameHostRedirect, fake.FaultTheRecordsAddressCarriesTheCredential},
+		"an Access has nowhere to say it is about another repository",
+		"a Handle names no repository",
+		"stamps Hook.Key FROM THE ARGUMENT",
+		"the method was replayed",
+		"is gone: a write was replayed",
+		"deleting a repository this credential holds admin on failed",
+		"clone address in a record the listing yielded, %q, does not parse",
+		"clone address in the record of the repository just created, %q, does not parse",
+		"clone address in the record of the writable fixture, %q, does not parse",
+		"clone address in the record the forge answers for a repository that moved, %q, does not parse",
+		"clone address in the record a followed same-host redirect answered with, %q, does not parse")
 
 	// ─── where a request goes ───
 
@@ -147,7 +235,7 @@ func faultProofs() []proof {
 		"succeeded anyway, so an answer from another host was taken for the forge's",
 		"a request arrived at",
 		"and it carried the credential there",
-		"a recorded request went to")
+		"a recorded request went to %q, which is not the host this credential is for, of the requests an operation made")
 	// No "and it carried the credential there" here, and the absence is the
 	// point: the credential on that hop is the DEPLOYMENT'S, which no Subject
 	// hands over, so the suite catches this one by the arrival and not by what
@@ -156,7 +244,7 @@ func faultProofs() []proof {
 	add("follows-redirect-on-the-deployment-credential", fake.GitHubLike, []fake.Fault{fake.FaultFollowsRedirectOnTheDeploymentCredential},
 		"succeeded anyway, so an answer from another host was taken for the forge's",
 		"a request arrived at",
-		"a recorded request went to")
+		"a recorded request went to %q, which is not the host this credential is for, of the requests an operation made")
 	add("follows-same-host-redirect", fake.GitHubLike, []fake.Fault{fake.FaultFollowsSameHostRedirect},
 		"an Access has nowhere to say it is about another repository",
 		"a Handle names no repository",
@@ -168,8 +256,10 @@ func faultProofs() []proof {
 		[]fake.Fault{fake.FaultFollowsSameHostRedirect, fake.FaultEchoesKey},
 		"the record describes",
 		"must be derived from the clone address the forge returned",
-		"the forge and the caller disagree about which repository this is",
-		"clone address in the record for",
+		"the forge and the caller disagree about which repository the record the forge answers for a repository that moved is",
+		"the forge and the caller disagree about which repository the record a followed same-host redirect answered with is",
+		"clone address in the record the forge answers for a repository that moved for",
+		"clone address in the record a followed same-host redirect answered with for",
 		"an Access has nowhere to say it is about another repository",
 		"a Handle names no repository",
 		"stamps Hook.Key FROM THE ARGUMENT",
@@ -179,7 +269,10 @@ func faultProofs() []proof {
 	add("leaks-token-in-error", fake.GitHubLike, []fake.Fault{fake.FaultLeaksTokenInError},
 		"the live credential is in an error string", "the refused credential is in an error string")
 	add("leaks-token-in-url", fake.GitHubLike, []fake.Fault{fake.FaultLeaksTokenInURL},
-		"the credential is in a request URL", "the credential is in a query parameter",
+		"the credential is in a request URL, of the requests an operation made",
+		"the credential is in a request URL, of everything the subject sent",
+		"the credential is in a query parameter, of the requests an operation made",
+		"the credential is in a query parameter, of everything the subject sent",
 		// And an address with a credential in it is quoted back by whatever
 		// failed at it, so the URL canary and the error canary catch the same
 		// driver. Both, or neither is load-bearing.
@@ -290,12 +383,37 @@ func subjectProofs() []proof {
 		"registering the hook every delivery below is signed for",
 		"learning the address this operation uses for")
 
-	add("underclaims-a-capability", func(t *testing.T) Subject {
-		s := subjectFor(t, "underclaims", fake.GitHubLike)
-		delete(s.Expect, forge.CapDeployKeys)
-		return s
-	}, "capabilities =", "must refuse a capability the session lacks",
-		"is not declared, so it must be *UnsupportedError and never a zero value")
+	// A capability the driver HAS and the Subject does not declare, ONE PROOF
+	// PER CAPABILITY. Each takes a different absent branch, in a different
+	// place, calling a different method — nine separate contracts. One proof
+	// standing for all of them left eight deletable, which is the same defect
+	// as a table row with no proof: what fires is one case, and the site was
+	// counted.
+	for _, tc := range []struct {
+		cap   forge.Capability
+		calls []string
+	}{
+		{forge.CapList, []string{"so ListRepositories must be"}},
+		{forge.CapCreate, []string{"so Create must be"}},
+		{forge.CapDelete, []string{"so Delete must be", "so Delete under a same-host redirect must be"}},
+		{forge.CapDeployKeys, []string{"so InstallDeployKey must be", "so RemoveDeployKey must be",
+			"so InstallDeployKey under a same-host redirect must be"}},
+		{forge.CapCloneAddr, []string{"so CloneAddress must be"}},
+		{forge.CapPushProbe, []string{"so CanPush must be"}},
+		{forge.CapMembership, []string{"so IsActiveMember must be"}},
+		{forge.CapPushHooks, []string{"so RegisterPushHook must be", "so RemovePushHook must be",
+			"so RegisterPushHook under a same-host redirect must be"}},
+		{forge.CapSignatures, []string{"so RegisterPushHook must be", "so VerifyPush must be",
+			"so RegisterPushHook under a same-host redirect must be"}},
+	} {
+		missing := tc.cap
+		says := append([]string{"capabilities =", "must refuse a capability the session lacks"}, tc.calls...)
+		add("underclaims-"+string(missing), func(t *testing.T) Subject {
+			s := subjectFor(t, "underclaims-"+string(missing), fake.GitHubLike)
+			delete(s.Expect, missing)
+			return s
+		}, says...)
+	}
 
 	// A Registry that is not the one binding this suite is run against. Both of
 	// these are preflight, and both are the difference between a suite that ran
@@ -390,7 +508,10 @@ func subjectProofs() []proof {
 			return plain(h, ref, commit)
 		}
 		return s
-	}, "%s was accepted", "%s produced a Push beside its error")
+	}, "a delivery signed an hour ago was accepted",
+		"a delivery signed an hour from now was accepted",
+		"a delivery signed an hour ago produced a Push beside its error",
+		"a delivery signed an hour from now produced a Push beside its error")
 
 	add("a-timestamped-scheme-with-no-dating-builder", func(t *testing.T) Subject {
 		s := subjectFor(t, "no-delivery-at", fake.GitLabLike)

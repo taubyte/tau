@@ -173,6 +173,29 @@ const (
 	// addresses name the same repository.
 	FaultRepositoryAddressNamesAnother Fault = "repository-address-names-another"
 
+	// FaultTheRecordNamesAnotherRepository serves a record whose KEY names a
+	// repository that is not the one it describes — the mistake a driver makes
+	// by reading the wrong object out of an answer that carries several: the
+	// project and its fork parent, the repository and the one it was
+	// transferred from.
+	//
+	// It is not FaultEchoesKey, and the difference is what each proves. An echo
+	// answers with the key it was ASKED about, which is the right answer
+	// everywhere except a repository that moved — so it proves only the
+	// derivation contract, on the one fixture where argument and answer differ.
+	// This names a THIRD repository, so it is wrong on every record the suite
+	// reads: the listing's, the created one's, the writable fixture's, the
+	// nested one's. Each of those is a separate contract and each needs a fault
+	// that reaches it.
+	FaultTheRecordNamesAnotherRepository Fault = "the-record-names-another-repository"
+
+	// FaultAsksAnotherHostWhoThisIs sends the identity request to a host this
+	// credential is not for, with the credential on it. It is the hardcoded
+	// api.github.com left in a driver written by copying one — no redirect, no
+	// attacker, just a request that was always addressed wrongly, and a
+	// credential spent at whatever answers there.
+	FaultAsksAnotherHostWhoThisIs Fault = "asks-another-host-who-this-is"
+
 	// FaultCloneAddressNamesAnother is the same mistake on the OTHER surface
 	// that produces a clone address: the CloneAddress face, which is what a
 	// builder is actually handed. The two surfaces are separate code in every

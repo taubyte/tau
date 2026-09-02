@@ -200,7 +200,7 @@ func (r *runner) addressableDepth(t tb) {
 
 	repo, err := sess.Repository(r.ctx, r.s.Deep)
 	mustReach(t, r.note(err), "reading the record of the nested fixture")
-	r.assertRepository(t, repo, r.s.Deep)
+	r.assertRepository(t, repo, r.s.Deep, "the record of the nested fixture")
 }
 
 func (r *runner) zeroCredential(t tb) {
@@ -315,7 +315,7 @@ func (r *runner) repository(t tb) {
 	sess := r.session(t, r.s.Writable)
 	repo, err := sess.Repository(r.ctx, r.s.Writable)
 	mustReach(t, r.note(err), "reading the record the round trip below is about")
-	r.assertRepository(t, repo, r.s.Writable)
+	r.assertRepository(t, repo, r.s.Writable, "the record of the writable fixture")
 
 	repo, err = sess.Repository(r.ctx, r.s.Missing)
 	var nf *forge.NotFoundError
@@ -347,7 +347,7 @@ func (r *runner) derivedKey(t tb) {
 
 	// And the whole repository must be the one the forge served, not a value
 	// half taken from the argument.
-	r.assertRepository(t, repo, r.s.MovedTo)
+	r.assertRepository(t, repo, r.s.MovedTo, "the record the forge answers for a repository that moved")
 }
 
 // redirectOffHost is the one destination assertion in this suite that a fixture
@@ -416,7 +416,7 @@ func (r *runner) redirectOffHost(t tb) {
 			assert.Error(t, r.note(op.call()),
 				"the forge answered a redirect to %q and %s succeeded anyway, so an answer from another host was taken for the forge's", d.url(), op.name)
 
-			r.assertRequestsStayHome(t, r.s.Requests())
+			r.assertRequestsStayHome(t, r.s.Requests(), "of the requests an operation made after the forge answered it a redirect")
 		})
 	}
 
@@ -631,7 +631,7 @@ func (r *runner) sameHostRedirect(t tb) {
 		assert.Equal(t, other, repo.Key,
 			"Repository(%q) followed a redirect to %q and answered with the key it was ASKED about; the record describes %q and names %q, so tau files one repository and clones another",
 			r.s.Writable, elsewhere, other, repo.Key)
-		r.assertRepository(t, repo, other)
+		r.assertRepository(t, repo, other, "the record a followed same-host redirect answered with")
 	})
 
 	t.Run("access", func(t tb) {
@@ -655,7 +655,7 @@ func (r *runner) sameHostRedirect(t tb) {
 		sess := r.session(t, r.s.Admin)
 		if !r.s.Expect.Has(forge.CapDeployKeys) {
 			_, err := sess.InstallDeployKey(r.ctx, r.s.Admin, "forgetest", pub)
-			r.absent(t, forge.CapDeployKeys, err)
+			r.absent(t, forge.CapDeployKeys, err, "InstallDeployKey under a same-host redirect")
 			return
 		}
 		victim := r.session(t, other)
@@ -690,7 +690,7 @@ func (r *runner) sameHostRedirect(t tb) {
 				missing = forge.CapSignatures
 			}
 			_, err := sess.RegisterPushHook(r.ctx, r.s.Admin, callback, secret)
-			r.absent(t, missing, err)
+			r.absent(t, missing, err, "RegisterPushHook under a same-host redirect")
 			return
 		}
 		victim := r.session(t, other)
@@ -719,7 +719,17 @@ func (r *runner) sameHostRedirect(t tb) {
 			// Nothing reaches the wire, so there is no hop to arm — and arming
 			// one a driver will never take would leave it live for whatever
 			// runs next.
-			r.absent(t, forge.CapDelete, sess.Delete(r.ctx, r.s.Admin))
+			//
+			// IT IS AIMED AT other AND NOT AT Admin, because "nothing reaches
+			// the wire" is only true of an honest Subject. One that declares
+			// less than its driver has really does delete what this names, and
+			// Admin is the fixture every deploy-key and hook question below is
+			// asked about — so aiming it there turned an under-declared
+			// capability into three steps that could not be taken, for a reason
+			// that has nothing to do with the capability. other is the fixture
+			// this suite is allowed to destroy, and this runs after everything
+			// that needs it.
+			r.absent(t, forge.CapDelete, sess.Delete(r.ctx, other), "Delete under a same-host redirect")
 			return
 		}
 		victim := r.session(t, other)
@@ -782,19 +792,37 @@ func (r *runner) whereItWouldGo(t tb, k repokey.Key, do func() error) string {
 // repository this is" is a checked fact. repokey refuses a URL carrying a
 // credential, so a successful re-parse is also the check that neither address
 // has one spliced into it.
-func (r *runner) assertRepository(t tb, repo forge.Repository, want repokey.Key) {
+//
+// about is WHICH RECORD, and it is not decoration. Six places in the suite ask
+// these four questions and each is a separate contract; without a word saying
+// which one is speaking they are four assertions instead of twenty-four, a
+// proof needs one of the six to fire, and the other five can be deleted with
+// the tree green. Measured, before this argument existed: three of the six.
+func (r *runner) assertRepository(t tb, repo forge.Repository, want repokey.Key, about string) {
 	t.Helper()
-	assert.Equal(t, want, repo.Key, "the forge and the caller disagree about which repository this is")
-	assert.NotEmpty(t, repo.DefaultBranch, "no default branch; a builder has nothing to check out")
+	assert.Equal(t, want, repo.Key, "the forge and the caller disagree about which repository %s is", about)
+	r.assertRecord(t, repo, about)
+}
+
+// assertRecord is the half of it that asks only whether a record AGREES WITH
+// ITSELF: the key it carries, the branch, and the two addresses. It is separate
+// because the listing has nothing to compare a record's key against — it finds
+// each record BY that key — so asking there whether the key is the key it was
+// asked about compares a value to itself. That assertion was vacuous in the
+// listing's case and provable in nobody's, which is the definition this file
+// works from.
+func (r *runner) assertRecord(t tb, repo forge.Repository, about string) {
+	t.Helper()
+	assert.NotEmpty(t, repo.DefaultBranch, "%s has no default branch; a builder has nothing to check out", about)
 	for label, spelling := range map[string]string{"HTTPS": repo.HTTPS, "SSH": repo.SSH} {
-		mustHold(t, spelling != "", "reading the %s clone address out of the record for %q", label, repo.Key)
+		mustHold(t, spelling != "", "reading the %s clone address out of %s, %q", label, about, repo.Key)
 		got, err := repokey.Parse(spelling)
-		if !assert.NoError(t, err, "the %s clone address in the record, %q, does not parse to a key; repokey refuses a URL carrying a credential, so a token spliced into a record arrives here", label, spelling) {
+		if !assert.NoError(t, err, "the %s clone address in %s, %q, does not parse to a key; repokey refuses a URL carrying a credential, so a token spliced into a record arrives here", label, about, spelling) {
 			continue
 		}
 		assert.Equal(t, repo.Key, got,
-			"the %s clone address in the record for %q names %q; tau would file one repository and clone another",
-			label, repo.Key, got)
+			"the %s clone address in %s for %q names %q; tau would file one repository and clone another",
+			label, about, repo.Key, got)
 	}
 }
 
@@ -844,7 +872,7 @@ func (r *runner) credentialNeverTravels(t tb) {
 	r.note(second(sess.Access(r.ctx, r.s.Writable)))
 	r.note(second(sess.Repository(r.ctx, r.s.Writable)))
 
-	r.assertRequestsStayHome(t, r.s.Requests())
+	r.assertRequestsStayHome(t, r.s.Requests(), "of everything the subject sent over a whole run")
 
 	for _, err := range r.errs {
 		msg := err.Error()
@@ -860,15 +888,15 @@ func (r *runner) credentialNeverTravels(t tb) {
 // half of it for one that reports what a server received — the other half being
 // what the decoy saw, which is the only place a request to another host is
 // visible at all.
-func (r *runner) assertRequestsStayHome(t tb, reqs []Request) {
+func (r *runner) assertRequestsStayHome(t tb, reqs []Request, about string) {
 	t.Helper()
 	for _, req := range reqs {
 		u, err := url.Parse(req.URL)
 		mustReach(t, err, "parsing the request URL %q the subject reported", req.URL)
 
-		assert.NotContains(t, req.URL, r.s.Token, "the credential is in a request URL")
-		assert.NotContains(t, u.RawQuery, r.s.Token, "the credential is in a query parameter")
-		assert.Equal(t, r.s.Host, u.Host, "a recorded request went to %q, which is not the host this credential is for", u.Host)
+		assert.NotContains(t, req.URL, r.s.Token, "the credential is in a request URL, %s", about)
+		assert.NotContains(t, u.RawQuery, r.s.Token, "the credential is in a query parameter, %s", about)
+		assert.Equal(t, r.s.Host, u.Host, "a recorded request went to %q, which is not the host this credential is for, %s", u.Host, about)
 	}
 }
 
@@ -878,10 +906,15 @@ func second[T any](_ T, err error) error { return err }
 
 // absent asserts the two halves of a capability a driver does not have: the
 // Session method returns *UnsupportedError naming it, and Require refuses.
-func (r *runner) absent(t tb, c forge.Capability, err error) {
+//
+// about is WHICH CALL was supposed to refuse. Eleven places ask this and the
+// capability alone does not tell them apart — two of them are the two halves of
+// deploy keys, and two more are handed a capability chosen at run time — so
+// without it, one proof stood for all eleven.
+func (r *runner) absent(t tb, c forge.Capability, err error, about string) {
 	t.Helper()
 	var un *forge.UnsupportedError
-	assert.ErrorAs(t, r.note(err), &un, "%s is not declared, so it must be *UnsupportedError and never a zero value", c)
+	assert.ErrorAs(t, r.note(err), &un, "%s is not declared, so %s must be *UnsupportedError and never a zero value", c, about)
 }
 
 func httpsURL(t tb, s string) *url.URL {
