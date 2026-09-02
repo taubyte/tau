@@ -88,7 +88,11 @@ func (s *Service) reconcile() error {
 //
 //   - THE FIRST READ IS TRIAGE AND DECIDES NOTHING. A row it finds live goes to
 //     the age gate below; a row it finds finished is read a second time, after
-//     the barrier, and it is THAT read the delete is decided on.
+//     the barrier, and it is THAT read the delete is decided on. A test of this
+//     therefore has to be released at the SECOND read: armed at the first, the
+//     retry it lets go is caught by the re-read and the section is never
+//     reached, which is how PAIR 4 came to pass two thousand runs against a
+//     mend with no section at all.
 //   - THE PUSH NEEDS NO BARRIER OF ITS OWN. Its safety is queue.Push's
 //     deduplication, which reads the queue's own index behind the queue's own
 //     barrier, and an item pushed for a job that has since finished is dropped

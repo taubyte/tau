@@ -39,16 +39,34 @@ import (
 // reproduced rather than merely made likely.
 const window = 100 * time.Millisecond
 
-// readGatedStore fires a hook the first time a key it is watching is read,
-// after the read has answered. Everything else is the harness's store.
+// readGatedStore fires a hook when a key it is watching is read, after the read
+// has answered. Everything else is the harness's store.
+//
+// IT COUNTS READS, because WHICH read a hook fires on is the difference between
+// a test and a test that passes either way. A section that triages on a cheap
+// read and decides on a second one is only raced by a hook on the SECOND: armed
+// on the first, the racer it launches is caught by the re-read and the section
+// is never reached at all — which is how PAIR 4 below came to pass two thousand
+// runs against a mend with its jobLock section deleted.
+//
+// AND IT HOLDS SEVERAL ARMS AT ONCE, because a pass over several rows is where
+// two racers of different kinds meet one walk.
 type readGatedStore struct {
 	*fakeStore
 
 	mu      sync.Mutex
 	key     string
-	match   func(string) bool
-	hook    func()
+	arms    []*gateArm
 	written func()
+}
+
+// gateArm is one armed hook: which keys it watches, which read of them it fires
+// on, and how many it has seen.
+type gateArm struct {
+	match func(string) bool
+	after int
+	seen  int
+	hook  func()
 }
 
 func gated(t *testing.T, h *harness, key string) *readGatedStore {
@@ -73,7 +91,15 @@ func gatedHarness(t *testing.T, opts ...Option) (*harness, *readGatedStore) {
 // own and holds the reader for a window, which is the interleaving.
 func (s *readGatedStore) on(t *testing.T, racer func()) <-chan struct{} {
 	t.Helper()
-	return s.arm(func(key string) bool { return key == s.key }, racer)
+	return s.arm(func(key string) bool { return key == s.key }, 1, racer)
+}
+
+// onRead arms the gate on the nth read of one key. It is what a section with a
+// triage read needs: the read the writes are decided on is the LAST one, and a
+// racer released at the first is racing nothing.
+func (s *readGatedStore) onRead(t *testing.T, key string, nth int, racer func()) <-chan struct{} {
+	t.Helper()
+	return s.arm(func(k string) bool { return k == key }, nth, racer)
 }
 
 // onFirstUnder arms the gate on the first read of ANY key under prefix, which
@@ -83,21 +109,20 @@ func (s *readGatedStore) on(t *testing.T, racer func()) <-chan struct{} {
 // instant its ack begins.
 func (s *readGatedStore) onFirstUnder(t *testing.T, prefix string, racer func()) <-chan struct{} {
 	t.Helper()
-	return s.arm(func(key string) bool { return strings.HasPrefix(key, prefix) }, racer)
+	return s.arm(func(key string) bool { return strings.HasPrefix(key, prefix) }, 1, racer)
 }
 
-func (s *readGatedStore) arm(match func(string) bool, racer func()) <-chan struct{} {
+func (s *readGatedStore) arm(match func(string) bool, after int, racer func()) <-chan struct{} {
 	done := make(chan struct{})
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.match = match
-	s.hook = func() {
+	s.arms = append(s.arms, &gateArm{match: match, after: after, hook: func() {
 		go func() {
 			defer close(done)
 			racer()
 		}()
 		time.Sleep(window)
-	}
+	}})
 	return done
 }
 
@@ -153,11 +178,16 @@ func (s *readGatedStore) Get(key string) ([]byte, bool) {
 	value, found := s.fakeStore.Get(key)
 
 	s.mu.Lock()
-	hook := s.hook
-	if hook == nil || !s.match(key) {
-		hook = nil
-	} else {
-		s.hook = nil
+	var hook func()
+	for i, a := range s.arms {
+		if !a.match(key) {
+			continue
+		}
+		if a.seen++; a.seen == a.after {
+			hook = a.hook
+			s.arms = append(s.arms[:i], s.arms[i+1:]...)
+		}
+		break
 	}
 	s.mu.Unlock()
 
@@ -303,42 +333,113 @@ func exhaust(t *testing.T, h *harness) {
 	require.Equal(t, 1, dead, "the job must be in the dead letter or this test means nothing")
 }
 
-// PAIR 4 — retry (an RPC goroutine) against reconcile (the loop's). reconcile
-// reads a record, finds it finished, and deletes the open-index row that says
-// otherwise. A retry in the window reopens the job and writes that very row
-// back; reconcile's entry then deletes it.
+// PAIR 4 — a reopen against the reconcile pass that overlaps it.
 //
-// NOTHING REPAIRS THAT. reconcile walks the open index, so a job missing from
+// TWO ROWS IN ONE PASS, because mend has two guards and they stop two different
+// racers. With one row this was a DISJUNCTION — it passed with EITHER guard
+// present — and that is not a detail: it passed two thousand runs against a
+// mend whose jobLock section had been deleted, leaving the section pinned by an
+// AST table and nothing else. The gate fired on mend's FIRST read, which since
+// the exemption was split is the TRIAGE read that decides nothing, so the retry
+// it released was caught by the post-barrier re-read and the section was never
+// reached.
+//
+//   - THE ROW THE SECTION DEFENDS (raced). reconcile reads a record, finds it
+//     finished, and deletes the open-index row that says otherwise. A retry
+//     answering on an rpc goroutine in the window between THAT read — the
+//     second, the deciding one — and the delete reopens the job and writes that
+//     very row back; mend's entry then deletes it. This racer CONTENDS FOR
+//     jobLock, which is exactly what makes the section the thing that stops it.
+//
+//   - THE ROW THE RE-READ DEFENDS (ahead). The other racer cannot be raced,
+//     because it has ALREADY HAPPENED. reconcile takes one barrier, at the top,
+//     and lists behind it; the record is read per row, arbitrarily later, and a
+//     node that regains leadership mid-walk holds entries that are committed
+//     and not applied. The triage read sees a job as finished while the retry
+//     that reopened it is already ordered ahead of anything this pass will
+//     write — and raft.BatchOp has no compare-and-swap, so the delete lands on
+//     the row that retry wrote. The gate plants the reopen after the triage
+//     read has answered, which is what an unapplied entry looks like from
+//     inside mend. Nothing contends for anything, and no section can help.
+//
+// NOTHING REPAIRS EITHER. reconcile walks the open index, so a job missing from
 // it is a job reconcile will never look at again, and MaxOpenPerRepo stops
 // counting it.
 func TestAReopenIsNotLostToTheReconcileThatOverlapsIt(t *testing.T) {
-	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	h, gate := gatedHarness(t)
 
-	// Drain the item, so the retry's push is a real one, and finish the job.
+	raced := finishedAndStillListed(t, h, testCommit)
+	ahead := finishedAndStillListed(t, h, shaOf(3))
+
+	// The reopen this node holds committed and has not applied, built now and
+	// planted the instant mend's triage read of it has answered.
+	reopened := h.mustRecord(t, ahead)
+	reopened.Status = int32(buildv1.JobStatus_JobStatusOpen)
+	reopened.UpdatedAt = h.clock.now().Unix()
+	value, err := reopened.encode()
+	require.NoError(t, err)
+
+	var plantErr error
+	planted := gate.onRead(t, jobRecordKey(ahead), 1, func() {
+		if plantErr = h.store.MockCluster.Set(jobRecordKey(ahead), value, time.Second); plantErr != nil {
+			return
+		}
+		if plantErr = h.store.MockCluster.Set(openIndexKey(testRepo, ahead), nil, time.Second); plantErr != nil {
+			return
+		}
+		plantErr = h.work.Push(ahead, nil)
+	})
+
+	// And the reopen that overlaps, released at the read the delete is decided
+	// on. Armed at the first read instead, this races the triage and the
+	// re-read catches it, which is a test of the re-read wearing the section's
+	// name.
+	var retryErr error
+	retried := gate.onRead(t, jobRecordKey(raced), 2, func() { retryErr = h.retry(raced) })
+
+	require.NoError(t, h.reconcile())
+	<-planted
+	require.NoError(t, plantErr, "the entry this pass had not applied")
+
+	// A RACER THE GATE NEVER RELEASED IS NOT A PASSING TEST. It means mend no
+	// longer makes the read this was armed on — the triage and the deciding
+	// read collapsed back into one — and mend then walked both rows with
+	// nothing racing it at all. It is not waited out, because waiting out a
+	// hang is how a test reports "nothing happened" as success; the two rows
+	// below are what say what actually happened.
+	select {
+	case <-retried:
+		require.NoError(t, retryErr, "the caller was told its retry was accepted")
+	case <-time.After(5 * time.Second):
+		t.Log("mend took no second read of the raced row, so nothing was released into its window")
+	}
+
+	rows := h.store.Keys(openIndexPrefix(testRepo))
+	ready, _ := h.work.Depth()
+	t.Logf("raced=%s ahead=%s openRows=%d ready=%d",
+		h.status(t, raced), h.status(t, ahead), len(rows), ready)
+
+	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, raced))
+	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, ahead))
+	require.ElementsMatch(t,
+		[]string{openIndexKey(testRepo, raced), openIndexKey(testRepo, ahead)}, rows,
+		"a reopened job must be in the open index, or nothing will ever look at it again")
+	require.Equal(t, 2, ready, "and each must have an item")
+}
+
+// finishedAndStillListed is a job that has finished with its open-index row
+// left behind — the row mend exists to drop, and the row a reopen writes back.
+// Its item is drained first, so the reopen's push is a real one.
+func finishedAndStillListed(t *testing.T, h *harness, commit string) string {
+	t.Helper()
+
+	id := h.push(t, testRef, commit)
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	require.NoError(t, h.work.Ack(d))
 	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "boom"))
-
-	// The stale row reconcile exists to drop.
 	h.store.put(t, openIndexKey(testRepo, id), nil)
-
-	var retryErr error
-	retried := gated(t, h, jobRecordKey(id)).on(t, func() { retryErr = h.retry(id) })
-
-	require.NoError(t, h.reconcile())
-	<-retried
-	require.NoError(t, retryErr)
-
-	ready, _ := h.work.Depth()
-	t.Logf("retry=%v status=%s openRows=%d ready=%d",
-		retryErr, h.status(t, id), len(h.store.Keys(openIndexPrefix(testRepo))), ready)
-
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
-	require.Len(t, h.store.Keys(openIndexPrefix(testRepo)), 1,
-		"a reopened job must be in the open index, or nothing will ever look at it again")
-	require.Equal(t, 1, ready, "and it must have an item")
+	return id
 }
 
 // PAIR 5 — a redelivered webhook against cancel. Enqueue answers a push it
