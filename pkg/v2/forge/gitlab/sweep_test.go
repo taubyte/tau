@@ -571,7 +571,11 @@ func (in *sweepInstance) answer(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && strings.HasSuffix(path, "/deploy_keys"):
 		sweepJSON(w, map[string]any{"id": 77, "can_push": false})
 	case path == "/api/graphql":
+		// fullPath is the project that was ASKED about, so Access's own "did it
+		// answer about something else" comparison is not what fails a redirect
+		// row — the same reason the namespace answer below names itself.
 		sweepJSON(w, map[string]any{"data": map[string]any{"project": map[string]any{
+			"fullPath":        victim + "/pay",
 			"userPermissions": map[string]any{"pushCode": true, "adminProject": true}}}})
 	case path == "/api/v4/user":
 		sweepJSON(w, map[string]any{"id": 9, "username": successor})
@@ -710,6 +714,7 @@ var sweptBodies = []string{
 	"POST /api/graphql\n\t" + sweepJSONOf(map[string]any{
 		"query": "query($fullPath: ID!) {\n" +
 			"  project(fullPath: $fullPath) {\n" +
+			"    fullPath\n" +
 			"    userPermissions { pushCode adminProject }\n" +
 			"  }\n" +
 			"}",

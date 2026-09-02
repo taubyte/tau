@@ -110,7 +110,7 @@ func (c *client) get(ctx context.Context, key repokey.Key) (repoJSON, forge.Repo
 	if err := c.send(ctx, routeRepository.at(key.Owner, key.Name), nil, &r); err != nil {
 		return repoJSON{}, forge.Repository{}, c.classify(err, key)
 	}
-	repo, err := c.repository(r)
+	repo, err := c.repository(r, fmt.Sprintf("repository %q", key))
 	if err != nil {
 		return repoJSON{}, forge.Repository{}, err
 	}
@@ -127,7 +127,19 @@ func (c *client) get(ctx context.Context, key repokey.Key) (repoJSON, forge.Repo
 // key nothing could act on — the alternative is failing a whole listing over
 // one repository the caller never asked about.
 func (c *client) ListRepositories(ctx context.Context, yield func(forge.Repository) bool) error {
+	// A FORGE THAT ALWAYS ANSWERS A FULL PAGE IS AN UNBOUNDED LOOP inside a call
+	// a consumer thinks is one request. Stopping on a short page is termination
+	// while the forge is honest, which is not the same thing as termination: the
+	// gitlab driver bounds its own pager for this reason and this one did not,
+	// and the two drivers may not disagree about a threat the layer has written
+	// down. A hundred thousand repositories is more than any credential reaches
+	// and the same ceiling the other driver keeps.
+	const maxPages = 1000
+
 	for page := 1; ; page++ {
+		if page > maxPages {
+			return fmt.Errorf("forge/github: %s is still answering a full page after %d of them; refusing to keep paging", c.d.host, maxPages)
+		}
 		var out []repoJSON
 		rq := routeListRepositories.at().with(url.Values{
 			"per_page": {strconv.Itoa(listPageSize)},
@@ -136,8 +148,8 @@ func (c *client) ListRepositories(ctx context.Context, yield func(forge.Reposito
 		if err := c.send(ctx, rq, nil, &out); err != nil {
 			return c.classify(err, repokey.Key{})
 		}
-		for _, r := range out {
-			repo, err := c.repository(r)
+		for i, r := range out {
+			repo, err := c.repository(r, fmt.Sprintf("entry %d of listing page %d", i+1, page))
 			if err != nil {
 				continue
 			}
@@ -187,7 +199,7 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 		return forge.Repository{}, c.classifyResource(err)
 	}
 
-	repo, err := c.repository(r)
+	repo, err := c.repository(r, fmt.Sprintf("repository %q", key))
 	if err != nil {
 		return forge.Repository{}, err
 	}

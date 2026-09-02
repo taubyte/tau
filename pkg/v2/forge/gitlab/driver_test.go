@@ -3,6 +3,8 @@ package gitlab
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -49,6 +51,39 @@ func answer(t *testing.T, status int, body string) http.HandlerFunc {
 		if _, err := w.Write([]byte(body)); err != nil {
 			t.Errorf("writing a stub answer: %v", err)
 		}
+	}
+}
+
+// TestTheDriverKeepsNoCopyOfTheCallersCredential is the github driver's row of
+// the same name, which this package did not have.
+//
+// forge.Credential exists to close EVERY way of rendering key material: Format
+// catches every verb and the marshallers fail rather than redact. A driver that
+// unwraps one at the door and keeps the string beside its http.Client undoes
+// that in one line, and the line buys nothing — the credential is written by a
+// closure that captures the parameter and is read nowhere else.
+//
+// THE DEPLOYMENT'S CREDENTIAL IS A FIELD, deliberately: it belongs to the
+// driver and no Session can reach it. It is kept as a forge.Credential and not
+// as a string, which is what makes rendering the driver safe, and that is what
+// the second half asserts.
+func TestTheDriverKeepsNoCopyOfTheCallersCredential(t *testing.T) {
+	const caller = "gl-tok-CALLER-1a2b3c4d"
+	const deployment = "gl-tok-DEPLOY-9f8e7d6c"
+
+	d, err := New("gitlab.example", Deployment(forge.Token(deployment)))
+	require.NoError(t, err)
+	bound, err := d.Bind(forge.Token(caller))
+	require.NoError(t, err)
+	c := bound.(*client)
+
+	for _, rendering := range []string{
+		fmt.Sprintf("%v", *c), fmt.Sprintf("%+v", *c), fmt.Sprintf("%v", c),
+		fmt.Sprintf("%v", *c.cfg), fmt.Sprintf("%+v", *c.cfg),
+		fmt.Sprintf("%v", d), fmt.Sprintf("%+v", d),
+	} {
+		assert.NotContains(t, rendering, caller, "a rendering carried the caller's credential: %s", rendering)
+		assert.NotContains(t, rendering, deployment, "a rendering carried the deployment's credential: %s", rendering)
 	}
 }
 
@@ -268,10 +303,16 @@ func TestWhoamiReportsTheUserIdAsAnOpaqueSubject(t *testing.T) {
 // holds the same rule the same way.
 func TestAnAnswerThisDriverWillNotFinishReadingIsAnError(t *testing.T) {
 	var host string
-	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
-		answer(t, http.StatusOK, `{"padding":"`+strings.Repeat("x", 5<<20)+`",
+	c, key := stubClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		// WRITTEN WITHOUT REPORTING THE WRITE, and that is this case and not a
+		// shortcut. The driver is SUPPOSED to stop reading part way through, so
+		// the socket is closed under this handler and the write fails — which
+		// through the shared answer() helper is a t.Errorf that fires whenever
+		// the kernel has not already accepted the whole 5MB, which is a race.
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"padding":"`+strings.Repeat("x", 5<<20)+`",
 			"path_with_namespace":"acme/pay","http_url_to_repo":"http://`+host+`/acme/pay.git",
-			"default_branch":"main","visibility":"private"}`)(w, r)
+			"default_branch":"main","visibility":"private"}`)
 	})
 	host = key.Host
 
@@ -288,6 +329,43 @@ func TestAccessTurnsAGraphQLErrorArrayIntoAnError(t *testing.T) {
 	assert.Contains(t, err.Error(), "authorization query")
 	assert.NotContains(t, err.Error(), "pushCode", "the instance's own words reached the error")
 	assert.NotContains(t, err.Error(), "stub-token", "the credential is in an error string")
+}
+
+// TestAccessIsBoundToTheKeyItWasAskedAbout is the github driver's row of the
+// same name, and this driver did not have it.
+//
+// A VERDICT CARRIES NO NAME, so it is filed under the question's. userPermissions
+// describes whatever project the answer describes, and on this driver the
+// channel is not the 3xx noRedirect refuses: GraphQL resolves a project
+// internally, so a REDIRECT ROUTE left behind by a rename or a transfer is
+// followed with no status this driver ever sees. A transferred path is free for
+// anyone to re-register the moment it is transferred, which is what turns
+// "admin on whatever acme/pay currently points at" into a grant on a path an
+// attacker may already hold.
+func TestAccessIsBoundToTheKeyItWasAskedAbout(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusOK, `{"data":{"project":{
+		"fullPath":"attacker/pay",
+		"userPermissions":{"pushCode":true,"adminProject":true}}}}`))
+
+	got, err := c.Access(context.Background(), key)
+	t.Logf("Access(%s) = %v, err = %v", key, got, err)
+	assert.False(t, got.CanWrite(),
+		"Access answered %v for %q on the strength of the caller's grant on attacker/pay; the answer is not bound to the key that was asked about", got, key)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "attacker",
+		"the name the instance resolved to is a string it chose while holding the caller's credential")
+}
+
+// A project whose own path differs only in case is the SAME project: repokey
+// lowercases and GitLab does not, so a fold is not a disagreement.
+func TestAccessAcceptsTheAnswerNamingItselfInAnotherCase(t *testing.T) {
+	c, key := stubClient(t, answer(t, http.StatusOK, `{"data":{"project":{
+		"fullPath":"Acme/Pay",
+		"userPermissions":{"pushCode":true,"adminProject":false}}}}`))
+
+	got, err := c.Access(context.Background(), key)
+	require.NoError(t, err)
+	assert.Equal(t, forge.AccessWrite, got)
 }
 
 func TestAccessRefusesAnUnreadableAnswer(t *testing.T) {

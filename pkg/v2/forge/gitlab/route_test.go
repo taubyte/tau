@@ -168,6 +168,28 @@ func TestThisDriverBuildsAnHTTPRequestInExactlyOnePlace(t *testing.T) {
 		})
 	}
 
+	// AND ONE PLACE BUILDS THE CLIENT. The pin and the redirect policy are
+	// installed on an http.Client, so a second one built anywhere is a second
+	// set of both — which is exactly the shape of the defect an earlier round
+	// found here, where a redirect policy lived on one of this driver's two
+	// clients and not the other.
+	clients := []string{}
+	for _, file := range pkg.Syntax {
+		ast.Inspect(file, func(n ast.Node) bool {
+			lit, ok := n.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			if named, ok := pkg.TypesInfo.TypeOf(lit).(interface{ String() string }); ok && named.String() == "net/http.Client" {
+				clients = append(clients, pkg.Fset.Position(lit.Pos()).String())
+			}
+			return true
+		})
+	}
+	t.Logf("this driver builds an http.Client at %v", clients)
+	assert.Len(t, clients, 1,
+		"this driver builds more than one http.Client, so the credential pin and the redirect policy are installed in more than one place")
+
 	t.Logf("this driver reaches the network at %v", builders)
 	assert.Len(t, builders, 2,
 		"this driver builds or issues an HTTP request somewhere other than do, so the routing table does not cover every request it makes")

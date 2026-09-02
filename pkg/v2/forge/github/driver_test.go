@@ -653,6 +653,39 @@ func TestTheListingStopsWhenTheCallerStops(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
+// TestTheListingStopsPagingEventually is the gitlab driver's row of the same
+// name, which this driver did not have. Its pager terminates on a SHORT page,
+// which is termination while the forge is honest; a forge that always answers a
+// full one is an unbounded loop inside a call a consumer thinks is one request.
+//
+// THE FORGE HERE RUNS OUT EVENTUALLY, and that is not a softened case: it runs
+// out well past the bound, so a driver that keeps the bound stops first and a
+// driver that drops it FINISHES and returns nil. Without it the row would be
+// satisfied by the test binary's own timeout, which fails no name and takes ten
+// minutes to say so.
+func TestTheListingStopsPagingEventually(t *testing.T) {
+	const pastTheBound = 4000
+
+	page := 0
+	sess, _ := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		page++
+		w.Header().Set("Content-Type", "application/json")
+		if page > pastTheBound {
+			io.WriteString(w, "[]")
+			return
+		}
+		// A FULL page of entries this driver cannot name, so the loop keeps
+		// going on the count — which is the whole of what termination rests on
+		// — while each page stays small enough to run in milliseconds.
+		io.WriteString(w, "["+strings.Repeat("{},", 99)+"{}]")
+	}), "acme/pay")
+
+	err := sess.ListRepositories(ctx(), func(forge.Repository) bool { return true })
+	require.Errorf(t, err, "this driver paged a forge %d times and believed it had reached the end", page)
+	assert.Contains(t, err.Error(), "refusing to keep paging")
+	assert.Less(t, page, pastTheBound, "the bound is not what stopped it")
+}
+
 func TestAListingThatFailsIsAnError(t *testing.T) {
 	sess, _ := sessionOn(t, answer(http.StatusUnauthorized, `{"message":"Bad credentials"}`), "acme/pay")
 	err := sess.ListRepositories(ctx(), func(forge.Repository) bool { return true })

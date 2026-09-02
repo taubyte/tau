@@ -72,9 +72,17 @@ func (d *driver) Push(body forge.VerifiedBody, header http.Header) (forge.PushCl
 	case len(p.Repository.CloneURL) > maxHostString:
 		return forge.PushClaim{}, errors.New("forge/github: push payload names a repository by an implausibly long clone URL")
 	}
+	// THE REASON IS NOT CARRIED, which is the same rule repository() keeps. A
+	// delivery is a stranger bytes that a signature proves the forge RELAYED,
+	// up to the core cap, and repokey quotes what it was given — so a clone URL
+	// with an identity half, the one shape repokey calls a secret at rest,
+	// would be written into a tau log by whoever composed the payload.
+	// Measured: a delivery naming
+	// https://x-access-token:<token>@github.com/acme/pay.git put that token in
+	// the error.
 	key, err := repokey.Parse(p.Repository.CloneURL)
 	if err != nil {
-		return forge.PushClaim{}, fmt.Errorf("forge/github: push payload names no repository this layer can address: %w", err)
+		return forge.PushClaim{}, errors.New("forge/github: push payload names no repository this layer can address")
 	}
 
 	// "after" is the ref's new tip and is present on every push INCLUDING a

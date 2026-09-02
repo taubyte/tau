@@ -282,6 +282,19 @@ func (p permissions) access() forge.Access {
 // makes a rename, a redirect or a case-folding disagreement visible instead of
 // silently absorbed: a caller that echoed its own argument would never know.
 //
+// asked IS WHAT TAU CALLED THIS REPOSITORY, and every error below names it
+// rather than the full_name the forge sent, and carries no reason repokey gave.
+// The forge chose both of those strings while holding the caller credential,
+// and repokey QUOTES WHAT IT WAS GIVEN — so a clone URL with an identity half,
+// which is the one shape repokey calls a secret at rest, was the forge writing
+// a credential of its choosing into tau logs through the one path that refuses
+// them. Measured: a 200 answering
+// clone_url https://x-access-token:<token>@host/acme/pay.git put that token in
+// the error. A caller always has a name of its own — the key it asked about, or
+// the coordinates of the listing entry — and it is the more useful half of the
+// mismatch anyway. This is the gitlab driver rule, and two drivers over one
+// interface may not disagree about a threat the layer has written down.
+//
 // A CLONE URL ON ANOTHER HOST IS REFUSED, and the gitlab driver refuses the same
 // thing for the same reason — it calls it not hypothetical, because an instance
 // behind a proxy that was told the wrong external URL emits exactly that. Two
@@ -296,16 +309,19 @@ func (p permissions) access() forge.Access {
 // port, which is a good clone address and a different repokey key. Nothing
 // clones it with a bearer credential, so it is a fact reported rather than a
 // place a secret goes.
-func (c *client) repository(r repoJSON) (forge.Repository, error) {
-	if len(r.CloneURL) > maxHostString {
-		return forge.Repository{}, fmt.Errorf("forge/github: %q came back with an implausibly long clone URL", short(r.FullName))
+func (c *client) repository(r repoJSON, asked string) (forge.Repository, error) {
+	switch {
+	case r.CloneURL == "":
+		return forge.Repository{}, fmt.Errorf("forge/github: %s described %s with no clone URL, so there is nothing to derive a key from", c.d.host, asked)
+	case len(r.CloneURL) > maxHostString:
+		return forge.Repository{}, fmt.Errorf("forge/github: %s described %s with a %d-byte clone URL, which is not one", c.d.host, asked, len(r.CloneURL))
 	}
 	key, err := repokey.Parse(r.CloneURL)
 	if err != nil {
-		return forge.Repository{}, fmt.Errorf("forge/github: the clone URL of %q is not one this layer can name: %w", short(r.FullName), err)
+		return forge.Repository{}, fmt.Errorf("forge/github: %s reported a clone URL for %s that this layer cannot derive a key from", c.d.host, asked)
 	}
 	if key.Host != c.d.host {
-		return forge.Repository{}, fmt.Errorf("forge/github: %s answered with a clone URL on host %q; a key derived from it would name a repository on a host this deployment has no driver for, and the address would be one a clone spends a credential at", c.d.host, short(key.Host))
+		return forge.Repository{}, fmt.Errorf("forge/github: %s reported %s on host %q; a key derived from it would name a repository on a host this deployment has no driver for, and the address would be one a clone spends a credential at", c.d.host, asked, key.Host)
 	}
 	return forge.Repository{
 		Key:           key,
@@ -314,14 +330,4 @@ func (c *client) repository(r repoJSON) (forge.Repository, error) {
 		DefaultBranch: r.DefaultBranch,
 		Private:       r.Private,
 	}, nil
-}
-
-// short truncates a host-chosen string for an error message. It cuts bytes
-// rather than runes because %q renders a broken one as an escape, which is
-// exactly as readable and one fewer thing to get wrong.
-func short(s string) string {
-	if len(s) > maxHostString {
-		return s[:maxHostString] + "..."
-	}
-	return s
 }

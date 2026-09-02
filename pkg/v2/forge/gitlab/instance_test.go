@@ -356,6 +356,7 @@ func (in *instance) serveGraphQL(w http.ResponseWriter, r *http.Request, token s
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"project": map[string]any{
+		"fullPath": p.path,
 		"userPermissions": map[string]any{
 			"pushCode":     level.CanWrite(),
 			"adminProject": level.CanAdmin(),

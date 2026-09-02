@@ -71,10 +71,15 @@ func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 }
 
 // accessQuery asks GitLab what this credential may do to one project. It names
-// two permissions and nothing else, because every extra field is another thing
-// that can be renamed out from under a running deployment.
+// two permissions and the project's own path, and nothing else, because every
+// extra field is another thing that can be renamed out from under a running
+// deployment.
+//
+// fullPath IS THE ANSWER'S NAME, and it is asked for so that the verdict can be
+// bound to the question. See Access.
 const accessQuery = `query($fullPath: ID!) {
   project(fullPath: $fullPath) {
+    fullPath
     userPermissions { pushCode adminProject }
   }
 }`
@@ -111,6 +116,7 @@ func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, err
 	var answer struct {
 		Data struct {
 			Project *struct {
+				FullPath        string `json:"fullPath"`
 				UserPermissions struct {
 					PushCode     bool `json:"pushCode"`
 					AdminProject bool `json:"adminProject"`
@@ -134,6 +140,22 @@ func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, err
 	}
 	if answer.Data.Project == nil {
 		return forge.AccessNone, &forge.NotFoundError{Host: c.cfg.host, Key: key}
+	}
+	// AND IT IS BOUND TO THE PROJECT IT WAS ASKED ABOUT. userPermissions is a
+	// nameless field: it describes whatever project the answer describes, so
+	// reading it as the verdict for a different key answers a question nobody
+	// asked. The channel is not the 3xx noRedirect refuses — GraphQL resolves a
+	// project internally, so a REDIRECT ROUTE left behind by a rename or a
+	// TRANSFER is followed with no status this driver ever sees, and a
+	// transferred path is free for anyone to re-register the moment it is
+	// transferred. "admin on whatever victim/pay currently points at" is then a
+	// grant on a path an attacker may already hold.
+	//
+	// The name it resolved TO is not quoted, for the reason repository gives:
+	// the instance chose that string while holding the caller's credential.
+	// Case is not a disagreement: repokey lowercases and GitLab does not.
+	if !strings.EqualFold(answer.Data.Project.FullPath, key.FullName()) {
+		return forge.AccessNone, fmt.Errorf("gitlab: %s was asked what this credential may do to %q and answered about a different project", c.cfg.host, key)
 	}
 
 	switch permissions := answer.Data.Project.UserPermissions; {
