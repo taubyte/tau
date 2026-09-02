@@ -359,6 +359,27 @@ func violateStrandedFault(t *testing.T) *ledger {
 	return nil
 }
 
+// violateStrandedFaultDeclaredWithoutItsType is the same rule evaded by
+// SPELLING rather than by deletion: a fault the fake forge can be told to have,
+// declared without the type on its line and typed where it is used, which is
+// where an untyped constant gets its type.
+//
+// Measured living in the real fake forge — a live fault making RemoveDeployKey
+// a no-op, wired into faces.go — with the ledger still reporting 58 faults, this
+// rule silent, and the whole tree at GO_TEST_EXIT=0. Written with the type on
+// the line, the same fault is named here immediately. That is a population read
+// off a spelling, and it is a hole in the census, in the registry check and in
+// this rule at once.
+func violateStrandedFaultDeclaredWithoutItsType(t *testing.T) *ledger {
+	src := suiteSource(t).withIn(t, "../fake", "ledger_fault_untyped_fault.go", `package fake
+
+const faultDeclaredWithoutItsType = "declared-without-its-type"
+
+var _ Fault = faultDeclaredWithoutItsType
+`)
+	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
+}
+
 // violateFaultDoesNothing is the laundering that started this round, run for
 // real: a proof carrying one more fault than anything it says depends on.
 //

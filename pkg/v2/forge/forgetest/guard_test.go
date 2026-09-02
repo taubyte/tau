@@ -201,7 +201,8 @@ func ledgerRules() []rule {
 		{ruleOrphan, checkOrphan, breaks(violateOrphan,
 			violateOrphanInATopLevelLiteral, violateOrphanInAMarker,
 			violateOrphanThroughAMethodValue, violateOrphanThroughAName)},
-		{ruleStrandedFault, checkStrandedFault, breaks(violateStrandedFault)},
+		{ruleStrandedFault, checkStrandedFault, breaks(violateStrandedFault,
+			violateStrandedFaultDeclaredWithoutItsType)},
 		{ruleFaultDoesNothing, checkFaultDoesNothing, breaks(violateFaultDoesNothing)},
 		{ruleUnwalkedBody, checkUnwalkedBody, breaks(violateUnwalkedBody)},
 		{ruleFailurePutDown, checkFailurePutDown, breaks(violateFailurePutDown)},
@@ -587,6 +588,23 @@ const harnessNobodyRuns harnessName = "a way of running the rules nothing ever r
 	if len(everyRun().unaccounted(broken)) == 0 {
 		t.Fatalf("a harness declared and never run went unnoticed, so declaring one and leaving it out of the list would too")
 	}
+
+	// AND ONE DECLARED WITHOUT THE TYPE ON ITS LINE, which is the same
+	// declaration with one token deleted. Measured: untyping
+	// harnessTheSuiteObeysTheLedger — which leaves it a perfectly good harness
+	// name, because the field it is written into is one — took that harness out
+	// of the census's population while leaving it in the program, and
+	// `ledgerHarnesses()[1:]` beside it hid the deleted LastDeployKeyReadOnly
+	// contract at GO_TEST_EXIT=0.
+	stripped := src.with(t, "ledger_fault_unheld_untyped_harness_test.go", `package forgetest
+
+const harnessNobodyRunsEither = "a way of running the rules nothing ever runs, declared without the type on the line"
+
+var _ = harness{name: harnessNobodyRunsEither}
+`)
+	if len(everyRun().unaccounted(stripped)) == 0 {
+		t.Fatalf("a harness declared without the type on its line, and never run, went unnoticed: the census is a closure over a spelling and not over the harnesses this file declares")
+	}
 }
 
 // TestGoingRoundTheRulesIsNotSatisfiedByAnythingButEachOnce is the handout's
@@ -757,6 +775,25 @@ const ruleNobodyReads ruleName = "a rule the registry never looks at"
 `)
 		if len(unreadRules(broken, read)) == 0 {
 			heard.Errorf("a rule declared and left out of the registry went unnoticed, so shortening the registry — or emptying it — would too")
+		}
+	})
+	t.Run("one more rule declared without the type on the line", func(t *testing.T) {
+		// AND A DECLARATION IS NOT A TYPE ANNOTATION. constantsOf used to ask
+		// for constants written `ruleName = ...`, so deleting that one token
+		// took a rule out of the population without taking it out of the
+		// program: measured, untyping ruleOrphan and dropping its registry
+		// entry left a live orphan assertion in optional.go at GO_TEST_EXIT=0,
+		// gofmt clean and vet clean. A constant has a type where it is USED,
+		// and that is what is read now — so this fault is spelled the way the
+		// evasion was.
+		broken := src.with(t, "ledger_fault_unread_untyped_rule_test.go", `package forgetest
+
+const ruleNobodyReadsEither = "a rule the registry never looks at, declared without the type on the line"
+
+var _ = complaint{rule: ruleNobodyReadsEither}
+`)
+		if len(unreadRules(broken, read)) == 0 {
+			heard.Errorf("a rule declared without the type on its line, and left out of the registry, went unnoticed: the registry check is a closure over a spelling and not over the rules this file declares")
 		}
 	})
 }

@@ -383,7 +383,15 @@ func suiteSource(t *testing.T) *source {
 // is the sentence this whole file is built on.
 func (s *source) with(t *testing.T, name, content string) *source {
 	t.Helper()
-	dir, err := filepath.Abs(".")
+	return s.withIn(t, ".", name, content)
+}
+
+// withIn is the same, in some other package of this tree. A fault is declared
+// in the fake forge and not here, so a fault whose DECLARATION is what is being
+// shown has to be put where faults live.
+func (s *source) withIn(t *testing.T, dir, name, content string) *source {
+	t.Helper()
+	dir, err := filepath.Abs(dir)
 	if err != nil {
 		t.Fatalf("finding the suite's own directory, to show the ledger a source that breaks its rules: %v", err)
 	}
@@ -451,7 +459,10 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 	if obj == nil {
 		return nil, fmt.Errorf("this package declares no `step` type, which is what marks a marker; see plumbing.go. Without it every step reads as a claim")
 	}
-	faults, err := constantsOf(faked, faultType.Name())
+	// The fake forge's own source is where a fault is CONSULTED, and the
+	// suite's is where one is injected: a constant whose line has been stripped
+	// of its type is typed at either, so both are read.
+	faults, err := constantsOf(faked, faultType.Name(), tested)
 	if err != nil {
 		return nil, err
 	}
@@ -472,26 +483,81 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 var suitePath = reflect.TypeOf(assertion{}).PkgPath()
 
 // constantsOf is every constant of one named string type in a package, by value
-// and by the name it is declared under. It reads the fake forge's faults and
-// this file's own rule names, and for the same reason in both cases: a
-// population kept in a list beside the code is a population somebody forgets to
-// add to, or quietly shortens.
-func constantsOf(pkg *packages.Package, typeName string) (map[string]string, error) {
-	scope := pkg.Types.Scope()
+// and by the name it is declared under. It reads the fake forge's faults, this
+// file's own rule names and the names of the three things that run them, and
+// for the same reason in all three cases: a population kept in a list beside
+// the code is a population somebody forgets to add to, or quietly shortens.
+//
+// A DECLARATION IS NOT A TYPE ANNOTATION, and asking for one made this a
+// closure over a SPELLING. It used to keep a constant only when its own line
+// read `X harnessName = "..."`, so deleting that one token took a thing out of
+// the population without taking it out of the program. Measured, all three
+// uses, each gofmt clean and vet clean and each GO_TEST_EXIT=0 over the whole
+// forge tree:
+//
+//	harnessTheSuiteObeysTheLedger untyped, plus ledgerHarnesses()[1:] — the
+//	  census no longer had that harness in its population, so it did not name
+//	  the run that never happened, and the deleted LastDeployKeyReadOnly
+//	  contract rode home green
+//	ruleOrphan untyped, plus its registry entry dropped — the orphan rule was
+//	  off and a live orphan assertion in optional.go went unnamed
+//	a LIVE fake.Fault untyped, making RemoveDeployKey a no-op — the ledger went
+//	  on reporting 58 faults and ruleStrandedFault stayed quiet about a mistake
+//	  no proof injects
+//
+// So a constant is found by what it IS. An untyped constant declared in a const
+// block still has a type where it is USED — go/types records the converted type
+// of every expression — and a constant nothing uses is a constant no harness
+// runs, no registry reads and no fake forge can be told to have. Both readings
+// are taken and unioned: the typed declaration for the ones nothing uses yet,
+// and the use for the ones whose line has been stripped.
+//
+// Types are compared by their fully qualified NAME rather than by identity,
+// because a package loaded as a root and the same package seen through an
+// importer's export data are two *types.Named values that are not identical.
+func constantsOf(decl *packages.Package, typeName string, alsoUsedIn ...*packages.Package) (map[string]string, error) {
+	scope := decl.Types.Scope()
 	obj := scope.Lookup(typeName)
 	if obj == nil {
-		return nil, fmt.Errorf("%s declares no %s type, which is what a fault is", pkg.PkgPath, typeName)
+		return nil, fmt.Errorf("%s declares no %s type, which is what a fault is", decl.PkgPath, typeName)
 	}
+	want := obj.Type().String()
+
 	out := map[string]string{}
+	keep := func(c *types.Const) {
+		if c.Pkg() == nil || c.Pkg().Path() != decl.PkgPath || c.Val().Kind() != constant.String {
+			return
+		}
+		out[constant.StringVal(c.Val())] = c.Name()
+	}
 	for _, name := range scope.Names() {
-		c, ok := scope.Lookup(name).(*types.Const)
-		if !ok || !types.Identical(c.Type(), obj.Type()) || c.Val().Kind() != constant.String {
+		if c, ok := scope.Lookup(name).(*types.Const); ok && c.Type().String() == want {
+			keep(c)
+		}
+	}
+	for _, pkg := range append([]*packages.Package{decl}, alsoUsedIn...) {
+		if pkg == nil || pkg.TypesInfo == nil {
 			continue
 		}
-		out[constant.StringVal(c.Val())] = name
+		for _, file := range pkg.Syntax {
+			ast.Inspect(file, func(n ast.Node) bool {
+				id, ok := n.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				c, ok := pkg.TypesInfo.Uses[id].(*types.Const)
+				if !ok {
+					return true
+				}
+				if tv, ok := pkg.TypesInfo.Types[id]; ok && tv.Type != nil && tv.Type.String() == want {
+					keep(c)
+				}
+				return true
+			})
+		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("%s declares no %s at all", pkg.PkgPath, typeName)
+		return nil, fmt.Errorf("%s declares no %s at all", decl.PkgPath, typeName)
 	}
 	return out, nil
 }
