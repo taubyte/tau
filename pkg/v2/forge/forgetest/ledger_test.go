@@ -3,13 +3,19 @@ package forgetest
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
+	"go/constant"
 	"go/token"
+	"go/types"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // THE INVERSE GUARD.
@@ -47,55 +53,66 @@ import (
 // step is the same defect this file exists to close, one level up. So the one
 // exemption is spelled, it is narrow, and it is checked.
 //
-// THERE WAS A THIRD KIND AND IT WAS AN ESCAPE HATCH. A trailing comment,
-// `// held by forge: TestX`, exempted an assertion from needing a fault on the
-// grounds that pkg/v2/forge produces its value with no driver code in between.
-// The only thing checked was that a test called TestX existed somewhere in that
-// package — never that it held anything, never that the assertion was
-// driver-independent at all. Measured: assert.NotNil on a value three lines
-// older than the assertion passed with the marker and failed without it, under
-// a marker naming a test about registry resolution. Measured the other way: an
-// existing held assertion with its call to the thing under test replaced by a
-// constant left the tree at exit 0. Thirty-four assertions, a fifth of the
-// suite, sat behind it.
-//
-// A comment is not proof, and there is no proof to be had HERE: an assertion
-// whose value the core produces on its own can only be killed by breaking the
-// core, and the core is one package down, concrete, and correctly not
-// substitutable. So the assertions went where the fault that can kill them
-// lives — pkg/v2/forge's own tests, which already held every one of them, and
-// which say so in session_test.go's header. What was left in this suite was a
-// copy that read like a check.
-//
-//	CONTRACT — assert/require/Errorf/Fatalf. A claim about the SUBJECT: the
+//	CONTRACT — a call that fails the suite. A claim about the SUBJECT: the
 //	driver, and the probes its author wired up. Needs a fault.
 //
-//	PLUMBING — mustReach/mustAsk/mustHold. A step the suite takes on its way to
-//	a question; see plumbing.go. Needs no fault, and MUST NOT HAVE ONE: a step a
-//	proof can kill was a claim somebody demoted, and that is a build failure
-//	naming the proof. It must also be ON ITS WAY somewhere — a real assertion
-//	after it in the same function, or a function that returns the value a
-//	caller asks its question with.
+//	PLUMBING — a marker, which is any function asking for a step. A step the
+//	suite takes on its way to a question; see plumbing.go. Needs no fault, and
+//	MUST NOT HAVE ONE: a step a proof can kill was a claim somebody demoted,
+//	and that is a build failure naming the proof. It must also be ON ITS WAY
+//	somewhere — a real assertion after it in the same function, or a function
+//	that returns the value a caller asks its question with.
 //
 //	THE ONE EXCUSE FOR A STEP THAT FIRES, and the two things that hold it shut.
 //	A proof may list a step it STOPS, because an honest cascade exists: a
 //	Subject declaring a capability its driver has not got turns the next call
 //	into an *UnsupportedError and the suite really did not get there. Left free,
 //	that list was a way to hide a live claim — respell it as a step, move its
-//	saying one list over, tree green. So a stop must now be BOTH:
+//	saying one list over, tree green. So a stop must now be BOTH a capability
+//	refusal, which only a marker emits and only for an *UnsupportedError, and
+//	COLLATERAL, in a function this proof does not also name a claim in.
 //
-//	  a capability refusal — the step's own words must carry
-//	  refusedCapability, which only mustReach and mustAsk emit and only for an
-//	  *UnsupportedError. A step that fired because a driver answered wrongly or
-//	  a probe lied is a complaint about the subject, and a complaint has one
-//	  honest spelling.
+// ─────────────────────────────────────────────────────────────────────────────
 //
-//	  collateral — the step must not be in a function this proof also names a
-//	  claim in. A proof's complaint and the place it "could not reach" are not
-//	  the same place; when they are, the stop IS the complaint, renamed.
+// THE POPULATION IS FOUND BY TYPE, AND IT USED TO BE FOUND BY SPELLING.
 //
-// The population is read out of the source with go/ast rather than kept in a
-// list, because a list is a thing you can forget to add to.
+// This file matched the literal identifiers "assert", "require" and "t" at the
+// call site and had a table of call names beside them. Anything spelled
+// otherwise was not in the population at all — and the population is what every
+// rule below is computed over, so an assertion outside it needs no message, no
+// proof and no fault, and nothing anywhere says so.
+//
+// Measured: a conformance subtest in a new file importing testify as `check`,
+// with three assertions no proof could kill, left the tree at exit 0, gofmt
+// clean and vet clean, and left this file's own census UNCHANGED at "145
+// assertions: 105 contract, 40 plumbing" while `go test -v` showed the subtest
+// running. Renaming a tb receiver from `t` to `tt` did the same. The ledger was
+// BLIND, not permissive; the exemption had moved from a comment to an import
+// alias and got cheaper to type than the comment had been.
+//
+// So the population is resolved with go/types, and a call is an assertion
+// because of WHAT IT IS:
+//
+//	a call to a function DECLARED OUTSIDE THIS PACKAGE that takes something it
+//	can fail through — a parameter whose type has an Errorf. That is testify's
+//	TestingT, and it is testify under any alias, any dot-import, any fork and
+//	any wrapper written outside this package.
+//
+//	a call to one of the methods that fail a TB — Error, Errorf, Fatal, Fatalf,
+//	Fail, FailNow — on a receiver that has an Errorf, whatever the receiver is
+//	named at the call site.
+//
+//	a call to a MARKER, which is any function asking for a step. Not three
+//	names: a type, so the fourth marker is seen the day it is written.
+//
+// A function declared INSIDE this package is never a leaf: its body is walked,
+// so a wrapper does not hide the assertion in it — the assertion is counted
+// where it is written, and the wrapper is the place a proof must name.
+//
+// THE THREE ANCHORS THIS LEAVES are a type name, six method names and "outside
+// this package", and none of them is a call-site spelling. `step` is looked up
+// by name and its absence is a failure of its own; Errorf cannot be renamed and
+// still fail a test; and "outside this package" is not a name at all.
 
 // kind is which of the two an entry is.
 type kind int
@@ -121,96 +138,289 @@ type assertion struct {
 	kind kind
 }
 
-// fixedArgs is how many arguments each call takes before its message. testify's
-// message is the trailing variadic, so the count is the only way to tell a
-// message from an expected value: assert.Contains(t, hay, "needle") has none,
-// and assert.Equal(t, want, got, "why") has one. An unknown call name is a
-// build failure rather than a guess.
-var fixedArgs = map[string]int{
-	"assert.Equal": 2, "assert.NotEqual": 2, "assert.ErrorIs": 2, "assert.ErrorAs": 2,
-	"assert.Contains": 2, "assert.NotContains": 2, "assert.Len": 2,
-	"assert.NoError": 1, "assert.Error": 1, "assert.True": 1, "assert.False": 1,
-	"assert.Empty": 1, "assert.NotEmpty": 1, "assert.Nil": 1, "assert.NotNil": 1,
-	"assert.Fail": 1,
-
-	"require.Equal": 2, "require.NotEqual": 2, "require.ErrorIs": 2, "require.ErrorAs": 2,
-	"require.Contains": 2, "require.NotContains": 2, "require.Len": 2,
-	"require.NoError": 1, "require.Error": 1, "require.True": 1, "require.False": 1,
-	"require.Empty": 1, "require.NotEmpty": 1, "require.Nil": 1, "require.NotNil": 1,
-	"require.Fail": 1,
-
-	// The suite's own two ways of failing, which carry their message first.
-	"t.Errorf": 0, "t.Fatalf": 0,
-
-	// And the three ways it says a step is not one. Their question is where a
-	// message would be, so they read like everything above.
-	"mustReach": 1, "mustAsk": 1, "mustHold": 1,
+// failing is the set of methods that fail a testing.TB. A receiver can be
+// called anything and a package can be imported under any alias, but a method
+// that stops a test is one of these six: the name is the interface's, not the
+// call site's, and renaming it does not compile.
+var failing = map[string]bool{
+	"Error": true, "Errorf": true, "Fatal": true, "Fatalf": true,
+	"Fail": true, "FailNow": true,
 }
 
-// markers are the functions that MAKE a step a step. Their own bodies fail the
-// suite — that is what they are for — but a failure inside a marker is the
-// marker firing and not an assertion of its own, so the walk steps over them.
-var markers = map[string]bool{"mustReach": true, "mustAsk": true, "mustHold": true}
+// source is this suite's own package, type-checked. Everything the ledger
+// reads about the population comes from here.
+type source struct {
+	pkg      *packages.Package
+	reporter *types.Interface // anything with an Errorf: testify's TestingT, tb, *testing.T
+	step     types.Type       // the marker's question type
+}
 
-// population is every assertion in the suite, read out of the source. Test
-// files are not part of it: this file, and the proofs beside it, are the thing
-// doing the asserting.
+var (
+	loadOnce sync.Once
+	loaded   *source
+	loadErr  error
+)
+
+// suiteSource type-checks the suite's own source. Test files are not part of
+// it: this file, and the proofs beside it, are the thing doing the asserting.
+//
+// The load is hermetic on purpose. GOPROXY=off makes a module that is not
+// already in the cache a loud failure rather than a network fetch from inside a
+// test, and GOWORK=off keeps a workspace somebody happens to have from
+// deciding which source this reads.
+func suiteSource(t *testing.T) *source {
+	t.Helper()
+	loadOnce.Do(func() { loaded, loadErr = loadSuite() })
+	if loadErr != nil {
+		t.Fatalf("type-checking the suite's own source, which is the population every rule below is computed over: %v", loadErr)
+	}
+	return loaded
+}
+
+func loadSuite() (*source, error) {
+	cfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+		Dir: ".",
+		Env: append(os.Environ(), "GOPROXY=off", "GOWORK=off"),
+	}
+	pkgs, err := packages.Load(cfg, ".")
+	if err != nil {
+		return nil, err
+	}
+	if len(pkgs) != 1 {
+		return nil, fmt.Errorf("loading the suite's own package answered %d packages", len(pkgs))
+	}
+	pkg := pkgs[0]
+	if len(pkg.Errors) > 0 {
+		return nil, fmt.Errorf("%v", pkg.Errors)
+	}
+	if pkg.TypesInfo == nil || len(pkg.Syntax) == 0 {
+		return nil, fmt.Errorf("the suite's own package came back with no type information")
+	}
+	obj := pkg.Types.Scope().Lookup("step")
+	if obj == nil {
+		return nil, fmt.Errorf("this package declares no `step` type, which is what marks a marker; see plumbing.go. Without it every step reads as a claim")
+	}
+	return &source{pkg: pkg, reporter: reporterInterface(), step: obj.Type()}, nil
+}
+
+// reporterInterface is `interface{ Errorf(string, ...any) }`, built rather than
+// imported because it must match three unrelated declarations: testify's
+// TestingT, this package's tb, and testing.TB. Anything a call can fail
+// through has it.
+func reporterInterface() *types.Interface {
+	anyT := types.NewInterfaceType(nil, nil)
+	anyT.Complete()
+	sig := types.NewSignatureType(nil, nil, nil,
+		types.NewTuple(
+			types.NewVar(token.NoPos, nil, "format", types.Typ[types.String]),
+			types.NewVar(token.NoPos, nil, "args", types.NewSlice(anyT)),
+		), nil, true)
+	iface := types.NewInterfaceType([]*types.Func{
+		types.NewFunc(token.NoPos, nil, "Errorf", sig),
+	}, nil)
+	iface.Complete()
+	return iface
+}
+
+// failure is what one call in the source turns out to be.
+type failure struct {
+	spelling string // how it reads at the call site, for a message
+	at       int    // which argument carries the message, or -1
+	kind     kind
+}
+
+// howItFails resolves a call to its declared function and says whether that
+// function is one of the ways this suite fails, where its message sits, and
+// which of the two kinds it is. It answers by TYPE: an alias, a renamed
+// receiver, a dot-import and a fork are all the same object underneath.
+func (s *source) howItFails(call *ast.CallExpr) (failure, bool) {
+	fn, recv := s.callee(call)
+	if fn == nil {
+		return failure{}, false
+	}
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok {
+		return failure{}, false
+	}
+	spelling := s.spell(call, fn)
+
+	// A marker: any function that asks for a step. The question is where its
+	// message is, which is what a step says it was on its way to.
+	if at := s.stepParam(sig); at >= 0 {
+		return failure{spelling: spelling, at: at, kind: plumbing}, true
+	}
+
+	// A method that fails a TB, on a receiver that can be failed through.
+	if sig.Recv() != nil && failing[fn.Name()] && recv != nil && types.Implements(recv, s.reporter) {
+		return failure{spelling: spelling, at: messageArg(sig), kind: contract}, true
+	}
+
+	// A leaf assertion: declared outside this package and handed something it
+	// can fail through. This is testify, under whatever name.
+	if fn.Pkg() != nil && fn.Pkg() != s.pkg.Types && takesAReporter(sig, s.reporter) {
+		return failure{spelling: spelling, at: messageArg(sig), kind: contract}, true
+	}
+	return failure{}, false
+}
+
+// callee resolves what a call actually calls, and the receiver it is called on.
+func (s *source) callee(call *ast.CallExpr) (*types.Func, types.Type) {
+	info := s.pkg.TypesInfo
+	switch fun := ast.Unparen(call.Fun).(type) {
+	case *ast.SelectorExpr:
+		if sel, ok := info.Selections[fun]; ok {
+			fn, _ := sel.Obj().(*types.Func)
+			return fn, info.TypeOf(fun.X)
+		}
+		fn, _ := info.Uses[fun.Sel].(*types.Func)
+		return fn, nil
+	case *ast.Ident:
+		fn, _ := info.Uses[fun].(*types.Func)
+		return fn, nil
+	}
+	return nil, nil
+}
+
+// spell is how a call reads where it is written, which is what a failure
+// message should quote back. It is a label and never an identity.
+func (s *source) spell(call *ast.CallExpr, fn *types.Func) string {
+	if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok {
+		if x, ok := ast.Unparen(sel.X).(*ast.Ident); ok {
+			return x.Name + "." + sel.Sel.Name
+		}
+		return sel.Sel.Name
+	}
+	return fn.Name()
+}
+
+// stepParam is where a marker's question sits, or -1 for a function that asks
+// for no step.
+func (s *source) stepParam(sig *types.Signature) int {
+	for i := 0; i < sig.Params().Len(); i++ {
+		if types.Identical(sig.Params().At(i).Type(), s.step) {
+			return i
+		}
+	}
+	return -1
+}
+
+// takesAReporter reports whether a function is handed something it can fail
+// through — testify's TestingT and everything shaped like it.
+func takesAReporter(sig *types.Signature, reporter *types.Interface) bool {
+	for i := 0; i < sig.Params().Len(); i++ {
+		if types.Implements(sig.Params().At(i).Type(), reporter) {
+			return true
+		}
+	}
+	return false
+}
+
+// messageArg is which argument carries the message, read off the signature
+// rather than out of a table of call names.
+//
+// The two shapes are told apart by the parameter BEFORE the variadic. Errorf
+// and every marker read (format string, args ...any), so the message is that
+// string. testify reads (t, expected, actual, msgAndArgs ...any), so the
+// message is the head of the variadic itself. A call whose message argument is
+// not a string literal ends up saying nothing, and an assertion that says
+// nothing is a failure of its own — so a signature this reads wrongly is loud.
+func messageArg(sig *types.Signature) int {
+	n := sig.Params().Len()
+	if !sig.Variadic() || n < 2 {
+		return -1
+	}
+	if basic, ok := sig.Params().At(n - 2).Type().(*types.Basic); ok && basic.Kind() == types.String {
+		return n - 2
+	}
+	return n - 1
+}
+
+// isMarkerDecl reports whether a declared function IS a marker. Its body fails
+// the suite — that is what it is for — but a failure inside a marker is the
+// marker firing and not an assertion of its own, so the walk steps over it.
+func (s *source) isMarkerDecl(fn *ast.FuncDecl) bool {
+	obj, _ := s.pkg.TypesInfo.Defs[fn.Name].(*types.Func)
+	if obj == nil {
+		return false
+	}
+	sig, ok := obj.Type().(*types.Signature)
+	return ok && s.stepParam(sig) >= 0
+}
+
+// called is what a call calls, whatever that is: a function, a method, or a
+// closure a function bound to a name. Objects and not names, so two closures
+// spelled the same in two files are two things.
+func (s *source) called(call *ast.CallExpr) types.Object {
+	info := s.pkg.TypesInfo
+	switch fun := ast.Unparen(call.Fun).(type) {
+	case *ast.SelectorExpr:
+		if sel, ok := info.Selections[fun]; ok {
+			return sel.Obj()
+		}
+		return info.Uses[fun.Sel]
+	case *ast.Ident:
+		return info.Uses[fun]
+	}
+	return nil
+}
+
+// asserts reports whether a body makes a claim of its own — a real assertion
+// and not a step.
+func (s *source) asserts(n ast.Node) bool {
+	found := false
+	ast.Inspect(n, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if f, ok := s.howItFails(call); ok && f.kind == contract {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// position spells a node the way a stack frame does.
+func (s *source) position(p token.Pos) token.Position { return s.pkg.Fset.Position(p) }
+
+func (s *source) site(p token.Pos) string {
+	pos := s.position(p)
+	return fmt.Sprintf("%s:%d", filepath.Base(pos.Filename), pos.Line)
+}
+
+// population is every assertion in the suite, read out of the type-checked
+// source.
 func population(t *testing.T) []assertion {
 	t.Helper()
-	fset := token.NewFileSet()
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("the suite's own source is not where this test runs from: %v", err)
-	}
+	src := suiteSource(t)
 	var out []assertion
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatalf("parsing %s: %v", name, err)
-		}
+	for _, file := range src.pkg.Syntax {
 		enclosing := ""
 		ast.Inspect(file, func(n ast.Node) bool {
 			if fn, ok := n.(*ast.FuncDecl); ok {
-				if markers[fn.Name.Name] {
+				if src.isMarkerDecl(fn) {
 					return false
 				}
-				enclosing = filepath.Base(fset.Position(fn.Pos()).Filename) + ":" + fn.Name.Name
+				enclosing = filepath.Base(src.position(fn.Pos()).Filename) + ":" + fn.Name.Name
 			}
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			spelling, at, ok := howItFails(call)
+			f, ok := src.howItFails(call)
 			if !ok {
 				return true
 			}
-			fixed, known := fixedArgs[spelling]
-			if !known {
-				t.Errorf("%s: %s is a way of failing this file does not know how to read; add it to fixedArgs with the number of arguments it takes before its message",
-					fset.Position(call.Pos()), spelling)
-				return true
-			}
-			_ = fixed
-			says := ""
-			if len(call.Args) > at {
-				if lit, ok := call.Args[at].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					says = strings.Trim(lit.Value, "`\"")
-				}
-			}
-			pos := fset.Position(call.Pos())
-			a := assertion{
-				site: fmt.Sprintf("%s:%d", filepath.Base(pos.Filename), pos.Line),
-				call: spelling,
-				says: says,
+			out = append(out, assertion{
+				site: src.site(call.Pos()),
+				call: f.spelling,
+				says: literalArg(call, f.at),
 				in:   enclosing,
-			}
-			if markers[spelling] {
-				a.kind = plumbing
-			}
-			out = append(out, a)
+				kind: f.kind,
+			})
 			return true
 		})
 	}
@@ -218,34 +428,32 @@ func population(t *testing.T) []assertion {
 	return out
 }
 
-// howItFails names the call and says where its message sits, or reports that
-// this call is not one of the suite's ways of failing.
-func howItFails(call *ast.CallExpr) (spelling string, at int, ok bool) {
-	switch fn := call.Fun.(type) {
-	case *ast.Ident:
-		if !markers[fn.Name] {
-			return "", 0, false
-		}
-		// mustReach(t, err, question, ...), mustAsk(t, err, question, ...) and
-		// mustHold(t, ok, question, ...).
-		return fn.Name, 2, true
-	case *ast.SelectorExpr:
-		recv, ok := fn.X.(*ast.Ident)
-		if !ok {
-			return "", 0, false
-		}
-		switch recv.Name {
-		case "assert", "require":
-			spelling = recv.Name + "." + fn.Sel.Name
-			return spelling, fixedArgs[spelling] + 1, true
-		case "t":
-			if fn.Sel.Name != "Errorf" && fn.Sel.Name != "Fatalf" {
-				return "", 0, false
-			}
-			return "t." + fn.Sel.Name, 0, true
-		}
+// literalArg is the message a call carries, or "" for a call whose message is
+// not written down where it is made.
+func literalArg(call *ast.CallExpr, at int) string {
+	if at < 0 || at >= len(call.Args) {
+		return ""
 	}
-	return "", 0, false
+	lit, ok := call.Args[at].(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return ""
+	}
+	s, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return strings.Trim(lit.Value, "`\"")
+	}
+	return s
+}
+
+// constantArg is the value of an argument the compiler already knows — a
+// string literal, and a typed constant like forge.CapList, which is how one
+// call site of a shared helper is told from another.
+func constantArg(info *types.Info, arg ast.Expr) (string, bool) {
+	tv, ok := info.Types[arg]
+	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+		return "", false
+	}
+	return constant.StringVal(tv.Value), true
 }
 
 // trace is where testify writes the assertion's own call site. It is the first
@@ -273,9 +481,9 @@ func attribute(t *testing.T, pop []assertion, msgs []string) map[string][]string
 			fired[g[1]] = append(fired[g[1]], msg)
 			continue
 		}
-		// No trace: the suite's own Errorf and Fatalf, and the two markers,
-		// which are placed by their message instead. It has to be exactly one,
-		// and messages are unique, so it is.
+		// No trace: the suite's own Errorf and Fatalf, and the markers, which
+		// are placed by their message instead. It has to be exactly one, and
+		// messages are unique, so it is.
 		var hits []string
 		for _, a := range pop {
 			if a.says != "" && containsFormat(msg, a.says) {
@@ -311,7 +519,7 @@ func containsFormat(msg, format string) bool {
 // format that is nothing but verbs and punctuation matches everything.
 func literalRuns(format string) []string {
 	var runs []string
-	for _, run := range regexp.MustCompile(`%[-+# 0-9.*]*[a-zA-Z]`).Split(format, -1) {
+	for _, run := range verb.Split(format, -1) {
 		if len(strings.TrimSpace(run)) >= 4 {
 			runs = append(runs, run)
 		}
@@ -321,3 +529,5 @@ func literalRuns(format string) []string {
 	}
 	return runs
 }
+
+var verb = regexp.MustCompile(`%[-+# 0-9.*]*[a-zA-Z]`)

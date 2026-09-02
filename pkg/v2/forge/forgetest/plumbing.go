@@ -67,6 +67,19 @@ import (
 // deliberately a sentence no assertion message contains.
 const refusedCapability = ": this session refuses "
 
+// step is the question a marker was on its way to, and it is a TYPE rather
+// than a string so that the ledger can find the suite's steps by what they
+// TAKE rather than by what they are CALLED.
+//
+// The ledger used to know the three markers by name, which meant a fourth one
+// spelled anything else was invisible to it — the same blindness that let an
+// assertion hide behind an import alias. A marker is now the thing that asks
+// for one of these, so renaming mustReach, adding mustSettle, or writing the
+// next marker in another file all leave the ledger seeing a step; and a claim
+// cannot become a step without taking a step, which is a rewritten signature
+// and not a rewritten call.
+type step string
+
 // mustReach is a step that had to succeed for the question after it to mean
 // anything. question is what the suite was on its way to ask, in words, and it
 // is mandatory: a step that cannot say what it was for is an assertion wearing
@@ -74,17 +87,17 @@ const refusedCapability = ": this session refuses "
 //
 // A capability refusal is spelled differently from every other failure, and the
 // difference is what the ledger reads. See refusedCapability.
-func mustReach(t tb, err error, question string, args ...any) {
+func mustReach(t tb, err error, question step, args ...any) {
 	t.Helper()
 	if err == nil {
 		return
 	}
 	var un *forge.UnsupportedError
 	if errors.As(err, &un) {
-		t.Fatalf("forgetest: the suite never got as far as "+question+refusedCapability+"%s",
+		t.Fatalf("forgetest: the suite never got as far as "+string(question)+refusedCapability+"%s",
 			append(append([]any{}, args...), un.Capability)...)
 	}
-	t.Fatalf("forgetest: the suite never got as far as "+question+": %v", append(append([]any{}, args...), err)...)
+	t.Fatalf("forgetest: the suite never got as far as "+string(question)+": %v", append(append([]any{}, args...), err)...)
 }
 
 // mustAsk is the step for a call the suite makes for its SIDE EFFECT rather
@@ -94,13 +107,13 @@ func mustReach(t tb, err error, question string, args ...any) {
 // failure that takes the side effect away too is the session refusing the
 // capability, because then nothing was composed at all, and that is the only
 // failure this step reads.
-func mustAsk(t tb, err error, question string, args ...any) {
+func mustAsk(t tb, err error, question step, args ...any) {
 	t.Helper()
 	var un *forge.UnsupportedError
 	if !errors.As(err, &un) {
 		return
 	}
-	t.Fatalf("forgetest: the suite never got as far as "+question+refusedCapability+"%s",
+	t.Fatalf("forgetest: the suite never got as far as "+string(question)+refusedCapability+"%s",
 		append(append([]any{}, args...), un.Capability)...)
 }
 
@@ -108,10 +121,10 @@ func mustAsk(t tb, err error, question string, args ...any) {
 // reported nothing, a fixture that is not what the next question needs. It has
 // no error to read, so it can never carry refusedCapability, and therefore no
 // proof can ever stop one.
-func mustHold(t tb, ok bool, question string, args ...any) {
+func mustHold(t tb, ok bool, question step, args ...any) {
 	t.Helper()
 	if ok {
 		return
 	}
-	t.Fatalf("forgetest: the suite never got as far as "+question, args...)
+	t.Fatalf("forgetest: the suite never got as far as "+string(question), args...)
 }

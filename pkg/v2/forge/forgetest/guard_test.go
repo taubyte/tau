@@ -2,9 +2,8 @@ package forgetest
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"path/filepath"
+	"go/types"
 	"sort"
 	"strings"
 	"testing"
@@ -260,67 +259,67 @@ func sayingAt(pop []assertion, site string) string {
 
 // ─────────────────────── reading the shape of the source ───────────────────────
 
-type step struct{ site, fn string }
+type stray struct{ site, fn string }
 
-// stepsGoingNowhere is every mustReach/mustHold with nothing after it. "After"
-// means, in the function it is written in: a real assertion, or a call to
-// something in this package that makes one. A function that RETURNS a value is
-// on its way by construction — the question is its caller's.
-func stepsGoingNowhere(t *testing.T) []step {
+// stepsGoingNowhere is every marker call with nothing after it. "After" means,
+// in the function it is written in: a real assertion, or a call to something in
+// this package that makes one. A function that RETURNS a value is on its way by
+// construction — the question is its caller's.
+func stepsGoingNowhere(t *testing.T) []stray {
 	t.Helper()
-	fset := token.NewFileSet()
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("the suite's own source is not where this test runs from: %v", err)
-	}
+	src := suiteSource(t)
 
-	parsed := map[string]*ast.File{}
-	asserting := map[string]bool{} // functions whose body makes a claim
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatalf("parsing %s: %v", name, err)
-		}
-		parsed[name] = file
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || markers[fn.Name.Name] {
-				continue
-			}
-			if asserts(fn) {
-				asserting[fn.Name.Name] = true
-			}
-		}
-		// And the closures a function binds to a name and then calls, which is
-		// how this suite spells "every wrong delivery, one line each".
+	// The functions and the closures whose body makes a claim of its own. They
+	// are held by OBJECT and not by name: two closures called reject in two
+	// files are two objects, and a method and a function sharing a name are
+	// two objects as well.
+	asserting := map[types.Object]bool{}
+	for _, file := range src.pkg.Syntax {
 		ast.Inspect(file, func(n ast.Node) bool {
-			assign, ok := n.(*ast.AssignStmt)
-			if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
-				return true
-			}
-			lit, ok := assign.Rhs[0].(*ast.FuncLit)
-			if !ok {
-				return true
-			}
-			if id, ok := assign.Lhs[0].(*ast.Ident); ok && asserts(lit) {
-				asserting[id.Name] = true
+			switch v := n.(type) {
+			case *ast.FuncDecl:
+				if src.isMarkerDecl(v) {
+					return false
+				}
+				if src.asserts(v.Body) {
+					if obj := src.pkg.TypesInfo.Defs[v.Name]; obj != nil {
+						asserting[obj] = true
+					}
+				}
+			case *ast.AssignStmt:
+				// And the closures a function binds to a name and then calls,
+				// which is how this suite spells "every wrong delivery, one
+				// line each".
+				if len(v.Lhs) != 1 || len(v.Rhs) != 1 {
+					return true
+				}
+				lit, ok := v.Rhs[0].(*ast.FuncLit)
+				if !ok {
+					return true
+				}
+				id, ok := v.Lhs[0].(*ast.Ident)
+				if !ok || !src.asserts(lit.Body) {
+					return true
+				}
+				for _, obj := range []types.Object{src.pkg.TypesInfo.Defs[id], src.pkg.TypesInfo.Uses[id]} {
+					if obj != nil {
+						asserting[obj] = true
+					}
+				}
 			}
 			return true
 		})
 	}
 
-	var out []step
-	for name, file := range parsed {
+	var out []stray
+	for _, file := range src.pkg.Syntax {
 		ast.Inspect(file, func(n ast.Node) bool {
 			var body *ast.BlockStmt
 			var results *ast.FieldList
 			label := "a function literal"
 			switch fn := n.(type) {
 			case *ast.FuncDecl:
-				if markers[fn.Name.Name] {
+				if src.isMarkerDecl(fn) {
 					return false
 				}
 				body, results, label = fn.Body, fn.Type.Results, fn.Name.Name
@@ -336,19 +335,16 @@ func stepsGoingNowhere(t *testing.T) []step {
 			// function literals — those are walked in their own right.
 			var steps, questions []token.Pos
 			for _, call := range callsDirectlyIn(body) {
-				spelling, _, isFailure := howItFails(call)
-				switch {
-				case isFailure && markers[spelling]:
-					steps = append(steps, call.Pos())
-				case isFailure:
+				if f, ok := src.howItFails(call); ok {
+					if f.kind == plumbing {
+						steps = append(steps, call.Pos())
+					} else {
+						questions = append(questions, call.Pos())
+					}
+					continue
+				}
+				if obj := src.called(call); obj != nil && asserting[obj] {
 					questions = append(questions, call.Pos())
-				default:
-					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && asserting[sel.Sel.Name] {
-						questions = append(questions, call.Pos())
-					}
-					if id, ok := call.Fun.(*ast.Ident); ok && asserting[id.Name] {
-						questions = append(questions, call.Pos())
-					}
 				}
 			}
 			for _, at := range steps {
@@ -359,11 +355,7 @@ func stepsGoingNowhere(t *testing.T) []step {
 					}
 				}
 				if !onItsWay {
-					pos := fset.Position(at)
-					out = append(out, step{
-						site: filepath.Base(name) + ":" + itoa(pos.Line),
-						fn:   label,
-					})
+					out = append(out, stray{site: src.site(at), fn: label})
 				}
 			}
 			return true
@@ -375,47 +367,16 @@ func stepsGoingNowhere(t *testing.T) []step {
 
 // callsDirectlyIn is every call in a body that is not inside a nested function
 // literal, because a literal is its own place and is walked as one.
-// asserts reports whether a body makes a claim of its own — a real assertion
-// and not a step.
-func asserts(n ast.Node) bool {
-	found := false
-	ast.Inspect(n, func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok {
-			if spelling, _, ok := howItFails(call); ok && !markers[spelling] {
-				found = true
-			}
+func callsDirectlyIn(body *ast.BlockStmt) []*ast.CallExpr {
+	var out []*ast.CallExpr
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.CallExpr:
+			out = append(out, v)
 		}
 		return true
 	})
-	return found
-}
-
-func callsDirectlyIn(body *ast.BlockStmt) []*ast.CallExpr {
-	var out []*ast.CallExpr
-	var walk func(ast.Node)
-	walk = func(n ast.Node) {
-		ast.Inspect(n, func(n ast.Node) bool {
-			switch v := n.(type) {
-			case *ast.FuncLit:
-				return false
-			case *ast.CallExpr:
-				out = append(out, v)
-			}
-			return true
-		})
-	}
-	walk(body)
 	return out
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b []byte
-	for n > 0 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-		n /= 10
-	}
-	return string(b)
 }
