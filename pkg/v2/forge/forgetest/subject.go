@@ -52,6 +52,78 @@
 // holds it named on the line. See ledger_test.go, and plumbing.go for the
 // spelling that tells a step from a claim.
 //
+// WHERE THE TOWER ENDS. Every round of this package's history added a level.
+// The suite is held by the ledger; the ledger's rules are held by faults; the
+// three things that RUN the rules are held by faults of their own; and the one
+// call that runs those is held by a census read back against the names in
+// source. "What guards the guard" has to stop somewhere, and this is where,
+// said exactly rather than left for somebody to find.
+//
+// FOUR LINES, two pairs, both in guard_test.go. In hold:
+//
+//	if heard.failed != over.complains {
+//		t.Errorf("%s", over.wrong(h, heard))
+//
+// and in TestTheLedgerHolds:
+//
+//	for _, wrong := range ran.unaccounted(suiteSource(t)) {
+//		t.Errorf("%s", wrong)
+//
+// The first pair is the only place a ledger complaint becomes a test failure.
+// The second is the only place the census of what actually ran is read. Nothing
+// in this package notices either being switched off. Measured, against the
+// LastDeployKeyReadOnly contract deleted from optional.go — which on its own is
+// GO_TEST_EXIT=1: `if false &&` on the first line is GO_TEST_EXIT=0, that
+// Errorf written as Logf is GO_TEST_EXIT=0, and deleting the second pair
+// together with `ledgerHarnesses()[1:]` is GO_TEST_EXIT=0.
+//
+// EVERYTHING TOUCHING THEM IS HELD, which is why the set is four and not forty.
+// Measured one at a time, each of these fails BY NAME rather than passing:
+//
+//	hold's ran.write hollowed             every declared run is named as never
+//	                                      having happened
+//	hold's h.run deleted                  the direction that must complain says
+//	                                      nothing, and is named
+//	hold listening to a recorder the      the same
+//	  harness never writes to
+//	over.wrong hollowed to ""             still red: Errorf fails the test
+//	                                      whatever string it is handed
+//	theRulesAsTheyStand emptied           readEveryRuleDeclared names every rule
+//	                                      this file declares
+//	either direction flag written the     each direction is the other's control
+//	  other way round
+//	one of the two hold calls deleted     the census names that direction for
+//	                                      every harness
+//	ledgerHarnesses()[1:]                 the census names the harness that went,
+//	                                      both ways
+//	the census filled in before the loop  hold writes once per call, so a run
+//	                                      written down twice is named
+//	a harness reporting to t instead of   the fault registry's own complaint
+//	  to the listener it was handed       lands on t: red on a CLEAN tree
+//	h.run called past hold                nothing is written down and all three
+//	                                      harnesses are named
+//	a discarding reporter at the call     "too many arguments in call to hold"
+//	  site
+//
+// WHY IT CANNOT BE SMALLER. A Go test fails by calling Errorf. Somewhere there
+// has to be a first call to it that nothing else is watching, and a condition
+// deciding whether to make it — and a check on that check is another Errorf
+// with the same property one level further out, which is the regress this
+// file's history walked six times. Two of the four are the verdict on the
+// ledger and two are the verdict on whether the ledger was read at all, and
+// neither can be folded into the other: the first runs inside the very thing
+// the second counts, so it cannot also be what reports the count.
+//
+// WHAT THIS IS THE SAME AS. It is the exposure every Go test suite already
+// carries and does not write down. A TestMain that returns before m.Run(). A
+// build tag on the file the assertions live in. A file never added to the
+// package at all. A t.Run whose body returns early. Each is a small edit that
+// leaves a green run and no trace, and no test framework defends against any of
+// them. The census read could be moved into TestMain and the count would be the
+// same four — it would only be spelled as a shape people accept without
+// looking. It is written here instead, in the open, with the measurement beside
+// it.
+//
 // MEASURE IT WITH -coverpkg. Plain -cover counts only the statements a
 // package's OWN tests reach, and the two packages a conformance suite is made
 // of are run by everybody else: pkg/v2/forge/fake is exercised by this
