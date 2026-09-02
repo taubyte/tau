@@ -32,6 +32,15 @@ type proof struct {
 	subject func(t *testing.T) Subject
 	says    []string
 	stops   []string
+
+	// faults is what this proof injects, and it is written down so the ledger
+	// can read the population of FAULTS the way it reads the population of
+	// assertions. The two closures are inverses: the ledger requires every
+	// assertion to have a fault behind it, and every fault to have a proof in
+	// front of it. Without the second, demoting an assertion to a step and
+	// deleting its proof leaves the fault stranded and the tree green — which
+	// is exactly how a live contract was measured dead.
+	faults []fake.Fault
 }
 
 func allProofs() []proof {
@@ -53,6 +62,7 @@ func faultProofs() []proof {
 			name:    name,
 			subject: func(t *testing.T) Subject { return subjectFor(t, "broken", shape) },
 			says:    says,
+			faults:  faults,
 		})
 	}
 

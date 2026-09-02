@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -16,6 +17,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages"
+
+	"github.com/taubyte/tau/pkg/v2/forge/fake"
 )
 
 // THE INVERSE GUARD.
@@ -153,6 +156,13 @@ type source struct {
 	pkg      *packages.Package
 	reporter *types.Interface // anything with an Errorf: testify's TestingT, tb, *testing.T
 	step     types.Type       // the marker's question type
+
+	// faults is every fault the fake forge can be told to have, by the value
+	// it carries and the constant it is declared as. It is read out of that
+	// package's source rather than kept in a list here, because a list is a
+	// thing you can forget to add to — which is the whole reason the
+	// population is read out of source too.
+	faults map[string]string
 }
 
 var (
@@ -219,16 +229,31 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 		Env:     append(os.Environ(), "GOPROXY=off", "GOWORK=off"),
 		Overlay: overlay,
 	}
-	pkgs, err := packages.Load(cfg, ".")
+	// The fake forge is loaded beside the suite so its faults can be counted.
+	// Its import path comes from the type itself and not from a string here.
+	faultType := reflect.TypeOf(fake.Fault(""))
+	pkgs, err := packages.Load(cfg, ".", faultType.PkgPath())
 	if err != nil {
 		return nil, err
 	}
-	if len(pkgs) != 1 {
-		return nil, fmt.Errorf("loading the suite's own package answered %d packages", len(pkgs))
+	if len(pkgs) != 2 {
+		return nil, fmt.Errorf("loading the suite and the fake forge answered %d packages", len(pkgs))
 	}
-	pkg := pkgs[0]
-	if len(pkg.Errors) > 0 {
-		return nil, fmt.Errorf("%v", pkg.Errors)
+	var pkg, faked *packages.Package
+	for _, p := range pkgs {
+		if p.PkgPath == faultType.PkgPath() {
+			faked = p
+			continue
+		}
+		pkg = p
+	}
+	if pkg == nil || faked == nil {
+		return nil, fmt.Errorf("loading the suite and the fake forge answered %v", pkgs)
+	}
+	for _, p := range []*packages.Package{pkg, faked} {
+		if len(p.Errors) > 0 {
+			return nil, fmt.Errorf("%v", p.Errors)
+		}
 	}
 	if pkg.TypesInfo == nil || len(pkg.Syntax) == 0 {
 		return nil, fmt.Errorf("the suite's own package came back with no type information")
@@ -237,7 +262,35 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 	if obj == nil {
 		return nil, fmt.Errorf("this package declares no `step` type, which is what marks a marker; see plumbing.go. Without it every step reads as a claim")
 	}
-	return &source{pkg: pkg, reporter: reporterInterface(), step: obj.Type()}, nil
+	faults, err := faultsOf(faked, faultType.Name())
+	if err != nil {
+		return nil, err
+	}
+	return &source{pkg: pkg, reporter: reporterInterface(), step: obj.Type(), faults: faults}, nil
+}
+
+// faultsOf is every constant of the fake forge's fault type, by value and by
+// the name it is declared under. A fault is a question the fake forge can be
+// told to answer wrongly, and the ledger reads them all so that one nothing
+// proves is visible.
+func faultsOf(pkg *packages.Package, typeName string) (map[string]string, error) {
+	scope := pkg.Types.Scope()
+	obj := scope.Lookup(typeName)
+	if obj == nil {
+		return nil, fmt.Errorf("%s declares no %s type, which is what a fault is", pkg.PkgPath, typeName)
+	}
+	out := map[string]string{}
+	for _, name := range scope.Names() {
+		c, ok := scope.Lookup(name).(*types.Const)
+		if !ok || !types.Identical(c.Type(), obj.Type()) || c.Val().Kind() != constant.String {
+			continue
+		}
+		out[constant.StringVal(c.Val())] = name
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%s declares no %s at all", pkg.PkgPath, typeName)
+	}
+	return out, nil
 }
 
 // reporterInterface is `interface{ Errorf(string, ...any) }`, built rather than

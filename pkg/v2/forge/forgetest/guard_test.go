@@ -75,6 +75,7 @@ const (
 	ruleNamedDidNotFire    = "an assertion named and not firing"
 	ruleProofProvesNothing = "a proof that complains about nothing"
 	ruleOrphan             = "a contract assertion with no fault behind it"
+	ruleStrandedFault      = "a fault with no proof in front of it"
 )
 
 // ledger is everything the rules are read over: the suite's own source, the
@@ -115,6 +116,7 @@ func ledgerRules() []rule {
 		{ruleNamedDidNotFire, checkRun(ruleNamedDidNotFire), violateNamedDidNotFire},
 		{ruleProofProvesNothing, checkProofProvesNothing, violateProofProvesNothing},
 		{ruleOrphan, checkOrphan, violateOrphan},
+		{ruleStrandedFault, checkStrandedFault, violateStrandedFault},
 	}
 }
 
@@ -126,6 +128,7 @@ func TestTheSuiteObeysTheLedger(t *testing.T) {
 		counts[a.kind]++
 	}
 	t.Logf("%d assertions: %d contract, %d plumbing", len(l.pop), counts[contract], counts[plumbing])
+	t.Logf("%d proofs against %d faults the fake forge can be told to have", len(l.proofs), len(l.src.faults))
 	for _, r := range ledgerRules() {
 		t.Run(r.name, func(t *testing.T) {
 			for _, c := range r.check(l) {
@@ -391,6 +394,43 @@ func checkOrphan(l *ledger) []complaint {
 		}
 		out = append(out, complaint{ruleOrphan, a.site,
 			fmt.Sprintf("%s %q has no fault behind it: no proof names it, so either nothing can reach it or its deletion would go unnoticed", a.call, a.says)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].at < out[j].at })
+	return out
+}
+
+// checkStrandedFault is the inverse closure, and it is what makes a demotion
+// impossible to hide.
+//
+// The orphan rule reads one way round: every assertion must have a fault behind
+// it. Nothing read the other way, and the other way is where the last defect
+// went. Measured: turning `require.NotEmpty(t, h, "an empty handle is a key
+// nothing can ever remove")` into a step and deleting the four lines of the
+// proof that named it left the tree at exit 0, and then replacing the step's
+// condition with a constant left it at exit 0 again — a contract fully dead,
+// with fake.FaultDeployKeyHandleIsEmpty still in the fake forge, still
+// answering an installation with an empty handle, and nothing at all asking it
+// to.
+//
+// Deleting the proof ALONE was caught, because the assertion orphaned. The
+// DEMOTION is what laundered it: a step needs no proof, so the assertion
+// stopped needing one, and the fault was left with nobody to notice. A fault
+// that no proof injects is either a mistake nothing checks for or a proof
+// somebody deleted, and from out here those are the same thing.
+func checkStrandedFault(l *ledger) []complaint {
+	named := map[string]bool{}
+	for _, p := range l.proofs {
+		for _, f := range p.faults {
+			named[string(f)] = true
+		}
+	}
+	var out []complaint
+	for value, ident := range l.src.faults {
+		if named[value] {
+			continue
+		}
+		out = append(out, complaint{ruleStrandedFault, "fake." + ident,
+			"no proof injects this fault, so the mistake it makes a driver commit is one nothing in this suite is shown to catch; either a proof was deleted, or the assertion it proved was demoted out from under it"})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].at < out[j].at })
 	return out

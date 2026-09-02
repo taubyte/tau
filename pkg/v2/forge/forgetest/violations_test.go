@@ -224,6 +224,30 @@ func violateUnplaceable(t *testing.T) *ledger {
 		}}})
 }
 
+// violateStrandedFault takes away the one proof that injects some fault, which
+// is what deleting a proof — or demoting the assertion it proved — leaves
+// behind.
+func violateStrandedFault(t *testing.T) *ledger {
+	l := theLedger(t)
+	count := map[string]int{}
+	for _, p := range l.proofs {
+		for _, f := range p.faults {
+			count[string(f)]++
+		}
+	}
+	for i, p := range l.proofs {
+		for _, f := range p.faults {
+			if count[string(f)] != 1 {
+				continue
+			}
+			kept := append(append([]proof{}, l.proofs[:i]...), l.proofs[i+1:]...)
+			return l.but(kept, nil)
+		}
+	}
+	t.Fatalf("every fault in the fake forge is injected by more than one proof, so no single deletion strands one")
+	return nil
+}
+
 // ─────────────────────── finding real material to break ───────────────────────
 
 func aContract(t *testing.T, pop []assertion) assertion {
