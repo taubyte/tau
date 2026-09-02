@@ -160,23 +160,24 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 // It reports whether the delivery was claimed. Not claimed is not an error — it
 // is a delivery for the caller to ack and drop.
 func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.CancelFunc) (jobRecord, bool, error) {
-	jobLock.Lock()
+	at := jobLock.Lock()
 	defer jobLock.Unlock()
 
 	if err := s.lead(); err != nil {
 		return jobRecord{}, false, err
 	}
-	rec, found, err := s.record(d.ID)
+	r, err := s.record(at, d.ID)
 	if err != nil {
 		return jobRecord{}, false, err
 	}
 	// Cancelled is one of the three terminal states, so this is the cancel case
 	// as much as it is the redelivery case. An item with no record cannot be
 	// identified, let alone built.
-	if !found || rec.terminal() {
-		return jobRecord{}, false, s.ack(d)
+	if !r.found || r.rec.terminal() {
+		return jobRecord{}, false, s.ack(r.at, s.work, d)
 	}
 
+	rec := r.rec
 	rec.Status = int32(buildv1.JobStatus_JobStatusClaimed)
 	rec.Attempt++
 	rec.UpdatedAt = s.now().Unix()
@@ -187,7 +188,7 @@ func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.Cance
 	if err != nil {
 		return jobRecord{}, false, errInternal("encoding job %s: %v", rec.ID, err)
 	}
-	if err := s.store.Batch([]raft.BatchOp{set(jobRecordKey(rec.ID), value)}, s.cfg.Queue.ApplyTimeout); err != nil {
+	if err := s.commit(r, []raft.BatchOp{set(jobRecordKey(rec.ID), value)}); err != nil {
 		return jobRecord{}, false, fmt.Errorf("claiming job %s: %w", rec.ID, err)
 	}
 
@@ -259,37 +260,37 @@ func (s *Service) invoke(ctx context.Context, work Work) (err error) {
 //     reconcile to walk either. So the item goes back, in this section, where
 //     the reopening could not have raced it.
 func (s *Service) settle(d queue.Delivery, runErr error) error {
-	jobLock.Lock()
+	at := jobLock.Lock()
 	defer jobLock.Unlock()
 
-	if err := s.ack(d); err != nil {
+	if err := s.ack(at, s.work, d); err != nil {
 		return err
 	}
 
-	rec, found, err := s.record(d.ID)
+	r, err := s.record(at, d.ID)
 	if err != nil {
 		return err
 	}
-	if !found || rec.terminal() {
+	if !r.found || r.rec.terminal() {
 		return nil
 	}
-	if rec.status() != buildv1.JobStatus_JobStatusClaimed {
-		return s.requeue(rec)
+	if r.rec.status() != buildv1.JobStatus_JobStatusClaimed {
+		return s.requeue(r)
 	}
 
 	if runErr != nil {
 		// AN ERROR FROM Run IS TERMINAL. The queue's retry exists for a worker
 		// that DIED — which is a claim that expired, not an error returned —
 		// and retrying a compile error five times is waste.
-		return s.finish(rec, buildv1.JobStatus_JobStatusFailed, runErr.Error())
+		return s.finish(r, buildv1.JobStatus_JobStatusFailed, runErr.Error())
 	}
 
 	// The ref anchor is written in the SAME entry as the success, because it is
 	// the same fact: this commit is what the next build of this ref diffs from,
 	// and it is read from here rather than from a webhook (build.proto: "read
 	// from its own job history, never from the frontend").
-	return s.finish(rec, buildv1.JobStatus_JobStatusSuccess, "",
-		set(refLastKey(rec.RepositoryKey, rec.Ref), []byte(rec.CommitSHA)))
+	return s.finish(r, buildv1.JobStatus_JobStatusSuccess, "",
+		set(refLastKey(r.rec.RepositoryKey, r.rec.Ref), []byte(r.rec.CommitSHA)))
 }
 
 // claimDeadline is when this run must be over.
@@ -307,15 +308,6 @@ func (s *Service) claimDeadline(d queue.Delivery) time.Time {
 		return policy
 	}
 	return lease
-}
-
-// ack removes the item for good, and reports a delivery that is no longer ours
-// as what it is.
-func (s *Service) ack(d queue.Delivery) error {
-	if err := s.work.Ack(d); err != nil {
-		return fmt.Errorf("ack %s: %w", d.ID, err)
-	}
-	return nil
 }
 
 // lastCommit is the "before" of the next diff: the commit this service itself
@@ -348,23 +340,23 @@ func (s *Service) drainDeadLetter() (bool, error) {
 		return false, fmt.Errorf("dead letter claim: %w", err)
 	}
 
-	jobLock.Lock()
+	at := jobLock.Lock()
 	defer jobLock.Unlock()
 
 	if err := s.lead(); err != nil {
 		return true, err
 	}
-	rec, found, err := s.record(d.ID)
+	r, err := s.record(at, d.ID)
 	if err != nil {
 		return true, err
 	}
-	if found && !rec.terminal() {
-		if err := s.finish(rec, buildv1.JobStatus_JobStatusFailed, "attempts exhausted"); err != nil {
+	if r.found && !r.rec.terminal() {
+		if err := s.finish(r, buildv1.JobStatus_JobStatusFailed, "attempts exhausted"); err != nil {
 			return true, err
 		}
 	}
-	if err := s.dead.Ack(d); err != nil {
-		return true, fmt.Errorf("dead letter ack %s: %w", d.ID, err)
+	if err := s.ack(r.at, s.dead, d); err != nil {
+		return true, fmt.Errorf("dead letter %w", err)
 	}
 	return true, nil
 }

@@ -319,7 +319,7 @@ func TestAReopenIsNotLostToTheReconcileThatOverlapsIt(t *testing.T) {
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	require.NoError(t, h.work.Ack(d))
-	require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusFailed, "boom"))
+	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "boom"))
 
 	// The stale row reconcile exists to drop.
 	h.store.put(t, openIndexKey(testRepo, id), nil)

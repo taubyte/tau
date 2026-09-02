@@ -326,10 +326,25 @@ func (h *harness) push(t testing.TB, ref, commit string) string {
 
 func (h *harness) mustRecord(t testing.TB, id string) jobRecord {
 	t.Helper()
-	rec, found, err := h.record(id)
+	r, err := h.record(unsectioned, id)
 	require.NoError(t, err)
-	require.True(t, found, "job %s must exist", id)
-	return rec
+	require.True(t, r.found, "job %s must exist", id)
+	return r.rec
+}
+
+// finishNow is a terminal write the way a transition makes one: one section,
+// one read, and the write that read decided. A fixture that wrote it any other
+// way would be writing on a reading no section took, which is the one thing
+// section.go refuses — so the fixture does what the code does.
+func (h *harness) finishNow(t testing.TB, id string, status buildv1.JobStatus, reason string, extra ...raft.BatchOp) error {
+	t.Helper()
+	at := jobLock.Lock()
+	defer jobLock.Unlock()
+
+	r, err := h.record(at, id)
+	require.NoError(t, err)
+	require.True(t, r.found, "job %s must exist", id)
+	return h.finish(r, status, reason, extra...)
 }
 
 func (h *harness) status(t testing.TB, id string) buildv1.JobStatus {

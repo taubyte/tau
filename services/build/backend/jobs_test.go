@@ -227,7 +227,7 @@ func TestCancellingAFinishedJobIsAFailedPrecondition(t *testing.T) {
 		t.Run(status.String(), func(t *testing.T) {
 			h := newHarness(t)
 			id := h.push(t, testRef, testCommit)
-			require.NoError(t, h.finish(h.mustRecord(t, id), status, ""))
+			require.NoError(t, h.finishNow(t, id, status, ""))
 
 			require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(h.cancel(id)))
 		})
@@ -315,8 +315,7 @@ func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 	sink := &attemptSink{s: h.Service, id: id, attempt: 1}
 	require.NoError(t, sink.Log(t.Context(), h.clock.now(), "cid-log-1"))
 
-	rec = h.mustRecord(t, id)
-	require.NoError(t, h.finish(rec, buildv1.JobStatus_JobStatusFailed, "it broke"))
+	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "it broke"))
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
@@ -341,7 +340,7 @@ func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 func TestRetryReportsAStoreThatRefusedTheWrite(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusFailed, "x"))
+	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "x"))
 
 	h.store.failBatches(errors.New("log is full"))
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.retry(id)))
@@ -377,7 +376,7 @@ func TestGetSkipsARowThatVanishedBetweenTheListingAndTheRead(t *testing.T) {
 func TestRetryReportsAPushThatFailsAfterTheRecordWasReopened(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusFailed, "x"))
+	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "x"))
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
@@ -395,7 +394,7 @@ func TestRetryReportsAPushThatFailsAfterTheRecordWasReopened(t *testing.T) {
 func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusFailed, "x"))
+	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "x"))
 
 	terminal := rootSegment + "/" + indexSegment + "/" + terminalSegment + "/"
 	require.Len(t, h.store.Keys(terminal), 1)

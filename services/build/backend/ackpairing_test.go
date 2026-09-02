@@ -88,22 +88,32 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 // decision makes is an ACK. Made after the section closed, a retry in the
 // window is deduplicated against the very item the ack then destroys.
 //
-// THE OUTCOME CANNOT BE THE NEEDLE HERE, and the first version of this test
-// learned that the expensive way: it asserted only the outcome and passed 2000
-// runs of the exact code it was written to catch. pkg/v2/queue takes its GROUP
-// LOCK before it touches the store — Ack is group.mu.Lock() and then prepare()
-// — so the earliest instant a store gate can fire inside the ack is an instant
-// at which the group lock is already held, and the racer's Push queues up
-// behind it. The push therefore lands AFTER the ack however this package is
-// written, the ack is a real one rather than a deduplicated no-op, and the job
-// comes out correct either way. The harm needs the racer to win a lock a test
-// cannot make it win.
+// THE HARM ITSELF STILL CANNOT BE RACED INTO EXISTENCE. pkg/v2/queue takes its
+// GROUP LOCK before it touches the store — Ack is group.mu.Lock() and then
+// prepare() — so the earliest instant a store gate can fire inside the ack is
+// one at which the group lock is already held, and the racer's Push queues up
+// behind it. The push lands AFTER the ack however this package is written, the
+// ack is a real one rather than a deduplicated no-op, and the job comes out
+// correct either way. The first version of this test learned that the expensive
+// way: it asserted only the outcome and passed 2000 runs of the exact code it
+// was written to catch.
 //
-// So the needle is the fact the outcome rests on: at the instant the ack
-// touches the queue's keyspace, jobLock — the section whose read decided to ack
-// — is still held. A goroutine that can take it is a section that has already
-// closed. The outcome is asserted underneath, because it is what the section is
-// for.
+// BUT THE HARM IS NO LONGER WHAT THIS FAILS ON. Since the section has an
+// identity (section.go), an ack decided in a section that has been left is
+// REFUSED rather than made — so the mutant that puts the defect back does not
+// destroy an item quietly, it returns an error from run(), and the
+// require.NoError below is what catches it. That is an outcome, in this
+// package, with no seam in pkg/v2/queue and no lock to win: measured, the
+// Unlock-and-re-Lock form of this defect now fails at that line rather than at
+// the needle. TestTheQueueWritesAreRefusedOutsideTheSectionThatDecidedThem
+// asserts the same thing from the other side, and asserts that the delivery
+// survives.
+//
+// The needle stays anyway, underneath, because it says something the outcome
+// does not: at the instant the ack touches the queue's keyspace, jobLock is
+// still held. It is no longer the only thing holding this test up — and it was
+// never sufficient on its own, because a section released and retaken answers
+// it the same way a section held all along does.
 func TestTheDropDecisionAndItsAckAreOneSection(t *testing.T) {
 	h, gate := gatedHarness(t)
 	id := h.push(t, testRef, testCommit)

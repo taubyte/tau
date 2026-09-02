@@ -101,10 +101,10 @@ func (s *Service) reconcile() error {
 //     pass over sixteen live open jobs still costs one, and a pass over four
 //     orphaned rows costs one plus four.
 func (s *Service) mend(repositoryKey, id string, now time.Time, cutoff time.Duration) error {
-	jobLock.Lock()
+	at := jobLock.Lock()
 	defer jobLock.Unlock()
 
-	rec, found, err := s.record(id)
+	r, err := s.record(at, id)
 	if err != nil {
 		return err
 	}
@@ -113,28 +113,28 @@ func (s *Service) mend(repositoryKey, id string, now time.Time, cutoff time.Dura
 	// row that is wrong — but only if that is still true of a prefix this node
 	// has caught up to. Deleting it is what keeps MaxOpenPerRepo counting real
 	// work rather than history.
-	if !found || rec.terminal() {
+	if !r.found || r.rec.terminal() {
 		if err := s.lead(); err != nil {
 			return err
 		}
-		if rec, found, err = s.record(id); err != nil {
+		if r, err = s.record(at, id); err != nil {
 			return err
 		}
 	}
 
-	if !found || rec.terminal() {
-		if err := s.store.Batch([]raft.BatchOp{
+	if !r.found || r.rec.terminal() {
+		if err := s.commit(r, []raft.BatchOp{
 			del(openIndexKey(repositoryKey, id)),
-		}, s.cfg.Queue.ApplyTimeout); err != nil {
+		}); err != nil {
 			return fmt.Errorf("dropping stale open row of job %s: %w", id, err)
 		}
 		return nil
 	}
 
-	if now.Sub(time.Unix(rec.UpdatedAt, 0)) < cutoff {
+	if now.Sub(time.Unix(r.rec.UpdatedAt, 0)) < cutoff {
 		return nil
 	}
-	if err := s.work.Push(id, nil); err != nil {
+	if err := s.push(r, id); err != nil {
 		return fmt.Errorf("re-queueing job %s: %w", id, err)
 	}
 	return nil

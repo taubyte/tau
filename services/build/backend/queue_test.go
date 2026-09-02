@@ -88,8 +88,7 @@ func TestARedeliveryOfAClaimedOrFinishedJobChangesNothing(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, h.work.Ack(d))
 
-			rec := h.mustRecord(t, id)
-			require.NoError(t, h.finish(rec, status, ""))
+			require.NoError(t, h.finishNow(t, id, status, ""))
 
 			again, err := enqueue(t, h, testRepo, testRef, testCommit)
 			require.NoError(t, err)
@@ -254,7 +253,7 @@ func TestAdmissionBoundsTheQueueAndTheRepository(t *testing.T) {
 		h := newHarness(t, func(s *Service) error { s.cfg.MaxOpenPerRepo = 1; return nil })
 
 		id := h.push(t, testRef, testCommit)
-		require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusSuccess, ""))
+		require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusSuccess, ""))
 
 		_, err := enqueue(t, h, testRepo, "refs/heads/other", testCommit)
 		require.NoError(t, err)

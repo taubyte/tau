@@ -49,6 +49,16 @@ import (
 // It reads this package's own source, the way services/build/boundary_test.go
 // reads the two roles' import lists, and for the same reason: this is the kind
 // of property that decays without anyone noticing.
+//
+// WHAT IT CANNOT SEE, AND WHAT NOW DOES. Everything here is a fact about
+// POSITIONS IN A FILE. "The write this read decided is made while the same
+// section is still held" is a fact about two instants in one execution, and no
+// scan can see it: a body that reads, unlocks, works, re-locks and writes has
+// every call inside a span, and it is not the span the read was taken in. That
+// property is checked at runtime instead — section.go, and section_test.go
+// beside it. These two halves are complementary and neither is redundant: this
+// one says which functions may write and which key they may write, at review
+// time; that one says whether the write happened when it was still allowed to.
 
 // span is one [Lock, Unlock) interval of jobLock in a body.
 type span struct{ from, to token.Pos }
@@ -75,7 +85,13 @@ type funcs struct {
 	// body and so closes nothing here; a plain one closes where it is written,
 	// which is the shape "after the first Lock" could not see.
 	sections []span
-	end      token.Pos
+	// locks and plainUnlocks are the raw positions the spans were built from.
+	// TestASectionIsEnteredOnceAndLeftOnTheWayOut reads them: two Locks in one
+	// body are two sections, and a write decided in the first and made in the
+	// second is exactly what "inside SOME span" reports as covered.
+	locks        []token.Pos
+	plainUnlocks []token.Pos
+	end          token.Pos
 }
 
 func (f funcs) sectioned() bool { return len(f.sections) > 0 }
@@ -251,6 +267,7 @@ func pkgFuncs(t *testing.T) map[string]funcs {
 
 			slices.Sort(locks)
 			slices.Sort(unlocks)
+			f.locks, f.plainUnlocks = locks, unlocks
 			for _, from := range locks {
 				to := f.end
 				for _, u := range unlocks {
@@ -552,9 +569,9 @@ func TestEveryQueueWriteIsInsideTheSectionThatDecidedIt(t *testing.T) {
 	// verb -> the functions of this package that call it -> why it is outside a
 	// section, or "" when it is inside one.
 	sites := map[string]map[string]string{
-		"Push":   {"Service.requeue": "", "Service.retry": "", "Service.mend": ""},
+		"Push":   {"Service.push": ""},
 		"Remove": {"Service.withdraw": ""},
-		"Ack":    {"Service.ack": "", "Service.drainDeadLetter": ""},
+		"Ack":    {"Service.ack": ""},
 		"Nack":   {},
 		"Claim": {
 			"Service.step": "the queue's own transition, taken under the queue's own group lock " +
@@ -863,7 +880,7 @@ func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 
 	for _, n := range []string{"Service.create", "Service.begin", "Service.retry"} {
 		require.True(t, all[n].sectioned(), "%s writes a record and must hold jobLock", n)
-		require.True(t, all[n].covered(all[n].at["Batch"]),
+		require.True(t, all[n].covered(all[n].at["commit"]),
 			"%s writes a record inside its section, not after releasing it", n)
 	}
 
@@ -907,7 +924,7 @@ func TestTheClaimAndTheRegistrationAreOneSection(t *testing.T) {
 			"about what this node is running")
 
 	begin := all["Service.begin"]
-	claim, wrote := begin.at["Batch"]
+	claim, wrote := begin.at["commit"]
 	require.True(t, wrote, "begin must write the claim itself, or there is no section to be inside of")
 
 	for _, at := range writers["Service.begin"] {
@@ -946,4 +963,98 @@ func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
 	}
 	require.Equal(t, []string{"loop"}, started,
 		"a second goroutine in this package is a second writer, and the four loop-side transitions stop excluding each other by construction")
+}
+
+// EVERY ENTRY GOES THROUGH THE READ THAT DECIDED IT. commit is this package's
+// only path to Store.Batch, and push, ack and withdraw are the only paths to
+// the three queue writes that pair with a record write — so a write cannot be
+// made without NAMING the reading, or the section, it was decided in.
+//
+// THIS IS THE STATIC HALF OF section.go. It says a write is impossible to make
+// without a name; section.go's live() says whether the thing named is still
+// running at the instant of the write. Neither is the other: a scan cannot see
+// when, and a runtime check cannot see a site nobody exercised.
+//
+// attemptSink.write is the one exemption and it is named rather than implicit:
+// a log or asset row is content keyed by (job, attempt), written DURING the
+// build and outside every section on purpose, and no read of a job record
+// decides it.
+func TestEveryEntryIsWrittenThroughTheReadThatDecidedIt(t *testing.T) {
+	all := pkgFuncs(t)
+
+	require.ElementsMatch(t, []string{"Service.commit", "attemptSink.write"},
+		names(callers(all, "Batch")),
+		"an entry written outside commit() is an entry that names no reading — and a reading is "+
+			"the only thing that can say the section it was decided in is still the one running")
+
+	// verb -> the one function of this package that may call it, and which must
+	// ask live() before it does.
+	for fn, verb := range map[string]string{
+		"Service.commit":   "Batch",
+		"Service.push":     "Push",
+		"Service.ack":      "Ack",
+		"Service.withdraw": "Remove",
+	} {
+		f, known := all[fn]
+		require.True(t, known, "%s is gone, and with it the only checked path to %s", fn, verb)
+		require.True(t, f.calls["live"],
+			"%s writes without asking whether the section that decided the write is still held", fn)
+		require.Less(t, f.at["live"], f.at[verb],
+			"%s asks after it has already written, which answers a question it no longer has", fn)
+	}
+}
+
+// A READING IS ONLY EVER MADE BY THE READ THAT TOOK IT. The identity in it is
+// the whole check, so a reading assembled anywhere else — at a write site, out
+// of jobLock.current() — is a write vouching for itself.
+//
+// reading.as is the one other maker, and it carries a section rather than
+// minting one: create writes a job its read found nothing for, and then queues
+// the record that read let it write.
+func TestAReadingIsOnlyMadeByTheReadThatTookIt(t *testing.T) {
+	made := map[string]bool{}
+	for _, file := range parsePackage(t).Files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				lit, ok := n.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				if id, ok := lit.Type.(*ast.Ident); ok && id.Name == "reading" {
+					made[qualify(fn)] = true
+				}
+				return true
+			})
+		}
+	}
+	require.ElementsMatch(t, []string{"Service.record", "reading.as"}, names(made),
+		"a reading built anywhere but the read that took it is an identity nothing read")
+}
+
+// A SECTION IS ENTERED ONCE AND LEFT ON THE WAY OUT.
+//
+// Two jobLock.Lock() calls in one body are TWO sections, and a body that reads
+// in the first and writes in the second is exactly what "the call is inside
+// SOME Lock..Unlock span" reports as covered — the shape that put the defect
+// back with the suite green. A plain Unlock is the other half of it: it is what
+// lets a body release the lock in the middle and keep going.
+//
+// This does not make the runtime check redundant and is not made redundant by
+// it. It fails at review time, on the shape, before anything runs; live() fails
+// at the instant of a write however the body was arranged — including from a
+// deferred call or a closure, which are inside the span by every measure a scan
+// has.
+func TestASectionIsEnteredOnceAndLeftOnTheWayOut(t *testing.T) {
+	for name, f := range pkgFuncs(t) {
+		require.LessOrEqual(t, len(f.locks), 1,
+			"%s enters jobLock %d times: a read taken in one of them and a write made in another "+
+				"are two sections, which is the whole defect", name, len(f.locks))
+		require.Empty(t, f.plainUnlocks,
+			"%s leaves jobLock somewhere other than on the way out — a section released in the "+
+				"middle of a body is a section whose later writes were decided in it and made after it", name)
+	}
 }

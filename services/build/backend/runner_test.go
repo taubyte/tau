@@ -295,7 +295,7 @@ func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
 func TestDrainingADeadLetterEntryForAFinishedJobJustAcksIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusCancelled, "cancelled"))
+	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusCancelled, "cancelled"))
 
 	require.NoError(t, h.dead.Push(id, nil))
 	require.True(t, h.mustStep(t))
@@ -324,7 +324,7 @@ func TestAnItemWithNoRecordIsAckedAndDropped(t *testing.T) {
 func TestARedeliveredJobThatIsAlreadyFinishedIsDropped(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusSuccess, ""))
+	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusSuccess, ""))
 
 	require.True(t, h.mustStep(t))
 	require.Empty(t, h.runner.seen())
@@ -380,10 +380,10 @@ func TestANodeWithNoRunnerKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 	require.Equal(t, 1, ready, "the item is left for a node that can run it")
 	require.Equal(t, 0, claimed)
 
-	rec, found, err := s.record(id)
+	r, err := s.record(unsectioned, id)
 	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, rec.status())
+	require.True(t, r.found)
+	require.Equal(t, buildv1.JobStatus_JobStatusOpen, r.rec.status())
 }
 
 func TestStepReportsAStoreThatRefusesTheClaimWrite(t *testing.T) {
@@ -503,7 +503,7 @@ func TestSettleReportsARecordItCannotReadAfterTheAck(t *testing.T) {
 func TestTheDeadLetterDrainReportsAnAckItCannotMake(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusCancelled, "cancelled"))
+	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusCancelled, "cancelled"))
 	require.NoError(t, h.dead.Push(id, nil))
 
 	// The claim's own entry commits, and the ack's does not.

@@ -2,7 +2,6 @@ package backend
 
 import (
 	"context"
-	"sync"
 
 	"connectrpc.com/connect"
 
@@ -112,17 +111,17 @@ func (s *Service) enqueue(ctx context.Context, p *buildv1.PushEvent) (string, er
 // same row again at the moment it writes — but the push it makes is a decision,
 // and that is why the read is behind the lock.
 func (s *Service) resume(id string) (bool, error) {
-	jobLock.Lock()
+	at := jobLock.Lock()
 	defer jobLock.Unlock()
 
 	if err := s.lead(); err != nil {
 		return false, err
 	}
-	rec, found, err := s.record(id)
-	if err != nil || !found {
+	r, err := s.record(at, id)
+	if err != nil || !r.found {
 		return false, err
 	}
-	return true, s.requeue(rec)
+	return true, s.requeue(r)
 }
 
 // jobLock makes a job record's read and the entry that read decides ONE
@@ -187,8 +186,17 @@ func (s *Service) resume(id string) (bool, error) {
 // pkg/v2/queue takes its group lock before it touches the store, so an ack
 // already holds it by the time anything a test can hook has run, and a racing
 // push queues up behind rather than landing in front. The harm needs the racer
-// to win that lock; the fact does not. ackpairing_test.go asserts the section
-// itself for exactly that reason, and says so.
+// to win that lock; the fact does not.
+//
+// WHICH IS WHY THE SECTION HAS AN IDENTITY. section.go gives every holding of
+// this lock a number, a read of a job record carries the number it was taken
+// under, and a write asserts that number is still the one running. An ack made
+// on a decision taken in a section that has closed is then REFUSED, not made —
+// so a defect that could not be raced into a visible outcome has one anyway:
+// an error, and a delivery that stays claimed and comes back. That is also the
+// only thing in this package that can see the difference between "a lock is
+// held" and "the lock that decided this is held", which is the difference every
+// static guard over this file's source has failed on.
 //
 // THE PAIRING IS THE RULE AND NOT AN ILLUSTRATION, and the sentence above was
 // once true of every transition except the one that ran the builds. run acked
@@ -210,7 +218,7 @@ func (s *Service) resume(id string) (bool, error) {
 // the build, and the round trip to auth. A section that held either would hold
 // this lock for an hour, or across a network call to another service — and the
 // whole point of it is that it is only ever held across writes to one store.
-var jobLock sync.Mutex
+var jobLock sectionLock
 
 // create writes a job that does not exist yet: the record, its project index
 // row and its open index row, in ONE entry — and then the item it is to be
@@ -223,17 +231,17 @@ var jobLock sync.Mutex
 // finds the job already there requeues THAT record rather than overwriting it
 // with a fresh one.
 func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) error {
-	jobLock.Lock()
+	at := jobLock.Lock()
 	defer jobLock.Unlock()
 
 	if err := s.lead(); err != nil {
 		return err
 	}
-	existing, found, err := s.record(id)
+	existing, err := s.record(at, id)
 	if err != nil {
 		return err
 	}
-	if found {
+	if existing.found {
 		return s.requeue(existing)
 	}
 
@@ -256,14 +264,14 @@ func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) er
 	// ONE Batch: the record, the project index row and the open index row are
 	// one replicated entry, so a reader never sees a job that is in one of the
 	// three and not the others.
-	if err := s.store.Batch([]raft.BatchOp{
+	if err := s.commit(existing, []raft.BatchOp{
 		set(jobRecordKey(id), value),
 		set(projectIndexKey(projectID, id), nil),
 		set(openIndexKey(rec.RepositoryKey, id), nil),
-	}, s.cfg.Queue.ApplyTimeout); err != nil {
-		return errUnavailable("writing job %s: %v", id, err)
+	}); err != nil {
+		return refused(err, "writing job %s", id)
 	}
-	return s.requeue(rec)
+	return s.requeue(existing.as(rec))
 }
 
 // requeue gives an open job an item to be claimed by, and is a no-op for one
@@ -281,12 +289,12 @@ func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) er
 // could finish the job and withdraw its item between the read and this, and the
 // item would go straight back for a build nobody wants. Push takes the queue's
 // group lock under jobLock, which is the one direction that order runs in.
-func (s *Service) requeue(rec jobRecord) error {
-	if rec.terminal() || rec.status() == buildv1.JobStatus_JobStatusClaimed {
+func (s *Service) requeue(r reading) error {
+	if r.rec.terminal() || r.rec.status() == buildv1.JobStatus_JobStatusClaimed {
 		return nil
 	}
-	if err := s.work.Push(rec.ID, nil); err != nil {
-		return errUnavailable("queue push: %v", err)
+	if err := s.push(r, r.rec.ID); err != nil {
+		return refused(err, "queue push")
 	}
 	return nil
 }
@@ -321,17 +329,19 @@ func (s *Service) projectError(repositoryKey string, err error) error {
 	}
 }
 
-// record reads one job record. It is the only reader of jobRecordKey.
-func (s *Service) record(id string) (jobRecord, bool, error) {
+// record reads one job record UNDER A NAMED SECTION. It is the only reader of
+// jobRecordKey, and the section it stamps the answer with is what every write
+// decided on that answer has to match — see section.go.
+func (s *Service) record(at section, id string) (reading, error) {
 	raw, exists := s.store.Get(jobRecordKey(id))
 	if !exists {
-		return jobRecord{}, false, nil
+		return reading{at: at}, nil
 	}
 	rec, err := decodeJobRecord(jobRecordKey(id), raw)
 	if err != nil {
-		return jobRecord{}, false, errInternal("%v", err)
+		return reading{at: at}, errInternal("%v", err)
 	}
-	return rec, true, nil
+	return reading{rec: rec, found: true, at: at}, nil
 }
 
 func set(key string, value []byte) raft.BatchOp {

@@ -69,7 +69,7 @@ func TestReconcileDropsStaleOpenRows(t *testing.T) {
 	h := newHarness(t)
 
 	finished := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finish(h.mustRecord(t, finished), buildv1.JobStatus_JobStatusSuccess, ""))
+	require.NoError(t, h.finishNow(t, finished, buildv1.JobStatus_JobStatusSuccess, ""))
 	// finish already removed the row; put it back to stand for a crash between
 	// the two halves of some earlier transition.
 	h.store.put(t, openIndexKey(testRepo, finished), nil)
@@ -136,7 +136,7 @@ func TestReconcileReportsWhatItCannotRead(t *testing.T) {
 		d, err := h.work.Claim()
 		require.NoError(t, err)
 		require.NoError(t, h.work.Ack(d))
-		require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusFailed, "boom"))
+		require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "boom"))
 
 		applied, exists := stale.fakeStore.Get(jobRecordKey(id))
 		require.True(t, exists)
@@ -214,7 +214,7 @@ func TestMendDoesNotDropAnOpenRowItReadAtAnOlderPrefix(t *testing.T) {
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	require.NoError(t, h.work.Ack(d))
-	require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusFailed, "boom"))
+	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "boom"))
 	applied, exists := stale.fakeStore.Get(jobRecordKey(id))
 	require.True(t, exists)
 
