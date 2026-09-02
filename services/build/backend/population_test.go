@@ -281,8 +281,53 @@ func indexRowKeys(all map[string]string) map[string]bool {
 	return out
 }
 
+// attemptRowKeys are the builders that produce a LOG OR ASSET ROW of one
+// attempt — content the build writes as it goes, keyed by (job, attempt), which
+// no read of a job record decides. It is the class attemptSink may write, and
+// naming it as a class rather than as "some builder in store.go" is what scopes
+// that exemption by its JUSTIFICATION: the sink took an arbitrary key and the
+// scan asked only that it came from somewhere in store.go, so a ref anchor or a
+// project row would have passed straight through it.
+func attemptRowKeys(all map[string]string) map[string]bool {
+	const sampleID = "0123456789012345678901234567890123456789abc"
+	under := attemptPrefix(sampleID)
+
+	out := map[string]bool{}
+	for name, key := range all {
+		if strings.HasPrefix(key, under) && !strings.HasSuffix(key, "/") {
+			out[name] = true
+		}
+	}
+	return out
+}
+
+// assembles is every function that BUILDS a composite literal of the named
+// type, which is a different question from which functions return one: a chain
+// method returns the entry it was handed, and that is not a second way to get
+// one. It is the question the round that made the handle a closure already
+// asked of held, asked of the two types the writes now hang off.
+func assembles(all map[string]funcs, name string) []string {
+	var out []string
+	for n, f := range all {
+		if len(f.literals[name]) > 0 || len(f.literals["&"+name]) > 0 {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// recvName is what a method calls its receiver — "e", "s", "h", "k". A check
+// that a key is built from the handle's own subject has to spell the receiver,
+// and spelling it wrong would make the check vacuous.
+func recvName(fn *ast.FuncDecl) string {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 || len(fn.Recv.List[0].Names) != 1 {
+		return ""
+	}
+	return fn.Recv.List[0].Names[0].Name
+}
+
 // qualify names a declaration the way the tables below do: "Service.cancel",
-// "held.commit", or a bare "jobRecordKey" for a function with no receiver.
+// "entry.commit", or a bare "jobRecordKey" for a function with no receiver.
 func qualify(fn *ast.FuncDecl) string {
 	if name := receiver(fn); name != "" {
 		return name + "." + fn.Name.Name
@@ -643,11 +688,85 @@ func TestOnlyOneFunctionReadsAJobRecord(t *testing.T) {
 		"every read of a job record must go through readRecord(), or the population below is incomplete")
 
 	require.ElementsMatch(t,
-		[]string{"Service.enter", "held.reread", "Service.job"},
+		[]string{"jobReader.First", "jobReader.Again", "Service.job"},
 		names(callers(all, "readRecord")),
-		"a fourth reader is either a section that did not go through the entry point, or a read "+
-			"outside every section — and a read outside every section decides nothing, because "+
-			"there is no handle attached to it")
+		"a fourth reader is either a section that did not go through the source enter names, or "+
+			"a read outside every section — and a read outside every section decides nothing, "+
+			"because there is no handle attached to it")
+
+	// AND THE SOURCE IS THE ONLY THING A SECTION READS THROUGH. enter names one
+	// and does not read; the two reads on it are the section's first and its
+	// second, and they differ only in the barrier.
+	require.False(t, all["Service.enter"].calls["readRecord"],
+		"the entry point names the source; it does not take the read itself, or there would be "+
+			"a second answer to what a holding carries")
+	require.ElementsMatch(t, []string{"jobReader.Subject", "jobReader.First", "jobReader.Again"},
+		methodsOn(t, "jobReader"),
+		"the source is three methods: what the section is about, and its two reads")
+
+	// AND ALL THREE MUST NAME THE SAME FIELD. A source is two answers — what
+	// this section is about, and what it reads — and nothing in the type makes
+	// them agree. Divergent, the handle composes every key from one job while
+	// the body decides on another's record, which is the defect this whole
+	// mechanism exists to make unspellable, reintroduced at the door. Measured,
+	// it does not even fail: the suite HANGS, because a transition deciding on
+	// a record that is never the one it wrote loops.
+	subject := reads(t, "jobReader.Subject", "id")
+	require.NotEmpty(t, subject, "the source must say what it is about by naming a field")
+	for _, read := range []string{"jobReader.First", "jobReader.Again"} {
+		require.Equal(t, subject, reads(t, read, "readRecord"),
+			"%s must read the field Subject names, or a section is about one job and decides "+
+				"on another's record", read)
+	}
+}
+
+// reads is what a method hands to `call`, or returns when call is "" — as a
+// source expression, so that "the same field" is a comparison rather than a
+// hope. Subject is a bare return, so it is matched by the field it names.
+func reads(t *testing.T, method, call string) string {
+	t.Helper()
+
+	var out []string
+	for _, file := range parsePackage(t).Files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || qualify(fn) != method || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				switch v := n.(type) {
+				case *ast.ReturnStmt:
+					for _, result := range v.Results {
+						if sel, ok := result.(*ast.SelectorExpr); ok && sel.Sel.Name == call {
+							out = append(out, types.ExprString(sel))
+						}
+					}
+				case *ast.CallExpr:
+					if calleeName(v.Fun) == call && len(v.Args) == 1 {
+						out = append(out, types.ExprString(v.Args[0]))
+					}
+				}
+				return true
+			})
+		}
+	}
+	require.Len(t, out, 1, "%s must name %q exactly once", method, call)
+	return out[0]
+}
+
+// methodsOn is every method declared on a type in this package.
+func methodsOn(t *testing.T, recv string) []string {
+	t.Helper()
+
+	var out []string
+	for _, file := range parsePackage(t).Files {
+		for _, decl := range file.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && receiver(fn) == recv {
+				out = append(out, qualify(fn))
+			}
+		}
+	}
+	return out
 }
 
 // site is one SECTION and THE WRITES ITS READ DECIDES — one row per transition,
@@ -744,7 +863,6 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 		require.NotEmpty(t, want.why, "%s: a section that reads without a barrier must say why that is safe", name)
 		reread, ok := f.at["reread"]
 		require.True(t, ok, "%s: a section that reads without a barrier must read again behind one", name)
-		require.True(t, barriers(all, "reread"), "%s: and that second read must barrier", name)
 		for verb, positions := range writesIn(all, f) {
 			for _, at := range positions {
 				require.Greater(t, at, reread,
@@ -753,12 +871,30 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 		}
 	}
 
-	// AND THE BARRIER IS THE ENTRY POINT'S, before the read every body decides
-	// on. It was nine lines in nine transitions and is one line in one place.
-	enter := all["Service.enter"]
+	// AND THE BARRIER IS THE SOURCE'S, before the read every body decides on.
+	// It was nine lines in nine transitions, then one line in the entry point,
+	// and it is now a field of the thing that answers "what is this section
+	// about and what does it read" — which is where the difference between the
+	// two entry points belongs, because that is the whole of the difference.
 	require.True(t, barriers(all, "lead"), "lead() must barrier, or no section has one")
-	require.Less(t, enter.at["lead"], enter.at["readRecord"],
-		"the entry point must barrier BEFORE the read its body's writes are decided on")
+	for _, read := range []string{"jobReader.First", "jobReader.Again"} {
+		src := all[read]
+		require.Less(t, src.at["lead"], src.at["readRecord"],
+			"%s must barrier BEFORE the read a body's writes are decided on", read)
+	}
+
+	// THE SECOND READ ALWAYS BARRIERS, whichever entry point was used, and that
+	// is why mend's exemption is safe: its one caller reads without one and then
+	// decides on a read that has one. The link from reread to Again runs through
+	// the holding, which is an interface call in another package and not
+	// something any scan over this package can follow — so what is pinned here
+	// are its two ends. The other is below: reread is the ONLY thing that asks a
+	// holding to read again.
+	require.False(t, all["jobReader.Again"].calls["barrier"],
+		"Again must not consult the flag: a second read that skipped the barrier when the "+
+			"first did is the exemption spreading from one branch to the whole section")
+	require.True(t, all["jobReader.First"].calls["barrier"],
+		"and First must, or withJob and withJobUnbarriered are the same door")
 }
 
 // EVERY QUEUE WRITE IS INSIDE THE SECTION THAT DECIDED IT — the rule jobLock's
@@ -902,88 +1038,56 @@ func inBodyFrom(all map[string]funcs, fn, call string, seen map[string]bool) (bo
 // (reconcile.go). Split across two entries by some later transition, the repair
 // starts dropping rows a live job still needs.
 //
+// IT IS A TYPE NOW RATHER THAN A SCAN, and that is what the round that removed
+// the arbitrary key bought here. The pairing used to be counted: every mention
+// of an open-row builder had to sit inside a []raft.BatchOp literal that also
+// mentioned a record builder, which was a fact about two idents being near each
+// other in a composite literal. There are no such literals left. open() and
+// dropOpen() are methods on `stated` — an entry that CARRIES this job's record
+// — and the only thing that produces one is record(), which puts that record
+// into the very same entry. An open row in an entry that writes no record is
+// not a scan failure any more; it does not compile.
+//
 // AND THE EXCEPTION IS NAMED RATHER THAN INVISIBLE. mend's own entry deletes an
 // open row and writes no record, on purpose: the record it read is finished or
-// gone, and the row is the only thing left to remove. While that key was a loop
-// variable this scan could not see the entry at all.
-//
-// IT IS THE KEY THAT IS COUNTED, NOT THE SPELLING. This scan matched the idents
-// openIndexKey and jobRecordKey, so a second builder in store.go with the same
-// body and another name moved an open row alone in an entry nothing here saw.
-// Both halves of the pairing are now CLASSES: every builder that returns the
-// key openIndexKey returns, and every builder that returns the key
-// jobRecordKey returns.
+// gone, and the row is the only thing left to remove. So it is the one method
+// that touches an open-row key from a bare entry, and its callers are
+// enumerated — an exemption scoped by the shape of an argument is an exemption
+// anybody can reach for.
 func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
-	keys := classes(t)
-	recordKeys, openRowKeys := sameKeyAs(keys, "jobRecordKey"), sameKeyAs(keys, "openIndexKey")
+	all := pkgFuncs(t)
+	openRowKeys := sameKeyAs(classes(t), "openIndexKey")
 
-	// mentions counts a key builder's appearances, and inEntry counts the ones
-	// inside a []raft.BatchOp literal — one replicated entry. A builder named
-	// anywhere else is a key written or deleted on its own.
-	mentions := map[string]int{}
-	inEntry := map[string]int{}
-	var pairing, alone []string
-
-	count := func(n ast.Node, into map[string]int) (record, openRow bool) {
-		ast.Inspect(n, func(n ast.Node) bool {
-			id, ok := n.(*ast.Ident)
-			if !ok || !(recordKeys[id.Name] || openRowKeys[id.Name]) {
-				return true
+	var touches []string
+	for name, f := range all {
+		if openRowKeys[name] {
+			continue
+		}
+		for builder := range openRowKeys {
+			if f.calls[builder] {
+				touches = append(touches, name)
+				break
 			}
-			into[id.Name]++
-			record = record || recordKeys[id.Name]
-			openRow = openRow || openRowKeys[id.Name]
-			return true
-		})
-		return record, openRow
-	}
-
-	for _, file := range parsePackage(t).Files {
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil || qualify(fn) == "Service.readRecord" {
-				continue
-			}
-			count(fn.Body, mentions)
-
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				lit, ok := n.(*ast.CompositeLit)
-				if !ok || !isBatchOps(lit.Type) {
-					return true
-				}
-				record, openRow := count(lit, inEntry)
-				if !openRow {
-					return true
-				}
-				if record {
-					pairing = append(pairing, qualify(fn))
-				} else {
-					alone = append(alone, qualify(fn))
-				}
-				return true
-			})
 		}
 	}
+	require.ElementsMatch(t,
+		[]string{"stated.open", "stated.dropOpen", "entry.dropOrphanedOpen"}, touches,
+		"an open-index row is built in three places: the two that move it with the record, and "+
+			"the one that drops an orphan")
 
-	require.ElementsMatch(t, []string{"Service.create", "Service.retry", "held.finish"}, pairing,
-		"the three transitions that move a record and its open row together")
-	require.ElementsMatch(t, []string{"Service.mend"}, alone,
-		"mend's orphan delete is the ONE entry allowed to move an open row without the record, "+
-			"and a second one is a transition that leaves a job listed as open with no record saying so")
-	require.Equal(t, mentions, inEntry,
-		"a job record key or an open-index row key built outside a []raft.BatchOp literal is half a transition")
-}
-
-// isBatchOps reports whether a composite literal's type is []raft.BatchOp — one
-// replicated entry, which is what Store.Batch takes and the only shape in which
-// this package writes anything.
-func isBatchOps(expr ast.Expr) bool {
-	arr, ok := expr.(*ast.ArrayType)
-	if !ok {
-		return false
+	for _, name := range []string{"stated.open", "stated.dropOpen"} {
+		require.Equal(t, "stated", all[name].recv,
+			"%s must hang off an entry that carries the record, or the pairing is back to a scan", name)
 	}
-	sel, ok := arr.Elt.(*ast.SelectorExpr)
-	return ok && sel.Sel.Name == "BatchOp"
+	require.ElementsMatch(t, []string{"entry.record"}, assembles(all, "stated"),
+		"a second way to MAKE a `stated` is a second way to write an open row without the record "+
+			"it belongs to — which is the whole of what this type is for")
+	require.Equal(t, "entry", all["entry.record"].recv)
+
+	require.Equal(t, "entry", all["entry.dropOrphanedOpen"].recv)
+	require.ElementsMatch(t, []string{"Service.mend"}, names(callers(all, "dropOrphanedOpen")),
+		"the orphan delete is reconcile's alone: a second caller is a transition dropping the "+
+			"open row of a job whose record it has not shown to be gone")
 }
 
 // keyBuilder reports whether an expression is a call to one of store.go's key
@@ -1031,7 +1135,7 @@ func params(fn *ast.FuncDecl) map[string]int {
 // EVERY KEY AN ENTRY WRITES IS BUILT WHERE THE ENTRY IS. set() and del() are
 // this package's only two BatchOp constructors, and the key each is handed must
 // be a call to one of store.go's builders — or a parameter, in which case every
-// caller must build one.
+// caller must build one, out of the CLASS that sink is allowed.
 //
 // THIS IS WHAT MAKES THE PAIRING CHECK ABOVE A CHECK RATHER THAN A SPELLING
 // TEST. mend deletes an open-index row; while that key was the loop variable
@@ -1039,12 +1143,32 @@ func params(fn *ast.FuncDecl) map[string]int {
 // source could tell what it wrote. A tenth site deleting an open row alone,
 // outside any section, spelled the same way, passed everything. An opaque key
 // is the hole, so an opaque key is what fails here.
+//
+// AND EACH SINK IS SCOPED BY ITS OWN JUSTIFICATION, which is the half that was
+// missing. attemptSink.write took an arbitrary key and this scan asked only
+// that it came from SOME builder in store.go — so a ref anchor, a project row
+// or a retention row handed to the sink was a write outside every section that
+// nothing here would have named. A sink is allowed a CLASS of key now: the
+// entry's two constructors may be handed any whole key, because everything
+// above them composes it from the section's own subject; the sink may be handed
+// an attempt row and nothing else, because "a log or asset row keyed by (job,
+// attempt), written during the build, decided by no record read" is the whole
+// of its exemption.
 func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 	pkg := parsePackage(t)
-	builders := wholeKeys(classes(t))
+	keys := classes(t)
+	builders := wholeKeys(keys)
 
-	// sinks are declarations that take a key as a parameter: the key is built
-	// by their callers instead, and every caller is checked below.
+	// THE SINKS ARE NAMED, and so is what each may be handed. A sink this table
+	// does not know about fails rather than being discovered and waved through
+	// — and there is exactly one, because a method that takes a key is a door
+	// scoped by the shape of an argument. The entry had two for one draft, and
+	// `j.writes().put(refLastKey("github.com/evil/repo", …), sha)` inside a
+	// method on the handle left the whole suite green.
+	allowed := map[string]map[string]bool{
+		"attemptSink.write": attemptRowKeys(keys),
+	}
+
 	sinks := map[string]map[int]bool{}
 
 	for _, file := range pkg.Files {
@@ -1082,6 +1206,10 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 		}
 	}
 
+	require.ElementsMatch(t, names(allowed), names(sinks),
+		"a function that takes a key and writes it is a door onto the store, and every one of "+
+			"them is named above with the class of key it may be handed")
+
 	for sink, positions := range sinks {
 		seen := 0
 		for _, file := range pkg.Files {
@@ -1098,8 +1226,9 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 					seen++
 					for i := range positions {
 						require.Greater(t, len(call.Args), i, "%s calls %s with too few arguments", qualify(fn), sink)
-						require.True(t, keyBuilder(builders, call.Args[i]),
-							"%s passes %s the key %q, which it did not build — the entry %s writes cannot say what it writes",
+						require.True(t, keyBuilder(allowed[sink], call.Args[i]),
+							"%s passes %s the key %q, which is not one this sink may write — the "+
+								"entry %s writes cannot say what it writes",
 							qualify(fn), sink, types.ExprString(call.Args[i]), sink)
 					}
 					return true
@@ -1110,14 +1239,75 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 	}
 }
 
+// AND THE ONE EXEMPTION IS SCOPED BY ITS JUSTIFICATION, NOT BY ITS SPELLING.
+//
+// attemptSink is the one writer in this package that is outside every section
+// on purpose: a log line or an asset cid is CONTENT the build produces as it
+// goes, keyed by (job, attempt), and no read of a job record decides it. That
+// is a sentence with three clauses, and until this round the guard checked
+// none of them — it checked that the key came from some function declared in
+// store.go, which a ref anchor, a project row and a retention row all satisfy.
+//
+// So all three are checked here: WHO may write through it, WHAT class of key it
+// may write (above), and that the job and attempt in that key are the sink's
+// OWN — a sink built for one job's third attempt cannot address another's.
+func TestTheSinkWritesOnlyItsOwnJobsAttemptRows(t *testing.T) {
+	all := pkgFuncs(t)
+
+	require.ElementsMatch(t, []string{"attemptSink.Log", "attemptSink.Asset"},
+		names(callers(all, "write")),
+		"the sink's one door to the store is reached from its two Sink methods and nowhere "+
+			"else — an unenumerated caller is a write outside every section that nothing named")
+
+	rows := attemptRowKeys(classes(t))
+
+	built := map[string]string{}
+	for _, file := range parsePackage(t).Files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || receiver(fn) != "attemptSink" || fn.Body == nil {
+				continue
+			}
+			k := recvName(fn)
+			require.NotEmpty(t, k, "%s must name its receiver, or nothing below can be spelled", qualify(fn))
+
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || !rows[calleeName(call.Fun)] {
+					return true
+				}
+				built[qualify(fn)] = calleeName(call.Fun)
+				require.GreaterOrEqual(t, len(call.Args), 2)
+				require.Equal(t, k+".id", types.ExprString(call.Args[0]),
+					"%s must key its row by the job THIS sink is for", qualify(fn))
+				require.Equal(t, k+".attempt", types.ExprString(call.Args[1]),
+					"%s must key its row by the attempt THIS sink is for — per attempt is what "+
+						"keeps two runners either side of a leadership flap out of one another's "+
+						"rows, and a retry from overwriting the previous run's logs", qualify(fn))
+				return true
+			})
+		}
+	}
+	require.Equal(t,
+		map[string]string{"attemptSink.Log": "attemptLogKey", "attemptSink.Asset": "attemptAssetKey"},
+		built,
+		"one row kind per Sink method, and both of them attempt rows")
+}
+
 // The write side, from the other direction: every entry that SETS a job record
-// is written inside the section that read it — which for three of them means
-// the commit sits inside the body they opened, and for the fourth means it is a
-// method on the handle a body was handed.
+// is written inside the section that read it — which is now ONE METHOD, because
+// the key is composed rather than spelled.
 //
 // THE ENUMERATION IS BY KEY, NOT BY IDENT. A second builder returning the same
 // key let settle write a job record while this list still read
 // [create, begin, retry, finish].
+//
+// AND IT USED TO BE FOUR NAMES. create, begin and retry each built the record's
+// key themselves, inside their own bodies, from an id they had in scope — and
+// begin built it from the id in the RECORD rather than from the id its section
+// was entered on, which is the same expression only as long as the store agrees
+// with itself. There is one writer of a record key in this package now, it is a
+// method on an entry, and the id it uses is the section's.
 func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 	all := pkgFuncs(t)
 	recordKeys := sameKeyAs(classes(t), "jobRecordKey")
@@ -1134,26 +1324,155 @@ func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 			}
 		}
 	}
-	require.ElementsMatch(t,
-		[]string{"Service.create", "Service.begin", "Service.retry", "held.finish"}, writers)
+	require.ElementsMatch(t, []string{"entry.record"}, writers,
+		"a second place that names a job record key is a second place that decides which job an "+
+			"entry is about")
 
-	for _, n := range []string{"Service.create", "Service.begin", "Service.retry"} {
-		require.NotEmpty(t, all[n].bodies, "%s writes a record and must open a section to do it", n)
-		for _, at := range all[n].posns["commit"] {
-			require.True(t, covered(all[n].bodies, at),
-				"%s writes a record inside the body it opened, not after it returns", n)
+	// AND IT NAMES THE SECTION'S JOB. This is the whole of the round: the key
+	// is the handle's subject, and the record's own id is overwritten with it,
+	// so a body that hands over a record it read somewhere else writes THIS job
+	// rather than that one.
+	record := all["entry.record"]
+	require.Equal(t, "entry", record.recv)
+	require.Contains(t, record.writesTo, "ID",
+		"record() must stamp the subject onto the record it encodes, or a record can still say "+
+			"it is a job the section was not entered on")
+
+	// The four transitions that write one all open a section to do it, and
+	// ends() is the shared terminal write, so it is a method on the handle and
+	// its callers are the ones that must open the section.
+	require.ElementsMatch(t,
+		[]string{"Service.create", "Service.begin", "Service.retry", "held.ends"},
+		names(callers(all, "record")))
+	for name := range callers(all, "record") {
+		held, chain := inBody(all, name, "record")
+		require.True(t, held, "%s writes a record outside its section — %s", name, chain)
+	}
+	for name := range callers(all, "ends") {
+		held, chain := inBody(all, name, "ends")
+		require.True(t, held, "%s writes a terminal record outside its section — %s", name, chain)
+	}
+}
+
+// EVERY KEY AN ENTRY WRITES NAMES THE JOB ITS SECTION WAS ENTERED ON, and this
+// is the clause the whole ladder was missing.
+//
+// Seven rounds answered WHEN a write was made and WHO made it. None answered
+// ABOUT WHAT: commit took []raft.BatchOp and finish took extra ...raft.BatchOp,
+// so a body inside a live, unforgeable, correctly-barriered section could put
+// one more line in its entry — set(jobRecordKey(someOtherJob), value) — and
+// pass every static guard and every runtime refusal, because the holding it
+// wrote through was genuinely live. Nothing anywhere compared an id inside a
+// key with the id the read was taken on.
+//
+// So no key is spelled at a call site any more. Each ROW is a method, it
+// composes its own key from h.id() — the subject inside the holding, which is
+// another package's struct — and this is where the population of those methods
+// is closed.
+//
+// IT IS SCANNED OVER THE WHOLE PACKAGE, not over the entry's own methods, and
+// that is the correction the first draft of this round needed. Scanned over
+// entry and stated alone, a row appended from a method on the HANDLE was
+// invisible: `j.writes().put(refLastKey("github.com/evil/repo", "refs/heads/
+// main"), []byte("deadbeef"))` inside ends() was measured GREEN against the
+// whole suite. A raft.BatchOp exists only where set() or del() is called, so
+// that is what is counted, wherever it is.
+func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
+	builders := wholeKeys(classes(t))
+
+	// THE ONE ROW A JOB OWNS THAT IS NOT KEYED BY ITS id, and why. Naming it is
+	// what keeps it from being a general escape: everything else must show the
+	// subject in the key it builds.
+	notKeyedByTheJob := map[string]string{
+		"refLastKey": "the ref anchor is keyed by (repository, ref), because the thing that reads " +
+			"it is the NEXT build of that ref, which is a different job. All three of its parts " +
+			"come off the record THIS SECTION READ, so the anchor an entry can move is the one " +
+			"belonging to the job the read was taken on.",
+	}
+
+	// THE SINK IS THE ONE ROW BUILT SOMEWHERE ELSE, and it is checked by the
+	// two tests either side of this one: who may call it, what class of key it
+	// may write, and that the job and attempt in that key are its own.
+	const sink = "attemptSink.write"
+
+	rows := map[string]string{}
+	for _, file := range parsePackage(t).Files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			owner, e := qualify(fn), recvName(fn)
+
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || len(call.Args) == 0 {
+					return true
+				}
+				if verb := calleeName(call.Fun); verb != "set" && verb != "del" {
+					return true
+				}
+				if owner == sink {
+					return true
+				}
+
+				key, ok := call.Args[0].(*ast.CallExpr)
+				require.True(t, ok && keyBuilder(builders, key),
+					"%s writes %s, which is not a key store.go builds", owner, types.ExprString(call.Args[0]))
+
+				builder := calleeName(key.Fun)
+				require.NotContains(t, rows, owner,
+					"%s builds two kinds of row, so the table below cannot say which one it is", owner)
+				rows[owner] = builder
+
+				var args []string
+				for _, arg := range key.Args {
+					args = append(args, types.ExprString(arg))
+				}
+				if why, exempt := notKeyedByTheJob[builder]; exempt {
+					for _, arg := range args {
+						require.True(t, strings.HasPrefix(arg, e+".h.rec()."),
+							"%s builds %s from %q, which is neither the section's subject nor a "+
+								"field of the record this section READ. %s", owner, builder, arg, why)
+					}
+					return true
+				}
+				require.Contains(t, args, e+".h.id()",
+					"%s builds %s from %v, and none of those is the job this section was entered "+
+						"on — a key an entry did not take from its own handle is a row about "+
+						"somebody else", owner, builder, args)
+				return true
+			})
 		}
 	}
 
-	// finish is the shared terminal write, so it is a method on the handle and
-	// its callers are the ones that must open the section — which is the same
-	// sentence as before with the deadlock removed: two nested sections would
-	// hang rather than race.
-	require.Equal(t, "held", all["held.finish"].recv)
-	for name := range callers(all, "finish") {
-		held, chain := inBody(all, name, "finish")
-		require.True(t, held, "%s writes a terminal record outside its section — %s", name, chain)
+	// AND EVERY ROW THIS PACKAGE CAN WRITE IS IN THIS TABLE. A raft.BatchOp is
+	// made nowhere but a call to set() or del(), so a method added anywhere —
+	// on the entry, on the handle, on a Service — fails here until somebody has
+	// said which row it is and shown that it names this section's job.
+	require.Equal(t, map[string]string{
+		"entry.record":           "jobRecordKey",
+		"entry.dropRetained":     "terminalIndexKey",
+		"entry.dropOrphanedOpen": "openIndexKey",
+		"stated.open":            "openIndexKey",
+		"stated.dropOpen":        "openIndexKey",
+		"stated.inProject":       "projectIndexKey",
+		"stated.retained":        "terminalIndexKey",
+		"stated.anchor":          "refLastKey",
+	}, rows, "one row kind per method, and every method named")
+
+	// AND THE SLICE THEY APPEND TO IS THEIRS. A body that assigned an entry's
+	// ops directly would be handing it rows nothing above composed, which is
+	// the same door with the method removed.
+	all := pkgFuncs(t)
+	appenders := map[string]bool{}
+	for name, f := range all {
+		if len(f.writesTo["ops"]) > 0 {
+			appenders[name] = true
+		}
 	}
+	require.ElementsMatch(t, names(rows), names(appenders),
+		"an entry's rows are appended by the methods that compose them and by nothing else")
 }
 
 // THE RUN IS REGISTERED INSIDE THE SECTION THAT CLAIMED IT, and two arguments
@@ -1263,15 +1582,17 @@ func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
 		"a second goroutine in this package is a second writer, and the four loop-side transitions stop excluding each other by construction")
 }
 
-// EVERY WRITE IS A METHOD ON THE HANDLE, AND EVERY ONE OF THEM WRITES INSIDE
-// under().
+// EVERY WRITE IS A METHOD ON THE HANDLE OR ON ITS ENTRY, AND EVERY ONE OF THEM
+// WRITES INSIDE under().
 //
-// commit is this package's only path to Store.Batch; push, ack and withdraw are
-// the only paths to the three queue writes that pair with a record write; and
-// register and stop are the only paths to the map that says what this node is
-// running. Each is a method on held — so a helper that wants to write takes the
-// handle, which is a parameter list rather than a scan — and each makes its
-// write inside under(), which refuses a handle whose section has returned.
+// entry.commit is this package's only path to Store.Batch; push, ack and
+// withdraw are the only paths to the three queue writes that pair with a record
+// write; and register and stop are the only paths to the map that says what
+// this node is running. Each hangs off a handle — an entry carries the handle
+// that made it and nothing else can make one — so a helper that wants to write
+// takes the handle, which is a parameter list rather than a scan; and each
+// makes its write inside under(), which refuses a handle whose section has
+// returned.
 //
 // THE RECEIVER IS THE POINT. A write used to take a reading: unforgeable, but
 // MINTABLE, because the thing that stamped one was exported and generic over an
@@ -1287,11 +1608,12 @@ func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
 // attemptSink.write is the one exemption and it is named rather than implicit:
 // a log or asset row is content keyed by (job, attempt), written DURING the
 // build and outside every section on purpose, and no read of a job record
-// decides it.
+// decides it. TestTheSinkWritesOnlyItsOwnJobsAttemptRows checks all three
+// clauses of that sentence rather than the shape of its argument.
 func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 	all := pkgFuncs(t)
 
-	require.ElementsMatch(t, []string{"held.commit", "attemptSink.write"},
+	require.ElementsMatch(t, []string{"entry.commit", "attemptSink.write"},
 		names(callers(all, "Batch")),
 		"an entry written outside commit() is an entry no section decided — and a handle is the "+
 			"only thing that can say the section it was decided in is still running")
@@ -1300,18 +1622,24 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 	// stop's are a map rather than a call, which is exactly why they had no
 	// path at all until they were methods here.
 	writes := map[string]string{
-		"held.commit":   "Batch",
+		"entry.commit":  "Batch",
 		"held.push":     "Push",
 		"held.ack":      "Ack",
 		"held.withdraw": "Remove",
 		"held.register": "running",
 		"held.stopRun":  "running",
 	}
+	// THE HANDLE AND THE THINGS THAT CARRY ONE. An entry is made by held.writes
+	// and holds the handle that made it; a stated is made by entry.record and
+	// holds that entry. Neither is reachable without a live handle, and both
+	// are enumerated below.
+	carriesTheHandle := map[string]bool{"held": true, "entry": true, "stated": true}
+
 	for fn, verb := range writes {
 		f, known := all[fn]
 		require.True(t, known, "%s is gone, and with it a checked path to a write", fn)
-		require.Equal(t, "held", f.recv,
-			"%s must be a method on the handle, or a caller with no section can reach the write", fn)
+		require.True(t, carriesTheHandle[f.recv],
+			"%s must hang off the handle, or a caller with no section can reach the write", fn)
 		require.NotEmpty(t, f.gated, "%s writes without the gate that refuses a returned section", fn)
 		for _, at := range f.posns[verb] {
 			require.True(t, covered(f.gated, at),
@@ -1319,24 +1647,30 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		}
 	}
 
-	// AND NOTHING REACHES PAST THE HANDLE INTO THE HOLDING. Write and Reread
-	// are backend/section's two doors and each has exactly one caller here: the
-	// gate every write is an argument to, and mend's second read. They are
-	// generic over a closure, so a body that called j.in.Reread with one of its
-	// own would be deciding on a value nothing read — which is the shape that
-	// defeated the round before this one, one level in. It buys nothing there
-	// (a body inside a live section can already put any value in an entry) and
-	// it is still not a thing this package should be able to spell.
+	// AND THE THINGS THAT CARRY A HANDLE COME FROM ONE PLACE EACH. A second
+	// constructor for either is a second way to hold a live section's authority
+	// without having been handed it.
+	require.ElementsMatch(t, []string{"held.writes"}, assembles(all, "entry"),
+		"an entry is made by the handle and nowhere else")
+	require.ElementsMatch(t, []string{"entry.record"}, assembles(all, "stated"))
+
+	// AND NOTHING REACHES PAST THE HANDLE INTO THE HOLDING. Write, Reread and
+	// Subject are backend/section's three doors and each has exactly one caller
+	// here: the gate every write is an argument to, mend's second read, and the
+	// accessor every key an entry writes is composed from.
 	require.ElementsMatch(t, []string{"held.under"}, onTheHolding(t, "Write"),
 		"the gate is the only thing that asks the holding to write")
 	require.ElementsMatch(t, []string{"held.reread"}, onTheHolding(t, "Reread"),
 		"and the one second read is the only thing that replaces what a holding carries")
+	require.ElementsMatch(t, []string{"held.id"}, onTheHolding(t, "Subject"),
+		"and the subject is read in one place, which is what every key is built from — a "+
+			"second reader of it is a second answer to what this section is about")
 
-	// AND NOTHING ELSE IS A WRITE METHOD. A seventh method on held that reached
-	// a store or the map without the gate is the hole this list would not
-	// notice, so the list is closed from the other side too.
+	// AND NOTHING ELSE IS A WRITE METHOD. A seventh method on the handle or its
+	// entry that reached a store or the map without the gate is the hole this
+	// list would not notice, so the list is closed from the other side too.
 	for name, f := range all {
-		if f.recv != "held" {
+		if !carriesTheHandle[f.recv] {
 			continue
 		}
 		if _, checked := writes[name]; checked {
@@ -1402,14 +1736,15 @@ func onTheHolding(t *testing.T, verb string) []string {
 func TestAHandleIsOnlyMadeByTheOneThatTookTheLock(t *testing.T) {
 	all := pkgFuncs(t)
 
-	var builds []string
-	for name, f := range all {
-		if len(f.literals["held"]) > 0 || len(f.literals["&held"]) > 0 {
-			builds = append(builds, name)
-		}
-	}
-	require.ElementsMatch(t, []string{"Service.enter"}, builds,
+	require.ElementsMatch(t, []string{"Service.enter"}, assembles(all, "held"),
 		"a handle assembled anywhere but the one place that took the lock is a section nobody entered")
+
+	// AND THE SUBJECT IS NAMED IN THE SAME PLACE, once. jobReader is what
+	// answers "which job is this section about" and "what does it read", and it
+	// is built where the lock is taken — so a section is entered on a job by
+	// the same expression that takes the exclusion, and there is no second one.
+	require.ElementsMatch(t, []string{"Service.enter"}, assembles(all, "jobReader"),
+		"a source assembled anywhere else is a section about a job the door did not name")
 
 	touches := map[string]bool{}
 	for name, f := range all {

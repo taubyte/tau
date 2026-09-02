@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
@@ -12,13 +13,20 @@ import (
 )
 
 // section.go is where this package's writes are, ALL OF THEM, and there is no
-// way to reach one except from inside the transition that decided it.
+// way to reach one except from inside the transition that decided it, ABOUT THE
+// JOB THAT TRANSITION READ.
 //
-// THE PROPERTY IS OWNERSHIP: "the write this read decided is made while the
-// section the read was taken in is still held". It is not "a lock is held", it
-// is not "the call sits between two tokens in a file", and it is not "a section
-// by this number is running". Seven attempts at that are behind this file, and
-// six of them CHECKED it:
+// THE PROPERTY HAS THREE CLAUSES, and it was stated with two for eight rounds:
+//
+//	WHEN      the write is made while the section the read was taken in is
+//	          still held;
+//	WHO       it is made by the body that took that read, or by something that
+//	          body handed its handle to;
+//	ABOUT WHAT every row the write names is a row of the job that read was
+//	          taken on.
+//
+// The first two are the seven rounds behind this file. Six of them CHECKED the
+// first:
 //
 //   - a table keyed by the READING function could not see a write made by a
 //     function that reads nothing (run's two acks);
@@ -37,9 +45,7 @@ import (
 // exported and generic over an arbitrary closure, so a caller inside a live
 // section could stamp ANY value with the section it held, including one read
 // somewhere else entirely. What was proved was that a live section was held at
-// the instant the stamp was made. Presence, one indirection further in. Any
-// token can be handed to a write that did not earn it, so a check on the token
-// is always a check on presence — and the way out is not an eighth check.
+// the instant the stamp was made. Presence, one indirection further in.
 //
 // SO THERE IS NO TOKEN. A transition is ONE CLOSURE:
 //
@@ -51,6 +57,28 @@ import (
 // withJob takes the lock, takes the barrier, takes the read, and calls the body
 // with a handle. Every write in this package is a method on that handle, and
 // the handle exists only for the length of the call.
+//
+// # And the eighth round is ABOUT WHAT
+//
+// THE LADDER ANSWERED "WHEN" AND "WHO" ALL THE WAY UP AND NEVER "ABOUT WHAT".
+// commit([]raft.BatchOp) took arbitrary entries and finish(..., extra ...) took
+// arbitrary extras, so a body inside a perfectly live section, holding a handle
+// nobody could forge, could put a row of ANOTHER JOB in its entry — one line
+// inside a literal, in a method already on every writer list — and the whole
+// suite stayed green. Nothing compared the id inside a key with the id the read
+// was taken on, because no id inside a key ever came from the handle.
+//
+// It is not hypothetical either: begin's entry was set(jobRecordKey(rec.ID), …)
+// inside withJob(d.ID, …), where the two agreeing was a fact about the record
+// on disk rather than about the expression.
+//
+// SO A HANDLE'S WRITES COMPOSE THEIR OWN KEYS. There is no []raft.BatchOp in
+// this file's parameter lists any more. A body asks the handle for an entry and
+// names the ROWS it wants — the record, the open row, the project row, the
+// retention row, the ref anchor — and each of them is built from
+// h.in.Subject(), which is the id the section's read was taken on and which
+// this package cannot assign, because it is a field of another package's
+// struct.
 //
 // WHAT IS COMPILER-ENFORCED, rather than checked:
 //
@@ -64,8 +92,18 @@ import (
 //	                                live record along with it, and the fields
 //	                                that would separate the two are unexported
 //	                                in another package
+//	there is no value to install    Reread takes no closure. It re-reads the
+//	                                SUBJECT, through the source named at the
+//	                                door, and a body has nowhere to put a value
+//	                                it read anywhere else
+//	there is no id to re-point      a handle has no id field. `other := *j;
+//	                                other.id = neighbour` does not compile,
+//	                                because the id lives inside the holding
 //	a write cannot be made outside  every write is a method on *held, and the
 //	                                only *held is withJob's argument
+//	a write cannot name another job every key an entry writes is composed from
+//	                                the handle's own subject; a row of another
+//	                                job has no expression
 //	a helper carries the handle      ...or it cannot write at all, which is the
 //	                                same property stated by a parameter list
 //	                                rather than by a scan
@@ -80,9 +118,9 @@ import (
 // WHAT IS STILL A GUARD, in population_test.go, because no type can say it:
 // which functions may reach Store.Batch and the queue's three paired writes at
 // all — a body that ignores the handle and calls s.store.Batch itself is a
-// write nothing here can prevent, only enumerate — plus which KEY an entry may
-// write, and that the read is taken in one place. Those fail at review time and
-// cover the half this cannot.
+// write nothing here can prevent, only enumerate — plus which expressions may
+// build a raft.BatchOp, and that the read is taken in one place. Those fail at
+// review time and cover the half this cannot.
 //
 // WHAT IT COSTS. One mutex acquisition and two atomic stores per section, one
 // atomic store on the way out, and one atomic load plus a nil check per write —
@@ -116,6 +154,13 @@ import (
 // the first — and the store has no compare-and-swap for them to arbitrate with.
 // So they take a lock, which is the same three-part argument pkg/v2/queue makes
 // for its own claim, over the same store, for the same reason.
+//
+// IT IS ONE LOCK OVER THE WHOLE TABLE AND THE SECTIONS ARE PER JOB. The lock is
+// the exclusion; the SUBJECT is what a section is about, and it is named at the
+// door, carried in the holding, and composed into every key a write builds.
+// Two transitions of two different jobs still serialize — a table-wide mutex is
+// cheap next to a replicated entry, and a lock per job is a map of locks that
+// has to be reaped — but neither of them can write the other's rows.
 //
 // WHAT IT DOES NOT COVER, said out loud so it is not mistaken for more. It is
 // one process's third of an exclusion whose other two thirds are leadership and
@@ -175,6 +220,45 @@ import (
 // whole point of it is that it is only ever held across writes to one store.
 var jobLock section.Lock[jobRecord]
 
+// jobReader is WHICH JOB a section is about and where its record comes from,
+// named at the door and nowhere else.
+//
+// IT IS A STRUCT AND NOT THREE CLOSURES because the closures were the hole. A
+// body handed a closure returning a record could hand one back that read
+// anything at all; a source is chosen once, by enter(), and both of its reads
+// name r.id.
+//
+// The two reads differ only in the barrier, and that is the whole of the
+// difference between the two entry points: First takes one when withJob asked
+// for one, and Again ALWAYS takes one, because the only caller of a second read
+// is mend's delete branch, which is exactly the branch that must not decide on
+// entries this node has not applied.
+type jobReader struct {
+	s       *Service
+	id      string
+	barrier bool
+}
+
+// Subject is the job this section is about. Every key every write in this file
+// composes is built from it.
+func (r jobReader) Subject() string { return r.id }
+
+func (r jobReader) First() (jobRecord, bool, error) {
+	if r.barrier {
+		if err := r.s.lead(); err != nil {
+			return jobRecord{}, false, err
+		}
+	}
+	return r.s.readRecord(r.id)
+}
+
+func (r jobReader) Again() (jobRecord, bool, error) {
+	if err := r.s.lead(); err != nil {
+		return jobRecord{}, false, err
+	}
+	return r.s.readRecord(r.id)
+}
+
 // held is ONE JOB UNDER THE LOCK: the record read for it, and every write that
 // read can decide. It is the only route in this package to Store.Batch, to the
 // queue's push, ack and withdrawal, and to the map that says what this node is
@@ -186,9 +270,15 @@ var jobLock section.Lock[jobRecord]
 // outlived its call is refused. There is nothing here to forge: assembling a
 // held is assembling one around a holding, and the only live holding is the one
 // a running body was given.
+//
+// IT HAS NO id FIELD, AND THAT IS THE EIGHTH ROUND. It used to carry the job id
+// beside the holding, as an ordinary string in an ordinary struct — so
+// `other := *j; other.id = neighbour` was a legal expression that produced a
+// live handle pointing at somebody else's rows, and a dereference copy is not a
+// composite literal, so no scan over this package saw it. The id is inside the
+// holding now, where this package can read it and cannot write it.
 type held struct {
 	s  *Service
-	id string
 	in section.Holding[jobRecord]
 }
 
@@ -216,39 +306,33 @@ func (s *Service) withJobUnbarriered(id string, body func(*held) error) error {
 	return s.enter(id, false, body)
 }
 
-// enter is the ONE PLACE A HANDLE IS MADE, which is what makes "the handle is
-// the section" true rather than nearly true.
+// enter is the ONE PLACE A HANDLE IS MADE and the ONE PLACE A SUBJECT IS NAMED,
+// which is what makes "the handle is the section, and the section is about one
+// job" true rather than nearly true.
 func (s *Service) enter(id string, barrier bool, body func(*held) error) error {
-	return jobLock.Do(func() (jobRecord, bool, error) {
-		if barrier {
-			if err := s.lead(); err != nil {
-				return jobRecord{}, false, err
-			}
-		}
-		return s.readRecord(id)
-	}, func(in section.Holding[jobRecord]) error {
-		return body(&held{s: s, id: id, in: in})
-	})
+	return jobLock.Do(
+		jobReader{s: s, id: id, barrier: barrier},
+		func(in section.Holding[jobRecord]) error { return body(&held{s: s, in: in}) },
+	)
 }
+
+// id is the job this section was entered on, and it is a METHOD rather than a
+// field: it reads the subject out of the holding, which is another package's
+// struct with unexported fields, so there is no assignment in this package that
+// points a handle at a different job.
+func (h *held) id() string { return h.in.Subject() }
 
 // rec is the record this section read. found is whether there was one.
 func (h *held) rec() jobRecord { return h.in.Value() }
 func (h *held) found() bool    { return h.in.Found() }
 
-// reread takes the barrier and reads the record AGAIN, under this same holding
-// — mend's second read, and the only one in this package.
+// reread takes the barrier and reads THIS JOB'S RECORD again, under this same
+// holding — mend's second read, and the only one in this package.
 //
-// It is not a way to re-stamp anything: the value it installs comes from a read
-// this call makes, inside the holding this call is running in. A body that
-// wanted a value from anywhere else would have nothing to put it in.
-func (h *held) reread() error {
-	return h.in.Reread(func() (jobRecord, bool, error) {
-		if err := h.s.lead(); err != nil {
-			return jobRecord{}, false, err
-		}
-		return h.s.readRecord(h.id)
-	})
-}
+// It takes nothing, because the read is the source's and the source is enter's.
+// A body that wanted to install a value from anywhere else has no argument to
+// put it in and no field to assign it to.
+func (h *held) reread() error { return h.in.Reread() }
 
 // under is the one gate, and every write below goes through it. THE WRITE IS
 // THE ARGUMENT rather than something done after asking: a gate that answers a
@@ -289,18 +373,200 @@ func refused(err error, format string, args ...any) error {
 // there is no other node to ask.
 func stale(err error) error { return errInternal("%w", err) }
 
-// commit writes ONE ENTRY on behalf of the read that decided it, and is this
-// package's only path to Store.Batch — attemptSink.write excepted, and named as
-// the exception in population_test.go, because a log or asset row is content
-// keyed by attempt that no record read decides.
-func (h *held) commit(ops []raft.BatchOp) error {
-	return h.under(func() error { return h.s.store.Batch(ops, h.s.cfg.Queue.ApplyTimeout) })
+// ── THE ENTRY ────────────────────────────────────────────────────────────
+//
+// entry is one replicated entry under construction, AND EVERY ROW IN IT IS
+// COMPOSED HERE — from the handle's own subject, except for the single row a
+// job owns that is not keyed by its id, which is composed from the record the
+// section read and is named as the exception where it is built.
+//
+// IT REPLACES commit(ops []raft.BatchOp). That parameter was the last thing in
+// this package that a live, unforgeable, correctly-sectioned handle could point
+// at another job: `set(jobRecordKey(neighbour(h.id)), value)`, one line inside
+// a literal, in a method already on every writer list, passed every static
+// guard and every runtime refusal — because the holding IS live, which was
+// always the point. There is no such parameter now. A body names a ROW and the
+// entry builds the key.
+//
+// THE OPS ARE NEVER HANDED IN AND NEVER HANDED OUT. Every raft.BatchOp this
+// package makes is made by one of the row methods below, on a key that method
+// composed from the handle, and there is no method here that takes a key at
+// all. population_test.go enumerates that from the other side.
+type entry struct {
+	h   *held
+	ops []raft.BatchOp
+	// err carries the one failure that can happen while an entry is being
+	// built — a record that will not encode — to commit(), so that a chain
+	// reads as one expression instead of five branches. Nothing is written on
+	// the way to a commit, so an entry that failed to build has done nothing.
+	err error
 }
+
+// stated is an entry that CARRIES THIS JOB'S RECORD, and it is a separate type
+// on purpose.
+//
+// A row this entry ADDS is a claim about the record it is adding: "open for
+// this repository", "belongs to this project", "finished at this second",
+// "this ref now diffs from that commit". None of those can be true of an entry
+// that writes no record, so none of them is a method on entry — which makes
+// them a compile error there rather than something a nil check catches.
+//
+// The two methods that stay on entry are the two that undo a row a PREVIOUS
+// entry wrote: dropRetained, which retry uses, and dropOrphanedOpen, which is
+// mend's and is the one transition that genuinely needs the other shape — it
+// deletes an open row whose record is GONE.
+type stated struct {
+	*entry
+	rec jobRecord
+}
+
+// writes opens an entry about this job. It is the only constructor there is.
+func (h *held) writes() *entry {
+	// FOUR IS THE WIDEST ENTRY THIS PACKAGE WRITES — a terminal record, its
+	// open row, its retention row and the ref anchor — so the rows below never
+	// regrow the slice a body composes them into.
+	return &entry{h: h, ops: make([]raft.BatchOp, 0, 4)}
+}
+
+// THERE IS NO put(key) AND NO drop(key). There was, for one draft, and it was
+// the same defect one floor down: a method on the entry that took a key was a
+// method any body holding a handle could call with any key at all, and
+// `j.writes().put(refLastKey("github.com/evil/repo", "refs/heads/main"), sha)`
+// inside ends() left the whole suite GREEN. A door scoped by the SHAPE of its
+// argument is a door anybody can walk through. So set() and del() are called by
+// the row methods below and nowhere else, each on a key it composed itself, and
+// population_test.go enumerates that from the other side.
+
+// record writes THIS JOB'S record.
+//
+// THE KEY IS THE HANDLE'S AND SO IS THE RECORD'S OWN id. A body decides what a
+// record SAYS — that is the whole of a read-modify-write — but it does not
+// decide which job it is: rec.ID is overwritten with the subject before it is
+// encoded, so a body that hands over a record it read somewhere else writes
+// this job, with foreign contents, rather than writing another job's row.
+// begin's entry was set(jobRecordKey(rec.ID), value) inside withJob(d.ID, …)
+// until this round, where the two agreeing was a property of the store rather
+// than of the expression.
+func (e *entry) record(rec jobRecord) stated {
+	rec.ID = e.h.id()
+	value, err := rec.encode()
+	if err != nil {
+		e.err = errInternal("encoding job %s: %v", e.h.id(), err)
+		return stated{entry: e, rec: rec}
+	}
+	e.ops = append(e.ops, set(jobRecordKey(e.h.id()), value))
+	return stated{entry: e, rec: rec}
+}
+
+// open lists this job as outstanding for its repository, and dropOpen takes it
+// off that listing. The repository is the record's, and the id is the handle's.
+func (s stated) open() stated {
+	s.ops = append(s.ops, set(openIndexKey(s.rec.RepositoryKey, s.h.id()), nil))
+	return s
+}
+
+func (s stated) dropOpen() stated {
+	s.ops = append(s.ops, del(openIndexKey(s.rec.RepositoryKey, s.h.id())))
+	return s
+}
+
+// inProject is how a caller FINDS this job. It is written once, by create, in
+// the same entry as the record it indexes.
+func (s stated) inProject() stated {
+	s.ops = append(s.ops, set(projectIndexKey(s.rec.ProjectID, s.h.id()), nil))
+	return s
+}
+
+// retained is the retention row, at the second THIS ENTRY'S record says the job
+// finished — which is the same instant the record's UpdatedAt carries, because
+// they are written together.
+func (s stated) retained() stated {
+	s.ops = append(s.ops, set(terminalIndexKey(time.Unix(s.rec.UpdatedAt, 0), s.h.id()), nil))
+	return s
+}
+
+// dropRetained removes the retention row a PREVIOUS finish wrote, and it is
+// keyed off the record THIS SECTION READ rather than the one being written.
+//
+// THAT IS THE POINT OF DERIVING IT. retry reopens a finished job, and the row
+// to delete is the one written when it finished — the timestamp the record
+// still carried on the way in. Spelled by hand it had to be read out before the
+// record was mutated, or the delete named a key nothing wrote and left the real
+// row behind: a job that reads Open and is also listed as retained. Here the
+// mutation cannot reach it.
+func (e *entry) dropRetained() *entry {
+	e.ops = append(e.ops, del(terminalIndexKey(time.Unix(e.h.rec().UpdatedAt, 0), e.h.id())))
+	return e
+}
+
+// anchor is the "before" of the next build of this ref: the commit this job
+// built. It is the ONE ROW THIS JOB OWNS THAT IS NOT KEYED BY ITS id —
+// (repository, ref) is the key, because the thing that reads it is the NEXT
+// build of that ref, which is a different job and cannot look under this one —
+// so it is the one place "about what" cannot be the subject.
+//
+// IT IS STILL NOT A KEY OR A VALUE A BODY CHOOSES. All three of its parts come
+// off the record THIS SECTION READ, rather than off the record the entry is
+// writing: the two differ only by a status and a timestamp on the live path,
+// and taking them from the read is what keeps a body from anchoring a ref it
+// merely put in a record. It is a method on stated so that the anchor and the
+// success it belongs to cannot end up in different entries.
+//
+// A SECTION THAT FOUND NO RECORD HAS NOTHING TO ANCHOR, and says so rather than
+// writing "build/index/ref///last" — a row under two empty segments, which no
+// build of anything would ever read back.
+func (s stated) anchor() stated {
+	if !s.h.found() {
+		s.err = errInternal("job %s: a ref anchor decided on a record this section did not find", s.h.id())
+		return s
+	}
+	s.ops = append(s.ops, set(refLastKey(s.h.rec().RepositoryKey, s.h.rec().Ref), []byte(s.h.rec().CommitSHA)))
+	return s
+}
+
+// dropOrphanedOpen is THE NAMED EXCEPTION: the one row this handle cannot
+// compose for itself.
+//
+// mend deletes the open-index row of a job whose record is gone or finished,
+// and when it is GONE there is no record to take the repository off. What is
+// left is the row reconcile listed, whose two halves parseOpenIndexKey reads
+// back out of it — so the repository comes in as an argument and the id, which
+// is the half that says WHICH JOB, is still the handle's.
+//
+// Its one caller is enumerated in population_test.go, which is what keeps this
+// from becoming a general-purpose door: an exemption scoped by the shape of its
+// argument rather than by its justification is an exemption anybody can reach.
+func (e *entry) dropOrphanedOpen(repositoryKey string) *entry {
+	e.ops = append(e.ops, del(openIndexKey(repositoryKey, e.h.id())))
+	return e
+}
+
+// commit makes the entry, on behalf of the read that decided it, and is this
+// package's only path to Store.Batch — attemptSink excepted, and named as the
+// exception in population_test.go, because a log or asset row is content keyed
+// by (job, attempt) that no record read decides.
+//
+// what is the gerund the failure is spelled with: "writing job X", "reopening
+// job X". The job is the handle's, so a message cannot name a different one
+// either.
+func (e *entry) commit(what string) error {
+	if e.err != nil {
+		return e.err
+	}
+	if err := e.h.under(func() error {
+		return e.h.s.store.Batch(e.ops, e.h.s.cfg.Queue.ApplyTimeout)
+	}); err != nil {
+		return refused(err, "%s job %s", what, e.h.id())
+	}
+	return nil
+}
+
+// ── THE WRITES THAT ARE NOT ENTRIES ──────────────────────────────────────
 
 // push gives this job an item, on behalf of the read that decided it should
 // have one.
 func (h *held) push() error {
-	return h.under(func() error { return h.s.work.Push(h.id, nil) })
+	return h.under(func() error { return h.s.work.Push(h.id(), nil) })
 }
 
 // ack removes an item for good, on behalf of the read that decided it should
@@ -314,14 +580,23 @@ func (h *held) push() error {
 // told it had. There is no way left to spell that: the ack is a method on the
 // handle the deciding read came with.
 //
-// settle acked BEFORE its read until the round before last, because queue.Ack
-// barriers and its section had no other one. That ordering was real and it is
-// now paid for rather than worked around: settle takes withJob's barrier like
-// every other section, and its ack is an ordinary write inside the body. It
-// costs one replicated entry per settled build — barrier_test.go spends it —
-// and it is what makes "every write is the body's" true with no exception.
+// AND THE DELIVERY MUST BE THIS JOB'S. A queue item is named by the job id, so
+// the one argument here that could point somewhere else is checked against the
+// subject rather than trusted — the same clause as every key below, in the one
+// write whose target is a value rather than a key. It is this process's own
+// fault when it fails, so it is Internal and not Unavailable.
+//
+// settle acked BEFORE its read until two rounds ago, because queue.Ack barriers
+// and its section had no other one. That ordering was real and it is now paid
+// for rather than worked around: settle takes withJob's barrier like every
+// other section, and its ack is an ordinary write inside the body. It costs one
+// replicated entry per settled build — barrier_test.go spends it — and it is
+// what makes "every write is the body's" true with no exception.
 func (h *held) ack(q *queue.Queue, d queue.Delivery) error {
 	return h.under(func() error {
+		if d.ID != h.id() {
+			return errInternal("job %s: acking delivery %s, which is another job's", h.id(), d.ID)
+		}
 		if err := q.Ack(d); err != nil {
 			return fmt.Errorf("ack %s: %w", d.ID, err)
 		}
@@ -363,11 +638,11 @@ func (h *held) ack(q *queue.Queue, d queue.Delivery) error {
 // begin, not this call, that closed that.
 func (h *held) withdraw() error {
 	return h.under(func() error {
-		err := h.s.work.Remove(h.id)
+		err := h.s.work.Remove(h.id())
 		if err == nil || errors.Is(err, queue.ErrNotFound) || errors.Is(err, queue.ErrClaimed) {
 			return nil
 		}
-		return errUnavailable("withdrawing job %s from the queue: %v", h.id, err)
+		return errUnavailable("withdrawing job %s from the queue: %v", h.id(), err)
 	})
 }
 
@@ -387,6 +662,10 @@ func (h *held) withdraw() error {
 // is inside the span by every measure a scan has, and outside the section by
 // the only one that matters. As a method on the handle it is refused.
 //
+// THE KEY IS THE SUBJECT'S, like every other write here. A map in this process
+// is keyed the same way a row in the store is, and it was keyed by a field
+// anything in this package could reassign until the id moved into the holding.
+//
 // forget is its counterpart and is not a method here: it is not decided by a
 // read but by the run being over, it runs outside every section (the build
 // holds no lock), and deleting the cancel of a run that has ended is what run's
@@ -397,7 +676,7 @@ func (h *held) register(stop context.CancelFunc) error {
 	return h.under(func() error {
 		h.s.runningMu.Lock()
 		defer h.s.runningMu.Unlock()
-		h.s.running[h.id] = stop
+		h.s.running[h.id()] = stop
 		return nil
 	})
 }
@@ -422,7 +701,7 @@ func (h *held) register(stop context.CancelFunc) error {
 func (h *held) stopRun() error {
 	return h.under(func() error {
 		h.s.runningMu.Lock()
-		end, ok := h.s.running[h.id]
+		end, ok := h.s.running[h.id()]
 		h.s.runningMu.Unlock()
 		if ok {
 			end()
@@ -431,35 +710,39 @@ func (h *held) stopRun() error {
 	})
 }
 
-// finish writes a terminal record in one Batch: the record, the open index row
-// removed, the retention index row written, plus whatever else belongs in the
-// same entry — on success that is the ref anchor, so "this job succeeded" and
-// "this is now the commit to diff from" cannot end up disagreeing. A job is
-// never in a state where it is finished but still listed as open, or listed as
-// open but has no record.
-func (h *held) finish(status buildv1.JobStatus, reason string, extra ...raft.BatchOp) error {
-	now := h.s.now()
+// ── THE TRANSITIONS' SHARED ENTRIES ──────────────────────────────────────
+
+// ends builds the entry that finishes this job: the record, the open index row
+// removed, the retention index row written. A job is never in a state where it
+// is finished but still listed as open, or listed as open but has no record.
+//
+// IT HANDS BACK AN ENTRY RATHER THAN MAKING ONE so that settle can add the ref
+// anchor to the SAME entry — "this job succeeded" and "this is now the commit
+// to diff from" cannot end up disagreeing. What it can add is still only a row
+// composed from this job: the `extra ...raft.BatchOp` this replaces was the one
+// parameter in this file through which a correctly-held handle could name
+// another job's rows.
+func (h *held) ends(status buildv1.JobStatus, reason string) stated {
 	rec := h.rec()
 	rec.Status = int32(status)
-	rec.UpdatedAt = now.Unix()
+	rec.UpdatedAt = h.s.now().Unix()
 	rec.ClaimedUntil = 0
 	rec.Holder = ""
 	rec.Reason = reason
+	return h.writes().record(rec).dropOpen().retained()
+}
 
-	value, err := rec.encode()
-	if err != nil {
-		return errInternal("encoding job %s: %v", h.id, err)
-	}
+// finish ends this job and writes nothing else.
+func (h *held) finish(status buildv1.JobStatus, reason string) error {
+	return h.ends(status, reason).commit("finishing")
+}
 
-	ops := append([]raft.BatchOp{
-		set(jobRecordKey(h.id), value),
-		del(openIndexKey(rec.RepositoryKey, h.id)),
-		set(terminalIndexKey(now, h.id), nil),
-	}, extra...)
-	if err := h.commit(ops); err != nil {
-		return refused(err, "finishing job %s", h.id)
-	}
-	return nil
+// succeed ends this job AND moves the ref anchor, in one entry, because they
+// are the same fact: this commit is what the next build of this ref diffs from,
+// and it is read from here rather than from a webhook (build.proto: "read from
+// its own job history, never from the frontend").
+func (h *held) succeed() error {
+	return h.ends(buildv1.JobStatus_JobStatusSuccess, "").anchor().commit("finishing")
 }
 
 // requeue gives an open job an item to be claimed by, and is a no-op for one

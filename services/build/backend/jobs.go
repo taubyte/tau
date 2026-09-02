@@ -3,11 +3,9 @@ package backend
 import (
 	"context"
 	"slices"
-	"time"
 
 	"connectrpc.com/connect"
 
-	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 )
 
@@ -247,29 +245,21 @@ func (s *Service) retry(id string) error {
 			return errFailedPrecondition("job %s is %s, not finished", id, rec.status())
 		}
 
-		// The retention row was written at the moment the job FINISHED, which
-		// is the timestamp the record still carries — so it has to be read
-		// before the record is reopened. Reading it afterwards deletes a key
-		// nothing wrote and leaves the real row behind, which is a job that
-		// reads Open and is also listed as retained.
-		finishedAt := time.Unix(rec.UpdatedAt, 0)
-
 		rec.Status = int32(buildv1.JobStatus_JobStatusOpen)
 		rec.UpdatedAt = s.now().Unix()
 		rec.ClaimedUntil = 0
 		rec.Holder = ""
 		rec.Reason = ""
-		value, err := rec.encode()
-		if err != nil {
-			return errInternal("encoding job %s: %v", id, err)
-		}
 
-		if err := j.commit([]raft.BatchOp{
-			set(jobRecordKey(id), value),
-			set(openIndexKey(rec.RepositoryKey, id), nil),
-			del(terminalIndexKey(finishedAt, id)),
-		}); err != nil {
-			return refused(err, "reopening job %s", id)
+		// THE RETENTION ROW WAS WRITTEN AT THE MOMENT THE JOB FINISHED, which
+		// is the timestamp the record carried on the way IN — so dropRetained
+		// reads it off the record this section READ rather than off the one
+		// being written a line above. Spelled by hand it had to be saved before
+		// the mutation, and read afterwards it deleted a key nothing wrote and
+		// left the real row behind: a job that reads Open and is also listed as
+		// retained.
+		if err := j.writes().record(rec).open().dropRetained().commit("reopening"); err != nil {
+			return err
 		}
 
 		if err := j.push(); err != nil {

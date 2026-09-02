@@ -3,8 +3,6 @@ package backend
 import (
 	"fmt"
 	"time"
-
-	"github.com/taubyte/tau/pkg/raft"
 )
 
 // reconcile walks the open index and repairs the one inconsistency this design
@@ -120,10 +118,14 @@ func (s *Service) mend(repositoryKey, id string, now time.Time, cutoff time.Dura
 		}
 
 		if !j.found() || j.rec().terminal() {
-			if err := j.commit([]raft.BatchOp{
-				del(openIndexKey(repositoryKey, id)),
-			}); err != nil {
-				return fmt.Errorf("dropping stale open row of job %s: %w", id, err)
+			// THE REPOSITORY COMES IN AND THE ID DOES NOT. This is the one
+			// write in the package whose key the handle cannot compose on its
+			// own: the record that named the repository is gone, so what is
+			// left is the row reconcile listed. The half that says WHICH JOB is
+			// still the section's subject — section.go names this the
+			// exception and population_test.go enumerates its one caller.
+			if err := j.writes().dropOrphanedOpen(repositoryKey).commit("dropping the stale open row of"); err != nil {
+				return err
 			}
 			return nil
 		}

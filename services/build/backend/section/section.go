@@ -6,7 +6,7 @@
 // Its callers hold a read-modify-write over a replicated store: they read a
 // record, decide on what it said, and write it back, and a read is only true
 // until something else writes. A mutex serializes them; it does not say WHICH
-// holding of itself a write was decided in. Seven guards for that have now been
+// holding of itself a write was decided in. Eight guards for that have now been
 // written, and the first six each checked a PROXY — a position in a file, a
 // spelling, a Lock..Unlock span, a number, and finally a struct nobody outside
 // this package could assign a field of — and each was defeated by the next
@@ -30,21 +30,36 @@
 //
 //	Lock     the exclusion, and the only door. Do is its only method that
 //	         serializes anything, and it is the only source of a live Holding.
-//	Holding  one holding of a Lock AND the value read under it. Its zero value
-//	         holds nothing — it is the only one a caller can construct — and
-//	         every write through it is refused.
+//	Source   WHAT one holding is about and where its value comes from. It is
+//	         named at the door, by the call that takes the lock.
+//	Holding  one holding of a Lock, the subject it is about, AND the value read
+//	         under it. Its zero value holds nothing — it is the only one a
+//	         caller can construct — and every write through it is refused.
 //
 // A body writes by handing Write what it wants done. Write is not a
 // "may I?" a caller can ask and then ignore: THE WRITE IS THE ARGUMENT, so
 // there is no order to get wrong and no branch to forget.
 //
-// AND THE VALUE TRAVELS WITH THE AUTHORITY, which is what closes the shape the
-// round before this one left open. A caller cannot put a live holding on a
-// value it read earlier, because the value IS a field of the holding: copying
-// the liveness copies the value with it, and every field is unexported, so
-// there is no assignment that separates the two. The only way to change what a
-// holding carries is Reread, which reads NOW, under this holding — and a caller
-// that wants a value from somewhere else has nowhere to put it.
+// # The subject travels with the authority, and so does the value
+//
+// THE EIGHTH ROUND IS THE Source INTERFACE, and it closes two shapes the
+// seventh left open.
+//
+// The first was Reread. It took a closure returning T and installed whatever
+// that closure handed back — which is the exported, generic minting function of
+// the seventh round wearing a method receiver, needing no token because it was
+// a method on the thing that carried the authority. Reread takes nothing now:
+// the value it installs comes from Again, on the Source named at the door, and
+// a body has nowhere to put a value it got anywhere else.
+//
+// The second was ABOUT WHAT. A holding said WHEN a write was decided and WHO
+// decided it, and nothing at all about WHICH THING it was about — so a caller
+// whose subject was an id in a struct beside the holding could copy the handle
+// and re-point that id, and write another subject's rows under this subject's
+// authority. The subject is a field of the holding now, taken from the Source
+// at the instant Do reads it, and every field here is unexported: a caller
+// outside this package cannot separate the authority from what it is about,
+// because there is no assignment that reaches either.
 //
 // # What it does not prove, said plainly
 //
@@ -55,11 +70,18 @@
 // INVALIDATED when Do returns, so an escaped one refuses every write from that
 // instant on, whoever holds the lock meanwhile and however long they hold it.
 //
+// A copy is still the same holding, subject included — which is what makes
+// copying it useless rather than dangerous. Two handles that carry one holding
+// are one authority over one subject; there is no assignment that gives a copy
+// a different subject, because the copy would have to reach a field of another
+// package's struct to make one.
+//
 // So the split is:
 //
-//   - THE COMPILER'S HALF. There is no token to obtain, no read to re-stamp,
-//     no lock to leave and retake, and no way for a helper to write without
-//     being handed the handle. Each of those is a name that does not exist.
+//   - THE COMPILER'S HALF. There is no token to obtain, no read to re-stamp, no
+//     value to install, no subject to re-point, no lock to leave and retake,
+//     and no way for a helper to write without being handed the handle. Each of
+//     those is a name that does not exist.
 //   - THE RUNTIME'S HALF. A handle that outlives its Do — captured, deferred,
 //     or sent elsewhere — is dead, and every write through it is refused with
 //     ErrStale rather than made.
@@ -77,6 +99,31 @@ import (
 // from a store that refused, which is somebody else's and worth retrying
 // elsewhere.
 var ErrStale = errors.New("the section that decided it had already been left")
+
+// Source is WHAT A HOLDING IS ABOUT and where its value comes from. It is
+// named at the door, by the call that takes the lock, and never at a write.
+//
+// IT IS AN INTERFACE RATHER THAN A CLOSURE, and that is the whole of the
+// difference from the round before this one. A closure handed to a write site
+// is a value the write site chose: Reread(read func() (T, bool, error)) was a
+// caller saying "install this", which is the minting function of two rounds ago
+// with the token removed because the receiver already carried the authority.
+// Everything a holding knows now comes from three methods this package calls
+// itself, at instants this package picks.
+type Source[T any] interface {
+	// Subject names the one thing this holding is about — a job id, a row, a
+	// name. It is read ONCE, by Do, and copied into the holding, so a source
+	// that changed its mind later would be changing nothing.
+	Subject() string
+	// First is the read Do takes before it runs the body. Its result is what
+	// the body decides on.
+	First() (T, bool, error)
+	// Again is the read Reread takes, under the same holding. It is a separate
+	// method because a section that triages on a cheap read and decides on a
+	// second, more careful one is a real shape, and the difference between the
+	// two belongs at the door rather than at the write.
+	Again() (T, bool, error)
+}
 
 // Lock is the exclusion over one table. THE MUTEX IS UNEXPORTED AND NOTHING
 // TOUCHES IT ALONE: Do takes it and Do releases it, in one call, so there is no
@@ -101,34 +148,42 @@ type Lock[T any] struct {
 	held atomic.Uint64
 }
 
-// Holding is one holding of a Lock and the value read under it. THE ZERO VALUE
-// IS NO HOLDING AT ALL: it belongs to no Lock, it is live in nothing, and it is
-// the only one a caller outside this package can construct. That is the point.
+// Holding is one holding of a Lock, the subject it is about, and the value read
+// under it. THE ZERO VALUE IS NO HOLDING AT ALL: it belongs to no Lock, it is
+// about nothing, it is live in nothing, and it is the only one a caller outside
+// this package can construct. That is the point.
 //
 // It is handed to Do's body BY VALUE. A copy is the same holding — the liveness
-// it carries is shared, so every copy of an escaped handle dies with the one it
-// was copied from — and a copy costs no more than passing the value the read
-// returned, which is what a body is here to look at.
+// and the subject it carries are shared, so every copy of an escaped handle
+// dies with the one it was copied from and every copy is about the same thing —
+// and a copy costs no more than passing the value the read returned, which is
+// what a body is here to look at.
 type Holding[T any] struct {
 	// lock is nil in the zero value, and id stops matching the instant Do
 	// returns. Both are refusals, and they are different sentences because they
 	// are different mistakes.
-	lock  *Lock[T]
-	id    uint64
-	value T
-	found bool
+	lock *Lock[T]
+	id   uint64
+	// subject is WHAT this holding is about, snapshotted from the source at the
+	// instant of the read. It is a plain string and it is unexported, which
+	// together are the whole of the guarantee: a caller can read it and cannot
+	// write it, so a handle it copied is about what the original was about.
+	subject string
+	source  Source[T]
+	value   T
+	found   bool
 }
 
 // Do takes the lock, TAKES THE READ ITSELF, and runs body over what it read.
 //
 // The read is here rather than in the body because a value the body read for
 // itself is a value this package cannot vouch for — which is exactly the hole
-// the round before this one left: a stamp handed out is a stamp that can be put
-// on anything. Read once, under the lock, and hand over the result.
+// the seventh round left: a stamp handed out is a stamp that can be put on
+// anything. Read once, under the lock, and hand over the result.
 //
 // A read that FAILS runs no body: there is nothing to decide a write on. The
 // error is the caller's own and is returned unwrapped.
-func (l *Lock[T]) Do(read func() (T, bool, error), body func(Holding[T]) error) error {
+func (l *Lock[T]) Do(src Source[T], body func(Holding[T]) error) error {
 	l.mu.Lock()
 	id := l.minted.Add(1)
 	l.held.Store(id)
@@ -144,12 +199,19 @@ func (l *Lock[T]) Do(read func() (T, bool, error), body func(Holding[T]) error) 
 		l.mu.Unlock()
 	}()
 
-	value, found, err := read()
+	value, found, err := src.First()
 	if err != nil {
 		return err
 	}
 
-	return body(Holding[T]{lock: l, id: id, value: value, found: found})
+	return body(Holding[T]{
+		lock:    l,
+		id:      id,
+		subject: src.Subject(),
+		source:  src,
+		value:   value,
+		found:   found,
+	})
 }
 
 // Held answers "is a holding running right now" — WHICH IS A DIFFERENT QUESTION
@@ -163,6 +225,10 @@ func (l *Lock[T]) Held() bool { return l.held.Load() != 0 }
 // T is — for its caller a job record, six strings and five integers — and a
 // value receiver copies all of it to answer a question about none of it. It
 // changes nothing else: no method exposes a field and only Reread writes one.
+
+// Subject is what this holding is ABOUT. It is what a caller composes the keys
+// of its writes from, so that a write naming something else has no expression.
+func (h *Holding[T]) Subject() string { return h.subject }
 
 // Value is what the read read.
 func (h *Holding[T]) Value() T { return h.value }
@@ -188,19 +254,24 @@ func (h *Holding[T]) Write(w func() error) error {
 	return w()
 }
 
-// Reread replaces what this holding carries with a fresh read, TAKEN NOW AND
-// UNDER THIS SAME HOLDING. It is what a body that triages on a cheap read and
-// decides on a second one needs, and it is not a way to re-stamp anything: the
-// value it installs comes from a read this call makes, inside a holding this
-// call has just checked is live, which is the same instant Do's own read has.
+// Reread replaces what this holding carries with a fresh read of THE SAME
+// SUBJECT, taken NOW and under this same holding. It is what a body that
+// triages on a cheap read and decides on a second one needs.
+//
+// IT TAKES NOTHING, and that is the fix of the eighth round. It used to take a
+// closure returning T and install whatever came back — a caller saying "the
+// value is this", under an authority the caller already held, which is the
+// minting function of the seventh round with the receiver doing the work the
+// token used to. The read is the source's, the source is the door's, and a body
+// that wants a value from somewhere else has nowhere to put it.
 //
 // A failed read leaves what was there. There is no third state to install and
 // nothing has happened.
-func (h *Holding[T]) Reread(read func() (T, bool, error)) error {
+func (h *Holding[T]) Reread() error {
 	if err := h.live(); err != nil {
 		return err
 	}
-	value, found, err := read()
+	value, found, err := h.source.Again()
 	if err != nil {
 		return err
 	}

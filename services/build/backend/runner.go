@@ -182,12 +182,14 @@ func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.Cance
 		rec.ClaimedUntil = deadline.UnixNano()
 		rec.Holder = s.host.ID().String()
 
-		value, err := rec.encode()
-		if err != nil {
-			return errInternal("encoding job %s: %v", rec.ID, err)
-		}
-		if err := j.commit([]raft.BatchOp{set(jobRecordKey(rec.ID), value)}); err != nil {
-			return fmt.Errorf("claiming job %s: %w", rec.ID, err)
+		// THE ENTRY'S KEY IS THE SECTION'S, not the record's. It was
+		// set(jobRecordKey(rec.ID), value) inside withJob(d.ID, …) until the
+		// round that removed the arbitrary key: the two agreed because the
+		// record on disk said so, which is a property of the store rather than
+		// of the expression, and a record read from anywhere else would have
+		// been written wherever it said it belonged.
+		if err := j.writes().record(rec).commit("claiming"); err != nil {
+			return err
 		}
 
 		// THE REGISTRATION IS THE CLAIM'S OTHER HALF, so it is inside this same
@@ -308,9 +310,10 @@ func (s *Service) settle(d queue.Delivery, runErr error) error {
 		// it is the same fact: this commit is what the next build of this ref
 		// diffs from, and it is read from here rather than from a webhook
 		// (build.proto: "read from its own job history, never from the
-		// frontend").
-		return j.finish(buildv1.JobStatus_JobStatusSuccess, "",
-			set(refLastKey(rec.RepositoryKey, rec.Ref), []byte(rec.CommitSHA)))
+		// frontend"). It used to be handed in as an extra BatchOp this body
+		// composed; it is a row of the entry now, built off the record the
+		// entry writes, so the anchor a success can move is this job's ref.
+		return j.succeed()
 	})
 }
 

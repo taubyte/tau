@@ -336,11 +336,11 @@ func (h *harness) mustRecord(t testing.TB, id string) jobRecord {
 // one read, and the write that read decided. A fixture cannot write it any
 // other way — finish is a method on the handle withJob hands its body, and
 // there is no handle anywhere else — so the fixture does what the code does.
-func (h *harness) finishNow(t testing.TB, id string, status buildv1.JobStatus, reason string, extra ...raft.BatchOp) error {
+func (h *harness) finishNow(t testing.TB, id string, status buildv1.JobStatus, reason string) error {
 	t.Helper()
 	return h.withJob(id, func(j *held) error {
 		require.True(t, j.found(), "job %s must exist", id)
-		return j.finish(status, reason, extra...)
+		return j.finish(status, reason)
 	})
 }
 

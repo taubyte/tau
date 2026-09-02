@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/services/build/backend/section"
 )
@@ -86,8 +88,8 @@ func TestAHandleAssembledOutsideAHoldingIsDead(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	forged := &held{s: h.Service, id: id}
-	requireRefused(t, h, id, forged.commit(nil))
+	forged := &held{s: h.Service}
+	requireRefused(t, h, id, forged.writes().commit("forging"))
 	requireRefused(t, h, id, forged.push())
 	requireRefused(t, h, id, forged.withdraw())
 	requireRefused(t, h, id, forged.register(func() {}))
@@ -125,8 +127,11 @@ func TestAGoroutineThatHoldsNothingHasNothingToWriteWith(t *testing.T) {
 		// The ten milliseconds of real work the old shape did between the read
 		// and the write, in which anything at all may write this record.
 		time.Sleep(10 * time.Millisecond)
-		// And the only handle this goroutine can put that record behind.
-		done <- (&held{s: h.Service, id: rec.ID}).finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+		// And the only handle this goroutine can put that record behind. It
+		// cannot even be pointed at the job it just read: a handle has no id
+		// field to fill in, because the subject lives inside the holding.
+		_ = rec
+		done <- (&held{s: h.Service}).finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
 	}()
 
 	require.NoError(t, h.withJob(id, func(*held) error {
@@ -472,6 +477,185 @@ func TestACancelStopsTheRunTheClaimRegistered(t *testing.T) {
 	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
 }
 
+// ── ABOUT WHAT ───────────────────────────────────────────────────────────
+//
+// The tests above are the WHEN and the WHO: a write is refused when the section
+// that decided it has closed, and a write can only be made by something holding
+// the handle. Neither of them says anything about WHICH JOB a write is about,
+// and for eight rounds neither did the mechanism.
+//
+// rowsOf is every row of one job, so that "the neighbour did not move" is a
+// measurement rather than a spot check.
+func rowsOf(h *harness, id string) map[string]string {
+	out := map[string]string{}
+	for _, key := range h.store.Keys(rootSegment + "/") {
+		if !strings.Contains(key, seg(id)) {
+			continue
+		}
+		value, _ := h.store.Get(key)
+		out[key] = string(value)
+	}
+	return out
+}
+
+// AN ENTRY CANNOT NAME A JOB ITS SECTION WAS NOT ENTERED ON — which is the
+// clause the ladder was missing, driven in its strongest form: a live handle, a
+// barriered section, and the NEIGHBOUR'S OWN RECORD in hand.
+//
+// The write that made this necessary was one line: set(jobRecordKey(other),
+// value), inside a []raft.BatchOp literal handed to commit(), from a method
+// already on every writer list. It passed every static guard and every runtime
+// refusal, because everything they check was true — the section was held, by
+// the body that read, through a handle nobody forged.
+//
+// There is no such line now. The body cannot spell a key at all: it names ROWS,
+// and the entry composes each of them from the subject inside the holding.
+func TestAnEntryCannotNameAJobItsSectionWasNotEnteredOn(t *testing.T) {
+	h := newHarness(t)
+	a := h.push(t, testRef, testCommit)
+	b := h.push(t, testRef, shaOf(1))
+	require.NotEqual(t, a, b)
+
+	before := rowsOf(h, b)
+	require.NotEmpty(t, before, "the neighbour must have rows for this to measure anything")
+
+	// Every row an entry can write, in one entry, decided inside A's section
+	// and handed B's record — the record a body would have reached for to name
+	// B's rows back when the key came from the value.
+	neighbour := h.mustRecord(t, b)
+	require.NoError(t, h.withJob(a, func(j *held) error {
+		return j.writes().record(neighbour).inProject().open().retained().anchor().commit("writing")
+	}))
+
+	require.Equal(t, before, rowsOf(h, b),
+		"a section entered on one job wrote a row of another")
+
+	// AND WHAT IT DID WRITE IS THIS JOB. The record's own id is the handle's,
+	// so a foreign record lands as this job rather than as that one: the body
+	// still decides what the record SAYS, which is what a read-modify-write is,
+	// and no longer decides which job it is.
+	require.Equal(t, a, h.mustRecord(t, a).ID)
+	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef),
+		"and the ref anchor is the commit the SECTION READ, not the one the body handed over")
+}
+
+// A HANDLE CANNOT BE POINTED AT ANOTHER JOB, and the two shapes that did it are
+// a dereference copy and a field assignment — neither of which is a composite
+// literal, so no scan over this package ever saw either.
+//
+//	other := *j; other.id = neighbour     a section entered for A writing B
+//	ghost.in = j.in                       a handle verified dead, alive again
+//
+// THE FIRST IS A COMPILE ERROR NOW: held has no id field to assign. The job is
+// inside the holding, which is another package's struct with every field
+// unexported, so this package can read the subject and cannot write it. What is
+// asserted here is the SHAPE that makes that true, because the assignment that
+// would prove it cannot be compiled.
+//
+// THE SECOND STILL COMPILES AND IS NO LONGER WORTH ANYTHING. Copying a live
+// holding into another handle copies the subject with it — the liveness and the
+// job travel together — so what comes back to life is not the escaped handle's
+// authority over its own job. It is an alias of the live one, writing the live
+// one's rows, which is a thing the body could already do by using its own
+// handle. That half is measured below.
+func TestAHandleCannotBePointedAtAnotherJob(t *testing.T) {
+	fields := reflect.TypeOf(held{})
+	var names []string
+	for i := range fields.NumField() {
+		names = append(names, fields.Field(i).Name)
+	}
+	require.ElementsMatch(t, []string{"s", "in"}, names,
+		"a handle is a service and a holding. A third field is a second answer to something, "+
+			"and an `id` among them is a job this package can reassign")
+
+	holding := reflect.TypeOf(section.Holding[jobRecord]{})
+	require.Equal(t, "github.com/taubyte/tau/services/build/backend/section", holding.PkgPath())
+	for i := range holding.NumField() {
+		require.False(t, holding.Field(i).IsExported(),
+			"section.Holding.%s is exported, so a handle can be pointed at another job",
+			holding.Field(i).Name)
+	}
+
+	// AND THE COPY IS ABOUT WHAT THE ORIGINAL WAS ABOUT. A ghost from a section
+	// that has closed, handed a live holding, writes the LIVE section's job —
+	// it does not resurrect its own.
+	h := newHarness(t)
+	a := h.push(t, testRef, testCommit)
+	b := h.push(t, testRef, shaOf(1))
+
+	ghost := escapee(t, h, b)
+	requireRefused(t, h, b, ghost.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled"))
+
+	require.NoError(t, h.withJob(a, func(j *held) error {
+		ghost.in = j.in
+		require.Equal(t, a, ghost.id(), "the subject came with the holding")
+		return ghost.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+	}))
+
+	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, a),
+		"the write it made is the LIVE section's own, which its own handle could already make")
+	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, b),
+		"and the job the ghost was entered for is untouched")
+}
+
+// AN ACK IS THE ONE WRITE WHOSE TARGET IS A VALUE RATHER THAN A KEY, so it is
+// the one place "about what" has to be checked instead of composed.
+//
+// A delivery names a job. Acking a neighbour's delivery from inside this job's
+// section destroys an item nothing in this section read anything about — and
+// pkg/v2/queue's Ack deletes the very index row a concurrent push deduplicates
+// against, which is how a job ends up reading Open with nothing queued for it.
+func TestAnAckOfAnotherJobsDeliveryIsRefused(t *testing.T) {
+	h := newHarness(t)
+	a := h.push(t, testRef, testCommit)
+	b := h.push(t, testRef, shaOf(1))
+
+	first, err := h.work.Claim()
+	require.NoError(t, err)
+	second, err := h.work.Claim()
+	require.NoError(t, err)
+
+	neighbour := first
+	if neighbour.ID == a {
+		neighbour = second
+	}
+	require.Equal(t, b, neighbour.ID)
+
+	err = h.withJob(a, func(j *held) error { return j.ack(h.work, neighbour) })
+	require.Error(t, err)
+	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+	require.ErrorContains(t, err, "which is another job's")
+
+	_, claimed := h.work.Depth()
+	require.Equal(t, 2, claimed, "and the neighbour's item is still there to come back")
+}
+
+// AN ENTRY THAT COULD NOT BE BUILT WRITES NOTHING, and it is one branch rather
+// than five: the encode that can fail happens once, in record(), and the
+// failure travels to commit() so that a chain reads as one expression.
+//
+// The anchor's own refusal is the reachable half of that, and it is here rather
+// than in a transition because no transition can reach it: succeed() is only
+// spelled after settle has found the record.
+func TestAnEntryThatCouldNotBeBuiltWritesNothing(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+	before := rowsOf(h, id)
+
+	require.NoError(t, h.withJob(unknownJobID, func(j *held) error {
+		require.False(t, j.found())
+		err := j.writes().record(jobRecord{}).anchor().commit("writing")
+		require.Error(t, err)
+		require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+		require.ErrorContains(t, err, "a record this section did not find")
+		return nil
+	}))
+
+	require.Equal(t, before, rowsOf(h, id))
+	require.Empty(t, rowsOf(h, unknownJobID),
+		"an entry that failed to build must not have written the rows it had already composed")
+}
+
 // THE COST, MEASURED. A section is a mutex acquisition and two atomic stores,
 // one atomic store on the way out, and one atomic load plus a nil check per
 // write. The numbers are printed rather than asserted, because what they have
@@ -487,10 +671,9 @@ func BenchmarkSection(b *testing.B) {
 	})
 	b.Run("a section", func(b *testing.B) {
 		var l section.Lock[jobRecord]
-		read := func() (jobRecord, bool, error) { return jobRecord{}, true, nil }
 		body := func(section.Holding[jobRecord]) error { return nil }
 		for b.Loop() {
-			if err := l.Do(read, body); err != nil {
+			if err := l.Do(benchSource{}, body); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -498,17 +681,69 @@ func BenchmarkSection(b *testing.B) {
 	b.Run("the check a write makes", func(b *testing.B) {
 		var l section.Lock[jobRecord]
 		write := func() error { return nil }
-		if err := l.Do(
-			func() (jobRecord, bool, error) { return jobRecord{}, true, nil },
-			func(h section.Holding[jobRecord]) error {
-				for b.Loop() {
-					if err := h.Write(write); err != nil {
-						b.Fatal(err)
-					}
+		if err := l.Do(benchSource{}, func(h section.Holding[jobRecord]) error {
+			for b.Loop() {
+				if err := h.Write(write); err != nil {
+					b.Fatal(err)
 				}
-				return nil
-			},
-		); err != nil {
+			}
+			return nil
+		}); err != nil {
+			b.Fatal(err)
+		}
+	})
+}
+
+// benchSource is the cheapest source there is, so that what the benchmark above
+// measures is the section rather than a store.
+type benchSource struct{}
+
+func (benchSource) Subject() string                 { return "a job" }
+func (benchSource) First() (jobRecord, bool, error) { return jobRecord{}, true, nil }
+func (benchSource) Again() (jobRecord, bool, error) { return jobRecord{}, true, nil }
+
+// AND WHAT THE COMPOSED KEYS COST, measured against the shape they replaced: a
+// []raft.BatchOp literal a body spelled for itself, with the same three rows
+// and the same encode in it.
+//
+// Both are printed rather than asserted, for the same reason as above — what
+// they have to be smaller than is a replicated entry, which is a round trip to
+// a quorum, and no test here can bound one.
+func BenchmarkTheEntry(b *testing.B) {
+	h := newHarness(b)
+	id := h.push(b, testRef, testCommit)
+	rec := h.mustRecord(b, id)
+
+	b.Run("the slice literal an entry replaced", func(b *testing.B) {
+		for b.Loop() {
+			value, err := rec.encode()
+			if err != nil {
+				b.Fatal(err)
+			}
+			ops := []raft.BatchOp{
+				set(jobRecordKey(id), value),
+				set(projectIndexKey(rec.ProjectID, id), nil),
+				set(openIndexKey(rec.RepositoryKey, id), nil),
+			}
+			if len(ops) != 3 {
+				b.Fatal("the compiler elided the thing being measured")
+			}
+		}
+	})
+
+	b.Run("the entry that replaced it", func(b *testing.B) {
+		if err := h.withJob(id, func(j *held) error {
+			for b.Loop() {
+				e := j.writes().record(rec).inProject().open()
+				if e.err != nil {
+					b.Fatal(e.err)
+				}
+				if len(e.ops) != 3 {
+					b.Fatal("the compiler elided the thing being measured")
+				}
+			}
+			return nil
+		}); err != nil {
 			b.Fatal(err)
 		}
 	})

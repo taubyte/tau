@@ -149,20 +149,14 @@ func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) er
 			CreatedAt:     now.Unix(),
 			UpdatedAt:     now.Unix(),
 		}
-		value, err := rec.encode()
-		if err != nil {
-			return errInternal("encoding job %s: %v", id, err)
-		}
 
 		// ONE Batch: the record, the project index row and the open index row
 		// are one replicated entry, so a reader never sees a job that is in one
-		// of the three and not the others.
-		if err := j.commit([]raft.BatchOp{
-			set(jobRecordKey(id), value),
-			set(projectIndexKey(projectID, id), nil),
-			set(openIndexKey(rec.RepositoryKey, id), nil),
-		}); err != nil {
-			return refused(err, "writing job %s", id)
+		// of the three and not the others. ALL THREE KEYS ARE THE ENTRY'S OWN:
+		// the id half of each is the handle's subject, and the repository and
+		// the project are read off the record this same entry writes.
+		if err := j.writes().record(rec).inProject().open().commit("writing"); err != nil {
+			return err
 		}
 
 		// AND THE ITEM, IN THE SAME SECTION. It is a push rather than a requeue
@@ -216,9 +210,9 @@ func (s *Service) projectError(repositoryKey string, err error) error {
 // IT IS NOT WHERE A SECTION COMES FROM ANY MORE, and that is the whole of what
 // changed. A read used to be handed the section it was taken in and stamp what
 // it returned, so a caller inside a live section could stamp any value at all;
-// now the entry point calls this itself, before the body runs, and hands the
-// body the result. A read on its own decides nothing and can write nothing —
-// there is no handle attached to it.
+// now the SOURCE named at the door calls this itself, before the body runs, and
+// the result is what the body is handed. A read on its own decides nothing and
+// can write nothing — there is no handle attached to it.
 //
 // AND THE RECORD IT RETURNS IS THE RECORD THE KEY NAMES. decodeJobRecord is
 // handed the id as well as the key, so a row that decodes cleanly and says it
