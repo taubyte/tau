@@ -302,6 +302,11 @@ type source struct {
 	// the same reason. A rule constant that no registry entry carries is a rule
 	// nothing reads, and the registry is a list somebody can shorten.
 	rules map[string]string
+
+	// harnesses is every name the three things that RUN the rules are declared
+	// under, read the same way again. The rules were closed and the loops that
+	// execute them were not, and a loop nothing runs is every rule turned off.
+	harnesses map[string]string
 }
 
 var (
@@ -416,9 +421,13 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 	if err != nil {
 		return nil, err
 	}
+	harnesses, err := constantsOf(tested, reflect.TypeOf(harnessName("")).Name())
+	if err != nil {
+		return nil, err
+	}
 	report := reporterInterface()
 	return &source{pkg: pkg, reporter: report, fails: report.Method(0).Type().(*types.Signature),
-		step: obj.Type(), faults: faults, rules: rules}, nil
+		step: obj.Type(), faults: faults, rules: rules, harnesses: harnesses}, nil
 }
 
 // suitePath is this package, taken from a type in it rather than written out.

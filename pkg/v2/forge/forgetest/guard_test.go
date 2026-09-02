@@ -41,30 +41,45 @@ import (
 // type-checked by the same loader — the ledger's own version of injecting a
 // fault into the fake forge and requiring the suite to catch it.
 //
-// Twenty rules, twenty faults. Hollowed one at a time, all twenty fail here.
+// Twenty-two rules and their faults, and a rule may have more than one: a rule
+// evaded in four shapes needs four, or the three nobody showed it are three it
+// does not hold against. Hollowed one at a time, all of them fail here.
 //
-// THREE THINGS OUTSIDE THE RULES ARE HELD TOO, because each of them could
-// disable every rule at once and no rule can see it happen from inside the
-// registry:
+// AND THE THINGS THAT RUN THE RULES ARE HELD THE SAME WAY, because each of them
+// could disable every rule at once and no rule can see it happen from inside
+// the registry. Round six closed the rules and left these open; measured, each
+// could be hollowed on its own with the whole forge tree at exit 0. So each is
+// a HARNESS with a registry that breaks it, in the shape a rule has:
 //
-//	the REPORT. obey is the one path a complaint travels, and the self-test
-//	travels it: a loop that hears a rule and drops what it says is hollowing,
-//	one level further out.
+//	the REPORT. obey is the one path a complaint travels, and a loop that
+//	hears a rule and drops what it says is hollowing one level further out.
+//	Handed a rule that complains about every ledger there is, it must complain.
+//
+//	the SELF-TEST. Handed a rule that is decoration — one that says nothing
+//	about the ledger it is given — it must say so, which is the whole of what
+//	it exists for.
 //
 //	the REGISTRY. A rule not in it does not run, so an emptied registry is
-//	every rule turned off and nothing left to notice.
-//	TestEveryRuleTheLedgerDeclaresIsRead asks from outside it, over the rule
-//	names read out of this file's own source with go/types — the same closure
-//	the faults get. Emptying the registry, or dropping one entry, fails there.
+//	every rule turned off and nothing left to notice. It is asked from outside
+//	it, over the rule names read out of this file's own source with go/types —
+//	the same closure the faults get — and handed a registry one entry short, it
+//	must name the entry that went.
+//
+//	the LIST OF HARNESSES, closed the way the registry is: the names are read
+//	out of source, so dropping one, or emptying the list, is visible from
+//	outside it.
 //
 //	the LOADER. If the source cannot be type-checked the ledger fails loudly
 //	rather than computing its rules over a smaller population.
 //
-// WHAT IT STILL DOES NOT COVER, said plainly: deleting a rule OUTRIGHT — its
+// WHAT IT STILL DOES NOT COVER, said plainly. Deleting a rule OUTRIGHT — its
 // name, its entry, its check and its violation, in one hunk — leaves nothing
 // declared for the registry check to miss. That is the same exposure as
 // deleting a test, and it is four coordinated deletions rather than the one
-// character that used to do it.
+// character that used to do it. And the loop in
+// TestTheThingsThatRunTheRulesRunThem is where the regress stops: it is held by
+// being four lines long and by every harness under it failing loudly when its
+// listener is not listened to — measured — and by nothing else.
 
 // complaint is one thing the ledger has to say. It carries the rule that said
 // it so that a rule proven by the self-test is proven under its own name and
@@ -195,7 +210,7 @@ func ledgerRules() []rule {
 // the ONE path a failure travels, and the self-test below travels it too: a
 // rule that complains into a loop which drops what it says is a rule nobody
 // hears, and that is hollowing one level further out than hollowing the rule.
-func obey(t interface{ Errorf(string, ...any) }, l *ledger, rules []rule) int {
+func obey(t reporter, l *ledger, rules []rule) int {
 	said := 0
 	for _, r := range rules {
 		for _, c := range r.check(l) {
@@ -206,8 +221,114 @@ func obey(t interface{ Errorf(string, ...any) }, l *ledger, rules []rule) int {
 	return said
 }
 
-// TestTheSuiteObeysTheLedger is the ledger read over the suite as it stands.
-func TestTheSuiteObeysTheLedger(t *testing.T) {
+// ──────────── the three things that run the rules, and their faults ────────────
+//
+// EVERY RULE HAD A FAULT BEHIND IT AND THE LOOPS THAT EXECUTE THEM HAD NONE.
+//
+// Round six made a rule a value with a violating ledger, and left the three
+// things that run those rules exactly as exposed as the rules had been.
+// Measured, one at a time: the report's loop emptied to `_ = r`, the
+// self-test's condition switched off with `false &&`, and the registry check
+// reading `unreadRules(src, nil)` — three separate hollowings, three times
+// GO_TEST_EXIT=0 over the whole forge tree. A rule proven by a loop that does
+// not run it is proven by nothing, and no rule can see that from inside the
+// registry.
+//
+// So each of the three is a HARNESS now, in the same shape a rule is: a name,
+// a run that is a function of the rules it is given, and a registry that breaks
+// it. The list is read from both directions — TestTheLedgerHolds runs each
+// harness over the real rules, TestTheThingsThatRunTheRulesRunThem hands each
+// the registry it must complain about — so a harness dropped from the list
+// leaves both directions, and the names it declares are read out of source the
+// way the rule names are, so shortening the list is visible from outside it.
+
+// harnessName is what one of the three is called, and it is a TYPE for the same
+// reason ruleName is: a list is a thing somebody can shorten.
+type harnessName string
+
+const (
+	harnessTheSuiteObeysTheLedger    harnessName = "the suite obeys the ledger"
+	harnessTheLedgerObeysItsOwnRules harnessName = "the ledger obeys the rule it imposes"
+	harnessEveryRuleDeclaredIsRead   harnessName = "every rule the ledger declares is read"
+)
+
+// harness is one of the three, and the registry that breaks it.
+type harness struct {
+	name harnessName
+	// run reads a set of rules and reports what they have to say. It is a
+	// function of the rules, and of where it reports, so that the same code
+	// that holds the suite can be handed a registry that breaks it and be
+	// required to say so somewhere a test can read.
+	run func(t *testing.T, report reporter, rules []rule)
+	// breaks is a registry this harness must complain about — its fault, in
+	// the same sense a rule's violating ledger is one.
+	breaks func(t *testing.T) []rule
+}
+
+func ledgerHarnesses() []harness {
+	return []harness{
+		{harnessTheSuiteObeysTheLedger, readTheLedgerOverTheSuite, aRuleWithSomethingToSayAboutEverything},
+		{harnessTheLedgerObeysItsOwnRules, proveEveryRule, aRuleThatIsDecoration},
+		{harnessEveryRuleDeclaredIsRead, readEveryRuleDeclared, aRegistryOneShort},
+	}
+}
+
+// TestTheLedgerHolds is the three, run over the rules as they stand: the ledger
+// read over the suite, each rule read over the ledgers that break it, and the
+// registry read over the rule names this file declares.
+func TestTheLedgerHolds(t *testing.T) {
+	for _, h := range ledgerHarnesses() {
+		t.Run(string(h.name), func(t *testing.T) { h.run(t, nil, ledgerRules()) })
+	}
+}
+
+// TestTheThingsThatRunTheRulesRunThem is the same three, each handed a registry
+// that breaks it and required to say so. It is the fault behind the harness,
+// which is what the harnesses did not have.
+func TestTheThingsThatRunTheRulesRunThem(t *testing.T) {
+	for _, h := range ledgerHarnesses() {
+		t.Run(string(h.name), func(t *testing.T) {
+			heard := &recorder{}
+			h.run(t, heard, h.breaks(t))
+			if !heard.failed {
+				t.Fatalf("this was handed a registry that breaks it and said nothing: it is a loop that does not run what it is given, and hollowing it turns every rule off at once with no rule able to see it happen")
+			}
+		})
+	}
+	t.Run("a harness declared and left out of the list", func(t *testing.T) {
+		src := suiteSource(t)
+		for _, name := range unreadHarnesses(src, ledgerHarnesses()) {
+			t.Errorf("%s is declared and no entry in the list runs it, so nothing above is computed over anything it would have held", name)
+		}
+		broken := src.with(t, "ledger_fault_unread_harness_test.go", `package forgetest
+
+const harnessNobodyRuns harnessName = "a way of running the rules the list never mentions"
+`)
+		if len(unreadHarnesses(broken, ledgerHarnesses())) == 0 {
+			t.Fatalf("a harness declared and left out of the list went unnoticed, so shortening the list — or emptying it — would too")
+		}
+	})
+}
+
+// unreadHarnesses is every harness name this file declares that no entry in the
+// list carries, by the identifier it is declared under.
+func unreadHarnesses(src *source, hs []harness) []string {
+	read := map[string]bool{}
+	for _, h := range hs {
+		read[string(h.name)] = true
+	}
+	var out []string
+	for value, ident := range src.harnesses {
+		if !read[value] {
+			out = append(out, ident)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// readTheLedgerOverTheSuite is the ledger read over the suite as it stands.
+func readTheLedgerOverTheSuite(t *testing.T, report reporter, rules []rule) {
 	l := theLedger(t)
 	counts := map[kind]int{}
 	for _, a := range l.pop {
@@ -215,19 +336,41 @@ func TestTheSuiteObeysTheLedger(t *testing.T) {
 	}
 	t.Logf("%d cases: %d contract, %d plumbing", len(l.pop), counts[contract], counts[plumbing])
 	t.Logf("%d proofs against %d faults the fake forge can be told to have", len(l.proofs), len(l.src.faults))
-	for _, r := range ledgerRules() {
-		t.Run(string(r.name), func(t *testing.T) { obey(t, l, []rule{r}) })
+	for _, r := range rules {
+		t.Run(string(r.name), func(t *testing.T) { obey(reportTo(report, t), l, []rule{r}) })
 	}
 }
 
-// TestTheLedgerObeysTheRuleItImposes is the other direction, and it is the one
-// that was missing. Each rule is handed a ledger that breaks it and must say
-// so, under its own name, THROUGH the loop that reports it. A rule that has
-// been hollowed says nothing and fails here; a rule added with no violation
-// behind it fails here too; and so does a reporting loop that hears a rule and
-// drops it.
-func TestTheLedgerObeysTheRuleItImposes(t *testing.T) {
-	proveEveryRule(t, nil, ledgerRules())
+// aRuleWithSomethingToSayAboutEverything is the report's fault: a registry of
+// one rule that complains about any ledger at all. A report that runs no rule,
+// or hears one and drops what it says, stays quiet here.
+func aRuleWithSomethingToSayAboutEverything(*testing.T) []rule {
+	name := ruleName("a rule with something to say about every ledger there is")
+	return []rule{{name: name, check: func(*ledger) []complaint {
+		return []complaint{{name, "the suite", "this rule complains about every ledger, and the report has to carry what it says"}}
+	}}}
+}
+
+// aRuleThatIsDecoration is the self-test's fault: a rule that stays quiet about
+// a ledger it was handed. Catching exactly this is what the self-test is for,
+// so a self-test that does not run its rules passes it.
+func aRuleThatIsDecoration(*testing.T) []rule {
+	return []rule{{
+		name:     ruleName("a rule that says nothing about the ledger that breaks it"),
+		check:    func(*ledger) []complaint { return nil },
+		violates: breaks(func(t *testing.T) *ledger { return theLedger(t) }),
+	}}
+}
+
+// aRegistryOneShort is the registry check's fault: the real registry with an
+// entry taken away, which is what shortening it — or emptying it — looks like
+// from outside.
+func aRegistryOneShort(t *testing.T) []rule {
+	rules := ledgerRules()
+	if len(rules) < 2 {
+		t.Fatalf("the ledger declares fewer than two rules, so a registry one short of itself is not a registry")
+	}
+	return rules[1:]
 }
 
 // proveEveryRule hands each rule every ledger that breaks it and requires the
@@ -280,17 +423,18 @@ func reportTo(report reporter, t *testing.T) reporter {
 	return report
 }
 
-// TestEveryRuleTheLedgerDeclaresIsRead closes the registry, which is the last
-// list in this file that a hand maintains. A rule constant no entry carries is
-// a rule nothing runs, and an empty registry is every rule at once — neither is
-// visible from inside the registry, because a rule that is not in it does not
-// run. So this is asked from outside it, over the rule names read out of this
-// file's own source.
-func TestEveryRuleTheLedgerDeclaresIsRead(t *testing.T) {
+// readEveryRuleDeclared closes the registry, which is the last list in this file
+// that a hand maintains. A rule constant no entry carries is a rule nothing
+// runs, and an empty registry is every rule at once — neither is visible from
+// inside the registry, because a rule that is not in it does not run. So this is
+// asked from outside it, over the rule names read out of this file's own source,
+// and it is asked of the registry it is HANDED so that a registry one entry
+// short is a thing it can be shown.
+func readEveryRuleDeclared(t *testing.T, report reporter, rules []rule) {
 	src := suiteSource(t)
 	t.Run("as it stands", func(t *testing.T) {
-		for _, name := range unreadRules(src, ledgerRules()) {
-			t.Errorf("%s is declared and no registry entry reads it, so nothing computes it over anything", name)
+		for _, name := range unreadRules(src, rules) {
+			reportTo(report, t).Errorf("%s is declared and no registry entry reads it, so nothing computes it over anything", name)
 		}
 	})
 	t.Run("one more rule declared than the registry reads", func(t *testing.T) {
@@ -298,8 +442,8 @@ func TestEveryRuleTheLedgerDeclaresIsRead(t *testing.T) {
 
 const ruleNobodyReads ruleName = "a rule the registry never looks at"
 `)
-		if len(unreadRules(broken, ledgerRules())) == 0 {
-			t.Fatalf("a rule declared and left out of the registry went unnoticed, so shortening the registry — or emptying it — would too")
+		if len(unreadRules(broken, rules)) == 0 {
+			reportTo(report, t).Errorf("a rule declared and left out of the registry went unnoticed, so shortening the registry — or emptying it — would too")
 		}
 	})
 }
