@@ -59,6 +59,29 @@ func (s *Service) reconcile() error {
 // it, because no later pass can see it. The push has the same shape one state
 // over: decided on a record read as open, it would put an item back for a job a
 // cancel finished in between.
+//
+// IT IS THE ONE SECTION IN THIS PACKAGE THAT TAKES NO BARRIER OF ITS OWN, and
+// that is a decision rather than an omission. queue.go's jobLock names it; this
+// is why it is safe:
+//
+//   - THE PUSH does not need one. Its safety is queue.Push's deduplication,
+//     which reads the queue's own index behind the queue's own barrier, and an
+//     item pushed for a job that has since finished is dropped by begin on the
+//     next claim and acked there. A stale read here costs a wasted claim cycle,
+//     never a wrong write.
+//   - THE DELETE cannot be wrong from staleness alone. Every entry that makes a
+//     record terminal deletes its open row IN THE SAME ENTRY (finish), and
+//     every entry that writes an open row writes a non-terminal record in the
+//     same one (create, retry). The listing above and the read below come from
+//     one local state that only moves forward, and the read is taken after the
+//     listing — so "this row is listed AND its record is finished" is not a
+//     view any applied prefix of the log produces for a job whose last
+//     transition was one of those three. It is produced by a row that is
+//     genuinely orphaned, which is what this exists to drop.
+//   - AND THE COST IS THE REASON TO CARE. A barrier is a replicated log entry;
+//     one here is one per open job per pass, forever. barrier_test.go measures
+//     a pass at ONE, and at MaxQueueDepth the other way would be an order of
+//     magnitude more than the whole claim loop spends.
 func (s *Service) mend(key, id string, now time.Time, cutoff time.Duration) error {
 	jobLock.Lock()
 	defer jobLock.Unlock()

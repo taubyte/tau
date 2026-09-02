@@ -55,6 +55,13 @@ type funcs struct {
 // TestEveryQueueWriteIsInsideTheSectionThatDecidedIt.
 var pairedQueueWrites = map[string]bool{"Push": true, "Remove": true, "Ack": true, "Nack": true}
 
+// barrierVerbs are the pkg/v2/queue calls that take a barrier of their own:
+// every one of them goes through prepare(), which refuses a follower and then
+// blocks until everything committed is applied.
+var barrierVerbs = map[string]bool{
+	"Push": true, "Remove": true, "Ack": true, "Nack": true, "Claim": true, "Sweep": true,
+}
+
 // qualify names a declaration the way the tables below do: "Service.cancel",
 // "attemptSink.write", or a bare "jobRecordKey" for a function with no
 // receiver.
@@ -199,6 +206,37 @@ func writesQueue(all map[string]funcs, qualified string) bool {
 	return false
 }
 
+// barriers reports whether a call takes a barrier, directly or through this
+// package's own functions or pkg/v2/queue's prepare().
+func barriers(all map[string]funcs, call string) bool {
+	if call == "Barrier" || barrierVerbs[call] {
+		return true
+	}
+	for name := range reach(all, call, nil) {
+		if name == "Barrier" || barrierVerbs[name] {
+			return true
+		}
+	}
+	return false
+}
+
+// barriersBeforeTheRead is every call a section makes between taking jobLock
+// and reading the record that takes a barrier. A section with none of them is
+// deciding on state this node may not have applied yet.
+func barriersBeforeTheRead(all map[string]funcs, f funcs) []string {
+	var out []string
+	for name := range f.calls {
+		at, ok := f.at[name]
+		if !ok || at <= f.lockAt || at >= f.at["record"] {
+			continue
+		}
+		if barriers(all, name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // record() is the only reader of jobRecordKey, so counting its callers counts
 // every read of a job record in this package. If that stops being true the
 // enumeration below stops being an enumeration.
@@ -224,12 +262,17 @@ type site struct {
 	record bool
 	// queue: the read decides a push, a withdrawal or an ack.
 	queue bool
+	// barrier names the call that barriers between the lock and the read. A
+	// section that takes none is deciding on entries this node may not have
+	// applied, so an empty one has to say in why that a stale read is harmless.
+	barrier string
+	why     string
 }
 
 func (s site) section() bool { return s.record || s.queue }
 
-// EVERY READ OF A JOB RECORD IS NAMED HERE, with every write it decides. Adding
-// a site means adding a line, which
+// EVERY READ OF A JOB RECORD IS NAMED HERE, with every write it decides and the
+// barrier the section takes before it. Adding a site means adding a line, which
 // is the point: a site nobody thought about fails here rather than shipping,
 // which is exactly what the sixth site did — and a site whose SECOND write
 // leaves the section fails here too, which is what the ninth did.
@@ -237,17 +280,34 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 	population := map[string]site{
 		// jobs.go
 		"Service.job":    {}, // a read shape: it decides no write at all
-		"Service.cancel": {record: true, queue: true},
-		"Service.retry":  {record: true, queue: true},
+		"Service.cancel": {record: true, queue: true, barrier: "lead"},
+		"Service.retry":  {record: true, queue: true, barrier: "lead"},
 		// queue.go
-		"Service.resume": {queue: true},
-		"Service.create": {record: true, queue: true},
+		"Service.resume": {queue: true, barrier: "lead"},
+		"Service.create": {record: true, queue: true, barrier: "lead"},
 		// runner.go
-		"Service.begin":           {record: true, queue: true},
-		"Service.settle":          {record: true, queue: true},
-		"Service.drainDeadLetter": {record: true, queue: true},
+		"Service.begin": {record: true, queue: true, barrier: "lead"},
+		// settle's barrier is its own ack: queue.Ack goes through prepare(),
+		// which refuses a follower and blocks until everything committed is
+		// applied — inside the lock, before the read. A second lead() here
+		// would be a second replicated entry for a fact the ack already
+		// established.
+		"Service.settle":          {record: true, queue: true, barrier: "ack"},
+		"Service.drainDeadLetter": {record: true, queue: true, barrier: "lead"},
 		// reconcile.go
-		"Service.mend": {queue: true},
+		"Service.mend": {
+			queue: true,
+			why: "mend takes no barrier of its own, and the two decisions its read makes are " +
+				"both safe against a stale one. The push is deduplicated by the queue behind " +
+				"the queue's own barrier, and an item pushed for a job that has since finished " +
+				"is dropped by begin on the next claim. The delete cannot be wrong from " +
+				"staleness alone: every entry that makes a record terminal deletes its open " +
+				"row in the SAME entry, and every entry that writes an open row writes a " +
+				"non-terminal record in the same one, so no applied prefix of the log shows a " +
+				"row whose record is finished unless the row is genuinely orphaned — which is " +
+				"what mend is for. A barrier here would be one replicated entry per open job " +
+				"per pass, which reconcile.go's age gate exists to avoid.",
+		},
 	}
 
 	all := pkgFuncs(t)
@@ -265,6 +325,20 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 			"%s: the table and the code disagree about whether this read decides a record write", name)
 		require.Equal(t, want.queue, writesQueue(all, name),
 			"%s: the table and the code disagree about whether this read decides a queue write", name)
+
+		if !want.section() {
+			continue
+		}
+
+		taken := barriersBeforeTheRead(all, f)
+		if want.barrier == "" {
+			require.NotEmpty(t, want.why, "%s: a section with no barrier must say why that is safe", name)
+			require.Empty(t, taken, "%s: it does take a barrier now, so the exemption above is stale", name)
+			continue
+		}
+		require.Empty(t, want.why, "%s: a section with a barrier needs no exemption", name)
+		require.Contains(t, taken, want.barrier,
+			"%s: %s must be called between jobLock and the read, and must barrier", name, want.barrier)
 	}
 }
 

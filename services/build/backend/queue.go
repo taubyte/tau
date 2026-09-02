@@ -134,9 +134,13 @@ func (s *Service) resume(id string) (bool, error) {
 // only true until something else writes. Off this process nothing else can: a
 // write commits on the leader alone, so another node deciding this same job has
 // to take leadership first and this node's Batch then does not commit, and
-// every section below reads behind a Barrier, so a node that has just won an
-// election cannot decide on entries it has not applied. In this process nothing
-// stopped it — Cancel and Retry answer on rpc goroutines while the claim loop
+// every section below takes a Barrier of its own between the lock and its read
+// — begin's and drainDeadLetter's lead(), settle's ack, and the lead() the four
+// rpc-side transitions already made — so a node that has just won an election
+// cannot decide on entries it has not applied. mend is the one section that
+// takes none, and it is NAMED rather than assumed: reconcile.go says why a
+// stale read is harmless there, and barrier_test.go measures what a barrier per
+// open job per pass would have cost. In this process nothing stopped it — Cancel and Retry answer on rpc goroutines while the claim loop
 // runs on its own, and raft ORDERS their two entries without noticing that the
 // second was decided on a read taken before the first — and the store has no
 // compare-and-swap for them to arbitrate with. So they take a lock, which is
@@ -158,6 +162,10 @@ func (s *Service) resume(id string) (bool, error) {
 //     lock is never asked to arbitrate across processes. A store without that
 //     property needs a CONDITIONAL WRITE instead, and raft.BatchOp has exactly
 //     two operations, Set and Delete — there is nothing to condition on.
+//   - the queue's own claim and sweep are outside it. Both are pkg/v2/queue's
+//     transitions rather than this table's: they are decided under the queue's
+//     group lock, on no job record. The record write a claim pairs with is
+//     begin's, and that is a section.
 //
 // It is the package's rather than a field on Service because what it protects
 // is a job table, not a Service: nothing stops two Services from being

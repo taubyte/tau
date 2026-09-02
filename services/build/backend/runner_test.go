@@ -10,6 +10,7 @@ import (
 
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/pkg/v2/queue"
+	"github.com/taubyte/tau/services/build"
 )
 
 func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
@@ -528,4 +529,58 @@ func TestTheDeadLetterDrainReportsARecordItCannotWrite(t *testing.T) {
 	ready, claimed := h.dead.Depth()
 	require.Equal(t, 0, ready)
 	require.Equal(t, 1, claimed, "an entry whose record could not be written stays claimed and comes back")
+}
+
+// THE TWO CLAIM-LOOP SECTIONS TAKE A BARRIER OF THEIR OWN, and a barrier that
+// cannot be taken is a section that must not decide. Both are reached only
+// after a queue call has already barriered successfully, so the refusal has to
+// be armed between the two — which is what the batch hook is for.
+func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
+	t.Run("the claim's section", func(t *testing.T) {
+		h := newHarness(t)
+		id := h.push(t, testRef, testCommit)
+
+		// The queue's own claim commits; begin's barrier is then refused.
+		h.store.onBatch(func() { h.store.failBarrier(errors.New("timed out")) })
+
+		_, err := h.step(t.Context())
+		require.ErrorContains(t, err, "barrier on "+build.QueueDomain)
+		require.Empty(t, h.runner.seen(), "a job whose section could not barrier must not run")
+		require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id),
+			"and its record must not have moved")
+	})
+
+	t.Run("the dead letter drain's section", func(t *testing.T) {
+		h := newHarness(t)
+		id := h.push(t, testRef, testCommit)
+		require.NoError(t, h.dead.Push(id, nil))
+
+		h.store.onBatch(func() { h.store.failBarrier(errors.New("timed out")) })
+
+		_, err := h.step(t.Context())
+		require.ErrorContains(t, err, "barrier on "+build.QueueDomain)
+
+		h.store.failBarrier(nil)
+		require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+		ready, claimed := h.dead.Depth()
+		require.Equal(t, 0, ready)
+		require.Equal(t, 1, claimed, "the entry stays claimed and comes back")
+	})
+}
+
+// A dead-letter entry whose record will not decode is reported rather than
+// treated as a job that has no record — which would ack it and lose the only
+// thing that says the build ever happened.
+func TestTheDeadLetterDrainReportsACorruptRecord(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+	require.NoError(t, h.dead.Push(id, nil))
+	h.store.put(t, jobRecordKey(id), []byte("not cbor"))
+
+	_, err := h.step(t.Context())
+	require.ErrorContains(t, err, "corrupt job record")
+
+	ready, claimed := h.dead.Depth()
+	require.Equal(t, 0, ready)
+	require.Equal(t, 1, claimed, "and the entry is not acknowledged")
 }

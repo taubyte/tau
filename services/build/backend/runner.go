@@ -128,8 +128,8 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 	return s.settle(d, runErr)
 }
 
-// begin is the claim's own transition, and it is ONE SECTION: the re-read that
-// decides whether this delivery is still worth running, and then
+// begin is the claim's own transition, and it is ONE SECTION: the barrier, the
+// re-read that decides whether this delivery is still worth running, and then
 // EITHER the entry that writes the record Claimed and the registration that
 // lets Cancel stop the run, OR the ack that drops the delivery.
 //
@@ -163,6 +163,9 @@ func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.Cance
 	jobLock.Lock()
 	defer jobLock.Unlock()
 
+	if err := s.lead(); err != nil {
+		return jobRecord{}, false, err
+	}
 	rec, found, err := s.record(d.ID)
 	if err != nil {
 		return jobRecord{}, false, err
@@ -230,6 +233,10 @@ func (s *Service) invoke(ctx context.Context, work Work) (err error) {
 // written by a node that no longer speaks for the group is not. v1 asked
 // whether it still owned the job only when REPORTING, after it had already
 // stashed assets and pushed keys to tns.
+//
+// IT IS ALSO THE SECTION'S BARRIER, taken inside the lock and before the read:
+// queue.Ack refuses a follower and blocks until everything committed is
+// applied, so the record below is read after it, not before.
 //
 // THE RECORD IS RE-READ because the whole build happened outside this lock, and
 // three different things can have written it in the meantime. Each is a
@@ -325,11 +332,13 @@ func (s *Service) lastCommit(repositoryKey, ref string) string {
 
 // drainDeadLetter marks one exhausted job Failed and acknowledges it.
 //
-// The claim is outside the section; the read, the record and the ack are inside
-// it. A cancel between the read and the write would be overwritten with Failed,
-// and its caller told a build it had stopped failed on its own. The claim needs
-// no protection here — the dead letter's own group lock is what makes it
-// exclusive.
+// The claim is outside the section; the barrier, the read, the record and the
+// ack are inside it. A cancel between the read and the write would be
+// overwritten with Failed, and its caller told a build it had stopped failed on
+// its own. The claim needs no protection here — the dead letter's own group
+// lock is what makes it exclusive — but it is NOT this section's barrier: it is
+// another function's, taken before the lock, with an unbounded wait for the
+// lock in between.
 func (s *Service) drainDeadLetter() (bool, error) {
 	d, err := s.dead.Claim()
 	if errors.Is(err, queue.ErrNoItem) {
@@ -342,6 +351,9 @@ func (s *Service) drainDeadLetter() (bool, error) {
 	jobLock.Lock()
 	defer jobLock.Unlock()
 
+	if err := s.lead(); err != nil {
+		return true, err
+	}
 	rec, found, err := s.record(d.ID)
 	if err != nil {
 		return true, err

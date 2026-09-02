@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +26,11 @@ import (
 // same reason.
 type fakeStore struct {
 	*raft.MockCluster
+
+	// barriers counts them because a barrier is a replicated log entry and the
+	// claim loop runs continuously, so "take one in every section" is a cost
+	// and not only a correctness argument. barrier_test.go spends it.
+	barriers atomic.Int64
 
 	mu          sync.Mutex
 	follower    bool
@@ -95,6 +101,8 @@ func (s *fakeStore) onBatch(hook func()) {
 }
 
 func (s *fakeStore) Barrier(time.Duration) error {
+	s.barriers.Add(1)
+
 	s.mu.Lock()
 	err := s.barrierErr
 	s.mu.Unlock()
