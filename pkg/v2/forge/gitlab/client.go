@@ -269,6 +269,27 @@ func (c *config) repository(p project, asked string) (forge.Repository, error) {
 // the projects this credential holds a grant on, and it OMITS public projects
 // the caller merely can read. An absence therefore proves nothing, which is what
 // the interface already says about every forge's listing.
+//
+// NOTHING IS YIELDED THAT THIS DRIVER COULD NOT THEN ACT ON. Two entries fail
+// that: one whose clone URL this layer cannot derive a key from, and one whose
+// key this driver's own Addressable refuses. The second was measured, not
+// imagined — an entry with path_with_namespace "pay" and a clone URL at the
+// instance root yielded Owner "" Name "pay", which addressable() refuses with
+// "a GitLab project always lives in a namespace" — so this listing was handing
+// a consumer a project every other method of this driver would refuse, under a
+// key nothing could ever act on.
+//
+// SKIPPED RATHER THAN FAILING THE LISTING, AND THAT DISPOSITION IS THE OWNER'S
+// TO REVERSE. The case for failing is that a consumer cannot tell a skipped
+// entry from an absent one; the case for skipping — which is what this driver
+// now does — is that forge.Lister has already settled it, in so many words: the
+// contract is the weakest true one and AN ABSENCE PROVES NOTHING, so no
+// consumer may read this listing as a set to begin with, and failing a whole
+// listing over one project the caller never asked about denies it the rest. The
+// deciding argument is neither: the github driver in this tree skips both of
+// these, held by TestTheListingPagesAndSkipsWhatItCannotName, and two drivers
+// over one interface may not disagree about a question the layer has written
+// down. An owner who wants the other disposition wants it in BOTH drivers.
 func (c *client) ListRepositories(ctx context.Context, yield func(forge.Repository) bool) error {
 	// GitLab pages with a header, and a broken or hostile pager that keeps
 	// naming a next page would otherwise be an unbounded loop inside a call a
@@ -296,9 +317,10 @@ func (c *client) ListRepositories(ctx context.Context, yield func(forge.Reposito
 		for i, p := range listing {
 			repo, err := c.cfg.repository(p, fmt.Sprintf("entry %d of listing page %d", i+1, pages+1))
 			if err != nil {
-				// A listing that quietly drops the entry it could not read is a
-				// listing whose absences a consumer cannot interpret.
-				return err
+				continue
+			}
+			if c.cfg.addressable(repo.Key) != nil {
+				continue
 			}
 			if !yield(repo) {
 				return nil

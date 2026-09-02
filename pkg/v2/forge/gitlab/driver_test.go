@@ -515,14 +515,38 @@ func TestListStopsPagingEventually(t *testing.T) {
 	assert.Contains(t, err.Error(), "refusing to keep paging")
 }
 
-// A listing that quietly drops the entry it could not read is a listing whose
-// absences a consumer cannot interpret.
-func TestListPropagatesAnUnreadableEntry(t *testing.T) {
-	c, _ := stubClient(t, answer(t, http.StatusOK, `[{"path_with_namespace":"acme/pay","http_url_to_repo":"nonsense"}]`))
-	yielded := 0
-	err := c.ListRepositories(context.Background(), func(forge.Repository) bool { yielded++; return true })
-	require.Error(t, err)
-	assert.Zero(t, yielded)
+// TestTheListingSkipsWhatThisDriverCouldNotActOn is the gitlab row of the
+// github driver's TestTheListingPagesAndSkipsWhatItCannotName, and it is here
+// because this listing yielded a key its OWN Addressable refuses: an entry at
+// the instance root came out Owner "" Name "pay", which is a project no other
+// method of this driver would touch and a key nothing downstream could act on.
+//
+// The two entries it must not yield are the two ways an entry is unnameable —
+// a clone URL no key can be derived from, and a key this forge cannot
+// address — and the third is the one that must still arrive, because a
+// listing that skipped everything would pass a test that only counted
+// refusals.
+func TestTheListingSkipsWhatThisDriverCouldNotActOn(t *testing.T) {
+	var root string
+	d, base := stub(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `[
+			{"path_with_namespace":"acme/broken","http_url_to_repo":"nonsense"},
+			{"path_with_namespace":"pay","http_url_to_repo":%q},
+			{"path_with_namespace":"acme/pay","http_url_to_repo":%q,"default_branch":"main"}
+		]`, root+"/pay.git", root+"/acme/pay.git")
+	})
+	root = base
+	bound, err := d.Bind(forge.Token("stub-token"))
+	require.NoError(t, err)
+
+	var seen []string
+	require.NoError(t, bound.(forge.Lister).ListRepositories(context.Background(), func(r forge.Repository) bool {
+		assert.NoError(t, d.Addressable(r.Key), "the listing yielded a key this driver's own Addressable refuses")
+		seen = append(seen, r.Key.FullName())
+		return true
+	}))
+	assert.Equal(t, []string{"acme/pay"}, seen)
 }
 
 // ─────────────────────────── creation ───────────────────────────

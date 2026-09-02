@@ -275,15 +275,22 @@ func (d *driver) Host() string { return d.cfg.host }
 // Both are refused here, before any request leaves the process, because the
 // registry calls this once per key rather than each method calling it and one
 // method forgetting.
-func (d *driver) Addressable(key repokey.Key) error {
+func (d *driver) Addressable(key repokey.Key) error { return d.cfg.addressable(key) }
+
+// addressable is the rule itself, on the configuration rather than on the
+// driver, because the LISTING has to ask it too: a client holds the config and
+// not the driver, and a listing that yielded a key this very method refuses
+// would hand a consumer a project no method of this driver could ever act on.
+// One rule, two callers — the alternative is a second copy that drifts.
+func (c *config) addressable(key repokey.Key) error {
 	// THE HOST FIRST, and it is here rather than left to the registry because
-	// this method is EXPORTED and answers on its own. The registry routes by
-	// host and Session.check compares one before calling this, so a key that
+	// Addressable is EXPORTED and answers on its own. The registry routes by
+	// host and Session.check compares one before calling it, so a key that
 	// arrives through either has already been through it — but a consumer that
 	// asks a driver directly whether it can address a key on another host was
 	// being told yes. The github driver refuses it here for the same reason.
-	if key.Host != d.cfg.host {
-		return fmt.Errorf("this driver answers for %s", d.cfg.host)
+	if key.Host != c.host {
+		return fmt.Errorf("this driver answers for %s", c.host)
 	}
 	if key.Owner == "" {
 		return errors.New("a GitLab project always lives in a namespace, and this key names a repository at the host root")
