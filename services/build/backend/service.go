@@ -39,7 +39,7 @@ type Service struct {
 	// only ever touch one Service from one goroutine.
 	startMu sync.Mutex
 	server  *rpc.Server
-	stop    context.CancelFunc
+	stop    context.CancelCauseFunc
 	stopped chan struct{}
 
 	// running holds the cancel of every job THIS node is currently running, so
@@ -212,7 +212,11 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	s.server = server
 
-	loopCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	// WITH A CAUSE, because the loop's context ending is not self-explanatory:
+	// Close ends it too, and a run that was interrupted by a shutdown reaches
+	// run() as an error from Run over a cancelled context — exactly what a build
+	// that failed looks like. See errShuttingDown.
+	loopCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	s.stop = cancel
 	s.stopped = make(chan struct{})
 	go s.loop(loopCtx, s.stopped)
@@ -247,15 +251,30 @@ func (s *Service) loop(ctx context.Context, done chan<- struct{}) {
 	}
 }
 
+// errShuttingDown is the cause Close cancels the claim loop's context with, and
+// it exists because NOTHING IN AN ERROR SAYS WHY A CONTEXT DIED. A run stopped
+// by a shutdown returns exactly what a run stopped by Cancel returns, and what
+// a Runner that wraps ctx.Err() in its own message returns, and what a build
+// that genuinely failed at that instant returns. context.Cause on the loop's
+// own context is the fact rather than a reading of the error.
+var errShuttingDown = errors.New("build: shutting down")
+
 // Close is idempotent and stops the two things this service started: serving,
 // and the claim loop. It does not close the store, and cannot — Store has no
 // Close method (config.go), because the store was handed in by whatever
 // composed the node and is shared with the services composed beside it.
 //
-// It does not cancel a run in flight either. A claim outlives this process by
-// design: the item stays claimed, the claim expires, and the queue redelivers
-// it. Cancelling the runs on the way out would look tidier and would cost an
-// attempt each time a node restarts.
+// A RUN IN FLIGHT IS ABANDONED, NOT FAILED. The loop's context ends here, so a
+// Runner that honours it returns and a shutdown does not wait out an hour-long
+// build — but the delivery is NOT acknowledged and no terminal record is
+// written. The item stays claimed, the claim expires, and the queue redelivers
+// it to whoever is leader then, which is the same path a node that was killed
+// takes. A rolling restart therefore costs an attempt and a rebuild; it never
+// leaves a job reading Failed for a build nobody ever finished.
+//
+// Acknowledging it here would look tidier and would be a lie the caller cannot
+// detect: the ack "removes an item for good", so there is no redelivery behind
+// it, and every restart would permanently fail whatever was building.
 func (s *Service) Close() error {
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)
@@ -265,7 +284,7 @@ func (s *Service) Close() error {
 		s.startMu.Unlock()
 
 		if stop != nil {
-			stop()
+			stop(errShuttingDown)
 			<-stopped
 		}
 		if server != nil {

@@ -109,6 +109,26 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 
 	runErr := s.invoke(ctx, deadline, work)
 
+	// A SHUTDOWN ABANDONS THE DELIVERY RATHER THAN FAILING THE JOB. Close ends
+	// the loop's context so that a restart does not wait out an hour-long build,
+	// and the run returns the moment it does — but that run was interrupted, not
+	// judged, and acking it here would mark Failed a build nothing finished, on
+	// EVERY rolling restart. Left unacknowledged, the item stays claimed, the
+	// claim expires, and the queue redelivers it: the crashed-worker path, which
+	// this design already has.
+	//
+	// It is the CAUSE that is read, not the error. A build that failed at the
+	// instant of a shutdown is indistinguishable from a run the shutdown cut
+	// short, so both are abandoned — which costs one redelivery, where guessing
+	// the other way costs the job.
+	//
+	// A run that RETURNED NOTHING is a run that finished. It is settled as
+	// normal: the work is done, the two writes it takes are cheap, and throwing
+	// it away would rebuild what this node had already built.
+	if runErr != nil && errors.Is(context.Cause(ctx), errShuttingDown) {
+		return fmt.Errorf("job %s abandoned: %w", rec.ID, errShuttingDown)
+	}
+
 	// ACK IS THE COMMIT POINT, and it comes before anything this run produced
 	// is published. It is the only compare-and-swap this service has: the
 	// queue refuses an ack whose delivery it no longer holds, so a node whose

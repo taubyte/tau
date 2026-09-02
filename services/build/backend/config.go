@@ -283,7 +283,15 @@ type Sink interface {
 // state but is not meant to run CI wants.
 type Runner interface {
 	// Run executes one job. It MUST return when ctx ends: this service cancels
-	// ctx on Cancel, on the claim's deadline, and on loss of leadership.
+	// ctx on Cancel, on the claim's deadline, and on Close — where returning
+	// promptly is what keeps a restart from waiting out an hour-long build. A
+	// run the shutdown cut short is ABANDONED rather than failed: the claim
+	// lapses and another node builds it (see Service.Close).
+	//
+	// Losing leadership does not cancel it: nothing watches for that, and there
+	// is nothing to gain by stopping early. The ack is where a run that no
+	// longer speaks for the group is caught, and it is caught before anything
+	// this run produced is published.
 	//
 	// AN ERROR FROM Run IS TERMINAL — status Failed, then Ack. The queue's
 	// retry exists for a worker that DIED, not for a build that failed;
