@@ -1,0 +1,192 @@
+package backend
+
+import (
+	"context"
+
+	"connectrpc.com/connect"
+
+	"github.com/taubyte/tau/pkg/raft"
+	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+)
+
+// queueHandler is the connect adapter for QueueService. Every method on it is
+// three lines — authorize, lead, delegate — and the body is a plain method with
+// no connect types in it.
+//
+// THAT SPLIT IS WHAT MAKES THIS PACKAGE TESTABLE. rpc.RemotePeer reads a
+// context value under a key private to package rpc, and connect.Request's peer
+// field is unexported with no setter, so NO TEST OUTSIDE p2p/rpc CAN FABRICATE
+// A CALLER IDENTITY. A handler that requires one is therefore unreachable by a
+// direct call, and a package whose whole logic lived in its handlers would be
+// reachable only over the wire.
+type queueHandler struct{ s *Service }
+
+func (h *queueHandler) Enqueue(ctx context.Context, req *connect.Request[buildv1.PushEvent]) (*connect.Response[buildv1.JobRef], error) {
+	if err := h.s.allow(ctx, ActEnqueue, req.Msg.GetRepositoryKey()); err != nil {
+		return nil, err
+	}
+	id, err := h.s.enqueue(ctx, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&buildv1.JobRef{Id: id}), nil
+}
+
+// enqueue durably records a push and returns its job id.
+//
+// IT IS IDEMPOTENT, AND CORRECTLY SO rather than tolerantly: a job is a
+// function of (repository, ref, commit) and nothing else, so two pushes landing
+// on one triple have nothing different to build. The job id IS that
+// idempotency — deterministic, so queue.Push's own id deduplication and this
+// method's are one mechanism — and there is no separate dedup index for the two
+// to disagree about.
+//
+// Every argument here originates in an unauthenticated POST to the frontend
+// (build.proto: "the only one whose contents a STRANGER authored"), so this is
+// the last place the three are looked at before they become a hash and three
+// key segments.
+func (s *Service) enqueue(ctx context.Context, p *buildv1.PushEvent) (string, error) {
+	key, ok := parseRepositoryKey(p.GetRepositoryKey())
+	if !ok {
+		return "", errInvalidArgument("repository key %q is not canonical", p.GetRepositoryKey())
+	}
+	// The frontend already decided branch eligibility, before Enqueue was
+	// called (build.proto). This is not a second policy filter — it is the
+	// shape check that keeps a nonsense ref from becoming a job.
+	if !validRef(p.GetRef()) {
+		return "", errInvalidArgument("ref %q is not a branch ref this service will build", p.GetRef())
+	}
+	if !validCommitSHA(p.GetCommitSha()) {
+		return "", errInvalidArgument("commit %q is not a full object name", p.GetCommitSha())
+	}
+
+	if err := s.lead(); err != nil {
+		return "", err
+	}
+
+	id := jobID(key, p.GetRef(), p.GetCommitSha())
+
+	existing, found, err := s.record(id)
+	if err != nil {
+		return "", err
+	}
+	if found {
+		// A record that is claimed or finished is answered as it stands: there
+		// is nothing to add and re-pushing would be a second run of a job
+		// somebody is already running.
+		if existing.terminal() || existing.status() == buildv1.JobStatus_JobStatusClaimed {
+			return id, nil
+		}
+		// Open, so the item should be in the queue. Push is a no-op for an id
+		// the queue already holds, which makes this a REPAIR for the one crash
+		// window this design has — a record written whose push never landed —
+		// at the cost of nothing when there is no such window.
+		if err := s.work.Push(id, nil); err != nil {
+			return "", errUnavailable("queue push: %v", err)
+		}
+		return id, nil
+	}
+
+	if err := s.admit(key.String()); err != nil {
+		return "", err
+	}
+
+	// A repository nobody registered with this cloud is refused BEFORE anything
+	// is queued. It is the admission check on stranger-authored input that
+	// costs nothing extra, because the project id has to be resolved anyway.
+	projectID, err := s.repos.Project(ctx, key.String())
+	if err != nil {
+		return "", s.projectError(key.String(), err)
+	}
+	if projectID == "" {
+		return "", errFailedPrecondition("repository %q belongs to no project", key)
+	}
+
+	now := s.now()
+	rec := jobRecord{
+		ID:            id,
+		Status:        int32(buildv1.JobStatus_JobStatusOpen),
+		RepositoryKey: key.String(),
+		Ref:           p.GetRef(),
+		CommitSHA:     p.GetCommitSha(),
+		ProjectID:     projectID,
+		CreatedAt:     now.Unix(),
+		UpdatedAt:     now.Unix(),
+	}
+	value, err := rec.encode()
+	if err != nil {
+		return "", errInternal("encoding job %s: %v", id, err)
+	}
+
+	// ONE Batch: the record, the project index row and the open index row are
+	// one replicated entry, so a reader never sees a job that is in one of the
+	// three and not the others.
+	if err := s.store.Batch([]raft.BatchOp{
+		set(jobRecordKey(id), value),
+		set(projectIndexKey(projectID, id), nil),
+		set(openIndexKey(rec.RepositoryKey, id), nil),
+	}, s.cfg.Queue.ApplyTimeout); err != nil {
+		return "", errUnavailable("writing job %s: %v", id, err)
+	}
+
+	// RECORD FIRST, PUSH SECOND, and the two cannot be fused because
+	// queue.Push does its own Batch. A crash between them leaves a record with
+	// no item, which reconcile repairs and which a redelivered webhook already
+	// answers correctly. The other order leaves an item with no record — an
+	// unidentifiable job nobody can run — which is exactly v1's orphan.
+	if err := s.work.Push(id, nil); err != nil {
+		return "", errUnavailable("queue push: %v", err)
+	}
+	return id, nil
+}
+
+// admit is the bound on stranger-authored input. Both limits are per this
+// consistency domain, both are cheap listings of keys this service already
+// keeps, and both answer CodeResourceExhausted — which a frontend can turn
+// into a 503 and a retry rather than into a failed build.
+func (s *Service) admit(repositoryKey string) error {
+	ready, claimed := s.work.Depth()
+	if ready+claimed >= s.cfg.MaxQueueDepth {
+		return errResourceExhausted("build queue is full (%d)", s.cfg.MaxQueueDepth)
+	}
+	if open := len(s.store.Keys(openIndexPrefix(repositoryKey))); open >= s.cfg.MaxOpenPerRepo {
+		return errResourceExhausted("repository %q already has %d jobs outstanding", repositoryKey, open)
+	}
+	return nil
+}
+
+// projectError keeps auth's own code where it is meaningful and turns
+// everything else into "ask somebody else". A repository this cloud does not
+// know is a push to refuse; an auth that cannot be reached is a push to retry,
+// and they are the same string.
+func (s *Service) projectError(repositoryKey string, err error) error {
+	switch connect.CodeOf(err) {
+	case connect.CodeNotFound:
+		return errFailedPrecondition("repository %q is not registered with this cloud", repositoryKey)
+	case connect.CodeInvalidArgument, connect.CodeFailedPrecondition, connect.CodePermissionDenied:
+		return err
+	default:
+		return errUnavailable("resolving the project for %q: %v", repositoryKey, err)
+	}
+}
+
+// record reads one job record. It is the only reader of jobRecordKey.
+func (s *Service) record(id string) (jobRecord, bool, error) {
+	raw, exists := s.store.Get(jobRecordKey(id))
+	if !exists {
+		return jobRecord{}, false, nil
+	}
+	rec, err := decodeJobRecord(jobRecordKey(id), raw)
+	if err != nil {
+		return jobRecord{}, false, errInternal("%v", err)
+	}
+	return rec, true, nil
+}
+
+func set(key string, value []byte) raft.BatchOp {
+	return raft.BatchOp{Set: &raft.SetCommand{Key: key, Value: value}}
+}
+
+func del(key string) raft.BatchOp {
+	return raft.BatchOp{Delete: &raft.DeleteCommand{Key: key}}
+}

@@ -2,7 +2,6 @@ package backend
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -354,8 +353,3 @@ func (a allowPeers) Allow(_ context.Context, caller peer.ID, act Action, _ strin
 	}
 	return nil
 }
-
-// ErrNoRunner is what step reports when this node holds the domain but was
-// given nothing to run work with. It is not an error condition: a node can be
-// a voter without being a builder.
-var ErrNoRunner = errors.New("build: no runner")
