@@ -34,7 +34,7 @@ type cBase struct{ bound }
 func (b cBase) Host() string { return b.c.shape.Host }
 
 func (b cBase) Whoami(context.Context) (forge.Identity, error) {
-	if err := b.c.call("GET", "/api/user", b.token); err != nil {
+	if ok, err := b.c.call("GET", "/api/user", b.token); !ok {
 		return forge.Identity{}, err
 	}
 	return forge.Identity{
@@ -45,7 +45,7 @@ func (b cBase) Whoami(context.Context) (forge.Identity, error) {
 }
 
 func (b cBase) Access(_ context.Context, k repokey.Key) (forge.Access, error) {
-	if err := b.c.callAbout("GET", "/api/repos/"+k.FullName(), b.token, k); err != nil {
+	if ok, err := b.c.callAbout("GET", "/api/repos/"+k.FullName(), b.token, k); !ok {
 		if errors.Is(err, errUnreachable) && b.c.shape.faulty(FaultOutageIsRefusal) {
 			return forge.AccessNone, nil
 		}
@@ -64,7 +64,7 @@ func (b cBase) Access(_ context.Context, k repokey.Key) (forge.Access, error) {
 }
 
 func (b cBase) Repository(_ context.Context, k repokey.Key) (forge.Repository, error) {
-	if err := b.c.callAbout("GET", "/api/repos/"+k.FullName(), b.token, k); err != nil {
+	if ok, err := b.c.callAbout("GET", "/api/repos/"+k.FullName(), b.token, k); !ok {
 		return forge.Repository{}, err
 	}
 	b.c.mu.Lock()
@@ -84,7 +84,7 @@ func (b cBase) Repository(_ context.Context, k repokey.Key) (forge.Repository, e
 type fList struct{ bound }
 
 func (b fList) ListRepositories(_ context.Context, yield func(forge.Repository) bool) error {
-	if err := b.c.call("GET", "/api/user/repos", b.token); err != nil {
+	if ok, err := b.c.call("GET", "/api/user/repos", b.token); !ok {
 		return err
 	}
 	b.c.mu.Lock()
@@ -111,7 +111,7 @@ func (b fList) ListRepositories(_ context.Context, yield func(forge.Repository) 
 type fCreate struct{ bound }
 
 func (b fCreate) Create(_ context.Context, k repokey.Key, opts forge.CreateOptions) (forge.Repository, error) {
-	if err := b.c.callAbout("POST", "/api/repos/"+k.FullName(), b.token, k); err != nil {
+	if ok, err := b.c.callAbout("POST", "/api/repos/"+k.FullName(), b.token, k); !ok {
 		return forge.Repository{}, err
 	}
 	b.c.mu.Lock()
@@ -130,7 +130,7 @@ func (b fCreate) Create(_ context.Context, k repokey.Key, opts forge.CreateOptio
 type fDelete struct{ bound }
 
 func (b fDelete) Delete(_ context.Context, k repokey.Key) error {
-	if err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName(), b.token, k); err != nil {
+	if ok, err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName(), b.token, k); !ok {
 		return err
 	}
 	b.c.mu.Lock()
@@ -151,7 +151,7 @@ func (b fDelete) Delete(_ context.Context, k repokey.Key) error {
 type fKeys struct{ bound }
 
 func (b fKeys) InstallDeployKey(_ context.Context, k repokey.Key, title, publicKey string) (forge.Handle, error) {
-	if err := b.c.callAbout("POST", "/api/repos/"+k.FullName()+"/keys", b.token, k); err != nil {
+	if ok, err := b.c.callAbout("POST", "/api/repos/"+k.FullName()+"/keys", b.token, k); !ok {
 		return "", err
 	}
 	b.c.mu.Lock()
@@ -173,7 +173,7 @@ func (b fKeys) InstallDeployKey(_ context.Context, k repokey.Key, title, publicK
 }
 
 func (b fKeys) RemoveDeployKey(_ context.Context, k repokey.Key, h forge.Handle) error {
-	if err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName()+"/keys/"+string(h), b.token, k); err != nil {
+	if ok, err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName()+"/keys/"+string(h), b.token, k); !ok {
 		return err
 	}
 	b.c.mu.Lock()
@@ -191,7 +191,7 @@ func (b fKeys) RemoveDeployKey(_ context.Context, k repokey.Key, h forge.Handle)
 type fHooks struct{ bound }
 
 func (b fHooks) RegisterPushHook(_ context.Context, k repokey.Key, callback *url.URL, wire string) (forge.Handle, error) {
-	if err := b.c.callAbout("POST", "/api/repos/"+k.FullName()+"/hooks", b.token, k); err != nil {
+	if ok, err := b.c.callAbout("POST", "/api/repos/"+k.FullName()+"/hooks", b.token, k); !ok {
 		return "", err
 	}
 	b.c.mu.Lock()
@@ -214,7 +214,7 @@ func (b fHooks) RegisterPushHook(_ context.Context, k repokey.Key, callback *url
 }
 
 func (b fHooks) RemovePushHook(_ context.Context, k repokey.Key, h forge.Handle) error {
-	if err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName()+"/hooks/"+string(h), b.token, k); err != nil {
+	if ok, err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName()+"/hooks/"+string(h), b.token, k); !ok {
 		return err
 	}
 	b.c.mu.Lock()
@@ -247,7 +247,7 @@ func (b fAddr) CloneAddress(k repokey.Key, over forge.Protocol) (forge.Address, 
 type fProbe struct{ bound }
 
 func (b fProbe) CanPush(_ context.Context, k repokey.Key, sshPrivateKey []byte) (bool, error) {
-	if err := b.c.callAbout("GET", "/"+k.FullName()+".git/info/refs?service=git-receive-pack", "", k); err != nil {
+	if ok, err := b.c.callAbout("GET", "/"+k.FullName()+".git/info/refs?service=git-receive-pack", "", k); !ok {
 		return false, err
 	}
 	b.c.mu.Lock()
@@ -433,7 +433,7 @@ type dMem struct{ c *core }
 // IsActiveMember spends the DEPLOYMENT's credential, which no session can
 // reach.
 func (d dMem) IsActiveMember(_ context.Context, namespace, username string) (bool, error) {
-	if err := d.c.call("GET", "/api/orgs/"+namespace+"/members/"+username, deployToken); err != nil {
+	if ok, err := d.c.call("GET", "/api/orgs/"+namespace+"/members/"+username, deployToken); !ok {
 		return false, err
 	}
 	return namespace == Namespace && username == Member, nil

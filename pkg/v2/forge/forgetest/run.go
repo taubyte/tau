@@ -3,6 +3,7 @@ package forgetest
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -444,7 +445,11 @@ func (r *runner) redirectOffHost(t tb) {
 			// reporting the request it would have sent rather than by sending
 			// one.
 			r.s.Requests()
-			r.s.RedirectOnce(d.url())
+			// 307 everywhere here: the destination is not a forge, so the only
+			// thing the status changes is what arrives at the decoy — and a
+			// method-preserving one makes the arrival say which operation
+			// leaked rather than turning every one of them into a GET.
+			r.s.RedirectOnce(d.url(), http.StatusTemporaryRedirect)
 
 			assert.Error(t, r.note(op.call()),
 				"the forge answered a redirect to %q and %s succeeded anyway, so an answer from another host was taken for the forge's", d.url(), op.name)
@@ -618,21 +623,39 @@ func (r *runner) everyOperation(t tb) []operation {
 // is a 404 there rather than a deletion; whoami and list are about no
 // repository at all; and create names one that does not exist yet.
 //
-// The address the redirect points at is the DRIVER'S OWN address for another
-// repository, read back out of what the subject reported. The suite knows no
-// forge's URL shapes and must not invent one: an address it made up would be a
-// 404 at the far end, and every driver would pass by accident.
+// EACH OPERATION IS AIMED AT THE ADDRESS ITS OWN ENDPOINT WOULD USE, and that
+// is the difference between a probe about policy and a probe about spelling.
+// Aiming every one of them at the repository path — which is what one learned
+// address amounts to — means a replayed POST arrives where only a GET is
+// answered, so the call fails on ENDPOINT SHAPE, the assertion passes, and
+// nothing about the redirect was ever asked. So each operation is made once
+// against `other` WITH THE WIRE BROKEN: the request is composed and recorded,
+// nothing happens at the far end, and the address it would have used is read
+// back out of Requests. The suite knows no forge's URL shapes and must not
+// invent one.
+//
+// AND THE STATUS DIFFERS BY OPERATION, for the same reason. A read is armed
+// with 302, which is what a forge really answers a moved read with and which Go
+// replays as the GET it already was. A WRITE is armed with 307, which preserves
+// method and body: under 302 Go rewrites the POST to a GET, the far end answers
+// that its write endpoint takes no GET, and the write fails for a reason that
+// has nothing to do with the hop. 307 puts the write at the other repository's
+// own write endpoint, where the only thing that can refuse it is policy.
 func (r *runner) sameHostRedirect(t tb) {
 	t.Helper()
 	// Deletable is the one fixture nothing else in the suite has touched yet,
 	// and this runs before the subtest that consumes it.
 	other := r.s.Deletable
-	elsewhere := r.addressOfAnother(t, other)
+	const pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIforgetestpublichalf forgetest"
 
 	t.Run("repository", func(t tb) {
 		sess := r.session(t, r.s.Writable)
+		victim := r.session(t, other)
+		elsewhere := r.whereItWouldGo(t, other, func() error {
+			return second(victim.Repository(r.ctx, other))
+		})
 		r.s.Requests()
-		r.s.RedirectOnce(elsewhere)
+		r.s.RedirectOnce(elsewhere, http.StatusFound)
 
 		repo, err := sess.Repository(r.ctx, r.s.Writable)
 		if err != nil {
@@ -651,27 +674,36 @@ func (r *runner) sameHostRedirect(t tb) {
 
 	t.Run("access", func(t tb) {
 		sess := r.session(t, r.s.Writable)
+		victim := r.session(t, other)
+		elsewhere := r.whereItWouldGo(t, other, func() error {
+			return second(victim.Access(r.ctx, other))
+		})
 		r.s.Requests()
-		r.s.RedirectOnce(elsewhere)
+		r.s.RedirectOnce(elsewhere, http.StatusFound)
 
 		lvl, err := sess.Access(r.ctx, r.s.Writable)
 		if assert.Error(t, r.note(err),
 			"Access(%q) followed a redirect to %q and answered %s; an Access has nowhere to say it is about another repository, so this is %q's grant reported as %q's",
 			r.s.Writable, elsewhere, lvl, other, r.s.Writable) {
-			assert.Equal(t, forge.AccessNone, lvl, "a failed Access returned a level a caller could act on")
+			assert.Equal(t, forge.AccessNone, lvl, "a followed hop answered a level a caller could act on")
 		}
 	})
 
 	t.Run("install-deploy-key", func(t tb) {
 		sess := r.session(t, r.s.Admin)
-		const pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIforgetestpublichalf forgetest"
 		if !r.s.Expect.Has(forge.CapDeployKeys) {
 			_, err := sess.InstallDeployKey(r.ctx, r.s.Admin, "forgetest", pub)
 			r.absent(t, forge.CapDeployKeys, err)
 			return
 		}
+		victim := r.session(t, other)
+		elsewhere := r.whereItWouldGo(t, other, func() error {
+			return second(victim.InstallDeployKey(r.ctx, other, "forgetest-address", pub))
+		})
 		r.s.Requests()
-		r.s.RedirectOnce(elsewhere)
+		// 307: a POST rewritten to a GET fails because the deploy-key endpoint
+		// answers no GET, which says nothing at all about the hop.
+		r.s.RedirectOnce(elsewhere, http.StatusTemporaryRedirect)
 
 		h, err := sess.InstallDeployKey(r.ctx, r.s.Admin, "forgetest-redirect", pub)
 		if assert.Error(t, r.note(err),
@@ -688,7 +720,7 @@ func (r *runner) sameHostRedirect(t tb) {
 		sess := r.session(t, r.s.Admin)
 		callback := httpsURL(t, "https://build.example.invalid/hooks/forgetest")
 		secret, err := forge.NewSecret()
-		require.NoError(t, err)
+		mustReach(t, err, "minting the secret the hook this probe registers is keyed with")
 
 		if !r.s.Expect.Has(forge.CapPushHooks) || !r.s.Expect.Has(forge.CapSignatures) {
 			missing := forge.CapPushHooks
@@ -699,8 +731,13 @@ func (r *runner) sameHostRedirect(t tb) {
 			r.absent(t, missing, err)
 			return
 		}
+		victim := r.session(t, other)
+		elsewhere := r.whereItWouldGo(t, other, func() error {
+			return second(victim.RegisterPushHook(r.ctx, other, callback, secret))
+		})
 		r.s.Requests()
-		r.s.RedirectOnce(elsewhere)
+		// 307, for the reason the deploy key above gives.
+		r.s.RedirectOnce(elsewhere, http.StatusTemporaryRedirect)
 
 		hook, err := sess.RegisterPushHook(r.ctx, r.s.Admin, callback, secret)
 		if assert.Error(t, r.note(err),
@@ -723,11 +760,18 @@ func (r *runner) sameHostRedirect(t tb) {
 			r.absent(t, forge.CapDelete, sess.Delete(r.ctx, r.s.Admin))
 			return
 		}
+		victim := r.session(t, other)
+		elsewhere := r.whereItWouldGo(t, other, func() error {
+			return victim.Delete(r.ctx, other)
+		})
 		r.s.Requests()
-		r.s.RedirectOnce(elsewhere)
+		// 307, so a DELETE arrives as a DELETE. Under 302 it would arrive as a
+		// GET, be answered with a repository, and fail on the shape of that
+		// answer rather than on the hop.
+		r.s.RedirectOnce(elsewhere, http.StatusTemporaryRedirect)
 
 		assert.Error(t, r.note(sess.Delete(r.ctx, r.s.Admin)),
-			"Delete(%q) answered a redirect to %q with success; a 301 or a 302 makes that a GET the driver read as a deletion, and a 307 makes it a DELETE somewhere else — either way the answer says a repository is gone",
+			"Delete(%q) answered a redirect to %q with success; the method was replayed, so what that reports as gone is a repository the caller never named",
 			r.s.Admin, elsewhere)
 
 		// And whatever it did, it must not have done it at the far end.
@@ -737,20 +781,32 @@ func (r *runner) sameHostRedirect(t tb) {
 	})
 }
 
-// addressOfAnother is an address on THIS HOST for a repository that is not the
-// one the probes name — and it is the driver's own address for it, taken back
-// out of what the subject reported rather than built here. A URL this suite
-// invented would be a 404 at the far end, and a driver that followed a redirect
-// to it would look like one that refused.
-func (r *runner) addressOfAnother(t tb, k repokey.Key) string {
+// whereItWouldGo is the address THIS OPERATION uses for k — the driver's own,
+// read back out of what the subject reported rather than built here. A URL this
+// suite invented would be a 404 at the far end, and a driver that followed a
+// redirect to it would look exactly like one that refused.
+//
+// IT LEARNS THE ADDRESS WITH THE WIRE BROKEN, which is the only way to ask a
+// DESTRUCTIVE operation where it would go without letting it go there: the
+// request is composed, the subject records it, and nothing at the far end ever
+// sees it. Requests reports what the SUBJECT sent rather than what a server
+// received — which is what a Subject's Requests is documented to be, and what
+// makes this possible.
+//
+// The LAST request is the operation's own. An operation that needs a lookup
+// first has that lookup fail under the outage, so a driver whose write is
+// preceded by one would be probed at its lookup instead — weaker, and visible
+// here rather than silently wrong, because the address is read and not guessed.
+func (r *runner) whereItWouldGo(t tb, k repokey.Key, do func() error) string {
 	t.Helper()
-	sess := r.session(t, k)
 	r.s.Requests()
-	_, err := sess.Repository(r.ctx, k)
-	require.NoError(t, r.note(err), "the suite cannot learn this driver's own address for %q", k)
+	r.s.Break()
+	r.note(do())
+	r.s.Unbreak()
 
 	reqs := r.s.Requests()
-	require.NotEmpty(t, reqs, "the driver answered about %q with no request at all, so there is no address to point a redirect at", k)
+	mustHold(t, len(reqs) > 0,
+		"learning the address this operation uses for %q, which is where the redirect it is probed with must point", k)
 	return reqs[len(reqs)-1].URL
 }
 

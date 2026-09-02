@@ -113,16 +113,17 @@ type fixture struct {
 	// read without the lock for that reason.
 	renames map[string]string
 
-	mu            sync.Mutex
-	repos         map[string]*fRepo
-	hooks         map[string]*fHook
-	keys          map[string]*fKey
-	installTokens map[string]bool
-	seq           int64
-	requests      []forgetest.Request
-	lastWire      string
-	lastRO        bool
-	redirect      string
+	mu             sync.Mutex
+	repos          map[string]*fRepo
+	hooks          map[string]*fHook
+	keys           map[string]*fKey
+	installTokens  map[string]bool
+	seq            int64
+	requests       []forgetest.Request
+	lastWire       string
+	lastRO         bool
+	redirect       string
+	redirectStatus int
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -187,13 +188,7 @@ func (f *fixture) key(t *testing.T, full string) repokey.Key {
 // Requests reports what the server saw since the last call, and resets. It is
 // how the suite proves a refusal happened BEFORE the wire, and it is what the
 // credential canary reads.
-func (f *fixture) Requests() []forgetest.Request {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := f.requests
-	f.requests = nil
-	return out
-}
+func (f *fixture) Requests() []forgetest.Request { return f.rt.drain() }
 
 // Break fails the next request AT THE TRANSPORT rather than answering it with a
 // 500: an outage is not a status code, and the invariant being asserted is that
@@ -201,14 +196,19 @@ func (f *fixture) Requests() []forgetest.Request {
 func (f *fixture) Break()   { f.rt.broken.Store(true) }
 func (f *fixture) Unbreak() { f.rt.broken.Store(false) }
 
-// RedirectOnce makes the next request this server answers a 302 to loc, which
-// is a host this credential is not for. It is what the suite arms to find out
-// where a driver's requests actually GO: this fixture can only report the ones
-// that reached it, so the interesting one — the request that went somewhere
-// else — is the one it cannot see, and the suite reads that at the other end.
-func (f *fixture) RedirectOnce(loc string) {
+// RedirectOnce makes the next request this server answers with status, pointing
+// at loc. It is what the suite arms to find out where a driver's requests
+// actually GO: this fixture can only report the ones that reached it, so the
+// interesting one — the request that went somewhere else — is the one it cannot
+// see, and the suite reads that at the other end.
+//
+// The status is the suite's, not this fixture's: 301, 302 and 303 make Go
+// rewrite a write to a GET, and 307 and 308 replay it, so the two reach
+// different halves of the defect and only the caller knows which half it is
+// asking about.
+func (f *fixture) RedirectOnce(loc string, status int) {
 	f.mu.Lock()
-	f.redirect = loc
+	f.redirect, f.redirectStatus = loc, status
 	f.mu.Unlock()
 }
 
@@ -244,9 +244,37 @@ func (f *fixture) HookInstalled(h forge.Handle) bool {
 type breakableRT struct {
 	base   http.RoundTripper
 	broken atomic.Bool
+
+	mu   sync.Mutex
+	sent []forgetest.Request
 }
 
+func (b *breakableRT) record(req forgetest.Request) {
+	b.mu.Lock()
+	b.sent = append(b.sent, req)
+	b.mu.Unlock()
+}
+
+func (b *breakableRT) drain() []forgetest.Request {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := b.sent
+	b.sent = nil
+	return out
+}
+
+// RoundTrip RECORDS BEFORE IT DECIDES, and it records here rather than in the
+// handler because Requests is documented as what the SUBJECT sent and not as
+// what a server received. The difference is the whole of two probes: a request
+// the wire swallowed is still a request this driver composed — which is how the
+// same-host probe learns where a destructive operation would have gone without
+// letting it go there — and a request that went to another host never reaches
+// this fixture's handler at all.
+//
+// It is under forge.PinnedTransport, so what it records is the hop AFTER the
+// credential was attached, which is the only place worth looking for one.
 func (b *breakableRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	b.record(forgetest.Request{Method: r.Method, URL: r.URL.String(), Header: r.Header.Clone()})
 	if b.broken.Load() {
 		return nil, fmt.Errorf("fixture: the forge is unreachable")
 	}
@@ -274,20 +302,15 @@ func (f *fixture) handler() http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
-		f.requests = append(f.requests, forgetest.Request{
-			Method: r.Method,
-			URL:    "https://" + r.Host + r.URL.RequestURI(),
-			Header: r.Header.Clone(),
-		})
-		loc := f.redirect
-		f.redirect = ""
+		loc, status := f.redirect, f.redirectStatus
+		f.redirect, f.redirectStatus = "", 0
 		f.mu.Unlock()
 		if loc != "" {
-			// A forge answering 302 to somewhere else. It is the whole reason
+			// A forge answering a 3xx to somewhere else. It is the whole reason
 			// the credential is attached by a pinned transport rather than by
 			// the driver: an http.Client follows this, and a RoundTripper that
 			// sets a header sets it again on the next hop.
-			http.Redirect(w, r, loc, http.StatusFound)
+			http.Redirect(w, r, loc, status)
 			return
 		}
 		mux.ServeHTTP(w, r)

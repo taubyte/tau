@@ -90,6 +90,13 @@ type core struct {
 	broken   bool
 	redirect string
 
+	// redirectStatus is what the armed answer carries. It is a fixture's
+	// choice in the interface and the SUITE'S choice here, because it decides
+	// which half of the defect is reached: 301, 302 and 303 make Go rewrite the
+	// request to a GET, so a write following one lands nowhere and reads
+	// somebody else's 200; 307 and 308 replay method and body, so it lands.
+	redirectStatus int
+
 	// issued is every address this forge has told the world about, and which
 	// repository each one is for. A same-host redirect names an address, and
 	// this is what turns that address back into the repository it addresses —
@@ -219,19 +226,18 @@ func (f *Forge) Requests() []Request {
 func (f *Forge) Break()   { f.c.mu.Lock(); f.c.broken = true; f.c.mu.Unlock() }
 func (f *Forge) Unbreak() { f.c.mu.Lock(); f.c.broken = false; f.c.mu.Unlock() }
 
-// RedirectOnce makes the next call answer with a redirect to loc, which is a
-// host this credential is not for.
+// RedirectOnce makes the next call answer with status, pointing at loc.
 //
 // THIS FORGE SENDS NOTHING, so following one is modelled rather than performed:
-// a correct driver refuses the hop and this forge says so with an error, and
-// FaultFollowsRedirect instead writes down the request it would have sent to
-// loc — with the credential on it, because a credential attached by a
-// RoundTripper is attached again on every hop. Either way the destination ends
-// up somewhere the conformance suite can read it, which is the whole point:
-// where a request WENT is not something the receiving end can report.
-func (f *Forge) RedirectOnce(loc string) {
+// a correct driver refuses the hop and this forge says so with an error naming
+// the status, and the following faults instead act as an http.Client would.
+// Either way the destination ends up somewhere the conformance suite can read
+// it, which is the whole point: where a request WENT is not something the
+// receiving end can report.
+func (f *Forge) RedirectOnce(loc string, status int) {
 	f.c.mu.Lock()
 	f.c.redirect = loc
+	f.c.redirectStatus = status
 	f.c.mu.Unlock()
 }
 
@@ -298,37 +304,52 @@ func (c *core) record(method, path, token string, about repokey.Key) {
 // call is a request about no repository in particular — an identity, a
 // membership. Everything about a repository goes through callAbout, so that an
 // address this forge issued can be traced back to what it addresses.
-func (c *core) call(method, path, token string) error {
+func (c *core) call(method, path, token string) (bool, error) {
 	return c.callAbout(method, path, token, repokey.Key{})
 }
 
-// callAbout is every request this forge serves: it records, then fails if
-// broken or if the credential is refused.
-func (c *core) callAbout(method, path, token string, about repokey.Key) error {
+// callAbout is every request this forge serves: it records, then says whether
+// the operation may GO ON.
+//
+// THE BOOL IS NOT A DUPLICATE OF THE ERROR. It is false with a nil error in
+// exactly one situation, and that situation is a defect this suite exists to
+// name: the driver followed a hop, something that is not this forge answered
+// it, and the driver took that answer. A 204 from another host parses as
+// nothing, so the operation reports success having done nothing at all — which
+// is a `nil` error and no state change, and there is no error value that says
+// so.
+func (c *core) callAbout(method, path, token string, about repokey.Key) (bool, error) {
 	c.mu.Lock()
 	// One operation, one hop: whatever the last call was redirected to has no
 	// business surviving into this one.
 	c.followed = repokey.Key{}
 	c.record(method, path, token, about)
 	loc := c.redirect
-	c.redirect = ""
+	status := c.redirectStatus
+	c.redirect, c.redirectStatus = "", 0
 	broken := c.broken
 	c.mu.Unlock()
 
 	if loc != "" {
-		return c.answerRedirect(method, loc, token)
+		return c.answerRedirect(method, loc, status, token)
 	}
 	if broken {
-		return errUnreachable
+		if c.shape.faulty(FaultLeaksTokenInError) && token != "" {
+			// The same mistake as the branch below, on the path a consumer
+			// pastes most: an outage, quoted with the credential that was in
+			// flight when it happened.
+			return false, fmt.Errorf("fake: while acting as %s: %w", token, errUnreachable)
+		}
+		return false, errUnreachable
 	}
 	if token == badToken {
 		reason := "token was revoked"
 		if c.shape.faulty(FaultLeaksTokenInError) {
 			reason = "token " + token + " was revoked"
 		}
-		return &forge.CredentialError{Host: c.shape.Host, Reason: reason}
+		return false, &forge.CredentialError{Host: c.shape.Host, Reason: reason}
 	}
-	return nil
+	return true, nil
 }
 
 // hopper is the client the one sending fault uses. Its transport is bare, so
@@ -348,23 +369,23 @@ var hopper = &http.Client{Transport: &http.Transport{}}
 // hop — which is exactly how a driver that dropped its pinned transport leaks
 // one. loc is whatever armed this, in practice a loopback server the caller
 // started to watch.
-func (c *core) answerRedirect(method, loc, token string) error {
+func (c *core) answerRedirect(method, loc string, status int, token string) (bool, error) {
 	if c.onThisHost(loc) {
 		if !c.shape.faulty(FaultFollowsSameHostRedirect) {
-			return fmt.Errorf("fake: %s answered a redirect to %s, which is another repository on this host; the hop was refused", c.shape.Host, loc)
+			return false, fmt.Errorf("fake: %s answered %d to %s, which is another repository on this host; the hop was refused", c.shape.Host, status, loc)
 		}
-		return c.followSameHost(method, loc, token)
+		return c.followSameHost(method, loc, status, token)
 	}
 	// The deployment's credential rides a client of its own, and a driver can
 	// hold a redirect policy on one client and not the other.
 	onDeployment := c.shape.faulty(FaultFollowsRedirectOnTheDeploymentCredential) && token == deployToken
 	if !c.shape.faulty(FaultFollowsRedirect) && !onDeployment {
-		return fmt.Errorf("fake: %s answered a redirect to %s, which is not this host; the hop was refused", c.shape.Host, loc)
+		return false, fmt.Errorf("fake: %s answered %d to %s, which is not this host; the hop was refused", c.shape.Host, status, loc)
 	}
 
 	req, err := http.NewRequest(method, loc, nil)
 	if err != nil {
-		return fmt.Errorf("fake: the redirect names %q, which is not a request: %w", loc, err)
+		return false, fmt.Errorf("fake: the redirect names %q, which is not a request: %w", loc, err)
 	}
 	hdr := make(http.Header)
 	if token != "" {
@@ -379,7 +400,14 @@ func (c *core) answerRedirect(method, loc, token string) error {
 	c.mu.Lock()
 	c.requests = append(c.requests, Request{Method: method, URL: loc, Header: hdr})
 	c.mu.Unlock()
-	return fmt.Errorf("fake: followed a redirect to %s, and what answered was not this forge", loc)
+
+	// AND THE ANSWER FROM THERE IS THE ANSWER. This is what a driver that
+	// follows a redirect actually does: the hop returns 204, which parses as
+	// nothing, and the operation reports success having done nothing. Returning
+	// an error here instead would model a driver that followed the hop and then
+	// happened to fail — which is the milder half, and the half that leaves "an
+	// answer from another host was taken for the forge's" unassertable.
+	return false, nil
 }
 
 // onThisHost is whether a redirect names this forge's own host. It decides which
@@ -401,7 +429,7 @@ func (c *core) onThisHost(loc string) bool {
 // operation returns still describes the repository the CALLER named, because
 // that is the argument it was given, and that is precisely what makes the defect
 // invisible from above.
-func (c *core) followSameHost(method, loc, token string) error {
+func (c *core) followSameHost(method, loc string, status int, token string) (bool, error) {
 	hdr := make(http.Header)
 	if token != "" {
 		hdr.Set("Authorization", "Bearer "+token)
@@ -409,6 +437,14 @@ func (c *core) followSameHost(method, loc, token string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.requests = append(c.requests, Request{Method: method, URL: loc, Header: hdr})
+
+	// THE STATUS DECIDES WHETHER ANYTHING IS WRITTEN. Go rewrites a non-GET to
+	// a GET on 301, 302 and 303, so a write following one never lands: the
+	// driver reads the other repository's answer and reports success having
+	// done nothing. 307 and 308 replay method and body, so it lands there.
+	if rewritesToGET(status) && method != http.MethodGet {
+		return false, nil
+	}
 	// An address this forge never issued names no repository it can serve, so
 	// the operation goes on against the one it was asked about — the hop was
 	// followed and landed nowhere interesting.
@@ -416,7 +452,17 @@ func (c *core) followSameHost(method, loc, token string) error {
 	// An armed redirect is answered before the outage and before the credential,
 	// which is the order call itself uses: a forge redirects on the address it
 	// was given, and has read neither by then.
-	return nil
+	return true, nil
+}
+
+// rewritesToGET is the stdlib's rule, which is HTTP's: only 307 and 308 promise
+// to replay the method.
+func rewritesToGET(status int) bool {
+	switch status {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther:
+		return true
+	}
+	return false
 }
 
 // rename makes this forge answer for `from` with the repository `to` names, and

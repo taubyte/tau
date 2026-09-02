@@ -41,17 +41,18 @@ type instance struct {
 	// again, so it is read without the lock.
 	moved map[string]string
 
-	mu          sync.Mutex
-	projects    map[string]*proj
-	namespaces  map[string]int64
-	hooks       map[int64]*hookRecord
-	deployKeys  map[int64]*deployKeyRecord
-	users       map[string]*userRecord
-	members     map[string]int
-	seq         int64
-	lastWire    string
-	lastCanPush bool
-	redirect    string
+	mu             sync.Mutex
+	projects       map[string]*proj
+	namespaces     map[string]int64
+	hooks          map[int64]*hookRecord
+	deployKeys     map[int64]*deployKeyRecord
+	users          map[string]*userRecord
+	members        map[string]int
+	seq            int64
+	lastWire       string
+	lastCanPush    bool
+	redirect       string
+	redirectStatus int
 }
 
 type proj struct {
@@ -224,13 +225,18 @@ func (in *instance) keys(t *testing.T) keys {
 	}
 }
 
-// redirectOnce makes the next request this instance answers a 302 to loc, which
-// is a host this credential is not for. A fixture records what ARRIVED at it,
-// so where a request went instead is the one thing it cannot report; this is
-// what lets the suite go and look at the other end.
-func (in *instance) redirectOnce(loc string) {
+// redirectOnce makes the next request this instance answers with status,
+// pointing at loc. A fixture records what ARRIVED at it, so where a request went
+// instead is the one thing it cannot report; this is what lets the suite go and
+// look at the other end.
+//
+// The status is the suite's and not this instance's: 301, 302 and 303 make Go
+// rewrite a write to a GET and 307 and 308 replay it, so the two reach
+// different halves of the defect, and only the caller knows which half it is
+// asking about.
+func (in *instance) redirectOnce(loc string, status int) {
 	in.mu.Lock()
-	in.redirect = loc
+	in.redirect, in.redirectStatus = loc, status
 	in.mu.Unlock()
 }
 
@@ -251,15 +257,15 @@ func (in *instance) driver(t *testing.T, opts ...Option) forge.Driver {
 
 func (in *instance) serve(w http.ResponseWriter, r *http.Request) {
 	in.mu.Lock()
-	loc := in.redirect
-	in.redirect = ""
+	loc, status := in.redirect, in.redirectStatus
+	in.redirect, in.redirectStatus = "", 0
 	in.mu.Unlock()
 	if loc != "" {
-		// An instance answering 302 to somewhere else. Every SDK runs on an
+		// An instance answering a 3xx to somewhere else. Every SDK runs on an
 		// http.Client and an http.Client follows redirects, so what stops the
 		// credential going with it is forge.PinnedTransport and nothing in this
 		// driver's own code.
-		http.Redirect(w, r, loc, http.StatusFound)
+		http.Redirect(w, r, loc, status)
 		return
 	}
 

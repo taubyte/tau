@@ -160,8 +160,8 @@ type Subject struct {
 	Break   func()
 	Unbreak func()
 
-	// RedirectOnce makes the forge answer the NEXT request it is given with a
-	// redirect to loc, once. REQUIRED.
+	// RedirectOnce makes the forge answer the NEXT request it is given with
+	// status, pointing at loc, once. REQUIRED.
 	//
 	// IT IS ARMED ONCE PER OPERATION, not once per run, and every operation
 	// this subject declares gets a turn — the deployment's own credential
@@ -190,20 +190,23 @@ type Subject struct {
 	// suite reads the ANSWER the operation produced rather than the destination,
 	// because there is nothing wrong with the destination.
 	//
-	// THE STATUS IS THE FIXTURE'S CHOICE AND IT DECIDES WHICH HALF IS REACHED. A
-	// 301, 302 or 303 makes Go rewrite the request to a GET, which reaches the
-	// half where a write reads somebody else's 200 and reports success having
-	// done nothing. A 307 or 308 replays method and body, which reaches the half
-	// where the write actually lands on the repository the redirect named. A
-	// fixture that only ever answers 302 leaves the second half unreached, and a
-	// driver's refusal is the same answer either way — so answering 307 to a
-	// non-GET is strictly more probe for the same fixture.
+	// THE STATUS IS THE SUITE'S CHOICE AND IT DECIDES WHICH HALF IS REACHED,
+	// which is why it is a parameter and not a fixture's constant. A 301, 302
+	// or 303 makes Go rewrite the request to a GET: a write following one lands
+	// nowhere, and the driver reads somebody else's 200 and reports success
+	// having done nothing. A 307 or 308 replays method and body, so the write
+	// lands on the repository the redirect named. A fixture that only ever
+	// answered 302 left the second half unreached — and worse, it made a
+	// replayed POST arrive at an endpoint that answers only GET, so the call
+	// failed on ENDPOINT SHAPE and the probe passed without ever reaching the
+	// question it asks.
 	//
 	// A subject that speaks no HTTP implements it by recording the request it
 	// WOULD have sent to loc, which the same subtest reads out of Requests, and
-	// by acting on the repository loc names. Either way what happened is
-	// observed rather than assumed.
-	RedirectOnce func(loc string)
+	// by acting on the repository loc names — under the same rule about the
+	// status, since that rule is the stdlib's and not a fixture's. Either way
+	// what happened is observed rather than assumed.
+	RedirectOnce func(loc string, status int)
 
 	// Required when Expect has CapDeployKeys.
 	//
