@@ -149,9 +149,11 @@ func TestListReportsAnIndexRowItCannotDecode(t *testing.T) {
 		connect.CodeOf(h.list("p", func(*buildv1.JobRef) error { return nil })))
 }
 
-// Cancel is a record write. A queued job needs no special case at all: the
-// claimer re-reads the record before it runs.
-func TestCancelIsOneRecordWriteAndAQueuedJobNeedsNoSpecialCase(t *testing.T) {
+// Cancel is a record write and the withdrawal of the item that record was
+// written for. A queued job needs no special case beyond that: the claimer
+// re-reads the record before it runs, so a delivery that outruns the withdrawal
+// is dropped rather than built.
+func TestCancelWritesTheRecordAndTakesTheItemOutOfTheQueue(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
@@ -160,15 +162,54 @@ func TestCancelIsOneRecordWriteAndAQueuedJobNeedsNoSpecialCase(t *testing.T) {
 	require.Empty(t, h.store.Keys(openIndexPrefix(testRepo)), "a finished job is not open")
 	require.Len(t, h.store.Keys(rootSegment+"/"+indexSegment+"/"+terminalSegment+"/"), 1)
 
-	// The item is still in the queue, and the claimer is what drops it.
-	ready, _ := h.work.Depth()
-	require.Equal(t, 1, ready)
-
-	require.True(t, h.mustStep(t))
-	require.Empty(t, h.runner.seen(), "a cancelled job must not be run")
+	// The open row and the queue item are the two halves of one fact, so both
+	// go: a repository told it has nothing outstanding, with a delivery still
+	// queued for it, is the disagreement this layout exists to prevent.
 	ready, claimed := h.work.Depth()
 	require.Equal(t, 0, ready)
 	require.Equal(t, 0, claimed)
+
+	require.False(t, h.mustStep(t), "there is nothing left to claim")
+	require.Empty(t, h.runner.seen(), "a cancelled job must not be run")
+}
+
+// WHAT THE LEFTOVER ITEM ACTUALLY COSTS, which is why the withdrawal is not
+// tidiness. Both halves are the same orphan seen from two deployments.
+func TestACancelledJobLeavesNoWorkBehindItInTheQueue(t *testing.T) {
+	t.Run("the builder reaches the live job in the very next cycle", func(t *testing.T) {
+		h := newHarness(t)
+		cancelled := h.push(t, testRef, testCommit)
+
+		// A second later, so the ready keys order by push and the cancelled job
+		// is the one a claim would reach first.
+		h.clock.advance(time.Second)
+		live := h.push(t, "refs/heads/other", testCommit)
+
+		require.NoError(t, h.cancel(cancelled))
+
+		ready, _ := h.work.Depth()
+		require.Equal(t, 1, ready, "only the job somebody still wants built is queued")
+
+		require.True(t, h.mustStep(t))
+		require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, live),
+			"a cancelled job must not spend the cycle the live one needed")
+		require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, cancelled))
+		require.Len(t, h.runner.seen(), 1)
+	})
+
+	t.Run("a leader that runs no builds claims nothing, so nothing would ever reap it", func(t *testing.T) {
+		h := newHarness(t, func(s *Service) error { s.runner = nil; return nil })
+		id := h.push(t, testRef, testCommit)
+
+		require.NoError(t, h.cancel(id))
+
+		// This node never claims (WithRunner: a voter need not be a builder), so
+		// the claim path cannot be what drops the item. Nothing else would.
+		require.False(t, h.mustStep(t))
+		ready, claimed := h.work.Depth()
+		require.Equal(t, 0, ready)
+		require.Equal(t, 0, claimed)
+	})
 }
 
 func TestCancellingACancelledJobIsTheOutcomeTheCallerAskedFor(t *testing.T) {
@@ -191,6 +232,45 @@ func TestCancellingAFinishedJobIsAFailedPrecondition(t *testing.T) {
 			require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(h.cancel(id)))
 		})
 	}
+}
+
+// An item the queue no longer holds is nothing to withdraw, not a failure: it
+// is a delivery already acked by a run whose terminal write never landed.
+func TestCancellingAJobWhoseItemIsAlreadyGoneIsNotAnError(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	d, err := h.work.Claim()
+	require.NoError(t, err)
+	require.NoError(t, h.work.Ack(d))
+
+	require.NoError(t, h.cancel(id))
+	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+}
+
+// The withdrawal is a second entry and can fail on its own. The record is what
+// cancels the job, so it is written first and the failure is reported — and the
+// caller's retry is what finishes the withdrawal, which is why cancelling a
+// cancelled job is a repair rather than a no-op.
+func TestCancelReportsAWithdrawalThatFailedAndTheNextCancelFinishesIt(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	// The record's entry commits, and the withdrawal's does not.
+	h.store.onBatch(func() { h.store.failBatches(errors.New("log is full")) })
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.cancel(id)))
+
+	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id),
+		"the record is what cancels the job, and it landed")
+	ready, _ := h.work.Depth()
+	require.Equal(t, 1, ready, "the item the entry did not remove is still there")
+
+	h.store.failBatches(nil)
+	require.NoError(t, h.cancel(id))
+
+	ready, claimed := h.work.Depth()
+	require.Equal(t, 0, ready)
+	require.Equal(t, 0, claimed)
 }
 
 func TestCancelReportsAStoreThatRefusedTheWrite(t *testing.T) {

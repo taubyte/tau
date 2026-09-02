@@ -30,13 +30,15 @@
 //
 // Every transition is ONE Batch, which is one entry in the replicated log, so
 // there is no instant at which an item is in neither place. That is the whole of
-// the durability argument: nothing leaves except by an ack, and every move is
-// atomic.
+// the durability argument: nothing a consumer holds leaves except by an ack, and
+// every move is atomic. A producer may withdraw an item nobody has claimed; a
+// claimed one it may not, because that claim is the mutual exclusion.
 //
 //	Push   -> ready(now+Delay)
 //	Claim  -> ready -> claimed(now+VisibilityTimeout), Attempts+1
 //	Ack    -> claimed -> gone
 //	Nack   -> claimed -> ready(now+backoff) or -> dead
+//	Remove -> ready -> gone
 //	expiry -> claimed -> ready(deadline+backoff) or -> dead
 //
 // The Queue value itself holds no state beyond its configuration. A process that
@@ -65,8 +67,8 @@
 // # The leader is the only writer, and this package says so
 //
 // The store's Set/Delete/Batch fail with raft.ErrNotLeader off the leader.
-// This package does not hide that and does not retry it: Push, Claim, Ack, Nack
-// and Sweep check leadership first and return [ErrNotLeader] — which IS
+// This package does not hide that and does not retry it: Push, Claim, Ack, Nack,
+// Remove and Sweep check leadership first and return [ErrNotLeader] — which IS
 // raft.ErrNotLeader — before doing any work. A follower therefore consumes
 // nothing. Consumers run on the leader, or ask the leader. Reads ([Queue.Depth])
 // work anywhere and may be stale.

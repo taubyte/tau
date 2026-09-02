@@ -308,11 +308,12 @@ func TestAFollowerWritesNothing(t *testing.T) {
 	h.store.stepDown()
 
 	for name, call := range map[string]func() error{
-		"Push":  func() error { return h.Push("job-3", nil) },
-		"Claim": func() error { _, err := h.Claim(); return err },
-		"Ack":   func() error { return h.Ack(claimed) },
-		"Nack":  func() error { return h.Nack(claimed) },
-		"Sweep": h.Sweep,
+		"Push":   func() error { return h.Push("job-3", nil) },
+		"Claim":  func() error { _, err := h.Claim(); return err },
+		"Ack":    func() error { return h.Ack(claimed) },
+		"Nack":   func() error { return h.Nack(claimed) },
+		"Remove": func() error { return h.Remove("job-2") },
+		"Sweep":  h.Sweep,
 	} {
 		if err := call(); !errors.Is(err, ErrNotLeader) {
 			t.Errorf("%s on a follower: got %v, want ErrNotLeader", name, err)
@@ -330,6 +331,10 @@ func TestAFollowerWritesNothing(t *testing.T) {
 // An empty queue would answer ErrNoItem if the leader were only checked by the
 // write, so this pins the check ahead of the scan — and a follower does not even
 // reach the store, which is what the check is for.
+//
+// Remove is the same shape and the stakes are higher: a follower that looked
+// would answer ErrNotFound out of state it has not applied yet, and ErrNotFound
+// is what tells a producer its withdrawal has already landed.
 func TestAFollowerRefusesBeforeItLooks(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.store.stepDown()
@@ -337,6 +342,14 @@ func TestAFollowerRefusesBeforeItLooks(t *testing.T) {
 
 	if _, err := h.Claim(); !errors.Is(err, ErrNotLeader) {
 		t.Fatalf("Claim: got %v, want ErrNotLeader", err)
+	}
+	if trace := h.store.trace(); len(trace) != 0 {
+		t.Fatalf("a follower reached the store: %v", trace)
+	}
+
+	h.store.reset()
+	if err := h.Remove("job-1"); !errors.Is(err, ErrNotLeader) {
+		t.Fatalf("Remove: got %v, want ErrNotLeader", err)
 	}
 	if trace := h.store.trace(); len(trace) != 0 {
 		t.Fatalf("a follower reached the store: %v", trace)
@@ -349,6 +362,9 @@ func TestEveryMutationBarriersBeforeItReads(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
 	d := h.mustClaim(t)
+	// Pushed now and claimed by nothing below, so the last step has an item to
+	// withdraw whichever one the Claim step took.
+	h.mustPush(t, "job-keep", "kept")
 
 	for _, step := range []struct {
 		name string
@@ -363,6 +379,7 @@ func TestEveryMutationBarriersBeforeItReads(t *testing.T) {
 			return err
 		}},
 		{"Ack", func() error { return h.Ack(d) }},
+		{"Remove", func() error { return h.Remove("job-keep") }},
 	} {
 		h.store.reset()
 		if err := step.call(); err != nil {
@@ -465,5 +482,110 @@ func TestADeliveryWithNoTokenMatchesNothing(t *testing.T) {
 
 	if err := h.Ack(Delivery{ID: "job"}); !errors.Is(err, ErrStaleDelivery) {
 		t.Fatalf("Ack: got %v, want ErrStaleDelivery", err)
+	}
+}
+
+// Remove is Push's counterpart: the producer takes back work nobody has started,
+// and the id is free to be pushed again.
+func TestRemoveWithdrawsAnItemNobodyHasClaimed(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.mustPush(t, "job-1", "one")
+	h.mustPush(t, "job-2", "two")
+
+	if err := h.Remove("job-1"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if ready, claimed := h.Depth(); ready != 1 || claimed != 0 {
+		t.Fatalf("depth after remove: got (%d, %d), want (1, 0)", ready, claimed)
+	}
+	if d := h.mustClaim(t); d.ID != "job-2" {
+		t.Fatalf("claim: got %q, want job-2 — the withdrawn item was handed out", d.ID)
+	}
+
+	// The id is pushable again, and comes back as a first delivery rather than
+	// as a continuation of the one that was withdrawn.
+	h.mustPush(t, "job-1", "again")
+	if d := h.mustClaim(t); d.ID != "job-1" || string(d.Data) != "again" || d.Attempt != 1 {
+		t.Fatalf("claim: got (%q, %q, attempt %d), want (job-1, again, attempt 1)", d.ID, d.Data, d.Attempt)
+	}
+}
+
+// An item that is not deliverable yet is withdrawn on the same terms: waiting,
+// delayed and backing off are one state, and it is the one nobody holds.
+func TestRemoveWithdrawsAnItemThatIsStillBackingOff(t *testing.T) {
+	h := newHarness(t, Config{VisibilityTimeout: time.Second, RetryInterval: time.Hour})
+	h.mustPush(t, "job-1", "one")
+	if err := h.Nack(h.mustClaim(t)); err != nil {
+		t.Fatalf("Nack: %v", err)
+	}
+
+	if err := h.Remove("job-1"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if ready, claimed := h.Depth(); ready != 0 || claimed != 0 {
+		t.Fatalf("depth: got (%d, %d), want (0, 0)", ready, claimed)
+	}
+}
+
+// AN ITEM A CONSUMER HOLDS IS NOT THE PRODUCER'S TO TAKE. Withdrawing a claim
+// would let the same id be pushed and claimed beside the consumer still working
+// on it, which is the one thing this queue exists to prevent — so the claim is
+// left, and its holder's ack still lands.
+func TestRemoveRefusesAnItemAConsumerHolds(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.mustPush(t, "job-1", "one")
+	d := h.mustClaim(t)
+
+	if err := h.Remove("job-1"); !errors.Is(err, ErrClaimed) {
+		t.Fatalf("Remove: got %v, want ErrClaimed", err)
+	}
+	if ready, claimed := h.Depth(); ready != 0 || claimed != 1 {
+		t.Fatalf("depth: got (%d, %d), want (0, 1)", ready, claimed)
+	}
+	if err := h.Ack(d); err != nil {
+		t.Fatalf("Ack after a refused Remove: %v", err)
+	}
+	if ready, claimed := h.Depth(); ready != 0 || claimed != 0 {
+		t.Fatalf("depth after ack: got (%d, %d), want (0, 0)", ready, claimed)
+	}
+}
+
+// A producer that cannot tell whether its withdrawal landed may repeat it.
+func TestRemoveOfAnItemTheQueueDoesNotHold(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.mustPush(t, "job-1", "one")
+
+	if err := h.Remove("job-1"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if err := h.Remove("job-1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second Remove: got %v, want ErrNotFound", err)
+	}
+	if err := h.Remove("nobody"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Remove of an unknown id: got %v, want ErrNotFound", err)
+	}
+}
+
+func TestRemoveReportsAnIndexPointingOutsideTheQueue(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.store.put("queue/build/index/job", []byte("somewhere/else"))
+
+	if err := h.Remove("job"); !errors.Is(err, ErrForeignKey) {
+		t.Fatalf("Remove: got %v, want ErrForeignKey", err)
+	}
+}
+
+func TestRemoveReportsAStoreThatRefusedTheWrite(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.mustPush(t, "job-1", "one")
+
+	boom := errors.New("boom")
+	h.store.failBatches(boom)
+
+	if err := h.Remove("job-1"); !errors.Is(err, boom) {
+		t.Fatalf("Remove: got %v, want the store's error", err)
+	}
+	if ready, _ := h.Depth(); ready != 1 {
+		t.Fatal("a refused withdrawal took the item anyway")
 	}
 }

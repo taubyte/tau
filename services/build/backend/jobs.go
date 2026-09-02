@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/pkg/v2/queue"
 )
 
 // jobHandler is the connect adapter for JobService. As in queue.go, each method
@@ -144,13 +146,15 @@ func (s *Service) list(projectID string, emit func(*buildv1.JobRef) error) error
 	return nil
 }
 
-// cancel writes the terminal record and, if this node is the one running the
-// job, stops it. THAT IS THE WHOLE OF IT.
+// cancel writes the terminal record, withdraws the job's queue item and, if
+// this node is the one running the job, stops it.
 //
-// A queued job needs no special case: the claimer re-reads the record before it
-// runs and acks a cancelled one without starting. A job running on ANOTHER
-// backend node needs no forwarding either — that node re-reads the record too,
-// at its next claim, and its run is bounded by the claim deadline regardless.
+// THE RECORD IS STILL WHAT CANCELS THE JOB. The withdrawal is bookkeeping on
+// top of it, never the mechanism: a delivery that outran it is dropped anyway,
+// because the claimer re-reads the record before it runs and acks a cancelled
+// one without starting. A job running on ANOTHER backend node needs no
+// forwarding either — its run settles against a record that is already terminal
+// and publishes nothing, and it is bounded by the claim deadline regardless.
 //
 // v1 needed three hops for this: the HTTP handler read which monkey was
 // assigned, called that monkey's own p2p service, and monkey then called
@@ -174,19 +178,55 @@ func (s *Service) cancel(id string) error {
 		return errNotFound("no job %s", id)
 	}
 	if rec.status() == buildv1.JobStatus_JobStatusCancelled {
-		// Cancelling a cancelled job is the outcome the caller asked for.
-		return nil
+		// Cancelling a cancelled job is the outcome the caller asked for — and
+		// is where a withdrawal whose entry did not land is finished off, the
+		// same way Enqueue's push repairs a record whose push was lost.
+		return s.withdraw(id)
 	}
 	if rec.terminal() {
 		return errFailedPrecondition("job %s already finished as %s", id, rec.status())
 	}
 
+	// THE RECORD FIRST, THE WITHDRAWAL SECOND, and the two cannot be one entry
+	// because the queue does its own Batch. A crash between them leaves a
+	// cancelled job with an item, which the next claim drops on reading the
+	// record; the other order leaves an open job with no item, which reconcile
+	// would push back into the queue — a build somebody asked to stop.
 	if err := s.finish(rec, buildv1.JobStatus_JobStatusCancelled, "cancelled"); err != nil {
+		return err
+	}
+	if err := s.withdraw(id); err != nil {
 		return err
 	}
 
 	s.stopRun(id)
 	return nil
+}
+
+// withdraw takes a cancelled job's item out of the queue.
+//
+// LEAVING IT WAS NOT FREE. finish() drops the open index row, so the repository
+// is told it has nothing outstanding while a delivery for it is still queued —
+// and that item counts against MaxQueueDepth, and costs the builder a whole
+// claim cycle before it reaches a job somebody still wants. On a leader that
+// runs no builds — a voter rather than a builder, which WithRunner says is a
+// deployment's choice — nothing ever claims, so nothing ever drops it.
+//
+// The two refusals are the cases where there is nothing to withdraw. An item
+// the queue does not hold is one already acked, or one whose push never landed.
+// An item a CONSUMER holds is refused by the queue on purpose: that claim is
+// the mutual exclusion, and taking it away would let a retry of this same job
+// be claimed beside the run still going. Its holder's ack is what drops it, and
+// the stopRun a line below is what makes that prompt when the holder is this
+// node. A holder that never acks loses the claim to its deadline instead, and
+// the redelivery is dropped on reading the record — run() acks a job it finds
+// terminal without starting it.
+func (s *Service) withdraw(id string) error {
+	err := s.work.Remove(id)
+	if err == nil || errors.Is(err, queue.ErrNotFound) || errors.Is(err, queue.ErrClaimed) {
+		return nil
+	}
+	return errUnavailable("withdrawing job %s from the queue: %v", id, err)
 }
 
 // retry re-queues a finished job.
