@@ -326,6 +326,26 @@ func faultProofs() []proof {
 		"removing the hook this driver just registered failed")
 	add("removing-an-unknown-hook-succeeds", fake.GitHubLike, []fake.Fault{fake.FaultRemovingAnUnknownHookSucceeds},
 		"removing a hook that is not there succeeded")
+
+	// Three faults, and each is load-bearing. Without removes-without-a-handle
+	// the subject refuses "" where it stands and nothing here fires at all.
+	// Without the two "an unknown removal succeeds" faults the request goes out
+	// and the far end then says no, so the wire half fires and the "succeeded"
+	// half does not — which is exactly the gap a fixture that answers a
+	// collection URL with an error leaves behind, and the reason the wire half
+	// exists. Those two also carry the "not there" claims into this proof, so
+	// this proof names them: an assertion a proof makes fire and does not name
+	// is one whose deletion the proof would not notice.
+	add("removes-without-a-handle", fake.GitHubLike, []fake.Fault{
+		fake.FaultRemovesWithoutAHandle,
+		fake.FaultRemovingAnUnknownDeployKeySucceeds,
+		fake.FaultRemovingAnUnknownHookSucceeds},
+		"removing a key that is not there succeeded",
+		"removing a hook that is not there succeeded",
+		"removing a deploy key with no handle at all succeeded",
+		"removing a push hook with no handle at all succeeded",
+		"a deploy-key removal naming no handle went to the wire",
+		"a hook removal naming no handle went to the wire")
 	add("forgets-removal", fake.GitHubLike, []fake.Fault{fake.FaultForgetsRemoval},
 		"still installed after a successful removal",
 		"the hook is still registered after a successful removal")

@@ -222,6 +222,10 @@ func (b fKeys) InstallDeployKey(_ context.Context, k repokey.Key, title, publicK
 }
 
 func (b fKeys) RemoveDeployKey(_ context.Context, k repokey.Key, h forge.Handle) error {
+	// Refused where it stands, not after the request. See FaultRemovesWithoutAHandle.
+	if h == "" && !b.c.shape.faulty(FaultRemovesWithoutAHandle) {
+		return fmt.Errorf("fake: a removal naming no handle addresses every deploy key on %q", k)
+	}
 	if ok, err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName()+"/keys/"+string(h), b.token, k); !ok {
 		return err
 	}
@@ -269,6 +273,10 @@ func (b fHooks) RegisterPushHook(_ context.Context, k repokey.Key, callback *url
 }
 
 func (b fHooks) RemovePushHook(_ context.Context, k repokey.Key, h forge.Handle) error {
+	// Refused where it stands, not after the request. See FaultRemovesWithoutAHandle.
+	if h == "" && !b.c.shape.faulty(FaultRemovesWithoutAHandle) {
+		return fmt.Errorf("fake: a removal naming no handle addresses every hook on %q", k)
+	}
 	if ok, err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName()+"/hooks/"+string(h), b.token, k); !ok {
 		return err
 	}

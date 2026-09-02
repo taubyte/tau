@@ -423,6 +423,21 @@ const (
 	// never there.
 	FaultRemovingAnUnknownHookSucceeds Fault = "removing-an-unknown-hook-succeeds"
 
+	// FaultRemovesWithoutAHandle sends a removal that names no handle instead
+	// of refusing it where it stands.
+	//
+	// AN EMPTY HANDLE ADDRESSES THE COLLECTION. Every forge with a REST shape
+	// spells one key as .../keys/<id>, so .../keys/ with nothing after it is
+	// every key at once, and a removal of one thing is answered by an answer
+	// about all of them. A correct driver refuses it BEFORE anything leaves the
+	// process, because a write cannot be undone by checking afterwards — so
+	// this fake refuses it too, and this is the fault that makes it stop.
+	//
+	// It is reachable without a hostile forge: an install that names no id
+	// hands a caller "", and a caller that stored what it was handed arrives
+	// here with it.
+	FaultRemovesWithoutAHandle Fault = "removes-without-a-handle"
+
 	// FaultHTTPSAddressHasNoUsername hands back an https clone address with no
 	// account to present a token as, which is a clone that will prompt.
 	FaultHTTPSAddressHasNoUsername Fault = "https-address-has-no-username"

@@ -127,6 +127,27 @@ func (r *runner) deployKeys(t tb) {
 	assert.Error(t, r.note(sess.RemoveDeployKey(r.ctx, r.s.Admin, "forgetest-no-such-handle")),
 		"removing a key that is not there succeeded")
 
+	// AND A HANDLE THAT IS NOT A HANDLE. An empty last path segment addresses
+	// the COLLECTION on every forge with a REST shape, so a driver that pastes
+	// one into its route answers a removal of ONE key with an answer about all
+	// of them. It is reachable without a hostile forge: InstallDeployKey above
+	// returns ("", err) when the forge names no id for what it just created,
+	// and a consumer that stored what it was handed arrives here with "". The
+	// two drivers disagreed about exactly this for as long as the suite did not
+	// ask.
+	//
+	// IT IS ASKED IN TWO HALVES, AND THE SECOND IS THE ONE THAT TRAVELS. That
+	// the call errors is only as strong as what the subject's fixture happens
+	// to answer for a collection URL — measured, gitlab's own instance answers
+	// one with an error, so the driver bug hides behind it. That NOTHING LEFT
+	// THE PROCESS holds whatever the far end would have said, because a write
+	// cannot be undone by checking afterwards.
+	r.s.Requests()
+	assert.Error(t, r.note(sess.RemoveDeployKey(r.ctx, r.s.Admin, "")),
+		"removing a deploy key with no handle at all succeeded")
+	assert.Empty(t, r.s.Requests(),
+		"a deploy-key removal naming no handle went to the wire; it must be refused before the request, because the request it composes addresses every key at once")
+
 	assert.NoError(t, r.note(sess.RemoveDeployKey(r.ctx, r.s.Admin, h)),
 		"removing the deploy key this driver just installed failed; the handle it answered with names nothing the forge will remove")
 	assert.False(t, r.s.DeployKeyInstalled(h), "the key is still installed after a successful removal")
@@ -259,6 +280,14 @@ func (r *runner) pushHooks(t tb) {
 
 	assert.Error(t, r.note(sess.RemovePushHook(r.ctx, r.s.Admin, "forgetest-no-such-handle")),
 		"removing a hook that is not there succeeded")
+
+	// The same handle that is not a handle, on the other collection, in the same
+	// two halves. See the deploy-key contract above.
+	r.s.Requests()
+	assert.Error(t, r.note(sess.RemovePushHook(r.ctx, r.s.Admin, "")),
+		"removing a push hook with no handle at all succeeded")
+	assert.Empty(t, r.s.Requests(),
+		"a hook removal naming no handle went to the wire; it must be refused before the request, because the request it composes addresses every hook at once")
 	assert.NoError(t, r.note(sess.RemovePushHook(r.ctx, r.s.Admin, hook.Handle)),
 		"removing the hook this driver just registered failed; the handle it answered with names nothing the forge will remove")
 	assert.False(t, r.s.HookInstalled(hook.Handle), "the hook is still registered after a successful removal")
