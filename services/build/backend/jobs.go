@@ -220,6 +220,13 @@ func (s *Service) retry(id string) error {
 		return errFailedPrecondition("job %s is %s, not finished", id, rec.status())
 	}
 
+	// The retention row was written at the moment the job FINISHED, which is
+	// the timestamp the record still carries — so it has to be read before the
+	// record is reopened. Reading it afterwards deletes a key nothing wrote and
+	// leaves the real row behind, which is a job that reads Open and is also
+	// listed as retained.
+	finishedAt := time.Unix(rec.UpdatedAt, 0)
+
 	rec.Status = int32(buildv1.JobStatus_JobStatusOpen)
 	rec.UpdatedAt = s.now().Unix()
 	rec.ClaimedUntil = 0
@@ -233,7 +240,7 @@ func (s *Service) retry(id string) error {
 	if err := s.store.Batch([]raft.BatchOp{
 		set(jobRecordKey(id), value),
 		set(openIndexKey(rec.RepositoryKey, id), nil),
-		del(terminalIndexKey(time.Unix(rec.UpdatedAt, 0), id)),
+		del(terminalIndexKey(finishedAt, id)),
 	}, s.cfg.Queue.ApplyTimeout); err != nil {
 		return errUnavailable("reopening job %s: %v", id, err)
 	}

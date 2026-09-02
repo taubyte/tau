@@ -306,3 +306,26 @@ func TestRetryReportsAPushThatFailsAfterTheRecordWasReopened(t *testing.T) {
 	h.store.onBatch(func() { h.store.failBatches(errors.New("log is full")) })
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.retry(id)))
 }
+
+// The retention row is written at the moment a job finishes, so a retry that
+// looked it up under the reopening's timestamp would delete a key nothing wrote
+// and leave the real row behind — a job that reads Open and is also listed as
+// retained. The clock moves between the two here, which is the only way to see
+// it.
+func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+	require.NoError(t, h.finish(h.mustRecord(t, id), buildv1.JobStatus_JobStatusFailed, "x"))
+
+	terminal := rootSegment + "/" + indexSegment + "/" + terminalSegment + "/"
+	require.Len(t, h.store.Keys(terminal), 1)
+
+	d, err := h.work.Claim()
+	require.NoError(t, err)
+	require.NoError(t, h.work.Ack(d))
+
+	h.clock.advance(time.Hour)
+	require.NoError(t, h.retry(id))
+
+	require.Empty(t, h.store.Keys(terminal), "a reopened job is not retained history")
+}
