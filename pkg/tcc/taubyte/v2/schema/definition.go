@@ -1565,14 +1565,26 @@ var V2Resources = []*Node{
 	//   - "A DURABLE, ADDRESSABLE THING WITH CODE IN IT". That is a `function` with the
 	//     state it reaches declared beside it, which is every other workload here.
 	//
-	// WHAT IT COSTS, said out loud: nothing in this vocabulary now offers compare-and-swap
-	// — no kind declares a conditional-write verb, and none did before either. The
-	// vocabulary is SILENT on it rather than pointing somewhere, which is the honest state
-	// and is why the three notes that pointed here were rewritten rather than repointed.
+	// WHAT IT COSTS, said out loud, and it is two things rather than one.
 	//
-	// WHAT WOULD BRING IT BACK is not this kind: it is a conditional-write verb on a kind
-	// that already stores something, which is one verb and the owner's call. A second
-	// compute kind is not how a counter gets a fence.
+	// The first is compare-and-swap: nothing in this vocabulary offers it — no kind
+	// declares a conditional-write verb, and none did before either. The vocabulary is
+	// SILENT on it rather than pointing somewhere, which is the honest state and is why
+	// the three notes that pointed here were rewritten rather than repointed.
+	//
+	// The second is larger and is the one to notice. Deleting the kind decided that the
+	// runtime sequences execution; it did NOT decide that no such thing runs. If a durable
+	// addressable instance does exist out there, a workload has no way to say it reaches
+	// one — the access block admits the kinds that declare verbs and there is no
+	// eighteenth slot — so there is no ops grant, no dependency edge, no blast radius in
+	// the explorer and nothing an authorizer can be asked about. A runtime that grew one
+	// and a config that cannot name it is a real gap, not a tidy one.
+	//
+	// WHAT WOULD BRING SOMETHING BACK is deliberately not answered here. A conditional-write
+	// verb on a kind that already stores something is one shape; a compute kind that holds
+	// its own state is another, and it is sized as work elsewhere. Which one — or neither —
+	// is §11's, and a note is not the place to settle it. What this note fixes is only that
+	// the vocabulary stopped naming a kind it does not have.
 
 	// Claim / visibility-timeout / ack / DLQ — not pop-and-delete. Today's
 	// pkg/raft Queue.Pop deletes before returning, so a consumer that crashes

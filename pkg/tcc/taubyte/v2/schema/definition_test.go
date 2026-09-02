@@ -2,10 +2,14 @@ package schema_test
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -2329,4 +2333,166 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 	// or narrow what runs under it, because it is one of the things being placed.
 	_, err = compile("regions: [eu]\n")
 	assert.ErrorContains(t, err, "unknown key 'regions'")
+}
+
+// THE SPELLED-OUT COUNT IN index.go IS AN ARGUMENT, NOT A CAPTION. "v2 has twenty-four
+// kinds sharing one namespace where v1 had eight" is the whole justification for putting
+// the kind in the key, so a number that quietly goes wrong turns a reasoned decision into
+// a claim nobody can check. It was exact at every commit until a kind was deleted and it
+// was not, which is the drift this pins.
+//
+// Spelled out rather than a digit because that is how the file writes, so the test reads
+// the word and the comment stays prose.
+func TestTheKindCountInProseIsTheRealOne(t *testing.T) {
+	words := []string{
+		"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+		"ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+		"seventeen", "eighteen", "nineteen", "twenty", "twenty-one", "twenty-two",
+		"twenty-three", "twenty-four", "twenty-five", "twenty-six", "twenty-seven",
+		"twenty-eight", "twenty-nine", "thirty",
+	}
+
+	// The second site says "when the twenty-fifth is added", an ordinal rather than a
+	// cardinal, so it needs its own spelling — and it is the site most likely to be left
+	// behind, because it reads as rhetoric rather than as a number.
+	ordinals := []string{
+		"zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
+		"eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth",
+		"fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth",
+		"twenty-first", "twenty-second", "twenty-third", "twenty-fourth", "twenty-fifth",
+		"twenty-sixth", "twenty-seventh", "twenty-eighth", "twenty-ninth", "thirtieth",
+	}
+
+	n := len(schema.V2Resources)
+	assert.Assert(t, n > 1 && n < len(words)-2, "kind count %d is outside what this test can spell", n)
+
+	src, err := os.ReadFile("index.go")
+	assert.NilError(t, err)
+	text := string(src)
+
+	assert.Assert(t, strings.Contains(text, words[n]),
+		"index.go does not say %q, and there are %d kinds", words[n], n)
+	assert.Assert(t, strings.Contains(text, ordinals[n+1]),
+		"index.go does not say %q, which is what the next kind added would be", ordinals[n+1])
+
+	// AND THE SCAN IS LIVE: the neighbouring numbers must NOT appear, or the assertions
+	// above would pass on a file that had drifted by one in either direction — which is
+	// exactly how it drifted in the first place. Checked as whole words, because
+	// "twenty-four" is a substring of nothing but "twenty-four" while "four" is a
+	// substring of "fourteen".
+	for _, wrong := range []string{words[n-1], words[n+1], ordinals[n], ordinals[n+2]} {
+		w := regexp.MustCompile(`\b` + regexp.QuoteMeta(wrong) + `\b`)
+		assert.Assert(t, !w.MatchString(text),
+			"index.go still says %q, but there are %d kinds", wrong, n)
+	}
+}
+
+// A FINDING'S PROSE SHIPS, and that is why this is not covered by the JSON Schema scan
+// above. `Audit` returns Title and Detail, wasm/main.go hands both to the browser, and an
+// author reads a remedy in the explorer exactly the way they read a field description.
+// One of those strings told an author a workflow becomes "the queues and the entity" long
+// after nothing lowered into an entity, and the JSON Schema scan could not see it because
+// a Finding is not in the schema.
+//
+// Read off the SOURCE rather than by triggering every check: these are authored constants,
+// a check that fires needs a project shaped to break it, and a scan that only sees the
+// findings some fixture happens to raise proves the least about the ones it does not.
+func TestNoAuthoredFindingNamesADeletedKind(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "checks.go", nil, 0)
+	assert.NilError(t, err)
+
+	var lits []string
+	ast.Inspect(f, func(n ast.Node) bool {
+		if b, ok := n.(*ast.BasicLit); ok && b.Kind == token.STRING {
+			if v, err := strconv.Unquote(b.Value); err == nil {
+				lits = append(lits, v)
+			}
+		}
+		return true
+	})
+	assert.Assert(t, len(lits) > 50, "only %d string literals in checks.go, the walk is wrong", len(lits))
+
+	for _, gone := range []string{"entity", "entities", "connector", "connectors", "smartops"} {
+		word := regexp.MustCompile(`(?i)\b` + gone + `\b`)
+		for _, lit := range lits {
+			assert.Assert(t, !word.MatchString(lit),
+				"an authored string in checks.go names %q, a kind this vocabulary does not have: %q", gone, lit)
+		}
+	}
+
+	// LIVE, the same way the schema scan proves itself: kinds that ARE here are named in
+	// these strings, so a clean run means clean rather than a walk that found nothing.
+	for _, here := range []string{"queue", "function"} {
+		word := regexp.MustCompile(`(?i)\b` + here + `\b`)
+		found := false
+		for _, lit := range lits {
+			if word.MatchString(lit) {
+				found = true
+				break
+			}
+		}
+		assert.Assert(t, found, "no authored string names %q, so this scan proves nothing", here)
+	}
+}
+
+// A BUS HAS NO CONSISTENCY AXIS, and the reason is the transport rather than a preference:
+// it is libp2p pubsub, which orders nothing and keeps nothing, so a field naming how two
+// writes resolve would be a promise the thing underneath cannot make. `cache` and
+// `database` carry `consensus` because something down there can honour it.
+//
+// Pinned because prose could not stop it. The bus's comment argues at length that the kind
+// has no engine axis, and that argument is pinned — but a `consensus` key is not an engine
+// key, and one could be added with the whole suite green.
+func TestABusDeclaresNoConsistency(t *testing.T) {
+	var bus *engine.Node
+	for _, g := range schema.V2Resources {
+		if name, _ := g.Match.(string); name == "bus" {
+			bus = g
+			break
+		}
+	}
+	assert.Assert(t, bus != nil, "there is no bus kind")
+
+	banned := regexp.MustCompile(`(?i)consensus|crdt|single-writer|linearizab|quorum`)
+	var walk func(n *engine.Node)
+	walk = func(n *engine.Node) {
+		for _, a := range n.Attributes {
+			for _, seg := range a.Segments {
+				assert.Assert(t, !banned.MatchString(seg),
+					"bus has an attribute %q: a bus is libp2p pubsub and can honour no such promise", strings.Join(a.Segments, "/"))
+			}
+			assert.Assert(t, !banned.MatchString(a.Name),
+				"bus has an attribute named %q, which a gossipsub bus cannot honour", a.Name)
+		}
+		for _, c := range n.Children {
+			walk(c)
+		}
+	}
+	walk(bus)
+
+	// LIVE: the same walk over `cache` finds the axis, so a clean bus is a clean bus and
+	// not a walk that never reached an attribute.
+	var cache *engine.Node
+	for _, g := range schema.V2Resources {
+		if name, _ := g.Match.(string); name == "cache" {
+			cache = g
+			break
+		}
+	}
+	assert.Assert(t, cache != nil, "there is no cache kind")
+	seen := false
+	var look func(n *engine.Node)
+	look = func(n *engine.Node) {
+		for _, a := range n.Attributes {
+			if banned.MatchString(a.Name) || banned.MatchString(strings.Join(a.Segments, "/")) {
+				seen = true
+			}
+		}
+		for _, c := range n.Children {
+			look(c)
+		}
+	}
+	look(cache)
+	assert.Assert(t, seen, "the walk cannot find cache's consensus axis, so it proves nothing about bus")
 }
