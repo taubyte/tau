@@ -22,7 +22,10 @@ package github_test
 // declared it.
 
 import (
+	"fmt"
 	"go/ast"
+	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,17 +43,158 @@ import (
 // traffic.
 func assertOneRoute(t *testing.T, drv forge.Driver, shape string) []github.RouteFact {
 	t.Helper()
+	return routesMatching(t, github.DeclaredRoutes(drv), shape)
+}
+
+// routesMatching asks that of ONE TABLE rather than of the driver's own. The
+// closures below walk a table with a route inserted into it, so they cannot ask
+// through a function that goes and fetches the real one — the inserted route
+// would not be in the answer, and "was it reached" would be decided for it by
+// different code than for every other route.
+func routesMatching(t *testing.T, table []github.RouteFact, shape string) []github.RouteFact {
+	t.Helper()
 	method, path, found := strings.Cut(shape, " ")
 	require.Truef(t, found, "%q is not a request shape", shape)
 
 	matched := []github.RouteFact{}
-	for _, r := range github.DeclaredRoutes(drv) {
+	for _, r := range table {
 		if r.Matches(method, path) {
 			matched = append(matched, r)
 		}
 	}
 	assert.Lenf(t, matched, 1, "%q matched %d routes; every request this driver makes is one route's", shape, len(matched))
 	return matched
+}
+
+// ─────────────────── the closure, and its one invocation path ───────────────────
+
+// A CLOSURE THAT IS A LOOP WITH AN ASSERT IN IT GUARDS NOTHING BUT ITSELF.
+// Round 7 measured the shape next door: the ledger's rules were proven against
+// a recorder and then APPLIED with a discarded one, and the whole suite passed
+// at exit 0 with a real contract assertion deleted. The two rows here had the
+// same shape. Measured on this driver: declare
+//
+//	routeMutant = newRoute(http.MethodGet, "repos/"+hole+"/"+hole+"/mutant")
+//
+// and the row below fails naming route.go:119, which is the closure working;
+// then change one token in the row — `range table` to `range table[:0]` — and
+// the whole package is back at exit 0 with that request still declared and
+// still armed by nothing. Nothing else in the package says a word about it,
+// because nothing else applies the table to anything.
+//
+// SO THERE IS ONE CALL SITE AND IT PROVES BOTH HALVES AT ONCE. The closure is
+// the pure function below; the row inserts a route NOTHING REACHES into the
+// table, walks the table with it, and requires the complaints to be EXACTLY
+// that route's:
+//
+//   - an empty answer means the closure did not run — switched off, or ranged
+//     over a subset that skipped the position the inserted route is at, which
+//     is why it is inserted at every position in turn;
+//   - an extra line is a route this driver really ships that the sweep really
+//     did not reach, named by the line that declared it. That is the original
+//     property, unweakened: the inserted route is one more row in the answer,
+//     never a substitute for a row.
+//
+// AND THE OBSERVATION IS BUILT AFTER THE INSERTION, from the same matcher, so
+// "reached" is decided for the inserted route by the code that decides it for
+// every other one. Marking the table's routes reached to quiet the row marks
+// this one too, and the complaint it must make stops being made.
+//
+// WHERE THE TOWER ENDS, and it ends here rather than at another rung. What must
+// be correct is: sweepShapes returns what the driver really put on the wire;
+// sweptRoutes decides "reached" by RouteFact.Matches and nothing else; the row
+// below runs the insertion over every position and compares for equality. That
+// is a handful of lines in one place, all of them named in this comment, and it
+// is the same exposure as trusting that this file is compiled into the package
+// at all. A further rung would be a closure over the closure with its own
+// invocation to guard, and that regress does not terminate.
+
+// describe is how a route is named in a complaint: what it is, and the line
+// that introduced it.
+func describe(r github.RouteFact) string {
+	return fmt.Sprintf("%s %s, declared at %s", r.Method, r.Template, r.Declared)
+}
+
+// decoyDeclared is where the route nothing reaches says it comes from. It is
+// prose rather than a file:line, because a reader who sees it in a failure has
+// to be able to tell it from a route this driver really declared.
+const decoyDeclared = "route_test.go, as the route nothing reaches"
+
+// decoyUnsent is a query parameter no route declares and nothing sends.
+const decoyUnsent = "nothing-sends-this"
+
+// aRouteNothingReaches is the request this driver could grow tomorrow: declared
+// and SHIPPING — a route a test built to drive the plumbing is skipped by both
+// closures, so a decoy that was not shipping would prove nothing about either.
+//
+// It carries two query parameters on purpose. "page" is one the sweep really
+// sends, so a `sent` map that had been filled from the table rather than from
+// the wire still answers this route correctly; decoyUnsent is one nothing
+// sends, and it is the whole of what the parameter row must complain about. An
+// observation that says everything was sent stops complaining about it, and an
+// observation that says nothing was starts complaining about "page" as well.
+func aRouteNothingReaches() github.RouteFact {
+	return github.RouteFact{
+		Method:   http.MethodGet,
+		Template: "repos/{}/{}/nothing-reaches-this",
+		Params:   []string{"page", decoyUnsent},
+		Declared: decoyDeclared,
+		Ships:    true,
+		Matches:  func(string, string) bool { return false },
+	}
+}
+
+// withRouteAt is the table with one more route in it, at the given position.
+func withRouteAt(table []github.RouteFact, i int, r github.RouteFact) []github.RouteFact {
+	return slices.Insert(slices.Clone(table), i, r)
+}
+
+// unreachedRoutes IS THE CLOSURE over the routing table: every route this
+// driver ships that the sweep never reached, as one complaint each.
+func unreachedRoutes(table []github.RouteFact, reached map[string]bool) []string {
+	out := []string{}
+	for _, r := range table {
+		// A route a test built to drive the plumbing is not a request this
+		// driver can issue.
+		if !r.Ships || reached[r.Declared] {
+			continue
+		}
+		out = append(out, describe(r))
+	}
+	return out
+}
+
+// sweptRoutes is the observation the closure is applied to: which routes OF
+// THIS TABLE the sweep's request shapes reached.
+func sweptRoutes(t *testing.T, table []github.RouteFact, shapes map[string][]string) map[string]bool {
+	t.Helper()
+	reached := map[string]bool{}
+	for _, op := range sweepOps {
+		for _, shape := range shapes[op.name] {
+			for _, r := range routesMatching(t, table, shape) {
+				reached[r.Declared] = true
+			}
+		}
+	}
+	return reached
+}
+
+// parametersNeverSent is the same closure one level down: every query parameter
+// a shipping route may carry that the sweep never saw one of.
+func parametersNeverSent(table []github.RouteFact, sent map[string]bool) []string {
+	out := []string{}
+	for _, r := range table {
+		if !r.Ships {
+			continue
+		}
+		for _, param := range r.Params {
+			if sent[param] {
+				continue
+			}
+			out = append(out, fmt.Sprintf("%s, may carry the query parameter %q", describe(r), param))
+		}
+	}
+	return out
 }
 
 // TestEveryRouteThisDriverCanIssueIsSwept.
@@ -77,26 +221,16 @@ func TestEveryRouteThisDriverCanIssueIsSwept(t *testing.T) {
 	shapes := sweepShapes(t)
 	subject := newSweepForge(t, sweepOps[0])
 
-	reached := map[string]bool{}
-	for _, op := range sweepOps {
-		for _, shape := range shapes[op.name] {
-			for _, r := range assertOneRoute(t, subject.drv, shape) {
-				reached[r.Declared] = true
-			}
-		}
-	}
-
 	table := github.DeclaredRoutes(subject.drv)
 	require.NotEmpty(t, table, "this driver declared no routes, so nothing here is a closure over anything")
-	for _, r := range table {
-		if !r.Ships {
-			// A route a test built to drive the plumbing is not a request this
-			// driver can issue.
-			continue
-		}
-		assert.Truef(t, reached[r.Declared],
-			"%s %s, declared at %s, is a request this driver can issue and the sweep never reached it: no redirect row, no anonymous row and no escaping row says anything about it",
-			r.Method, r.Template, r.Declared)
+
+	decoy := aRouteNothingReaches()
+	want := []string{describe(decoy)}
+	for i := 0; i <= len(table); i++ {
+		with := withRouteAt(table, i, decoy)
+		assert.Equalf(t, want, unreachedRoutes(with, sweptRoutes(t, with, shapes)),
+			"with a route nothing reaches at position %d of %d, this closure must name it and nothing else. An extra line is a request this driver can issue that the sweep never reached — no redirect row, no anonymous row and no escaping row says anything about it. An empty answer is the closure not running over that position at all, which would arm a route there with nothing",
+			i, len(table))
 	}
 }
 
@@ -105,6 +239,9 @@ func TestEveryRouteThisDriverCanIssueIsSwept(t *testing.T) {
 // reaches changes what is asked without changing any path — so the route
 // declares which parameters it may carry, send refuses one it did not declare,
 // and a declared parameter nothing sent is a parameter armed by nothing.
+//
+// It is applied the same way, for the reason the comment above gives: a loop
+// with an assert in it is switched off by one token and says nothing about it.
 func TestEveryQueryParameterThisDriverDeclaresIsSwept(t *testing.T) {
 	subject := newSweepForge(t, sweepOps[0])
 
@@ -120,15 +257,16 @@ func TestEveryQueryParameterThisDriverDeclaresIsSwept(t *testing.T) {
 		}
 	}
 
-	for _, r := range github.DeclaredRoutes(subject.drv) {
-		if !r.Ships {
-			continue
-		}
-		for _, param := range r.Params {
-			assert.Truef(t, sent[param],
-				"%s %s, declared at %s, may carry the query parameter %q and the sweep never saw one",
-				r.Method, r.Template, r.Declared, param)
-		}
+	table := github.DeclaredRoutes(subject.drv)
+	require.NotEmpty(t, table, "this driver declared no routes, so nothing here is a closure over anything")
+
+	decoy := aRouteNothingReaches()
+	want := []string{fmt.Sprintf("%s, may carry the query parameter %q", describe(decoy), decoyUnsent)}
+	for i := 0; i <= len(table); i++ {
+		with := withRouteAt(table, i, decoy)
+		assert.Equalf(t, want, parametersNeverSent(with, sent),
+			"with a route declaring one parameter the sweep sends and one it never does, at position %d of %d, this closure must name the second and nothing else. An extra line is a parameter this driver may carry that nothing armed; an empty answer is the closure not running over that position",
+			i, len(table))
 	}
 }
 
