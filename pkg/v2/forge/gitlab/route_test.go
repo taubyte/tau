@@ -66,6 +66,19 @@ func declaredRoutes() []*route {
 // the sweep arms — not the redirect rows, not the anonymous row, not the
 // escaping rows — and it is named here by the line that declared it rather than
 // discovered a round later.
+//
+// WHAT THIS CLOSES AND WHAT IT DOES NOT, measured rather than reasoned. A
+// branch that reaches a NEW route fails here; a branch that adds a query
+// PARAMETER fails the row below; a branch that adds one without declaring it is
+// refused by the driver. What survives is a branch that reuses a route the
+// sweep already reached and changes only a VALUE it sends — measured, twice, at
+// exit 0: Create sending Private false when the key's name starts with "z", and
+// Create taking its own personal-account branch on the same condition. The
+// first is a request the sweep never sees and the second is a request it sees
+// under another name; neither is a new SHAPE, and shape is the unit here. What
+// would close them is a driver DRIVEN over its own branches rather than over a
+// table of operations, which is a different mechanism from this one and not a
+// stronger version of it.
 func TestEveryRouteThisDriverCanIssueIsSwept(t *testing.T) {
 	shapes := sweepShapes(t)
 	subject := newSweepInstance(t)
