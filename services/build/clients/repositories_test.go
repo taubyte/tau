@@ -9,7 +9,14 @@ import (
 
 	"github.com/taubyte/tau/p2p/discovery"
 	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	"github.com/taubyte/tau/services/build/backend"
 )
+
+// The interface satisfaction lives HERE rather than in repositories.go: a test
+// file may import the role package, and production code in this package may
+// not (services/build/boundary_test.go). This is the whole of what that
+// separation costs.
+var _ backend.Repositories = (*RepositoryClient)(nil)
 
 func TestAuthProtocolIsWalkedOffAuthsSchema(t *testing.T) {
 	require.EqualValues(t, "/tau/auth/v1", AuthProtocol)
