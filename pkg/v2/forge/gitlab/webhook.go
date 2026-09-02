@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -68,9 +69,21 @@ func (d *driver) Push(body forge.VerifiedBody, header http.Header) (forge.PushCl
 	// The repository is named by ITS CLONE URL and derived through the one
 	// grammar, so the payload and the config agree by construction rather than
 	// by two readings of "owner/name".
+	//
+	// IT IS MEASURED BEFORE IT IS PARSED, and the reason it fails is not carried
+	// — both for the reason repository gives. A delivery is a stranger's bytes
+	// that a signature proves the instance relayed, up to the core's eight
+	// megabyte cap, and repokey quotes what it was given; a key derived from an
+	// implausible one would be stored and printed by everything downstream.
+	switch cloneURL := payload.Project.GitHTTPURL; {
+	case cloneURL == "":
+		return forge.PushClaim{}, errors.New("gitlab: delivery names no repository")
+	case len(cloneURL) > maxHostString:
+		return forge.PushClaim{}, errors.New("gitlab: delivery names no repository, only a string too long to be a clone URL")
+	}
 	key, err := repokey.Parse(payload.Project.GitHTTPURL)
 	if err != nil {
-		return forge.PushClaim{}, fmt.Errorf("gitlab: delivery names no repository: %w", err)
+		return forge.PushClaim{}, errors.New("gitlab: delivery names no repository this layer can address")
 	}
 
 	commit := payload.CheckoutSHA

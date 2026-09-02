@@ -162,7 +162,7 @@ func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Reposit
 	if _, err := c.get(ctx, c.cfg.endpoint("api", "v4", "projects", key.FullName()), &key, &p); err != nil {
 		return forge.Repository{}, err
 	}
-	return c.cfg.repository(p)
+	return c.cfg.repository(p, fmt.Sprintf("project %q", key.FullName()))
 }
 
 // repository turns GitLab's project into tau's, DERIVING THE KEY FROM THE CLONE
@@ -176,6 +176,18 @@ func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Reposit
 // the key derived from it would file the repository under a host this deployment
 // has no driver for, which is a repository nothing can ever act on again.
 //
+// asked IS WHAT TAU CALLED THIS PROJECT, and every error below names it rather
+// than the path_with_namespace the instance sent. The instance chose that string
+// while holding the caller's credential, so quoting it back is the credential
+// channel fault was just closed for; a caller always has a name of its own —
+// the key it asked about, or the coordinates of the listing entry — and it is
+// the more useful half of the mismatch anyway.
+//
+// What survives is one instance-chosen string, the host a clone URL named, and
+// it is bounded before it is read. That is the line the github driver's package
+// comment draws in so many words, and this driver now draws it in the same
+// place.
+//
 // THE SSH URL IS PASSED THROUGH UNCHECKED, and that is a deliberate, flagged
 // asymmetry. A self-managed instance routinely serves SSH on another port or
 // another name (ssh.acme.example:2222), which is a perfectly good clone address
@@ -183,16 +195,37 @@ func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Reposit
 // driver reports what the instance said rather than inventing agreement; the
 // consequence is that on such an instance the two addresses of one repository
 // derive two keys, which is a property of the doctrine and not of this method.
-func (c *config) repository(p project) (forge.Repository, error) {
-	if p.HTTPURLToRepo == "" {
-		return forge.Repository{}, fmt.Errorf("gitlab: %s described project %q with no clone URL, so there is nothing to derive a key from", c.host, p.PathWithNamespace)
+func (c *config) repository(p project, asked string) (forge.Repository, error) {
+	switch {
+	case p.HTTPURLToRepo == "":
+		return forge.Repository{}, fmt.Errorf("gitlab: %s described %s with no clone URL, so there is nothing to derive a key from", c.host, asked)
+	case len(p.HTTPURLToRepo) > maxHostString:
+		// Refused rather than parsed: a key derived from it would be stored,
+		// indexed and printed by everything downstream, so the length an
+		// instance picks would be a cost tau keeps paying.
+		return forge.Repository{}, fmt.Errorf("gitlab: %s described %s with a %d-byte clone URL, which is not one", c.host, asked, len(p.HTTPURLToRepo))
 	}
 	key, err := repokey.Parse(p.HTTPURLToRepo)
 	if err != nil {
-		return forge.Repository{}, fmt.Errorf("gitlab: %s reported a clone URL that is not one: %w", c.host, err)
+		// THE REASON IS NOT CARRIED, because carrying it carries the URL: repokey
+		// quotes what it was given, and what it was given is a string the instance
+		// composed while holding the caller's credential — a clone URL with a
+		// token in its identity half is the one shape repokey calls a secret at
+		// rest, and this is the path that would write it into a log. Nor is the
+		// reason worth much here: an instance that spells its own external URL
+		// wrongly still spells a URL, so this branch is reached by an instance
+		// that is broken or hostile, and for either the answer is to read what it
+		// actually answered — one request, against the project named below.
+		return forge.Repository{}, fmt.Errorf("gitlab: %s reported a clone URL for %s that this layer cannot derive a key from", c.host, asked)
 	}
 	if key.Host != c.host {
-		return forge.Repository{}, fmt.Errorf("gitlab: %s reported clone URL on host %q; a key derived from it would name a repository on a host this deployment has no driver for", c.host, key.Host)
+		// key.Host IS THE ONE INSTANCE-CHOSEN STRING LEFT IN THIS DRIVER'S ERRORS,
+		// and it is here because it is the entire content of the mismatch: an
+		// instance behind a proxy that was told the wrong external URL is a real
+		// and common misconfiguration, and "which host did it claim" is the
+		// answer. It is bounded — it came out of a URL already refused above the
+		// length of one — lowercased by repokey, and %q-escaped.
+		return forge.Repository{}, fmt.Errorf("gitlab: %s reported %s on host %q; a key derived from it would name a repository on a host this deployment has no driver for", c.host, asked, key.Host)
 	}
 	return forge.Repository{
 		Key:           key,
@@ -238,8 +271,8 @@ func (c *client) ListRepositories(ctx context.Context, yield func(forge.Reposito
 		if err != nil {
 			return err
 		}
-		for _, p := range listing {
-			repo, err := c.cfg.repository(p)
+		for i, p := range listing {
+			repo, err := c.cfg.repository(p, fmt.Sprintf("entry %d of listing page %d", i+1, pages+1))
 			if err != nil {
 				// A listing that quietly drops the entry it could not read is a
 				// listing whose absences a consumer cannot interpret.
@@ -249,13 +282,35 @@ func (c *client) ListRepositories(ctx context.Context, yield func(forge.Reposito
 				return nil
 			}
 		}
+		// X-Next-Page IS PUT IN THE NEXT REQUEST, so it is checked before it goes
+		// anywhere: an instance that answers with prose there would otherwise
+		// write it into a URL this driver composes and into any error quoting it.
 		next := r.header.Get("X-Next-Page")
+		if next != "" && !isPageNumber(next) {
+			return fmt.Errorf("gitlab: %s named a next page that is not a page number", c.cfg.host)
+		}
 		if next == page {
 			return fmt.Errorf("gitlab: %s named page %q as its own successor", c.cfg.host, page)
 		}
 		page = next
 	}
 	return nil
+}
+
+// isPageNumber reports whether a pager header is something this driver will put
+// in a query. GitLab's X-Next-Page is empty on the last page and a decimal
+// integer otherwise, so anything else is an instance writing into a request tau
+// composes rather than naming a page.
+func isPageNumber(s string) bool {
+	if s == "" || len(s) > 9 {
+		return false
+	}
+	for _, b := range []byte(s) {
+		if b < '0' || b > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // Create makes a project AT THE KEY IT WILL BE ADDRESSED BY.
@@ -283,7 +338,11 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 		return forge.Repository{}, fmt.Errorf("gitlab: %s named no id for namespace %q", c.cfg.host, key.Owner)
 	}
 	if !strings.EqualFold(namespace.FullPath, key.Owner) {
-		return forge.Repository{}, fmt.Errorf("gitlab: %s resolved namespace %q to %q; creating there would put the repository somewhere other than where it was asked for", c.cfg.host, key.Owner, namespace.FullPath)
+		// The name it resolved TO is not quoted, for the reason repository gives:
+		// it is a string the instance chose while holding the caller's
+		// credential. That it did not resolve to itself is the whole fact, and
+		// what it became is on the instance, one lookup away.
+		return forge.Repository{}, fmt.Errorf("gitlab: %s resolved namespace %q to a different one; creating there would put the repository somewhere other than where it was asked for", c.cfg.host, key.Owner)
 	}
 
 	visibility := "public"
@@ -305,7 +364,7 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 	if err := c.send(ctx, http.MethodPost, c.cfg.endpoint("api", "v4", "projects"), nil, body, &created); err != nil {
 		return forge.Repository{}, err
 	}
-	return c.cfg.repository(created)
+	return c.cfg.repository(created, fmt.Sprintf("project %q", key.FullName()))
 }
 
 // Delete removes a project.

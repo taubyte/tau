@@ -216,3 +216,126 @@ func TestAdvAKeySegmentCannotWalkOutOfItsPathSegment(t *testing.T) {
 	assert.NotContains(t, got[0], "?admin=1", "a name walked out of its path segment into the query")
 	assert.Contains(t, got[0], "%3F")
 }
+
+// TestAdvNoInstanceChosenSentenceReachesAnError is the REST of the class the
+// message() defect belongs to. Every case here answers 200 — so fault never sees
+// it — and every one puts the caller's own credential in a free-text field this
+// driver renders into an error. The threat is identical: the instance receives
+// the token on every request, so any instance-chosen string that reaches an
+// error is a channel from the instance into tau's logs.
+func TestAdvNoInstanceChosenSentenceReachesAnError(t *testing.T) {
+	repository := func(s *forge.Session, k repokey.Key) error {
+		_, err := s.Repository(context.Background(), k)
+		return err
+	}
+	for name, tc := range map[string]struct {
+		answer string
+		call   func(*forge.Session, repokey.Key) error
+	}{
+		"a graphql errors array": {
+			answer: `{"data":{"project":null},"errors":[{"message":"could not authenticate $TOKEN"}]}`,
+			call: func(s *forge.Session, k repokey.Key) error {
+				_, err := s.Access(context.Background(), k)
+				return err
+			},
+		},
+		"a project described with no clone url": {
+			answer: `{"path_with_namespace":"$TOKEN"}`,
+			call:   repository,
+		},
+		"a clone url carrying a credential": {
+			answer: `{"path_with_namespace":"acme/pay","http_url_to_repo":"https://oauth2:$TOKEN@gitlab.example/acme/pay.git"}`,
+			call:   repository,
+		},
+		"a namespace that resolved somewhere else": {
+			answer: `{"id":7,"full_path":"$TOKEN"}`,
+			call: func(s *forge.Session, k repokey.Key) error {
+				_, err := s.Create(context.Background(), k, forge.CreateOptions{})
+				return err
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := tc.answer
+			sess, k := advSess(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, strings.ReplaceAll(body, "$TOKEN", r.Header.Get("PRIVATE-TOKEN")))
+			}), "acme/pay")
+
+			err := tc.call(sess, k)
+			require.Error(t, err)
+			t.Logf("%v", err)
+			assert.NotContains(t, err.Error(), advToken,
+				"%s wrote the caller's credential into an error string", name)
+		})
+	}
+}
+
+// TestAdvAnInstanceCannotChooseHowLongATauLogLineIs. A host that picks how long
+// a log line is picks how much of a disk it costs, so every host-chosen string
+// that survives into an error is bounded first.
+func TestAdvAnInstanceCannotChooseHowLongATauLogLineIs(t *testing.T) {
+	const wide = 200000
+	for name, body := range map[string]string{
+		"a project path": `{"path_with_namespace":"` + strings.Repeat("x", wide) + `"}`,
+		"a clone url":    `{"path_with_namespace":"acme/pay","http_url_to_repo":"https://` + strings.Repeat("x", wide) + `"}`,
+		"a clone url host": `{"path_with_namespace":"acme/pay","http_url_to_repo":"https://` +
+			strings.Repeat("x", wide) + `.example/acme/pay.git"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			sess, k := advSess(t, answer(t, http.StatusOK, body), "acme/pay")
+			_, err := sess.Repository(context.Background(), k)
+			require.Error(t, err)
+			assert.Less(t, len(err.Error()), 2000,
+				"%s: an instance chose how long a tau log line is (%d bytes)", name, len(err.Error()))
+		})
+	}
+}
+
+// TestAdvADeliveryIsAStrangersCloneURL. A verified delivery is still a
+// stranger's bytes — the signature proves the instance RELAYED them, not that
+// they are true — and the core admits one up to eight megabytes. So the clone URL
+// a payload names is measured before it is parsed, and the reason it will not
+// parse is not carried: repokey quotes what it was given, and a URL with an
+// identity half is the one shape repokey calls a secret at rest.
+func TestAdvADeliveryIsAStrangersCloneURL(t *testing.T) {
+	const inThePayload = "glpat-RELAYED-8c31f0d5b7a2"
+
+	drv, err := New("gitlab.example.invalid")
+	require.NoError(t, err)
+	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true},
+		forge.Binding{Host: "gitlab.example.invalid", Driver: drv})
+	require.NoError(t, err)
+
+	k, err := repokey.Parse("https://gitlab.example.invalid/acme/pay")
+	require.NoError(t, err)
+	secret, err := forge.NewSecret()
+	require.NoError(t, err)
+	wire, err := forge.SchemeSharedToken.Wire(secret)
+	require.NoError(t, err)
+	hook := forge.Hook{Key: k, Handle: "1", Scheme: forge.SchemeSharedToken, Secret: secret}
+
+	header := http.Header{}
+	header.Set("X-Gitlab-Event", "Push Hook")
+	header.Set("X-Gitlab-Token", wire)
+
+	for name, cloneURL := range map[string]string{
+		"none at all": "",
+		// It PARSES. Without the measurement it becomes a key, and a key is
+		// stored, compared and printed by everything downstream.
+		"a name no repository has": "https://gitlab.example.invalid/acme/" + strings.Repeat("x", 5000),
+		"an identity half":         "https://oauth2:" + inThePayload + "@gitlab.example.invalid/acme/pay.git",
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := []byte(`{"object_kind":"push","ref":"refs/heads/main",
+				"checkout_sha":"1f0c9d2b3a4e5f60718293a4b5c6d7e8f9012345",
+				"project":{"git_http_url":"` + cloneURL + `"}}`)
+			_, err := reg.VerifyPush(hook, forge.Delivery{Header: header, Body: body})
+			require.Error(t, err)
+			assert.Less(t, len(err.Error()), 2000,
+				"a delivery chose how long a tau log line is (%d bytes)", len(err.Error()))
+			assert.NotContains(t, err.Error(), inThePayload,
+				"an identity a delivery carried was written into an error string")
+		})
+	}
+}

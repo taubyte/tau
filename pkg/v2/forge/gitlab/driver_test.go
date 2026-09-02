@@ -820,6 +820,20 @@ func TestAFaultNamesTheRequestAndNothingTheInstanceWrote(t *testing.T) {
 	assert.NotContains(t, err.Error(), "try again")
 }
 
+// X-Next-Page goes into the URL of the next request and into the error that
+// refuses a pager, so it is checked to be a page number before it is either.
+func TestListRefusesAPagerThatNamesSomethingOtherThanAPage(t *testing.T) {
+	for _, next := range []string{"could not authenticate stub-token", "1x", "-1", strings.Repeat("9", 10)} {
+		c, _ := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Next-Page", next)
+			answer(t, http.StatusOK, `[]`)(w, r)
+		})
+		err := c.ListRepositories(context.Background(), func(forge.Repository) bool { return true })
+		require.Error(t, err, "a next page of %q was accepted", next)
+		assert.NotContains(t, err.Error(), "stub-token", "the credential is in an error string")
+	}
+}
+
 // decodeInto reads a request body in a test handler.
 func decodeInto(r *http.Request, out any) error {
 	return json.NewDecoder(r.Body).Decode(out)
