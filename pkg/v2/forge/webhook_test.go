@@ -258,3 +258,79 @@ func TestObjectIDsAreWholeOrNothing(t *testing.T) {
 	assert.False(t, isZeroOID(""))
 	assert.False(t, isZeroOID("0000000000000000000000000000000000000001"))
 }
+
+// TestARefnameIsAGrammarAndNotABlocklist. The accepted half is the half that
+// matters: a check that refuses the six shapes somebody thought of and refuses
+// half the world with them is not a fix. Every refused case names the rule that
+// refused it, so widening one rule cannot quietly widen another.
+func TestARefnameIsAGrammarAndNotABlocklist(t *testing.T) {
+	for _, ref := range []string{
+		"refs/heads/main",
+		"refs/heads/feature/JIRA-1234-a-long-but-entirely-ordinary-branch-name",
+		"refs/tags/v1.2.3",
+		"refs/tags/v1.2.3-rc.1+build.4",
+		"refs/heads/dependabot/npm_and_yarn/packages/frontend/babel/plugin-transform-runtime-7.22.15",
+		"refs/changes/12/3456/1",
+		"refs/pull/17/head",
+		"refs/heads/maître", // an accented branch name is a legal ref
+		"refs/heads/主幹",     // and so is a CJK one
+		"refs/heads/a.b.c",  // dots are fine anywhere but the places git names
+		"refs/heads/locked", // only a whole ".lock" suffix is refused
+		"refs/heads/" + strings.Repeat("a", maxRefComponent),
+	} {
+		assert.Empty(t, refReason(ref), "a legitimate ref was refused: %q", ref)
+	}
+
+	for name, ref := range map[string]string{
+		"empty":                           "",
+		"an option, not a ref":            "--upload-pack=/bin/sh",
+		"a bare branch name":              "main",
+		"a path climb":                    "../../../../etc/passwd",
+		"a path climb inside refs":        "refs/heads/../../../etc/passwd",
+		"two dots and nothing else wrong": "refs/heads/ma..in",
+		"words":                           "just some words",
+		"a newline":                       "refs/heads/main\nrefs/heads/evil",
+		"a carriage return":               "refs/heads/main\rx",
+		"a NUL":                           "refs/heads/main\x00",
+		"a DEL":                           "refs/heads/main\x7f",
+		"a tab":                           "refs/heads/ma\tin",
+		"a space":                         "refs/heads/ma in",
+		"a tilde":                         "refs/heads/main~1",
+		"a caret":                         "refs/heads/main^2",
+		"a colon":                         "refs/heads/main:refs/heads/evil",
+		"a glob star":                     "refs/heads/*",
+		"a glob question mark":            "refs/heads/mai?",
+		"an open bracket":                 "refs/heads/mai[n]",
+		"a backslash":                     "refs/heads/main\\evil",
+		"a reflog selector":               "refs/heads/main@{1}",
+		"a trailing dot":                  "refs/heads/main.",
+		"a component starting with a dot": "refs/heads/.hidden",
+		"a lock file":                     "refs/heads/main.lock",
+		"a trailing slash":                "refs/heads/main/",
+		"a doubled slash":                 "refs/heads//main",
+		"refs and nothing else":           "refs/",
+		"not under refs":                  "heads/main",
+		"a megabyte of nothing":           "refs/heads/" + strings.Repeat("a", 1<<20),
+		"one oversized component":         "refs/heads/" + strings.Repeat("a", maxRefComponent+1),
+		"invalid utf-8":                   "refs/heads/ma\xffin",
+	} {
+		t.Run(name, func(t *testing.T) {
+			reason := refReason(ref)
+			require.NotEmpty(t, reason, "%q was accepted as a refname", ref)
+			// The reason is a constant naming the rule. It never quotes the
+			// ref, so a payload does not get to choose how long a log line is.
+			assert.Less(t, len(reason), 80, "reason: %q", reason)
+			if len(ref) >= 4 {
+				assert.NotContains(t, reason, ref)
+			}
+		})
+	}
+}
+
+// TestARefusedRefNamesTheRuleAndNotTheRef: a ref is a stranger's bytes, and
+// VerifyPush's error is the thing that ends up in a log.
+func TestARefusedRefNamesTheRuleAndNotTheRef(t *testing.T) {
+	assert.Equal(t, "the ref is longer than a refname may be",
+		refReason("refs/heads/"+strings.Repeat("a", MaxRefLength)))
+	assert.Equal(t, "the delivery names no ref", refReason(""))
+}

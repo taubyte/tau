@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
@@ -226,8 +227,9 @@ type Push struct {
 //     this is redundant, which is exactly why it is here: one comparison turns
 //     a forge bug, a driver bug or a confused-deputy delivery into a rejection
 //     instead of a build of somebody else's code.
-//  10. the ref is named and the commit is a whole object id that is not the
-//     all-zero deletion sentinel
+//  10. the ref is a REFNAME and not merely non-empty, and the commit is a whole
+//     object id that is not the all-zero deletion sentinel. A verified delivery
+//     is still a stranger's bytes, and Push.Ref is spent on a git command line
 //
 // THERE IS NO DEV-MODE BRANCH. v1's receiver skips verification entirely when a
 // dev flag and a fixed fake secret line up, so the bypass is one
@@ -271,8 +273,8 @@ func (r *Registry) VerifyPush(h Hook, d Delivery) (Push, error) {
 			Reason: fmt.Sprintf("delivery claims repository %q on a hook registered for %q", claim.Repository, h.Key),
 		}
 	}
-	if claim.Ref == "" {
-		return Push{}, &VerificationError{Scheme: h.Scheme, Reason: "delivery names no ref"}
+	if reason := refReason(claim.Ref); reason != "" {
+		return Push{}, &VerificationError{Scheme: h.Scheme, Reason: reason}
 	}
 	if isZeroOID(claim.Commit) {
 		return Push{}, ErrRefDeleted
@@ -456,4 +458,86 @@ func isObjectID(s string) bool {
 	}
 	_, err := hex.DecodeString(s)
 	return err == nil
+}
+
+// MaxRefLength bounds a whole refname. GIT ITSELF SETS NO TOTAL LENGTH, so this
+// is not a git rule and is not pretending to be one: it is the bound on how big
+// a thing a stranger's payload gets to choose, at the one place a ref is spent —
+// an argv, a log line, a job record. The longest refnames anyone actually writes
+// are dependabot's, around 110 bytes; 1024 is an order of magnitude above that
+// and still nothing.
+const MaxRefLength = 1024
+
+// maxRefComponent is the one length git DOES effectively enforce: a loose ref
+// lives at .git/<refname>, so every slash-separated component has to be a legal
+// filename, and 255 bytes is the limit on every filesystem git runs on.
+const maxRefComponent = 255
+
+// refReason returns why a ref is not one a verified push delivery may carry, or
+// "" if it is. IT IS A GRAMMAR AND NOT A BLOCKLIST: it says what a refname IS,
+// so a shape nobody thought of is refused by default rather than accepted by
+// default.
+//
+// The rules are git-check-ref-format's, for a full refname, plus two this layer
+// adds:
+//
+//   - FULLY QUALIFIED. A ref must begin "refs/". Every forge that fires a push
+//     event sends the qualified form, and a driver that receives a bare name
+//     (Bitbucket Cloud sends changes[].new.name = "master") must qualify it
+//     rather than pass it on — because a bare name is AMBIGUOUS exactly where
+//     it is spent: `git fetch origin main` resolves through refspec matching and
+//     can land on a tag, `git fetch origin refs/heads/main` cannot. The prefix
+//     also settles, structurally and not by listing them, every shape that is
+//     not a ref at all: a leading "-" is an option and not a ref, "../.." is a
+//     path and not a ref, and a bare word is neither.
+//   - BOUNDED. MaxRefLength over the whole name, maxRefComponent per component.
+//
+// and one more that is about how the ref got here rather than about git: a
+// delivery body is JSON, JSON is UTF-8, so a ref that is not valid UTF-8 did not
+// survive the wire intact and is not the ref anybody pushed.
+//
+// What is deliberately NOT refused: any byte above ASCII that forms valid UTF-8.
+// Accented and CJK branch names are legal in git and people use them, and they
+// are not dangerous anywhere — nothing here builds a shell string.
+//
+// The returned reason names the rule and NEVER quotes the ref: the ref is a
+// stranger's bytes, and an error string is the most-copied thing in a log.
+func refReason(ref string) string {
+	switch {
+	case ref == "":
+		return "the delivery names no ref"
+	case len(ref) > MaxRefLength:
+		return "the ref is longer than a refname may be"
+	case !utf8.ValidString(ref):
+		return "the ref is not valid utf-8"
+	case !strings.HasPrefix(ref, "refs/"):
+		return "the ref is not fully qualified"
+	case strings.Contains(ref, ".."):
+		return "the ref contains .."
+	case strings.Contains(ref, "@{"):
+		return "the ref contains @{"
+	case strings.HasSuffix(ref, "."):
+		return "the ref ends with ."
+	}
+	for _, r := range ref {
+		switch {
+		case r < 0x20 || r == 0x7f:
+			return "the ref contains a control character"
+		case strings.ContainsRune(" ~^:?*[\\", r):
+			return "the ref contains a character git forbids in a refname"
+		}
+	}
+	for _, component := range strings.Split(ref, "/") {
+		switch {
+		case component == "":
+			return "the ref has an empty path component"
+		case len(component) > maxRefComponent:
+			return "the ref has a path component longer than a filename may be"
+		case strings.HasPrefix(component, "."):
+			return "the ref has a path component beginning with ."
+		case strings.HasSuffix(component, ".lock"):
+			return "the ref has a path component ending in .lock"
+		}
+	}
+	return ""
 }
