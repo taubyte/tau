@@ -59,8 +59,9 @@ func subjectFor(t *testing.T, name string, sh fake.Shape) Subject {
 			}
 			return out
 		},
-		Break:   f.Break,
-		Unbreak: f.Unbreak,
+		Break:        f.Break,
+		Unbreak:      f.Unbreak,
+		RedirectOnce: f.RedirectOnce,
 
 		LastDeployKeyReadOnly: f.LastDeployKeyReadOnly,
 		DeployKeyInstalled:    f.DeployKeyInstalled,

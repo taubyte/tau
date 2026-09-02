@@ -87,6 +87,7 @@ type core struct {
 	lastRO   bool
 	requests []Request
 	broken   bool
+	redirect string
 
 	keys Keys
 }
@@ -205,6 +206,22 @@ func (f *Forge) Requests() []Request {
 func (f *Forge) Break()   { f.c.mu.Lock(); f.c.broken = true; f.c.mu.Unlock() }
 func (f *Forge) Unbreak() { f.c.mu.Lock(); f.c.broken = false; f.c.mu.Unlock() }
 
+// RedirectOnce makes the next call answer with a redirect to loc, which is a
+// host this credential is not for.
+//
+// THIS FORGE SENDS NOTHING, so following one is modelled rather than performed:
+// a correct driver refuses the hop and this forge says so with an error, and
+// FaultFollowsRedirect instead writes down the request it would have sent to
+// loc — with the credential on it, because a credential attached by a
+// RoundTripper is attached again on every hop. Either way the destination ends
+// up somewhere the conformance suite can read it, which is the whole point:
+// where a request WENT is not something the receiving end can report.
+func (f *Forge) RedirectOnce(loc string) {
+	f.c.mu.Lock()
+	f.c.redirect = loc
+	f.c.mu.Unlock()
+}
+
 // LastDeployKeyReadOnly reports whether the last installed key was read-only.
 // It is a probe the FORGE supplies, so a driver that lies about it passes — the
 // interface has no parameter to inspect. Saying so is more honest than a test
@@ -267,6 +284,20 @@ func (c *core) call(method, path, token string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.record(method, path, token)
+	if loc := c.redirect; loc != "" {
+		c.redirect = ""
+		if !c.shape.faulty(FaultFollowsRedirect) {
+			return fmt.Errorf("fake: %s answered a redirect to %s, which is not this host; the hop was refused", c.shape.Host, loc)
+		}
+		// The hop, written down where it can be seen. A header the driver set
+		// on the first request is set again on this one.
+		hdr := make(http.Header)
+		if token != "" {
+			hdr.Set("Authorization", "Bearer "+token)
+		}
+		c.requests = append(c.requests, Request{Method: method, URL: loc, Header: hdr})
+		return fmt.Errorf("fake: followed a redirect to %s, and what answered was not this forge", loc)
+	}
 	if c.broken {
 		return errUnreachable
 	}

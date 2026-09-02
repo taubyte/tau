@@ -51,6 +51,7 @@ type instance struct {
 	seq         int64
 	lastWire    string
 	lastCanPush bool
+	redirect    string
 }
 
 type proj struct {
@@ -223,6 +224,16 @@ func (in *instance) keys(t *testing.T) keys {
 	}
 }
 
+// redirectOnce makes the next request this instance answers a 302 to loc, which
+// is a host this credential is not for. A fixture records what ARRIVED at it,
+// so where a request went instead is the one thing it cannot report; this is
+// what lets the suite go and look at the other end.
+func (in *instance) redirectOnce(loc string) {
+	in.mu.Lock()
+	in.redirect = loc
+	in.mu.Unlock()
+}
+
 // driver builds the driver under test, pointed at this instance. The host is the
 // loopback authority the server bound to, which is the whole self-hosted case:
 // nothing in the driver knows the string "gitlab.com".
@@ -239,6 +250,19 @@ func (in *instance) driver(t *testing.T, opts ...Option) forge.Driver {
 // ─────────────────────────────── the handler ───────────────────────────────
 
 func (in *instance) serve(w http.ResponseWriter, r *http.Request) {
+	in.mu.Lock()
+	loc := in.redirect
+	in.redirect = ""
+	in.mu.Unlock()
+	if loc != "" {
+		// An instance answering 302 to somewhere else. Every SDK runs on an
+		// http.Client and an http.Client follows redirects, so what stops the
+		// credential going with it is forge.PinnedTransport and nothing in this
+		// driver's own code.
+		http.Redirect(w, r, loc, http.StatusFound)
+		return
+	}
+
 	token, presented := credential(r)
 	if presented && token != goodToken && token != deployToken {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid_token"})

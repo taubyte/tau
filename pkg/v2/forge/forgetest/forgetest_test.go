@@ -83,6 +83,14 @@ func TestTheSuiteCatchesABrokenDriver(t *testing.T) {
 			saying: "must be derived from the clone address the forge returned",
 		},
 		{
+			// A credential that followed a redirect off its own host. No
+			// fixture can see this one — the request arrives somewhere else —
+			// so the suite reads it where it lands.
+			fault:  fake.FaultFollowsRedirect,
+			shape:  fake.GitHubLike,
+			saying: "which is not the host this credential is for",
+		},
+		{
 			fault:  fake.FaultLeaksTokenInError,
 			shape:  fake.GitHubLike,
 			saying: "the credential is in an error string",
@@ -168,6 +176,7 @@ func TestASubjectThatCannotBeRunIsFatalAndNotSkipped(t *testing.T) {
 		saying string
 	}{
 		{"no-requests-probe", func(s *Subject) { s.Requests = nil }, "refused before the wire"},
+		{"no-redirect-probe", func(s *Subject) { s.RedirectOnce = nil }, "where a request WENT is unobservable"},
 		{"a-moved-fixture-that-did-not-move", func(s *Subject) {
 			s.Moved = s.MovedTo
 		}, "answer for one key and answer WITH another"},

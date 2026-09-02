@@ -178,6 +178,13 @@ const (
 	// exist, collapsing "there is nothing here" into "you may not".
 	FaultMissingIsNone Fault = "missing-is-none"
 
+	// FaultFollowsRedirect takes a forge's redirect to another host and sends
+	// the request there with the credential still on it. It is the fault
+	// forge.PinnedTransport exists to make impossible, and it is what a driver
+	// that attaches its credential on an unpinned transport does: the header is
+	// set by a RoundTripper, and a RoundTripper runs on every hop.
+	FaultFollowsRedirect Fault = "follows-redirect"
+
 	// FaultSignsWithAnotherScheme names one scheme and signs with another,
 	// which is the one webhook mistake this design leaves a driver room to
 	// make: the core owns verification, but the driver owns the claim about

@@ -8,14 +8,18 @@
 // forge gave rather than echoed back from the argument, that a delivery whose
 // body moved by one byte is rejected, that a hook can only speak for its own
 // repository, that a capability a driver appears to have is one it can actually
-// perform, and that a credential never turns up in an error string or a URL.
-// Every one of those is a thing a driver can get wrong while compiling
-// perfectly.
+// perform, and that a credential never turns up in an error string, in a URL,
+// or at a host it is not for. Every one of those is a thing a driver can get
+// wrong while compiling perfectly.
 //
-// ONE OF THEM NEEDS A FIXTURE THAT DISAGREES, and for a long time there was
-// none, so it went unchecked: a key round-tripping unchanged is what an ECHOING
-// driver produces too, and only Moved — a repository the forge answers for
-// under one key and answers WITH under another — tells the two apart.
+// TWO OF THOSE NEED A FIXTURE THAT DISAGREES, and for a long time neither had
+// one, so neither was checked. A key round-tripping unchanged is what an
+// ECHOING driver produces too, and only Moved — a repository the forge answers
+// for under one key and answers WITH under another — tells the two apart. A
+// credential's destination cannot be read off a fixture at all: a fixture
+// records what ARRIVED at it, so the one request it can never see is the
+// request that went somewhere else. RedirectOnce and the decoy the suite starts
+// against it are where that request becomes visible.
 //
 // THE SUITE NEVER SKIPS. For each optional capability it runs one of two
 // contracts — the capability's own, or the contract that absence is
@@ -143,6 +147,24 @@ type Subject struct {
 	// most: an outage is an error and never (AccessNone, nil).
 	Break   func()
 	Unbreak func()
+
+	// RedirectOnce makes the forge answer the NEXT request it is given with a
+	// redirect to loc, once. REQUIRED.
+	//
+	// IT IS THE ONLY WAY THE SUITE CAN SEE WHERE A REQUEST WENT. Requests
+	// reports what a fixture observed, and a fixture observes arrivals: a
+	// request that went to another host arrives nowhere it can report, so
+	// "every recorded request went to Host" is a sentence that cannot fail for
+	// a driver that sent one elsewhere. A forge answering 302 to somewhere else
+	// is the whole threat forge.PinnedTransport exists for — every SDK runs on
+	// an http.Client and an http.Client follows redirects — and against this
+	// probe the suite starts a server of its own at loc and reads what showed
+	// up. A driver must send NOTHING there.
+	//
+	// A subject that speaks no HTTP implements it by recording the request it
+	// WOULD have sent to loc, which the same subtest reads out of Requests.
+	// Either way the destination is observed rather than assumed.
+	RedirectOnce func(loc string)
 
 	// Required when Expect has CapDeployKeys.
 	//

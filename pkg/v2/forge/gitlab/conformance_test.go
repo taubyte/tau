@@ -70,9 +70,10 @@ func subject(t *testing.T, in *instance, name string, driver forge.Driver, polic
 		Moved:   fixtures.Moved,
 		MovedTo: fixtures.MovedTo,
 
-		Requests: in.rec.drain,
-		Break:    func() { in.rec.setBroken(true) },
-		Unbreak:  func() { in.rec.setBroken(false) },
+		Requests:     in.rec.drain,
+		Break:        func() { in.rec.setBroken(true) },
+		Unbreak:      func() { in.rec.setBroken(false) },
+		RedirectOnce: in.redirectOnce,
 
 		LastDeployKeyReadOnly: in.lastDeployKeyReadOnly,
 		DeployKeyInstalled:    in.deployKeyInstalled,

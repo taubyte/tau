@@ -180,9 +180,10 @@ func (f *fixture) subject(t *testing.T, reg *forge.Registry, extra ...forge.Capa
 		Moved:   f.key(t, "acme/billing"),
 		MovedTo: f.key(t, "acme/pay"),
 
-		Requests: f.Requests,
-		Break:    f.Break,
-		Unbreak:  f.Unbreak,
+		Requests:     f.Requests,
+		Break:        f.Break,
+		Unbreak:      f.Unbreak,
+		RedirectOnce: f.RedirectOnce,
 
 		LastDeployKeyReadOnly: f.LastDeployKeyReadOnly,
 		DeployKeyInstalled:    f.DeployKeyInstalled,

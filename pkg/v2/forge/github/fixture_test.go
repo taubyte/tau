@@ -122,6 +122,7 @@ type fixture struct {
 	requests      []forgetest.Request
 	lastWire      string
 	lastRO        bool
+	redirect      string
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -200,6 +201,17 @@ func (f *fixture) Requests() []forgetest.Request {
 func (f *fixture) Break()   { f.rt.broken.Store(true) }
 func (f *fixture) Unbreak() { f.rt.broken.Store(false) }
 
+// RedirectOnce makes the next request this server answers a 302 to loc, which
+// is a host this credential is not for. It is what the suite arms to find out
+// where a driver's requests actually GO: this fixture can only report the ones
+// that reached it, so the interesting one — the request that went somewhere
+// else — is the one it cannot see, and the suite reads that at the other end.
+func (f *fixture) RedirectOnce(loc string) {
+	f.mu.Lock()
+	f.redirect = loc
+	f.mu.Unlock()
+}
+
 func (f *fixture) LastDeployKeyReadOnly() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -267,7 +279,17 @@ func (f *fixture) handler() http.Handler {
 			URL:    "https://" + r.Host + r.URL.RequestURI(),
 			Header: r.Header.Clone(),
 		})
+		loc := f.redirect
+		f.redirect = ""
 		f.mu.Unlock()
+		if loc != "" {
+			// A forge answering 302 to somewhere else. It is the whole reason
+			// the credential is attached by a pinned transport rather than by
+			// the driver: an http.Client follows this, and a RoundTripper that
+			// sets a header sets it again on the next hop.
+			http.Redirect(w, r, loc, http.StatusFound)
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
 }

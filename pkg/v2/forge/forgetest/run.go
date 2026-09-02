@@ -68,6 +68,7 @@ func run(t tb, s Subject) {
 	t.Run("repository-round-trips-the-key", r.repository)
 	t.Run("the-key-is-derived-from-the-forges-answer", r.derivedKey)
 	t.Run("an-outage-is-not-a-refusal", r.outage)
+	t.Run("a-redirect-carries-the-credential-nowhere", r.redirectOffHost)
 
 	t.Run("list", r.list)
 	t.Run("create", r.create)
@@ -95,6 +96,9 @@ func (r *runner) preflight(t tb) {
 	}
 	if s.Requests == nil || s.Break == nil || s.Unbreak == nil {
 		t.Fatalf("forgetest: Subject needs Requests, Break and Unbreak; without them 'refused before the wire' and 'an outage is not a refusal' are unassertable")
+	}
+	if s.RedirectOnce == nil {
+		t.Fatalf("forgetest: Subject needs RedirectOnce; without it where a request WENT is unobservable, since a fixture only ever sees the requests that arrived at it")
 	}
 	if s.Token == "" {
 		t.Fatalf("forgetest: Subject.Token is the raw credential the canary looks for and cannot be empty")
@@ -382,6 +386,58 @@ func (r *runner) derivedKey(t tb) {
 	r.assertRepository(t, repo, r.s.MovedTo)
 }
 
+// redirectOffHost is the one destination assertion in this suite that a fixture
+// cannot make for itself.
+//
+// A FIXTURE SEES ARRIVALS. It records the requests that reached it, so the
+// request that reached somebody else is precisely the one missing from its
+// report, and "every recorded request went to Host" is a sentence that is true
+// for a driver that sent one somewhere else. The threat is not exotic: a forge —
+// or an instance an operator named, or anything answering as one — replies 302,
+// every SDK runs on an http.Client, an http.Client follows redirects, and a
+// credential attached by a RoundTripper is attached again on the next hop.
+// forge.PinnedTransport refuses that hop; a driver that drops it does not, and
+// nothing here could tell.
+//
+// So the suite stops reading a fixture's report and starts a host of its own.
+// RedirectOnce points the forge's next answer at it, and what shows up there is
+// observed rather than inferred. Nothing may.
+func (r *runner) redirectOffHost(t tb) {
+	t.Helper()
+	sess := r.session(t, r.s.Writable)
+
+	d := newDecoy()
+	defer d.close()
+
+	// Everything Requests reports after this belongs to the redirect, which
+	// matters for a subject that answers RedirectOnce by reporting the request
+	// it would have sent rather than by sending one.
+	r.s.Requests()
+	r.s.RedirectOnce(d.url())
+
+	_, err := sess.Whoami(r.ctx)
+	assert.Error(t, r.note(err),
+		"the forge answered a redirect to %q and Whoami succeeded anyway, so an answer from another host was taken for the forge's", d.url())
+
+	r.assertRequestsStayHome(t, r.s.Requests())
+
+	for _, got := range d.seen() {
+		t.Errorf("a request went to %q, which is not the host this credential is for: %s %s", d.host(), got.Method, got.URL)
+		// EVERY header, not the Authorization one. Go strips Authorization on a
+		// cross-host redirect and strips nothing else, so a forge whose header
+		// is PRIVATE-TOKEN or X-Token hands the credential over where GitHub's
+		// spelling would have been dropped — the stdlib's rule is about a name,
+		// and a credential does not care what it is called.
+		for name, values := range got.Header {
+			for _, v := range values {
+				if strings.Contains(v, r.s.Token) {
+					t.Errorf("and it carried the credential there, in %s", name)
+				}
+			}
+		}
+	}
+}
+
 // assertRepository is the round trip: both clone addresses must re-derive the
 // key the forge says the repository has, so "the forge and tau agree which
 // repository this is" is a checked fact. repokey refuses a URL carrying a
@@ -445,15 +501,7 @@ func (r *runner) credentialNeverTravels(t tb) {
 	r.note(second(sess.Access(r.ctx, r.s.Writable)))
 	r.note(second(sess.Repository(r.ctx, r.s.Writable)))
 
-	for _, req := range r.s.Requests() {
-		u, err := url.Parse(req.URL)
-		if !assert.NoError(t, err, "recorded request URL %q does not parse", req.URL) {
-			continue
-		}
-		assert.NotContains(t, req.URL, r.s.Token, "the credential is in a request URL")
-		assert.NotContains(t, u.RawQuery, r.s.Token, "the credential is in a query parameter")
-		assert.Equal(t, r.s.Host, u.Host, "a request went to %q, which is not the host this credential is for", u.Host)
-	}
+	r.assertRequestsStayHome(t, r.s.Requests())
 
 	for _, err := range r.errs {
 		msg := err.Error()
@@ -461,6 +509,24 @@ func (r *runner) credentialNeverTravels(t tb) {
 		if r.s.BadToken != "" {
 			assert.NotContains(t, msg, r.s.BadToken, "the credential is in an error string: %s", msg)
 		}
+	}
+}
+
+// assertRequestsStayHome is what every request a subject REPORTS must satisfy.
+// It is the whole check for a subject that reports what it would have sent, and
+// half of it for one that reports what a server received — the other half being
+// what the decoy saw, which is the only place a request to another host is
+// visible at all.
+func (r *runner) assertRequestsStayHome(t tb, reqs []Request) {
+	t.Helper()
+	for _, req := range reqs {
+		u, err := url.Parse(req.URL)
+		if !assert.NoError(t, err, "recorded request URL %q does not parse", req.URL) {
+			continue
+		}
+		assert.NotContains(t, req.URL, r.s.Token, "the credential is in a request URL")
+		assert.NotContains(t, u.RawQuery, r.s.Token, "the credential is in a query parameter")
+		assert.Equal(t, r.s.Host, u.Host, "a request went to %q, which is not the host this credential is for", u.Host)
 	}
 }
 
