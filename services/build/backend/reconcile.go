@@ -87,8 +87,9 @@ func (s *Service) reconcile() error {
 // branch that does:
 //
 //   - THE FIRST READ IS TRIAGE AND DECIDES NOTHING. A row it finds live goes to
-//     the age gate below; a row it finds finished is read a second time, after
-//     the barrier, and it is THAT read the delete is decided on. A test of this
+//     the age gate below; a row it finds finished is read a second time by
+//     reread(), which takes the barrier and reads UNDER THIS SAME HOLDING, and
+//     it is THAT read the delete is decided on. A test of this
 //     therefore has to be released at the SECOND read: armed at the first, the
 //     retry it lets go is caught by the re-read and the section is never
 //     reached, which is how PAIR 4 came to pass two thousand runs against a
@@ -98,48 +99,41 @@ func (s *Service) reconcile() error {
 //     barrier, and an item pushed for a job that has since finished is dropped
 //     by begin on the next claim and acked there. A stale read here costs a
 //     wasted claim cycle, never a wrong write.
-//   - AND THE COST IS WHY IT IS THIS BRANCH AND NOT THE TOP OF THE FUNCTION. A
-//     barrier is a replicated log entry. Taken before the first read it is one
-//     per open job per pass, forever; taken here it is one per row that LOOKS
-//     orphaned, which in steady state is none. barrier_test.go measures both: a
+//   - AND THE COST IS WHY IT IS THIS BRANCH AND NOT THE ENTRY POINT. A barrier
+//     is a replicated log entry. Taken before the first read — which is what
+//     withJob does for every other transition, and why mend is the one caller
+//     of withJobUnbarriered — it is one per open job per pass, forever; taken
+//     here it is one per row that LOOKS orphaned, which in steady state is
+//     none. barrier_test.go measures both: a
 //     pass over sixteen live open jobs still costs one, and a pass over four
 //     orphaned rows costs one plus four.
 func (s *Service) mend(repositoryKey, id string, now time.Time, cutoff time.Duration) error {
-	sec := jobLock.Enter()
-	defer sec.Leave()
-
-	r, err := s.record(sec, id)
-	if err != nil {
-		return err
-	}
-
-	// An index row whose record is gone, or whose record has finished, is the
-	// row that is wrong — but only if that is still true of a prefix this node
-	// has caught up to. Deleting it is what keeps MaxOpenPerRepo counting real
-	// work rather than history.
-	if !r.Found() || r.Value().terminal() {
-		if err := s.lead(); err != nil {
-			return err
+	return s.withJobUnbarriered(id, func(j *held) error {
+		// An index row whose record is gone, or whose record has finished, is
+		// the row that is wrong — but only if that is still true of a prefix
+		// this node has caught up to. Deleting it is what keeps MaxOpenPerRepo
+		// counting real work rather than history.
+		if !j.found() || j.rec().terminal() {
+			if err := j.reread(); err != nil {
+				return err
+			}
 		}
-		if r, err = s.record(sec, id); err != nil {
-			return err
-		}
-	}
 
-	if !r.Found() || r.Value().terminal() {
-		if err := s.commit(r, []raft.BatchOp{
-			del(openIndexKey(repositoryKey, id)),
-		}); err != nil {
-			return fmt.Errorf("dropping stale open row of job %s: %w", id, err)
+		if !j.found() || j.rec().terminal() {
+			if err := j.commit([]raft.BatchOp{
+				del(openIndexKey(repositoryKey, id)),
+			}); err != nil {
+				return fmt.Errorf("dropping stale open row of job %s: %w", id, err)
+			}
+			return nil
+		}
+
+		if now.Sub(time.Unix(j.rec().UpdatedAt, 0)) < cutoff {
+			return nil
+		}
+		if err := j.push(); err != nil {
+			return fmt.Errorf("re-queueing job %s: %w", id, err)
 		}
 		return nil
-	}
-
-	if now.Sub(time.Unix(r.Value().UpdatedAt, 0)) < cutoff {
-		return nil
-	}
-	if err := s.push(r, id); err != nil {
-		return fmt.Errorf("re-queueing job %s: %w", id, err)
-	}
-	return nil
+	})
 }

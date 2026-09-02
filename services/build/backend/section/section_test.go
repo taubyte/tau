@@ -6,7 +6,6 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -18,10 +17,97 @@ import (
 //
 // Every defeat this package exists to end was a caller reaching for something
 // that was there: a "which section is running" accessor that returned a
-// spendable number, a mutex beside it, a stamp it could assign. So the whole
-// exported surface is enumerated here, and a function added to it — however
-// reasonable — fails until somebody has decided what it hands out.
-func TestTheOnlyWayToGetASectionIsToEnterOne(t *testing.T) {
+// spendable number, a mutex beside it, a stamp it could assign, and finally a
+// minting function it could put on a value it had read anywhere at all. So the
+// whole exported surface is enumerated here, and a function added to it —
+// however reasonable — fails until somebody has decided what it hands out.
+//
+// THE TWO CLAIMS UNDER IT are what the enumeration is for: nothing but Do
+// returns a Holding, and Do takes the mutex to make one. A second source of a
+// live Holding is a token again, and this time there would be no read attached
+// to it either.
+func TestTheOnlyThingThatHandsOutAHoldingIsDo(t *testing.T) {
+	var exported, handsOutAHolding []string
+	locksTheMutex := map[string]bool{}
+
+	for _, fn := range declarations(t) {
+		if !fn.Name.IsExported() {
+			continue
+		}
+		name := fn.Name.Name
+		exported = append(exported, name)
+
+		if fn.Type.Results != nil {
+			for _, result := range fn.Type.Results.List {
+				if typeName(result.Type) == "Holding" {
+					handsOutAHolding = append(handsOutAHolding, name)
+				}
+			}
+		}
+		// A Holding handed to a callback is handed out just as much as one
+		// returned, which is exactly how Do hands one over.
+		for _, param := range fn.Type.Params.List {
+			ast.Inspect(param.Type, func(n ast.Node) bool {
+				if fn, ok := n.(*ast.FuncType); ok {
+					for _, arg := range fn.Params.List {
+						if typeName(arg.Type) == "Holding" {
+							handsOutAHolding = append(handsOutAHolding, name)
+						}
+					}
+				}
+				return true
+			})
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "Lock" {
+				locksTheMutex[name] = true
+			}
+			return true
+		})
+	}
+
+	require.ElementsMatch(t,
+		[]string{"Do", "Held", "Value", "Found", "Write", "Reread"},
+		exported,
+		"the exported surface of this package is the whole of what a caller can spend")
+
+	require.Equal(t, []string{"Do"}, handsOutAHolding,
+		"a second source of a Holding is a handle somebody can hold without holding the lock — "+
+			"which is what an Enter that returned one was, and what a Read that stamped one was")
+	require.True(t, locksTheMutex["Do"],
+		"and Do must take the mutex to make one, or the handle is not exclusion")
+}
+
+// AND THE READ IS DO'S, NOT THE BODY'S. The round before this one exported the
+// stamp — Read(section, closure) — so a body inside a live holding could stamp
+// a value it had read anywhere at all, including one read in a holding that had
+// closed. Nothing here takes a value in from outside except through a read this
+// package calls itself.
+func TestNothingTakesAValueInExceptThroughAReadThisPackageCalls(t *testing.T) {
+	takers := map[string][]string{}
+	for _, fn := range declarations(t) {
+		if !fn.Name.IsExported() {
+			continue
+		}
+		for _, param := range fn.Type.Params.List {
+			fnType, ok := param.Type.(*ast.FuncType)
+			if !ok || fnType.Results == nil {
+				continue
+			}
+			for _, result := range fnType.Results.List {
+				if typeName(result.Type) == "T" {
+					takers[fn.Name.Name] = append(takers[fn.Name.Name], "read")
+				}
+			}
+		}
+	}
+	require.ElementsMatch(t, []string{"Do", "Reread"}, keys(takers),
+		"a value reaches a holding only through a read function this package calls, at the "+
+			"instant it calls it — never as a value a caller had already got hold of")
+}
+
+func declarations(t *testing.T) []*ast.FuncDecl {
+	t.Helper()
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go")
@@ -29,50 +115,23 @@ func TestTheOnlyWayToGetASectionIsToEnterOne(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, pkgs, "section")
 
-	var exported, handsOutASection, handsOutAReading []string
-	locksTheMutex := map[string]bool{}
-
+	var out []*ast.FuncDecl
 	for _, file := range pkgs["section"].Files {
 		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || !fn.Name.IsExported() {
-				continue
+			if fn, ok := decl.(*ast.FuncDecl); ok {
+				out = append(out, fn)
 			}
-			name := fn.Name.Name
-			exported = append(exported, name)
-
-			if fn.Type.Results != nil {
-				for _, result := range fn.Type.Results.List {
-					switch typeName(result.Type) {
-					case "Section":
-						handsOutASection = append(handsOutASection, name)
-					case "Reading":
-						handsOutAReading = append(handsOutAReading, name)
-					}
-				}
-			}
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "Lock" {
-					locksTheMutex[name] = true
-				}
-				return true
-			})
 		}
 	}
+	return out
+}
 
-	require.ElementsMatch(t,
-		[]string{"Enter", "Leave", "Held", "Live", "Read", "Value", "Found", "Live"},
-		exported,
-		"the exported surface of this package is the whole of what a caller can spend")
-
-	require.Equal(t, []string{"Enter"}, handsOutASection,
-		"a second source of a Section is a token a caller can hold without holding the lock — "+
-			"which is exactly what a `current()` accessor was")
-	require.True(t, locksTheMutex["Enter"],
-		"and Enter must take the mutex to make one, or the token is not exclusion")
-
-	require.Equal(t, []string{"Read"}, handsOutAReading,
-		"a second maker of a Reading is a stamp put on by something other than a read")
+func keys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func typeName(expr ast.Expr) string {
@@ -87,147 +146,201 @@ func typeName(expr ast.Expr) string {
 	return ""
 }
 
-// A SECTION IS ALIVE ONLY WHILE IT IS HELD, and the next one is never the same
-// one again.
-func TestASectionIsLiveOnlyWhileItIsHeld(t *testing.T) {
-	var l Lock
+// A HOLDING IS LIVE ONLY WHILE ITS BODY IS RUNNING, and an escaped one never
+// comes back to life — not when the lock is free, and not while somebody else
+// holds it.
+func TestAHoldingIsLiveOnlyWhileItsBodyRuns(t *testing.T) {
+	var l Lock[string]
 	require.False(t, l.Held())
 
-	first := l.Enter()
-	require.True(t, l.Held())
-	require.NoError(t, first.Live())
-	first.Leave()
+	var escaped Holding[string]
+	require.NoError(t, l.Do(read("the record"), func(h Holding[string]) error {
+		require.True(t, l.Held())
+		require.Equal(t, "the record", h.Value())
+		require.True(t, h.Found())
+		require.NoError(t, h.Write(func() error { return nil }))
+		escaped = h
+		return nil
+	}))
 
-	require.False(t, l.Held())
-	require.ErrorIs(t, first.Live(), ErrStale, "it is over the moment it is left")
+	require.False(t, l.Held(), "the exclusion is released when the body returns")
+	require.ErrorIs(t, escaped.Write(func() error { return nil }), ErrStale,
+		"and the handle is dead at the same instant")
 
-	second := l.Enter()
-	defer second.Leave()
-	require.NoError(t, second.Live())
-	require.ErrorIs(t, first.Live(), ErrStale,
-		"and a section retaken is a different section, so the old one does not come back to life")
-	require.NotEqual(t, first, second)
+	require.NoError(t, l.Do(read("a later record"), func(Holding[string]) error {
+		require.ErrorIs(t, escaped.Write(func() error { return nil }), ErrStale,
+			"including while a DIFFERENT holding is running, which is the whole difference "+
+				"between owning the section and there being one")
+		return nil
+	}))
 }
 
-// THE ZERO SECTION IS NO SECTION. It is the only one a caller can construct,
-// and it answers nothing.
-func TestTheZeroSectionIsLiveInNothing(t *testing.T) {
-	var none Section
-	require.ErrorIs(t, none.Live(), ErrStale)
-	require.ErrorContains(t, none.Live(), "under no section")
+// AND A REFUSED WRITE IS NOT MADE. The closure is the write; a gate that
+// answered a question would leave it to the caller to act on the answer.
+func TestARefusedWriteDoesNotRunTheWrite(t *testing.T) {
+	var l Lock[string]
+	var escaped Holding[string]
+	require.NoError(t, l.Do(read("x"), func(h Holding[string]) error {
+		escaped = h
+		return nil
+	}))
 
-	// And leaving it releases nothing: a Lock somebody else is holding stays
-	// held.
-	var l Lock
-	held := l.Enter()
-	none.Leave()
-	require.True(t, l.Held(), "the zero section must not release a lock it never took")
-	held.Leave()
-	require.False(t, l.Held())
+	written := false
+	require.ErrorIs(t, escaped.Write(func() error { written = true; return nil }), ErrStale)
+	require.False(t, written, "the write is the argument, so a refusal is a write that never ran")
 }
 
-// LEAVING IS IDEMPOTENT, AND A STALE SECTION RELEASES NOTHING. Two Leaves of
-// one holding would unlock a mutex twice — and a Leave of a holding that has
-// already ended would release the exclusion of whoever holds it NOW, which is
-// the "release the mutex and leave the number alive" shape one door over.
-func TestAStaleSectionCannotReleaseTheOneThatIsRunning(t *testing.T) {
-	var l Lock
+// THE ZERO HOLDING IS NO HOLDING. It is the only one a caller can construct,
+// and it answers nothing — which is what makes a handle assembled at a write
+// site worthless rather than merely detectable.
+func TestTheZeroHoldingIsLiveInNothing(t *testing.T) {
+	var none Holding[string]
+	require.ErrorIs(t, none.Write(func() error { return nil }), ErrStale)
+	require.ErrorContains(t, none.Write(func() error { return nil }), "no section ever handed out")
+	require.ErrorIs(t, none.Reread(read("smuggled")), ErrStale)
+	require.Empty(t, none.Value())
+	require.False(t, none.Found())
 
-	first := l.Enter()
-	first.Leave()
-	first.Leave() // a second Leave of the same holding does nothing
-
-	second := l.Enter()
-	first.Leave() // and a stale holding does not release the live one
-	require.True(t, l.Held())
-	require.NoError(t, second.Live())
-
-	second.Leave()
-	require.False(t, l.Held())
+	// And it releases nothing: a Lock somebody else is holding stays held.
+	var l Lock[string]
+	require.NoError(t, l.Do(read("x"), func(Holding[string]) error {
+		require.True(t, l.Held())
+		require.ErrorIs(t, none.Write(func() error { return nil }), ErrStale)
+		return nil
+	}))
 }
 
-// THE EXCLUSION IS REAL, and Held is not a substitute for it: entering blocks
-// until the holding running now has been left.
-func TestEnteringWaitsForTheSectionRunningNow(t *testing.T) {
-	var l Lock
-	var order []uint64
+// THE EXCLUSION IS REAL, and Held is not a substitute for it: Do blocks until
+// the body running now has returned.
+func TestDoWaitsForTheBodyRunningNow(t *testing.T) {
+	var l Lock[int]
 	var mu sync.Mutex
+	var order []int
 
-	first := l.Enter()
-
+	first := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		second := l.Enter()
-		defer second.Leave()
-		mu.Lock()
-		order = append(order, second.id)
-		mu.Unlock()
-	}()
 
-	mu.Lock()
-	order = append(order, first.id)
-	mu.Unlock()
-	first.Leave()
+	require.NoError(t, l.Do(read(1), func(Holding[int]) error {
+		go func() {
+			defer wg.Done()
+			<-first
+			l.Do(read(2), func(Holding[int]) error {
+				mu.Lock()
+				order = append(order, 2)
+				mu.Unlock()
+				return nil
+			})
+		}()
+		close(first)
+
+		mu.Lock()
+		order = append(order, 1)
+		mu.Unlock()
+		return nil
+	}))
 	wg.Wait()
 
-	require.True(t, slices.IsSorted(order), "the second entry cannot have run before the first left")
+	require.Equal(t, []int{1, 2}, order, "the second body cannot have run before the first returned")
 	require.False(t, l.Held())
 }
 
-// A READING CARRIES THE SECTION THE READ WAS TAKEN IN, and what it read.
-func TestAReadingCarriesTheSectionItWasTakenIn(t *testing.T) {
-	var l Lock
-
-	in := l.Enter()
-	r, err := Read(in, func() (string, bool, error) { return "the record", true, nil })
-	require.NoError(t, err)
-	require.Equal(t, "the record", r.Value())
-	require.True(t, r.Found())
-	require.NoError(t, r.Live())
-
-	in.Leave()
-	require.ErrorIs(t, r.Live(), ErrStale, "and it is dead the moment that section is")
-
-	next := l.Enter()
-	defer next.Leave()
-	require.ErrorIs(t, r.Live(), ErrStale,
-		"including while a DIFFERENT section is running, which is the whole difference "+
-			"between owning the section and there being one")
-	require.ErrorContains(t, r.Live(), "was made under section")
-}
-
-// A read that found nothing is still a reading, and a read that FAILED is not
-// one at all: there is nothing to decide a write on.
-func TestAReadThatFailedIsNotAReading(t *testing.T) {
-	var l Lock
-	in := l.Enter()
-	defer in.Leave()
-
-	empty, err := Read(in, func() (string, bool, error) { return "", false, nil })
-	require.NoError(t, err)
-	require.False(t, empty.Found())
-	require.NoError(t, empty.Live(), "a read that found nothing still decides what to write")
-
+// A READ THAT FAILED RUNS NO BODY: there is nothing to decide a write on, and
+// the error is the caller's own.
+func TestAFailedReadRunsNoBody(t *testing.T) {
+	var l Lock[string]
 	boom := errors.New("the store is gone")
-	failed, err := Read(in, func() (string, bool, error) { return "", false, boom })
+
+	ran := false
+	err := l.Do(func() (string, bool, error) { return "", false, boom }, func(Holding[string]) error {
+		ran = true
+		return nil
+	})
 	require.ErrorIs(t, err, boom)
-	require.ErrorIs(t, failed.Live(), ErrStale, "and a failed read is stamped with nothing")
+	require.False(t, ran)
+	require.False(t, l.Held(), "and the lock is released however the read went")
 }
 
-// A read taken OUTSIDE any section is stamped with the zero section on purpose:
-// it is a fact the code states rather than a comment, and every write that
-// tried to spend it is refused.
-func TestAReadTakenOutsideASectionDecidesNoWrite(t *testing.T) {
-	var l Lock
-	held := l.Enter()
-	defer held.Leave()
+// A READ THAT FOUND NOTHING IS STILL A DECISION — "there is no job here" is
+// what create's write is decided on — so it runs the body like any other.
+func TestAReadThatFoundNothingStillDecides(t *testing.T) {
+	var l Lock[string]
+	require.NoError(t, l.Do(func() (string, bool, error) { return "", false, nil }, func(h Holding[string]) error {
+		require.False(t, h.Found())
+		return h.Write(func() error { return nil })
+	}))
+}
 
-	// Another goroutine's read, with no section of its own, while a section it
-	// does not hold is running.
-	r, err := Read(Section{}, func() (string, bool, error) { return "the record", true, nil })
-	require.NoError(t, err)
-	require.Equal(t, "the record", r.Value())
-	require.ErrorIs(t, r.Live(), ErrStale)
+// REREADING IS A SECOND READ UNDER THE SAME HOLDING, and the value it installs
+// is the one the body decides on from then on.
+func TestRereadReplacesWhatTheHoldingCarries(t *testing.T) {
+	var l Lock[string]
+	require.NoError(t, l.Do(read("triage"), func(h Holding[string]) error {
+		require.Equal(t, "triage", h.Value())
+
+		require.NoError(t, h.Reread(func() (string, bool, error) { return "decided", true, nil }))
+		require.Equal(t, "decided", h.Value())
+		require.True(t, h.Found())
+
+		// A failed re-read leaves what was there: there is no third state to
+		// install and nothing has happened.
+		boom := errors.New("the store is gone")
+		require.ErrorIs(t, h.Reread(func() (string, bool, error) { return "", false, boom }), boom)
+		require.Equal(t, "decided", h.Value())
+		return nil
+	}))
+}
+
+// AND AN ESCAPED HANDLE CANNOT REREAD ITSELF BACK TO LIFE. Reread is a read
+// under a live holding, so the one thing it cannot be is the way a dead handle
+// gets a fresh value to write on.
+func TestAnEscapedHandleCannotRereadItselfAlive(t *testing.T) {
+	var l Lock[string]
+	var escaped Holding[string]
+	require.NoError(t, l.Do(read("x"), func(h Holding[string]) error {
+		escaped = h
+		return nil
+	}))
+
+	require.ErrorIs(t, escaped.Reread(read("fresh")), ErrStale)
+	require.Equal(t, "x", escaped.Value())
+	require.ErrorIs(t, escaped.Write(func() error { return nil }), ErrStale)
+}
+
+// A COPY OF A HANDLE IS THE SAME HANDLE. The body is handed a value, so copying
+// one is free and inevitable — and a copy that outlives the body is dead with
+// it, which is what makes "hand your decision to a helper" safe and "stash it
+// for later" useless.
+func TestACopyOfAHandleDiesWithTheOneItWasCopiedFrom(t *testing.T) {
+	var l Lock[string]
+	var copied Holding[string]
+	require.NoError(t, l.Do(read("x"), func(h Holding[string]) error {
+		copied = h
+		require.NoError(t, copied.Write(func() error { return nil }), "a copy writes while the body runs")
+		return nil
+	}))
+	require.ErrorIs(t, copied.Write(func() error { return nil }), ErrStale)
+}
+
+// THE BODY'S ERROR IS DO'S ERROR, and a body that panics still releases the
+// lock and kills the handle — a transition that crashed must not leave the
+// table locked for the life of the process.
+func TestDoReportsTheBodyAndSurvivesAPanic(t *testing.T) {
+	var l Lock[string]
+	boom := errors.New("the body refused")
+	require.ErrorIs(t, l.Do(read("x"), func(Holding[string]) error { return boom }), boom)
+
+	var escaped Holding[string]
+	require.Panics(t, func() {
+		l.Do(read("x"), func(h Holding[string]) error {
+			escaped = h
+			panic("the body blew up")
+		})
+	})
+	require.False(t, l.Held(), "a panicking body must not hold the table forever")
+	require.ErrorIs(t, escaped.Write(func() error { return nil }), ErrStale)
+}
+
+func read[T any](value T) func() (T, bool, error) {
+	return func() (T, bool, error) { return value, true, nil }
 }

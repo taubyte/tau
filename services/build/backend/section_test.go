@@ -16,39 +16,37 @@ import (
 
 // section_test.go is the half population_test.go cannot be.
 //
-// WRITTEN INTO THE REAL CODE, EVERY FORM BELOW PASSED EVERY STATIC GUARD IN
-// THIS PACKAGE — several were, and did, with the whole suite green. Each reads
-// a job record inside a jobLock section and makes the write that read decided
-// from a position that is, textually, inside the same span; and each makes that
-// write when the section is no longer held. A scan sees correct functions. The
-// store sees writes decided on reads that something else was free to invalidate
-// in between.
+// WRITTEN INTO THE REAL CODE, EVERY FORM BELOW ONCE PASSED EVERY STATIC GUARD
+// IN THIS PACKAGE — several were, and did, with the whole suite green. Each
+// reads a job record inside a section and makes the write that read decided
+// from a position that is, textually, inside it; and each makes that write when
+// the section is no longer held.
 //
-// AND THE LAST THREE ARE NEW IN KIND. The forms above are a write made when NO
-// section is running; these are a write made while a section IS running that
-// the writer does not hold — a goroutine that took no lock at all, an ack
-// handed a live section that decided nothing, a registration built inside a
-// section and made after it. A check that asks "is a section by this number
-// running" answers yes to all three. That is the difference between recency and
-// ownership, and it is why the token is now a value only Enter hands out.
+// MOST OF THEM CANNOT BE WRITTEN ANY MORE, and that is the point of the round
+// that produced this file: there is no Enter to leave and retake, no accessor
+// that hands out a live section, and no way to stamp a value with one. What is
+// left is the one escape Go cannot express away — A HANDLE THAT OUTLIVES THE
+// CALL IT WAS HANDED TO, captured, deferred, or sent to another goroutine — and
+// the forms below are that one escape, in each of the shapes the earlier
+// guards were defeated by. They are refused at runtime, because the handle is
+// dead from the instant withJob returns.
 //
 // They are exercised against the real Service, the real store and the real
 // jobLock, so that what is measured is the mechanism rather than a model of it,
 // and each has the name of the shape it stands for so that a failure says which
 // escape happened.
 
-// inOneSection is what a correct transition does, and is the control every test
-// below is measured against: one section, one read, and the write that read
-// decided, made inside it.
-func inOneSection(h *harness, id string, write func(reading) error) error {
-	sec := jobLock.Enter()
-	defer sec.Leave()
-
-	r, err := h.record(sec, id)
-	if err != nil {
-		return err
-	}
-	return write(r)
+// escapee is a handle that outlived its call. It is the one thing a body can do
+// that no type can stop it doing, so it is what every form below is built from.
+func escapee(t *testing.T, h *harness, id string) *held {
+	t.Helper()
+	var out *held
+	require.NoError(t, h.withJob(id, func(j *held) error {
+		require.True(t, j.found(), "job %s must exist", id)
+		out = j
+		return nil
+	}))
+	return out
 }
 
 // requireRefused is the shape of every failure below: the write did not happen,
@@ -63,77 +61,114 @@ func requireRefused(t *testing.T, h *harness, id string, err error) {
 
 // THE CONTROL. The same read and the same write, in one section, are allowed —
 // so nothing below fails merely because the check refuses everything.
-func TestAWriteMadeInTheSectionThatReadItIsAllowed(t *testing.T) {
+func TestAWriteMadeByTheBodyThatReadItIsAllowed(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	err := inOneSection(h, id, func(r reading) error {
-		return h.finish(r, buildv1.JobStatus_JobStatusCancelled, "cancelled")
-	})
-	require.NoError(t, err)
+	require.NoError(t, h.withJob(id, func(j *held) error {
+		return j.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+	}))
 	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
 }
 
-// A GOROUTINE THAT HOLDS NOTHING CAN ASK WHETHER A SECTION IS RUNNING AND
-// CANNOT SPEND THE ANSWER. This is the shape that outlived the number: with a
-// "which section is running" accessor, a goroutine holding NO LOCK AT ALL read
-// the record, worked for ten milliseconds, wrote, and the record moved — the
-// write was made under a live section that the writer did not hold.
+// A HANDLE ASSEMBLED RATHER THAN HANDED OVER IS DEAD, AND THAT IS WHY FORGING
+// ONE BUYS NOTHING.
 //
-// There is now nothing for it to read. Held() answers the question with a bool,
-// Enter is the only thing that hands out a section, and the only reading this
-// goroutine can take is stamped with none — so the write is refused however
-// long it waits and whoever is holding the lock meanwhile.
-func TestAGoroutineThatHoldsNoSectionCannotWriteWhatItRead(t *testing.T) {
+// held is this package's own struct, so this package can of course build one —
+// no scan and no type can stop a file assembling a struct declared beside it,
+// and the round before this one spent its whole budget on making a token that
+// could not be forged. THE AUTHORITY IS NOT THE STRUCT. It is the holding
+// inside it, which only backend/section can make live and only inside a running
+// Do. So a handle built anywhere else carries the zero holding, and every write
+// through it is refused — while a handle built INSIDE a live body carries
+// exactly the authority that body already had, which is not an escalation.
+func TestAHandleAssembledOutsideAHoldingIsDead(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	held := jobLock.Enter()
-	defer held.Leave()
-	require.True(t, jobLock.Held(), "a section IS running — and that is all it can learn")
+	forged := &held{s: h.Service, id: id}
+	requireRefused(t, h, id, forged.commit(nil))
+	requireRefused(t, h, id, forged.push())
+	requireRefused(t, h, id, forged.withdraw())
+	requireRefused(t, h, id, forged.register(func() {}))
+	requireRefused(t, h, id, forged.stopRun())
+	requireRefused(t, h, id, forged.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled"))
+	require.ErrorIs(t, forged.reread(), section.ErrStale,
+		"and it cannot read itself a value to write on either")
+
+	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+}
+
+// A GOROUTINE THAT HOLDS NOTHING CAN READ AND HAS NOTHING TO WRITE WITH. This
+// is the shape that outlived the number: with a "which section is running"
+// accessor, a goroutine holding NO LOCK AT ALL read the record, worked for ten
+// milliseconds, wrote, and the record moved — the write was made under a live
+// section that the writer did not hold.
+//
+// There is nothing for it to read now. Held() answers the question with a bool,
+// withJob is the only thing that makes a handle, and it hands it to its own
+// body — so the write is refused however long this waits and whoever is holding
+// the lock meanwhile.
+func TestAGoroutineThatHoldsNothingHasNothingToWriteWith(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
 
 	done := make(chan error, 1)
+	entered := make(chan struct{})
 	go func() {
-		r, err := h.record(unsectioned(), id)
-		if err != nil {
+		<-entered
+		rec, found, err := h.readRecord(id)
+		if err != nil || !found {
 			done <- err
 			return
 		}
 		// The ten milliseconds of real work the old shape did between the read
 		// and the write, in which anything at all may write this record.
 		time.Sleep(10 * time.Millisecond)
-		done <- h.finish(r, buildv1.JobStatus_JobStatusCancelled, "cancelled")
+		// And the only handle this goroutine can put that record behind.
+		done <- (&held{s: h.Service, id: rec.ID}).finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
 	}()
+
+	require.NoError(t, h.withJob(id, func(*held) error {
+		require.True(t, jobLock.Held(), "a section IS running — and that is all it can learn")
+		close(entered)
+		return nil
+	}))
 
 	requireRefused(t, h, id, <-done)
 	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id),
 		"and the record the sectionless read decided on must not have moved")
 }
 
-// FORM 1 — LEAVE AND RE-ENTER. The body reads under the lock, releases it, does
-// real work, retakes it and then writes. Every call sits inside a section; it is
+// FORM 1 — LEAVE AND RE-ENTER. The body read under the lock, released it, did
+// real work, retook it and then wrote. Every call sat inside a section; it was
 // not the section the read was taken in, and the six lines that put this shape
 // back into begin() shipped with the whole suite green and the behavioural
 // needle printing sectionHeldAtTheAck=true, because a needle that asks whether
 // the lock is held finds the RE-TAKEN one.
-func TestASectionReleasedAndRetakenIsNotTheSectionThatRead(t *testing.T) {
+//
+// THERE IS NO LONGER AN Enter TO CALL, so what is left of the shape is a handle
+// from a finished section spent inside a later one. It answers the needle
+// exactly as the original did — the lock IS held at the write — and it is
+// refused, because the handle names the section it came from and that section
+// has returned.
+func TestAHandleSpentInsideALaterSectionIsRefused(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	sec := jobLock.Enter()
-	r, err := h.record(sec, id)
-	require.NoError(t, err)
-	require.True(t, r.Found())
-	sec.Leave()
+	stale := escapee(t, h, id)
 
 	// The real work the section was released for, and the window in which
 	// anything at all may write this record.
 	h.lastCommit(testRepo, testRef)
 
-	next := jobLock.Enter()
-	err = h.finish(r, buildv1.JobStatus_JobStatusCancelled, "cancelled")
-	heldAtTheWrite := jobLock.Held()
-	next.Leave()
+	var err error
+	var heldAtTheWrite bool
+	require.NoError(t, h.withJob(id, func(*held) error {
+		heldAtTheWrite = jobLock.Held()
+		err = stale.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+		return nil
+	}))
 
 	require.True(t, heldAtTheWrite, "the lock is held at the write, which is exactly what the old needle asked")
 	requireRefused(t, h, id, err)
@@ -141,25 +176,23 @@ func TestASectionReleasedAndRetakenIsNotTheSectionThatRead(t *testing.T) {
 		"and the record the stale read decided on must not have moved")
 }
 
-// FORM 2 — A DEFERRED WRITE. Registered before the Leave defer, so LIFO runs it
-// AFTER the section is over, while its call site sits inside it. drainDeadLetter
-// rewritten this way passed everything and left jobLock free at the ack in ten
-// runs out of ten.
-func TestAWriteFromACallDeferredBeforeTheLeaveHasNoSectionAtAll(t *testing.T) {
+// FORM 2 — A DEFERRED WRITE. Registered outside the body, so it runs AFTER the
+// section is over while its call site sits above it. drainDeadLetter rewritten
+// this way passed everything and left jobLock free at the ack in ten runs out
+// of ten.
+func TestAWriteFromACallDeferredAfterTheSectionHasNoSectionAtAll(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
 	var err error
 	func() {
-		sec := jobLock.Enter()
-		var r reading
-		defer func() { err = h.finish(r, buildv1.JobStatus_JobStatusCancelled, "cancelled") }()
-		defer sec.Leave()
+		var j *held
+		defer func() { err = j.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled") }()
 
-		var read error
-		r, read = h.record(sec, id)
-		require.NoError(t, read)
-		require.True(t, r.Found())
+		require.NoError(t, h.withJob(id, func(in *held) error {
+			j = in
+			return nil
+		}))
 	}()
 
 	requireRefused(t, h, id, err)
@@ -173,47 +206,37 @@ func TestAClosureBuiltInASectionAndInvokedOutsideItIsRefused(t *testing.T) {
 	id := h.push(t, testRef, testCommit)
 
 	var pending func() error
-	func() {
-		sec := jobLock.Enter()
-		defer sec.Leave()
-
-		r, err := h.record(sec, id)
-		require.NoError(t, err)
-		require.True(t, r.Found())
-		pending = func() error { return h.finish(r, buildv1.JobStatus_JobStatusCancelled, "cancelled") }
-	}()
+	require.NoError(t, h.withJob(id, func(j *held) error {
+		pending = func() error { return j.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled") }
+		return nil
+	}))
 
 	requireRefused(t, h, id, pending())
 	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
-// FORM 4 — A WRITE IN ANOTHER FUNCTION. It carries the identity or it cannot
-// write, and the check says which: the same helper, handed the same reading,
-// is allowed from inside the section that took it and refused from outside.
+// FORM 4 — A WRITE IN ANOTHER FUNCTION. It takes the handle or it cannot write
+// at all, and that is now a parameter list rather than a scan: a helper with no
+// *held has no route to Batch, to a queue write or to the running map.
 //
 // This is the form a table keyed by the READING function could not see at all,
 // because the function that writes reads nothing. It is also the hand-off the
-// design wants: what a holder passes on is its own decision, and it dies with
-// the section.
-func TestAWriteInAnotherFunctionCarriesTheSectionOrIsRefused(t *testing.T) {
+// design wants: what a body passes on is its own decision, and it dies with the
+// section.
+func TestAWriteInAnotherFunctionTakesTheHandleOrIsRefused(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	// The helper. It reads nothing and decides nothing; it is handed a reading
-	// and writes what that reading decided.
-	elsewhere := func(r reading) error {
-		return h.finish(r, buildv1.JobStatus_JobStatusCancelled, "cancelled")
+	// The helper. It reads nothing and decides nothing; it is handed a handle
+	// and writes what that handle's read decided.
+	elsewhere := func(j *held) error {
+		return j.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
 	}
 
-	sec := jobLock.Enter()
-	r, err := h.record(sec, id)
-	require.NoError(t, err)
-	sec.Leave()
-
-	requireRefused(t, h, id, elsewhere(r))
+	requireRefused(t, h, id, elsewhere(escapee(t, h, id)))
 	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
 
-	require.NoError(t, inOneSection(h, id, elsewhere), "and the same call from inside is allowed")
+	require.NoError(t, h.withJob(id, elsewhere), "and the same call from inside is allowed")
 	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
 }
 
@@ -230,32 +253,32 @@ func TestTheQueueWritesAreRefusedInsideADifferentLiveSection(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	sec := jobLock.Enter()
-	r, err := h.record(sec, id)
-	require.NoError(t, err)
-	sec.Leave()
+	stale := escapee(t, h, id)
 
 	// The write's own section: live, entered by the writer, and not the one the
-	// reading was taken in.
+	// handle came from.
 	inADifferentSection := func(write func() error) error {
-		other := jobLock.Enter()
-		defer other.Leave()
-		require.True(t, jobLock.Held())
-		return write()
+		var err error
+		require.NoError(t, h.withJob(id, func(*held) error {
+			require.True(t, jobLock.Held())
+			err = write()
+			return nil
+		}))
+		return err
 	}
 
 	t.Run("push", func(t *testing.T) {
-		requireRefused(t, h, id, inADifferentSection(func() error { return h.Service.push(r, id) }))
+		requireRefused(t, h, id, inADifferentSection(stale.push))
 	})
 	t.Run("withdraw", func(t *testing.T) {
-		requireRefused(t, h, id, inADifferentSection(func() error { return h.withdraw(r) }))
+		requireRefused(t, h, id, inADifferentSection(stale.withdraw))
 		ready, claimed := h.work.Depth()
 		require.Equal(t, 1, ready+claimed, "the item a refused withdrawal did not remove is still there")
 	})
 	t.Run("ack", func(t *testing.T) {
 		d, err := h.work.Claim()
 		require.NoError(t, err)
-		requireRefused(t, h, id, inADifferentSection(func() error { return h.ack(r, h.work, d) }))
+		requireRefused(t, h, id, inADifferentSection(func() error { return stale.ack(h.work, d) }))
 
 		_, claimed := h.work.Depth()
 		require.Equal(t, 1, claimed,
@@ -265,113 +288,113 @@ func TestTheQueueWritesAreRefusedInsideADifferentLiveSection(t *testing.T) {
 				"told it had. Refused, the delivery stays claimed and comes back.")
 	})
 	t.Run("register", func(t *testing.T) {
-		requireRefused(t, h, id, inADifferentSection(func() error {
-			return h.register(r, func() {})
-		}))
+		requireRefused(t, h, id, inADifferentSection(func() error { return stale.register(func() {}) }))
 		h.runningMu.Lock()
 		defer h.runningMu.Unlock()
 		require.Empty(t, h.running,
 			"AND NOTHING IS REGISTERED. A registration is not an entry in the log, and that is "+
-				"the whole reason it was the last write with no checked path: a cancel serialized "+
-				"after the claim finds what this map says, and a stale registration is a build "+
-				"nobody can stop.")
+				"why it was the last write with no checked path: a cancel serialized after the "+
+				"claim finds what this map says, and a stale registration is a build nobody can "+
+				"stop.")
 	})
 }
 
-// A REGISTRATION IS A WRITE, AND ITS ONLY GUARD WAS A SCAN THAT COULD NOT SEE
-// THE SPAN. s.running[id] = stop reaches no store, so the check could not see it
-// and the AST table asked only whether the assignment sat inside SOME jobLock
-// section — which a closure built inside the section and invoked after begin
-// returns satisfies, textually, while running after the unlock.
+// A STOP CARRIED OUT AFTER ITS SECTION KILLS A BUILD SOMEBODY ELSE STARTED, and
+// that is the harm rather than the shape.
 //
-// Handed the read instead, it is refused: begin's claim fails, the delivery
-// stays claimed and comes back, and nothing is left half-registered.
-func TestARegistrationBuiltInASectionAndMadeOutsideItIsRefused(t *testing.T) {
+// stopRun was a write with no door at all until this round. It reads the
+// running map and INVOKES a context.CancelFunc — it reaches no store, so the
+// enumeration of who WRITES that map walked past it, and the whole of its
+// safety was the sentence "it is called inside cancel's section". Moved one
+// line out, the entire suite stayed green.
+//
+// WHAT IT COSTS IS BELOW, deterministically and with no race to win: a cancel's
+// decision, carried out after its section has returned, reaching the run a
+// LATER section registered. The later run is the retry's — the job was
+// cancelled and asked for again, which is two ordinary RPCs — and killing it
+// ends it Failed("context canceled") having never built anything.
+func TestAStopCarriedOutOfItsSectionCannotKillALaterRun(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	stopped := make(chan struct{})
-	var pending func() error
-	func() {
-		sec := jobLock.Enter()
-		defer sec.Leave()
+	// The cancel's handle, escaped from the section that decided the stop.
+	stale := escapee(t, h, id)
 
-		r, err := h.record(sec, id)
-		require.NoError(t, err)
-		pending = func() error { return h.register(r, func() { close(stopped) }) }
-	}()
+	// And the run a later section registered, exactly as begin does.
+	killed := make(chan struct{})
+	require.NoError(t, h.withJob(id, func(j *held) error {
+		return j.register(func() { close(killed) })
+	}))
 
-	requireRefused(t, h, id, pending())
-
-	h.runningMu.Lock()
-	defer h.runningMu.Unlock()
-	require.Empty(t, h.running, "a cancel serialized after that section would find nothing to stop")
-}
-
-// A READING CANNOT BE RE-STAMPED, AND THAT IS THE COMPILER'S DOING RATHER THAN
-// A TEST'S. The guard before this scanned for composite literals of type
-// reading, so `r.at = at` — a field assignment, not a literal — re-stamped a
-// read taken in a closed section with the section running now, and Live()
-// passed. retry split into a reopen and a queueRetry that way ran green.
-//
-// reading is section.Reading now: declared in another package, with every field
-// unexported and no setter, so there is no assignment this package can write.
-// What is asserted here is the SHAPE THAT MAKES THAT TRUE, because the
-// assignment that would prove it cannot be compiled.
-func TestAReadingIsImmutableBecauseItIsNotThisPackagesToAssign(t *testing.T) {
-	for _, typ := range []reflect.Type{
-		reflect.TypeOf(reading{}),
-		reflect.TypeOf(section.Section{}),
-	} {
-		require.Equal(t, "github.com/taubyte/tau/services/build/backend/section", typ.PkgPath(),
-			"%s must be declared where this package cannot assign its fields", typ)
-		require.Positive(t, typ.NumField())
-		for i := range typ.NumField() {
-			require.False(t, typ.Field(i).IsExported(),
-				"%s.%s is exported, so a write site can stamp itself with a live section",
-				typ, typ.Field(i).Name)
-		}
+	requireRefused(t, h, id, stale.stopRun())
+	select {
+	case <-killed:
+		require.FailNow(t, "a stop made after its section killed a build a later section registered")
+	default:
 	}
 
-	// And the one Section value this package CAN construct is the zero one,
-	// which is live in nothing.
-	require.Error(t, unsectioned().Live())
-	require.ErrorIs(t, unsectioned().Live(), section.ErrStale)
+	// And the section that DOES own the decision still stops it, so what was
+	// refused is the stale carrying-out and not the stop.
+	require.NoError(t, h.withJob(id, func(j *held) error { return j.stopRun() }))
+	<-killed
 }
 
-// LEAVING IS THE ONLY WAY TO RELEASE THE EXCLUSION, so the number cannot be
-// left alive behind it. jobLock.mu.Unlock() was a thing this package could
-// write: it released the mutual exclusion while the identity stayed live, and
-// the static scan — which matched a selector whose X is the ident jobLock —
-// saw one clean section. The mutex is in another package now and there is no
-// method that touches it alone.
-func TestReleasingTheExclusionAndEndingTheSectionAreOneAct(t *testing.T) {
+// THE HANDLE DIES BEFORE THE EXCLUSION IS RELEASED, which is the ordering that
+// leaves no instant in which a write could find a section already on its way
+// out. jobLock.mu.Unlock() was once a thing this package could write: it
+// released the mutual exclusion while the identity stayed live, and the static
+// scan — which matched a selector whose X is the ident jobLock — saw one clean
+// section. There is no mutex here to unlock any more, and nothing but Do
+// touches the one there is.
+func TestTheHandleDiesBeforeTheExclusionIsReleased(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	sec := jobLock.Enter()
-	r, err := h.record(sec, id)
-	require.NoError(t, err)
-	require.True(t, jobLock.Held())
-
-	sec.Leave()
-	require.False(t, jobLock.Held(), "the identity cannot outlive the exclusion")
+	stale := escapee(t, h, id)
+	require.False(t, jobLock.Held(), "the exclusion is released when the body returns")
 
 	// A second goroutine gets in immediately, which is what "the exclusion was
-	// released" means — and the reading from before is dead, which is what
-	// "the section ended" means. The old shape had the first without the
-	// second.
+	// released" means — and the handle from before is dead, which is what "the
+	// section ended" means. The old shape had the first without the second.
 	entered, wrote := make(chan struct{}), make(chan error, 1)
 	go func() {
-		next := jobLock.Enter()
-		defer next.Leave()
-		close(entered)
-		wrote <- h.finish(r, buildv1.JobStatus_JobStatusCancelled, "cancelled")
+		wrote <- h.withJob(id, func(*held) error {
+			close(entered)
+			return stale.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+		})
 	}()
 	<-entered
 
 	requireRefused(t, h, id, <-wrote)
 	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+}
+
+// THE LIVENESS IS NOT THIS PACKAGE'S TO ASSIGN, AND THAT IS THE COMPILER'S
+// DOING RATHER THAN A TEST'S. Two rounds ago `r.at = at` re-stamped a read
+// taken in a closed section with the section running now, and retry split into
+// a reopen and a queueRetry that way ran green. One round ago the fields were
+// unexported in another package and the STAMP was exported instead, so a body
+// could put a live section on any value at all.
+//
+// There is neither now: section.Holding's fields are unexported, and the only
+// thing that fills them in is Do, which takes the read itself. What is asserted
+// here is the SHAPE THAT MAKES THAT TRUE, because the assignment that would
+// prove it cannot be compiled.
+func TestTheHoldingIsNotThisPackagesToAssign(t *testing.T) {
+	typ := reflect.TypeOf(section.Holding[jobRecord]{})
+	require.Equal(t, "github.com/taubyte/tau/services/build/backend/section", typ.PkgPath(),
+		"a holding must be declared where this package cannot assign its fields")
+	require.Positive(t, typ.NumField())
+	for i := range typ.NumField() {
+		require.False(t, typ.Field(i).IsExported(),
+			"section.Holding.%s is exported, so a write site can stamp itself with a live section",
+			typ.Field(i).Name)
+	}
+
+	// And the one holding this package CAN construct is the zero one, which is
+	// live in nothing.
+	var none section.Holding[jobRecord]
+	require.ErrorIs(t, none.Write(func() error { return nil }), section.ErrStale)
 }
 
 // EVERY TRANSITION WRITES IN THE SECTION IT READ IN, driven end to end rather
@@ -449,11 +472,11 @@ func TestACancelStopsTheRunTheClaimRegistered(t *testing.T) {
 	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
 }
 
-// THE COST, MEASURED. A section entry is one atomic add and one atomic store on
-// top of a mutex acquisition; an exit is one compare-and-swap; a write is one
-// atomic load and a compare on top of a replicated raft entry. The numbers are
-// printed rather than asserted, because what they have to be smaller than is a
-// raft round trip and no test in this package can bound one.
+// THE COST, MEASURED. A section is a mutex acquisition and two atomic stores,
+// one atomic store on the way out, and one atomic load plus a nil check per
+// write. The numbers are printed rather than asserted, because what they have
+// to be smaller than is a raft round trip and no test in this package can bound
+// one.
 func BenchmarkSection(b *testing.B) {
 	b.Run("a plain mutex", func(b *testing.B) {
 		var mu sync.Mutex
@@ -463,23 +486,30 @@ func BenchmarkSection(b *testing.B) {
 		}
 	})
 	b.Run("a section", func(b *testing.B) {
-		var l section.Lock
+		var l section.Lock[jobRecord]
+		read := func() (jobRecord, bool, error) { return jobRecord{}, true, nil }
+		body := func(section.Holding[jobRecord]) error { return nil }
 		for b.Loop() {
-			l.Enter().Leave()
+			if err := l.Do(read, body); err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
 	b.Run("the check a write makes", func(b *testing.B) {
-		sec := jobLock.Enter()
-		defer sec.Leave()
-
-		r, err := section.Read(sec, func() (jobRecord, bool, error) { return jobRecord{}, true, nil })
-		if err != nil {
+		var l section.Lock[jobRecord]
+		write := func() error { return nil }
+		if err := l.Do(
+			func() (jobRecord, bool, error) { return jobRecord{}, true, nil },
+			func(h section.Holding[jobRecord]) error {
+				for b.Loop() {
+					if err := h.Write(write); err != nil {
+						b.Fatal(err)
+					}
+				}
+				return nil
+			},
+		); err != nil {
 			b.Fatal(err)
-		}
-		for b.Loop() {
-			if err := r.Live(); err != nil {
-				b.Fatal(err)
-			}
 		}
 	})
 }

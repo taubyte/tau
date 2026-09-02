@@ -2,7 +2,6 @@ package backend
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/pkg/v2/queue"
 )
 
 // jobHandler is the connect adapter for JobService. As in queue.go, each method
@@ -60,7 +58,7 @@ func (h *jobHandler) Retry(ctx context.Context, req *connect.Request[buildv1.Job
 // attempt.
 //
 // IT IS THE ONE READ OF A RECORD THAT DECIDES NO WRITE, so it is the one that
-// takes no jobLock: there is nothing for a concurrent transition to make stale,
+// takes no section: there is nothing for a concurrent transition to make stale,
 // and serializing every Get behind every build's bookkeeping would buy a
 // consistency this shape does not promise anyway — the rows are listed after
 // the record is read, and one that vanished between the two is skipped below.
@@ -78,14 +76,13 @@ func (s *Service) job(id string) (*buildv1.Job, error) {
 		return nil, err
 	}
 
-	r, err := s.record(unsectioned(), id)
+	rec, found, err := s.readRecord(id)
 	if err != nil {
 		return nil, err
 	}
-	if !r.Found() {
+	if !found {
 		return nil, errNotFound("no job %s", id)
 	}
-	rec := r.Value()
 
 	job := &buildv1.Job{
 		Id:            rec.ID,
@@ -155,8 +152,11 @@ func (s *Service) list(projectID string, emit func(*buildv1.JobRef) error) error
 
 // cancel writes the terminal record, withdraws the job's queue item and, if
 // this node is the one running the job, stops it. All four — the read, the
-// record, the withdrawal and the stop — are ONE SECTION under jobLock, and that
-// is what makes the paragraph below true rather than nearly true.
+// record, the withdrawal and the stop — are ONE SECTION, which is one closure
+// over one handle, and that is what makes the paragraph below true rather than
+// nearly true. The stop was the last of the four to become a write with a door:
+// it reaches no store, so every enumeration walked past it, and carried out
+// after its section it kills a build a later retry registered (section.go).
 //
 // THE RECORD IS STILL WHAT CANCELS THE JOB. The withdrawal is bookkeeping on
 // top of it, never the mechanism, and a delivery that outran it is dropped —
@@ -184,94 +184,36 @@ func (s *Service) cancel(id string) error {
 		return err
 	}
 
-	sec := jobLock.Enter()
-	defer sec.Leave()
+	return s.withJob(id, func(j *held) error {
+		if !j.found() {
+			return errNotFound("no job %s", id)
+		}
+		rec := j.rec()
+		if rec.status() == buildv1.JobStatus_JobStatusCancelled {
+			// Cancelling a cancelled job is the outcome the caller asked for —
+			// and is where a withdrawal whose entry did not land is finished
+			// off, the same way Enqueue's push repairs a record whose push was
+			// lost.
+			return j.withdraw()
+		}
+		if rec.terminal() {
+			return errFailedPrecondition("job %s already finished as %s", id, rec.status())
+		}
 
-	if err := s.lead(); err != nil {
-		return err
-	}
-
-	r, err := s.record(sec, id)
-	if err != nil {
-		return err
-	}
-	if !r.Found() {
-		return errNotFound("no job %s", id)
-	}
-	rec := r.Value()
-	if rec.status() == buildv1.JobStatus_JobStatusCancelled {
-		// Cancelling a cancelled job is the outcome the caller asked for — and
-		// is where a withdrawal whose entry did not land is finished off, the
-		// same way Enqueue's push repairs a record whose push was lost.
-		return s.withdraw(r)
-	}
-	if rec.terminal() {
-		return errFailedPrecondition("job %s already finished as %s", id, rec.status())
-	}
-
-	// THE RECORD FIRST, THE WITHDRAWAL SECOND, and the two cannot be one entry
-	// because the queue does its own Batch. A crash between them leaves a
-	// cancelled job with an item, which the next claim drops on reading the
-	// record; the other order leaves an open job with no item, which reconcile
-	// would push back into the queue — a build somebody asked to stop.
-	if err := s.finish(r, buildv1.JobStatus_JobStatusCancelled, "cancelled"); err != nil {
-		return err
-	}
-	if err := s.withdraw(r); err != nil {
-		return err
-	}
-
-	s.stopRun(id)
-	return nil
-}
-
-// withdraw takes a cancelled job's item out of the queue.
-//
-// LEAVING IT WAS NOT FREE. finish() drops the open index row, so the repository
-// is told it has nothing outstanding while a delivery for it is still queued —
-// and that item counts against MaxQueueDepth, and costs the builder a whole
-// claim cycle before it reaches a job somebody still wants. On a leader that
-// runs no builds — a voter rather than a builder, which WithRunner says is a
-// deployment's choice — nothing ever claims, so nothing ever drops it.
-//
-// The two refusals are the cases where there is nothing to withdraw. An item
-// the queue does not hold is one already acked, or one whose push never landed.
-// An item a CONSUMER holds is refused by the queue on purpose: that claim is
-// the mutual exclusion, and taking it away would let a retry of this same job
-// be claimed beside the run still going.
-//
-// SWALLOWING ErrClaimed IS ONLY HONEST IF THAT ITEM ALWAYS LEAVES, and it does,
-// by one of three exits — none of which needs anybody to come back to it:
-//
-//   - the holder acks. On this node the stopRun a line below is what makes that
-//     prompt, and it reaches the run because begin registered it inside the
-//     same section this one is running in. On another node the run finishes,
-//     acks, and settles against a record that is already terminal.
-//   - the holder dies, the claim lapses at its deadline, and the redelivery is
-//     dropped on reading the record: begin refuses a job it finds terminal and
-//     run acks it without starting it.
-//   - the redeliveries run out and the item reaches the dead letter, where the
-//     drain finds a terminal record, writes nothing, and acks.
-//
-// Before the section existed the first exit was the claim: stopRun could be
-// called while the run had been decided on and not yet registered, so it was a
-// no-op and the build ran to its own completion. It is the registration inside
-// begin, not this call, that closed that.
-func (s *Service) withdraw(r reading) error {
-	// THE CHECK IS SPELLED OUT HERE rather than behind a helper like push and
-	// ack, because the three outcomes below must not swallow it: "the section
-	// that decided this had already been left" is not an item the queue does
-	// not hold, and answering it Unavailable would send the caller round the
-	// cloud looking for a node where the code is different.
-	if err := r.Live(); err != nil {
-		return stale(err)
-	}
-	id := r.Value().ID
-	err := s.work.Remove(id)
-	if err == nil || errors.Is(err, queue.ErrNotFound) || errors.Is(err, queue.ErrClaimed) {
-		return nil
-	}
-	return errUnavailable("withdrawing job %s from the queue: %v", id, err)
+		// THE RECORD FIRST, THE WITHDRAWAL SECOND, and the two cannot be one
+		// entry because the queue does its own Batch. A crash between them
+		// leaves a cancelled job with an item, which the next claim drops on
+		// reading the record; the other order leaves an open job with no item,
+		// which reconcile would push back into the queue — a build somebody
+		// asked to stop.
+		if err := j.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled"); err != nil {
+			return err
+		}
+		if err := j.withdraw(); err != nil {
+			return err
+		}
+		return j.stopRun()
+	})
 }
 
 // retry re-queues a finished job.
@@ -296,101 +238,43 @@ func (s *Service) retry(id string) error {
 	// record it read as finished, and released early it would delete the very
 	// row written a line below — leaving a job that reads Open and that nothing
 	// walking the open index will ever look at again.
-	sec := jobLock.Enter()
-	defer sec.Leave()
+	return s.withJob(id, func(j *held) error {
+		if !j.found() {
+			return errNotFound("no job %s", id)
+		}
+		rec := j.rec()
+		if !rec.terminal() {
+			return errFailedPrecondition("job %s is %s, not finished", id, rec.status())
+		}
 
-	if err := s.lead(); err != nil {
-		return err
-	}
+		// The retention row was written at the moment the job FINISHED, which
+		// is the timestamp the record still carries — so it has to be read
+		// before the record is reopened. Reading it afterwards deletes a key
+		// nothing wrote and leaves the real row behind, which is a job that
+		// reads Open and is also listed as retained.
+		finishedAt := time.Unix(rec.UpdatedAt, 0)
 
-	r, err := s.record(sec, id)
-	if err != nil {
-		return err
-	}
-	if !r.Found() {
-		return errNotFound("no job %s", id)
-	}
-	rec := r.Value()
-	if !rec.terminal() {
-		return errFailedPrecondition("job %s is %s, not finished", id, rec.status())
-	}
+		rec.Status = int32(buildv1.JobStatus_JobStatusOpen)
+		rec.UpdatedAt = s.now().Unix()
+		rec.ClaimedUntil = 0
+		rec.Holder = ""
+		rec.Reason = ""
+		value, err := rec.encode()
+		if err != nil {
+			return errInternal("encoding job %s: %v", id, err)
+		}
 
-	// The retention row was written at the moment the job FINISHED, which is
-	// the timestamp the record still carries — so it has to be read before the
-	// record is reopened. Reading it afterwards deletes a key nothing wrote and
-	// leaves the real row behind, which is a job that reads Open and is also
-	// listed as retained.
-	finishedAt := time.Unix(rec.UpdatedAt, 0)
+		if err := j.commit([]raft.BatchOp{
+			set(jobRecordKey(id), value),
+			set(openIndexKey(rec.RepositoryKey, id), nil),
+			del(terminalIndexKey(finishedAt, id)),
+		}); err != nil {
+			return refused(err, "reopening job %s", id)
+		}
 
-	rec.Status = int32(buildv1.JobStatus_JobStatusOpen)
-	rec.UpdatedAt = s.now().Unix()
-	rec.ClaimedUntil = 0
-	rec.Holder = ""
-	rec.Reason = ""
-	value, err := rec.encode()
-	if err != nil {
-		return errInternal("encoding job %s: %v", id, err)
-	}
-
-	if err := s.commit(r, []raft.BatchOp{
-		set(jobRecordKey(id), value),
-		set(openIndexKey(rec.RepositoryKey, id), nil),
-		del(terminalIndexKey(finishedAt, id)),
-	}); err != nil {
-		return refused(err, "reopening job %s", id)
-	}
-
-	if err := s.push(r, id); err != nil {
-		return refused(err, "queue push")
-	}
-	return nil
-}
-
-// finish writes a terminal record in one Batch: the record, the open index row
-// removed, the retention index row written, plus whatever else belongs in the
-// same entry — on success that is the ref anchor, so "this job succeeded" and
-// "this is now the commit to diff from" cannot end up disagreeing. A job is
-// never in a state where it is finished but still listed as open, or listed as
-// open but has no record.
-func (s *Service) finish(r reading, status buildv1.JobStatus, reason string, extra ...raft.BatchOp) error {
-	now := s.now()
-	rec := r.Value()
-	rec.Status = int32(status)
-	rec.UpdatedAt = now.Unix()
-	rec.ClaimedUntil = 0
-	rec.Holder = ""
-	rec.Reason = reason
-
-	value, err := rec.encode()
-	if err != nil {
-		return errInternal("encoding job %s: %v", rec.ID, err)
-	}
-
-	ops := append([]raft.BatchOp{
-		set(jobRecordKey(rec.ID), value),
-		del(openIndexKey(rec.RepositoryKey, rec.ID)),
-		set(terminalIndexKey(now, rec.ID), nil),
-	}, extra...)
-	if err := s.commit(r, ops); err != nil {
-		return refused(err, "finishing job %s", rec.ID)
-	}
-	return nil
-}
-
-// stopRun cancels a run this node is holding. It is a no-op for a job running
-// somewhere else or not running at all, which is the common case and not an
-// error: the record write is what cancels those.
-//
-// IT IS CALLED INSIDE cancel's SECTION, and that is what makes it reach a run
-// this node just claimed rather than being a no-op against a window. begin
-// registers the run inside the claim's section, so the two orders are the only
-// two: this one first, and the claim's re-read finds a cancelled record and
-// never starts; the claim first, and the registration is already here.
-func (s *Service) stopRun(id string) {
-	s.runningMu.Lock()
-	cancel, ok := s.running[id]
-	s.runningMu.Unlock()
-	if ok {
-		cancel()
-	}
+		if err := j.push(); err != nil {
+			return refused(err, "queue push")
+		}
+		return nil
+	})
 }

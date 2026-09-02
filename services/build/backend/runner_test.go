@@ -216,7 +216,7 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 // about the same instant — a node that is no longer the leader can neither
 // barrier nor ack — and which of them speaks is decided by the order the
 // section runs in: the barrier comes before the read the outcome is decided on,
-// and the ack comes after it, carrying that read (section.go). What matters
+// and the ack comes after it, inside the body that read it (section.go). What matters
 // here is unchanged and is asserted below: NOTHING IS PUBLISHED.
 func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
@@ -392,10 +392,10 @@ func TestANodeWithNoRunnerKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 	require.Equal(t, 1, ready, "the item is left for a node that can run it")
 	require.Equal(t, 0, claimed)
 
-	r, err := s.record(unsectioned(), id)
+	rec, found, err := s.readRecord(id)
 	require.NoError(t, err)
-	require.True(t, r.Found())
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, r.Value().status())
+	require.True(t, found)
+	require.Equal(t, buildv1.JobStatus_JobStatusOpen, rec.status())
 }
 
 func TestStepReportsAStoreThatRefusesTheClaimWrite(t *testing.T) {

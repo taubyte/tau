@@ -36,19 +36,23 @@
 //     is only worth something if nothing writes between the read and the entry
 //     it decided, and Cancel and Retry answer on rpc goroutines while the claim
 //     loop runs on its own. raft orders their entries and cannot see that the
-//     second decided on a stale read. queue.go's jobLock is that section and
-//     its boundary is stated there. THE SECTION IS A TOKEN (section.go, over
-//     the backend/section package): entering the lock is the only way to get
-//     one, a read of a job record carries the one it was taken under, and EVERY
-//     write takes that read — because "the write this read decided is made
-//     while the same section is still held" is a fact about two instants in one
-//     execution, and six successive scans over this package's source each
-//     missed the next shape of it. population_test.go is the other half —
-//     which functions may write, and which key they may write — checked at
-//     review time. v1 polled a claim
-//     record thirty times at two-second intervals, blocking the request for up
-//     to a minute, and still could not cancel a job that had not been picked
-//     up yet.
+//     second decided on a stale read. section.go's jobLock is that section and
+//     its boundary is stated there. A SECTION IS A CLOSURE (section.go, over
+//     the backend/section package): withJob takes the lock, takes the barrier,
+//     takes the read, and hands the body a handle whose methods are the only
+//     writes there are. Nothing hands out a token, so there is none to forge;
+//     nothing stamps a value, so there is no read to re-stamp; and a helper
+//     that wants to write takes the handle or cannot write at all. That is
+//     because "the write this read decided is made while the same section is
+//     still held" is a fact about two instants in one execution, and seven
+//     successive guards over this package's source each missed the next shape
+//     of it. The one escape Go cannot express away — a handle captured by
+//     something that outlives the call — is refused at runtime, because the
+//     handle dies when withJob returns. population_test.go is the other half:
+//     which functions may reach a write at all, and which key they may write,
+//     checked at review time. v1 polled a claim record thirty times at
+//     two-second intervals, blocking the request for up to a minute, and still
+//     could not cancel a job that had not been picked up yet.
 //
 // # What it is built from
 //
