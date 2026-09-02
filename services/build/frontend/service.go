@@ -36,11 +36,15 @@ type Service struct {
 	tune   func(*http.Server)
 	router http.Handler
 
-	// secrets and buckets are both keyed by a string a stranger chooses, so
-	// both are the same bounded, expiring map. See secrets.go and ratelimit.go.
-	secrets *cache[*authv1.GithubHook]
-	buckets *cache[*bucket]
-	global  *bucket
+	// FOUR LIMITERS, TWO PER PUBLIC SURFACE, and one cache of auth's answers.
+	// The keyed ones are all keyed by a string a stranger chooses, so all three
+	// are the same bounded, expiring map; the global ones are one bucket each
+	// and cannot be keyed at all. See secrets.go and ratelimit.go.
+	secrets       *cache[*authv1.GithubHook]
+	hookBuckets   *cache[*bucket]
+	callerBuckets *cache[*bucket]
+	globalHooks   *bucket
+	globalJobs    *bucket
 
 	startMu  sync.Mutex
 	server   *http.Server
@@ -156,8 +160,15 @@ func New(hooks Hooks, projects Projects, backend Backend, identity Identity, cfg
 	s.secrets = newCache[*authv1.GithubHook](s.cfg.SecretCacheMax, s.cfg.SecretCacheTTL, s.now, terminal)
 	// A bucket's lifetime is one refill period, because a bucket untouched for
 	// that long has refilled to full and is indistinguishable from a new one.
-	s.buckets = newCache[*bucket](s.cfg.SecretCacheMax, max(s.cfg.HookRate.Per, time.Second), s.now, nil)
-	s.global = newBucket(s.cfg.WebhookRate, s.now)
+	//
+	// THE TWO KEYED MAPS ARE SEPARATE. One map shared between hook ids and
+	// credentials would let a flood of invented keys on either surface evict
+	// the other's buckets — and an evicted bucket comes back full, which is the
+	// per-key limiter being turned off by a caller rather than by an operator.
+	s.hookBuckets = newCache[*bucket](s.cfg.SecretCacheMax, max(s.cfg.HookRate.Per, time.Second), s.now, nil)
+	s.callerBuckets = newCache[*bucket](s.cfg.SecretCacheMax, max(s.cfg.CallerRate.Per, time.Second), s.now, nil)
+	s.globalHooks = newBucket(s.cfg.WebhookRate, s.now)
+	s.globalJobs = newBucket(s.cfg.JobRate, s.now)
 	s.router = s.mount()
 
 	return s, nil

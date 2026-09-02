@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
@@ -198,4 +200,182 @@ func TestAnOversizedIdNeverReachesTheBackend(t *testing.T) {
 			require.False(t, reached)
 		})
 	}
+}
+
+// ── what a request costs before anything is proven ───────────────────────────
+
+// bearer() checks the SHAPE of the Authorization header and nothing else, so
+// "Bearer x" reaches mayTouchJob — which has to call the backend first, because
+// the job's repository_key IS the authorization subject. Every backend read
+// goes through its lead(), and pkg/raft/cluster.go's Barrier is
+// hashicorp/raft's: api.go puts a logFuture{log: Log{Type: LogBarrier}} on
+// applyCh and raft.go's leaderLoop hands it to dispatchLogs. That is a log
+// entry replicated to quorum, not a local read.
+//
+// So one stranger's HTTP request costs the whole consistency domain one
+// replicated entry. webhook.go's own doc comment names this defect and closes
+// it for the webhook route with two limits; these four had none.
+func TestNoJobRouteSpendsTheCloudOnceForEveryRequest(t *testing.T) {
+	const flood = 1000
+
+	countGets := func(h *harness, n *int) {
+		h.backend.get = func(string) (*buildv1.Job, error) {
+			*n++
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("no job"))
+		}
+	}
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		path   string
+		count  func(*harness, *int)
+	}{
+		{"GET /job", http.MethodGet, "/job/" + testJobID, countGets},
+		{"POST /cancel", http.MethodPost, "/cancel/" + testJobID, countGets},
+		{"POST /retry", http.MethodPost, "/retry/" + testJobID, countGets},
+		{"GET /jobs", http.MethodGet, "/jobs/" + testProject, func(h *harness, n *int) {
+			h.projects.repositories = func(string) ([]string, error) {
+				*n++
+				return nil, connect.NewError(connect.CodeNotFound, errors.New("no project"))
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, Config{})
+			reached := 0
+			tc.count(h, &reached)
+
+			limited := 0
+			for range flood {
+				if h.do(t, authed(tc.method, tc.path, "x")).Code == http.StatusTooManyRequests {
+					limited++
+				}
+			}
+
+			require.Less(t, reached, flood, "a stranger reached the cloud once per request")
+			require.Positive(t, limited, "nothing was ever refused")
+		})
+	}
+}
+
+// The per-caller limiter is keyed by a string the stranger chooses, so a fresh
+// bearer token buys a fresh bucket. Only the unkeyable one can stop that — the
+// same sentence ratelimit.go makes about invented hook ids, on the surface
+// where the cost is a replicated raft entry rather than a lookup.
+func TestAFloodOfInventedCredentialsMeetsTheGlobalJobLimit(t *testing.T) {
+	h := newHarness(t, Config{
+		JobRate:    Rate{Burst: 2, Per: time.Minute},
+		CallerRate: Rate{Burst: 100, Per: time.Minute},
+	})
+	asked := 0
+	h.backend.get = func(string) (*buildv1.Job, error) {
+		asked++
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no job"))
+	}
+
+	codes := []int{}
+	for i := range 4 {
+		codes = append(codes, h.do(t, authed(http.MethodGet, "/job/"+testJobID, fmt.Sprintf("invented-%d", i))).Code)
+	}
+
+	require.Equal(t, []int{
+		http.StatusNotFound, http.StatusNotFound,
+		http.StatusTooManyRequests, http.StatusTooManyRequests,
+	}, codes)
+	require.Equal(t, 2, asked, "two barriers, not four")
+}
+
+func TestOneCredentialsBurstDoesNotSpendTheWholeJobAPI(t *testing.T) {
+	h := newHarness(t, Config{
+		CallerRate: Rate{Burst: 2, Per: time.Minute},
+		JobRate:    Rate{Burst: 100, Per: time.Minute},
+	})
+
+	for range 2 {
+		require.Equal(t, http.StatusOK, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
+	}
+	limited := h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken))
+	require.Equal(t, http.StatusTooManyRequests, limited.Code)
+	require.Equal(t, "60", limited.Header().Get("Retry-After"), "the caller is told how long to wait")
+
+	// Another credential is unaffected: the limit is per caller, not per node.
+	require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodGet, "/job/"+testJobID, "someone-else")).Code)
+
+	// And the bucket refills on the clock, not on a sleep.
+	h.clock.advance(time.Minute)
+	require.Equal(t, http.StatusOK, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
+}
+
+// The order inside credentials() is the fix, not just the presence of a
+// limiter. A request refused by bearer() or pathID() has cost this cloud
+// nothing, so it must not spend a token: if it did, a stranger could empty the
+// global bucket with requests that ask for nothing and lock out every caller
+// whose request would have been served — the rate limit doing the job it exists
+// to prevent.
+func TestARequestThatCostsNothingSpendsNoLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		request func() *http.Request
+	}{
+		{"no credential", func() *http.Request {
+			return authed(http.MethodGet, "/job/"+testJobID, "")
+		}},
+		{"a credential that is only a scheme", func() *http.Request {
+			r := httptest.NewRequest(http.MethodGet, "/job/"+testJobID, nil)
+			r.Header.Set("Authorization", bearerPrefix+"   ")
+			return r
+		}},
+		{"an oversized id", func() *http.Request {
+			return authed(http.MethodGet, "/job/"+strings.Repeat("x", maxIDLength+1), testToken)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, Config{
+				JobRate:    Rate{Burst: 1, Per: time.Minute},
+				CallerRate: Rate{Burst: 1, Per: time.Minute},
+			})
+
+			for range 100 {
+				require.NotEqual(t, http.StatusTooManyRequests, h.do(t, tc.request()).Code)
+			}
+
+			// The one token in each bucket is still there for a caller who
+			// actually asks for something.
+			require.Equal(t, http.StatusOK, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
+		})
+	}
+}
+
+// Two public surfaces, four limits, and neither surface's flood may spend the
+// other's budget. A webhook refused is a delivery GitHub stops retrying; a job
+// route refused is a CLI that cannot read its own build. They are not
+// interchangeable, so they do not share a ceiling.
+func TestTheTwoPublicSurfacesDoNotSpendEachOthersBudget(t *testing.T) {
+	exhausting := Config{
+		JobRate:     Rate{Burst: 1, Per: time.Minute},
+		CallerRate:  Rate{Burst: 1, Per: time.Minute},
+		WebhookRate: Rate{Burst: 1, Per: time.Minute},
+		HookRate:    Rate{Burst: 1, Per: time.Minute},
+	}
+
+	t.Run("a job flood leaves the webhook alone", func(t *testing.T) {
+		h := newHarness(t, exhausting)
+		for range 10 {
+			h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken))
+		}
+		require.Equal(t, http.StatusTooManyRequests, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
+
+		require.Equal(t, http.StatusAccepted, h.do(t, webhookRequest(webhookOpts{})).Code)
+	})
+
+	t.Run("a webhook flood leaves the job API alone", func(t *testing.T) {
+		h := newHarness(t, exhausting)
+		for range 10 {
+			h.do(t, webhookRequest(webhookOpts{}))
+		}
+		require.Equal(t, http.StatusTooManyRequests, h.do(t, webhookRequest(webhookOpts{})).Code)
+
+		require.Equal(t, http.StatusOK, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
+	})
 }

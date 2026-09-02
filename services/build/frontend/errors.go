@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
 	"connectrpc.com/connect"
 )
@@ -21,11 +23,30 @@ import (
 type httpError struct {
 	status int
 	msg    string
+	// retryAfter is how long the caller should wait, when this answer knows.
+	// Only a rate limit does.
+	retryAfter time.Duration
 }
 
 func (e *httpError) Error() string { return fmt.Sprintf("%d %s", e.status, e.msg) }
 
 func problem(status int, msg string) *httpError { return &httpError{status: status, msg: msg} }
+
+// tooManyRequests is what both public surfaces answer a limited caller, and it
+// carries the one thing that helps them: how long to wait. The period is the
+// limiter's own refill period, so the answer is derived from the limit that
+// fired rather than typed beside it.
+//
+// It is one constructor rather than a helper per surface because the Retry-After
+// header is written in exactly one place — respond — and a second place to
+// write it is a second place to forget it.
+func tooManyRequests(after time.Duration) *httpError {
+	return &httpError{
+		status:     http.StatusTooManyRequests,
+		msg:        "too many requests",
+		retryAfter: after,
+	}
+}
 
 var (
 	// errUnauthorized is a missing or malformed credential: nothing was proven,
@@ -60,6 +81,11 @@ func respond(w http.ResponseWriter, err error) {
 		if decided.status == http.StatusAccepted {
 			accepted(w, decided.msg)
 			return
+		}
+		// Seconds, floored: Retry-After is an integer count and a limiter whose
+		// period rounds to zero is one nobody has to wait for.
+		if seconds := int(decided.retryAfter.Seconds()); seconds > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(seconds))
 		}
 		writeJSON(w, decided.status, map[string]string{"error": decided.msg})
 		return

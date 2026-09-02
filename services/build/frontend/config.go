@@ -43,11 +43,24 @@ const (
 	DefaultSecretCacheMax = 1024
 )
 
-// DefaultHookRate and DefaultWebhookRate are the two limits, and they are two
-// because they defend different things. See ratelimit.go.
+// The four limits, two per public surface, and they are four because the two
+// surfaces defend different things and neither's flood may spend the other's
+// budget. See ratelimit.go.
+//
+// THE NUMBERS ARE POLICY and an operator overrides every one of them. What is
+// not policy is that a Config naming none of them is limited rather than open,
+// which is why they are defaults and not zero.
 var (
 	DefaultHookRate    = Rate{Burst: 30, Per: time.Minute}
 	DefaultWebhookRate = Rate{Burst: 300, Per: time.Minute}
+	// DefaultCallerRate is one credential's share of the job API. A CLI polling
+	// one build's status wants about one request a second; sixty a minute is
+	// that, with a minute's worth of burst in front of it.
+	DefaultCallerRate = Rate{Burst: 60, Per: time.Minute}
+	// DefaultJobRate is the whole job API's ceiling on one node, and it is the
+	// bound that actually holds: a stranger gets a fresh per-credential bucket
+	// by inventing a new bearer token, and cannot get a fresh one of these.
+	DefaultJobRate = Rate{Burst: 600, Per: time.Minute}
 )
 
 // DefaultEligibleRefs is RESTATED, not imported. legacy/specs/common's
@@ -105,12 +118,22 @@ type Config struct {
 	// ref and there is exactly one place that decides.
 	EligibleRefs []string `yaml:"eligibleRefs"`
 
-	// HookRate limits one hook id; WebhookRate limits the route. The ZERO Rate
-	// means the matching default, so a config that names neither is limited
-	// rather than open. Turning a limit off takes a period with a burst of
-	// zero — deliberately not the shape a half-filled config falls into.
+	// HookRate limits one hook id; WebhookRate limits the webhook route.
+	// CallerRate limits one credential; JobRate limits the four job routes.
+	// The ZERO Rate means the matching default, so a config that names none of
+	// them is limited rather than open. Turning a limit off takes a period with
+	// a burst of zero — deliberately not the shape a half-filled config falls
+	// into.
+	//
+	// THE JOB ROUTES NEED THEIR OWN PAIR rather than sharing the webhook's.
+	// One shared ceiling would let a flood on either surface lock the other
+	// out, and the two are not interchangeable: a webhook refused is a delivery
+	// a provider stops retrying, and a job route refused is a CLI that cannot
+	// read its own build.
 	HookRate    Rate `yaml:"hookRate"`
 	WebhookRate Rate `yaml:"webhookRate"`
+	CallerRate  Rate `yaml:"callerRate"`
+	JobRate     Rate `yaml:"jobRate"`
 
 	// SecretCacheTTL and SecretCacheMax bound how long and how much of auth's
 	// answer this process keeps. Zero means the matching default.
@@ -144,6 +167,12 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if err := c.WebhookRate.valid(); err != nil {
 		return c, fmt.Errorf("build: webhookRate: %w", err)
+	}
+	if err := c.CallerRate.valid(); err != nil {
+		return c, fmt.Errorf("build: callerRate: %w", err)
+	}
+	if err := c.JobRate.valid(); err != nil {
+		return c, fmt.Errorf("build: jobRate: %w", err)
 	}
 	for _, ref := range c.EligibleRefs {
 		if ref == "" {
@@ -180,6 +209,12 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if c.WebhookRate == (Rate{}) {
 		c.WebhookRate = DefaultWebhookRate
+	}
+	if c.CallerRate == (Rate{}) {
+		c.CallerRate = DefaultCallerRate
+	}
+	if c.JobRate == (Rate{}) {
+		c.JobRate = DefaultJobRate
 	}
 	return c, nil
 }

@@ -16,6 +16,15 @@ import (
 // so a caller who may not touch a job cannot cancel it and learn afterwards
 // that they could not.
 //
+// EVERY ONE OF THEM IS ADMITTED BEFORE IT AUTHORIZES, which is a different
+// property and is the one v1 has no version of. Authorizing a job route COSTS
+// THIS CLOUD SOMETHING before the caller has proven anything: the job's
+// repository_key is the authorization subject, so the backend has to be read
+// first, and that read is leader-only through a raft barrier — a log entry
+// replicated to quorum. bearer() proves only that a header has a shape. So
+// credentials(), below, spends a token from the same two limits webhook.go
+// spends, and it is the single door all four routes come through.
+//
 // WHAT IS NOT HERE, and it is not an oversight: v1's GET /logs/{cid} and
 // GET /download/{jobId}/{resourceId}. The first is an open IPFS gateway keyed
 // by a bare content id and gated only by a token being valid — so anyone with
@@ -168,15 +177,34 @@ func (s *Service) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("]"))
 }
 
-// credentials reads the bearer and one bounded path value, in that order: a
-// caller who proved nothing does not get to find out whether their id was
-// well-formed.
+// credentials reads the bearer, reads one bounded path value, and admits the
+// request — IN THAT ORDER, and the order is the whole of it.
+//
+// THE FREE CHECKS COME FIRST. bearer and pathID read a header and a path
+// segment: no allocation that outlives the call, no map insert, nothing asked
+// of anything. Spending a limiter token on them would let a caller drain the
+// global bucket with requests that cost this cloud nothing, and lock out the
+// callers whose requests would have cost something — a rate limit turned into
+// the denial of service it exists to prevent.
+//
+// THE GLOBAL LIMIT COMES BEFORE THE PER-CALLER ONE, for webhook.go's reason:
+// the per-caller bucket lives in a map keyed by a string a stranger chooses, so
+// the unkeyable limit has to be what gates the insert.
+//
+// IT IS ONE FUNCTION BECAUSE IT IS ONE DOOR. A job route reaches nothing
+// without a token and an id, and this is the only place either comes from, so a
+// route added later cannot ask the cloud for anything without passing through
+// the admission it also carries. That is the difference between a check every
+// handler remembers and a check no handler can forget.
 func (s *Service) credentials(r *http.Request, name string) (token, id string, err error) {
 	if token, err = bearer(r); err != nil {
 		return "", "", err
 	}
 	if id, err = pathID(r, name); err != nil {
 		return "", "", err
+	}
+	if !s.globalJobs.allow() || !s.allowCaller(token) {
+		return "", "", tooManyRequests(s.cfg.CallerRate.Per)
 	}
 	return token, id, nil
 }

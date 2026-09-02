@@ -6,7 +6,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"strconv"
 )
 
 // maxHookIDLength bounds the one caller-chosen string this route puts in a map.
@@ -85,8 +84,8 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// first because it is the one a caller cannot get a fresh bucket for by
 	// changing the hook id, and because it gates the map insert the per-hook
 	// one would otherwise have to make.
-	if !s.global.allow() || !s.allowHook(hookID) {
-		s.tooManyRequests(w)
+	if !s.globalHooks.allow() || !s.allowHook(hookID) {
+		respond(w, tooManyRequests(s.cfg.HookRate.Per))
 		return
 	}
 
@@ -179,13 +178,4 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 func isJSON(header string) bool {
 	mediaType, _, err := mime.ParseMediaType(header)
 	return err == nil && mediaType == "application/json"
-}
-
-// tooManyRequests answers a limited caller with the one thing that helps it:
-// how long to wait.
-func (s *Service) tooManyRequests(w http.ResponseWriter) {
-	if retry := int(s.cfg.HookRate.Per.Seconds()); retry > 0 {
-		w.Header().Set("Retry-After", strconv.Itoa(retry))
-	}
-	respond(w, problem(http.StatusTooManyRequests, "too many requests"))
 }

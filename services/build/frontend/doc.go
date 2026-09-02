@@ -39,6 +39,18 @@
 //     routes ever reads the resulting client — so any GitHub account can read,
 //     cancel or retry any project's jobs.
 //
+// # What it costs before it establishes anything
+//
+// Both of those checks COST THIS CLOUD SOMETHING before the caller has proven
+// anything, so both are behind an admission gate: one global limit per public
+// surface, which cannot be keyed and is therefore the bound that holds, and one
+// per-key limit for fairness (ratelimit.go). The webhook's proof is a lookup at
+// auth. The job routes' proof is a read of the job itself — leader-only,
+// through a raft barrier, which hashicorp/raft implements as a log entry
+// replicated to quorum — so an un-admitted job route hands a stranger holding
+// nothing but a well-shaped Authorization header one replicated entry per HTTP
+// request. v1 has no version of this on either surface.
+//
 // # Its dependencies are four interfaces, and they are why it is testable
 //
 // Hooks, Projects, Backend and Identity (config.go) are declared here and

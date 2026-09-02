@@ -51,7 +51,11 @@ func TestNewRefusesAnUnusableConfig(t *testing.T) {
 		{"negative cache size", Config{SecretCacheMax: -1}, "secretCacheMax"},
 		{"negative burst", Config{HookRate: Rate{Burst: -1, Per: time.Second}}, "hookRate"},
 		{"negative period", Config{WebhookRate: Rate{Burst: 1, Per: -time.Second}}, "webhookRate"},
+		{"negative caller burst", Config{CallerRate: Rate{Burst: -1, Per: time.Second}}, "callerRate"},
+		{"negative job period", Config{JobRate: Rate{Burst: 1, Per: -time.Second}}, "jobRate"},
 		{"a rate with no period", Config{HookRate: Rate{Burst: 5}}, "no period"},
+		{"a caller rate with no period", Config{CallerRate: Rate{Burst: 5}}, "no period"},
+		{"a job rate with no period", Config{JobRate: Rate{Burst: 5}}, "no period"},
 		{"an empty eligible ref", Config{EligibleRefs: []string{"refs/heads/main", ""}}, "empty ref"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
