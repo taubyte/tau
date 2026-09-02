@@ -46,10 +46,11 @@
 // A caller's credential is bound once, by forge.Registry.For, and spent through
 // forge.PinnedTransport so it can never reach another host — and this driver
 // follows NO redirect at all, because the hop a pin cannot refuse is the one
-// back onto this host: see noRedirect. The
-// DEPLOYMENT's credential — the one Memberships answers with — is a construction
-// option, held by the driver, and no Session can reach it. A driver built
-// without it does not implement forge.Memberships AT ALL, because it is a
+// back onto this host: see noRedirect.
+//
+// The DEPLOYMENT's credential — the one Memberships answers with — is a
+// construction option, held by the driver, and no Session can reach it. A driver
+// built without it does not implement forge.Memberships AT ALL, because it is a
 // different Go type: see New.
 package gitlab
 
