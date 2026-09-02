@@ -72,8 +72,9 @@ func (p *pinRecorder) RoundTrip(req *http.Request) (*http.Response, error) {
 //
 // It is behaviour through the public API. Not one request may leave, because a
 // credential on the wire in the clear is spent — and the recorder under the pin
-// is what says whether one did. redirectOps is reused deliberately: the rule is
-// a property of the client every method shares, so every method is the unit.
+// is what says whether one did. The sweep's operations are reused deliberately:
+// the rule is a property of the client every method shares, so every method is
+// the unit, and a method added there is a method covered here.
 //
 // THE DRIVER HOLDS A DEPLOYMENT CREDENTIAL, so that the membership rows in that
 // table drive the SECOND client this driver builds. It is a different
@@ -92,11 +93,20 @@ func TestACleartextInstanceIsNeverSentTheCredential(t *testing.T) {
 	sess, err := reg.For(key, forge.Token(pinCallerToken))
 	require.NoError(t, err)
 
-	for _, op := range redirectOps {
+	for _, op := range sweepOps {
 		t.Run(op.name, func(t *testing.T) {
-			got, err := op.call(context.Background(), reg, sess, key)
+			got, err := op.call(context.Background(), reg, sess, key, benignArgs)
 			t.Logf("%s -> %v, err = %v", op.name, got, err)
 
+			if op.offline {
+				// It answers from the key alone, so there is no request for the
+				// pin to refuse — and that IS the assertion for this row: an
+				// operation that suddenly needed one would be spending a
+				// credential on a wire this test is about.
+				require.NoError(t, err, "%s answers from the key alone and it failed", op.name)
+				assert.Empty(t, rec.sent, "%s made a request: %v", op.name, rec.sent)
+				return
+			}
 			require.Error(t, err, "%s spoke to %s in the clear", op.name, pinHost)
 			var leak *forge.CredentialLeakError
 			require.ErrorAs(t, err, &leak,
