@@ -40,19 +40,38 @@
 //     its boundary is stated there. A SECTION IS A CLOSURE (section.go, over
 //     the backend/section package): withJob takes the lock, takes the barrier,
 //     takes the read, and hands the body a handle whose methods are the only
-//     writes there are. Nothing hands out a token, so there is none to forge;
-//     nothing stamps a value, so there is no read to re-stamp; and a helper
-//     that wants to write takes the handle or cannot write at all. That is
-//     because "the write this read decided is made while the same section is
-//     still held" is a fact about two instants in one execution, and seven
-//     successive guards over this package's source each missed the next shape
-//     of it. The one escape Go cannot express away — a handle captured by
-//     something that outlives the call — is refused at runtime, because the
-//     handle dies when withJob returns. population_test.go is the other half:
-//     which functions may reach a write at all, and which key they may write,
-//     checked at review time. v1 polled a claim record thirty times at
-//     two-second intervals, blocking the request for up to a minute, and still
-//     could not cancel a job that had not been picked up yet.
+//     writes there are, about the one job it was entered on. v1 polled a claim
+//     record thirty times at two-second intervals, blocking the request for up
+//     to a minute, and still could not cancel a job that had not been picked
+//     up yet.
+//
+// # The property in full
+//
+// Rule 4 was stated with two of its three clauses for eight rounds, and the
+// missing one is the one that kept being defeated. All three, spelled out:
+//
+//	WHEN       the write is made while the section the deciding read was taken
+//	           in is STILL HELD. A read is only true until something else
+//	           writes, so a write decided on a read whose section has ended is
+//	           a write decided on nothing.
+//	WHO        it is made BY THE BODY that took that read, or by something that
+//	           body handed its handle to. Not "by a function that holds a lock",
+//	           and not "while some section is running" — those are presence,
+//	           and presence is what every defeated guard was checking.
+//	ABOUT WHAT every row the write names is A ROW OF THE JOB THAT READ WAS
+//	           TAKEN ON. Not the job named in the record the body happens to
+//	           have in hand, and not a job whose id the body composed a key
+//	           from: the section's own subject, which the body cannot assign.
+//
+// WHERE EACH CLAUSE LIVES. WHEN is the runtime's: a handle is dead the instant
+// withJob returns, and Go has no lifetime on a parameter, so a handle captured,
+// deferred or sent elsewhere is refused rather than stopped. WHO is the
+// compiler's: every write is a method on the handle, the handle is made in one
+// place, and a helper takes one or cannot write. ABOUT WHAT is the compiler's
+// for the SUBJECT — a handle has no id field, because the id is inside another
+// package's struct — and a review-time enumeration for the KEY GRAMMAR, which
+// is the one place this package's guarantees stop being the compiler's. See
+// below.
 //
 // # What it is built from
 //
@@ -81,4 +100,145 @@
 // IPFS gateway gated only by a token being valid, and its /download route has
 // no authorization at all; when those come back they are per-job routes on the
 // frontend, authorized like Get and checked against that job's own maps.
+//
+// # Where the tower ends
+//
+// Eight rounds of this package's history each added a level. The writes are
+// held by a handle; the handle is held by a closure; the closure's population
+// is held by scans over this package's own source; and the scans are held by
+// assertions in a test file. "What guards the guard" has to stop somewhere, and
+// this is where, said exactly rather than left for somebody to find.
+//
+// THE COMPILER'S HALF ENDS NOWHERE, because nothing has to run for it. Twelve
+// expressions do not exist, and a tree that compiles is a tree in which they
+// are absent:
+//
+//	no Enter to leave and retake         no `commit([]raft.BatchOp)`
+//	no accessor handing out a holding    no `finish(…, extra …)`
+//	no mutex to touch                    no method on the entry taking a key
+//	no exported field on a Holding       no `Reread(closure)`
+//	no minting function                  no `held.id` to assign
+//	no write reachable without a *held   no `Holding.subject` to write
+//
+// The seven on the left were confirmed by the round that made a section a
+// closure. The five on the right were written into this tree and compiled: each
+// is `cannot assign`, `too many arguments`, `undefined`, or `has no field or
+// method`, which is a build failure and not a test failure.
+//
+// THE RUNTIME'S HALF IS WATCHED FROM EIGHT ANGLES, so it has no small set
+// either. Deleting the identity comparison in section.Holding.live, or making
+// the gate call the write instead of asking the holding, each fails eight named
+// tests — and hollowing requireRefused's own assertions on top does not save
+// it, because every escape form ALSO asserts that the record did not move. Its
+// exposure is the file, not a line.
+//
+// SO THE TOWER IS THE STATIC HALF, AND IT ENDS AT SIX LINES, all in
+// population_test.go, in three tests. In
+// TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob:
+//
+//	require.Contains(t, args, e+".h.id()",
+//	require.Equal(t, map[string]string{ … }, rows,
+//	require.ElementsMatch(t, names(rows), names(appenders),
+//
+// in TestEveryWriteOfAJobRecordIsInsideASection:
+//
+//	require.ElementsMatch(t, []string{"entry.record"}, writers,
+//
+// and in TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord the pair:
+//
+//	require.ElementsMatch(t, []string{"entry.commit", "attemptSink.write"},
+//	require.False(t, f.calls[verb],
+//
+// The first says every key a row builds names the section's own job. The second
+// says these are all the rows there are. The third says the slice they append
+// to is theirs. The fourth says one method writes a job record. The fifth and
+// sixth say nothing else reaches the store at all.
+//
+// MEASURED, one at a time, each against a control that is GO_TEST_EXIT=1:
+//
+//	an open row keyed s.rec.ID rather than    red; with the first line hollowed
+//	  s.h.id() — begin's own old defect         to a t.Logf, GREEN
+//	a second method building a project-       red; with the second line
+//	  index row                                 weakened to Subset, GREEN
+//	a raw raft.BatchOp appended to an entry    red; with the third line hollowed,
+//	  naming another repository's ref anchor    GREEN
+//	a second job record in the same entry      red; with the first three hollowed
+//	                                            it is the fourth that fails, and
+//	                                            with the fourth hollowed too,
+//	                                            GREEN
+//	a raw raft.BatchOp handed straight to      red; with the fifth weakened to
+//	  Store.Batch from a new handle method       Subset AND the sixth hollowed,
+//	                                            GREEN
+//
+// EVERYTHING TOUCHING THEM IS HELD, which is why the set is six and not sixty.
+// Measured one at a time, each of these fails BY NAME rather than passing:
+//
+//	a second job record in one entry          the row census and the record-
+//	                                          writer census, both by name
+//	a ref anchor for another repository,      the row census: ends() appears
+//	  appended in a method on the handle      building refLastKey
+//	an entry method that takes a key          there is none; the draft that had
+//	  (put/drop), called with a foreign key    one measured GREEN, which is why
+//	a new write method on the handle          three tests
+//	  reaching Store.Batch
+//	a raw BatchOp appended to an entry        the appenders enumeration
+//	a raw BatchOp handed to Store.Batch       the Batch census and the closed-
+//	                                          from-the-other-side loop
+//	a `stated` assembled around another       three tests, including the one
+//	  job's record                            that says who may make one
+//	record() not stamping the subject onto    the behavioural test and the
+//	  the record it encodes                   record-writer census
+//	the sink writing a ref anchor instead     four tests, two of them
+//	  of an attempt row                       behavioural
+//	the second read dropping its barrier      three tests, including the
+//	                                          barrier budget
+//	the source's Subject and its First        the reader census, by name — and
+//	  naming different jobs                   this one is why that check is
+//	                                          there: unguarded it does not fail,
+//	                                          the suite HANGS
+//	decodeJobRecord asking "has an id"        the store test, by name
+//	  instead of "is this id"
+//	the ack's subject check deleted           the ack test, by name
+//	the holding's liveness comparison, and    eight named tests each
+//	  the gate that asks it
+//	parsePackage returning nothing            every census at once: an empty
+//	                                          scan cannot match a non-empty
+//	                                          expectation
+//
+// WHY IT CANNOT BE SMALLER. The six are three pairs and neither half of any
+// pair can be folded into the other. Two say WHICH ROWS EXIST and two say EACH
+// ROW NAMES THIS JOB: a census cannot also be the check that a row names the
+// right job, because a row naming the wrong one is IN the census; and a check
+// that every row names this job cannot see a row built without calling set() or
+// del() at all. The last two say NOTHING ELSE REACHES THE STORE, which neither
+// of the other pairs can say, because both of them start from a call this
+// package makes to its own key builders. Under all six is the thing no Go test
+// escapes: a test fails by calling Errorf, so somewhere there is a first call
+// nothing else watches, and a check on that check is another Errorf with the
+// same property one level out — the regress this package's history walked seven
+// times.
+//
+// AND ONE OF THEM IS A REVIEW-TIME GUARD WHERE A COMPILER COULD DO IT, said out
+// loud. "About what" is the compiler's for the SUBJECT and an enumeration for
+// the KEY GRAMMAR, because store.go's builders take an id as a string and those
+// same builders are the READERS' — job(), admit(), lastCommit() and reconcile's
+// listing all call them with an id no section handed over. Putting the grammar
+// behind the subject would make a foreign key a compile error and would take
+// every reader in the package with it. That is the boundary, and it is a choice
+// rather than an oversight.
+//
+// WHAT THIS IS THE SAME AS. It is the exposure every Go test suite already
+// carries and does not write down. A TestMain that returns before m.Run(). A
+// build tag on the file the assertions live in. population_test.go never added
+// to the package at all. `go test` never run in CI. Each is a small edit that
+// leaves a green run and no trace, and no test framework defends against any of
+// them. These six are written here instead, in the open, with the measurement
+// beside them.
+//
+// MEASURE THE MECHANISM'S OWN PACKAGE EITHER WAY. backend/section is exercised
+// by its own tests and by this package's, and the two figures agree — 100.0%
+// plain, 100.0% pinned — because its own tests drive the whole surface:
+//
+//	go test -count=1 -p 4 -cover ./services/build/...
+//	go test -count=1 -p 4 -coverpkg=./services/build/backend/section/... ./services/build/...
 package backend
