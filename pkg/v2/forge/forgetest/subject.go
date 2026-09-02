@@ -21,6 +21,16 @@
 // request that went somewhere else. RedirectOnce and the decoy the suite starts
 // against it are where that request becomes visible.
 //
+// AND A REDIRECT HAS A SECOND EDGE THE DECOY IS BLIND TO. A hop to another host
+// is refused by forge.PinnedTransport under every driver; a hop to another
+// REPOSITORY ON THE SAME HOST is permitted by it, correctly, because a per-hop
+// host check is the whole of what a pin can decide. Every request stays on the
+// host the credential is for, every recorded URL passes the canary, and the
+// forge has just chosen which repository the caller's question was about. The
+// suite aims RedirectOnce at both, and the same-host probe reads the ANSWER an
+// operation produced rather than the destination — because there is nothing
+// wrong with the destination.
+//
 // THE SUITE NEVER SKIPS. For each optional capability it runs one of two
 // contracts — the capability's own, or the contract that absence is
 // *forge.UnsupportedError and that Require refuses — so a driver cannot hide a

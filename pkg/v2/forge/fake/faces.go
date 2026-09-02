@@ -45,7 +45,7 @@ func (b cBase) Whoami(context.Context) (forge.Identity, error) {
 }
 
 func (b cBase) Access(_ context.Context, k repokey.Key) (forge.Access, error) {
-	if err := b.c.call("GET", "/api/repos/"+k.FullName(), b.token); err != nil {
+	if err := b.c.callAbout("GET", "/api/repos/"+k.FullName(), b.token, k); err != nil {
 		if errors.Is(err, errUnreachable) && b.c.shape.faulty(FaultOutageIsRefusal) {
 			return forge.AccessNone, nil
 		}
@@ -64,7 +64,7 @@ func (b cBase) Access(_ context.Context, k repokey.Key) (forge.Access, error) {
 }
 
 func (b cBase) Repository(_ context.Context, k repokey.Key) (forge.Repository, error) {
-	if err := b.c.call("GET", "/api/repos/"+k.FullName(), b.token); err != nil {
+	if err := b.c.callAbout("GET", "/api/repos/"+k.FullName(), b.token, k); err != nil {
 		return forge.Repository{}, err
 	}
 	b.c.mu.Lock()
@@ -111,7 +111,7 @@ func (b fList) ListRepositories(_ context.Context, yield func(forge.Repository) 
 type fCreate struct{ bound }
 
 func (b fCreate) Create(_ context.Context, k repokey.Key, opts forge.CreateOptions) (forge.Repository, error) {
-	if err := b.c.call("POST", "/api/repos/"+k.FullName(), b.token); err != nil {
+	if err := b.c.callAbout("POST", "/api/repos/"+k.FullName(), b.token, k); err != nil {
 		return forge.Repository{}, err
 	}
 	b.c.mu.Lock()
@@ -130,7 +130,7 @@ func (b fCreate) Create(_ context.Context, k repokey.Key, opts forge.CreateOptio
 type fDelete struct{ bound }
 
 func (b fDelete) Delete(_ context.Context, k repokey.Key) error {
-	if err := b.c.call("DELETE", "/api/repos/"+k.FullName(), b.token); err != nil {
+	if err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName(), b.token, k); err != nil {
 		return err
 	}
 	b.c.mu.Lock()
@@ -142,14 +142,16 @@ func (b fDelete) Delete(_ context.Context, k repokey.Key) error {
 	if !b.c.grant(r, b.token).CanAdmin() {
 		return fmt.Errorf("fake: deleting %q needs admin", k)
 	}
-	delete(b.c.repos, k.String())
+	// r is what the lookup found, which is not k when a hop was followed. A
+	// repository is deleted where the request went.
+	delete(b.c.repos, r.key.String())
 	return nil
 }
 
 type fKeys struct{ bound }
 
 func (b fKeys) InstallDeployKey(_ context.Context, k repokey.Key, title, publicKey string) (forge.Handle, error) {
-	if err := b.c.call("POST", "/api/repos/"+k.FullName()+"/keys", b.token); err != nil {
+	if err := b.c.callAbout("POST", "/api/repos/"+k.FullName()+"/keys", b.token, k); err != nil {
 		return "", err
 	}
 	b.c.mu.Lock()
@@ -165,13 +167,13 @@ func (b fKeys) InstallDeployKey(_ context.Context, k repokey.Key, title, publicK
 	// writable is a driver reaching past the interface — which is the fault.
 	readOnly := !b.c.shape.faulty(FaultWritableDeployKey)
 	h := b.c.nextHandle("key")
-	b.c.deploy[h] = &keyRec{key: k, title: title, pub: publicKey, readOnly: readOnly}
+	b.c.deploy[h] = &keyRec{key: r.key, title: title, pub: publicKey, readOnly: readOnly}
 	b.c.lastRO = readOnly
 	return h, nil
 }
 
 func (b fKeys) RemoveDeployKey(_ context.Context, k repokey.Key, h forge.Handle) error {
-	if err := b.c.call("DELETE", "/api/repos/"+k.FullName()+"/keys/"+string(h), b.token); err != nil {
+	if err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName()+"/keys/"+string(h), b.token, k); err != nil {
 		return err
 	}
 	b.c.mu.Lock()
@@ -189,7 +191,7 @@ func (b fKeys) RemoveDeployKey(_ context.Context, k repokey.Key, h forge.Handle)
 type fHooks struct{ bound }
 
 func (b fHooks) RegisterPushHook(_ context.Context, k repokey.Key, callback *url.URL, wire string) (forge.Handle, error) {
-	if err := b.c.call("POST", "/api/repos/"+k.FullName()+"/hooks", b.token); err != nil {
+	if err := b.c.callAbout("POST", "/api/repos/"+k.FullName()+"/hooks", b.token, k); err != nil {
 		return "", err
 	}
 	b.c.mu.Lock()
@@ -206,13 +208,13 @@ func (b fHooks) RegisterPushHook(_ context.Context, k repokey.Key, callback *url
 		stored = strings.ToUpper(wire)
 	}
 	h := b.c.nextHandle("hook")
-	b.c.hooks[h] = &hookRec{key: k, callback: callback.String(), wire: stored}
+	b.c.hooks[h] = &hookRec{key: r.key, callback: callback.String(), wire: stored}
 	b.c.lastWire = stored
 	return h, nil
 }
 
 func (b fHooks) RemovePushHook(_ context.Context, k repokey.Key, h forge.Handle) error {
-	if err := b.c.call("DELETE", "/api/repos/"+k.FullName()+"/hooks/"+string(h), b.token); err != nil {
+	if err := b.c.callAbout("DELETE", "/api/repos/"+k.FullName()+"/hooks/"+string(h), b.token, k); err != nil {
 		return err
 	}
 	b.c.mu.Lock()
@@ -245,7 +247,7 @@ func (b fAddr) CloneAddress(k repokey.Key, over forge.Protocol) (forge.Address, 
 type fProbe struct{ bound }
 
 func (b fProbe) CanPush(_ context.Context, k repokey.Key, sshPrivateKey []byte) (bool, error) {
-	if err := b.c.call("GET", "/"+k.FullName()+".git/info/refs?service=git-receive-pack", ""); err != nil {
+	if err := b.c.callAbout("GET", "/"+k.FullName()+".git/info/refs?service=git-receive-pack", "", k); err != nil {
 		return false, err
 	}
 	b.c.mu.Lock()

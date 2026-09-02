@@ -212,7 +212,29 @@ const (
 	// forge.PinnedTransport exists to make impossible, and it is what a driver
 	// that attaches its credential on an unpinned transport does: the header is
 	// set by a RoundTripper, and a RoundTripper runs on every hop.
+	//
+	// It follows a hop to ANOTHER HOST and nothing else. A hop to another
+	// repository on this host is a different defect against a different
+	// defence, and it has its own fault below.
 	FaultFollowsRedirect Fault = "follows-redirect"
+
+	// FaultFollowsSameHostRedirect takes a forge's redirect to ANOTHER
+	// REPOSITORY ON THIS HOST and acts on the one the redirect names, while
+	// every value it hands back still describes the one the caller asked about.
+	//
+	// IT IS THE HOP A CREDENTIAL PIN PERMITS BY DESIGN. A pin decides one thing
+	// per hop — is this the host the credential is for — and the answer here is
+	// yes, so nothing below a driver refuses this and nothing above it can see
+	// it. The forge is free to answer 301 to a renamed path, 302 to anything,
+	// and 307 to a write with the body replayed; what comes back is a
+	// repository the caller never named, with its permissions, its hooks, its
+	// deletion. The only place the refusal can live is the driver's own
+	// redirect policy.
+	//
+	// The credential goes on the hop, because the hop is to the host the
+	// credential is for. That is not the defect. Acting on somebody else's
+	// repository is.
+	FaultFollowsSameHostRedirect Fault = "follows-same-host-redirect"
 
 	// FaultSignsWithAnotherScheme names one scheme and signs with another,
 	// which is the one webhook mistake this design leaves a driver room to

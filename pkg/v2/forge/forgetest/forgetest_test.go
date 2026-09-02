@@ -55,7 +55,13 @@ func TestAbsenceIsATestedContract(t *testing.T) {
 // in the wrong place.
 func TestTheSuiteCatchesABrokenDriver(t *testing.T) {
 	for _, tc := range []struct {
-		fault  fake.Fault
+		fault fake.Fault
+		// plus is a SECOND fault, for the cases where one alone is permitted.
+		// Following a same-host redirect and deriving the key from what came
+		// back is how a rename resolves; following it and echoing the argument
+		// is the record that names one repository and describes another. Only
+		// the pair is wrong, so only the pair can prove the assertion.
+		plus   fake.Fault
 		shape  fake.Shape
 		saying string
 	}{
@@ -109,6 +115,21 @@ func TestTheSuiteCatchesABrokenDriver(t *testing.T) {
 			saying: "which is not the host this credential is for",
 		},
 		{
+			// The hop a credential pin permits by design: same host, another
+			// repository. The decoy proves nothing about it — the request never
+			// leaves the host it is for — so the only way to see it is to watch
+			// what the operation ANSWERED after being pointed somewhere else.
+			fault:  fake.FaultFollowsSameHostRedirect,
+			shape:  fake.GitHubLike,
+			saying: "followed a redirect to",
+		},
+		{
+			fault:  fake.FaultFollowsSameHostRedirect,
+			plus:   fake.FaultEchoesKey,
+			shape:  fake.GitHubLike,
+			saying: "answered with the key it was ASKED about",
+		},
+		{
 			fault:  fake.FaultLeaksTokenInError,
 			shape:  fake.GitHubLike,
 			saying: "the credential is in an error string",
@@ -152,14 +173,20 @@ func TestTheSuiteCatchesABrokenDriver(t *testing.T) {
 			saying: "wire secret the verifier will not key its MAC with",
 		},
 	} {
-		t.Run(string(tc.fault)+"-on-"+tc.shape.Host, func(t *testing.T) {
-			rec := record(subjectFor(t, "broken", faulty(tc.shape, tc.fault)))
+		name := string(tc.fault)
+		shape := faulty(tc.shape, tc.fault)
+		if tc.plus != "" {
+			name += "+" + string(tc.plus)
+			shape = faulty(shape, tc.plus)
+		}
+		t.Run(name+"-on-"+tc.shape.Host, func(t *testing.T) {
+			rec := record(subjectFor(t, "broken", shape))
 			if !rec.failed {
-				t.Fatalf("the suite passed a driver with fault %q", tc.fault)
+				t.Fatalf("the suite passed a driver with fault %q", name)
 			}
 			if !strings.Contains(rec.String(), tc.saying) {
 				t.Fatalf("the suite failed a driver with fault %q, but never said %q:\n%s",
-					tc.fault, tc.saying, rec.String())
+					name, tc.saying, rec.String())
 			}
 		})
 	}

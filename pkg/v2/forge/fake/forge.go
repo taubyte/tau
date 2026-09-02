@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -89,6 +90,17 @@ type core struct {
 	broken   bool
 	redirect string
 
+	// issued is every address this forge has told the world about, and which
+	// repository each one is for. A same-host redirect names an address, and
+	// this is what turns that address back into the repository it addresses —
+	// so a hop is followed to a REPOSITORY rather than to a string.
+	issued map[string]repokey.Key
+
+	// followed is the repository the current call was redirected to, set for
+	// exactly one operation. It is what makes a followed hop act on somebody
+	// else's repository, which is the whole of the defect being modelled.
+	followed repokey.Key
+
 	keys Keys
 }
 
@@ -126,6 +138,7 @@ func New(sh Shape) *Forge {
 		aliases: make(map[string]string),
 		hooks:   make(map[forge.Handle]*hookRec),
 		deploy:  make(map[forge.Handle]*keyRec),
+		issued:  make(map[string]repokey.Key),
 	}
 	c.keys = Keys{
 		Writable: c.seed("acme/pay", true, forge.AccessWrite),
@@ -263,13 +276,17 @@ func (f *Forge) NoPushKey() []byte { return []byte("fake-ssh-key-read-only") }
 
 // ─────────────────────────── the shared implementation ───────────────────────────
 
-// record writes down what this forge would have sent. The credential goes in an
-// Authorization header, which is where a driver must put it; FaultLeaksTokenInURL
-// puts it where it must not.
-func (c *core) record(method, path, token string) {
+// record writes down what this forge would have sent, and remembers which
+// repository the address is for. The credential goes in an Authorization
+// header, which is where a driver must put it; FaultLeaksTokenInURL puts it
+// where it must not.
+func (c *core) record(method, path, token string, about repokey.Key) {
 	url := "https://" + c.shape.Host + path
 	if c.shape.faulty(FaultLeaksTokenInURL) && token != "" {
 		url += "?access_token=" + token
+	}
+	if about.Name != "" {
+		c.issued[url] = about
 	}
 	hdr := make(http.Header)
 	if token != "" {
@@ -278,11 +295,21 @@ func (c *core) record(method, path, token string) {
 	c.requests = append(c.requests, Request{Method: method, URL: url, Header: hdr})
 }
 
-// call is every request this forge serves: it records, then fails if broken or
-// if the credential is refused.
+// call is a request about no repository in particular — an identity, a
+// membership. Everything about a repository goes through callAbout, so that an
+// address this forge issued can be traced back to what it addresses.
 func (c *core) call(method, path, token string) error {
+	return c.callAbout(method, path, token, repokey.Key{})
+}
+
+// callAbout is every request this forge serves: it records, then fails if
+// broken or if the credential is refused.
+func (c *core) callAbout(method, path, token string, about repokey.Key) error {
 	c.mu.Lock()
-	c.record(method, path, token)
+	// One operation, one hop: whatever the last call was redirected to has no
+	// business surviving into this one.
+	c.followed = repokey.Key{}
+	c.record(method, path, token, about)
 	loc := c.redirect
 	c.redirect = ""
 	broken := c.broken
@@ -322,6 +349,12 @@ var hopper = &http.Client{Transport: &http.Transport{}}
 // one. loc is whatever armed this, in practice a loopback server the caller
 // started to watch.
 func (c *core) answerRedirect(method, loc, token string) error {
+	if c.onThisHost(loc) {
+		if !c.shape.faulty(FaultFollowsSameHostRedirect) {
+			return fmt.Errorf("fake: %s answered a redirect to %s, which is another repository on this host; the hop was refused", c.shape.Host, loc)
+		}
+		return c.followSameHost(method, loc, token)
+	}
 	if !c.shape.faulty(FaultFollowsRedirect) {
 		return fmt.Errorf("fake: %s answered a redirect to %s, which is not this host; the hop was refused", c.shape.Host, loc)
 	}
@@ -346,6 +379,46 @@ func (c *core) answerRedirect(method, loc, token string) error {
 	return fmt.Errorf("fake: followed a redirect to %s, and what answered was not this forge", loc)
 }
 
+// onThisHost is whether a redirect names this forge's own host. It decides which
+// of the two redirect defects is in play, and it is also what keeps this package
+// off the network: the sending fault below dials loc, and loc must therefore be
+// the loopback server a caller started, never a host name this forge invented.
+func (c *core) onThisHost(loc string) bool {
+	u, err := url.Parse(loc)
+	return err == nil && u.Host == c.shape.Host
+}
+
+// followSameHost is the hop a credential pin permits: same host, credential
+// attached again, and a repository at the other end that the caller never named.
+//
+// NOTHING IS SENT, because there is nothing to send to — this forge is a map.
+// What a real driver's http.Client would do is done here directly: the request
+// is written down as having gone to loc with the credential on it, and the
+// operation now acts on whatever repository loc addresses. Everything the
+// operation returns still describes the repository the CALLER named, because
+// that is the argument it was given, and that is precisely what makes the defect
+// invisible from above.
+func (c *core) followSameHost(method, loc, token string) error {
+	hdr := make(http.Header)
+	if token != "" {
+		hdr.Set("Authorization", "Bearer "+token)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.requests = append(c.requests, Request{Method: method, URL: loc, Header: hdr})
+	// An address this forge never issued names no repository it can serve, so
+	// the operation goes on against the one it was asked about — the hop was
+	// followed and landed nowhere interesting.
+	c.followed = c.issued[loc]
+	if c.broken {
+		return errUnreachable
+	}
+	if token == badToken {
+		return &forge.CredentialError{Host: c.shape.Host, Reason: "token was revoked"}
+	}
+	return nil
+}
+
 // rename makes this forge answer for `from` with the repository `to` names, and
 // returns the old key. It is a redirect and not a copy: there is one repository
 // and it has one identity, which is the whole point.
@@ -356,6 +429,12 @@ func (c *core) rename(from string, to repokey.Key) repokey.Key {
 }
 
 func (c *core) lookup(k repokey.Key) (*repo, bool) {
+	// A followed hop resolves to the repository the redirect named, and the
+	// caller's key is never consulted again. Every face reaches its repository
+	// through here, so this is the one place the substitution has to live.
+	if c.followed.Name != "" {
+		k = c.followed
+	}
 	name := k.String()
 	if to, moved := c.aliases[name]; moved {
 		name = to

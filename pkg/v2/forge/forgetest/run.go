@@ -69,6 +69,7 @@ func run(t tb, s Subject) {
 	t.Run("the-key-is-derived-from-the-forges-answer", r.derivedKey)
 	t.Run("an-outage-is-not-a-refusal", r.outage)
 	t.Run("a-redirect-carries-the-credential-nowhere", r.redirectOffHost)
+	t.Run("a-same-host-redirect-is-another-repository", r.sameHostRedirect)
 
 	t.Run("list", r.list)
 	t.Run("create", r.create)
@@ -436,6 +437,179 @@ func (r *runner) redirectOffHost(t tb) {
 			}
 		}
 	}
+}
+
+// ─────────────────── the hop a credential pin permits ───────────────────
+
+// sameHostRedirect is the redirect probe's other half, and the half the decoy
+// above can say NOTHING about.
+//
+// THE DECOY ASSERTS THE PROPERTY A PIN ALREADY HAS. forge.PinnedTransport
+// decides one thing per hop — is this the host the credential is for — so a
+// redirect to somewhere else is refused underneath every driver, and the decoy
+// watches that happen. A redirect to ANOTHER REPOSITORY ON THIS HOST is the
+// same host. The pin permits it, by design and correctly: a per-hop host check
+// is the whole of what a pin can decide. Nothing below a driver refuses it and
+// nothing above a driver can see it, because every request stays on the host
+// the credential is for and every recorded URL passes the canary.
+//
+// So the forge gets to choose which repository a request is about. It answers
+// 301 to a renamed path, 302 to anything at all, and 307 to a write with the
+// method and body replayed — and what comes back is a repository the caller
+// never named: its permissions read as the named one's, its hooks installed as
+// the named one's, its deletion reported as the named one's. A name that has
+// been transferred away is free to be re-registered by anybody, which is what
+// turns "the forge redirected us" into a grant.
+//
+// WHAT THE CONTRACT REQUIRES IS DECIDED BY WHERE THE ANSWER CAN PUT IT.
+//
+//	Repository answers with a Key the driver DERIVES, so it has somewhere to
+//	say "what you asked about is over there" — which is exactly the rename this
+//	suite already requires a driver to resolve. Refusing the hop and resolving
+//	it are both honest. Answering with the key that was ASKED about, over
+//	another repository's body, is not.
+//
+//	Everything else has nowhere to put it. Access answers a level. Delete
+//	answers an error. InstallDeployKey answers a Handle. RegisterPushHook
+//	answers a Hook whose Key is stamped by forge.Session FROM THE ARGUMENT — so
+//	a hook that lands on another repository CANNOT be reported honestly, no
+//	matter what the driver does. For those the only answer that is not a lie is
+//	a refusal, and that is what is asserted.
+//
+// The address the redirect points at is the DRIVER'S OWN address for another
+// repository, read back out of what the subject reported. The suite knows no
+// forge's URL shapes and must not invent one: an address it made up would be a
+// 404 at the far end, and every driver would pass by accident.
+func (r *runner) sameHostRedirect(t tb) {
+	t.Helper()
+	// Deletable is the one fixture nothing else in the suite has touched yet,
+	// and this runs before the subtest that consumes it.
+	other := r.s.Deletable
+	elsewhere := r.addressOfAnother(t, other)
+
+	t.Run("repository", func(t tb) {
+		sess := r.session(t, r.s.Writable)
+		r.s.Requests()
+		r.s.RedirectOnce(elsewhere)
+
+		repo, err := sess.Repository(r.ctx, r.s.Writable)
+		if err != nil {
+			// Refused the hop, which is the other half of the contract.
+			r.note(err)
+			return
+		}
+		// It answered, so it followed — the forge's reply to the request it
+		// made was a redirect and nothing else. The record must then say which
+		// repository it is describing, and that is not the one asked about.
+		assert.Equal(t, other, repo.Key,
+			"Repository(%q) followed a redirect to %q and answered with the key it was ASKED about; the record describes %q and names %q, so tau files one repository and clones another",
+			r.s.Writable, elsewhere, other, repo.Key)
+		r.assertRepository(t, repo, other)
+	})
+
+	t.Run("access", func(t tb) {
+		sess := r.session(t, r.s.Writable)
+		r.s.Requests()
+		r.s.RedirectOnce(elsewhere)
+
+		lvl, err := sess.Access(r.ctx, r.s.Writable)
+		if assert.Error(t, r.note(err),
+			"Access(%q) followed a redirect to %q and answered %s; an Access has nowhere to say it is about another repository, so this is %q's grant reported as %q's",
+			r.s.Writable, elsewhere, lvl, other, r.s.Writable) {
+			assert.Equal(t, forge.AccessNone, lvl, "a failed Access returned a level a caller could act on")
+		}
+	})
+
+	t.Run("install-deploy-key", func(t tb) {
+		sess := r.session(t, r.s.Admin)
+		const pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIforgetestpublichalf forgetest"
+		if !r.s.Expect.Has(forge.CapDeployKeys) {
+			_, err := sess.InstallDeployKey(r.ctx, r.s.Admin, "forgetest", pub)
+			r.absent(t, forge.CapDeployKeys, err)
+			return
+		}
+		r.s.Requests()
+		r.s.RedirectOnce(elsewhere)
+
+		h, err := sess.InstallDeployKey(r.ctx, r.s.Admin, "forgetest-redirect", pub)
+		if assert.Error(t, r.note(err),
+			"InstallDeployKey(%q) followed a redirect to %q and answered with handle %q; a Handle names no repository, so nothing this call returns can say the key was installed on %q",
+			r.s.Admin, elsewhere, h, other) {
+			return
+		}
+		// It installed one somewhere. Take it back out rather than leave a
+		// machine credential on a repository nobody named.
+		r.note(sess.RemoveDeployKey(r.ctx, r.s.Admin, h))
+	})
+
+	t.Run("register-push-hook", func(t tb) {
+		sess := r.session(t, r.s.Admin)
+		callback := httpsURL(t, "https://build.example.invalid/hooks/forgetest")
+		secret, err := forge.NewSecret()
+		require.NoError(t, err)
+
+		if !r.s.Expect.Has(forge.CapPushHooks) || !r.s.Expect.Has(forge.CapSignatures) {
+			missing := forge.CapPushHooks
+			if r.s.Expect.Has(forge.CapPushHooks) {
+				missing = forge.CapSignatures
+			}
+			_, err := sess.RegisterPushHook(r.ctx, r.s.Admin, callback, secret)
+			r.absent(t, missing, err)
+			return
+		}
+		r.s.Requests()
+		r.s.RedirectOnce(elsewhere)
+
+		hook, err := sess.RegisterPushHook(r.ctx, r.s.Admin, callback, secret)
+		if assert.Error(t, r.note(err),
+			"RegisterPushHook(%q) followed a redirect to %q and answered with handle %q; forge.Session stamps Hook.Key FROM THE ARGUMENT, so a hook that landed on %q is recorded against %q and no later call can ever find it",
+			r.s.Admin, elsewhere, hook.Handle, other, r.s.Admin) {
+			return
+		}
+		r.note(sess.RemovePushHook(r.ctx, r.s.Admin, hook.Handle))
+	})
+
+	// Delete runs last of the writes: a driver that replays it at the far end
+	// destroys the repository the other probes are pointed at, and a probe
+	// whose target has already been deleted passes for the wrong reason.
+	t.Run("delete", func(t tb) {
+		sess := r.session(t, r.s.Admin)
+		if !r.s.Expect.Has(forge.CapDelete) {
+			// Nothing reaches the wire, so there is no hop to arm — and arming
+			// one a driver will never take would leave it live for whatever
+			// runs next.
+			r.absent(t, forge.CapDelete, sess.Delete(r.ctx, r.s.Admin))
+			return
+		}
+		r.s.Requests()
+		r.s.RedirectOnce(elsewhere)
+
+		assert.Error(t, r.note(sess.Delete(r.ctx, r.s.Admin)),
+			"Delete(%q) answered a redirect to %q with success; a 301 or a 302 makes that a GET the driver read as a deletion, and a 307 makes it a DELETE somewhere else — either way the answer says a repository is gone",
+			r.s.Admin, elsewhere)
+
+		// And whatever it did, it must not have done it at the far end.
+		_, err := r.session(t, other).Repository(r.ctx, other)
+		assert.NoError(t, r.note(err),
+			"%q is gone: a write was replayed against the repository the redirect named, which the caller never mentioned", other)
+	})
+}
+
+// addressOfAnother is an address on THIS HOST for a repository that is not the
+// one the probes name — and it is the driver's own address for it, taken back
+// out of what the subject reported rather than built here. A URL this suite
+// invented would be a 404 at the far end, and a driver that followed a redirect
+// to it would look like one that refused.
+func (r *runner) addressOfAnother(t tb, k repokey.Key) string {
+	t.Helper()
+	sess := r.session(t, k)
+	r.s.Requests()
+	_, err := sess.Repository(r.ctx, k)
+	require.NoError(t, r.note(err), "the suite cannot learn this driver's own address for %q", k)
+
+	reqs := r.s.Requests()
+	require.NotEmpty(t, reqs, "the driver answered about %q with no request at all, so there is no address to point a redirect at", k)
+	return reqs[len(reqs)-1].URL
 }
 
 // assertRepository is the round trip: both clone addresses must re-derive the
