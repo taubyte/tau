@@ -307,7 +307,12 @@ func TestNoRedirectIsFollowed(t *testing.T) {
 			require.Error(t, err, "the redirect was followed and another repository's grant returned as this one's")
 			assert.Equal(t, forge.AccessNone, lvl)
 			assert.Len(t, seen.urls, 1, "the request was replayed at what the forge pointed at: %v", seen.urls)
-			assert.Contains(t, err.Error(), "302", "the status is the fact an operator needs")
+			// "answered " and not the bare number, for the reason the gitlab
+			// driver's redirect table gives: a needle that is only digits is a
+			// needle any other number in the sentence can satisfy. This
+			// driver's own rendering carries no host, so nothing here satisfies
+			// it today — the anchor is what keeps that true.
+			assert.Contains(t, err.Error(), "answered 302", "the status is the fact an operator needs")
 
 			var leak *forge.CredentialLeakError
 			assert.False(t, errors.As(err, &leak),
