@@ -61,6 +61,7 @@ func (d *driver) bind(token string) *client {
 		d:     d,
 		token: token,
 		http: &http.Client{
+			CheckRedirect: noRedirect,
 			Transport: forge.PinnedTransport(d.apiHost, d.rt, func(h http.Header) {
 				// An anonymous session binds an empty credential; sending
 				// "Bearer " would turn a public read into a 401.
@@ -71,6 +72,33 @@ func (d *driver) bind(token string) *client {
 		},
 	}
 }
+
+// noRedirect stops at the 3xx instead of replaying the request wherever the
+// answer points. THIS DRIVER FOLLOWS NO REDIRECT AT ALL.
+//
+// GitHub answers a request for a renamed or TRANSFERRED repository with 301 to
+// its current path, and a POST or DELETE on one with 307, which Go replays
+// method and body against. PinnedTransport permits that hop and must: it is the
+// same host, and a per-hop host check is the whole of what a pin can decide.
+// So without this, a request built for one repository is answered by another —
+// the permissions read are that other repository's, the hook is installed on
+// it, the deletion lands on it — while every value this driver returns still
+// carries the key the CALLER named. A transferred name is free to re-register
+// the moment it is transferred, which is what turns that into a grant.
+//
+// A WRITE CANNOT BE UNDONE BY CHECKING AFTERWARDS, which is why the refusal is
+// before the second request rather than a re-verification after it: by the time
+// a re-fetch could notice, the hook is installed and the repository is gone.
+// 301 makes it worse, not better — Go rewrites a non-HEAD request to GET on
+// 301/302/303, so a Delete would have followed the redirect, read a 200 and
+// reported success having deleted nothing.
+//
+// It is one rule on the client rather than a check per call because it must hold
+// for every request this driver makes, the app credential's membership walk
+// included, and because a rule with no host arithmetic in it cannot disagree
+// with the pin. ErrUseLastResponse hands the 3xx to send, which treats it as the
+// non-2xx it is: one error path, and the status is the fact an operator needs.
+func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 func (c *client) Host() string { return c.d.host }
 

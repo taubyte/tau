@@ -104,6 +104,21 @@ func (c *canned) RoundTrip(r *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+// hops records what the driver actually put on the wire, UNDER the pin, so a
+// request that was replayed at a second address is a second entry.
+type hops struct {
+	mu   sync.Mutex
+	urls []string
+	base http.RoundTripper
+}
+
+func (h *hops) RoundTrip(r *http.Request) (*http.Response, error) {
+	h.mu.Lock()
+	h.urls = append(h.urls, r.URL.String())
+	h.mu.Unlock()
+	return h.base.RoundTrip(r)
+}
+
 // TestDotComTalksToTheAPIHostAndNotToTheRepositoryHost: github.com serves its
 // API from api.github.com, so the host a key names and the host a request goes
 // to are two different values — and the credential is pinned to the second.
@@ -194,26 +209,148 @@ func TestBindRefusesACredentialNobodySet(t *testing.T) {
 
 // ─────────────────────────── the credential never leaves ───────────────────────────
 
-// TestARedirectOffTheHostDoesNotCarryTheCredential is the threat PinnedTransport
-// exists for: an http.Client follows redirects, and a forge — or anything
-// answering as one — that answers 302 to somewhere else would otherwise be
-// handed the Authorization header on the next hop.
-func TestARedirectOffTheHostDoesNotCarryTheCredential(t *testing.T) {
-	var secondHop int
+// TestNoRedirectIsFollowed. An http.Client replays a request wherever a 3xx
+// points, and GitHub answers a renamed or TRANSFERRED repository with 301 to
+// its current path — so a request built for one repository comes back answered
+// by another, carrying that other repository's `permissions`.
+//
+// PinnedTransport is not the answer to that and cannot be. It refuses the hop
+// that leaves the host, which is the whole of what a per-hop host check can
+// decide; a redirect to another repository on the SAME host is one it permits
+// by design. So the driver refuses to follow at all, and this asserts both
+// halves: for the off-host redirect the error is no longer the pin's, because
+// the driver never got as far as asking the pin to make a second request.
+func TestNoRedirectIsFollowed(t *testing.T) {
+	for name, target := range map[string]string{
+		"off the host, which the pin would have refused": "https://elsewhere.example.invalid/api/v3/user",
+		"onto another repository, which the pin permits": "/api/v3/repos/attacker/pay",
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/repos/acme/pay") {
+					http.Redirect(w, r, target, http.StatusFound)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, `{"full_name":"attacker/pay","clone_url":"https://`+r.Host+`/attacker/pay.git",
+					"default_branch":"main","permissions":{"admin":true,"push":true,"pull":true}}`)
+			}))
+			t.Cleanup(srv.Close)
+			host := strings.TrimPrefix(srv.URL, "https://")
+			seen := &hops{base: srv.Client().Transport}
+
+			drv, err := github.New(host, github.Transport(seen))
+			require.NoError(t, err)
+			reg, err := forge.New(forge.Policy{}, forge.Binding{Host: host, Driver: drv})
+			require.NoError(t, err)
+			key, err := repokey.Parse("https://" + host + "/acme/pay")
+			require.NoError(t, err)
+			sess, err := reg.For(key, forge.Token(goodToken))
+			require.NoError(t, err)
+
+			lvl, err := sess.Access(ctx(), key)
+			require.Error(t, err, "the redirect was followed and another repository's grant returned as this one's")
+			assert.Equal(t, forge.AccessNone, lvl)
+			assert.Len(t, seen.urls, 1, "the request was replayed at what the forge pointed at: %v", seen.urls)
+			assert.Contains(t, err.Error(), "302", "the status is the fact an operator needs")
+
+			var leak *forge.CredentialLeakError
+			assert.False(t, errors.As(err, &leak),
+				"the driver asked the pin to make the second request instead of refusing to make one")
+			assert.NotContains(t, err.Error(), goodToken)
+		})
+	}
+}
+
+// TestAccessIsBoundToTheKeyItWasAskedAbout is the whole defect in one call.
+// GitHub answers a request for a renamed or TRANSFERRED repository with 301 to
+// its current path; what comes back is a repository object and the caller's
+// permissions ON THAT OTHER REPOSITORY. Access is what the registration gate is
+// built on, and the name it was asked about is free for anyone to re-register
+// the moment the transfer happens.
+func TestAccessIsBoundToTheKeyItWasAskedAbout(t *testing.T) {
+	var asked []string
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Host != "" && strings.Contains(r.URL.Path, "/api/v3/repos/") {
-			http.Redirect(w, r, "https://elsewhere.example.invalid/api/v3/user", http.StatusFound)
-			return
+		asked = append(asked, r.URL.Path)
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/repos/acme/pay"):
+			http.Redirect(w, r, "/api/v3/repos/attacker/pay", http.StatusMovedPermanently)
+		case strings.HasSuffix(r.URL.Path, "/repos/attacker/pay"):
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"full_name":"attacker/pay",
+				"clone_url":"https://`+r.Host+`/attacker/pay.git",
+				"ssh_url":"ssh://git@`+r.Host+`/attacker/pay.git",
+				"default_branch":"main","private":false,
+				"permissions":{"admin":true,"push":true,"pull":true}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		secondHop++
-		io.WriteString(w, `{}`)
 	}), "acme/pay")
 
-	_, err := sess.Access(ctx(), key)
+	got, err := sess.Access(ctx(), key)
+	t.Logf("requests: %v", asked)
+	t.Logf("Access(%s) = %v, err = %v", key, got, err)
+
+	assert.False(t, got.CanWrite(),
+		"Access answered %v for %q on the strength of the caller's grant on attacker/pay; "+
+			"the answer is not bound to the key that was asked about", got, key)
+}
+
+// TestAWriteIsNotReplayedAtWhateverARedirectNames is the same defect on the
+// write side, and the one no check-afterwards can undo. GitHub answers a POST
+// to a moved repository with 307, which Go replays method and body against, so
+// the hook is created on the repository the redirect names while the forge.Hook
+// that comes back is stamped with the key the CALLER asked for. On 301 it is
+// worse for a delete: Go rewrites a non-HEAD request to GET, so Delete would
+// have read a 200 and reported success having deleted nothing.
+func TestAWriteIsNotReplayedAtWhateverARedirectNames(t *testing.T) {
+	var created string
+	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/repos/acme/pay/hooks"):
+			http.Redirect(w, r, "/api/v3/repos/attacker/pay/hooks", http.StatusTemporaryRedirect)
+		case strings.HasSuffix(r.URL.Path, "/repos/attacker/pay/hooks"):
+			created = r.URL.Path
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"id":991}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}), "acme/pay")
+
+	callback, err := url.Parse("https://build.example.invalid/hook")
+	require.NoError(t, err)
+	secret, err := forge.NewSecret()
+	require.NoError(t, err)
+
+	hook, err := sess.RegisterPushHook(ctx(), key, callback, secret)
+	t.Logf("hook = {Key:%s Handle:%s Scheme:%s}, err = %v, server created it at %q", hook.Key, hook.Handle, hook.Scheme, err, created)
+
+	assert.Empty(t, created, "a hook recorded under %q was installed on attacker/pay", key)
 	require.Error(t, err)
-	var leak *forge.CredentialLeakError
-	require.ErrorAs(t, err, &leak, "the redirect was followed with the credential attached")
-	assert.Equal(t, 0, secondHop)
+}
+
+// TestAnAnswerAboutAnotherRepositoryIsRefused is what no redirect rule can see:
+// a host that answers 200 at the path this driver built with a body describing
+// a DIFFERENT repository. A proxy told the wrong external URL does it by
+// accident; a forge handing a caller somebody else's grant does it on purpose.
+func TestAnAnswerAboutAnotherRepositoryIsRefused(t *testing.T) {
+	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"full_name":"attacker/pay","clone_url":"https://`+r.Host+`/attacker/pay.git",
+			"default_branch":"main","permissions":{"admin":true,"push":true,"pull":true}}`)
+	}), "acme/pay")
+
+	lvl, err := sess.Access(ctx(), key)
+	require.Error(t, err, "the grant on attacker/pay was returned as the grant on acme/pay")
+	assert.Equal(t, forge.AccessNone, lvl)
+
+	// Repository is the other half of the asymmetry and is asserted here so the
+	// split cannot be lost by accident: it REPORTS what the forge named, which
+	// is how a rename reaches a consumer at all.
+	repo, err := sess.Repository(ctx(), key)
+	require.NoError(t, err)
+	assert.Equal(t, "attacker", repo.Key.Owner, "the repository was filed under the name that was asked, not the one the forge named")
 }
 
 // ─────────────────────────────── access ───────────────────────────────
@@ -231,8 +368,14 @@ func TestAccessMapsGitHubsRolesOntoTausRungs(t *testing.T) {
 		"nothing at all":               {`{}`, forge.AccessNone},
 	} {
 		t.Run(name, func(t *testing.T) {
-			body := `{"full_name":"acme/pay","default_branch":"main","permissions":` + tc.perms + `,"clone_url":"https://x/acme/pay.git"}`
-			sess, key := sessionOn(t, answer(http.StatusOK, body), "acme/pay")
+			// The clone URL names the repository that was asked about, on the
+			// host it was asked of: an answer that names another repository is
+			// refused now, and it is refused wherever it comes from.
+			sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, `{"full_name":"acme/pay","default_branch":"main","permissions":`+tc.perms+
+					`,"clone_url":"https://`+r.Host+`/acme/pay.git"}`)
+			}), "acme/pay")
 			got, err := sess.Access(ctx(), key)
 			require.NoError(t, err, "a definitive answer is a value, including AccessNone")
 			assert.Equal(t, tc.want, got)

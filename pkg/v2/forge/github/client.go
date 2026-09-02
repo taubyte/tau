@@ -63,28 +63,59 @@ type userJSON struct {
 // A definitive answer is a value, INCLUDING (AccessNone, nil). Everything that
 // is not an answer is an error — see classify — so an outage, a rate limit or a
 // blocked OAuth app can never arrive at a consumer as a denial.
+//
+// AND IT IS BOUND TO THE KEY IT WAS ASKED ABOUT. `permissions` is a nameless
+// field: it describes whatever repository the body describes, so reading it as
+// the answer for a different key answers a question nobody asked. GitHub
+// answers a renamed or TRANSFERRED repository by naming the one it became — and
+// a transferred name is free for anyone to re-register the moment it is
+// transferred, so "admin on whatever victim/pay currently points at" is a grant
+// on a name an attacker may already hold. The same fetch already carries
+// clone_url and get already derives a key from it; all that was missing was
+// asking whether that key is the one this call was about.
 func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, error) {
-	r, err := c.get(ctx, key)
+	r, repo, err := c.get(ctx, key)
 	if err != nil {
 		return forge.AccessNone, err
+	}
+	if repo.Key != key {
+		return forge.AccessNone, fmt.Errorf("forge/github: %s was asked what this credential may do to %q and answered about %q", c.d.host, key, repo.Key)
 	}
 	return r.Permissions.access(), nil
 }
 
+// Repository REPORTS, and so it does not bind. A forge.Repository names itself:
+// the key is derived from the clone address the forge returned, so a rename
+// arrives as a different key rather than as an error, and a consumer that reads
+// it sees the move the forge is reporting. That asymmetry with Access is the
+// point — a value that names itself may differ from the question; a VERDICT may
+// not, because the verdict carries no name and would be filed under the
+// question's.
 func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Repository, error) {
-	r, err := c.get(ctx, key)
+	_, repo, err := c.get(ctx, key)
 	if err != nil {
 		return forge.Repository{}, err
 	}
-	return c.repository(r)
+	return repo, nil
 }
 
-func (c *client) get(ctx context.Context, key repokey.Key) (repoJSON, error) {
+// get is the one fetch behind both Access and Repository. It returns the body
+// AND the repository derived from it, so the key the forge named is computed
+// once, by the same code, whichever of the two asked — and the two then differ
+// only in what they do about a disagreement, which is a decision each states
+// for itself rather than a second derivation that could drift from this one.
+//
+// Case is not a disagreement: both keys come from repokey, which lowercases.
+func (c *client) get(ctx context.Context, key repokey.Key) (repoJSON, forge.Repository, error) {
 	var r repoJSON
 	if err := c.send(ctx, http.MethodGet, repoPath(key), nil, &r); err != nil {
-		return repoJSON{}, c.classify(err, key)
+		return repoJSON{}, forge.Repository{}, c.classify(err, key)
 	}
-	return r, nil
+	repo, err := c.repository(r)
+	if err != nil {
+		return repoJSON{}, forge.Repository{}, err
+	}
+	return r, repo, nil
 }
 
 // ListRepositories walks the repositories this credential can reach.
@@ -158,12 +189,11 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 	if err != nil {
 		return forge.Repository{}, err
 	}
-	// THE ONE PLACE A DERIVED KEY IS CHECKED AGAINST THE ARGUMENT, and it is
-	// checked here because creation is the one call that chose where the
-	// repository would land. Repository does not check, on purpose: a key that
-	// comes back different there is a rename, which is a fact to surface. A key
-	// that comes back different HERE is a repository made somewhere nobody asked
-	// for, and returning it would file it under a name that does not name it.
+	// The derived key is checked against the argument, the same way get() checks
+	// it for a read. Here it is a repository MADE somewhere nobody asked for, and
+	// returning it would file it under a name that does not name it — which on a
+	// forge that silently created it elsewhere means tau holds a name it does not
+	// own and anyone may register.
 	if repo.Key != key {
 		return forge.Repository{}, fmt.Errorf("forge/github: asked for %q and the forge created %q", key, repo.Key)
 	}
