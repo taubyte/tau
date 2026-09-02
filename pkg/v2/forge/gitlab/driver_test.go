@@ -728,10 +728,22 @@ func TestIsActiveMemberSaysNoOnlyWhenItKnows(t *testing.T) {
 
 // A 403 means the credential was blocked, which is an operator problem and not a
 // verdict on a person — so it is an error and never a false a caller acts on.
+//
+// A 404 ON THE USER LOOKUP IS IN THAT SET AND NOT IN THE OTHER ONE. GitLab says
+// "no such user" with 200 and an empty array; a 404 from that endpoint is the
+// endpoint missing or the deployment's token not permitted to reach it, which is
+// an operator problem wearing the status the ONE definitive non-member answer
+// also wears. Reading it as that answer would deny every member of the group at
+// once, and it would look like a policy rather than an outage. Measured: this
+// driver already gets it right — fault turns a 404 on a request that named no
+// repository into a plain error — and nothing said so, so a shortcut moved up
+// one request left the whole tree at exit 0. The 404 that IS the non-member is
+// the one on the member read, and the conformance suite holds that.
 func TestIsActiveMemberErrorsRatherThanDenying(t *testing.T) {
 	for name, handler := range map[string]http.HandlerFunc{
 		"the user lookup was refused":    answer(t, http.StatusForbidden, `{"message":"403 Forbidden"}`),
 		"the user lookup was unreadable": answer(t, http.StatusOK, `not json`),
+		"the user lookup was not there":  answer(t, http.StatusNotFound, `{"message":"404 Not Found"}`),
 	} {
 		d, _ := stub(t, handler, Deployment(forge.Token("deployment")))
 		ok, err := d.(forge.Memberships).IsActiveMember(context.Background(), "acme", "alice")
