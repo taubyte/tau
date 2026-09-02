@@ -42,11 +42,13 @@ func (s *Service) reconcile() error {
 	now := s.now()
 
 	for _, key := range s.store.Keys(openIndexRoot()) {
-		id, err := idFromIndexKey(key)
+		// BOTH halves, not just the id: mend deletes this row, and an entry
+		// whose key it was merely handed cannot say what it deletes.
+		repositoryKey, id, err := parseOpenIndexKey(key)
 		if err != nil {
 			return errInternal("%v", err)
 		}
-		if err := s.mend(key, id, now, cutoff); err != nil {
+		if err := s.mend(repositoryKey, id, now, cutoff); err != nil {
 			return err
 		}
 	}
@@ -98,7 +100,7 @@ func (s *Service) reconcile() error {
 //     orphaned, which in steady state is none. barrier_test.go measures both: a
 //     pass over sixteen live open jobs still costs one, and a pass over four
 //     orphaned rows costs one plus four.
-func (s *Service) mend(key, id string, now time.Time, cutoff time.Duration) error {
+func (s *Service) mend(repositoryKey, id string, now time.Time, cutoff time.Duration) error {
 	jobLock.Lock()
 	defer jobLock.Unlock()
 
@@ -121,8 +123,10 @@ func (s *Service) mend(key, id string, now time.Time, cutoff time.Duration) erro
 	}
 
 	if !found || rec.terminal() {
-		if err := s.store.Batch([]raft.BatchOp{del(key)}, s.cfg.Queue.ApplyTimeout); err != nil {
-			return fmt.Errorf("dropping stale open row %q: %w", key, err)
+		if err := s.store.Batch([]raft.BatchOp{
+			del(openIndexKey(repositoryKey, id)),
+		}, s.cfg.Queue.ApplyTimeout); err != nil {
+			return fmt.Errorf("dropping stale open row of job %s: %w", id, err)
 		}
 		return nil
 	}

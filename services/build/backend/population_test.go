@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"slices"
 	"strings"
@@ -20,13 +21,25 @@ import (
 // seventh site added later would be that again, silently, and no interleaving
 // test can fail for a site nobody wrote one for.
 //
-// THE FIRST VERSION OF THIS TABLE WAS ITSELF TOO COARSE, and that is the second
-// defect it now carries. It had one row per FUNCTION and one column — "does the
-// read hold the lock" — so it could say that begin's read was behind jobLock
-// and could not say that the SECOND write that read decided, the ack of a
-// delivery it drops, was made after the section closed. One read, two branches,
-// two writes, one of them loose. The table below therefore names the KINDS of
-// write a read decides, and checks each of them separately against the code.
+// THE TABLE HAS BEEN TOO COARSE TWICE, AND EACH TIME IN THE SAME WAY: it could
+// not see the thing it claimed to guard.
+//
+//   - One row per FUNCTION with one column — "does the read hold the lock" —
+//     could not say that the SECOND write a read decides, the ack of a delivery
+//     it drops, was made after the section closed. So the table names the KINDS
+//     of write a read decides and checks each separately.
+//   - "After the first jobLock.Lock()" is not a section. Nothing recorded an
+//     Unlock at all, so a site that read under the lock, released it, and then
+//     made the queue write its read decided — run's original shape, the defect
+//     this all started from — was reported as covered. So a section is now a
+//     Lock..Unlock span, and a call is judged by where IT is.
+//   - And a fact checked by SPELLING is not checked. mend deletes an
+//     open-index row, and while that key was a loop variable carried down from
+//     reconcile's listing, the pairing scan below could not see the entry at
+//     all — nor could it see a tenth site that deleted one outside any section.
+//     So an entry's key must be built where the entry is, and an index-row
+//     write is a column of the table rather than something that falls through
+//     it as neither a record write nor a queue write.
 //
 // So the enumeration is mechanical and it is checked. record() is the only
 // reader of jobRecordKey — TestOnlyOneFunctionReadsAJobRecord is that claim —
@@ -37,17 +50,45 @@ import (
 // reads the two roles' import lists, and for the same reason: this is the kind
 // of property that decays without anyone noticing.
 
+// span is one [Lock, Unlock) interval of jobLock in a body.
+type span struct{ from, to token.Pos }
+
 // funcs is one non-test function of this package, and what its body does. It
 // is keyed by receiver type and name — this package has two Allow methods, and
 // a table keyed by name alone would silently hold one of them.
 type funcs struct {
 	name  string
 	calls map[string]bool
-	// at is where each call first appears, which is what lets a test say
-	// "before the read" rather than only "somewhere in the body".
-	at     map[string]token.Pos
-	locks  bool
-	lockAt token.Pos
+	// at and last are where each call FIRST and LAST appears. The difference
+	// between them is what a section that TRIAGES on a cheap read and decides
+	// on a second one looks like from here.
+	at   map[string]token.Pos
+	last map[string]token.Pos
+	// posns is every appearance of every call, because "this write is inside
+	// the section" is a question about each call site and not about the first.
+	posns map[string][]token.Pos
+	// writesTo is where the body ASSIGNS to a field rather than calling
+	// something — s.running[id] = stop, delete(s.running, id). A section is not
+	// only about calls.
+	writesTo map[string][]token.Pos
+	// sections are the jobLock spans. A DEFERRED Unlock runs at the end of the
+	// body and so closes nothing here; a plain one closes where it is written,
+	// which is the shape "after the first Lock" could not see.
+	sections []span
+	end      token.Pos
+}
+
+func (f funcs) sectioned() bool { return len(f.sections) > 0 }
+
+// covered reports whether a position is inside one of the body's jobLock
+// spans.
+func (f funcs) covered(at token.Pos) bool {
+	for _, s := range f.sections {
+		if at > s.from && at < s.to {
+			return true
+		}
+	}
+	return false
 }
 
 // pairedQueueWrites are the queue verbs that PAIR WITH A RECORD WRITE: a job
@@ -61,6 +102,14 @@ var pairedQueueWrites = map[string]bool{"Push": true, "Remove": true, "Ack": tru
 // blocks until everything committed is applied.
 var barrierVerbs = map[string]bool{
 	"Push": true, "Remove": true, "Ack": true, "Nack": true, "Claim": true, "Sweep": true,
+}
+
+// indexRowKeys are the rows a LISTING walks: the open index reconcile repairs
+// and MaxOpenPerRepo counts, the project index a caller lists by, the retention
+// index. A write of one is neither a record write nor a queue write, and
+// without a column of its own it was invisible to the table.
+var indexRowKeys = map[string]bool{
+	"openIndexKey": true, "projectIndexKey": true, "terminalIndexKey": true,
 }
 
 // qualify names a declaration the way the tables below do: "Service.cancel",
@@ -81,29 +130,91 @@ func qualify(fn *ast.FuncDecl) string {
 	return id.Name + "." + fn.Name.Name
 }
 
-func pkgFuncs(t *testing.T) map[string]funcs {
+// parsePackage parses this package's own non-test source.
+func parsePackage(t *testing.T) *ast.Package {
 	t.Helper()
-
 	fset := token.NewFileSet()
 	parsed, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go")
 	}, 0)
 	require.NoError(t, err)
 	require.Contains(t, parsed, "backend")
+	return parsed["backend"]
+}
+
+// jobLockCall reports whether a selector is jobLock.Lock or jobLock.Unlock.
+func jobLockCall(n ast.Node, verb string) (token.Pos, bool) {
+	sel, ok := n.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != verb {
+		return 0, false
+	}
+	id, ok := sel.X.(*ast.Ident)
+	if !ok || id.Name != "jobLock" {
+		return 0, false
+	}
+	return sel.Sel.NamePos, true
+}
+
+// fieldWritten names the field an assignment target writes: s.running[id] and
+// s.running both answer "running".
+func fieldWritten(expr ast.Expr) (string, token.Pos, bool) {
+	if idx, ok := expr.(*ast.IndexExpr); ok {
+		expr = idx.X
+	}
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return "", 0, false
+	}
+	return sel.Sel.Name, sel.Sel.NamePos, true
+}
+
+func pkgFuncs(t *testing.T) map[string]funcs {
+	t.Helper()
 
 	out := map[string]funcs{}
-	for _, file := range parsed["backend"].Files {
+	for _, file := range parsePackage(t).Files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
 				continue
 			}
-			f := funcs{name: qualify(fn), calls: map[string]bool{}, at: map[string]token.Pos{}}
+			f := funcs{
+				name:     qualify(fn),
+				calls:    map[string]bool{},
+				at:       map[string]token.Pos{},
+				last:     map[string]token.Pos{},
+				posns:    map[string][]token.Pos{},
+				writesTo: map[string][]token.Pos{},
+				end:      fn.Body.End(),
+			}
+
+			// A deferred Unlock runs at the end of the body, so it does not
+			// close the section where it is written.
+			deferred := map[token.Pos]bool{}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				d, ok := n.(*ast.DeferStmt)
+				if !ok {
+					return true
+				}
+				ast.Inspect(d.Call, func(n ast.Node) bool {
+					if at, ok := jobLockCall(n, "Unlock"); ok {
+						deferred[at] = true
+					}
+					return true
+				})
+				return true
+			})
+
+			var locks, unlocks []token.Pos
 			note := func(name string, pos token.Pos) {
 				f.calls[name] = true
 				if at, seen := f.at[name]; !seen || pos < at {
 					f.at[name] = pos
 				}
+				if at, seen := f.last[name]; !seen || pos > at {
+					f.last[name] = pos
+				}
+				f.posns[name] = append(f.posns[name], pos)
 			}
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				switch v := n.(type) {
@@ -111,18 +222,46 @@ func pkgFuncs(t *testing.T) map[string]funcs {
 					// s.record, s.store.Get, jobLock.Lock — the selector's last
 					// segment is the name, whatever it hangs off.
 					note(v.Sel.Name, v.Sel.NamePos)
-					if id, ok := v.X.(*ast.Ident); ok && id.Name == "jobLock" && v.Sel.Name == "Lock" {
-						f.locks = true
-						f.lockAt = v.Sel.NamePos
+					if at, ok := jobLockCall(v, "Lock"); ok {
+						locks = append(locks, at)
+					}
+					if at, ok := jobLockCall(v, "Unlock"); ok && !deferred[at] {
+						unlocks = append(unlocks, at)
 					}
 				case *ast.CallExpr:
 					// Bare calls, for the key builders that have no receiver.
 					if id, ok := v.Fun.(*ast.Ident); ok {
 						note(id.Name, id.NamePos)
+						// delete(s.running, id) writes a field.
+						if id.Name == "delete" && len(v.Args) > 0 {
+							if name, at, ok := fieldWritten(v.Args[0]); ok {
+								f.writesTo[name] = append(f.writesTo[name], at)
+							}
+						}
+					}
+				case *ast.AssignStmt:
+					for _, lhs := range v.Lhs {
+						if name, at, ok := fieldWritten(lhs); ok {
+							f.writesTo[name] = append(f.writesTo[name], at)
+						}
 					}
 				}
 				return true
 			})
+
+			slices.Sort(locks)
+			slices.Sort(unlocks)
+			for _, from := range locks {
+				to := f.end
+				for _, u := range unlocks {
+					if u > from {
+						to = u
+						break
+					}
+				}
+				f.sections = append(f.sections, span{from: from, to: to})
+			}
+
 			require.NotContains(t, out, f.name, "two declarations named %s", f.name)
 			out[f.name] = f
 		}
@@ -207,6 +346,16 @@ func writesQueue(all map[string]funcs, qualified string) bool {
 	return false
 }
 
+// writesIndex reports the same for a row of one of the listings.
+func writesIndex(all map[string]funcs, qualified string) bool {
+	for name := range reach(all, bare(qualified), map[string]bool{"record": true}) {
+		if indexRowKeys[name] {
+			return true
+		}
+	}
+	return false
+}
+
 // barriers reports whether a call takes a barrier, directly or through this
 // package's own functions or pkg/v2/queue's prepare().
 func barriers(all map[string]funcs, call string) bool {
@@ -221,14 +370,40 @@ func barriers(all map[string]funcs, call string) bool {
 	return false
 }
 
-// barriersBeforeTheRead is every call a section makes between taking jobLock
-// and reading the record that takes a barrier. A section with none of them is
-// deciding on state this node may not have applied yet.
-func barriersBeforeTheRead(all map[string]funcs, f funcs) []string {
+// entryWrite reports whether a call ends in an entry or a paired queue write,
+// wherever in the call tree it is built.
+func entryWrite(all map[string]funcs, call string) bool {
+	if call == "Batch" || pairedQueueWrites[call] {
+		return true
+	}
+	for name := range reach(all, call, map[string]bool{"record": true}) {
+		if name == "Batch" || pairedQueueWrites[name] {
+			return true
+		}
+	}
+	return false
+}
+
+// writesIn is every position at which a section writes something.
+func writesIn(all map[string]funcs, f funcs) map[string][]token.Pos {
+	out := map[string][]token.Pos{}
+	for name := range f.calls {
+		if name == "record" || !entryWrite(all, name) {
+			continue
+		}
+		out[name] = f.posns[name]
+	}
+	return out
+}
+
+// barriersBefore is every call a section makes between taking jobLock and
+// limit that takes a barrier. A section with none of them is deciding on state
+// this node may not have applied yet.
+func barriersBefore(all map[string]funcs, f funcs, limit token.Pos) []string {
 	var out []string
 	for name := range f.calls {
 		at, ok := f.at[name]
-		if !ok || at <= f.lockAt || at >= f.at["record"] {
+		if !ok || !f.covered(at) || at >= limit {
 			continue
 		}
 		if barriers(all, name) {
@@ -263,14 +438,25 @@ type site struct {
 	record bool
 	// queue: the read decides a push, a withdrawal or an ack.
 	queue bool
-	// barrier names the call that barriers between the lock and the read. A
-	// section that takes none is deciding on entries this node may not have
-	// applied, so an empty one has to say in why that a stale read is harmless.
+	// index: the read decides a write or a delete of an INDEX ROW. Without a
+	// column of its own an open-row write is neither of the two above, and a
+	// site that made one fell through this table as a site that decides
+	// nothing at all.
+	index bool
+	// barrier names the call that barriers between the lock and the read the
+	// section's writes are decided on. A section that takes none is deciding on
+	// entries this node may not have applied, so an empty one has to say in why
+	// that a stale read is harmless.
 	barrier string
+	// rereads says the deciding read is not the first one: the section triages
+	// on a cheap read and pays for the barrier only on the branch that needs
+	// it. Then the barrier is before the LAST read, and every write the section
+	// makes comes after that read rather than before it.
+	rereads bool
 	why     string
 }
 
-func (s site) section() bool { return s.record || s.queue }
+func (s site) section() bool { return s.record || s.queue || s.index }
 
 // EVERY READ OF A JOB RECORD IS NAMED HERE, with every write it decides and the
 // barrier the section takes before it. Adding a site means adding a line, which
@@ -281,11 +467,11 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 	population := map[string]site{
 		// jobs.go
 		"Service.job":    {}, // a read shape: it decides no write at all
-		"Service.cancel": {record: true, queue: true, barrier: "lead"},
-		"Service.retry":  {record: true, queue: true, barrier: "lead"},
+		"Service.cancel": {record: true, queue: true, index: true, barrier: "lead"},
+		"Service.retry":  {record: true, queue: true, index: true, barrier: "lead"},
 		// queue.go
 		"Service.resume": {queue: true, barrier: "lead"},
-		"Service.create": {record: true, queue: true, barrier: "lead"},
+		"Service.create": {record: true, queue: true, index: true, barrier: "lead"},
 		// runner.go
 		"Service.begin": {record: true, queue: true, barrier: "lead"},
 		// settle's barrier is its own ack: queue.Ack goes through prepare(),
@@ -293,22 +479,14 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 		// applied — inside the lock, before the read. A second lead() here
 		// would be a second replicated entry for a fact the ack already
 		// established.
-		"Service.settle":          {record: true, queue: true, barrier: "ack"},
-		"Service.drainDeadLetter": {record: true, queue: true, barrier: "lead"},
-		// reconcile.go
-		"Service.mend": {
-			queue: true,
-			why: "mend takes no barrier of its own, and the two decisions its read makes are " +
-				"both safe against a stale one. The push is deduplicated by the queue behind " +
-				"the queue's own barrier, and an item pushed for a job that has since finished " +
-				"is dropped by begin on the next claim. The delete cannot be wrong from " +
-				"staleness alone: every entry that makes a record terminal deletes its open " +
-				"row in the SAME entry, and every entry that writes an open row writes a " +
-				"non-terminal record in the same one, so no applied prefix of the log shows a " +
-				"row whose record is finished unless the row is genuinely orphaned — which is " +
-				"what mend is for. A barrier here would be one replicated entry per open job " +
-				"per pass, which reconcile.go's age gate exists to avoid.",
-		},
+		"Service.settle":          {record: true, queue: true, index: true, barrier: "ack"},
+		"Service.drainDeadLetter": {record: true, queue: true, index: true, barrier: "lead"},
+		// reconcile.go — the one section whose barrier is not before its FIRST
+		// read. mend triages on a stale read that decides nothing, and takes
+		// the barrier on the branch that deletes an open-index row, so the cost
+		// is one per row that looks orphaned rather than one per open job per
+		// pass. barrier_test.go measures both numbers.
+		"Service.mend": {queue: true, index: true, barrier: "lead", rereads: true},
 	}
 
 	all := pkgFuncs(t)
@@ -320,18 +498,37 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 	for name, want := range population {
 		f := found[name]
 
-		require.Equal(t, want.section(), f.locks,
+		require.Equal(t, want.section(), f.sectioned(),
 			"%s: the read and the entries it decides must be one section", name)
 		require.Equal(t, want.record, writesRecord(all, name),
 			"%s: the table and the code disagree about whether this read decides a record write", name)
 		require.Equal(t, want.queue, writesQueue(all, name),
 			"%s: the table and the code disagree about whether this read decides a queue write", name)
+		require.Equal(t, want.index, writesIndex(all, name),
+			"%s: the table and the code disagree about whether this read decides an index-row write", name)
 
 		if !want.section() {
 			continue
 		}
 
-		taken := barriersBeforeTheRead(all, f)
+		deciding := f.at["record"]
+		if want.rereads {
+			require.NotEqual(t, f.at["record"], f.last["record"],
+				"%s: a section that triages must read the record again after its barrier", name)
+			deciding = f.last["record"]
+
+			// AND THE TRIAGE MUST DECIDE NOTHING. Every write the section makes
+			// comes after the read the barrier covers, or the first read is not
+			// triage at all.
+			for verb, positions := range writesIn(all, f) {
+				for _, at := range positions {
+					require.Greater(t, at, deciding,
+						"%s: %s is decided before the read its barrier covers", name, verb)
+				}
+			}
+		}
+
+		taken := barriersBefore(all, f, deciding)
 		if want.barrier == "" {
 			require.NotEmpty(t, want.why, "%s: a section with no barrier must say why that is safe", name)
 			require.Empty(t, taken, "%s: it does take a barrier now, so the exemption above is stale", name)
@@ -339,7 +536,7 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 		}
 		require.Empty(t, want.why, "%s: a section with a barrier needs no exemption", name)
 		require.Contains(t, taken, want.barrier,
-			"%s: %s must be called between jobLock and the read, and must barrier", name, want.barrier)
+			"%s: %s must be called inside the section and before the deciding read, and must barrier", name, want.barrier)
 	}
 }
 
@@ -393,11 +590,17 @@ func TestEveryQueueWriteIsInsideTheSectionThatDecidedIt(t *testing.T) {
 	}
 }
 
-// inSection reports whether fn's call to `call` is made under jobLock — which
-// is a question about the CALL SITE and not about the function: drainDeadLetter
+// inSection reports whether fn's calls to `call` are made under jobLock — which
+// is a question about the CALL SITES and not about the function: drainDeadLetter
 // takes the lock and claims the dead letter before it, so "drainDeadLetter
 // locks" is true and says nothing about which of its two queue writes is
-// covered.
+// covered. Every call site must be covered, because one of two that is not is
+// still a hole.
+//
+// A SECTION IS Lock..Unlock, not "after the first Lock". A body that reads under
+// the lock, releases it, and then makes the write its read decided is the
+// original shape of run(), and a check that only knew where the Lock was called
+// it covered.
 //
 // A function that takes no lock of its own is covered only if every function
 // that calls IT is covered, which is what makes ack(), requeue() and withdraw()
@@ -412,11 +615,17 @@ func inSectionFrom(all map[string]funcs, fn, call string, seen map[string]bool) 
 	if !known {
 		return false, fn + " is not a function of this package"
 	}
-	if f.locks {
-		if at, ok := f.at[call]; ok && at > f.lockAt {
-			return true, ""
+	if f.sectioned() {
+		positions := f.posns[call]
+		if len(positions) == 0 {
+			return false, fn + " does not call " + call
 		}
-		return false, fn + " calls " + call + " before it takes jobLock"
+		for _, at := range positions {
+			if !f.covered(at) {
+				return false, fn + " calls " + call + " outside its jobLock section"
+			}
+		}
+		return true, ""
 	}
 	if seen[fn] {
 		return true, ""
@@ -435,30 +644,28 @@ func inSectionFrom(all map[string]funcs, fn, call string, seen map[string]bool) 
 	return true, ""
 }
 
-// mend IS EXEMPT FROM THE BARRIER RULE ON ONE STRUCTURAL FACT, and this is that
-// fact checked rather than asserted: a job record and its open-index row move
-// in the SAME replicated entry, always. That is what makes "this row is listed
-// as open AND its record reads finished" impossible to produce by reading a
-// state that is merely behind — whatever prefix of the log a node has applied,
-// it has applied both halves or neither — so a row in that shape is genuinely
-// orphaned, which is what mend deletes.
+// A RECORD AND ITS OPEN ROW MOVE IN ONE ENTRY, and mend's orphan delete is the
+// one entry that moves the row alone.
 //
-// Split across two entries by some later transition, mend's exemption dies
-// silently and its delete starts dropping rows a live job still needs. This
-// fails instead.
+// That pairing is what makes "this row is listed as open AND its record reads
+// finished" impossible to produce within ONE applied prefix: whatever prefix a
+// node has, it has applied both halves or neither. mend needs it — the whole
+// reason its delete is a repair and not a guess — and it needs a barrier on top
+// of it, because the listing and the read are two different prefixes
+// (reconcile.go). Split across two entries by some later transition, the repair
+// starts dropping rows a live job still needs.
+//
+// AND THE EXCEPTION IS NAMED RATHER THAN INVISIBLE. mend's own entry deletes an
+// open row and writes no record, on purpose: the record it read is finished or
+// gone, and the row is the only thing left to remove. While that key was a loop
+// variable this scan could not see the entry at all.
 func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
-	fset := token.NewFileSet()
-	parsed, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
-	require.NoError(t, err)
-
 	// mentions counts a key builder's appearances, and inEntry counts the ones
 	// inside a []raft.BatchOp literal — one replicated entry. A builder named
 	// anywhere else is a key written or deleted on its own.
 	mentions := map[string]int{}
 	inEntry := map[string]int{}
-	var pairing []string
+	var pairing, alone []string
 
 	count := func(n ast.Node, into map[string]int) []string {
 		var seen []string
@@ -474,7 +681,7 @@ func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
 		return seen
 	}
 
-	for _, file := range parsed["backend"].Files {
+	for _, file := range parsePackage(t).Files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil || qualify(fn) == "Service.record" {
@@ -488,10 +695,13 @@ func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
 					return true
 				}
 				named := count(lit, inEntry)
-				if slices.Contains(named, "openIndexKey") {
+				if !slices.Contains(named, "openIndexKey") {
+					return true
+				}
+				if slices.Contains(named, "jobRecordKey") {
 					pairing = append(pairing, qualify(fn))
-					require.Contains(t, named, "jobRecordKey",
-						"%s writes an open-index row in an entry that does not write the record", qualify(fn))
+				} else {
+					alone = append(alone, qualify(fn))
 				}
 				return true
 			})
@@ -500,6 +710,9 @@ func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
 
 	require.ElementsMatch(t, []string{"Service.create", "Service.retry", "Service.finish"}, pairing,
 		"the three transitions that move a record and its open row together")
+	require.ElementsMatch(t, []string{"Service.mend"}, alone,
+		"mend's orphan delete is the ONE entry allowed to move an open row without the record, "+
+			"and a second one is a transition that leaves a job listed as open with no record saying so")
 	require.Equal(t, mentions, inEntry,
 		"a job record key or an open-index row key built outside a []raft.BatchOp literal is half a transition")
 }
@@ -514,6 +727,123 @@ func isBatchOps(expr ast.Expr) bool {
 	}
 	sel, ok := arr.Elt.(*ast.SelectorExpr)
 	return ok && sel.Sel.Name == "BatchOp"
+}
+
+// keyBuilder reports whether an expression is a call to one of store.go's key
+// builders — the only expressions that may name a key an entry writes.
+func keyBuilder(expr ast.Expr) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	return ok && strings.HasSuffix(id.Name, "Key")
+}
+
+// calleeName is the last segment of whatever a call hangs off: "write" for
+// k.write(...), "mend" for s.mend(...), "del" for del(...).
+func calleeName(fun ast.Expr) string {
+	switch v := fun.(type) {
+	case *ast.Ident:
+		return v.Name
+	case *ast.SelectorExpr:
+		return v.Sel.Name
+	}
+	return ""
+}
+
+// params maps a declaration's parameter names to their flat positions.
+func params(fn *ast.FuncDecl) map[string]int {
+	out := map[string]int{}
+	i := 0
+	for _, field := range fn.Type.Params.List {
+		for _, name := range field.Names {
+			out[name.Name] = i
+			i++
+		}
+	}
+	return out
+}
+
+// EVERY KEY AN ENTRY WRITES IS BUILT WHERE THE ENTRY IS. set() and del() are
+// this package's only two BatchOp constructors, and the key each is handed must
+// be a call to one of store.go's builders — or a parameter, in which case every
+// caller must build one.
+//
+// THIS IS WHAT MAKES THE PAIRING CHECK ABOVE A CHECK RATHER THAN A SPELLING
+// TEST. mend deletes an open-index row; while that key was the loop variable
+// reconcile's listing handed it, the entry named nothing and no scan over the
+// source could tell what it wrote. A tenth site deleting an open row alone,
+// outside any section, spelled the same way, passed everything. An opaque key
+// is the hole, so an opaque key is what fails here.
+func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
+	pkg := parsePackage(t)
+
+	// sinks are declarations that take a key as a parameter: the key is built
+	// by their callers instead, and every caller is checked below.
+	sinks := map[string]map[int]bool{}
+
+	for _, file := range pkg.Files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			taken := params(fn)
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || len(call.Args) == 0 {
+					return true
+				}
+				if verb := calleeName(call.Fun); verb != "set" && verb != "del" {
+					return true
+				}
+				if keyBuilder(call.Args[0]) {
+					return true
+				}
+				if id, ok := call.Args[0].(*ast.Ident); ok {
+					if i, isParam := taken[id.Name]; isParam {
+						if sinks[qualify(fn)] == nil {
+							sinks[qualify(fn)] = map[int]bool{}
+						}
+						sinks[qualify(fn)][i] = true
+						return true
+					}
+				}
+				require.Fail(t, "an entry writes a key it did not build",
+					"%s: %s(%s) — the key must be a store.go builder here, or a parameter every caller builds",
+					qualify(fn), calleeName(call.Fun), types.ExprString(call.Args[0]))
+				return true
+			})
+		}
+	}
+
+	for sink, positions := range sinks {
+		seen := 0
+		for _, file := range pkg.Files {
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Body == nil || qualify(fn) == sink {
+					continue
+				}
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok || calleeName(call.Fun) != bare(sink) {
+						return true
+					}
+					seen++
+					for i := range positions {
+						require.Greater(t, len(call.Args), i, "%s calls %s with too few arguments", qualify(fn), sink)
+						require.True(t, keyBuilder(call.Args[i]),
+							"%s passes %s the key %q, which it did not build — the entry %s writes cannot say what it writes",
+							qualify(fn), sink, types.ExprString(call.Args[i]), sink)
+					}
+					return true
+				})
+			}
+		}
+		require.Positive(t, seen, "%s takes a key it does not build and nothing in this package calls it", sink)
+	}
 }
 
 // The write side, from the other direction: every entry that SETS a job record
@@ -532,14 +862,60 @@ func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 		[]string{"Service.create", "Service.begin", "Service.retry", "Service.finish"}, writers)
 
 	for _, n := range []string{"Service.create", "Service.begin", "Service.retry"} {
-		require.True(t, all[n].locks, "%s writes a record and must hold jobLock", n)
+		require.True(t, all[n].sectioned(), "%s writes a record and must hold jobLock", n)
+		require.True(t, all[n].covered(all[n].at["Batch"]),
+			"%s writes a record inside its section, not after releasing it", n)
 	}
 
 	// finish is the shared terminal write, so it is its CALLERS that must hold
 	// the lock — it takes none itself, because two of them would deadlock.
-	require.False(t, all["Service.finish"].locks)
+	require.False(t, all["Service.finish"].sectioned())
 	for name, f := range callers(all, "finish") {
-		require.True(t, f.locks, "%s writes a terminal record and must hold jobLock", name)
+		held, chain := inSection(all, name, "finish")
+		require.True(t, held, "%s writes a terminal record outside its section — %s", name, chain)
+		require.True(t, f.sectioned(), "%s writes a terminal record and must hold jobLock", name)
+	}
+}
+
+// THE RUN IS REGISTERED INSIDE THE SECTION THAT CLAIMED IT, and two arguments
+// in this package rest their whole weight on that.
+//
+// runner.go's begin says a cancel serialized AFTER the claim's section must
+// find the run registered, or it writes a terminal record while a build it
+// could have stopped runs on to its own deadline. jobs.go's withdraw swallows
+// queue.ErrClaimed on the strength of it: the first of the three exits by which
+// a claimed item always leaves is the holder's own ack, and what makes that
+// prompt is the stopRun inside cancel's section reaching a run this node
+// registered inside begin's.
+//
+// IT IS CHECKED HERE AND NOT BY AN INTERLEAVING because with the registration
+// outside the section the harm is a LOST RACE rather than an ordering: the
+// cancel and the registration are two goroutines released at the same instant,
+// and a test that flips that coin passes most of the time. Where the write is
+// does not flip.
+func TestTheClaimAndTheRegistrationAreOneSection(t *testing.T) {
+	all := pkgFuncs(t)
+
+	writers := map[string][]token.Pos{}
+	for n, f := range all {
+		if at := f.writesTo["running"]; len(at) > 0 {
+			writers[n] = at
+		}
+	}
+	require.ElementsMatch(t, []string{"Service.begin", "Service.forget"}, names(writers),
+		"begin registers the run and forget drops it; a third writer of this map is a third opinion "+
+			"about what this node is running")
+
+	begin := all["Service.begin"]
+	claim, wrote := begin.at["Batch"]
+	require.True(t, wrote, "begin must write the claim itself, or there is no section to be inside of")
+
+	for _, at := range writers["Service.begin"] {
+		require.True(t, begin.covered(at),
+			"begin must register the run inside its own jobLock section, or a cancel serialized "+
+				"after that section finds nothing to stop")
+		require.Greater(t, at, claim,
+			"and after the entry that writes the record Claimed, so the two are one decision")
 	}
 }
 
@@ -555,14 +931,8 @@ func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 // arithmetic over the package's `go` statements is a rule that a second loop
 // would break without touching any of them.
 func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
-	fset := token.NewFileSet()
-	parsed, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
-	require.NoError(t, err)
-
 	var started []string
-	for _, file := range parsed["backend"].Files {
+	for _, file := range parsePackage(t).Files {
 		ast.Inspect(file, func(n ast.Node) bool {
 			g, ok := n.(*ast.GoStmt)
 			if !ok {

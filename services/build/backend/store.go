@@ -199,6 +199,32 @@ func terminalIndexKey(at time.Time, id string) string {
 		stamp(at.Unix()) + "/" + seg(id)
 }
 
+// parseOpenIndexKey reads BOTH halves of an open-index row back out of it.
+//
+// reconcile walks the index by prefix, so what it holds is a key rather than
+// the two things that built one — and an entry that deletes a key it was handed
+// says nothing about what it deletes. Splitting it here is what lets mend spell
+// its delete openIndexKey(repositoryKey, id), which is the spelling
+// TestARecordAndItsOpenRowMoveInOneEntry reads and the one
+// TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs requires.
+func parseOpenIndexKey(key string) (repositoryKey, id string, err error) {
+	rest, ok := strings.CutPrefix(key, openIndexRoot())
+	if !ok {
+		return "", "", fmt.Errorf("key %q is not an open index row", key)
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("key %q is not an open index row", key)
+	}
+	if repositoryKey, err = unseg(parts[0]); err != nil {
+		return "", "", err
+	}
+	if id, err = unseg(parts[1]); err != nil {
+		return "", "", err
+	}
+	return repositoryKey, id, nil
+}
+
 // idFromIndexKey reads the job id off the end of an index row.
 func idFromIndexKey(key string) (string, error) {
 	i := strings.LastIndex(key, "/")

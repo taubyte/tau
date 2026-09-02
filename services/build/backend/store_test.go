@@ -100,6 +100,46 @@ func TestIDFromIndexKeyReadsTheIDOffTheEnd(t *testing.T) {
 	}
 }
 
+// mend DELETES A KEY IT REBUILDS, so the round trip has to be the identity or
+// the repair deletes a row nobody asked it to. A repository key is variable
+// depth and a job id is opaque; both survive because seg() puts neither a "/"
+// nor a "." in a segment.
+func TestParseOpenIndexKeyRoundTrips(t *testing.T) {
+	for _, repositoryKey := range []string{
+		"github.com/a/b",
+		"gitlab.com/acme/team/widget",
+		"github.com/a/b-c_d",
+	} {
+		for _, id := range []string{
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			"a/b/../c",
+			"",
+		} {
+			key := openIndexKey(repositoryKey, id)
+			gotRepo, gotID, err := parseOpenIndexKey(key)
+			require.NoError(t, err)
+			require.Equal(t, repositoryKey, gotRepo)
+			require.Equal(t, id, gotID)
+			require.Equal(t, key, openIndexKey(gotRepo, gotID),
+				"mend deletes what it rebuilds, so the two must be one key")
+		}
+	}
+}
+
+func TestParseOpenIndexKeyRejectsWhatIsNotOne(t *testing.T) {
+	for _, key := range []string{
+		"",
+		projectIndexKey("p", "id"),
+		openIndexRoot(),
+		openIndexPrefix("github.com/a/b") + "!!!",
+		openIndexRoot() + "!!!/" + seg("id"),
+		openIndexKey("github.com/a/b", "id") + "/extra",
+	} {
+		_, _, err := parseOpenIndexKey(key)
+		require.Error(t, err, "key %q", key)
+	}
+}
+
 // Byte order is the only sort order (root AGENTS.md rule 7), so the attempt
 // number is zero-padded: attempt 2 must sort before attempt 10.
 func TestAttemptRowsSortInAttemptOrder(t *testing.T) {
