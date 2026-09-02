@@ -95,12 +95,28 @@ func TestAShapeThatSignsNothingBindingIsRefusedByTheZeroPolicy(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestDeliveriesNeedAHookThisForgeHolds: the builders sign for a hook the forge
-// actually registered, so a test cannot accidentally verify against a hook that
-// was never installed.
-func TestDeliveriesNeedAHookThisForgeHolds(t *testing.T) {
+// TestDeliveriesNeedAHookAndNotAHandle: the builders sign for a hook that has a
+// secret and a scheme, so a test cannot accidentally verify against a zero
+// value.
+//
+// They deliberately do NOT require the handle to be one this forge assigned. A
+// driver that answers with a handle the forge never gave it is a defect the
+// conformance suite names in two places — the forge holds no hook under it, and
+// nothing can remove it — and a builder that refused to sign there would turn
+// that named defect into a fixture failure, which reads as the harness breaking.
+func TestDeliveriesNeedAHookAndNotAHandle(t *testing.T) {
 	f := fake.New(fake.GitHubLike)
 	_, err := f.Delivery(forge.Hook{Handle: "never-registered"}, "refs/heads/main", "abc")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no hook")
+	assert.Contains(t, err.Error(), "no secret or no scheme")
+
+	secret, err := forge.NewSecret()
+	require.NoError(t, err)
+	_, err = f.Delivery(forge.Hook{
+		Handle: "a-handle-this-forge-never-assigned",
+		Key:    f.Keys().Admin,
+		Scheme: forge.SchemeHubSHA256,
+		Secret: secret,
+	}, "refs/heads/main", "1f0c9d2b3a4e5f60718293a4b5c6d7e8f9012345")
+	require.NoError(t, err, "a hook with a secret and a scheme is signable wherever its handle came from")
 }

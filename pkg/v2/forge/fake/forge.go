@@ -342,7 +342,7 @@ func (c *core) callAbout(method, path, token string, about repokey.Key) (bool, e
 		}
 		return false, errUnreachable
 	}
-	if token == badToken {
+	if token == badToken && !c.shape.faulty(FaultARefusedCredentialIsAccepted) {
 		reason := "token was revoked"
 		if c.shape.faulty(FaultLeaksTokenInError) {
 			reason = "token " + token + " was revoked"
@@ -504,6 +504,12 @@ func (c *core) grant(r *repo, token string) forge.Access {
 	if !r.private && c.shape.faulty(FaultVisibilityIsPermission) {
 		return forge.AccessWrite
 	}
+	if r.grant == forge.AccessWrite && c.shape.faulty(FaultWritableReadsAsReadOnly) {
+		return forge.AccessRead
+	}
+	if r.grant == forge.AccessNone && c.shape.faulty(FaultAHiddenRepositoryIsReadable) {
+		return forge.AccessRead
+	}
 	return r.grant
 }
 
@@ -546,6 +552,14 @@ func (c *core) servedCloneURL(k repokey.Key, over forge.Protocol, under Fault) s
 func (c *core) repository(r *repo, asked repokey.Key) forge.Repository {
 	https := c.servedCloneURL(r.key, forge.HTTPS, FaultRepositoryAddressNamesAnother)
 	ssh := c.servedCloneURL(r.key, forge.SSH, FaultRepositoryAddressNamesAnother)
+	if c.shape.faulty(FaultTheRecordsAddressCarriesTheCredential) {
+		https = c.credentialed(https)
+		ssh = c.credentialed(ssh)
+	}
+	branch := r.defaultBranch
+	if c.shape.faulty(FaultTheRecordHasNoDefaultBranch) {
+		branch = ""
+	}
 	key := r.key
 	if c.shape.faulty(FaultEchoesKey) {
 		// ONE defect and only one: the argument is echoed back, and the clone
@@ -559,9 +573,22 @@ func (c *core) repository(r *repo, asked repokey.Key) forge.Repository {
 		Key:           key,
 		HTTPS:         https,
 		SSH:           ssh,
-		DefaultBranch: r.defaultBranch,
+		DefaultBranch: branch,
 		Private:       r.private,
 	}
+}
+
+// credentialed splices the credential into a clone address, which is what puts
+// one in .git/config, in process arguments and in every error that quotes a
+// remote. repokey refuses a URL carrying one, so this is visible to anything
+// that re-derives a key from an address — and invisible to everything else.
+func (c *core) credentialed(spelling string) string {
+	for _, scheme := range []string{"https://", "ssh://"} {
+		if strings.HasPrefix(spelling, scheme) {
+			return scheme + "x-access-token:" + goodToken + "@" + strings.TrimPrefix(spelling, scheme)
+		}
+	}
+	return spelling
 }
 
 func (c *core) nextHandle(kind string) forge.Handle {
@@ -574,7 +601,13 @@ func (c *core) nextHandle(kind string) forge.Handle {
 
 // addressable is Driver.Addressable's body, shared so the fault has one home.
 func (c *core) addressable(k repokey.Key) error {
-	if c.shape.Nested || !strings.Contains(k.Owner, "/") {
+	if !strings.Contains(k.Owner, "/") {
+		return nil
+	}
+	if c.shape.Nested {
+		if c.shape.faulty(FaultANestingForgeRefusesADepth) {
+			return errors.New("this forge cannot address a nested owner")
+		}
 		return nil
 	}
 	if c.shape.faulty(FaultFlattensDeepKey) {

@@ -248,6 +248,194 @@ const (
 	// repository is.
 	FaultFollowsSameHostRedirect Fault = "follows-same-host-redirect"
 
+	// ─── the mandatory contract ───
+
+	// FaultBindsAZeroCredential builds a client for a Credential nobody filled
+	// in. The registry refuses one before Bind is reached, so this is the half
+	// of Driver.Bind's contract no Session can reach — and a driver that binds
+	// one is a driver that will act as nobody the moment a configuration value
+	// goes missing.
+	FaultBindsAZeroCredential Fault = "binds-a-zero-credential"
+
+	// FaultRefusesAnonymousAtTheDoor refuses Anonymous() at Bind rather than at
+	// the question. Reading a public repository with no credential is a real
+	// thing to want, and the refusal that matters is the authorization one,
+	// which forge.Session already owns.
+	FaultRefusesAnonymousAtTheDoor Fault = "refuses-anonymous-at-the-door"
+
+	// FaultWhoamiHasNoLogin answers an identity with no login. Whoami is the
+	// only honest token check a forge offers, and an answer with nothing in it
+	// is a token check that passes for a token nobody honoured.
+	FaultWhoamiHasNoLogin Fault = "whoami-has-no-login"
+
+	// FaultARefusedCredentialIsAccepted honours a credential this forge revoked,
+	// which is the shape of a driver that reads a 401 body for a message instead
+	// of reading the status.
+	FaultARefusedCredentialIsAccepted Fault = "a-refused-credential-is-accepted"
+
+	// FaultARefusedCredentialIsNoAccess turns a refused credential into
+	// (AccessNone, nil): a statement about the CREDENTIAL delivered as a verdict
+	// on the repository, which a caller will act on by revoking somebody.
+	FaultARefusedCredentialIsNoAccess Fault = "a-refused-credential-is-no-access"
+
+	// FaultAnswersBesideItsError returns a filled value along with its error, so
+	// a caller that reads the value first — which is every caller that forgets a
+	// check — acts on an answer no forge gave.
+	FaultAnswersBesideItsError Fault = "answers-beside-its-error"
+
+	// FaultWritableReadsAsReadOnly is visibility-is-permission's mirror: a
+	// repository this credential may push to reads as one it may only see. It is
+	// the failure that stops a registration rather than the one that permits it,
+	// and a suite that only catches the dangerous direction catches half a
+	// driver.
+	FaultWritableReadsAsReadOnly Fault = "writable-reads-as-read-only"
+
+	// FaultAHiddenRepositoryIsARawError answers a repository this credential
+	// holds nothing on with a plain error. The contract allows exactly two
+	// answers there — AccessNone or *NotFoundError — because a caller has to be
+	// able to tell "not yours" from "could not ask".
+	FaultAHiddenRepositoryIsARawError Fault = "a-hidden-repository-is-a-raw-error"
+
+	// FaultAHiddenRepositoryIsReadable reads a repository the credential holds
+	// nothing on as AccessRead: the API answered, so the driver assumed the
+	// caller may see it.
+	FaultAHiddenRepositoryIsReadable Fault = "a-hidden-repository-is-readable"
+
+	// FaultAMissingRepositoryIsNoError answers a repository that does not exist
+	// with a zero record and no error, so a caller files a repository with no
+	// name, no branch and no clone address.
+	FaultAMissingRepositoryIsNoError Fault = "a-missing-repository-is-no-error"
+
+	// FaultTheRecordHasNoDefaultBranch serves a record with no default branch. A
+	// builder handed one has nothing to check out and no way to say so.
+	FaultTheRecordHasNoDefaultBranch Fault = "the-record-has-no-default-branch"
+
+	// FaultTheRecordsAddressCarriesTheCredential splices the credential into the
+	// clone addresses a repository RECORD carries. That address is written into
+	// .git/config, into process arguments and into every error that quotes a
+	// remote — which is v1's standing way of spending a token.
+	FaultTheRecordsAddressCarriesTheCredential Fault = "the-records-address-carries-the-credential"
+
+	// FaultCloneAddressCarriesTheCredential is the same mistake on the surface a
+	// builder is actually handed, which is separate code in every driver.
+	FaultCloneAddressCarriesTheCredential Fault = "clone-address-carries-the-credential"
+
+	// FaultAnOutageIsNotFound reports an unreachable forge as "no such
+	// repository", which is a definitive answer manufactured out of a network
+	// failure.
+	FaultAnOutageIsNotFound Fault = "an-outage-is-not-found"
+
+	// FaultAnswersFromCacheWhileUnreachable answers the questions that are not
+	// the authorization one — who this credential is, what a repository is, what
+	// it can reach, whether somebody is a member — while the forge cannot be
+	// reached. An outage becomes a stale answer nobody can date. (Access has its
+	// own fault, because there an outage becomes a REFUSAL, which is worse.)
+	FaultAnswersFromCacheWhileUnreachable Fault = "answers-from-cache-while-unreachable"
+
+	// FaultAsksBeforeRefusingADepth makes a request before refusing a key it
+	// cannot address — a driver checking with the forge whether "acme/team" and
+	// "widget" happen to name something, instead of refusing a shape it cannot
+	// express.
+	FaultAsksBeforeRefusingADepth Fault = "asks-before-refusing-a-depth"
+
+	// FaultANestingForgeRefusesADepth refuses a nested owner on a forge that
+	// nests, which is GitLab's whole subgroup story reported as an unaddressable
+	// key.
+	FaultANestingForgeRefusesADepth Fault = "a-nesting-forge-refuses-a-depth"
+
+	// ─── the optional faces ───
+
+	// FaultListsNothing yields nothing from a listing this credential can
+	// certainly reach, so a consumer walking a namespace finds it empty.
+	FaultListsNothing Fault = "lists-nothing"
+
+	// FaultListOmitsWhatCanBeWritten yields everything but the repository this
+	// credential may write. An absence proves nothing in general — that is the
+	// contract — but a listing that omits precisely what a caller can act on is
+	// a listing nobody can use.
+	FaultListOmitsWhatCanBeWritten Fault = "list-omits-what-can-be-written"
+
+	// FaultListIgnoresAStoppedYield keeps going after yield returned false. The
+	// caller that stopped has already decided; a forge that pages on is a walk
+	// nobody can bound.
+	FaultListIgnoresAStoppedYield Fault = "list-ignores-a-stopped-yield"
+
+	// FaultCreatesTheSameRepositoryTwice answers a creation that collides by
+	// overwriting, which turns "make me a repository" into "empty somebody's".
+	FaultCreatesTheSameRepositoryTwice Fault = "creates-the-same-repository-twice"
+
+	// FaultCreatesInAnyNamespace creates in a namespace this credential may not
+	// write, rather than refusing the key it was handed.
+	FaultCreatesInAnyNamespace Fault = "creates-in-any-namespace"
+
+	// FaultDeletesWithoutAdmin deletes for a credential that holds less than
+	// admin. AccessAdmin is a real rung and deletion is what consumes it.
+	FaultDeletesWithoutAdmin Fault = "deletes-without-admin"
+
+	// FaultDeleteForgetsTheRepository answers a deletion with nil and deletes
+	// nothing, which is FaultForgetsRemoval's shape on the surface where the
+	// caller has no handle to re-check.
+	FaultDeleteForgetsTheRepository Fault = "delete-forgets-the-repository"
+
+	// FaultDeployKeyHandleIsEmpty answers an installation with an empty handle,
+	// which is a machine credential nothing can ever remove. forge.Session
+	// refuses an empty HOOK handle for exactly this reason and does not refuse
+	// this one, so the suite is what stands under it.
+	FaultDeployKeyHandleIsEmpty Fault = "deploy-key-handle-is-empty"
+
+	// FaultDeployKeyHandleNamesNothing answers with a handle the forge does not
+	// know, so the key is installed and unremovable under a name nobody holds.
+	FaultDeployKeyHandleNamesNothing Fault = "deploy-key-handle-names-nothing"
+
+	// FaultRemovingAnUnknownDeployKeySucceeds answers "removed" for a key that
+	// was never there, so a registrar cleaning up cannot tell a removal from a
+	// typo.
+	FaultRemovingAnUnknownDeployKeySucceeds Fault = "removing-an-unknown-deploy-key-succeeds"
+
+	// FaultHookHandleNamesNothing is the same mistake for a webhook: a handle
+	// the forge does not hold, so nothing can ever find or remove that hook.
+	FaultHookHandleNamesNothing Fault = "hook-handle-names-nothing"
+
+	// FaultRemovingAnUnknownHookSucceeds answers "removed" for a hook that was
+	// never there.
+	FaultRemovingAnUnknownHookSucceeds Fault = "removing-an-unknown-hook-succeeds"
+
+	// FaultHTTPSAddressHasNoUsername hands back an https clone address with no
+	// account to present a token as, which is a clone that will prompt.
+	FaultHTTPSAddressHasNoUsername Fault = "https-address-has-no-username"
+
+	// FaultSSHAddressHasNoAccount hands back an ssh clone address with no
+	// account before the '@'. It is a host fact and not a caller's choice.
+	FaultSSHAddressHasNoAccount Fault = "ssh-address-has-no-account"
+
+	// FaultPushProbeSaysNoToAKeyThatMay reports a git credential that may push
+	// as one that may not, which stops a registration that should have run.
+	FaultPushProbeSaysNoToAKeyThatMay Fault = "push-probe-says-no-to-a-key-that-may"
+
+	// FaultPushProbeSaysYesToAKeyThatMayNot is the dangerous direction of the
+	// same mistake.
+	FaultPushProbeSaysYesToAKeyThatMayNot Fault = "push-probe-says-yes-to-a-key-that-may-not"
+
+	// FaultPushProbeAnswersForAMissingRepository answers false for a repository
+	// that does not exist, so "there is nothing there" arrives as "you may not
+	// push".
+	FaultPushProbeAnswersForAMissingRepository Fault = "push-probe-answers-for-a-missing-repository"
+
+	// FaultAMemberReadsAsANonMember answers false for somebody who is a member.
+	// (false, nil) is the one definitive negative membership has, and a caller
+	// acts on it.
+	FaultAMemberReadsAsANonMember Fault = "a-member-reads-as-a-non-member"
+
+	// FaultANonMemberReadsAsAMember is the same mistake in the direction that
+	// grants.
+	FaultANonMemberReadsAsAMember Fault = "a-non-member-reads-as-a-member"
+
+	// FaultPushReadsTheBaseRef reads the wrong field out of a verified payload:
+	// the branch a change was aimed AT rather than the ref that moved. The
+	// delivery is genuine, the signature is genuine, and the build runs on a
+	// branch nobody pushed.
+	FaultPushReadsTheBaseRef Fault = "push-reads-the-base-ref"
+
 	// FaultSignsWithAnotherScheme names one scheme and signs with another,
 	// which is the one webhook mistake this design leaves a driver room to
 	// make: the core owns verification, but the driver owns the claim about

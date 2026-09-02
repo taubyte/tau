@@ -34,22 +34,38 @@ type cBase struct{ bound }
 func (b cBase) Host() string { return b.c.shape.Host }
 
 func (b cBase) Whoami(context.Context) (forge.Identity, error) {
-	if ok, err := b.c.call("GET", "/api/user", b.token); !ok {
-		return forge.Identity{}, err
-	}
-	return forge.Identity{
+	me := forge.Identity{
 		Login:   "fake-user",
 		Subject: "fake-user-subject",
 		Email:   "fake-user@example.invalid",
-	}, nil
+	}
+	if b.c.shape.faulty(FaultWhoamiHasNoLogin) {
+		me.Login = ""
+	}
+	if ok, err := b.c.call("GET", "/api/user", b.token); !ok {
+		if b.c.cached(err) {
+			return me, nil
+		}
+		return beside(b.c, me, err)
+	}
+	return me, nil
 }
 
 func (b cBase) Access(_ context.Context, k repokey.Key) (forge.Access, error) {
 	if ok, err := b.c.callAbout("GET", "/api/repos/"+k.FullName(), b.token, k); !ok {
-		if errors.Is(err, errUnreachable) && b.c.shape.faulty(FaultOutageIsRefusal) {
+		if errors.Is(err, errUnreachable) {
+			if b.c.shape.faulty(FaultOutageIsRefusal) {
+				return forge.AccessNone, nil
+			}
+			if b.c.shape.faulty(FaultAnOutageIsNotFound) {
+				err = &forge.NotFoundError{Host: b.c.shape.Host, Key: k}
+			}
+		}
+		var ce *forge.CredentialError
+		if errors.As(err, &ce) && b.c.shape.faulty(FaultARefusedCredentialIsNoAccess) {
 			return forge.AccessNone, nil
 		}
-		return forge.AccessNone, err
+		return beside(b.c, forge.AccessWrite, err)
 	}
 	b.c.mu.Lock()
 	defer b.c.mu.Unlock()
@@ -58,14 +74,28 @@ func (b cBase) Access(_ context.Context, k repokey.Key) (forge.Access, error) {
 		if b.c.shape.faulty(FaultMissingIsNone) {
 			return forge.AccessNone, nil
 		}
-		return forge.AccessNone, &forge.NotFoundError{Host: b.c.shape.Host, Key: k}
+		return beside(b.c, forge.AccessWrite, &forge.NotFoundError{Host: b.c.shape.Host, Key: k})
+	}
+	if b.c.grant(r, b.token) == forge.AccessNone && b.c.shape.faulty(FaultAHiddenRepositoryIsARawError) {
+		return forge.AccessNone, errors.New("fake: the forge answered 403")
 	}
 	return b.c.grant(r, b.token), nil
 }
 
 func (b cBase) Repository(_ context.Context, k repokey.Key) (forge.Repository, error) {
 	if ok, err := b.c.callAbout("GET", "/api/repos/"+k.FullName(), b.token, k); !ok {
-		return forge.Repository{}, err
+		b.c.mu.Lock()
+		r, found := b.c.lookup(b.c.flatten(k))
+		cached := b.c.cached(err) && found
+		var out forge.Repository
+		if found {
+			out = b.c.repository(r, k)
+		}
+		b.c.mu.Unlock()
+		if cached {
+			return out, nil
+		}
+		return beside(b.c, out, err)
 	}
 	b.c.mu.Lock()
 	defer b.c.mu.Unlock()
@@ -74,7 +104,10 @@ func (b cBase) Repository(_ context.Context, k repokey.Key) (forge.Repository, e
 	// refused, which is what every real forge does and what makes "no such
 	// repository" and "you may not see it" one answer from outside.
 	if !ok || b.c.grant(r, b.token) == forge.AccessNone {
-		return forge.Repository{}, &forge.NotFoundError{Host: b.c.shape.Host, Key: k}
+		if b.c.shape.faulty(FaultAMissingRepositoryIsNoError) {
+			return forge.Repository{}, nil
+		}
+		return beside(b.c, forge.Repository{Key: k, DefaultBranch: "main"}, &forge.NotFoundError{Host: b.c.shape.Host, Key: k})
 	}
 	return b.c.repository(r, k), nil
 }
@@ -84,12 +117,15 @@ func (b cBase) Repository(_ context.Context, k repokey.Key) (forge.Repository, e
 type fList struct{ bound }
 
 func (b fList) ListRepositories(_ context.Context, yield func(forge.Repository) bool) error {
-	if ok, err := b.c.call("GET", "/api/user/repos", b.token); !ok {
+	if ok, err := b.c.call("GET", "/api/user/repos", b.token); !ok && !b.c.cached(err) {
 		return err
 	}
 	b.c.mu.Lock()
 	repos := make([]forge.Repository, 0, len(b.c.repos))
 	for _, k := range []repokey.Key{b.c.keys.Writable, b.c.keys.ReadOnly, b.c.keys.Admin, b.c.keys.Deep} {
+		if k == b.c.keys.Writable && b.c.shape.faulty(FaultListOmitsWhatCanBeWritten) {
+			continue
+		}
 		r, ok := b.c.lookup(k)
 		if !ok || b.c.grant(r, b.token) == forge.AccessNone {
 			continue
@@ -99,9 +135,13 @@ func (b fList) ListRepositories(_ context.Context, yield func(forge.Repository) 
 		}
 		repos = append(repos, b.c.repository(r, k))
 	}
+	if b.c.shape.faulty(FaultListsNothing) {
+		repos = nil
+	}
+	pagesOn := b.c.shape.faulty(FaultListIgnoresAStoppedYield)
 	b.c.mu.Unlock()
 	for _, r := range repos {
-		if !yield(r) {
+		if !yield(r) && !pagesOn {
 			return nil
 		}
 	}
@@ -116,10 +156,10 @@ func (b fCreate) Create(_ context.Context, k repokey.Key, opts forge.CreateOptio
 	}
 	b.c.mu.Lock()
 	defer b.c.mu.Unlock()
-	if _, taken := b.c.lookup(k); taken {
+	if _, taken := b.c.lookup(k); taken && !b.c.shape.faulty(FaultCreatesTheSameRepositoryTwice) {
 		return forge.Repository{}, fmt.Errorf("fake: %q already exists", k)
 	}
-	if k.Namespace() != Namespace {
+	if k.Namespace() != Namespace && !b.c.shape.faulty(FaultCreatesInAnyNamespace) {
 		return forge.Repository{}, fmt.Errorf("fake: this credential cannot create in namespace %q", k.Namespace())
 	}
 	r := &repo{key: k, private: opts.Private, defaultBranch: "main", grant: forge.AccessAdmin}
@@ -139,8 +179,11 @@ func (b fDelete) Delete(_ context.Context, k repokey.Key) error {
 	if !ok {
 		return &forge.NotFoundError{Host: b.c.shape.Host, Key: k}
 	}
-	if !b.c.grant(r, b.token).CanAdmin() {
+	if !b.c.grant(r, b.token).CanAdmin() && !b.c.shape.faulty(FaultDeletesWithoutAdmin) {
 		return fmt.Errorf("fake: deleting %q needs admin", k)
+	}
+	if b.c.shape.faulty(FaultDeleteForgetsTheRepository) {
+		return nil
 	}
 	// r is what the lookup found, which is not k when a hop was followed. A
 	// repository is deleted where the request went.
@@ -169,6 +212,12 @@ func (b fKeys) InstallDeployKey(_ context.Context, k repokey.Key, title, publicK
 	h := b.c.nextHandle("key")
 	b.c.deploy[h] = &keyRec{key: r.key, title: title, pub: publicKey, readOnly: readOnly}
 	b.c.lastRO = readOnly
+	if b.c.shape.faulty(FaultDeployKeyHandleIsEmpty) {
+		return "", nil
+	}
+	if b.c.shape.faulty(FaultDeployKeyHandleNamesNothing) {
+		return h + "-not-this-one", nil
+	}
 	return h, nil
 }
 
@@ -179,6 +228,9 @@ func (b fKeys) RemoveDeployKey(_ context.Context, k repokey.Key, h forge.Handle)
 	b.c.mu.Lock()
 	defer b.c.mu.Unlock()
 	if _, ok := b.c.deploy[h]; !ok {
+		if b.c.shape.faulty(FaultRemovingAnUnknownDeployKeySucceeds) {
+			return nil
+		}
 		return fmt.Errorf("fake: no deploy key %q on %q", h, k)
 	}
 	if b.c.shape.faulty(FaultForgetsRemoval) {
@@ -210,6 +262,9 @@ func (b fHooks) RegisterPushHook(_ context.Context, k repokey.Key, callback *url
 	h := b.c.nextHandle("hook")
 	b.c.hooks[h] = &hookRec{key: r.key, callback: callback.String(), wire: stored}
 	b.c.lastWire = stored
+	if b.c.shape.faulty(FaultHookHandleNamesNothing) {
+		return h + "-not-this-one", nil
+	}
 	return h, nil
 }
 
@@ -220,6 +275,9 @@ func (b fHooks) RemovePushHook(_ context.Context, k repokey.Key, h forge.Handle)
 	b.c.mu.Lock()
 	defer b.c.mu.Unlock()
 	if _, ok := b.c.hooks[h]; !ok {
+		if b.c.shape.faulty(FaultRemovingAnUnknownHookSucceeds) {
+			return nil
+		}
 		return fmt.Errorf("fake: no hook %q on %q", h, k)
 	}
 	if b.c.shape.faulty(FaultForgetsRemoval) {
@@ -234,14 +292,26 @@ type fAddr struct{ bound }
 // CloneAddress talks to nothing: it is a fact about the host, which is why it
 // keeps working while the forge is unreachable.
 func (b fAddr) CloneAddress(k repokey.Key, over forge.Protocol) (forge.Address, error) {
+	var addr forge.Address
 	if over == forge.SSH {
-		return forge.Address{URL: b.c.servedCloneURL(k, forge.SSH, FaultCloneAddressNamesAnother), SSHAccount: "git"}, nil
+		addr = forge.Address{URL: b.c.servedCloneURL(k, forge.SSH, FaultCloneAddressNamesAnother), SSHAccount: "git"}
+		if b.c.shape.faulty(FaultSSHAddressHasNoAccount) {
+			addr.SSHAccount = ""
+		}
+	} else {
+		user := "x-access-token"
+		if b.c.shape.Handles == HandlesUUID {
+			user = "x-token-auth" // Bitbucket accepts no other basic-auth username
+		}
+		if b.c.shape.faulty(FaultHTTPSAddressHasNoUsername) {
+			user = ""
+		}
+		addr = forge.Address{URL: b.c.servedCloneURL(k, forge.HTTPS, FaultCloneAddressNamesAnother), HTTPUsername: user}
 	}
-	user := "x-access-token"
-	if b.c.shape.Handles == HandlesUUID {
-		user = "x-token-auth" // Bitbucket accepts no other basic-auth username
+	if b.c.shape.faulty(FaultCloneAddressCarriesTheCredential) {
+		addr.URL = b.c.credentialed(addr.URL)
 	}
-	return forge.Address{URL: b.c.servedCloneURL(k, forge.HTTPS, FaultCloneAddressNamesAnother), HTTPUsername: user}, nil
+	return addr, nil
 }
 
 type fProbe struct{ bound }
@@ -252,8 +322,14 @@ func (b fProbe) CanPush(_ context.Context, k repokey.Key, sshPrivateKey []byte) 
 	}
 	b.c.mu.Lock()
 	defer b.c.mu.Unlock()
-	if _, ok := b.c.lookup(k); !ok {
+	if _, ok := b.c.lookup(k); !ok && !b.c.shape.faulty(FaultPushProbeAnswersForAMissingRepository) {
 		return false, &forge.NotFoundError{Host: b.c.shape.Host, Key: k}
+	}
+	switch {
+	case b.c.shape.faulty(FaultPushProbeSaysNoToAKeyThatMay):
+		return false, nil
+	case b.c.shape.faulty(FaultPushProbeSaysYesToAKeyThatMayNot):
+		return true, nil
 	}
 	return string(sshPrivateKey) == "fake-ssh-key-may-push", nil
 }
@@ -392,11 +468,31 @@ type dBase struct{ c *core }
 
 func (d dBase) Host() string { return d.c.shape.Host }
 
-func (d dBase) Addressable(k repokey.Key) error { return d.c.addressable(k) }
+func (d dBase) Addressable(k repokey.Key) error {
+	err := d.c.addressable(k)
+	// A driver that goes and ASKS. The refusal is right and the request is the
+	// defect: a shape this forge cannot express is not a question the forge can
+	// be asked, and asking anyway puts a caller's repository name on a wire
+	// before anything has agreed it is addressable.
+	//
+	// It is recorded HERE, at the driver's own entry point, and not in the
+	// shared body: the listing reads that body while it holds the core's lock,
+	// and a fault that took the lock again would be a deadlock in the fake
+	// rather than a defect in a driver.
+	if err != nil && d.c.shape.faulty(FaultAsksBeforeRefusingADepth) {
+		d.c.mu.Lock()
+		d.c.record("GET", "/api/repos/"+k.FullName(), goodToken, k)
+		d.c.mu.Unlock()
+	}
+	return err
+}
 
 func (d dBase) Bind(cred forge.Credential) (forge.Client, error) {
-	if cred.IsZero() {
+	if cred.IsZero() && !d.c.shape.faulty(FaultBindsAZeroCredential) {
 		return nil, forge.ErrNoCredential
+	}
+	if cred.IsAnonymous() && d.c.shape.faulty(FaultRefusesAnonymousAtTheDoor) {
+		return nil, errors.New("fake: this forge answers nobody in particular")
 	}
 	return newClient(d.c, string(cred.Expose()))
 }
@@ -425,7 +521,13 @@ func (d dSig) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim
 	if err != nil {
 		return forge.PushClaim{}, fmt.Errorf("fake: push payload names no repository: %w", err)
 	}
-	return forge.PushClaim{Repository: k, Ref: p.Ref, Commit: p.After}, nil
+	ref := p.Ref
+	if d.c.shape.faulty(FaultPushReadsTheBaseRef) {
+		// The branch a change was aimed AT rather than the ref that moved. The
+		// delivery is genuine and so is the signature; the build is not.
+		ref = p.BaseRef
+	}
+	return forge.PushClaim{Repository: k, Ref: ref, Commit: p.After}, nil
 }
 
 type dMem struct{ c *core }
@@ -433,10 +535,20 @@ type dMem struct{ c *core }
 // IsActiveMember spends the DEPLOYMENT's credential, which no session can
 // reach.
 func (d dMem) IsActiveMember(_ context.Context, namespace, username string) (bool, error) {
-	if ok, err := d.c.call("GET", "/api/orgs/"+namespace+"/members/"+username, deployToken); !ok {
-		return false, err
+	member := namespace == Namespace && username == Member
+	switch {
+	case d.c.shape.faulty(FaultAMemberReadsAsANonMember):
+		member = false
+	case d.c.shape.faulty(FaultANonMemberReadsAsAMember):
+		member = true
 	}
-	return namespace == Namespace && username == Member, nil
+	if ok, err := d.c.call("GET", "/api/orgs/"+namespace+"/members/"+username, deployToken); !ok {
+		if d.c.cached(err) {
+			return member, nil
+		}
+		return beside(d.c, true, err)
+	}
+	return member, nil
 }
 
 type dAll struct {
@@ -480,8 +592,12 @@ type payload struct {
 		CloneURL string `json:"clone_url"`
 		FullName string `json:"full_name"`
 	} `json:"repository"`
-	Ref   string `json:"ref"`
-	After string `json:"after"`
+	Ref string `json:"ref"`
+	// BaseRef is the branch a change was aimed at, which every forge carrying
+	// one puts right beside the ref that actually moved. It is here so that
+	// reading the wrong one is a fault a driver can have.
+	BaseRef string `json:"base_ref"`
+	After   string `json:"after"`
 }
 
 // ─────────────────────────── deliveries ───────────────────────────
@@ -512,17 +628,28 @@ func (f *Forge) DeliveryAt(h forge.Hook, ref, commit string, at time.Time) (forg
 }
 
 func (f *Forge) deliver(h forge.Hook, names repokey.Key, ref, commit string, at time.Time, isPush bool) (forge.Delivery, error) {
-	f.c.mu.Lock()
-	rec, ok := f.c.hooks[h.Handle]
-	f.c.mu.Unlock()
-	if !ok {
-		return forge.Delivery{}, fmt.Errorf("fake: no hook %q to deliver to", h.Handle)
+	// A HOOK, AND NOT A HANDLE THIS FORGE HOLDS. The check used to be the
+	// second, and it made a driver that answers with a handle the forge never
+	// assigned — a real defect, with its own fault — arrive as a fixture that
+	// could not build a delivery, which reads as the harness breaking rather
+	// than as the suite naming a driver. What a delivery actually needs is a
+	// hook with a secret and a scheme, so that is what is required.
+	if h.Secret.Empty() || h.Scheme == "" {
+		return forge.Delivery{}, fmt.Errorf("fake: %q is not a hook anything can be signed for: no secret or no scheme", h.Handle)
 	}
+
+	// The record is consulted for one thing: the WIRE STRING the forge was
+	// actually given. Its absence means signing with the wire this hook's own
+	// secret derives, which is what a forge holding it would have been given.
+	f.c.mu.Lock()
+	rec, held := f.c.hooks[h.Handle]
+	f.c.mu.Unlock()
 
 	var p payload
 	p.Repository.CloneURL = f.c.cloneURL(names, forge.HTTPS)
 	p.Repository.FullName = names.FullName()
 	p.Ref = ref
+	p.BaseRef = "refs/heads/somewhere-else"
 	p.After = commit
 	body, err := json.Marshal(p)
 	if err != nil {
@@ -538,8 +665,10 @@ func (f *Forge) deliver(h forge.Hook, names repokey.Key, ref, commit string, at 
 	// which is how a mangled registration shows up as a delivery nothing can
 	// verify, rather than as nothing at all.
 	secret := h.Secret
-	if want, err := h.Scheme.Wire(h.Secret); err != nil || want != rec.wire {
-		secret = forge.SecretFrom(padded(rec.wire))
+	if held {
+		if want, err := h.Scheme.Wire(h.Secret); err != nil || want != rec.wire {
+			secret = forge.SecretFrom(padded(rec.wire))
+		}
 	}
 	hdr, err := forge.Sign(scheme, secret, body, "msg_"+string(h.Handle), at)
 	if err != nil {
@@ -566,4 +695,23 @@ func otherScheme(s forge.Scheme) forge.Scheme {
 		return forge.SchemeBitbucketSHA256
 	}
 	return forge.SchemeHubSHA256
+}
+
+// cached is whether this forge should answer an unreachable question anyway.
+// The authorization question is deliberately not one of them: there an outage
+// becoming an answer is a REFUSAL, which has its own fault and its own name.
+func (c *core) cached(err error) bool {
+	return errors.Is(err, errUnreachable) && c.shape.faulty(FaultAnswersFromCacheWhileUnreachable)
+}
+
+// beside returns a value ALONGSIDE an error, which is the whole of
+// FaultAnswersBesideItsError: a caller that reads the value first — which is
+// every caller that forgets a check — acts on an answer no forge gave. Without
+// the fault it returns the zero value, which is what a correct driver does.
+func beside[T any](c *core, filled T, err error) (T, error) {
+	if c.shape.faulty(FaultAnswersBesideItsError) {
+		return filled, err
+	}
+	var zero T
+	return zero, err
 }
