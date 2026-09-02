@@ -1,16 +1,41 @@
 package github_test
 
 // A SIGNATURE CHECK THAT IS ONLY TESTED ON ITS HAPPY PATH IS NOT TESTED. What
-// follows is one vector computed OUTSIDE Go — python's hmac and base64 — and
-// then every way a delivery can be wrong. The good vector is a literal, so this
-// file cannot agree with the implementation by computing the answer the same
-// way the implementation does; if the driver ever named a different scheme, or
-// the scheme's construction moved, this constant would stop matching and no
+// follows is one vector computed OUTSIDE Go — python's hmac, hashlib and base64
+// — and then every way a delivery can be wrong. The good vector is a literal, so
+// this file cannot agree with the implementation by computing the answer the
+// same way the implementation does; if the driver ever named a different scheme,
+// or the scheme's construction moved, this constant would stop matching and no
 // amount of internal consistency would hide it.
 //
+// THE RECIPE IS THE WHOLE OF THAT CLAIM, and it is written to be RUN rather than
+// read. It went stale once and nothing noticed: it still printed the
+// pre-domain-separation derivation — base64 of the secret itself, which yields
+// AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8 — long after the constants below
+// moved to the derived wire secret. A recipe that does not reproduce them costs
+// the file the only thing that made it a vector file, and turns it into magic
+// numbers whose provenance is that they were once right. Nothing in this tree
+// can check a comment, so the check is a person pasting it into python3 and
+// reading three lines. Below is that paste, verbatim.
+//
+//	import base64, hashlib, hmac
+//
+//	body   = b'{"ref":"refs/heads/main","after":"9b2c1d4e5f60718293a4b5c6d7e8f90123456789","repository":{"full_name":"acme/pay","clone_url":"https://github.com/acme/pay.git"}}'
 //	secret = bytes(range(32))
-//	wire   = base64.urlsafe_b64encode(secret).rstrip(b'=')
-//	mac    = hmac.new(wire, body, hashlib.sha256).hexdigest()
+//	info   = b"taubyte/forge/webhook/v1/" + b"hub-sha256"   # secretDomain + the scheme
+//
+//	# HKDF-SHA256 (RFC 5869) over HMAC (RFC 2104), spelled out rather than
+//	# imported, so the recipe depends on the RFCs and not on a library agreeing
+//	# with Go's: extract under the all-zero salt an absent salt means, then one
+//	# expand block, which is the whole of the expand because 32 bytes is exactly
+//	# SHA-256's own output length.
+//	prk    = hmac.new(b"\x00" * 32, secret, hashlib.sha256).digest()
+//	okm    = hmac.new(prk, info + b"\x01", hashlib.sha256).digest()
+//
+//	wire   = base64.urlsafe_b64encode(okm).rstrip(b'=')
+//	print(wire.decode())                                    # vectorWire
+//	print(hmac.new(wire, body, hashlib.sha256).hexdigest())  # vectorSHA256
+//	print(hmac.new(wire, body, hashlib.sha1).hexdigest())    # vectorSHA1
 //
 // The SHA-1 vector is here to be REJECTED. GitHub sends X-Hub-Signature beside
 // the SHA-256 header on every delivery, so a verifier that read it would be
@@ -20,8 +45,11 @@ package github_test
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -106,6 +134,51 @@ func TestTheVectorGitHubWouldSendIsAccepted(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, forge.Push{Key: hook.Key, Ref: vectorRef, Commit: vectorCommit}, push)
+}
+
+// TestTheWireStringThisDriverHandsGitHubIsTheVector. Of the three constants
+// above, vectorWire was the one NOTHING IN THIS FILE READ BACK. It is used
+// twice, both times to key a forgery, and a forgery keyed with the wrong string
+// is rejected exactly as fast as one keyed with the right one — so if it drifted
+// the suite stayed green and "a correct MAC of a different body" quietly stopped
+// being about the body and became a second test of the wrong key.
+//
+// The value is pinned elsewhere in the tree — the forge package asserts the same
+// literal, as hubWire, against Scheme.Wire — but not here and not at the seam
+// this constant is described by. vectorWire is "what a GitHub would have STORED
+// for this hook", and the only place that becomes true is the registration
+// request, so that is where it is compared: the end of the chain the recipe at
+// the top of this file describes, out on the wire in config.secret.
+func TestTheWireStringThisDriverHandsGitHubIsTheVector(t *testing.T) {
+	c := &canned{body: `{"id":7}`}
+	drv, err := github.New("github.com", github.Transport(c))
+	require.NoError(t, err)
+	reg, err := forge.New(forge.Policy{}, forge.Binding{Host: "github.com", Driver: drv})
+	require.NoError(t, err)
+	key, err := repokey.Parse("https://github.com/acme/pay.git")
+	require.NoError(t, err)
+	sess, err := reg.For(key, forge.Token("gh-tok-vector"))
+	require.NoError(t, err)
+	callback, err := url.Parse("https://build.example.invalid/hook")
+	require.NoError(t, err)
+
+	_, err = sess.RegisterPushHook(ctx(), key, callback, vectorSecret())
+	require.NoError(t, err)
+	require.Len(t, c.sent, 1)
+
+	raw, err := c.sent[0].GetBody()
+	require.NoError(t, err)
+	var body struct {
+		Config struct {
+			Secret string `json:"secret"`
+		} `json:"config"`
+	}
+	require.NoError(t, json.NewDecoder(raw).Decode(&body))
+
+	assert.Equal(t, vectorWire, body.Config.Secret,
+		"the string registered with the forge is not the one the vectors below are keyed with, so this hook would reject every delivery it ever received")
+	assert.NotEqual(t, base64.RawURLEncoding.EncodeToString(vectorSecret().Expose()), body.Config.Secret,
+		"the wire is an encoding of the Secret rather than a one-way function of it, which is the derivation this file's recipe was still printing long after it stopped being true")
 }
 
 // TestTheComparisonIsOverBytesAndNotOverTheHeaderString. A digest spelled in
