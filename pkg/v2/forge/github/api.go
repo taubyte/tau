@@ -134,14 +134,31 @@ func statusOf(err error) int {
 
 // send issues one request against the API base and decodes a 2xx body into out.
 //
-// path is relative to the base and already escaped. A non-2xx becomes a
-// *statusError; a transport failure stays whatever it was, wrapped, so that an
-// outage can never be pattern-matched into a verdict.
-func (c *client) send(ctx context.Context, method, path string, in, out any) error {
-	u, err := url.Parse(c.d.base + path)
+// IT TAKES A ROUTE AND NOT A PATH, and that is the whole of why there is a
+// route type: this is the only place in the package that builds an
+// *http.Request, so a path that reaches the wire is a path some route composed,
+// with every segment escaped by the one function that escapes segments. A call
+// site cannot spell a path of its own without declaring the route it belongs
+// to, and a declared route the sweep never reaches fails the sweep.
+//
+// A non-2xx becomes a *statusError; a transport failure stays whatever it was,
+// wrapped, so that an outage can never be pattern-matched into a verdict.
+func (c *client) send(ctx context.Context, rq request, in, out any) error {
+	path, err := rq.path()
+	if err != nil {
+		return err
+	}
+	method := rq.route.method
+	query, err := rq.rawQuery()
+	if err != nil {
+		return err
+	}
+
+	u, err := url.Parse(c.d.base.String() + path)
 	if err != nil {
 		return fmt.Errorf("forge/github: %s %s is not a URL: %w", method, path, err)
 	}
+	u.RawQuery = query
 
 	var body io.Reader
 	if in != nil {
@@ -214,18 +231,6 @@ func (c *client) classify(err error, key repokey.Key) error {
 // there.
 func (c *client) classifyResource(err error) error {
 	return c.classify(err, repokey.Key{})
-}
-
-// repoPath is the API path for a key. Addressable has already refused a nested
-// or ownerless key, so the two segments are exactly the two GitHub takes; they
-// are escaped anyway, because a path built by concatenation is a path someone
-// will one day feed something else.
-func repoPath(key repokey.Key, tail ...string) string {
-	p := "repos/" + url.PathEscape(key.Owner) + "/" + url.PathEscape(key.Name)
-	for _, t := range tail {
-		p += "/" + t
-	}
-	return p
 }
 
 // repoJSON is what this driver reads out of a repository. Everything else

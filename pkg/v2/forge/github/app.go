@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -117,7 +116,7 @@ func (m *memberDriver) IsActiveMember(ctx context.Context, namespace, username s
 	appClient := m.bind(assertion)
 
 	var install installationJSON
-	if err := appClient.send(ctx, http.MethodGet, "orgs/"+url.PathEscape(namespace)+"/installation", nil, &install); err != nil {
+	if err := appClient.send(ctx, routeInstallation.at(namespace), nil, &install); err != nil {
 		return false, fmt.Errorf("forge/github: this deployment's app could not be found on %q: %w", namespace, err)
 	}
 	if install.ID == 0 {
@@ -125,10 +124,9 @@ func (m *memberDriver) IsActiveMember(ctx context.Context, namespace, username s
 	}
 
 	var minted installationTokenJSON
-	path := "app/installations/" + strconv.FormatInt(install.ID, 10) + "/access_tokens"
 	// The narrowest token the question needs, and not everything the app holds.
 	body := installationTokenRequest{Permissions: map[string]string{"members": "read"}}
-	if err := appClient.send(ctx, http.MethodPost, path, body, &minted); err != nil {
+	if err := appClient.send(ctx, routeInstallationToken.at(strconv.FormatInt(install.ID, 10)), body, &minted); err != nil {
 		return false, fmt.Errorf("forge/github: minting an installation token for %q: %w", namespace, err)
 	}
 	if minted.Token == "" {
@@ -136,8 +134,7 @@ func (m *memberDriver) IsActiveMember(ctx context.Context, namespace, username s
 	}
 
 	var membership membershipJSON
-	path = "orgs/" + url.PathEscape(namespace) + "/memberships/" + url.PathEscape(username)
-	if err := m.bind(minted.Token).send(ctx, http.MethodGet, path, nil, &membership); err != nil {
+	if err := m.bind(minted.Token).send(ctx, routeMembership.at(namespace, username), nil, &membership); err != nil {
 		if statusOf(err) == http.StatusNotFound {
 			return false, nil
 		}

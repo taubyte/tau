@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
@@ -29,7 +31,7 @@ import (
 // the parameter.
 func TestTheDriverKeepsNoCopyOfTheCredential(t *testing.T) {
 	const secret = "gh-tok-INTERNAL-1a2b3c4d5e6f"
-	d := &driver{host: "github.com", apiHost: "api.github.com", base: "https://api.github.com/"}
+	d := &driver{host: "github.com", apiHost: "api.github.com", base: apiRoot("https://api.github.com/")}
 	c := d.bind(secret)
 
 	for _, rendering := range []string{
@@ -80,7 +82,7 @@ func TestTheTransportBindInstallsIsPinnedToTheAPIHost(t *testing.T) {
 	const secret = "gh-tok-PINNED-9f8e7d6c"
 
 	base := &recordingRoundTripper{}
-	d := &driver{host: "github.com", apiHost: "api.github.com", base: "https://api.github.com/", rt: base}
+	d := &driver{host: "github.com", apiHost: "api.github.com", base: apiRoot("https://api.github.com/"), rt: base}
 	rt := d.bind(secret).http.Transport
 	require.NotNil(t, rt, "bind installed no transport, so nothing checks where a credential goes")
 
@@ -118,4 +120,82 @@ func TestTheTransportBindInstallsIsPinnedToTheAPIHost(t *testing.T) {
 			assert.NotContains(t, err.Error(), secret, "the refusal quotes the credential it refused to spend")
 		})
 	}
+}
+
+// apiRoot is the parsed API base a driver built by New holds, for the two tests
+// above that build one by hand.
+func apiRoot(raw string) *url.URL {
+	u, err := url.Parse(raw)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
+
+// ─────────────────────────── the routing table ───────────────────────────
+
+// routeWithAMethodThatIsNotOne is declared here, at package level, so that the
+// route table's own closure test can tell it from the routes this driver ships:
+// newRoute records the file it was called from, and a route declared in a test
+// is not a request this driver can issue.
+var routeWithAMethodThatIsNotOne = newRoute("not a method", "user")
+
+// routeNobodyDeclared is a route value built WITHOUT newRoute, which is the one
+// way a path could reach the wire without the sweep having been told about it.
+var routeNobodyDeclared = &route{method: http.MethodGet, template: "user", segments: []string{"user"}}
+
+// TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics is the gitlab driver's row
+// of the same name, which this package did not have. Every one of these is a
+// way the routing table can be asked for something it cannot compose, and the
+// answer has to be an error a caller sees rather than a panic in a request path
+// or — worse — a request that goes out anyway.
+func TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics(t *testing.T) {
+	c := (&driver{host: "github.com", apiHost: "api.github.com", base: apiRoot("https://api.github.com/")}).bind("tok")
+
+	// A body nothing can encode.
+	assert.Error(t, c.send(t.Context(), routeCreateOwnedByMe.at(), make(chan int), nil))
+
+	// A method that is not one.
+	assert.Error(t, c.send(t.Context(), routeWithAMethodThatIsNotOne.at(), nil, nil))
+
+	// A route nobody declared. Every request this driver makes is armed by the
+	// sweep because the sweep runs over the ROUTE TABLE, so a path composed
+	// outside it is a request nothing arms — and it is refused here rather than
+	// sent.
+	err := c.send(t.Context(), routeNobodyDeclared.at(), nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "newRoute")
+
+	// A request with no route at all.
+	require.Error(t, c.send(t.Context(), request{}, nil, nil))
+
+	// A route given the wrong number of arguments is a path with a hole left in
+	// it, and that is an error rather than a request against "{}".
+	require.Error(t, c.send(t.Context(), routeRepository.at("acme"), nil, nil))
+	require.Error(t, c.send(t.Context(), routeRepository.at("acme", "pay", "extra"), nil, nil))
+
+	// A query parameter the route does not declare. Declaring them is what
+	// makes the sweep able to say a parameter went unexercised, so one that
+	// slipped past the declaration would slip past the sweep.
+	err = c.send(t.Context(), routeListRepositories.at().with(url.Values{"legacy": {"1"}}), nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "legacy")
+}
+
+// TestARouteIsEscapedByTheOneFunctionThatEscapesSegments. The clone address is
+// not a request, so no row about requests reaches it, and both halves of a key
+// used to be escaped there by their own line — one of the five that could be
+// deleted with the whole tree at exit 0.
+func TestARouteIsEscapedByTheOneFunctionThatEscapesSegments(t *testing.T) {
+	base := apiRoot("https://api.github.com/")
+	rq := routeRepository.at("acme", "pay#evil")
+	path, err := rq.path()
+	require.NoError(t, err)
+	assert.Equal(t, "repos/acme/pay%23evil", path,
+		"a name a forge can hand back with a # in it must not address the repository before the #")
+
+	c := (&driver{host: "github.com", apiHost: "api.github.com", base: base}).bind("tok")
+	addr, err := c.CloneAddress(repokey.Key{Host: "github.com", Owner: "acme", Name: "pay#evil"}, forge.HTTPS)
+	require.NoError(t, err)
+	assert.Equal(t, "https://github.com/acme/pay%23evil.git", addr.URL)
 }

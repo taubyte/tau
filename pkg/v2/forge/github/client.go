@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -34,7 +33,7 @@ const deployKeyReadOnly = true
 // check that the credential is still good.
 func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 	var u userJSON
-	if err := c.send(ctx, http.MethodGet, "user", nil, &u); err != nil {
+	if err := c.send(ctx, routeCurrentUser.at(), nil, &u); err != nil {
 		return forge.Identity{}, c.classify(err, repokey.Key{})
 	}
 	if u.Login == "" {
@@ -108,7 +107,7 @@ func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Reposit
 // Case is not a disagreement: both keys come from repokey, which lowercases.
 func (c *client) get(ctx context.Context, key repokey.Key) (repoJSON, forge.Repository, error) {
 	var r repoJSON
-	if err := c.send(ctx, http.MethodGet, repoPath(key), nil, &r); err != nil {
+	if err := c.send(ctx, routeRepository.at(key.Owner, key.Name), nil, &r); err != nil {
 		return repoJSON{}, forge.Repository{}, c.classify(err, key)
 	}
 	repo, err := c.repository(r)
@@ -130,8 +129,11 @@ func (c *client) get(ctx context.Context, key repokey.Key) (repoJSON, forge.Repo
 func (c *client) ListRepositories(ctx context.Context, yield func(forge.Repository) bool) error {
 	for page := 1; ; page++ {
 		var out []repoJSON
-		path := "user/repos?per_page=" + strconv.Itoa(listPageSize) + "&page=" + strconv.Itoa(page)
-		if err := c.send(ctx, http.MethodGet, path, nil, &out); err != nil {
+		rq := routeListRepositories.at().with(url.Values{
+			"per_page": {strconv.Itoa(listPageSize)},
+			"page":     {strconv.Itoa(page)},
+		})
+		if err := c.send(ctx, rq, nil, &out); err != nil {
 			return c.classify(err, repokey.Key{})
 		}
 		for _, r := range out {
@@ -174,14 +176,14 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 		return forge.Repository{}, err
 	}
 
-	path := "orgs/" + url.PathEscape(key.Owner) + "/repos"
+	rq := routeCreateUnderOrg.at(key.Owner)
 	if strings.EqualFold(key.Owner, me.Login) {
-		path = "user/repos"
+		rq = routeCreateOwnedByMe.at()
 	}
 
 	var r repoJSON
 	body := createRepoRequest{Name: key.Name, Description: opts.Description, Private: opts.Private}
-	if err := c.send(ctx, http.MethodPost, path, body, &r); err != nil {
+	if err := c.send(ctx, rq, body, &r); err != nil {
 		return forge.Repository{}, c.classifyResource(err)
 	}
 
@@ -203,7 +205,7 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 // Delete is what makes AccessAdmin a real rung rather than a speculative one.
 // v1's CLI discovers it lacked admin by string-matching an error body.
 func (c *client) Delete(ctx context.Context, key repokey.Key) error {
-	if err := c.send(ctx, http.MethodDelete, repoPath(key), nil, nil); err != nil {
+	if err := c.send(ctx, routeDeleteRepository.at(key.Owner, key.Name), nil, nil); err != nil {
 		return c.classify(err, key)
 	}
 	return nil
@@ -224,7 +226,7 @@ type resourceJSON struct {
 func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, publicKey string) (forge.Handle, error) {
 	var out resourceJSON
 	body := createKeyRequest{Title: title, Key: publicKey, ReadOnly: deployKeyReadOnly}
-	if err := c.send(ctx, http.MethodPost, repoPath(key, "keys"), body, &out); err != nil {
+	if err := c.send(ctx, routeInstallDeployKey.at(key.Owner, key.Name), body, &out); err != nil {
 		return "", c.classify(err, key)
 	}
 	return handle(out.ID)
@@ -235,7 +237,7 @@ func (c *client) RemoveDeployKey(ctx context.Context, key repokey.Key, h forge.H
 	if err != nil {
 		return err
 	}
-	if err := c.send(ctx, http.MethodDelete, repoPath(key, "keys", seg), nil, nil); err != nil {
+	if err := c.send(ctx, routeRemoveDeployKey.at(key.Owner, key.Name, seg), nil, nil); err != nil {
 		return c.classifyResource(err)
 	}
 	return nil
@@ -277,7 +279,7 @@ func (c *client) RegisterPushHook(ctx context.Context, key repokey.Key, callback
 			Secret:      wire,
 		},
 	}
-	if err := c.send(ctx, http.MethodPost, repoPath(key, "hooks"), body, &out); err != nil {
+	if err := c.send(ctx, routeRegisterPushHook.at(key.Owner, key.Name), body, &out); err != nil {
 		return "", c.classify(err, key)
 	}
 	return handle(out.ID)
@@ -288,7 +290,7 @@ func (c *client) RemovePushHook(ctx context.Context, key repokey.Key, h forge.Ha
 	if err != nil {
 		return err
 	}
-	if err := c.send(ctx, http.MethodDelete, repoPath(key, "hooks", seg), nil, nil); err != nil {
+	if err := c.send(ctx, routeRemovePushHook.at(key.Owner, key.Name, seg), nil, nil); err != nil {
 		return c.classifyResource(err)
 	}
 	return nil
@@ -304,14 +306,18 @@ func handle(id int64) (forge.Handle, error) {
 	return forge.Handle(strconv.FormatInt(id, 10)), nil
 }
 
-// handleSegment refuses an empty handle rather than building a path that ends
-// in a slash, which addresses the COLLECTION and would answer a removal of one
+// handleSegment refuses an empty handle rather than filling a path's hole with
+// nothing, which addresses the COLLECTION and would answer a removal of one
 // thing with an answer about all of them.
+//
+// It does not escape. Escaping is what the route does with every argument it is
+// given, and a second escape here would be one this driver has to remember and
+// GitHub would receive doubled.
 func handleSegment(h forge.Handle) (string, error) {
 	if h == "" {
 		return "", errors.New("forge/github: removing a resource needs the handle the forge gave it")
 	}
-	return url.PathEscape(string(h)), nil
+	return string(h), nil
 }
 
 // CloneAddress is the address a clone uses and the account it presents as, both
@@ -331,7 +337,14 @@ func handleSegment(h forge.Handle) (string, error) {
 // authoritative; this method is the offline derivation, and a caller that needs
 // certainty on a ported host should ask the forge.
 func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Address, error) {
-	path := "/" + url.PathEscape(key.Owner) + "/" + url.PathEscape(key.Name) + ".git"
+	// A CLONE ADDRESS IS NOT A REQUEST AND IS STILL A URL WITH A KEY IN IT.
+	// repokey's grammar accepts a "?" and a "#" inside a segment — it splits on
+	// "/" and refuses whitespace, and says nothing about the characters a URL
+	// gives meaning to — so a name spelled pay%23evil arrives here as "pay#evil"
+	// and, pasted in raw, would name the repository BEFORE the "#" to every
+	// clone tau ever runs with this address. So it goes through the same
+	// function a request path's segments go through.
+	path := "/" + escapedSegments([]string{key.Owner, key.Name}) + ".git"
 	if over == forge.SSH {
 		// "git" is the account every GitHub answers ssh on, and it is a host
 		// fact rather than an identity: the key that authenticates is the

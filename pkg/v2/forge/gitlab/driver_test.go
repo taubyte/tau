@@ -952,16 +952,48 @@ func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
 
 // ─────────────────────────── plumbing ───────────────────────────
 
+// routeWithAMethodThatIsNotOne is declared here, at package level, so that the
+// route table's own closure test can tell it from the routes this driver ships:
+// newRoute records the file it was called from, and a route declared in a test
+// is not a request this driver can issue.
+var routeWithAMethodThatIsNotOne = newRoute("not a method", "api/v4/projects")
+
+// routeNobodyDeclared is a route value built WITHOUT newRoute, which is the one
+// way a path could reach the wire without the sweep having been told about it.
+var routeNobodyDeclared = &route{method: http.MethodGet, template: "api/v4/projects", segments: []string{"api", "v4", "projects"}}
+
 func TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics(t *testing.T) {
 	c, key := stubClient(t, answer(t, http.StatusOK, `{}`))
 
 	// A body nothing can encode.
-	err := c.send(context.Background(), http.MethodPost, c.cfg.endpoint("api", "v4", "projects"), nil, make(chan int), nil)
+	err := c.send(context.Background(), routeCreateProject.at(), nil, make(chan int), nil)
 	assert.Error(t, err)
 
 	// A method that is not one.
-	err = c.send(context.Background(), "not a method", c.cfg.endpoint("api", "v4", "projects"), &key, nil, nil)
+	err = c.send(context.Background(), routeWithAMethodThatIsNotOne.at(), &key, nil, nil)
 	assert.Error(t, err)
+
+	// A route nobody declared. Every request this driver makes is armed by the
+	// sweep because the sweep runs over the ROUTE TABLE, so a path composed
+	// outside it is a request nothing arms — and it is refused here rather than
+	// sent.
+	err = c.send(context.Background(), routeNobodyDeclared.at(), &key, nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "newRoute")
+
+	// A route given the wrong number of arguments is a path with a hole left in
+	// it, and that is an error rather than a request against "{}".
+	err = c.send(context.Background(), routeProject.at(), &key, nil, nil)
+	require.Error(t, err)
+	err = c.send(context.Background(), routeProject.at("a", "b"), &key, nil, nil)
+	require.Error(t, err)
+
+	// A query parameter the route does not declare. Declaring them is what
+	// makes the sweep able to say a parameter went unexercised, so one that
+	// slipped past the declaration would slip past the sweep.
+	err = c.send(context.Background(), routeListProjects.at().with(url.Values{"legacy": {"1"}}), nil, nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "legacy")
 }
 
 // A failed request is named by WHAT THIS DRIVER SENT — the method, the path it

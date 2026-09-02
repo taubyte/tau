@@ -53,7 +53,7 @@ func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 		Username string `json:"username"`
 		Email    string `json:"email"`
 	}
-	if _, err := c.get(ctx, c.cfg.endpoint("api", "v4", "user"), nil, &user); err != nil {
+	if _, err := c.get(ctx, routeCurrentUser.at(), nil, &user); err != nil {
 		return forge.Identity{}, err
 	}
 	if user.Username == "" {
@@ -153,13 +153,13 @@ func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, err
 // graphql posts one query. GitLab's GraphQL endpoint is not under /api/v4.
 func (c *client) graphql(ctx context.Context, query string, variables map[string]any, out any) error {
 	body := map[string]any{"query": query, "variables": variables}
-	return c.send(ctx, http.MethodPost, c.cfg.endpoint("api", "graphql"), nil, body, out)
+	return c.send(ctx, routeAuthorization.at(), nil, body, out)
 }
 
 // Repository is what only the instance knows.
 func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Repository, error) {
 	var p project
-	if _, err := c.get(ctx, c.cfg.endpoint("api", "v4", "projects", key.FullName()), &key, &p); err != nil {
+	if _, err := c.get(ctx, routeProject.at(key.FullName()), &key, &p); err != nil {
 		return forge.Repository{}, err
 	}
 	return c.cfg.repository(p, fmt.Sprintf("project %q", key.FullName()))
@@ -257,17 +257,16 @@ func (c *client) ListRepositories(ctx context.Context, yield func(forge.Reposito
 		if pages == maxPages {
 			return fmt.Errorf("gitlab: %s is still naming a next page after %d of them; refusing to keep paging", c.cfg.host, maxPages)
 		}
-		u := c.cfg.endpoint("api", "v4", "projects")
-		u.RawQuery = url.Values{
+		rq := routeListProjects.at().with(url.Values{
 			"membership": {"true"},
 			"per_page":   {"100"},
 			"page":       {page},
 			"order_by":   {"id"},
 			"sort":       {"asc"},
-		}.Encode()
+		})
 
 		var listing []project
-		r, err := c.get(ctx, u, nil, &listing)
+		r, err := c.get(ctx, rq, nil, &listing)
 		if err != nil {
 			return err
 		}
@@ -331,7 +330,7 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 		ID       int64  `json:"id"`
 		FullPath string `json:"full_path"`
 	}
-	if _, err := c.get(ctx, c.cfg.endpoint("api", "v4", "namespaces", key.Owner), nil, &namespace); err != nil {
+	if _, err := c.get(ctx, routeNamespace.at(key.Owner), nil, &namespace); err != nil {
 		return forge.Repository{}, err
 	}
 	if namespace.ID == 0 {
@@ -361,7 +360,7 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 	}
 
 	var created project
-	if err := c.send(ctx, http.MethodPost, c.cfg.endpoint("api", "v4", "projects"), nil, body, &created); err != nil {
+	if err := c.send(ctx, routeCreateProject.at(), nil, body, &created); err != nil {
 		return forge.Repository{}, err
 	}
 	return c.cfg.repository(created, fmt.Sprintf("project %q", key.FullName()))
@@ -376,7 +375,7 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 // subsequent successful Repository as this call having failed — which is exactly
 // the shape of assumption a GitHub-only integration acquires without noticing.
 func (c *client) Delete(ctx context.Context, key repokey.Key) error {
-	return c.send(ctx, http.MethodDelete, c.cfg.endpoint("api", "v4", "projects", key.FullName()), &key, nil, nil)
+	return c.send(ctx, routeDeleteProject.at(key.FullName()), &key, nil, nil)
 }
 
 // InstallDeployKey installs a read-only clone credential.
@@ -399,8 +398,7 @@ func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, p
 		ID      int64 `json:"id"`
 		CanPush bool  `json:"can_push"`
 	}
-	u := c.cfg.endpoint("api", "v4", "projects", key.FullName(), "deploy_keys")
-	if err := c.send(ctx, http.MethodPost, u, &key, body, &installed); err != nil {
+	if err := c.send(ctx, routeInstallDeployKey.at(key.FullName()), &key, body, &installed); err != nil {
 		return "", err
 	}
 	if installed.ID == 0 {
@@ -422,8 +420,7 @@ func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, p
 }
 
 func (c *client) RemoveDeployKey(ctx context.Context, key repokey.Key, h forge.Handle) error {
-	u := c.cfg.endpoint("api", "v4", "projects", key.FullName(), "deploy_keys", string(h))
-	return c.send(ctx, http.MethodDelete, u, &key, nil, nil)
+	return c.send(ctx, routeRemoveDeployKey.at(key.FullName(), string(h)), &key, nil, nil)
 }
 
 // RegisterPushHook registers a webhook for pushes only.
@@ -460,8 +457,7 @@ func (c *client) RegisterPushHook(ctx context.Context, key repokey.Key, callback
 	var registered struct {
 		ID int64 `json:"id"`
 	}
-	u := c.cfg.endpoint("api", "v4", "projects", key.FullName(), "hooks")
-	if err := c.send(ctx, http.MethodPost, u, &key, body, &registered); err != nil {
+	if err := c.send(ctx, routeRegisterPushHook.at(key.FullName()), &key, body, &registered); err != nil {
 		return "", err
 	}
 	if registered.ID == 0 {
@@ -471,8 +467,7 @@ func (c *client) RegisterPushHook(ctx context.Context, key repokey.Key, callback
 }
 
 func (c *client) RemovePushHook(ctx context.Context, key repokey.Key, h forge.Handle) error {
-	u := c.cfg.endpoint("api", "v4", "projects", key.FullName(), "hooks", string(h))
-	return c.send(ctx, http.MethodDelete, u, &key, nil, nil)
+	return c.send(ctx, routeRemovePushHook.at(key.FullName(), string(h)), &key, nil, nil)
 }
 
 // CloneAddress is the address a clone of one key uses on this instance, and the
@@ -488,16 +483,25 @@ func (c *client) RemovePushHook(ctx context.Context, key repokey.Key, h forge.Ha
 // re-derive the key, and a different SSH host derives a different key. A
 // deployment whose instance moves SSH must use Repository's addresses.
 func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Address, error) {
+	// A CLONE ADDRESS IS NOT A REQUEST AND IS STILL A URL WITH A KEY IN IT.
+	// repokey's grammar accepts a "?" and a "#" inside a segment — it splits on
+	// "/" and refuses whitespace, and says nothing about the characters a URL
+	// gives meaning to — so a project spelled pay%23evil arrives here as
+	// "pay#evil" and, pasted in raw, would name the project BEFORE the "#" to
+	// every clone tau ever runs with this address. So it goes through the same
+	// function a request path's segments go through, over the segments a URL
+	// under this host really has.
+	path := "/" + escapedSegments(keySegments(key)) + ".git"
 	if over == forge.SSH {
 		return forge.Address{
-			URL: "ssh://git@" + c.cfg.host + "/" + key.FullName() + ".git",
+			URL: "ssh://git@" + c.cfg.host + path,
 			// The account before the "@" is a host fact, and on GitLab it is
 			// "git" for every instance including a self-managed one.
 			SSHAccount: "git",
 		}, nil
 	}
 	return forge.Address{
-		URL: c.cfg.base.Scheme + "://" + c.cfg.host + "/" + key.FullName() + ".git",
+		URL: c.cfg.base.Scheme + "://" + c.cfg.host + path,
 		// GitLab accepts any username beside a token over HTTP basic auth, and
 		// documents "oauth2", which is the only one that works for BOTH an OAuth
 		// access token and a personal one.

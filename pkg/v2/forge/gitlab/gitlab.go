@@ -368,27 +368,6 @@ func (c *config) httpClient(cred forge.Credential) *http.Client {
 // drivers agreeing is worth more than either answer alone.
 func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
-// endpoint builds a URL under the API root with every segment path-escaped.
-//
-// THE ESCAPING IS LOAD-BEARING TWICE. GitLab addresses a project by its full
-// path URL-encoded — acme%2Fteam%2Fwidget — so a "/" must survive as %2F or the
-// request lands on a different route entirely; and a forge.Handle is opaque, so
-// escaping it is what stops an id nothing here parses from walking out of its
-// path segment.
-func (c *config) endpoint(segments ...string) *url.URL {
-	u := *c.base
-	var plain, escaped strings.Builder
-	for _, s := range segments {
-		plain.WriteString("/")
-		plain.WriteString(s)
-		escaped.WriteString("/")
-		escaped.WriteString(url.PathEscape(s))
-	}
-	u.Path = plain.String()
-	u.RawPath = escaped.String()
-	return &u
-}
-
 // checkHostSpelling refuses a host that is not what repokey derives from a clone
 // URL to it, so "GitLab.com", "https://gitlab.com" and "gitlab.com:443" fail at
 // startup rather than becoming a driver no key ever resolves to.

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -42,11 +41,22 @@ type response struct {
 // call performs one request. It never decides what a status MEANS — fault does
 // that, with the repository in hand, because whether a 404 is *NotFoundError
 // depends on whether the request named a repository at all.
-func (c *client) call(ctx context.Context, method string, u *url.URL, body any) (*response, error) {
-	return do(ctx, c.api, c.cfg.host, method, u, body)
+func (c *client) call(ctx context.Context, rq request, body any) (*response, error) {
+	return do(ctx, c.api, c.cfg, rq, body)
 }
 
-func do(ctx context.Context, api *http.Client, host, method string, u *url.URL, body any) (*response, error) {
+// do IS THE ONLY PLACE IN THIS PACKAGE THAT BUILDS AN *http.Request, and it
+// takes a ROUTE rather than a URL, so a path that reaches the wire is a path
+// some declared route composed with every segment escaped by the one function
+// that escapes segments. Both of this driver's http.Clients — the caller's and
+// the deployment's — come through here.
+func do(ctx context.Context, api *http.Client, cfg *config, rq request, body any) (*response, error) {
+	host, method := cfg.host, rq.route.method
+	u, err := rq.url(cfg.base)
+	if err != nil {
+		return nil, err
+	}
+
 	var payload io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -141,8 +151,8 @@ func decode(r *response, out any) error {
 }
 
 // get is the whole of a read: request, taxonomy, decode.
-func (c *client) get(ctx context.Context, u *url.URL, key *repokey.Key, out any) (*response, error) {
-	r, err := c.call(ctx, http.MethodGet, u, nil)
+func (c *client) get(ctx context.Context, rq request, key *repokey.Key, out any) (*response, error) {
+	r, err := c.call(ctx, rq, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -153,8 +163,8 @@ func (c *client) get(ctx context.Context, u *url.URL, key *repokey.Key, out any)
 }
 
 // send is the whole of a write.
-func (c *client) send(ctx context.Context, method string, u *url.URL, key *repokey.Key, body, out any) error {
-	r, err := c.call(ctx, method, u, body)
+func (c *client) send(ctx context.Context, rq request, key *repokey.Key, body, out any) error {
+	r, err := c.call(ctx, rq, body)
 	if err != nil {
 		return err
 	}

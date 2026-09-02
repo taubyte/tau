@@ -43,8 +43,7 @@ func (d *memberDriver) IsActiveMember(ctx context.Context, namespace, username s
 	// members/all rather than members: it includes membership INHERITED from an
 	// ancestor group, which is how most people are members of a subgroup, and
 	// omitting it would answer false for someone who plainly is one.
-	u := d.cfg.endpoint("api", "v4", "groups", namespace, "members", "all", strconv.FormatInt(id, 10))
-	r, err := do(ctx, d.api, d.cfg.host, http.MethodGet, u, nil)
+	r, err := do(ctx, d.api, d.cfg, routeGroupMember.at(namespace, strconv.FormatInt(id, 10)), nil)
 	if err != nil {
 		return false, err
 	}
@@ -70,10 +69,9 @@ func (d *memberDriver) IsActiveMember(ctx context.Context, namespace, username s
 // userID resolves a username to the id GitLab's membership endpoints take. An
 // empty answer is "no such user" and not a failure.
 func (d *memberDriver) userID(ctx context.Context, username string) (int64, bool, error) {
-	u := d.cfg.endpoint("api", "v4", "users")
-	u.RawQuery = url.Values{"username": {username}}.Encode()
+	rq := routeUser.at().with(url.Values{"username": {username}})
 
-	r, err := do(ctx, d.api, d.cfg.host, http.MethodGet, u, nil)
+	r, err := do(ctx, d.api, d.cfg, rq, nil)
 	if err != nil {
 		return 0, false, err
 	}

@@ -47,6 +47,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -74,7 +75,11 @@ const (
 type driver struct {
 	host    string
 	apiHost string
-	base    string // absolute, ends with "/"
+	// base is the API root, absolute and ending in "/". It is a parsed URL
+	// rather than a string because the routing table matches what went out
+	// against it, and a second spelling of the same prefix is a spelling that
+	// drifts.
+	base *url.URL
 
 	rt  http.RoundTripper // under the pin; nil means http.DefaultTransport
 	app *app
@@ -129,10 +134,13 @@ func New(host string, opts ...Option) (forge.Driver, error) {
 		return nil, fmt.Errorf("forge/github: %q is not a host spelling repokey produces (lowercase, and a port only when it is not the transport's default)", host)
 	}
 
-	d := &driver{host: host, apiHost: host, base: "https://" + host + "/api/v3/"}
+	// BUILT AND NOT PARSED. The host has just been through repokey, and a
+	// string that is then parsed back into the value it was built from is a
+	// second grammar with an error branch nothing can reach.
+	d := &driver{host: host, apiHost: host, base: &url.URL{Scheme: "https", Host: host, Path: "/api/v3/"}}
 	if host == dotCom {
 		d.apiHost = dotComAPI
-		d.base = "https://" + dotComAPI + "/"
+		d.base = &url.URL{Scheme: "https", Host: dotComAPI, Path: "/"}
 	}
 	for _, opt := range opts {
 		if err := opt(d); err != nil {
