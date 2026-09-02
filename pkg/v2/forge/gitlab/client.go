@@ -100,6 +100,13 @@ const accessQuery = `query($fullPath: ID!) {
 // see, so "no such project" and "you may not look" are one answer from outside
 // and neither is a verdict a consumer may act on. An errors array is a plain
 // error for the same reason.
+//
+// THE ERRORS ARRAY IS COUNTED AND NOT QUOTED. It is prose the instance composed,
+// which makes it the same channel into tau's logs that fault refuses the response
+// body for, and this endpoint is reached with the caller's own credential in a
+// header. What is named instead is driver-chosen and enough to act on: the query
+// is a const in this file, the count says the instance answered about it, and the
+// instance's own log holds the sentence.
 func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, error) {
 	var answer struct {
 		Data struct {
@@ -122,8 +129,8 @@ func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, err
 	if err := c.graphql(ctx, accessQuery, map[string]any{"fullPath": key.FullName()}, &answer); err != nil {
 		return forge.AccessNone, err
 	}
-	if len(answer.Errors) > 0 {
-		return forge.AccessNone, fmt.Errorf("gitlab: %s could not answer the authorization question for %q: %s", c.cfg.host, key, truncate(answer.Errors[0].Message))
+	if n := len(answer.Errors); n > 0 {
+		return forge.AccessNone, fmt.Errorf("gitlab: %s answered the authorization query for %q with errors (%d) and no permissions", c.cfg.host, key, n)
 	}
 	if answer.Data.Project == nil {
 		return forge.AccessNone, &forge.NotFoundError{Host: c.cfg.host, Key: key}

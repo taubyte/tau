@@ -252,12 +252,17 @@ func TestWhoamiReportsTheUserIdAsAnOpaqueSubject(t *testing.T) {
 // GRAPHQL ANSWERS 200 FOR FAILURES, so the taxonomy's status mapping does not
 // reach it and an errors array has to become an error by hand. It must never
 // become a level.
+// GraphQL answers 200 for failures, so the errors array is the second failure
+// channel — and it is prose the instance composed, on the one endpoint reached
+// with the caller's credential in a header. It is counted, never quoted.
 func TestAccessTurnsAGraphQLErrorArrayIntoAnError(t *testing.T) {
-	c, key := stubClient(t, answer(t, http.StatusOK, `{"data":null,"errors":[{"message":"Field 'pushCode' doesn't exist"}]}`))
+	c, key := stubClient(t, answer(t, http.StatusOK, `{"data":null,"errors":[{"message":"Field 'pushCode' doesn't exist for stub-token"}]}`))
 	level, err := c.Access(context.Background(), key)
 	require.Error(t, err)
 	assert.Equal(t, forge.AccessNone, level)
-	assert.Contains(t, err.Error(), "pushCode")
+	assert.Contains(t, err.Error(), "authorization query")
+	assert.NotContains(t, err.Error(), "pushCode", "the instance's own words reached the error")
+	assert.NotContains(t, err.Error(), "stub-token", "the credential is in an error string")
 }
 
 func TestAccessRefusesAnUnreadableAnswer(t *testing.T) {
@@ -790,20 +795,29 @@ func TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestMessageRendersAnInstancesOwnWords(t *testing.T) {
-	for body, want := range map[string]string{
-		`{"message":"404 Project Not Found"}`:             "404 Project Not Found",
-		`{"message":{"path":["has already been taken"]}}`: `{"path":["has already been taken"]}`,
-		`{"error":"invalid_token"}`:                       "invalid_token",
-		`<html>gateway timeout</html>`:                    "<html>gateway timeout</html>",
-		`{}`:                                              "{}",
-	} {
-		assert.Equal(t, want, message([]byte(body)), "body %s", body)
-	}
+// A failed request is named by WHAT THIS DRIVER SENT — the method, the path it
+// built, and Go's own text for the numeric status. The instance receives the
+// caller's credential on every request, so a sentence it gets to choose is a
+// sentence it can put that credential in, and this driver renders none of it:
+// not the body, not the reason phrase on the status line.
+func TestAFaultNamesTheRequestAndNothingTheInstanceWrote(t *testing.T) {
+	const words = `{"message":"could not authenticate stub-token, try again","error":"stub-token"}`
 
-	long := message([]byte(strings.Repeat("x", 500)))
-	assert.Len(t, []rune(long), 201, "an unrecognised body was pasted whole into an error")
-	assert.True(t, strings.HasSuffix(long, "…"))
+	c, key := stubClient(t, answer(t, http.StatusInternalServerError, words))
+	_, err := c.Repository(context.Background(), key)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GET", "an error must name the method this driver sent")
+	assert.Contains(t, err.Error(), "/api/v4/projects/", "an error must name the path this driver built")
+	assert.Contains(t, err.Error(), "500 Internal Server Error")
+	assert.NotContains(t, err.Error(), "try again", "the instance's own words reached the error")
+	assert.NotContains(t, err.Error(), "stub-token", "the credential is in an error string")
+
+	// A status Go has no text for is still a number and nothing else.
+	c, key = stubClient(t, answer(t, 599, words))
+	_, err = c.Repository(context.Background(), key)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "599")
+	assert.NotContains(t, err.Error(), "try again")
 }
 
 // decodeInto reads a request body in a test handler.

@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
+	"strconv"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/v2/forge"
@@ -20,13 +20,23 @@ import (
 // and reading it into memory to find that out is the wrong order.
 const maxBody = 4 << 20
 
+// maxHostString bounds a string the INSTANCE chose before it may reach an error.
+// A host that picks how long a log line is picks how much of a disk it costs.
+const maxHostString = 256
+
 // response is one API answer, read whole before anything is decided about it, so
 // the status, the headers and the body are all in hand when the failure taxonomy
 // is applied.
+//
+// method and path are what THIS DRIVER SENT, and they are here because they are
+// the whole of what an error may say about a failure: see fault.
 type response struct {
 	status int
 	header http.Header
 	body   []byte
+
+	method string
+	path   string
 }
 
 // call performs one request. It never decides what a status MEANS — fault does
@@ -68,7 +78,13 @@ func do(ctx context.Context, api *http.Client, host, method string, u *url.URL, 
 	if err != nil {
 		return nil, fmt.Errorf("gitlab: reading a %s answer from %s: %w", method, host, err)
 	}
-	return &response{status: resp.StatusCode, header: resp.Header, body: read}, nil
+	return &response{
+		status: resp.StatusCode,
+		header: resp.Header,
+		body:   read,
+		method: method,
+		path:   u.EscapedPath(),
+	}, nil
 }
 
 // fault turns a non-2xx answer into the right member of the failure taxonomy, or
@@ -80,6 +96,18 @@ func do(ctx context.Context, api *http.Client, host, method string, u *url.URL, 
 // reading an instance's 403 — which GitLab returns for an archived project, a
 // blocked user, a missing scope and a permission the caller genuinely lacks —
 // as a verdict it can act on.
+//
+// NOTHING THE INSTANCE WROTE IS IN THE ERROR. Not the body it composed, not the
+// reason phrase on its status line: an error here names the method and the path
+// THIS DRIVER built, the numeric status, and Go's own text for that number. The
+// instance receives the caller's credential on every request, so a sentence it
+// gets to choose is a sentence it can put that credential in — and an error
+// string is the most-copied thing in a log. It is the same refusal the github
+// driver's package comment states, and this driver used to render the body here.
+//
+// The two answers that do NOT come through here are safe for the same reason and
+// not by exception: the 401 carries a fixed sentence, and the 404 carries the
+// key TAU asked about. Neither reads a single byte the instance chose.
 func (c *client) fault(r *response, key *repokey.Key) error {
 	return fault(c.cfg.host, r, key)
 }
@@ -95,7 +123,7 @@ func fault(host string, r *response, key *repokey.Key) error {
 	case r.status == http.StatusNotFound && key != nil:
 		return &forge.NotFoundError{Host: host, Key: *key}
 	}
-	return fmt.Errorf("gitlab: %s answered %d: %s", host, r.status, message(r.body))
+	return fmt.Errorf("gitlab: %s answered %s %q with %s", host, r.method, r.path, statusLine(r.status))
 }
 
 // decode reads a successful answer's body.
@@ -133,39 +161,11 @@ func (c *client) send(ctx context.Context, method string, u *url.URL, key *repok
 	return decode(r, out)
 }
 
-// message renders an instance's own words about a failure. GitLab writes them
-// under "message" as a string ("404 Project Not Found") or as an object
-// ({"path":["has already been taken"]}), and under "error" for OAuth failures,
-// so all three are read and the raw body is the fallback.
-//
-// It is truncated because an operator needs the sentence, not the document, and
-// because a body this function did not recognise is a body nothing should paste
-// whole into a log.
-func message(body []byte) string {
-	var envelope struct {
-		Message json.RawMessage `json:"message"`
-		Error   json.RawMessage `json:"error"`
+// statusLine renders a status with Go's own text for it, which is a table keyed
+// by the number rather than the reason phrase the instance sent.
+func statusLine(status int) string {
+	if text := http.StatusText(status); text != "" {
+		return strconv.Itoa(status) + " " + text
 	}
-	if json.Unmarshal(body, &envelope) == nil {
-		for _, raw := range []json.RawMessage{envelope.Message, envelope.Error} {
-			if len(raw) == 0 {
-				continue
-			}
-			var text string
-			if json.Unmarshal(raw, &text) == nil {
-				return truncate(text)
-			}
-			return truncate(string(raw))
-		}
-	}
-	return truncate(strings.TrimSpace(string(body)))
-}
-
-func truncate(s string) string {
-	const limit = 200
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= limit {
-		return s
-	}
-	return s[:limit] + "…"
+	return strconv.Itoa(status)
 }
