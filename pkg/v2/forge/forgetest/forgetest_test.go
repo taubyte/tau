@@ -83,6 +83,24 @@ func TestTheSuiteCatchesABrokenDriver(t *testing.T) {
 			saying: "must be derived from the clone address the forge returned",
 		},
 		{
+			// The OTHER half of the record: a key that is right and clone
+			// addresses that name a different repository. Nothing else in the
+			// suite refuses this driver, which is what makes it the case that
+			// proves the record's address assertion is doing work rather than
+			// standing beside one that would have failed anyway.
+			fault:  fake.FaultRepositoryAddressNamesAnother,
+			shape:  fake.GitHubLike,
+			saying: "clone address in the record",
+		},
+		{
+			// And the same mistake on the surface a builder is actually handed.
+			// It is a separate fault because it is separate code: one assertion
+			// each, and neither can pass on the other's account.
+			fault:  fake.FaultCloneAddressNamesAnother,
+			shape:  fake.GitHubLike,
+			saying: "clone address handed to a builder",
+		},
+		{
 			// A credential that followed a redirect off its own host. No
 			// fixture can see this one — the request arrives somewhere else —
 			// so the suite reads it where it lands.

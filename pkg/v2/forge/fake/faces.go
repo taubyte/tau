@@ -233,13 +233,13 @@ type fAddr struct{ bound }
 // keeps working while the forge is unreachable.
 func (b fAddr) CloneAddress(k repokey.Key, over forge.Protocol) (forge.Address, error) {
 	if over == forge.SSH {
-		return forge.Address{URL: b.c.cloneURL(k, forge.SSH), SSHAccount: "git"}, nil
+		return forge.Address{URL: b.c.servedCloneURL(k, forge.SSH, FaultCloneAddressNamesAnother), SSHAccount: "git"}, nil
 	}
 	user := "x-access-token"
 	if b.c.shape.Handles == HandlesUUID {
 		user = "x-token-auth" // Bitbucket accepts no other basic-auth username
 	}
-	return forge.Address{URL: b.c.cloneURL(k, forge.HTTPS), HTTPUsername: user}, nil
+	return forge.Address{URL: b.c.servedCloneURL(k, forge.HTTPS, FaultCloneAddressNamesAnother), HTTPUsername: user}, nil
 }
 
 type fProbe struct{ bound }

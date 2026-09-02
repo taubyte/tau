@@ -455,7 +455,9 @@ func (r *runner) assertRepository(t tb, repo forge.Repository, want repokey.Key)
 		if !assert.NoError(t, err, "%s clone address %q does not parse to a key", label, spelling) {
 			continue
 		}
-		assert.Equal(t, repo.Key, got, "%s clone address names %q, not %q", label, got, repo.Key)
+		assert.Equal(t, repo.Key, got,
+			"the %s clone address in the record for %q names %q; tau would file one repository and clone another",
+			label, repo.Key, got)
 	}
 }
 

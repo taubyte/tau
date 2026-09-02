@@ -159,7 +159,9 @@ func (r *runner) assertAddress(t tb, spelling string, want repokey.Key, label st
 	if !assert.NoError(t, err, "%s clone address %q does not parse to a key", label, spelling) {
 		return
 	}
-	assert.Equal(t, want, got, "%s clone address names %q, not %q", label, got, want)
+	assert.Equal(t, want, got,
+		"the %s clone address handed to a builder for %q names %q; that address is the one a checkout actually uses",
+		label, want, got)
 }
 
 func (r *runner) pushProbe(t tb) {

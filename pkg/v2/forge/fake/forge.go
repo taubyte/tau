@@ -401,9 +401,26 @@ func (c *core) cloneURL(k repokey.Key, over forge.Protocol) string {
 	return "https://" + c.shape.Host + "/" + k.FullName() + ".git"
 }
 
+// servedCloneURL is a clone address this forge REPORTS, under whichever fault
+// governs the surface asking for it: the record a repository answer carries, or
+// the address the CloneAddress face hands a builder. Under that fault it names a
+// different repository on this host — a legal address, well formed, and not the
+// one it is supposed to be about.
+//
+// It is deliberately not cloneURL itself: a delivery's payload also carries a
+// clone address, and a payload naming another repository is the confused-deputy
+// defect, which has its own fixture and its own assertion. One fault, one
+// mistake.
+func (c *core) servedCloneURL(k repokey.Key, over forge.Protocol, under Fault) string {
+	if c.shape.faulty(under) {
+		k = c.parse("acme/elsewhere")
+	}
+	return c.cloneURL(k, over)
+}
+
 func (c *core) repository(r *repo, asked repokey.Key) forge.Repository {
-	https := c.cloneURL(r.key, forge.HTTPS)
-	ssh := c.cloneURL(r.key, forge.SSH)
+	https := c.servedCloneURL(r.key, forge.HTTPS, FaultRepositoryAddressNamesAnother)
+	ssh := c.servedCloneURL(r.key, forge.SSH, FaultRepositoryAddressNamesAnother)
 	key := r.key
 	if c.shape.faulty(FaultEchoesKey) {
 		// ONE defect and only one: the argument is echoed back, and the clone

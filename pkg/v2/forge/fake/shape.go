@@ -151,7 +151,36 @@ const (
 	// it as this one — so the echo the contract actually forbids went unchecked
 	// on every driver while a test said it did not. A fault carrying two
 	// mistakes proves the suite catches the easier one.
+	//
+	// SPLITTING IT LEFT THE OTHER HALF WITH NO FAULT AT ALL, which is a hole of
+	// the same kind: the clone-address assertion could be deleted from the suite
+	// and every test still passed. The half it lost is
+	// FaultRepositoryAddressNamesAnother below.
 	FaultEchoesKey Fault = "echoes-key"
+
+	// FaultRepositoryAddressNamesAnother serves a repository RECORD whose key is
+	// right and whose clone addresses name a different repository on this host.
+	// It is FaultEchoesKey's other half, which used to ride along inside it —
+	// and the suite reported the pair as an echo, so the half nobody was
+	// checking was the address. They are two defects, and two defects need two
+	// faults: a fault carrying both proves the suite catches one of them.
+	//
+	// A forge's answer carries more than one clone address: the project's, its
+	// fork parent's, its mirror's. A driver that reads the wrong field files the
+	// repository under one name and hands a builder the address of another, and
+	// every value it returns looks entirely well formed. The only thing between
+	// that driver and a pass is the assertion that a record's key and its
+	// addresses name the same repository.
+	FaultRepositoryAddressNamesAnother Fault = "repository-address-names-another"
+
+	// FaultCloneAddressNamesAnother is the same mistake on the OTHER surface
+	// that produces a clone address: the CloneAddress face, which is what a
+	// builder is actually handed. The two surfaces are separate code in every
+	// driver — one reads a field out of an answer, the other builds a URL from a
+	// key — so one fault covering both would leave whichever assertion runs
+	// second unproven, which is exactly how the record's half came to be
+	// unchecked.
+	FaultCloneAddressNamesAnother Fault = "clone-address-names-another"
 
 	// FaultLeaksTokenInError quotes the credential in an error string, which is
 	// the most-copied thing in a log.
