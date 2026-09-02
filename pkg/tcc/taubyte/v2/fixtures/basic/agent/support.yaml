@@ -8,8 +8,6 @@ memory:
         name: embed
     dimensions: 1536
     size: 2GB
-sessions:
-    size: 64MB
 limits:
     steps: 8
     concurrent: 4

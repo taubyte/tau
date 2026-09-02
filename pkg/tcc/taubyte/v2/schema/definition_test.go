@@ -2,8 +2,14 @@ package schema_test
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -266,10 +272,10 @@ func TestWorkerEntrypointIsRequiredOnTheWasmTierOnly(t *testing.T) {
 		"a container names an image, not an exported symbol")
 	assert.ErrorContains(t, compile("runtime: container\n"+limits), "required attribute 'image'")
 
-	// The two kinds that are ALWAYS a component keep the unconditional demand. A gate
-	// written inside the shared helper would have named an attribute neither has, and
-	// a condition on a field that is not there is never true.
-	for _, kind := range []string{"function", "entity"} {
+	// The kind that is ALWAYS a component keeps the unconditional demand. A gate
+	// written inside the shared helper would have named an attribute it does not
+	// have, and a condition on a field that is not there is never true.
+	for _, kind := range []string{"function"} {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 		assert.NilError(t, afero.WriteFile(fs, "/"+kind+"/probe.yaml", []byte(head+limits), 0o644))
@@ -1151,7 +1157,7 @@ func TestPortsAreNamed(t *testing.T) {
 // a function doing the same is not — while the guest HTTP client is exactly as real as
 // the container's socket.
 func TestEveryWorkloadCanDeclareEgress(t *testing.T) {
-	for _, kind := range []string{"application", "function", "worker", "entity", "sandbox"} {
+	for _, kind := range []string{"application", "function", "worker", "sandbox"} {
 		var found bool
 		for _, g := range schema.CompileRoot().Children {
 			if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
@@ -1272,7 +1278,7 @@ func TestWorkloadVariables(t *testing.T) {
 	assert.Assert(t, !literal)
 
 	// every workload kind can be configured, not just the container one
-	for _, kind := range []string{"application", "function", "worker", "entity", "sandbox"} {
+	for _, kind := range []string{"application", "function", "worker", "sandbox"} {
 		var found bool
 		for _, g := range schema.CompileRoot().Children {
 			if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
@@ -1348,15 +1354,24 @@ func TestWorkflowLowers(t *testing.T) {
 			"a workflow produced a stream nobody asked for: %v", got)
 	}
 
-	// NO store for the run's state: the state is the message, and which queue it is in
-	// is which step it is at. It briefly lowered into an entity, which is a code-bearing
-	// kind whose code nothing was setting — a resource nobody could instantiate.
+	// AND NOTHING ELSE AT ALL, as the WHOLE set rather than as the absence of one kind.
+	// A workflow briefly lowered into a store for the run's state, and this used to be
+	// pinned by naming that kind — which is a guard that goes quiet the day the kind is
+	// deleted, and passes on a tree where a workflow produces some other thing nobody
+	// asked for. There is no store because the state IS the message: which queue it is
+	// in is which step it is at.
+	var produced []string
 	for _, d := range plan {
-		if d.Of != "workflow/checkout" {
-			continue
+		if d.Of == "workflow/checkout" {
+			produced = append(produced, d.Kind+"/"+d.Name)
 		}
-		assert.Assert(t, d.Kind != "entity", "a workflow needs no entity: %v", got)
 	}
+	sort.Strings(produced)
+	assert.DeepEqual(t, produced, []string{
+		"function/checkout_charge", "function/checkout_reserve", "function/checkout_settle",
+		"queue/checkout_charge", "queue/checkout_failed", "queue/checkout_reserve",
+		"queue/checkout_settle",
+	})
 
 	// EVERY WRITE THE PLAN CARRIES, keyed by what it lands on and where. That the value
 	// is a verb and the path an access entry is this vocabulary's reading of it — the
@@ -1833,14 +1848,20 @@ func TestAStreamIsNamedNotMatched(t *testing.T) {
 	assert.DeepEqual(t, entry["ops"], []string{"publish"})
 }
 
-// A BUS IS A STREAM WITHOUT DURABILITY, AND THE SCHEMA SAYS SO RATHER THAN THE PROSE.
-// Two kinds that fan out to everyone attached will be read as duplicates and merged by
-// somebody unless what separates them is structural, so this pins the three places it
-// is: a bus can name no engine (every engine a stream has is a durable log, and a bus
-// that rewinds is a stream wearing the wrong kind), a bus admits many instances by
-// validator where a stream is one topic named by the resource, and a bus has a host —
-// the websocket a browser attaches to — where a stream has none.
-func TestABusIsAStreamWithoutDurability(t *testing.T) {
+// A BUS IS A STREAM THAT CAN NEVER BECOME A LOG, AND THE SCHEMA SAYS SO RATHER THAN
+// THE PROSE. Two kinds that fan out to everyone attached will be read as duplicates
+// and merged by somebody unless what separates them is structural, so this pins the
+// three places it is: a bus can name no engine at all — not because a stream's
+// engines are all durable, `distributed` keeps nothing either, but because a bus has
+// nothing to choose and so can never be moved onto Kafka or JetStream the way a
+// stream can — a bus admits many instances by validator where a stream is one topic
+// named by the resource, and a bus has a host, the websocket a browser attaches to,
+// where a stream has none.
+//
+// Not one assertion below changed when the reason did, which is the tell that the
+// reason was the only thing wrong: every one of them is about which keys the compiler
+// accepts, and the compiler never believed the durability story.
+func TestABusIsAStreamThatCannotBecomeALog(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -1858,8 +1879,9 @@ func TestABusIsAStreamWithoutDurability(t *testing.T) {
 	// A bus needs nothing at all: it is the swarm's, and there is nothing to choose.
 	assert.NilError(t, compile("/bus/chat.yaml", "description: internal only\n"))
 
-	// NO ENGINE AXIS. Every one of a stream's engines is a durable log, so none of them
-	// is a key a bus can write — which is what stops a bus that rewinds existing.
+	// NO ENGINE AXIS — not one key, `distributed` included, which is the counterexample
+	// the loop below names out loud. A bus has nothing to choose, so what it cannot do
+	// is what a stream can: name a log and move onto it.
 	for _, engine := range []string{"kafka", "nats", "distributed"} {
 		assert.ErrorContains(t, compile("/bus/chat.yaml", engine+":\n    host: b:9092\n"),
 			"unknown key '"+engine+"'", "a bus must not be able to name %q", engine)
@@ -1985,6 +2007,123 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 		"a workload reaching an external system needs no kind for it")
 }
 
+// ORCHESTRATION IS THE RUNTIME'S, AND `entity` IS WHERE THIS VOCABULARY SAID OTHERWISE.
+// It was a named, durably-stored, single-writer compute instance: a WASM entrypoint, a
+// per-instance storage ceiling, a `durable` bit journalling host calls for replay, and a
+// quorum lease as the fence. Every one of those is HOW something is run, decided while it
+// runs; none is a shape a compiler can hand a deployer. So the kind is gone, and this is
+// what stops it returning.
+//
+// FOUR LISTS AND A COMPILE, and they are ONE CHAIN rather than four independent checks:
+// `CompileRoot`, `KindRoot` and `Kinds` are all derived from `V2Resources`, so today they
+// fail together. Each is named anyway because each is a different consumer's list — the
+// authored vocabulary, the loader's root, the shape a lowered kind compiles in, and the set
+// that declares verbs — and `Lowerable` states a before and an after shape separately, so
+// the lowered root is a place a kind CAN survive its own deletion.
+//
+// `Kinds()` is spelled out because it is the check somebody reaches for first and it is
+// the one that can be vacuous: it answers with the kinds declaring Ops. Here it is live —
+// this kind declared `get` and `call` — and it is a trap on a kind that declared none,
+// which is what the connector guard records.
+//
+// AND A DOCUMENT THAT WOULD HAVE BEEN ONE, because the four lists are the vocabulary's own
+// account of itself and a compile is the author's.
+func TestThereIsNoEntityKind(t *testing.T) {
+	for _, g := range schema.V2Resources {
+		name, _ := g.Match.(string)
+		assert.Assert(t, name != "entity", "entity is still a group in V2Resources")
+	}
+	for _, g := range schema.CompileRoot().Children {
+		name, _ := g.Match.(string)
+		assert.Assert(t, name != "entity", "entity is still a group of the compile root")
+	}
+	for _, g := range schema.KindRoot() {
+		name, _ := g.Match.(string)
+		assert.Assert(t, name != "entity", "entity is still a group of the lowered root")
+	}
+	for _, k := range schema.Kinds() {
+		assert.Assert(t, k != "entity", "entity still declares verbs")
+	}
+
+	// A directory named after a kind the vocabulary does not have is walked past, so this
+	// is SILENT rather than an error — which is exactly why it has to be asserted. Strict
+	// keys are a property of a document the loader reads, and nothing reads this one.
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/entity/counter.yaml", []byte(
+		"id: QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn\n"+
+			"execution:\n    call: tick\n    timeout: 5s\n    memory: 8MB\n"+
+			"durable: true\nsize: 64MB\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	_, present := root(t, obj.Flat())["entity"]
+	assert.Assert(t, !present, "an entity still compiles to a resource: %v", root(t, obj.Flat()))
+
+	// AND NOTHING LOWERS INTO IT, which needs no assertion of its own: the generic check
+	// refuses a lowering naming a kind that is not there, so the agent's `sessions`
+	// lowering coming back on its own is caught by TestEveryLoweringNamesARealKind and
+	// caught HERE only in the sense that the four lists above are what make it not a kind.
+}
+
+// NO SHIPPED STRING NAMES A KIND THAT IS NOT HERE. Deleting a kind is three tiers and only
+// the first is mechanical: the declaration comes out, everything derived from it follows,
+// and then there is the PROSE — and prose that sent an author somewhere keeps sending them
+// after the somewhere is gone. Three doc strings did exactly that here. `database` and
+// `cache` each said an `entity` was what served a linearizable counter, which was never
+// true of it — its verbs were `get` and `call` — and `queue`'s GroupDoc sent an author
+// there for per-key ordering. Two were Go comments. The third SHIPS.
+//
+// That is the line this draws: a Go comment is read by whoever edits this file and a
+// GroupDoc or a Doc is read by an author who has no way to find out the kind is gone. So
+// the assertion is over the emitted schema — the same strings a console, a CLI and the
+// completion in an editor render — and not over this file.
+//
+// THE LIST IS HAND-WRITTEN, because the set of names this vocabulary does NOT have cannot
+// be derived from the vocabulary. It is the deleted kinds, and adding to it is what a
+// deletion owes.
+func TestNoShippedStringNamesADeletedKind(t *testing.T) {
+	b, err := schema.JSONSchema()
+	assert.NilError(t, err)
+	shipped := string(b)
+
+	// `entities` is here for the same reason `entity` is: the plural was the word the
+	// access-block descriptions were generated from, so it would come back with the kind.
+	for _, gone := range []string{"entity", "entities", "connector", "connectors", "smartops"} {
+		word := regexp.MustCompile(`(?i)\b` + gone + `\b`)
+		hit := word.FindStringIndex(shipped)
+		assert.Assert(t, hit == nil, "the shipped schema still names %q, a kind this vocabulary does not have: %s",
+			gone, excerpt(shipped, hit))
+	}
+
+	// AND THE CHECK IS LIVE, which for a needle-in-a-haystack assertion is the half worth
+	// proving: the same scan finds a kind that IS here, so a silent pass would be a bug in
+	// the scan rather than a clean schema.
+	for _, here := range []string{"queue", "cache", "agent"} {
+		word := regexp.MustCompile(`(?i)\b` + here + `\b`)
+		assert.Assert(t, word.FindStringIndex(shipped) != nil,
+			"the scan cannot find %q, which is a kind this vocabulary has", here)
+	}
+}
+
+// excerpt is the text around a match, so a failure says which sentence rather than that
+// there is one somewhere in 400KB.
+func excerpt(s string, at []int) string {
+	if at == nil {
+		return ""
+	}
+	lo, hi := at[0]-120, at[1]+120
+	if lo < 0 {
+		lo = 0
+	}
+	if hi > len(s) {
+		hi = len(s)
+	}
+	return "…" + s[lo:hi] + "…"
+}
+
 // A PLACEHOLDER THAT STAYS A PLACEHOLDER. `log` has no fields of its own on purpose —
 // its shape is owed and has not been given — and the two things that could quietly
 // happen to it are pinned here: somebody deleting it as inert, and somebody completing
@@ -2101,7 +2240,7 @@ func TestRegionIsDeclaredOnKindsWithAFootprint(t *testing.T) {
 	assert.DeepEqual(t, schema.PlacedKinds(), []string{
 		"application", "function", "worker", "sandbox",
 		"cache", "database", "storage", "volume", "log",
-		"entity", "queue", "agent", "workflow",
+		"queue", "agent", "workflow",
 	})
 
 	placed := map[string]bool{}
@@ -2194,4 +2333,166 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 	// or narrow what runs under it, because it is one of the things being placed.
 	_, err = compile("regions: [eu]\n")
 	assert.ErrorContains(t, err, "unknown key 'regions'")
+}
+
+// THE SPELLED-OUT COUNT IN index.go IS AN ARGUMENT, NOT A CAPTION. "v2 has twenty-four
+// kinds sharing one namespace where v1 had eight" is the whole justification for putting
+// the kind in the key, so a number that quietly goes wrong turns a reasoned decision into
+// a claim nobody can check. It was exact at every commit until a kind was deleted and it
+// was not, which is the drift this pins.
+//
+// Spelled out rather than a digit because that is how the file writes, so the test reads
+// the word and the comment stays prose.
+func TestTheKindCountInProseIsTheRealOne(t *testing.T) {
+	words := []string{
+		"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+		"ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+		"seventeen", "eighteen", "nineteen", "twenty", "twenty-one", "twenty-two",
+		"twenty-three", "twenty-four", "twenty-five", "twenty-six", "twenty-seven",
+		"twenty-eight", "twenty-nine", "thirty",
+	}
+
+	// The second site says "when the twenty-fifth is added", an ordinal rather than a
+	// cardinal, so it needs its own spelling — and it is the site most likely to be left
+	// behind, because it reads as rhetoric rather than as a number.
+	ordinals := []string{
+		"zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
+		"eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth",
+		"fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth",
+		"twenty-first", "twenty-second", "twenty-third", "twenty-fourth", "twenty-fifth",
+		"twenty-sixth", "twenty-seventh", "twenty-eighth", "twenty-ninth", "thirtieth",
+	}
+
+	n := len(schema.V2Resources)
+	assert.Assert(t, n > 1 && n < len(words)-2, "kind count %d is outside what this test can spell", n)
+
+	src, err := os.ReadFile("index.go")
+	assert.NilError(t, err)
+	text := string(src)
+
+	assert.Assert(t, strings.Contains(text, words[n]),
+		"index.go does not say %q, and there are %d kinds", words[n], n)
+	assert.Assert(t, strings.Contains(text, ordinals[n+1]),
+		"index.go does not say %q, which is what the next kind added would be", ordinals[n+1])
+
+	// AND THE SCAN IS LIVE: the neighbouring numbers must NOT appear, or the assertions
+	// above would pass on a file that had drifted by one in either direction — which is
+	// exactly how it drifted in the first place. Checked as whole words, because
+	// "twenty-four" is a substring of nothing but "twenty-four" while "four" is a
+	// substring of "fourteen".
+	for _, wrong := range []string{words[n-1], words[n+1], ordinals[n], ordinals[n+2]} {
+		w := regexp.MustCompile(`\b` + regexp.QuoteMeta(wrong) + `\b`)
+		assert.Assert(t, !w.MatchString(text),
+			"index.go still says %q, but there are %d kinds", wrong, n)
+	}
+}
+
+// A FINDING'S PROSE SHIPS, and that is why this is not covered by the JSON Schema scan
+// above. `Audit` returns Title and Detail, wasm/main.go hands both to the browser, and an
+// author reads a remedy in the explorer exactly the way they read a field description.
+// One of those strings told an author a workflow becomes "the queues and the entity" long
+// after nothing lowered into an entity, and the JSON Schema scan could not see it because
+// a Finding is not in the schema.
+//
+// Read off the SOURCE rather than by triggering every check: these are authored constants,
+// a check that fires needs a project shaped to break it, and a scan that only sees the
+// findings some fixture happens to raise proves the least about the ones it does not.
+func TestNoAuthoredFindingNamesADeletedKind(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "checks.go", nil, 0)
+	assert.NilError(t, err)
+
+	var lits []string
+	ast.Inspect(f, func(n ast.Node) bool {
+		if b, ok := n.(*ast.BasicLit); ok && b.Kind == token.STRING {
+			if v, err := strconv.Unquote(b.Value); err == nil {
+				lits = append(lits, v)
+			}
+		}
+		return true
+	})
+	assert.Assert(t, len(lits) > 50, "only %d string literals in checks.go, the walk is wrong", len(lits))
+
+	for _, gone := range []string{"entity", "entities", "connector", "connectors", "smartops"} {
+		word := regexp.MustCompile(`(?i)\b` + gone + `\b`)
+		for _, lit := range lits {
+			assert.Assert(t, !word.MatchString(lit),
+				"an authored string in checks.go names %q, a kind this vocabulary does not have: %q", gone, lit)
+		}
+	}
+
+	// LIVE, the same way the schema scan proves itself: kinds that ARE here are named in
+	// these strings, so a clean run means clean rather than a walk that found nothing.
+	for _, here := range []string{"queue", "function"} {
+		word := regexp.MustCompile(`(?i)\b` + here + `\b`)
+		found := false
+		for _, lit := range lits {
+			if word.MatchString(lit) {
+				found = true
+				break
+			}
+		}
+		assert.Assert(t, found, "no authored string names %q, so this scan proves nothing", here)
+	}
+}
+
+// A BUS HAS NO CONSISTENCY AXIS, and the reason is the transport rather than a preference:
+// it is libp2p pubsub, which orders nothing and keeps nothing, so a field naming how two
+// writes resolve would be a promise the thing underneath cannot make. `cache` and
+// `database` carry `consensus` because something down there can honour it.
+//
+// Pinned because prose could not stop it. The bus's comment argues at length that the kind
+// has no engine axis, and that argument is pinned — but a `consensus` key is not an engine
+// key, and one could be added with the whole suite green.
+func TestABusDeclaresNoConsistency(t *testing.T) {
+	var bus *engine.Node
+	for _, g := range schema.V2Resources {
+		if name, _ := g.Match.(string); name == "bus" {
+			bus = g
+			break
+		}
+	}
+	assert.Assert(t, bus != nil, "there is no bus kind")
+
+	banned := regexp.MustCompile(`(?i)consensus|crdt|single-writer|linearizab|quorum`)
+	var walk func(n *engine.Node)
+	walk = func(n *engine.Node) {
+		for _, a := range n.Attributes {
+			for _, seg := range a.Segments {
+				assert.Assert(t, !banned.MatchString(seg),
+					"bus has an attribute %q: a bus is libp2p pubsub and can honour no such promise", strings.Join(a.Segments, "/"))
+			}
+			assert.Assert(t, !banned.MatchString(a.Name),
+				"bus has an attribute named %q, which a gossipsub bus cannot honour", a.Name)
+		}
+		for _, c := range n.Children {
+			walk(c)
+		}
+	}
+	walk(bus)
+
+	// LIVE: the same walk over `cache` finds the axis, so a clean bus is a clean bus and
+	// not a walk that never reached an attribute.
+	var cache *engine.Node
+	for _, g := range schema.V2Resources {
+		if name, _ := g.Match.(string); name == "cache" {
+			cache = g
+			break
+		}
+	}
+	assert.Assert(t, cache != nil, "there is no cache kind")
+	seen := false
+	var look func(n *engine.Node)
+	look = func(n *engine.Node) {
+		for _, a := range n.Attributes {
+			if banned.MatchString(a.Name) || banned.MatchString(strings.Join(a.Segments, "/")) {
+				seen = true
+			}
+		}
+		for _, c := range n.Children {
+			look(c)
+		}
+	}
+	look(cache)
+	assert.Assert(t, seen, "the walk cannot find cache's consensus axis, so it proves nothing about bus")
 }

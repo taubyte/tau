@@ -176,8 +176,8 @@ func egressAttribute() *Attribute {
 var secNetwork = Section("network", "Network", "How this workload is reached, and what it may reach.")
 
 // wasmAttributes is the shared shape of everything that runs a WASM entrypoint —
-// function, worker's wasm half, entity and authorizer. Declared once because the
-// four differ in what points AT them, never in how they run.
+// function, worker's wasm half and authorizer. Declared once because the three
+// differ in what points AT them, never in how they run.
 // hostWorlds are the interfaces a WASM workload can be built against. A function is
 // named in four places that hand it four DIFFERENT worlds, and nothing in the function
 // said which — so a gateway transformer named on a proxy compiled clean and failed on
@@ -197,7 +197,7 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 }
 
 // wasmAttributesEntrypoint is wasmAttributes with the ENTRYPOINT'S DEMAND as an
-// argument, because one of the three kinds that runs a WASM component does not
+// argument, because one of the two kinds that runs a WASM component does not
 // always run one.
 //
 // `worker` carries a `runtime` tier, and a container worker has no exported symbol
@@ -206,11 +206,11 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 // error compiled an object stating two wasm facts about a container.
 //
 // THE GATE HAD TO BE A PARAMETER RATHER THAN A CONDITION INSIDE THIS HELPER.
-// `RequiredWhen("runtime", …)` written here would name an attribute `function` and
-// `entity` do not have, and a condition naming a field that is not there is simply
-// never true — so the entrypoint would have stopped being required on the two kinds
-// that always need it. That is a check narrowed to fit one caller, which is worse
-// than the error it removes.
+// `RequiredWhen("runtime", …)` written here would name an attribute `function` does
+// not have, and a condition naming a field that is not there is simply never true —
+// so the entrypoint would have stopped being required on the kind that always needs
+// it. That is a check narrowed to fit one caller, which is worse than the error it
+// removes.
 func wasmAttributesEntrypoint(demand AttrOption, attrs ...*Attribute) []*Attribute {
 	base := []*Attribute{
 		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
@@ -815,12 +815,14 @@ var databaseTypes = []databaseType{
 	//
 	// WHAT `consensus: crdt` DOES NOT PROMISE, because the engine does not: concurrent
 	// writes to ONE key are merged last-writer-wins, so one of them is discarded with
-	// no error. There is no compare-and-swap and no transaction — an `entity` is what
-	// serves a linearizable counter. The rule that falls out is the one AGENTS.md
-	// states for every kvdb layout in this repository: never a key two writers can
-	// write differently; put the discriminator in the key and let the prefix scan be
-	// the index. It was every distributed database's story until the field existed; it
-	// is now the story of the ones that ask for it by name.
+	// no error. There is no compare-and-swap and no transaction, and no kind here has
+	// one to offer either: `consensus: single-writer` is as far as this vocabulary
+	// goes, and it ORDERS the writes to a key rather than letting a caller make one
+	// conditional on what is already there. The rule that falls out is the one
+	// AGENTS.md states for every kvdb layout in this repository: never a key two
+	// writers can write differently; put the discriminator in the key and let the
+	// prefix scan be the index. It was every distributed database's story until the
+	// field existed; it is now the story of the ones that ask for it by name.
 	{
 		name: "kv",
 		ops:  Verbs{ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")},
@@ -1247,8 +1249,10 @@ var V2Resources = []*Node{
 
 	// ---- data ----
 
-	// A cache. It never gets CAS — an entity is what serves a linearizable counter. It
-	// is NOT a database: entries have a lifetime, losing one costs a recomputation, and
+	// A cache. It never gets CAS, and the reason is its own verb list rather than
+	// somewhere else to go: they are get, list, watch, put and delete, and nothing in
+	// this vocabulary makes a write conditional on what is already at the key. It is
+	// NOT a database: entries have a lifetime, losing one costs a recomputation, and
 	// nothing here is a system of record.
 	//
 	// WHERE IT SITS ON THE CAP LINE IS `consensus`'s ANSWER, NOT THE KIND'S. It used to
@@ -1529,26 +1533,58 @@ var V2Resources = []*Node{
 			Resource("secret", "Secret", "Secret", "secret"),
 		)),
 
-	// ---- coordination ----
-
-	// A named, durably-stored, single-writer compute instance: the fence is a quorum
-	// lease and its epoch. CP, and the docs say so in the first paragraph — during a
-	// partition the side that cannot reach K replicas cannot complete a write.
-	// `shards` is fixed at creation because it is the lease and replica-set
-	// granularity (resources.md §3.1).
-	DefineGroup("entity",
-		resource(
-			wasmAttributes(
-				Bool("durable", InSection("coordination"), Doc("Durable", "Journal every host call so an interrupted turn replays deterministically.")),
-				Bytes(Key("size"), PerEnv(), InSection("limits"), Doc("Storage", "Per-instance SQL storage ceiling.")),
-			),
-			Nested(variablesGroup()),
-			GroupDoc("A single-writer, durably-stored compute instance addressed by name. CP: a partition that cannot reach K replicas cannot write."), Icon("cube"), Category("compute"), Placed(),
-			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
-			Section("coordination", "Coordination", "Sharding and durability."),
-			Ops(ReadOp("get"), WriteOp("call")),
-			Resource("entity", "Entity", "Entity", "entity"),
-		)),
+	// NO `entity` KIND, and this is the note that stops it coming back as a field at a
+	// time. It was a named, durably-stored, single-writer compute instance — a WASM
+	// entrypoint, a per-instance storage ceiling, a `durable` bit journalling every host
+	// call so an interrupted turn replays, and a quorum lease as the fence. Read as a
+	// list of fields it is defensible. Read as a claim it is not: every one of those
+	// fields describes HOW A RUNTIME RUNS SOMETHING, and none of them is a shape a
+	// compiler can hand to a deployer.
+	//
+	// ORCHESTRATION IS RUNTIME. That is the whole of it. Where a conversation lives, when
+	// a turn is durable, which replica holds the lease this second, what replays after an
+	// interruption — these are decided while the work runs, by the thing running it, and
+	// they change between one invocation and the next. Config states what EXISTS and what
+	// may reach it. A kind whose content is entirely how execution is sequenced is the
+	// vocabulary answering a question it is not the one asked, and the answer goes stale
+	// the moment the runtime picks differently.
+	//
+	// WHAT ARGUED FOR IT, and why each argument moved out:
+	//
+	//   - SESSION STATE. `agent.sessions.size` lowered into one, so a conversation was a
+	//     named instance with a fence around it. A thread is the loop's, at run time —
+	//     see the note where that field stood.
+	//   - A LINEARIZABLE COUNTER. `database` and `cache` each cited this kind as the place
+	//     compare-and-swap lives. It never was: an entity's verbs were `get` and `call`,
+	//     and a safe counter was always code somebody wrote INSIDE one. Those two notes
+	//     pointed at a runtime capability and called it a vocabulary one.
+	//   - PER-KEY ORDERING. `queue`'s doc sent an author here for it. `consensus:
+	//     single-writer` is what orders writes to a key, it is declared on the kinds that
+	//     have it, and a second spelling of the same fact is the parallel table §10 is
+	//     about.
+	//   - "A DURABLE, ADDRESSABLE THING WITH CODE IN IT". That is a `function` with the
+	//     state it reaches declared beside it, which is every other workload here.
+	//
+	// WHAT IT COSTS, said out loud, and it is two things rather than one.
+	//
+	// The first is compare-and-swap: nothing in this vocabulary offers it — no kind
+	// declares a conditional-write verb, and none did before either. The vocabulary is
+	// SILENT on it rather than pointing somewhere, which is the honest state and is why
+	// the three notes that pointed here were rewritten rather than repointed.
+	//
+	// The second is larger and is the one to notice. Deleting the kind decided that the
+	// runtime sequences execution; it did NOT decide that no such thing runs. If a durable
+	// addressable instance does exist out there, a workload has no way to say it reaches
+	// one — the access block admits the kinds that declare verbs and there is no
+	// eighteenth slot — so there is no ops grant, no dependency edge, no blast radius in
+	// the explorer and nothing an authorizer can be asked about. A runtime that grew one
+	// and a config that cannot name it is a real gap, not a tidy one.
+	//
+	// WHAT WOULD BRING SOMETHING BACK is deliberately not answered here. A conditional-write
+	// verb on a kind that already stores something is one shape; a compute kind that holds
+	// its own state is another, and it is sized as work elsewhere. Which one — or neither —
+	// is §11's, and a note is not the place to settle it. What this note fixes is only that
+	// the vocabulary stopped naming a kind it does not have.
 
 	// Claim / visibility-timeout / ack / DLQ — not pop-and-delete. Today's
 	// pkg/raft Queue.Pop deletes before returning, so a consumer that crashes
@@ -1587,7 +1623,7 @@ var V2Resources = []*Node{
 				String(Key("dead_letter", "name"), IsVariableName(), Ref("queue"), InSection("delivery"),
 					Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts.")),
 			),
-			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. Per-key ordering is an entity, not this."), Icon("list"), Category("data"), Placed(),
+			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. The order is the queue's: there is one, and it is not one per key."), Icon("list"), Category("data"), Placed(),
 			secIdentity, secAccess,
 			Section("delivery", "Delivery", "Claim, retry and dead-letter behaviour."),
 			Ops(DeliveredOp("receive"), WriteOp("send")),
@@ -1936,6 +1972,19 @@ var V2Resources = []*Node{
 	// that is the product an author has credentials for; whether the key should say
 	// `jetstream` instead is the owner's call.
 	//
+	// WHAT THE KEY BUYS, PLAINLY, because everything above says where the topic LIVES
+	// and nothing says what each answer keeps. `kafka` and `nats` are logs: ordering,
+	// consumer groups, replay, a subscriber that was not there still getting what it
+	// missed — which is why each REQUIRES both a host and a credential, the log being
+	// somebody else's cluster. `distributed` is the swarm's own gossipsub and is none
+	// of that: no offsets, no consumer groups, no replay, delivery to whoever is
+	// subscribed at the time, and it requires nothing at all. So it is the same
+	// delivery a `bus` gives, and saying so HERE is the point — what this key buys is
+	// not that a stream is durable, it is that MOVING the topic onto a log is an engine
+	// block rather than a rewrite of everything that publishes to it. It is on this
+	// kind rather than beside the comparison on `bus` because the axis is this one's,
+	// and §10 says a thing is declared once, on the thing that has it.
+	//
 	// `local` moves under `distributed`, where it always belonged: "restrict this to
 	// the local node" is a thing the swarm's own gossipsub does and a thing a Kafka
 	// cluster has no notion of, so it must not be a key a kafka-backed stream can
@@ -1983,22 +2032,27 @@ var V2Resources = []*Node{
 			Resource("stream", "Stream", "Stream", "stream"),
 		)),
 
-	// AN N:N BUS WITH NO REWIND, and that is the only thing separating it from
-	// `stream` — not the shape. Both fan out to everyone attached. A stream backed by
-	// Kafka or by NATS JetStream is a LOG: it has offsets, consumer groups and replay,
-	// so a subscriber that was not there still gets what it missed. A message put on a
-	// bus and not received is gone. Durability is the whole distinction, and it is why
-	// there are two kinds rather than one with a flag: a flag would make "can I replay
-	// this?" a property somebody edits, when it is a property of what the thing IS.
+	// AN N:N BUS THAT CAN NEVER REWIND, and the "never" is the word doing the work,
+	// because it is a CEILING rather than a state. Both kinds fan out to everyone
+	// attached, and on tau's own engine they deliver identically — a `distributed`
+	// stream keeps nothing either, so DURABILITY IS NOT THE DISTINCTION and saying it
+	// was made this comment disagree with the fixture beside it. What separates them
+	// is what each can BECOME: a stream names an engine, so the same topic moves onto
+	// Kafka or JetStream and IS a log without a line changing in anything that
+	// publishes to it, and a bus names none and cannot be moved. That is why there are
+	// two kinds rather than one with a flag: a flag would make "could this ever be
+	// replayed?" a property somebody edits, when it is a property of what the thing IS.
 	//
 	// (NATS is on both sides of that line and the halves are easy to swap: JetStream is
 	// NATS's PERSISTENCE layer and belongs to `stream`; core NATS is the ephemeral n:n
 	// bus and is this shape.)
 	//
-	// IT HAS NO ENGINE AXIS, and the absence is the statement. Every engine a `stream`
-	// can name is a durable log; giving a bus the same key would let somebody write a
-	// bus that rewinds, which is a stream wearing the wrong kind. What backs it is the
-	// swarm, and there is nothing to choose.
+	// IT HAS NO ENGINE AXIS, and the absence is the statement — but NOT because every
+	// engine a `stream` names is durable. The reason is that a bus has nothing to
+	// choose: a stream's engine key asks "the swarm, or a cluster you hold credentials
+	// for?", and `kafka` and `nats` each require a host AND a credential because the
+	// log is somebody else's machine — while the ephemeral n:n shape is what the swarm
+	// already IS. A key with one legal value states nothing an author can act on.
 	//
 	// A WEBSOCKET IS AN ADDRESS, NOT A BOOLEAN. v1 spelled it `bridges.websocket.enable`
 	// on the pubsub kind — a flag that turned something on and named nowhere for a
@@ -2301,24 +2355,27 @@ var V2Resources = []*Node{
 				// here fired for every agent, so one that names no embedder compiled
 				// claiming a gigabyte of memory it does not have — a value that is
 				// misleading when the branch is not taken, which is the one thing §7
-				// says not to give a default to. `sessions.size` beside it is the same
-				// shape done right.
+				// says not to give a default to.
 				Bytes(Key("memory", "size"), RequiredWhen(Key("memory", "embedder", "name")), PerEnv(), InSection("memory"),
 					Doc("Memory Size", "How much the agent may remember, as a human string.")),
 
-				// SESSIONS. A conversation that outlives one invocation needs somewhere to
-				// live, and this vocabulary already has the shape: an `entity` is a
-				// single-writer, durably-stored compute instance addressed BY NAME, which
-				// is one instance per conversation and a fence around each. Declaring a
-				// ceiling is what turns it on, the way naming an embedder turns memory
-				// on: an agent with no sessions is stateless per call, which is what
-				// every agent here has been until now.
+				// NO `sessions` BLOCK. It was one field, a per-conversation byte
+				// ceiling, and its Doc said naming it "is what gives this agent
+				// sessions; without it every invocation starts cold" — so the field
+				// was the config deciding whether a conversation is kept, and where.
+				// That is ORCHESTRATION, and orchestration is the runtime's: what a
+				// thread is, where its turns live, when one ends and what survives it
+				// are decisions the loop makes while it runs, not shape a compiler can
+				// give a resource. Memory beside it is the contrast that makes the line
+				// visible: an embedder and a width are a vector index this vocabulary
+				// can BUILD, and a thread is not.
 				//
-				// A size and nothing else. Retention, compaction and what a turn keeps
-				// are the loop's business at run time, and a field for any of them would
-				// be a promise nothing in this vocabulary performs.
-				Bytes(Key("sessions", "size"), InSection("sessions"),
-					Doc("Session Size", "How much one conversation may keep, as a human string (e.g. \"64MB\"). Naming it is what gives this agent sessions; without it every invocation starts cold.")),
+				// So it went the way `notification.email` did, and for the same reason
+				// rather than a related one: nothing here performed it. It comes back
+				// the day the runtime says it reads a ceiling off the compiled agent —
+				// as `limits.sessions`, beside the other ceilings the loop is handed,
+				// and PerEnv() like every other ceiling, which this one was refused
+				// only because it doubled as a switch.
 
 				// REQUIRED, and it bounds DECISIONS. It is not a spend ceiling and no
 				// longer claims to be one: every turn re-sends the conversation, so what
@@ -2354,7 +2411,6 @@ var V2Resources = []*Node{
 			secIdentity, secAccess, secConfig, secNetwork, secLimits, secSource,
 			Section("model", "Model", "Which model answers, and what it is told."),
 			Section("memory", "Memory", "What it remembers, and how wide the vectors are."),
-			Section("sessions", "Sessions", "What one conversation keeps between invocations."),
 			Ops(WriteOp("invoke")),
 
 			// AN AGENT LOWERS, like a workflow: nothing in the substrate runs "agents".
@@ -2379,25 +2435,6 @@ var V2Resources = []*Node{
 					Sets(Key("execution", "timeout"), Attr(Key("limits", "timeout"))),
 					Sets(Key("execution", "memory"), Attr(Key("limits", "memory"))),
 					Sets("implements", Text("handler")),
-				),
-
-				// ONE CONVERSATION, KEPT. Only when a ceiling says so: an agent with no
-				// sessions gets no instance rather than an empty one. The entity is a
-				// class and the runtime addresses an instance of it per conversation,
-				// which is what "addressed by name" already means — so a thread is a
-				// name, and the single writer per name is the fence around it.
-				Into("entity",
-					When(Key("sessions", "size")),
-					Named(Concat(Attr("name"), Text("_sessions"))),
-					Carries(Concat(Text("one conversation with "), Attr("name"), Text(", kept between invocations"))),
-					Sets(Key("source", "builtin"), Text("agent")),
-					Sets(Key("execution", "call"), Text("session")),
-					Sets(Key("execution", "timeout"), Text("5m")),
-					Sets(Key("execution", "memory"), Text("64MB")),
-					Sets(Key("size"), Attr(Key("sessions", "size"))),
-					// the loop is what reads and writes it
-					Reaches("get", From("function", Concat(Attr("name"), Text("_infer")))),
-					Reaches("call", From("function", Concat(Attr("name"), Text("_infer")))),
 				),
 
 				// Only when there is an embedder to fill it: an agent that remembers

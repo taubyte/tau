@@ -672,7 +672,7 @@ func checkWorkflows(all []compiled) []Finding {
 		if len(steps) == 0 {
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 				"has no steps, so it lowers to nothing and starting it does nothing",
-				"A workflow IS its steps: with none, the queues and the entity it would become are not created and a start has nowhere to go.", res.id})
+				"A workflow IS its steps: with none, the queues it would become are not created and a start has nowhere to go.", res.id})
 			continue
 		}
 
