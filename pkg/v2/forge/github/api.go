@@ -36,10 +36,17 @@ const (
 // "current repository", so no method can silently depend on a fetch having
 // happened first, which is the shape v1's client has and the reason its
 // CreateDeployKey has a "no repository selected" error at all.
+//
+// AND IT HOLDS NO COPY OF THE CREDENTIAL. The credential reaches exactly one
+// place, the closure below that writes the header, which captures the parameter
+// — so there is no field for %v to render, nothing for a struct dump to carry
+// into a log, and nothing to forget to redact. forge.Credential goes to the
+// trouble of closing every verb through enclosing structs, slices, maps and
+// pointers; a driver that unwraps one at the door and keeps the string beside
+// it undoes that in one line, and the line bought nothing.
 type client struct {
-	d     *driver
-	token string
-	http  *http.Client
+	d    *driver
+	http *http.Client
 }
 
 var (
@@ -58,8 +65,7 @@ var (
 // by which a redirect carries it off one.
 func (d *driver) bind(token string) *client {
 	return &client{
-		d:     d,
-		token: token,
+		d: d,
 		http: &http.Client{
 			CheckRedirect: noRedirect,
 			Transport: forge.PinnedTransport(d.apiHost, d.rt, func(h http.Header) {

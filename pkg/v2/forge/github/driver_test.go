@@ -209,6 +209,61 @@ func TestBindRefusesACredentialNobodySet(t *testing.T) {
 
 // ─────────────────────────── the credential never leaves ───────────────────────────
 
+// TestTheCredentialNeverReachesAnErrorString drives every method against a
+// host that fails in every way and reads the whole error — Error(), %v and
+// %+v — for the token. An error string is the most-copied thing in a log, and
+// a host that gets to choose what lands in one would choose to put the
+// caller's own credential there.
+func TestTheCredentialNeverReachesAnErrorString(t *testing.T) {
+	for name, h := range map[string]http.Handler{
+		"401": answer(http.StatusUnauthorized, `{}`),
+		"403": answer(http.StatusForbidden, `{}`),
+		"500 echoing the request": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			io.WriteString(w, "your Authorization was: "+r.Header.Get("Authorization"))
+		}),
+		"a redirect off the host": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "https://elsewhere.example.invalid/x", http.StatusFound)
+		}),
+		"garbage 200": answer(http.StatusOK, "\x00 not json"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			sess, key := sessionOn(t, h, "acme/pay")
+			callback, err := url.Parse("https://build.example.invalid/hook")
+			require.NoError(t, err)
+			secret, err := forge.NewSecret()
+			require.NoError(t, err)
+
+			errs := map[string]error{}
+			_, err = sess.Whoami(ctx())
+			errs["Whoami"] = err
+			_, err = sess.Access(ctx(), key)
+			errs["Access"] = err
+			_, err = sess.Repository(ctx(), key)
+			errs["Repository"] = err
+			_, err = sess.Create(ctx(), key, forge.CreateOptions{})
+			errs["Create"] = err
+			errs["Delete"] = sess.Delete(ctx(), key)
+			_, err = sess.InstallDeployKey(ctx(), key, "tau", "ssh-ed25519 AAAA")
+			errs["InstallDeployKey"] = err
+			errs["RemoveDeployKey"] = sess.RemoveDeployKey(ctx(), key, "7")
+			_, err = sess.RegisterPushHook(ctx(), key, callback, secret)
+			errs["RegisterPushHook"] = err
+			errs["RemovePushHook"] = sess.RemovePushHook(ctx(), key, "7")
+			errs["ListRepositories"] = sess.ListRepositories(ctx(), func(forge.Repository) bool { return true })
+
+			for method, err := range errs {
+				if err == nil {
+					continue
+				}
+				for _, rendering := range []string{err.Error(), fmt.Sprintf("%v", err), fmt.Sprintf("%+v", err)} {
+					assert.NotContains(t, rendering, goodToken, "%s leaked the credential", method)
+				}
+			}
+		})
+	}
+}
+
 // TestNoRedirectIsFollowed. An http.Client replays a request wherever a 3xx
 // points, and GitHub answers a renamed or TRANSFERRED repository with 301 to
 // its current path — so a request built for one repository comes back answered
