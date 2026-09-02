@@ -76,10 +76,10 @@ import (
 // name, its entry, its check and its violation, in one hunk — leaves nothing
 // declared for the registry check to miss. That is the same exposure as
 // deleting a test, and it is four coordinated deletions rather than the one
-// character that used to do it. And the loop in
-// TestTheThingsThatRunTheRulesRunThem is where the regress stops: it is held by
-// being four lines long and by every harness under it failing loudly when its
-// listener is not listened to — measured — and by nothing else.
+// character that used to do it. And the regress stops at hold and
+// TestTheLedgerHolds below; the package doc in subject.go names the twelve
+// lines, says why that set cannot be smaller, and says what the equivalent
+// exposure is elsewhere.
 
 // complaint is one thing the ledger has to say. It carries the rule that said
 // it so that a rule proven by the self-test is proven under its own name and
@@ -236,11 +236,30 @@ func obey(t reporter, l *ledger, rules []rule) int {
 //
 // So each of the three is a HARNESS now, in the same shape a rule is: a name,
 // a run that is a function of the rules it is given, and a registry that breaks
-// it. The list is read from both directions — TestTheLedgerHolds runs each
-// harness over the real rules, TestTheThingsThatRunTheRulesRunThem hands each
-// the registry it must complain about — so a harness dropped from the list
-// leaves both directions, and the names it declares are read out of source the
-// way the rule names are, so shortening the list is visible from outside it.
+// it.
+//
+// AND THERE IS ONE CALL THAT RUNS ONE, because two of them was the last
+// off-switch. Round seven ran every harness twice from two places: the real one
+// passed nil and the rules as they stand, the self-test passed a recorder and a
+// registry that breaks it. The self-test proved the path IT used and the suite
+// hung off the other one, so `nil` written as `&recorder{}` — one token, gofmt
+// clean, vet clean — sent every complaint from all twenty-two rules over the
+// real suite into a recorder nobody reads. Measured with the
+// LastDeployKeyReadOnly contract deleted from optional.go: GO_TEST_EXIT=0 over
+// the whole forge tree, where that deletion alone is GO_TEST_EXIT=1, the census
+// still printing "183 cases", all twenty-two named subtests still green.
+// `ledgerHarnesses()[1:]` did the same, and nothing noticed either: the checks
+// that existed asked whether every declared name was CARRIED BY the list, which
+// stays true when the loop goes round a subset of it.
+//
+// So there is ONE call now — hold — and it is the only place a harness is ever
+// run and the only place what a harness said is read. It takes no reporter: the
+// listener is made inside it and is always compared against what the registry
+// it was handed must come to. Both directions go through it, so the call the
+// suite is held by IS the call the self-test exercises. And what actually ran
+// is written down INSIDE that call and read back against the harness names in
+// source, so a loop round a subset — or round nothing — is named rather than
+// silent.
 
 // harnessName is what one of the three is called, and it is a TYPE for the same
 // reason ruleName is: a list is a thing somebody can shorten.
@@ -255,11 +274,12 @@ const (
 // harness is one of the three, and the registry that breaks it.
 type harness struct {
 	name harnessName
-	// run reads a set of rules and reports what they have to say. It is a
-	// function of the rules, and of where it reports, so that the same code
-	// that holds the suite can be handed a registry that breaks it and be
-	// required to say so somewhere a test can read.
-	run func(t *testing.T, report reporter, rules []rule)
+	// run reads a set of rules and says what they have to say to the listener
+	// it is handed — never to t, which is why the type is the recorder and not
+	// an interface with a nil in it. A harness that reported straight to t
+	// could only ever be run in the direction that must be silent, and that is
+	// what made two call sites necessary in the first place.
+	run func(t *testing.T, heard *recorder, rules []rule)
 	// breaks is a registry this harness must complain about — its fault, in
 	// the same sense a rule's violating ledger is one.
 	breaks func(t *testing.T) []rule
@@ -273,62 +293,201 @@ func ledgerHarnesses() []harness {
 	}
 }
 
-// TestTheLedgerHolds is the three, run over the rules as they stand: the ledger
-// read over the suite, each rule read over the ledgers that break it, and the
-// registry read over the rule names this file declares.
-func TestTheLedgerHolds(t *testing.T) {
-	for _, h := range ledgerHarnesses() {
-		t.Run(string(h.name), func(t *testing.T) { h.run(t, nil, ledgerRules()) })
+// ───────────────────── the one call a harness is run by ─────────────────────
+
+// registry is a set of rules AND what running a harness over them must come to.
+// There are two answers and there is no third, and which one applies is a
+// property of the MATERIAL and not of the plumbing: over the rules as they
+// stand a harness must be silent, over a registry that breaks it a harness must
+// complain.
+//
+// Neither answer can be written the other way round without a named failure,
+// because each is the other's control. The real rules under "must complain" say
+// nothing and fail; a registry that breaks a harness under "must be silent"
+// complains and fails. That is what makes it safe for the direction to be data.
+type registry struct {
+	what      string
+	rules     []rule
+	complains bool
+}
+
+// theRulesAsTheyStand is the registry the whole suite is actually held by.
+//
+// Hollowing it to nothing does not pass: readEveryRuleDeclared is one of the
+// harnesses, and over an empty set of rules it names every rule this file
+// declares, which is a complaint in the direction that must be silent.
+func theRulesAsTheyStand() registry {
+	return registry{"the rules as they stand", ledgerRules(), false}
+}
+
+// whatBreaksIt is the harness's own fault, in the shape a rule's violating
+// ledger is one.
+func whatBreaksIt(t *testing.T, h harness) registry {
+	return registry{"a registry that breaks it", h.breaks(t), true}
+}
+
+// hold runs one harness over one registry. IT IS THE ONLY PLACE A HARNESS IS
+// EVER RUN, and the only place what a harness said is read.
+//
+// It takes no reporter. The listener is made here and is compared, here,
+// against what the registry it was handed must come to — so "discard" is not
+// something this file can express: there is no argument to write it as, and the
+// only listener there is gets read four lines after it is made. The call the
+// suite is held by is this one; the call the self-test exercises is this one;
+// proving either proves both.
+func hold(t *testing.T, ran *census, h harness, over registry) {
+	ran.write(heldRun{h.name, over.complains})
+	heard := &recorder{}
+	h.run(t, heard, over.rules)
+	if heard.failed != over.complains {
+		t.Errorf("%s", over.wrong(h, heard))
 	}
 }
 
-// TestTheThingsThatRunTheRulesRunThem is the same three, each handed a registry
-// that breaks it and required to say so. It is the fault behind the harness,
-// which is what the harnesses did not have.
-func TestTheThingsThatRunTheRulesRunThem(t *testing.T) {
-	for _, h := range ledgerHarnesses() {
-		t.Run(string(h.name), func(t *testing.T) {
-			heard := &recorder{}
-			h.run(t, heard, h.breaks(t))
-			if !heard.failed {
-				t.Fatalf("this was handed a registry that breaks it and said nothing: it is a loop that does not run what it is given, and hollowing it turns every rule off at once with no rule able to see it happen")
-			}
-		})
+// wrong is what a harness that came out the other way is reported as.
+//
+// It is deliberately NOT load-bearing and it is a separate function for exactly
+// that reason: Errorf fails the test whatever string it is handed, so a
+// hollowed message is still a red test, and the lines that must be correct stay
+// the five above and no more.
+func (over registry) wrong(h harness, heard *recorder) string {
+	if over.complains {
+		return fmt.Sprintf("%q was run %s and said nothing: it is a loop that does not run what it is given, and hollowing it turns every rule off at once with no rule able to see it happen",
+			h.name, over.what)
 	}
-	t.Run("a harness declared and left out of the list", func(t *testing.T) {
-		src := suiteSource(t)
-		for _, name := range unreadHarnesses(src, ledgerHarnesses()) {
-			t.Errorf("%s is declared and no entry in the list runs it, so nothing above is computed over anything it would have held", name)
-		}
-		broken := src.with(t, "ledger_fault_unread_harness_test.go", `package forgetest
-
-const harnessNobodyRuns harnessName = "a way of running the rules the list never mentions"
-`)
-		if len(unreadHarnesses(broken, ledgerHarnesses())) == 0 {
-			t.Fatalf("a harness declared and left out of the list went unnoticed, so shortening the list — or emptying it — would too")
-		}
-	})
+	return fmt.Sprintf("%q %s said:\n%s", h.name, over.what, heard)
 }
 
-// unreadHarnesses is every harness name this file declares that no entry in the
-// list carries, by the identifier it is declared under.
-func unreadHarnesses(src *source, hs []harness) []string {
-	read := map[string]bool{}
-	for _, h := range hs {
-		read[string(h.name)] = true
+// theDirection names one of the two ways a harness is run, for a census entry
+// that has to say WHICH run never happened.
+func theDirection(complains bool) string {
+	if complains {
+		return "over a registry that breaks it"
 	}
+	return "over the rules as they stand"
+}
+
+// heldRun is one harness run one way. It is the unit the census counts, because
+// a harness held in one direction only is a harness whose other direction is
+// off — and dropping one of the two calls in TestTheLedgerHolds is exactly as
+// cheap as dropping an entry from the list used to be.
+type heldRun struct {
+	name      harnessName
+	complains bool
+}
+
+func (r heldRun) String() string { return string(r.name) + " " + theDirection(r.complains) }
+
+// census is what actually ran, written down INSIDE hold and not by the loop
+// that calls it.
+//
+// MEMBERSHIP WAS THE HOLE. unreadHarnesses asked whether every declared name
+// was carried by an entry in the list — which stays true when the loop goes
+// round `ledgerHarnesses()[1:]`, and stays true when a call reaches past hold
+// to h.run with a listener nobody reads. This asks the other question: did this
+// run actually hold it, both ways. A declared harness with nothing written down
+// is named, and there is no way to write something down except by going through
+// the call that also reads the answer.
+type census struct {
+	mu   sync.Mutex
+	done map[heldRun]bool
+}
+
+func (c *census) write(r heldRun) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.done == nil {
+		c.done = map[heldRun]bool{}
+	}
+	c.done[r] = true
+}
+
+// missing is every harness this file declares that this run did not hold in
+// both directions, by the identifier it is declared under and the direction
+// that never happened.
+func (c *census) missing(src *source) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	var out []string
 	for value, ident := range src.harnesses {
-		if !read[value] {
-			out = append(out, ident)
+		for _, complains := range []bool{false, true} {
+			if !c.done[heldRun{harnessName(value), complains}] {
+				out = append(out, ident+" "+theDirection(complains))
+			}
 		}
 	}
 	sort.Strings(out)
 	return out
 }
 
+// TestTheLedgerHolds is the whole invocation: every harness, both ways, through
+// the one call.
+//
+// There is no second call site. The direction that must be silent and the
+// direction that must complain are the same two lines apart, so a listener
+// nobody reads is not expressible, and the census below names a loop that went
+// round a subset instead of letting it pass.
+func TestTheLedgerHolds(t *testing.T) {
+	ran := &census{}
+	for _, h := range ledgerHarnesses() {
+		t.Run(string(h.name), func(t *testing.T) {
+			hold(t, ran, h, theRulesAsTheyStand())
+			hold(t, ran, h, whatBreaksIt(t, h))
+		})
+	}
+	for _, never := range ran.missing(suiteSource(t)) {
+		t.Errorf("%s is declared and this run never held it, so every rule that run would have read is off and nothing above was computed over anything it would have caught", never)
+	}
+}
+
+// TestTheCensusNoticesARunThatNeverHappened is the census's own fault, and it is
+// why the loop above cannot be shortened. A census that answers "nothing
+// missing" whatever it is shown is the membership check all over again, so it
+// is shown three things: a run of every declared harness both ways, which it
+// must call complete; the same with one single run taken away, which it must
+// name; and a source declaring a harness nothing ever ran, which it must name
+// too.
+func TestTheCensusNoticesARunThatNeverHappened(t *testing.T) {
+	src := suiteSource(t)
+	everyRun := func() *census {
+		c := &census{}
+		for value := range src.harnesses {
+			for _, complains := range []bool{false, true} {
+				c.write(heldRun{harnessName(value), complains})
+			}
+		}
+		return c
+	}
+	if got := everyRun().missing(src); len(got) > 0 {
+		t.Fatalf("a census with every declared harness held both ways reported %v missing, so it names runs that did happen and nothing it says can be read", got)
+	}
+	for value, ident := range src.harnesses {
+		for _, complains := range []bool{false, true} {
+			gone := heldRun{harnessName(value), complains}
+			short := &census{}
+			for v := range src.harnesses {
+				for _, c := range []bool{false, true} {
+					if r := (heldRun{harnessName(v), c}); r != gone {
+						short.write(r)
+					}
+				}
+			}
+			if len(short.missing(src)) == 0 {
+				t.Errorf("%s %s never ran and the census did not notice, so a loop round a subset of the harnesses — or round none of them, or one of the two calls deleted — would pass", ident, theDirection(complains))
+			}
+		}
+	}
+	broken := src.with(t, "ledger_fault_unheld_harness_test.go", `package forgetest
+
+const harnessNobodyRuns harnessName = "a way of running the rules nothing ever runs"
+`)
+	if len(everyRun().missing(broken)) == 0 {
+		t.Fatalf("a harness declared and never run went unnoticed, so declaring one and leaving it out of the list would too")
+	}
+}
+
 // readTheLedgerOverTheSuite is the ledger read over the suite as it stands.
-func readTheLedgerOverTheSuite(t *testing.T, report reporter, rules []rule) {
+func readTheLedgerOverTheSuite(t *testing.T, heard *recorder, rules []rule) {
 	l := theLedger(t)
 	counts := map[kind]int{}
 	for _, a := range l.pop {
@@ -337,7 +496,7 @@ func readTheLedgerOverTheSuite(t *testing.T, report reporter, rules []rule) {
 	t.Logf("%d cases: %d contract, %d plumbing", len(l.pop), counts[contract], counts[plumbing])
 	t.Logf("%d proofs against %d faults the fake forge can be told to have", len(l.proofs), len(l.src.faults))
 	for _, r := range rules {
-		t.Run(string(r.name), func(t *testing.T) { obey(reportTo(report, t), l, []rule{r}) })
+		t.Run(string(r.name), func(t *testing.T) { obey(heard, l, []rule{r}) })
 	}
 }
 
@@ -381,27 +540,25 @@ func aRegistryOneShort(t *testing.T) []rule {
 // has been hollowed says nothing and fails here; a rule declared with no
 // violation behind it fails here too; and so does a reporting loop that hears a
 // rule and drops what it says.
-func proveEveryRule(t *testing.T, report reporter, rules []rule) {
+func proveEveryRule(t *testing.T, heard *recorder, rules []rule) {
 	for _, r := range rules {
 		t.Run(string(r.name), func(t *testing.T) {
-			to := reportTo(report, t)
 			if len(r.violates) == 0 {
-				to.Errorf("%s has no ledger that breaks it, so nothing knows whether it still holds — which is exactly what it accuses an assertion of", r.name)
+				heard.Errorf("%s has no ledger that breaks it, so nothing knows whether it still holds — which is exactly what it accuses an assertion of", r.name)
 				return
 			}
 			for _, violate := range r.violates {
 				t.Run(theShapeOf(violate), func(t *testing.T) {
-					to := reportTo(report, t)
 					broken := violate(t)
 					for _, c := range r.check(broken) {
 						if c.rule != r.name {
-							to.Errorf("a ledger that breaks %q was answered under %q instead: %s", r.name, c.rule, c)
+							heard.Errorf("%s: a ledger that breaks %q was answered under %q instead: %s", theShapeOf(violate), r.name, c.rule, c)
 						}
 					}
-					heard := &recorder{}
-					if n := obey(heard, broken, []rule{r}); n == 0 || !heard.failed {
-						to.Errorf("%s was handed a ledger that breaks it and %d complaints reached the report (failed=%v): it is decoration, and hollowing it — or the loop that reports it — would go unnoticed",
-							r.name, n, heard.failed)
+					said := &recorder{}
+					if n := obey(said, broken, []rule{r}); n == 0 || !said.failed {
+						heard.Errorf("%s was handed %s, a ledger that breaks it, and %d complaints reached the report (failed=%v): it is decoration, and hollowing it — or the loop that reports it — would go unnoticed",
+							r.name, theShapeOf(violate), n, said.failed)
 					}
 				})
 			}
@@ -409,19 +566,15 @@ func proveEveryRule(t *testing.T, report reporter, rules []rule) {
 	}
 }
 
-// reporter is where a complaint goes. The three things that run the rules take
-// one so that each can be run against a recorder over material that breaks it —
-// a *testing.T when they are held for real, a recorder when they are the thing
-// being held.
+// reporter is where a complaint goes: obey takes one so that a rule can be read
+// over a ledger that breaks it and what it said can be looked at rather than
+// ending the test.
+//
+// It used to be what a HARNESS took as well, with nil meaning "report to t" —
+// which is how one token came to silence the whole suite. A harness now always
+// says what it has to say to the recorder hold made for it, and hold always
+// reads it; there is no nil and no choice of listener anywhere.
 type reporter interface{ Errorf(string, ...any) }
-
-// reportTo is the subtest's own t unless somebody is listening instead.
-func reportTo(report reporter, t *testing.T) reporter {
-	if report == nil {
-		return t
-	}
-	return report
-}
 
 // readEveryRuleDeclared closes the registry, which is the last list in this file
 // that a hand maintains. A rule constant no entry carries is a rule nothing
@@ -430,11 +583,11 @@ func reportTo(report reporter, t *testing.T) reporter {
 // asked from outside it, over the rule names read out of this file's own source,
 // and it is asked of the registry it is HANDED so that a registry one entry
 // short is a thing it can be shown.
-func readEveryRuleDeclared(t *testing.T, report reporter, rules []rule) {
+func readEveryRuleDeclared(t *testing.T, heard *recorder, rules []rule) {
 	src := suiteSource(t)
 	t.Run("as it stands", func(t *testing.T) {
 		for _, name := range unreadRules(src, rules) {
-			reportTo(report, t).Errorf("%s is declared and no registry entry reads it, so nothing computes it over anything", name)
+			heard.Errorf("%s is declared and no registry entry reads it, so nothing computes it over anything", name)
 		}
 	})
 	t.Run("one more rule declared than the registry reads", func(t *testing.T) {
@@ -443,7 +596,7 @@ func readEveryRuleDeclared(t *testing.T, report reporter, rules []rule) {
 const ruleNobodyReads ruleName = "a rule the registry never looks at"
 `)
 		if len(unreadRules(broken, rules)) == 0 {
-			reportTo(report, t).Errorf("a rule declared and left out of the registry went unnoticed, so shortening the registry — or emptying it — would too")
+			heard.Errorf("a rule declared and left out of the registry went unnoticed, so shortening the registry — or emptying it — would too")
 		}
 	})
 }
