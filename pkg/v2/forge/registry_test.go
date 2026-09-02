@@ -320,11 +320,15 @@ func TestRegisterPushHookRefusesEveryUnsafeRegistration(t *testing.T) {
 		assert.Equal(t, Handle("h"), hook.Handle)
 	})
 
-	t.Run("a secret the scheme cannot encode", func(t *testing.T) {
-		sess := sessionFor(t, &stub{host: stubHost, scheme: SchemeStandardWebhooks, handle: "h"}, Policy{})
-		_, err := sess.RegisterPushHook(ctx, k, https, SecretFrom([]byte("short")))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "32-byte")
+	t.Run("a secret too short to key a MAC, whatever the scheme", func(t *testing.T) {
+		for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks} {
+			sess := sessionFor(t, &stub{host: stubHost, scheme: sc, handle: "h"}, Policy{})
+			for _, short := range []string{"x", "short", strings.Repeat("a", SecretSize-1)} {
+				_, err := sess.RegisterPushHook(ctx, k, https, SecretFrom([]byte(short)))
+				require.Error(t, err, "%s registered a hook with a %d-byte secret", sc, len(short))
+				assert.Contains(t, err.Error(), "at least 32 bytes")
+			}
+		}
 	})
 
 	t.Run("a driver that fails", func(t *testing.T) {
@@ -477,6 +481,22 @@ func TestVerifyPushRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 		_, err := reg.VerifyPush(none, signed(t, SchemeHubSHA256, body))
 		require.ErrorAs(t, err, &ve)
 		assert.Contains(t, ve.Reason, "no secret")
+	})
+
+	// A hook that predates the floor, or one a consumer built by hand out of a
+	// store, never went through RegisterPushHook. Checking strength only at
+	// registration would leave that hook verifying forever.
+	t.Run("a hook whose stored secret is too short to key a MAC", func(t *testing.T) {
+		reg := newRegistry(t, &stub{host: stubHost, scheme: SchemeHubSHA256, claim: claim}, Policy{})
+		weak := hook
+		weak.Secret = SecretFrom([]byte("x"))
+		// Signed with that very secret, so nothing but the floor refuses it.
+		hdr, err := Sign(SchemeHubSHA256, vectorSecret(), body, "msg_1", time.Now())
+		require.NoError(t, err)
+		var ve *VerificationError
+		_, err = reg.VerifyPush(weak, Delivery{Header: hdr, Body: body})
+		require.ErrorAs(t, err, &ve)
+		assert.Contains(t, ve.Reason, "shorter than a MAC key")
 	})
 
 	t.Run("a body over the cap, refused before any MAC", func(t *testing.T) {

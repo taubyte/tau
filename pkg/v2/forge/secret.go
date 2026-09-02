@@ -51,6 +51,24 @@ func (s Secret) Expose() []byte { return s.b }
 
 func (s Secret) Empty() bool { return len(s.b) == 0 }
 
+// tooShort is the STRENGTH floor, and SecretSize is both the mint and the
+// floor because there is no honest second number.
+//
+// A Secret keys an HMAC-SHA256. RFC 2104 §3 says a key shorter than the hash's
+// own output is "strongly discouraged" because the construction is then no
+// stronger than the key, and NIST SP 800-107 §5.3.4 says the same in the other
+// direction: the key must carry at least the security strength being claimed.
+// For SHA-256 that is 32 bytes, which is what NewSecret already mints and what
+// SchemeStandardWebhooks already demanded -- as a side effect of GitLab's
+// whsec_ FORMAT, not for any reason about strength, which is why the other
+// three schemes happily keyed a MAC with two base64 characters.
+//
+// Length is a proxy for entropy and it is the only proxy anything here can
+// check: nothing can tell 32 random bytes from 32 zeros. This is a floor under
+// the accident -- a short string out of a config file, a reused word -- and not
+// a certificate that the bytes above it are any good.
+func (s Secret) tooShort() bool { return len(s.b) < SecretSize }
+
 // Equal compares in constant time. Two empty secrets are NOT equal: "no secret
 // configured" must never compare equal to anything, least of all to another
 // unconfigured hook.

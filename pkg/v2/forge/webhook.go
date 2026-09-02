@@ -106,6 +106,9 @@ func (s Scheme) Wire(secret Secret) (string, error) {
 	if secret.Empty() {
 		return "", fmt.Errorf("forge: cannot derive a %s wire secret from an empty Secret", s)
 	}
+	if secret.tooShort() {
+		return "", fmt.Errorf("forge: a %s secret must be at least %d bytes; a shorter key is brute-forceable offline from one captured delivery, after which every push to the repository can be forged", s, SecretSize)
+	}
 	switch s {
 	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeSharedToken:
 		return base64.RawURLEncoding.EncodeToString(secret.Expose()), nil
@@ -219,7 +222,10 @@ type Push struct {
 //  2. that driver can address the hook's key
 //  3. the driver can read a payload at all
 //  4. the recorded scheme is implemented, and the policy accepts it
-//  5. the secret is non-empty — "no secret configured" never reaches a compare
+//  5. the secret is non-empty AND long enough to be a MAC key — "no secret
+//     configured" never reaches a compare, and neither does a secret an
+//     attacker can exhaust offline from one captured delivery. A hook already
+//     in a store is checked here and not only at registration
 //  6. the body is within the policy's cap
 //  7. the signature verifies, in constant time, against the RECORDED scheme
 //  8. only then does the driver read the body, out of a VerifiedBody
@@ -255,6 +261,9 @@ func (r *Registry) VerifyPush(h Hook, d Delivery) (Push, error) {
 	}
 	if h.Secret.Empty() {
 		return Push{}, &VerificationError{Scheme: h.Scheme, Reason: "hook has no secret"}
+	}
+	if h.Secret.tooShort() {
+		return Push{}, &VerificationError{Scheme: h.Scheme, Reason: "hook secret is shorter than a MAC key may be"}
 	}
 	if len(d.Body) > r.maxDeliveryBody() {
 		return Push{}, &VerificationError{Scheme: h.Scheme, Reason: "delivery body exceeds the cap"}

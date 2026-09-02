@@ -237,13 +237,28 @@ func TestAnEmptySecretDerivesNothing(t *testing.T) {
 	}
 }
 
-// TestStandardWebhooksInsistsOnAWholeSecret: GitLab's own format check is
-// whsec_ plus base64 of exactly 32 bytes, so a short secret must fail at
-// derivation rather than register a hook the instance will reject.
-func TestStandardWebhooksInsistsOnAWholeSecret(t *testing.T) {
-	_, err := SchemeStandardWebhooks.Wire(SecretFrom([]byte("short")))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "32-byte")
+// TestEverySchemeInsistsOnAWholeSecret. The floor used to belong to one scheme
+// and for the wrong reason: SchemeStandardWebhooks refused a short secret
+// because GitLab's whsec_ FORMAT is base64 of exactly 32 bytes, so the other
+// three keyed a MAC with whatever they were handed -- one byte, wire form
+// "eA", exhaustible offline from a single captured delivery. The floor is a
+// property of the SECRET now, so it holds for a scheme added tomorrow too.
+func TestEverySchemeInsistsOnAWholeSecret(t *testing.T) {
+	for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken} {
+		for _, short := range [][]byte{[]byte("x"), []byte("short"), make([]byte, SecretSize-1)} {
+			weak := SecretFrom(short)
+			_, err := sc.Wire(weak)
+			require.Error(t, err, "%s derived a wire secret from %d bytes", sc, len(short))
+			assert.Contains(t, err.Error(), "at least 32 bytes")
+
+			// And nothing downstream of Wire is reachable around it.
+			_, err = Sign(sc, weak, vectorBody, "m", vectorAt)
+			require.Error(t, err, "%s signed with %d bytes", sc, len(short))
+			require.Error(t, verify(sc, weak, Delivery{Header: http.Header{}, Body: vectorBody}, vectorAt, time.Minute))
+		}
+		_, err := sc.Wire(vectorSecret())
+		require.NoError(t, err, "%s refused a whole secret", sc)
+	}
 }
 
 func TestObjectIDsAreWholeOrNothing(t *testing.T) {
