@@ -35,6 +35,9 @@ func TestOnlyA404OnTheMembershipItselfIsANonMember(t *testing.T) {
 		handler    http.HandlerFunc
 		wantMember bool
 		wantErr    bool
+		// wantRequests, when set, is how many requests the walk may make before
+		// it gives up. Zero means this case does not say.
+		wantRequests int
 	}{
 		"the app is not installed on this namespace": {
 			handler: func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +50,14 @@ func TestOnlyA404OnTheMembershipItselfIsANonMember(t *testing.T) {
 				io.WriteString(w, `{"id":0}`)
 			},
 			wantErr: true,
+			// AND THE WALK STOPS THERE. Without the id check the next request is
+			// POST /app/installations/0/access_tokens — this deployment's most
+			// privileged credential, the app assertion, spent asking an
+			// installation that does not exist to hand back a token. It still
+			// ends in an error, which is why deleting the check left the tree at
+			// exit 0; the fact worth holding is that the assertion never went out
+			// a second time.
+			wantRequests: 1,
 		},
 		"the installation token could not be minted": {
 			handler: func(w http.ResponseWriter, r *http.Request) {
@@ -109,8 +120,17 @@ func TestOnlyA404OnTheMembershipItselfIsANonMember(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			reg, host := appRegistry(t, tc.handler)
+			var sent int
+			handler := tc.handler
+			reg, host := appRegistry(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sent++
+				handler(w, r)
+			}))
 			ok, err := reg.IsActiveMember(context.Background(), host, namespace, member)
+			if tc.wantRequests > 0 {
+				assert.Equal(t, tc.wantRequests, sent,
+					"the walk kept going after an answer it had already refused")
+			}
 			if tc.wantErr {
 				require.Error(t, err, "an unanswerable question answered false")
 				assert.False(t, ok)

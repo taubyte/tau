@@ -420,8 +420,14 @@ func TestAccessMapsGitHubsRolesOntoTausRungs(t *testing.T) {
 		perms string
 		want  forge.Access
 	}{
-		"admin":                        {`{"admin":true,"maintain":true,"push":true,"pull":true}`, forge.AccessAdmin},
-		"maintain":                     {`{"maintain":true,"push":true,"pull":true}`, forge.AccessWrite},
+		"admin":    {`{"admin":true,"maintain":true,"push":true,"pull":true}`, forge.AccessAdmin},
+		"maintain": {`{"maintain":true,"push":true,"pull":true}`, forge.AccessWrite},
+		// GitHub sends push:true with maintain, so the row above is the one a
+		// real forge produces and this one is the branch the driver keeps for
+		// itself: maintain|push|admin is v1's write predicate, preserved
+		// exactly, and dropping Maintain from it left the tree at exit 0
+		// because every other row still had push.
+		"maintain without push, which only this driver decides": {`{"maintain":true,"pull":true}`, forge.AccessWrite},
 		"push":                         {`{"push":true,"pull":true}`, forge.AccessWrite},
 		"pull only":                    {`{"pull":true}`, forge.AccessRead},
 		"triage, which grants no push": {`{"pull":true,"triage":true}`, forge.AccessRead},
@@ -553,6 +559,29 @@ func TestARepositoryReportsBothAddressesTheForgeNamed(t *testing.T) {
 	fromSSH, err := repokey.Parse(repo.SSH)
 	require.NoError(t, err)
 	assert.NotEqual(t, repo.Key, fromSSH)
+}
+
+// TestAnAnswerThisDriverWillNotFinishReadingIsAnError. A response is a
+// stranger's bytes even when the stranger is GitHub, and an unbounded decode is
+// an unbounded allocation decided by whoever is answering. maxResponseBody is
+// the whole of what stops that, and until this test it was a constant with a
+// comment: deleting the LimitReader around the decode left the tree at exit 0,
+// because nothing here had ever sent a large answer.
+//
+// The body below is valid JSON describing the repository that was asked for, so
+// a driver that reads all of it SUCCEEDS — which is what makes the refusal the
+// thing being asserted rather than a malformed-input path.
+func TestAnAnswerThisDriverWillNotFinishReadingIsAnError(t *testing.T) {
+	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"padding":"`+strings.Repeat("x", 9<<20)+`",
+			"full_name":"acme/pay","clone_url":"https://`+r.Host+`/acme/pay.git",
+			"default_branch":"main","permissions":{"admin":true,"push":true,"pull":true}}`)
+	}), "acme/pay")
+
+	repo, err := sess.Repository(ctx(), key)
+	require.Error(t, err, "this driver read a 9MB answer to the end and believed it: %+v", repo)
+	assert.Less(t, len(err.Error()), 600, "the forge chose the length of this error")
 }
 
 func TestWhoamiRefusesACredentialBelongingToNobody(t *testing.T) {
@@ -872,12 +901,36 @@ func TestInstallingOnARepositoryTheCredentialCannotAdministerFails(t *testing.T)
 // TestAHostDoesNotGetToChooseHowLongALogLineIs. A clone URL and a full name are
 // both the forge's to write, and both land in an error message when they cannot
 // be read; neither may be unbounded.
+//
+// THE SECOND CASE IS ON THIS DRIVER'S OWN HOST, and it is the one the length
+// bound is really for. On another host the host check refuses the answer and the
+// error is short whether or not anything measured the URL — measured: deleting
+// the length check left the whole tree at exit 0 while only the off-host case
+// existed. Here the URL is one repokey will happily parse, so without the bound
+// a key IS derived from it, and a key is stored, indexed, compared and printed
+// by everything downstream: the length an instance picks becomes a cost tau
+// keeps paying.
 func TestAHostDoesNotGetToChooseHowLongALogLineIs(t *testing.T) {
 	long := strings.Repeat("a", 4000)
-	sess, key := sessionOn(t, answer(http.StatusOK,
-		`{"full_name":"acme/`+long+`","clone_url":"https://x/acme/`+long+`.git","default_branch":"main"}`), "acme/pay")
 
-	_, err := sess.Repository(ctx(), key)
-	require.Error(t, err)
-	assert.Less(t, len(err.Error()), 600, "the forge chose the length of this error")
+	t.Run("on another host", func(t *testing.T) {
+		sess, key := sessionOn(t, answer(http.StatusOK,
+			`{"full_name":"acme/`+long+`","clone_url":"https://x/acme/`+long+`.git","default_branch":"main"}`), "acme/pay")
+
+		_, err := sess.Repository(ctx(), key)
+		require.Error(t, err)
+		assert.Less(t, len(err.Error()), 600, "the forge chose the length of this error")
+	})
+
+	t.Run("on this very host, where it would become a key", func(t *testing.T) {
+		sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"full_name":"acme/`+long+`","clone_url":"https://`+r.Host+`/acme/`+long+`.git",
+				"ssh_url":"ssh://git@`+r.Host+`/acme/`+long+`.git","default_branch":"main"}`)
+		}), "acme/pay")
+
+		repo, err := sess.Repository(ctx(), key)
+		require.Error(t, err, "a %d-byte clone URL became the key %q", len(long), repo.Key)
+		assert.Less(t, len(err.Error()), 600, "the forge chose the length of this error")
+	})
 }

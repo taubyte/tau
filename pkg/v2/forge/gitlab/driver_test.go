@@ -255,6 +255,31 @@ func TestWhoamiReportsTheUserIdAsAnOpaqueSubject(t *testing.T) {
 // GraphQL answers 200 for failures, so the errors array is the second failure
 // channel — and it is prose the instance composed, on the one endpoint reached
 // with the caller's credential in a header. It is counted, never quoted.
+// TestAnAnswerThisDriverWillNotFinishReadingIsAnError. A response is a
+// stranger's bytes even when the stranger is the instance an operator named, and
+// reading an unbounded one into memory to find out what it is is the wrong
+// order. maxBody is the whole of what stops that, and until this test it was a
+// constant with a comment: deleting the LimitReader around the read left the
+// tree at exit 0, because nothing here had ever sent a large answer.
+//
+// The body below is valid JSON describing the project that was asked for, so an
+// instance that is read to the end SUCCEEDS — which is what makes the refusal
+// the thing being asserted rather than a malformed-input path. The github driver
+// holds the same rule the same way.
+func TestAnAnswerThisDriverWillNotFinishReadingIsAnError(t *testing.T) {
+	var host string
+	c, key := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		answer(t, http.StatusOK, `{"padding":"`+strings.Repeat("x", 5<<20)+`",
+			"path_with_namespace":"acme/pay","http_url_to_repo":"http://`+host+`/acme/pay.git",
+			"default_branch":"main","visibility":"private"}`)(w, r)
+	})
+	host = key.Host
+
+	repo, err := c.Repository(context.Background(), key)
+	require.Error(t, err, "this driver read a 5MB answer to the end and believed it: %+v", repo)
+	assert.Less(t, len(err.Error()), 2000, "an instance chose how long a tau log line is")
+}
+
 func TestAccessTurnsAGraphQLErrorArrayIntoAnError(t *testing.T) {
 	c, key := stubClient(t, answer(t, http.StatusOK, `{"data":null,"errors":[{"message":"Field 'pushCode' doesn't exist for stub-token"}]}`))
 	level, err := c.Access(context.Background(), key)
