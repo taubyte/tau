@@ -88,3 +88,20 @@ func TestActionsName(t *testing.T) {
 	require.Equal(t, "retry", ActRetry.String())
 	require.Equal(t, "action(99)", Action(99).String())
 }
+
+// THE PUBLISH IS SPENT OUT OF THE MARGIN, so a publish that could use all of it
+// is an acknowledgement made after the claim expired — which the queue refuses,
+// correctly, and the job is then rebuilt by whoever takes the redelivery.
+func TestAPublishTimeoutMustFitInsideTheClaimMargin(t *testing.T) {
+	for name, c := range map[string]Config{
+		"the whole margin": {ClaimMargin: 30 * time.Second, PublishTimeout: 30 * time.Second},
+		"more than it":     {ClaimMargin: time.Second, PublishTimeout: time.Minute},
+	} {
+		_, err := c.withDefaults()
+		require.ErrorContains(t, err, "publishTimeout", name)
+	}
+
+	c, err := Config{ClaimMargin: time.Minute, PublishTimeout: 30 * time.Second}.withDefaults()
+	require.NoError(t, err)
+	require.Equal(t, 30*time.Second, c.PublishTimeout)
+}

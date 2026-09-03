@@ -592,10 +592,11 @@ func (e *entry) dropOrphanedOpen(repositoryKey string) *entry {
 	return e
 }
 
-// commit makes the entry, on behalf of the read that decided it, and is one of
-// this package's two paths to a replicated batch — attemptSink.write is the
-// other, named as the exception in population_test.go, because a log or asset
-// row is content keyed by (job, attempt) that no record read decides.
+// commit makes the entry, on behalf of the read that decided it, and is THE
+// path to a replicated batch — the only one. It was one of two: the sink's door
+// was the other, named as an exception in population_test.go because a log row
+// was content that no record read decided. The log is a file now (output.go)
+// and there is no second path, so the exception is gone rather than narrowed.
 //
 // IT TAKES NO ROWS AND IT HANDS NONE OVER. `what` is a word for the failure
 // message; the rows are the ones this entry's own methods composed, and
@@ -773,14 +774,19 @@ func (h *held) stopRun() error {
 // removed, the retention index row written. A job is never in a state where it
 // is finished but still listed as open, or listed as open but has no record.
 //
+// IT ALSO CARRIES WHAT THE RUN PRODUCED, which is a field of the record rather
+// than a row beside it: one cid for the attempt's log and one per resource
+// built. A transition with no run behind it hands over the zero value and
+// changes nothing.
+//
 // IT HANDS BACK AN ENTRY RATHER THAN MAKING ONE so that settle can add the ref
 // anchor to the SAME entry — "this job succeeded" and "this is now the commit
 // to diff from" cannot end up disagreeing. What it can add is still only a row
 // composed from this job: the `extra ...raft.BatchOp` this replaces was the one
 // parameter in this file through which a correctly-held handle could name
 // another job's rows.
-func (h *held) ends(status buildv1.JobStatus, reason string) stated {
-	rec := h.rec()
+func (h *held) ends(status buildv1.JobStatus, reason string, p produced) stated {
+	rec := h.rec().with(p)
 	rec.Status = int32(status)
 	rec.UpdatedAt = h.s.now().Unix()
 	rec.ClaimedUntil = 0
@@ -789,17 +795,50 @@ func (h *held) ends(status buildv1.JobStatus, reason string) stated {
 	return h.writes().record(rec).dropOpen().retained()
 }
 
-// finish ends this job and writes nothing else.
+// finish ends this job and writes nothing else. It is the terminal write of the
+// transitions that ran NO BUILD — a cancel, a dead letter drain — so there is
+// nothing produced to carry.
 func (h *held) finish(status buildv1.JobStatus, reason string) error {
-	return h.ends(status, reason).commit("finishing")
+	return h.ends(status, reason, produced{}).commit("finishing")
 }
 
-// succeed ends this job AND moves the ref anchor, in one entry, because they
-// are the same fact: this commit is what the next build of this ref diffs from,
-// and it is read from here rather than from a webhook (build.proto: "read from
-// its own job history, never from the frontend").
-func (h *held) succeed() error {
-	return h.ends(buildv1.JobStatus_JobStatusSuccess, "").anchor().commit("finishing")
+// fail ends this job as Failed and records what the run that failed produced.
+//
+// THE OUTPUT OF A FAILED BUILD IS THE OUTPUT SOMEBODY WANTS. v1 keeps the log
+// of a build that failed only if the failure was one it RETURNED from: the
+// publish is a `defer` in the run, so a worker that died skipped it and the
+// file it wrote stayed on that node with no cid naming it.
+func (h *held) fail(reason string, p produced) error {
+	return h.ends(buildv1.JobStatus_JobStatusFailed, reason, p).commit("finishing")
+}
+
+// succeed ends this job, records what it produced, AND moves the ref anchor,
+// in one entry, because they are the same fact: this commit is what the next
+// build of this ref diffs from, and it is read from here rather than from a
+// webhook (build.proto: "read from its own job history, never from the
+// frontend").
+func (h *held) succeed(p produced) error {
+	return h.ends(buildv1.JobStatus_JobStatusSuccess, "", p).anchor().commit("finishing")
+}
+
+// logged records what a run produced on a record that is ALREADY TERMINAL, and
+// changes nothing else about it.
+//
+// It is the cancel case. The status must not move — a cancelled job must not be
+// overwritten with the outcome of the run that was cancelled — but the cid of
+// what that run printed is the one thing whoever cancelled it wants, and it is
+// a field on the record this section already read. v1 needed a second RPC in
+// the other direction to carry it (monkey's cancelHandler hands patrick the
+// accumulated logs so patrick can write them beside the status).
+//
+// A run that produced nothing writes nothing: an entry with no rows is refused
+// by row.Entry.Apply anyway, and a replicated entry that changes no field is a
+// cost with no fact in it.
+func (h *held) logged(p produced) error {
+	if p.logCID == "" && len(p.assets) == 0 {
+		return nil
+	}
+	return h.writes().record(h.rec().with(p)).commit("recording the output of")
 }
 
 // requeue gives an open job an item to be claimed by, and is a no-op for one

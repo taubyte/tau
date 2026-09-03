@@ -41,7 +41,7 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 
 	building := make(chan struct{})
 	release := make(chan struct{})
-	h.runner.run = func(ctx context.Context, _ Work, _ Sink) error {
+	h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
 		close(building)
 		<-release
 		// The cancel is what ended this build, and this is what a Runner that

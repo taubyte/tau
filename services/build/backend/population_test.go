@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/taubyte/tau/services/build/backend/attempt"
 )
 
 // population_test.go pins the POPULATION rather than any one member of it.
@@ -102,10 +100,10 @@ func covered(spans []span, at token.Pos) bool {
 // a table keyed by name alone would silently hold one of them.
 type funcs struct {
 	name string
-	// recv is the receiver's type name: "Service", "held", "attemptSink", or
-	// "" for a function with none. IT IS THE WHOLE OF WHAT "INSIDE A SECTION"
-	// MEANS NOW for a write: a method on held is reachable only from a body
-	// that was handed one.
+	// recv is the receiver's type name: "Service", "held", "entry", or "" for
+	// a function with none. IT IS THE WHOLE OF WHAT "INSIDE A SECTION" MEANS
+	// NOW for a write: a method on held is reachable only from a body that was
+	// handed one.
 	recv  string
 	calls map[string]bool
 	// at and last are where each call FIRST and LAST appears. The difference
@@ -201,9 +199,8 @@ var barrierVerbs = map[string]bool{
 // inputs so that two builders producing the same key produce the same string.
 func sampleKeys() map[string]string {
 	const (
-		sampleID       = "0123456789012345678901234567890123456789abc"
-		sampleProject  = "project-of-" + testRepo
-		sampleResource = "resource-1"
+		sampleID      = "0123456789012345678901234567890123456789abc"
+		sampleProject = "project-of-" + testRepo
 	)
 	at := time.Unix(1756000000, 0).UTC()
 
@@ -212,9 +209,6 @@ func sampleKeys() map[string]string {
 		"stamp":              stamp(1),
 		"jobPrefix":          jobPrefix(sampleID),
 		"jobRecordKey":       jobRecordKey(sampleID),
-		"attemptPrefix":      attemptPrefix(sampleID),
-		"attemptLogKey":      attemptLogKey(attempt.Nth(sampleID, 1), at),
-		"attemptAssetKey":    attemptAssetKey(attempt.Nth(sampleID, 1), sampleResource),
 		"projectIndexPrefix": projectIndexPrefix(sampleProject),
 		"projectIndexKey":    projectIndexKey(sampleProject, sampleID),
 		"openIndexPrefix":    openIndexPrefix(testRepo),
@@ -226,9 +220,9 @@ func sampleKeys() map[string]string {
 }
 
 // storeDeclares is every builder store.go declares: no receiver, exactly one
-// string result. unseg, parseAttemptKey, parseOpenIndexKey and idFromIndexKey
-// return two or three values and are readers rather than builders; encode,
-// status and terminal have receivers.
+// string result. unseg, parseOpenIndexKey and idFromIndexKey return two or
+// three values and are readers rather than builders; merged returns a map, and
+// encode, with, status and terminal have receivers.
 func storeDeclares(t *testing.T) []string {
 	t.Helper()
 
@@ -324,24 +318,27 @@ func indexRowKeys(all map[string]string) map[string]bool {
 
 // AND NO KEY THIS PACKAGE WRITES IS IN NO CENSUS.
 //
-// Every scan in this file asks its question of a CLASS of key — is this a
-// record, one of the listings, an attempt row — and a builder in none of them
-// is a row that every one of those scans walks past. refLastKey was exactly
-// that for eight rounds: excluded from the record class because it is not a
-// record, absent from the index class because nothing lists it, and outside the
-// attempt class because it belongs to no attempt. It is the row that decides
+// Every scan in this file asks its question of a CLASS of key — is this the
+// record, is it one of the listings — and a builder in neither is a row that
+// every one of those scans walks past. refLastKey was exactly that for eight
+// rounds: excluded from the record class because it is not a record, and absent
+// from the index class because nothing lists it. It is the row that decides
 // what the NEXT build of a ref diffs from.
 //
 // So the classification is closed here rather than assumed: a builder added to
 // store.go is invoked by sampleKeys (classes() says so), and then it is in
-// exactly one of the three censuses or this fails with its name in the message.
+// exactly one of the two censuses or this fails with its name in the message.
+//
+// THERE WERE THREE, and the third was the attempt rows — a log or asset row per
+// entry, written by the one writer outside every section. There is no such row
+// and no such writer: a log is a file (services/build/livelog) and its cid is a
+// field of the record, so the class is gone rather than empty.
 func TestEveryKeyThisPackageWritesIsInSomeCensus(t *testing.T) {
 	keys := classes(t)
 	whole := wholeKeys(keys)
 	censuses := []map[string]bool{
 		sameKeyAs(keys, "jobRecordKey"),
 		indexRowKeys(keys),
-		attemptRowKeys(keys),
 	}
 
 	for name := range keys {
@@ -362,29 +359,6 @@ func TestEveryKeyThisPackageWritesIsInSomeCensus(t *testing.T) {
 			"%s builds a prefix or a fragment rather than a whole key, so no census of ROWS may "+
 				"count it: a listing is not a write", name)
 	}
-}
-
-// attemptRowKeys are the builders that produce a LOG OR ASSET ROW of one
-// attempt — content the build writes as it goes, keyed by (job, attempt), which
-// no read of a job record decides. It is the class attemptSink writes.
-//
-// IT IS A CLASS AND NOT A LIST OF NAMES, and that has outlived what it was
-// written for. The sink took an arbitrary key for two rounds, and the scan asked
-// only that it came from SOME builder in store.go — so a ref anchor, a project
-// row or a retention row handed to it passed straight through. The door takes no
-// key now, so what this class is used for is narrower and sharper: it says which
-// builders the sink's own switch may name, and both of them take an attempt.Of.
-func attemptRowKeys(all map[string]string) map[string]bool {
-	const sampleID = "0123456789012345678901234567890123456789abc"
-	under := attemptPrefix(sampleID)
-
-	out := map[string]bool{}
-	for name, key := range all {
-		if strings.HasPrefix(key, under) && !strings.HasSuffix(key, "/") {
-			out[name] = true
-		}
-	}
-	return out
 }
 
 // assembles is every function that BUILDS a composite literal of the named
@@ -460,7 +434,7 @@ func receiver(fn *ast.FuncDecl) string {
 // version of the same attack — is caught by the list not naming it.
 var backendFiles = []string{
 	"authz.go", "config.go", "doc.go", "errors.go", "jobid.go", "jobs.go",
-	"leader.go", "queue.go", "reconcile.go", "rpc.go", "runner.go",
+	"leader.go", "output.go", "queue.go", "reconcile.go", "rpc.go", "runner.go",
 	"section.go", "service.go", "store.go",
 }
 
@@ -1328,21 +1302,24 @@ func params(fn *ast.FuncDecl) map[string]int {
 // (backend/row) — and the key each is handed must be a call to one of store.go's
 // builders. Not "a builder or a parameter": A PARAMETER IS THE HOLE.
 //
-// THAT ESCAPE HATCH WAS REAL AND IT WAS USED. Until this round the check read
-// "a builder here, or a parameter every caller builds", and attemptSink.write
-// was the one door through it: a method taking (key, cid), scoped by the SHAPE
-// of its argument. The census one test down then exempted that owner
-// unconditionally from the check that a key names its writer's own subject —
-// `if owner == sink { return true }` — because a door that takes a key cannot
-// satisfy a census about which keys a writer may compose. One line inside it,
+// THAT ESCAPE HATCH WAS REAL AND IT WAS USED, and both the door and the writer
+// behind it are gone now. The check used to read "a builder here, or a
+// parameter every caller builds", and the sink's write() was the one door
+// through it: a method taking (key, cid), scoped by the SHAPE of its argument,
+// belonging to the one writer in this package outside every section. The census
+// one test down then exempted that owner unconditionally from the check that a
+// key names its writer's own subject — `if owner == sink { return true }` —
+// because a door that takes a key cannot satisfy a census about which keys a
+// writer may compose. One line inside it,
 //
 //	set(refLastKey("github.com/evil/repo", "refs/heads/main"), []byte("0000…"))
 //
 // left all seven build packages green and moved another repository's ref anchor
-// on the happy path of every build. The sink takes no key now (runner.go): it
-// takes WHICH KIND of the attempt's two rows this is and composes the key from
-// the attempt it was constructed for. So there is no parameter branch here any
-// more, and a door that takes a key fails by name the moment somebody adds one.
+// on the happy path of every build. What that writer existed for was a log row
+// per line; a log is a FILE now (services/build/livelog) and its cid is a field
+// of the record, written by the section that settles the job. So there is no
+// parameter branch here, no exemption one test down, and no writer outside a
+// section for either of them to be about.
 //
 // mend's dropOrphanedOpen still takes the REPOSITORY of a row whose record is
 // gone — a parameter, and the named exception — but it is not a key: it is one
@@ -1422,97 +1399,6 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 			return true
 		})
 	}
-}
-
-// AND THE ONE EXEMPTION IS SCOPED BY ITS JUSTIFICATION, NOT BY ITS SPELLING.
-//
-// attemptSink is the one writer in this package that is outside every section
-// on purpose: a log line or an asset cid is CONTENT the build produces as it
-// goes, keyed by (job, attempt), and no read of a job record decides it. That
-// is a sentence with several clauses, and the guard checked none of them two
-// rounds ago and not all of them one round ago.
-//
-// WHAT WAS MISSING WAS THE CONSTRUCTION. Who may write through the sink was
-// checked; who may MAKE one was not — and `assembles` is asked of entry, of
-// stated, of held and of jobReader precisely because a second constructor is a
-// second way to hold authority nobody handed you. A method on the handle that
-// built a foreign sink and wrote through the sink's own door was a write into
-// another job's attempt prefix that this file named nowhere: the closing loop of
-// TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord watches the store and
-// the queue verbs, and a door reached through "write" is neither.
-//
-// SO ALL OF IT IS CHECKED HERE: who may write through the sink, who may make
-// one, that nothing re-points one after it is made, and that the rows it
-// composes are keyed by the attempt it was made for.
-//
-// TWO OF THESE HOLD A NAME AND SAY SO. "Only invoke may call attempt.Nth" and
-// "only these two methods may call write" read identifiers at call sites. What
-// stands behind them is the compiler: attempt.Of's fields are unexported in
-// another package, so `other := *k; other.of.job = neighbour` does not compile
-// and neither does `attempt.Of{job: …}` — the only spellable re-point is a call
-// to Nth and an assignment to `of`, and both are counted below.
-func TestTheSinkWritesOnlyItsOwnJobsAttemptRows(t *testing.T) {
-	all := pkgFuncs(t)
-
-	require.ElementsMatch(t, []string{"attemptSink.Log", "attemptSink.Asset"},
-		names(callers(all, "write")),
-		"the sink's one door to the store is reached from its two Sink methods and nowhere "+
-			"else — an unenumerated caller is a write outside every section that nothing named")
-
-	require.ElementsMatch(t, []string{"Service.invoke"}, assembles(all, "attemptSink"),
-		"a sink assembled anywhere but where a run is handed one is a writer outside every "+
-			"section that no run produced — and a foreign one built inside a section writes "+
-			"through this door into another job's attempt prefix")
-
-	require.ElementsMatch(t, []string{"Service.invoke"}, names(callers(all, "Nth")),
-		"attempt.Nth is the only way to say which job and which run a sink's rows are for, so "+
-			"a second caller is a second answer — including one that re-points a copy of a live "+
-			"sink, which is not a composite literal and which the census above cannot see")
-
-	require.Contains(t, fieldsOn(t, "attemptSink"), "of",
-		"the sink's attempt is the field the check below names, so a rename would leave that "+
-			"check looking at a key nothing writes and passing on an empty answer")
-	for name, f := range all {
-		require.Empty(t, f.writesTo["of"],
-			"%s assigns the attempt a sink was constructed for; `other := *k` copies a sink "+
-				"without a literal, and an assignment through the copy is the whole of what is "+
-				"left once the fields are another package's", name)
-	}
-
-	// AND THE ROWS IT COMPOSES ARE KEYED BY THAT ATTEMPT. Both key builders take
-	// an attempt.Of, so a bare id does not compile; what this adds is that the
-	// one they are handed is the SINK'S OWN and not one made beside it.
-	rows := attemptRowKeys(classes(t))
-
-	built := map[string][]string{}
-	for _, file := range parsePackage(t).Files {
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || receiver(fn) != "attemptSink" || fn.Body == nil {
-				continue
-			}
-			k := recvName(fn)
-			require.NotEmpty(t, k, "%s must name its receiver, or nothing below can be spelled", qualify(fn))
-
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok || !rows[calleeName(call.Fun)] {
-					return true
-				}
-				built[qualify(fn)] = append(built[qualify(fn)], calleeName(call.Fun))
-				require.NotEmpty(t, call.Args)
-				require.Equal(t, k+".of", types.ExprString(call.Args[0]),
-					"%s must key its row by the attempt THIS sink is for — per attempt is what "+
-						"keeps two runners either side of a leadership flap out of one another's "+
-						"rows, and a retry from overwriting the previous run's logs", qualify(fn))
-				return true
-			})
-		}
-	}
-	require.Equal(t,
-		map[string][]string{"attemptSink.write": {"attemptLogKey", "attemptAssetKey"}},
-		built,
-		"the two attempt rows are composed in the one door, and both are attempt rows")
 }
 
 // A RESPELLING OF A ROW MAKER IS STILL COUNTED, and this is the check on the
@@ -1608,7 +1494,7 @@ func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 	// ends() is the shared terminal write, so it is a method on the handle and
 	// its callers are the ones that must open the section.
 	require.ElementsMatch(t,
-		[]string{"Service.create", "Service.begin", "Service.retry", "held.ends"},
+		[]string{"Service.create", "Service.begin", "Service.retry", "held.ends", "held.logged"},
 		names(callers(all, "record")))
 	for name := range callers(all, "record") {
 		held, chain := inBody(all, name, "record")
@@ -1636,23 +1522,23 @@ func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 // composes its own key from the subject its writer carries, and this is where
 // the population of those methods is closed.
 //
-// AND THE SINK IS IN IT NOW. It was exempted here — one line, `if owner == sink
-// { return true }` — because the sink's door TOOK A KEY, and a door that takes
-// a key cannot answer a census about which keys its owner may compose. The
-// exemption was unconditional, so a single line inside the sink's own rows,
+// AND THERE IS ONE SUBJECT NOW, BECAUSE THERE IS ONE WRITER. There were two:
+// an entry's rows are about the job its section was entered on and read it out
+// of the handle, h.id(), and the SINK's were about the attempt it was
+// constructed for and read it off a field of its own. The sink was exempt from
+// this census for two rounds — one line, `if owner == sink { return true }` —
+// because its door TOOK A KEY, and a door that takes a key cannot answer a
+// census about which keys its owner may compose. The exemption was
+// unconditional, so a single line inside the sink's own rows,
 //
 //	set(refLastKey("github.com/evil/repo", "refs/heads/main"), []byte("0000…"))
 //
 // moved another repository's ref anchor on the happy path of every build, from
-// a writer this file had placed outside every section BY DESIGN. There is no
-// key at that door now, so there is nothing left to exempt.
-//
-// TWO SUBJECTS, BECAUSE THERE ARE TWO WRITERS. An entry's rows are about the
-// job its section was entered on and read it out of the handle, h.id(); the
-// sink's are about the attempt it was constructed for and read it off its own
-// field, k.of. Both are values this package cannot assign: a subject lives
-// inside backend/section's holding, and an attempt inside backend/attempt's
-// struct.
+// a writer this file had placed outside every section BY DESIGN. It was brought
+// inside the census in the round after that, and it is DELETED now: what it
+// existed for was a replicated row per log line, and a log is a file whose cid
+// the settling section writes (output.go). Every row this package makes is an
+// entry's, and every entry's is the section's.
 //
 // IT IS SCANNED OVER THE WHOLE PACKAGE, not over the entry's own methods, and
 // that was a correction one round needed: scanned over entry and stated alone, a
@@ -1676,9 +1562,8 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 	// HOW EACH WRITER NAMES ITS SUBJECT, spelled against the receiver so that a
 	// method that renamed its receiver cannot make the check vacuous.
 	subjects := map[string]string{
-		"entry":       "h.id()",
-		"stated":      "h.id()",
-		"attemptSink": "of",
+		"entry":  "h.id()",
+		"stated": "h.id()",
 	}
 
 	rows := map[string][]string{}
@@ -1744,9 +1629,7 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 		"stated.inProject":       {"projectIndexKey"},
 		"stated.retained":        {"terminalIndexKey"},
 		"stated.anchor":          {"refLastKey"},
-		"attemptSink.write":      {"attemptLogKey", "attemptAssetKey"},
-	}, rows, "one row kind per method, and every method named — except the sink's one door, "+
-		"which is the two kinds of an attempt and nothing else")
+	}, rows, "one row kind per method, and every method named")
 
 	// AND THOSE TWO VERBS ARE THE ONLY THINGS THAT MAKE A ROW AT ALL. row.Entry's
 	// slice is unexported in another package and its elements carry another
@@ -1761,7 +1644,6 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 	all := pkgFuncs(t)
 	require.ElementsMatch(t, []string{
 		"entry.record", "stated.open", "stated.inProject", "stated.retained", "stated.anchor",
-		"attemptSink.write",
 	}, names(callers(all, "Set")),
 		"a row with a value in it is made by a method in the table above and by nothing else — "+
 			"including a method that only takes the method VALUE, which counts here exactly as a "+
@@ -1933,16 +1815,17 @@ func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
 // takes the STORE and not the rows, and Batch is named NOWHERE in this package —
 // which is what is checked, instead of what its argument was spelled.
 //
-// attemptSink.write is the one exemption and it is named rather than implicit:
-// a log or asset row is content keyed by (job, attempt), written DURING the
-// build and outside every section on purpose, and no read of a job record
-// decides it. TestTheSinkWritesOnlyItsOwnJobsAttemptRows checks every clause of
-// that sentence — including who may MAKE one — rather than the shape of an
-// argument.
+// AND THERE IS NO EXEMPTION LEFT. There was one, named rather than implicit: a
+// log or asset row was content keyed by (job, attempt), written DURING the
+// build by a writer outside every section on purpose, and a whole test existed
+// to check the clauses of that sentence. The writer is gone (output.go) — a log
+// is a file, and its cid reaches the store once, from the section that settles
+// the job — so the list below is the whole population rather than the
+// population minus one.
 func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 	all := pkgFuncs(t)
 
-	require.ElementsMatch(t, []string{"entry.commit", "attemptSink.write"},
+	require.ElementsMatch(t, []string{"entry.commit"},
 		names(callers(all, "Apply")),
 		"an entry applied outside commit() is an entry no section decided — and a handle is the "+
 			"only thing that can say the section it was decided in is still running")
@@ -2017,13 +1900,15 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		if _, checked := writes[name]; checked {
 			continue
 		}
-		// "write" IS IN THIS SET NOW, and it was not until this round: the
-		// sink's door is a write like any other, and a method on the handle
-		// that built a foreign sink and wrote through it reached another job's
-		// attempt prefix past every verb below.
+		// "write" WAS IN THIS SET AND IS NOT ANY MORE. It was the sink's door,
+		// added when a method on the handle that built a foreign sink and wrote
+		// through it turned out to reach another job's attempt prefix past
+		// every verb below. There is no such door and no such prefix: the verb
+		// named nothing once the sink was deleted, and a check on a name that
+		// stands for nothing is worse than no check, because it reads like one.
 		for verb := range map[string]bool{
 			"Apply": true, "Batch": true, "Push": true, "Ack": true,
-			"Remove": true, "Nack": true, "running": true, "write": true,
+			"Remove": true, "Nack": true, "running": true,
 		} {
 			require.False(t, f.calls[verb],
 				"%s writes %s and is not one of the checked paths above", name, verb)

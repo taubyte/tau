@@ -2,6 +2,10 @@ package backend
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -277,10 +281,10 @@ type fakeRunner struct {
 	mu   sync.Mutex
 	work []Work
 
-	run func(ctx context.Context, w Work, sink Sink) error
+	run func(ctx context.Context, w Work, out Output) error
 }
 
-func (f *fakeRunner) Run(ctx context.Context, w Work, sink Sink) error {
+func (f *fakeRunner) Run(ctx context.Context, w Work, out Output) error {
 	f.mu.Lock()
 	f.work = append(f.work, w)
 	run := f.run
@@ -289,7 +293,89 @@ func (f *fakeRunner) Run(ctx context.Context, w Work, sink Sink) error {
 	if run == nil {
 		return nil
 	}
-	return run(ctx, w, sink)
+	return run(ctx, w, out)
+}
+
+// fakeAssets is the byte store a build's output goes to — v2's storage service,
+// which does not exist yet (config.go's Assets says what a real one owes this
+// seam).
+//
+// IT IS CONTENT-ADDRESSED, like the thing it stands in for, because that is
+// what makes the assertions below about cids mean anything: the same bytes are
+// the same id, so a test names what it expects by naming the content.
+type fakeAssets struct {
+	mu     sync.Mutex
+	stored map[string][]byte
+	puts   int
+	err    error
+	// emptyCID answers with no id at all, which is a store that broke its own
+	// contract rather than one that failed.
+	emptyCID bool
+	// block holds a Put until a test releases it, which is how the publish
+	// deadline is measured.
+	block chan struct{}
+}
+
+func newAssets() *fakeAssets { return &fakeAssets{stored: map[string][]byte{}} }
+
+func (f *fakeAssets) Put(ctx context.Context, content io.Reader) (string, error) {
+	f.mu.Lock()
+	block, err := f.block, f.err
+	f.puts++
+	f.mu.Unlock()
+
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	if err != nil {
+		return "", err
+	}
+
+	raw, readErr := io.ReadAll(content)
+	if readErr != nil {
+		return "", readErr
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.emptyCID {
+		return "", nil
+	}
+	id := assetCID(raw)
+	f.stored[id] = raw
+	return id, nil
+}
+
+// assetCID is what fakeAssets calls a piece of content, so a test can say "the
+// cid of these bytes" without having stored them first.
+func assetCID(content []byte) string {
+	sum := sha256.Sum256(content)
+	return "cid-" + base64.RawURLEncoding.EncodeToString(sum[:])[:16]
+}
+
+func (f *fakeAssets) content(t testing.TB, cid string) string {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	raw, ok := f.stored[cid]
+	require.True(t, ok, "nothing was stored at %q", cid)
+	return string(raw)
+}
+
+func (f *fakeAssets) fail(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
+}
+
+func (f *fakeAssets) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.puts
 }
 
 func (f *fakeRunner) seen() []Work {
@@ -321,6 +407,7 @@ type harness struct {
 	store  *fakeStore
 	repos  *fakeRepositories
 	runner *fakeRunner
+	assets *fakeAssets
 	clock  *testClock
 	host   host.Host
 }
@@ -350,19 +437,27 @@ func newHarnessOver(t testing.TB, over Store, store *fakeStore, opts ...Option) 
 
 	repos := newRepositories(testRepo)
 	runner := &fakeRunner{}
+	assets := newAssets()
 	clock := newClock()
 	h := newHost(t, newMocknet(t))
 
 	opts = append([]Option{
 		WithClock(clock.now),
 		WithRunner(runner),
+		WithAssets(assets),
 	}, opts...)
 
-	s, err := New(h, over, repos, Config{}, opts...)
+	// THE LOG DIRECTORY IS THIS TEST'S OWN. A run writes a real file, and the
+	// default is a scratch directory shared by every process on the box — fine
+	// for a node, wrong for a test that must not see another test's leftovers.
+	s, err := New(h, over, repos, Config{LogDir: t.TempDir()}, opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
-	return &harness{Service: s, store: store, repos: repos, runner: runner, clock: clock, host: h}
+	return &harness{
+		Service: s, store: store, repos: repos,
+		runner: runner, assets: assets, clock: clock, host: h,
+	}
 }
 
 func (h *harness) push(t testing.TB, ref, commit string) string {
@@ -415,4 +510,22 @@ func (h *harness) deadLetter(t testing.TB) *queue.Queue {
 	q, err := h.group.Open(queue.Config{Name: h.cfg.Queue.DeadLetter})
 	require.NoError(t, err)
 	return q
+}
+
+// logFiles is what is left in the log directory. A run's file is scratch: it is
+// removed when the log has been handed to the asset store, so a test that
+// finishes a build and finds one has found a leak.
+func logFiles(t testing.TB, h *harness) []string {
+	t.Helper()
+	entries, err := os.ReadDir(h.cfg.LogDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	require.NoError(t, err)
+
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
 }

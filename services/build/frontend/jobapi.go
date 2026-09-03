@@ -35,6 +35,17 @@ import (
 // what makes them per-job rather than per-cid. There is no bare-cid route in
 // v2. They wait on the byte store the runner will publish to, which does not
 // exist yet.
+//
+// AND A THIRD IS COMING THAT v1 HAS NO VERSION OF: following a build WHILE IT
+// RUNS. The backend writes a run's log to a file a reader can fork off at any
+// offset and holds the seam open (backend's Service.Follow), so the route is a
+// fork and an io.Copy — GET /job/{jid}/logs with an offset, resumable by a
+// client that reconnects. It is the SAME authorization as everything here, on
+// the caller's write access to the job's repository, through admitted() like
+// every other route in this file. What it waits on is not the byte store but
+// the ROUTING: the file is on the backend node running that build, and which
+// node that is, and how a request reaches it, is what the move to leased
+// stateless executors decides.
 
 // jobJSON is how a Job reaches a caller: protojson over the generated message,
 // with the proto's own field names.

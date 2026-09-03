@@ -458,7 +458,7 @@ func TestACancelStopsTheRunTheClaimRegistered(t *testing.T) {
 	// cancel was supposed to end this build and instead left it to its own
 	// deadline an hour away.
 	building, stopped := make(chan struct{}), make(chan error, 1)
-	h.runner.run = func(ctx context.Context, _ Work, _ Sink) error {
+	h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
 		close(building)
 		select {
 		case <-ctx.Done():

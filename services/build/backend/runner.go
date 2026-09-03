@@ -8,8 +8,6 @@ import (
 
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/pkg/v2/queue"
-	"github.com/taubyte/tau/services/build/backend/attempt"
-	"github.com/taubyte/tau/services/build/backend/row"
 )
 
 // step performs exactly ONE cycle of the claim loop, and the loop Start spawns
@@ -104,7 +102,26 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 		Attempt:       rec.Attempt,
 	}
 
-	runErr := s.invoke(runCtx, work)
+	// THE RUN'S OUTPUT IS A FILE AND A VALUE, and this is where the sink used
+	// to be. A build streams rows while it runs, so the thing that took them
+	// was the ONE WRITER IN THIS PACKAGE OUTSIDE EVERY SECTION — and three of
+	// the last four escapes this package found came through it, each one
+	// moving another repository's ref anchor on the happy path of every build.
+	// What a run writes now is a log FILE (services/build/livelog) and a map in
+	// this goroutine's own memory; the store hears about either of them once,
+	// from settle, inside the section that read the record.
+	out, runErr := s.invoke(runCtx, work)
+	if out == nil {
+		// The run never started: this node could not open a log for it. That
+		// is a FAILED build rather than a build with no log — a node that
+		// cannot record what a build printed should not be the node that runs
+		// it, and settling it as failed is what hands the job to another one.
+		return s.settle(d, produced{}, runErr)
+	}
+	// Whatever happens below, the log is closed — which releases anybody
+	// watching it — and the file goes. It is scratch: what outlives the run is
+	// a cid, and only if it was published.
+	defer out.discard()
 
 	// A SHUTDOWN ABANDONS THE DELIVERY RATHER THAN FAILING THE JOB. Close ends
 	// the loop's context so that a restart does not wait out an hour-long build,
@@ -126,7 +143,11 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 		return fmt.Errorf("job %s abandoned: %w", rec.ID, errShuttingDown)
 	}
 
-	return s.settle(d, runErr)
+	// AND NOTHING IS PUBLISHED ON THE WAY OUT, above, for the reason the ack is
+	// the commit point: an abandoned delivery writes no record, so a log shipped
+	// there would be bytes in the asset store that no job ever names, and
+	// nothing in this design deletes those. The rebuild writes its own.
+	return s.settle(d, out.publish(ctx), runErr)
 }
 
 // begin is the claim's own transition, and it is ONE SECTION: the barrier, the
@@ -220,20 +241,33 @@ func (s *Service) forget(id string) {
 	s.runningMu.Unlock()
 }
 
-// invoke runs the job. The context is the claim's, built by run and registered
-// by begin, so that a cancel can never land between the record reading Claimed
-// and there being something to stop.
-func (s *Service) invoke(ctx context.Context, work Work) (err error) {
+// invoke opens the run's output and runs the job. The context is the claim's,
+// built by run and registered by begin, so that a cancel can never land between
+// the record reading Claimed and there being something to stop.
+//
+// IT HANDS THE OUTPUT BACK EVEN WHEN THE RUN FAILED, and that is the point of
+// the named return: a build that failed, was cancelled, or panicked printed
+// exactly the lines that say why, and those are the lines somebody wants. v1
+// publishes its log from a `defer` inside the run — so what the defer does not
+// survive, the log does not survive either, and the temp file it had been
+// writing is left in /tmp with nothing naming it.
+func (s *Service) invoke(ctx context.Context, work Work) (out *runOutput, err error) {
+	if out, err = s.output(work); err != nil {
+		return nil, err
+	}
+
 	// A runner that panics must not take the loop down with it, and must not
 	// leave the item claimed until its lease expires either: a panic is a
-	// failed build, which is what the recovery turns it into.
+	// failed build, which is what the recovery turns it into. The output is
+	// already in the named return by then, so the log the panicking build wrote
+	// is published like any other.
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("runner panicked: %v", r)
 		}
 	}()
 
-	return s.runner.Run(ctx, work, &attemptSink{s: s, of: attempt.Nth(work.JobID, work.Attempt)})
+	return out, s.runner.Run(ctx, work, out)
 }
 
 // settle ends the delivery and writes what the run decided — THE ACK AND THE
@@ -285,14 +319,24 @@ func (s *Service) invoke(ctx context.Context, work Work) (err error) {
 //     Open with no item and, once finish has dropped its open row, nothing for
 //     reconcile to walk either. So the item goes back, in this section, where
 //     the reopening could not have raced it.
-func (s *Service) settle(d queue.Delivery, runErr error) error {
+func (s *Service) settle(d queue.Delivery, p produced, runErr error) error {
 	return s.withJob(d.ID, func(j *held) error {
 		if err := j.ack(s.work, d); err != nil {
 			return err
 		}
 
-		if !j.found() || j.rec().terminal() {
+		if !j.found() {
 			return nil
+		}
+		if j.rec().terminal() {
+			// A CANCELLED JOB STILL GETS ITS LOG. The status is not touched —
+			// a cancelled build must not be overwritten with the outcome of
+			// the run that was cancelled — but the cid of what that run
+			// printed is the one thing whoever cancelled it wants to read, and
+			// v1 went to the trouble of a second RPC to carry it (monkey's
+			// cancelHandler hands patrick the accumulated logs). Here it is a
+			// field on the record this section already holds.
+			return j.logged(p)
 		}
 
 		rec := j.rec()
@@ -304,7 +348,7 @@ func (s *Service) settle(d queue.Delivery, runErr error) error {
 			// AN ERROR FROM Run IS TERMINAL. The queue's retry exists for a
 			// worker that DIED — which is a claim that expired, not an error
 			// returned — and retrying a compile error five times is waste.
-			return j.finish(buildv1.JobStatus_JobStatusFailed, runErr.Error())
+			return j.fail(runErr.Error(), p)
 		}
 
 		// The ref anchor is written in the SAME entry as the success, because
@@ -314,7 +358,7 @@ func (s *Service) settle(d queue.Delivery, runErr error) error {
 		// frontend"). It used to be handed in as an extra BatchOp this body
 		// composed; it is a row of the entry now, built off the record the
 		// entry writes, so the anchor a success can move is this job's ref.
-		return j.succeed()
+		return j.succeed(p)
 	})
 }
 
@@ -376,116 +420,4 @@ func (s *Service) drainDeadLetter() (bool, error) {
 		}
 		return nil
 	})
-}
-
-// attemptSink writes what a run produced, one row per entry, under THIS
-// attempt.
-//
-// Per attempt rather than per job, so two runners either side of a leadership
-// flap cannot interleave into one another's rows, and a retry does not
-// overwrite the previous run's logs. Durable when called, so a build that
-// crashes still has the logs it had got to — v1's log file only reached IPFS
-// after the run returned.
-//
-// IT IS THE ONE WRITER IN THIS PACKAGE OUTSIDE EVERY SECTION, on purpose: a log
-// line or an asset cid is CONTENT the build produces as it goes, keyed by (job,
-// attempt), and no read of a job record decides it. What holds it instead is
-// that it is CONSTRUCTED for one attempt and there is no expression in it that
-// names a key.
-//
-// THAT IS ROUND TEN, AND IT IS WHAT THE ROUND BEFORE LEFT OPEN. write took a
-// KEY, and the census that says "every key a row names is composed from the
-// subject its writer was entered on" exempted this method unconditionally — one
-// line, `if owner == sink { return true }`. So one line here,
-//
-//	set(refLastKey("github.com/evil/repo", "refs/heads/main"), []byte("0000…"))
-//
-// as a second element of the sink's own rows, left all seven build packages
-// green and moved another repository's ref anchor on the happy path of every
-// build: Service.lastCommit reads that row, and what it reads becomes the
-// Before the NEXT build of that ref diffs from. The exemption was not a hole
-// somebody forgot to close — it was the only way a door that took a key could
-// be let through a census about keys.
-//
-// SO THE DOOR TAKES NO KEY. It takes WHAT THE ROW IS — which of the attempt's
-// two kinds, and the one thing that distinguishes it inside that attempt — and
-// composes the key from the attempt this sink was constructed for. There is
-// nothing here to hand a foreign key to, and no exemption left to write.
-type attemptSink struct {
-	s *Service
-	// of is the job and the run of it these rows belong to. It is another
-	// package's struct with unexported fields (backend/attempt), so a copy of
-	// this sink cannot be re-pointed at a neighbour's attempt by assigning
-	// through it — the eighth round's lesson about `other := *j; other.id = …`,
-	// which is not a composite literal and which no census of literals sees.
-	of attempt.Of
-}
-
-// attemptRowKind is WHICH OF AN ATTEMPT'S TWO ROWS this is, and it is the sink's
-// whole answer to "about what".
-//
-// It is a kind rather than a key because a kind cannot name anything: there are
-// two of them, they are declared here, and the key each one means is composed
-// below from the sink's own attempt. A third kind is a compile-time constant
-// somebody had to add, beside the branch that means it.
-type attemptRowKind int
-
-const (
-	logRow attemptRowKind = iota + 1
-	assetRow
-)
-
-func (r attemptRowKind) String() string {
-	switch r {
-	case logRow:
-		return logSegment
-	case assetRow:
-		return assetSegment
-	default:
-		return "unknown"
-	}
-}
-
-func (k *attemptSink) Log(_ context.Context, at time.Time, cid string) error {
-	if cid == "" {
-		return errors.New("build: a log entry needs a cid")
-	}
-	return k.write(logRow, at, "", cid)
-}
-
-func (k *attemptSink) Asset(_ context.Context, resourceID, cid string) error {
-	if resourceID == "" {
-		return errors.New("build: an asset needs a resource id")
-	}
-	if cid == "" {
-		return errors.New("build: an asset needs a cid")
-	}
-	return k.write(assetRow, time.Time{}, resourceID, cid)
-}
-
-// write is the sink's ONE DOOR TO THE STORE AND IT TAKES NO KEY: the kind of
-// row, the two things that can distinguish one inside an attempt — the instant
-// a log line arrived, the resource an asset is for — and the cid that goes at
-// it. Exactly one of the two is meaningful, and the kind is what says which.
-//
-// ONE ROW, COUNTED RATHER THAN TRUSTED. The entry is asked how many rows went
-// into it, which is a fact about what it HOLDS rather than about how anything
-// was spelled: a kind this switch does not know puts none in, and a second row
-// spliced in beside the first puts two, and both are refused before anything is
-// applied. It is the one guard here that a respelling does not reach.
-func (k *attemptSink) write(kind attemptRowKind, at time.Time, resourceID, cid string) error {
-	e := row.Sized(1)
-	switch kind {
-	case logRow:
-		e.Set(attemptLogKey(k.of, at), []byte(cid))
-	case assetRow:
-		e.Set(attemptAssetKey(k.of, resourceID), []byte(cid))
-	}
-	if e.Len() != 1 {
-		return errInternal("build: job %s: a %s row of an attempt is %d rows", k.of.Job(), kind, e.Len())
-	}
-	if err := e.Apply(k.s.store, k.s.cfg.Queue.ApplyTimeout); err != nil {
-		return fmt.Errorf("build: recording a %s row of job %s: %w", kind, k.of.Job(), err)
-	}
-	return nil
 }

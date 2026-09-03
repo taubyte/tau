@@ -52,20 +52,24 @@ func (h *jobHandler) Retry(ctx context.Context, req *connect.Request[buildv1.Job
 	return connect.NewResponse(&buildv1.Empty{}), nil
 }
 
-// job assembles one Job: the record, plus every log and asset row across every
-// attempt.
+// job assembles one Job. It is ONE READ: the record carries the whole of it,
+// including the cids of what its runs produced.
 //
 // IT IS THE ONE READ OF A RECORD THAT DECIDES NO WRITE, so it is the one that
 // takes no section: there is nothing for a concurrent transition to make stale,
 // and serializing every Get behind every build's bookkeeping would buy a
-// consistency this shape does not promise anyway — the rows are listed after
-// the record is read, and one that vanished between the two is skipped below.
+// consistency this shape does not promise anyway.
 //
-// THE MAPS ARE A READ SHAPE. They are never a stored blob — one entry, one key
-// (root AGENTS.md rule 1) — because a map re-serialized on each write is a
-// read-modify-write, and two writers of it lose entries. Rows are read in
-// attempt order, so a later attempt's asset for a resource overwrites an
-// earlier one, which is what a reader of a retried job wants.
+// IT USED TO BE A LISTING. The logs and assets were one row per entry under
+// this job's attempt prefix, so assembling a Job meant a prefix scan and a Get
+// per row — and writing one meant a replicated entry per log line, from the one
+// writer in this package that was outside every section. The maps are fields of
+// the record now (store.go), and what they hold is a content id per attempt and
+// per resource rather than one per line.
+//
+// THE MAPS ARE COPIED OUT. The proto message a caller is handed must not share
+// a map with the record this process decoded, or a reader and a later write of
+// that record are two writers of one map.
 func (s *Service) job(id string) (*buildv1.Job, error) {
 	if err := requireJobID(id); err != nil {
 		return nil, err
@@ -82,7 +86,7 @@ func (s *Service) job(id string) (*buildv1.Job, error) {
 		return nil, errNotFound("no job %s", id)
 	}
 
-	job := &buildv1.Job{
+	return &buildv1.Job{
 		Id:            rec.ID,
 		Status:        rec.status(),
 		RepositoryKey: rec.RepositoryKey,
@@ -90,30 +94,9 @@ func (s *Service) job(id string) (*buildv1.Job, error) {
 		CommitSha:     rec.CommitSHA,
 		Timestamp:     rec.CreatedAt,
 		Attempt:       int32(rec.Attempt),
-		Logs:          map[string]string{},
-		AssetCid:      map[string]string{},
-	}
-
-	keys := s.store.Keys(attemptPrefix(id))
-	slices.Sort(keys)
-	for _, key := range keys {
-		row, err := parseAttemptKey(id, key)
-		if err != nil {
-			return nil, errInternal("%v", err)
-		}
-		value, exists := s.store.Get(key)
-		if !exists {
-			// Listed and then gone is a store that changed under the listing,
-			// not a fault: skip it rather than fail a read.
-			continue
-		}
-		if row.kind == logSegment {
-			job.Logs[row.key] = string(value)
-		} else {
-			job.AssetCid[row.key] = string(value)
-		}
-	}
-	return job, nil
+		Logs:          merged(rec.Logs, nil),
+		AssetCid:      merged(rec.Assets, nil),
+	}, nil
 }
 
 // list streams the ids of a project's jobs.
@@ -221,9 +204,9 @@ func (s *Service) cancel(id string) error {
 // the id, found it, and answered {"retry": jid} — so "retry" on a running job
 // was a lie the caller could not detect.
 //
-// The accumulated attempt rows are KEPT: the record's attempt counter keeps
-// going up, so the new run writes under a higher attempt/ segment and the
-// previous run's logs stay readable. Push after an Ack is a genuinely new queue
+// WHAT EARLIER ATTEMPTS PRODUCED IS KEPT: the record's attempt counter keeps
+// going up, so the next run's log is filed under a higher attempt and the
+// previous one's cid stays where it is. Push after an Ack is a genuinely new queue
 // item whose delivery attempts start from one, which is exactly why the
 // attempt/ segment is driven by the record's counter and not by the queue's.
 func (s *Service) retry(id string) error {

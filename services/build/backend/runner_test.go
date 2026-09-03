@@ -3,6 +3,8 @@ package backend
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,9 +21,10 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	id := h.push(t, testRef, testCommit)
 
 	var during buildv1.JobStatus
-	h.runner.run = func(_ context.Context, w Work, sink Sink) error {
+	h.runner.run = func(_ context.Context, w Work, out Output) error {
 		during = h.status(t, w.JobID)
-		return sink.Asset(context.Background(), "website/home", "cid-asset")
+		fmt.Fprintf(out, "building %s\n", w.CommitSHA)
+		return out.Asset(context.Background(), "website/home", strings.NewReader("the artifact"))
 	}
 
 	require.True(t, h.mustStep(t))
@@ -50,7 +53,20 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 
 	job, err := h.job(id)
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"website/home": "cid-asset"}, job.GetAssetCid())
+
+	// WHAT THE RUN PRODUCED IS ON THE JOB AS CONTENT IDS, and the bytes are in
+	// the asset store — one Put for the artifact, during the run, and one for
+	// the log, at the end of it.
+	require.Equal(t, map[string]string{"website/home": assetCID([]byte("the artifact"))}, job.GetAssetCid())
+	require.Equal(t, "the artifact", h.assets.content(t, job.GetAssetCid()["website/home"]))
+
+	logCID, logged := job.GetLogs()[stamp(1)]
+	require.True(t, logged, "the log of attempt 1 is keyed by the attempt: %v", job.GetLogs())
+	require.Equal(t, "building "+testCommit+"\n", h.assets.content(t, logCID))
+
+	// And no file is left behind: the log is scratch, and what survives is the
+	// cid above.
+	require.Empty(t, logFiles(t, h), "the log file must not outlive the run that wrote it")
 }
 
 // The before..after anchor is this service's own: written on success, read at
@@ -85,7 +101,7 @@ func TestBeforeIsWhatThisServiceItselfLastFinished(t *testing.T) {
 func TestARunThatFailsIsTerminalRatherThanRetried(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	h.runner.run = func(context.Context, Work, Sink) error { return errors.New("compile error") }
+	h.runner.run = func(context.Context, Work, Output) error { return errors.New("compile error") }
 
 	require.True(t, h.mustStep(t))
 
@@ -107,7 +123,7 @@ func TestARunThatFailsIsTerminalRatherThanRetried(t *testing.T) {
 func TestARunnerThatPanicsIsAFailedBuild(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	h.runner.run = func(context.Context, Work, Sink) error { panic("nil map write") }
+	h.runner.run = func(context.Context, Work, Output) error { panic("nil map write") }
 
 	require.True(t, h.mustStep(t))
 	require.Equal(t, buildv1.JobStatus_JobStatusFailed, h.status(t, id))
@@ -121,7 +137,7 @@ func TestCancelWhileRunningStopsTheRunAndKeepsTheCancelledStatus(t *testing.T) {
 	id := h.push(t, testRef, testCommit)
 
 	var ctxErr error
-	h.runner.run = func(ctx context.Context, w Work, _ Sink) error {
+	h.runner.run = func(ctx context.Context, w Work, _ Output) error {
 		require.NoError(t, h.cancel(w.JobID))
 		<-ctx.Done()
 		ctxErr = ctx.Err()
@@ -149,7 +165,7 @@ func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T)
 		h.push(t, testRef, testCommit)
 
 		var left time.Duration
-		h.runner.run = func(ctx context.Context, _ Work, _ Sink) error {
+		h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
 			deadline, ok := ctx.Deadline()
 			require.True(t, ok, "a run must always be bounded")
 			left = time.Until(deadline)
@@ -172,7 +188,7 @@ func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T)
 		h.push(t, testRef, testCommit)
 
 		var left time.Duration
-		h.runner.run = func(ctx context.Context, _ Work, _ Sink) error {
+		h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
 			deadline, ok := ctx.Deadline()
 			require.True(t, ok, "a run must always be bounded")
 			left = time.Until(deadline)
@@ -192,7 +208,7 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	h.runner.run = func(context.Context, Work, Sink) error {
+	h.runner.run = func(context.Context, Work, Output) error {
 		// Somebody else takes the job while this run is going: the lease
 		// elapses and the queue redelivers it.
 		h.clock.advance(h.cfg.Queue.VisibilityTimeout + time.Second)
@@ -222,7 +238,7 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	h.runner.run = func(context.Context, Work, Sink) error {
+	h.runner.run = func(context.Context, Work, Output) error {
 		h.store.stepDown()
 		return nil
 	}
@@ -431,7 +447,7 @@ func TestTheStartedLoopEventuallyRunsAQueuedJob(t *testing.T) {
 	id := h.push(t, testRef, testCommit)
 
 	done := make(chan struct{})
-	h.runner.run = func(context.Context, Work, Sink) error { close(done); return nil }
+	h.runner.run = func(context.Context, Work, Output) error { close(done); return nil }
 
 	require.NoError(t, h.Start(t.Context()))
 	select {
@@ -502,7 +518,7 @@ func TestSettleReportsARecordItCannotRead(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	h.runner.run = func(context.Context, Work, Sink) error {
+	h.runner.run = func(context.Context, Work, Output) error {
 		h.store.put(t, jobRecordKey(id), []byte("not cbor"))
 		return nil
 	}
@@ -572,7 +588,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 		id := h.push(t, testRef, testCommit)
 
 		// begin's barrier is taken and the build runs; settle's is refused.
-		h.runner.run = func(context.Context, Work, Sink) error {
+		h.runner.run = func(context.Context, Work, Output) error {
 			h.store.failBarrier(errors.New("timed out"))
 			return nil
 		}

@@ -3,6 +3,9 @@ package backend
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -39,6 +42,17 @@ const (
 	// does not bound one and says "every v2 service is expected to make that
 	// call"; this is build's.
 	DefaultMaxMessageBytes = 64 << 10
+	// DefaultMaxLogBytes bounds ONE ATTEMPT'S LOG, and it is admission control
+	// on a stranger's output the same way MaxQueueDepth is on a stranger's
+	// pushes: the build script deciding how much to print is in a repository
+	// this cloud was asked to build, not in this cloud. Past it the log says it
+	// was truncated and the build carries on. v1 has no bound of any kind: its
+	// log is a temp file nothing ever truncates, closes or removes.
+	DefaultMaxLogBytes = 16 << 20
+	// DefaultPublishTimeout bounds handing one finished log to the asset store.
+	// It is spent inside ClaimMargin, before the ack that is this service's
+	// commit point, which is why withDefaults refuses one that does not fit.
+	DefaultPublishTimeout = 10 * time.Second
 )
 
 // Config is what an operator declared. A plain value: no live objects, no
@@ -77,6 +91,22 @@ type Config struct {
 	// MaxMessageBytes bounds one decoded request message. Zero means
 	// DefaultMaxMessageBytes.
 	MaxMessageBytes int `yaml:"maxMessageBytes"`
+
+	// LogDir is where a run's log file lives while the build is running. Zero
+	// means a "tau-build-logs" directory under the OS temp dir — which is a
+	// SCRATCH location on purpose: a log that matters is one that reached the
+	// asset store, and a node that died mid-build leaves a file behind that
+	// nothing will ever come back for. Somewhere the OS already cleans is the
+	// honest place for that, and an operator who wants a bigger or faster disk
+	// for it names one.
+	LogDir string `yaml:"logDir"`
+
+	// MaxLogBytes bounds one attempt's log. Zero means DefaultMaxLogBytes.
+	MaxLogBytes int64 `yaml:"maxLogBytes"`
+
+	// PublishTimeout bounds the handoff of a finished log to the asset store.
+	// Zero means DefaultPublishTimeout.
+	PublishTimeout time.Duration `yaml:"publishTimeout"`
 }
 
 // withDefaults fills in the zero values and refuses the combinations that have
@@ -90,6 +120,7 @@ func (c Config) withDefaults() (Config, error) {
 		{"claimMargin", c.ClaimMargin},
 		{"claimInterval", c.ClaimInterval},
 		{"reconcileEvery", c.ReconcileEvery},
+		{"publishTimeout", c.PublishTimeout},
 	} {
 		if d.value < 0 {
 			return c, fmt.Errorf("build: %s must not be negative", d.name)
@@ -97,11 +128,12 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	for _, n := range []struct {
 		name  string
-		value int
+		value int64
 	}{
-		{"maxQueueDepth", c.MaxQueueDepth},
-		{"maxOpenPerRepo", c.MaxOpenPerRepo},
-		{"maxMessageBytes", c.MaxMessageBytes},
+		{"maxQueueDepth", int64(c.MaxQueueDepth)},
+		{"maxOpenPerRepo", int64(c.MaxOpenPerRepo)},
+		{"maxMessageBytes", int64(c.MaxMessageBytes)},
+		{"maxLogBytes", c.MaxLogBytes},
 	} {
 		if n.value < 0 {
 			return c, fmt.Errorf("build: %s must not be negative", n.name)
@@ -128,6 +160,29 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if c.MaxMessageBytes == 0 {
 		c.MaxMessageBytes = DefaultMaxMessageBytes
+	}
+	if c.MaxLogBytes == 0 {
+		c.MaxLogBytes = DefaultMaxLogBytes
+	}
+	if c.PublishTimeout == 0 {
+		c.PublishTimeout = DefaultPublishTimeout
+	}
+	if c.LogDir == "" {
+		c.LogDir = filepath.Join(os.TempDir(), "tau-build-logs")
+	}
+
+	// THE PUBLISH IS SPENT OUT OF THE MARGIN, so it has to fit inside it. The
+	// run ends at the claim's deadline less ClaimMargin, and what happens in
+	// that margin is: ship the log, ack, write the terminal record. A publish
+	// allowed to use the whole margin is an ack made after the claim expired —
+	// which the queue refuses, correctly, and the job is then rebuilt by
+	// whoever picks up the redelivery. Refusing the combination here is
+	// cheaper than discovering it once per long build.
+	if c.PublishTimeout >= c.ClaimMargin {
+		return c, fmt.Errorf(
+			"build: publishTimeout (%s) must be shorter than claimMargin (%s), which is what the "+
+				"publish and the acknowledgement share",
+			c.PublishTimeout, c.ClaimMargin)
 	}
 
 	c.Queue.Name = build.QueueDomain
@@ -242,8 +297,8 @@ type Repositories interface {
 // the frontend/backend boundary: build.proto's PushEvent is three fields, and
 // ProjectID and Before are read from this service's own state.
 type Work struct {
-	// JobID is the record this run belongs to. Every Sink row is written under
-	// it, at this attempt.
+	// JobID is the record this run belongs to. What the run produces is
+	// recorded on it, at this attempt.
 	JobID string
 	// RepositoryKey is the canonical clone identity (pkg/git/repokey).
 	RepositoryKey string
@@ -265,17 +320,71 @@ type Work struct {
 	Attempt uint32
 }
 
-// Sink is where a run puts what it produced.
+// Output is where a run puts what it produces, and IT IS THE LOG'S WRITER: a
+// runner pipes a build's output straight into it, so wiring one up is an
+// io.Copy rather than a call per line.
 //
-// ONE ENTRY, ONE KEY — never a map re-serialized on each write (root AGENTS.md
-// rule 1). Durable when called, so a crashed build still has the logs it had
-// got to; v1's log file only reached IPFS after the run returned, so a build
-// that killed its worker left nothing to read.
-type Sink interface {
-	// Log records one log entry's cid, at the time the entry was made.
-	Log(ctx context.Context, at time.Time, cid string) error
-	// Asset records one built resource's artifact cid.
-	Asset(ctx context.Context, resourceID, cid string) error
+// NOTHING HERE REACHES A STORE. What a run writes goes to a file this node
+// owns (services/build/livelog) and to the asset store; the JOB RECORD hears
+// about it once, from the section that settles the job. Its predecessor wrote
+// a replicated raft row per log line from outside every section — see
+// output.go for what that cost.
+//
+// The log is DURABLE ENOUGH WHEN Write RETURNS: the bytes are readable by
+// anybody following the build, and they survive this process dying. v1 writes
+// to a file too (os.CreateTemp, services/monkey/monkey.go) — what it does not
+// do is let anything READ that file: it is published to IPFS from a `defer` at
+// the end of the run and served by cid afterwards, so a build that killed its
+// worker never reached the defer and left a temp file in /tmp that nothing
+// names and nothing removes.
+type Output interface {
+	io.Writer
+
+	// Asset hands over one built artifact — the bytes, not a cid, because
+	// where they go is this service's decision and not the runner's. It reads
+	// content to EOF.
+	Asset(ctx context.Context, resourceID string, content io.Reader) error
+}
+
+// Assets is the byte store a build's output goes to: v1's hoarder, which in v2
+// is the STORAGE service — and that service is not written yet, so this is the
+// seam it will be plugged into and there is no implementation of it in this
+// tree. A node constructed without one still builds; its logs and artifacts
+// live and die with the run, and its jobs carry no cids.
+//
+// WHAT A REAL IMPLEMENTATION OWES IT, stated here because the interface cannot:
+//
+//   - CONTENT ADDRESSING. The returned id is derived from the bytes, so the
+//     same bytes always yield the same id. That is what makes storing an
+//     artifact during a run that later fails harmless, and what makes a retry
+//     of an identical build cost nothing.
+//   - DURABLE BEFORE IT RETURNS, on a node OTHER than this one. The cid goes
+//     into a replicated record that any node may answer a read for, so a Put
+//     that has only reached this node's disk is a promise the record cannot
+//     keep. This is v1's pushStash — the bytes travel from the node that made
+//     them to storage — with the acknowledgement that v1 does not wait for.
+//   - STREAMING, in one pass, with no length known in advance. A build log has
+//     no size until it ends, and this must never require the caller to hold it
+//     in memory to find out.
+//   - CONCURRENCY. Many runs on one node call it at once.
+//   - THE CONTEXT. A Put that outlasts its deadline must return, because the
+//     one this service passes is a slice of the margin it has left before its
+//     claim expires — and what comes after the publish is the acknowledgement
+//     that makes the whole build count.
+//   - NO IDENTITY. It is handed bytes and nothing else: an asset store that
+//     took a job id would be a second place authorization could be decided,
+//     and authorization is the frontend's, on the caller's write access to the
+//     job's repository (frontend/authz.go). A cid is an address, not a
+//     credential — which is exactly what v1's GET /logs/{cid} treats it as.
+//
+// What it does NOT owe, said out loud because the absence is a debt rather than
+// a decision: any way to UNREFERENCE an asset. Nothing in this service deletes
+// an archived job today, so nothing deletes what one points at either — v1's
+// defect, carried, and it becomes a retention question the moment terminal
+// records start being swept (store.go's terminalIndexKey).
+type Assets interface {
+	// Put stores content and returns the content id it is addressed by.
+	Put(ctx context.Context, content io.Reader) (cid string, err error)
 }
 
 // Runner executes one job. A Service constructed without one serves and
@@ -299,7 +408,7 @@ type Runner interface {
 	// retrying a compile error five times is waste, and v1's own
 	// MaxJobAttempts=2 counted only REPORTED failures, so a crash was free and
 	// a job that killed its worker retried forever.
-	Run(ctx context.Context, w Work, sink Sink) error
+	Run(ctx context.Context, w Work, out Output) error
 }
 
 // Action names what a caller is trying to do, for the Authorizer.

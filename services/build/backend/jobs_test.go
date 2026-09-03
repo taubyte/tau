@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/services/build/backend/attempt"
 )
 
 const unknownJobID = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -48,22 +47,21 @@ func TestEveryJobRPCIsLeaderOnly(t *testing.T) {
 		connect.CodeOf(h.list("p", func(*buildv1.JobRef) error { return nil })))
 }
 
-// The maps are a READ shape, assembled from one row per entry. Rows are read in
-// attempt order, so a retry's asset for a resource wins over the first run's —
-// which is what a reader of a retried job wants.
-func TestGetAssemblesTheMapsFromOneRowPerEntryInAttemptOrder(t *testing.T) {
+// THE MAPS ARE A READ SHAPE OFF THE RECORD, which is one Get rather than a
+// prefix listing plus a Get per row. What they hold is one cid per attempt's
+// log and one per resource — content ids of things in the asset store, not the
+// content, and not a row each in raft.
+func TestGetCarriesTheCidsOfEveryAttemptAndResource(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	first := &attemptSink{s: h.Service, of: attempt.Nth(id, 1)}
-	second := &attemptSink{s: h.Service, of: attempt.Nth(id, 2)}
-
-	at1 := h.clock.now()
-	at2 := at1.Add(time.Minute)
-	require.NoError(t, first.Log(t.Context(), at1, "cid-log-1"))
-	require.NoError(t, first.Asset(t.Context(), "website/home", "cid-a-1"))
-	require.NoError(t, second.Log(t.Context(), at2, "cid-log-2"))
-	require.NoError(t, second.Asset(t.Context(), "website/home", "cid-a-2"))
+	rec := h.mustRecord(t, id)
+	rec.Attempt = 2
+	rec.Logs = map[string]string{stamp(1): "cid-log-1", stamp(2): "cid-log-2"}
+	rec.Assets = map[string]string{"website/home": "cid-a-2"}
+	value, err := rec.encode()
+	require.NoError(t, err)
+	h.store.put(t, jobRecordKey(id), value)
 
 	job, err := h.job(id)
 	require.NoError(t, err)
@@ -73,59 +71,45 @@ func TestGetAssemblesTheMapsFromOneRowPerEntryInAttemptOrder(t *testing.T) {
 	require.Equal(t, testRepo, job.GetRepositoryKey())
 	require.Equal(t, testRef, job.GetRef())
 	require.Equal(t, testCommit, job.GetCommitSha())
+	require.Equal(t, int32(2), job.GetAttempt())
 
-	require.Equal(t, map[string]string{
-		at1.Format(time.RFC3339Nano): "cid-log-1",
-		at2.Format(time.RFC3339Nano): "cid-log-2",
-	}, job.GetLogs())
-	require.Equal(t, map[string]string{"website/home": "cid-a-2"}, job.GetAssetCid(),
-		"a later attempt's asset must win")
+	require.Equal(t, map[string]string{stamp(1): "cid-log-1", stamp(2): "cid-log-2"}, job.GetLogs(),
+		"keyed by the attempt, which sorts causally — v1 keys this map by a wall clock")
+	require.Equal(t, map[string]string{"website/home": "cid-a-2"}, job.GetAssetCid())
 }
 
-func TestASinkRefusesARowThatWouldBeAnEmptySegment(t *testing.T) {
-	h := newHarness(t)
-	sink := &attemptSink{s: h.Service, of: attempt.Nth(h.push(t, testRef, testCommit), 1)}
-
-	require.Error(t, sink.Log(t.Context(), h.clock.now(), ""))
-	require.Error(t, sink.Asset(t.Context(), "", "cid"))
-	require.Error(t, sink.Asset(t.Context(), "r", ""))
-
-	h.store.failBatches(errors.New("log is full"))
-	require.Error(t, sink.Log(t.Context(), h.clock.now(), "cid"))
-	require.Error(t, sink.Asset(t.Context(), "r", "cid"))
-}
-
-// A SINK WRITE IS EXACTLY ONE ROW, AND THE ENTRY IS ASKED RATHER THAN TRUSTED.
-//
-// The door takes a KIND and not a key (runner.go), so what it composes is
-// decided by a switch — and a kind that switch does not know would compose
-// nothing and apply an empty batch, while a second row spliced in beside the
-// first would apply two. Both are the same question, and the entry answers it:
-// it is asked how many rows went in, which is a fact about what it HOLDS and
-// not about how anything was spelled.
-func TestASinkWriteIsExactlyOneRow(t *testing.T) {
-	h := newHarness(t)
-	sink := &attemptSink{s: h.Service, of: attempt.Nth(h.push(t, testRef, testCommit), 1)}
-
-	before := h.store.appliedEntries()
-	err := sink.write(attemptRowKind(0), h.clock.now(), "website/home", "cid")
-
-	require.Error(t, err)
-	require.Equal(t, connect.CodeInternal, connect.CodeOf(err),
-		"a row of no kind is this process's own fault, so there is no other node to ask")
-	require.Contains(t, err.Error(), "is 0 rows")
-	require.Equal(t, before, h.store.appliedEntries(),
-		"and nothing reaches the store: an empty batch is indistinguishable at the store from "+
-			"one that was applied")
-}
-
-func TestGetReportsARowItCannotParse(t *testing.T) {
+// AND THE MAPS A CALLER IS HANDED ARE NOT THE RECORD'S. Two reads of one job
+// must not share a map with each other or with the next write of that record.
+func TestGetHandsOutACopyOfTheMapsAndNotTheRecords(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	h.store.put(t, attemptPrefix(id)+"nonsense", []byte("x"))
 
-	_, err := h.job(id)
-	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+	rec := h.mustRecord(t, id)
+	rec.Logs = map[string]string{stamp(1): "cid-log-1"}
+	value, err := rec.encode()
+	require.NoError(t, err)
+	h.store.put(t, jobRecordKey(id), value)
+
+	first, err := h.job(id)
+	require.NoError(t, err)
+	first.GetLogs()["invented"] = "cid-nothing"
+
+	second, err := h.job(id)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{stamp(1): "cid-log-1"}, second.GetLogs())
+}
+
+// A job with no runs behind it reads as empty maps rather than as nulls, which
+// is what v1's shape promises a caller.
+func TestGetAnswersAJobThatHasProducedNothingWithEmptyMaps(t *testing.T) {
+	h := newHarness(t)
+
+	job, err := h.job(h.push(t, testRef, testCommit))
+	require.NoError(t, err)
+	require.NotNil(t, job.GetLogs())
+	require.Empty(t, job.GetLogs())
+	require.NotNil(t, job.GetAssetCid())
+	require.Empty(t, job.GetAssetCid())
 }
 
 func TestListStreamsAProjectsJobIDs(t *testing.T) {
@@ -324,21 +308,19 @@ func TestRetryOnANonTerminalJobIsRefusedRatherThanSilentlyIgnored(t *testing.T) 
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(h.retry(id)))
 }
 
-// A retry keeps the accumulated attempt rows: the record's counter keeps going
-// up, so the new run writes under a higher attempt/ segment and the previous
-// run's logs stay readable.
+// A retry keeps what earlier attempts produced: the record's counter keeps
+// going up, so the next run's log is recorded under a higher attempt and the
+// previous one's cid stays where it was.
 func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
 	rec := h.mustRecord(t, id)
 	rec.Attempt = 1
+	rec.Logs = map[string]string{stamp(1): "cid-log-1"}
 	value, err := rec.encode()
 	require.NoError(t, err)
 	h.store.put(t, jobRecordKey(id), value)
-
-	sink := &attemptSink{s: h.Service, of: attempt.Nth(id, 1)}
-	require.NoError(t, sink.Log(t.Context(), h.clock.now(), "cid-log-1"))
 
 	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "it broke"))
 
@@ -359,7 +341,8 @@ func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 
 	job, err := h.job(id)
 	require.NoError(t, err)
-	require.Len(t, job.GetLogs(), 1, "the previous run's logs survive a retry")
+	require.Equal(t, map[string]string{stamp(1): "cid-log-1"}, job.GetLogs(),
+		"the previous run's log survives a retry")
 }
 
 func TestRetryReportsAStoreThatRefusedTheWrite(t *testing.T) {
@@ -380,21 +363,6 @@ func TestACorruptRecordIsInternalOnEveryRead(t *testing.T) {
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(h.cancel(id)))
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(h.retry(id)))
-}
-
-// A row listed and then gone is a store that changed under the listing, not a
-// fault: a job read must not fail because somebody wrote beside it.
-func TestGetSkipsARowThatVanishedBetweenTheListingAndTheRead(t *testing.T) {
-	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
-
-	sink := &attemptSink{s: h.Service, of: attempt.Nth(id, 1)}
-	require.NoError(t, sink.Asset(t.Context(), "website/home", "cid-a"))
-	h.store.haunt(attemptAssetKey(attempt.Nth(id, 1), "gone"))
-
-	job, err := h.job(id)
-	require.NoError(t, err)
-	require.Equal(t, map[string]string{"website/home": "cid-a"}, job.GetAssetCid())
 }
 
 // The record's push is a second entry, so it can fail on its own.

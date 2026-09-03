@@ -58,7 +58,10 @@ func TestNewRefusesWhatItCannotBeBuiltFrom(t *testing.T) {
 		},
 		"a nil runner":     func() (*Service, error) { return New(h, store, repos, Config{}, WithRunner(nil)) },
 		"a nil authorizer": func() (*Service, error) { return New(h, store, repos, Config{}, WithAuthorizer(nil)) },
-		"a nil clock":      func() (*Service, error) { return New(h, store, repos, Config{}, WithClock(nil)) },
+		"a nil asset store": func() (*Service, error) {
+			return New(h, store, repos, Config{}, WithAssets(nil))
+		},
+		"a nil clock": func() (*Service, error) { return New(h, store, repos, Config{}, WithClock(nil)) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, err := tc()
@@ -170,7 +173,7 @@ func TestCloseAbandonsTheRunInFlightRatherThanFailingTheJob(t *testing.T) {
 	id := h.push(t, testRef, testCommit)
 
 	started := make(chan struct{})
-	h.runner.run = func(ctx context.Context, _ Work, _ Sink) error {
+	h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()

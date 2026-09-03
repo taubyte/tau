@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/v2/queue"
 	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/build/livelog"
 )
 
 // Service is build's private half: the host it answers on, the replicated
@@ -29,6 +30,7 @@ type Service struct {
 	dead  *queue.Queue
 
 	runner Runner
+	assets Assets
 	authz  Authorizer
 	now    func() time.Time
 
@@ -47,6 +49,19 @@ type Service struct {
 	// whole of what v1 needed a monkey p2p round trip for.
 	runningMu sync.Mutex
 	running   map[string]context.CancelFunc
+
+	// logs holds the open log of every build this node is WRITING ONE FOR, so
+	// that Follow can fork a reader off it while it is still being appended to
+	// (output.go).
+	//
+	// IT IS A SECOND MAP AND NOT A SECOND OPINION about what this node runs.
+	// The one above is decided by a record READ — the claim's, inside its
+	// section, which is what makes a cancel find something to stop — and this
+	// one is decided by the run itself having started, like Service.forget and
+	// for the same reason: a build holds no lock, and opening its log is not a
+	// transition of anything.
+	logsMu sync.Mutex
+	logs   map[string]*livelog.Log
 
 	closeOnce sync.Once
 	closeErr  error
@@ -78,6 +93,23 @@ func WithRunner(r Runner) Option {
 			return errors.New("build: runner must not be nil")
 		}
 		s.runner = r
+		return nil
+	}
+}
+
+// WithAssets gives this node somewhere to put what a build produced: the log
+// file when the run ends, and each artifact as it is built. WITHOUT ONE THE
+// NODE STILL BUILDS — the log is written, followed and then thrown away with
+// the run, and the job carries no cids — because v2 has no storage service to
+// implement Assets yet and a node that refused to build without one could not
+// be started at all today. See Assets in config.go for what a real
+// implementation owes.
+func WithAssets(a Assets) Option {
+	return func(s *Service) error {
+		if a == nil {
+			return errors.New("build: asset store must not be nil")
+		}
+		s.assets = a
 		return nil
 	}
 }
@@ -147,6 +179,7 @@ func New(h host.Host, store Store, repos Repositories, cfg Config, opts ...Optio
 		authz:   AllowAnyPeer(),
 		now:     time.Now,
 		running: map[string]context.CancelFunc{},
+		logs:    map[string]*livelog.Log{},
 	}
 
 	for _, opt := range opts {

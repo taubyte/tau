@@ -10,7 +10,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/services/build/backend/attempt"
 )
 
 // THE PREFIX RULE, AGAINST A REAL STORE. raft's Keys is a plain HasPrefix, so a
@@ -30,7 +29,6 @@ func TestEveryPrefixEndsInASlashAndACrossJobReadIsImpossible(t *testing.T) {
 
 	for _, prefix := range []string{
 		jobPrefix(short),
-		attemptPrefix(short),
 		projectIndexPrefix("p"),
 		openIndexPrefix("github.com/a/b"),
 		openIndexRoot(),
@@ -141,49 +139,45 @@ func TestParseOpenIndexKeyRejectsWhatIsNotOne(t *testing.T) {
 	}
 }
 
-// Byte order is the only sort order (root AGENTS.md rule 7), so the attempt
-// number is zero-padded: attempt 2 must sort before attempt 10.
-func TestAttemptRowsSortInAttemptOrder(t *testing.T) {
-	id := "job"
-	keys := []string{
-		attemptAssetKey(attempt.Nth(id, 10), "r"),
-		attemptLogKey(attempt.Nth(id, 2), time.Unix(0, 0)),
-		attemptAssetKey(attempt.Nth(id, 2), "r"),
-	}
-	slices.Sort(keys)
+// Byte order is the only sort order (root AGENTS.md rule 7), so an attempt is
+// zero-padded wherever it is a key: attempt 2 must sort before attempt 10 in a
+// reader that sorts the log map it was handed.
+func TestTheLogsOfARecordSortInAttemptOrder(t *testing.T) {
+	rec := jobRecord{}.with(produced{attempt: 2, logCID: "cid-2"})
+	rec = rec.with(produced{attempt: 10, logCID: "cid-10"})
 
-	require.Equal(t, []string{
-		attemptAssetKey(attempt.Nth(id, 2), "r"),
-		attemptLogKey(attempt.Nth(id, 2), time.Unix(0, 0)),
-		attemptAssetKey(attempt.Nth(id, 10), "r"),
-	}, keys)
+	keys := names(rec.Logs)
+	slices.Sort(keys)
+	require.Equal(t, []string{stamp(2), stamp(10)}, keys)
+	require.Equal(t, map[string]string{stamp(2): "cid-2", stamp(10): "cid-10"}, rec.Logs)
 }
 
-func TestParseAttemptKey(t *testing.T) {
-	id := "job"
-
-	row, err := parseAttemptKey(id, attemptAssetKey(attempt.Nth(id, 3), "website/home"))
-	require.NoError(t, err)
-	require.Equal(t, attemptRow{attempt: 3, kind: assetSegment, key: "website/home"}, row)
-
-	at := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
-	row, err = parseAttemptKey(id, attemptLogKey(attempt.Nth(id, 1), at))
-	require.NoError(t, err)
-	require.Equal(t, uint32(1), row.attempt)
-	require.Equal(t, logSegment, row.kind)
-	require.Equal(t, at.Format(time.RFC3339Nano), row.key)
-
-	for _, bad := range []string{
-		"somewhere/else",
-		attemptPrefix(id) + "0001/log/AAAA",            // attempt not fixed width
-		attemptPrefix(id) + stamp(1) + "/other/AAAA",   // unknown row kind
-		attemptPrefix(id) + stamp(1) + "/log/!!!",      // undecodable map key
-		attemptPrefix(id) + stamp(1) + "/log/AA/extra", // too many segments
-		attemptPrefix(id) + "notanumberatallnotanumb/log/AA",
-	} {
-		_, err := parseAttemptKey(id, bad)
-		require.Error(t, err, "parseAttemptKey(%q) must fail", bad)
+// A RECORD'S MAPS ARE COPIED RATHER THAN ADDED TO. The record a section read
+// carries the holding's maps, and a transition that appended through them would
+// edit what the section believes it read, in place, before anything was
+// committed — and a rolled-back or refused entry would leave the edit behind.
+func TestWithLeavesTheRecordItWasBuiltFromAlone(t *testing.T) {
+	before := jobRecord{
+		Attempt: 1,
+		Logs:    map[string]string{stamp(1): "cid-log-1"},
+		Assets:  map[string]string{"website/home": "cid-a-1"},
 	}
+
+	after := before.with(produced{
+		attempt: 1,
+		logCID:  "cid-log-2",
+		assets:  map[string]string{"website/home": "cid-a-2"},
+	})
+
+	require.Equal(t, map[string]string{stamp(1): "cid-log-1"}, before.Logs, "the record read is untouched")
+	require.Equal(t, map[string]string{"website/home": "cid-a-1"}, before.Assets)
+	require.Equal(t, map[string]string{stamp(1): "cid-log-2"}, after.Logs,
+		"and a second run of one attempt replaces that attempt's log")
+	require.Equal(t, map[string]string{"website/home": "cid-a-2"}, after.Assets)
+
+	// A run that produced nothing changes nothing, so a transition with no
+	// output does not have to say so.
+	require.Equal(t, before, before.with(produced{}))
 }
 
 func TestStampClampsBelowZeroAndIsFixedWidth(t *testing.T) {

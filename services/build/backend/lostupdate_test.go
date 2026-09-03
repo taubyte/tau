@@ -245,7 +245,7 @@ func TestACancelIsNotLostToTheClaimThatOverlapsIt(t *testing.T) {
 	// cancel was supposed to end this build and instead left it to its own
 	// deadline an hour away.
 	stopped := make(chan error, 1)
-	h.runner.run = func(ctx context.Context, _ Work, _ Sink) error {
+	h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
 		select {
 		case <-ctx.Done():
 			stopped <- ctx.Err()
@@ -294,7 +294,7 @@ func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 	var cancelErr error
 	cancelled := gated(t, h, jobRecordKey(id)).on(t, func() { cancelErr = h.cancel(id) })
 
-	require.NoError(t, h.settle(d, nil))
+	require.NoError(t, h.settle(d, produced{}, nil))
 	<-cancelled
 
 	requireCancelKept(t, h, id, cancelErr)

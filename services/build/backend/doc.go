@@ -89,17 +89,48 @@
 //
 // # What it deliberately does not do
 //
-// It does not run a build. Runner, Work and Sink are the seam, and the reason
-// is not effort: v2 has no tns schema to publish a compiled config to and no
-// storage contract to stash bytes at, and reaching for v1's clients would
-// import the cbor stack v2 exists to leave. Everything around the run —
-// idempotency, claiming, attempts, cancellation, the before..after anchor, the
-// per-attempt log and asset rows — ships now, so the runner is a drop-in.
+// It does not run a build. Runner, Work, Output and Assets are the seam, and
+// the reason is not effort: v2 has no tns schema to publish a compiled config
+// to, and reaching for v1's clients would import the cbor stack v2 exists to
+// leave. Everything around the run — idempotency, claiming, attempts,
+// cancellation, the before..after anchor, the log a viewer can follow and the
+// cids of what a run produced — ships now, so the runner is a drop-in.
 //
-// It also does not serve log or artifact BYTES. v1's GET /logs/{cid} is an open
-// IPFS gateway gated only by a token being valid, and its /download route has
-// no authorization at all; when those come back they are per-job routes on the
-// frontend, authorized like Get and checked against that job's own maps.
+// It does not STORE the bytes either. Assets (config.go) is the seam onto v2's
+// storage service — v1's hoarder — which is not written yet, and what a real
+// implementation owes it is written down there rather than guessed at here. A
+// node without one still builds; its logs are followable while the build runs
+// and gone afterwards, and its jobs carry no cids.
+//
+// # A log is a file, and only its cid is replicated
+//
+// The one part of a build that streams while it runs, and the one this package
+// used to write a REPLICATED ENTRY PER LINE for. Three lives (output.go):
+//
+//	while the build runs   an append-only file this node owns
+//	                       (services/build/livelog). No consensus, no RPC per
+//	                       line, nothing agreed by the queue's group.
+//	while somebody watches a reader forks off it AT AN OFFSET and follows,
+//	                       blocking at the end rather than seeing EOF. Many
+//	                       readers, each at its own offset. Service.Follow is
+//	                       the seam; v1 has no version of this at all.
+//	when the build ends    the file goes to the asset store and the cid goes on
+//	                       the record, in the entry that settles the job.
+//
+// WHAT THAT DELETED IS A CLASS OF DEFECT, not a component. The sink was THE ONE
+// WRITER IN THIS PACKAGE OUTSIDE EVERY SECTION, by design, because a build
+// produces rows while it runs — and three of the last four escapes found here
+// went through it. There is no writer outside a section now, and four of the
+// ends below went with it.
+//
+// It still does not serve log or artifact BYTES to a caller. v1's
+// GET /logs/{cid} is an open IPFS gateway gated only by a token being valid —
+// so a cid, which is an ADDRESS, is treated as a credential — and its /download
+// route has no authorization at all. When those come back they are per-job
+// routes on the frontend, authorized like Get on the caller's write access to
+// the job's repository. Following a RUNNING build is the same rule and the same
+// gate; where the route lives is decided by the topology change, and output.go's
+// Follow says why it is not here.
 //
 // # Where the tower ends
 //
@@ -110,7 +141,7 @@
 // the guard" has to stop somewhere, and this is where, said exactly rather than
 // left for somebody to find.
 //
-// THE COMPILER'S HALF ENDS NOWHERE, because nothing has to run for it. Seventeen
+// THE COMPILER'S HALF ENDS NOWHERE, because nothing has to run for it. Fifteen
 // expressions do not exist, and a tree that compiles is a tree in which they are
 // absent:
 //
@@ -120,45 +151,56 @@
 //	no exported field on a Holding       no `Reread(closure)`
 //	no minting function                  no `held.id` to assign
 //	no raw op to append to an entry      no `Holding.subject` to write
-//	no slice of rows to splice into      no key the sink can be handed
-//	no batch expression at all           no attempt key on a bare id
-//	no attempt.Of to fill or re-point
+//	no slice of rows to splice into      no cid a runner can hand over
+//	no batch expression at all           no attempt row to key at all
 //
-// EACH IS A BUILD FAILURE AND EACH HAS BEEN COMPILED. The four this round added
-// were measured against the escapes that made them necessary, in their own
-// words:
+// EACH IS A BUILD FAILURE AND EACH HAS BEEN COMPILED. The one this round added
+// and the row it is about, in their own words:
 //
-//	undefined: row.Ops / undefined: set
-//	invalid append: argument must be a slice; have e.ops (variable of struct
-//	  type row.Entry)
-//	not enough arguments in call to k.write
-//	  have (string, string) / want (attemptRowKind, time.Time, string, string)
-//	too many arguments in call to attemptLogKey
-//	  have (string, number, time.Time) / want (attempt.Of, time.Time)
+//	cannot use "cid-forged" (constant of type string) as "io".Reader value in
+//	  argument to out.Asset: string does not implement "io".Reader (missing
+//	  method Read)
+//	undefined: attemptLogKey
+//
+// THE FIRST IS WHAT AN Output CANNOT SAY. A run hands over BYTES and never a
+// content id, so a runner cannot make a job point at something nobody stored —
+// the record's cids are all composed by the one thing that put the bytes
+// somewhere. The second is the row class this round deleted: there is no log
+// key to build, because there is no log row.
+//
+// AND THREE EXPRESSIONS LEFT THIS LIST WITH THE WRITER THEY WERE ABOUT. "No key
+// the sink can be handed", "no attempt key on a bare id" and "no attempt.Of to
+// fill or re-point" were the compiler's half of guarding the one writer outside
+// every section, down to a whole package (backend/attempt) whose only purpose
+// was to make an attempt un-assignable. A guard whose subject is gone is not a
+// guard, so all of it went rather than being kept as reassurance.
 //
 // THE LEFT COLUMN IS THE SECTION'S SHAPE AND THE RIGHT IS WHAT A WRITE MAY SAY.
-// The bottom two rows of each are round ten's, and what they replaced is worth
-// more than themselves: both were CHECKS ON AN ARGUMENT, and both were defeated
-// by respelling the argument rather than by finding new ground.
+// The store's door is the one worth restating, because it was a CHECK ON AN
+// ARGUMENT and was defeated by respelling the argument rather than by finding
+// new ground: commit handed Store.Batch `row.Ops(e.ops)`, and the guard read
+// the outermost callee's NAME — so `append(row.Ops(e.ops), forged)` failed and
+// `row.Ops(append(e.ops, forged))` PASSED. Eight lines in one file, on the
+// committed tree with every end of that round intact, put a row moving another
+// repository's ref anchor on every replicated entry this service writes. The
+// rows are a row.Entry now and row.Entry.Apply takes the STORE rather than the
+// rows: there is no expression of raft's batch type in this package for a name
+// to be read off.
 //
-//   - the store's door. commit handed Store.Batch `row.Ops(e.ops)`, and the
-//     guard read the outermost callee's NAME — so `append(row.Ops(e.ops),
-//     forged)` failed and `row.Ops(append(e.ops, forged))` PASSED. Eight lines
-//     in one file, on the committed tree with every end of the previous round
-//     intact, put a row moving another repository's ref anchor on every
-//     replicated entry this service writes. The rows are a row.Entry now and
-//     row.Entry.Apply takes the STORE rather than the rows: there is no
-//     expression of raft's batch type in this package for a name to be read off.
-//   - the sink's door. attemptSink.write took a KEY, and the census that says
-//     every key names its writer's own subject exempted that one owner
-//     unconditionally, because a door that takes a key cannot answer a question
-//     about which keys its owner may compose. One line inside it —
-//     set(refLastKey("github.com/evil/repo", "refs/heads/main"), …) — was green
-//     across all seven build packages and moved another repository's anchor on
-//     the happy path of every build, from a writer placed outside every section
-//     BY DESIGN. The door takes a KIND now and composes the key from the attempt
-//     the sink was constructed for, and that attempt is another package's struct
-//     with two unexported fields. There is no exemption left to write.
+// THE OTHER DOOR IS GONE RATHER THAN NARROWED, and it is the round this one is.
+// The sink's write() took a KEY, and the census that says every key names its
+// writer's own subject exempted that one owner unconditionally, because a door
+// that takes a key cannot answer a question about which keys its owner may
+// compose. One line inside it —
+// set(refLastKey("github.com/evil/repo", "refs/heads/main"), …) — was green
+// across all seven build packages and moved another repository's anchor on the
+// happy path of every build, from a writer placed outside every section BY
+// DESIGN. The round after that made the door take a KIND and composed the key
+// from an attempt it could not assign; this one asks what the door was FOR, and
+// the answer is a log — which is content, which needs no consensus, and which
+// is a file (output.go). What is deleted is the writer, the two key builders,
+// the row class, the package that made an attempt un-assignable, and the four
+// ends that watched all of it.
 //
 // THE RUNTIME'S HALF IS WATCHED FROM EIGHT ANGLES, so it has no small set
 // either. Deleting the identity comparison in section.Holding.live, or making
@@ -170,19 +212,31 @@
 // under the contention that makes a mutex hand the lock straight to the
 // goroutine waiting on it.
 //
-// AND TWO OF THE RUNTIME'S GUARDS ARE COUNTS, WHICH IS THE ONE SHAPE A
-// RESPELLING DOES NOT REACH. row.Entry.Apply refuses an entry with no rows, and
-// attemptSink.write refuses one that does not hold exactly one — a fact about
-// what the entry HOLDS rather than about how anything was spelled, so a kind the
-// switch does not know and a second row spliced in beside the first are the same
-// failure. They are compiled in everywhere: a check that is only in the test
-// build is a production binary running code no test ran.
+// AND ONE OF THE RUNTIME'S GUARDS IS A COUNT, WHICH IS THE ONE SHAPE A
+// RESPELLING DOES NOT REACH: row.Entry.Apply refuses an entry with no rows — a
+// fact about what the entry HOLDS rather than about how anything was spelled.
+// There were two, and the second was the sink's "exactly one row", which went
+// with the door it guarded. It is compiled in everywhere: a check that is only
+// in the test build is a production binary running code no test ran.
 //
-// SO THE TOWER IS THE STATIC HALF, AND IT ENDS AT THIRTEEN LINES FORMING TWELVE
-// ENDS — up from nine, four of which are no longer ends at all. All of them are
-// in population_test.go. MEASURED ONE AT A TIME: each control below is
-// GO_TEST_EXIT=1 on this tree, and GO_TEST_EXIT=0 with that ONE line hollowed
-// and nothing else changed. The one exception is marked, and it takes two.
+// SO THE TOWER IS THE STATIC HALF, AND IT ENDS AT NINE LINES FORMING EIGHT ENDS
+// — DOWN from thirteen and twelve, because four of the twelve were the sink's
+// and the sink is gone. All of them are in population_test.go. Each was
+// MEASURED ONE AT A TIME when it was written: GO_TEST_EXIT=1 on the tree of its
+// round, and GO_TEST_EXIT=0 with that ONE line hollowed and nothing else
+// changed. The one exception is marked, and it takes two.
+//
+// THE COUNT IS A RECOUNT AND NOT A NEW MEASUREMENT, said plainly. Nothing was
+// added to this list; four were removed with their subject, and the two lists
+// inside end 5 and end 8 shrank by the rows and the caller the deletion took.
+// What was re-measured is that the survivors still FIRE on the file that
+// replaced the sink: a row method on runOutput, in output.go, composing another
+// repository's anchor and applying a batch of its own. Two lines named it —
+// "runOutput.forge makes a row and hangs off "runOutput", which names no
+// subject a key can be composed from" (line 4) and Apply's caller list (line 8)
+// — because a census that silently stopped reading a NEW file would be the
+// failure mode line 2 exists for, and a new file is exactly what this round
+// added.
 //
 //	in parsePackage, the scan's own input:
 //	 1 the files parsed are the files listed  the filter told to skip errors.go,
@@ -201,25 +255,17 @@
 //	in TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob:
 //	 4 every key names the subject its        an open row keyed s.rec.ID, which
 //	   writer was constructed on                is begin's own old defect
-//	 5 these nine rows and no others, AND     a tenth row method — TWO LINES,
+//	 5 these eight rows and no others, AND    a ninth row method — TWO LINES,
 //	   who may name Set and Delete              and both must go
 //	 6 an entry's rows are never assigned,    an entry handed the rows of
 //	   only added to                            another entry
 //
-//	in TestTheSinkWritesOnlyItsOwnJobsAttemptRows:
-//	 7 the sink's door has two callers        a third Sink method calling it
-//	 8 the sink is assembled in one place     the sink building a sibling
-//	 9 attempt.Nth has one caller             a Service method minting an
-//	                                           attempt of its own
-//	10 nothing assigns the attempt a sink     a method that re-points one
-//	   was constructed for
-//
 //	in TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord:
-//	11 Batch is named NOWHERE in this         a second replicated batch beside
-//	   package                                  the sink's own row
-//	12 Apply has exactly two callers          a third Apply, on a Service
+//	 7 Batch is named NOWHERE in this         a second replicated batch beside
+//	   package                                  an entry's own rows
+//	 8 Apply has exactly ONE caller           a second Apply, on a Service
 //
-// AND EVERY ONE OF THE TWELVE HOLDS A NAME. That is the distinction this round
+// AND EVERY ONE OF THE EIGHT HOLDS A NAME. That is the distinction this round
 // was made to state, and it is the honest one: the ACTS are the compiler's and
 // the counts', and what is left up here reads an IDENTIFIER — a file name, a
 // method name, a type name, a field name, the text of an argument. A scan cannot
@@ -247,12 +293,12 @@
 //
 // A NAME THAT FAILS CLOSED IS NOT AN ACT, and this doc does not claim it is. It
 // is a check whose defeat is an EDIT TO THE CHECK rather than a rewrite of the
-// code under it — which is the same exposure as the twelve lines themselves, one
+// code under it — which is the same exposure as the nine lines themselves, one
 // level in, and is where this stops.
 //
-// AND SIX MORE LINES STAND OVER GROUND THE TWELVE ALREADY COVER. They are
-// written down because a round that counts its own exposure at nine when it is
-// twelve is worse than one that counts nothing: the next reader stops looking.
+// AND THREE MORE LINES STAND OVER GROUND THE EIGHT ALREADY COVER. They are
+// written down because a round that counts its own exposure at five when it is
+// eight is worse than one that counts nothing: the next reader stops looking.
 // Each was measured the same way — hollow it, run the control it was written
 // for, and see what else fails:
 //
@@ -260,32 +306,19 @@
 //	  — the parameter branch is GONE           Set list catches it a third time:
 //	                                           a key-taking door needs all three
 //	                                           hollowed before it is green
-//	the sink keys its rows by its OWN         the subject census (line 4) and TWO
-//	  attempt                                  behavioural tests — a retry's logs
-//	                                           stop surviving. It was an END last
-//	                                           round and is a second line now,
-//	                                           because the sink is inside the
-//	                                           general census rather than exempt
-//	"write" in the closing verb set of        a second line over line 7
-//	  TestEveryWriteIsMadeThroughTheHandle…
 //	the anchor's exemption: its three parts   a behavioural test catches the
 //	  come off the record the section READ    anchor taken off the record being
 //	                                           WRITTEN instead
 //	one function names a job record key       pairs with line 5
-//	who may reach a replicated batch at all   pairs with lines 11 and 12
 //
-// HOW THE COUNT MOVED, and it is not a rearrangement. Four of the old nine are
-// gone as ends. TWO LOST THEIR SUBJECT: "set() is the only maker of a set row"
-// and its delete twin were about two free functions that no longer exist, and
-// what replaced them — who may name row.Entry.Set — is one of the two lines of
-// line 5. ONE DOES NOT COMPILE ANY MORE: "what goes into an entry's rows came
-// from one of those two" was written against an append of a forged element, and
-// an entry's rows are not a slice. ONE WAS DEMOTED BY BEING GENERALISED: the
-// sink keying its row by its own job was an end while the sink was exempt from
-// the subject census, and is a second line now that it is inside it. SEVEN ARE
-// NEW, and six of those are the sink: it had ONE line on it and now has four,
-// because the round that gave it a construction census also found that nothing
-// had ever said who may MAKE one.
+// HOW THE COUNT MOVED, and it is not a rearrangement: FOUR OF THE TWELVE LOST
+// THEIR SUBJECT AT ONCE. All four were the sink — who may call its door, who
+// may make one, who may mint the attempt it is for, and that nothing re-points
+// that attempt — and there is no sink. Three of the six extra lines went the
+// same way: "the sink keys its rows by its own attempt", "'write' in the
+// closing verb set", and the sink's own row count. Nothing was ADDED to either
+// list, which is the honest shape of a deletion: the writer this package spent
+// four rounds fencing in is not fenced better, it is not there.
 //
 // TWO GUARDS ARE ON THE CENSUSES' INPUT rather than on a write, and they are not
 // ends. TestEveryKeyThisPackageWritesIsInSomeCensus requires every whole key
@@ -297,7 +330,7 @@
 // and asserts that the first is still counted as naming the verb and the second
 // is a key no builder built.
 //
-// EVERYTHING TOUCHING THEM IS HELD, which is why the set is twelve and not
+// EVERYTHING TOUCHING THEM IS HELD, which is why the set is eight and not
 // ninety. Measured one at a time, each of these fails BY NAME rather than
 // passing:
 //
@@ -314,12 +347,10 @@
 //	a raw op appended to an entry             it does not compile
 //	a raw op spliced into what the store      it does not compile: there is no
 //	  is handed                               batch expression to splice into
-//	a key handed to the sink                  it does not compile
-//	an attempt key built on a bare id         it does not compile
-//	a foreign sink built in a handle method   FOUR lines, and all four must go
-//	  and written through its own door
-//	a second row in the sink's entry          the row census, AND the sink's own
-//	                                          count, which is not a name
+//	a cid a runner hands over instead of      it does not compile
+//	  the bytes
+//	a log row keyed by anything at all        it does not compile: there is no
+//	                                          builder for one
 //	a `stated` assembled around another       three tests, including the one
 //	  job's record                            that says who may make one
 //	record() not stamping the subject onto    the behavioural test and the
@@ -343,7 +374,7 @@
 //	                                          scan cannot match a non-empty
 //	                                          expectation
 //
-// WHY IT CANNOT BE SMALLER. The twelve are four regions and no line of one
+// WHY IT CANNOT BE SMALLER. The eight are four regions and no line of one
 // covers another. WHICH FILES ARE READ is under everything, because a scan reads
 // what it is given. WHICH ROWS EXIST and EACH ROW NAMES ITS OWN SUBJECT cannot
 // be folded together: a row naming the wrong subject is IN the census, and a
@@ -351,10 +382,10 @@
 // WHAT MAKES A ROW is a third — the type says a row comes from Set or Delete,
 // and only an enumeration can say those two are called from where a key was
 // composed, and only line 3 can say a verb was called at all rather than taken.
-// WHO MAY WRITE AT ALL is the fourth, and it has two halves that do not reach
-// each other: the entry's, which is Apply and the absence of Batch, and the
-// sink's, which is a door, a constructor, a minting call and a field. Under all
-// of them is the thing no Go test escapes: a test fails by calling Errorf, so
+// WHO MAY WRITE AT ALL is the fourth, and it is ONE half now rather than two:
+// the entry's, which is Apply and the absence of Batch. The other half was the
+// sink's — a door, a constructor, a minting call and a field — and it is gone
+// with it. Under all of them is the thing no Go test escapes: a test fails by calling Errorf, so
 // somewhere there is a first call nothing else watches, and a check on that
 // check is another Errorf with the same property one level out — the regress
 // this package's history walked nine times.
@@ -365,10 +396,12 @@
 // same builders are the READERS' — job(), admit(), lastCommit() and reconcile's
 // listing all call them with an id no section handed over. Putting the grammar
 // behind the subject would make a foreign key a compile error and would take
-// every reader in the package with it. THE ATTEMPT ROWS ARE THE ONE PLACE IT WAS
-// AFFORDABLE, and this round did it there: attemptLogKey and attemptAssetKey
-// take an attempt.Of, because their only caller is a writer. That is the
-// boundary, and where it sits is a choice rather than an oversight.
+// every reader in the package with it. The attempt rows were the one place it
+// was affordable, and a round did it there — those two builders took a struct
+// only their writer could make. The rows are deleted now, so the boundary is
+// back where it was: every key builder in store.go takes a string, and the
+// enumeration is what says who may call one. Where it sits is a choice rather
+// than an oversight.
 //
 // AND WHAT IS NOT COVERED AT ALL, in the same voice. A record's IDENTITY FIELDS
 // are not pinned: record() stamps rec.ID with the subject, so an entry writes
@@ -386,14 +419,18 @@
 // build tag on the file the assertions live in. population_test.go never added
 // to the package at all. `go test` never run in CI. Each is a small edit that
 // leaves a green run and no trace, and no test framework defends against any of
-// them. These twelve are written here instead, in the open, with the measurement
+// them. These eight are written here instead, in the open, with the measurement
 // beside them.
 //
-// MEASURE THE MECHANISM'S OWN PACKAGES EITHER WAY. backend/section, backend/row
-// and backend/attempt are exercised by their own tests and by this package's,
-// and the figures agree — 100.0% plain each, 100.0% pinned together — because
-// their own tests drive the whole surface:
+// MEASURE THE MECHANISM'S OWN PACKAGES EITHER WAY. backend/section and
+// backend/row are exercised by their own tests and by this package's, and the
+// figures agree — 100.0% plain each, 100.0% pinned together — because their own
+// tests drive the whole surface. backend/attempt was a third and is deleted:
+// its whole purpose was to make the sink's attempt un-assignable. The log
+// writer that replaced it is measured the same way and reads the same, plain
+// and pinned.
 //
 //	go test -count=1 -p 2 -cover ./services/build/...
-//	go test -count=1 -p 2 -coverpkg=./services/build/backend/section/...,./services/build/backend/row/...,./services/build/backend/attempt/... ./services/build/...
+//	go test -count=1 -p 2 -coverpkg=./services/build/backend/section/...,./services/build/backend/row/... ./services/build/...
+//	go test -count=1 -p 2 -coverpkg=./services/build/livelog/... ./services/build/...
 package backend

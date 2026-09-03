@@ -3,13 +3,13 @@ package backend
 import (
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
 
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/services/build/backend/attempt"
 )
 
 // store.go is the key layout — the only file in this package that builds a
@@ -19,13 +19,20 @@ import (
 //
 // ── THE GRAMMAR ──────────────────────────────────────────────────────────
 //
-//	build/job/<seg(id)>/record                            the job itself
-//	build/job/<seg(id)>/attempt/<%020d>/log/<seg(ts)>     -> cid, one row per entry
-//	build/job/<seg(id)>/attempt/<%020d>/asset/<seg(rid)>  -> cid, one row per resource
-//	build/index/project/<seg(pid)>/<seg(id)>              how a caller FINDS a job
-//	build/index/open/<seg(repokey)>/<seg(id)>             non-terminal jobs
-//	build/index/ref/<seg(repokey)>/<seg(ref)>/last        -> the last sha finished here
-//	build/index/terminal/<%020d unix>/<seg(id)>           retention scan
+//	build/job/<seg(id)>/record                       the job itself
+//	build/index/project/<seg(pid)>/<seg(id)>          how a caller FINDS a job
+//	build/index/open/<seg(repokey)>/<seg(id)>         non-terminal jobs
+//	build/index/ref/<seg(repokey)>/<seg(ref)>/last    -> the last sha finished here
+//	build/index/terminal/<%020d unix>/<seg(id)>       retention scan
+//
+// FIVE KEYS, AND ONE OF THEM IS THE JOB. There were seven, and the two that
+// went were the LOG AND ASSET ROWS OF AN ATTEMPT — one replicated entry per log
+// line of every build, for content no read of a record decides and no node has
+// to agree with another about. A log is a FILE now (services/build/livelog),
+// followed while it is written and handed to the asset store when the build
+// ends, and what raft holds about it is the cid on the record. The writer that
+// wrote those rows was the one writer in this package outside every section,
+// and three of the last four escapes this package found came through it.
 //
 // A segment is either a LITERAL spelled out in this file, an ID passed through
 // seg(), or a fixed-width decimal. seg() is unpadded base64url (RFC 4648 §5),
@@ -40,7 +47,7 @@ import (
 // ("refs/heads/feature/x").
 //
 // WHICH ATTACK THAT CLOSES, concretely. Spliced raw, a push to the ref
-// `heads/x/../../../job/<other id>/attempt` under a repository key an attacker
+// `heads/x/../../../job/<other id>/record` under a repository key an attacker
 // can register would land its rows inside another job's prefix, and a job id
 // is derived from (repository, ref, sha) — all three attacker-chosen for a
 // repository they own. Encoded, "/" and ".." cannot survive into a key at all,
@@ -61,9 +68,6 @@ const (
 	rootSegment     = "build"
 	jobSegment      = "job"
 	recordSegment   = "record"
-	attemptSegment  = "attempt"
-	logSegment      = "log"
-	assetSegment    = "asset"
 	indexSegment    = "index"
 	projectSegment  = "project"
 	openSegment     = "open"
@@ -101,68 +105,15 @@ func stamp(n int64) string {
 	return fmt.Sprintf("%0*d", stampWidth, n)
 }
 
-// jobPrefix is everything one job owns. Every row of a job is under it, so
-// nothing else has to know how many kinds of row there are.
+// jobPrefix is everything one job owns — which is one row today, and is still
+// a prefix rather than the record's key spelled directly: what the shape says
+// is that the record is a row OF a job, so a second kind of row would be a
+// sibling under it rather than a second top-level spelling of a job's identity.
 func jobPrefix(id string) string {
 	return rootSegment + "/" + jobSegment + "/" + seg(id) + "/"
 }
 
 func jobRecordKey(id string) string { return jobPrefix(id) + recordSegment }
-
-// attemptPrefix is every log and asset row of one job, across all its
-// attempts. Listed and sorted, it reads in attempt order, then asset before
-// log within an attempt — which is why assembling a Job needs one listing
-// rather than one per attempt.
-func attemptPrefix(id string) string { return jobPrefix(id) + attemptSegment + "/" }
-
-// THE TWO ATTEMPT ROWS TAKE AN attempt.Of AND NOT A PAIR OF VALUES, which is
-// round ten one floor down. They took (id string, attempt uint32), so the
-// writer that calls them — attemptSink, the one writer in this package outside
-// every section — could hand them any id at all and the only thing that said
-// otherwise was a scan reading the ARGUMENT TEXT at the call site. An
-// attempt.Of is another package's struct with two unexported fields, so
-// attemptLogKey("github.com/evil/repo", 0, at) does not compile and there is
-// nothing in the sink to respell.
-func attemptLogKey(of attempt.Of, at time.Time) string {
-	return attemptPrefix(of.Job()) + stamp(int64(of.Number())) + "/" +
-		logSegment + "/" + seg(at.UTC().Format(time.RFC3339Nano))
-}
-
-func attemptAssetKey(of attempt.Of, resourceID string) string {
-	return attemptPrefix(of.Job()) + stamp(int64(of.Number())) + "/" +
-		assetSegment + "/" + seg(resourceID)
-}
-
-// attemptRow is one parsed log or asset row.
-type attemptRow struct {
-	attempt uint32
-	kind    string // logSegment or assetSegment
-	key     string // the map key: an RFC3339 timestamp, or a resource id
-}
-
-// parseAttemptKey reads a key this package wrote under attemptPrefix(id).
-func parseAttemptKey(id, key string) (attemptRow, error) {
-	rest, ok := strings.CutPrefix(key, attemptPrefix(id))
-	if !ok {
-		return attemptRow{}, fmt.Errorf("key %q is not an attempt row of job %q", key, id)
-	}
-	parts := strings.Split(rest, "/")
-	if len(parts) != 3 {
-		return attemptRow{}, fmt.Errorf("key %q is not an attempt row", key)
-	}
-	if parts[1] != logSegment && parts[1] != assetSegment {
-		return attemptRow{}, fmt.Errorf("key %q names no row kind", key)
-	}
-	var attempt uint32
-	if _, err := fmt.Sscanf(parts[0], "%d", &attempt); err != nil || len(parts[0]) != stampWidth {
-		return attemptRow{}, fmt.Errorf("key %q has a malformed attempt number", key)
-	}
-	mapKey, err := unseg(parts[2])
-	if err != nil {
-		return attemptRow{}, err
-	}
-	return attemptRow{attempt: attempt, kind: parts[1], key: mapKey}, nil
-}
 
 // ── the indexes ──────────────────────────────────────────────────────────
 //
@@ -269,15 +220,25 @@ func idFromIndexKey(key string) (string, error) {
 
 // ── the record ───────────────────────────────────────────────────────────
 
-// jobRecord is what build/job/<id>/record holds: the whole job except its logs
-// and assets, which are rows of their own so that two writers can never
-// read-modify-write one map (root AGENTS.md rule 1).
+// jobRecord is what build/job/<id>/record holds: the WHOLE job, including the
+// content ids of what its runs produced.
+//
+// THE TWO MAPS WERE ROWS OF THEIR OWN and are fields now, which is the opposite
+// of what root AGENTS.md rule 1 asks for and is right here for the reason the
+// rule is about: a map re-serialized on each write is a read-modify-write, and
+// what makes that a defect is TWO WRITERS. There was a second writer — the
+// sink, outside every section by design, writing a row per log line as the
+// build went — and there is not one now. Every write of this record is made by
+// the body that read it, inside the section that took the lock (section.go), so
+// a merge into these maps is serialized by the same thing that serializes the
+// status beside it. What used to be one replicated entry per log line is one
+// cid on the entry that settles the job.
 //
 // cbor with integer keys, which is what pkg/raft stores its own values in and
 // what pkg/v2/queue's own record uses, for the reason stated there: this never
 // crosses a wire and no other language reads it. v2's "protobuf, never cbor"
 // rule is about STREAMS; a stored record is not one, and the proto Job is a
-// READ shape assembled from this plus the attempt rows.
+// READ shape assembled from this and nothing else.
 type jobRecord struct {
 	ID            string `cbor:"1,keyasint"`
 	Status        int32  `cbor:"2,keyasint"`
@@ -290,9 +251,10 @@ type jobRecord struct {
 	CreatedAt int64 `cbor:"7,keyasint"`
 	// Attempt counts the deliveries this record has seen. It is the record's
 	// own counter rather than the queue Delivery's, because a Retry after an
-	// Ack is a genuinely NEW queue item whose attempts start again, and the
-	// attempt/ segment has to keep going up or a retry would overwrite the
-	// previous run's rows.
+	// Ack is a genuinely NEW queue item whose attempts start again, and this
+	// counter has to keep going up or a retry would overwrite the previous
+	// run's log: it is what a run is handed (Work.Attempt) and what that run's
+	// output is filed under in Logs below.
 	Attempt uint32 `cbor:"8,keyasint"`
 	// UpdatedAt is unix seconds at the last transition. reconcile's age gate
 	// reads it.
@@ -307,6 +269,51 @@ type jobRecord struct {
 	// so it is stored and not served — it is what distinguishes a runner's own
 	// error from "attempts exhausted" when someone reads the store.
 	Reason string `cbor:"12,keyasint,omitempty"`
+	// Logs is the cid of each attempt's log, keyed by the attempt number of the
+	// RUN THAT WROTE IT — which is carried by what the run produced rather than
+	// read off this record, because this record is read again after the build
+	// and what it says by then is another transition's business.
+	//
+	// KEYED BY THE ATTEMPT, and that is the v1 defect this does not carry over:
+	// v1 keys its log map by time.Now().Format(time.RFC3339) (patrick's
+	// Job.SetLog), which is a wall clock as a map key — it collides inside one
+	// second, it sorts lexically rather than causally, and it says nothing
+	// about WHICH RUN produced the entry it names. An attempt number is the
+	// causal order, it is this record's own counter, and a retry cannot
+	// overwrite the previous run's log because the counter only goes up.
+	//
+	// It is zero-padded (stamp) for root AGENTS.md rule 7: attempt 10 must not
+	// sort before attempt 2 in a reader that sorts the keys it was handed.
+	Logs map[string]string `cbor:"13,keyasint,omitempty"`
+	// Assets is the cid of the artifact built for each resource id, which is
+	// what v1's Job.SetCid holds and what its /download/{jobId}/{resourceId}
+	// route reads back. A later attempt's artifact replaces an earlier one:
+	// there is one current build of a resource, not a history of them.
+	Assets map[string]string `cbor:"14,keyasint,omitempty"`
+}
+
+// with is this record plus what a run produced. The maps are COPIED rather than
+// added to, because the record it is called on is the one the section READ and
+// its maps are the holding's: appending through them would edit what the
+// section believes it read, in place, before anything was committed.
+func (r jobRecord) with(p produced) jobRecord {
+	if p.logCID != "" {
+		r.Logs = merged(r.Logs, map[string]string{stamp(int64(p.attempt)): p.logCID})
+	}
+	if len(p.assets) > 0 {
+		r.Assets = merged(r.Assets, p.assets)
+	}
+	return r
+}
+
+// merged is one map over another, into a third. merged(m, nil) is a copy, which
+// is what a READ shape wants: the proto's map handed to a caller must not be
+// the record's own.
+func merged(into, from map[string]string) map[string]string {
+	out := make(map[string]string, len(into)+len(from))
+	maps.Copy(out, into)
+	maps.Copy(out, from)
+	return out
 }
 
 func (r jobRecord) encode() ([]byte, error) { return cbor.Marshal(r) }
