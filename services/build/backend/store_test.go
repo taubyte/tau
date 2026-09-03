@@ -10,6 +10,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/services/build/backend/attempt"
 )
 
 // THE PREFIX RULE, AGAINST A REAL STORE. raft's Keys is a plain HasPrefix, so a
@@ -145,28 +146,28 @@ func TestParseOpenIndexKeyRejectsWhatIsNotOne(t *testing.T) {
 func TestAttemptRowsSortInAttemptOrder(t *testing.T) {
 	id := "job"
 	keys := []string{
-		attemptAssetKey(id, 10, "r"),
-		attemptLogKey(id, 2, time.Unix(0, 0)),
-		attemptAssetKey(id, 2, "r"),
+		attemptAssetKey(attempt.Nth(id, 10), "r"),
+		attemptLogKey(attempt.Nth(id, 2), time.Unix(0, 0)),
+		attemptAssetKey(attempt.Nth(id, 2), "r"),
 	}
 	slices.Sort(keys)
 
 	require.Equal(t, []string{
-		attemptAssetKey(id, 2, "r"),
-		attemptLogKey(id, 2, time.Unix(0, 0)),
-		attemptAssetKey(id, 10, "r"),
+		attemptAssetKey(attempt.Nth(id, 2), "r"),
+		attemptLogKey(attempt.Nth(id, 2), time.Unix(0, 0)),
+		attemptAssetKey(attempt.Nth(id, 10), "r"),
 	}, keys)
 }
 
 func TestParseAttemptKey(t *testing.T) {
 	id := "job"
 
-	row, err := parseAttemptKey(id, attemptAssetKey(id, 3, "website/home"))
+	row, err := parseAttemptKey(id, attemptAssetKey(attempt.Nth(id, 3), "website/home"))
 	require.NoError(t, err)
 	require.Equal(t, attemptRow{attempt: 3, kind: assetSegment, key: "website/home"}, row)
 
 	at := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
-	row, err = parseAttemptKey(id, attemptLogKey(id, 1, at))
+	row, err = parseAttemptKey(id, attemptLogKey(attempt.Nth(id, 1), at))
 	require.NoError(t, err)
 	require.Equal(t, uint32(1), row.attempt)
 	require.Equal(t, logSegment, row.kind)

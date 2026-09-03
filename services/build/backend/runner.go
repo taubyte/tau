@@ -8,6 +8,7 @@ import (
 
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/pkg/v2/queue"
+	"github.com/taubyte/tau/services/build/backend/attempt"
 	"github.com/taubyte/tau/services/build/backend/row"
 )
 
@@ -183,7 +184,7 @@ func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.Cance
 		rec.Holder = s.host.ID().String()
 
 		// THE ENTRY'S KEY IS THE SECTION'S, not the record's. It was
-		// set(jobRecordKey(rec.ID), value) inside withJob(d.ID, …) until the
+		// a row at jobRecordKey(rec.ID) inside withJob(d.ID, …) until the
 		// round that removed the arbitrary key: the two agreed because the
 		// record on disk said so, which is a property of the store rather than
 		// of the expression, and a record read from anywhere else would have
@@ -232,7 +233,7 @@ func (s *Service) invoke(ctx context.Context, work Work) (err error) {
 		}
 	}()
 
-	return s.runner.Run(ctx, work, &attemptSink{s: s, id: work.JobID, attempt: work.Attempt})
+	return s.runner.Run(ctx, work, &attemptSink{s: s, of: attempt.Nth(work.JobID, work.Attempt)})
 }
 
 // settle ends the delivery and writes what the run decided — THE ACK AND THE
@@ -385,17 +386,71 @@ func (s *Service) drainDeadLetter() (bool, error) {
 // overwrite the previous run's logs. Durable when called, so a build that
 // crashes still has the logs it had got to — v1's log file only reached IPFS
 // after the run returned.
+//
+// IT IS THE ONE WRITER IN THIS PACKAGE OUTSIDE EVERY SECTION, on purpose: a log
+// line or an asset cid is CONTENT the build produces as it goes, keyed by (job,
+// attempt), and no read of a job record decides it. What holds it instead is
+// that it is CONSTRUCTED for one attempt and there is no expression in it that
+// names a key.
+//
+// THAT IS ROUND TEN, AND IT IS WHAT THE ROUND BEFORE LEFT OPEN. write took a
+// KEY, and the census that says "every key a row names is composed from the
+// subject its writer was entered on" exempted this method unconditionally — one
+// line, `if owner == sink { return true }`. So one line here,
+//
+//	set(refLastKey("github.com/evil/repo", "refs/heads/main"), []byte("0000…"))
+//
+// as a second element of the sink's own rows, left all seven build packages
+// green and moved another repository's ref anchor on the happy path of every
+// build: Service.lastCommit reads that row, and what it reads becomes the
+// Before the NEXT build of that ref diffs from. The exemption was not a hole
+// somebody forgot to close — it was the only way a door that took a key could
+// be let through a census about keys.
+//
+// SO THE DOOR TAKES NO KEY. It takes WHAT THE ROW IS — which of the attempt's
+// two kinds, and the one thing that distinguishes it inside that attempt — and
+// composes the key from the attempt this sink was constructed for. There is
+// nothing here to hand a foreign key to, and no exemption left to write.
 type attemptSink struct {
-	s       *Service
-	id      string
-	attempt uint32
+	s *Service
+	// of is the job and the run of it these rows belong to. It is another
+	// package's struct with unexported fields (backend/attempt), so a copy of
+	// this sink cannot be re-pointed at a neighbour's attempt by assigning
+	// through it — the eighth round's lesson about `other := *j; other.id = …`,
+	// which is not a composite literal and which no census of literals sees.
+	of attempt.Of
+}
+
+// attemptRowKind is WHICH OF AN ATTEMPT'S TWO ROWS this is, and it is the sink's
+// whole answer to "about what".
+//
+// It is a kind rather than a key because a kind cannot name anything: there are
+// two of them, they are declared here, and the key each one means is composed
+// below from the sink's own attempt. A third kind is a compile-time constant
+// somebody had to add, beside the branch that means it.
+type attemptRowKind int
+
+const (
+	logRow attemptRowKind = iota + 1
+	assetRow
+)
+
+func (r attemptRowKind) String() string {
+	switch r {
+	case logRow:
+		return logSegment
+	case assetRow:
+		return assetSegment
+	default:
+		return "unknown"
+	}
 }
 
 func (k *attemptSink) Log(_ context.Context, at time.Time, cid string) error {
 	if cid == "" {
 		return errors.New("build: a log entry needs a cid")
 	}
-	return k.write(attemptLogKey(k.id, k.attempt, at), cid)
+	return k.write(logRow, at, "", cid)
 }
 
 func (k *attemptSink) Asset(_ context.Context, resourceID, cid string) error {
@@ -405,12 +460,32 @@ func (k *attemptSink) Asset(_ context.Context, resourceID, cid string) error {
 	if cid == "" {
 		return errors.New("build: an asset needs a cid")
 	}
-	return k.write(attemptAssetKey(k.id, k.attempt, resourceID), cid)
+	return k.write(assetRow, time.Time{}, resourceID, cid)
 }
 
-func (k *attemptSink) write(key, cid string) error {
-	if err := k.s.store.Batch(row.Ops([]row.Op{set(key, []byte(cid))}), k.s.cfg.Queue.ApplyTimeout); err != nil {
-		return fmt.Errorf("build: recording %q: %w", key, err)
+// write is the sink's ONE DOOR TO THE STORE AND IT TAKES NO KEY: the kind of
+// row, the two things that can distinguish one inside an attempt — the instant
+// a log line arrived, the resource an asset is for — and the cid that goes at
+// it. Exactly one of the two is meaningful, and the kind is what says which.
+//
+// ONE ROW, COUNTED RATHER THAN TRUSTED. The entry is asked how many rows went
+// into it, which is a fact about what it HOLDS rather than about how anything
+// was spelled: a kind this switch does not know puts none in, and a second row
+// spliced in beside the first puts two, and both are refused before anything is
+// applied. It is the one guard here that a respelling does not reach.
+func (k *attemptSink) write(kind attemptRowKind, at time.Time, resourceID, cid string) error {
+	e := row.Sized(1)
+	switch kind {
+	case logRow:
+		e.Set(attemptLogKey(k.of, at), []byte(cid))
+	case assetRow:
+		e.Set(attemptAssetKey(k.of, resourceID), []byte(cid))
+	}
+	if e.Len() != 1 {
+		return errInternal("build: job %s: a %s row of an attempt is %d rows", k.of.Job(), kind, e.Len())
+	}
+	if err := e.Apply(k.s.store, k.s.cfg.Queue.ApplyTimeout); err != nil {
+		return fmt.Errorf("build: recording a %s row of job %s: %w", kind, k.of.Job(), err)
 	}
 	return nil
 }

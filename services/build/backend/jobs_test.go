@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/services/build/backend/attempt"
 )
 
 const unknownJobID = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -54,8 +55,8 @@ func TestGetAssemblesTheMapsFromOneRowPerEntryInAttemptOrder(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	first := &attemptSink{s: h.Service, id: id, attempt: 1}
-	second := &attemptSink{s: h.Service, id: id, attempt: 2}
+	first := &attemptSink{s: h.Service, of: attempt.Nth(id, 1)}
+	second := &attemptSink{s: h.Service, of: attempt.Nth(id, 2)}
 
 	at1 := h.clock.now()
 	at2 := at1.Add(time.Minute)
@@ -83,7 +84,7 @@ func TestGetAssemblesTheMapsFromOneRowPerEntryInAttemptOrder(t *testing.T) {
 
 func TestASinkRefusesARowThatWouldBeAnEmptySegment(t *testing.T) {
 	h := newHarness(t)
-	sink := &attemptSink{s: h.Service, id: h.push(t, testRef, testCommit), attempt: 1}
+	sink := &attemptSink{s: h.Service, of: attempt.Nth(h.push(t, testRef, testCommit), 1)}
 
 	require.Error(t, sink.Log(t.Context(), h.clock.now(), ""))
 	require.Error(t, sink.Asset(t.Context(), "", "cid"))
@@ -92,6 +93,30 @@ func TestASinkRefusesARowThatWouldBeAnEmptySegment(t *testing.T) {
 	h.store.failBatches(errors.New("log is full"))
 	require.Error(t, sink.Log(t.Context(), h.clock.now(), "cid"))
 	require.Error(t, sink.Asset(t.Context(), "r", "cid"))
+}
+
+// A SINK WRITE IS EXACTLY ONE ROW, AND THE ENTRY IS ASKED RATHER THAN TRUSTED.
+//
+// The door takes a KIND and not a key (runner.go), so what it composes is
+// decided by a switch — and a kind that switch does not know would compose
+// nothing and apply an empty batch, while a second row spliced in beside the
+// first would apply two. Both are the same question, and the entry answers it:
+// it is asked how many rows went in, which is a fact about what it HOLDS and
+// not about how anything was spelled.
+func TestASinkWriteIsExactlyOneRow(t *testing.T) {
+	h := newHarness(t)
+	sink := &attemptSink{s: h.Service, of: attempt.Nth(h.push(t, testRef, testCommit), 1)}
+
+	before := h.store.appliedEntries()
+	err := sink.write(attemptRowKind(0), h.clock.now(), "website/home", "cid")
+
+	require.Error(t, err)
+	require.Equal(t, connect.CodeInternal, connect.CodeOf(err),
+		"a row of no kind is this process's own fault, so there is no other node to ask")
+	require.Contains(t, err.Error(), "is 0 rows")
+	require.Equal(t, before, h.store.appliedEntries(),
+		"and nothing reaches the store: an empty batch is indistinguishable at the store from "+
+			"one that was applied")
 }
 
 func TestGetReportsARowItCannotParse(t *testing.T) {
@@ -312,7 +337,7 @@ func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 	require.NoError(t, err)
 	h.store.put(t, jobRecordKey(id), value)
 
-	sink := &attemptSink{s: h.Service, id: id, attempt: 1}
+	sink := &attemptSink{s: h.Service, of: attempt.Nth(id, 1)}
 	require.NoError(t, sink.Log(t.Context(), h.clock.now(), "cid-log-1"))
 
 	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "it broke"))
@@ -363,9 +388,9 @@ func TestGetSkipsARowThatVanishedBetweenTheListingAndTheRead(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	sink := &attemptSink{s: h.Service, id: id, attempt: 1}
+	sink := &attemptSink{s: h.Service, of: attempt.Nth(id, 1)}
 	require.NoError(t, sink.Asset(t.Context(), "website/home", "cid-a"))
-	h.store.haunt(attemptAssetKey(id, 1, "gone"))
+	h.store.haunt(attemptAssetKey(attempt.Nth(id, 1), "gone"))
 
 	job, err := h.job(id)
 	require.NoError(t, err)

@@ -11,8 +11,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/services/build/backend/row"
 	"github.com/taubyte/tau/services/build/backend/section"
 )
 
@@ -508,7 +508,7 @@ func rowsOf(h *harness, id string) map[string]string {
 // clause the ladder was missing, driven in its strongest form: a live handle, a
 // barriered section, and the NEIGHBOUR'S OWN RECORD in hand.
 //
-// The write that made this necessary was one line: set(jobRecordKey(other),
+// The write that made this necessary was one line: a row at jobRecordKey(other),
 // value), inside a []raft.BatchOp literal handed to commit(), from a method
 // already on every writer list. It passed every static guard and every runtime
 // refusal, because everything they check was true — the section was held, by
@@ -726,10 +726,10 @@ func BenchmarkTheEntry(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			ops := []row.Op{
-				set(jobRecordKey(id), value),
-				set(projectIndexKey(rec.ProjectID, id), nil),
-				set(openIndexKey(rec.RepositoryKey, id), nil),
+			ops := []raft.BatchOp{
+				{Set: &raft.SetCommand{Key: jobRecordKey(id), Value: value}},
+				{Set: &raft.SetCommand{Key: projectIndexKey(rec.ProjectID, id)}},
+				{Set: &raft.SetCommand{Key: openIndexKey(rec.RepositoryKey, id)}},
 			}
 			if len(ops) != 3 {
 				b.Fatal("the compiler elided the thing being measured")
@@ -744,7 +744,7 @@ func BenchmarkTheEntry(b *testing.B) {
 				if e.err != nil {
 					b.Fatal(e.err)
 				}
-				if len(e.ops) != 3 {
+				if e.ops.Len() != 3 {
 					b.Fatal("the compiler elided the thing being measured")
 				}
 			}

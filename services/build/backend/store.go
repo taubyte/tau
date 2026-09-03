@@ -9,7 +9,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/services/build/backend/row"
+	"github.com/taubyte/tau/services/build/backend/attempt"
 )
 
 // store.go is the key layout — the only file in this package that builds a
@@ -115,12 +115,22 @@ func jobRecordKey(id string) string { return jobPrefix(id) + recordSegment }
 // rather than one per attempt.
 func attemptPrefix(id string) string { return jobPrefix(id) + attemptSegment + "/" }
 
-func attemptLogKey(id string, attempt uint32, at time.Time) string {
-	return attemptPrefix(id) + stamp(int64(attempt)) + "/" + logSegment + "/" + seg(at.UTC().Format(time.RFC3339Nano))
+// THE TWO ATTEMPT ROWS TAKE AN attempt.Of AND NOT A PAIR OF VALUES, which is
+// round ten one floor down. They took (id string, attempt uint32), so the
+// writer that calls them — attemptSink, the one writer in this package outside
+// every section — could hand them any id at all and the only thing that said
+// otherwise was a scan reading the ARGUMENT TEXT at the call site. An
+// attempt.Of is another package's struct with two unexported fields, so
+// attemptLogKey("github.com/evil/repo", 0, at) does not compile and there is
+// nothing in the sink to respell.
+func attemptLogKey(of attempt.Of, at time.Time) string {
+	return attemptPrefix(of.Job()) + stamp(int64(of.Number())) + "/" +
+		logSegment + "/" + seg(at.UTC().Format(time.RFC3339Nano))
 }
 
-func attemptAssetKey(id string, attempt uint32, resourceID string) string {
-	return attemptPrefix(id) + stamp(int64(attempt)) + "/" + assetSegment + "/" + seg(resourceID)
+func attemptAssetKey(of attempt.Of, resourceID string) string {
+	return attemptPrefix(of.Job()) + stamp(int64(of.Number())) + "/" +
+		assetSegment + "/" + seg(resourceID)
 }
 
 // attemptRow is one parsed log or asset row.
@@ -235,30 +245,27 @@ func idFromIndexKey(key string) (string, error) {
 	return unseg(key[i+1:])
 }
 
-// ── the two rows ─────────────────────────────────────────────────────────
-
-// set and del are THE ONLY TWO EXPRESSIONS IN THIS PACKAGE THAT MAKE A ROW, and
-// that is now a fact of the program rather than a sentence in a comment.
+// ── the rows ─────────────────────────────────────────────────────────────
 //
-// They took a key and returned a raft.BatchOp until the ninth round, which is
-// an ordinary exported struct with exported fields — so a row was composable
-// beside them, out of nothing, by anybody:
+// THERE IS NO set() AND NO del() IN THIS PACKAGE ANY MORE, and that is round
+// ten. They were the only two expressions that made a row, they returned a
+// row.Op, and a []row.Op was an ordinary slice — so the rows an entry had
+// composed could be handed to the store with one more spliced in beside them,
+// and the guard on that door read the outermost callee's NAME:
 //
-//	s.ops = append(s.ops, raft.BatchOp{Set: &raft.SetCommand{
-//	        Key: refLastKey("github.com/evil/repo", "refs/heads/main"), …}})
+//	store.Batch(append(row.Ops(e.ops), forged), t)   -> "append", caught
+//	store.Batch(row.Ops(append(e.ops, forged)), t)   -> "Ops",    green
 //
-// inside stated.anchor, the method that owns that very row, left the whole
-// service green and landed a row that moves ANOTHER REPOSITORY'S ref anchor.
-// Every guard over the rows is keyed on a CALL — which builder built the key,
-// which method appended the row — and composing a struct is not a call.
+// A row is now MADE INTO the entry it belongs to — row.Entry.Set and
+// row.Entry.Delete, on a struct whose slice is unexported in another package —
+// and row.Entry.Apply hands them to a store WITHOUT TAKING THEM. So there is no
+// value of raft's batch type anywhere in this package: nothing to append to,
+// nothing to splice into, and no second spelling of the same act. row/row.go
+// states the whole of what a caller is left with.
 //
-// So the element type is row.Op, whose one field is unexported in another
-// package: a filled one has no expression outside these two functions, and the
-// zero value carries no key (row/row.go says what raft does with it). They live
-// here, beside the key builders, because a row is a key and what goes at it.
-func set(key string, value []byte) row.Op { return row.Set(key, value) }
-
-func del(key string) row.Op { return row.Delete(key) }
+// The key builders above are still called from exactly the places that compose
+// the row, which is the half a type cannot say — population_test.go enumerates
+// it from the other side.
 
 // ── the record ───────────────────────────────────────────────────────────
 

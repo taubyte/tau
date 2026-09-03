@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/services/build/backend/attempt"
 )
 
 // population_test.go pins the POPULATION rather than any one member of it.
@@ -148,6 +150,34 @@ const packageLevel = "(package level)"
 // TestEveryQueueWriteIsInsideTheSectionThatDecidedIt.
 var pairedQueueWrites = map[string]bool{"Push": true, "Remove": true, "Ack": true, "Nack": true}
 
+// rowVerbs are the two calls that MAKE A ROW: backend/row's Set and Delete, on
+// the entry the row goes into. There is no third, and there is no free-standing
+// row to make one out of — row.Entry's slice is unexported and its elements'
+// contents are another package's, so a row exists only where one of these two
+// is called.
+//
+// THIS IS A NAME AND IT IS WRITTEN DOWN AS ONE. What every census below reads
+// is the identifier at a call site; what it stands for is the act of composing
+// a row. An alias is the obvious respelling, and it is caught here rather than
+// by luck: a method value `mk := e.ops.Set` is a selector, so the function that
+// takes it appears in callers(all, "Set") exactly as a direct call would — and a
+// call through `mk` fails the key check above, because `mk(…)` is not a call to
+// a store.go builder. TestARespeltRowMakerIsStillCounted drives both.
+var rowVerbs = map[string]bool{"Set": true, "Delete": true}
+
+// neverTaken are the three backend/row verbs that may appear ONLY as the thing
+// being called: the two that make a row, and the one that hands an entry's rows
+// to a store.
+//
+// A METHOD VALUE IS NOT A CALL, and that is the whole of why this exists.
+// `mk := e.ops.Set` leaves the function reading as an ordinary caller of Set,
+// and the call through mk has the callee name "mk", so every census keyed on
+// the verb walks past the key it names. `ap := e.ops.Apply` is worse: stashed in
+// a package-level var and invoked later, it applies the entry's rows OUTSIDE the
+// gate that refuses a section which has returned — the one property no scan can
+// see and the runtime holds. Both were measured GREEN before this line.
+var neverTaken = map[string]bool{"Set": true, "Delete": true, "Apply": true}
+
 // barrierVerbs are the pkg/v2/queue calls that take a barrier of their own:
 // every one of them goes through prepare(), which refuses a follower and then
 // blocks until everything committed is applied.
@@ -183,8 +213,8 @@ func sampleKeys() map[string]string {
 		"jobPrefix":          jobPrefix(sampleID),
 		"jobRecordKey":       jobRecordKey(sampleID),
 		"attemptPrefix":      attemptPrefix(sampleID),
-		"attemptLogKey":      attemptLogKey(sampleID, 1, at),
-		"attemptAssetKey":    attemptAssetKey(sampleID, 1, sampleResource),
+		"attemptLogKey":      attemptLogKey(attempt.Nth(sampleID, 1), at),
+		"attemptAssetKey":    attemptAssetKey(attempt.Nth(sampleID, 1), sampleResource),
 		"projectIndexPrefix": projectIndexPrefix(sampleProject),
 		"projectIndexKey":    projectIndexKey(sampleProject, sampleID),
 		"openIndexPrefix":    openIndexPrefix(testRepo),
@@ -256,7 +286,7 @@ func sameKeyAs(all map[string]string, like string) map[string]bool {
 
 // wholeKeys are the builders that produce a KEY rather than a prefix or a
 // fragment: rooted at this package's root segment, and not ending at a segment
-// boundary. Those are the only expressions set() and del() may be handed.
+// boundary. Those are the only expressions a row may be built on.
 func wholeKeys(all map[string]string) map[string]bool {
 	out := map[string]bool{}
 	for name, key := range all {
@@ -336,11 +366,14 @@ func TestEveryKeyThisPackageWritesIsInSomeCensus(t *testing.T) {
 
 // attemptRowKeys are the builders that produce a LOG OR ASSET ROW of one
 // attempt — content the build writes as it goes, keyed by (job, attempt), which
-// no read of a job record decides. It is the class attemptSink may write, and
-// naming it as a class rather than as "some builder in store.go" is what scopes
-// that exemption by its JUSTIFICATION: the sink took an arbitrary key and the
-// scan asked only that it came from somewhere in store.go, so a ref anchor or a
-// project row would have passed straight through it.
+// no read of a job record decides. It is the class attemptSink writes.
+//
+// IT IS A CLASS AND NOT A LIST OF NAMES, and that has outlived what it was
+// written for. The sink took an arbitrary key for two rounds, and the scan asked
+// only that it came from SOME builder in store.go — so a ref anchor, a project
+// row or a retention row handed to it passed straight through. The door takes no
+// key now, so what this class is used for is narrower and sharper: it says which
+// builders the sink's own switch may name, and both of them take an attempt.Of.
 func attemptRowKeys(all map[string]string) map[string]bool {
 	const sampleID = "0123456789012345678901234567890123456789abc"
 	under := attemptPrefix(sampleID)
@@ -748,12 +781,18 @@ func barriers(all map[string]funcs, call string) bool {
 
 // entryWrite reports whether a call ends in an entry or a paired queue write,
 // wherever in the call tree it is built.
+//
+// THE STORE IS REACHED BY Apply AND NOT BY Batch. Round ten moved the batch
+// behind a type: an entry's rows are a row.Entry, and row.Entry.Apply takes the
+// STORE rather than the ops, so this package names raft's batch nowhere. That
+// the name Batch appears in no body here is itself checked, in
+// TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord.
 func entryWrite(all map[string]funcs, call string) bool {
-	if call == "Batch" || pairedQueueWrites[call] {
+	if call == "Apply" || pairedQueueWrites[call] {
 		return true
 	}
 	for name := range reach(all, call, theRead) {
-		if name == "Batch" || pairedQueueWrites[name] {
+		if name == "Apply" || pairedQueueWrites[name] {
 			return true
 		}
 	}
@@ -866,6 +905,43 @@ func reads(t *testing.T, method, call string) string {
 	}
 	require.Len(t, out, 1, "%s must name %q exactly once", method, call)
 	return out[0]
+}
+
+// fieldsOn is every field name declared on a struct type in this package.
+//
+// IT EXISTS SO THAT A CHECK ON A FIELD FAILS CLOSED. Two of the enumerations
+// below say "nothing assigns this field", which is require.Empty over a map
+// keyed by the field's NAME — so a field renamed and reassigned would leave the
+// check looking at a key nothing writes and passing on an empty answer. Asking
+// the type whether the field is still there is what turns that into a failure.
+func fieldsOn(t *testing.T, recv string) []string {
+	t.Helper()
+
+	var out []string
+	for _, file := range parsePackage(t).Files {
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok || ts.Name.Name != recv {
+					continue
+				}
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				for _, field := range st.Fields.List {
+					for _, name := range field.Names {
+						out = append(out, name.Name)
+					}
+				}
+			}
+		}
+	}
+	return out
 }
 
 // methodsOn is every method declared on a type in this package.
@@ -1246,110 +1322,105 @@ func params(fn *ast.FuncDecl) map[string]int {
 	return out
 }
 
-// EVERY KEY AN ENTRY WRITES IS BUILT WHERE THE ENTRY IS. set() and del() are
-// this package's only two BatchOp constructors, and the key each is handed must
-// be a call to one of store.go's builders — or a parameter, in which case every
-// caller must build one, out of the CLASS that sink is allowed.
+// EVERY KEY A ROW NAMES IS BUILT WHERE THE ROW IS, AND NOTHING TAKES ONE.
 //
-// THIS IS WHAT MAKES THE PAIRING CHECK ABOVE A CHECK RATHER THAN A SPELLING
-// TEST. mend deletes an open-index row; while that key was the loop variable
-// reconcile's listing handed it, the entry named nothing and no scan over the
-// source could tell what it wrote. A tenth site deleting an open row alone,
-// outside any section, spelled the same way, passed everything. An opaque key
-// is the hole, so an opaque key is what fails here.
+// A row comes to exist in exactly two ways — row.Entry.Set and row.Entry.Delete
+// (backend/row) — and the key each is handed must be a call to one of store.go's
+// builders. Not "a builder or a parameter": A PARAMETER IS THE HOLE.
 //
-// AND EACH SINK IS SCOPED BY ITS OWN JUSTIFICATION, which is the half that was
-// missing. attemptSink.write took an arbitrary key and this scan asked only
-// that it came from SOME builder in store.go — so a ref anchor, a project row
-// or a retention row handed to the sink was a write outside every section that
-// nothing here would have named. A sink is allowed a CLASS of key now: the
-// entry's two constructors may be handed any whole key, because everything
-// above them composes it from the section's own subject; the sink may be handed
-// an attempt row and nothing else, because "a log or asset row keyed by (job,
-// attempt), written during the build, decided by no record read" is the whole
-// of its exemption.
+// THAT ESCAPE HATCH WAS REAL AND IT WAS USED. Until this round the check read
+// "a builder here, or a parameter every caller builds", and attemptSink.write
+// was the one door through it: a method taking (key, cid), scoped by the SHAPE
+// of its argument. The census one test down then exempted that owner
+// unconditionally from the check that a key names its writer's own subject —
+// `if owner == sink { return true }` — because a door that takes a key cannot
+// satisfy a census about which keys a writer may compose. One line inside it,
+//
+//	set(refLastKey("github.com/evil/repo", "refs/heads/main"), []byte("0000…"))
+//
+// left all seven build packages green and moved another repository's ref anchor
+// on the happy path of every build. The sink takes no key now (runner.go): it
+// takes WHICH KIND of the attempt's two rows this is and composes the key from
+// the attempt it was constructed for. So there is no parameter branch here any
+// more, and a door that takes a key fails by name the moment somebody adds one.
+//
+// mend's dropOrphanedOpen still takes the REPOSITORY of a row whose record is
+// gone — a parameter, and the named exception — but it is not a key: it is one
+// segment, handed to a builder that composes the rest from the handle's own
+// subject, and TestARecordAndItsOpenRowMoveInOneEntry enumerates its one caller.
 func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 	pkg := parsePackage(t)
-	keys := classes(t)
-	builders := wholeKeys(keys)
+	builders := wholeKeys(classes(t))
 
-	// THE SINKS ARE NAMED, and so is what each may be handed. A sink this table
-	// does not know about fails rather than being discovered and waved through
-	// — and there is exactly one, because a method that takes a key is a door
-	// scoped by the shape of an argument. The entry had two for one draft, and
-	// `j.writes().put(refLastKey("github.com/evil/repo", …), sha)` inside a
-	// method on the handle left the whole suite green.
-	allowed := map[string]map[string]bool{
-		"attemptSink.write": attemptRowKeys(keys),
-	}
-
-	sinks := map[string]map[int]bool{}
-
+	made := 0
 	for _, file := range pkg.Files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
 				continue
 			}
-			taken := params(fn)
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
-				if !ok || len(call.Args) == 0 {
+				if !ok || len(call.Args) == 0 || !rowVerbs[calleeName(call.Fun)] {
 					return true
 				}
-				if verb := calleeName(call.Fun); verb != "set" && verb != "del" {
-					return true
-				}
-				if keyBuilder(builders, call.Args[0]) {
-					return true
-				}
-				if id, ok := call.Args[0].(*ast.Ident); ok {
-					if i, isParam := taken[id.Name]; isParam {
-						if sinks[qualify(fn)] == nil {
-							sinks[qualify(fn)] = map[int]bool{}
-						}
-						sinks[qualify(fn)][i] = true
-						return true
-					}
-				}
-				require.Fail(t, "an entry writes a key it did not build",
-					"%s: %s(%s) — the key must be a store.go builder here, or a parameter every caller builds",
+				made++
+				require.True(t, keyBuilder(builders, call.Args[0]),
+					"%s: %s(%s) — the key a row names must be built by one of store.go's "+
+						"builders, right here. A key that arrives as a parameter is a door "+
+						"scoped by the shape of its argument, and anybody can walk through one",
 					qualify(fn), calleeName(call.Fun), types.ExprString(call.Args[0]))
 				return true
 			})
 		}
 	}
+	require.Positive(t, made, "this package makes rows, so a scan that found none read the wrong tree")
 
-	require.ElementsMatch(t, names(allowed), names(sinks),
-		"a function that takes a key and writes it is a door onto the store, and every one of "+
-			"them is named above with the class of key it may be handed")
-
-	for sink, positions := range sinks {
-		seen := 0
-		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				fn, ok := decl.(*ast.FuncDecl)
-				if !ok || fn.Body == nil || qualify(fn) == sink {
-					continue
+	// AND A ROW MAKER IS ONLY EVER CALLED, NEVER TAKEN.
+	//
+	// THIS IS THE ALIAS, AND IT IS THE ONE RESPELLING THAT BEAT EVERY CENSUS
+	// ABOVE. `mk := s.ops.Set` inside stated.anchor, and then
+	//
+	//	mk(refLastKey("github.com/evil/repo", "refs/heads/main"), []byte("0000…"))
+	//
+	// beside the anchor's own row: the method VALUE is a selector, so the
+	// function still reads as a caller of Set and the table of who may make a
+	// row is unchanged — and the call through `mk` has the callee name "mk", so
+	// every scan keyed on the verb walks straight past the key it names. It was
+	// GREEN across all seven build packages, measured.
+	//
+	// AND THE SAME IS TRUE OF Apply ONE FLOOR UP: `ap := e.ops.Apply`, stashed
+	// in a package-level var and called after the section closed, applies the
+	// entry's rows outside the gate — and commit is an allowed caller of Apply,
+	// so no enumeration notices. That was GREEN too.
+	//
+	// A method value is not a call, so the fix is not another list: these verbs
+	// may appear ONLY as the thing being called. Then an alias is a failure by
+	// name where it is taken, and a call through one is a key no builder built.
+	for _, file := range pkg.Files {
+		called := map[token.Pos]bool{}
+		ast.Inspect(file, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+					called[sel.Sel.NamePos] = true
 				}
-				ast.Inspect(fn.Body, func(n ast.Node) bool {
-					call, ok := n.(*ast.CallExpr)
-					if !ok || calleeName(call.Fun) != bare(sink) {
-						return true
-					}
-					seen++
-					for i := range positions {
-						require.Greater(t, len(call.Args), i, "%s calls %s with too few arguments", qualify(fn), sink)
-						require.True(t, keyBuilder(allowed[sink], call.Args[i]),
-							"%s passes %s the key %q, which is not one this sink may write — the "+
-								"entry %s writes cannot say what it writes",
-							qualify(fn), sink, types.ExprString(call.Args[i]), sink)
-					}
-					return true
-				})
+				if id, ok := call.Fun.(*ast.Ident); ok {
+					called[id.NamePos] = true
+				}
 			}
-		}
-		require.Positive(t, seen, "%s takes a key it does not build and nothing in this package calls it", sink)
+			return true
+		})
+		ast.Inspect(file, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok || !neverTaken[sel.Sel.Name] || called[sel.Sel.NamePos] {
+				return true
+			}
+			require.Fail(t, "one of backend/row's verbs is taken as a value rather than called",
+				"%s at %v — a method value is not a call, so what is done through it is done in a "+
+					"function whose name the call does not carry, while the function that TOOK it "+
+					"still reads as an ordinary caller of %s", types.ExprString(sel), sel.Sel.NamePos, sel.Sel.Name)
+			return true
+		})
 	}
 }
 
@@ -1358,13 +1429,28 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 // attemptSink is the one writer in this package that is outside every section
 // on purpose: a log line or an asset cid is CONTENT the build produces as it
 // goes, keyed by (job, attempt), and no read of a job record decides it. That
-// is a sentence with three clauses, and until this round the guard checked
-// none of them — it checked that the key came from some function declared in
-// store.go, which a ref anchor, a project row and a retention row all satisfy.
+// is a sentence with several clauses, and the guard checked none of them two
+// rounds ago and not all of them one round ago.
 //
-// So all three are checked here: WHO may write through it, WHAT class of key it
-// may write (above), and that the job and attempt in that key are the sink's
-// OWN — a sink built for one job's third attempt cannot address another's.
+// WHAT WAS MISSING WAS THE CONSTRUCTION. Who may write through the sink was
+// checked; who may MAKE one was not — and `assembles` is asked of entry, of
+// stated, of held and of jobReader precisely because a second constructor is a
+// second way to hold authority nobody handed you. A method on the handle that
+// built a foreign sink and wrote through the sink's own door was a write into
+// another job's attempt prefix that this file named nowhere: the closing loop of
+// TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord watches the store and
+// the queue verbs, and a door reached through "write" is neither.
+//
+// SO ALL OF IT IS CHECKED HERE: who may write through the sink, who may make
+// one, that nothing re-points one after it is made, and that the rows it
+// composes are keyed by the attempt it was made for.
+//
+// TWO OF THESE HOLD A NAME AND SAY SO. "Only invoke may call attempt.Nth" and
+// "only these two methods may call write" read identifiers at call sites. What
+// stands behind them is the compiler: attempt.Of's fields are unexported in
+// another package, so `other := *k; other.of.job = neighbour` does not compile
+// and neither does `attempt.Of{job: …}` — the only spellable re-point is a call
+// to Nth and an assignment to `of`, and both are counted below.
 func TestTheSinkWritesOnlyItsOwnJobsAttemptRows(t *testing.T) {
 	all := pkgFuncs(t)
 
@@ -1373,9 +1459,32 @@ func TestTheSinkWritesOnlyItsOwnJobsAttemptRows(t *testing.T) {
 		"the sink's one door to the store is reached from its two Sink methods and nowhere "+
 			"else — an unenumerated caller is a write outside every section that nothing named")
 
+	require.ElementsMatch(t, []string{"Service.invoke"}, assembles(all, "attemptSink"),
+		"a sink assembled anywhere but where a run is handed one is a writer outside every "+
+			"section that no run produced — and a foreign one built inside a section writes "+
+			"through this door into another job's attempt prefix")
+
+	require.ElementsMatch(t, []string{"Service.invoke"}, names(callers(all, "Nth")),
+		"attempt.Nth is the only way to say which job and which run a sink's rows are for, so "+
+			"a second caller is a second answer — including one that re-points a copy of a live "+
+			"sink, which is not a composite literal and which the census above cannot see")
+
+	require.Contains(t, fieldsOn(t, "attemptSink"), "of",
+		"the sink's attempt is the field the check below names, so a rename would leave that "+
+			"check looking at a key nothing writes and passing on an empty answer")
+	for name, f := range all {
+		require.Empty(t, f.writesTo["of"],
+			"%s assigns the attempt a sink was constructed for; `other := *k` copies a sink "+
+				"without a literal, and an assignment through the copy is the whole of what is "+
+				"left once the fields are another package's", name)
+	}
+
+	// AND THE ROWS IT COMPOSES ARE KEYED BY THAT ATTEMPT. Both key builders take
+	// an attempt.Of, so a bare id does not compile; what this adds is that the
+	// one they are handed is the SINK'S OWN and not one made beside it.
 	rows := attemptRowKeys(classes(t))
 
-	built := map[string]string{}
+	built := map[string][]string{}
 	for _, file := range parsePackage(t).Files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -1390,11 +1499,9 @@ func TestTheSinkWritesOnlyItsOwnJobsAttemptRows(t *testing.T) {
 				if !ok || !rows[calleeName(call.Fun)] {
 					return true
 				}
-				built[qualify(fn)] = calleeName(call.Fun)
-				require.GreaterOrEqual(t, len(call.Args), 2)
-				require.Equal(t, k+".id", types.ExprString(call.Args[0]),
-					"%s must key its row by the job THIS sink is for", qualify(fn))
-				require.Equal(t, k+".attempt", types.ExprString(call.Args[1]),
+				built[qualify(fn)] = append(built[qualify(fn)], calleeName(call.Fun))
+				require.NotEmpty(t, call.Args)
+				require.Equal(t, k+".of", types.ExprString(call.Args[0]),
 					"%s must key its row by the attempt THIS sink is for — per attempt is what "+
 						"keeps two runners either side of a leadership flap out of one another's "+
 						"rows, and a retry from overwriting the previous run's logs", qualify(fn))
@@ -1403,9 +1510,54 @@ func TestTheSinkWritesOnlyItsOwnJobsAttemptRows(t *testing.T) {
 		}
 	}
 	require.Equal(t,
-		map[string]string{"attemptSink.Log": "attemptLogKey", "attemptSink.Asset": "attemptAssetKey"},
+		map[string][]string{"attemptSink.write": {"attemptLogKey", "attemptAssetKey"}},
 		built,
-		"one row kind per Sink method, and both of them attempt rows")
+		"the two attempt rows are composed in the one door, and both are attempt rows")
+}
+
+// A RESPELLING OF A ROW MAKER IS STILL COUNTED, and this is the check on the
+// check: every census over the rows reads an IDENTIFIER, so the honest thing is
+// to measure what happens when the identifier is moved.
+//
+// A method value is a selector wherever it is taken, so the function that takes
+// one is in callers(all, verb) exactly as a caller would be; and a call THROUGH
+// it hands a key the scan cannot classify, which the key census fails on rather
+// than passes. Both halves are asserted against the real scan.
+func TestARespeltRowMakerIsStillCounted(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "aliased.go", `package backend
+
+func (e *entry) aliased(key string) {
+	mk := e.ops.Set
+	mk(key, nil)
+	bk := refLastKey
+	e.ops.Set(bk("github.com/evil/repo", "refs/heads/main"), nil)
+}
+`, 0)
+	require.NoError(t, err)
+
+	fn := file.Decls[0].(*ast.FuncDecl)
+	f := newFuncs(qualify(fn), receiver(fn))
+	scan(&f, fn.Body)
+
+	require.True(t, f.calls["Set"],
+		"a method value taken off the entry must count as naming Set, or an alias is a row "+
+			"maker no census of names can see")
+
+	// And the alias of a key builder is caught from the other side: the census
+	// of what a row may be handed asks for a CALL TO A BUILDER, so `bk(…)` is a
+	// failure rather than something it walks past.
+	builders := wholeKeys(classes(t))
+	var handed []ast.Expr
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && rowVerbs[calleeName(call.Fun)] && len(call.Args) > 0 {
+			handed = append(handed, call.Args[0])
+		}
+		return true
+	})
+	require.Len(t, handed, 1, "the direct call is the one the key census sees")
+	require.False(t, keyBuilder(builders, handed[0]),
+		"a key built through an aliased builder is not a call to one, so the census fails on it")
 }
 
 // The write side, from the other direction: every entry that SETS a job record
@@ -1468,29 +1620,46 @@ func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 	}
 }
 
-// EVERY KEY AN ENTRY WRITES NAMES THE JOB ITS SECTION WAS ENTERED ON, and this
-// is the clause the whole ladder was missing.
+// EVERY KEY A ROW NAMES IS THE SUBJECT ITS WRITER WAS CONSTRUCTED ON, and this
+// is the clause the whole ladder was missing until the eighth round and did not
+// hold for every writer until the tenth.
 //
 // Seven rounds answered WHEN a write was made and WHO made it. None answered
 // ABOUT WHAT: commit took []raft.BatchOp and finish took extra ...raft.BatchOp,
 // so a body inside a live, unforgeable, correctly-barriered section could put
-// one more line in its entry — set(jobRecordKey(someOtherJob), value) — and
-// pass every static guard and every runtime refusal, because the holding it
-// wrote through was genuinely live. Nothing anywhere compared an id inside a
-// key with the id the read was taken on.
+// one more line in its entry — a row at jobRecordKey(someOtherJob) — and pass
+// every static guard and every runtime refusal, because the holding it wrote
+// through was genuinely live. Nothing anywhere compared an id inside a key with
+// the id the read was taken on.
 //
 // So no key is spelled at a call site any more. Each ROW is a method, it
-// composes its own key from h.id() — the subject inside the holding, which is
-// another package's struct — and this is where the population of those methods
-// is closed.
+// composes its own key from the subject its writer carries, and this is where
+// the population of those methods is closed.
+//
+// AND THE SINK IS IN IT NOW. It was exempted here — one line, `if owner == sink
+// { return true }` — because the sink's door TOOK A KEY, and a door that takes
+// a key cannot answer a census about which keys its owner may compose. The
+// exemption was unconditional, so a single line inside the sink's own rows,
+//
+//	set(refLastKey("github.com/evil/repo", "refs/heads/main"), []byte("0000…"))
+//
+// moved another repository's ref anchor on the happy path of every build, from
+// a writer this file had placed outside every section BY DESIGN. There is no
+// key at that door now, so there is nothing left to exempt.
+//
+// TWO SUBJECTS, BECAUSE THERE ARE TWO WRITERS. An entry's rows are about the
+// job its section was entered on and read it out of the handle, h.id(); the
+// sink's are about the attempt it was constructed for and read it off its own
+// field, k.of. Both are values this package cannot assign: a subject lives
+// inside backend/section's holding, and an attempt inside backend/attempt's
+// struct.
 //
 // IT IS SCANNED OVER THE WHOLE PACKAGE, not over the entry's own methods, and
-// that is the correction the first draft of this round needed. Scanned over
-// entry and stated alone, a row appended from a method on the HANDLE was
-// invisible: `j.writes().put(refLastKey("github.com/evil/repo", "refs/heads/
-// main"), []byte("deadbeef"))` inside ends() was measured GREEN against the
-// whole suite. A raft.BatchOp exists only where set() or del() is called, so
-// that is what is counted, wherever it is.
+// that was a correction one round needed: scanned over entry and stated alone, a
+// row appended from a method on the HANDLE was invisible, and
+// `j.writes().put(refLastKey("github.com/evil/repo", …), …)` inside ends() was
+// measured GREEN against the whole suite. A row exists only where Set or Delete
+// is called, so that is what is counted, wherever it is.
 func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 	builders := wholeKeys(classes(t))
 
@@ -1504,12 +1673,15 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 			"belonging to the job the read was taken on.",
 	}
 
-	// THE SINK IS THE ONE ROW BUILT SOMEWHERE ELSE, and it is checked by the
-	// two tests either side of this one: who may call it, what class of key it
-	// may write, and that the job and attempt in that key are its own.
-	const sink = "attemptSink.write"
+	// HOW EACH WRITER NAMES ITS SUBJECT, spelled against the receiver so that a
+	// method that renamed its receiver cannot make the check vacuous.
+	subjects := map[string]string{
+		"entry":       "h.id()",
+		"stated":      "h.id()",
+		"attemptSink": "of",
+	}
 
-	rows := map[string]string{}
+	rows := map[string][]string{}
 	for _, file := range parsePackage(t).Files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -1520,24 +1692,23 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
-				if !ok || len(call.Args) == 0 {
+				if !ok || len(call.Args) == 0 || !rowVerbs[calleeName(call.Fun)] {
 					return true
 				}
-				if verb := calleeName(call.Fun); verb != "set" && verb != "del" {
-					return true
-				}
-				if owner == sink {
-					return true
-				}
+
+				subject, known := subjects[receiver(fn)]
+				require.True(t, known,
+					"%s makes a row and hangs off %q, which names no subject a key can be "+
+						"composed from — every writer of a row is constructed on something it "+
+						"cannot assign", owner, receiver(fn))
+				require.NotEmpty(t, e, "%s must name its receiver, or the check below is vacuous", owner)
 
 				key, ok := call.Args[0].(*ast.CallExpr)
 				require.True(t, ok && keyBuilder(builders, key),
 					"%s writes %s, which is not a key store.go builds", owner, types.ExprString(call.Args[0]))
 
 				builder := calleeName(key.Fun)
-				require.NotContains(t, rows, owner,
-					"%s builds two kinds of row, so the table below cannot say which one it is", owner)
-				rows[owner] = builder
+				rows[owner] = append(rows[owner], builder)
 
 				var args []string
 				for _, arg := range key.Args {
@@ -1551,130 +1722,70 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 					}
 					return true
 				}
-				require.Contains(t, args, e+".h.id()",
-					"%s builds %s from %v, and none of those is the job this section was entered "+
-						"on — a key an entry did not take from its own handle is a row about "+
-						"somebody else", owner, builder, args)
+				require.Contains(t, args, e+"."+subject,
+					"%s builds %s from %v, and none of those is the subject its writer was "+
+						"constructed on — a key a row did not take from its own writer is a row "+
+						"about somebody else", owner, builder, args)
 				return true
 			})
 		}
 	}
 
 	// AND EVERY ROW THIS PACKAGE CAN WRITE IS IN THIS TABLE. A row is made
-	// nowhere but a call to set() or del(), so a method added anywhere — on the
-	// entry, on the handle, on a Service — fails here until somebody has said
-	// which row it is and shown that it names this section's job.
-	require.Equal(t, map[string]string{
-		"entry.record":           "jobRecordKey",
-		"entry.dropRetained":     "terminalIndexKey",
-		"entry.dropOrphanedOpen": "openIndexKey",
-		"stated.open":            "openIndexKey",
-		"stated.dropOpen":        "openIndexKey",
-		"stated.inProject":       "projectIndexKey",
-		"stated.retained":        "terminalIndexKey",
-		"stated.anchor":          "refLastKey",
-	}, rows, "one row kind per method, and every method named")
+	// nowhere but a call to Set or Delete, so a method added anywhere — on the
+	// entry, on the handle, on the sink, on a Service — fails here until
+	// somebody has said which row it is and shown that it names its own subject.
+	require.Equal(t, map[string][]string{
+		"entry.record":           {"jobRecordKey"},
+		"entry.dropRetained":     {"terminalIndexKey"},
+		"entry.dropOrphanedOpen": {"openIndexKey"},
+		"stated.open":            {"openIndexKey"},
+		"stated.dropOpen":        {"openIndexKey"},
+		"stated.inProject":       {"projectIndexKey"},
+		"stated.retained":        {"terminalIndexKey"},
+		"stated.anchor":          {"refLastKey"},
+		"attemptSink.write":      {"attemptLogKey", "attemptAssetKey"},
+	}, rows, "one row kind per method, and every method named — except the sink's one door, "+
+		"which is the two kinds of an attempt and nothing else")
 
-	// AND THOSE TWO ARE THE ONLY THINGS THAT MAKE A ROW AT ALL. row.Set and
-	// row.Delete are the only expressions in the tree that can fill a row.Op —
-	// its one field is unexported in another package — so a third caller of
-	// either would be a row built outside this package's two verbs, and every
-	// census in this file is keyed on those two verbs.
+	// AND THOSE TWO VERBS ARE THE ONLY THINGS THAT MAKE A ROW AT ALL. row.Entry's
+	// slice is unexported in another package and its elements carry another
+	// package's structs, so a row exists only where one of them is called, and a
+	// batch exists nowhere in this package at all.
+	//
+	// THIS HOLDS A NAME. What is compared is the identifier at a call site, and
+	// the act it stands for is composing a row. It is not defeated by taking the
+	// method value — a selector counts wherever it appears, and
+	// TestARespeltRowMakerIsStillCounted measures that — but it is a name, and a
+	// name is the shape three rounds of this package's history were beaten by.
 	all := pkgFuncs(t)
-	require.ElementsMatch(t, []string{"set"}, names(callers(all, "Set")),
-		"set() is the only thing that makes a row with a value in it")
-	require.ElementsMatch(t, []string{"del"}, names(callers(all, "Delete")),
-		"and del() the only thing that makes a row removed")
+	require.ElementsMatch(t, []string{
+		"entry.record", "stated.open", "stated.inProject", "stated.retained", "stated.anchor",
+		"attemptSink.write",
+	}, names(callers(all, "Set")),
+		"a row with a value in it is made by a method in the table above and by nothing else — "+
+			"including a method that only takes the method VALUE, which counts here exactly as a "+
+			"call does")
+	require.ElementsMatch(t, []string{
+		"stated.dropOpen", "entry.dropRetained", "entry.dropOrphanedOpen",
+	}, names(callers(all, "Delete")),
+		"and a row removed likewise")
 
-	// AND THE SLICE THEY APPEND TO IS THEIRS, AND SO IS WHAT GOES IN IT.
-	//
-	// THE SECOND HALF IS THE NINTH ROUND'S. This was a comparison of two SETS
-	// OF FUNCTION NAMES — who appends, and who builds a row — and all eight row
-	// methods are in both, so a SECOND element appended by a method already
-	// named was invisible: one line inside stated.anchor,
-	//
-	//	s.ops = append(s.ops, raft.BatchOp{Set: &raft.SetCommand{
-	//	        Key: refLastKey("github.com/evil/repo", …)}})
-	//
-	// moved another repository's ref anchor and left the whole service green.
-	// That expression does not compile any more (store.go). This says the same
-	// thing from the side a compiler cannot: an element that is not a call to
-	// set() or del() — one from a helper, one read back out of another entry,
-	// one forged past the type — is named rather than counted.
-	appended := appendedRows(t)
-	require.ElementsMatch(t, names(rows), names(appended),
-		"an entry's rows are appended by the methods that compose them and by nothing else")
-	for owner, elements := range appended {
-		for _, verb := range elements {
-			require.Contains(t, []string{"set", "del"}, verb,
-				"%s puts %s into an entry's rows, which is not a row set() or del() made", owner, verb)
-		}
+	// AND THE ROWS ARE NEVER REPLACED, only added to. There is no append here
+	// any more — an entry's rows are a value whose slice this package cannot
+	// name — so what is left to say is that nothing ASSIGNS the field: an entry
+	// handed the rows of another entry writes a set of rows none of the methods
+	// above composed, and an assignment is the only way to do it.
+	require.Contains(t, fieldsOn(t, "entry"), "ops",
+		"an entry's rows are the field the check below names, so a rename would make it vacuous")
+	for name, f := range all {
+		require.Empty(t, f.writesTo["ops"],
+			"%s assigns an entry's rows rather than adding to them, which is a batch composed "+
+				"somewhere the table above cannot see", name)
 	}
-}
-
-// appendedRows is every element this package puts into an entry's rows, by the
-// function that puts it there and by the VERB that made it.
-//
-// A row slice that is assigned anything but an append of its own — a slice from
-// somewhere else, a call with two results, another entry's rows spread into it
-// — is a set of rows nothing above composed, so it fails here rather than
-// arriving as an element this scan cannot read.
-func appendedRows(t *testing.T) map[string][]string {
-	t.Helper()
-
-	out := map[string][]string{}
-	for _, file := range parsePackage(t).Files {
-		for _, decl := range file.Decls {
-			owner, node := packageLevel, ast.Node(decl)
-			if fn, ok := decl.(*ast.FuncDecl); ok {
-				if fn.Body == nil {
-					continue
-				}
-				owner, node = qualify(fn), fn.Body
-			}
-			ast.Inspect(node, func(n ast.Node) bool {
-				assign, ok := n.(*ast.AssignStmt)
-				if !ok {
-					return true
-				}
-				for i, lhs := range assign.Lhs {
-					if name, _, ok := fieldWritten(lhs); ok && name == "ops" {
-						out[owner] = append(out[owner], wentIn(assign, lhs, i)...)
-					}
-				}
-				return true
-			})
-		}
-	}
-	return out
-}
-
-// wentIn is the verb that made each element of one assignment to a row slice —
-// "set", "del" — and, for an assignment that is not that shape at all, the
-// expression itself, so that the ONE check above names what it found rather
-// than passing over what it could not read. A row slice assigned a slice from
-// somewhere else, another entry's rows spread into it, or the result of a call
-// with two results is exactly the hole the check exists for, and each of them
-// arrives there spelled out.
-func wentIn(assign *ast.AssignStmt, lhs ast.Expr, i int) []string {
-	if len(assign.Rhs) != len(assign.Lhs) {
-		return []string{types.ExprString(assign.Rhs[0])}
-	}
-	call, ok := assign.Rhs[i].(*ast.CallExpr)
-	if !ok || calleeName(call.Fun) != "append" || len(call.Args) < 2 ||
-		types.ExprString(call.Args[0]) != types.ExprString(lhs) || call.Ellipsis != token.NoPos {
-		return []string{types.ExprString(assign.Rhs[i])}
-	}
-
-	var out []string
-	for _, arg := range call.Args[1:] {
-		if made, ok := arg.(*ast.CallExpr); ok {
-			out = append(out, calleeName(made.Fun))
-			continue
-		}
-		out = append(out, types.ExprString(arg))
-	}
-	return out
+	require.ElementsMatch(t, []string{"held.writes"}, assembles(all, "entry"),
+		"and an entry is made in one place, so the rows a commit applies are the ones its own "+
+			"methods put there")
 }
 
 // THE RUN IS REGISTERED INSIDE THE SECTION THAT CLAIMED IT, and two arguments
@@ -1787,7 +1898,7 @@ func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
 // EVERY WRITE IS A METHOD ON THE HANDLE OR ON ITS ENTRY, AND EVERY ONE OF THEM
 // WRITES INSIDE under().
 //
-// entry.commit is this package's only path to Store.Batch; push, ack and
+// entry.commit is this package's only path to a replicated batch; push, ack and
 // withdraw are the only paths to the three queue writes that pair with a record
 // write; and register and stop are the only paths to the map that says what
 // this node is running. Each hangs off a handle — an entry carries the handle
@@ -1807,43 +1918,52 @@ func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
 // is an expression any function in this package can write. What that expression
 // CANNOT do is name a section — and this is what says it must not be written.
 //
+// AND THE ARGUMENT IS GONE FROM THAT DOOR, WHICH IS ROUND TEN. This used to read
+// what each caller HANDED Store.Batch and require it be a call to row.Ops —
+// which is the outermost callee's NAME, and two spellings of one act:
+//
+//	store.Batch(append(row.Ops(e.ops), forged), t)   -> "append", failed
+//	store.Batch(row.Ops(append(e.ops, forged)), t)   -> "Ops",    PASSED
+//
+// Moving the append one level in defeated it, and with the forged key spliced as
+// a string literal there was no builder call for the key census to classify
+// either: eight lines in one file put a row moving another repository's ref
+// anchor on every replicated entry this service writes, with all nine of the
+// doc's ends intact. So the rows are handed to a store by row.Entry.Apply, which
+// takes the STORE and not the rows, and Batch is named NOWHERE in this package —
+// which is what is checked, instead of what its argument was spelled.
+//
 // attemptSink.write is the one exemption and it is named rather than implicit:
 // a log or asset row is content keyed by (job, attempt), written DURING the
 // build and outside every section on purpose, and no read of a job record
-// decides it. TestTheSinkWritesOnlyItsOwnJobsAttemptRows checks all three
-// clauses of that sentence rather than the shape of its argument.
+// decides it. TestTheSinkWritesOnlyItsOwnJobsAttemptRows checks every clause of
+// that sentence — including who may MAKE one — rather than the shape of an
+// argument.
 func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 	all := pkgFuncs(t)
 
 	require.ElementsMatch(t, []string{"entry.commit", "attemptSink.write"},
-		names(callers(all, "Batch")),
-		"an entry written outside commit() is an entry no section decided — and a handle is the "+
+		names(callers(all, "Apply")),
+		"an entry applied outside commit() is an entry no section decided — and a handle is the "+
 			"only thing that can say the section it was decided in is still running")
 
-	// AND WHAT THEY HAND IT IS THE ROWS, WITH NOTHING ADDED TO THEM.
+	// AND NOTHING IN THIS PACKAGE NAMES Batch AT ALL.
 	//
-	// THE TYPE STOPS A RAW OP REACHING AN ENTRY'S ROWS; THIS STOPS ONE REACHING
-	// THE STORE BESIDE THEM. Store.Batch takes []raft.BatchOp, because that is
-	// raft's own signature and this package does not get to change it — so at
-	// these two call sites, and only there, a raw op is spellable again:
-	//
-	//	store.Batch(append(row.Ops(e.ops), raft.BatchOp{Set: …}), timeout)
-	//
-	// row.Ops is the one expression that turns rows into something raft
-	// applies, and what the store is handed must be exactly one of those calls.
-	for owner, entries := range handedToTheStore(t) {
-		for _, handed := range entries {
-			require.Equal(t, "Ops", handed,
-				"%s hands the store %s: an entry is the rows this package composed and nothing "+
-					"appended to them on the way out", owner, handed)
-		}
-	}
+	// Store.Batch takes []raft.BatchOp, because that is raft's own signature and
+	// this package does not get to change it — so a call to it is a place where
+	// a raw op is spellable again, and the previous round's guard read the NAME
+	// of whatever expression was in its first argument. There is no such call
+	// now: row.Entry.Apply takes the store, so a batch has no expression here,
+	// and this asks the question with no argument in it.
+	require.Empty(t, names(callers(all, "Batch")),
+		"a call to Store.Batch is an entry composed where nothing above can see it — the rows "+
+			"reach a store through row.Entry.Apply, which takes the store rather than them")
 
 	// the checked path -> the write it is the only path to. register's and
 	// stop's are a map rather than a call, which is exactly why they had no
 	// path at all until they were methods here.
 	writes := map[string]string{
-		"entry.commit":  "Batch",
+		"entry.commit":  "Apply",
 		"held.push":     "Push",
 		"held.ack":      "Ack",
 		"held.withdraw": "Remove",
@@ -1897,42 +2017,18 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		if _, checked := writes[name]; checked {
 			continue
 		}
-		for verb := range map[string]bool{"Batch": true, "Push": true, "Ack": true, "Remove": true, "Nack": true, "running": true} {
+		// "write" IS IN THIS SET NOW, and it was not until this round: the
+		// sink's door is a write like any other, and a method on the handle
+		// that built a foreign sink and wrote through it reached another job's
+		// attempt prefix past every verb below.
+		for verb := range map[string]bool{
+			"Apply": true, "Batch": true, "Push": true, "Ack": true,
+			"Remove": true, "Nack": true, "running": true, "write": true,
+		} {
 			require.False(t, f.calls[verb],
 				"%s writes %s and is not one of the checked paths above", name, verb)
 		}
 	}
-}
-
-// handedToTheStore is what each caller of Store.Batch puts in its first
-// argument, by the verb that built it — or the expression itself when it was
-// not built by a call at all.
-func handedToTheStore(t *testing.T) map[string][]string {
-	t.Helper()
-
-	out := map[string][]string{}
-	for _, file := range parsePackage(t).Files {
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
-			}
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok || calleeName(call.Fun) != "Batch" || len(call.Args) == 0 {
-					return true
-				}
-				owner := qualify(fn)
-				if made, ok := call.Args[0].(*ast.CallExpr); ok {
-					out[owner] = append(out[owner], calleeName(made.Fun))
-					return true
-				}
-				out[owner] = append(out[owner], types.ExprString(call.Args[0]))
-				return true
-			})
-		}
-	}
-	return out
 }
 
 // onTheHolding is every function that calls verb ON A HANDLE'S HOLDING —

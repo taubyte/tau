@@ -287,7 +287,9 @@ func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 	claim.Status = int32(buildv1.JobStatus_JobStatusClaimed)
 	value, err := claim.encode()
 	require.NoError(t, err)
-	require.NoError(t, h.store.Batch(row.Ops([]row.Op{set(jobRecordKey(id), value)}), time.Second))
+	claimed := row.Sized(1)
+	claimed.Set(jobRecordKey(id), value)
+	require.NoError(t, claimed.Apply(h.store, time.Second))
 
 	var cancelErr error
 	cancelled := gated(t, h, jobRecordKey(id)).on(t, func() { cancelErr = h.cancel(id) })

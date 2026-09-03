@@ -68,9 +68,9 @@ import (
 // suite stayed green. Nothing compared the id inside a key with the id the read
 // was taken on, because no id inside a key ever came from the handle.
 //
-// It is not hypothetical either: begin's entry was set(jobRecordKey(rec.ID), …)
-// inside withJob(d.ID, …), where the two agreeing was a fact about the record
-// on disk rather than about the expression.
+// It is not hypothetical either: begin's entry was a row at
+// jobRecordKey(rec.ID) inside withJob(d.ID, …), where the two agreeing was a
+// fact about the record on disk rather than about the expression.
 //
 // SO A HANDLE'S WRITES COMPOSE THEIR OWN KEYS. There is no []raft.BatchOp in
 // this file's parameter lists any more. A body asks the handle for an entry and
@@ -104,11 +104,18 @@ import (
 //	a write cannot name another job every key an entry writes is composed from
 //	                                the handle's own subject; a row of another
 //	                                job has no expression
-//	a row cannot be composed at all an entry holds []row.Op, whose one field is
-//	                                unexported in another package, so set() and
-//	                                del() are the only expressions that make
-//	                                one — `append(e.ops, raft.BatchOp{…})` does
-//	                                not compile
+//	a row cannot be composed at all an entry's rows are a row.Entry, whose
+//	                                slice is unexported in another package. A
+//	                                row is MADE INTO one — e.ops.Set(…) — so
+//	                                `append(e.ops, raft.BatchOp{…})` does not
+//	                                compile, and neither does anything else
+//	                                that treats the rows as a value
+//	nor handed to the store beside  Apply takes the STORE, not the rows. There
+//	the ones it composed            is no expression of raft's batch type in
+//	                                this package, so `Batch(Ops(append(e.ops,
+//	                                forged)), t)` — the respelling that walked
+//	                                past a guard reading the outermost callee's
+//	                                name — has nothing left to name
 //	a helper carries the handle      ...or it cannot write at all, which is the
 //	                                same property stated by a parameter list
 //	                                rather than by a scan
@@ -121,13 +128,21 @@ import (
 // something else was free to invalidate. section_test.go drives each of them.
 //
 // WHAT IS STILL A GUARD, in population_test.go, because no type can say it:
-// which functions may reach Store.Batch and the queue's three paired writes at
-// all — a body that ignores the handle and calls s.store.Batch itself is a
-// write nothing here can prevent, only enumerate — WHICH KEY each row builds,
-// and that the read is taken in one place. Those fail at review time and cover
-// the half this cannot. "Which expressions may build a raft.BatchOp" was on
-// that list until the ninth round and is the compiler's now: there is no such
-// expression outside backend/row.
+// which functions may reach a replicated batch and the queue's three paired
+// writes at all — a body that ignores the handle and calls s.store.Batch itself
+// is a write nothing here can prevent, only enumerate — WHICH KEY each row
+// builds, and that the read is taken in one place. Those fail at review time and
+// cover the half this cannot. "Which expressions may build a raft.BatchOp" was
+// on that list until the ninth round and "what is handed to the store" until the
+// tenth; both are the compiler's now, because neither a row nor a batch of them
+// has an expression outside backend/row.
+//
+// AND WHAT IS LEFT ON THAT LIST HOLDS A NAME. "These functions may name Set,
+// Delete and Apply" is a check on a SPELLING: the act it stands for is composing
+// a row or reaching a store, and a scan reads the identifier at the call. It is
+// written down here and beside each check rather than left as a claim about
+// acts, because three rounds running the thing that survived was a check on an
+// argument and the thing that beat it was a respelling.
 //
 // WHAT IT COSTS. One mutex acquisition and two atomic stores per section, one
 // atomic store on the way out, and one atomic load plus a nil check per write —
@@ -409,14 +424,26 @@ func stale(err error) error { return errInternal("%w", err) }
 //
 // added a second row to that entry naming ANOTHER REPOSITORY'S ref anchor, and
 // the whole service stayed green: every guard over the rows is keyed on which
-// FUNCTION was called, and composing a struct calls nothing. The element type
-// is row.Op now (backend/row), whose one field is unexported in a package this
-// one cannot reach into, so that line does not compile — and the invariant
-// doc.go states about the rows is a fact of the program rather than a comment
-// with a scan behind it.
+// FUNCTION was called, and composing a struct calls nothing.
+//
+// AND THE TENTH IS THE SLICE. The element type became row.Op, whose one field is
+// unexported in a package this one cannot reach into, and that line stopped
+// compiling — but []row.Op was still an ordinary slice and row.Ops(rows) was
+// still an ordinary call, so commit's own argument to Store.Batch was an
+// EXPRESSION, and the guard on it read the outermost callee's name:
+//
+//	store.Batch(append(row.Ops(e.ops), forged), t)   caught, "append"
+//	store.Batch(row.Ops(append(e.ops, forged)), t)   GREEN,  "Ops"
+//
+// One file, +8/-1 lines, measured on the committed tree with all nine of the
+// doc's ends intact, put a row moving another repository's ref anchor on every
+// replicated entry this service writes. So the rows are a row.Entry now: a
+// struct whose slice is unexported, whose rows are MADE INTO it, and which hands
+// them to a store without handing them to anybody. There is no expression left
+// at that door for a name to be read off.
 type entry struct {
 	h   *held
-	ops []row.Op
+	ops row.Entry
 	// err carries the one failure that can happen while an entry is being
 	// built — a record that will not encode — to commit(), so that a chain
 	// reads as one expression instead of five branches. Nothing is written on
@@ -447,7 +474,7 @@ func (h *held) writes() *entry {
 	// FOUR IS THE WIDEST ENTRY THIS PACKAGE WRITES — a terminal record, its
 	// open row, its retention row and the ref anchor — so the rows below never
 	// regrow the slice a body composes them into.
-	return &entry{h: h, ops: make([]row.Op, 0, 4)}
+	return &entry{h: h, ops: row.Sized(4)}
 }
 
 // THERE IS NO put(key) AND NO drop(key). There was, for one draft, and it was
@@ -455,10 +482,11 @@ func (h *held) writes() *entry {
 // method any body holding a handle could call with any key at all, and
 // `j.writes().put(refLastKey("github.com/evil/repo", "refs/heads/main"), sha)`
 // inside ends() left the whole suite GREEN. A door scoped by the SHAPE of its
-// argument is a door anybody can walk through. So set() and del() (store.go,
-// where the keys are) are called by the row methods below and nowhere else,
-// each on a key it composed itself, and population_test.go enumerates that from
-// the other side.
+// argument is a door anybody can walk through. So the rows below each compose
+// their own key and add it to the entry themselves — e.ops.Set(…), which is the
+// only expression that makes a row at all — and population_test.go enumerates
+// which methods may do so from the other side. THAT ENUMERATION HOLDS A NAME:
+// what it counts is who names Set and Delete.
 
 // record writes THIS JOB'S record.
 //
@@ -467,8 +495,8 @@ func (h *held) writes() *entry {
 // decide which job it is: rec.ID is overwritten with the subject before it is
 // encoded, so a body that hands over a record it read somewhere else writes
 // this job, with foreign contents, rather than writing another job's row.
-// begin's entry was set(jobRecordKey(rec.ID), value) inside withJob(d.ID, …)
-// until this round, where the two agreeing was a property of the store rather
+// begin's entry was a row at jobRecordKey(rec.ID) inside withJob(d.ID, …) until
+// the eighth round, where the two agreeing was a property of the store rather
 // than of the expression.
 func (e *entry) record(rec jobRecord) stated {
 	rec.ID = e.h.id()
@@ -477,26 +505,26 @@ func (e *entry) record(rec jobRecord) stated {
 		e.err = errInternal("encoding job %s: %v", e.h.id(), err)
 		return stated{entry: e, rec: rec}
 	}
-	e.ops = append(e.ops, set(jobRecordKey(e.h.id()), value))
+	e.ops.Set(jobRecordKey(e.h.id()), value)
 	return stated{entry: e, rec: rec}
 }
 
 // open lists this job as outstanding for its repository, and dropOpen takes it
 // off that listing. The repository is the record's, and the id is the handle's.
 func (s stated) open() stated {
-	s.ops = append(s.ops, set(openIndexKey(s.rec.RepositoryKey, s.h.id()), nil))
+	s.ops.Set(openIndexKey(s.rec.RepositoryKey, s.h.id()), nil)
 	return s
 }
 
 func (s stated) dropOpen() stated {
-	s.ops = append(s.ops, del(openIndexKey(s.rec.RepositoryKey, s.h.id())))
+	s.ops.Delete(openIndexKey(s.rec.RepositoryKey, s.h.id()))
 	return s
 }
 
 // inProject is how a caller FINDS this job. It is written once, by create, in
 // the same entry as the record it indexes.
 func (s stated) inProject() stated {
-	s.ops = append(s.ops, set(projectIndexKey(s.rec.ProjectID, s.h.id()), nil))
+	s.ops.Set(projectIndexKey(s.rec.ProjectID, s.h.id()), nil)
 	return s
 }
 
@@ -504,7 +532,7 @@ func (s stated) inProject() stated {
 // finished — which is the same instant the record's UpdatedAt carries, because
 // they are written together.
 func (s stated) retained() stated {
-	s.ops = append(s.ops, set(terminalIndexKey(time.Unix(s.rec.UpdatedAt, 0), s.h.id()), nil))
+	s.ops.Set(terminalIndexKey(time.Unix(s.rec.UpdatedAt, 0), s.h.id()), nil)
 	return s
 }
 
@@ -518,7 +546,7 @@ func (s stated) retained() stated {
 // row behind: a job that reads Open and is also listed as retained. Here the
 // mutation cannot reach it.
 func (e *entry) dropRetained() *entry {
-	e.ops = append(e.ops, del(terminalIndexKey(time.Unix(e.h.rec().UpdatedAt, 0), e.h.id())))
+	e.ops.Delete(terminalIndexKey(time.Unix(e.h.rec().UpdatedAt, 0), e.h.id()))
 	return e
 }
 
@@ -543,7 +571,7 @@ func (s stated) anchor() stated {
 		s.err = errInternal("job %s: a ref anchor decided on a record this section did not find", s.h.id())
 		return s
 	}
-	s.ops = append(s.ops, set(refLastKey(s.h.rec().RepositoryKey, s.h.rec().Ref), []byte(s.h.rec().CommitSHA)))
+	s.ops.Set(refLastKey(s.h.rec().RepositoryKey, s.h.rec().Ref), []byte(s.h.rec().CommitSHA))
 	return s
 }
 
@@ -560,14 +588,20 @@ func (s stated) anchor() stated {
 // from becoming a general-purpose door: an exemption scoped by the shape of its
 // argument rather than by its justification is an exemption anybody can reach.
 func (e *entry) dropOrphanedOpen(repositoryKey string) *entry {
-	e.ops = append(e.ops, del(openIndexKey(repositoryKey, e.h.id())))
+	e.ops.Delete(openIndexKey(repositoryKey, e.h.id()))
 	return e
 }
 
-// commit makes the entry, on behalf of the read that decided it, and is this
-// package's only path to Store.Batch — attemptSink excepted, and named as the
-// exception in population_test.go, because a log or asset row is content keyed
-// by (job, attempt) that no record read decides.
+// commit makes the entry, on behalf of the read that decided it, and is one of
+// this package's two paths to a replicated batch — attemptSink.write is the
+// other, named as the exception in population_test.go, because a log or asset
+// row is content keyed by (job, attempt) that no record read decides.
+//
+// IT TAKES NO ROWS AND IT HANDS NONE OVER. `what` is a word for the failure
+// message; the rows are the ones this entry's own methods composed, and
+// row.Entry.Apply takes the store rather than the batch. The line it replaces —
+// store.Batch(row.Ops(e.ops), timeout) — had an argument, and an argument is
+// something a body can respell.
 //
 // what is the gerund the failure is spelled with: "writing job X", "reopening
 // job X". The job is the handle's, so a message cannot name a different one
@@ -577,7 +611,7 @@ func (e *entry) commit(what string) error {
 		return e.err
 	}
 	if err := e.h.under(func() error {
-		return e.h.s.store.Batch(row.Ops(e.ops), e.h.s.cfg.Queue.ApplyTimeout)
+		return e.ops.Apply(e.h.s.store, e.h.s.cfg.Queue.ApplyTimeout)
 	}); err != nil {
 		return refused(err, "%s job %s", what, e.h.id())
 	}

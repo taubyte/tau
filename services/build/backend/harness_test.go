@@ -40,6 +40,10 @@ type fakeStore struct {
 	afterKeys   func()
 	keysPrefix  string
 	phantom     []string
+	// entries is every batch applied, in order. An entry hands its rows to a
+	// Batcher and to nothing else — there is no accessor on one (backend/row) —
+	// so this is where a test reads what one actually carried.
+	entries [][]raft.BatchOp
 }
 
 // haunt makes Keys report a key that Get will not find — a row deleted between
@@ -152,7 +156,55 @@ func (s *fakeStore) Batch(ops []raft.BatchOp, timeout time.Duration) error {
 	if hook != nil {
 		hook()
 	}
+
+	s.mu.Lock()
+	s.entries = append(s.entries, ops)
+	s.mu.Unlock()
+
 	return s.MockCluster.Batch(ops, timeout)
+}
+
+// entriesNaming is every applied batch carrying a row at key, in order. An
+// entry hands its rows to a Batcher and to nothing else — there is no accessor
+// on one (backend/row) — so this is where a test reads what one carried.
+func (s *fakeStore) entriesNaming(key string) [][]raft.BatchOp {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var found [][]raft.BatchOp
+	for _, entry := range s.entries {
+		for _, op := range entry {
+			if (op.Set != nil && op.Set.Key == key) || (op.Delete != nil && op.Delete.Key == key) {
+				found = append(found, entry)
+				break
+			}
+		}
+	}
+	return found
+}
+
+// appliedEntries is how many batches have reached the store, which is what a
+// test that says "and nothing was written" counts.
+func (s *fakeStore) appliedEntries() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.entries)
+}
+
+// keysIn spells one applied entry as the rows it is: "set <key>", "del <key>".
+func keysIn(entry []raft.BatchOp) []string {
+	var out []string
+	for _, op := range entry {
+		switch {
+		case op.Set != nil && op.Delete == nil:
+			out = append(out, "set "+op.Set.Key)
+		case op.Delete != nil && op.Set == nil:
+			out = append(out, "del "+op.Delete.Key)
+		default:
+			out = append(out, "neither a set nor a delete")
+		}
+	}
+	return out
 }
 
 // put writes straight into the underlying state, to plant a row this package

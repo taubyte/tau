@@ -295,20 +295,35 @@ func TestACorruptRecordIsInternalRatherThanASecondJob(t *testing.T) {
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
 
-// set and del are the only two shapes of write this package makes, and Store
-// deliberately offers no single-key Set or Delete: a single-key write is a way
-// to write half a transition.
+// A SET AND A DELETE ARE THE ONLY TWO SHAPES OF WRITE THIS PACKAGE MAKES, and
+// Store deliberately offers no single-key Set or Delete: a single-key write is a
+// way to write half a transition.
 //
-// THEY ARE ALSO THE ONLY TWO EXPRESSIONS THAT MAKE A ROW AT ALL, which is why
-// what they return is read through row.Ops here rather than off the value: a
-// row's one field is unexported in another package, so there is nothing on it
-// to read, and nothing on it to fill either (store.go).
-func TestTheOnlyWritesAreBatchOps(t *testing.T) {
-	ops := row.Ops([]row.Op{set("a", []byte("v")), del("b")})
-	require.Equal(t, []raft.BatchOp{
-		{Set: &raft.SetCommand{Key: "a", Value: []byte("v")}},
-		{Delete: &raft.DeleteCommand{Key: "b"}},
-	}, ops)
+// WHAT THEY LOOK LIKE AT THE STORE IS backend/row's TEST, not this one — an
+// entry's rows have no expression outside that package and no accessor, so what
+// this can say is the half that is about THIS package: an entry reaches a store
+// through row.Entry.Apply, and every row in one was composed by a method that
+// built its own key.
+func TestTheOnlyWritesAreOneEntrysRows(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	require.NoError(t, h.cancel(id))
+
+	entries := h.store.entriesNaming(jobRecordKey(id))
+	require.Len(t, entries, 2, "the record is written twice: once created, once cancelled")
+
+	require.Equal(t, []string{
+		"set " + jobRecordKey(id),
+		"set " + projectIndexKey("project-of-"+testRepo, id),
+		"set " + openIndexKey(testRepo, id),
+	}, keysIn(entries[0]), "create composes the record, the project row and the open row")
+
+	require.Equal(t, []string{
+		"set " + jobRecordKey(id),
+		"del " + openIndexKey(testRepo, id),
+		"set " + terminalIndexKey(h.clock.now(), id),
+	}, keysIn(entries[1]), "and a cancel the record, the open row removed and the retention row")
 }
 
 // The repair path's push is its own entry too.
@@ -430,12 +445,25 @@ type staleStore struct {
 }
 
 // commitElsewhere is an entry another leader wrote and this node has accepted
-// and not yet applied. It takes the rows rather than the raft ops so that the
-// entry a test stands in for is composed the way this package composes one.
-func (s *staleStore) commitElsewhere(rows ...row.Op) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.unapplied = append(s.unapplied, row.Ops(rows)...)
+// and not yet applied. It takes a row.Entry rather than raft's ops so that the
+// entry a test stands in for is composed the way this package composes one —
+// which is also the only way to get at what is in one: an entry hands its rows
+// to a Batcher and to nothing else, so the collector below is how a test reads
+// them.
+func (s *staleStore) commitElsewhere(t *testing.T, e row.Entry) {
+	t.Helper()
+	require.NoError(t, e.Apply(unapplied{s}, 0))
+}
+
+// unapplied takes an entry's rows and holds them where the store cannot answer
+// from them.
+type unapplied struct{ s *staleStore }
+
+func (u unapplied) Batch(ops []raft.BatchOp, _ time.Duration) error {
+	u.s.mu.Lock()
+	defer u.s.mu.Unlock()
+	u.s.unapplied = append(u.s.unapplied, ops...)
+	return nil
 }
 
 // behindFrom is the same lag arranged so that it starts AFTER a caller has
@@ -533,11 +561,11 @@ func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
 	}
 	value, err := finished.encode()
 	require.NoError(t, err)
-	store.commitElsewhere(
-		set(jobRecordKey(id), value),
-		set(projectIndexKey(finished.ProjectID, id), nil),
-		set(terminalIndexKey(h.clock.now(), id), nil),
-	)
+	elsewhere := row.Sized(3)
+	elsewhere.Set(jobRecordKey(id), value)
+	elsewhere.Set(projectIndexKey(finished.ProjectID, id), nil)
+	elsewhere.Set(terminalIndexKey(h.clock.now(), id), nil)
+	store.commitElsewhere(t, elsewhere)
 	_, visible := store.Get(jobRecordKey(id))
 	require.False(t, visible, "an unapplied entry must not be readable, or this test proves nothing")
 
