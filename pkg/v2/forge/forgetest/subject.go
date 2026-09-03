@@ -54,30 +54,51 @@
 //
 // WHERE THE TOWER ENDS. Every round of this package's history added a level.
 // The suite is held by the ledger; the ledger's rules are held by faults; the
-// three things that RUN the rules are held by faults of their own; and the one
-// call that runs those is held by a census read back against the names in
+// three things that RUN the rules are held by faults of their own; the rules a
+// harness goes round are counted against the rules it was handed; and the one
+// call that runs a harness is held by a census read back against the names in
 // source. "What guards the guard" has to stop somewhere, and this is where,
 // said exactly rather than left for somebody to find.
 //
-// FOUR LINES, two pairs, both in guard_test.go. In hold:
+// FIVE POINTS, on four lines, in two places in guard_test.go. A POINT is one
+// edit that leaves a green run with a real defect live — not a line: two of the
+// five sit on one line, as two clauses of one condition, and each can be
+// deleted without the other. Counting lines is what let the last round call
+// this set four when it is five, and call it closed when two more were open.
 //
-//	if heard.failed != over.complains {
-//		t.Errorf("%s", over.wrong(h, heard))
+// In hold:
+//
+//	if heard.failed != over.complains || len(given.unhandled()) > 0 {
+//		t.Errorf("%s", over.wrong(h, heard, given))
 //
 // and in TestTheLedgerHolds:
 //
 //	for _, wrong := range ran.unaccounted(suiteSource(t)) {
 //		t.Errorf("%s", wrong)
 //
-// The first pair is the only place a ledger complaint becomes a test failure.
-// The second is the only place the census of what actually ran is read. Nothing
-// in this package notices either being switched off. Measured, against the
-// LastDeployKeyReadOnly contract deleted from optional.go — which on its own is
-// GO_TEST_EXIT=1: `if false &&` on the first line is GO_TEST_EXIT=0, that
-// Errorf written as Logf is GO_TEST_EXIT=0, and deleting the second pair
-// together with `ledgerHarnesses()[1:]` is GO_TEST_EXIT=0.
+// The first pair is the only place a ledger complaint becomes a test failure
+// and the only place a harness that went round a subset of its rules becomes
+// one. The second is the only place the census of what actually ran is read.
+// Nothing in this package notices any of the five being switched off.
 //
-// EVERYTHING TOUCHING THEM IS HELD, which is why the set is four and not forty.
+// MEASURED, one at a time, over
+//
+//	go test -count=1 -p 4 ./pkg/v2/forge/forgetest/... ./pkg/v2/forge/fake/... ./pkg/v2/forge/
+//
+// with the LastDeployKeyReadOnly contract deleted from optional.go, which on
+// its own is GO_TEST_EXIT=1:
+//
+//	the verdict clause written `false`            GO_TEST_EXIT=0
+//	that Errorf written Logf                      GO_TEST_EXIT=0
+//	the census loop written `range []string(nil)` GO_TEST_EXIT=0, with
+//	  ledgerHarnesses()[1:] beside it
+//	that Errorf written Logf                      GO_TEST_EXIT=0, likewise
+//
+// and the fifth with a harness reading over.all[:1] instead of going round:
+//
+//	`|| len(given.unhandled()) > 0` deleted       GO_TEST_EXIT=0
+//
+// EVERYTHING TOUCHING THEM IS HELD, which is why the set is five and not fifty.
 // Measured one at a time, each of these fails BY NAME rather than passing:
 //
 //	hold's ran.write hollowed             every declared run is named as never
@@ -86,6 +107,8 @@
 //	                                      nothing, and is named
 //	hold listening to a recorder the      the same
 //	  harness never writes to
+//	hold handing over handOut(nil)        every rule that came out is named as
+//	                                      never handed in
 //	over.wrong hollowed to ""             still red: Errorf fails the test
 //	                                      whatever string it is handed
 //	theRulesAsTheyStand emptied           readEveryRuleDeclared names every rule
@@ -104,37 +127,67 @@
 //	                                      harnesses are named
 //	a discarding reporter at the call     "too many arguments in call to hold"
 //	  site
+//	handout.each shortened to all[:1]     every rule that did not come out is
+//	                                      named, for all three harnesses
+//	a harness ranging over over.all       the same, for that harness
+//	  instead of going round
+//	handout.unhandled hollowed to nil     its own fault names it
+//	census.unaccounted hollowed to nil    its own fault names it
+//	obey's Errorf written Logf            it does not compile: the listener is
+//	                                      `interface{ Errorf(...) }`
+//	constantsOf's reading of a constant   the untyped rule, the untyped harness
+//	  at its USE deleted                  and the untyped fault all name it
+//	hermetic.Pin's body emptied           the loader's own fault reads the
+//	                                      process environment back
+//	hermetic.Load's override deleted      the same fault, under a workspace it
+//	                                      was handed
+//	the init that calls hermetic.Pin      both drivers' route tables are named
+//	  hollowed                            as loads nothing pinned
 //
-// WHY IT CANNOT BE SMALLER. A Go test fails by calling Errorf. Somewhere there
-// has to be a first call to it that nothing else is watching, and a condition
-// deciding whether to make it — and a check on that check is another Errorf
-// with the same property one level further out, which is the regress this
-// file's history walked six times. Two of the four are the verdict on the
-// ledger and two are the verdict on whether the ledger was read at all, and
-// neither can be folded into the other: the first runs inside the very thing
-// the second counts, so it cannot also be what reports the count.
+// WHY IT CANNOT BE SMALLER, counted in points. A Go test fails by calling
+// Errorf. Somewhere there has to be a first call to it that nothing else is
+// watching — one point — and a condition deciding whether to make it, which is
+// a second, because the two are independently deletable and a check on either
+// is another Errorf with the same property one level further out. That is the
+// regress this file's history walked seven times. Two pairs and not one,
+// because the verdict on the ledger runs INSIDE the very thing the census
+// counts, so it cannot also be what reports the count. The fifth point is a
+// clause and not a pair: the tally reuses the verdict's Errorf rather than
+// adding a third, which is the whole reason it is written as one condition.
 //
-// WHAT THIS IS THE SAME AS. It is the exposure every Go test suite already
-// carries and does not write down. A TestMain that returns before m.Run(). A
-// build tag on the file the assertions live in. A file never added to the
-// package at all. A t.Run whose body returns early. Each is a small edit that
-// leaves a green run and no trace, and no test framework defends against any of
-// them. The census read could be moved into TestMain and the count would be the
-// same four — it would only be spelled as a shape people accept without
-// looking. It is written here instead, in the open, with the measurement beside
-// it.
+// WHAT THIS IS THE SAME AS — and two of the three things this doc used to claim
+// it was the same as are FALSE HERE, which is what happens when an equivalence
+// is asserted rather than run. Each measured, with the same contract deleted:
+//
+//	a TestMain that returns before m.Run()   GO_TEST_EXIT=0. HOLDS: silent, green,
+//	                                         no trace. It is the same exposure.
+//	a build tag on guard_test.go             GO_TEST_EXIT=1, and not a failing
+//	                                         test: "undefined: complaint",
+//	                                         "undefined: ledger" — a build error
+//	a _test.go file renamed out of the       GO_TEST_EXIT=1, the same build error
+//	  package
+//
+// The last two are loud because the test files here are mutually load-bearing
+// at compile time: guard_test.go declares the types ledger_test.go and
+// violations_test.go are written in. Taking one out of the package does not
+// quietly shrink what runs, it stops the package building. So the exposure this
+// tower ends on is ONE of the four things that sentence used to list, not four,
+// and the census read could NOT simply be moved into TestMain — a TestMain is
+// the one shape here that fails silently.
 //
 // MEASURE IT WITH -coverpkg. Plain -cover counts only the statements a
 // package's OWN tests reach, and the two packages a conformance suite is made
 // of are run by everybody else: pkg/v2/forge/fake is exercised by this
 // package's tests and by consumers', so plain -cover calls it 28.0% where the
 // pinned measurement says 96.1%. This package reads about the same either way
-// (99.3% plain, 98.6% pinned) only because its tests run the whole suite
-// themselves. One command is true for both, and it names the package being
-// measured:
+// (99.3% plain, 99.3% pinned) only because its tests run the whole suite
+// themselves; pinned to the tree it sits in, which adds the loader beside it,
+// it is 98.5%, and the loader on its own is 100.0%. One command is true for all
+// of them, and it names the package being measured:
 //
-//	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/forgetest/... ./pkg/v2/forge/...
-//	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/fake/...      ./pkg/v2/forge/...
+//	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/forgetest/...          ./pkg/v2/forge/...
+//	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/forgetest/hermetic     ./pkg/v2/forge/...
+//	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/fake/...               ./pkg/v2/forge/...
 package forgetest
 
 import (

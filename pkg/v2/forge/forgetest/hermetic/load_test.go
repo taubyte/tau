@@ -72,3 +72,25 @@ func TestTheEnvironmentIsNotSomethingACallerCanDecline(t *testing.T) {
 		t.Errorf("the config this loader handed to packages.Load ends %v, so a caller's own GOPROXY or GOWORK could sit after the override and decide what is read", tail)
 	}
 }
+
+// TestAConfigThatBringsNoEnvironmentOfItsOwn is the ordinary case and the
+// degenerate one. The ledger's own load writes no Env, and a caller that writes
+// no config at all is the same question one step further: both have to end up
+// reading the process environment with the override after it, not instead of
+// it.
+func TestAConfigThatBringsNoEnvironmentOfItsOwn(t *testing.T) {
+	for name, cfg := range map[string]*packages.Config{
+		"a config carrying no Env": {Mode: packages.NeedName, Dir: "."},
+		"no config at all":         nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			pkgs, err := hermetic.Load(cfg, ".")
+			if err != nil {
+				t.Fatalf("loading with %s: %v", name, err)
+			}
+			if len(pkgs) != 1 || pkgs[0].Name != "hermetic" {
+				t.Fatalf("loading with %s answered %d packages and not the one it is", name, len(pkgs))
+			}
+		})
+	}
+}
