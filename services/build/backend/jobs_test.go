@@ -389,15 +389,37 @@ func TestRetryReportsAPushThatFailsAfterTheRecordWasReopened(t *testing.T) {
 // The retention row is written at the moment a job finishes, so a retry that
 // looked it up under the reopening's timestamp would delete a key nothing wrote
 // and leave the real row behind — a job that reads Open and is also listed as
-// retained. The clock moves between the two here, which is the only way to see
-// it.
+// retained.
+//
+// THE CLOCK MOVES TWICE HERE, AND BOTH MOVES ARE THE TEST.
+//
+// The second — between the finish and the retry — is what makes the reopening's
+// timestamp a different key from the one the finish wrote. It has been here
+// since the round that spelled the delete by hand.
+//
+// THE FIRST IS THE NINTH ROUND'S, and without it this test was named for an
+// invariant it could not see. A job built instantly has CreatedAt == UpdatedAt,
+// so `retained` stamping time.Unix(rec.CreatedAt, 0) and `dropRetained` reading
+// rec.CreatedAt are BOTH invisible: two independent one-token substitutions,
+// each reading a plausible timestamp off the right record, and each green
+// across twenty runs of the whole service. Every other clock.advance in this
+// package expires a claim or ages a reconcile row; none of them ever moved the
+// clock between a job's creation and its terminal write, so nothing in the
+// package ever wrote a terminal record whose two timestamps differed. Five
+// minutes here is a build that took five minutes, and it is what makes the
+// retention row's key a fact about when the job FINISHED.
 func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
+
+	h.clock.advance(5 * time.Minute)
 	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "x"))
 
 	terminal := rootSegment + "/" + indexSegment + "/" + terminalSegment + "/"
-	require.Len(t, h.store.Keys(terminal), 1)
+	rec := h.mustRecord(t, id)
+	require.NotEqual(t, rec.CreatedAt, rec.UpdatedAt, "a build that took no time proves nothing here")
+	require.Equal(t, []string{terminalIndexKey(time.Unix(rec.UpdatedAt, 0), id)}, h.store.Keys(terminal),
+		"the retention row is keyed by the second the record says the job finished")
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
