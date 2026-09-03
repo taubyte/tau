@@ -174,18 +174,18 @@ func escapedSegments(segments []string) (string, error) {
 // COLLECTION, which is the threat handleSegment was already written against.
 //
 // IT IS CHECKED IN THE RAW SPELLING, WHICH IS THE ONE THE SERVER HOLDS. This
-// driver escapes once and the forge on the other end decodes once, so the string a server
-// really has in its hands is the segment as it arrived here — which is why
-// "../.." is refused even though it escapes to "..%2F..", one innocent-looking
-// segment on the wire.
+// driver escapes once and the forge on the other end decodes once, so the string a
+// server really has in its hands is the segment as it arrived here — which is
+// why "../.." is refused even though it escapes to "..%2F..", one
+// innocent-looking segment on the wire.
 //
 // AND CHECKING THE ESCAPED SPELLING AS WELL WOULD BE CHECKING THIS ONE TWICE.
 // It was written that way and it was dead: measured, deleting the escaped half
 // left the whole forge tree at GO_TEST_EXIT=0, because url.PathEscape emits no
 // "/" and leaves an unreserved dot alone, so PathEscape(s) is a dot segment
 // exactly when s is. That coincidence is not left as an argument —
-// TestEscapingNeitherMakesADotSegmentNorUnmakesOne is the row that holds it,
-// and it is what this one line rests on.
+// TestCheckingTheEscapedSpellingWouldBeCheckingTheRawOneTwice is the row that
+// holds it, and it is what this one line rests on.
 //
 // IT IS NOT AIMED AT ESCAPING, and it must not be. A forge hands back an opaque
 // handle and may legitimately spell one with a "?", a "#" or a "%" in it; those

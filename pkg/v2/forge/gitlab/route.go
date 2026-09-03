@@ -186,8 +186,8 @@ func escapedSegments(segments []string) (string, error) {
 // left the whole forge tree at GO_TEST_EXIT=0, because url.PathEscape emits no
 // "/" and leaves an unreserved dot alone, so PathEscape(s) is a dot segment
 // exactly when s is. That coincidence is not left as an argument —
-// TestEscapingNeitherMakesADotSegmentNorUnmakesOne is the row that holds it,
-// and it is what this one line rests on.
+// TestCheckingTheEscapedSpellingWouldBeCheckingTheRawOneTwice is the row that
+// holds it, and it is what this one line rests on.
 //
 // A "/" INSIDE A SEGMENT IS NOT REFUSED, and on this driver it may not be: the
 // hole under projects/ takes acme/team/widget and the escaping turns it into
