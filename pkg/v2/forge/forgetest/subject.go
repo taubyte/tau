@@ -54,10 +54,10 @@
 //
 // WHERE THE TOWER ENDS. Every round of this package's history added a level.
 // The suite is held by the ledger; the ledger's rules are held by faults; the
-// three things that RUN the rules are held by faults of their own; the rules a
-// harness goes round are counted against the rules it was handed; and the one
-// call that runs a harness is held by a census read back against the names in
-// source. "What guards the guard" has to stop somewhere, and this is where,
+// three things that RUN the rules are held by faults of their own; the rules
+// each of them was actually asked about are counted against the rules it was
+// handed; and the one call that runs a harness is held by a census read back
+// against the names in source. "What guards the guard" has to stop somewhere, and this is where,
 // said exactly rather than left for somebody to find.
 //
 // FIVE POINTS, on four lines, in two places in guard_test.go. A POINT is one
@@ -77,8 +77,8 @@
 //		t.Errorf("%s", wrong)
 //
 // The first pair is the only place a ledger complaint becomes a test failure
-// and the only place a harness that went round a subset of its rules becomes
-// one. The second is the only place the census of what actually ran is read.
+// and the only place a harness asked about a subset of the rules it was handed
+// becomes one. The second is the only place the census of what actually ran is read.
 // Nothing in this package notices any of the five being switched off.
 //
 // MEASURED, one at a time, over
@@ -103,12 +103,10 @@
 //
 //	hold's ran.write hollowed             every declared run is named as never
 //	                                      having happened
-//	hold's h.run deleted                  the direction that must complain says
-//	                                      nothing, and is named
-//	hold listening to a recorder the      the same
-//	  harness never writes to
 //	hold's h.run call deleted             the direction that must complain says
 //	                                      nothing, and the tally names every rule
+//	hold listening to a recorder the      the same
+//	  harness never writes to
 //	over.wrong hollowed to ""             still red: Errorf fails the test
 //	                                      whatever string it is handed
 //	theRulesAsTheyStand emptied           readEveryRuleDeclared names every rule

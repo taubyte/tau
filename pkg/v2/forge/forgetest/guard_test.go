@@ -41,7 +41,7 @@ import (
 // type-checked by the same loader — the ledger's own version of injecting a
 // fault into the fake forge and requiring the suite to catch it.
 //
-// Twenty-three rules and their faults, and a rule may have more than one: a rule
+// Twenty-four rules and their faults, and a rule may have more than one: a rule
 // evaded in four shapes needs four, or the three nobody showed it are three it
 // does not hold against. Hollowed one at a time, all of them fail here.
 //
@@ -248,9 +248,9 @@ func obey(t reporter, l *ledger, r rule) int {
 // not run it is proven by nothing, and no rule can see that from inside the
 // registry.
 //
-// So each of the three is a HARNESS now, in the same shape a rule is: a name,
-// a run that is a function of the rules it is given, and a registry that breaks
-// it.
+// So each of the three is a HARNESS now, in the same shape a rule is: a name, a
+// run that is a function of the rule it is asked about, and a registry that
+// breaks it.
 //
 // AND THERE IS ONE CALL THAT RUNS ONE, because two of them was the last
 // off-switch. Round seven ran every harness twice from two places: the real one
@@ -272,11 +272,13 @@ func obey(t reporter, l *ledger, r rule) int {
 // it was handed must come to. Both directions go through it, so the call the
 // suite is held by IS the call the self-test exercises. And what actually ran
 // is written down INSIDE that call and read back against the harness names in
-// source, so a loop round a subset — or round nothing — is named rather than
-// silent.
+// source, so a loop round a subset of the harnesses — or round nothing — is
+// named rather than silent. The rules that loop goes round are counted the same
+// way and for the same reason; see unvisited, below.
 
 // harnessName is what one of the three is called, and it is a TYPE for the same
-// reason ruleName is: a list is a thing somebody can shorten.
+// reason ruleName is: a list is a thing somebody can shorten. The type token is
+// not what finds it — see constantsOf, which reads a constant by what it IS.
 type harnessName string
 
 const (
@@ -441,7 +443,7 @@ func hold(t *testing.T, ran *census, h harness, over registry) {
 // the five statements above and no more.
 func (over registry) wrong(h harness, heard *recorder, missed []string) string {
 	if len(missed) > 0 {
-		return fmt.Sprintf("%q was run %s and did not go round every rule it was handed:\n\t%s\nso whatever it did say was said over a subset, and the rules that never came out were read over nothing. It also said:\n%s",
+		return fmt.Sprintf("%q was run %s and was not asked about every rule it was handed:\n\t%s\nso whatever it did say was said over a subset, and the rules it was never asked about were read over nothing. It also said:\n%s",
 			h.name, theDirection(over.complains), strings.Join(missed, "\n\t"), heard)
 	}
 	if over.complains {
