@@ -214,7 +214,7 @@ func ledgerRules() []rule {
 		{ruleFaultDoesNothing, checkFaultDoesNothing, breaks(violateFaultDoesNothing)},
 		{ruleUnwalkedBody, checkUnwalkedBody, breaks(violateUnwalkedBody)},
 		{ruleFailurePutDown, checkFailurePutDown, breaks(violateFailurePutDown)},
-		{ruleLooseLoad, checkLooseLoad, breaks(violateLooseLoad)},
+		{ruleLooseLoad, checkLooseLoad, breaks(violateLooseLoad, violateLooseLoadThroughAValue)},
 	}
 }
 
@@ -1155,7 +1155,7 @@ func checkLooseLoad(l *ledger) []complaint {
 	var out []complaint
 	for _, site := range l.loads {
 		out = append(out, complaint{ruleLooseLoad, site,
-			"this call type-checks source in a binary nothing has pinned, so the environment it reads under is whatever the machine running the test happens to have: a workspace can decide which tree it is shown and a missing module can be fetched over the network from inside a test. Whatever it then proves, it proves about source nobody chose"})
+			"this reaches the loader that type-checks source, in a binary nothing has pinned, so the environment it reads under is whatever the machine running the test happens to have: a workspace can decide which tree it is shown and a missing module can be fetched over the network from inside a test. Whatever it then proves, it proves about source nobody chose"})
 	}
 	return out
 }

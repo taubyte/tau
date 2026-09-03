@@ -506,9 +506,10 @@ var (
 // write. A load site in a package whose binary links neither is a load site
 // under whatever the machine running it has, and it is named.
 //
-// The callee is resolved through go/types rather than matched as a spelling, so
-// an aliased import, a renamed variable and a dot-import are all the same call
-// underneath — the same reading the drivers' own route tables get.
+// It is resolved through go/types rather than matched as a spelling, so an
+// aliased import, a dot-import, a variable bound to the loader and a call
+// through that variable are all the same reach underneath — the same reading
+// the drivers' own route tables get.
 func looseLoads(t *testing.T, overlay map[string][]byte) []string {
 	t.Helper()
 	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
@@ -530,19 +531,21 @@ func looseLoads(t *testing.T, overlay map[string][]byte) []string {
 		}
 		for _, file := range p.Syntax {
 			ast.Inspect(file, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
+				// EVERY REFERENCE, not every call. A load site written as a
+				// call is the ordinary shape; `var load = packages.Load` and
+				// then calling the variable is the same load one name further
+				// away, and matching CallExpr missed it — measured, GO_TEST_EXIT=0
+				// with such a site live in an unpinned package. What is named is
+				// wherever the loader is REACHED, which is where it escapes.
+				id, ok := n.(*ast.Ident)
 				if !ok {
 					return true
 				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				fn, ok := p.TypesInfo.Uses[sel.Sel].(*types.Func)
+				fn, ok := p.TypesInfo.Uses[id].(*types.Func)
 				if !ok || fn.FullName() != "golang.org/x/tools/go/packages.Load" {
 					return true
 				}
-				at := p.Fset.Position(call.Pos())
+				at := p.Fset.Position(id.Pos())
 				// The package a file sits in, because two drivers in this tree
 				// both write their route table in a file called route_test.go.
 				site := filepath.Base(filepath.Dir(at.Filename)) + "/" +

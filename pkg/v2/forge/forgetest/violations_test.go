@@ -381,6 +381,30 @@ func ledgerFaultLooseLoad() ([]*packages.Package, error) {
 	})}
 }
 
+// violateLooseLoadThroughAValue is the same rule evaded by putting one name
+// between the call and the loader. Measured living in the fake forge — `var
+// loadSomething = packages.Load` and a call through it — with the rule matching
+// call expressions, at GO_TEST_EXIT=0; what is named now is wherever the loader
+// is REACHED, so the site is the line the value was bound on.
+func violateLooseLoadThroughAValue(t *testing.T) *ledger {
+	dir, err := filepath.Abs("../fake")
+	if err != nil {
+		t.Fatalf("finding the fake forge's directory, to show the ledger a source load that breaks its rule: %v", err)
+	}
+	return &ledger{src: suiteSource(t), loads: looseLoads(t, map[string][]byte{
+		filepath.Join(dir, "ledger_fault_loose_load_value.go"): []byte(`package fake
+
+import "golang.org/x/tools/go/packages"
+
+var ledgerFaultLoadThroughAValue = packages.Load
+
+func ledgerFaultLooseLoadThroughAValue() ([]*packages.Package, error) {
+	return ledgerFaultLoadThroughAValue(&packages.Config{Mode: packages.NeedName}, ".")
+}
+`),
+	})}
+}
+
 // violateStrandedFaultDeclaredWithoutItsType is the same rule evaded by
 // SPELLING rather than by deletion: a fault the fake forge can be told to have,
 // declared without the type on its line and typed where it is used, which is

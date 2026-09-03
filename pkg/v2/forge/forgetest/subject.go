@@ -150,6 +150,8 @@
 //	                                      was handed
 //	the init that calls hermetic.Pin      both drivers' route tables are named
 //	  hollowed                            as loads nothing pinned
+//	a load reached through a value or a   named at the line the loader is
+//	  dot-import, in an unpinned package  reached on, not at the call
 //
 // WHAT SURVIVED THE ATTACK ON THIS ROUND'S OWN FIX, measured and not argued.
 // The first shape of it counted what a harness handed ITSELF, and two evasions
