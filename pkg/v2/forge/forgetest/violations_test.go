@@ -3,6 +3,7 @@ package forgetest
 import (
 	"go/ast"
 	"go/types"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -357,6 +358,27 @@ func violateStrandedFault(t *testing.T) *ledger {
 	}
 	t.Fatalf("every fault in the fake forge is injected by more than one proof, so no single deletion strands one")
 	return nil
+}
+
+// violateLooseLoad is a real load site in a real package that nothing has
+// pinned: the fake forge, whose own test binary links neither the loader nor
+// the suite that pins the process. It is read by the same walk over the same
+// tree as the honest code.
+func violateLooseLoad(t *testing.T) *ledger {
+	dir, err := filepath.Abs("../fake")
+	if err != nil {
+		t.Fatalf("finding the fake forge's directory, to show the ledger a source load that breaks its rule: %v", err)
+	}
+	return &ledger{src: suiteSource(t), loads: looseLoads(t, map[string][]byte{
+		filepath.Join(dir, "ledger_fault_loose_load.go"): []byte(`package fake
+
+import "golang.org/x/tools/go/packages"
+
+func ledgerFaultLooseLoad() ([]*packages.Package, error) {
+	return packages.Load(&packages.Config{Mode: packages.NeedName}, ".")
+}
+`),
+	})}
 }
 
 // violateStrandedFaultDeclaredWithoutItsType is the same rule evaded by

@@ -6,10 +6,11 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
-	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"golang.org/x/tools/go/packages"
 
 	"github.com/taubyte/tau/pkg/v2/forge/fake"
+	"github.com/taubyte/tau/pkg/v2/forge/forgetest/hermetic"
 )
 
 // THE INVERSE GUARD.
@@ -359,10 +361,10 @@ var (
 // suiteSource type-checks the suite's own source. Test files are not part of
 // it: this file, and the proofs beside it, are the thing doing the asserting.
 //
-// The load is hermetic on purpose. GOPROXY=off makes a module that is not
-// already in the cache a loud failure rather than a network fetch from inside a
-// test, and GOWORK=off keeps a workspace somebody happens to have from
-// deciding which source this reads.
+// The load goes through hermetic.Load, which is the ONE place in this tree that
+// calls packages.Load and the only place the environment it needs is written.
+// See checkLooseLoad for what makes that "the one place" a fact of the program
+// rather than a sentence in a comment.
 func suiteSource(t *testing.T) *source {
 	t.Helper()
 	loadOnce.Do(func() { loaded, loadErr = loadSuite(nil) })
@@ -416,7 +418,6 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
 			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
 		Dir: ".",
-		Env: append(os.Environ(), "GOPROXY=off", "GOWORK=off"),
 		// The test files are type-checked as well, not because they are part of
 		// the population — they are the thing doing the asserting — but because
 		// the ledger's own rule names are declared in them and are read out of
@@ -427,7 +428,7 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 	// The fake forge is loaded beside the suite so its faults can be counted.
 	// Its import path comes from the type itself and not from a string here.
 	faultType := reflect.TypeOf(fake.Fault(""))
-	pkgs, err := packages.Load(cfg, ".", faultType.PkgPath())
+	pkgs, err := hermetic.Load(cfg, ".", faultType.PkgPath())
 	if err != nil {
 		return nil, err
 	}
@@ -481,6 +482,176 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 
 // suitePath is this package, taken from a type in it rather than written out.
 var suitePath = reflect.TypeOf(assertion{}).PkgPath()
+
+// theForgeTree is every package this suite and the drivers it holds live in,
+// taken from suitePath rather than written out.
+var theForgeTree = path.Dir(suitePath) + "/..."
+
+// theOneLoader is the function every source load in this tree has to go
+// through, and thePin is the one that sets the environment for a whole binary.
+// Both are named by the function value and not by a string.
+var (
+	theOneLoader = runtime.FuncForPC(reflect.ValueOf(hermetic.Load).Pointer()).Name()
+	thePin       = runtime.FuncForPC(reflect.ValueOf(hermetic.Pin).Pointer()).Name()
+)
+
+// looseLoads is every call to packages.Load written anywhere in the forge tree
+// that runs under an environment nobody chose, by the site it is written at.
+//
+// TWO THINGS MAKE A LOAD HERMETIC and both are counted here. Going through
+// hermetic.Load is one. Being in a binary hermetic.Pin has pinned is the other,
+// and it is what actually holds the two drivers' route tables: their tests link
+// this suite, this suite pins the process in an init, and the environment is a
+// property of the process rather than of the config a call site happened to
+// write. A load site in a package whose binary links neither is a load site
+// under whatever the machine running it has, and it is named.
+//
+// The callee is resolved through go/types rather than matched as a spelling, so
+// an aliased import, a renamed variable and a dot-import are all the same call
+// underneath — the same reading the drivers' own route tables get.
+func looseLoads(t *testing.T, overlay map[string][]byte) []string {
+	t.Helper()
+	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+		packages.NeedImports | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo
+	pkgs, err := treeSource(t, mode, overlay)
+	if err != nil {
+		t.Fatalf("type-checking the forge tree, which is where every source load in it is written: %v", err)
+	}
+	if len(pkgs) == 0 {
+		t.Fatalf("type-checking %s answered no packages, so this closure is over nothing", theForgeTree)
+	}
+	loaderPkg := theOneLoader[:strings.LastIndex(theOneLoader, ".")]
+	pinned := linkersOf(pkgs, pinnersIn(pkgs))
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range pkgs {
+		if p.TypesInfo == nil || p.PkgPath == loaderPkg || pinned[p.ID] {
+			continue
+		}
+		for _, file := range p.Syntax {
+			ast.Inspect(file, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				fn, ok := p.TypesInfo.Uses[sel.Sel].(*types.Func)
+				if !ok || fn.FullName() != "golang.org/x/tools/go/packages.Load" {
+					return true
+				}
+				at := p.Fset.Position(call.Pos())
+				// The package a file sits in, because two drivers in this tree
+				// both write their route table in a file called route_test.go.
+				site := filepath.Base(filepath.Dir(at.Filename)) + "/" +
+					filepath.Base(at.Filename) + ":" + strconv.Itoa(at.Line)
+				if seen[site] {
+					return true
+				}
+				seen[site] = true
+				out = append(out, site)
+				return true
+			})
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// pinnersIn is every package in the tree that calls hermetic.Pin from an init,
+// by import path.
+//
+// It is read out of source and not written down here for the reason everything
+// else in this file is: the exemption above says "in a binary something pinned",
+// and a package that merely IMPORTS the suite pins nothing if the call went
+// away. Measured: with `func init() { hermetic.Pin() }` hollowed to a reference,
+// an exemption keyed on the import graph alone still excused both drivers'
+// route tables, and both were back under whatever environment the machine had.
+func pinnersIn(pkgs []*packages.Package) map[string]bool {
+	out := map[string]bool{}
+	for _, p := range pkgs {
+		if p.TypesInfo == nil {
+			continue
+		}
+		for _, file := range p.Syntax {
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Recv != nil || fn.Name.Name != "init" || fn.Body == nil {
+					continue
+				}
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					sel, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok {
+						return true
+					}
+					if f, ok := p.TypesInfo.Uses[sel.Sel].(*types.Func); ok && f.FullName() == thePin {
+						out[p.PkgPath] = true
+					}
+					return true
+				})
+			}
+		}
+	}
+	return out
+}
+
+// linkersOf is every loaded package that reaches one of a set of import paths,
+// by ID. The tree's packages are all roots, so the paths named in their Imports
+// are enough to walk it — nothing outside this module can import a package
+// inside it.
+func linkersOf(pkgs []*packages.Package, want map[string]bool) map[string]bool {
+	byPath := map[string]*packages.Package{}
+	for _, p := range pkgs {
+		if p.ID == p.PkgPath {
+			byPath[p.PkgPath] = p
+		}
+	}
+	reaches := map[string]bool{}
+	var walk func(p *packages.Package, seen map[string]bool) bool
+	walk = func(p *packages.Package, seen map[string]bool) bool {
+		if p == nil || seen[p.ID] {
+			return false
+		}
+		seen[p.ID] = true
+		for path := range p.Imports {
+			if want[path] || walk(byPath[path], seen) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, p := range pkgs {
+		if want[p.PkgPath] || walk(p, map[string]bool{}) {
+			reaches[p.ID] = true
+		}
+	}
+	return reaches
+}
+
+// treeSource type-checks every package in the forge tree, once, and once more
+// for each overlay a rule's violating ledger asks for.
+func treeSource(t *testing.T, mode packages.LoadMode, overlay map[string][]byte) ([]*packages.Package, error) {
+	t.Helper()
+	if overlay != nil {
+		return hermetic.Load(&packages.Config{Mode: mode, Dir: ".", Tests: true, Overlay: overlay}, theForgeTree)
+	}
+	loadedTree.Do(func() {
+		treePkgs, treeErr = hermetic.Load(&packages.Config{Mode: mode, Dir: ".", Tests: true}, theForgeTree)
+	})
+	return treePkgs, treeErr
+}
+
+var (
+	loadedTree sync.Once
+	treePkgs   []*packages.Package
+	treeErr    error
+)
 
 // constantsOf is every constant of one named string type in a package, by value
 // and by the name it is declared under. It reads the fake forge's faults, this

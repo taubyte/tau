@@ -124,6 +124,7 @@ const (
 	ruleFaultDoesNothing   ruleName = "a fault the proof does not need"
 	ruleUnwalkedBody       ruleName = "a body nothing walks"
 	ruleFailurePutDown     ruleName = "a way to fail put where nothing follows it"
+	ruleLooseLoad          ruleName = "a source load under an environment nobody chose"
 )
 
 // ledger is everything the rules are read over: the suite's own source, the
@@ -141,6 +142,12 @@ type ledger struct {
 	// edit, and an assertion in a body nothing walks is in no population and no
 	// rule below is computed over it.
 	unwalked []string
+
+	// loads is every call to packages.Load written in the forge tree that is
+	// not the one inside hermetic.Load. Three tests here read source rather
+	// than trusting a comment about it, and a test that reads source is only as
+	// trustworthy as the source it was handed.
+	loads []string
 
 	// without is what the suite says about a proof's subject when ONE of its
 	// faults is taken away and everything else is left alone. It is the
@@ -206,6 +213,7 @@ func ledgerRules() []rule {
 		{ruleFaultDoesNothing, checkFaultDoesNothing, breaks(violateFaultDoesNothing)},
 		{ruleUnwalkedBody, checkUnwalkedBody, breaks(violateUnwalkedBody)},
 		{ruleFailurePutDown, checkFailurePutDown, breaks(violateFailurePutDown)},
+		{ruleLooseLoad, checkLooseLoad, breaks(violateLooseLoad)},
 	}
 }
 
@@ -829,6 +837,7 @@ func theLedger(t *testing.T) *ledger {
 		}
 		l.pop = populationOf(l.src)
 		l.unwalked = l.src.unwalkedBodies(l.src.walk())
+		l.loads = looseLoads(t, nil)
 		for _, p := range l.proofs {
 			l.said[p.name] = record(p.subject(t, p.faults))
 			if len(p.faults) == 0 {
@@ -1120,6 +1129,32 @@ func checkFailurePutDown(l *ledger) []complaint {
 	for _, p := range l.src.waysToFailPutDown() {
 		out = append(out, complaint{ruleFailurePutDown, p.site,
 			"a way to fail this test is put in " + p.where + ", where nothing follows it: called from there its type is func(...any) or func(), which is the shape of every callback in the language, so the claim made through it would be in no population and would need no fault. Hand it over, do not store it"})
+	}
+	return out
+}
+
+// checkLooseLoad. A test that reads its own source is a closure over whatever
+// source it was handed, so the environment is part of the check. GOPROXY=off is
+// what makes a module the cache does not have a loud failure rather than a
+// network fetch from inside a test; GOWORK=off is what keeps a workspace
+// somebody happens to have from deciding which tree is read.
+//
+// Three tests in this tree read source and only one of the three set either.
+// Measured, with the test binaries built first and then run under a GOWORK
+// naming a file that is not a workspace: the github and gitlab route tests both
+// die on the load, and the ledger's own load does not notice. Writing the
+// environment into each config would be a fix for the configs that exist, so
+// the fix is hermetic.Pin, which sets it on the PROCESS — and a driver's tests
+// get it by linking this suite, which pins in an init.
+//
+// This is the closure over what is left: a load site in a package whose binary
+// links neither the loader nor the pin runs under whatever the machine has, and
+// it is named here, at the line it is written on, before it has read anything.
+func checkLooseLoad(l *ledger) []complaint {
+	var out []complaint
+	for _, site := range l.loads {
+		out = append(out, complaint{ruleLooseLoad, site,
+			"this call type-checks source in a binary nothing has pinned, so the environment it reads under is whatever the machine running the test happens to have: a workspace can decide which tree it is shown and a missing module can be fetched over the network from inside a test. Whatever it then proves, it proves about source nobody chose"})
 	}
 	return out
 }
