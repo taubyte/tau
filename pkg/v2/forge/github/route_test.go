@@ -356,3 +356,65 @@ func TestThisDriverBuildsAnHTTPRequestInExactlyOnePlace(t *testing.T) {
 			"the one place a request is built is send, in api.go, and this is not it: %s", where)
 	}
 }
+
+// TestThisDriverTurnsAStringIntoAPathInExactlyOnePlace is the census the
+// traversal refusal rests on, made a fact of the program rather than a sentence
+// in a comment.
+//
+// escapedSegments says of itself that it IS THE ONE PLACE A STRING BECOMES PART
+// OF A PATH IN THIS PACKAGE, and until now nothing said so but the comment —
+// which is exactly the kind of sentence that stays in a file after it has
+// stopped being true. It matters more now than when it was only about escaping:
+// addressesItself refuses a segment that names something else, and a second
+// place that composed a path would be a place that refuses nothing.
+//
+// url.PathEscape and url.QueryEscape are the two ways a string is turned into a
+// piece of a URL, and both are counted. What is asserted is the FILE: route.go is
+// where escapedSegments and addressesItself live, and a call from anywhere else
+// is a path composed outside the refusal — a call site that "escaped it here"
+// and never asked whether the thing it escaped was a name.
+// The load is written plainly, like its neighbour above, and it is hermetic
+// anyway: the conformance suite this driver's tests link pins GOPROXY=off and
+// GOWORK=off on the process in an init, and an environment is a property of a
+// process rather than of a call site. Measured, from this package's directory
+// with GOWORK naming a file that is not a workspace: both loads here pass.
+func TestThisDriverTurnsAStringIntoAPathInExactlyOnePlace(t *testing.T) {
+	loaded, err := packages.Load(&packages.Config{
+		Mode:  packages.NeedName | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
+		Tests: false,
+	}, "github.com/taubyte/tau/pkg/v2/forge/github")
+	require.NoError(t, err)
+	require.Len(t, loaded, 1)
+	pkg := loaded[0]
+	require.Emptyf(t, pkg.Errors, "type-checking this driver's own source: %v", pkg.Errors)
+
+	escapers := []string{}
+	for _, file := range pkg.Syntax {
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			fn, ok := pkg.TypesInfo.Uses[sel.Sel].(interface{ FullName() string })
+			if !ok {
+				return true
+			}
+			switch fn.FullName() {
+			case "net/url.PathEscape", "net/url.QueryEscape":
+				escapers = append(escapers, pkg.Fset.Position(call.Pos()).String()+" "+fn.FullName())
+			}
+			return true
+		})
+	}
+
+	t.Logf("this driver turns a string into a piece of a path at %v", escapers)
+	require.NotEmptyf(t, escapers, "this driver escapes nothing, so this row is a closure over nothing")
+	for _, where := range escapers {
+		assert.Containsf(t, where, "route.go",
+			"a string becomes part of a path somewhere other than escapedSegments, which is where the refusal is: %s", where)
+	}
+}
