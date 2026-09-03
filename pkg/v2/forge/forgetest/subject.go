@@ -68,8 +68,8 @@
 //
 // In hold:
 //
-//	if heard.failed != over.complains || len(given.unhandled()) > 0 {
-//		t.Errorf("%s", over.wrong(h, heard, given))
+//	if heard.failed != over.complains || len(unvisited(over.rules, went)) > 0 {
+//		t.Errorf("%s", over.wrong(h, heard, unvisited(over.rules, went)))
 //
 // and in TestTheLedgerHolds:
 //
@@ -94,9 +94,9 @@
 //	  ledgerHarnesses()[1:] beside it
 //	that Errorf written Logf                      GO_TEST_EXIT=0, likewise
 //
-// and the fifth with a harness reading over.all[:1] instead of going round:
+// and the fifth with hold's own loop calling the harness for one rule only:
 //
-//	`|| len(given.unhandled()) > 0` deleted       GO_TEST_EXIT=0
+//	`|| len(unvisited(...)) > 0` deleted          GO_TEST_EXIT=0
 //
 // EVERYTHING TOUCHING THEM IS HELD, which is why the set is five and not fifty.
 // Measured one at a time, each of these fails BY NAME rather than passing:
@@ -107,8 +107,8 @@
 //	                                      nothing, and is named
 //	hold listening to a recorder the      the same
 //	  harness never writes to
-//	hold handing over handOut(nil)        every rule that came out is named as
-//	                                      never handed in
+//	hold's h.run call deleted             the direction that must complain says
+//	                                      nothing, and the tally names every rule
 //	over.wrong hollowed to ""             still red: Errorf fails the test
 //	                                      whatever string it is handed
 //	theRulesAsTheyStand emptied           readEveryRuleDeclared names every rule
@@ -127,11 +127,18 @@
 //	                                      harnesses are named
 //	a discarding reporter at the call     "too many arguments in call to hold"
 //	  site
-//	handout.each shortened to all[:1]     every rule that did not come out is
-//	                                      named, for all three harnesses
-//	a harness ranging over over.all       the same, for that harness
-//	  instead of going round
-//	handout.unhandled hollowed to nil     its own fault names it
+//	hold's loop shortened to rules[:1]    every rule it did not reach is named,
+//	                                      for all three harnesses
+//	the call guarded and the tally kept   the tally is the harness's own answer
+//	  (`if i == 0`)                       about the rule, so a rule not asked
+//	                                      about is a rule not answered for
+//	the read-set line guarded             the registry check names every rule
+//	a harness answering for a rule it     the tally names one never handed in and
+//	  was not asked about                 one never reached
+//	h.after guarded off                   the registry check's own fault is
+//	                                      silent in the direction that must
+//	                                      complain
+//	unvisited hollowed to nil             its own fault names it
 //	census.unaccounted hollowed to nil    its own fault names it
 //	obey's Errorf written Logf            it does not compile: the listener is
 //	                                      `interface{ Errorf(...) }`
@@ -143,6 +150,20 @@
 //	                                      was handed
 //	the init that calls hermetic.Pin      both drivers' route tables are named
 //	  hollowed                            as loads nothing pinned
+//
+// WHAT SURVIVED THE ATTACK ON THIS ROUND'S OWN FIX, measured and not argued.
+// The first shape of it counted what a harness handed ITSELF, and two evasions
+// went straight through: going round in full to fill the tally and then doing
+// the work over a subset, and shortening the slice before going round — both
+// GO_TEST_EXIT=0 with a real contract deleted. That is why a harness has no loop
+// and no slice at all now, and why the tally is the answer a harness gives about
+// the rule it was asked about rather than a line beside the call.
+//
+// One shape still passes: hold's loop rewritten to call the harness for one rule
+// and to write the tally BY HAND for the rest — five lines, a `continue`, and a
+// map written with a count nothing produced. It is not a token and it is not a
+// slip; it is the same class as deleting a rule outright, which this file has
+// always said it does not cover, and it is said here rather than left out.
 //
 // WHY IT CANNOT BE SMALLER, counted in points. A Go test fails by calling
 // Errorf. Somewhere there has to be a first call to it that nothing else is

@@ -77,8 +77,9 @@ import (
 // declared for the registry check to miss. That is the same exposure as
 // deleting a test, and it is four coordinated deletions rather than the one
 // character that used to do it. And the regress stops at hold and
-// TestTheLedgerHolds below; the package doc in subject.go names the twelve
-// lines, says why that set cannot be smaller, and says what the equivalent
+// TestTheLedgerHolds below; the package doc in subject.go names the five points
+// that are left, says why that set cannot be smaller counted in points rather
+// than in lines, and says — measured rather than asserted — what the equivalent
 // exposure is elsewhere.
 
 // complaint is one thing the ledger has to say. It carries the rule that said
@@ -285,18 +286,46 @@ const (
 )
 
 // harness is one of the three, and the registry that breaks it.
+//
+// A HARNESS HAS NO LOOP. Handing one a slice of rules put a range expression
+// inside it, and a range expression is a thing one token shortens: measured,
+// `rules[:1]` in either of the two per-rule harnesses was GO_TEST_EXIT=0 with a
+// real contract deleted, because every fault registry returns exactly ONE rule
+// and so `[:1]` is a no-op in the direction that must complain.
+//
+// Counting what a harness handed itself did not close it either. A harness can
+// go round in full to fill a tally and then do the work over a subset, or
+// shorten the slice before going round — both measured GREEN against the tally
+// this round first wrote. So the loop is gone from a harness altogether. hold
+// goes round the rules, and a harness is asked about one at a time.
 type harness struct {
 	name harnessName
-	// run reads the rules it is handed and says what they have to say to the
-	// listener it is handed — never to t, which is why the type is the recorder
-	// and not an interface with a nil in it. A harness that reported straight
-	// to t could only ever be run in the direction that must be silent, and
-	// that is what made two call sites necessary in the first place.
+	// run is asked about ONE rule, and says what it has to say to the listener
+	// it is handed — never to t, which is why the type is the recorder and not
+	// an interface with a nil in it. A harness that reported straight to t
+	// could only ever be run in the direction that must be silent, and that is
+	// what made two call sites necessary in the first place.
 	//
-	// It is handed a HANDOUT and not a slice, because a slice is a thing you
-	// write a range expression over and a range expression is a thing one token
-	// shortens. See handout.
-	run func(t *testing.T, heard *recorder, over *handout)
+	// IT ANSWERS WITH THE RULE IT WAS ASKED ABOUT, and that answer is what hold
+	// tallies. A tally written beside the call rather than out of it is a tally
+	// anything between the two can diverge from: measured, `if h.run != nil &&
+	// i == 0` in hold's loop — the tally kept, the call guarded — was
+	// GO_TEST_EXIT=0 with a real contract deleted. There is nothing between
+	// them now; skipping a rule means not answering for it, and not answering
+	// for it is named.
+	//
+	// Answering for a rule and then doing nothing with it is the one shape left,
+	// and it is not free either: it takes naming a rule, and the registry that
+	// breaks a harness is a rule with a name of its own, so a harness that
+	// answers about one name only says nothing in the direction that must
+	// complain.
+	run func(t *testing.T, heard *recorder, r rule) ruleName
+	// after is asked once, about the whole SET hold went round — a registry
+	// check is a question about all of them and not about any one. It is handed
+	// the set hold BUILT while going round, in the same loop as the tally, so a
+	// shortened loop shortens this too: the tally names the rules that went
+	// missing, and the harness that reads the set names them again.
+	after func(t *testing.T, heard *recorder, read map[string]bool)
 	// breaks is a registry this harness must complain about — its fault, in
 	// the same sense a rule's violating ledger is one.
 	breaks func(t *testing.T) []rule
@@ -304,9 +333,9 @@ type harness struct {
 
 func ledgerHarnesses() []harness {
 	return []harness{
-		{harnessTheSuiteObeysTheLedger, readTheLedgerOverTheSuite, aRuleWithSomethingToSayAboutEverything},
-		{harnessTheLedgerObeysItsOwnRules, proveEveryRule, aRuleThatIsDecoration},
-		{harnessEveryRuleDeclaredIsRead, readEveryRuleDeclared, aRegistryOneShort},
+		{harnessTheSuiteObeysTheLedger, readOneRuleOverTheSuite, nil, aRuleWithSomethingToSayAboutEverything},
+		{harnessTheLedgerObeysItsOwnRules, proveOneRule, nil, aRuleThatIsDecoration},
+		{harnessEveryRuleDeclaredIsRead, theRuleItself, readEveryRuleDeclared, aRegistryOneShort},
 	}
 }
 
@@ -342,71 +371,35 @@ func whatBreaksIt(t *testing.T, h harness) registry {
 	return registry{h.breaks(t), true}
 }
 
-// handout is the rules AS A HARNESS RECEIVES THEM: a thing you go ROUND, which
-// writes down what it handed over as it goes.
-//
-// THE RANGE EXPRESSION WAS THE HOLE, one level in from where the last round
-// closed it. Round eight closed the list HANDED TO a harness — readEveryRuleDeclared
-// is given the registry rather than fetching it, so a registry one entry short
-// is a thing it can be shown — and left the list each harness GOES ROUND wide
-// open. Measured: `for _, r := range rules` written `rules[:1]` in
-// readTheLedgerOverTheSuite is GO_TEST_EXIT=0 with the LastDeployKeyReadOnly
-// contract deleted from optional.go, and the same token in proveEveryRule is
-// GO_TEST_EXIT=0 with checkOrphan hollowed — each of those deletions being
-// GO_TEST_EXIT=1 on its own, each truncation gofmt clean and vet clean. Nothing
-// noticed, because every fault registry returns EXACTLY ONE rule: `[:1]` is a
-// no-op in the direction that must complain and a mass switch-off in the
-// direction that must be silent.
-//
-// So there is no slice to range over and no index to stop short of. A harness
-// reaches a rule by going round, going round writes down what came out, and
-// hold reads the tally back against what it handed in — which is 81dace9c's
-// sentence, "a sample cannot prove what a program can do", applied to the loop
-// itself rather than to the list the loop is given.
-//
-// THE ONE LOOP LEFT IS each's OWN, and it is inside the tally: shortening it
-// hands fewer rules out than were handed in, and every rule that did not come
-// out is named. A harness that reads the field directly instead of going round
-// writes nothing down at all, and every rule is named.
-type handout struct {
-	all []rule
-	out map[ruleName]int
-}
-
-func handOut(rules []rule) *handout { return &handout{all: rules, out: map[ruleName]int{}} }
-
-// each hands every rule over, in order, writing each one down as it goes. It is
-// the only way to reach what is in a handout.
-func (h *handout) each(f func(rule)) {
-	for _, r := range h.all {
-		h.out[r.name]++
-		f(r)
-	}
-}
-
-// unhandled is every rule handed IN that going round did not hand OUT the same
+// unvisited is every rule HANDED IN that going round did not reach the same
 // number of times — a loop that stopped short, a loop that never ran, and a
 // tally somebody filled in by hand, which is what going round a subset looks
 // like once you have started counting.
-func (h *handout) unhandled() []string {
+//
+// The base it compares against is the list hold was handed, read again here
+// rather than taken from the loop, so shortening the range expression shortens
+// one side only and every rule that went missing is named. And the list itself
+// is closed one level out: readEveryRuleDeclared is a harness, so a registry
+// with an entry taken out of it fails under its own name.
+func unvisited(rules []rule, went map[ruleName]int) []string {
 	want := map[ruleName]int{}
-	for _, r := range h.all {
+	for _, r := range rules {
 		want[r.name]++
 	}
 	var out []string
 	for name, n := range want {
-		switch got := h.out[name]; {
+		switch got := went[name]; {
 		case got < n:
-			out = append(out, fmt.Sprintf("%s was handed to this harness %d time(s) and came out %d: the loop that reads them stopped short of it — or never started — so it was read over nothing",
+			out = append(out, fmt.Sprintf("%s was handed to this harness %d time(s) and reached it %d: the loop that runs them stopped short of it — or never started — so it was read over nothing",
 				name, n, got))
 		case got > n:
-			out = append(out, fmt.Sprintf("%s was handed to this harness %d time(s) and came out %d: going round hands each rule out once, so something wrote into the tally rather than going round",
+			out = append(out, fmt.Sprintf("%s was handed to this harness %d time(s) and reached it %d: going round reaches each rule once, so something wrote into the tally rather than going round",
 				name, n, got))
 		}
 	}
-	for name, got := range h.out {
+	for name, got := range went {
 		if want[name] == 0 {
-			out = append(out, fmt.Sprintf("%s came out %d time(s) and was never handed in, so the rules this harness read are not the rules it was given",
+			out = append(out, fmt.Sprintf("%s reached this harness %d time(s) and was never handed in, so the rules it read are not the rules it was given",
 				name, got))
 		}
 	}
@@ -426,10 +419,17 @@ func (h *handout) unhandled() []string {
 func hold(t *testing.T, ran *census, h harness, over registry) {
 	ran.write(heldRun{h.name, over.complains})
 	heard := &recorder{}
-	given := handOut(over.rules)
-	h.run(t, heard, given)
-	if heard.failed != over.complains || len(given.unhandled()) > 0 {
-		t.Errorf("%s", over.wrong(h, heard, given))
+	went := map[ruleName]int{}
+	read := map[string]bool{}
+	for _, r := range over.rules {
+		read[string(r.name)] = true
+		went[h.run(t, heard, r)]++
+	}
+	if h.after != nil {
+		h.after(t, heard, read)
+	}
+	if heard.failed != over.complains || len(unvisited(over.rules, went)) > 0 {
+		t.Errorf("%s", over.wrong(h, heard, unvisited(over.rules, went)))
 	}
 }
 
@@ -439,8 +439,8 @@ func hold(t *testing.T, ran *census, h harness, over registry) {
 // that reason: Errorf fails the test whatever string it is handed, so a
 // hollowed message is still a red test, and the lines that must be correct stay
 // the five statements above and no more.
-func (over registry) wrong(h harness, heard *recorder, given *handout) string {
-	if missed := given.unhandled(); len(missed) > 0 {
+func (over registry) wrong(h harness, heard *recorder, missed []string) string {
+	if len(missed) > 0 {
 		return fmt.Sprintf("%q was run %s and did not go round every rule it was handed:\n\t%s\nso whatever it did say was said over a subset, and the rules that never came out were read over nothing. It also said:\n%s",
 			h.name, theDirection(over.complains), strings.Join(missed, "\n\t"), heard)
 	}
@@ -531,6 +531,14 @@ func (c *census) unaccounted(src *source) []string {
 // names a loop that went round a subset of the harnesses instead of letting it
 // pass.
 func TestTheLedgerHolds(t *testing.T) {
+	l := theLedger(t)
+	counts := map[kind]int{}
+	for _, a := range l.pop {
+		counts[a.kind]++
+	}
+	t.Logf("%d cases: %d contract, %d plumbing", len(l.pop), counts[contract], counts[plumbing])
+	t.Logf("%d proofs against %d faults the fake forge can be told to have", len(l.proofs), len(l.src.faults))
+
 	ran := &census{}
 	for _, h := range ledgerHarnesses() {
 		t.Run(string(h.name), func(t *testing.T) {
@@ -615,74 +623,70 @@ var _ = harness{name: harnessNobodyRunsEither}
 	}
 }
 
-// TestGoingRoundTheRulesIsNotSatisfiedByAnythingButEachOnce is the handout's
-// own fault, and it is why hold's verdict can carry the tally: a tally that
-// answers "nothing to report" whatever it is shown is the membership check all
-// over again.
+// TestTheRulesReachedAreCountedAgainstTheRulesHandedIn is the tally's own
+// fault, and it is why hold's verdict can carry it: a tally that answers
+// "nothing to report" whatever it is shown is the membership check all over
+// again.
 //
-// So it is shown four handouts: one gone round in full, which it must call
-// complete; one gone round short, which it must name — that is `rules[:1]` in a
-// harness, and it is the hole this closes; one never gone round at all, which
-// is a harness that reads the field instead of going round; and one whose tally
-// was written into without going round, which is what filling it in advance
-// looks like from here.
-func TestGoingRoundTheRulesIsNotSatisfiedByAnythingButEachOnce(t *testing.T) {
+// So it is shown four tallies: one complete, which it must call complete; one
+// short by a single rule, which it must name — that is `over.rules[:1]` in
+// hold, and it is the hole this closes; one empty, which is a loop that never
+// ran; and one written into without going round, which is what filling it in
+// advance looks like from here.
+func TestTheRulesReachedAreCountedAgainstTheRulesHandedIn(t *testing.T) {
 	rules := ledgerRules()
 	if len(rules) < 2 {
-		t.Fatalf("the ledger declares fewer than two rules, so a handout gone round short is not a handout")
+		t.Fatalf("the ledger declares fewer than two rules, so a tally short by one is not a tally")
+	}
+	full := func() map[ruleName]int {
+		out := map[ruleName]int{}
+		for _, r := range rules {
+			out[r.name]++
+		}
+		return out
 	}
 
-	full := handOut(rules)
-	full.each(func(rule) {})
-	if got := full.unhandled(); len(got) > 0 {
-		t.Fatalf("a handout gone round in full reported %v, so it names rules that did come out and nothing it says can be read", got)
+	if got := unvisited(rules, full()); len(got) > 0 {
+		t.Fatalf("a complete tally reported %v, so it names rules that were reached and nothing it says can be read", got)
 	}
 
 	for i, r := range rules {
-		short := handOut(rules)
-		short.each(func(seen rule) {
-			if seen.name == r.name {
-				short.out[seen.name]--
-			}
-		})
-		if len(short.unhandled()) == 0 {
-			t.Errorf("%s was handed over and never came out, and the tally did not notice: a loop that stopped short of position %d — which is what `rules[:%d]` is — would pass", r.name, i, i)
+		short := full()
+		short[r.name]--
+		if len(unvisited(rules, short)) == 0 {
+			t.Errorf("%s was handed over and never reached, and the tally did not notice: a loop that stopped short of position %d — which is what `over.rules[:%d]` in hold is — would pass", r.name, i, i)
 		}
 	}
 
-	never := handOut(rules)
-	if len(never.unhandled()) != len(rules) {
-		t.Errorf("a handout nothing ever went round named %d rules and not %d, so a harness that reads the rules without going round them — or one that is never run at all — would pass", len(never.unhandled()), len(rules))
+	if got := unvisited(rules, map[ruleName]int{}); len(got) != len(rules) {
+		t.Errorf("a tally nothing was ever written into named %d rules and not %d, so a loop that never ran — or one whose body does not tally — would pass", len(got), len(rules))
 	}
 
-	written := handOut(rules)
-	written.each(func(rule) {})
-	written.out[rules[0].name]++
-	if len(written.unhandled()) == 0 {
+	written := full()
+	written[rules[0].name]++
+	if len(unvisited(rules, written)) == 0 {
 		t.Errorf("%s was written into the tally twice and it did not notice, so filling the tally in and then going round a subset would pass", rules[0].name)
 	}
 
-	stranger := handOut(rules)
-	stranger.each(func(rule) {})
-	stranger.out[ruleName("a rule this handout was never given")]++
-	if len(stranger.unhandled()) == 0 {
-		t.Errorf("a rule that was never handed in came out anyway and the tally did not notice, so a harness reading some other registry would pass")
+	stranger := full()
+	stranger[ruleName("a rule this harness was never given")]++
+	if len(unvisited(rules, stranger)) == 0 {
+		t.Errorf("a rule that was never handed in was reached anyway and the tally did not notice, so a loop over some other registry would pass")
 	}
 }
 
-// readTheLedgerOverTheSuite is the ledger read over the suite as it stands.
-func readTheLedgerOverTheSuite(t *testing.T, heard *recorder, over *handout) {
+// readOneRuleOverTheSuite is one rule read over the suite as it stands.
+func readOneRuleOverTheSuite(t *testing.T, heard *recorder, r rule) ruleName {
 	l := theLedger(t)
-	counts := map[kind]int{}
-	for _, a := range l.pop {
-		counts[a.kind]++
-	}
-	t.Logf("%d cases: %d contract, %d plumbing", len(l.pop), counts[contract], counts[plumbing])
-	t.Logf("%d proofs against %d faults the fake forge can be told to have", len(l.proofs), len(l.src.faults))
-	over.each(func(r rule) {
-		t.Run(string(r.name), func(t *testing.T) { obey(heard, l, r) })
-	})
+	t.Run(string(r.name), func(t *testing.T) { obey(heard, l, r) })
+	return r.name
 }
+
+// theRuleItself is the run of a harness whose whole question is about the SET.
+// It exists so that there is no nil to guard, and so the tally is written the
+// same way for all three: by the answer a harness gives about the rule it was
+// asked about.
+func theRuleItself(_ *testing.T, _ *recorder, r rule) ruleName { return r.name }
 
 // aRuleWithSomethingToSayAboutEverything is the report's fault: a registry of
 // one rule that complains about any ledger at all. A report that runs no rule,
@@ -716,38 +720,37 @@ func aRegistryOneShort(t *testing.T) []rule {
 	return rules[1:]
 }
 
-// proveEveryRule hands each rule every ledger that breaks it and requires the
-// rule to say so, under its own name, THROUGH the loop that reports it.
+// proveOneRule hands a rule every ledger that breaks it and requires the rule to
+// say so, under its own name, THROUGH the loop that reports it.
 //
-// It is a function of the rules it is given so that the thing RUNNING them can
-// itself be handed a rule that breaks it — see the harnesses below. A rule that
-// has been hollowed says nothing and fails here; a rule declared with no
-// violation behind it fails here too; and so does a reporting loop that hears a
-// rule and drops what it says.
-func proveEveryRule(t *testing.T, heard *recorder, over *handout) {
-	over.each(func(r rule) {
-		t.Run(string(r.name), func(t *testing.T) {
-			if len(r.violates) == 0 {
-				heard.Errorf("%s has no ledger that breaks it, so nothing knows whether it still holds — which is exactly what it accuses an assertion of", r.name)
-				return
-			}
-			for _, violate := range r.violates {
-				t.Run(theShapeOf(violate), func(t *testing.T) {
-					broken := violate(t)
-					for _, c := range r.check(broken) {
-						if c.rule != r.name {
-							heard.Errorf("%s: a ledger that breaks %q was answered under %q instead: %s", theShapeOf(violate), r.name, c.rule, c)
-						}
+// It is a function of ONE rule so that the thing running the rules can itself be
+// handed a rule that breaks it — see the harnesses above — without there being a
+// loop in here to shorten. A rule that has been hollowed says nothing and fails
+// here; a rule declared with no violation behind it fails here too; and so does
+// a reporting loop that hears a rule and drops what it says.
+func proveOneRule(t *testing.T, heard *recorder, r rule) ruleName {
+	t.Run(string(r.name), func(t *testing.T) {
+		if len(r.violates) == 0 {
+			heard.Errorf("%s has no ledger that breaks it, so nothing knows whether it still holds — which is exactly what it accuses an assertion of", r.name)
+			return
+		}
+		for _, violate := range r.violates {
+			t.Run(theShapeOf(violate), func(t *testing.T) {
+				broken := violate(t)
+				for _, c := range r.check(broken) {
+					if c.rule != r.name {
+						heard.Errorf("%s: a ledger that breaks %q was answered under %q instead: %s", theShapeOf(violate), r.name, c.rule, c)
 					}
-					said := &recorder{}
-					if n := obey(said, broken, r); n == 0 || !said.failed {
-						heard.Errorf("%s was handed %s, a ledger that breaks it, and %d complaints reached the report (failed=%v): it is decoration, and hollowing it — or the loop that reports it — would go unnoticed",
-							r.name, theShapeOf(violate), n, said.failed)
-					}
-				})
-			}
-		})
+				}
+				said := &recorder{}
+				if n := obey(said, broken, r); n == 0 || !said.failed {
+					heard.Errorf("%s was handed %s, a ledger that breaks it, and %d complaints reached the report (failed=%v): it is decoration, and hollowing it — or the loop that reports it — would go unnoticed",
+						r.name, theShapeOf(violate), n, said.failed)
+				}
+			})
+		}
 	})
+	return r.name
 }
 
 // reporter is where a complaint goes: obey takes one so that a rule can be read
@@ -767,10 +770,8 @@ type reporter interface{ Errorf(string, ...any) }
 // asked from outside it, over the rule names read out of this file's own source,
 // and it is asked of the registry it is HANDED so that a registry one entry
 // short is a thing it can be shown.
-func readEveryRuleDeclared(t *testing.T, heard *recorder, over *handout) {
+func readEveryRuleDeclared(t *testing.T, heard *recorder, read map[string]bool) {
 	src := suiteSource(t)
-	read := map[string]bool{}
-	over.each(func(r rule) { read[string(r.name)] = true })
 	t.Run("as it stands", func(t *testing.T) {
 		for _, name := range unreadRules(src, read) {
 			heard.Errorf("%s is declared and no registry entry reads it, so nothing computes it over anything", name)
