@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -351,7 +352,55 @@ func receiver(fn *ast.FuncDecl) string {
 	return id.Name
 }
 
-// parsePackage parses this package's own non-test source.
+// ── THE SCAN'S OWN INPUT ─────────────────────────────────────────────────
+//
+// EVERY CHECK IN THIS FILE IS A SCAN OVER THIS PACKAGE'S SOURCE, AND NOTHING
+// SAID WHICH SOURCE. parsePackage filtered by suffix and asserted only that a
+// package called "backend" came back, so one line inside the filter —
+//
+//	return !strings.HasSuffix(fi.Name(), "_test.go") && fi.Name() != "errors.go"
+//
+// took a file out of EVERY census at once. Go lets a method on any type be
+// declared in ANY file of its package, so that is not a theoretical hole: a new
+// write method on the handle, declared in errors.go rather than in section.go,
+// fails by name in the committed tree and is GREEN with that one line added.
+// One line, and it reaches further than any single line the doc used to count:
+// hiding that same write through the doors below takes two of them hollowed.
+//
+// SO THE SCAN OWNS ITS INPUT, and it owns it from three sides that disagree in
+// different ways: backendFiles is what it EXPECTS, sourceFiles is what is
+// ACTUALLY THERE, and the parser answers with what it READ. A file added to
+// this package is an edit to the list below; a file the filter drops is a
+// failure by name; and a file added and dropped in one go — the two-line
+// version of the same attack — is caught by the list not naming it.
+var backendFiles = []string{
+	"authz.go", "config.go", "doc.go", "errors.go", "jobid.go", "jobs.go",
+	"leader.go", "queue.go", "reconcile.go", "rpc.go", "runner.go",
+	"section.go", "service.go", "store.go",
+}
+
+// sourceFiles is the DIRECTORY'S OWN ANSWER: every .go file here that is not a
+// test. It applies no build constraints on purpose — the parser reads a file
+// the build might exclude, and a scan that sees MORE than the build is the safe
+// direction of that difference, where a scan that sees less is the hole above.
+func sourceFiles(t *testing.T) []string {
+	t.Helper()
+
+	entries, err := os.ReadDir(".")
+	require.NoError(t, err)
+
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		out = append(out, e.Name())
+	}
+	return out
+}
+
+// parsePackage parses this package's own non-test source, AND CHECKS THAT WHAT
+// IT PARSED IS WHAT IS THERE.
 func parsePackage(t *testing.T) *ast.Package {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -360,6 +409,19 @@ func parsePackage(t *testing.T) *ast.Package {
 	}, 0)
 	require.NoError(t, err)
 	require.Contains(t, parsed, "backend")
+
+	var read []string
+	for name := range parsed["backend"].Files {
+		read = append(read, filepath.Base(name))
+	}
+	require.ElementsMatch(t, backendFiles, read,
+		"the scan read a different set of files than the one it expects: a file added to this "+
+			"package belongs in backendFiles, and a file the filter skips is a file every census "+
+			"in here is blind to")
+	require.ElementsMatch(t, backendFiles, sourceFiles(t),
+		"and the files on disk are that same set — a file added to the package and left out of "+
+			"backendFiles is one the parser could be told to skip without any list disagreeing")
+
 	return parsed["backend"]
 }
 

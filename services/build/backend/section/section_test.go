@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -132,6 +133,14 @@ func producers(t *testing.T, decls []*ast.FuncDecl) []string {
 	return out
 }
 
+// declarations is this package's own source, AND IT PINS WHICH SOURCE THAT IS.
+//
+// The scan above asserts an ABSENCE — nothing exported takes a value from its
+// caller — and an absence is only as good as the file set it was measured over.
+// A filter that skips a file by name, or a second file added beside this one,
+// would make the emptiness a fact about the scan rather than about the package.
+// So what it expects to read is written down, and what is on disk has to agree
+// with it: a second file here is an edit to this list.
 func declarations(t *testing.T) []*ast.FuncDecl {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -141,13 +150,41 @@ func declarations(t *testing.T) []*ast.FuncDecl {
 	require.NoError(t, err)
 	require.Contains(t, pkgs, "section")
 
+	var read []string
 	var out []*ast.FuncDecl
-	for _, file := range pkgs["section"].Files {
+	for name, file := range pkgs["section"].Files {
+		read = append(read, filepath.Base(name))
 		for _, decl := range file.Decls {
 			if fn, ok := decl.(*ast.FuncDecl); ok {
 				out = append(out, fn)
 			}
 		}
+	}
+
+	require.Equal(t, []string{"section.go"}, read,
+		"the whole of this package is one file, and the scan above reads it — a file it does "+
+			"not read is a declaration the absence it asserts was never measured over")
+	require.ElementsMatch(t, read, sourceFiles(t),
+		"and the files on disk are that same one: a file added here and left out of the line "+
+			"above is one the parser could be told to skip with nothing disagreeing")
+
+	return out
+}
+
+// sourceFiles is the directory's own answer: every .go file here that is not a
+// test.
+func sourceFiles(t *testing.T) []string {
+	t.Helper()
+
+	entries, err := os.ReadDir(".")
+	require.NoError(t, err)
+
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		out = append(out, e.Name())
 	}
 	return out
 }

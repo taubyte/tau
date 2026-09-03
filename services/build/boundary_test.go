@@ -44,6 +44,14 @@ const (
 
 // imports returns the import paths of the non-test files of the package in
 // dir, and whether the directory exists at all.
+//
+// IT CHECKS THAT IT READ EVERY FILE THAT IS THERE, because a scan that filters
+// its own input by name proves nothing about the files it skipped. One line in
+// the filter — `&& fi.Name() != "service.go"` — would take a file out of every
+// check below at once, and every check below is an ABSENCE: an import that is
+// not there. An absence measured over a file set nobody pinned is an absence of
+// evidence. sources() is the directory's own answer and is the same rule this
+// filter is meant to be applying.
 func imports(t *testing.T, dir string) ([]string, bool) {
 	t.Helper()
 
@@ -57,9 +65,10 @@ func imports(t *testing.T, dir string) ([]string, bool) {
 	}, parser.ImportsOnly)
 	require.NoError(t, err)
 
-	var out []string
+	var read, out []string
 	for _, pkg := range pkgs {
-		for _, f := range pkg.Files {
+		for name, f := range pkg.Files {
+			read = append(read, filepath.Base(name))
 			for _, spec := range f.Imports {
 				path, err := strconv.Unquote(spec.Path.Value)
 				require.NoError(t, err)
@@ -67,6 +76,16 @@ func imports(t *testing.T, dir string) ([]string, bool) {
 			}
 		}
 	}
+
+	var there []string
+	for name := range sources(t, dir) {
+		there = append(there, name)
+	}
+	require.ElementsMatch(t, there, read,
+		"the import scan of %s read a different set of files than the directory holds — a file "+
+			"it skips is a file every check below is blind to, and every check below is an "+
+			"absence", dir)
+
 	return out, true
 }
 
