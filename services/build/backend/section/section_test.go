@@ -7,8 +7,10 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -448,6 +450,97 @@ func TestDoReportsTheBodyAndSurvivesAPanic(t *testing.T) {
 	require.False(t, l.Held(), "a panicking body must not hold the table forever")
 	require.ErrorIs(t, escaped.Write(func() error { return nil }), ErrStale)
 }
+
+// THE IDENTITY DIES BEFORE THE EXCLUSION IS RELEASED, and this is a test for
+// the ORDER OF DO'S TWO CLOSING STATEMENTS rather than for their effect.
+//
+// Every other test in this package, and the one named for this ordering in the
+// package that uses it, takes its measurements AFTER Do has returned — when
+// both statements have run, whichever order they are in. So reversing them,
+//
+//	defer func() {
+//	        l.mu.Unlock()
+//	        l.held.Store(0)
+//	}()
+//
+// left this package green and its caller green in two runs out of five, and the
+// sentence in Do saying the order matters was carried by nothing.
+//
+// THE HARM IS NOT THAT THE OUTGOING SECTION LIVES TOO LONG. It is that the
+// store lands on the INCOMING one: a goroutine waiting on the mutex takes it
+// the instant it is released, mints its own identity, puts it in that same
+// field — and the section on its way out then writes 0 over it. A body that
+// entered correctly, holding the exclusion, finds its own writes refused with
+// ErrStale, which is the one thing this package promises cannot happen.
+//
+// SO IT IS MEASURED UNDER CONTENTION, and that is not decoration. An uncontended
+// Unlock hands nothing over: the goroutine that unlocks keeps running and gets
+// to the store on the next instruction, so the window is a preemption wide. A
+// mutex somebody has been waiting on for a millisecond enters starvation mode
+// and hands the lock DIRECTLY to the waiter, which is exactly the interleaving —
+// eight goroutines holding it long enough to starve each other reproduce it in
+// ten runs out of ten, where one goroutine handing over to one other found it in
+// none.
+//
+// IT IS ONE-SIDED. In the committed order the store happens before the unlock,
+// which happens before any waiter can take the mutex, so no interleaving can
+// clear a live identity and no write can be refused. There is nothing here to
+// tune and nothing to flake: a failure is the ordering, not the timing.
+func TestTheIdentityDiesBeforeTheExclusionIsReleased(t *testing.T) {
+	var l Lock[string]
+	var cleared atomic.Bool
+	refused := make(chan error, 64)
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 200 {
+				err := l.Do(watchful{lock: &l, cleared: &cleared}, func(h Holding[string]) error {
+					return h.Write(func() error { return nil })
+				})
+				if err != nil {
+					select {
+					case refused <- err:
+					default:
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(refused)
+
+	require.NoError(t, <-refused, "a section that entered correctly must not have its writes refused")
+	require.False(t, cleared.Load(),
+		"a holding was cleared while another section's read was running under it")
+}
+
+// watchful is a source that watches the identity WHILE IT READS. A source's
+// First runs with the mutex held and this holding already minted, so a Lock
+// that reports itself unheld there can only have been cleared by somebody
+// else's section on its way out. It is the second detector; the first is the
+// refusal that follows.
+type watchful struct {
+	lock    *Lock[string]
+	cleared *atomic.Bool
+}
+
+func (w watchful) Subject() string { return "the section coming in" }
+
+func (w watchful) First() (string, bool, error) {
+	for range 16 {
+		if !w.lock.Held() {
+			w.cleared.Store(true)
+			break
+		}
+		runtime.Gosched()
+	}
+	return "the record", true, nil
+}
+
+func (w watchful) Again() (string, bool, error) { return "the record", true, nil }
 
 // mutable is a source whose answers a test can move, so that "the subject is
 // snapshotted" and "Reread reads again" are shown rather than asserted.
