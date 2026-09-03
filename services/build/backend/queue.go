@@ -5,7 +5,6 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 )
 
@@ -229,12 +228,4 @@ func (s *Service) readRecord(id string) (jobRecord, bool, error) {
 		return jobRecord{}, false, errInternal("%v", err)
 	}
 	return rec, true, nil
-}
-
-func set(key string, value []byte) raft.BatchOp {
-	return raft.BatchOp{Set: &raft.SetCommand{Key: key, Value: value}}
-}
-
-func del(key string) raft.BatchOp {
-	return raft.BatchOp{Delete: &raft.DeleteCommand{Key: key}}
 }

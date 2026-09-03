@@ -14,6 +14,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/services/build/backend/row"
 )
 
 func enqueue(t *testing.T, h *harness, key, ref, commit string) (string, error) {
@@ -297,13 +298,17 @@ func TestACorruptRecordIsInternalRatherThanASecondJob(t *testing.T) {
 // set and del are the only two shapes of write this package makes, and Store
 // deliberately offers no single-key Set or Delete: a single-key write is a way
 // to write half a transition.
+//
+// THEY ARE ALSO THE ONLY TWO EXPRESSIONS THAT MAKE A ROW AT ALL, which is why
+// what they return is read through row.Ops here rather than off the value: a
+// row's one field is unexported in another package, so there is nothing on it
+// to read, and nothing on it to fill either (store.go).
 func TestTheOnlyWritesAreBatchOps(t *testing.T) {
-	require.NotNil(t, set("k", nil).Set)
-	require.Nil(t, set("k", nil).Delete)
-	require.NotNil(t, del("k").Delete)
-	require.Nil(t, del("k").Set)
-
-	var _ []raft.BatchOp = []raft.BatchOp{set("a", nil), del("b")}
+	ops := row.Ops([]row.Op{set("a", []byte("v")), del("b")})
+	require.Equal(t, []raft.BatchOp{
+		{Set: &raft.SetCommand{Key: "a", Value: []byte("v")}},
+		{Delete: &raft.DeleteCommand{Key: "b"}},
+	}, ops)
 }
 
 // The repair path's push is its own entry too.
@@ -425,11 +430,12 @@ type staleStore struct {
 }
 
 // commitElsewhere is an entry another leader wrote and this node has accepted
-// and not yet applied.
-func (s *staleStore) commitElsewhere(ops ...raft.BatchOp) {
+// and not yet applied. It takes the rows rather than the raft ops so that the
+// entry a test stands in for is composed the way this package composes one.
+func (s *staleStore) commitElsewhere(rows ...row.Op) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.unapplied = append(s.unapplied, ops...)
+	s.unapplied = append(s.unapplied, row.Ops(rows)...)
 }
 
 // behindFrom is the same lag arranged so that it starts AFTER a caller has

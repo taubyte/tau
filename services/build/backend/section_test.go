@@ -11,8 +11,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/services/build/backend/row"
 	"github.com/taubyte/tau/services/build/backend/section"
 )
 
@@ -351,6 +351,12 @@ func TestAStopCarriedOutOfItsSectionCannotKillALaterRun(t *testing.T) {
 // scan — which matched a selector whose X is the ident jobLock — saw one clean
 // section. There is no mutex here to unlock any more, and nothing but Do
 // touches the one there is.
+//
+// WHAT IS CHECKED HERE IS THE EFFECT AND NOT THE ORDER, and the difference was
+// worth a round. Both statements have run by the time anything below looks, so
+// reversing the two inside Do's defer leaves this green — the ordering itself
+// is measured where it is written, under contention, by
+// section.TestTheIdentityDiesBeforeTheExclusionIsReleased.
 func TestTheHandleDiesBeforeTheExclusionIsReleased(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -720,7 +726,7 @@ func BenchmarkTheEntry(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			ops := []raft.BatchOp{
+			ops := []row.Op{
 				set(jobRecordKey(id), value),
 				set(projectIndexKey(rec.ProjectID, id), nil),
 				set(openIndexKey(rec.RepositoryKey, id), nil),

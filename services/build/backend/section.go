@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/pkg/v2/queue"
+	"github.com/taubyte/tau/services/build/backend/row"
 	"github.com/taubyte/tau/services/build/backend/section"
 )
 
@@ -104,6 +104,11 @@ import (
 //	a write cannot name another job every key an entry writes is composed from
 //	                                the handle's own subject; a row of another
 //	                                job has no expression
+//	a row cannot be composed at all an entry holds []row.Op, whose one field is
+//	                                unexported in another package, so set() and
+//	                                del() are the only expressions that make
+//	                                one — `append(e.ops, raft.BatchOp{…})` does
+//	                                not compile
 //	a helper carries the handle      ...or it cannot write at all, which is the
 //	                                same property stated by a parameter list
 //	                                rather than by a scan
@@ -118,9 +123,11 @@ import (
 // WHAT IS STILL A GUARD, in population_test.go, because no type can say it:
 // which functions may reach Store.Batch and the queue's three paired writes at
 // all — a body that ignores the handle and calls s.store.Batch itself is a
-// write nothing here can prevent, only enumerate — plus which expressions may
-// build a raft.BatchOp, and that the read is taken in one place. Those fail at
-// review time and cover the half this cannot.
+// write nothing here can prevent, only enumerate — WHICH KEY each row builds,
+// and that the read is taken in one place. Those fail at review time and cover
+// the half this cannot. "Which expressions may build a raft.BatchOp" was on
+// that list until the ninth round and is the compiler's now: there is no such
+// expression outside backend/row.
 //
 // WHAT IT COSTS. One mutex acquisition and two atomic stores per section, one
 // atomic store on the way out, and one atomic load plus a nil check per write —
@@ -388,13 +395,28 @@ func stale(err error) error { return errInternal("%w", err) }
 // always the point. There is no such parameter now. A body names a ROW and the
 // entry builds the key.
 //
-// THE OPS ARE NEVER HANDED IN AND NEVER HANDED OUT. Every raft.BatchOp this
-// package makes is made by one of the row methods below, on a key that method
-// composed from the handle, and there is no method here that takes a key at
-// all. population_test.go enumerates that from the other side.
+// THE OPS ARE NEVER HANDED IN AND NEVER HANDED OUT. Every row this package
+// makes is made by one of the row methods below, on a key that method composed
+// from the handle, and there is no method here that takes a key at all.
+// population_test.go enumerates that from the other side.
+//
+// AND THE NINTH ROUND IS THE ELEMENT TYPE. The parameter was gone and the rows
+// were composed, and a row was still an ordinary raft.BatchOp — an exported
+// struct with exported fields — so one line inside stated.anchor,
+//
+//	s.ops = append(s.ops, raft.BatchOp{Set: &raft.SetCommand{
+//	        Key: refLastKey("github.com/evil/repo", "refs/heads/main"), …}})
+//
+// added a second row to that entry naming ANOTHER REPOSITORY'S ref anchor, and
+// the whole service stayed green: every guard over the rows is keyed on which
+// FUNCTION was called, and composing a struct calls nothing. The element type
+// is row.Op now (backend/row), whose one field is unexported in a package this
+// one cannot reach into, so that line does not compile — and the invariant
+// doc.go states about the rows is a fact of the program rather than a comment
+// with a scan behind it.
 type entry struct {
 	h   *held
-	ops []raft.BatchOp
+	ops []row.Op
 	// err carries the one failure that can happen while an entry is being
 	// built — a record that will not encode — to commit(), so that a chain
 	// reads as one expression instead of five branches. Nothing is written on
@@ -425,7 +447,7 @@ func (h *held) writes() *entry {
 	// FOUR IS THE WIDEST ENTRY THIS PACKAGE WRITES — a terminal record, its
 	// open row, its retention row and the ref anchor — so the rows below never
 	// regrow the slice a body composes them into.
-	return &entry{h: h, ops: make([]raft.BatchOp, 0, 4)}
+	return &entry{h: h, ops: make([]row.Op, 0, 4)}
 }
 
 // THERE IS NO put(key) AND NO drop(key). There was, for one draft, and it was
@@ -433,9 +455,10 @@ func (h *held) writes() *entry {
 // method any body holding a handle could call with any key at all, and
 // `j.writes().put(refLastKey("github.com/evil/repo", "refs/heads/main"), sha)`
 // inside ends() left the whole suite GREEN. A door scoped by the SHAPE of its
-// argument is a door anybody can walk through. So set() and del() are called by
-// the row methods below and nowhere else, each on a key it composed itself, and
-// population_test.go enumerates that from the other side.
+// argument is a door anybody can walk through. So set() and del() (store.go,
+// where the keys are) are called by the row methods below and nowhere else,
+// each on a key it composed itself, and population_test.go enumerates that from
+// the other side.
 
 // record writes THIS JOB'S record.
 //
@@ -554,7 +577,7 @@ func (e *entry) commit(what string) error {
 		return e.err
 	}
 	if err := e.h.under(func() error {
-		return e.h.s.store.Batch(e.ops, e.h.s.cfg.Queue.ApplyTimeout)
+		return e.h.s.store.Batch(row.Ops(e.ops), e.h.s.cfg.Queue.ApplyTimeout)
 	}); err != nil {
 		return refused(err, "%s job %s", what, e.h.id())
 	}

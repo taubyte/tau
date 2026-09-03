@@ -9,6 +9,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/services/build/backend/row"
 )
 
 // store.go is the key layout — the only file in this package that builds a
@@ -233,6 +234,31 @@ func idFromIndexKey(key string) (string, error) {
 	}
 	return unseg(key[i+1:])
 }
+
+// ── the two rows ─────────────────────────────────────────────────────────
+
+// set and del are THE ONLY TWO EXPRESSIONS IN THIS PACKAGE THAT MAKE A ROW, and
+// that is now a fact of the program rather than a sentence in a comment.
+//
+// They took a key and returned a raft.BatchOp until the ninth round, which is
+// an ordinary exported struct with exported fields — so a row was composable
+// beside them, out of nothing, by anybody:
+//
+//	s.ops = append(s.ops, raft.BatchOp{Set: &raft.SetCommand{
+//	        Key: refLastKey("github.com/evil/repo", "refs/heads/main"), …}})
+//
+// inside stated.anchor, the method that owns that very row, left the whole
+// service green and landed a row that moves ANOTHER REPOSITORY'S ref anchor.
+// Every guard over the rows is keyed on a CALL — which builder built the key,
+// which method appended the row — and composing a struct is not a call.
+//
+// So the element type is row.Op, whose one field is unexported in another
+// package: a filled one has no expression outside these two functions, and the
+// zero value carries no key (row/row.go says what raft does with it). They live
+// here, beside the key builders, because a row is a key and what goes at it.
+func set(key string, value []byte) row.Op { return row.Set(key, value) }
+
+func del(key string) row.Op { return row.Delete(key) }
 
 // ── the record ───────────────────────────────────────────────────────────
 

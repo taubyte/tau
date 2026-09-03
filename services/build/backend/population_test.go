@@ -267,19 +267,71 @@ func wholeKeys(all map[string]string) map[string]bool {
 	return out
 }
 
-// indexRowKeys are the rows a LISTING walks: the open index reconcile repairs
-// and MaxOpenPerRepo counts, the project index a caller lists by, the retention
-// index. A write of one is neither a record write nor a queue write, and
-// without a column of its own it was invisible to the table. It is a union of
-// CLASSES, so a second spelling of any of the three is in it.
+// indexRowKeys is EVERY ROW OF THIS PACKAGE'S THAT IS NOT THE RECORD AND NOT AN
+// ATTEMPT ROW: the open index reconcile repairs and MaxOpenPerRepo counts, the
+// project index a caller lists by, the retention index, and the ref anchor. A
+// write of one is neither a record write nor a queue write, and without a
+// column of its own it was invisible to the table. It is a union of CLASSES, so
+// a second spelling of any of them is in it.
+//
+// THE ANCHOR WAS IN NONE OF THE CENSUSES UNTIL THE NINTH ROUND, and that is
+// what made it the unrecoverable half of that round's escape: a transition that
+// wrote only a ref anchor answered "no, this read decides no index write" to
+// the table below, and the reach walk never saw the key at all. It is not a row
+// a listing walks — it is read by key, by the next build of that ref — but it
+// is a row a job's transition writes, which is what these censuses are about.
+// TestEveryKeyThisPackageWritesIsInSomeCensus is what keeps the next one from
+// being missed the same way.
 func indexRowKeys(all map[string]string) map[string]bool {
 	out := map[string]bool{}
-	for _, like := range []string{"openIndexKey", "projectIndexKey", "terminalIndexKey"} {
+	for _, like := range []string{"openIndexKey", "projectIndexKey", "terminalIndexKey", "refLastKey"} {
 		for name := range sameKeyAs(all, like) {
 			out[name] = true
 		}
 	}
 	return out
+}
+
+// AND NO KEY THIS PACKAGE WRITES IS IN NO CENSUS.
+//
+// Every scan in this file asks its question of a CLASS of key — is this a
+// record, one of the listings, an attempt row — and a builder in none of them
+// is a row that every one of those scans walks past. refLastKey was exactly
+// that for eight rounds: excluded from the record class because it is not a
+// record, absent from the index class because nothing lists it, and outside the
+// attempt class because it belongs to no attempt. It is the row that decides
+// what the NEXT build of a ref diffs from.
+//
+// So the classification is closed here rather than assumed: a builder added to
+// store.go is invoked by sampleKeys (classes() says so), and then it is in
+// exactly one of the three censuses or this fails with its name in the message.
+func TestEveryKeyThisPackageWritesIsInSomeCensus(t *testing.T) {
+	keys := classes(t)
+	whole := wholeKeys(keys)
+	censuses := []map[string]bool{
+		sameKeyAs(keys, "jobRecordKey"),
+		indexRowKeys(keys),
+		attemptRowKeys(keys),
+	}
+
+	for name := range keys {
+		in := 0
+		for _, census := range censuses {
+			if census[name] {
+				in++
+			}
+		}
+		if whole[name] {
+			require.Equal(t, 1, in,
+				"%s builds a key this package writes and exactly one census must count it — a "+
+					"builder in none is a row every scan in this file walks past, and one in two "+
+					"is a row two scans disagree about", name)
+			continue
+		}
+		require.Zero(t, in,
+			"%s builds a prefix or a fragment rather than a whole key, so no census of ROWS may "+
+				"count it: a listing is not a write", name)
+	}
 }
 
 // attemptRowKeys are the builders that produce a LOG OR ASSET ROW of one
@@ -1508,10 +1560,10 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 		}
 	}
 
-	// AND EVERY ROW THIS PACKAGE CAN WRITE IS IN THIS TABLE. A raft.BatchOp is
-	// made nowhere but a call to set() or del(), so a method added anywhere —
-	// on the entry, on the handle, on a Service — fails here until somebody has
-	// said which row it is and shown that it names this section's job.
+	// AND EVERY ROW THIS PACKAGE CAN WRITE IS IN THIS TABLE. A row is made
+	// nowhere but a call to set() or del(), so a method added anywhere — on the
+	// entry, on the handle, on a Service — fails here until somebody has said
+	// which row it is and shown that it names this section's job.
 	require.Equal(t, map[string]string{
 		"entry.record":           "jobRecordKey",
 		"entry.dropRetained":     "terminalIndexKey",
@@ -1523,18 +1575,106 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 		"stated.anchor":          "refLastKey",
 	}, rows, "one row kind per method, and every method named")
 
-	// AND THE SLICE THEY APPEND TO IS THEIRS. A body that assigned an entry's
-	// ops directly would be handing it rows nothing above composed, which is
-	// the same door with the method removed.
+	// AND THOSE TWO ARE THE ONLY THINGS THAT MAKE A ROW AT ALL. row.Set and
+	// row.Delete are the only expressions in the tree that can fill a row.Op —
+	// its one field is unexported in another package — so a third caller of
+	// either would be a row built outside this package's two verbs, and every
+	// census in this file is keyed on those two verbs.
 	all := pkgFuncs(t)
-	appenders := map[string]bool{}
-	for name, f := range all {
-		if len(f.writesTo["ops"]) > 0 {
-			appenders[name] = true
+	require.ElementsMatch(t, []string{"set"}, names(callers(all, "Set")),
+		"set() is the only thing that makes a row with a value in it")
+	require.ElementsMatch(t, []string{"del"}, names(callers(all, "Delete")),
+		"and del() the only thing that makes a row removed")
+
+	// AND THE SLICE THEY APPEND TO IS THEIRS, AND SO IS WHAT GOES IN IT.
+	//
+	// THE SECOND HALF IS THE NINTH ROUND'S. This was a comparison of two SETS
+	// OF FUNCTION NAMES — who appends, and who builds a row — and all eight row
+	// methods are in both, so a SECOND element appended by a method already
+	// named was invisible: one line inside stated.anchor,
+	//
+	//	s.ops = append(s.ops, raft.BatchOp{Set: &raft.SetCommand{
+	//	        Key: refLastKey("github.com/evil/repo", …)}})
+	//
+	// moved another repository's ref anchor and left the whole service green.
+	// That expression does not compile any more (store.go). This says the same
+	// thing from the side a compiler cannot: an element that is not a call to
+	// set() or del() — one from a helper, one read back out of another entry,
+	// one forged past the type — is named rather than counted.
+	appended := appendedRows(t)
+	require.ElementsMatch(t, names(rows), names(appended),
+		"an entry's rows are appended by the methods that compose them and by nothing else")
+	for owner, elements := range appended {
+		for _, verb := range elements {
+			require.Contains(t, []string{"set", "del"}, verb,
+				"%s puts %s into an entry's rows, which is not a row set() or del() made", owner, verb)
 		}
 	}
-	require.ElementsMatch(t, names(rows), names(appenders),
-		"an entry's rows are appended by the methods that compose them and by nothing else")
+}
+
+// appendedRows is every element this package puts into an entry's rows, by the
+// function that puts it there and by the VERB that made it.
+//
+// A row slice that is assigned anything but an append of its own — a slice from
+// somewhere else, a call with two results, another entry's rows spread into it
+// — is a set of rows nothing above composed, so it fails here rather than
+// arriving as an element this scan cannot read.
+func appendedRows(t *testing.T) map[string][]string {
+	t.Helper()
+
+	out := map[string][]string{}
+	for _, file := range parsePackage(t).Files {
+		for _, decl := range file.Decls {
+			owner, node := packageLevel, ast.Node(decl)
+			if fn, ok := decl.(*ast.FuncDecl); ok {
+				if fn.Body == nil {
+					continue
+				}
+				owner, node = qualify(fn), fn.Body
+			}
+			ast.Inspect(node, func(n ast.Node) bool {
+				assign, ok := n.(*ast.AssignStmt)
+				if !ok {
+					return true
+				}
+				for i, lhs := range assign.Lhs {
+					if name, _, ok := fieldWritten(lhs); ok && name == "ops" {
+						out[owner] = append(out[owner], wentIn(assign, lhs, i)...)
+					}
+				}
+				return true
+			})
+		}
+	}
+	return out
+}
+
+// wentIn is the verb that made each element of one assignment to a row slice —
+// "set", "del" — and, for an assignment that is not that shape at all, the
+// expression itself, so that the ONE check above names what it found rather
+// than passing over what it could not read. A row slice assigned a slice from
+// somewhere else, another entry's rows spread into it, or the result of a call
+// with two results is exactly the hole the check exists for, and each of them
+// arrives there spelled out.
+func wentIn(assign *ast.AssignStmt, lhs ast.Expr, i int) []string {
+	if len(assign.Rhs) != len(assign.Lhs) {
+		return []string{types.ExprString(assign.Rhs[0])}
+	}
+	call, ok := assign.Rhs[i].(*ast.CallExpr)
+	if !ok || calleeName(call.Fun) != "append" || len(call.Args) < 2 ||
+		types.ExprString(call.Args[0]) != types.ExprString(lhs) || call.Ellipsis != token.NoPos {
+		return []string{types.ExprString(assign.Rhs[i])}
+	}
+
+	var out []string
+	for _, arg := range call.Args[1:] {
+		if made, ok := arg.(*ast.CallExpr); ok {
+			out = append(out, calleeName(made.Fun))
+			continue
+		}
+		out = append(out, types.ExprString(arg))
+	}
+	return out
 }
 
 // THE RUN IS REGISTERED INSIDE THE SECTION THAT CLAIMED IT, and two arguments
@@ -1680,6 +1820,25 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		"an entry written outside commit() is an entry no section decided — and a handle is the "+
 			"only thing that can say the section it was decided in is still running")
 
+	// AND WHAT THEY HAND IT IS THE ROWS, WITH NOTHING ADDED TO THEM.
+	//
+	// THE TYPE STOPS A RAW OP REACHING AN ENTRY'S ROWS; THIS STOPS ONE REACHING
+	// THE STORE BESIDE THEM. Store.Batch takes []raft.BatchOp, because that is
+	// raft's own signature and this package does not get to change it — so at
+	// these two call sites, and only there, a raw op is spellable again:
+	//
+	//	store.Batch(append(row.Ops(e.ops), raft.BatchOp{Set: …}), timeout)
+	//
+	// row.Ops is the one expression that turns rows into something raft
+	// applies, and what the store is handed must be exactly one of those calls.
+	for owner, entries := range handedToTheStore(t) {
+		for _, handed := range entries {
+			require.Equal(t, "Ops", handed,
+				"%s hands the store %s: an entry is the rows this package composed and nothing "+
+					"appended to them on the way out", owner, handed)
+		}
+	}
+
 	// the checked path -> the write it is the only path to. register's and
 	// stop's are a map rather than a call, which is exactly why they had no
 	// path at all until they were methods here.
@@ -1743,6 +1902,37 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 				"%s writes %s and is not one of the checked paths above", name, verb)
 		}
 	}
+}
+
+// handedToTheStore is what each caller of Store.Batch puts in its first
+// argument, by the verb that built it — or the expression itself when it was
+// not built by a call at all.
+func handedToTheStore(t *testing.T) map[string][]string {
+	t.Helper()
+
+	out := map[string][]string{}
+	for _, file := range parsePackage(t).Files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || calleeName(call.Fun) != "Batch" || len(call.Args) == 0 {
+					return true
+				}
+				owner := qualify(fn)
+				if made, ok := call.Args[0].(*ast.CallExpr); ok {
+					out[owner] = append(out[owner], calleeName(made.Fun))
+					return true
+				}
+				out[owner] = append(out[owner], types.ExprString(call.Args[0]))
+				return true
+			})
+		}
+	}
+	return out
 }
 
 // onTheHolding is every function that calls verb ON A HANDLE'S HOLDING —

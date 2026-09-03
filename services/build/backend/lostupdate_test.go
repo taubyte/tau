@@ -12,6 +12,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/services/build/backend/row"
 )
 
 // lostupdate_test.go is one test per PAIR of transitions that can be in flight
@@ -286,7 +287,7 @@ func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 	claim.Status = int32(buildv1.JobStatus_JobStatusClaimed)
 	value, err := claim.encode()
 	require.NoError(t, err)
-	require.NoError(t, h.store.Batch([]raft.BatchOp{set(jobRecordKey(id), value)}, time.Second))
+	require.NoError(t, h.store.Batch(row.Ops([]row.Op{set(jobRecordKey(id), value)}), time.Second))
 
 	var cancelErr error
 	cancelled := gated(t, h, jobRecordKey(id)).on(t, func() { cancelErr = h.cancel(id) })

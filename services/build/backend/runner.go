@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/tau/pkg/raft"
 	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/pkg/v2/queue"
+	"github.com/taubyte/tau/services/build/backend/row"
 )
 
 // step performs exactly ONE cycle of the claim loop, and the loop Start spawns
@@ -409,7 +409,7 @@ func (k *attemptSink) Asset(_ context.Context, resourceID, cid string) error {
 }
 
 func (k *attemptSink) write(key, cid string) error {
-	if err := k.s.store.Batch([]raft.BatchOp{set(key, []byte(cid))}, k.s.cfg.Queue.ApplyTimeout); err != nil {
+	if err := k.s.store.Batch(row.Ops([]row.Op{set(key, []byte(cid))}), k.s.cfg.Queue.ApplyTimeout); err != nil {
 		return fmt.Errorf("build: recording %q: %w", key, err)
 	}
 	return nil
