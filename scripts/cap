@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Run a command inside a rootless, memory-capped cgroup-v2 scope so a runaway
+# test/VM (OOM, fork bomb) is killed inside its own cgroup — never the host.
+#
+# Used two ways:
+#   scripts/cap -- go test -count=1 -p 2 ./...
+#   scripts/cap 10G -- go test -count=1 -p 4 ./...
+#   scripts/cap -- go test -bench . -benchtime 3000000x ./services/build/backend/
+#
+# Pair it with -p 2 (or -p 4 at most): this box has 20 cores and the default -p
+# OOMs the linkers, which is where an unexplained "[build failed]" with no
+# compiler diagnostic comes from.
+#
+# MEM defaults to $TAU_CAP_MEM or 6G. Set TAU_NO_CAP=1 to bypass (e.g. CI
+# without a user systemd session). Falls back to direct exec where systemd-run
+# --user is unavailable, so it is always safe to invoke.
+mem="${TAU_CAP_MEM:-6G}"
+case "${1:-}" in
+  [0-9]*[GMK]) mem="$1"; shift ;;
+esac
+[ "${1:-}" = "--" ] && shift
+
+runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [ "${TAU_NO_CAP:-0}" != "1" ] \
+   && command -v systemd-run >/dev/null 2>&1 \
+   && [ -S "$runtime/systemd/private" ]; then
+  exec systemd-run --user --scope -q --collect \
+    -p MemoryMax="$mem" -p MemorySwapMax=0 -p TasksMax=4096 -- "$@"
+fi
+exec "$@"
