@@ -103,11 +103,12 @@
 //
 // # Where the tower ends
 //
-// Eight rounds of this package's history each added a level. The writes are
-// held by a handle; the handle is held by a closure; the closure's population
-// is held by scans over this package's own source; and the scans are held by
-// assertions in a test file. "What guards the guard" has to stop somewhere, and
-// this is where, said exactly rather than left for somebody to find.
+// Nine rounds of this package's history each added a level. The writes are held
+// by a handle; the handle is held by a closure; the closure's population is held
+// by scans over this package's own source; the scans are held by assertions in a
+// test file; and the scans' INPUT is held by a list of file names. "What guards
+// the guard" has to stop somewhere, and this is where, said exactly rather than
+// left for somebody to find.
 //
 // THE COMPILER'S HALF ENDS NOWHERE, because nothing has to run for it. Twelve
 // expressions do not exist, and a tree that compiles is a tree in which they
@@ -118,78 +119,134 @@
 //	no mutex to touch                    no method on the entry taking a key
 //	no exported field on a Holding       no `Reread(closure)`
 //	no minting function                  no `held.id` to assign
-//	no write reachable without a *held   no `Holding.subject` to write
+//	no raw op to append to an entry      no `Holding.subject` to write
 //
-// The seven on the left were confirmed by the round that made a section a
-// closure. The five on the right were written into this tree and compiled: each
-// is `cannot assign`, `too many arguments`, `undefined`, or `has no field or
-// method`, which is a build failure and not a test failure.
+// EACH IS A BUILD FAILURE AND EACH HAS BEEN COMPILED: `cannot use raft.BatchOp{…}
+// as row.Op value`, `cannot assign`, `too many arguments`, `undefined`, `has no
+// field or method`. The left column is the section's shape and the right is the
+// entry's.
+//
+// THE LAST ONE IS THE NINTH ROUND'S, and what it replaced in this table is worth
+// more than itself. The line here used to read "no write reachable without a
+// *held", WHICH IS NOT THE COMPILER'S AT ALL: s.store.Batch is an expression any
+// function in this package can write, and what refuses it is an enumeration
+// three paragraphs down. A table of things the compiler guarantees had a thing
+// it does not guarantee in it, and the prose under it said "the seven on the
+// left" and "the five on the right" of six and six. Both are corrected above.
 //
 // THE RUNTIME'S HALF IS WATCHED FROM EIGHT ANGLES, so it has no small set
 // either. Deleting the identity comparison in section.Holding.live, or making
 // the gate call the write instead of asking the holding, each fails eight named
 // tests — and hollowing requireRefused's own assertions on top does not save
 // it, because every escape form ALSO asserts that the record did not move. Its
-// exposure is the file, not a line.
+// exposure is the file, not a line. The ORDER of Do's two closing statements is
+// there too, and was carried by nothing until this round: every test that
+// looked at it looked after Do had returned, when both statements have run
+// either way. section.TestTheIdentityDiesBeforeTheExclusionIsReleased measures
+// the order itself, under the contention that makes a mutex hand the lock
+// straight to the goroutine waiting on it.
 //
-// SO THE TOWER IS THE STATIC HALF, AND IT ENDS AT SIX LINES, all in
-// population_test.go, in three tests. In
-// TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob:
+// SO THE TOWER IS THE STATIC HALF, AND IT ENDS AT NINE LINES — up from six,
+// three of which are no longer ends at all. All nine are in population_test.go:
+// two in parsePackage, which every scan in the file calls, and seven in three
+// tests. MEASURED ONE AT A TIME: each control below is GO_TEST_EXIT=1 on this
+// tree, and GO_TEST_EXIT=0 with that ONE line hollowed and nothing else
+// changed.
 //
-//	require.Contains(t, args, e+".h.id()",
-//	require.Equal(t, map[string]string{ … }, rows,
-//	require.ElementsMatch(t, names(rows), names(appenders),
+//	in parsePackage, the scan's own input:
+//	 1 the files parsed are the files listed  the filter told to skip errors.go,
+//	                                           with a row method declared there
+//	 2 the files on disk are those files      a new file carrying a row method,
+//	                                           and the filter told to skip it
 //
-// in TestEveryWriteOfAJobRecordIsInsideASection:
+//	in TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob:
+//	 3 every key names the subject            an open row keyed s.rec.ID, which
+//	                                           is begin's own old defect
+//	 4 these eight rows and no others         a second method building a
+//	                                           project-index row
+//	 5 set() is the only maker of a set row   the sink composing a second row
+//	 6 del() is the only maker of a delete      with row.Set / row.Delete, on
+//	                                           another repository's ref anchor
+//	 7 what goes into an entry's rows came    a row forged past the type with
+//	   from one of those two                    unsafe, appended inside anchor()
 //
-//	require.ElementsMatch(t, []string{"entry.record"}, writers,
+//	in TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord:
+//	 8 the store is handed row.Ops(rows)      a raw op appended beside the rows
+//	   and nothing else                         in commit(), on a key spliced by
+//	                                           hand so no builder is called
 //
-// and in TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord the pair:
+//	in TestTheSinkWritesOnlyItsOwnJobsAttemptRows:
+//	 9 the sink keys its row by its own job   the sink writing one more row into
+//	                                           another job's attempt prefix
 //
-//	require.ElementsMatch(t, []string{"entry.commit", "attemptSink.write"},
-//	require.False(t, f.calls[verb],
+// AND FIVE MORE LINES STAND OVER GROUND THE NINE ALREADY COVER. They are
+// written down because a round that counts its own exposure at six when it is
+// nine is worse than one that counts nothing: the next reader stops looking.
+// Each was measured the same way — hollow it, run the control it was written
+// for, and see what else fails:
 //
-// The first says every key a row builds names the section's own job. The second
-// says these are all the rows there are. The third says the slice they append
-// to is theirs. The fourth says one method writes a job record. The fifth and
-// sixth say nothing else reaches the store at all.
+//	the anchor's exemption: its three parts    a behavioural test catches the
+//	  come off the record the section READ     anchor taken off the record being
+//	                                           WRITTEN instead
+//	the appenders enumeration: an entry's      line 7 catches the same forge;
+//	  rows are appended by the row methods     hollow both and it is green
+//	one function names a job record key        pairs with line 4 — hollow either
+//	                                           and the other catches a second
+//	                                           record in one entry
+//	who may call Store.Batch at all            both pair with line 8: a new write
+//	nothing else on the handle reaches it        method on the handle reaching the
+//	                                             store needs all three hollowed
+//	                                             before it is green
 //
-// MEASURED, one at a time, each against a control that is GO_TEST_EXIT=1:
+// HOW THE COUNT MOVED, and it is not a rearrangement. Two of the old six are
+// still ends: every key names the subject, and these eight rows and no others.
+// FOUR ARE NOT. One of the four lost its SUBJECT rather than its strength — the
+// appenders enumeration was written against a raw raft.BatchOp appended to an
+// entry, and that does not compile any more — and the other three are second
+// lines over ground lines 4 and 8 cover. Six of the nine were written this
+// round; the seventh, the sink keying its row by its own job, was here all along
+// and had never been counted. The one that should worry a reader is line 1:
+// nothing had ever pinned WHICH FILES the scans read, and one line in a filter
+// took a writer out of every census at once, which is more reach than any of the
+// six ever had.
 //
-//	an open row keyed s.rec.ID rather than    red; with the first line hollowed
-//	  s.h.id() — begin's own old defect         to a t.Logf, GREEN
-//	a second method building a project-       red; with the second line
-//	  index row                                 weakened to Subset, GREEN
-//	a raw raft.BatchOp appended to an entry    red; with the third line hollowed,
-//	  naming another repository's ref anchor    GREEN
-//	a second job record in the same entry      red; with the first three hollowed
-//	                                            it is the fourth that fails, and
-//	                                            with the fourth hollowed too,
-//	                                            GREEN
-//	a raw raft.BatchOp handed straight to      red; with the fifth weakened to
-//	  Store.Batch from a new handle method       Subset AND the sixth hollowed,
-//	                                            GREEN
+// TWO GUARDS ARE ON THE CENSUSES' INPUT rather than on a write, and they are not
+// ends. TestEveryKeyThisPackageWritesIsInSomeCensus requires every whole key
+// store.go builds to be in exactly one class and every prefix in none — the
+// state refLastKey was in for eight rounds was NONE, and that is what made the
+// ninth round's anchor escape unrecoverable: the reach walk could not see the
+// row. It is measured against its own control (a builder classified nowhere),
+// and the classification it protects is load-bearing: with line 8 hollowed, a
+// raw op naming refLastKey inside commit() is still caught, by the site table,
+// because that key is in a census now.
 //
-// EVERYTHING TOUCHING THEM IS HELD, which is why the set is six and not sixty.
+// EVERYTHING TOUCHING THEM IS HELD, which is why the set is nine and not ninety.
 // Measured one at a time, each of these fails BY NAME rather than passing:
 //
 //	a second job record in one entry          the row census and the record-
 //	                                          writer census, both by name
-//	a ref anchor for another repository,      the row census: ends() appears
+//	a ref anchor for another repository,      the row census: the method appears
 //	  appended in a method on the handle      building refLastKey
+//	the anchor taken off the record being     the row census AND a behavioural
+//	  written rather than the one read        test
 //	an entry method that takes a key          there is none; the draft that had
-//	  (put/drop), called with a foreign key    one measured GREEN, which is why
+//	  (put/drop), called with a foreign key   one measured GREEN, which is why
 //	a new write method on the handle          three tests
 //	  reaching Store.Batch
-//	a raw BatchOp appended to an entry        the appenders enumeration
-//	a raw BatchOp handed to Store.Batch       the Batch census and the closed-
-//	                                          from-the-other-side loop
+//	a raw op appended to an entry             it does not compile
+//	a raw op handed to Store.Batch beside     the argument census, by name
+//	  the rows
 //	a `stated` assembled around another       three tests, including the one
 //	  job's record                            that says who may make one
 //	record() not stamping the subject onto    the behavioural test and the
 //	  the record it encodes                   record-writer census
 //	the sink writing a ref anchor instead     four tests, two of them
 //	  of an attempt row                       behavioural
+//	the retention row stamped with the        the retry test, by name — and this
+//	  record's CreatedAt, or the delete       is the ninth round's own: the two
+//	  reading it                              were invisible until a test moved
+//	                                          the clock between a job's creation
+//	                                          and its finish
 //	the second read dropping its barrier      three tests, including the
 //	                                          barrier budget
 //	the source's Subject and its First        the reader census, by name — and
@@ -201,22 +258,25 @@
 //	the ack's subject check deleted           the ack test, by name
 //	the holding's liveness comparison, and    eight named tests each
 //	  the gate that asks it
+//	Do releasing the exclusion before it      the ordering test in
+//	  drops the identity                      backend/section, by name
 //	parsePackage returning nothing            every census at once: an empty
 //	                                          scan cannot match a non-empty
 //	                                          expectation
 //
-// WHY IT CANNOT BE SMALLER. The six are three pairs and neither half of any
-// pair can be folded into the other. Two say WHICH ROWS EXIST and two say EACH
-// ROW NAMES THIS JOB: a census cannot also be the check that a row names the
-// right job, because a row naming the wrong one is IN the census; and a check
-// that every row names this job cannot see a row built without calling set() or
-// del() at all. The last two say NOTHING ELSE REACHES THE STORE, which neither
-// of the other pairs can say, because both of them start from a call this
-// package makes to its own key builders. Under all six is the thing no Go test
-// escapes: a test fails by calling Errorf, so somewhere there is a first call
-// nothing else watches, and a check on that check is another Errorf with the
-// same property one level out — the regress this package's history walked seven
-// times.
+// WHY IT CANNOT BE SMALLER. The nine are four regions and no line of one covers
+// another. WHICH FILES ARE READ is under everything, because a scan reads what
+// it is given. WHICH ROWS EXIST and EACH ROW NAMES THIS JOB cannot be folded
+// together: a row naming the wrong job is IN the census, and a check that every
+// row names this job cannot see a row that no census counted. WHAT MAKES A ROW
+// is a third: the type says a row comes from set() or del(), and only an
+// enumeration can say those two are called from where a key was composed. WHAT
+// REACHES THE STORE is the fourth, and neither of the others can say it, because
+// both start from a call this package makes to its own key builders. Under all
+// of them is the thing no Go test escapes: a test fails by calling Errorf, so
+// somewhere there is a first call nothing else watches, and a check on that
+// check is another Errorf with the same property one level out — the regress
+// this package's history walked eight times.
 //
 // AND ONE OF THEM IS A REVIEW-TIME GUARD WHERE A COMPILER COULD DO IT, said out
 // loud. "About what" is the compiler's for the SUBJECT and an enumeration for
@@ -227,18 +287,30 @@
 // every reader in the package with it. That is the boundary, and it is a choice
 // rather than an oversight.
 //
+// AND WHAT IS NOT COVERED AT ALL, in the same voice. A record's IDENTITY FIELDS
+// are not pinned: record() stamps rec.ID with the subject, so an entry writes
+// the job its section was entered on — but RepositoryKey, Ref, CommitSHA,
+// ProjectID and CreatedAt are whatever the body hands over, so a body can write
+// THIS job's record carrying a neighbour's repository and ref. The rows keyed by
+// the record then follow the record rather than the neighbour, and the anchor
+// follows the record the section READ, so nothing crosses into another job's
+// rows; what a body can do is make this job's record SAY something else. Pinning
+// them is a product decision about what a transition may change, and it is the
+// owner's.
+//
 // WHAT THIS IS THE SAME AS. It is the exposure every Go test suite already
 // carries and does not write down. A TestMain that returns before m.Run(). A
 // build tag on the file the assertions live in. population_test.go never added
 // to the package at all. `go test` never run in CI. Each is a small edit that
 // leaves a green run and no trace, and no test framework defends against any of
-// them. These six are written here instead, in the open, with the measurement
+// them. These nine are written here instead, in the open, with the measurement
 // beside them.
 //
-// MEASURE THE MECHANISM'S OWN PACKAGE EITHER WAY. backend/section is exercised
-// by its own tests and by this package's, and the two figures agree — 100.0%
-// plain, 100.0% pinned — because its own tests drive the whole surface:
+// MEASURE THE MECHANISM'S OWN PACKAGES EITHER WAY. backend/section and
+// backend/row are both exercised by their own tests and by this package's, and
+// the figures agree — 100.0% plain each, 100.0% pinned together — because their
+// own tests drive the whole surface:
 //
 //	go test -count=1 -p 4 -cover ./services/build/...
-//	go test -count=1 -p 4 -coverpkg=./services/build/backend/section/... ./services/build/...
+//	go test -count=1 -p 4 -coverpkg=./services/build/backend/section/...,./services/build/backend/row/... ./services/build/...
 package backend
