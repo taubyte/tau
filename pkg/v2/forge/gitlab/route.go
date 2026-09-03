@@ -175,13 +175,19 @@ func escapedSegments(segments []string) (string, error) {
 // "." is the same defect one rung down: it resolves to the COLLECTION, which is
 // the threat handleSegment was already written against.
 //
-// IT IS CHECKED IN BOTH SPELLINGS a segment has on the way to an instance,
-// because the two resolvers in the chain read different ones. The escaped
-// spelling is what an RFC-conforming intermediary resolves before anything is
-// decoded. The raw spelling is what a server holds after the ONE decode it
-// performs, and it is what catches "../..", which escapes to "..%2F.." — a
-// single segment on the wire, and two dot components to anything that decodes
-// before it routes.
+// IT IS CHECKED IN THE RAW SPELLING, WHICH IS THE ONE THE SERVER HOLDS. This
+// driver escapes once and the instance on the other end decodes once, so the
+// string a server really has in its hands is the segment as it arrived here —
+// which is why "../.." is refused even though it escapes to "..%2F..", one
+// innocent-looking segment on the wire.
+//
+// AND CHECKING THE ESCAPED SPELLING AS WELL WOULD BE CHECKING THIS ONE TWICE.
+// It was written that way and it was dead: measured, deleting the escaped half
+// left the whole forge tree at GO_TEST_EXIT=0, because url.PathEscape emits no
+// "/" and leaves an unreserved dot alone, so PathEscape(s) is a dot segment
+// exactly when s is. That coincidence is not left as an argument —
+// TestEscapingNeitherMakesADotSegmentNorUnmakesOne is the row that holds it,
+// and it is what this one line rests on.
 //
 // A "/" INSIDE A SEGMENT IS NOT REFUSED, and on this driver it may not be: the
 // hole under projects/ takes acme/team/widget and the escaping turns it into
@@ -202,10 +208,7 @@ func addressesItself(segment string) error {
 	if segment == "" {
 		return errors.New("an empty path segment addresses the collection the request is under, so one thing is asked about and all of them are answered")
 	}
-	for _, spelling := range [...]string{segment, url.PathEscape(segment)} {
-		if path.Clean("/"+spelling) == "/"+spelling {
-			continue
-		}
+	if path.Clean("/"+segment) != "/"+segment {
 		return fmt.Errorf("%q is not a name: a resolver removing dot segments does not leave it where this driver put it, so the request would address something the caller never named", bounded(segment))
 	}
 	return nil

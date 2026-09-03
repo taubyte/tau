@@ -113,9 +113,10 @@ func (m *memberDriver) IsActiveMember(ctx context.Context, namespace, username s
 	// owner nests, with the sentence "GitHub addresses exactly one owner and one
 	// name"; an organization login and a user login are the same shape, and a
 	// "/" in either would fill one hole of orgs/{}/memberships/{} with two
-	// segments — a question asked about a route nobody named. The dot-segment
-	// refusal is not here: that one belongs to every hole of every route and
-	// lives where a string becomes a path. See addressesItself.
+	// segments — a question asked about a route nobody named. It is a SHAPE rule
+	// and it lives here, where the shape is known; the dot-segment rule below
+	// belongs to every hole of every route and is stated at both ends for the
+	// reason given there.
 	for what, half := range map[string]string{"namespace": namespace, "username": username} {
 		if strings.Contains(half, "/") {
 			return false, fmt.Errorf("forge/github: the %s %q nests, and GitHub addresses exactly one organization and one login", what, bounded(half))

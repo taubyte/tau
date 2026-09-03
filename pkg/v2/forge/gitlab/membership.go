@@ -35,9 +35,9 @@ func (d *memberDriver) IsActiveMember(ctx context.Context, namespace, username s
 	// addressed by its full path — acme/team is the ordinary case, and the
 	// escaping turns it into acme%2Fteam — so a "/" there is data. A username is
 	// a login and has none, and a "/" in it would fill one hole of
-	// groups/{}/members/all/{} with two segments. The dot-segment refusal is not
-	// here: that one belongs to every hole of every route and lives where a
-	// string becomes a path. See addressesItself.
+	// groups/{}/members/all/{} with two segments. It is a SHAPE rule and it lives
+	// here, where the shape is known; the dot-segment rule below belongs to every
+	// hole of every route and is stated at both ends for the reason given there.
 	if strings.Contains(username, "/") {
 		return false, fmt.Errorf("gitlab: the username %q nests, and a login is one path segment", bounded(username))
 	}

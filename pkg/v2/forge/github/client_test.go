@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"testing"
 
@@ -273,3 +274,66 @@ func declaredRoutesForTest() []*route {
 // composeForTest is the path one request names, which is where a segment
 // becomes part of a URL in this driver.
 func composeForTest(rq request) (string, error) { return rq.path() }
+
+// TestCheckingTheEscapedSpellingWouldBeCheckingTheRawOneTwice is the row
+// addressesItself's ONE line rests on.
+//
+// It was written with two, one per spelling, on the argument that the two
+// resolvers in a request's chain read different ones. Measured: deleting the
+// escaped half left the whole forge tree at GO_TEST_EXIT=0 — a line deletable at
+// exit 0, which is the defect this branch keeps finding, in the fix for this
+// branch's own defect.
+//
+// The reason it is dead is stated here rather than argued: url.PathEscape emits
+// no "/", so its output is always ONE component, and it leaves an unreserved dot
+// alone, so that component is "." or ".." exactly when its input is. Therefore a
+// segment that survives dot-segment removal RAW survives it ESCAPED, and
+// checking the escaped one adds nothing — while the converse is false, which is
+// why the raw one is the one kept: "../.." does not survive raw and does survive
+// escaped, as "..%2F..".
+//
+// THE POPULATION IS EXHAUSTIVE AND NOT A SAMPLE, over the characters that decide
+// this: every string of up to three of them.
+//
+// AND THE SIZE IS PINNED AS A LITERAL, because a walk whose extent is computed
+// from its own depth is a walk that can be shortened without saying so.
+// Measured: with the count unpinned, changing walk("", 3) to walk("", 1) was
+// GO_TEST_EXIT=0 — nine strings claiming to be five hundred and eighty-five.
+// Widening the alphabet costs the author this arithmetic, which is the right
+// price for an exhaustiveness claim.
+func TestCheckingTheEscapedSpellingWouldBeCheckingTheRawOneTwice(t *testing.T) {
+	survives := func(s string) bool { return path.Clean("/"+s) == "/"+s }
+
+	alphabet := []string{".", "/", "%", "2", "e", "F", "a", "?"}
+	visited, held, converseFailed := 0, 0, 0
+
+	var walk func(string, int)
+	walk = func(s string, left int) {
+		visited++
+		if survives(s) {
+			held++
+			require.Truef(t, survives(url.PathEscape(s)),
+				"%q survives dot-segment removal and %q, which is what this driver actually sends, does not: the escaped spelling is not implied by the raw one",
+				s, url.PathEscape(s))
+		} else if survives(url.PathEscape(s)) {
+			converseFailed++
+		}
+		if left == 0 {
+			return
+		}
+		for _, c := range alphabet {
+			walk(s+c, left-1)
+		}
+	}
+	walk("", 3)
+
+	// 1 + 8 + 8*8 + 8*8*8: the empty string and every string of one, two and
+	// three characters over the alphabet above.
+	require.Equalf(t, 1+8+64+512, visited,
+		"this row claims to be exhaustive over an eight-character alphabet up to length three, and it walked %d strings", visited)
+
+	t.Logf("%d spellings survive raw and every one of them survives escaped", held)
+	require.Positivef(t, converseFailed,
+		"no spelling survives escaped and fails raw, so the two checks are the same check and the raw one is not the stronger: %d held", held)
+	t.Logf("%d spellings survive escaped and do NOT survive raw, which is why the raw one is the one kept", converseFailed)
+}

@@ -1404,18 +1404,17 @@ func TestNoStringThisDriverPastesIntoAURLCanMoveThePathItIsIn(t *testing.T) {
 // assertStaysPut is the RFC 3986 property, said about one composed URL: a
 // resolver removing dot segments leaves it exactly where this driver put it.
 //
-// BOTH SPELLINGS, because the two resolvers in the chain read different ones.
-// The escaped path is what a conforming proxy, gateway or origin resolves before
-// anything is decoded. The decoded path is what a server holds after the one
-// decode it performs, and it is the spelling that catches "../..", which escapes
-// to "..%2F..": one segment on the wire, two dot components to anything that
-// decodes before it routes.
+// THE DECODED SPELLING IS THE ONE ASKED ABOUT, because it is what a server holds
+// after the one decode it performs — and because it SUBSUMES the escaped one. An
+// escaped component is a dot segment only when its decoded form is, and the
+// decoded spelling additionally catches "../..", which escapes to "..%2F..": one
+// innocent segment on the wire and two dot components to anything that decodes
+// before it routes. Asserting the escaped path beside it would be asserting this
+// twice, which is how a line comes to be deletable at exit 0.
 func assertStaysPut(t *testing.T, op string, u composedURL) {
 	t.Helper()
 	decoded := strings.Join(decodedSegments(t, u.path), "/")
-	for _, spelling := range []string{u.path, decoded} {
-		assert.Equalf(t, spelling, path.Clean(spelling),
-			"%s composed %v, and removing dot segments from %q moves it to %q: the request addresses something the caller never named",
-			op, u, spelling, path.Clean(spelling))
-	}
+	assert.Equalf(t, decoded, path.Clean(decoded),
+		"%s composed %v, and removing dot segments from %q moves it to %q: the request addresses something the caller never named",
+		op, u, decoded, path.Clean(decoded))
 }
