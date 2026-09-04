@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -958,6 +959,73 @@ func TestASlowAssetStoreDoesNotStallEveryOtherJobOnTheNode(t *testing.T) {
 	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
 }
 
+// THE ONE THING A LOG'S TRIP TO THE STORE IS NOT IS ATOMIC WITH THE RECORD,
+// and this is that measured rather than argued. output.go says a cid reaches a
+// job only for a log that reached the store; the CONVERSE — that a log reaches
+// the store only if a cid for it reaches a job — was written down as a
+// biconditional for one round and is false, and a claim that is false is worse
+// than the weaker one that holds.
+//
+// THE STORE HERE TRIPS A LEADERSHIP FLAP THE INSTANT IT HAS TAKEN THE BYTES,
+// which is the one interleaving that produces it: everything before the object
+// is kept is refused by the ack, and everything after it is a record write this
+// node can no longer make. What is left is an object in the asset store that no
+// record names — and nothing in this service unreferences an asset (config.go)
+// — plus a job that reads Claimed with no queue item, which reconcile pushes
+// back once it is older than its cutoff so that the rebuild writes a SECOND log.
+//
+// doc.go names it under what is not covered at all, with its width and its
+// precondition. This test is what makes that entry a fact: a round that closes
+// the window has to delete this.
+func TestALogCanReachTheStoreAndNoCidReachAnyJob(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	// ONCE: the flap is this run's, and the rebuild below has to be allowed to
+	// finish so that the second log it writes can be counted.
+	h.assets.onStored = sync.OnceFunc(func() { h.store.stepDown() })
+	// The attempt is in what the build prints so that the two runs are two
+	// distinct objects: the store is content-addressed, so a rebuild printing
+	// the same bytes would be the same cid and there would be nothing to count.
+	h.runner.run = func(_ context.Context, w Work, out Output) error {
+		fmt.Fprintf(out, "attempt %d printed this\n", w.Attempt)
+		return nil
+	}
+	orphaned := assetCID([]byte("attempt 1 printed this\n"))
+
+	_, err := h.step(t.Context())
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+
+	h.store.stepUp()
+
+	require.Equal(t, 1, h.assets.objects(), "the store kept the log")
+	require.Equal(t, "attempt 1 printed this\n", h.assets.content(t, orphaned))
+
+	rec := h.mustRecord(t, id)
+	require.Equal(t, buildv1.JobStatus_JobStatusClaimed, rec.status())
+	require.Empty(t, rec.Logs, "and no job names it")
+
+	ready, claimed := h.work.Depth()
+	require.Zero(t, ready)
+	require.Zero(t, claimed, "the ack landed, so there is no delivery left either")
+
+	// AND WHAT REPAIRS THE JOB DOES NOT REPAIR THE OBJECT. reconcile pushes the
+	// record back once it is past its cutoff, and the rebuild writes its own
+	// log — a second object, beside the one nothing names.
+	h.clock.advance(h.cfg.Queue.VisibilityTimeout + h.cfg.BuildTimeout + time.Minute)
+	require.NoError(t, h.reconcile())
+	require.True(t, h.mustStep(t))
+	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+
+	after := h.mustRecord(t, id)
+	require.Equal(t, map[string]string{stamp(2): assetCID([]byte("attempt 2 printed this\n"))},
+		after.Logs, "the job names the rebuild's log and only that one")
+	require.Equal(t, 2, h.assets.objects(),
+		"and the first is still there, named by nothing, with nothing in this service able to "+
+			"unreference it")
+	require.Equal(t, "attempt 1 printed this\n", h.assets.content(t, orphaned))
+}
+
 // A CANCEL AND A RETRY CAN LAND WHILE THE LOG IS GOING TO THE STORE, and that
 // is the window the second section exists to read again. The first section
 // found a record this run's outcome was about, so the bytes went; by the time
@@ -1004,6 +1072,39 @@ func TestAJobReopenedWhileItsLogWasStoredKeepsThatLog(t *testing.T) {
 
 	ready, _ := h.work.Depth()
 	require.Equal(t, 1, ready, "the retry's item is there, and the requeue deduplicated against it")
+}
+
+// THE RECORD CAN GO WHILE THE LOG IS GOING TO THE STORE, and the second section
+// reads again for that as much as for the three states settle lists. There is
+// nothing left to name the log with, so nothing is written — and the object the
+// store already took is one nothing will ever name, which is the same window
+// doc.go records under what is not covered at all, reached by a different
+// precondition.
+func TestARecordThatWentWhileItsLogWasStoredIsNotWrittenBack(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	storing := make(chan struct{})
+	release := make(chan struct{})
+	h.assets.block = release
+	h.assets.onPut = func() { close(storing) }
+	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "built\n")
+		return nil
+	}
+
+	stepped := make(chan error, 1)
+	go func() { _, err := h.step(context.Background()); stepped <- err }()
+	<-storing
+
+	require.NoError(t, h.store.MockCluster.Delete(jobRecordKey(id), time.Second))
+	close(release)
+	require.NoError(t, <-stepped)
+
+	_, found, err := h.readRecord(id)
+	require.NoError(t, err)
+	require.False(t, found, "a record nobody put back is a record that stayed gone")
+	require.Equal(t, 1, h.assets.objects(), "and the log the store already took stays with it")
 }
 
 // AND THE REOPENED JOB'S LOG IS A WRITE LIKE ANY OTHER: a store that refuses it

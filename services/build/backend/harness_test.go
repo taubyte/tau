@@ -109,6 +109,14 @@ func (s *fakeStore) stepDown() {
 	s.follower = true
 }
 
+// stepUp is the other half of a flap, for a test that has to keep reading — or
+// keep running the node — after the write it was measuring was refused.
+func (s *fakeStore) stepUp() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.follower = false
+}
+
 func (s *fakeStore) failBatches(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -326,6 +334,11 @@ type fakeAssets struct {
 	// when a publish has actually reached the store rather than guessing at it
 	// with a sleep.
 	onPut func()
+	// onStored fires once the object is KEPT and before the cid is handed back,
+	// which is the one instant at which a store has the bytes and no record
+	// names them. It is where a store that answers and then trips a leadership
+	// flap is built.
+	onStored func()
 }
 
 func newAssets() *fakeAssets { return &fakeAssets{stored: map[string][]byte{}} }
@@ -364,6 +377,9 @@ func (f *fakeAssets) Put(ctx context.Context, content io.Reader) (string, error)
 	}
 	id := assetCID(raw)
 	f.stored[id] = raw
+	if f.onStored != nil {
+		f.onStored()
+	}
 	return id, nil
 }
 

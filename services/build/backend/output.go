@@ -227,6 +227,28 @@ func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Rea
 // PublishTimeout per settled build. runner.go's settle argues the order; this
 // is the half of it this function is responsible for knowing.
 //
+// SO ONE DIRECTION HOLDS AND THE OTHER DOES NOT, and it was written down for a
+// round as a biconditional that was false:
+//
+//	A CID REACHES A JOB       only for a log that reached the store, whole. That
+//	                          is this function's contract and the three
+//	                          refusals below are what make it true.
+//	A LOG REACHES THE STORE   and a cid for it may still reach NO job. Between
+//	                          the store taking the bytes and the entry naming
+//	                          them being applied, this node can stop leading —
+//	                          and then the object is in the store, the record
+//	                          reads Claimed with no queue item, and reconcile
+//	                          rebuilds the job into a SECOND log. Nothing here
+//	                          unreferences the first. The window is as wide as
+//	                          the rest of the publish plus one entry, bounded by
+//	                          PublishTimeout; doc.go names it under what is not
+//	                          covered at all, and output_test.go measures it.
+//
+// Closing it needs the two stores to commit together, which is a transaction
+// across a raft group and a storage service; the shape that comes closest —
+// publishing inside the section that writes the record — is the one section.go
+// refuses, and for a bigger reason.
+//
 // IT IS THE ONE PLACE THE WHOLE LOG IS READ, and it reads it by forking a
 // reader like any other watcher — so the bytes stream from the file to the
 // store, this process never holds the build's output in memory, and the read is

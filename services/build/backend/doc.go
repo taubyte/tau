@@ -528,6 +528,37 @@
 // them is a product decision about what a transition may change, and it is the
 // owner's.
 //
+// AND A LOG CAN REACH THE ASSET STORE WITH NO CID REACHING ANY JOB. It is the
+// one thing settle's ordering does not buy, it is measured
+// (TestALogCanReachTheStoreAndNoCidReachAnyJob), and it is written here rather
+// than left as the false half of a biconditional this package printed for a
+// round:
+//
+//	PRECONDITION  this node stops leading, or dies, AFTER its ack and after the
+//	              store has taken the bytes — or the job's record is deleted in
+//	              that same window, which reaches the same end by another road
+//	              (TestARecordThatWentWhileItsLogWasStoredIsNotWrittenBack).
+//	WIDTH         the rest of the publish plus the second section's barrier and
+//	              its entry — bounded above by PublishTimeout, ten seconds by
+//	              default. It was one entry wide while the publish and the
+//	              record were one section; getting the store's round trip out of
+//	              jobLock is what widened it, and runner.go says why that trade
+//	              was taken.
+//	WHAT IS LEFT  one object in the asset store that no record names, and
+//	              nothing here unreferences an asset. The JOB repairs itself: it
+//	              reads Claimed with no queue item, and reconcile pushes it back
+//	              once it is older than VisibilityTimeout + BuildTimeout, so the
+//	              rebuild writes a SECOND log and the job ends correct.
+//
+// CLOSING IT NEEDS THE TWO STORES TO COMMIT TOGETHER, which is a transaction
+// across a raft group and a storage service that does not exist yet. The three
+// orderings that do not need one were each measured and each loses something
+// bigger: publishing before the ack orphans on EVERY stale claim rather than on
+// a flap; publishing inside the section that records holds the whole node's job
+// table across the round trip; writing the record first and the cid second
+// cannot fail a build for a log it could not read back, because that would mean
+// moving a terminal record.
+//
 // AND THE DOOR OUT OF THIS NODE IS COUNTED BUT NOT BOUNDED. The census says who
 // may call Put and from where; it says nothing about HOW MUCH, and nothing
 // else does either — MaxLogBytes caps the log a build may write and there is no
