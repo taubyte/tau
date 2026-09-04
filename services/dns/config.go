@@ -23,6 +23,11 @@ import (
 // read there is one name for it rather than two.
 type Router interface {
 	Route(name string, maxAge time.Duration) []stats.Node
+
+	// Get is one node by peer id, however old its row. SRV answers point at
+	// per-node names, and something has to resolve those names back to
+	// addresses — this is that lookup.
+	Get(peer string) (stats.Node, bool)
 }
 
 // Config is what an operator declared, plus the one thing injected.
@@ -49,6 +54,20 @@ type Config struct {
 	// related — an answer cached for TTL, built from a row already MaxAge old,
 	// can be acted on up to TTL+MaxAge after the last thing the node said.
 	MaxAge time.Duration
+
+	// NodeZone is the suffix under which each node gets a name, e.g.
+	// "nodes.example.com" — a node's own name is "<peer-id>.<NodeZone>".
+	//
+	// SRV EXISTS BECAUSE A RECORDS CANNOT CARRY A PORT, and an SRV record's
+	// target is a NAME, not an address (RFC 2782). So answering SRV means
+	// minting a name per node and being able to resolve it, which is what this
+	// zone is for. A peer id is alphanumeric and around fifty characters, so it
+	// fits a DNS label without encoding.
+	//
+	// Empty disables SRV: the server answers NOERROR with no records rather
+	// than inventing a zone, because a target in a zone nobody delegated is an
+	// answer that resolves to nothing.
+	NodeZone string
 
 	// MaxRecords caps how many addresses go into one answer. Default 8.
 	//

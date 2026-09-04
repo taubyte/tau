@@ -116,6 +116,12 @@ type Report struct {
 	// an AAAA, or a hostname is the reader's question, and a view that had an
 	// opinion would be deciding for every reader at once.
 	Addresses []string
+
+	// Port is where this node's proxy listens — one per node, since the proxy
+	// demultiplexes by name and a workload's own port never leaves the machine.
+	// Zero means the node is not accepting ingress yet, which is a thing it is
+	// entitled to say.
+	Port uint16
 }
 
 // Node is one peer's current stats, as this process sees them.
@@ -126,6 +132,7 @@ type Node struct {
 	Serving     []string
 	Ready       bool
 	Addresses   []string
+	Port        uint16
 
 	// Age is how long ago this process received the report. It is on every row
 	// because a stale load figure is a confidently wrong one, and a caller
@@ -183,6 +190,7 @@ type row struct {
 	serving     []string
 	ready       bool
 	addresses   []string
+	port        uint16
 	received    time.Time
 }
 
@@ -229,6 +237,7 @@ func (v *View) Observe(r Report) error {
 		serving:     serving,
 		ready:       r.Ready,
 		addresses:   append([]string(nil), r.Addresses...),
+		port:        r.Port,
 		received:    now,
 	}
 	return nil
@@ -329,6 +338,7 @@ func node(peer string, r *row, now time.Time) Node {
 		Serving:     append([]string(nil), r.serving...),
 		Ready:       r.ready,
 		Addresses:   append([]string(nil), r.addresses...),
+		Port:        r.port,
 		Age:         now.Sub(r.received),
 	}
 }

@@ -4,7 +4,7 @@
 // v2 runs code on more than one tier on purpose: a wasm component is the
 // differentiator, a container is what runs the code people already have (and
 // what makes an AWS Lambda image importable at all), and warpjs is a third.
-// The config vocabulary already chooses between them — `Engines(...)` on a kind
+// The config vocabulary already chooses between them — `Runtimes(...)` on a kind
 // and worker's `runtime` field, both in pkg/tcc/taubyte/v2/schema — so what is
 // missing is the runtime side of that choice.
 //
@@ -28,7 +28,7 @@
 // own idle timer, and nothing has to reach into a running process and swap its
 // code. It also means a rollback is warm if the old revision has not yet aged
 // out, which is the case that matters most.
-package engine
+package invoke
 
 import (
 	"context"
@@ -39,7 +39,8 @@ import (
 )
 
 var (
-	ErrNoEngine    = errors.New("engine: no engine registered for this spec")
+	ErrNoRuntimes  = errors.New("invoke: a pool with no runtimes can run nothing")
+	ErrNoRuntime   = errors.New("engine: no engine registered for this spec")
 	ErrPoolClosed  = errors.New("engine: pool is closed")
 	ErrNoRevision  = errors.New("engine: a spec with no revision cannot be told apart from the next deploy")
 	ErrNoName      = errors.New("engine: a spec with no name identifies nothing")
@@ -50,11 +51,11 @@ var (
 // Spec is what to run. Two specs that are equal run the same code, and two that
 // differ in any field are different things.
 type Spec struct {
-	// Engine names which tier runs this — the same strings the config
+	// Runtime names which tier runs this — the same strings the config
 	// vocabulary uses ("wasm", "container"). It is a string rather than an
 	// enum because a third engine must be a registration, not a schema change
 	// in this package.
-	Engine string
+	Runtime string
 
 	// Name is what is being run, scoped by whoever composes this (a project,
 	// an environment and a resource name flattened by the caller). This
@@ -84,7 +85,7 @@ func (s Spec) validate() error {
 	if s.Revision == "" {
 		return ErrNoRevision
 	}
-	if s.Engine == "" {
+	if s.Runtime == "" {
 		return fmt.Errorf("engine: %q names no engine", s.Name)
 	}
 	if s.Concurrency < 0 {
@@ -96,7 +97,7 @@ func (s Spec) validate() error {
 // key is the pool's identity for a spec. Concurrency and Timeout are excluded:
 // they are how the pool treats an instance, not what the instance IS, and
 // changing a timeout should not force a cold start.
-func (s Spec) key() string { return s.Engine + "\x00" + s.Name + "\x00" + s.Revision }
+func (s Spec) key() string { return s.Runtime + "\x00" + s.Name + "\x00" + s.Revision }
 
 // Request is one call into an instance.
 //
@@ -130,10 +131,10 @@ type Instance interface {
 	io.Closer
 }
 
-// Engine starts instances. That is the entire contract, and it is small on
+// Runtime starts instances. That is the entire contract, and it is small on
 // purpose: everything else an engine might be asked to do is the same for all
 // of them and lives in Pool.
-type Engine interface {
+type Runtime interface {
 	// Name is the string the config vocabulary uses for this tier.
 	Name() string
 

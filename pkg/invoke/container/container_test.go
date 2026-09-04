@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/containers/core"
-	"github.com/taubyte/tau/pkg/engine"
+	"github.com/taubyte/tau/pkg/invoke"
 )
 
 // THE FAKE RUNTIME'S "CONTAINER" IS A REAL HTTP SERVER ON A REAL PORT.
@@ -26,7 +26,7 @@ import (
 // request over a real socket. A fake that returned a canned response would test
 // none of that — the addressing scheme IS the design here.
 
-type fakeRuntime struct {
+type fakeBackend struct {
 	mu sync.Mutex
 
 	created  []*core.ContainerConfig
@@ -59,11 +59,11 @@ type closerFunc func() error
 
 func (f closerFunc) Close() error { return f() }
 
-func newFakeRuntime() *fakeRuntime {
-	return &fakeRuntime{statuses: map[core.ContainerID]string{}}
+func newFakeBackend() *fakeBackend {
+	return &fakeBackend{statuses: map[core.ContainerID]string{}}
 }
 
-func (f *fakeRuntime) Create(_ context.Context, cfg *core.ContainerConfig) (core.ContainerID, error) {
+func (f *fakeBackend) Create(_ context.Context, cfg *core.ContainerConfig) (core.ContainerID, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.createErr != nil {
@@ -76,7 +76,7 @@ func (f *fakeRuntime) Create(_ context.Context, cfg *core.ContainerConfig) (core
 	return id, nil
 }
 
-func (f *fakeRuntime) Start(_ context.Context, id core.ContainerID) error {
+func (f *fakeBackend) Start(_ context.Context, id core.ContainerID) error {
 	f.mu.Lock()
 	if f.startErr != nil {
 		err := f.startErr
@@ -107,7 +107,7 @@ func (f *fakeRuntime) Start(_ context.Context, id core.ContainerID) error {
 
 // configFor finds the config a container was created with. The caller holds the
 // lock. Ids are c1, c2, … in creation order.
-func (f *fakeRuntime) configFor(id core.ContainerID) *core.ContainerConfig {
+func (f *fakeBackend) configFor(id core.ContainerID) *core.ContainerConfig {
 	n, _ := strconv.Atoi(strings.TrimPrefix(string(id), "c"))
 	if n >= 1 && n <= len(f.created) {
 		return f.created[n-1]
@@ -115,7 +115,7 @@ func (f *fakeRuntime) configFor(id core.ContainerID) *core.ContainerConfig {
 	return &core.ContainerConfig{}
 }
 
-func (f *fakeRuntime) Stop(_ context.Context, id core.ContainerID) error {
+func (f *fakeBackend) Stop(_ context.Context, id core.ContainerID) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.stopped = append(f.stopped, id)
@@ -123,14 +123,14 @@ func (f *fakeRuntime) Stop(_ context.Context, id core.ContainerID) error {
 	return f.stopErr
 }
 
-func (f *fakeRuntime) Remove(_ context.Context, id core.ContainerID) error {
+func (f *fakeBackend) Remove(_ context.Context, id core.ContainerID) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.removed = append(f.removed, id)
 	return nil
 }
 
-func (f *fakeRuntime) Inspect(_ context.Context, id core.ContainerID) (*core.ContainerInfo, error) {
+func (f *fakeBackend) Inspect(_ context.Context, id core.ContainerID) (*core.ContainerInfo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	st, ok := f.statuses[id]
@@ -140,9 +140,9 @@ func (f *fakeRuntime) Inspect(_ context.Context, id core.ContainerID) (*core.Con
 	return &core.ContainerInfo{ID: id, Status: st, ExitCode: 7}, nil
 }
 
-func (f *fakeRuntime) Image(name string) core.Image { return &fakeImage{rt: f, name: name} }
+func (f *fakeBackend) Image(name string) core.Image { return &fakeImage{rt: f, name: name} }
 
-func (f *fakeRuntime) closeAll() {
+func (f *fakeBackend) closeAll() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, s := range f.servers {
@@ -151,7 +151,7 @@ func (f *fakeRuntime) closeAll() {
 	f.servers = nil
 }
 
-func (f *fakeRuntime) snapshot() (created []*core.ContainerConfig, stopped, removed []core.ContainerID) {
+func (f *fakeBackend) snapshot() (created []*core.ContainerConfig, stopped, removed []core.ContainerID) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]*core.ContainerConfig(nil), f.created...),
@@ -160,7 +160,7 @@ func (f *fakeRuntime) snapshot() (created []*core.ContainerConfig, stopped, remo
 }
 
 type fakeImage struct {
-	rt   *fakeRuntime
+	rt   *fakeBackend
 	name string
 }
 
@@ -222,34 +222,34 @@ func echoServer(port int) (closer, error) {
 	return closerFunc(func() error { return srv.Close() }), nil
 }
 
-func newEngine(t *testing.T, rt *fakeRuntime, img Image, adjust func(*Options)) *Engine {
+func newRuntime(t *testing.T, rt *fakeBackend, img Image, adjust func() []Option) *Runtime {
 	t.Helper()
-	opts := Options{Runtime: rt, ReadyInterval: 2 * time.Millisecond, ReadyTimeout: 3 * time.Second}
+	opts := []Option{WithBackend(rt), WithReadyInterval(2 * time.Millisecond), WithReadyTimeout(3 * time.Second)}
 	if adjust != nil {
-		adjust(&opts)
+		opts = append(opts, adjust()...)
 	}
-	e, err := New(func(engine.Spec) (Image, error) { return img, nil }, opts)
+	e, err := New(func(invoke.Spec) (Image, error) { return img, nil }, opts...)
 	require.NoError(t, err)
 	t.Cleanup(rt.closeAll)
 	return e
 }
 
-func spec() engine.Spec {
-	return engine.Spec{Engine: Name, Name: "shop", Revision: "r1", Concurrency: 1}
+func spec() invoke.Spec {
+	return invoke.Spec{Runtime: Name, Name: "shop", Revision: "r1", Concurrency: 1}
 }
 
 // TestARequestReachesTheContainerAndComesBack, over a real socket, through the
 // port the engine chose.
 func TestARequestReachesTheContainerAndComesBack(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, nil)
 
 	inst, err := e.Start(context.Background(), spec())
 	require.NoError(t, err)
 	defer inst.Close()
 
-	resp, err := inst.Serve(context.Background(), &engine.Request{
+	resp, err := inst.Serve(context.Background(), &invoke.Request{
 		Method:  "POST",
 		Path:    "/checkout",
 		Headers: map[string][]string{"X-Probe": {"hello"}},
@@ -267,9 +267,9 @@ func TestARequestReachesTheContainerAndComesBack(t *testing.T) {
 // PORT is the convention every PaaS uses, which is why an imported app needs no
 // change.
 func TestTheEngineTellsTheContainerWhichPortToUse(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1", Env: map[string]string{"DATABASE_URL": "x"}}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1", Env: map[string]string{"DATABASE_URL": "x"}}, nil)
 
 	inst, err := e.Start(context.Background(), spec())
 	require.NoError(t, err)
@@ -292,9 +292,9 @@ func TestTheEngineTellsTheContainerWhichPortToUse(t *testing.T) {
 // container listening elsewhere never becomes ready — a confusing timeout
 // instead of a clear refusal.
 func TestAnImageCannotOverridePort(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1", Env: map[string]string{"PORT": "9999"}}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1", Env: map[string]string{"PORT": "9999"}}, nil)
 
 	inst, err := e.Start(context.Background(), spec())
 	require.NoError(t, err)
@@ -315,9 +315,9 @@ func TestAnImageCannotOverridePort(t *testing.T) {
 // a backend default, and they are NOT copied from pkg/builder, which runs a
 // repository's own script under a different threat model.
 func TestUntrustedCodeGetsConfinedByDefault(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1", Memory: 256 << 20}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1", Memory: 256 << 20}, nil)
 
 	inst, err := e.Start(context.Background(), spec())
 	require.NoError(t, err)
@@ -336,7 +336,7 @@ func TestUntrustedCodeGetsConfinedByDefault(t *testing.T) {
 // not one that is LISTENING, and returning early hands the first request to a
 // socket nobody is on.
 func TestStartWaitsUntilTheContainerIsListening(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
 
 	var bound sync.WaitGroup
@@ -354,7 +354,7 @@ func TestStartWaitsUntilTheContainerIsListening(t *testing.T) {
 		return srv, err
 	}
 
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, nil)
 	start := time.Now()
 	inst, err := e.Start(context.Background(), spec())
 	require.NoError(t, err)
@@ -363,20 +363,18 @@ func TestStartWaitsUntilTheContainerIsListening(t *testing.T) {
 	require.GreaterOrEqual(t, time.Since(start), 100*time.Millisecond,
 		"Start did not return before the container was listening")
 
-	resp, err := inst.Serve(context.Background(), &engine.Request{Path: "/"})
+	resp, err := inst.Serve(context.Background(), &invoke.Request{Path: "/"})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusTeapot, resp.Status)
 }
 
 // TestAContainerThatNeverListensFailsWithinTheBudget rather than hanging.
 func TestAContainerThatNeverListensFailsWithinTheBudget(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
 	rt.listen = func(int) (closer, error) { return nil, nil } // starts, binds nothing
 
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, func(o *Options) {
-		o.ReadyTimeout = 150 * time.Millisecond
-	})
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, func() []Option { return []Option{WithReadyTimeout(150 * time.Millisecond)} })
 
 	_, err := e.Start(context.Background(), spec())
 	require.ErrorIs(t, err, ErrNotReady)
@@ -390,12 +388,13 @@ func TestAContainerThatNeverListensFailsWithinTheBudget(t *testing.T) {
 // immediately would otherwise burn the whole ready budget and then say the wrong
 // thing.
 func TestAContainerThatExitsIsReportedAsExitedNotAsSlow(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
 	rt.listen = func(int) (closer, error) { return nil, nil }
 
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, func(o *Options) {
-		o.ReadyTimeout = 10 * time.Second // long, to prove it does not wait it out
+	// A long budget, to prove it does not wait the whole thing out.
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, func() []Option {
+		return []Option{WithReadyTimeout(10 * time.Second)}
 	})
 
 	// The container is running when Start begins, and dies right after.
@@ -418,9 +417,9 @@ func TestAContainerThatExitsIsReportedAsExitedNotAsSlow(t *testing.T) {
 // TestEachInstanceGetsItsOwnPort. The pool starts N instances of one spec for
 // concurrency; two containers on one port is the bug this prevents.
 func TestEachInstanceGetsItsOwnPort(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, nil)
 
 	a, err := e.Start(context.Background(), spec())
 	require.NoError(t, err)
@@ -436,9 +435,9 @@ func TestEachInstanceGetsItsOwnPort(t *testing.T) {
 
 // TestAnAbsentImageIsPulled, and a present one is not.
 func TestAnAbsentImageIsPulled(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = false
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, nil)
 
 	inst, err := e.Start(context.Background(), spec())
 	require.NoError(t, err)
@@ -460,9 +459,9 @@ func TestAnAbsentImageIsPulled(t *testing.T) {
 }
 
 func TestAFailedPullReachesTheCaller(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.pullErr = errors.New("manifest unknown")
-	e := newEngine(t, rt, Image{Ref: "acme/nope:1"}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/nope:1"}, nil)
 
 	_, err := e.Start(context.Background(), spec())
 	require.Error(t, err)
@@ -470,9 +469,9 @@ func TestAFailedPullReachesTheCaller(t *testing.T) {
 }
 
 func TestCloseStopsAndRemoves(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, nil)
 
 	inst, err := e.Start(context.Background(), spec())
 	require.NoError(t, err)
@@ -484,7 +483,7 @@ func TestCloseStopsAndRemoves(t *testing.T) {
 
 	require.NoError(t, inst.Close(), "closing twice is not an error")
 
-	_, err = inst.Serve(context.Background(), &engine.Request{Path: "/"})
+	_, err = inst.Serve(context.Background(), &invoke.Request{Path: "/"})
 	require.ErrorIs(t, err, ErrClosed)
 }
 
@@ -492,10 +491,10 @@ func TestCloseStopsAndRemoves(t *testing.T) {
 // time a stop timed out would fill its disk — and the pool retires instances
 // routinely, since every failed request is one.
 func TestRemoveHappensEvenWhenStopFails(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
 	rt.stopErr = errors.New("container is wedged")
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, nil)
 
 	inst, err := e.Start(context.Background(), spec())
 	require.NoError(t, err)
@@ -508,27 +507,27 @@ func TestRemoveHappensEvenWhenStopFails(t *testing.T) {
 
 func TestStartFailuresAreReported(t *testing.T) {
 	t.Run("no image ref", func(t *testing.T) {
-		rt := newFakeRuntime()
-		e := newEngine(t, rt, Image{}, nil)
+		rt := newFakeBackend()
+		e := newRuntime(t, rt, Image{}, nil)
 		_, err := e.Start(context.Background(), spec())
 		require.ErrorIs(t, err, ErrNoImage)
 	})
 
 	t.Run("create failed", func(t *testing.T) {
-		rt := newFakeRuntime()
+		rt := newFakeBackend()
 		rt.imagePresent = true
 		rt.createErr = errors.New("no such image")
-		e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, nil)
+		e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, nil)
 		_, err := e.Start(context.Background(), spec())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no such image")
 	})
 
 	t.Run("start failed", func(t *testing.T) {
-		rt := newFakeRuntime()
+		rt := newFakeBackend()
 		rt.imagePresent = true
 		rt.startErr = errors.New("port in use")
-		e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, nil)
+		e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, nil)
 		_, err := e.Start(context.Background(), spec())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "port in use")
@@ -538,10 +537,10 @@ func TestStartFailuresAreReported(t *testing.T) {
 	})
 
 	t.Run("the image cannot be resolved", func(t *testing.T) {
-		rt := newFakeRuntime()
-		e, err := New(func(engine.Spec) (Image, error) {
+		rt := newFakeBackend()
+		e, err := New(func(invoke.Spec) (Image, error) {
 			return Image{}, errors.New("no build for this revision")
-		}, Options{Runtime: rt})
+		}, WithBackend(rt))
 		require.NoError(t, err)
 		_, err = e.Start(context.Background(), spec())
 		require.Error(t, err)
@@ -549,10 +548,12 @@ func TestStartFailuresAreReported(t *testing.T) {
 	})
 
 	t.Run("port allocation failed", func(t *testing.T) {
-		rt := newFakeRuntime()
+		rt := newFakeBackend()
 		rt.imagePresent = true
-		e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, func(o *Options) {
-			o.Port = func() (int, error) { return 0, errors.New("no ports left") }
+		e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, func() []Option {
+			return []Option{WithPortAllocator(func() (int, error) {
+				return 0, errors.New("no ports left")
+			})}
 		})
 		_, err := e.Start(context.Background(), spec())
 		require.Error(t, err)
@@ -561,37 +562,37 @@ func TestStartFailuresAreReported(t *testing.T) {
 }
 
 func TestOptionsAreValidated(t *testing.T) {
-	_, err := New(func(engine.Spec) (Image, error) { return Image{}, nil }, Options{})
-	require.ErrorIs(t, err, ErrNoRuntime)
+	_, err := New(func(invoke.Spec) (Image, error) { return Image{}, nil })
+	require.ErrorIs(t, err, ErrNoBackend)
 
-	_, err = New(nil, Options{Runtime: newFakeRuntime()})
+	_, err = New(nil, WithBackend(newFakeBackend()))
 	require.Error(t, err, "an engine that cannot say what to run is not an engine")
 
-	_, err = New(func(engine.Spec) (Image, error) { return Image{}, nil },
-		Options{Runtime: newFakeRuntime(), ReadyTimeout: -time.Second})
+	_, err = New(func(invoke.Spec) (Image, error) { return Image{}, nil },
+		WithBackend(newFakeBackend()), WithReadyTimeout(-time.Second))
 	require.Error(t, err)
 
-	e, err := New(func(engine.Spec) (Image, error) { return Image{}, nil },
-		Options{Runtime: newFakeRuntime()})
+	e, err := New(func(invoke.Spec) (Image, error) { return Image{}, nil },
+		WithBackend(newFakeBackend()))
 	require.NoError(t, err)
-	require.Equal(t, DefaultReadyTimeout, e.opts.ReadyTimeout)
+	require.Equal(t, DefaultReadyTimeout, e.opts.readyTimeout)
 	require.Equal(t, Name, e.Name())
 }
 
 // TestItIsAnEngineThePoolCanUse — the point of the whole package. This is the
 // pool's warm-reuse, concurrency and scale-to-zero running over real containers.
 func TestItIsAnEngineThePoolCanUse(t *testing.T) {
-	rt := newFakeRuntime()
+	rt := newFakeBackend()
 	rt.imagePresent = true
-	e := newEngine(t, rt, Image{Ref: "acme/shop:1"}, nil)
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, nil)
 
-	pool, err := engine.NewPool(engine.Options{Engines: []engine.Engine{e}})
+	pool, err := invoke.NewPool(invoke.WithRuntime(e))
 	require.NoError(t, err)
 	defer pool.Close()
 
 	s := spec()
 	for range 3 {
-		resp, err := pool.Do(context.Background(), s, &engine.Request{Path: "/ping"})
+		resp, err := pool.Do(context.Background(), s, &invoke.Request{Path: "/ping"})
 		require.NoError(t, err)
 		require.Equal(t, http.StatusTeapot, resp.Status)
 	}
@@ -611,4 +612,47 @@ func TestTheFreePortAllocatorReturnsSomethingBindable(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(p))
 	require.NoError(t, err, "the port it handed back is actually free")
 	l.Close()
+}
+
+// TestEveryOptionRefusesWhatItCannotUse. An option that silently accepted a
+// nonsense value would push the failure to the first request, where it reads as
+// a runtime fault rather than a configuration one.
+func TestEveryOptionRefusesWhatItCannotUse(t *testing.T) {
+	resolve := func(invoke.Spec) (Image, error) { return Image{}, nil }
+
+	for _, tc := range []struct {
+		name string
+		opt  Option
+	}{
+		{"a nil backend", WithBackend(nil)},
+		{"a ready timeout of zero", WithReadyTimeout(0)},
+		{"a negative ready timeout", WithReadyTimeout(-time.Second)},
+		{"a negative ready interval", WithReadyInterval(-time.Second)},
+		{"a negative stop timeout", WithStopTimeout(-time.Second)},
+		{"a nil port allocator", WithPortAllocator(nil)},
+		{"a nil dialer", WithDialer(nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := New(resolve, WithBackend(newFakeBackend()), tc.opt)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestTheOptionsThatAreAcceptedTakeEffect(t *testing.T) {
+	rt := newFakeBackend()
+	e, err := New(func(invoke.Spec) (Image, error) { return Image{}, nil },
+		WithBackend(rt),
+		WithReadyTimeout(11*time.Second),
+		WithReadyInterval(12*time.Millisecond),
+		WithStopTimeout(13*time.Second),
+		WithDialer(func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		}),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 11*time.Second, e.opts.readyTimeout)
+	require.Equal(t, 12*time.Millisecond, e.opts.readyInterval)
+	require.Equal(t, 13*time.Second, e.opts.stopTimeout)
+	require.NotNil(t, e.opts.dial)
 }

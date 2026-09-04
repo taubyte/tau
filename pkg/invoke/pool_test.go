@@ -1,4 +1,4 @@
-package engine
+package invoke
 
 import (
 	"context"
@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeEngine starts in nanoseconds, so every rule about WHEN things start is a
+// fakeRuntime starts in nanoseconds, so every rule about WHEN things start is a
 // fast unit test rather than a container fixture.
-type fakeEngine struct {
+type fakeRuntime struct {
 	name string
 
 	mu       sync.Mutex
@@ -26,13 +26,13 @@ type fakeEngine struct {
 	serve func(ctx context.Context, req *Request) (*Response, error)
 }
 
-func newFakeEngine(name string) *fakeEngine {
-	return &fakeEngine{name: name}
+func newFakeRuntime(name string) *fakeRuntime {
+	return &fakeRuntime{name: name}
 }
 
-func (e *fakeEngine) Name() string { return e.name }
+func (e *fakeRuntime) Name() string { return e.name }
 
-func (e *fakeEngine) Start(ctx context.Context, spec Spec) (Instance, error) {
+func (e *fakeRuntime) Start(ctx context.Context, spec Spec) (Instance, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.startErr != nil {
@@ -43,17 +43,17 @@ func (e *fakeEngine) Start(ctx context.Context, spec Spec) (Instance, error) {
 	if e.live > e.maxLive {
 		e.maxLive = e.live
 	}
-	return &fakeInstance{eng: e, spec: spec}, nil
+	return &fakeInstance{rt: e, spec: spec}, nil
 }
 
-func (e *fakeEngine) counts() (started, closed int) {
+func (e *fakeRuntime) counts() (started, closed int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.started, e.closed
 }
 
 type fakeInstance struct {
-	eng  *fakeEngine
+	rt   *fakeRuntime
 	spec Spec
 
 	inFlight atomic.Int32
@@ -71,18 +71,18 @@ func (i *fakeInstance) Serve(ctx context.Context, req *Request) (*Response, erro
 	}
 	defer i.inFlight.Add(-1)
 
-	if i.eng.serve != nil {
-		return i.eng.serve(ctx, req)
+	if i.rt.serve != nil {
+		return i.rt.serve(ctx, req)
 	}
 	return &Response{Status: 200, Body: []byte(i.spec.Revision)}, nil
 }
 
 func (i *fakeInstance) Close() error {
 	i.closedAt.Store(true)
-	i.eng.mu.Lock()
-	defer i.eng.mu.Unlock()
-	i.eng.closed++
-	i.eng.live--
+	i.rt.mu.Lock()
+	defer i.rt.mu.Unlock()
+	i.rt.closed++
+	i.rt.live--
 	return nil
 }
 
@@ -105,27 +105,27 @@ func (c *testClock) advance(d time.Duration) {
 	c.t = c.t.Add(d)
 }
 
-func newPool(t *testing.T, e Engine, adjust func(*Options)) (*Pool, *testClock) {
+func newPool(t *testing.T, e Runtime, adjust func() []Option) (*Pool, *testClock) {
 	t.Helper()
 	c := newTestClock()
-	opts := Options{Engines: []Engine{e}, Now: c.now}
+	opts := []Option{WithRuntime(e), WithClock(c.now)}
 	if adjust != nil {
-		adjust(&opts)
+		opts = append(opts, adjust()...)
 	}
-	p, err := NewPool(opts)
+	p, err := NewPool(opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { p.Close() })
 	return p, c
 }
 
 func spec(name, rev string) Spec {
-	return Spec{Engine: "fake", Name: name, Revision: rev}
+	return Spec{Runtime: "fake", Name: name, Revision: rev}
 }
 
 // TestAWarmInstanceIsReused — the whole reason a pool exists. The second
 // request must not pay a cold start.
 func TestAWarmInstanceIsReused(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	p, _ := newPool(t, e, nil)
 	ctx := context.Background()
 
@@ -144,7 +144,7 @@ func TestAWarmInstanceIsReused(t *testing.T) {
 // new code runs in new instances, and nothing reaches into a running process to
 // swap what it executes.
 func TestANewRevisionNeverSharesAnInstance(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	p, _ := newPool(t, e, nil)
 	ctx := context.Background()
 
@@ -167,7 +167,7 @@ func TestANewRevisionNeverSharesAnInstance(t *testing.T) {
 // serverless platform is routinely not safe to enter twice; a platform that
 // quietly shares an instance turns that into corruption rather than a queue.
 func TestConcurrencyOneMeansOneRequestAtATimePerInstance(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	release := make(chan struct{})
 	var instances sync.Map
 	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
@@ -201,7 +201,7 @@ func TestConcurrencyOneMeansOneRequestAtATimePerInstance(t *testing.T) {
 // TestConcurrencyAboveOneSharesAnInstance, and never exceeds what the spec
 // allows.
 func TestConcurrencyAboveOneSharesAnInstance(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	release := make(chan struct{})
 	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
 		<-release
@@ -231,7 +231,7 @@ func TestConcurrencyAboveOneSharesAnInstance(t *testing.T) {
 // error the moment every instance was busy would be useless under exactly the
 // traffic it exists for.
 func TestABurstQueuesRatherThanFailing(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	gate := make(chan struct{})
 	var served atomic.Int32
 	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
@@ -239,7 +239,7 @@ func TestABurstQueuesRatherThanFailing(t *testing.T) {
 		served.Add(1)
 		return &Response{Status: 200}, nil
 	}
-	p, _ := newPool(t, e, func(o *Options) { o.MaxInstances = 2 })
+	p, _ := newPool(t, e, func() []Option { return []Option{WithMaxInstances(2)} })
 
 	s := spec("shop", "r1")
 	s.Concurrency = 1
@@ -269,14 +269,14 @@ func TestABurstQueuesRatherThanFailing(t *testing.T) {
 
 // TestAWaitingCallerThatGivesUpStopsWaiting.
 func TestAWaitingCallerThatGivesUpStopsWaiting(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	block := make(chan struct{})
 	defer close(block)
 	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
 		<-block
 		return &Response{Status: 200}, nil
 	}
-	p, _ := newPool(t, e, func(o *Options) { o.MaxInstances = 1 })
+	p, _ := newPool(t, e, func() []Option { return []Option{WithMaxInstances(1)} })
 
 	s := spec("shop", "r1")
 	s.Concurrency = 1
@@ -292,8 +292,8 @@ func TestAWaitingCallerThatGivesUpStopsWaiting(t *testing.T) {
 
 // TestAnIdleSpecCostsNothing — scale to zero, on an injected clock.
 func TestAnIdleSpecCostsNothing(t *testing.T) {
-	e := newFakeEngine("fake")
-	p, clock := newPool(t, e, func(o *Options) { o.IdleTimeout = time.Minute })
+	e := newFakeRuntime("fake")
+	p, clock := newPool(t, e, func() []Option { return []Option{WithIdleTimeout(time.Minute)} })
 	ctx := context.Background()
 
 	_, err := p.Do(ctx, spec("shop", "r1"), &Request{})
@@ -321,13 +321,13 @@ func TestAnIdleSpecCostsNothing(t *testing.T) {
 // TestABusyInstanceIsNeverReaped even if it has been serving one long request
 // since before the idle window.
 func TestABusyInstanceIsNeverReaped(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	block := make(chan struct{})
 	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
 		<-block
 		return &Response{Status: 200}, nil
 	}
-	p, clock := newPool(t, e, func(o *Options) { o.IdleTimeout = time.Second })
+	p, clock := newPool(t, e, func() []Option { return []Option{WithIdleTimeout(time.Second)} })
 
 	s := spec("shop", "r1")
 	go p.Do(context.Background(), s, &Request{})
@@ -345,7 +345,7 @@ func TestABusyInstanceIsNeverReaped(t *testing.T) {
 // subsequent request badly — which reads as an intermittent fault rather than a
 // dead worker.
 func TestAFailedRequestRetiresTheInstance(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	boom := errors.New("the guest panicked")
 	e.serve = func(ctx context.Context, req *Request) (*Response, error) { return nil, boom }
 	p, _ := newPool(t, e, nil)
@@ -360,7 +360,7 @@ func TestAFailedRequestRetiresTheInstance(t *testing.T) {
 
 // TestATimeoutIsEnforcedPerRequest.
 func TestATimeoutIsEnforcedPerRequest(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
@@ -375,12 +375,12 @@ func TestATimeoutIsEnforcedPerRequest(t *testing.T) {
 }
 
 func TestTheDefaultTimeoutAppliesWhenTheSpecIsSilent(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	p, _ := newPool(t, e, func(o *Options) { o.Timeout = 20 * time.Millisecond })
+	p, _ := newPool(t, e, func() []Option { return []Option{WithTimeout(20 * time.Millisecond)} })
 
 	_, err := p.Do(context.Background(), spec("shop", "r1"), &Request{})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -389,24 +389,24 @@ func TestTheDefaultTimeoutAppliesWhenTheSpecIsSilent(t *testing.T) {
 // TestAnUnknownEngineIsRefusedRatherThanDefaulted. Running a container spec on
 // the wasm engine would be a very confusing failure.
 func TestAnUnknownEngineIsRefusedRatherThanDefaulted(t *testing.T) {
-	p, _ := newPool(t, newFakeEngine("fake"), nil)
+	p, _ := newPool(t, newFakeRuntime("fake"), nil)
 
 	s := spec("shop", "r1")
-	s.Engine = "container"
+	s.Runtime = "container"
 	_, err := p.Do(context.Background(), s, &Request{})
-	require.ErrorIs(t, err, ErrNoEngine)
+	require.ErrorIs(t, err, ErrNoRuntime)
 }
 
 // TestTwoEnginesCoexist — the point of the seam.
 func TestTwoEnginesCoexist(t *testing.T) {
-	wasm, ctr := newFakeEngine("wasm"), newFakeEngine("container")
-	p, err := NewPool(Options{Engines: []Engine{wasm, ctr}})
+	wasm, ctr := newFakeRuntime("wasm"), newFakeRuntime("container")
+	p, err := NewPool(WithRuntime(wasm, ctr))
 	require.NoError(t, err)
 	t.Cleanup(func() { p.Close() })
 
-	_, err = p.Do(context.Background(), Spec{Engine: "wasm", Name: "fn", Revision: "r1"}, &Request{})
+	_, err = p.Do(context.Background(), Spec{Runtime: "wasm", Name: "fn", Revision: "r1"}, &Request{})
 	require.NoError(t, err)
-	_, err = p.Do(context.Background(), Spec{Engine: "container", Name: "api", Revision: "r1"}, &Request{})
+	_, err = p.Do(context.Background(), Spec{Runtime: "container", Name: "api", Revision: "r1"}, &Request{})
 	require.NoError(t, err)
 
 	ws, _ := wasm.counts()
@@ -416,7 +416,7 @@ func TestTwoEnginesCoexist(t *testing.T) {
 }
 
 func TestAStartFailureReachesTheCaller(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	e.startErr = errors.New("image not found")
 	p, _ := newPool(t, e, nil)
 
@@ -427,42 +427,42 @@ func TestAStartFailureReachesTheCaller(t *testing.T) {
 }
 
 func TestASpecMustIdentifyItself(t *testing.T) {
-	p, _ := newPool(t, newFakeEngine("fake"), nil)
+	p, _ := newPool(t, newFakeRuntime("fake"), nil)
 	ctx := context.Background()
 
-	_, err := p.Do(ctx, Spec{Engine: "fake", Revision: "r1"}, &Request{})
+	_, err := p.Do(ctx, Spec{Runtime: "fake", Revision: "r1"}, &Request{})
 	require.ErrorIs(t, err, ErrNoName)
 
-	_, err = p.Do(ctx, Spec{Engine: "fake", Name: "shop"}, &Request{})
+	_, err = p.Do(ctx, Spec{Runtime: "fake", Name: "shop"}, &Request{})
 	require.ErrorIs(t, err, ErrNoRevision, "without it a deploy cannot be told from the one before")
 
 	_, err = p.Do(ctx, Spec{Name: "shop", Revision: "r1"}, &Request{})
 	require.Error(t, err)
 
-	_, err = p.Do(ctx, Spec{Engine: "fake", Name: "shop", Revision: "r1", Concurrency: -1}, &Request{})
+	_, err = p.Do(ctx, Spec{Runtime: "fake", Name: "shop", Revision: "r1", Concurrency: -1}, &Request{})
 	require.Error(t, err)
 }
 
 func TestPoolOptionsAreValidated(t *testing.T) {
-	_, err := NewPool(Options{IdleTimeout: -time.Second})
+	_, err := NewPool(WithRuntime(newFakeRuntime("f")), WithIdleTimeout(-time.Second))
 	require.Error(t, err)
 
-	_, err = NewPool(Options{MaxInstances: -1})
+	_, err = NewPool(WithRuntime(newFakeRuntime("f")), WithMaxInstances(-1))
 	require.Error(t, err)
 
-	_, err = NewPool(Options{Timeout: -time.Second})
+	_, err = NewPool(WithRuntime(newFakeRuntime("f")), WithTimeout(-time.Second))
 	require.Error(t, err)
 
-	_, err = NewPool(Options{Engines: []Engine{nil}})
+	_, err = NewPool(WithRuntime(nil))
 	require.Error(t, err)
 
-	e := newFakeEngine("fake")
-	_, err = NewPool(Options{Engines: []Engine{e, newFakeEngine("fake")}})
-	require.Error(t, err, "two engines answering to one name is ambiguous, not a merge")
+	e := newFakeRuntime("fake")
+	_, err = NewPool(WithRuntime(e, newFakeRuntime("fake")))
+	require.Error(t, err, "two runtimes answering to one name is ambiguous, not a merge")
 }
 
 func TestCloseShutsEverythingDownAndIsIdempotent(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	p, _ := newPool(t, e, nil)
 	ctx := context.Background()
 
@@ -482,8 +482,8 @@ func TestCloseShutsEverythingDownAndIsIdempotent(t *testing.T) {
 
 // TestTheReaperRunsOnItsOwn.
 func TestTheReaperRunsOnItsOwn(t *testing.T) {
-	e := newFakeEngine("fake")
-	p, clock := newPool(t, e, func(o *Options) { o.IdleTimeout = time.Millisecond })
+	e := newFakeRuntime("fake")
+	p, clock := newPool(t, e, func() []Option { return []Option{WithIdleTimeout(time.Millisecond)} })
 
 	_, err := p.Do(context.Background(), spec("shop", "r1"), &Request{})
 	require.NoError(t, err)
@@ -498,7 +498,7 @@ func TestTheReaperRunsOnItsOwn(t *testing.T) {
 }
 
 func TestWarmIsZeroForSomethingNeverRun(t *testing.T) {
-	p, _ := newPool(t, newFakeEngine("fake"), nil)
+	p, _ := newPool(t, newFakeRuntime("fake"), nil)
 	require.Zero(t, p.Warm(spec("never", "r1")))
 }
 
@@ -508,12 +508,12 @@ func TestWarmIsZeroForSomethingNeverRun(t *testing.T) {
 // instance is coming up. The instance that arrives late has to be closed rather
 // than parked in a pool nobody will drain.
 func TestAnInstanceStartedIntoAClosingPoolIsNotLeaked(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	starting := make(chan struct{})
 	proceed := make(chan struct{})
 
-	slow := &slowStartEngine{fakeEngine: e, starting: starting, proceed: proceed}
-	p, err := NewPool(Options{Engines: []Engine{slow}})
+	slow := &slowStartRuntime{fakeRuntime: e, starting: starting, proceed: proceed}
+	p, err := NewPool(WithRuntime(slow))
 	require.NoError(t, err)
 
 	done := make(chan error, 1)
@@ -533,17 +533,17 @@ func TestAnInstanceStartedIntoAClosingPoolIsNotLeaked(t *testing.T) {
 	require.Equal(t, 1, closed, "the late arrival was closed, not parked")
 }
 
-type slowStartEngine struct {
-	*fakeEngine
+type slowStartRuntime struct {
+	*fakeRuntime
 	starting chan struct{}
 	proceed  chan struct{}
 	once     sync.Once
 }
 
-func (e *slowStartEngine) Start(ctx context.Context, spec Spec) (Instance, error) {
+func (e *slowStartRuntime) Start(ctx context.Context, spec Spec) (Instance, error) {
 	e.once.Do(func() { close(e.starting) })
 	<-e.proceed
-	return e.fakeEngine.Start(ctx, spec)
+	return e.fakeRuntime.Start(ctx, spec)
 }
 
 // TestABurstOnAColdSpecStartsOneInstance, not one per request. Without
@@ -552,11 +552,11 @@ func (e *slowStartEngine) Start(ctx context.Context, spec Spec) (Instance, error
 // starts MaxInstances of them — seconds of latency and hundreds of megabytes
 // each, once the engine is containers.
 func TestABurstOnAColdSpecStartsOneInstance(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	slow := make(chan struct{})
-	gate := &gatedStartEngine{fakeEngine: e, gate: slow}
+	gate := &gatedStartRuntime{fakeRuntime: e, gate: slow}
 
-	p, err := NewPool(Options{Engines: []Engine{gate}})
+	p, err := NewPool(WithRuntime(gate))
 	require.NoError(t, err)
 	t.Cleanup(func() { p.Close() })
 
@@ -587,7 +587,7 @@ func TestABurstOnAColdSpecStartsOneInstance(t *testing.T) {
 // TestAWaiterStartsItsOwnWhenTheFirstInstanceIsFull. Single-flight must not
 // become a cap: at concurrency 1 the second request needs a second instance.
 func TestAWaiterStartsItsOwnWhenTheFirstInstanceIsFull(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	hold := make(chan struct{})
 	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
 		<-hold
@@ -612,7 +612,7 @@ func TestAWaiterStartsItsOwnWhenTheFirstInstanceIsFull(t *testing.T) {
 
 // TestAFailedColdStartReleasesTheWaiters rather than leaving them parked.
 func TestAFailedColdStartReleasesTheWaiters(t *testing.T) {
-	e := newFakeEngine("fake")
+	e := newFakeRuntime("fake")
 	e.startErr = errors.New("image not found")
 	p, _ := newPool(t, e, nil)
 
@@ -637,24 +637,72 @@ func TestAFailedColdStartReleasesTheWaiters(t *testing.T) {
 	}
 }
 
-type gatedStartEngine struct {
-	*fakeEngine
+type gatedStartRuntime struct {
+	*fakeRuntime
 	gate chan struct{}
 
 	mu  sync.Mutex
 	inW int
 }
 
-func (e *gatedStartEngine) waiting() int {
+func (e *gatedStartRuntime) waiting() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.inW
 }
 
-func (e *gatedStartEngine) Start(ctx context.Context, spec Spec) (Instance, error) {
+func (e *gatedStartRuntime) Start(ctx context.Context, spec Spec) (Instance, error) {
 	e.mu.Lock()
 	e.inW++
 	e.mu.Unlock()
 	<-e.gate
-	return e.fakeEngine.Start(ctx, spec)
+	return e.fakeRuntime.Start(ctx, spec)
+}
+
+// TestEveryPoolOptionRefusesWhatItCannotUse.
+func TestEveryPoolOptionRefusesWhatItCannotUse(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opt  Option
+	}{
+		{"a nil runtime", WithRuntime(nil)},
+		{"zero idle timeout", WithIdleTimeout(0)},
+		{"a negative idle timeout", WithIdleTimeout(-time.Second)},
+		{"no instances", WithMaxInstances(0)},
+		{"a negative timeout", WithTimeout(-time.Second)},
+		{"a nil clock", WithClock(nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewPool(WithRuntime(newFakeRuntime("fake")), tc.opt)
+			require.Error(t, err)
+		})
+	}
+}
+
+// TestAPoolWithNoRuntimesCanRunNothing, and says so at construction rather than
+// on the first request.
+func TestAPoolWithNoRuntimesCanRunNothing(t *testing.T) {
+	_, err := NewPool()
+	require.ErrorIs(t, err, ErrNoRuntimes)
+
+	_, err = NewPool(WithIdleTimeout(time.Minute))
+	require.ErrorIs(t, err, ErrNoRuntimes)
+}
+
+func TestPoolOptionsThatAreAcceptedTakeEffect(t *testing.T) {
+	c := newTestClock()
+	p, err := NewPool(
+		WithRuntime(newFakeRuntime("fake")),
+		WithIdleTimeout(7*time.Minute),
+		WithMaxInstances(9),
+		WithTimeout(11*time.Second),
+		WithClock(c.now),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { p.Close() })
+
+	require.Equal(t, 7*time.Minute, p.opts.idleTimeout)
+	require.Equal(t, 9, p.opts.maxInstances)
+	require.Equal(t, 11*time.Second, p.opts.timeout)
+	require.Equal(t, c.now(), p.opts.now())
 }

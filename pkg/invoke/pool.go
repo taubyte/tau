@@ -1,7 +1,8 @@
-package engine
+package invoke
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -21,59 +22,112 @@ const (
 	DefaultTimeout      = 30 * time.Second
 )
 
-// Options configure a Pool.
-type Options struct {
-	// Engines are the tiers available. A spec naming one that is not here is
-	// refused rather than defaulted: silently running a container spec on the
-	// wasm engine would be a very confusing failure.
-	Engines []Engine
+// Option configures a Pool. Everything optional is a With…; the only thing a
+// pool cannot be built without is at least one runtime, and that is an error
+// rather than a positional argument because a caller composing a node registers
+// tiers one at a time as it discovers which are available.
+type Option func(*options) error
 
-	// IdleTimeout is how long an instance with no work is kept before it is
-	// closed. Default 5m. This is scale-to-zero: when the last instance of a
-	// spec ages out, that spec costs nothing until the next request, which
-	// then pays a cold start.
-	IdleTimeout time.Duration
-
-	// MaxInstances is how many instances of ONE spec may exist at once.
-	// Default 32.
-	//
-	// IT IS PER SPEC AND NOT GLOBAL, deliberately. A global cap makes one busy
-	// function able to starve every other function on the node, which is the
-	// noisy-neighbour failure that is hardest to diagnose because the victim's
-	// own numbers all look fine.
-	MaxInstances int
-
-	// Timeout bounds one request when the Spec does not say. Default 30s.
-	Timeout time.Duration
-
-	// Now is the local clock. Tests inject one.
-	Now func() time.Time
+type options struct {
+	runtimes     []Runtime
+	idleTimeout  time.Duration
+	maxInstances int
+	timeout      time.Duration
+	now          func() time.Time
 }
 
-func (o Options) withDefaults() (Options, error) {
-	if o.IdleTimeout == 0 {
-		o.IdleTimeout = DefaultIdleTimeout
+// WithRuntime registers a tier. Call it once per tier; a spec naming one that
+// was never registered is refused rather than defaulted, because silently
+// running a container spec on the wasm tier would be a very confusing failure.
+func WithRuntime(rts ...Runtime) Option {
+	return func(o *options) error {
+		for _, rt := range rts {
+			if rt == nil {
+				return errors.New("invoke: a nil runtime was registered")
+			}
+			o.runtimes = append(o.runtimes, rt)
+		}
+		return nil
 	}
-	if o.MaxInstances == 0 {
-		o.MaxInstances = DefaultMaxInstances
+}
+
+// WithIdleTimeout is how long an instance with no work is kept before it is
+// closed. Default 5m.
+//
+// THIS IS SCALE-TO-ZERO: when the last instance of a spec ages out, that spec
+// costs nothing until the next request, which then pays a cold start.
+func WithIdleTimeout(d time.Duration) Option {
+	return func(o *options) error {
+		if d <= 0 {
+			return fmt.Errorf("invoke: idle timeout %s: an instance closed the moment it is free is never warm", d)
+		}
+		o.idleTimeout = d
+		return nil
 	}
-	if o.Timeout == 0 {
-		o.Timeout = DefaultTimeout
+}
+
+// WithMaxInstances is how many instances of ONE spec may exist at once.
+// Default 32.
+//
+// IT IS PER SPEC AND NOT GLOBAL, deliberately. A global cap lets one busy
+// function starve every other function on the node, which is the
+// noisy-neighbour failure that is hardest to diagnose because the victim's own
+// numbers all look fine.
+func WithMaxInstances(n int) Option {
+	return func(o *options) error {
+		if n < 1 {
+			return fmt.Errorf("invoke: %d instances: a spec that may not run is not a spec", n)
+		}
+		o.maxInstances = n
+		return nil
 	}
-	if o.Now == nil {
-		o.Now = time.Now
+}
+
+// WithTimeout bounds one request when the Spec does not say. Default 30s.
+func WithTimeout(d time.Duration) Option {
+	return func(o *options) error {
+		if d <= 0 {
+			return fmt.Errorf("invoke: timeout %s: every request would be over before it began", d)
+		}
+		o.timeout = d
+		return nil
 	}
-	if o.IdleTimeout <= 0 || o.MaxInstances < 1 || o.Timeout <= 0 {
-		return Options{}, fmt.Errorf("engine: idle %s, %d instances and timeout %s: all three need a positive budget",
-			o.IdleTimeout, o.MaxInstances, o.Timeout)
+}
+
+// WithClock injects the local clock. Tests use it; production does not.
+func WithClock(now func() time.Time) Option {
+	return func(o *options) error {
+		if now == nil {
+			return errors.New("invoke: a nil clock")
+		}
+		o.now = now
+		return nil
 	}
-	return o, nil
+}
+
+func (o *options) withDefaults() error {
+	if o.idleTimeout == 0 {
+		o.idleTimeout = DefaultIdleTimeout
+	}
+	if o.maxInstances == 0 {
+		o.maxInstances = DefaultMaxInstances
+	}
+	if o.timeout == 0 {
+		o.timeout = DefaultTimeout
+	}
+	if o.now == nil {
+		o.now = time.Now
+	}
+	if len(o.runtimes) == 0 {
+		return ErrNoRuntimes
+	}
+	return nil
 }
 
 // Pool keeps warm instances and routes requests to them.
 type Pool struct {
-	opts    Options
-	engines map[string]Engine
+	opts     options
+	runtimes map[string]Runtime
 
 	mu     sync.Mutex
 	groups map[string]*group
@@ -113,21 +167,24 @@ type slot struct {
 	lastUsed time.Time
 }
 
-// NewPool builds a pool over the given engines.
-func NewPool(opts Options) (*Pool, error) {
-	o, err := opts.withDefaults()
-	if err != nil {
+// NewPool builds a pool over the registered runtimes.
+func NewPool(opts ...Option) (*Pool, error) {
+	var o options
+	for _, apply := range opts {
+		if err := apply(&o); err != nil {
+			return nil, err
+		}
+	}
+	if err := o.withDefaults(); err != nil {
 		return nil, err
 	}
-	p := &Pool{opts: o, engines: map[string]Engine{}, groups: map[string]*group{}}
-	for _, e := range o.Engines {
-		if e == nil {
-			return nil, fmt.Errorf("engine: a nil engine was registered")
+
+	p := &Pool{opts: o, runtimes: map[string]Runtime{}, groups: map[string]*group{}}
+	for _, rt := range o.runtimes {
+		if _, dup := p.runtimes[rt.Name()]; dup {
+			return nil, fmt.Errorf("invoke: %q registered twice", rt.Name())
 		}
-		if _, dup := p.engines[e.Name()]; dup {
-			return nil, fmt.Errorf("engine: %q registered twice", e.Name())
-		}
-		p.engines[e.Name()] = e
+		p.runtimes[rt.Name()] = rt
 	}
 	return p, nil
 }
@@ -147,10 +204,10 @@ func (p *Pool) Do(ctx context.Context, spec Spec, req *Request) (*Response, erro
 		p.mu.Unlock()
 		return nil, ErrPoolClosed
 	}
-	eng, ok := p.engines[spec.Engine]
+	rt, ok := p.runtimes[spec.Runtime]
 	if !ok {
 		p.mu.Unlock()
-		return nil, fmt.Errorf("%w: %q", ErrNoEngine, spec.Engine)
+		return nil, fmt.Errorf("%w: %q", ErrNoRuntime, spec.Runtime)
 	}
 	g := p.groupFor(spec)
 	sem := g.sem
@@ -168,14 +225,14 @@ func (p *Pool) Do(ctx context.Context, spec Spec, req *Request) (*Response, erro
 	}
 	defer func() { <-sem }()
 
-	s, err := p.acquire(ctx, eng, spec)
+	s, err := p.acquire(ctx, rt, spec)
 	if err != nil {
 		return nil, err
 	}
 
 	timeout := spec.Timeout
 	if timeout == 0 {
-		timeout = p.opts.Timeout
+		timeout = p.opts.timeout
 	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -190,7 +247,7 @@ func (p *Pool) Do(ctx context.Context, spec Spec, req *Request) (*Response, erro
 // STARTING HAPPENS OUTSIDE THE LOCK. A cold start is the slowest thing this
 // package does — seconds for a container — and holding the pool's mutex across
 // it would make one cold start block every other spec on the node.
-func (p *Pool) acquire(ctx context.Context, eng Engine, spec Spec) (*slot, error) {
+func (p *Pool) acquire(ctx context.Context, rt Runtime, spec Spec) (*slot, error) {
 	for {
 		p.mu.Lock()
 		if p.closed {
@@ -205,7 +262,7 @@ func (p *Pool) acquire(ctx context.Context, eng Engine, spec Spec) (*slot, error
 				return s, nil
 			}
 		}
-		if len(g.slots) >= p.opts.MaxInstances {
+		if len(g.slots) >= p.opts.maxInstances {
 			// Cannot happen while the semaphore is sized
 			// MaxInstances*Concurrency, and it is checked anyway: the
 			// alternative to this branch is starting an unbounded number of
@@ -235,7 +292,7 @@ func (p *Pool) acquire(ctx context.Context, eng Engine, spec Spec) (*slot, error
 		// this package does — seconds for a container — and holding the pool's
 		// mutex across it would make one cold start block every other spec on
 		// the node.
-		inst, err := eng.Start(ctx, spec)
+		inst, err := rt.Start(ctx, spec)
 
 		p.mu.Lock()
 		g = p.groupFor(spec)
@@ -251,7 +308,7 @@ func (p *Pool) acquire(ctx context.Context, eng Engine, spec Spec) (*slot, error
 			inst.Close()
 			return nil, ErrPoolClosed
 		}
-		s := &slot{inst: inst, inUse: 1, lastUsed: p.opts.Now()}
+		s := &slot{inst: inst, inUse: 1, lastUsed: p.opts.now()}
 		g.slots = append(g.slots, s)
 		p.mu.Unlock()
 		return s, nil
@@ -268,7 +325,7 @@ func (p *Pool) acquire(ctx context.Context, eng Engine, spec Spec) (*slot, error
 func (p *Pool) release(spec Spec, s *slot, failed bool) {
 	p.mu.Lock()
 	s.inUse--
-	s.lastUsed = p.opts.Now()
+	s.lastUsed = p.opts.now()
 
 	if !failed {
 		p.mu.Unlock()
@@ -300,7 +357,7 @@ func (p *Pool) groupFor(spec Spec) *group {
 	}
 	g := &group{
 		spec: spec,
-		sem:  make(chan struct{}, p.opts.MaxInstances*spec.Concurrency),
+		sem:  make(chan struct{}, p.opts.maxInstances*spec.Concurrency),
 	}
 	p.groups[k] = g
 	return g
@@ -311,14 +368,14 @@ func (p *Pool) groupFor(spec Spec) *group {
 // private ticker so that "an idle spec costs nothing" is a unit test with an
 // injected clock instead of a sleep.
 func (p *Pool) Reap() int {
-	now := p.opts.Now()
+	now := p.opts.now()
 
 	p.mu.Lock()
 	var dead []Instance
 	for k, g := range p.groups {
 		kept := g.slots[:0]
 		for _, s := range g.slots {
-			if s.inUse == 0 && now.Sub(s.lastUsed) >= p.opts.IdleTimeout {
+			if s.inUse == 0 && now.Sub(s.lastUsed) >= p.opts.idleTimeout {
 				dead = append(dead, s.inst)
 				continue
 			}

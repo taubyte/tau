@@ -116,7 +116,20 @@ type Report struct {
 	// same sense. A node that reports an address it does not answer on takes
 	// traffic it cannot serve, and only the caller's health checking catches
 	// that.
-	Addresses     []string `protobuf:"bytes,6,rep,name=addresses,proto3" json:"addresses,omitempty"`
+	Addresses []string `protobuf:"bytes,6,rep,name=addresses,proto3" json:"addresses,omitempty"`
+	// port is where this node's PROXY listens — the ingress that accepts a
+	// connection and forwards it over p2p to whichever workload is being asked
+	// for.
+	//
+	// ONE PORT PER NODE, NOT ONE PER WORKLOAD. The proxy demultiplexes by the
+	// name being requested, so a node has a single ingress and a workload's own
+	// port never leaves the machine it runs on. That is what lets the container
+	// engine allocate a host port freely: nothing outside the node ever dials it.
+	//
+	// It is reported rather than assumed because it is a deployment choice, and
+	// because a node that has not got its proxy up yet should be able to say so
+	// by reporting no port rather than by being routed to and refusing.
+	Port          uint32 `protobuf:"varint,7,opt,name=port,proto3" json:"port,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -193,18 +206,26 @@ func (x *Report) GetAddresses() []string {
 	return nil
 }
 
+func (x *Report) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
 var File_tau_stats_v1_stats_proto protoreflect.FileDescriptor
 
 const file_tau_stats_v1_stats_proto_rawDesc = "" +
 	"\n" +
-	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\xa0\x01\n" +
+	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\xb4\x01\n" +
 	"\x06Report\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12 \n" +
 	"\vincarnation\x18\x02 \x01(\x04R\vincarnation\x12\x12\n" +
 	"\x04load\x18\x03 \x01(\x01R\x04load\x12\x18\n" +
 	"\aserving\x18\x04 \x03(\tR\aserving\x12\x14\n" +
 	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x1c\n" +
-	"\taddresses\x18\x06 \x03(\tR\taddressesB\xab\x01\n" +
+	"\taddresses\x18\x06 \x03(\tR\taddresses\x12\x12\n" +
+	"\x04port\x18\a \x01(\rR\x04portB\xab\x01\n" +
 	"\x10com.tau.stats.v1B\n" +
 	"StatsProtoP\x01Z9github.com/taubyte/tau/pkg/proto/gen/tau/stats/v1;statsv1\xa2\x02\x03TSX\xaa\x02\fTau.Stats.V1\xca\x02\fTau\\Stats\\V1\xe2\x02\x18Tau\\Stats\\V1\\GPBMetadata\xea\x02\x0eTau::Stats::V1b\x06proto3"
 

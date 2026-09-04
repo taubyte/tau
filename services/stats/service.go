@@ -214,6 +214,7 @@ func (s *Service) report(ctx context.Context) {
 		Serving:     snap.Serving,
 		Ready:       snap.Ready,
 		Addresses:   snap.Addresses,
+		Port:        uint32(snap.Port),
 	})
 	if err != nil {
 		return
@@ -230,6 +231,7 @@ func (s *Service) report(ctx context.Context) {
 		Serving:     snap.Serving,
 		Ready:       snap.Ready,
 		Addresses:   snap.Addresses,
+		Port:        snap.Port,
 	})
 
 	s.cfg.Bus.Publish(ctx, b)

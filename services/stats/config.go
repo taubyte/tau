@@ -65,6 +65,10 @@ type Snapshot struct {
 	// dial, and behind NAT or a container bridge that is an address no client
 	// can use. See the proto field for the full argument.
 	Addresses []string
+
+	// Port is where this node's proxy listens. Zero says this node is not
+	// accepting ingress yet, which is better than being routed to and refusing.
+	Port uint16
 }
 
 // ReporterFunc adapts a function to Reporter.

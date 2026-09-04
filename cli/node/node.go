@@ -8,7 +8,6 @@ import (
 	"github.com/taubyte/tau/services/gateway"
 	hoarderService "github.com/taubyte/tau/services/hoarder"
 	patrickService "github.com/taubyte/tau/services/patrick"
-	seerService "github.com/taubyte/tau/services/seer"
 	nodeService "github.com/taubyte/tau/services/substrate"
 	tnsService "github.com/taubyte/tau/services/tns"
 
@@ -20,7 +19,6 @@ var available = map[string]config.ProtoCommandIface{
 	"hoarder":   hoarderService.Package(),
 	"substrate": nodeService.Package(),
 	"patrick":   patrickService.Package(),
-	"seer":      seerService.Package(),
 	"tns":       tnsService.Package(),
 	"gateway":   gateway.Package(),
 }

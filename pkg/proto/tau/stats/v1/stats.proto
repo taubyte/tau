@@ -101,4 +101,18 @@ message Report {
   // traffic it cannot serve, and only the caller's health checking catches
   // that.
   repeated string addresses = 6;
+
+  // port is where this node's PROXY listens — the ingress that accepts a
+  // connection and forwards it over p2p to whichever workload is being asked
+  // for.
+  //
+  // ONE PORT PER NODE, NOT ONE PER WORKLOAD. The proxy demultiplexes by the
+  // name being requested, so a node has a single ingress and a workload's own
+  // port never leaves the machine it runs on. That is what lets the container
+  // engine allocate a host port freely: nothing outside the node ever dials it.
+  //
+  // It is reported rather than assumed because it is a deployment choice, and
+  // because a node that has not got its proxy up yet should be able to say so
+  // by reporting no port rather than by being routed to and refusing.
+  uint32 port = 7;
 }
