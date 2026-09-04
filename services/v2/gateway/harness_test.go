@@ -1,0 +1,229 @@
+package gateway
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/register"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+)
+
+// harness is a gateway over a real register holding a really-compiled project,
+// with a worker that records what it was asked to run.
+//
+// THE PROJECT IS COMPILED BY tcc. What this service reads is the compiled
+// vocabulary — route blocks, handler blocks, cors, rate_limit, transformers —
+// so a fixture of my own would be a fixture of what I believe that vocabulary
+// produces, and it would keep passing on the day it produced something else.
+type harness struct {
+	Gateway *Service
+	Reg     *register.Register
+	Workers *recordingWorkers
+	clock   *fakeClock
+}
+
+// hosts is the fixture's own names, which is what a publisher would hand the
+// register. The generated ones carry the project's portion only: the cloud's
+// fqdn is not in the config, and appending it is the node's job.
+func hostsOf(t testing.TB, p *project.Project, cloud string) []string {
+	t.Helper()
+	var out []string
+	for _, h := range p.Hosts() {
+		if h.Generated && cloud != "" {
+			out = append(out, h.Fqdn+"."+cloud)
+			continue
+		}
+		out = append(out, h.Fqdn)
+	}
+	return out
+}
+
+func newHarness(t testing.TB, cfg Config, opts ...Option) *harness {
+	t.Helper()
+
+	reg, err := register.New(register.WithStore(register.NewMemStore()))
+	require.NoError(t, err)
+
+	bytes := compiled(t)
+	p, err := project.Load(bytes)
+	require.NoError(t, err)
+
+	_, err = reg.Publish(t.Context(), register.Publication{
+		Project: "shop", Environment: "prod", Revision: 1,
+		Compiled: bytes, Hosts: hostsOf(t, p, cfg.CloudFqdn),
+	})
+	require.NoError(t, err)
+
+	workers := &recordingWorkers{}
+	clock := &fakeClock{at: time.Unix(1_700_000_000, 0)}
+
+	s, err := New(cfg, append([]Option{
+		WithHosts(reg), WithSource(reg), WithWorkers(workers), WithClock(clock.Now),
+	}, opts...)...)
+	require.NoError(t, err)
+
+	return &harness{Gateway: s, Reg: reg, Workers: workers, clock: clock}
+}
+
+// do makes one request against the gateway.
+func (h *harness) do(t testing.TB, method, url string, body string, headers ...string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	r := httptest.NewRequest(method, url, strings.NewReader(body))
+	r.RemoteAddr = "203.0.113.7:51000"
+	for i := 0; i+1 < len(headers); i += 2 {
+		r.Header.Set(headers[i], headers[i+1])
+	}
+
+	w := httptest.NewRecorder()
+	h.Gateway.Handler().ServeHTTP(w, r)
+	return w
+}
+
+func compiled(t testing.TB) []byte {
+	t.Helper()
+
+	c, err := schema.New(
+		schema.WithLocal("../../../pkg/tcc/taubyte/v2/fixtures/basic"),
+		schema.WithBranch("main"))
+	require.NoError(t, err)
+
+	obj, _, err := c.Compile(context.Background())
+	require.NoError(t, err)
+
+	b, err := json.Marshal(obj.Flat())
+	require.NoError(t, err)
+	return b
+}
+
+// recordingWorkers answers with what it was asked, so a test reads back exactly
+// what the route produced.
+type recordingWorkers struct {
+	mu    sync.Mutex
+	calls []call
+	err   error
+	reply *invoke.Response
+}
+
+type call struct {
+	at  project.Address
+	req *invoke.Request
+}
+
+func (w *recordingWorkers) Invoke(_ context.Context, at project.Address, req *invoke.Request) (*invoke.Response, error) {
+	w.mu.Lock()
+	w.calls = append(w.calls, call{at: at, req: req})
+	err, reply := w.err, w.reply
+	w.mu.Unlock()
+
+	if err != nil {
+		return nil, err
+	}
+	if reply != nil {
+		return reply, nil
+	}
+	return &invoke.Response{
+		Status:  http.StatusOK,
+		Headers: map[string][]string{"X-Served": {at.Kind + "/" + at.Name}},
+		Body:    []byte(req.Path),
+	}, nil
+}
+
+func (w *recordingWorkers) seen() []call {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]call(nil), w.calls...)
+}
+
+func (w *recordingWorkers) fail(err error) {
+	w.mu.Lock()
+	w.err = err
+	w.mu.Unlock()
+}
+
+func (w *recordingWorkers) answer(res *invoke.Response) {
+	w.mu.Lock()
+	w.reply = res
+	w.mu.Unlock()
+}
+
+type fakeClock struct {
+	mu sync.Mutex
+	at time.Time
+}
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.at
+}
+
+func (c *fakeClock) advance(d time.Duration) {
+	c.mu.Lock()
+	c.at = c.at.Add(d)
+	c.mu.Unlock()
+}
+
+func httptestRequest(method, path, host string) *http.Request {
+	r := httptest.NewRequest(method, "http://placeholder"+path, strings.NewReader(""))
+	r.Host = host
+	r.URL.Host = ""
+	r.RemoteAddr = "203.0.113.7:51000"
+	return r
+}
+
+func recorder() *httptest.ResponseRecorder { return httptest.NewRecorder() }
+
+// countingHosts is the host table with a tally.
+type countingHosts struct {
+	inner interface {
+		ResolveHost(ctx context.Context, fqdn string) (string, string, error)
+	}
+	mu sync.Mutex
+	n  int
+}
+
+func (c *countingHosts) ResolveHost(ctx context.Context, fqdn string) (string, string, error) {
+	c.mu.Lock()
+	c.n++
+	c.mu.Unlock()
+	return c.inner.ResolveHost(ctx, fqdn)
+}
+
+func (c *countingHosts) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n
+}
+
+// brokenHosts is a register that cannot be reached.
+type brokenHosts struct{}
+
+func (brokenHosts) ResolveHost(context.Context, string) (string, string, error) {
+	return "", "", errUnreachable
+}
+
+var errUnreachable = errors.New("the register is unreachable")
+
+// emptySource claims to know a pointer and holds no object for it — what a
+// half-replicated publish looks like on a node that has one and not the other.
+type emptySource struct{}
+
+func (emptySource) Resolve(context.Context, string, string) (register.Pointer, error) {
+	return register.Pointer{Object: "an-object-nobody-has", Revision: 1}, nil
+}
+
+func (emptySource) Object(context.Context, register.ObjectID) ([]byte, error) {
+	return nil, register.ErrNoObject
+}

@@ -37,6 +37,9 @@ type harness struct {
 	Runtime  *fakeRuntime
 	Client   workerv1connect.WorkerServiceClient
 
+	CallerHost host.Host
+	ServerHost host.Host
+
 	clock *fakeClock
 }
 
@@ -122,8 +125,22 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 		Register: counting,
 		Runtime:  rt,
 		Client:   workerv1connect.NewWorkerServiceClient(c.HTTP(), c.URL()),
-		clock:    clock,
+
+		CallerHost: caller,
+		ServerHost: server,
+
+		clock: clock,
 	}
+}
+
+// newWorkerClient is the typed client this package vends, dialled over the same
+// mocknet as the raw one.
+func newWorkerClient(t testing.TB, h *harness) *Client {
+	t.Helper()
+	c, err := NewClient(h.CallerHost, h.ServerHost.ID())
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+	return c
 }
 
 func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {

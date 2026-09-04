@@ -23,18 +23,10 @@ import (
 // be two answers to "how long after a deploy does the old code stop being
 // served" — which is a promise a platform makes once.
 
-// Target is what a caller names.
-type Target struct {
-	Project     string
-	Environment string
-
-	// Scope is the chain of namespace names from the project root. It is the
-	// ASKER's scope: a name resolves there first and then in each parent.
-	Scope []string
-
-	Kind string
-	Name string
-}
+// Target is what a caller names. It is pkg/project's Address under the name a
+// worker's callers use for it: a gateway names one too, and two spellings of
+// the same five fields is where a caller starts converting between them.
+type Target = project.Address
 
 var (
 	ErrNoTarget   = errors.New("worker: a target with no project, environment, kind or name names nothing")

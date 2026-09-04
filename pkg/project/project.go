@@ -53,6 +53,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -91,6 +92,12 @@ type Project struct {
 	// caller would look it up by. A resolved reference and a reachable name
 	// both arrive as ids, and both need the other direction.
 	located map[string]where
+
+	// hosts is memoized: a compiled project is immutable, so the walk that
+	// produces it runs once however many requests ask.
+	hostsOnce sync.Once
+	hosts     []Host
+	byHost    map[string][]Host
 
 	// index is tcc's flat index with the trailing `links` segment taken off,
 	// so a key is exactly `projects/<pid>/<scope…>/<kind>/<name>` and a lookup
@@ -400,6 +407,27 @@ func (r Resource) Strings(path ...string) []string {
 func (r Resource) Sub(path ...string) Resource {
 	m, _ := descend(r, path...).(map[string]any)
 	return Resource(m)
+}
+
+// List is an ordered list of blocks, e.g. a gateway's transformers.
+//
+// IT IS NOT Sub. The vocabulary has both shapes and they are not
+// interchangeable: `ports` is keyed by name and `transformers` is a sequence,
+// because the order transformers run in is what they mean. Reading a list with
+// Keys returns nothing and silently drops every entry — which for a
+// fail-closed transformer is a security control that quietly stops existing.
+func (r Resource) List(path ...string) []Resource {
+	items, ok := descend(r, path...).([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]Resource, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			out = append(out, Resource(m))
+		}
+	}
+	return out
 }
 
 // Keys lists the names in a nested block, e.g. every port a workload declares.

@@ -41,12 +41,44 @@ type Host struct {
 	Name  string
 }
 
+// Address is where a resource is, in the terms Resource takes. It is here
+// rather than in a consumer because a worker and a gateway both name one, and
+// two spellings of the same five fields is where a caller starts converting
+// between them.
+type Address struct {
+	Project     string
+	Environment string
+
+	// Scope is the chain of namespace names from the project root. It is the
+	// ASKER's scope: a name resolves there first and then in each parent.
+	Scope []string
+
+	Kind string
+	Name string
+}
+
 // Hosts is every name this project answers on, sorted.
 //
-// It is a WALK and not a lookup: it runs when a compiled project is loaded, not
-// on a request. What a gateway does per request is match a name it already has
-// an index for.
+// It is a WALK and not a lookup, and it runs once: the result is memoized
+// because a compiled project is immutable, so a consumer may call it per
+// request without paying for the walk per request.
 func (p *Project) Hosts() []Host {
+	p.hostsOnce.Do(func() { p.hosts, p.byHost = p.walkHosts() })
+	return p.hosts
+}
+
+// At is every host entry answering on one name.
+//
+// IT RETURNS A LIST because a name can serve several paths: an author writes
+// `/checkout` and `/api` as two gateways on one host, which is the only way
+// this vocabulary spells more than one route at a name. Which of them serves a
+// given request is the caller's match, not this lookup's.
+func (p *Project) At(name string) []Host {
+	p.Hosts()
+	return p.byHost[strings.ToLower(name)]
+}
+
+func (p *Project) walkHosts() ([]Host, map[string][]Host) {
 	reachable := schema.ReachableNames(p.root)
 
 	out := make([]Host, 0, len(reachable))
@@ -76,7 +108,13 @@ func (p *Project) Hosts() []Host {
 		}
 		return out[i].Name < out[j].Name
 	})
-	return out
+
+	by := map[string][]Host{}
+	for _, h := range out {
+		key := strings.ToLower(h.Fqdn)
+		by[key] = append(by[key], h)
+	}
+	return out, by
 }
 
 // where is a resource's address in the terms Resource takes.

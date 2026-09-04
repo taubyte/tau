@@ -338,3 +338,59 @@ type secretFunc func(ctx context.Context, project, environment, secretID string)
 func (f secretFunc) Secret(ctx context.Context, project, environment, secretID string) (string, error) {
 	return f(ctx, project, environment, secretID)
 }
+
+// TestTheClientIsTheSameWorker — a gateway holds one interface and one error
+// path whether the worker is in this process or across a stream, and the
+// distinction it depends on is "this deployment is missing a piece" versus
+// "this node cannot do it right now".
+func TestTheClientIsTheSameWorker(t *testing.T) {
+	h := newHarness(t)
+	c := newWorkerClient(t, h)
+
+	res, err := c.Invoke(t.Context(), project.Address{
+		Project: "shop", Environment: "prod", Kind: "application", Name: "api",
+	}, &invoke.Request{Method: "GET", Path: "/orders"})
+	require.NoError(t, err)
+	require.Equal(t, 200, res.Status)
+	require.Equal(t, []string{"/orders"}, res.Headers["X-Path"])
+
+	// A nil request is one with nothing in it rather than a panic: a queue
+	// delivery and a channel dial both carry no method and no path.
+	_, err = c.Invoke(t.Context(), project.Address{
+		Project: "shop", Environment: "prod", Kind: "application", Name: "api",
+	}, nil)
+	require.NoError(t, err)
+}
+
+func TestEverySentinelSurvivesTheWireToTheClient(t *testing.T) {
+	h := newBareHarness(t)
+	c := newWorkerClient(t, h)
+
+	at := func(kind, name string) project.Address {
+		return project.Address{Project: "shop", Environment: "prod", Kind: kind, Name: name}
+	}
+
+	_, err := c.Invoke(t.Context(), project.Address{}, nil)
+	require.ErrorIs(t, err, ErrNoTarget)
+
+	_, err = c.Invoke(t.Context(), at("application", "nope"), nil)
+	require.ErrorIs(t, err, project.ErrNotFound)
+
+	_, err = c.Invoke(t.Context(), project.Address{
+		Project: "shop", Environment: "staging", Kind: "application", Name: "api",
+	}, nil)
+	require.ErrorIs(t, err, register.ErrNotPublished)
+
+	_, err = c.Invoke(t.Context(), at("cache", "orders"), nil)
+	require.ErrorIs(t, err, ErrNoRuntime)
+
+	_, err = c.Invoke(t.Context(), at("application", "worker_pool"), nil)
+	require.ErrorIs(t, err, ErrNoArtifact)
+
+	// A status this package did not build passes through rather than being
+	// forced into a sentinel it does not mean.
+	plain := errors.New("no route to peer")
+	require.Equal(t, plain, unwire(plain))
+	require.Equal(t, connect.CodeUnavailable,
+		connect.CodeOf(unwire(connect.NewError(connect.CodeUnavailable, errors.New("something else")))))
+}

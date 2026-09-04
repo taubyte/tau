@@ -173,3 +173,38 @@ func TestTheAccessorsRefuseTheWrongType(t *testing.T) {
 	require.Empty(t, r.Sub("name"), "a string has no sub-block")
 	require.Equal(t, "", r.String("execution", "memory"))
 }
+
+// TestAListIsNotAMap. The vocabulary has both shapes and they are not
+// interchangeable: `ports` is keyed by name, `transformers` is a sequence
+// because the order they run in is what they mean. Reading a list with Keys
+// returns nothing and silently drops every entry — which cost a gateway its
+// fail-closed transformer before this existed.
+func TestAListIsNotAMap(t *testing.T) {
+	p, err := project.Load([]byte(`{
+		"object":{"id":"p1","gateway":{"rid":{
+			"name":"g",
+			"transformers":[
+				{"name":"redact","fail":"closed"},
+				{"name":"tier_header","fail":"open","namespace":"/shop"},
+				"not a block"
+			],
+			"ports":{"http":{"number":8080}},
+			"name_only":"a string"
+		}}},
+		"indexes":{"projects/p1/gateway/g/links":["branches/main/projects/p1/gateway/rid"]}}`))
+	require.NoError(t, err)
+
+	r, _, err := p.Resource(nil, "gateway", "g")
+	require.NoError(t, err)
+
+	list := r.List("transformers")
+	require.Len(t, list, 2, "the entry that is not a block is dropped, the blocks are kept in order")
+	require.Equal(t, "redact", list[0].String("name"))
+	require.Equal(t, "closed", list[0].String("fail"))
+	require.Equal(t, "/shop", list[1].String("namespace"))
+
+	require.Empty(t, r.Keys("transformers"), "which is exactly why List exists")
+	require.Nil(t, r.List("ports"), "a map is not a list either")
+	require.Nil(t, r.List("name_only"))
+	require.Nil(t, r.List("missing"))
+}
