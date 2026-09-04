@@ -40,9 +40,10 @@ func (srv *Service) GitHubTokenHTTPAuthCleanup(ctx http.Context) (interface{}, e
 	return nil, nil
 }
 
-// authorized is what a gateway route that serves something a project owns
-// declares: authenticate the caller, then authorize the object the path names.
-func (srv *Service) authorized(object func(http.Context) error) http.Handler {
+// authorized is the auth block a gateway route that serves something a project
+// owns declares: authenticate the caller, then authorize the object the path
+// names.
+func (srv *Service) authorized(object func(http.Context) error) http.RouteAuthHandler {
 	return authService.RouteAuth(srv.GitHubTokenHTTPAuth, srv.GitHubTokenHTTPAuthCleanup, object)
 }
 

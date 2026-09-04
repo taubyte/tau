@@ -662,10 +662,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"projectId"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.authorized(srv.authorizeProjectVariable),
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:    srv.authorized(srv.authorizeProjectVariable),
 		Handler: srv.projectAllJobHandler,
 	})
 
@@ -675,10 +672,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"jid"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.authorized(srv.authorizeJobVariable("jid")),
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:    srv.authorized(srv.authorizeJobVariable("jid")),
 		Handler: srv.projectJobHandler,
 	})
 
@@ -688,10 +682,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"jobId", "resourceId"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.authorized(srv.authorizeJobVariable("jobId")),
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:        srv.authorized(srv.authorizeJobVariable("jobId")),
 		Handler:     srv.downloadAsset,
 		RawResponse: true,
 	})
@@ -702,10 +693,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"cid"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.authorized(srv.authorizeLogVariable("cid")),
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:        srv.authorized(srv.authorizeLogVariable("cid")),
 		Handler:     srv.cidHandler,
 		RawResponse: true,
 	})
@@ -716,10 +704,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"jid"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.authorized(srv.authorizeJobVariable("jid")),
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:    srv.authorized(srv.authorizeJobVariable("jid")),
 		Handler: srv.cancelJob,
 	})
 
@@ -729,10 +714,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"jid"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.authorized(srv.authorizeJobVariable("jid")),
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:    srv.authorized(srv.authorizeJobVariable("jid")),
 		Handler: srv.retryJob,
 	})
 

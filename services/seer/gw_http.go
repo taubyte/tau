@@ -190,10 +190,7 @@ func (srv *Service) setupTNSGatewayHTTPRoutes() {
 		Vars: http.Variables{
 			Required: []string{"projectId"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.authorized(srv.authorizeProjectVariable),
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:    srv.authorized(srv.authorizeProjectVariable),
 		Handler: srv.projectConfigHandler,
 	})
 
@@ -203,10 +200,7 @@ func (srv *Service) setupTNSGatewayHTTPRoutes() {
 		Vars: http.Variables{
 			Required: []string{"projectId", "assetCID"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.authorized(srv.authorizeProjectVariable),
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:        srv.authorized(srv.authorizeProjectVariable),
 		Handler:     srv.downloadAsset,
 		RawResponse: true,
 	})

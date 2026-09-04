@@ -18,7 +18,7 @@ func (s *Service) WebSocket(def *service.WebSocketDefinition) {
 			logger.Error(err)
 			return
 		}
-		err = ctx.HandleAuth(auth.Scope(def.Scope, def.Auth.Validator))
+		err = ctx.HandleAuth(auth.Scope(def.Scope, def.Auth.Validate()))
 		if err != nil {
 			// enforceScope will return error to Client
 			logger.Error(err)

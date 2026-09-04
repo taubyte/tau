@@ -77,27 +77,19 @@ func AuthorizeProject(ctx http.Context, authClient authIface.Client, projectID s
 	return AuthorizeRepositories(client, repositories...)
 }
 
-// RouteAuth builds the validator a route that serves something a project owns
-// declares. It runs the token check first and the object check second, because
-// a token says who is asking and never what they may see — the two halves are
-// one declaration so a route cannot carry the first and quietly omit the second.
+// RouteAuth builds the whole auth block a route that serves something a project
+// owns declares: the token check and the object check, each in its own field of
+// the route table. A token says who is asking and never what they may see, so
+// both halves are named where the route is registered — a route carrying only
+// the first is visibly missing the second rather than merely behaving as if it
+// were absent.
 //
-// The refusal path releases whatever the token check built: an auth handler that
-// returns an error never reaches the route's GC, so a cancel func left behind
-// there would sit out its full timeout with nobody left to call it.
-func RouteAuth(authenticate, cleanup http.Handler, object func(http.Context) error) http.Handler {
-	return func(ctx http.Context) (interface{}, error) {
-		if _, err := authenticate(ctx); err != nil {
-			return nil, err
-		}
-
-		if err := object(ctx); err != nil {
-			if cleanup != nil {
-				cleanup(ctx)
-			}
-			return nil, err
-		}
-
-		return nil, nil
+// The order and the release-on-refusal are the router's, in
+// http.RouteAuthHandler.Validate.
+func RouteAuth(authenticate, cleanup http.Handler, object func(http.Context) error) http.RouteAuthHandler {
+	return http.RouteAuthHandler{
+		Validator: authenticate,
+		Object:    object,
+		GC:        cleanup,
 	}
 }

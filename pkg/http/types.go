@@ -16,9 +16,55 @@ type PermanentRedirect Redirect
 
 type Handler func(ctx Context) (interface{}, error)
 
+// RouteAuthHandler is a route's auth block, and it has two halves because a
+// token only answers one of the two questions a route has to ask. Validator
+// says who is asking. Object says whether that caller may have the thing this
+// route's path names — the project, the job, the cid.
+//
+// They are separate fields so that a route which serves something a project
+// owns cannot declare the first and quietly omit the second: what a route
+// authorizes is in the route table, where it can be read, and where a test can
+// tell a route that names an object from one that only checks a token.
 type RouteAuthHandler struct {
+	// Validator authenticates the caller.
 	Validator Handler
-	GC        Handler
+
+	// Object authorizes the object the path names, for the caller Validator
+	// just identified. Left nil by a route whose path names nothing owned.
+	Object func(Context) error
+
+	// GC releases whatever Validator built for the request.
+	GC Handler
+}
+
+// Validate is the handler the router runs for a route: Validator first, Object
+// second, because there is nothing to authorize until we know who is asking.
+//
+// A refusal by Object calls GC here rather than leaving it to the route,
+// because an auth handler that returns an error never reaches the route's
+// cleanup — anything Validator built would sit out its full timeout with
+// nobody left to release it.
+func (h RouteAuthHandler) Validate() Handler {
+	if h.Object == nil {
+		return h.Validator
+	}
+
+	return func(ctx Context) (interface{}, error) {
+		if h.Validator != nil {
+			if _, err := h.Validator(ctx); err != nil {
+				return nil, err
+			}
+		}
+
+		if err := h.Object(ctx); err != nil {
+			if h.GC != nil {
+				h.GC(ctx)
+			}
+			return nil, err
+		}
+
+		return nil, nil
+	}
 }
 
 type RawData struct {

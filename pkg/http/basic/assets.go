@@ -30,7 +30,7 @@ func (s *Service) ServeAssets(def *service.AssetsDefinition) {
 			logger.Error(err)
 			return
 		}
-		err = _ctx.HandleAuth(auth.Scope(def.Scope, def.Auth.Validator))
+		err = _ctx.HandleAuth(auth.Scope(def.Scope, def.Auth.Validate()))
 		if err != nil {
 			// enforceScope will return error to Client
 			logger.Error(err)
