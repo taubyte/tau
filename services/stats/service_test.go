@@ -348,3 +348,25 @@ func TestFreshAndAllReadThrough(t *testing.T) {
 	require.Len(t, s.Fresh(), 1)
 	require.Equal(t, s.Peer(), s.All()[0].Peer)
 }
+
+// TestAddressesReachTheWireAndComeBack. DNS is made of these, so a field that
+// was dropped in encoding would produce a routing answer with nowhere to send
+// anyone — and it would look like a working answer.
+func TestAddressesReachTheWireAndComeBack(t *testing.T) {
+	bus := &memBus{}
+	s := newService(t, bus, fixedSnapshot(Snapshot{
+		Load: 0.2, Ready: true, Serving: []string{"shop"},
+		Addresses: []string{"203.0.113.7", "2001:db8::1"},
+	}), nil)
+	require.NoError(t, s.Start(context.Background()))
+
+	eventually(t, "a report to be published", func() bool { return len(bus.published()) > 0 })
+
+	var decoded statsv1.Report
+	require.NoError(t, proto.Unmarshal(bus.published()[0], &decoded))
+	require.Equal(t, []string{"203.0.113.7", "2001:db8::1"}, decoded.GetAddresses())
+
+	got := s.Route("shop", time.Minute)
+	require.Len(t, got, 1)
+	require.Equal(t, []string{"203.0.113.7", "2001:db8::1"}, got[0].Addresses)
+}

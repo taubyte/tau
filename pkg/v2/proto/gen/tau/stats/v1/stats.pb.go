@@ -99,7 +99,24 @@ type Report struct {
 	// it is the only one serving a name — refusing to answer is worse than
 	// answering with the busy node, and the reader can see the number and
 	// decide. A draining node is never the answer, whatever its load says.
-	Ready         bool `protobuf:"varint,5,opt,name=ready,proto3" json:"ready,omitempty"`
+	Ready bool `protobuf:"varint,5,opt,name=ready,proto3" json:"ready,omitempty"`
+	// addresses is where clients reach this node — the IPs a DNS answer is made
+	// of, not the libp2p multiaddrs the fleet gossips over.
+	//
+	// THE TWO ARE DIFFERENT AND CONFLATING THEM IS A REAL BUG, not a tidiness
+	// point. A node's peerstore address is how other NODES dial it, and behind
+	// NAT, a mesh VPN or a container bridge that is routinely an address no
+	// client can reach. Answering DNS from the peerstore would hand the internet
+	// an address that works from inside the fleet and nowhere else, and it would
+	// do it only for the deployments that have such a topology — which is the
+	// ones that are hardest to debug.
+	//
+	// So it is reported, not derived: the node states where it believes clients
+	// can reach it, the same way it states its load, and it is a claim in the
+	// same sense. A node that reports an address it does not answer on takes
+	// traffic it cannot serve, and only the caller's health checking catches
+	// that.
+	Addresses     []string `protobuf:"bytes,6,rep,name=addresses,proto3" json:"addresses,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -169,17 +186,25 @@ func (x *Report) GetReady() bool {
 	return false
 }
 
+func (x *Report) GetAddresses() []string {
+	if x != nil {
+		return x.Addresses
+	}
+	return nil
+}
+
 var File_tau_stats_v1_stats_proto protoreflect.FileDescriptor
 
 const file_tau_stats_v1_stats_proto_rawDesc = "" +
 	"\n" +
-	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\x82\x01\n" +
+	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\xa0\x01\n" +
 	"\x06Report\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12 \n" +
 	"\vincarnation\x18\x02 \x01(\x04R\vincarnation\x12\x12\n" +
 	"\x04load\x18\x03 \x01(\x01R\x04load\x12\x18\n" +
 	"\aserving\x18\x04 \x03(\tR\aserving\x12\x14\n" +
-	"\x05ready\x18\x05 \x01(\bR\x05readyB\xae\x01\n" +
+	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x1c\n" +
+	"\taddresses\x18\x06 \x03(\tR\taddressesB\xae\x01\n" +
 	"\x10com.tau.stats.v1B\n" +
 	"StatsProtoP\x01Z<github.com/taubyte/tau/pkg/v2/proto/gen/tau/stats/v1;statsv1\xa2\x02\x03TSX\xaa\x02\fTau.Stats.V1\xca\x02\fTau\\Stats\\V1\xe2\x02\x18Tau\\Stats\\V1\\GPBMetadata\xea\x02\x0eTau::Stats::V1b\x06proto3"
 

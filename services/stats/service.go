@@ -165,6 +165,7 @@ func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
 				Load:        r.GetLoad(),
 				Serving:     r.GetServing(),
 				Ready:       r.GetReady(),
+				Addresses:   r.GetAddresses(),
 			})
 		}
 	}
@@ -212,6 +213,7 @@ func (s *Service) report(ctx context.Context) {
 		Load:        snap.Load,
 		Serving:     snap.Serving,
 		Ready:       snap.Ready,
+		Addresses:   snap.Addresses,
 	})
 	if err != nil {
 		return
@@ -227,6 +229,7 @@ func (s *Service) report(ctx context.Context) {
 		Load:        snap.Load,
 		Serving:     snap.Serving,
 		Ready:       snap.Ready,
+		Addresses:   snap.Addresses,
 	})
 
 	s.cfg.Bus.Publish(ctx, b)

@@ -298,3 +298,29 @@ func peers(ns []Node) []string {
 	}
 	return out
 }
+
+// TestAddressesAreCarriedAndCopied. Where clients reach a node is reported,
+// not derived from the peerstore, because a peerstore address is how other
+// NODES dial — behind NAT or a container bridge that is an address no client
+// can use. The view carries the claim and parses nothing.
+func TestAddressesAreCarriedAndCopied(t *testing.T) {
+	c := newClock()
+	v := view(t, c, Options{})
+
+	addrs := []string{"203.0.113.7", "2001:db8::1", "edge.example.com"}
+	require.NoError(t, v.Observe(Report{
+		Peer: "a", Ready: true, Serving: []string{"shop"}, Addresses: addrs,
+	}))
+
+	got := v.Route("shop", time.Minute)
+	require.Len(t, got, 1)
+	require.Equal(t, addrs, got[0].Addresses,
+		"a hostname is as valid here as an A record: parsing is the reader's question")
+
+	// The caller may reuse its slice, and the row handed out is a copy too.
+	addrs[0] = "somebody-elses-box"
+	got[0].Addresses[1] = "mutated"
+	require.Equal(t,
+		[]string{"203.0.113.7", "2001:db8::1", "edge.example.com"},
+		v.Route("shop", time.Minute)[0].Addresses)
+}

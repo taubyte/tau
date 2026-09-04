@@ -105,6 +105,17 @@ type Report struct {
 	// and a node at 0.99 load is still the right answer when it is the only
 	// one serving a name.
 	Ready bool
+
+	// Addresses is where CLIENTS reach this node, which is not where the fleet
+	// reaches it. A peerstore address is how other nodes dial, and behind NAT,
+	// a mesh VPN or a container bridge that is routinely unreachable from the
+	// internet — so this is reported rather than derived, and it is a claim in
+	// the same sense as Load.
+	//
+	// This package does not parse them. Whether a string is a usable A record,
+	// an AAAA, or a hostname is the reader's question, and a view that had an
+	// opinion would be deciding for every reader at once.
+	Addresses []string
 }
 
 // Node is one peer's current stats, as this process sees them.
@@ -114,6 +125,7 @@ type Node struct {
 	Load        float64
 	Serving     []string
 	Ready       bool
+	Addresses   []string
 
 	// Age is how long ago this process received the report. It is on every row
 	// because a stale load figure is a confidently wrong one, and a caller
@@ -170,6 +182,7 @@ type row struct {
 	load        float64
 	serving     []string
 	ready       bool
+	addresses   []string
 	received    time.Time
 }
 
@@ -215,6 +228,7 @@ func (v *View) Observe(r Report) error {
 		load:        r.Load,
 		serving:     serving,
 		ready:       r.Ready,
+		addresses:   append([]string(nil), r.Addresses...),
 		received:    now,
 	}
 	return nil
@@ -314,6 +328,7 @@ func node(peer string, r *row, now time.Time) Node {
 		Load:        r.load,
 		Serving:     append([]string(nil), r.serving...),
 		Ready:       r.ready,
+		Addresses:   append([]string(nil), r.addresses...),
 		Age:         now.Sub(r.received),
 	}
 }

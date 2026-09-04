@@ -59,6 +59,12 @@ type Snapshot struct {
 
 	// Ready is false while draining, warming or degraded.
 	Ready bool
+
+	// Addresses is where clients reach this node. It is reported rather than
+	// read off the host's peerstore: a peerstore address is how other NODES
+	// dial, and behind NAT or a container bridge that is an address no client
+	// can use. See the proto field for the full argument.
+	Addresses []string
 }
 
 // ReporterFunc adapts a function to Reporter.

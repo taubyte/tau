@@ -83,4 +83,22 @@ message Report {
   // answering with the busy node, and the reader can see the number and
   // decide. A draining node is never the answer, whatever its load says.
   bool ready = 5;
+
+  // addresses is where clients reach this node — the IPs a DNS answer is made
+  // of, not the libp2p multiaddrs the fleet gossips over.
+  //
+  // THE TWO ARE DIFFERENT AND CONFLATING THEM IS A REAL BUG, not a tidiness
+  // point. A node's peerstore address is how other NODES dial it, and behind
+  // NAT, a mesh VPN or a container bridge that is routinely an address no
+  // client can reach. Answering DNS from the peerstore would hand the internet
+  // an address that works from inside the fleet and nowhere else, and it would
+  // do it only for the deployments that have such a topology — which is the
+  // ones that are hardest to debug.
+  //
+  // So it is reported, not derived: the node states where it believes clients
+  // can reach it, the same way it states its load, and it is a claim in the
+  // same sense. A node that reports an address it does not answer on takes
+  // traffic it cannot serve, and only the caller's health checking catches
+  // that.
+  repeated string addresses = 6;
 }
