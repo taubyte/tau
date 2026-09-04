@@ -1,0 +1,252 @@
+// Package stats collects what every node says about itself, so dns and gateway
+// can route from measurements instead of guesses.
+//
+// It is one half of v1's seer; dns is the other. The split is not tidiness: the
+// two halves have different shapes at scale (answering a query is read-mostly
+// and latency-bound, collecting usage is write-heavy and staleness-tolerant)
+// and different trust properties, which pkg/v2/stats' doc argues in full.
+//
+// THIS PACKAGE IS THE NETWORK HALF AND NOTHING ELSE. Every decision about what
+// a report means — how old is too old, who wins a tie, whether a saturated node
+// is still an answer — lives in pkg/v2/stats, which has no host, no bus and no
+// goroutine in it. What is here is a ticker, an encoder and a subscription, so
+// that the interesting rules stay unit-testable and this file stays boring.
+package stats
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/libp2p/go-libp2p/core/host"
+	"google.golang.org/protobuf/proto"
+
+	statsv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/stats/v1"
+	"github.com/taubyte/tau/pkg/v2/stats"
+)
+
+// Service is a node's stats participation: it broadcasts this node's own
+// numbers and keeps a view of everyone else's.
+type Service struct {
+	cfg  Config
+	peer string
+	view *stats.View
+
+	// incarnation distinguishes this run from the last. It is chosen once, at
+	// construction, and never lowered — see the proto's field comment.
+	incarnation uint64
+
+	mu      sync.Mutex
+	stopped bool
+	cancel  context.CancelFunc
+	done    chan struct{}
+}
+
+// Option adjusts a Service at construction.
+type Option func(*Service)
+
+// WithIncarnation sets the run identifier explicitly. Production leaves it to
+// the clock; tests use it to say "this is the run after that one".
+func WithIncarnation(n uint64) Option {
+	return func(s *Service) { s.incarnation = n }
+}
+
+// New builds the service. It does not start it — Start does, so a caller can
+// construct, inspect and then decide.
+//
+// It takes a host.Host and never a peer.Node: the host is here for one thing,
+// this node's identity, and taking the bundle to get an id is what makes dream
+// parity a retrofit instead of an adapter.
+func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
+	c, err := cfg.withDefaults()
+	if err != nil {
+		return nil, err
+	}
+	if h == nil {
+		return nil, errors.New("stats: a service with no host does not know who it is reporting as")
+	}
+
+	view, err := stats.New(c.viewOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	s := &Service{
+		cfg:         c,
+		peer:        h.ID().String(),
+		view:        view,
+		incarnation: uint64(c.Now().UnixNano()),
+		done:        make(chan struct{}),
+	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s, nil
+}
+
+// Start begins broadcasting and listening. It returns once both are running.
+func (s *Service) Start(ctx context.Context) error {
+	s.mu.Lock()
+	if s.stopped {
+		s.mu.Unlock()
+		return errors.New("stats: this service has been closed")
+	}
+	if s.cancel != nil {
+		s.mu.Unlock()
+		return errors.New("stats: already started")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	s.cancel = cancel
+	s.mu.Unlock()
+
+	reports, err := s.cfg.Bus.Subscribe(ctx)
+	if err != nil {
+		cancel()
+		s.mu.Lock()
+		s.cancel = nil
+		s.mu.Unlock()
+		return fmt.Errorf("stats: subscribing: %w", err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); s.listen(ctx, reports) }()
+	go func() { defer wg.Done(); s.broadcast(ctx) }()
+	go func() { wg.Wait(); close(s.done) }()
+
+	return nil
+}
+
+// Close stops the service and waits for it to finish. It is safe to call twice.
+func (s *Service) Close() error {
+	s.mu.Lock()
+	if s.stopped {
+		s.mu.Unlock()
+		return nil
+	}
+	s.stopped = true
+	cancel := s.cancel
+	s.mu.Unlock()
+
+	if cancel == nil {
+		return nil // never started
+	}
+	cancel()
+	<-s.done
+	return nil
+}
+
+// listen folds every report that arrives into the view.
+//
+// A REPORT THAT DOES NOT DECODE IS DROPPED AND THE LOOP CONTINUES. The bus is
+// a broadcast medium: one malformed message must not be able to stop a node
+// from hearing every subsequent one, which is what returning here would do.
+func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case b, ok := <-reports:
+			if !ok {
+				return
+			}
+			var r statsv1.Report
+			if err := proto.Unmarshal(b, &r); err != nil {
+				continue
+			}
+			// Observe refuses a bad peer, a bad load and an older
+			// incarnation. Each refusal is about the sender, not about this
+			// node, so there is nothing here to do but keep listening.
+			s.view.Observe(stats.Report{
+				Peer:        r.GetPeer(),
+				Incarnation: r.GetIncarnation(),
+				Load:        r.GetLoad(),
+				Serving:     r.GetServing(),
+				Ready:       r.GetReady(),
+			})
+		}
+	}
+}
+
+// broadcast sends this node's own report on every tick, and once immediately so
+// a fresh node is routable before the first interval elapses rather than after
+// it.
+func (s *Service) broadcast(ctx context.Context) {
+	t := time.NewTicker(s.cfg.Interval)
+	defer t.Stop()
+
+	s.report(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.report(ctx)
+		}
+	}
+}
+
+// report asks this node about itself and broadcasts the answer.
+//
+// A FAILURE HERE IS NOT FATAL AND IS NOT RETRIED. The next tick is along
+// shortly, and every reader already knows how old the row it holds is — that is
+// what Age is for. Retrying inside a tick would only make a struggling node
+// send more.
+func (s *Service) report(ctx context.Context) {
+	snap, err := s.cfg.Reporter.Snapshot(ctx)
+	if err != nil {
+		return
+	}
+	if snap.Load < 0 || snap.Load > 1 {
+		// Refused rather than clamped: 1.4 clamped to 1 hides a broken
+		// measurement behind a plausible number, and this node would then be
+		// sorted as merely saturated rather than as broken.
+		return
+	}
+
+	b, err := proto.Marshal(&statsv1.Report{
+		Peer:        s.peer,
+		Incarnation: s.incarnation,
+		Load:        snap.Load,
+		Serving:     snap.Serving,
+		Ready:       snap.Ready,
+	})
+	if err != nil {
+		return
+	}
+
+	// This node folds its own report in directly rather than waiting to hear
+	// it back. Whether a bus echoes to its own publisher is a property of the
+	// bus, and a node that could not see itself would be missing from its own
+	// routing answers on any bus that does not.
+	s.view.Observe(stats.Report{
+		Peer:        s.peer,
+		Incarnation: s.incarnation,
+		Load:        snap.Load,
+		Serving:     snap.Serving,
+		Ready:       snap.Ready,
+	})
+
+	s.cfg.Bus.Publish(ctx, b)
+}
+
+// Peer is this node's identity, as it reports it.
+func (s *Service) Peer() string { return s.peer }
+
+// Route is the read dns and gateway make: who can answer for this name, no
+// older than maxAge, least loaded first. The caller states the tolerance — see
+// pkg/v2/stats for why there is no default.
+func (s *Service) Route(name string, maxAge time.Duration) []stats.Node {
+	return s.view.Route(name, maxAge)
+}
+
+// Fresh is every node whose report arrived within the configured window.
+func (s *Service) Fresh() []stats.Node { return s.view.Fresh() }
+
+// All is every remembered node, at any age.
+func (s *Service) All() []stats.Node { return s.view.All() }
+
+// Get is one node's row, however old.
+func (s *Service) Get(peer string) (stats.Node, bool) { return s.view.Get(peer) }
