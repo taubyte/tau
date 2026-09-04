@@ -5,6 +5,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/cli/commands/autocomplete"
 	buildCmd "github.com/taubyte/tau/tools/tau/cli/commands/build"
 	"github.com/taubyte/tau/tools/tau/cli/commands/current"
+	"github.com/taubyte/tau/tools/tau/cli/commands/importcmd"
 	"github.com/taubyte/tau/tools/tau/cli/commands/login"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds/build"
@@ -56,6 +57,7 @@ func New() (*cli.App, error) {
 			current.Command,
 			buildCmd.Command,
 			validate.Command,
+			importcmd.Command,
 		},
 	}
 
