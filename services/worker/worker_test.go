@@ -394,3 +394,24 @@ func TestEverySentinelSurvivesTheWireToTheClient(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable,
 		connect.CodeOf(unwire(connect.NewError(connect.CodeUnavailable, errors.New("something else")))))
 }
+
+// A TIER GETS THE `serve` BLOCK, flattened, and nothing else off the resource.
+// It is by definition how a thing is served — a static site's mode and index
+// live there — and passing the whole resource would put every access rule and
+// every variable into every Spec, which is a wider thing to hold for one that
+// is not read.
+func TestTheServeBlockReachesTheTier(t *testing.T) {
+	h := newHarness(t)
+
+	invokeOver(t, h, target("website", "shop"))
+	spec := h.Static.specs()[0]
+
+	require.Equal(t, "static", spec.Runtime, "read off the kind's Engines()")
+	require.Equal(t, "spa", spec.Settings["serve/mode"])
+
+	// A resource with no serve block carries no settings, rather than an empty
+	// map every tier has to check for.
+	h2 := newHarness(t)
+	invokeOver(t, h2, target("application", "api"))
+	require.Nil(t, h2.Runtime.specs()[0].Settings)
+}

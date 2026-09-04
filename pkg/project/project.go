@@ -424,6 +424,17 @@ func (r Resource) Sub(path ...string) Resource {
 // because the order transformers run in is what they mean. Reading a list with
 // Keys returns nothing and silently drops every entry — which for a
 // fail-closed transformer is a security control that quietly stops existing.
+// Map reads a block as it stands, for a consumer that wants the whole of one
+// rather than a named field inside it.
+//
+// IT IS RAW ON PURPOSE. What is in a block is the vocabulary's, and a caller
+// that hands one onwards — a worker giving a tier its serving settings — should
+// not be re-typing every field a kind might grow.
+func (r Resource) Map(path ...string) (map[string]any, bool) {
+	m, ok := descend(r, path...).(map[string]any)
+	return m, ok
+}
+
 func (r Resource) List(path ...string) []Resource {
 	items, ok := descend(r, path...).([]any)
 	if !ok {

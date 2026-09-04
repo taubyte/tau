@@ -35,6 +35,7 @@ type harness struct {
 	Worker   *Service
 	Register *countingRegister
 	Runtime  *fakeRuntime
+	Static   *fakeRuntime
 	Client   workerv1connect.WorkerServiceClient
 
 	CallerHost host.Host
@@ -89,10 +90,13 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 	require.NoError(t, err)
 
 	counting := &countingRegister{Register: reg}
+	// THE THREE ENGINES THE VOCABULARY NAMES, so a kind's Engines() is what
+	// decides which one runs a resource and this harness never is.
 	rt := &fakeRuntime{name: "container"}
 	wasm := &fakeRuntime{name: "wasm"}
+	site := &fakeRuntime{name: "static"}
 
-	pool, err := invoke.NewPool(invoke.WithRuntime(rt, wasm))
+	pool, err := invoke.NewPool(invoke.WithRuntime(rt, wasm, site))
 	require.NoError(t, err)
 	t.Cleanup(func() { pool.Close() })
 
@@ -124,6 +128,7 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 		Worker:   s,
 		Register: counting,
 		Runtime:  rt,
+		Static:   site,
 		Client:   workerv1connect.NewWorkerServiceClient(c.HTTP(), c.URL()),
 
 		CallerHost: caller,

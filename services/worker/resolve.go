@@ -100,7 +100,37 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, r proj
 	if concurrency, ok := r.Int("limits", "concurrency"); ok {
 		spec.Concurrency = int(concurrency)
 	}
+	spec.Settings = settingsOf(r)
 	return spec, nil
+}
+
+// settingsOf is the `serve` block, flattened, for whichever tier runs this.
+//
+// IT IS ONE BLOCK AND NOT THE WHOLE RESOURCE. `serve` is by definition how a
+// thing is served, so it is the block a tier reads and the one this can hand
+// over without deciding what any tier needs — a static site's mode and index
+// live there, and so will whatever a later tier is told about serving. Passing
+// the entire resource would put every access rule and every variable into every
+// Spec, which is a wider thing to hold for one that is not read.
+//
+// Nothing here is per-environment beyond what the compile already resolved:
+// this reads the compiled object, so a `mode_preview` is already `mode`.
+func settingsOf(r project.Resource) map[string]string {
+	block, ok := r.Map("serve")
+	if !ok || len(block) == 0 {
+		return nil
+	}
+
+	out := make(map[string]string, len(block))
+	for key, value := range block {
+		if s, ok := value.(string); ok {
+			out["serve/"+key] = s
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // runtimeOf says which tier runs this.
