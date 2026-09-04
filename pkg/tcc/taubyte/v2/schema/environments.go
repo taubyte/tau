@@ -1,6 +1,10 @@
 package schema
 
 import (
+	"regexp"
+	"sort"
+	"strings"
+
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
@@ -67,6 +71,14 @@ func environmentsIn(q *yaseer.Query, of string) ([]Environment, error) {
 		}
 		out = append(out, env)
 	}
+
+	// SORTED, BECAUSE THE SOURCE ORDER IS A GO MAP'S. yaseer's List ranges a
+	// map, so reading the same document twice yields the same set in a
+	// different order — and a deploy that publishes production, then preview,
+	// then production-first next time is one whose output nobody can diff and
+	// whose failures land on a different deployment each run. The document's
+	// own order is not recoverable here, so name order is what there is.
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
@@ -81,6 +93,91 @@ func EnvironmentNames(envs []Environment) []string {
 		}
 	}
 	return out
+}
+
+// Deployments is every deployment a pushed branch feeds, shadows included, in
+// declaration order.
+//
+// THIS IS THE FUNCTION EnvironmentsOf's DOC PROMISES — "called once per push by
+// whatever resolves a branch to its deployments" — and until it existed a push
+// had nowhere to send its build and a publish had to be told an environment by
+// hand.
+//
+// ONE BRANCH FEEDS SEVERAL. `main` feeds production AND the `ab` shadow written
+// inside it, because a shadow is its own release over its parent's state; a
+// caller that took the first match would silently stop deploying one of them.
+//
+// A project that declares no table declares one deployment, and this returns
+// nothing for it: there is no name to return, and inventing one here would be
+// this package naming a deployment the author did not.
+func Deployments(envs []Environment, branch string) []Environment {
+	var out []Environment
+	for _, e := range envs {
+		if matchesAny(e.Branches, branch) {
+			out = append(out, e)
+		}
+		for _, s := range e.Shadows {
+			if matchesAny(s.Branches, branch) {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// DeploymentNames is Deployments reduced to what a publish addresses.
+func DeploymentNames(envs []Environment, branch string) []string {
+	var out []string
+	for _, e := range Deployments(envs, branch) {
+		out = append(out, e.Name)
+	}
+	return out
+}
+
+func matchesAny(globs []string, branch string) bool {
+	for _, g := range globs {
+		if MatchBranch(g, branch) {
+			return true
+		}
+	}
+	return false
+}
+
+// MatchBranch is the glob a `branches` entry is.
+//
+// `*` CROSSES `/`, AND THAT IS THE WHOLE REASON THIS IS NOT path.Match. The
+// fixture's preview environment is `branches: ["*"]` and means every branch,
+// including `feature/checkout` — under path.Match's separator-aware `*` it
+// would match none of the branches anybody actually pushes, and `release/*`
+// would stop at `release/1.0` while missing `release/1/0`. Git's own refspec
+// globbing crosses separators for the same reason.
+//
+// `?` is one character. Nothing else is special, and nothing needs escaping:
+// git-check-ref-format already forbids `*` and `?` in a branch name, so a glob
+// character in a `branches` entry is always a glob character.
+func MatchBranch(glob, branch string) bool {
+	if glob == "" {
+		return false
+	}
+	var pattern strings.Builder
+	pattern.WriteString("^")
+	for _, r := range glob {
+		switch r {
+		case '*':
+			pattern.WriteString(".*")
+		case '?':
+			pattern.WriteString(".")
+		default:
+			pattern.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+	pattern.WriteString("$")
+
+	re, err := regexp.Compile(pattern.String())
+	if err != nil {
+		return false
+	}
+	return re.MatchString(branch)
 }
 
 // WithProjectEnvironments reads the table off the project at `fs`/`path` and declares

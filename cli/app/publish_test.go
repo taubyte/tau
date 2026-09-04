@@ -15,15 +15,19 @@ import (
 	"github.com/taubyte/tau/services/v2/node/boot"
 )
 
-// project is the vocabulary's own fixture, which is a config repository like
-// any other and the only one guaranteed to keep compiling.
-const project = "../../pkg/tcc/taubyte/v2/fixtures/basic"
+// basicProject is the vocabulary's own fixture, which is a config repository
+// like any other and the only one guaranteed to keep compiling. envsProject
+// declares three deployments and a shadow, and suffixes keys for them.
+const (
+	basicProject = "../../pkg/tcc/taubyte/v2/fixtures/basic"
+	envsProject  = "../../pkg/tcc/taubyte/v2/fixtures/environments"
+)
 
 // A DRY RUN NEEDS NO FLEET. Whether a config compiles is a question about the
 // config, and answering it should not require a swarm key, a bootstrap peer, or
 // anything else being up.
 func TestPublishDryRun(t *testing.T) {
-	out, err := run(t, "publish", "--dry-run", "-c", nodeFile(t, nil), "-p", "shop", "-e", "prod", project)
+	out, err := run(t, "publish", "--dry-run", "-c", nodeFile(t, nil), "-p", "shop", "-e", "prod", basicProject)
 	assert.NilError(t, err)
 	assert.Assert(t, strings.Contains(out, "compiles"), out)
 
@@ -37,7 +41,7 @@ func TestPublishDryRun(t *testing.T) {
 // With the zone, the generated names are whole and nothing is held back.
 func TestPublishDryRunWithTheZone(t *testing.T) {
 	out, err := run(t, "publish", "--dry-run", "--cloud-fqdn", "acme.example",
-		"-c", nodeFile(t, nil), "-p", "shop", project)
+		"-c", nodeFile(t, nil), "-p", "shop", basicProject)
 	assert.NilError(t, err)
 	assert.Assert(t, strings.Contains(out, "acme.example"), out)
 	assert.Assert(t, !strings.Contains(out, "not published"), out)
@@ -50,7 +54,7 @@ func TestPublishReachesAFleet(t *testing.T) {
 	fleet := fleetWithARegister(t)
 
 	out, err := run(t, "publish", "-c", nodeFile(t, fleet),
-		"-p", "shop", "-e", "prod", "--cloud-fqdn", "acme.example", project)
+		"-p", "shop", "-e", "prod", "--cloud-fqdn", "acme.example", basicProject)
 	assert.NilError(t, err)
 	assert.Assert(t, strings.Contains(out, "published shop/prod revision 1"), out)
 	assert.Assert(t, strings.Contains(out, "answers on"), out)
@@ -58,10 +62,52 @@ func TestPublishReachesAFleet(t *testing.T) {
 	// Publishing the same directory again does not move the pointer: the
 	// content is the name, so a re-run is a no-op rather than a revision.
 	out, err = run(t, "publish", "-c", nodeFile(t, fleet),
-		"-p", "shop", "-e", "prod", "--cloud-fqdn", "acme.example", project)
+		"-p", "shop", "-e", "prod", "--cloud-fqdn", "acme.example", basicProject)
 	assert.NilError(t, err)
 	assert.Assert(t, strings.Contains(out, "unchanged"), out)
 	assert.Assert(t, strings.Contains(out, "revision 1"), out)
+}
+
+// A PUSH IS THE DEPLOY. The project says which branches feed which of its
+// deployments, so one push to `main` puts production and the shadow written
+// inside it live — and nobody types an environment on a command line.
+func TestPublishDeploysEveryEnvironmentTheBranchFeeds(t *testing.T) {
+	fleet := fleetWithARegister(t)
+
+	out, err := run(t, "publish", "-c", nodeFile(t, fleet),
+		"-p", "shop", "--branch", "main", "--cloud-fqdn", "acme.example", envsProject)
+	assert.NilError(t, err)
+
+	for _, deployment := range []string{"shop/production", "shop/ab", "shop/preview"} {
+		assert.Assert(t, strings.Contains(out, "published "+deployment+" revision 1"), out)
+	}
+	assert.Assert(t, !strings.Contains(out, "shop/staging"), out)
+
+	// A different branch is a different set, and its revisions start at one of
+	// their own: a deployment's revision is its own pointer's.
+	out, err = run(t, "publish", "-c", nodeFile(t, fleet),
+		"-p", "shop", "--branch", "release/1.4", "--cloud-fqdn", "acme.example", envsProject)
+	assert.NilError(t, err)
+	assert.Assert(t, strings.Contains(out, "published shop/staging revision 1"), out)
+
+	// PREVIEW TAKES BOTH BRANCHES, and the branch is part of the compile — so
+	// the second push publishes a different object over the first rather than
+	// finding it unchanged. `branches: ["*"]` is ONE deployment fed by every
+	// branch, and the last push wins it; a preview per branch would be a
+	// deployment per branch, which the table can say and this project does not.
+	assert.Assert(t, strings.Contains(out, "published shop/preview revision 2"), out)
+}
+
+// EACH DEPLOYMENT IS ITS OWN COMPILE, which is what makes a per-environment
+// limit mean anything. The dry run says so per deployment rather than once.
+func TestPublishCompilesEachDeploymentSeparately(t *testing.T) {
+	out, err := run(t, "publish", "--dry-run", "-c", nodeFile(t, nil),
+		"-p", "shop", "--branch", "main", envsProject)
+	assert.NilError(t, err)
+
+	for _, deployment := range []string{"production", "ab", "preview"} {
+		assert.Assert(t, strings.Contains(out, "compiles for "+deployment), out)
+	}
 }
 
 func TestPublishRefusesWhatItCannotDo(t *testing.T) {
@@ -75,8 +121,17 @@ func TestPublishRefusesWhatItCannotDo(t *testing.T) {
 
 	// A project name is not derivable from anything, and guessing one would
 	// publish under a name nobody asked for.
-	_, err = run(t, "publish", "-c", config, project)
+	_, err = run(t, "publish", "-c", config, basicProject)
 	assert.ErrorContains(t, err, "project")
+
+	// A project whose deployments are fed by branches needs one of the two
+	// things that can name a deployment.
+	_, err = run(t, "publish", "--dry-run", "-c", config, "-p", "shop", envsProject)
+	assert.ErrorContains(t, err, "branch")
+
+	// A misspelled environment is not a new one.
+	_, err = run(t, "publish", "--dry-run", "-c", config, "-p", "shop", "-e", "prodution", envsProject)
+	assert.ErrorContains(t, err, "production")
 
 	// Nothing runs a register, so the wait ends and says what it waited for.
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -84,7 +139,7 @@ func TestPublishRefusesWhatItCannotDo(t *testing.T) {
 
 	app := newApp()
 	err = app.RunContext(ctx, []string{os.Args[0], "publish", "-c", config,
-		"-p", "shop", "--wait", "600ms", project})
+		"-p", "shop", "--wait", "600ms", basicProject})
 	assert.ErrorContains(t, err, node.Register)
 }
 

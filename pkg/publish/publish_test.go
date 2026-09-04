@@ -12,7 +12,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/project"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/v2/node/publish"
+	"github.com/taubyte/tau/pkg/publish"
 )
 
 // register is the real one over a map: what a publish does is decided by what
@@ -29,7 +29,7 @@ func fixture(t *testing.T) (afero.Fs, string) {
 	t.Helper()
 
 	fs := afero.NewMemMapFs()
-	src := "../../../../pkg/tcc/taubyte/v2/fixtures/basic"
+	src := "../tcc/taubyte/v2/fixtures/basic"
 
 	require.NoError(t, afero.Walk(afero.NewOsFs(), src, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {

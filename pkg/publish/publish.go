@@ -31,6 +31,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/afero"
 
@@ -93,19 +94,75 @@ type Result struct {
 	Unchanged bool
 }
 
+// DefaultEnvironment names the one deployment of a project that declares no
+// environment table. It is only ever used where nothing else names one.
+const DefaultEnvironment = "prod"
+
 var (
-	ErrNoProject     = errors.New("publish: a publish needs a project and an environment")
-	ErrNoRegister    = errors.New("publish: nowhere to publish to")
-	ErrNothingToRead = errors.New("publish: no configuration in that directory")
+	ErrNoProject         = errors.New("publish: a publish needs a project and an environment")
+	ErrNoBranch          = errors.New("publish: this project's deployments are fed by branches, so publishing to one needs a branch or an environment")
+	ErrNoDeployment      = errors.New("publish: no deployment is fed by that branch")
+	ErrNoSuchEnvironment = errors.New("publish: this project declares no such environment")
+	ErrNoRegister        = errors.New("publish: nowhere to publish to")
+	ErrNothingToRead     = errors.New("publish: no configuration in that directory")
 )
 
 // Dir compiles a config directory and publishes it.
 func Dir(ctx context.Context, r Register, fs afero.Fs, dir string, o Options) (Result, error) {
-	compiled, p, err := Compile(fs, dir, o.Branch)
+	compiled, p, err := Compile(fs, dir, o.Branch, o.Environment)
 	if err != nil {
 		return Result{}, err
 	}
 	return Object(ctx, r, compiled, p, o)
+}
+
+// Environments is which deployments this publish addresses.
+//
+// A DEPLOYMENT IS NOT A FLAG SOMEBODY TYPES when the project declares its own
+// table: `branches` on an environment says which pushes feed it, one branch
+// feeds several (production and the shadow written inside it), and the whole
+// point of writing that down is that nobody has to repeat it on a command line.
+//
+// An explicit name still wins, and it is CHECKED against the table rather than
+// taken: publishing to a misspelled environment would create a deployment the
+// project never declared, under a pointer nothing ever reads again.
+func Environments(fs afero.Fs, dir, branch, explicit string) ([]string, error) {
+	declared, err := schema.EnvironmentsOf(fs, dir)
+	if err != nil {
+		return nil, fmt.Errorf("publish: reading %s's environments: %w", dir, err)
+	}
+
+	// A project with no table has exactly one deployment and no name for it, so
+	// the name is the caller's — and DefaultEnvironment is what that is when
+	// the caller did not say either.
+	if len(declared) == 0 {
+		if explicit == "" {
+			return []string{DefaultEnvironment}, nil
+		}
+		return []string{explicit}, nil
+	}
+
+	names := schema.EnvironmentNames(declared)
+	if explicit != "" {
+		for _, name := range names {
+			if name == explicit {
+				return []string{explicit}, nil
+			}
+		}
+		return nil, fmt.Errorf("%w: %q; it declares %s",
+			ErrNoSuchEnvironment, explicit, strings.Join(names, ", "))
+	}
+
+	if branch == "" {
+		return nil, ErrNoBranch
+	}
+
+	fed := schema.DeploymentNames(declared, branch)
+	if len(fed) == 0 {
+		return nil, fmt.Errorf("%w: %q feeds none of %s",
+			ErrNoDeployment, branch, strings.Join(names, ", "))
+	}
+	return fed, nil
 }
 
 // Compile reads a config directory and returns what the register would hold,
@@ -114,10 +171,28 @@ func Dir(ctx context.Context, r Register, fs afero.Fs, dir string, o Options) (R
 // THE BYTES ARE JSON OF THE COMPILED OBJECT, which is what pkg/project reads
 // back. Saying so in one place is what keeps the writer and the reader from
 // disagreeing about the format nobody else names.
-func Compile(fs afero.Fs, dir, branch string) ([]byte, *project.Project, error) {
-	options := []schema.Option{schema.WithVirtual(fs, dir)}
+func Compile(fs afero.Fs, dir, branch, environment string) ([]byte, *project.Project, error) {
+	// THE ENVIRONMENT IS A COMPILE INPUT, NOT A LABEL ON THE RESULT. Fifty-one
+	// attributes may be written per deployment — every ceiling, every limit,
+	// the toolchain a build runs — and the compiler resolves `<key>_<env>` down
+	// to `<key>` for the one it is compiling. Publishing one object under
+	// several environment names would give every deployment production's
+	// numbers.
+	//
+	// AND THE DECLARED SET HAS TO TRAVEL WITH IT, because one document carries
+	// every deployment's spelling at once: without it, strict mode reads
+	// `timeout_preview` in production's compile as a typo and refuses the
+	// project outright. That was not a wrong value — it was every project that
+	// declares environments being unpublishable.
+	options := []schema.Option{
+		schema.WithVirtual(fs, dir),
+		schema.WithProjectEnvironments(fs, dir),
+	}
 	if branch != "" {
 		options = append(options, schema.WithBranch(branch))
+	}
+	if environment != "" {
+		options = append(options, schema.WithEnvironment(environment))
 	}
 
 	c, err := schema.New(options...)
