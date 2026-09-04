@@ -1,6 +1,10 @@
 id: QmRZ8XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuK
-description: a container queue consumer - ready when the pool says so; nothing restarts it, so it declares no liveness
-image: "ghcr.io/acme/pool:2.1"
+description: a container queue consumer built from this repository - ready when the pool says so; nothing restarts it, so it declares no liveness
+source: services/pool
+build:
+    dockerfile:
+        path: Dockerfile
+        target: runtime
 ports:
     work:
         number: 8080

@@ -36,9 +36,16 @@ import (
 //     many times a thing is tried before it is given up on is the same promise in
 //     every environment.
 //   - WHAT IT RUNS — `source`, `execution/call`, `implements`, `instructions`. A branch
-//     resolves to one environment, so that difference already has a spelling. `image`
-//     is NOT in this set: an image is pulled rather than built, a coordinate like an
-//     external database's host.
+//     resolves to one environment, so that difference already has a spelling.
+//     `source/image` is NOT in this set: an image is pulled rather than built, a
+//     coordinate like an external database's host.
+//   - HOW IT IS BUILT, structurally — `build/script`, `build/dockerfile`,
+//     `build/target`. A different recipe is a different artifact, and the branch key
+//     itself cannot carry a suffix anyway (TestABuildBranchCannotBeEnvironmentSuffixed).
+//     What IS marked is what a preview deployment genuinely differs in: the toolchain
+//     it builds with, the two commands, and where the product lands. That is the axis
+//     every other platform spells as a per-context build override, and it arrives here
+//     as `run_preview` sitting beside `run`.
 //   - REFERENCES — every one except `model/name`, which is marked with its namespace
 //     because a cheaper model in preview is the difference people actually ask for.
 func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
@@ -47,16 +54,20 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"agent/limits/steps", "agent/limits/timeout", "agent/memory/size",
 		"agent/model/name", "agent/model/namespace", "agent/value",
 		"application/egress", "application/execution/cpu", "application/execution/memory",
-		"application/image", "application/limits/concurrency",
-		"application/limits/max_instances", "application/value",
+		"application/limits/concurrency",
+		"application/limits/max_instances", "application/source/image", "application/value",
 		"bus/instances/limit",
 		"cache/instances/limit", "cache/size", "cache/ttl",
+		"component/build/image", "component/build/install", "component/build/output",
+		"component/build/run", "component/value",
 		"database/document/database", "database/document/host",
 		"database/document/size", "database/document/tls",
 		"database/kv/size",
 		"database/sql/database", "database/sql/host",
 		"database/sql/size", "database/sql/tls",
 		"database/instances/limit", "database/vector/size",
+		"function/build/image", "function/build/install", "function/build/output",
+		"function/build/run",
 		"function/egress", "function/execution/cpu", "function/execution/memory",
 		"function/execution/timeout", "function/value",
 		"gateway/cors/allow_self", "gateway/cors/origins",
@@ -69,14 +80,18 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"proxy/rate_limit/connections_per_minute",
 		"queue/visibility_timeout",
 		"sandbox/egress", "sandbox/execution/cpu", "sandbox/execution/memory",
-		"sandbox/image", "sandbox/lifetime/idle", "sandbox/lifetime/max",
-		"sandbox/value",
+		"sandbox/lifetime/idle", "sandbox/lifetime/max",
+		"sandbox/source/image", "sandbox/value",
 		"storage/instances/limit", "storage/size", "storage/streaming/ttl",
 		"stream/host", "stream/tls",
 		"volume/checkpoint/interval", "volume/checkpoint/rpo_budget", "volume/quota",
+		"website/build/image", "website/build/install", "website/build/output",
+		"website/build/run", "website/value",
+		"worker/build/image", "worker/build/install", "worker/build/output",
+		"worker/build/run",
 		"worker/egress", "worker/execution/cpu",
-		"worker/execution/memory", "worker/execution/timeout", "worker/image",
-		"worker/value",
+		"worker/execution/memory", "worker/execution/timeout",
+		"worker/source/image", "worker/value",
 		"workflow/concurrency", "workflow/timeout",
 	}
 

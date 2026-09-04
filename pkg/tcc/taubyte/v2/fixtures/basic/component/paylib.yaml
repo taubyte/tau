@@ -3,3 +3,15 @@ description: payment helpers
 source:
     git: https://github.com/acme/paylib
     branch: main
+build:
+    script:
+        image: taubyte/go-wasi:v2
+        path: .taubyte/build.sh
+        output: paylib.wasm
+variables:
+    GOPRIVATE:
+        value: github.com/acme/*
+    GITHUB_TOKEN:
+        at: build
+        secret:
+            name: stripe

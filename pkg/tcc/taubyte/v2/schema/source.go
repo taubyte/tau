@@ -23,6 +23,16 @@ import (
 //	source: {component: paylib}   another component of this project (+ `namespace`)
 //	source: {builtin: agent}      a program the platform ships; a lowering sets it
 //	source: {git: <url>, branch: …, path: …}   another repository, by its clone URL
+//	source: {image: <ref>}        an artifact somebody else already built
+//
+// AN IMAGE IS A SOURCE, NOT A BUILD, and it took a `build:` block to notice. An OCI
+// reference answers exactly the question this helper was written for — where does this
+// resource's content come from — and the answer is "from somebody else, finished". It
+// used to be a top-level `image:` beside `source:` on three kinds, each with its own
+// copy of the pull secret, which re-created precisely the defect this switch was made
+// to remove: two blocks both saying where the content is, with nothing stopping a
+// document from writing both. Here they are branches of one Either and the pair is
+// unrepresentable.
 //
 // THE COMMON CASE IS A BARE PATH. A switch whose default branch takes one argument
 // should not make an author write the branch's name to give it: `source: agents/support`
@@ -55,6 +65,24 @@ func contentSource(section string, branches ...string) []*engine.Attribute {
 					Doc("Component", "A component of this project to build from.")),
 				String(Key("source", "namespace"), IsNamespacePath(), InSection(section), ShowWhen(Key("source", "kind"), "component"),
 					Doc("Component Namespace", "Where that component lives. Omitted means this resource's own scope, then its parents.")))
+		case "image":
+			attrs = append(attrs,
+				// PerEnv: a preview deployment running a different tag is the same
+				// resource with one line beside the other, which is what every other
+				// ceiling and image reference here already does.
+				String(Key("source", "image"), Path("source", "image"), PerEnv(), InSection(section),
+					Doc("Image", "OCI image reference this runs. Somebody else built it, so there is nothing here to build.")),
+				// The credential is a SECRET named, never a token held — the reason a
+				// database's credentials are too. And it lives inside this branch
+				// because this is the only branch it means anything in: it was three
+				// copies of one pair, on three kinds, two of which could carry it
+				// beside a source that pulls nothing.
+				String(Key("source", "image_pull_secret", "namespace"), IsNamespacePath(), InSection(section),
+					ShowWhen(Key("source", "kind"), "image"),
+					Doc("Image Pull Secret Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
+				String(Key("source", "image_pull_secret", "name"), IsVariableName(), Ref("secret", Inbound()), InSection(section),
+					ShowWhen(Key("source", "kind"), "image"),
+					Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with. Omit for a public registry.")))
 		case "builtin":
 			attrs = append(attrs, String(Key("source", "builtin"), Path("source", "builtin"), IsVariableName(), InSection(section),
 				Doc("Built-in Program", "A program the platform itself ships, by name. Not for authors: a lowering sets it, and the set is closed by what exists.")))

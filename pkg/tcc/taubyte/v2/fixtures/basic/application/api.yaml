@@ -1,6 +1,7 @@
 id: QmVUyCkPnH4TfoyRmnAXPzGZ4PGwVJ9wJTvGXFqSaYbnGF
 description: the storefront api; two listening ports, named so nothing repeats a number
-image: "ghcr.io/acme/api:1.4"
+source:
+    image: "ghcr.io/acme/api:1.4"
 ports:
     http:
         number: 8080

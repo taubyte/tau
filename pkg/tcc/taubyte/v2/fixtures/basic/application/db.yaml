@@ -1,6 +1,9 @@
 id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY
 description: postgres - nothing about it is http, so no gateway can reach it
-image: "ghcr.io/acme/postgres:16"
+source:
+    image: "ghcr.io/acme/postgres:16"
+    image_pull_secret:
+        name: stripe
 ports:
     pg:
         number: 5432
@@ -8,8 +11,6 @@ readiness:
     http:
         port: pg
         path: /
-image_pull_secret:
-    name: stripe
 volume:
     pgdata:
         ops: [mount-rw]
