@@ -68,6 +68,7 @@ require (
 	github.com/h2non/gock v1.2.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/raft v1.7.3
+	github.com/ipfs/bbloom v0.1.0
 	github.com/ipfs/boxo v0.41.0
 	github.com/ipfs/go-ds-pebble v0.5.11
 	github.com/ipfs/go-ipld-format v0.6.3
@@ -204,7 +205,6 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/holiman/uint256 v1.2.2-0.20230321075855-87b91420868c // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
-	github.com/ipfs/bbloom v0.1.0 // indirect
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
 	github.com/ipfs/go-block-format v0.2.3 // indirect
 	github.com/ipfs/go-cidutil v0.1.1 // indirect
