@@ -18,7 +18,6 @@ import (
 
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
-	_ "github.com/taubyte/tau/services/monkey/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 

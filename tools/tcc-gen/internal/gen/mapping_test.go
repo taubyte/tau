@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // The mapping is the load-bearing logic: a wrong name or path silently generates

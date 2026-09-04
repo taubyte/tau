@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
+	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // --- JSON Schema subset (only what drives the CLI) ---

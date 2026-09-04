@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 

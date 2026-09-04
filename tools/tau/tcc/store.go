@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
+	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/tools/tau/common"
 	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/i18n"

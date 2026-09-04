@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/tools/tcc-gen/internal/gen"
 )
 

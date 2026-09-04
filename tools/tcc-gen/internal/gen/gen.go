@@ -1,4 +1,4 @@
-// Package gen projects the tcc schema DSL (pkg/tcc/taubyte/v1/schema) into the
+// Package gen projects the tcc schema DSL (pkg/tcc/taubyte/v2/schema) into the
 // mechanical legacy/schema/<resource> accessor files. It writes to an output dir
 // for review and can diff its output against the existing hand-written files.
 package gen
@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // schemaPrefix scopes the accessor drift check (a formatting-agnostic func-name
@@ -25,8 +25,8 @@ import (
 const (
 	schemaPrefix   = "legacy/schema/"
 	structPrefix   = "legacy/specs/structure/"
-	tsGenPath      = "pkg/tcc/clients/js/src/gen/schema.ts"
-	jsonSchemaPath = "pkg/tcc/taubyte/v1/config.schema.json"
+	tsGenPath      = "pkg/tcc/taubyte/v2/explorer/src/gen/schema.ts"
+	jsonSchemaPath = "pkg/tcc/taubyte/v2/config.schema.json"
 )
 
 // byteExact reports whether a generated file is checked byte-for-byte (struct

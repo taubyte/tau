@@ -24,7 +24,6 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/tools/tcc-gen/internal/gen"
 	"github.com/urfave/cli/v2"
@@ -40,7 +39,7 @@ func main() {
 			&cli.BoolFlag{Name: "check", Usage: "diff generated accessors against legacy/schema and report drift"},
 			&cli.BoolFlag{Name: "wasm", Usage: "build the browser wasm module (GOOS=js) + wasm_exec.js into --out"},
 			&cli.BoolFlag{Name: "ts", Usage: "generate the TypeScript schema (interfaces) into --out"},
-			&cli.StringFlag{Name: "dsl", Value: "v1", Usage: "which vocabulary to generate from: v1 or v2"},
+			&cli.StringFlag{Name: "dsl", Value: "v2", Usage: "which vocabulary to generate from"},
 		},
 		Action: run,
 	}
@@ -115,16 +114,7 @@ type dslTarget struct {
 
 func selectDSL(name string) (dslTarget, error) {
 	switch name {
-	case "", "v1":
-		return dslTarget{
-			name:           "v1",
-			generationRoot: schema.GenerationRoot(),
-			compileRoot:    schema.CompileRoot(),
-			wasmPkg:        "./pkg/tcc/wasm",
-			wasmOut:        "pkg/tcc/clients/js/assets",
-			tsOut:          "pkg/tcc/clients/js/src/gen",
-		}, nil
-	case "v2":
+	case "", "v2":
 		return dslTarget{
 			name:           "v2",
 			generationRoot: v2.GenerationRoot(),
@@ -134,7 +124,7 @@ func selectDSL(name string) (dslTarget, error) {
 			tsOut:          "pkg/tcc/taubyte/v2/explorer/src/gen",
 		}, nil
 	}
-	return dslTarget{}, fmt.Errorf("unknown --dsl %q: want v1 or v2", name)
+	return dslTarget{}, fmt.Errorf("unknown --dsl %q: v2 is the only vocabulary", name)
 }
 
 // findRepoRoot walks up from dir to the tau module root.

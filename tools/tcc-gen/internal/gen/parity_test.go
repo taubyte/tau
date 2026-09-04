@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 var specTypes = map[string]reflect.Type{
