@@ -33,6 +33,17 @@ const (
 	gwVictimAsset   = "QmVictimAsset"
 	gwStrangerAsset = "QmStrangerAsset"
 	gwFunctionID    = "FUNCTION_VICTIM"
+
+	// A resource id and the id of the git repository behind it are two
+	// different names. Monkey stashes a build under the resource id, so the
+	// two are held apart here — a fixture that spelled them the same could
+	// not tell a lookup by the wrong one from a lookup by the right one.
+	gwLibraryID    = "LIBRARY_VICTIM"
+	gwLibraryGitID = "222222222"
+	gwLibraryAsset = "QmVictimLibraryAsset"
+	gwWebsiteID    = "WEBSITE_VICTIM"
+	gwWebsiteGitID = "333333333"
+	gwWebsiteAsset = "QmVictimWebsiteAsset"
 )
 
 // gwGitHubClient is one caller's GitHub client: the repositories it can write
@@ -122,8 +133,11 @@ func (n *gwNode) GetFile(ctx context.Context, id string) (peer.ReadSeekCloser, e
 	return nil, errors.New("no such file")
 }
 
-// gwProject is a project holding exactly one function, whose asset cid is
-// published under that project's id — the shape the compiler leaves in TNS.
+// gwProject is a project holding one of every resource kind that carries a
+// build asset — a function, a library and a website — each asset published
+// under the project's id and the RESOURCE's id, which is the shape monkey
+// leaves in TNS: handleCompressedBuild stashes under the id it resolved from
+// the repository index, never the git repository's own id.
 func gwProject(t *testing.T) (projectSchema.Project, *gwTns) {
 	t.Helper()
 
@@ -143,14 +157,71 @@ func gwProject(t *testing.T) (projectSchema.Project, *gwTns) {
 		Call:   "ping",
 	}))
 
+	lib, err := prj.Library("test_library", "")
+	assert.NilError(t, err)
+	assert.NilError(t, lib.SetWithStruct(true, &structureSpec.Library{
+		Id:       gwLibraryID,
+		Name:     "test_library",
+		Path:     "/",
+		Branch:   "main",
+		Provider: "github",
+		RepoID:   gwLibraryGitID,
+		RepoName: "victim/library",
+	}))
+
+	web, err := prj.Website("test_website", "")
+	assert.NilError(t, err)
+	assert.NilError(t, web.SetWithStruct(true, &structureSpec.Website{
+		Id:       gwWebsiteID,
+		Name:     "test_website",
+		Paths:    []string{"/"},
+		Branch:   "main",
+		Provider: "github",
+		RepoID:   gwWebsiteGitID,
+		RepoName: "victim/website",
+	}))
+
 	assets := make(map[string]string)
-	for _, branch := range commonSpec.DefaultBranches {
-		path, err := methods.GetTNSAssetPath(gwVictimProject, gwFunctionID, branch)
-		assert.NilError(t, err)
-		assets[path.String()] = gwVictimAsset
+	for resourceID, cid := range map[string]string{
+		gwFunctionID: gwVictimAsset,
+		gwLibraryID:  gwLibraryAsset,
+		gwWebsiteID:  gwWebsiteAsset,
+	} {
+		for _, branch := range commonSpec.DefaultBranches {
+			path, err := methods.GetTNSAssetPath(gwVictimProject, resourceID, branch)
+			assert.NilError(t, err)
+			assets[path.String()] = cid
+		}
 	}
 
 	return prj, &gwTns{assets: assets}
+}
+
+// TestProjectPublishesEveryAssetKind is the other half of the download check:
+// refusing a stranger is worthless if the owner is refused too. Every kind that
+// can carry a build asset is walked, because the walk reads one key — "Asset" —
+// and a kind that resolves its asset under the wrong id never produces that key
+// at all, so it fails silently and only for that kind.
+func TestProjectPublishesEveryAssetKind(t *testing.T) {
+	srv, _ := gwService(t)
+	prj, tns := gwProject(t)
+	srv.tns = tns
+
+	for kind, cid := range map[string]string{
+		"function": gwVictimAsset,
+		"library":  gwLibraryAsset,
+		"website":  gwWebsiteAsset,
+	} {
+		t.Run(kind+" owner allowed", func(t *testing.T) {
+			assert.Assert(t, srv.projectPublishes(prj, cid),
+				"the project's own %s asset was refused to the project that published it", kind)
+		})
+	}
+
+	t.Run("foreign cid refused", func(t *testing.T) {
+		assert.Assert(t, !srv.projectPublishes(prj, gwStrangerAsset),
+			"a cid the project never published was accepted")
+	})
 }
 
 func gwService(t *testing.T) (*Service, string) {
@@ -265,6 +336,74 @@ func TestDownloadAssetRefusesForeignCid(t *testing.T) {
 	})
 	_, err := srv.downloadAsset(ctx)
 	assert.ErrorContains(t, err, "fetching project object failed")
+}
+
+// gwCapturingHTTP keeps the route definitions the gateway registers, so a test
+// can read the auth block a route declares rather than only its path.
+type gwCapturingHTTP struct {
+	httpPkg.Service
+	routes map[string]*httpPkg.RouteDefinition
+}
+
+func (c *gwCapturingHTTP) GET(def *httpPkg.RouteDefinition) { c.routes[def.Path] = def }
+
+// TestGatewayRoutesCarryObjectAuthorization pins the gateway's route table: both
+// of these paths name a project, so both declare the object half of their auth
+// block, and the check the table names is taken out of it and asked.
+//
+// Before the fix neither route carried an auth block at all. A validator on its
+// own would have closed only the first half of that: a token proves who is
+// asking and never what they may see, so a route that authenticates and stops
+// hands one project's configuration and assets to the holder of any token.
+func TestGatewayRoutesCarryObjectAuthorization(t *testing.T) {
+	stranger := &gwGitHubClient{login: "stranger", writable: map[string]bool{
+		"github.com/stranger/config": true,
+		"github.com/stranger/code":   true,
+	}}
+	owner := &gwGitHubClient{login: "victim", writable: map[string]bool{
+		gwVictimConfig: true,
+		gwVictimCode:   true,
+	}}
+
+	for _, route := range []struct {
+		path string
+		vars map[string]interface{}
+	}{
+		{"/config/{projectId}", map[string]interface{}{"projectId": gwVictimProject}},
+		{"/download/{projectId}/{assetCID}", map[string]interface{}{"projectId": gwVictimProject, "assetCID": gwVictimAsset}},
+	} {
+		t.Run(route.path, func(t *testing.T) {
+			srv, _ := gwService(t)
+			_, tns := gwProject(t)
+			srv.tns = tns
+
+			captured := make(map[string]*httpPkg.RouteDefinition)
+			srv.http = &gwCapturingHTTP{routes: captured}
+			srv.setupTNSGatewayHTTPRoutes()
+
+			def, ok := captured[route.path]
+			assert.Assert(t, ok, "route %s was not registered", route.path)
+			assert.Assert(t, def.Auth.Validator != nil, "route %s authenticates nobody", route.path)
+			assert.Assert(t, def.Auth.Object != nil,
+				"route %s names an object and does not authorize it: a token proves who is asking, never what they may see", route.path)
+
+			assert.Assert(t, def.Auth.Object(gwAuthContext(route.vars, stranger)) != nil,
+				"route %s served a caller with no claim on what its path names", route.path)
+			assert.NilError(t, def.Auth.Object(gwAuthContext(route.vars, owner)),
+				"route %s refused the project that owns what its path names", route.path)
+		})
+	}
+}
+
+// gwAuthContext is a request at one of these routes: the variables the path
+// carries, and the GitHub client the token check would have built.
+func gwAuthContext(vars map[string]interface{}, client *gwGitHubClient) *gwContext {
+	variables := map[string]interface{}{"GithubClient": authService.GitHubClient(client)}
+	for key, value := range vars {
+		variables[key] = value
+	}
+
+	return newGwContext(variables)
 }
 
 type gwContext struct {
