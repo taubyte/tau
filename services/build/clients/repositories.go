@@ -75,3 +75,39 @@ func (c *RepositoryClient) Project(ctx context.Context, repositoryKey string) (s
 	}
 	return projectID, nil
 }
+
+// DeployKey is the repository's own private key, for reading it.
+//
+// AUTH'S SCHEMA LEFT THIS OPEN "because nothing named the consumer", and the
+// consumer is now named: services/build/deploy clones a repository at the
+// commit a push named, and a private one needs a key to do it.
+//
+// PER REPOSITORY, WHICH IS THE POINT. One cloud serves repositories belonging
+// to people who do not know each other; an account-scoped token leaked from one
+// build would be a key to every repository in that account, and a deploy key is
+// a key to one.
+//
+// An empty key with no error means auth has none for this repository, which is
+// the right answer for a public one — the clone then proceeds unauthenticated
+// and a private repository fails with git's own message rather than silently
+// building an empty tree.
+func (c *RepositoryClient) DeployKey(ctx context.Context, repositoryKey string) (string, error) {
+	if repositoryKey == "" {
+		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("build: repository key is required"))
+	}
+
+	var key string
+	err := c.pool.Do(ctx, func(client *rpc.Client) error {
+		repos := authv1connect.NewRepositoryServiceClient(client.HTTP(), client.URL())
+		resp, err := repos.Get(ctx, connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: repositoryKey}))
+		if err != nil {
+			return err
+		}
+		key = resp.Msg.GetDeployKey()
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return key, nil
+}

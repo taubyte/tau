@@ -71,3 +71,38 @@ func (c *ProjectClient) Repositories(ctx context.Context, projectID string) ([]s
 	}
 	return keys, nil
 }
+
+// Configures reports whether this repository is the project's CONFIGURATION —
+// the one whose pushes are deploys rather than builds.
+//
+// IT ANSWERS A BOOL AND NOT THE PAIR, which is the same argument Repositories
+// above makes from the other side: which repositories gate a project is auth's
+// schema knowledge, and a caller handed both keys would be a caller deciding
+// which of them counts. This one asks a question with one right answer.
+//
+// A repository the project does not name at all is `false` and not an error: a
+// push can legitimately arrive for a repository registered to the project's
+// code half, and that is a build rather than a failure.
+func (c *ProjectClient) Configures(ctx context.Context, projectID, repositoryKey string) (bool, error) {
+	if projectID == "" {
+		return false, connect.NewError(connect.CodeInvalidArgument, errors.New("build: project id is required"))
+	}
+	if repositoryKey == "" {
+		return false, connect.NewError(connect.CodeInvalidArgument, errors.New("build: repository key is required"))
+	}
+
+	var configures bool
+	err := c.pool.Do(ctx, func(client *rpc.Client) error {
+		projects := authv1connect.NewProjectServiceClient(client.HTTP(), client.URL())
+		resp, err := projects.Get(ctx, connect.NewRequest(&authv1.ProjectRef{Id: projectID}))
+		if err != nil {
+			return err
+		}
+		configures = resp.Msg.GetConfigRepositoryKey() == repositoryKey
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return configures, nil
+}
