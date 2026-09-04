@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"sync"
 )
@@ -30,6 +31,13 @@ var (
 	// an offset is what a reader is, and two consumers sharing one would each
 	// see half a log.
 	ErrConcurrentRead = errors.New("livelog: a reader is read by one goroutine at a time")
+	// ErrNotALog is a path that resolved to something this package will not
+	// write a build's output over: a symbolic link, a second name for an inode
+	// somebody else also holds, or anything that is not an ordinary file. It is
+	// the one sentinel here that is about the DIRECTORY as much as the file —
+	// OwnDir answers with it too — because both are the same question asked at
+	// two depths: is what this process is about to write into a thing it made.
+	ErrNotALog = errors.New("livelog: not a file this log may be written to")
 )
 
 // truncationNotice is what a capped log says instead of the bytes it dropped. A
@@ -115,6 +123,38 @@ func WithMaxBytes(n int64) Option {
 // died is scratch to be reused, not a collision to fail on. Refusing would turn
 // somebody else's crash into this build's failure.
 //
+// AND TRUNCATING IS EXACTLY WHY THE OPEN IS THE CAREFUL ONE. This call
+// destroys whatever is at path, with this process's privileges, at a path its
+// caller derived rather than chose: a job id is a hash of three public strings
+// and is documented as guessable, so a run's log path is a value anybody who
+// can name the repository can compute. Somebody who can create a name in the
+// log directory therefore knows which name to create, and the three things
+// they can put there are the three refusals below:
+//
+//	A SYMBOLIC LINK   opened, the create follows it and truncates the file at
+//	                  the far end — any file this process can write, anywhere on
+//	                  the box. noFollow refuses it IN open(2), not in a check
+//	                  beside it, because a check-then-open is the race the
+//	                  attacker is playing for.
+//	A HARD LINK       a second name for an inode they do not own but can read.
+//	                  No open flag refuses that; the count does, asked of the
+//	                  descriptor after it is open and before anything is
+//	                  written.
+//	ANYTHING ELSE     a directory, a device, a fifo. A fifo is the quiet one: a
+//	                  build writing into it blocks on a reader that never comes,
+//	                  and the run is gone for as long as its claim lasts.
+//
+// SO THE TRUNCATION IS NOT IN THE OPEN ANY MORE. O_TRUNC destroys before
+// anything can be asked, which would make the checks a report rather than a
+// defence; the file is opened, interrogated through its own descriptor — fstat,
+// so there is no name to re-resolve and nothing to race — and truncated after.
+//
+// NONE OF THIS REPLACES OWNING THE DIRECTORY, which is OwnDir below and is the
+// half that stops the name from being creatable at all. This is what holds when
+// that half is wrong: an operator who pointed the log directory at something
+// shared, a directory that was loose before this process tightened it, a
+// process running as somebody who is not the only writer there.
+//
 // The file is 0600: a build log carries whatever the build printed, which
 // includes whatever it printed by mistake.
 func Create(path string, opts ...Option) (*Log, error) {
@@ -133,12 +173,154 @@ func Create(path string, opts ...Option) (*Log, error) {
 	// had to open the path again — and a path is not a file. It can be gone by
 	// then (the log directory is somewhere the OS sweeps), or, worse, be
 	// somebody else's file with the same name.
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND|noFollow, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("livelog: creating %s: %w", path, err)
 	}
+
+	if err := own(f, path); err != nil {
+		f.Close()
+		return nil, err
+	}
+
 	l.file, l.refs = f, 1
 	return l, nil
+}
+
+// own is Create's second half, and it is the counterpart of OwnDir one level
+// down: it asks an OPEN DESCRIPTOR whether this is a file this package may
+// write a build's output over, and EMPTIES it if it is. path is carried only so
+// that a refusal can name it.
+//
+// THE TWO ARE ONE FUNCTION BECAUSE THE ORDER IS THE POINT. Truncating is what
+// destroys, so it happens after the questions and never as an open flag; and
+// every question is asked of the DESCRIPTOR — fstat, not a second walk of the
+// name — so there is no window between what was checked and what is emptied.
+func own(f *os.File, path string) error {
+	fi, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("livelog: creating %s: %w", path, err)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("livelog: creating %s: %w: it is %s", path, ErrNotALog, fi.Mode().Type())
+	}
+	if n := links(fi); n > 1 {
+		return fmt.Errorf("livelog: creating %s: %w: %d names hold this file", path, ErrNotALog, n)
+	}
+	if err := f.Truncate(0); err != nil {
+		return fmt.Errorf("livelog: emptying %s: %w", path, err)
+	}
+	return nil
+}
+
+// OwnDir makes dir a directory THIS PROCESS OWNS AND NOBODY ELSE CAN WRITE IN,
+// and is the half of a log's safety that is about the name rather than the
+// file.
+//
+// A LOG DIRECTORY IS THE WHOLE PRECONDITION OF THE ATTACK Create refuses. The
+// paths in it are derived from public values, so they are known in advance;
+// what an attacker still needs is the ability to CREATE one of those names
+// first. In a directory this process owns at 0700, nobody else can, and every
+// path-shaped operation inside it — the create, the removal, the readers' own
+// name-free reads — is safe for the ordinary reason rather than for a clever
+// one.
+//
+// os.MkdirAll IS NOT THAT, and that is the defect this exists for. It succeeds
+// on a directory that is already there whoever made it and whatever its mode
+// is: MkdirAll(d, 0o700) over an existing 0777 d returns nil and leaves it
+// 0777. So "the service creates its log directory 0700" was true of a fresh box
+// and false of every box where anything had created that name first — including
+// an attacker who created it precisely so that it would be.
+//
+// THE THREE ANSWERS, and only the middle one is a repair:
+//
+//	NOT A DIRECTORY, or a symbolic link
+//	                     refused. Lstat, so a link to a directory is seen as a
+//	                     link: followed, this would tighten and then write into
+//	                     a directory chosen by whoever made the link.
+//	OURS BUT LOOSE       tightened to 0700 here. It is ours, so it is ours to
+//	                     fix, and leaving it for somebody to notice is leaving
+//	                     the hole open with a note on it.
+//	SOMEBODY ELSE'S      refused, and there is nothing this process can do to
+//	                     make it safe: chmod would work as root and would leave
+//	                     the OWNER — who is not us — still able to create names
+//	                     in it.
+//
+// WHAT IT DOES NOT DO is take the directory away from a name-swap under a
+// world-writable ANCESTOR: this resolves dir by name and so does everything
+// after it, so an ancestor whose entries a stranger can rename is a directory
+// this cannot pin. What holds there is Create's own refusal, one level down.
+// The ordinary case — a scratch directory under a sticky temp dir — has no such
+// ancestor.
+func OwnDir(dir string) error {
+	if dir == "" {
+		return fmt.Errorf("livelog: a log directory is required")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("livelog: log directory %s: %w", dir, err)
+	}
+
+	err := ownDir(dir)
+	if err == nil || !errors.Is(err, errLoose) {
+		return err
+	}
+
+	// OURS AND LOOSE, which is the one answer that is a repair rather than a
+	// refusal. Leaving it for somebody to notice is leaving the hole open with
+	// a note on it.
+	return tighten(dir)
+}
+
+// errLoose is a directory that is THIS PROCESS'S and writable by others: the
+// one answer OwnDir acts on rather than reports. It is not exported, because
+// after OwnDir returns it is either fixed or it is somebody else's problem
+// spelled ErrNotALog.
+var errLoose = errors.New("livelog: log directory is writable by others")
+
+// tighten is the one REPAIR this package makes rather than reports: a log
+// directory that is this process's own and writable by others is closed to
+// everybody else. It is a step of its own because it is the only WRITE OwnDir
+// makes, and a repair that could not be made has to read differently from a
+// check that refused.
+func tighten(dir string) error {
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("livelog: log directory %s is writable by others and cannot be "+
+			"tightened: %w", dir, err)
+	}
+	// AND THE REPAIR IS ASKED AGAIN RATHER THAN ASSUMED. A chmod that returned
+	// nil on a filesystem that does not carry unix permissions has changed
+	// nothing, and the whole point of this call is that what it leaves behind
+	// is a fact rather than an intention. A second errLoose is not a repair to
+	// try twice — it is the answer.
+	return ownDir(dir)
+}
+
+// ownDir is the question, and it is asked of a NAME because a directory is what
+// a name leads to — Lstat, so a link to a directory is seen as a link.
+func ownDir(dir string) error {
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("livelog: log directory %s: %w", dir, err)
+	}
+	return suitable(dir, fi)
+}
+
+// suitable is the three answers, taken apart from the filesystem so that the
+// one this process cannot arrange on a real disk — a directory belonging to
+// somebody else, which needs a second account — is still something a test can
+// ask.
+func suitable(dir string, fi fs.FileInfo) error {
+	if !fi.IsDir() {
+		return fmt.Errorf("livelog: log directory %s: %w: it is %s", dir, ErrNotALog, fi.Mode().Type())
+	}
+	if !ownedByThisProcess(fi) {
+		return fmt.Errorf("livelog: log directory %s: %w: it belongs to somebody else, so "+
+			"anything in it can be a name they created", dir, ErrNotALog)
+	}
+	if !exclusive(fi) {
+		return fmt.Errorf("%w: %s is %s", errLoose, dir, fi.Mode().Perm())
+	}
+	return nil
 }
 
 // Path is where this log is on disk.

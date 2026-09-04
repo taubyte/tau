@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -110,8 +109,19 @@ type runOutput struct {
 //
 // The attempt is in the name because two runs of one job must not share a file:
 // a retry writes its own log, and the previous one's cid stays on the record.
+//
+// AND THAT NAME IS PUBLIC, WHICH IS WHY THE DIRECTORY IS OWNED. Both halves are
+// derived: seg(jobID) is a hash of the repository, the ref and the commit —
+// deterministic on purpose and documented as guessable (jobid.go) — and the
+// attempt starts at one. So anybody who can name the repository can compute the
+// path of the file this node is about to open with O_CREATE and truncate, and
+// the default directory was under the OS temp dir, where anybody can create a
+// name. os.MkdirAll was what stood there, and it is not a check: it returns nil
+// for a directory that already exists whoever made it and whatever its mode.
+// livelog.OwnDir is, and Create refuses the file itself as well — the two
+// halves and what each costs are argued where they are.
 func (s *Service) output(w Work) (*runOutput, error) {
-	if err := os.MkdirAll(s.cfg.LogDir, 0o700); err != nil {
+	if err := livelog.OwnDir(s.cfg.LogDir); err != nil {
 		return nil, errUnavailable("build: log directory %s: %v", s.cfg.LogDir, err)
 	}
 

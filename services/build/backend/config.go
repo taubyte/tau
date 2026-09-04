@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -93,12 +94,19 @@ type Config struct {
 	MaxMessageBytes int `yaml:"maxMessageBytes"`
 
 	// LogDir is where a run's log file lives while the build is running. Zero
-	// means a "tau-build-logs" directory under the OS temp dir — which is a
-	// SCRATCH location on purpose: a log that matters is one that reached the
+	// means defaultLogDir() below — a directory under the OS temp dir, which is
+	// a SCRATCH location on purpose: a log that matters is one that reached the
 	// asset store, and a node that died mid-build leaves a file behind that
 	// nothing will ever come back for. Somewhere the OS already cleans is the
 	// honest place for that, and an operator who wants a bigger or faster disk
 	// for it names one.
+	//
+	// WHEREVER IT POINTS, THE SERVICE OWNS IT. output() calls livelog.OwnDir,
+	// which refuses a directory belonging to somebody else and tightens one of
+	// its own that is writable by anybody — because the path of the file
+	// inside it is derived from public values and the open truncates. An
+	// operator who names a shared directory here gets a refusal rather than a
+	// service quietly writing where anyone can plant a name first.
 	//
 	// AND THE SWEEP THAT COMES WITH THAT PLACE COSTS NOTHING, which is a fact
 	// about livelog rather than about this directory: a log is the INODE its
@@ -119,6 +127,29 @@ type Config struct {
 	// PublishTimeout bounds the handoff of a finished log to the asset store.
 	// Zero means DefaultPublishTimeout.
 	PublishTimeout time.Duration `yaml:"publishTimeout"`
+}
+
+// defaultLogDir is the scratch directory a node writes its running builds' logs
+// into when the operator names none.
+//
+// IT CARRIES THE UID, AND THAT IS THE CHANGE THIS ROUND MADE. It was
+// "tau-build-logs" flat under the OS temp dir, which on linux is one /tmp
+// shared by every account on the box — so the name a node needs to own is a
+// name every other account can create first, and the service's own MkdirAll
+// accepted whatever it found. livelog.OwnDir refuses that now, and a name
+// somebody else got to first would refuse a NODE rather than an attack: two tau
+// nodes under two accounts on one box, and the second one builds nothing.
+// One directory per uid is the smallest thing that makes ownership something
+// this process can always have.
+//
+// It is not per-NODE. Two nodes under one account share the directory and are
+// equally entitled to it, and their file names cannot collide: a name is
+// (job, attempt), and the queue's exclusion is what says one job has one run.
+//
+// On windows Getuid answers -1 for everybody, which is harmless there because
+// the temp dir is already inside the user's own profile.
+func defaultLogDir() string {
+	return filepath.Join(os.TempDir(), "tau-build-logs-"+strconv.Itoa(os.Getuid()))
 }
 
 // withDefaults fills in the zero values and refuses the combinations that have
@@ -180,16 +211,17 @@ func (c Config) withDefaults() (Config, error) {
 		c.PublishTimeout = DefaultPublishTimeout
 	}
 	if c.LogDir == "" {
-		c.LogDir = filepath.Join(os.TempDir(), "tau-build-logs")
+		c.LogDir = defaultLogDir()
 	}
 
 	// THE PUBLISH IS SPENT OUT OF THE MARGIN, so it has to fit inside it. The
 	// run ends at the claim's deadline less ClaimMargin, and what happens in
-	// that margin is: ship the log, ack, write the terminal record. A publish
-	// allowed to use the whole margin is an ack made after the claim expired —
-	// which the queue refuses, correctly, and the job is then rebuilt by
-	// whoever picks up the redelivery. Refusing the combination here is
-	// cheaper than discovering it once per long build.
+	// that margin is: ack, ship the log, write the terminal record. A publish
+	// allowed to use the whole margin is a terminal record written well after
+	// the claim expired — and the deliveries this node no longer holds are
+	// exactly the ones the ack in front of it refuses, so the whole of the
+	// margin left after the ack is what the last two have to fit in. Refusing
+	// the combination here is cheaper than discovering it once per long build.
 	if c.PublishTimeout >= c.ClaimMargin {
 		return c, fmt.Errorf(
 			"build: publishTimeout (%s) must be shorter than claimMargin (%s), which is what the "+
@@ -381,8 +413,10 @@ type Output interface {
 //   - CONCURRENCY. Many runs on one node call it at once.
 //   - THE CONTEXT. A Put that outlasts its deadline must return, because the
 //     one this service passes is a slice of the margin it has left before its
-//     claim expires — and what comes after the publish is the acknowledgement
-//     that makes the whole build count.
+//     claim expires — and what comes after the publish is the entry that
+//     records the outcome, on a node that has to still be the leader to write
+//     it. A Put that hangs is a job left Claimed with no queue item until
+//     reconcile puts it back.
 //   - NO IDENTITY. It is handed bytes and nothing else: an asset store that
 //     took a job id would be a second place authorization could be decided,
 //     and authorization is the frontend's, on the caller's write access to the

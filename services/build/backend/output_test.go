@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -812,4 +813,81 @@ func TestRecordingALogOnACancelledJobMovesNothingElse(t *testing.T) {
 
 	_, retained := h.store.Get(terminalIndexKey(time.Unix(after.UpdatedAt, 0), id))
 	require.True(t, retained, "the retention row still names the instant the record carries")
+}
+
+// A LOG PATH IS PUBLIC, SO THE FILE AT IT MUST BE ONE THIS NODE MADE. Both
+// halves of the name are derived — seg(jobID) is a hash of the repository, the
+// ref and the commit, and jobid.go says out loud that being deterministic makes
+// it guessable — and the open truncates. So a symbolic link planted at that
+// path before the build starts is a request to truncate whatever it points at
+// with this node's privileges, and the run then unlinks the link, which takes
+// the evidence with it.
+//
+// MEASURED ON THE TREE BEFORE THE FIX: the victim below came back holding the
+// build's output and the job read Success. The only precondition was somebody
+// creating the log directory first, which os.MkdirAll accepted whoever owned it
+// and whatever its mode.
+func TestALogIsNeverOpenedThroughASymlinkPlantedAtItsPath(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	victim := filepath.Join(t.TempDir(), "authorized_keys")
+	const secret = "ssh-ed25519 AAAA-the-operators-own-key\n"
+	require.NoError(t, os.WriteFile(victim, []byte(secret), 0o600))
+
+	planted := logFile(h, Work{JobID: id, Attempt: 1})
+	require.NoError(t, os.Symlink(victim, planted))
+
+	h.runner.run = func(context.Context, Work, Output) error {
+		t.Error("the run must not start against a log this node did not create")
+		return nil
+	}
+	require.True(t, h.mustStep(t))
+
+	kept, err := os.ReadFile(victim)
+	require.NoError(t, err)
+	require.Equal(t, secret, string(kept), "the file the link pointed at was written through")
+
+	link, err := os.Lstat(planted)
+	require.NoError(t, err, "and the link was removed, which is how the trace goes")
+	require.NotZero(t, link.Mode()&os.ModeSymlink)
+
+	rec := h.mustRecord(t, id)
+	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status(),
+		"a node that cannot open a log of its own is not the node that runs the build")
+	require.Contains(t, rec.Reason, id)
+}
+
+// THE OTHER HALF IS THE DIRECTORY, and it is the half that decides whether the
+// name above can be created at all. A directory this service owns at 0700 is
+// one nobody else can plant anything in, and it is what makes every path-shaped
+// step in a run safe for the ordinary reason.
+func TestTheLogDirectoryTheServiceUsesIsOneNobodyElseCanWriteIn(t *testing.T) {
+	shared := filepath.Join(t.TempDir(), "tau-build-logs")
+	require.NoError(t, os.Mkdir(shared, 0o777))
+
+	h := newHarness(t, func(s *Service) error {
+		s.cfg.LogDir = shared
+		return nil
+	})
+	id := h.push(t, testRef, testCommit)
+	require.True(t, h.mustStep(t))
+	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+
+	fi, err := os.Lstat(shared)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o700), fi.Mode().Perm(),
+		"a directory an operator pointed at something shared is tightened before a run writes in it")
+}
+
+// AND THE DEFAULT IS NOT A NAME EVERY ACCOUNT ON THE BOX COMPETES FOR. It was
+// one flat "tau-build-logs" under the OS temp dir, which on linux is a single
+// /tmp: whoever creates it owns it, and every other account's node is then a
+// node that cannot own its own log directory.
+func TestTheDefaultLogDirectoryIsThisAccountsAlone(t *testing.T) {
+	cfg, err := Config{}.withDefaults()
+	require.NoError(t, err)
+	require.Equal(t, defaultLogDir(), cfg.LogDir)
+	require.Contains(t, cfg.LogDir, strconv.Itoa(os.Getuid()))
+	require.NotEqual(t, filepath.Join(os.TempDir(), "tau-build-logs"), cfg.LogDir)
 }

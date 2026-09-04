@@ -806,3 +806,150 @@ func TestOneReaderIsReadByOneGoroutine(t *testing.T) {
 	write(t, l, "z")
 	require.Equal(t, "z", readN(t, r, 1))
 }
+
+// ── WHAT A LOG MAY BE OPENED OVER ────────────────────────────────────────
+//
+// Create TRUNCATES, at a path its caller derived from public values, with
+// whatever privileges the process has. So the question "is this a file I made"
+// is not paranoia about the filesystem; it is the difference between a build
+// log and a write-anything primitive.
+
+// A SYMBOLIC LINK IS THE WHOLE ATTACK. Planted at a log's path, the create
+// follows it and truncates the far end — measured on the tree before this
+// check: a file outside the log directory entirely came back holding the
+// build's output.
+func TestCreateRefusesASymbolicLinkAtItsPath(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim")
+	require.NoError(t, os.WriteFile(victim, []byte("not the build's"), 0o600))
+
+	path := filepath.Join(dir, "build.log")
+	require.NoError(t, os.Symlink(victim, path))
+
+	_, err := Create(path)
+	require.Error(t, err)
+
+	kept, readErr := os.ReadFile(victim)
+	require.NoError(t, readErr)
+	require.Equal(t, "not the build's", string(kept),
+		"the file at the far end of the link was truncated")
+}
+
+// A HARD LINK IS THE SAME HARM AND NO FLAG REFUSES IT. It is not a link from
+// open(2)'s side, it is the inode itself under a second name, so O_NOFOLLOW
+// walks straight past it — the count is what notices.
+func TestCreateRefusesAFileThatHasASecondName(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim")
+	require.NoError(t, os.WriteFile(victim, []byte("not the build's"), 0o600))
+
+	path := filepath.Join(dir, "build.log")
+	require.NoError(t, os.Link(victim, path))
+
+	_, err := Create(path)
+	require.ErrorIs(t, err, ErrNotALog)
+
+	kept, readErr := os.ReadFile(victim)
+	require.NoError(t, readErr)
+	require.Equal(t, "not the build's", string(kept))
+}
+
+// AND ANYTHING THAT IS NOT AN ORDINARY FILE. A directory is the loud one and a
+// fifo is the quiet one: a build writing into a pipe nobody reads blocks for as
+// long as its claim lasts, and the node has lost a run rather than a log.
+func TestCreateRefusesSomethingThatIsNotAnOrdinaryFile(t *testing.T) {
+	dir := t.TempDir()
+
+	path := filepath.Join(dir, "as-a-directory.log")
+	require.NoError(t, os.Mkdir(path, 0o700))
+	_, err := Create(path)
+	require.Error(t, err)
+
+	fifo := filepath.Join(dir, "as-a-fifo.log")
+	if mkfifo(t, fifo) {
+		_, err := Create(fifo)
+		require.ErrorIs(t, err, ErrNotALog)
+	}
+}
+
+// The truncation itself is unchanged: it moved out of the open flags so that
+// the refusals above could be asked before anything was destroyed, and a log
+// reusing a name a dead process left behind still starts empty.
+func TestCreateStillTruncatesAFileItIsAllowedToOpen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "build.log")
+	require.NoError(t, os.WriteFile(path, []byte("what the last process wrote"), 0o600))
+
+	l, err := Create(path)
+	require.NoError(t, err)
+	defer l.Close()
+
+	require.Zero(t, l.Size())
+	write(t, l, "this run's")
+
+	r, forkErr := l.Fork(0)
+	require.NoError(t, forkErr)
+	defer r.Close()
+	require.Equal(t, "this run's", readN(t, r, int(l.Size())))
+}
+
+// ── THE DIRECTORY THE LOGS GO IN ─────────────────────────────────────────
+
+// os.MkdirAll IS NOT A CHECK, and that is the whole of why OwnDir exists: it
+// answers nil for a directory that is already there whoever made it and
+// whatever its mode, so "the service creates its log directory 0700" was a
+// sentence about a fresh box.
+func TestOwnDirTightensADirectoryAnybodyCouldHaveWrittenIn(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "logs")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	// Explicitly, because a mode passed to Mkdir goes through the umask and a
+	// mode passed to Chmod does not: what is being reproduced is a directory
+	// that IS world-writable, not one that asked to be.
+	require.NoError(t, os.Chmod(dir, 0o777))
+
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	loose, err := os.Lstat(dir)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o777), loose.Mode().Perm(),
+		"MkdirAll left it exactly as it found it, which is the defect")
+
+	require.NoError(t, OwnDir(dir))
+	tight, err := os.Lstat(dir)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o700), tight.Mode().Perm())
+}
+
+func TestOwnDirMakesADirectoryThatIsNotThere(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nested", "logs")
+	require.NoError(t, OwnDir(dir))
+
+	fi, err := os.Lstat(dir)
+	require.NoError(t, err)
+	require.True(t, fi.IsDir())
+	require.Equal(t, os.FileMode(0o700), fi.Mode().Perm())
+	require.NoError(t, OwnDir(dir), "and asking again is the same answer")
+}
+
+// A SYMBOLIC LINK TO A DIRECTORY IS NOT A DIRECTORY THIS PROCESS MADE. Followed,
+// this would tighten and then write into whatever the link points at, which is
+// the same attack one level up from the file.
+func TestOwnDirRefusesALinkAndAnythingThatIsNotADirectory(t *testing.T) {
+	root := t.TempDir()
+
+	elsewhere := filepath.Join(root, "elsewhere")
+	require.NoError(t, os.Mkdir(elsewhere, 0o700))
+	require.NoError(t, os.Chmod(elsewhere, 0o777))
+	link := filepath.Join(root, "link")
+	require.NoError(t, os.Symlink(elsewhere, link))
+	require.ErrorIs(t, OwnDir(link), ErrNotALog)
+
+	pointed, err := os.Lstat(elsewhere)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o777), pointed.Mode().Perm(),
+		"and the directory at the far end was not touched either")
+
+	file := filepath.Join(root, "a-file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+	require.Error(t, OwnDir(file))
+
+	require.Error(t, OwnDir(""))
+}
