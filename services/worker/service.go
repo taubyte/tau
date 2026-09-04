@@ -1,0 +1,207 @@
+// Package worker is where code runs. v1 called it substrate.
+//
+// # What it does, in four steps
+//
+//	a request names a resource     (project, environment, scope, kind, name)
+//	  -> the register says what that environment currently runs
+//	    -> the compiled project says what that resource declares about itself
+//	      -> pkg/invoke runs it on the tier the config selected
+//
+// EVERY RUNTIME VALUE COMES FROM STEP THREE. Memory, timeout, concurrency and
+// environment are `PerEnv()` in the vocabulary — the author is expected to set
+// them differently per environment — so none of them is a constructor argument
+// and none is an operator setting. A worker that had captured a memory limit at
+// construction would serve a number the author changed, and nothing would
+// happen when they changed it.
+//
+// # It runs nothing itself
+//
+// Warm instances, cold starts, concurrency and scale-to-zero are pkg/invoke's,
+// behind a one-method interface. Which tier a resource runs on is read off the
+// vocabulary. So what is left here is the lookup and its two caches, which is
+// the part that is actually about being a worker.
+//
+// # Two things it deliberately cannot do
+//
+// IT CANNOT PUBLISH. The Register interface it declares has two reads and no
+// write, because a worker that could move a pointer could deploy.
+//
+// IT CANNOT INVENT AN ARTIFACT. A resource whose source is a path in the
+// repository names the source, not what came out of building it, and that is
+// the build service's to say — see Artifacts in resolve.go.
+package worker
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/libp2p/go-libp2p/core/host"
+
+	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/register"
+)
+
+// Service is a worker.
+type Service struct {
+	host     host.Host
+	cfg      Config
+	register Register
+	pool     Pool
+
+	// artifacts and secrets are optional. Absent, the resources that need them
+	// are refused by name rather than run without them.
+	artifacts Artifacts
+	secrets   Secrets
+
+	now func() time.Time
+
+	// mu guards both caches. It is a plain mutex rather than an RWMutex: every
+	// path that reads also writes — the pointer path refreshes, the project
+	// path touches the LRU — so a read lock would be taken and immediately
+	// upgraded.
+	mu       sync.Mutex
+	pointers map[string]pointerEntry
+	projects map[register.ObjectID]*projectEntry
+	lru      []register.ObjectID
+
+	serverOptions []rpc.ServerOption
+
+	startMu   sync.Mutex
+	server    *rpc.Server
+	closeOnce sync.Once
+	closeErr  error
+	closed    atomic.Bool
+}
+
+// WithArtifacts resolves what a built resource currently runs. Optional: a
+// resource whose source is an image or a component needs nothing here.
+func WithArtifacts(a Artifacts) Option {
+	return func(o *options) error {
+		if a == nil {
+			return errors.New("worker: a nil artifact resolver")
+		}
+		o.artifacts = a
+		return nil
+	}
+}
+
+// WithSecrets resolves a secret a run-time variable refers to. Optional: a
+// resource with no secret variables needs nothing here.
+func WithSecrets(s Secrets) Option {
+	return func(o *options) error {
+		if s == nil {
+			return errors.New("worker: a nil secret resolver")
+		}
+		o.secrets = s
+		return nil
+	}
+}
+
+// WithServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen.
+func WithServerOptions(opts ...rpc.ServerOption) Option {
+	return func(o *options) error {
+		o.serverOptions = append(o.serverOptions, opts...)
+		return nil
+	}
+}
+
+// New validates and allocates. It binds nothing and starts nothing.
+func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
+	if h == nil {
+		return nil, ErrNoHost
+	}
+
+	cfg, err := cfg.withDefaults()
+	if err != nil {
+		return nil, err
+	}
+
+	var o options
+	for _, apply := range opts {
+		if err := apply(&o); err != nil {
+			return nil, fmt.Errorf("worker: option: %w", err)
+		}
+	}
+	if o.register == nil {
+		return nil, ErrNoRegister
+	}
+	if o.pool == nil {
+		return nil, ErrNoPool
+	}
+	if o.now == nil {
+		o.now = time.Now
+	}
+
+	return &Service{
+		host:          h,
+		cfg:           cfg,
+		register:      o.register,
+		pool:          o.pool,
+		artifacts:     o.artifacts,
+		secrets:       o.secrets,
+		now:           o.now,
+		pointers:      map[string]pointerEntry{},
+		projects:      map[register.ObjectID]*projectEntry{},
+		serverOptions: o.serverOptions,
+	}, nil
+}
+
+// Invoke resolves a target and runs one request against it.
+func (s *Service) Invoke(ctx context.Context, t Target, req *invoke.Request) (*invoke.Response, error) {
+	spec, err := s.Resolve(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	return s.pool.Do(ctx, spec, req)
+}
+
+// Start listens and serves. Calling it twice, or after Close, is an error.
+func (s *Service) Start(ctx context.Context) error {
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+
+	if s.closed.Load() {
+		return errors.New("worker: closed")
+	}
+	if s.server != nil {
+		return errors.New("worker: already started")
+	}
+
+	server, err := rpc.Listen(ctx, s.host, Protocol, s.mount(), s.serverOptions...)
+	if err != nil {
+		return fmt.Errorf("worker: listen on %s: %w", Protocol, err)
+	}
+	s.server = server
+	return nil
+}
+
+// Close is idempotent and stops serving.
+//
+// IT DOES NOT CLOSE THE POOL. The pool is per-node and shared with everything
+// else the node runs, and it was handed in rather than built here — a worker
+// that closed it would stop every other consumer's warm instances.
+func (s *Service) Close() error {
+	s.closeOnce.Do(func() {
+		s.closed.Store(true)
+		s.startMu.Lock()
+		if s.server != nil {
+			s.closeErr = s.server.Close()
+		}
+		s.startMu.Unlock()
+	})
+	return s.closeErr
+}
+
+// Loaded is how many compiled projects are held. It exists for a test and for
+// an operator asking what a node is holding; nothing in this package's own
+// logic reads it.
+func (s *Service) Loaded() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.projects)
+}

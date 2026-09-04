@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+// worker is where code runs. v1 called it substrate.
+//
+// ONE CALL, AND EVERYTHING INTERESTING IS IN WHAT IT NAMES. A worker is handed
+// a target and a request; it resolves the target against the register, reads
+// what that resource declares about itself, and runs it. Which tier runs it —
+// wasm, container, and whatever is registered next — is read off the config and
+// is not in this schema, because a caller has no business choosing.
+//
+// THE TARGET IS A NAME AND NEVER AN ID. Every reference in v2 is by name and
+// the compiled object carries an index for exactly this lookup. A caller that
+// sent an id would be a caller that had already resolved one, which means it
+// held a compiled project, which means it is doing the worker's job.
+//
+// A REVISION IS NOT IN THE REQUEST EITHER. What an environment runs is the
+// register's answer, not the caller's, and a caller that could name a revision
+// could keep sending traffic at code that was replaced — which is a rollback
+// nobody performed and nobody can see.
+//
+// THIS IS UNARY, AND THAT IS A REAL LIMIT rather than an oversight. The whole
+// request body arrives before the workload sees any of it, and the whole
+// response is buffered before the caller sees any of it, so an upload and a
+// streamed response are both bounded by memory. The invocation model behind it
+// (pkg/invoke) has the same shape, and changing one without the other would
+// buy nothing. Streaming is a change to both, together, when something needs
+// it — and it is easier to add a streaming RPC beside this than to discover
+// that half the pipeline was never able to.
+package tau.worker.v1;
+
+// Target names one resource in one environment of one project.
+message Target {
+  string project = 1;
+  string environment = 2;
+
+  // scope is the chain of namespace NAMES from the project root — the
+  // `/shop/eu` an author writes, split. Empty is the project itself.
+  //
+  // It is the ASKER's scope, not the resource's: a name resolves in the scope
+  // that asked and then in each parent, which is how a namespace inherits its
+  // parent's resources without restating them.
+  repeated string scope = 3;
+
+  // kind and name are the vocabulary's own — "function", "checkout". kind is a
+  // string rather than an enum because the vocabulary grows in
+  // pkg/tcc/taubyte/v2/schema and an enum here would be a second place to add
+  // a kind, one of which would be forgotten.
+  string kind = 4;
+  string name = 5;
+}
+
+// Headers is one header's values. proto3 maps cannot hold a repeated value, so
+// the list needs a message around it.
+message Headers {
+  repeated string values = 1;
+}
+
+message InvokeRequest {
+  Target target = 1;
+
+  // method, path and headers carry an HTTP-shaped call and are empty for an
+  // invocation that is not one — a queue delivery, a channel dial.
+  string method = 2;
+  string path = 3;
+  map<string, Headers> headers = 4;
+
+  bytes body = 5;
+}
+
+message InvokeResponse {
+  int32 status = 1;
+  map<string, Headers> headers = 2;
+  bytes body = 3;
+}
+
+service WorkerService {
+  // Invoke runs one request against one resource.
+  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+}

@@ -76,6 +76,27 @@ type Spec struct {
 
 	// Timeout bounds one request. Zero means the pool's default.
 	Timeout time.Duration
+
+	// Memory is the hard limit in bytes, from the resource's
+	// `execution/memory`. Zero means the runtime's own default.
+	//
+	// IT IS HERE AND NOT IN A PER-TIER STRUCT because every tier has one: a
+	// container gets a cgroup limit, a wasm instance gets a memory ceiling,
+	// and a tier that ignored it would be a tier where a runaway workload is
+	// the node's problem instead of its own.
+	Memory int64
+
+	// Artifact names what to run: an image reference, a component's cid — the
+	// string the tier named by Runtime knows how to read.
+	//
+	// IT IS OPAQUE HERE ON PURPOSE. This package has no opinion about what an
+	// image reference looks like, and a Spec that carried a parsed one would
+	// be this package holding a registry's grammar.
+	Artifact string
+
+	// Env is what the workload is given. A tier may add to it — the container
+	// tier sets PORT — and may not have it overridden.
+	Env map[string]string
 }
 
 func (s Spec) validate() error {

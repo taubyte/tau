@@ -236,6 +236,18 @@ type Image struct {
 // ImageFunc resolves a spec to an image.
 type ImageFunc func(invoke.Spec) (Image, error)
 
+// ImageFromSpec is the ImageFunc for a composer whose Spec already carries
+// everything: the worker reads the artifact, the memory limit and the
+// environment off the compiled resource, so there is nothing left to look up.
+//
+// It exists so that the common case is a named function rather than the same
+// four-line closure at every composition root, and the injected ImageFunc stays
+// for the cases that are not it — a registry mirror, a local override, a tier
+// whose artifact is not a reference at all.
+func ImageFromSpec(spec invoke.Spec) (Image, error) {
+	return Image{Ref: spec.Artifact, Env: spec.Env, Memory: spec.Memory}, nil
+}
+
 // New builds the runtime. resolve says what image a spec runs.
 func New(resolve ImageFunc, opts ...Option) (*Runtime, error) {
 	if resolve == nil {
