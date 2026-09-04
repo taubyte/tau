@@ -163,3 +163,37 @@ func TestAnAbsentSourceIsNotTheRepositoryRoot(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, r.Source().Declared)
 }
+
+// A BUILD-TIME VARIABLE IS NOT A RUN-TIME ONE, and the config says which with
+// `at`. A build that passed everything would leak a runtime secret into a
+// toolchain container; one that passed nothing would drop the token a private
+// dependency needs.
+func TestVariablesSayWhenTheyApply(t *testing.T) {
+	p := load(t)
+
+	r, _, err := p.Resource(nil, "component", "paylib")
+	require.NoError(t, err)
+
+	byName := map[string]project.Variable{}
+	for _, v := range r.Variables() {
+		byName[v.Name] = v
+	}
+
+	literal := byName["GOPRIVATE"]
+	require.Equal(t, "build", literal.At)
+	require.Equal(t, "github.com/acme/*", literal.Value)
+	require.False(t, literal.FromSecret())
+
+	// A SECRET IS A REFERENCE AND COMPILES TO AN ID, so what is carried is the
+	// id and not the name it was written as.
+	secret := byName["GITHUB_TOKEN"]
+	require.Equal(t, "build", secret.At)
+	require.True(t, secret.FromSecret())
+	require.Empty(t, secret.Value)
+	require.NotEqual(t, "stripe", secret.Secret, "a reference is not the name it was written as")
+
+	// A resource that declares none reads as none rather than as a panic.
+	r, _, err = p.Resource(nil, "database", "orders")
+	require.NoError(t, err)
+	require.Empty(t, r.Variables())
+}

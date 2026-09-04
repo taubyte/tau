@@ -62,21 +62,13 @@ type ContainerConfig struct {
 // ErrUnknownBackend is a backend name this node cannot build.
 var ErrUnknownBackend = errors.New("node: not a container backend this node can build")
 
-// declared reports whether an operator asked for a container tier.
-func (c ContainerConfig) declared() bool { return c.Backend != "" }
-
-// containerTier builds the runtime a ContainerConfig describes.
+// containerBackend is the daemon an operator named.
 //
-// IT IS A FUNCTION AND NOT A METHOD ON THE CONFIG, and the difference is the
-// rule this whole layer is held to: a config is INERT DATA that survives a
-// round trip through yaml and constructs nothing. v1's pkg/config built the
-// p2p node, and once a config type owns a live resource every consumer of that
-// type has to be handed one — which is how a struct an operator writes becomes
-// something a test cannot make without a daemon running.
-//
-// config_test.go's census holds it: no method on a config type in this package
-// returns a resource.
-func containerTier(c ContainerConfig) (invoke.Runtime, error) {
+// IT IS SEPARATE FROM THE TIER because two things want it and they must be the
+// same one: the tier that runs workloads, and the engine that runs builds. A
+// build that auto-detected its own would run on a daemon nobody configured
+// while the workloads ran on the one they did.
+func containerBackend(c ContainerConfig) (core.Backend, error) {
 	var cfg core.BackendConfig
 
 	switch c.Backend {
@@ -96,6 +88,28 @@ func containerTier(c ContainerConfig) (invoke.Runtime, error) {
 	backend, err := containers.NewBackend(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("node: %s backend: %w", c.Backend, err)
+	}
+	return backend, nil
+}
+
+// declared reports whether an operator asked for a container tier.
+func (c ContainerConfig) declared() bool { return c.Backend != "" }
+
+// containerTier builds the runtime a ContainerConfig describes.
+//
+// IT IS A FUNCTION AND NOT A METHOD ON THE CONFIG, and the difference is the
+// rule this whole layer is held to: a config is INERT DATA that survives a
+// round trip through yaml and constructs nothing. v1's pkg/config built the
+// p2p node, and once a config type owns a live resource every consumer of that
+// type has to be handed one — which is how a struct an operator writes becomes
+// something a test cannot make without a daemon running.
+//
+// config_test.go's census holds it: no method on a config type in this package
+// returns a resource.
+func containerTier(c ContainerConfig) (invoke.Runtime, error) {
+	backend, err := containerBackend(c)
+	if err != nil {
+		return nil, err
 	}
 
 	// THE SPEC ALREADY CARRIES THE ARTIFACT. A worker reads the image, the

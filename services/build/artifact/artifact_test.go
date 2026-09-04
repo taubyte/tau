@@ -572,3 +572,43 @@ func TestABranchWhoseDeploymentIsNotLive(t *testing.T) {
 	require.ErrorIs(t, err, artifact.ErrNoDeployment)
 	require.ErrorContains(t, err, "none of those is deployed")
 }
+
+// ── the build's own environment ──────────────────────────────────────────
+
+// A BUILD-TIME VARIABLE REACHES THE BUILD AND A RUN-TIME ONE DOES NOT. Passing
+// everything would put a runtime secret into a toolchain container somebody
+// else wrote.
+func TestOnlyBuildTimeVariablesReachTheBuild(t *testing.T) {
+	config := projectConfig(t, "", map[string]string{
+		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\n" +
+			"source: services/reserve\n" +
+			"build:\n    commands:\n        image: rust:1.83\n        run: cargo build\n" +
+			"        output: out.wasm\n" +
+			"execution:\n    call: reserve\n    timeout: 15s\n    memory: 32MB\n" +
+			"variables:\n" +
+			"    GOPRIVATE:\n        at: build\n        value: github.com/acme/*\n" +
+			"    API_BASE:\n        at: run\n        value: https://api.example.com\n",
+	})
+
+	e := &engine{}
+	require.NoError(t, builder(t, deployed(t, config), &checkout{dir: t.TempDir()}, e, codeRepo).
+		Build(t.Context(), work(codeRepo), newOut()))
+
+	specs := e.seen()
+	require.Len(t, specs, 1)
+	require.Equal(t, map[string]string{"GOPRIVATE": "github.com/acme/*"}, specs[0].Variables)
+}
+
+// A SECRET NEEDS A RESOLVER AND THERE IS NONE, so the build is refused rather
+// than run without it — a build that quietly lost its token fails somewhere
+// further in, with a message about a dependency it could not fetch.
+func TestABuildThatNeedsASecret(t *testing.T) {
+	e := &engine{}
+
+	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, codeRepo).
+		Build(t.Context(), work(paylibRepo), newOut())
+
+	require.ErrorContains(t, err, "nothing to resolve a secret with")
+	require.ErrorContains(t, err, "GITHUB_TOKEN")
+	require.Empty(t, e.seen())
+}

@@ -413,7 +413,7 @@ type source struct{ node *Node }
 
 var (
 	_ project.Registry = (*source)(nil)
-	_ gateway.Hosts  = (*source)(nil)
+	_ gateway.Hosts    = (*source)(nil)
 )
 
 func (s *source) Resolve(ctx context.Context, name, environment string) (pkgregister.Pointer, error) {

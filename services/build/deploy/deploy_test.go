@@ -3,6 +3,7 @@ package deploy_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -406,4 +407,73 @@ func (unreadable) Resolve(context.Context, string, string) (register.Pointer, er
 }
 func (unreadable) Publish(context.Context, register.Publication) (register.ObjectID, error) {
 	return "", nil
+}
+
+// ── routing ──────────────────────────────────────────────────────────────
+
+// A PUSH IS ONE OF TWO THINGS AND THIS IS WHERE THAT IS DECIDED, because the
+// decision is one question to auth and both answers need it.
+func TestACodePushIsDelegated(t *testing.T) {
+	dir := fixture(t, basicFixture)
+	b := &builderStub{}
+
+	d, err := deploy.New(
+		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
+		deploy.WithCheckout(&checkout{dir: dir}),
+		deploy.WithLocalRegister(registry(t)),
+		deploy.WithBuilder(b),
+	)
+	require.NoError(t, err)
+
+	w := work()
+	w.RepositoryKey = "github.com/acme/shop-code"
+
+	var log out
+	require.NoError(t, d.Run(t.Context(), w, &log))
+	require.Equal(t, 1, b.calls, "the code push went to the builder")
+	require.Equal(t, w.RepositoryKey, b.saw.RepositoryKey)
+	require.Contains(t, log.String(), "delegated")
+
+	// AND A CONFIGURATION PUSH DOES NOT. The same runner, the same auth
+	// answer, a different job.
+	b.calls = 0
+	require.NoError(t, d.Run(t.Context(), work(), &log))
+	require.Zero(t, b.calls)
+}
+
+// A builder that failed is the job's failure, not a deploy that fell back to
+// doing nothing.
+func TestACodePushThatFails(t *testing.T) {
+	d, err := deploy.New(
+		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
+		deploy.WithCheckout(&checkout{dir: fixture(t, basicFixture)}),
+		deploy.WithLocalRegister(registry(t)),
+		deploy.WithBuilder(&builderStub{err: errors.New("the toolchain is not installed")}),
+	)
+	require.NoError(t, err)
+
+	w := work()
+	w.RepositoryKey = "github.com/acme/shop-code"
+	require.ErrorContains(t, d.Run(t.Context(), w, &out{}), "the toolchain is not installed")
+}
+
+func TestWithBuilderRefusesNil(t *testing.T) {
+	_, err := deploy.New(deploy.WithBuilder(nil))
+	require.ErrorContains(t, err, "builder")
+}
+
+type builderStub struct {
+	calls int
+	saw   backend.Work
+	err   error
+}
+
+func (b *builderStub) Build(_ context.Context, w backend.Work, out backend.Output) error {
+	b.calls++
+	b.saw = w
+	if b.err != nil {
+		return b.err
+	}
+	fmt.Fprintln(out, "delegated")
+	return nil
 }

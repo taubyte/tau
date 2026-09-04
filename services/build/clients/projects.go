@@ -106,3 +106,35 @@ func (c *ProjectClient) Configures(ctx context.Context, projectID, repositoryKey
 	}
 	return configures, nil
 }
+
+// CodeRepository is the repository whose pushes build a project's code.
+//
+// IT IS ASKED RATHER THAN INFERRED because half of it is not in the config: a
+// resource whose source is a bare path lives in the project's own code
+// repository, and which repository that IS is auth's to say.
+//
+// A project with none registered answers with an empty string and no error.
+// That is a real state — a project can be created with only a configuration
+// repository — and it means no bare-path resource is built by any push, which
+// is the right answer rather than an error on a push that was never going to
+// build anything.
+func (c *ProjectClient) CodeRepository(ctx context.Context, projectID string) (string, error) {
+	if projectID == "" {
+		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("build: project id is required"))
+	}
+
+	var key string
+	err := c.pool.Do(ctx, func(client *rpc.Client) error {
+		projects := authv1connect.NewProjectServiceClient(client.HTTP(), client.URL())
+		resp, err := projects.Get(ctx, connect.NewRequest(&authv1.ProjectRef{Id: projectID}))
+		if err != nil {
+			return err
+		}
+		key = resp.Msg.GetCodeRepositoryKey()
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return key, nil
+}

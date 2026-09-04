@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/raft"
+	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build/frontend"
 	authService "github.com/taubyte/tau/services/v2/auth"
 )
@@ -222,4 +225,130 @@ func TestThePublisherIsLocalWhenThisNodeHasTheRegister(t *testing.T) {
 	require.NoError(t, none.Start(t.Context()))
 	_, err = none.publisher(t.Context())
 	require.ErrorIs(t, err, ErrNoRegister)
+}
+
+// ── the code build's read of what is deployed ────────────────────────────
+
+// IT RESOLVES PER CALL for the same reason the deploy's publisher does: which
+// node answers is a routing question, and one held from construction would be
+// whichever node this dialled at boot, forever.
+func TestTheBuildRegisterReadsLocallyWhenThisNodeHasOne(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats}})
+	require.NoError(t, n.Start(t.Context()))
+
+	r := buildRegister{n}
+
+	// A project nobody published has no deployments, and asking is not an
+	// error.
+	got, err := r.Environments(t.Context(), "shop")
+	require.NoError(t, err)
+	require.Empty(t, got)
+
+	_, err = n.register.Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1,
+		Compiled: []byte(`{"object":{"id":"QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zd","name":"shop"}}`),
+	})
+	require.NoError(t, err)
+
+	got, err = r.Environments(t.Context(), "shop")
+	require.NoError(t, err)
+	require.Equal(t, []string{"prod"}, got)
+
+	pointer, err := r.Resolve(t.Context(), "shop", "prod")
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), pointer.Revision)
+
+	compiled, err := r.Object(t.Context(), pointer.Object)
+	require.NoError(t, err)
+	require.Contains(t, string(compiled), "shop")
+}
+
+// A NODE WITH NO REGISTER ANYWHERE cannot read what is deployed, and every one
+// of the three reads says so rather than answering emptily — an empty answer
+// would look like a project that was never deployed.
+func TestTheBuildRegisterWithNoRegisterAnywhere(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
+	require.NoError(t, n.Start(t.Context()))
+
+	r := buildRegister{n}
+
+	_, err := r.Environments(t.Context(), "shop")
+	require.ErrorIs(t, err, ErrNoRegister)
+
+	_, err = r.Resolve(t.Context(), "shop", "prod")
+	require.ErrorIs(t, err, ErrNoRegister)
+
+	_, err = r.Object(t.Context(), "some-object")
+	require.ErrorIs(t, err, ErrNoRegister)
+}
+
+// A NODE THAT CANNOT RUN A CONTAINER CANNOT BUILD CODE, and it says so on the
+// push rather than starting and refusing every one. The two halves of what a
+// push can be are independent: a node with no container backend still deploys
+// configuration, which is most of what a small cloud does.
+func TestABuildBackendWithNoContainerBackend(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Stats, BuildBackend}})
+	require.NoError(t, n.Start(t.Context()))
+	require.NotNil(t, n.buildBackend, "it still runs, and still deploys configuration")
+}
+
+// A CONTAINER BACKEND NAMED AND NOT BUILDABLE IS REFUSED AT BOOT rather than at
+// the first push, which is the same rule the worker's tier follows.
+func TestABuildBackendWithABackendThatIsNotOne(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+
+	_, err := New(Config{
+		Services:  []string{Stats, BuildBackend},
+		Container: ContainerConfig{Backend: "not-a-backend"},
+	},
+		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
+		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
+	)
+	require.ErrorIs(t, err, ErrUnknownBackend)
+}
+
+// A node given an asset store hands it to the build backend, which is the
+// difference between a job that records what it produced and one whose logs and
+// artifacts live and die with the run.
+func TestWithAssets(t *testing.T) {
+	require.ErrorContains(t, WithAssets(nil)(&options{}), "asset store")
+
+	store := &countingAssets{}
+	n, _, _ := makeNode(t, Config{Services: []string{Stats, BuildBackend}}, WithAssets(store))
+	require.NoError(t, n.Start(t.Context()))
+	require.NotNil(t, n.buildBackend)
+}
+
+type countingAssets struct{ puts int }
+
+func (c *countingAssets) Put(context.Context, io.Reader) (string, error) {
+	c.puts++
+	return "bafy", nil
+}
+
+// A CONTAINER BACKEND IS BUILT ONCE AND SHARED, because the tier that runs
+// workloads and the engine that runs builds must be the same daemon — a build
+// that auto-detected its own would run on one nobody configured while the
+// workloads ran on the one they did.
+func TestTheContainerBackendIsTheOperatorsChoice(t *testing.T) {
+	_, err := containerBackend(ContainerConfig{Backend: "not-a-backend"})
+	require.ErrorIs(t, err, ErrUnknownBackend)
+	require.ErrorContains(t, err, BackendDocker)
+	require.ErrorContains(t, err, BackendContainerd)
+
+	// A NAMED ONE IS BUILT RATHER THAN DETECTED, and the two backends differ in
+	// when they find out whether the daemon is there: docker builds a client
+	// and asks later, containerd checks its socket now. Either way the answer
+	// arrives at BOOT rather than at the first push, which is this
+	// composition's rule.
+	_, err = containerBackend(ContainerConfig{Backend: BackendDocker})
+	require.NoError(t, err)
+
+	_, err = containerBackend(ContainerConfig{Backend: BackendContainerd, Socket: "/nowhere/containerd.sock"})
+	if err != nil {
+		require.ErrorContains(t, err, "containerd",
+			"the message names the socket it looked for, so an operator sees which path was tried")
+	}
 }

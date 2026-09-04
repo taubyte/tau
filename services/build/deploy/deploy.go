@@ -29,13 +29,16 @@
 // down to `<key>` for the one it is compiling. One object published under
 // several names would give every deployment production's numbers.
 //
-// # What it is NOT
+// # It routes; it does not do both
 //
-// This runs the CONFIGURATION repository's pushes. A push to a code repository
-// is a build that produces artifacts, and that needs an asset store this tree
-// does not have yet (backend.Assets). Such a job is refused BY NAME rather than
-// silently succeeding, because a deploy that quietly built nothing is worse
-// than one that did not run.
+// A push is one of two things and this is where that is decided, because the
+// decision is one question to auth and both answers need it. A push to the
+// configuration repository is handled here. A push to a code repository is a
+// BUILD — services/build/artifact — and is delegated when this was given one.
+//
+// A node with no builder refuses a code push BY NAME rather than succeeding
+// quietly, because a job that reported success having built nothing looks
+// exactly like a deploy that worked.
 package deploy
 
 import (
@@ -60,10 +63,10 @@ const branchRef = "refs/heads/"
 
 var (
 	// ErrNotConfiguration is a push to a repository that is not the project's
-	// configuration. It names the job rather than passing it: a code build
-	// needs an artifact store, and one that returned success having produced
-	// nothing would look exactly like a deploy that worked.
-	ErrNotConfiguration = errors.New("deploy: this repository is not the project's configuration, and building code needs an artifact store this cloud has not been given")
+	// configuration, on a node that was given nothing to build code with. It
+	// names the job rather than passing it: one that returned success having
+	// produced nothing would look exactly like a deploy that worked.
+	ErrNotConfiguration = errors.New("deploy: this repository is not the project's configuration, and this node was not given anything to build code with")
 
 	// ErrNotABranch is a ref that is not a branch.
 	ErrNotABranch = errors.New("deploy: only a branch is a deployment")
@@ -103,6 +106,15 @@ type Checkout interface {
 	Checkout(ctx context.Context, repositoryKey, branch, commit string) (dir string, done func(), err error)
 }
 
+// Builder is what a push to a CODE repository becomes.
+//
+// It is an interface rather than the concrete builder so that this package
+// does not import the one that runs containers — routing a push and running a
+// build are different jobs, and only one of them needs a daemon.
+type Builder interface {
+	Build(ctx context.Context, w backend.Work, out backend.Output) error
+}
+
 // Register is the slice of the register a deploy writes: read what is there,
 // then publish.
 type Register interface {
@@ -119,6 +131,9 @@ type Deploy struct {
 	// services/v2/node does it: which node answers is a routing question, and a
 	// register can go away between two builds.
 	register func(context.Context) (Register, error)
+
+	// builder runs a push to a code repository, when this node was given one.
+	builder Builder
 
 	// cloudFqdn is the zone this cloud serves. It completes the generated half
 	// of a name — `<label>.<project label>` in the config, the rest here — and
@@ -152,6 +167,7 @@ func New(opts ...Option) (*Deploy, error) {
 		projects:  o.projects,
 		checkout:  o.checkout,
 		register:  o.register,
+		builder:   o.builder,
 		cloudFqdn: o.cloudFqdn,
 	}, nil
 }
@@ -173,7 +189,14 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 		return fmt.Errorf("deploy: %w", err)
 	}
 	if !configures {
-		return ErrNotConfiguration
+		// A CODE PUSH IS SOMEBODY ELSE'S JOB, and this is the only place that
+		// knows which of the two it is — the question costs one call to auth
+		// and both answers need it, so asking it twice would be asking it
+		// twice.
+		if d.builder == nil {
+			return ErrNotConfiguration
+		}
+		return d.builder.Build(ctx, w, out)
 	}
 
 	dir, done, err := d.checkout.Checkout(ctx, w.RepositoryKey, branch, w.CommitSHA)

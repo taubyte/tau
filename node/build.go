@@ -9,7 +9,9 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
+	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/clients"
 	"github.com/taubyte/tau/services/build/deploy"
@@ -190,27 +192,58 @@ func (n *Node) openBuildBackend() error {
 	// SSH, BECAUSE A DEPLOY KEY IS AN SSH KEY. auth holds one per repository,
 	// and a cloud reaching a provider over https could only read what is
 	// already public.
-	runner, err := deploy.New(
+	clone := deploy.NewClone(repositories, deploy.WithURL(deploy.SSH))
+
+	options := []deploy.Option{
 		deploy.WithProjects(projects),
-		deploy.WithCheckout(deploy.NewClone(repositories, deploy.WithURL(deploy.SSH))),
+		deploy.WithCheckout(clone),
 		deploy.WithRegister(n.publisher),
 		deploy.WithCloudFqdn(n.cfg.Gateway.CloudFqdn),
-	)
+	}
+
+	// A NODE THAT CANNOT RUN A CONTAINER CANNOT BUILD CODE, and it says so on
+	// the push rather than starting and refusing every one. The two halves of
+	// what a push can be are independent: a node with no container backend
+	// still deploys configuration, which is most of what a small cloud does.
+	if n.cfg.Container.declared() {
+		backend, err := containerBackend(n.cfg.Container)
+		if err != nil {
+			return err
+		}
+
+		engine, err := artifact.NewEngine(backend)
+		if err != nil {
+			return err
+		}
+
+		builder, err := artifact.New(
+			artifact.WithRegister(buildRegister{n}),
+			artifact.WithProjects(projects),
+			artifact.WithCheckout(clone),
+			artifact.WithEngine(engine),
+		)
+		if err != nil {
+			return err
+		}
+		options = append(options, deploy.WithBuilder(builder))
+	}
+
+	runner, err := deploy.New(options...)
 	if err != nil {
 		return err
 	}
 
-	options := []backend.Option{
+	service := []backend.Option{
 		backend.WithHost(n.opts.host),
 		backend.WithStore(cluster),
 		backend.WithRepositories(repositories),
 		backend.WithRunner(runner),
 	}
 	if n.opts.assets != nil {
-		options = append(options, backend.WithAssets(n.opts.assets))
+		service = append(service, backend.WithAssets(n.opts.assets))
 	}
 
-	svc, err := backend.New(n.cfg.BuildBackend, options...)
+	svc, err := backend.New(n.cfg.BuildBackend, service...)
 	if err != nil {
 		return err
 	}
@@ -267,6 +300,45 @@ func (n *Node) openBuildFrontend() error {
 	n.buildFrontend = svc
 	n.closers = append(n.closers, svc)
 	return nil
+}
+
+// buildRegister is how a code build reads the configuration it builds against.
+//
+// IT RESOLVES PER CALL for the same reason the deploy's publisher does: which
+// node answers is a routing question, and one held from construction would be
+// whichever node this dialled at boot, forever.
+type buildRegister struct{ node *Node }
+
+func (b buildRegister) Environments(ctx context.Context, project string) ([]string, error) {
+	r, err := b.reader()
+	if err != nil {
+		return nil, err
+	}
+	return r.Environments(ctx, project)
+}
+
+func (b buildRegister) Resolve(ctx context.Context, project, environment string) (pkgregister.Pointer, error) {
+	r, err := b.reader()
+	if err != nil {
+		return pkgregister.Pointer{}, err
+	}
+	return r.Resolve(ctx, project, environment)
+}
+
+func (b buildRegister) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
+	r, err := b.reader()
+	if err != nil {
+		return nil, err
+	}
+	return r.Object(ctx, id)
+}
+
+// reader is the register this node reads, local when it runs one.
+func (b buildRegister) reader() (artifact.Register, error) {
+	if b.node.register != nil {
+		return b.node.register.Local(), nil
+	}
+	return b.node.registerClientNow()
 }
 
 // publisher is where a deploy publishes.

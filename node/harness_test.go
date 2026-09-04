@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -85,6 +86,22 @@ func (k *memKV) Get(_ context.Context, key string) ([]byte, error) {
 		return nil, ds.ErrNotFound
 	}
 	return v, nil
+}
+
+// List is a prefix scan, and it returns WHOLE KEYS the way a real kvdb does —
+// pkg/register trims the prefix off what comes back, so a double that answered
+// relative keys would make every deployment name read as a whole pointer key.
+func (k *memKV) List(_ context.Context, prefix string) ([]string, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	var out []string
+	for key := range k.rows {
+		if strings.HasPrefix(key, prefix) {
+			out = append(out, key)
+		}
+	}
+	return out, nil
 }
 
 func (k *memKV) Put(_ context.Context, key string, v []byte) error {

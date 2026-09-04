@@ -12,6 +12,7 @@ type options struct {
 	projects  Projects
 	checkout  Checkout
 	register  func(context.Context) (Register, error)
+	builder   Builder
 	cloudFqdn string
 }
 
@@ -67,6 +68,18 @@ func WithLocalRegister(r Register) Option {
 func WithCloudFqdn(fqdn string) Option {
 	return func(o *options) error {
 		o.cloudFqdn = fqdn
+		return nil
+	}
+}
+
+// WithBuilder is what a push to a CODE repository becomes. A node without one
+// refuses such a push by name.
+func WithBuilder(b Builder) Option {
+	return func(o *options) error {
+		if b == nil {
+			return errors.New("builder must not be nil")
+		}
+		o.builder = b
 		return nil
 	}
 }

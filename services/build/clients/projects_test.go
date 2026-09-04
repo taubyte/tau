@@ -9,6 +9,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/discovery"
 	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/deploy"
 	"github.com/taubyte/tau/services/build/frontend"
 )
@@ -150,4 +151,35 @@ func TestConfiguresRefusesWhatItCannotAsk(t *testing.T) {
 	// the caller can tell a push to refuse from a push to retry.
 	_, err = c.Configures(t.Context(), "pay", "github.com/acme/pay-config")
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+}
+
+var _ artifact.Projects = (*ProjectClient)(nil)
+
+func TestCodeRepository(t *testing.T) {
+	c := newProjects(t, func(id string) (*authv1.Project, error) {
+		return &authv1.Project{
+			Id:                  id,
+			ConfigRepositoryKey: "github.com/acme/pay-config",
+			CodeRepositoryKey:   "github.com/acme/pay-code",
+		}, nil
+	})
+
+	key, err := c.CodeRepository(t.Context(), "pay")
+	require.NoError(t, err)
+	require.Equal(t, "github.com/acme/pay-code", key)
+
+	// A PROJECT WITH NONE REGISTERED IS AN EMPTY STRING AND NOT AN ERROR. It is
+	// a real state — a project can be created with only a configuration
+	// repository — and it means no bare-path resource is built by any push,
+	// which is the right answer rather than a failure on a push that was never
+	// going to build anything.
+	none := newProjects(t, func(id string) (*authv1.Project, error) {
+		return &authv1.Project{Id: id, ConfigRepositoryKey: "github.com/acme/pay-config"}, nil
+	})
+	key, err = none.CodeRepository(t.Context(), "pay")
+	require.NoError(t, err)
+	require.Empty(t, key)
+
+	_, err = c.CodeRepository(t.Context(), "")
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }

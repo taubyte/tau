@@ -48,6 +48,10 @@ import (
 // deploy does: nothing in an environment table matches a tag.
 const branchRef = "refs/heads/"
 
+// buildTime is what a variable's `at` says when it belongs to the build rather
+// than to the workload.
+const buildTime = "build"
+
 var (
 	// ErrNeverDeployed is a code push for a project whose configuration has
 	// never been published. There is nothing to build against, and building
@@ -286,6 +290,7 @@ type item struct {
 	ID          string
 	Build       project.Build
 	Path        string
+	Variables   []project.Variable
 }
 
 // plan is every build this push touches, across every deployment it feeds.
@@ -315,6 +320,7 @@ func (b *Builder) plan(ctx context.Context, projectID string, deployments []stri
 				ID:          buildable.ID,
 				Build:       buildable.Build,
 				Path:        buildable.Source.Path,
+				Variables:   buildable.Variables,
 			})
 		}
 	}
@@ -373,6 +379,28 @@ func specOf(i item, checkout string) (Spec, error) {
 		// into a failure nobody can read.
 		return Spec{}, fmt.Errorf("artifact: %s/%s is a %q build, and only %q and %q produce something this cloud can store",
 			i.Kind, i.Name, i.Build.Kind, project.BuildCommands, project.BuildScript)
+	}
+
+	// A BUILD-TIME VARIABLE IS NOT A RUN-TIME ONE, and the config says which
+	// with `at`. Passing everything would put a runtime secret into a toolchain
+	// container somebody else wrote; passing nothing would drop the token a
+	// private dependency needs.
+	for _, v := range i.Variables {
+		if v.At != buildTime {
+			continue
+		}
+		if v.FromSecret() {
+			// A SECRET NEEDS A RESOLVER AND THERE IS NONE, so the build is
+			// refused rather than run without it. A build that quietly lost its
+			// token fails somewhere further in, with a message about a
+			// dependency it could not fetch.
+			return Spec{}, fmt.Errorf("artifact: %s/%s's build needs the secret %s in %s, and this cloud has nothing to resolve a secret with",
+				i.Kind, i.Name, v.Secret, v.Name)
+		}
+		if spec.Variables == nil {
+			spec.Variables = map[string]string{}
+		}
+		spec.Variables[v.Name] = v.Value
 	}
 
 	if spec.Image == "" {

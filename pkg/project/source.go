@@ -139,6 +139,52 @@ func (r Resource) Build() Build {
 	}
 }
 
+// Variable is one of a resource's declared environment variables.
+type Variable struct {
+	Name string
+
+	// At is when it applies: "build" or "run". The compiler writes it, and a
+	// variable that does not say is a run-time one.
+	At string
+
+	// Value is a literal. Secret names one instead, and exactly one of the two
+	// is set.
+	Value  string
+	Secret string
+}
+
+// FromSecret reports whether this variable's value has to be resolved.
+func (v Variable) FromSecret() bool { return v.Secret != "" }
+
+// Variables are a resource's declared environment, sorted by name.
+func (r Resource) Variables() []Variable {
+	declared, ok := descend(r, "variables").(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	out := make([]Variable, 0, len(declared))
+	for name, raw := range declared {
+		at, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		v := Variable{Name: name}
+		v.At, _ = at["at"].(string)
+		v.Value, _ = at["value"].(string)
+		if secret, ok := at["secret"].(map[string]any); ok {
+			// A REFERENCE COMPILES TO AN ID, so what is carried is the secret's
+			// id and not the name it was written as.
+			v.Secret, _ = secret["name"].(string)
+		}
+		out = append(out, v)
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 // Buildable is one resource this project makes from source.
 type Buildable struct {
 	// Scope, Kind and Name address it, in the form Resource takes.
@@ -151,6 +197,10 @@ type Buildable struct {
 
 	Source Source
 	Build  Build
+
+	// Variables is the resource's declared environment, both build- and
+	// run-time. Which of them a build passes is the build's decision.
+	Variables []Variable
 }
 
 // Buildables is every resource this project makes from source, in a stable
@@ -188,12 +238,13 @@ func (p *Project) Buildables() []Buildable {
 		}
 
 		out = append(out, Buildable{
-			Scope:  at.scope,
-			Kind:   at.kind,
-			Name:   at.name,
-			ID:     id,
-			Source: source,
-			Build:  build,
+			Scope:     at.scope,
+			Kind:      at.kind,
+			Name:      at.name,
+			ID:        id,
+			Source:    source,
+			Build:     build,
+			Variables: r.Variables(),
 		})
 	}
 
