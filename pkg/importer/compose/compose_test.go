@@ -5,10 +5,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/importer"
+
 	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-func importOf(t *testing.T, yml string) Result {
+func importOf(t *testing.T, yml string) importer.Result {
 	t.Helper()
 	r, err := Import([]byte(yml))
 	require.NoError(t, err)
@@ -17,28 +19,28 @@ func importOf(t *testing.T, yml string) Result {
 
 // finding returns the finding for a service+key, and says so if there is none —
 // "it reported nothing" is the failure this package exists to prevent.
-func finding(t *testing.T, r Result, service, key string) Finding {
+func finding(t *testing.T, r importer.Result, service, key string) importer.Finding {
 	t.Helper()
 	for _, f := range r.Findings {
-		if f.Service == service && f.Key == key {
+		if f.Resource == service && f.Key == key {
 			return f
 		}
 	}
 	t.Fatalf("no finding for %q/%q; got %v", service, key, codes(r))
-	return Finding{}
+	return importer.Finding{}
 }
 
-func codes(r Result) []string {
+func codes(r importer.Result) []string {
 	var out []string
 	for _, f := range r.Findings {
-		out = append(out, f.Service+"/"+f.Key)
+		out = append(out, f.Resource+"/"+f.Key)
 	}
 	return out
 }
 
-func hasFinding(r Result, service, key string) bool {
+func hasFinding(r importer.Result, service, key string) bool {
 	for _, f := range r.Findings {
-		if f.Service == service && f.Key == key {
+		if f.Resource == service && f.Key == key {
 			return true
 		}
 	}
@@ -68,7 +70,7 @@ services:
       LOG_LEVEL: debug
 `)
 	require.Equal(t, "application", r.Kind)
-	api := r.Services["api"]
+	api := r.Resources["api"]
 	require.Equal(t, "acme/api:1.2.3", api["image"])
 	require.Equal(t, []string{"serve", "--port", "8080"}, api["command"])
 	require.Equal(t, "/srv", api["workdir"])
@@ -92,7 +94,7 @@ services:
       - A=1
       - B=two
 `)
-	require.Equal(t, map[string]any{"A": "1", "B": "two"}, list.Services["api"]["env"])
+	require.Equal(t, map[string]any{"A": "1", "B": "two"}, list.Resources["api"]["env"])
 
 	mapping := importOf(t, `
 services:
@@ -102,7 +104,7 @@ services:
       A: 1
       B: two
 `)
-	require.Equal(t, map[string]any{"A": "1", "B": "two"}, mapping.Services["api"]["env"])
+	require.Equal(t, map[string]any{"A": "1", "B": "two"}, mapping.Resources["api"]["env"])
 }
 
 // TestAValuelessVariableIsNotInvented. `KEY:` with no value means "take it from
@@ -117,7 +119,7 @@ services:
       FROM_SHELL:
       REAL: value
 `)
-	require.Equal(t, map[string]any{"REAL": "value"}, r.Services["api"]["env"])
+	require.Equal(t, map[string]any{"REAL": "value"}, r.Resources["api"]["env"])
 }
 
 // TestABuildBecomesTheDockerfileBranchOfTheBuildStanza.
@@ -136,7 +138,7 @@ services:
 			"path":    "Dockerfile.prod",
 			"target":  "release",
 		},
-	}, r.Services["api"]["build"])
+	}, r.Resources["api"]["build"])
 
 	short := importOf(t, `
 services:
@@ -144,7 +146,7 @@ services:
     build: ./api
 `)
 	require.Equal(t, map[string]any{"dockerfile": map[string]any{"context": "./api"}},
-		short.Services["api"]["build"])
+		short.Resources["api"]["build"])
 }
 
 // TestAServiceWithNoSourceIsRefused rather than imported as an empty resource.
@@ -155,9 +157,9 @@ services:
     environment:
       A: 1
 `)
-	require.NotContains(t, r.Services, "api", "there is nothing to run")
+	require.NotContains(t, r.Resources, "api", "there is nothing to run")
 	f := finding(t, r, "api", "image")
-	require.Equal(t, Blocked, f.Level)
+	require.Equal(t, importer.Blocked, f.Level)
 	require.Equal(t, "NO_SOURCE", f.Code)
 }
 
@@ -190,7 +192,7 @@ services:
 		"stop_grace_period", "volumes", "env_file", "entrypoint", "depends_on",
 	} {
 		f := finding(t, r, "api", key)
-		require.Equal(t, Blocked, f.Level, key)
+		require.Equal(t, importer.Blocked, f.Level, key)
 		require.NotEmpty(t, f.Needs,
 			"%s is blocked but names no contract that would unblock it, which makes it a shrug rather than a to-do", key)
 		require.NotEmpty(t, f.Detail, key)
@@ -217,7 +219,7 @@ services:
     volumes:
       - data:/var/lib/data
 `)
-	api := r.Services["api"]
+	api := r.Resources["api"]
 	for _, key := range []string{
 		"restart", "healthcheck", "privileged", "cap_add", "devices",
 		"network_mode", "deploy", "replicas", "volumes",
@@ -241,7 +243,7 @@ services:
 `)
 	for _, key := range []string{"privileged", "cap_add", "devices"} {
 		f := finding(t, r, "api", key)
-		require.Equal(t, Blocked, f.Level, key)
+		require.Equal(t, importer.Blocked, f.Level, key)
 		require.Empty(t, f.Needs,
 			"%s must name no contract: it is a refusal, not a gap, and naming a field would promise it", key)
 		require.Contains(t, f.Detail, "refused on purpose", key)
@@ -261,9 +263,9 @@ services:
       - "443:8443"
 `)
 	f := finding(t, r, "api", "ports")
-	require.Equal(t, Approximated, f.Level)
+	require.Equal(t, importer.Approximated, f.Level)
 	require.Contains(t, f.Detail, "8080:80")
-	require.NotContains(t, r.Services["api"], "ports")
+	require.NotContains(t, r.Resources["api"], "ports")
 }
 
 // TestAStringCommandIsNotAShell. Compose splits the string form with
@@ -277,7 +279,7 @@ services:
     command: "serve | tee /var/log/out"
 `)
 	f := finding(t, shelly, "api", "command")
-	require.Equal(t, Approximated, f.Level)
+	require.Equal(t, importer.Approximated, f.Level)
 	require.Equal(t, "COMMAND_STRING_IS_NOT_A_SHELL", f.Code)
 
 	plain := importOf(t, `
@@ -288,7 +290,7 @@ services:
 `)
 	require.False(t, hasFinding(plain, "api", "command"),
 		"a plain command needs no warning; crying wolf on every command teaches people to skip the findings")
-	require.Equal(t, []string{"serve", "--port", "8080"}, plain.Services["api"]["command"])
+	require.Equal(t, []string{"serve", "--port", "8080"}, plain.Resources["api"]["command"])
 }
 
 // TestDependsOnConditionsAreNamed, because service_healthy and
@@ -334,9 +336,9 @@ configs:
   nginx:
     file: ./nginx.conf
 `)
-	require.Equal(t, Ignored, finding(t, r, "", "networks").Level)
-	require.Equal(t, Blocked, finding(t, r, "", "secrets").Level)
-	require.Equal(t, Blocked, finding(t, r, "", "configs").Level)
+	require.Equal(t, importer.Ignored, finding(t, r, "", "networks").Level)
+	require.Equal(t, importer.Blocked, finding(t, r, "", "secrets").Level)
+	require.Equal(t, importer.Blocked, finding(t, r, "", "configs").Level)
 }
 
 // TestMetadataIsIgnoredRatherThanBlocked. Labels and profiles cost the import
@@ -353,7 +355,7 @@ services:
     expose: ["8080"]
 `)
 	for _, key := range []string{"labels", "profiles", "expose"} {
-		require.Equal(t, Ignored, finding(t, r, "api", key).Level, key)
+		require.Equal(t, importer.Ignored, finding(t, r, "api", key).Level, key)
 	}
 	require.Empty(t, r.Blocked())
 }
@@ -373,11 +375,11 @@ services:
     image: postgres
     restart: always
 `)
-	require.Len(t, r.Services, 3)
+	require.Len(t, r.Resources, 3)
 
 	var order []string
 	for _, f := range r.Findings {
-		order = append(order, f.Service)
+		order = append(order, f.Resource)
 	}
 	require.Equal(t, []string{"api", "db", "web"}, order, "sorted, so two runs diff cleanly")
 }
@@ -391,11 +393,11 @@ func TestAFileWithNoServicesIsNotACompose(t *testing.T) {
 }
 
 func TestAFindingReadsAsASentence(t *testing.T) {
-	f := Finding{Service: "api", Key: "healthcheck", Level: Blocked,
+	f := importer.Finding{Resource: "api", Key: "healthcheck", Level: importer.Blocked,
 		Code: "NO_TAU_FEATURE:healthcheck", Needs: "health.{test,interval}", Detail: "no vocabulary"}
 	require.Equal(t, "api: NO_TAU_FEATURE:healthcheck — no vocabulary (needs health.{test,interval})", f.String())
 
-	top := Finding{Key: "networks", Level: Ignored, Code: "NO_TAU_FEATURE:networks", Detail: "not modelled"}
+	top := importer.Finding{Key: "networks", Level: importer.Ignored, Code: "NO_TAU_FEATURE:networks", Detail: "not modelled"}
 	require.Equal(t, "NO_TAU_FEATURE:networks — not modelled", top.String())
 }
 
@@ -433,9 +435,9 @@ services:
 volumes:
   pgdata: {}
 `)
-	require.Len(t, r.Services, 3)
-	require.Equal(t, "acme/api:2", r.Services["api"]["image"])
-	require.NotNil(t, r.Services["web"]["build"])
+	require.Len(t, r.Resources, 3)
+	require.Equal(t, "acme/api:2", r.Resources["api"]["image"])
+	require.NotNil(t, r.Resources["web"]["build"])
 
 	// The honest report: this file cannot be imported faithfully, and the
 	// person doing it should know exactly why before they rely on it.

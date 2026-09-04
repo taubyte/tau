@@ -37,84 +37,13 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/taubyte/tau/pkg/importer"
+
 	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// Level says how much a finding costs the person importing.
-type Level string
-
-const (
-	// Blocked: the source says something tau cannot express at all. The import
-	// still produces config, and that config does less than the compose file
-	// did.
-	Blocked Level = "blocked"
-
-	// Approximated: it was carried across, but it does not mean exactly the
-	// same thing. These are the ones that produce a bug report six weeks later.
-	Approximated Level = "approximated"
-
-	// Ignored: a key that is meaningless here rather than missing — a compose
-	// concern with no runtime consequence for tau.
-	Ignored Level = "ignored"
-)
-
-// Finding is one thing the import did not do faithfully.
-type Finding struct {
-	// Service is the compose service it came from, or "" for a top-level key.
-	Service string
-
-	// Key is the compose key, e.g. "healthcheck" or "depends_on".
-	Key string
-
-	Level Level
-
-	// Code is the machine-readable reason, e.g.
-	// "NO_TAU_FEATURE:healthcheck". A corpus run counts these.
-	Code string
-
-	// Needs names the vocabulary that would unblock it, so the finding is a
-	// to-do item rather than a shrug. Empty when nothing would.
-	Needs string
-
-	// Detail is what to tell the person importing.
-	Detail string
-}
-
-func (f Finding) String() string {
-	s := f.Code
-	if f.Service != "" {
-		s = f.Service + ": " + s
-	}
-	if f.Needs != "" {
-		return s + " — " + f.Detail + " (needs " + f.Needs + ")"
-	}
-	return s + " — " + f.Detail
-}
-
-// Result is what an import produced.
-type Result struct {
-	// Kind is the v2 kind the services were imported as.
-	Kind string
-
-	// Services is the imported configuration, by service name. Each value is a
-	// document for one resource of Kind.
-	Services map[string]map[string]any
-
-	// Findings is everything not carried faithfully, in a stable order.
-	Findings []Finding
-}
-
-// Blocked is the findings that cost the importer something, which is what a
-// caller shows first.
-func (r Result) Blocked() []Finding {
-	var out []Finding
-	for _, f := range r.Findings {
-		if f.Level == Blocked {
-			out = append(out, f)
-		}
-	}
-	return out
-}
+// Source is what this importer is called in a finding.
+const Source = "compose"
 
 var (
 	ErrNotCompose = errors.New("compose: no services in this file")
@@ -185,55 +114,48 @@ type service struct {
 }
 
 // Import reads a compose file and produces v2 configuration plus every finding.
-func Import(data []byte) (Result, error) {
+func Import(data []byte) (importer.Result, error) {
 	kind, err := targetKind()
 	if err != nil {
-		return Result{}, err
+		return importer.Result{}, err
 	}
 
 	var f file
 	if err := yaml.Unmarshal(data, &f); err != nil {
-		return Result{}, fmt.Errorf("compose: %w", err)
+		return importer.Result{}, fmt.Errorf("compose: %w", err)
 	}
 	if len(f.Services) == 0 {
-		return Result{}, ErrNotCompose
+		return importer.Result{}, ErrNotCompose
 	}
 
-	r := Result{Kind: kind, Services: map[string]map[string]any{}}
+	r := importer.Result{Source: Source, Kind: kind}
 
 	// Top-level concerns that are not per-service.
 	if len(f.Networks) > 0 {
-		r.add(Finding{Key: "networks", Level: Ignored, Code: "NO_TAU_FEATURE:networks",
+		r.Add(importer.Finding{Key: "networks", Level: importer.Ignored, Code: "NO_TAU_FEATURE:networks",
 			Detail: "tau places workloads and does not model networks; what may reach what is an " +
 				"inbound edge on the resource, not a shared bridge"})
 	}
 	if len(f.Secrets) > 0 {
-		r.add(Finding{Key: "secrets", Level: Blocked, Code: "NO_TAU_FEATURE:compose-secrets",
+		r.Add(importer.Finding{Key: "secrets", Level: importer.Blocked, Code: "NO_TAU_FEATURE:compose-secrets",
 			Needs:  "a secret reference on the compute kind",
 			Detail: "compose secrets are files mounted from the host; they are not carried"})
 	}
 	if len(f.Configs) > 0 {
-		r.add(Finding{Key: "configs", Level: Blocked, Code: "NO_TAU_FEATURE:compose-configs",
+		r.Add(importer.Finding{Key: "configs", Level: importer.Blocked, Code: "NO_TAU_FEATURE:compose-configs",
 			Needs:  "a config-file reference on the compute kind",
 			Detail: "compose configs are files mounted from the host; they are not carried"})
 	}
 
 	for _, name := range sortedKeys(f.Services) {
-		r.importService(name, f.Services[name])
+		importService(&r, name, f.Services[name])
 	}
 
-	sort.SliceStable(r.Findings, func(i, j int) bool {
-		if r.Findings[i].Service != r.Findings[j].Service {
-			return r.Findings[i].Service < r.Findings[j].Service
-		}
-		return r.Findings[i].Key < r.Findings[j].Key
-	})
+	r.Sort()
 	return r, nil
 }
 
-func (r *Result) add(f Finding) { r.Findings = append(r.Findings, f) }
-
-func (r *Result) importService(name string, s service) {
+func importService(r *importer.Result, name string, s service) {
 	doc := map[string]any{}
 
 	switch {
@@ -244,7 +166,7 @@ func (r *Result) importService(name string, s service) {
 		// what a compose build maps onto.
 		doc["build"] = map[string]any{"dockerfile": buildToDockerfile(s.Build)}
 	default:
-		r.add(Finding{Service: name, Key: "image", Level: Blocked, Code: "NO_SOURCE",
+		r.Add(importer.Finding{Resource: name, Key: "image", Level: importer.Blocked, Code: "NO_SOURCE",
 			Detail: "the service names neither an image nor a build; there is nothing to run"})
 		return
 	}
@@ -256,7 +178,7 @@ func (r *Result) importService(name string, s service) {
 		// on a pipe or a variable expansion behaves differently. Reported when
 		// the source used the string form and the content suggests a shell.
 		if s.Command.Kind == yaml.ScalarNode && looksShelly(s.Command.Value) {
-			r.add(Finding{Service: name, Key: "command", Level: Approximated,
+			r.Add(importer.Finding{Resource: name, Key: "command", Level: importer.Approximated,
 				Code:   "COMMAND_STRING_IS_NOT_A_SHELL",
 				Detail: "the string form is split, not run by a shell; a pipe, a redirect or a $VAR will not behave as it does under compose"})
 		}
@@ -264,7 +186,7 @@ func (r *Result) importService(name string, s service) {
 	if ep := stringsOf(s.Entrypoint); len(ep) > 0 {
 		// Entrypoint and command compose differently in the image; carrying
 		// only one of them would change what runs.
-		r.add(Finding{Service: name, Key: "entrypoint", Level: Blocked,
+		r.Add(importer.Finding{Resource: name, Key: "entrypoint", Level: importer.Blocked,
 			Code:   "NO_TAU_FEATURE:entrypoint",
 			Needs:  "an entrypoint field distinct from command on the compute kind",
 			Detail: "entrypoint and command combine in the image; tau has one command field, so an entrypoint override cannot be expressed"})
@@ -280,7 +202,7 @@ func (r *Result) importService(name string, s service) {
 		// COMPOSE ENV PRECEDENCE IS SEVEN LAYERS. Interpolation, shell env,
 		// .env, env_file, service environment, image ENV and build args do not
 		// merge the way a single map does.
-		r.add(Finding{Service: name, Key: "env_file", Level: Blocked,
+		r.Add(importer.Finding{Resource: name, Key: "env_file", Level: importer.Blocked,
 			Code:   "NO_TAU_FEATURE:env_file",
 			Needs:  "a file-sourced environment on the compute kind",
 			Detail: "env_file is one of seven precedence layers compose merges; its contents are on the importer's machine, not in this file"})
@@ -289,14 +211,14 @@ func (r *Result) importService(name string, s service) {
 	if ports := portsOf(s.Ports); len(ports) > 0 {
 		// A published port is how the world reaches it, which in tau is a
 		// domain and an inbound edge rather than a host port.
-		r.add(Finding{Service: name, Key: "ports", Level: Approximated,
+		r.Add(importer.Finding{Resource: name, Key: "ports", Level: importer.Approximated,
 			Code: "PORTS_ARE_NOT_HOST_PORTS",
 			Detail: fmt.Sprintf("published %s: tau gives a workload a port and routes to it by name, so a host port mapping has no equivalent and is dropped",
 				strings.Join(ports, ", "))})
 	}
 
 	if vols := stringsOf(s.Volumes); len(vols) > 0 {
-		r.add(Finding{Service: name, Key: "volumes", Level: Blocked,
+		r.Add(importer.Finding{Resource: name, Key: "volumes", Level: importer.Blocked,
 			Code:   "NO_TAU_FEATURE:volumes",
 			Needs:  "a volume kind with a mount on the compute kind",
 			Detail: "a bind mount is host state and does not survive placement; a named volume needs a volume resource tau does not yet have"})
@@ -306,7 +228,7 @@ func (r *Result) importService(name string, s service) {
 		// depends_on is a HINT here and writes no config: service_healthy and
 		// service_completed_successfully are readiness and one-shot
 		// dependencies, not ordering, and tau models neither.
-		r.add(Finding{Service: name, Key: "depends_on", Level: Blocked,
+		r.Add(importer.Finding{Resource: name, Key: "depends_on", Level: importer.Blocked,
 			Code:   "NO_TAU_FEATURE:depends_on",
 			Needs:  "start ordering, plus the health contract its conditions rely on",
 			Detail: "depends_on " + strings.Join(deps, ", ") + ": conditions like service_healthy are readiness gates, not ordering, and tau has neither"})
@@ -336,31 +258,31 @@ func (r *Result) importService(name string, s service) {
 		if !b.present {
 			continue
 		}
-		r.add(Finding{Service: name, Key: b.key, Level: Blocked,
+		r.Add(importer.Finding{Resource: name, Key: b.key, Level: importer.Blocked,
 			Code: "NO_TAU_FEATURE:" + b.key, Needs: b.needs, Detail: b.detail})
 	}
 
 	if !s.Deploy.IsZero() {
-		r.add(Finding{Service: name, Key: "deploy", Level: Blocked,
+		r.Add(importer.Finding{Resource: name, Key: "deploy", Level: importer.Blocked,
 			Code:  "NO_TAU_FEATURE:deploy",
 			Needs: "resource limits on the compute kind",
 			Detail: "deploy.resources.limits is the one part with an equivalent, and replicas is deliberately absent: " +
 				"how many run and where is the platform's decision"})
 	}
 	if !s.Labels.IsZero() {
-		r.add(Finding{Service: name, Key: "labels", Level: Ignored, Code: "IGNORED:labels",
+		r.Add(importer.Finding{Resource: name, Key: "labels", Level: importer.Ignored, Code: "IGNORED:labels",
 			Detail: "labels are metadata for other tooling and have no runtime meaning here"})
 	}
 	if len(s.Profiles) > 0 {
-		r.add(Finding{Service: name, Key: "profiles", Level: Ignored, Code: "IGNORED:profiles",
+		r.Add(importer.Finding{Resource: name, Key: "profiles", Level: importer.Ignored, Code: "IGNORED:profiles",
 			Detail: "every service is imported; compose profiles select which run, which is a deploy-time choice tau makes per environment"})
 	}
 	if len(s.Expose) > 0 {
-		r.add(Finding{Service: name, Key: "expose", Level: Ignored, Code: "IGNORED:expose",
+		r.Add(importer.Finding{Resource: name, Key: "expose", Level: importer.Ignored, Code: "IGNORED:expose",
 			Detail: "expose documents a port for other compose services; reachability here is an inbound edge"})
 	}
 
-	r.Services[name] = doc
+	r.Set(name, doc)
 }
 
 // buildToDockerfile maps a compose build (string or mapping) onto the build
