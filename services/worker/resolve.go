@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/project"
@@ -15,17 +14,14 @@ import (
 
 // resolve.go turns a name into something the pool can run.
 //
-//	(project, environment)            -> a pointer      [register, cached for a TTL]
-//	pointer.Object                    -> a project      [register, cached forever]
+//	(project, environment)            -> what it runs   [project.Cache]
 //	(scope, kind, name)               -> a resource     [an index hit]
 //	resource                          -> an invoke.Spec [read off the vocabulary]
 //
-// TWO CACHES, AND THEY ARE CACHED FOR OPPOSITE REASONS. A compiled project is
-// named by its content, so one that has been fetched is correct forever and the
-// only bound on holding it is memory. A pointer is the thing that MOVES, so it
-// is held for as long as a deploy is allowed to take to propagate and no
-// longer. Collapsing them into one cache would mean either re-fetching a whole
-// compiled project every few seconds or serving replaced code indefinitely.
+// THE FIRST STEP IS project.Cache AND NOT A CACHE OF ITS OWN. A gateway does
+// exactly the same read on exactly the same request, and two copies of it would
+// be two answers to "how long after a deploy does the old code stop being
+// served" — which is a promise a platform makes once.
 
 // Target is what a caller names.
 type Target struct {
@@ -70,106 +66,6 @@ type Artifacts interface {
 // fails somewhere else, later, in a way that reads as a broken application.
 type Secrets interface {
 	Secret(ctx context.Context, project, environment, secretID string) (string, error)
-}
-
-// pointerEntry is one cached Resolve.
-type pointerEntry struct {
-	pointer register.Pointer
-	at      time.Time
-}
-
-// projectEntry is one cached compiled project. ready is closed when the load
-// that claimed this entry has finished, so concurrent readers of the same
-// object wait for one fetch rather than each starting their own — the fetch is
-// a whole compiled project over the wire, and a deploy makes every in-flight
-// request want it at the same instant.
-type projectEntry struct {
-	ready chan struct{}
-	proj  *project.Project
-	err   error
-}
-
-func (s *Service) pointer(ctx context.Context, projectName, environment string) (register.Pointer, error) {
-	key := projectName + "\x00" + environment
-
-	s.mu.Lock()
-	entry, ok := s.pointers[key]
-	s.mu.Unlock()
-
-	if ok && s.now().Sub(entry.at) < s.cfg.PointerTTL {
-		return entry.pointer, nil
-	}
-
-	p, err := s.register.Resolve(ctx, projectName, environment)
-	if err != nil {
-		return register.Pointer{}, err
-	}
-
-	s.mu.Lock()
-	s.pointers[key] = pointerEntry{pointer: p, at: s.now()}
-	s.mu.Unlock()
-
-	return p, nil
-}
-
-func (s *Service) project(ctx context.Context, id register.ObjectID) (*project.Project, error) {
-	s.mu.Lock()
-	if entry, ok := s.projects[id]; ok {
-		s.touch(id)
-		s.mu.Unlock()
-		<-entry.ready
-		return entry.proj, entry.err
-	}
-	entry := &projectEntry{ready: make(chan struct{})}
-	s.projects[id] = entry
-	s.touch(id)
-	s.evict()
-	s.mu.Unlock()
-
-	compiled, err := s.register.Object(ctx, id)
-	if err == nil {
-		entry.proj, err = project.Load(compiled)
-	}
-	entry.err = err
-	close(entry.ready)
-
-	// A FAILED LOAD IS NOT CACHED. The object is immutable, so a successful
-	// load is good forever — but a failure is usually the register being
-	// unreachable, and remembering it would turn one bad moment into a project
-	// that never loads again.
-	if err != nil {
-		s.mu.Lock()
-		if s.projects[id] == entry {
-			delete(s.projects, id)
-			s.forget(id)
-		}
-		s.mu.Unlock()
-		return nil, err
-	}
-	return entry.proj, nil
-}
-
-// touch, forget and evict are the LRU over compiled projects. They are called
-// with s.mu held.
-func (s *Service) touch(id register.ObjectID) {
-	s.forget(id)
-	s.lru = append(s.lru, id)
-}
-
-func (s *Service) forget(id register.ObjectID) {
-	for i, held := range s.lru {
-		if held == id {
-			s.lru = append(s.lru[:i], s.lru[i+1:]...)
-			return
-		}
-	}
-}
-
-func (s *Service) evict() {
-	for len(s.lru) > s.cfg.MaxProjects {
-		delete(s.projects, s.lru[0])
-		s.lru = s.lru[1:]
-	}
 }
 
 // spec reads a resource and says what to run.
@@ -300,12 +196,7 @@ func (s *Service) Resolve(ctx context.Context, t Target) (invoke.Spec, error) {
 		return invoke.Spec{}, ErrNoTarget
 	}
 
-	pointer, err := s.pointer(ctx, t.Project, t.Environment)
-	if err != nil {
-		return invoke.Spec{}, err
-	}
-
-	proj, err := s.project(ctx, pointer.Object)
+	proj, pointer, err := s.projects.At(ctx, t.Project, t.Environment)
 	if err != nil {
 		return invoke.Spec{}, err
 	}

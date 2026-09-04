@@ -37,13 +37,12 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/project"
 )
 
 // Service is a worker.
@@ -58,16 +57,7 @@ type Service struct {
 	artifacts Artifacts
 	secrets   Secrets
 
-	now func() time.Time
-
-	// mu guards both caches. It is a plain mutex rather than an RWMutex: every
-	// path that reads also writes — the pointer path refreshes, the project
-	// path touches the LRU — so a read lock would be taken and immediately
-	// upgraded.
-	mu       sync.Mutex
-	pointers map[string]pointerEntry
-	projects map[register.ObjectID]*projectEntry
-	lru      []register.ObjectID
+	projects *project.Cache
 
 	serverOptions []rpc.ServerOption
 
@@ -133,8 +123,17 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 	if o.pool == nil {
 		return nil, ErrNoPool
 	}
-	if o.now == nil {
-		o.now = time.Now
+	cacheOptions := []project.CacheOption{
+		project.WithTTL(cfg.PointerTTL),
+		project.WithMax(cfg.MaxProjects),
+	}
+	if o.now != nil {
+		cacheOptions = append(cacheOptions, project.WithClock(o.now))
+	}
+
+	projects, err := project.NewCache(o.register, cacheOptions...)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Service{
@@ -144,9 +143,7 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 		pool:          o.pool,
 		artifacts:     o.artifacts,
 		secrets:       o.secrets,
-		now:           o.now,
-		pointers:      map[string]pointerEntry{},
-		projects:      map[register.ObjectID]*projectEntry{},
+		projects:      projects,
 		serverOptions: o.serverOptions,
 	}, nil
 }
@@ -198,10 +195,5 @@ func (s *Service) Close() error {
 }
 
 // Loaded is how many compiled projects are held. It exists for a test and for
-// an operator asking what a node is holding; nothing in this package's own
-// logic reads it.
-func (s *Service) Loaded() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.projects)
-}
+// an operator asking what a node is holding.
+func (s *Service) Loaded() int { return s.projects.Held() }
