@@ -4,25 +4,34 @@
 #
 # Used two ways:
 #   scripts/cap -- go test -count=1 -p 2 ./...
-#   scripts/cap 8G -- go test -count=1 -p 4 ./...
+#   scripts/cap 6G -- go test -count=1 -p 2 ./...   # explicit, for the one hog
 #   scripts/cap -- go test -bench . -benchtime 3000000x ./services/build/backend/
 #
 # Pair it with -p 2 (or -p 4 at most): this box has 20 cores and the default -p
 # OOMs the linkers, which is where an unexplained "[build failed]" with no
 # compiler diagnostic comes from.
 #
-# TWO ceilings, and the second is the one that matters:
-#   MEM   ($TAU_CAP_MEM, default 4G)   — per invocation.
-#   TOTAL ($TAU_CAP_TOTAL, default 16G) — every capped run on this host, added
-#                                         up, inside one shared slice.
-# A per-invocation cap does not bound N invocations. Several concurrent test
-# runs, each honestly under its own 6G, took the host down anyway. The shared
-# slice is what makes the bound true no matter how many are launched.
+# THREE ceilings, and the third is the one that was missing:
+#   MEM   ($TAU_CAP_MEM,   default 3G)  — memory, per invocation.
+#   TOTAL ($TAU_CAP_TOTAL, default 8G)  — memory, every capped run on this host
+#                                         added up, inside one shared slice.
+#   CPU   ($TAU_CAP_CPU,   default 400%) — cores, across that same slice.
+#
+# A per-invocation cap does not bound N invocations: several concurrent runs,
+# each honestly under its own limit, took the host down anyway. The shared slice
+# fixes that for memory.
+#
+# THEN IT HAPPENED AGAIN WITH MEMORY TO SPARE. The slice was at 6.2G of 16G with
+# 22G free and the host still had to be reset, because nothing bounded CPU: a
+# full suite reached load 32 on 20 cores and the desktop stopped responding. A
+# machine does not have to run out of memory to become unusable. CPUQuota on the
+# slice is the bound that was missing, and it is the one that keeps the rest of
+# the box answerable while tests run.
 #
 # Set TAU_NO_CAP=1 to bypass (e.g. CI without a user systemd session). Falls
 # back to direct exec where systemd-run --user is unavailable, so it is always
 # safe to invoke.
-mem="${TAU_CAP_MEM:-4G}"
+mem="${TAU_CAP_MEM:-3G}"
 case "${1:-}" in
   [0-9]*[GMK]) mem="$1"; shift ;;
 esac
@@ -35,7 +44,8 @@ if [ "${TAU_NO_CAP:-0}" != "1" ] \
   # The slice is transient, so it loses the ceiling whenever it empties. Set it
   # on every run; it is idempotent and costs nothing.
   systemctl --user set-property tau-cap.slice \
-    MemoryMax="${TAU_CAP_TOTAL:-16G}" MemorySwapMax=0 >/dev/null 2>&1 || true
+    MemoryMax="${TAU_CAP_TOTAL:-8G}" MemorySwapMax=0 \
+    CPUQuota="${TAU_CAP_CPU:-400%}" >/dev/null 2>&1 || true
   exec systemd-run --user --scope -q --collect --slice=tau-cap.slice \
     -p MemoryMax="$mem" -p MemorySwapMax=0 -p TasksMax=4096 -- "$@"
 fi
