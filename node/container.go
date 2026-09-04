@@ -117,5 +117,12 @@ func containerTier(c ContainerConfig) (invoke.Runtime, error) {
 	// nothing left for an image resolver to look up — container.ImageFromSpec
 	// is that, and the injected ImageFunc stays for a registry mirror or a
 	// local override.
-	return container.New(container.ImageFromSpec, container.WithBackend(backend))
+	return container.New(container.ImageFromSpec,
+		container.WithBackend(backend),
+		// THE ONE THING THIS TIER CANNOT DO IS SAID OUT LOUD. A resource's
+		// egress allowlist is not enforceable by an nftables floor, so an
+		// operator whose author wrote one is told rather than left to assume
+		// it took effect.
+		container.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }),
+	)
 }

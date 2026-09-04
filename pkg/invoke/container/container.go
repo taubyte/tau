@@ -50,6 +50,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -99,6 +100,7 @@ type options struct {
 	stopTimeout   time.Duration
 	port          func() (int, error)
 	dial          func(ctx context.Context, network, addr string) (net.Conn, error)
+	warn          func(format string, args ...any)
 }
 
 // WithBackend is the container backend. Required.
@@ -108,6 +110,20 @@ func WithBackend(b Backend) Option {
 			return ErrNoBackend
 		}
 		o.backend = b
+		return nil
+	}
+}
+
+// WithWarn is where this tier says something an operator has to know but that
+// is not a reason to refuse a workload.
+//
+// THERE IS EXACTLY ONE SUCH THING and it is egress. See Start.
+func WithWarn(warn func(format string, args ...any)) Option {
+	return func(o *options) error {
+		if warn == nil {
+			return errors.New("container: a nil warn")
+		}
+		o.warn = warn
 		return nil
 	}
 }
@@ -272,6 +288,8 @@ var _ invoke.Runtime = (*Runtime)(nil)
 
 // Start brings up one container and waits until it is listening.
 func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance, error) {
+	e.egressGap(spec)
+
 	img, err := e.image(spec)
 	if err != nil {
 		return nil, fmt.Errorf("container: resolving image for %s: %w", spec.Name, err)
@@ -527,4 +545,33 @@ func (i *instance) Close() error {
 	stopErr := i.eng.opts.backend.Stop(ctx, i.id)
 	removeErr := i.eng.opts.backend.Remove(ctx, i.id)
 	return errors.Join(stopErr, removeErr)
+}
+
+// egressGap says out loud that this tier cannot narrow what a resource
+// declared.
+//
+// THE VOCABULARY PROMISES MORE THAN THIS TIER DELIVERS, and that is worth a
+// line in an operator's log rather than silence. `egress` is a per-workload
+// ALLOWLIST layered on the node-wide deny floor; what a container gets is the
+// floor — no node-local service, no metadata endpoint, no private range — and
+// then the whole public internet. A resource naming three hosts reaches more
+// than three.
+//
+// IT IS NOT A REFUSAL, and that is a judgement rather than an oversight.
+// Refusing would make a configuration the vocabulary explicitly allows
+// unrunnable, and the floor alone is already stricter than what a container
+// gets on every platform this is competing with. What it is not is what the
+// author wrote, so the author's own operator is told.
+//
+// Closing it means resolving the allowlist to addresses and programming them
+// into the same nftables set the floor uses — which is a real piece of work
+// with a real hazard (a name's addresses change under you, and DNS rebinding
+// is the attack that lives in that gap), not a line here.
+func (e *Runtime) egressGap(spec invoke.Spec) {
+	if len(spec.Egress) == 0 || e.opts.warn == nil {
+		return
+	}
+	e.opts.warn("container: %s declares an egress allowlist (%s) that this tier cannot narrow to; "+
+		"it gets the node-wide deny floor and the public internet",
+		spec.Name, strings.Join(spec.Egress, ", "))
 }

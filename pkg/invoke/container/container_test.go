@@ -656,3 +656,47 @@ func TestTheOptionsThatAreAcceptedTakeEffect(t *testing.T) {
 	require.Equal(t, 13*time.Second, e.opts.stopTimeout)
 	require.NotNil(t, e.opts.dial)
 }
+
+// THE VOCABULARY PROMISES MORE THAN THIS TIER DELIVERS, and that is worth a
+// line in an operator's log rather than silence: `egress` is a per-workload
+// allowlist layered on the node-wide deny floor, and what a container gets is
+// the floor and then the whole public internet.
+func TestAnEgressAllowlistIsReportedRatherThanEnforced(t *testing.T) {
+	var said []string
+	e := newRuntime(t, newFakeBackend(), Image{Ref: "ghcr.io/acme/api:1.4"}, func() []Option {
+		return []Option{WithWarn(func(format string, args ...any) {
+			said = append(said, fmt.Sprintf(format, args...))
+		})}
+	})
+
+	_, _ = e.Start(t.Context(), invoke.Spec{
+		Name:     "shop/prod/application/api",
+		Artifact: "ghcr.io/acme/api:1.4",
+		Egress:   []string{"api.stripe.com", "hooks.slack.com"},
+	})
+
+	require.Len(t, said, 1)
+	require.Contains(t, said[0], "shop/prod/application/api")
+	require.Contains(t, said[0], "api.stripe.com")
+	require.Contains(t, said[0], "hooks.slack.com")
+	require.Contains(t, said[0], "cannot narrow")
+}
+
+// A resource that declared none is not warned about, because there is nothing
+// it asked for that it did not get.
+func TestNoAllowlistIsNotWarnedAbout(t *testing.T) {
+	var said []string
+	e := newRuntime(t, newFakeBackend(), Image{Ref: "ghcr.io/acme/api:1.4"}, func() []Option {
+		return []Option{WithWarn(func(format string, args ...any) {
+			said = append(said, fmt.Sprintf(format, args...))
+		})}
+	})
+
+	_, _ = e.Start(t.Context(), invoke.Spec{Name: "fn", Artifact: "ghcr.io/acme/api:1.4"})
+	require.Empty(t, said)
+}
+
+func TestWithWarnRefusesNil(t *testing.T) {
+	_, err := New(ImageFromSpec, WithWarn(nil))
+	require.Error(t, err)
+}
