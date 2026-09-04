@@ -164,10 +164,9 @@ func TestReconcileReportsWhatItCannotRead(t *testing.T) {
 // The loop's other ticker. One test that it is wired, for the same reason the
 // claim loop has one.
 func TestTheStartedLoopReconciles(t *testing.T) {
-	h := newHarness(t, func(s *Service) error {
-		s.cfg.ClaimInterval = time.Hour // only reconcile may fire
-		s.cfg.ReconcileEvery = time.Millisecond
-		return nil
+	h := newHarnessCfg(t, func(c *Config) {
+		c.ClaimInterval = time.Hour // only reconcile may fire
+		c.ReconcileEvery = time.Millisecond
 	})
 	id := h.push(t, testRef, testCommit)
 

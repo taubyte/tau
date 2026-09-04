@@ -22,7 +22,7 @@ import (
 // directory, no kvdb factory, no port, and no raft.New — which takes peer.Node
 // and would have made every one of those mandatory.
 func TestServiceNeedsOnlyAMocknetHostAMockClusterAndAFakeAuth(t *testing.T) {
-	s, err := New(newHost(t, newMocknet(t)), raft.NewMockCluster(), newRepositories(), Config{})
+	s, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(raft.NewMockCluster()), WithRepositories(newRepositories()))
 	require.NoError(t, err)
 	require.NoError(t, s.Close())
 }
@@ -34,34 +34,37 @@ func TestNewRefusesWhatItCannotBeBuiltFrom(t *testing.T) {
 	repos := newRepositories()
 
 	for name, tc := range map[string]func() (*Service, error){
-		"no host":  func() (*Service, error) { return New(nil, store, repos, Config{}) },
-		"no store": func() (*Service, error) { return New(h, nil, repos, Config{}) },
+		"no host":     func() (*Service, error) { return New(Config{}, WithStore(store), WithRepositories(repos)) },
+		"a nil host":  func() (*Service, error) { return New(Config{}, WithHost(nil)) },
+		"no store":    func() (*Service, error) { return New(Config{}, WithHost(h), WithRepositories(repos)) },
+		"a nil store": func() (*Service, error) { return New(Config{}, WithStore(nil)) },
 		"no repositories": func() (*Service, error) {
-			return New(h, store, nil, Config{})
+			return New(Config{}, WithHost(h), WithStore(store))
 		},
+		"a nil repositories": func() (*Service, error) { return New(Config{}, WithRepositories(nil)) },
 		"a lease shorter than a build": func() (*Service, error) {
-			return New(h, store, repos, Config{
+			return New(Config{
 				BuildTimeout: time.Hour,
 				Queue:        queue.Config{VisibilityTimeout: time.Minute},
-			})
+			}, WithHost(h), WithStore(store), WithRepositories(repos))
 		},
 		"a negative tunable": func() (*Service, error) {
-			return New(h, store, repos, Config{ClaimInterval: -1})
+			return New(Config{ClaimInterval: -1}, WithHost(h), WithStore(store), WithRepositories(repos))
 		},
 		"an apply timeout the queue refuses": func() (*Service, error) {
-			return New(h, store, repos, Config{
+			return New(Config{
 				Queue: queue.Config{ApplyTimeout: raft.MaxApplyTimeout + time.Second},
-			})
+			}, WithHost(h), WithStore(store), WithRepositories(repos))
 		},
 		"an option that fails": func() (*Service, error) {
-			return New(h, store, repos, Config{}, func(*Service) error { return errors.New("no") })
+			return New(Config{}, func(*options) error { return errors.New("no") })
 		},
-		"a nil runner":     func() (*Service, error) { return New(h, store, repos, Config{}, WithRunner(nil)) },
-		"a nil authorizer": func() (*Service, error) { return New(h, store, repos, Config{}, WithAuthorizer(nil)) },
+		"a nil runner":     func() (*Service, error) { return New(Config{}, WithRunner(nil)) },
+		"a nil authorizer": func() (*Service, error) { return New(Config{}, WithAuthorizer(nil)) },
 		"a nil asset store": func() (*Service, error) {
-			return New(h, store, repos, Config{}, WithAssets(nil))
+			return New(Config{}, WithAssets(nil))
 		},
-		"a nil clock": func() (*Service, error) { return New(h, store, repos, Config{}, WithClock(nil)) },
+		"a nil clock": func() (*Service, error) { return New(Config{}, WithClock(nil)) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, err := tc()
@@ -101,7 +104,7 @@ func TestASecondListenerOnTheProtocolIsRefused(t *testing.T) {
 	h := newHarness(t)
 	require.NoError(t, h.Start(t.Context()))
 
-	other, err := New(h.host, newStore(), newRepositories(), Config{})
+	other, err := New(Config{}, WithHost(h.host), WithStore(newStore()), WithRepositories(newRepositories()))
 	require.NoError(t, err)
 	t.Cleanup(func() { other.Close() })
 
@@ -111,10 +114,9 @@ func TestASecondListenerOnTheProtocolIsRefused(t *testing.T) {
 // Close stops the loop it started, and waits for it — a loop still running
 // after Close would write to a store the composition root is about to close.
 func TestCloseStopsTheClaimLoop(t *testing.T) {
-	h := newHarness(t, func(s *Service) error {
-		s.cfg.ClaimInterval = time.Millisecond
-		s.cfg.ReconcileEvery = time.Millisecond
-		return nil
+	h := newHarnessCfg(t, func(c *Config) {
+		c.ClaimInterval = time.Millisecond
+		c.ReconcileEvery = time.Millisecond
 	})
 
 	require.NoError(t, h.Start(t.Context()))
@@ -166,9 +168,8 @@ func TestServerOptionsReachTheListener(t *testing.T) {
 // but the delivery is abandoned, not acknowledged: the item stays claimed, the
 // claim expires, and the queue redelivers it to whoever is leader then.
 func TestCloseAbandonsTheRunInFlightRatherThanFailingTheJob(t *testing.T) {
-	h := newHarness(t, func(s *Service) error {
-		s.cfg.ClaimInterval = time.Millisecond
-		return nil
+	h := newHarnessCfg(t, func(c *Config) {
+		c.ClaimInterval = time.Millisecond
 	})
 	id := h.push(t, testRef, testCommit)
 

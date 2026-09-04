@@ -460,10 +460,32 @@ const (
 	testCommit = "0123456789abcdef0123456789abcdef01234567"
 )
 
+// withoutRunner is a test-only option: a node that is a voter in the
+// consistency domain without being a builder, which WithRunner cannot express
+// because it refuses nil — correctly, since in production a nil runner is a
+// mistake rather than a deployment choice.
+func withoutRunner() Option {
+	return func(o *options) error { o.runner = nil; return nil }
+}
+
+// withoutAssets is the same for the asset store: a node that builds but has
+// nowhere to put what it produced. WithAssets refuses nil for the same reason
+// WithRunner does.
+func withoutAssets() Option {
+	return func(o *options) error { o.assetStore = nil; return nil }
+}
+
 func newHarness(t testing.TB, opts ...Option) *harness {
+	return newHarnessCfg(t, nil, opts...)
+}
+
+// newHarnessCfg is newHarness plus a tweak to the node config. It exists
+// because ClaimInterval and BuildTimeout are OPERATOR settings, not injected
+// collaborators, so they are not reachable through an Option.
+func newHarnessCfg(t testing.TB, adjust func(*Config), opts ...Option) *harness {
 	t.Helper()
 	store := newStore()
-	return newHarnessOver(t, store, store, opts...)
+	return newHarnessOverCfg(t, store, store, adjust, opts...)
 }
 
 // newHarnessOver builds the service over `over`, which may be a wrapper around
@@ -475,6 +497,10 @@ func newHarness(t testing.TB, opts ...Option) *harness {
 // and the queue write it decided, and then simply never fires. Passing it here
 // is the only way both sides are behind one hook.
 func newHarnessOver(t testing.TB, over Store, store *fakeStore, opts ...Option) *harness {
+	return newHarnessOverCfg(t, over, store, nil, opts...)
+}
+
+func newHarnessOverCfg(t testing.TB, over Store, store *fakeStore, adjust func(*Config), opts ...Option) *harness {
 	t.Helper()
 
 	repos := newRepositories(testRepo)
@@ -492,7 +518,11 @@ func newHarnessOver(t testing.TB, over Store, store *fakeStore, opts ...Option) 
 	// THE LOG DIRECTORY IS THIS TEST'S OWN. A run writes a real file, and the
 	// default is a scratch directory shared by every process on the box — fine
 	// for a node, wrong for a test that must not see another test's leftovers.
-	s, err := New(h, over, repos, Config{LogDir: t.TempDir()}, opts...)
+	cfg := Config{LogDir: t.TempDir()}
+	if adjust != nil {
+		adjust(&cfg)
+	}
+	s, err := New(cfg, append([]Option{WithHost(h), WithStore(over), WithRepositories(repos)}, opts...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 

@@ -237,7 +237,7 @@ func newHarness(t *testing.T, cfg Config, opts ...Option) *harness {
 	}
 
 	opts = append([]Option{WithClock(h.clock.now), WithLogger(h.logs.write)}, opts...)
-	svc, err := New(h.hooks, h.projects, h.backend, h.identity, cfg, opts...)
+	svc, err := New(cfg, append([]Option{WithHooks(h.hooks), WithProjects(h.projects), WithBackend(h.backend), WithIdentity(h.identity)}, opts...)...)
 	require.NoError(t, err)
 	h.Service = svc
 	return h

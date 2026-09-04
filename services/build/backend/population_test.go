@@ -1993,11 +1993,17 @@ func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 	// a door that reaches it and calls something else on it — a store that
 	// grows a second method, a wrapper — fails here without anybody having
 	// thought of that method's name.
-	require.ElementsMatch(t, []string{"WithAssets", "runOutput.Asset", "runOutput.publish"},
+	// New is in the population because an Option now configures an options
+	// value and NEW assembles the Service from it — so the constructor names
+	// every injected dependency exactly once, by construction. That is the
+	// point of the shape rather than a leak: there is no other way to put a
+	// store on a Service.
+	require.ElementsMatch(t, []string{"New", "WithAssets", "runOutput.Asset", "runOutput.publish"},
 		names(callers(all, "assetStore")),
-		"a fourth function names the asset store: the option that installs it, the run's own "+
-			"content door and the publish inside settle's section are the whole population, and "+
-			"anything else is a write to another node that no section decided")
+		"a fifth function names the asset store: the constructor that assembles it, the option "+
+			"that carries it, the run's own content door and the publish inside settle's section "+
+			"are the whole population, and anything else is a write to another node that no "+
+			"section decided")
 
 	// AND WHO MAY CALL IT. The field check above cannot see a door HANDED the
 	// store — `func stash(a Assets, …)` names no field — and this one cannot

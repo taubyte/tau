@@ -66,7 +66,7 @@ func newWireHarness(t *testing.T, opts ...Option) *wireHarness {
 	clock := newClock()
 
 	opts = append([]Option{WithClock(clock.now), WithRunner(runner), WithAuthorizer(authorizer)}, opts...)
-	s, err := New(server, store, repos, Config{}, opts...)
+	s, err := New(Config{}, append([]Option{WithHost(server), WithStore(store), WithRepositories(repos)}, opts...)...)
 	require.NoError(t, err)
 	require.NoError(t, s.Start(t.Context()))
 	t.Cleanup(func() { s.Close() })

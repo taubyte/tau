@@ -58,7 +58,70 @@ type Service struct {
 
 // Option configures a Service at construction. v2's tunables are fields set
 // through Option, never package-level vars every instance in a process shares.
-type Option func(*Service) error
+//
+// IT CONFIGURES AN options VALUE, NOT THE SERVICE. A Service is built once, from
+// a validated snapshot, so there is no window in which a half-configured one
+// exists and no second way to make one.
+type Option func(*options) error
+
+type options struct {
+	hooks    Hooks
+	projects Projects
+	backend  Backend
+	identity Identity
+
+	tune func(*http.Server)
+	now  func() time.Time
+	logf func(format string, args ...any)
+}
+
+// WithHooks is where a webhook's secret is verified against. Required.
+func WithHooks(h Hooks) Option {
+	return func(o *options) error {
+		if h == nil {
+			return errors.New("build: no hooks to verify a webhook against")
+		}
+		o.hooks = h
+		return nil
+	}
+}
+
+// WithProjects is what a caller is authorized against. Required.
+func WithProjects(p Projects) Option {
+	return func(o *options) error {
+		if p == nil {
+			return errors.New("build: no projects to authorize against")
+		}
+		o.projects = p
+		return nil
+	}
+}
+
+// WithBackend is where work is queued. Required.
+//
+// IT IS AN INTERFACE THIS PACKAGE DECLARES, never a client this package builds:
+// a public role that could construct its own route to the backend could be
+// started a way production never starts it.
+func WithBackend(b Backend) Option {
+	return func(o *options) error {
+		if b == nil {
+			return errors.New("build: no backend to queue into")
+		}
+		o.backend = b
+		return nil
+	}
+}
+
+// WithIdentity resolves a caller. Required.
+func WithIdentity(i Identity) Option {
+	return func(o *options) error {
+		if i == nil {
+			return errors.New("build: no identity to resolve a caller with")
+		}
+		o.identity = i
+		return nil
+	}
+}
 
 // WithHTTPServer hands the caller the *http.Server before it serves, for the
 // knobs this package does not name — TLS, connection state hooks, a custom
@@ -69,11 +132,11 @@ type Option func(*Service) error
 // caller can read them; overwriting Handler is how you make this service serve
 // something other than its own routes, and nothing stops you.
 func WithHTTPServer(f func(*http.Server)) Option {
-	return func(s *Service) error {
+	return func(o *options) error {
 		if f == nil {
 			return errors.New("build: http server hook must not be nil")
 		}
-		s.tune = f
+		o.tune = f
 		return nil
 	}
 }
@@ -82,11 +145,11 @@ func WithHTTPServer(f func(*http.Server)) Option {
 // limiters. It is what lets a test watch an entry expire or a bucket refill
 // without sleeping — which is most of why those two are testable at all.
 func WithClock(now func() time.Time) Option {
-	return func(s *Service) error {
+	return func(o *options) error {
 		if now == nil {
 			return errors.New("build: clock must not be nil")
 		}
-		s.now = now
+		o.now = now
 		return nil
 	}
 }
@@ -98,11 +161,11 @@ func WithClock(now func() time.Time) Option {
 // the log is the only place the reason exists. A hook whose secret is empty and
 // a signature made under the wrong hook are both invisible without it.
 func WithLogger(logf func(format string, args ...any)) Option {
-	return func(s *Service) error {
+	return func(o *options) error {
 		if logf == nil {
 			return errors.New("build: logger must not be nil")
 		}
-		s.logf = logf
+		o.logf = logf
 		return nil
 	}
 }
@@ -113,45 +176,47 @@ func WithLogger(logf func(format string, args ...any)) Option {
 // serves: services/patrick/service.go starts its stream, then can still fail
 // and leak it.
 //
-// Four dependencies, and every one of them is an interface this package
-// declares rather than a client it builds. A nil one is an error, never
-// something this service invents: a public role that could construct its own
-// route to the backend could be started a way production never starts it.
-func New(hooks Hooks, projects Projects, backend Backend, identity Identity, cfg Config, opts ...Option) (*Service, error) {
-	if hooks == nil {
-		return nil, errors.New("build: no hooks to verify a webhook against")
-	}
-	if projects == nil {
-		return nil, errors.New("build: no projects to authorize against")
-	}
-	if backend == nil {
-		return nil, errors.New("build: no backend to queue into")
-	}
-	if identity == nil {
-		return nil, errors.New("build: no identity to resolve a caller with")
-	}
-
+// Four dependencies, each an interface this package declares rather than a
+// client it builds, and each injected with a With… . A nil one is an error,
+// never something this service invents.
+func New(cfg Config, opts ...Option) (*Service, error) {
 	effective, err := cfg.withDefaults()
 	if err != nil {
 		return nil, err
 	}
 
-	s := &Service{
-		hooks:    hooks,
-		projects: projects,
-		backend:  backend,
-		identity: identity,
-		cfg:      effective,
-		now:      time.Now,
-		logf:     func(string, ...any) {},
-	}
-
-	for _, opt := range opts {
-		if err := opt(s); err != nil {
+	o := options{now: time.Now, logf: func(string, ...any) {}}
+	for _, apply := range opts {
+		if err := apply(&o); err != nil {
 			// Nothing to unwind: New owns no resource by the time an option
 			// runs.
 			return nil, fmt.Errorf("build: option: %w", err)
 		}
+	}
+
+	// Every dependency is checked AFTER the options have run, so a missing one
+	// is reported as missing rather than as a nil that surfaces on the first
+	// request.
+	switch {
+	case o.hooks == nil:
+		return nil, errors.New("build: no hooks to verify a webhook against")
+	case o.projects == nil:
+		return nil, errors.New("build: no projects to authorize against")
+	case o.backend == nil:
+		return nil, errors.New("build: no backend to queue into")
+	case o.identity == nil:
+		return nil, errors.New("build: no identity to resolve a caller with")
+	}
+
+	s := &Service{
+		hooks:    o.hooks,
+		projects: o.projects,
+		backend:  o.backend,
+		identity: o.identity,
+		cfg:      effective,
+		tune:     o.tune,
+		now:      o.now,
+		logf:     o.logf,
 	}
 
 	// A miss is remembered only when it is an ANSWER — see secrets.go's

@@ -157,10 +157,9 @@ func TestCancelWhileRunningStopsTheRunAndKeepsTheCancelledStatus(t *testing.T) {
 // build timeout.
 func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T) {
 	t.Run("the lease is the bound", func(t *testing.T) {
-		h := newHarness(t, func(s *Service) error {
-			s.cfg.BuildTimeout = time.Hour
-			s.cfg.ClaimMargin = time.Minute
-			return nil
+		h := newHarnessCfg(t, func(c *Config) {
+			c.BuildTimeout = time.Hour
+			c.ClaimMargin = time.Minute
 		})
 		h.push(t, testRef, testCommit)
 
@@ -180,10 +179,9 @@ func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T)
 	})
 
 	t.Run("the policy is the bound", func(t *testing.T) {
-		h := newHarness(t, func(s *Service) error {
-			s.cfg.BuildTimeout = time.Minute
-			s.cfg.Queue.VisibilityTimeout = 24 * time.Hour
-			return nil
+		h := newHarnessCfg(t, func(c *Config) {
+			c.BuildTimeout = time.Minute
+			c.Queue.VisibilityTimeout = 24 * time.Hour
 		})
 		h.push(t, testRef, testCommit)
 
@@ -285,14 +283,11 @@ func TestAWorkerThatDiedCostsAnAttemptAndTheJobComesBack(t *testing.T) {
 // A job that exhausts its attempts reaches the dead letter, and the drain is
 // what stops it sitting there forever with a record that still reads Open.
 func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
-	h := newHarness(t, func(s *Service) error {
-		s.cfg.Queue.MaxAttempts = 1
-		q, err := s.group.Open(s.cfg.Queue)
-		if err != nil {
-			return err
-		}
-		s.work = q
-		return nil
+	// New opens the queue from cfg (service.go:257), so setting MaxAttempts
+	// before construction is enough — the old shape had to reopen it because
+	// the option ran after the queue was already built.
+	h := newHarnessCfg(t, func(c *Config) {
+		c.Queue.MaxAttempts = 1
 	})
 	id := h.push(t, testRef, testCommit)
 
@@ -374,7 +369,7 @@ func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	follower, err := New(newHost(t, newMocknet(t)), h.store, h.repos, Config{},
+	follower, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(h.store), WithRepositories(h.repos),
 		WithClock(h.clock.now), WithRunner(&fakeRunner{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { follower.Close() })
@@ -397,7 +392,7 @@ func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 func TestANodeWithNoRunnerKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 	store := newStore()
 	clock := newClock()
-	s, err := New(newHost(t, newMocknet(t)), store, newRepositories(testRepo), Config{}, WithClock(clock.now))
+	s, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(store), WithRepositories(newRepositories(testRepo)), WithClock(clock.now))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
@@ -446,9 +441,8 @@ func TestStepReportsACorruptRecordRatherThanRunningIt(t *testing.T) {
 // makes every branch above reachable without a goroutine or a sleep. This is
 // the one test that runs it.
 func TestTheStartedLoopEventuallyRunsAQueuedJob(t *testing.T) {
-	h := newHarness(t, func(s *Service) error {
-		s.cfg.ClaimInterval = time.Millisecond
-		return nil
+	h := newHarnessCfg(t, func(c *Config) {
+		c.ClaimInterval = time.Millisecond
 	})
 	id := h.push(t, testRef, testCommit)
 

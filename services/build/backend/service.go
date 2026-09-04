@@ -76,13 +76,65 @@ type Service struct {
 // Option configures a Service at construction. v2's tunables are fields set
 // through Option, never package-level vars every instance in a process would
 // share.
-type Option func(*Service) error
+// Option configures an options value, not the Service. A Service is built once,
+// from a validated snapshot, so there is no window in which a half-configured
+// one exists and no second way to make one.
+type Option func(*options) error
+
+type options struct {
+	host  host.Host
+	store Store
+	repos Repositories
+
+	runner        Runner
+	assetStore    Assets
+	authz         Authorizer
+	now           func() time.Time
+	serverOptions []rpc.ServerOption
+}
+
+// WithHost is the libp2p host this service answers on. Required.
+//
+// A NIL HOST IS AN ERROR RATHER THAN A NODE THIS SERVICE INVENTS. v1 has that
+// fallback copied across four services, and a service that can invent its own
+// libp2p identity can be started a way production never starts it.
+func WithHost(h host.Host) Option {
+	return func(o *options) error {
+		if h == nil {
+			return errors.New("build: no host to answer on")
+		}
+		o.host = h
+		return nil
+	}
+}
+
+// WithStore is where the queue and the job records persist. Required.
+func WithStore(st Store) Option {
+	return func(o *options) error {
+		if st == nil {
+			return errors.New("build: no store")
+		}
+		o.store = st
+		return nil
+	}
+}
+
+// WithRepositories resolves a project. Required.
+func WithRepositories(r Repositories) Option {
+	return func(o *options) error {
+		if r == nil {
+			return errors.New("build: no repositories to resolve a project with")
+		}
+		o.repos = r
+		return nil
+	}
+}
 
 // WithServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen
 // in Start without this package needing an option of its own for each one.
 func WithServerOptions(opts ...rpc.ServerOption) Option {
-	return func(s *Service) error {
-		s.serverOptions = append(s.serverOptions, opts...)
+	return func(o *options) error {
+		o.serverOptions = append(o.serverOptions, opts...)
 		return nil
 	}
 }
@@ -93,11 +145,11 @@ func WithServerOptions(opts ...rpc.ServerOption) Option {
 // domain without being a builder, and that is a deployment's choice rather
 // than a degraded state.
 func WithRunner(r Runner) Option {
-	return func(s *Service) error {
+	return func(o *options) error {
 		if r == nil {
 			return errors.New("build: runner must not be nil")
 		}
-		s.runner = r
+		o.runner = r
 		return nil
 	}
 }
@@ -110,22 +162,22 @@ func WithRunner(r Runner) Option {
 // be started at all today. See Assets in config.go for what a real
 // implementation owes.
 func WithAssets(a Assets) Option {
-	return func(s *Service) error {
+	return func(o *options) error {
 		if a == nil {
 			return errors.New("build: asset store must not be nil")
 		}
-		s.assetStore = a
+		o.assetStore = a
 		return nil
 	}
 }
 
 // WithAuthorizer replaces the default, which is AllowAnyPeer. See authz.go.
 func WithAuthorizer(a Authorizer) Option {
-	return func(s *Service) error {
+	return func(o *options) error {
 		if a == nil {
 			return errors.New("build: authorizer must not be nil")
 		}
-		s.authz = a
+		o.authz = a
 		return nil
 	}
 }
@@ -134,11 +186,11 @@ func WithAuthorizer(a Authorizer) Option {
 // under it, which is the point: a test that moves time has to move both or the
 // two disagree about whether a claim has expired.
 func WithClock(now func() time.Time) Option {
-	return func(s *Service) error {
+	return func(o *options) error {
 		if now == nil {
 			return errors.New("build: clock must not be nil")
 		}
-		s.now = now
+		o.now = now
 		return nil
 	}
 }
@@ -148,51 +200,52 @@ func WithClock(now func() time.Time) Option {
 // constructed just to be inspected, and a node can construct every service
 // before starting any of them (service-conventions.md §2a).
 //
-// Three parameters and one bag of tunables: the host it answers on, the store
-// it persists into, the one question it may ask auth, and what the operator
-// declared. A nil host is an error rather than a node this service invents for
-// itself — v1 has that fallback copied across four services, and a service that
-// can invent its own libp2p identity can be started a way production never
-// starts it.
+// One bag of operator values and everything else injected: the host it answers
+// on, the store it persists into, and the one question it may ask auth. Each is
+// a With… that refuses nil, so a missing dependency fails at construction and a
+// bad one fails where it was written.
 //
 // It never constructs raft. raft.New takes peer.Node, which bundles host, DHT,
 // datastore, DAG and pubsub, and taking it would mean this package could not be
 // built against mocknet.GenPeer() with nothing else standing up —
 // service_test.go's TestServiceNeedsOnlyAMocknetHostAMockClusterAndAFakeAuth is
 // that claim as a test rather than as this sentence.
-func New(h host.Host, store Store, repos Repositories, cfg Config, opts ...Option) (*Service, error) {
-	if h == nil {
-		return nil, errors.New("build: no host to answer on")
-	}
-	if store == nil {
-		return nil, errors.New("build: no store")
-	}
-	if repos == nil {
-		return nil, errors.New("build: no repositories to resolve a project with")
-	}
-
+func New(cfg Config, opts ...Option) (*Service, error) {
 	effective, err := cfg.withDefaults()
 	if err != nil {
 		return nil, err
 	}
 
-	s := &Service{
-		host:    h,
-		store:   store,
-		repos:   repos,
-		cfg:     effective,
-		authz:   AllowAnyPeer(),
-		now:     time.Now,
-		running: map[string]context.CancelFunc{},
-		logs:    map[string]*livelog.Log{},
-	}
-
-	for _, opt := range opts {
-		if err := opt(s); err != nil {
+	o := options{authz: AllowAnyPeer(), now: time.Now}
+	for _, apply := range opts {
+		if err := apply(&o); err != nil {
 			// Nothing to unwind: New owns no resource by the time an option
 			// runs.
 			return nil, fmt.Errorf("build: option: %w", err)
 		}
+	}
+
+	switch {
+	case o.host == nil:
+		return nil, errors.New("build: no host to answer on")
+	case o.store == nil:
+		return nil, errors.New("build: no store")
+	case o.repos == nil:
+		return nil, errors.New("build: no repositories to resolve a project with")
+	}
+
+	s := &Service{
+		host:          o.host,
+		store:         o.store,
+		repos:         o.repos,
+		cfg:           effective,
+		runner:        o.runner,
+		assetStore:    o.assetStore,
+		authz:         o.authz,
+		now:           o.now,
+		serverOptions: o.serverOptions,
+		running:       map[string]context.CancelFunc{},
+		logs:          map[string]*livelog.Log{},
 	}
 
 	// The queue reads the same clock this service does, so a test that moves

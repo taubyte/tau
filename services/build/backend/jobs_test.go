@@ -207,7 +207,7 @@ func TestACancelledJobLeavesNoWorkBehindItInTheQueue(t *testing.T) {
 	})
 
 	t.Run("a leader that runs no builds claims nothing, so nothing would ever reap it", func(t *testing.T) {
-		h := newHarness(t, func(s *Service) error { s.runner = nil; return nil })
+		h := newHarness(t, withoutRunner())
 		id := h.push(t, testRef, testCommit)
 
 		require.NoError(t, h.cancel(id))

@@ -233,7 +233,7 @@ func TestARepositoryBelongingToNoProjectIsAFailedPrecondition(t *testing.T) {
 // kind, so a push loop is a queue nobody can drain.
 func TestAdmissionBoundsTheQueueAndTheRepository(t *testing.T) {
 	t.Run("queue depth", func(t *testing.T) {
-		h := newHarness(t, func(s *Service) error { s.cfg.MaxQueueDepth = 1; return nil })
+		h := newHarnessCfg(t, func(c *Config) { c.MaxQueueDepth = 1 })
 
 		h.push(t, testRef, testCommit)
 		_, err := enqueue(t, h, testRepo, "refs/heads/other", testCommit)
@@ -241,7 +241,7 @@ func TestAdmissionBoundsTheQueueAndTheRepository(t *testing.T) {
 	})
 
 	t.Run("open per repository", func(t *testing.T) {
-		h := newHarness(t, func(s *Service) error { s.cfg.MaxOpenPerRepo = 1; return nil })
+		h := newHarnessCfg(t, func(c *Config) { c.MaxOpenPerRepo = 1 })
 
 		h.push(t, testRef, testCommit)
 		_, err := enqueue(t, h, testRepo, "refs/heads/other", testCommit)
@@ -251,7 +251,7 @@ func TestAdmissionBoundsTheQueueAndTheRepository(t *testing.T) {
 	// The bound counts OUTSTANDING work, not history: a finished job's open row
 	// is gone, so it does not hold a repository's slot forever.
 	t.Run("a finished job frees the slot", func(t *testing.T) {
-		h := newHarness(t, func(s *Service) error { s.cfg.MaxOpenPerRepo = 1; return nil })
+		h := newHarnessCfg(t, func(c *Config) { c.MaxOpenPerRepo = 1 })
 
 		id := h.push(t, testRef, testCommit)
 		require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusSuccess, ""))
@@ -387,7 +387,7 @@ func (g *gatedRepositories) Project(ctx context.Context, key string) (string, er
 // the queue's own record of the id — so one push is built twice.
 func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) {
 	gate := newGatedRepositories(testRepo)
-	h := newHarness(t, func(s *Service) error { s.repos = gate; return nil })
+	h := newHarness(t, WithRepositories(gate))
 
 	type answer struct {
 		id  string
@@ -528,12 +528,13 @@ func (s *staleStore) Barrier(timeout time.Duration) error {
 func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
 	gate := newGatedRepositories(testRepo)
 	var store *staleStore
-	h := newHarness(t, func(s *Service) error {
-		store = &staleStore{fakeStore: s.store.(*fakeStore)}
-		s.store = store
-		s.repos = gate
+	// The harness's own options run first, so o.store is already the fake by
+	// the time this wraps it.
+	h := newHarness(t, func(o *options) error {
+		store = &staleStore{fakeStore: o.store.(*fakeStore)}
+		o.store = store
 		return nil
-	})
+	}, WithRepositories(gate))
 
 	key, ok := parseRepositoryKey(testRepo)
 	require.True(t, ok)
@@ -619,9 +620,9 @@ func (s *recordingStore) written() int {
 // and it is pkg/queue/exclusive_test.go's shape for the same reason.
 func TestASecondDeliveryCannotDecideWhileTheFirstIsWriting(t *testing.T) {
 	var store *recordingStore
-	h := newHarness(t, func(s *Service) error {
-		store = &recordingStore{fakeStore: s.store.(*fakeStore)}
-		s.store = store
+	h := newHarness(t, func(o *options) error {
+		store = &recordingStore{fakeStore: o.store.(*fakeStore)}
+		o.store = store
 		return nil
 	})
 
@@ -674,7 +675,7 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 	// rather than a store error.
 	t.Run("leadership is gone", func(t *testing.T) {
 		gate := newGatedRepositories(testRepo)
-		h := newHarness(t, func(s *Service) error { s.repos = gate; return nil })
+		h := newHarness(t, WithRepositories(gate))
 
 		done := make(chan error, 1)
 		go func() {
@@ -697,7 +698,7 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 	// whatever the first one was.
 	t.Run("the record is there and will not decode", func(t *testing.T) {
 		gate := newGatedRepositories(testRepo)
-		h := newHarness(t, func(s *Service) error { s.repos = gate; return nil })
+		h := newHarness(t, WithRepositories(gate))
 
 		key, ok := parseRepositoryKey(testRepo)
 		require.True(t, ok)

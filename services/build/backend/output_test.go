@@ -209,10 +209,7 @@ func TestAnAbandonedRunPublishesNothingAndLeavesNoFile(t *testing.T) {
 // followed while the build runs, and then it goes — the job carries no cids
 // because there is nowhere for the bytes to be.
 func TestANodeWithNoAssetStoreBuildsAndKeepsNothing(t *testing.T) {
-	h := newHarness(t, func(s *Service) error {
-		s.assetStore = nil
-		return nil
-	})
+	h := newHarness(t, withoutAssets())
 	id := h.push(t, testRef, testCommit)
 
 	var assetErr error
@@ -259,9 +256,8 @@ func TestAnAssetStoreThatRefusesTheLogLeavesTheJobWithoutOne(t *testing.T) {
 // this service's commit point. An asset store that hangs must cost the log,
 // never the job.
 func TestAPublishThatOutlastsItsDeadlineCostsTheLogAndNotTheJob(t *testing.T) {
-	h := newHarness(t, func(s *Service) error {
-		s.cfg.PublishTimeout = 10 * time.Millisecond
-		return nil
+	h := newHarnessCfg(t, func(c *Config) {
+		c.PublishTimeout = 10 * time.Millisecond
 	})
 	id := h.push(t, testRef, testCommit)
 
@@ -284,9 +280,8 @@ func TestAPublishThatOutlastsItsDeadlineCostsTheLogAndNotTheJob(t *testing.T) {
 // Past it the log says so and the build carries on: a verbose build is not a
 // failed one, and the runner is not told otherwise.
 func TestALogPastItsCapIsTruncatedAndTheBuildStillSucceeds(t *testing.T) {
-	h := newHarness(t, func(s *Service) error {
-		s.cfg.MaxLogBytes = 16
-		return nil
+	h := newHarnessCfg(t, func(c *Config) {
+		c.MaxLogBytes = 16
 	})
 	id := h.push(t, testRef, testCommit)
 
@@ -314,14 +309,11 @@ func TestALogPastItsCapIsTruncatedAndTheBuildStillSucceeds(t *testing.T) {
 // somebody's CI and then having nothing to show for it is worse than handing
 // the job to a node whose disk works.
 func TestARunThatCannotOpenALogIsAFailedBuild(t *testing.T) {
-	h := newHarness(t, func(s *Service) error {
+	h := newHarnessCfg(t, func(c *Config) {
 		// A FILE where the directory should be: MkdirAll fails on it.
-		blocked := filepath.Join(s.cfg.LogDir, "not-a-directory")
-		if err := os.WriteFile(blocked, nil, 0o600); err != nil {
-			return err
-		}
-		s.cfg.LogDir = blocked
-		return nil
+		blocked := filepath.Join(c.LogDir, "not-a-directory")
+		require.NoError(t, os.WriteFile(blocked, nil, 0o600))
+		c.LogDir = blocked
 	})
 	id := h.push(t, testRef, testCommit)
 
@@ -740,10 +732,7 @@ func TestSettleWritesNothingForARecordThatIsGone(t *testing.T) {
 // replicated entry that changes no field is a cost with no fact in it, and this
 // is the path every cancelled job takes on a node with no asset store.
 func TestACancelledJobWithNoOutputCostsNoEntry(t *testing.T) {
-	h := newHarness(t, func(s *Service) error {
-		s.assetStore = nil
-		return nil
-	})
+	h := newHarness(t, withoutAssets())
 	id := h.push(t, testRef, testCommit)
 
 	d, err := h.work.Claim()
@@ -874,9 +863,8 @@ func TestTheLogDirectoryTheServiceUsesIsOneNobodyElseCanWriteIn(t *testing.T) {
 	shared := filepath.Join(t.TempDir(), "tau-build-logs")
 	require.NoError(t, os.Mkdir(shared, 0o777))
 
-	h := newHarness(t, func(s *Service) error {
-		s.cfg.LogDir = shared
-		return nil
+	h := newHarnessCfg(t, func(c *Config) {
+		c.LogDir = shared
 	})
 	id := h.push(t, testRef, testCommit)
 	require.True(t, h.mustStep(t))
