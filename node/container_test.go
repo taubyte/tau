@@ -35,7 +35,7 @@ func TestAWorkerWithNoTier(t *testing.T) {
 
 	_, err := New(Config{Services: []string{Worker}}, WithHost(newHost(t, mn)))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "declare a container backend or inject one")
+	require.Contains(t, err.Error(), "declare a container backend, give it an asset store, or inject one")
 }
 
 // TestAnInjectedTierNeedsNoDeclaration, which is how dream and a test give a

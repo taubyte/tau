@@ -42,6 +42,7 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/invoke/static"
 	"github.com/taubyte/tau/pkg/project"
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -215,8 +216,20 @@ func (n *Node) openWorker() error {
 		tiers = append(tiers, tier)
 	}
 
+	// A SITE NEEDS NO DAEMON AND NO OPERATOR CHOICE. Its cold start is a fetch
+	// and an unpack, so a node that can reach the asset store can serve one —
+	// which means a static website runs on the smallest possible cloud, and
+	// that is most of what an imported project is.
+	if n.opts.assets != nil {
+		site, err := static.New(n.opts.assets)
+		if err != nil {
+			return err
+		}
+		tiers = append(tiers, site)
+	}
+
 	if len(tiers) == 0 {
-		return errors.New("node: a worker with no compute tier can run nothing; declare a container backend or inject one")
+		return errors.New("node: a worker with no compute tier can run nothing; declare a container backend, give it an asset store, or inject one")
 	}
 
 	pool, err := invoke.NewPool(invoke.WithRuntime(tiers...))

@@ -94,6 +94,21 @@ type Spec struct {
 	// be this package holding a registry's grammar.
 	Artifact string
 
+	// Settings are the tier-specific values the composer read off the resource.
+	//
+	// EVERYTHING ELSE IN THIS STRUCT IS SOMETHING EVERY TIER HAS — a memory
+	// ceiling, a timeout, an artifact — and this is what the ones that are not
+	// go in. A website's serve mode is meaningless to a container tier, so
+	// putting it beside Memory would be inviting every tier to grow a field
+	// nothing else reads.
+	//
+	// CHANGING ONE TAKES EFFECT LIKE A DEPLOY, and that falls out of Revision
+	// rather than out of this field: a setting comes off the compiled resource,
+	// so a different setting is a different compiled object and therefore a
+	// different revision, which the key already separates. Nothing here has to
+	// be comparable, which is why a map is safe to put in a Spec at all.
+	Settings map[string]string
+
 	// Env is what the workload is given. A tier may add to it — the container
 	// tier sets PORT — and may not have it overridden.
 	Env map[string]string

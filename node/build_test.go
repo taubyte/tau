@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -322,11 +323,49 @@ func TestWithAssets(t *testing.T) {
 	require.NotNil(t, n.buildBackend)
 }
 
-type countingAssets struct{ puts int }
+// A SITE NEEDS NO DAEMON AND NO OPERATOR CHOICE: its cold start is a fetch and
+// an unpack, so a node that can reach the asset store can serve one. That is
+// what lets a static website run on the smallest possible cloud, which is most
+// of what an imported project is.
+func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+
+	// No container backend, no injected runtime — and a worker still starts.
+	n, err := New(Config{Services: []string{Stats, Worker}},
+		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
+		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
+		WithAssets(&countingAssets{}),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { n.Close() })
+	require.NotNil(t, n.worker)
+
+	// And with neither, it refuses rather than starting a worker that can run
+	// nothing.
+	_, err = New(Config{Services: []string{Stats, Worker}},
+		WithHost(newHost(t, mn)), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
+		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
+	)
+	require.ErrorContains(t, err, "no compute tier")
+}
+
+// countingAssets is both halves, because this node is both: the build backend
+// puts and the static tier gets.
+type countingAssets struct {
+	puts int
+	gets int
+}
 
 func (c *countingAssets) Put(context.Context, io.Reader) (string, error) {
 	c.puts++
 	return "bafy", nil
+}
+
+func (c *countingAssets) Get(context.Context, string) (io.ReadSeekCloser, error) {
+	c.gets++
+	return nil, errors.New("nothing stored")
 }
 
 // A CONTAINER BACKEND IS BUILT ONCE AND SHARED, because the tier that runs

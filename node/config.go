@@ -1,8 +1,10 @@
 package node
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"time"
 
@@ -114,7 +116,7 @@ type options struct {
 	pubsub    stats.PubSub
 	databases kvdb.Factory
 	raft      func(namespace string) (raft.Cluster, error)
-	assets    backend.Assets
+	assets    Assets
 	runtimes  []invoke.Runtime
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
@@ -175,15 +177,27 @@ func WithRaft(open func(namespace string) (raft.Cluster, error)) Option {
 	}
 }
 
-// WithAssets is where a build's output goes: the log it wrote and the
-// artifacts it produced.
+// Assets is the byte store this node writes builds into and reads sites out of.
+//
+// IT IS BOTH HALVES BECAUSE THIS NODE IS BOTH. The build backend only puts
+// (backend.Assets) and the static tier only gets (static.Assets); the
+// composition that has one has the other, and declaring the pair here is what
+// lets a single store be handed to both instead of the same object arriving
+// through two options.
+type Assets interface {
+	Put(ctx context.Context, content io.Reader) (string, error)
+	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
+}
+
+// WithAssets is where a build's output goes and where a built site is read
+// from.
 //
 // OPTIONAL, AND WHAT IS LOST WITHOUT IT IS STATED RATHER THAN GUESSED: a
 // backend built without one still builds, and its logs and artifacts live and
 // die with the run. It is injected rather than built here for the same reason
 // raft is — the store is content-addressed over the machine's DAG, and only
 // whoever holds the machine's resources has one.
-func WithAssets(a backend.Assets) Option {
+func WithAssets(a Assets) Option {
 	return func(o *options) error {
 		if a == nil {
 			return errors.New("node: a nil asset store")
