@@ -107,6 +107,7 @@ require github.com/expr-lang/expr v1.17.8
 
 require (
 	cel.dev/expr v0.25.1 // indirect
+	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/google/nftables v0.3.0 // indirect
