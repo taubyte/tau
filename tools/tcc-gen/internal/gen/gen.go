@@ -37,34 +37,18 @@ func byteExact(rel string) bool {
 		rel == filepath.FromSlash(jsonSchemaPath)
 }
 
-// Generate returns a map of repo-relative path -> gofmt'd file content: the
-// legacy/schema accessor files plus the legacy/specs/structure struct proposals.
+// Generate returns a map of repo-relative path -> generated file content: the
+// TypeScript schema and the JSON schema.
+//
+// IT NO LONGER EMITS GO ACCESSORS. It used to also render legacy/schema/<kind>
+// accessor files and legacy/specs/structure struct proposals, which existed to
+// project the V1 vocabulary into the v1 services' hand-written packages. v1 is
+// not a target and its vocabulary is deleted, so there is nothing to project
+// into: generating v2 shapes into legacy/ paths would produce files describing
+// a vocabulary those packages do not speak, and the drift check would report
+// the difference forever as though it were a mistake somebody could fix.
 func Generate(root []*engine.Node) (map[string][]byte, error) {
-	rs, err := Resources(root)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string][]byte, len(rs)*len(files))
-	for _, r := range rs {
-		for _, f := range files {
-			b, err := render(f, r)
-			if err != nil {
-				return nil, err
-			}
-			out[filepath.Join("legacy", "schema", r.Package, f)] = b
-		}
-	}
-	structs, err := Structs(root)
-	if err != nil {
-		return nil, err
-	}
-	for _, m := range structs {
-		b, err := renderStruct(m)
-		if err != nil {
-			return nil, err
-		}
-		out[filepath.Join("legacy", "specs", "structure", strings.ToLower(m.Spec)+".go")] = b
-	}
+	out := make(map[string][]byte, 2)
 	ts, err := GenerateTS(schema.CompileRoot())
 	if err != nil {
 		return nil, err

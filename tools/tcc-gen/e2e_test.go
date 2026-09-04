@@ -43,14 +43,14 @@ func TestGeneratedClientE2E(t *testing.T) {
 	tmp := t.TempDir()
 
 	// 1. generate the wasm module + TS schema fresh into the temp package.
-	v1, err := selectDSL("v1")
+	v2, err := selectDSL("v2")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := buildWasm(root, filepath.Join(tmp, "assets"), v1); err != nil {
+	if err := buildWasm(root, filepath.Join(tmp, "assets"), v2); err != nil {
 		t.Fatalf("generate wasm: %v", err)
 	}
-	if err := writeTS(root, filepath.Join(tmp, "src", "gen"), v1); err != nil {
+	if err := writeTS(root, filepath.Join(tmp, "src", "gen"), v2); err != nil {
 		t.Fatalf("generate ts: %v", err)
 	}
 
@@ -77,7 +77,7 @@ func TestGeneratedClientE2E(t *testing.T) {
 	}
 
 	// 4. typecheck then run the tests against the generated code.
-	fixture := filepath.Join(root, "pkg", "tcc", "taubyte", "v1", "fixtures", "config")
+	fixture := filepath.Join(root, "pkg", "tcc", "taubyte", "v2", "fixtures", "basic")
 	npm := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("npm", args...)
