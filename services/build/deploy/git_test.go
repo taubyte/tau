@@ -1,0 +1,219 @@
+package deploy_test
+
+import (
+	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/services/build/deploy"
+)
+
+// git_test stands up a REAL repository with two commits and clones it. The
+// point is the commit: a branch moves between the webhook and the claim, and a
+// deploy that read the branch head would publish something no push asked for.
+
+func repository(t *testing.T) (path string, first, second string) {
+	t.Helper()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+
+	path = t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = path
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_AUTHOR_DATE=2020-01-01T00:00:00Z",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t", "GIT_COMMITTER_DATE=2020-01-01T00:00:00Z",
+			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+		return strings.TrimSpace(string(out))
+	}
+
+	run("init", "-q", "-b", "main")
+
+	// The first commit is the vocabulary's own project.
+	copyTree(t, basicFixture, path)
+	run("add", "-A")
+	run("commit", "-q", "-m", "the project")
+	first = run("rev-parse", "HEAD")
+
+	// The second changes it, and is what the branch points at afterwards.
+	require.NoError(t, os.WriteFile(filepath.Join(path, "zone", "example_com.yaml"),
+		[]byte("id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nfqdn: moved.example\n"), 0o644))
+	run("add", "-A")
+	run("commit", "-q", "-m", "moved")
+	second = run("rev-parse", "HEAD")
+
+	return path, first, second
+}
+
+func copyTree(t *testing.T, src, dst string) {
+	t.Helper()
+	require.NoError(t, filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, strings.TrimPrefix(path, src))
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	}))
+}
+
+// A REAL CLONE, AT THE COMMIT THE PUSH NAMED — not at the branch head, which by
+// the time a job is claimed is somewhere else.
+func TestACloneReadsTheCommitAndNotTheBranch(t *testing.T) {
+	path, first, second := repository(t)
+	require.NotEqual(t, first, second)
+
+	clone := deploy.NewClone(nil, deploy.WithURL(func(string) (string, error) { return path, nil }))
+
+	for name, want := range map[string]string{first: "example.com", second: "moved.example"} {
+		fs, dir, done, err := clone.Checkout(t.Context(), "local/repo", "main", name)
+		require.NoError(t, err)
+
+		zone, err := afero.ReadFile(fs, filepath.Join(dir, "zone", "example_com.yaml"))
+		require.NoError(t, err)
+		require.Contains(t, string(zone), want)
+
+		// AND IT LEAVES NOTHING BEHIND. A build reads a stranger's repository;
+		// one left next to the node's data is how one build sees another's.
+		done()
+		_, err = os.Stat(dir)
+		require.True(t, os.IsNotExist(err), "the checkout outlived its release")
+	}
+}
+
+// A COMMIT THE CLONE DOES NOT HAVE IS AN ERROR AND NOT A FALLBACK: it means the
+// branch was rewritten between the push and the build, and building the head
+// instead would deploy a commit nobody pushed.
+func TestACommitThatIsNotThere(t *testing.T) {
+	path, _, _ := repository(t)
+	clone := deploy.NewClone(nil, deploy.WithURL(func(string) (string, error) { return path, nil }))
+
+	_, _, _, err := clone.Checkout(t.Context(), "local/repo", "main",
+		"1111111111111111111111111111111111111111")
+	require.ErrorContains(t, err, "rewritten")
+
+	_, _, _, err = clone.Checkout(t.Context(), "local/repo", "main", "")
+	require.ErrorContains(t, err, "names no commit")
+
+	_, _, _, err = clone.Checkout(t.Context(), "local/repo", "main",
+		"0000000000000000000000000000000000000000")
+	require.ErrorContains(t, err, "not a commit")
+}
+
+// THE WHOLE PATH: a real repository, a real clone at a real commit, compiled and
+// published — which is what a push does and the only thing that writes the
+// register.
+func TestAPushOfARealRepositoryDeploys(t *testing.T) {
+	path, first, second := repository(t)
+	r := registry(t)
+
+	clone := deploy.NewClone(nil, deploy.WithURL(func(string) (string, error) { return path, nil }))
+	d, err := deploy.New(
+		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
+		deploy.WithCheckout(clone),
+		deploy.WithLocalRegister(r),
+		deploy.WithCloudFqdn("acme.example"),
+	)
+	require.NoError(t, err)
+
+	var log out
+	w := work()
+	w.CommitSHA = first
+	require.NoError(t, d.Run(t.Context(), w, &log))
+
+	project, environment, err := r.ResolveHost(t.Context(), "shop.example.com")
+	require.NoError(t, err)
+	require.Equal(t, "shop", project)
+	require.Equal(t, deploy.DefaultEnvironment, environment)
+
+	// The second commit moved the zone, so the deployment answers on a
+	// different name — and the revision moved with it.
+	w.CommitSHA = second
+	require.NoError(t, d.Run(t.Context(), w, &log))
+
+	pointer, err := r.Resolve(t.Context(), "shop", deploy.DefaultEnvironment)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), pointer.Revision)
+
+	_, _, err = r.ResolveHost(t.Context(), "shop.moved.example")
+	require.NoError(t, err)
+}
+
+// The two URL policies, because which one a cloud uses decides whether a deploy
+// key is usable at all.
+func TestHowACloudReachesARepository(t *testing.T) {
+	url, err := deploy.HTTPS("github.com/acme/shop")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/acme/shop.git", url)
+
+	url, err = deploy.SSH("github.com/acme/shop")
+	require.NoError(t, err)
+	require.Equal(t, "git@github.com:acme/shop.git", url)
+
+	_, err = deploy.HTTPS("")
+	require.Error(t, err)
+	_, err = deploy.SSH("")
+	require.Error(t, err)
+}
+
+// keys stands in for auth. A deploy key is PER REPOSITORY, which is what lets
+// one cloud serve repositories belonging to people who do not know each other:
+// an account-scoped token leaked from a build would be a key to every
+// repository in that account.
+type keys struct {
+	key string
+	err error
+}
+
+func (k keys) DeployKey(context.Context, string) (string, error) { return k.key, k.err }
+
+func TestReadingAPrivateRepository(t *testing.T) {
+	path, first, _ := repository(t)
+	local := deploy.WithURL(func(string) (string, error) { return path, nil })
+
+	// A repository that needs no key: auth says so with an empty string and no
+	// error, and the clone proceeds unauthenticated.
+	fs, dir, done, err := deploy.NewClone(keys{}, local).Checkout(t.Context(), "local/repo", "main", first)
+	require.NoError(t, err)
+	require.NotNil(t, fs)
+	done()
+	require.NotEmpty(t, dir)
+
+	// AUTH FAILING IS NOT A PUBLIC REPOSITORY. Falling back to an
+	// unauthenticated clone would turn an outage into a build that cannot see
+	// the code and says the repository is empty.
+	_, _, _, err = deploy.NewClone(keys{err: errors.New("auth is down")}, local).
+		Checkout(t.Context(), "local/repo", "main", first)
+	require.ErrorContains(t, err, "auth is down")
+	require.ErrorContains(t, err, "local/repo")
+
+	// A key that is not one fails at the clone rather than being ignored.
+	_, _, _, err = deploy.NewClone(keys{key: "not a pem"}, local).
+		Checkout(t.Context(), "local/repo", "main", first)
+	require.Error(t, err)
+}
+
+// A repository key that is not one never reaches the network.
+func TestAKeyThatIsNotARepository(t *testing.T) {
+	_, _, _, err := deploy.NewClone(nil).Checkout(t.Context(), "", "main", "abc")
+	require.ErrorContains(t, err, "not a repository")
+}
