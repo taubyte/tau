@@ -12,6 +12,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -49,6 +50,7 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 			WithPubSub(ps),
 			WithDatabases(&memFactory{}),
 			WithRuntimes(&tier{name: "wasm"}),
+			WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() { n.Close() })

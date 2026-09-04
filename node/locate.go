@@ -54,6 +54,16 @@ func (s *source) client() (registerReader, error) {
 // construction: services start concurrently, a register can go, and which node
 // answers is a routing question rather than a wiring one.
 func (n *Node) remoteRegister() (registerReader, error) {
+	return n.registerClientNow()
+}
+
+// registerClientNow is remoteRegister as the CONCRETE client.
+//
+// It exists because one caller needs more than the read surface: a deploy is
+// the only thing in this composition allowed to publish, and registerReader
+// deliberately does not carry Publish so that nothing else can. Returning the
+// client here rather than widening that interface keeps the narrow one narrow.
+func (n *Node) registerClientNow() (*registerService.Client, error) {
 	if n.stats == nil {
 		return nil, fmt.Errorf("%w: this node runs neither a register nor stats to find one", ErrNoRegister)
 	}

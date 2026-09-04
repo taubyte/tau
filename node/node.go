@@ -45,8 +45,11 @@ import (
 	"github.com/taubyte/tau/pkg/project"
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/frontend"
 	registerService "github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/stats"
+	authService "github.com/taubyte/tau/services/v2/auth"
 	gateway "github.com/taubyte/tau/services/v2/gateway"
 	"github.com/taubyte/tau/services/v2/placement"
 	"github.com/taubyte/tau/services/worker"
@@ -61,6 +64,10 @@ type Node struct {
 	register *registerService.Service
 	worker   *worker.Service
 	gateway  *gateway.Service
+
+	auth          *authService.Service
+	buildBackend  *backend.Service
+	buildFrontend *frontend.Service
 
 	pool    *invoke.Pool
 	workers *placement.Workers
@@ -99,32 +106,43 @@ func New(cfg Config, opts ...Option) (*Node, error) {
 	}
 
 	n := &Node{cfg: cfg, opts: o}
-	if err := n.build(); err != nil {
+	if err := n.open(); err != nil {
 		n.Close()
 		return nil, err
 	}
 	return n, nil
 }
 
-// build constructs in dependency order. Anything opened is recorded as it is
+// open constructs in dependency order. Anything opened is recorded as it is
 // opened, so a failure half way closes what it made.
-func (n *Node) build() error {
+func (n *Node) open() error {
 	// STATS FIRST. Everything else routes on the view it maintains, including
 	// the locators below, so a node that runs it must have it before they are
 	// wired.
-	if err := n.buildStats(); err != nil {
+	if err := n.openStats(); err != nil {
 		return err
 	}
-	if err := n.buildRegister(); err != nil {
+	if err := n.openRegister(); err != nil {
 		return err
 	}
-	if err := n.buildWorker(); err != nil {
+	if err := n.openAuth(); err != nil {
 		return err
 	}
-	return n.buildGateway()
+	if err := n.openWorker(); err != nil {
+		return err
+	}
+	if err := n.openGateway(); err != nil {
+		return err
+	}
+	// THE TWO BUILD ROLES COME LAST because both dial auth, and a node running
+	// auth itself has to have it answering before a pool onto it is opened.
+	if err := n.openBuildBackend(); err != nil {
+		return err
+	}
+	return n.openBuildFrontend()
 }
 
-func (n *Node) buildStats() error {
+func (n *Node) openStats() error {
 	if !n.cfg.runs(Stats) {
 		return nil
 	}
@@ -151,7 +169,7 @@ func (n *Node) buildStats() error {
 	return nil
 }
 
-func (n *Node) buildRegister() error {
+func (n *Node) openRegister() error {
 	if !n.cfg.runs(Register) {
 		return nil
 	}
@@ -179,7 +197,7 @@ func (n *Node) buildRegister() error {
 	return nil
 }
 
-func (n *Node) buildWorker() error {
+func (n *Node) openWorker() error {
 	if !n.cfg.runs(Worker) {
 		return nil
 	}
@@ -231,7 +249,7 @@ func (n *Node) buildWorker() error {
 	return nil
 }
 
-func (n *Node) buildGateway() error {
+func (n *Node) openGateway() error {
 	if !n.cfg.runs(Gateway) {
 		return nil
 	}
@@ -301,6 +319,19 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.worker != nil {
 		order = append(order, n.worker)
+	}
+	if n.auth != nil {
+		order = append(order, n.auth)
+	}
+	// THE BACKEND BEFORE THE FRONTEND, in the one process that could have both
+	// — which is none, because withDefaults refuses it — and in the order that
+	// reads correctly anyway: the public role's first act is to queue into the
+	// private one.
+	if n.buildBackend != nil {
+		order = append(order, n.buildBackend)
+	}
+	if n.buildFrontend != nil {
+		order = append(order, n.buildFrontend)
 	}
 
 	for _, s := range order {

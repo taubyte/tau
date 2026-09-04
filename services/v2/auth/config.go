@@ -82,3 +82,23 @@ type Store interface {
 }
 
 var _ Store = (kvdb.KVDB)(nil)
+
+// GenerateKeyPair mints a domain-validation key pair.
+//
+// IT IS EXPORTED FOR WHATEVER STARTS THIS SERVICE. A cloud that has never been
+// given one still has to start — a single-node development cloud is the whole
+// point of a default shape — and the alternative is either refusing to boot or
+// a key baked into the binary, which would let every cloud in the world sign
+// for every other cloud's domains.
+//
+// A MINTED PAIR IS NOT A SUBSTITUTE FOR ONE AN OPERATOR KEEPS. Domain-ownership
+// claims are signed with it, so a cloud that mints a new one on each start
+// stops being able to verify what it verified yesterday. Whoever mints one is
+// expected to say so loudly.
+func GenerateKeyPair() (KeyPair, error) {
+	private, public, err := generateECKeyPair()
+	if err != nil {
+		return KeyPair{}, err
+	}
+	return KeyPair{Private: private, Public: public}, nil
+}

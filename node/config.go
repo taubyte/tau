@@ -10,7 +10,12 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/stats"
+	auth "github.com/taubyte/tau/services/v2/auth"
 	gateway "github.com/taubyte/tau/services/v2/gateway"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -26,6 +31,26 @@ const (
 	Worker   = "worker"
 	Stats    = "stats"
 	Gateway  = "gateway"
+	Auth     = "auth"
+)
+
+// The two halves of the build service, named by the build service itself
+// rather than spelled again here — a rename there would otherwise leave an
+// operator's config naming a service nothing starts.
+//
+// THEY ARE TWO NAMES BECAUSE THEY MUST BE TWO PROCESSES.
+// services/build/boundary_test.go holds the import half of that: the public
+// role may not import the private one, so the process a stranger's POST
+// reaches does not hold the queue's writer or a repository's deploy key. One
+// node running both would put all of it there and reduce the split to a
+// directory layout, so withDefaults refuses the combination.
+var (
+	// BuildFrontend is the webhook a provider posts to and the job API a
+	// developer reads. It is the only public role in this composition.
+	BuildFrontend = build.Frontend.Name
+	// BuildBackend holds the queue, the job records, the clone credentials and
+	// the runners.
+	BuildBackend = build.Backend.Name
 )
 
 // All is every service this composition knows how to start.
@@ -36,7 +61,11 @@ const (
 // an allocated address per resource. Both are real services; neither is a line
 // in this file, and listing them before they can be started would make an
 // operator's config lie.
-var All = []string{Register, Worker, Stats, Gateway}
+var All = []string{Register, Worker, Stats, Gateway, Auth, BuildBackend}
+
+// BuildFrontend is NOT in All. All is what a single-node development cloud
+// starts, and that node runs the backend; putting the public half in the
+// default shape would make the default the one combination this file refuses.
 
 // Config is what an operator declared about this node, and ONLY that.
 type Config struct {
@@ -58,12 +87,23 @@ type Config struct {
 	Stats   stats.Config
 	Worker  worker.Config
 	Gateway gateway.Config
+	Auth    auth.Config
+
+	// BuildFrontend and BuildBackend are the two halves' own configuration.
+	// A node uses at most one of them.
+	BuildFrontend frontend.Config
+	BuildBackend  backend.Config
 }
 
 var (
 	ErrNoHost      = errors.New("node: no host to answer on")
 	ErrNoDatabases = errors.New("node: a register needs somewhere to keep what is published")
 	ErrNoPubSub    = errors.New("node: stats needs somewhere to gossip")
+	ErrNoRaft      = errors.New("node: the build backend's queue is replicated through raft, and nothing here opens one")
+
+	// ErrBothHalves is the one service combination this composition refuses.
+	ErrBothHalves = errors.New("node: " + build.Frontend.Name + " and " + build.Backend.Name +
+		" must not run in one process; the public half exists so a stranger's POST does not reach the queue or the clone credentials")
 )
 
 // Option injects what a node is built from.
@@ -73,6 +113,7 @@ type options struct {
 	host      host.Host
 	pubsub    stats.PubSub
 	databases kvdb.Factory
+	raft      func(namespace string) (raft.Cluster, error)
 	runtimes  []invoke.Runtime
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
@@ -112,6 +153,23 @@ func WithDatabases(f kvdb.Factory) Option {
 			return ErrNoDatabases
 		}
 		o.databases = f
+		return nil
+	}
+}
+
+// WithRaft is how the build backend opens the replicated log its queue and job
+// records live in. Required when this node runs that role.
+//
+// IT IS A FUNCTION OF A NAMESPACE, injected for the same reason the host is:
+// raft.New takes a peer.Node — a host, a DHT, a datastore and a lifetime —
+// which is one machine's resource. A composition that built its own could not
+// put two nodes in one process, which is exactly what dream does.
+func WithRaft(open func(namespace string) (raft.Cluster, error)) Option {
+	return func(o *options) error {
+		if open == nil {
+			return ErrNoRaft
+		}
+		o.raft = open
 		return nil
 	}
 }
@@ -171,10 +229,14 @@ func (c Config) withDefaults() (Config, error) {
 	if len(c.Services) == 0 {
 		c.Services = append([]string(nil), All...)
 	}
+	known := append(append([]string(nil), All...), BuildFrontend)
 	for _, name := range c.Services {
-		if !slices.Contains(All, name) {
-			return Config{}, fmt.Errorf("node: %q is not a service this node can run; it runs %v", name, All)
+		if !slices.Contains(known, name) {
+			return Config{}, fmt.Errorf("node: %q is not a service this node can run; it runs %v", name, known)
 		}
+	}
+	if slices.Contains(c.Services, BuildFrontend) && slices.Contains(c.Services, BuildBackend) {
+		return Config{}, ErrBothHalves
 	}
 	return c, nil
 }

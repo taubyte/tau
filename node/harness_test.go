@@ -15,6 +15,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/raft"
 )
 
 // A NODE IS TESTED WITH REAL SERVICES AND FAKE RESOURCES.
@@ -115,8 +116,8 @@ func (t *tier) Start(context.Context, invoke.Spec) (invoke.Instance, error) {
 	return nil, errors.New("tier: nothing is started in this test")
 }
 
-// build is a node over fresh resources, not started.
-func build(t *testing.T, cfg Config, extra ...Option) (*Node, host.Host, *memFactory) {
+// makeNode is a node over fresh resources, not started.
+func makeNode(t *testing.T, cfg Config, extra ...Option) (*Node, host.Host, *memFactory) {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -130,6 +131,9 @@ func build(t *testing.T, cfg Config, extra ...Option) (*Node, host.Host, *memFac
 		WithPubSub(newPubSub(t, h)),
 		WithDatabases(factory),
 		WithRuntimes(&tier{name: "container"}),
+		// A raft cluster of one, in memory. What this composition is asked to
+		// prove is the wiring; that raft replicates is pkg/raft's own test.
+		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
 	}, extra...)
 
 	n, err := New(cfg, opts...)

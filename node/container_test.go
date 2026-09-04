@@ -41,7 +41,7 @@ func TestAWorkerWithNoTier(t *testing.T) {
 // TestAnInjectedTierNeedsNoDeclaration, which is how dream and a test give a
 // node one without a daemon.
 func TestAnInjectedTierIsEnough(t *testing.T) {
-	n, _, _ := build(t, Config{Services: []string{Register, Worker}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker}})
 	require.NotNil(t, n.Worker())
 }
 

@@ -16,7 +16,7 @@ import (
 
 // TestANodeRunsWhatItWasToldTo, and nothing else.
 func TestANodeRunsWhatItWasToldTo(t *testing.T) {
-	n, _, _ := build(t, Config{Services: []string{Register, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats}})
 
 	require.NotNil(t, n.Register())
 	require.NotNil(t, n.Stats())
@@ -28,7 +28,7 @@ func TestANodeRunsWhatItWasToldTo(t *testing.T) {
 // TestAnEmptyServiceListIsEveryService, which is the single-node development
 // shape and the one a first `tau` run gets.
 func TestAnEmptyServiceListIsEveryService(t *testing.T) {
-	n, _, _ := build(t, Config{})
+	n, _, _ := makeNode(t, Config{})
 
 	require.ElementsMatch(t, All, n.Services())
 	require.NotNil(t, n.Register())
@@ -78,7 +78,7 @@ func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
 // TestNothingIsOpenedTwiceAndEverythingIsClosed. A composition that failed part
 // way used to leave a database open and a pool running.
 func TestWhatWasBuiltIsClosed(t *testing.T) {
-	n, _, factory := build(t, Config{Services: []string{Register}})
+	n, _, factory := makeNode(t, Config{Services: []string{Register}})
 
 	opened, closed := factory.counts()
 	require.Equal(t, []string{Register}, opened, "one database, named after the service that wanted it")
@@ -112,7 +112,7 @@ func TestAHalfBuiltNodeClosesWhatItMade(t *testing.T) {
 
 // TestStartIsOnceAndOrdered.
 func TestStartIsOnce(t *testing.T) {
-	n, _, _ := build(t, Config{})
+	n, _, _ := makeNode(t, Config{})
 
 	require.NoError(t, n.Start(t.Context()))
 	require.Error(t, n.Start(t.Context()), "a second listener is an error, not a leak")
@@ -122,7 +122,7 @@ func TestStartIsOnce(t *testing.T) {
 // TestANodeReportsWhatItRuns, which is what every locator in the fleet routes
 // on — a worker looking for a register, a gateway looking for a worker.
 func TestANodeReportsWhatItRuns(t *testing.T) {
-	n, _, _ := build(t, Config{Services: []string{Register, Worker, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
 
 	snapshot, err := n.Snapshot(t.Context())
 	require.NoError(t, err)
@@ -141,7 +141,7 @@ func TestANodeReportsWhatItRuns(t *testing.T) {
 // TestAWorkerAdvertisesTheEnvironmentsItHolds, so a router can send a request
 // where the compiled project is already warm.
 func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
-	n, _, _ := build(t, Config{})
+	n, _, _ := makeNode(t, Config{})
 	require.NoError(t, n.Start(t.Context()))
 
 	// Publish and resolve through this node's own register, which loads the
@@ -163,7 +163,7 @@ func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
 // replicated store, so a node running one already holds every answer; dialling
 // itself would add a stream and a serialization to a read on every request.
 func TestALocalRegisterNeedsNoStream(t *testing.T) {
-	n, _, _ := build(t, Config{Services: []string{Register, Worker, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
 
 	// Nothing is started, so nothing is dialable — and the read still works.
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -178,7 +178,7 @@ func TestALocalRegisterNeedsNoStream(t *testing.T) {
 
 // TestANodeWithNoRegisterSaysSoRatherThanHanging.
 func TestANodeWithNoRegisterSaysSo(t *testing.T) {
-	n, _, _ := build(t, Config{Services: []string{Worker, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}})
 
 	_, err := n.Worker().Resolve(t.Context(), workerTarget())
 	require.ErrorIs(t, err, ErrNoRegister)
@@ -203,7 +203,7 @@ func TestANodeWithNoWayToFindARegister(t *testing.T) {
 // TestTheGatewayIsServedByTheCaller. Handler() is what a composer serves,
 // because where and with what certificate is the composer's.
 func TestTheGatewayIsServedByTheCaller(t *testing.T) {
-	n, _, _ := build(t, Config{})
+	n, _, _ := makeNode(t, Config{})
 	require.NoError(t, n.Start(t.Context()))
 
 	handler := n.Handler()
@@ -221,7 +221,7 @@ func TestTheGatewayIsServedByTheCaller(t *testing.T) {
 // name, and ask its gateway for it. Nothing leaves the process, and every hop
 // is the production one.
 func TestAWholeRequestPathOnOneNode(t *testing.T) {
-	n, _, _ := build(t, Config{Gateway: gatewayConfig()})
+	n, _, _ := makeNode(t, Config{Gateway: gatewayConfig()})
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -246,7 +246,7 @@ func TestAWholeRequestPathOnOneNode(t *testing.T) {
 // caches forward without sleeping.
 func TestTheClockReachesEverything(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
-	n, _, _ := build(t, Config{}, WithClock(func() time.Time { return at }))
+	n, _, _ := makeNode(t, Config{}, WithClock(func() time.Time { return at }))
 	require.NotNil(t, n.Stats())
 	require.NoError(t, n.Start(t.Context()))
 }

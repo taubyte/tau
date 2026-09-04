@@ -47,6 +47,7 @@ import (
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
+	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/stats"
 )
 
@@ -208,6 +209,13 @@ func Start(ctx context.Context, f File) (*Running, error) {
 		node.WithHost(p.Peer()),
 		node.WithPubSub(p.Messaging()),
 		node.WithDatabases(kvdb.New(p)),
+		// RAFT IS OPENED HERE BECAUSE raft.New TAKES A peer.Node — a host, a
+		// DHT, a datastore and a lifetime — and this is the layer that has one.
+		// The node is handed a function so a composition that is not a machine
+		// (dream) can hand it something else.
+		node.WithRaft(func(namespace string) (raft.Cluster, error) {
+			return raft.New(p, namespace)
+		}),
 	)
 	if err != nil {
 		p.Close()
