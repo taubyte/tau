@@ -44,10 +44,10 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"gopkg.in/yaml.v3"
 
+	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/stats"
-	"github.com/taubyte/tau/services/v2/node"
 )
 
 // File is what an operator writes.

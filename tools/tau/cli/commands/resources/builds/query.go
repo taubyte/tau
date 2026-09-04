@@ -3,14 +3,14 @@ package builds
 import (
 	"time"
 
-	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/taubyte/tau/core/services/patrick"
-	"github.com/taubyte/tau/tools/tau/cli/common"
-	patrickClient "github.com/taubyte/tau/tools/tau/clients/patrick_client"
-	"github.com/taubyte/tau/tools/tau/output"
-	buildsTable "github.com/taubyte/tau/tools/tau/table/builds"
-	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/urfave/cli/v2"
+
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/tools/tau/cli/common"
+	buildClient "github.com/taubyte/tau/tools/tau/clients/build"
+	"github.com/taubyte/tau/tools/tau/output"
+	jobsTable "github.com/taubyte/tau/tools/tau/table/jobs"
+	"github.com/taubyte/tau/tools/tau/tcc"
 )
 
 func (link) Query() common.Command {
@@ -44,14 +44,13 @@ func query(ctx *cli.Context) error {
 		return err
 	}
 
-	patrickC, err := patrickClient.Load()
+	client, err := buildClient.Load()
 	if err != nil {
 		return err
 	}
 
-	jobIds, err := patrickC.Jobs(projectID)
+	ids, err := client.Jobs(ctx.Context, projectID)
 	if err != nil {
-		// use i18n
 		return err
 	}
 
@@ -67,16 +66,13 @@ func query(ctx *cli.Context) error {
 
 	rangeEnd := time.Now().Add(-sinceParsed).Unix()
 
-	// index string for unique jobs
-	jobs := make([]*patrick.Job, 0, len(jobIds))
-	for _, id := range jobIds {
-		job, err := patrickC.Job(id)
+	jobs := make([]*buildv1.Job, 0, len(ids))
+	for _, id := range ids {
+		job, err := client.Job(ctx.Context, id)
 		if err != nil {
-			// use i18n
 			return err
 		}
-
-		if job.Timestamp >= rangeEnd {
+		if job.GetTimestamp() >= rangeEnd {
 			jobs = append(jobs, job)
 		}
 	}
@@ -85,14 +81,6 @@ func query(ctx *cli.Context) error {
 		return nil
 	}
 
-	// separate keys from original for loop to ensure unique values
-	t, err := buildsTable.ListNoRender(jobs, false)
-	if err != nil {
-		return err
-	}
-
-	t.SetStyle(table.StyleLight)
-	t.Render()
-
+	jobsTable.List(jobs, nil).Render()
 	return nil
 }

@@ -190,7 +190,7 @@ func (n *Node) buildWorker() error {
 	// a container backend an operator named and a wasm engine the process
 	// already holds.
 	if n.cfg.Container.declared() {
-		tier, err := n.cfg.Container.tier()
+		tier, err := containerTier(n.cfg.Container)
 		if err != nil {
 			return err
 		}

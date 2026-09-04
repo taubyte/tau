@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"github.com/taubyte/tau/tools/tau/cli/common"
-	patrickClient "github.com/taubyte/tau/tools/tau/clients/patrick_client"
+	buildClient "github.com/taubyte/tau/tools/tau/clients/build"
 	"github.com/urfave/cli/v2"
 )
 
@@ -24,7 +24,7 @@ func (link) Retry() common.Command {
 }
 
 func retry(ctx *cli.Context) error {
-	patrickC, err := patrickClient.Load()
+	client, err := buildClient.Load()
 	if err != nil {
 		return err
 	}
@@ -34,6 +34,6 @@ func retry(ctx *cli.Context) error {
 		return errors.New("job id not set")
 	}
 
-	_, err = patrickC.Retry(jobId)
+	err = client.Retry(ctx.Context, jobId)
 	return err
 }

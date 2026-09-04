@@ -12,7 +12,7 @@ import (
 
 	"gotest.tools/v3/assert"
 
-	"github.com/taubyte/tau/services/v2/node/boot"
+	"github.com/taubyte/tau/node/boot"
 )
 
 // THERE IS ONE START AND IT IS THE NODE. The test this replaces booted a v1

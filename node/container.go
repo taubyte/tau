@@ -65,8 +65,18 @@ var ErrUnknownBackend = errors.New("node: not a container backend this node can 
 // declared reports whether an operator asked for a container tier.
 func (c ContainerConfig) declared() bool { return c.Backend != "" }
 
-// tier builds the container runtime this config describes.
-func (c ContainerConfig) tier() (invoke.Runtime, error) {
+// containerTier builds the runtime a ContainerConfig describes.
+//
+// IT IS A FUNCTION AND NOT A METHOD ON THE CONFIG, and the difference is the
+// rule this whole layer is held to: a config is INERT DATA that survives a
+// round trip through yaml and constructs nothing. v1's pkg/config built the
+// p2p node, and once a config type owns a live resource every consumer of that
+// type has to be handed one — which is how a struct an operator writes becomes
+// something a test cannot make without a daemon running.
+//
+// config_test.go's census holds it: no method on a config type in this package
+// returns a resource.
+func containerTier(c ContainerConfig) (invoke.Runtime, error) {
 	var cfg core.BackendConfig
 
 	switch c.Backend {

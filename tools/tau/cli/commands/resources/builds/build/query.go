@@ -3,13 +3,12 @@ package build
 import (
 	"errors"
 
-	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/taubyte/tau/core/services/patrick"
-	"github.com/taubyte/tau/tools/tau/cli/common"
-	patrickClient "github.com/taubyte/tau/tools/tau/clients/patrick_client"
-	"github.com/taubyte/tau/tools/tau/output"
-	buildsTable "github.com/taubyte/tau/tools/tau/table/builds"
 	"github.com/urfave/cli/v2"
+
+	"github.com/taubyte/tau/tools/tau/cli/common"
+	buildClient "github.com/taubyte/tau/tools/tau/clients/build"
+	"github.com/taubyte/tau/tools/tau/output"
+	jobsTable "github.com/taubyte/tau/tools/tau/table/jobs"
 )
 
 func (link) Query() common.Command {
@@ -28,17 +27,17 @@ func (link) Query() common.Command {
 }
 
 func query(ctx *cli.Context) error {
-	patrickC, err := patrickClient.Load()
+	client, err := buildClient.Load()
 	if err != nil {
 		return err
 	}
 
-	jobId := ctx.String("jid")
-	if len(jobId) < 1 {
+	jobID := ctx.String("jid")
+	if jobID == "" {
 		return errors.New("job id not set")
 	}
 
-	job, err := patrickC.Job(jobId)
+	job, err := client.Job(ctx.Context, jobID)
 	if err != nil {
 		return err
 	}
@@ -47,13 +46,6 @@ func query(ctx *cli.Context) error {
 		return nil
 	}
 
-	t, err := buildsTable.ListNoRender([]*patrick.Job{job}, true)
-	if err != nil {
-		return err
-	}
-
-	t.SetStyle(table.StyleLight)
-	t.Render()
-
+	jobsTable.One(job, nil).Render()
 	return nil
 }

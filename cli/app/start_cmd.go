@@ -10,8 +10,8 @@ import (
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
-	"github.com/taubyte/tau/services/v2/node"
-	"github.com/taubyte/tau/services/v2/node/boot"
+	"github.com/taubyte/tau/node"
+	"github.com/taubyte/tau/node/boot"
 )
 
 var logger = log.Logger("tau")

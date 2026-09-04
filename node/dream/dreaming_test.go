@@ -14,10 +14,10 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/node"
+	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/v2/node"
-	nodeDream "github.com/taubyte/tau/services/v2/node/dream"
 )
 
 // THIS IS THE WHOLE OF v2, RUNNING.

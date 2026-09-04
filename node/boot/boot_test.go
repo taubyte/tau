@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/taubyte/tau/services/v2/node"
+	"github.com/taubyte/tau/node"
 )
 
 func write(t *testing.T, content string) string {

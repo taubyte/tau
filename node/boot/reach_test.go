@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/services/v2/node"
+	"github.com/taubyte/tau/node"
 )
 
 // A COMMAND IS NOT A NODE, but it has to talk to one, and the only way into a

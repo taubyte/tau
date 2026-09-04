@@ -26,10 +26,10 @@ import (
 	iface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	dreamv2 "github.com/taubyte/tau/dream/v2"
+	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/kvdb"
-	"github.com/taubyte/tau/services/v2/node"
 )
 
 // Protocol is what a universe calls a v2 node.
