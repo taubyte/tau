@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -637,4 +638,109 @@ func TestTheDeadLetterDrainReportsACorruptRecord(t *testing.T) {
 	ready, claimed := h.dead.Depth()
 	require.Equal(t, 0, ready)
 	require.Equal(t, 1, claimed, "and the entry is not acknowledged")
+}
+
+// ── what this service accounted for ──────────────────────────────────────
+
+// A BUILD IS THE MOST OBVIOUSLY BILLED THING A CLOUD DOES, and this service
+// knew none of it. The job record carries the outcome, but a record is a
+// counter: it says what the figure is where an emission says what happened.
+type meter struct {
+	mu     sync.Mutex
+	events []Accounted
+}
+
+func (m *meter) Record(_ context.Context, ev Accounted) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, ev)
+}
+
+func (m *meter) of(op Op) []Accounted {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var out []Accounted
+	for _, ev := range m.events {
+		if ev.Op == op {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func TestASuccessfulBuildIsAccounted(t *testing.T) {
+	m := &meter{}
+	h := newHarness(t, WithMeter(m), WithAssets(newAssets()))
+	id := h.push(t, testRef, testCommit)
+
+	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+		fmt.Fprintln(out, "building")
+		h.clock.advance(90 * time.Second)
+		return out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact"))
+	}
+	require.True(t, h.mustStep(t))
+
+	// THE MINUTE, and what kind of minute it was.
+	builds := m.of(OpBuild)
+	require.Len(t, builds, 1)
+	require.Equal(t, 90*time.Second, builds[0].Duration, "what it occupied a builder for")
+	require.True(t, builds[0].Succeeded)
+	require.Equal(t, id, builds[0].Job)
+	require.Equal(t, testRepo, builds[0].Repository)
+	require.NotEmpty(t, builds[0].Project, "with the tenant on it")
+	require.Empty(t, builds[0].Environment,
+		"a RUN is not per-deployment: one clone, one set of commands")
+
+	// THE BYTES, separately for the artifact and the log, because they have
+	// different lifetimes and, in every pricing model that exists, different
+	// prices.
+	artifacts := m.of(OpArtifact)
+	require.Len(t, artifacts, 1)
+	require.Equal(t, uint64(len("the artifact")), artifacts[0].Bytes)
+	require.Equal(t, "prod", artifacts[0].Environment, "and what it produced IS per-deployment")
+
+	logs := m.of(OpLog)
+	require.Len(t, logs, 1)
+	require.Equal(t, uint64(len("building\n")), logs[0].Bytes)
+}
+
+// A FAILED BUILD IS ACCOUNTED. It occupied a builder for exactly as long as one
+// that worked, and a plan that charges differently for the two has to be able
+// to tell them apart — which is what Succeeded is for, rather than this
+// deciding on the biller's behalf by emitting nothing.
+func TestAFailedBuildIsAccounted(t *testing.T) {
+	m := &meter{}
+	h := newHarness(t, WithMeter(m), WithAssets(newAssets()))
+	h.push(t, testRef, testCommit)
+
+	h.runner.run = func(context.Context, Work, Output) error {
+		h.clock.advance(30 * time.Second)
+		return errors.New("the toolchain fell over")
+	}
+	require.True(t, h.mustStep(t))
+
+	builds := m.of(OpBuild)
+	require.Len(t, builds, 1)
+	require.Equal(t, 30*time.Second, builds[0].Duration)
+	require.False(t, builds[0].Succeeded)
+}
+
+// A node with no meter builds exactly as it did, and the events are not
+// constructed at all.
+func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
+	h := newHarness(t, WithAssets(newAssets()))
+	id := h.push(t, testRef, testCommit)
+
+	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+		return out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact"))
+	}
+	require.True(t, h.mustStep(t))
+	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+}
+
+func TestWithMeterRefusesNil(t *testing.T) {
+	_, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(newStore()),
+		WithRepositories(newRepositories()), WithMeter(nil))
+	require.ErrorContains(t, err, "meter")
 }

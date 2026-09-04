@@ -110,12 +110,18 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 	// What a run writes now is a log FILE (services/build/livelog) and a map in
 	// this goroutine's own memory; the store hears about either of them once,
 	// from settle, inside the section that read the record.
+	// THE CLOCK STARTS WHERE THE BUILD DOES, after the claim and before the
+	// run: what a build minute measures is what the builder was occupied for,
+	// not what the queue held.
+	started := s.now()
+
 	out, runErr := s.invoke(runCtx, work)
 	if out == nil {
 		// The run never started: this node could not open a log for it. That
 		// is a FAILED build rather than a build with no log — a node that
 		// cannot record what a build printed should not be the node that runs
 		// it, and settling it as failed is what hands the job to another one.
+		s.accountBuild(ctx, rec, started, runErr)
 		return s.settle(ctx, d, nil, runErr)
 	}
 	// Whatever happens below, the log is closed — which releases anybody
@@ -156,7 +162,31 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 	// then wrote no record naming it: the very orphan the paragraph above
 	// declines to make, made on the two paths where nobody chose it. settle
 	// publishes after its ack, on the branches that record what it returns.
+	s.accountBuild(ctx, rec, started, runErr)
 	return s.settle(ctx, d, out, runErr)
+}
+
+// accountBuild emits what one run occupied a builder for.
+//
+// IT IS EMITTED BEFORE THE SETTLE AND NOT INSIDE IT, which is the same rule
+// every other write on this path follows: settle takes a section, and a sink is
+// somebody else's code. A meter that blocked inside the section that holds a
+// job would turn a slow biller into a stuck queue.
+//
+// A FAILED BUILD IS ACCOUNTED. It occupied a builder for exactly as long as one
+// that worked, and a plan that charges differently for the two has to be able
+// to tell them apart — which is what Succeeded is for, rather than this
+// deciding on the biller's behalf by emitting nothing.
+func (s *Service) accountBuild(ctx context.Context, rec jobRecord, started time.Time, runErr error) {
+	s.emit(ctx, Accounted{
+		Project:    rec.ProjectID,
+		Repository: rec.RepositoryKey,
+		Job:        rec.ID,
+		Attempt:    rec.Attempt,
+		Op:         OpBuild,
+		Duration:   s.now().Sub(started),
+		Succeeded:  runErr == nil,
+	})
 }
 
 // begin is the claim's own transition, and it is ONE SECTION: the barrier, the

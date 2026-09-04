@@ -444,8 +444,8 @@ func receiver(fn *ast.FuncDecl) string {
 // version of the same attack — is caught by the list not naming it.
 var backendFiles = []string{
 	"authz.go", "config.go", "doc.go", "errors.go", "jobid.go", "jobs.go",
-	"leader.go", "output.go", "queue.go", "reconcile.go", "rpc.go", "runner.go",
-	"section.go", "service.go", "store.go",
+	"leader.go", "meter.go", "output.go", "queue.go", "reconcile.go", "rpc.go",
+	"runner.go", "section.go", "service.go", "store.go",
 }
 
 // sourceFiles is the DIRECTORY'S OWN ANSWER: every .go file here that is not a

@@ -68,6 +68,10 @@ type Service struct {
 	logsMu sync.Mutex
 	logs   map[string]*livelog.Log
 
+	// meter is where this service says what it accounted for. Nil is the
+	// ordinary case; see meter.go.
+	meter Meter
+
 	closeOnce sync.Once
 	closeErr  error
 	closed    atomic.Bool
@@ -88,6 +92,7 @@ type options struct {
 
 	runner        Runner
 	assetStore    Assets
+	meter         Meter
 	authz         Authorizer
 	now           func() time.Time
 	serverOptions []rpc.ServerOption
@@ -150,6 +155,18 @@ func WithRunner(r Runner) Option {
 			return errors.New("build: runner must not be nil")
 		}
 		o.runner = r
+		return nil
+	}
+}
+
+// WithMeter is where this service says what it accounted for — build minutes
+// and the bytes an artifact and a log occupy. Nil emits nothing.
+func WithMeter(m Meter) Option {
+	return func(o *options) error {
+		if m == nil {
+			return errors.New("build: a nil meter")
+		}
+		o.meter = m
 		return nil
 	}
 }
@@ -235,6 +252,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	}
 
 	s := &Service{
+		meter:         o.meter,
 		host:          o.host,
 		store:         o.store,
 		repos:         o.repos,

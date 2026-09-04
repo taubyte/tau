@@ -107,6 +107,7 @@ type produced struct {
 type runOutput struct {
 	s       *Service
 	job     string
+	project string
 	attempt uint32
 	log     *livelog.Log
 
@@ -157,7 +158,7 @@ func (s *Service) output(w Work) (*runOutput, error) {
 	s.logsMu.Unlock()
 
 	return &runOutput{
-		s: s, job: w.JobID, attempt: w.Attempt, log: log,
+		s: s, job: w.JobID, project: w.ProjectID, attempt: w.Attempt, log: log,
 		built: map[assetRef]string{},
 	}, nil
 }
@@ -207,7 +208,12 @@ func (o *runOutput) Asset(ctx context.Context, environment, resourceID string, c
 		return errUnavailable("build: this node has no asset store to put %s in", resourceID)
 	}
 
-	cid, err := o.s.assetStore.Put(ctx, content)
+	// THE SAME READER THE LOG GOES THROUGH, for the count and for nothing else:
+	// an artifact's bytes are what a plan bills, and a cid says nothing about
+	// size. Its error half is unused here — an artifact that failed to read is
+	// already the runner's failure, which is where it is raised.
+	counted := &handover{from: content}
+	cid, err := o.s.assetStore.Put(ctx, counted)
 	if err != nil {
 		return fmt.Errorf("build: job %s: storing %s: %w", o.job, resourceID, err)
 	}
@@ -216,8 +222,21 @@ func (o *runOutput) Asset(ctx context.Context, environment, resourceID string, c
 	}
 
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	o.built[assetRef{environment: environment, resource: resourceID}] = cid
+	o.mu.Unlock()
+
+	// THE BYTES ARE COUNTED WHERE THEY ARE STORED, which is the only place that
+	// knows how many there were: a cid says nothing about size, and going back
+	// to the store to ask would be a read per build to answer a question this
+	// path already had in hand.
+	o.s.emit(ctx, Accounted{
+		Project:     o.project,
+		Environment: environment,
+		Job:         o.job,
+		Attempt:     o.attempt,
+		Op:          OpArtifact,
+		Bytes:       uint64(counted.n),
+	})
 	return nil
 }
 
@@ -358,6 +377,14 @@ func (o *runOutput) publish(ctx context.Context) (produced, error) {
 		return p, errInternal("build: job %s: the asset store took %d of the %d bytes of its log",
 			o.job, source.n, size)
 	}
+	o.s.emit(ctx, Accounted{
+		Project: o.project,
+		Job:     o.job,
+		Attempt: o.attempt,
+		Op:      OpLog,
+		Bytes:   uint64(source.n),
+	})
+
 	p.logCID = cid
 	return p, nil
 }
