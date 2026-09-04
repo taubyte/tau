@@ -43,7 +43,7 @@ func (s *Service) buildRouteFromDef(def *service.RouteDefinition) *mux.Route {
 		if def.RawResponse {
 			options = append(options, context.RawResponse())
 		}
-		s.handleRequest(&request.Request{ResponseWriter: w, HttpRequest: h}, &def.Vars, def.Scope, def.Auth.Validator, def.Handler, def.Auth.GC, options...)
+		s.handleRequest(&request.Request{ResponseWriter: w, HttpRequest: h}, &def.Vars, def.Scope, def.Auth.Validate(), def.Handler, def.Auth.GC, options...)
 	})
 
 	applyHostMatch(route, def.Hosts)

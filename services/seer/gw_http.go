@@ -93,19 +93,62 @@ func (srv *Service) projectConfigHandler(ctx http.Context) (interface{}, error) 
 	return prettyObj, nil
 }
 
+// assetPublished reports whether a cid is one of the assets the prettified
+// project carries. Prettify resolves every resource's asset through TNS under
+// the project's own id, so the set it walks is exactly the set that project
+// published — resources inside applications included.
+func assetPublished(obj map[string]interface{}, assetCID string) bool {
+	for key, value := range obj {
+		if key == "Asset" {
+			if cid, ok := value.(string); ok && cid == assetCID {
+				return true
+			}
+			continue
+		}
+
+		if nested, ok := value.(map[string]interface{}); ok && assetPublished(nested, assetCID) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// projectPublishes resolves the project's assets the way /config does — through
+// TNS, under the project's own id — and reports whether this cid is one of them.
+func (srv *Service) projectPublishes(projectIface projectSchema.Project, assetCID string) bool {
+	engine := &safeEngine{
+		srv:      srv,
+		project:  projectIface.Get().Id(),
+		branches: commonSpec.DefaultBranches,
+	}
+
+	return assetPublished(projectIface.Prettify(engine), assetCID)
+}
+
 func (srv *Service) downloadAsset(ctx http.Context) (any, error) {
-	// Get project id
+	projectId, err := maps.String(ctx.Variables(), "projectId")
+	if err != nil {
+		return nil, err
+	}
 
-	// TODO: use the projectId to confirm a user has access to the asset
-	// projectId, err := maps.String(ctx.Variables, "projectId")
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// Get asset id
 	assetCID, err := maps.String(ctx.Variables(), "assetCID")
 	if err != nil {
 		return nil, err
+	}
+
+	// A cid is an address, not a credential. Authorizing the caller for the
+	// project settles who is asking; it says nothing about this cid until the
+	// cid is shown to be one that project published. Without this the project
+	// id in the path is decoration and every asset in the network is one
+	// request away from anyone holding any project of their own.
+	projectIface, err := srv.getProjectFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if !srv.projectPublishes(projectIface, assetCID) {
+		return nil, fmt.Errorf("asset %s is not published by project %s", assetCID, projectId)
 	}
 
 	_ctx, _ctxC := context.WithTimeout(srv.node.Context(), 60*time.Second)
@@ -147,6 +190,7 @@ func (srv *Service) setupTNSGatewayHTTPRoutes() {
 		Vars: http.Variables{
 			Required: []string{"projectId"},
 		},
+		Auth:    srv.authorized(srv.authorizeProjectVariable),
 		Handler: srv.projectConfigHandler,
 	})
 
@@ -156,6 +200,7 @@ func (srv *Service) setupTNSGatewayHTTPRoutes() {
 		Vars: http.Variables{
 			Required: []string{"projectId", "assetCID"},
 		},
+		Auth:        srv.authorized(srv.authorizeProjectVariable),
 		Handler:     srv.downloadAsset,
 		RawResponse: true,
 	})

@@ -240,6 +240,10 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 				return fmt.Errorf("failed put in timeoutHandler with %w", err)
 			}
 
+			if err = p.indexJobLogs(ctx, job); err != nil {
+				return err
+			}
+
 			err = p.deleteJob(ctx, jid, "/assigned/", "/jobs/")
 			if err != nil {
 				return fmt.Errorf("failed delete in timeoutHandler with %w", err)
@@ -337,6 +341,10 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		if err = p.db.Put(ctx, "/jobs/"+jid, jobData); err != nil {
 			return fmt.Errorf("updateStatus put failed with error: %w", err)
 		}
+	}
+
+	if err = p.indexJobLogs(ctx, job); err != nil {
+		return err
 	}
 
 	if err = p.deleteJob(ctx, jid, "/assigned/"); err != nil {
@@ -654,10 +662,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"projectId"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.GitHubTokenHTTPAuth,
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:    srv.authorized(srv.authorizeProjectVariable),
 		Handler: srv.projectAllJobHandler,
 	})
 
@@ -667,10 +672,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"jid"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.GitHubTokenHTTPAuth,
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:    srv.authorized(srv.authorizeJobVariable("jid")),
 		Handler: srv.projectJobHandler,
 	})
 
@@ -680,6 +682,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"jobId", "resourceId"},
 		},
+		Auth:        srv.authorized(srv.authorizeJobVariable("jobId")),
 		Handler:     srv.downloadAsset,
 		RawResponse: true,
 	})
@@ -690,10 +693,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"cid"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.GitHubTokenHTTPAuth,
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:        srv.authorized(srv.authorizeLogVariable("cid")),
 		Handler:     srv.cidHandler,
 		RawResponse: true,
 	})
@@ -704,10 +704,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"jid"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.GitHubTokenHTTPAuth,
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:    srv.authorized(srv.authorizeJobVariable("jid")),
 		Handler: srv.cancelJob,
 	})
 
@@ -717,10 +714,7 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"jid"},
 		},
-		Auth: http.RouteAuthHandler{
-			Validator: srv.GitHubTokenHTTPAuth,
-			GC:        srv.GitHubTokenHTTPAuthCleanup,
-		},
+		Auth:    srv.authorized(srv.authorizeJobVariable("jid")),
 		Handler: srv.retryJob,
 	})
 

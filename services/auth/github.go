@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -141,20 +140,7 @@ func (srv *AuthService) authorizeProject(client GitHubClient, project projects.P
 		return nil
 	}
 
-	for _, spelling := range []string{project.Config(), project.Code()} {
-		key, err := repokey.Parse("https://" + spelling)
-		if err != nil {
-			continue
-		}
-		if repoAccess(client, key) {
-			return nil
-		}
-	}
-
-	// Worded like a missing project on purpose. Telling the caller a project
-	// exists but isn't theirs turns the route back into the id oracle this
-	// check exists to close.
-	return errors.New("project not found")
+	return AuthorizeRepositories(client, project.Config(), project.Code())
 }
 
 func (srv *AuthService) registerGitHubRepository(ctx context.Context, client GitHubClient, key repokey.Key) (*RepositoryRegistrationResponse, error) {
