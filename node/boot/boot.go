@@ -46,6 +46,7 @@ import (
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/stats"
@@ -205,6 +206,14 @@ func Start(ctx context.Context, f File) (*Running, error) {
 		return nil, fmt.Errorf("boot: libp2p: %w", err)
 	}
 
+	// The asset store is over the same peer, for the same reason raft is: the
+	// content-addressed store IS the DAG, and only this layer has one.
+	store, err := assets.New(p)
+	if err != nil {
+		p.Close()
+		return nil, err
+	}
+
 	n, err := node.New(f.Node,
 		node.WithHost(p.Peer()),
 		node.WithPubSub(p.Messaging()),
@@ -216,6 +225,7 @@ func Start(ctx context.Context, f File) (*Running, error) {
 		node.WithRaft(func(namespace string) (raft.Cluster, error) {
 			return raft.New(p, namespace)
 		}),
+		node.WithAssets(store),
 	)
 	if err != nil {
 		p.Close()

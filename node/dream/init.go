@@ -28,6 +28,7 @@ import (
 	dreamv2 "github.com/taubyte/tau/dream/v2"
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
@@ -101,6 +102,11 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 		tiers = []invoke.Runtime{absent{}}
 	}
 
+	store, err := assets.New(p)
+	if err != nil {
+		return nil, err
+	}
+
 	n, err := node.New(
 		node.Config{Services: servicesIn(cfg), Cloud: u.Name()},
 		node.WithHost(h),
@@ -114,6 +120,7 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 		node.WithRaft(func(namespace string) (raft.Cluster, error) {
 			return raft.New(p, namespace)
 		}),
+		node.WithAssets(store),
 		node.WithRuntimes(tiers...),
 	)
 	if err != nil {

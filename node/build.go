@@ -200,12 +200,17 @@ func (n *Node) openBuildBackend() error {
 		return err
 	}
 
-	svc, err := backend.New(n.cfg.BuildBackend,
+	options := []backend.Option{
 		backend.WithHost(n.opts.host),
 		backend.WithStore(cluster),
 		backend.WithRepositories(repositories),
 		backend.WithRunner(runner),
-	)
+	}
+	if n.opts.assets != nil {
+		options = append(options, backend.WithAssets(n.opts.assets))
+	}
+
+	svc, err := backend.New(n.cfg.BuildBackend, options...)
 	if err != nil {
 		return err
 	}

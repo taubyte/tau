@@ -114,6 +114,7 @@ type options struct {
 	pubsub    stats.PubSub
 	databases kvdb.Factory
 	raft      func(namespace string) (raft.Cluster, error)
+	assets    backend.Assets
 	runtimes  []invoke.Runtime
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
@@ -170,6 +171,24 @@ func WithRaft(open func(namespace string) (raft.Cluster, error)) Option {
 			return ErrNoRaft
 		}
 		o.raft = open
+		return nil
+	}
+}
+
+// WithAssets is where a build's output goes: the log it wrote and the
+// artifacts it produced.
+//
+// OPTIONAL, AND WHAT IS LOST WITHOUT IT IS STATED RATHER THAN GUESSED: a
+// backend built without one still builds, and its logs and artifacts live and
+// die with the run. It is injected rather than built here for the same reason
+// raft is — the store is content-addressed over the machine's DAG, and only
+// whoever holds the machine's resources has one.
+func WithAssets(a backend.Assets) Option {
+	return func(o *options) error {
+		if a == nil {
+			return errors.New("node: a nil asset store")
+		}
+		o.assets = a
 		return nil
 	}
 }
