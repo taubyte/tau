@@ -42,11 +42,13 @@ func (l link) editable(f tcc.Field) bool {
 	if f.Widget == tcc.WidgetCID || f.Key == "name" {
 		return false
 	}
-	// The repository itself is chosen by the repository flow (select or
-	// generate), not typed in field by field; its provider still is.
-	if l.repo != nil && len(f.Path) == 3 && f.Path[0] == "source" {
-		return false
-	}
+	// EVERY FIELD OF THE SOURCE SWITCH IS TYPED, including the repository's.
+	//
+	// It used to hide them, because in v1 a website WAS a repository and the
+	// repository flow owned the block. In v2 a repository is one branch of a
+	// source switch an author picks between, so hiding the branch's fields
+	// would leave no way to write one — and the flow that would have filled
+	// them in is a GitHub picker a self-hosted project may never use.
 	return true
 }
 
@@ -75,11 +77,33 @@ func (l link) flagsFor() []cli.Flag {
 			out = append(out, &cli.StringFlag{Name: f.Flag, Aliases: aliases[f.Flag], Usage: usage})
 		}
 	}
+	// A KIND CAN BE BOTH, and both sets offer --template. A repository-backed
+	// kind that is also code-backed — every workload whose source may be
+	// another repository — would otherwise register the same flag twice, which
+	// urfave/cli panics on at command construction.
 	if l.repo != nil {
-		out = append(out, repoFlags...)
+		out = appendFlags(out, repoFlags...)
 	}
 	if l.code {
-		out = append(out, codeFlags...)
+		out = appendFlags(out, codeFlags...)
+	}
+	return out
+}
+
+// appendFlags adds what is not already there, by name.
+func appendFlags(out []cli.Flag, add ...cli.Flag) []cli.Flag {
+	taken := map[string]bool{}
+	for _, f := range out {
+		for _, n := range f.Names() {
+			taken[n] = true
+		}
+	}
+
+	for _, f := range add {
+		if taken[f.Names()[0]] {
+			continue
+		}
+		out = append(out, f)
 	}
 	return out
 }

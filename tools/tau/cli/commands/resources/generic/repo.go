@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	httpClient "github.com/taubyte/tau/clients/http/auth"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	repositoryCommands "github.com/taubyte/tau/tools/tau/cli/commands/resources/repository"
 	authClient "github.com/taubyte/tau/tools/tau/clients/auth_client"
 	"github.com/taubyte/tau/tools/tau/flags"
@@ -38,27 +39,62 @@ func (g getter) Description() string {
 	s, _ := tcc.Get(g.r.doc, []string{"description"}).(string)
 	return s
 }
+
+// THE DOCUMENT CARRIES A CLONE URL AND NOTHING ELSE. v2 replaced v1's
+// `source: {github: {fullname, id}}` with `source: {git: <url>}`, because the
+// host in a URL is the provider — GitLab, Gitea, Codeberg and an internal
+// mirror are values rather than schema edits — and the numeric id was a GitHub
+// fact rather than a git one.
+//
+// The driver below still speaks in a full name and an id, which is what the
+// GitHub API answers with. So the URL is parsed into the one and the other is
+// gone: what the platform indexes a repository by is its canonical key
+// (pkg/git/repokey), not a number one forge assigns.
 func (g getter) RepoName() string {
-	s, _ := tcc.Get(g.r.doc, g.r.shape.Under(g.r.doc, g.r.shape.Fullname)).(string)
-	return s
+	url := g.RepositoryURL()
+	if url == "" {
+		return ""
+	}
+	key, err := repokey.Parse(url)
+	if err != nil {
+		return ""
+	}
+	return key.FullName()
 }
-func (g getter) RepoID() string {
-	s, _ := tcc.Get(g.r.doc, g.r.shape.Under(g.r.doc, g.r.shape.ID)).(string)
-	return s
-}
+
+// RepoID is empty in v2, and always will be: see RepoName.
+func (g getter) RepoID() string { return "" }
+
 func (g getter) Branch() string {
 	s, _ := tcc.Get(g.r.doc, g.r.shape.Branch).(string)
 	return s
 }
+
 func (g getter) RepositoryURL() string {
-	return repositoryLib.GetRepositoryUrl(tcc.ActiveBranch(g.r.doc, g.r.shape.Provider), g.RepoName())
+	s, _ := tcc.Get(g.r.doc, g.r.shape.URL).(string)
+	return s
 }
 
-func (s setter) RepoID(id string) {
-	tcc.Set(s.r.doc, s.r.shape.Under(s.r.doc, s.r.shape.ID), id)
-}
+// RepoID writes nothing: there is no field for it.
+func (s setter) RepoID(string) {}
+
+// RepoName writes the clone URL a full name implies.
+//
+// IT ASSUMES GITHUB, AND THAT IS THE PICKER'S ASSUMPTION AND NOT THE
+// VOCABULARY'S. A full name with no host only means something once a forge is
+// chosen, and the only picker this CLI has is GitHub's. A URL written by hand,
+// or by an importer, keeps whatever host it has — this path is only reached
+// when the driver hands back what a GitHub search returned.
 func (s setter) RepoName(name string) {
-	tcc.Set(s.r.doc, s.r.shape.Under(s.r.doc, s.r.shape.Fullname), name)
+	if name == "" {
+		tcc.Set(s.r.doc, s.r.shape.URL, nil)
+		return
+	}
+	if strings.Contains(name, "://") || strings.Contains(name, "@") {
+		tcc.Set(s.r.doc, s.r.shape.URL, name)
+		return
+	}
+	tcc.Set(s.r.doc, s.r.shape.URL, repositoryLib.GetRepositoryUrl("github", name))
 }
 
 // commands wires this resource kind into the shared repository command driver.
@@ -166,7 +202,7 @@ func (l link) repositoryInfo(ctx *cli.Context, r *resource, isNew bool) (any, er
 	if err != nil {
 		return nil, err
 	}
-	if !selected.HasBeenCloned(projectConfig, tcc.ActiveBranch(r.doc, r.shape.Provider)) {
+	if !selected.HasBeenCloned(projectConfig, "github") {
 		selected.DoClone = prompts.GetClone(ctx)
 	}
 	return selected, nil

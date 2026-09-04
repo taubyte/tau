@@ -65,6 +65,11 @@ type node struct {
 	ShowWhen             *condition      `json:"x-tau-show-when"`
 	Sections             []sectionSpec   `json:"x-tau-sections"`
 
+	// OneOf is a switch whose branches are alternative SHAPES for one key: a
+	// bare path here, or a block naming another repository. The scalar branch
+	// is the key itself; each object branch's properties are fields under it.
+	OneOf []*node `json:"oneOf"`
+
 	// Required is what the schema says an author must answer, and
 	// RequiredWhen is the same thing once a condition holds.
 	//
@@ -275,11 +280,50 @@ func walk(p *props, prefix []string) []leaf {
 	for _, k := range p.keys {
 		n := p.m[k]
 		path := append(append([]string{}, prefix...), k)
+
 		if n.Properties != nil && !n.Dynamic {
 			out = append(out, walk(n.Properties, path)...)
 			continue
 		}
+
+		// A SHAPE SWITCH IS NOT A LEAF. `source` is either a path here or a
+		// block naming another repository, and the branches are alternative
+		// shapes for the same key — so the scalar branch IS the key and each
+		// object branch's properties are fields under it.
+		//
+		// Without this the CLI could not see `source/git`, `source/branch` or
+		// `source/path` at all: a resource's repository was unreachable from
+		// the command line, and `Form.Repo()` found nothing anywhere.
+		if len(n.OneOf) > 0 {
+			out = append(out, oneOf(n, k, path)...)
+			continue
+		}
+
 		out = append(out, leaf{key: k, path: path, n: n})
+	}
+	return out
+}
+
+// oneOf flattens a shape switch: the scalar branch under the key itself, every
+// object branch's properties beneath it.
+func oneOf(n *node, key string, path []string) []leaf {
+	var out []leaf
+	for _, branch := range n.OneOf {
+		if branch == nil {
+			continue
+		}
+		if branch.Properties != nil {
+			out = append(out, walk(branch.Properties, path)...)
+			continue
+		}
+
+		// The scalar form. It carries the switch's own documentation, so what
+		// is shown for the key is what the vocabulary wrote for it.
+		scalar := *branch
+		if scalar.Section == "" {
+			scalar.Section = n.Section
+		}
+		out = append(out, leaf{key: key, path: path, n: &scalar})
 	}
 	return out
 }

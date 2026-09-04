@@ -35,6 +35,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -197,3 +198,22 @@ func (s *Service) Close() error {
 // Loaded is how many compiled projects are held. It exists for a test and for
 // an operator asking what a node is holding.
 func (s *Service) Loaded() int { return s.projects.Held() }
+
+// Serving is what this node can answer for cheaply, in the form a router reads:
+// the service itself, plus one entry per environment whose compiled project it
+// already holds.
+//
+// IT IS A HINT AND NOT A CLAIM OF EXCLUSIVITY. A worker that holds nothing can
+// still run anything — it fetches the project first — so a router prefers a
+// node that has it and falls back to any. Without the fallback, a project
+// nobody has loaded yet would have nowhere to go.
+//
+// The list is SORTED because pkg/stats matches a name with a binary search.
+func (s *Service) Serving() []string {
+	out := []string{Descriptor.Name}
+	for _, env := range s.projects.Environments() {
+		out = append(out, Descriptor.Name+"/"+env)
+	}
+	sort.Strings(out)
+	return out
+}

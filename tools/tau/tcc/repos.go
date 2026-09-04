@@ -1,10 +1,12 @@
 package tcc
 
 // RepositoryNames lists the git repository each repository-backed resource in
-// the project points at, across the project scope and every container
-// (application) scope. Which kinds are repository-backed, and where their
-// repository name sits, both come from the DSL — nothing here knows that
-// websites and libraries are the ones with repos.
+// the project points at, across the project scope and every container scope.
+// Which kinds are repository-backed, and where the URL sits, both come from the
+// DSL — nothing here knows which kinds have one.
+//
+// WHAT IT RETURNS IS A CLONE URL, because that is what v2 writes: the host is
+// the provider and there is nothing else naming it.
 func (st *Store) RepositoryNames() ([]string, error) {
 	groups, err := Groups()
 	if err != nil {
@@ -47,8 +49,8 @@ func (st *Store) RepositoryNames() ([]string, error) {
 					continue
 				}
 				doc, _ := v.(map[string]any)
-				if full, ok := Get(Doc(doc), repo.Under(Doc(doc), repo.Fullname)).(string); ok && full != "" {
-					out = append(out, full)
+				if url, ok := Get(Doc(doc), repo.URL).(string); ok && url != "" {
+					out = append(out, url)
 				}
 			}
 		}

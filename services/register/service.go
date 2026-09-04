@@ -169,3 +169,15 @@ func (s *Service) Close() error {
 	})
 	return s.closeErr
 }
+
+// Local is the register this service answers from.
+//
+// IT IS FOR A COMPOSER ON THE SAME NODE, and it is the absence of a hop rather
+// than an optimisation: a register is a state machine over a replicated store,
+// so a node running one already holds every answer, and dialling itself would
+// add a stream and a serialization to a read that happens on every request.
+//
+// A caller that is NOT on this node has no way to reach this and must use a
+// Client, which is the point — the read surface is identical either way, so
+// nothing downstream can tell which it got.
+func (s *Service) Local() *register.Register { return s.reg }

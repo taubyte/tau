@@ -140,6 +140,10 @@ func TestArgs(t *testing.T) {
 			app:          realApp,
 		},
 		{
+			// THE FLAGS ARE v2's. This case used to name --paths, --domains and
+			// --git-provider, which a v2 website does not have — so the
+			// normaliser treated them as positional and the order it is
+			// asserting was never actually preserved.
 			name: "Using inverse bool flags",
 			testArgs: []string{
 				"tau", "new", "-y", "website",
@@ -147,12 +151,11 @@ func TestArgs(t *testing.T) {
 				"-description", "desc",
 				"-tags", "tag1",
 				"--no-generate-repository",
-				"--paths", "/",
+				"--source-kind", "git",
+				"--git", "https://gitlab.com/acme/site",
 				"--repository-name", "tb_website_reactdemo",
 				"--no-clone",
 				"-b", "main",
-				"--git-provider", "github",
-				"--domains", "hal.computers.com",
 			},
 			expectedArgs: []string{
 				"tau", "-y", "new", "website",
@@ -160,12 +163,11 @@ func TestArgs(t *testing.T) {
 				"-description", "desc",
 				"-tags", "tag1",
 				"--no-generate-repository",
-				"--paths", "/",
+				"--source-kind", "git",
+				"--git", "https://gitlab.com/acme/site",
 				"--repository-name", "tb_website_reactdemo",
 				"--no-clone",
 				"-b", "main",
-				"--git-provider", "github",
-				"--domains", "hal.computers.com",
 			},
 			app: realApp,
 		},

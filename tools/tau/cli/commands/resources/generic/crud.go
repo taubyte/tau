@@ -14,20 +14,24 @@ import (
 // (it has to create or attach a repo and optionally clone it) and gains the
 // repository verbs; every other kind uses the plain document flow.
 
+// A REPOSITORY IS A BRANCH OF THE SOURCE SWITCH, NOT A KIND OF RESOURCE.
+//
+// This used to route every create and edit of a repository-backed kind through
+// the repository driver, which is v1's shape: there, a website WAS a repository
+// and there was nothing else it could be. In v2 a resource's source is an
+// Either — a path in this repository, a component, a builtin, an image, or
+// another repository — and `git` is one branch of it.
+//
+// So creating one is the ordinary field flow, and the repository verbs
+// (clone/push/pull/checkout/import) are what act on the branch when an author
+// takes it. Routing `new` through the driver made creating a function require a
+// GitHub login for a resource whose code is in the project's own repository.
 func (l link) New() common.Command {
-	action := l.new
-	if l.repo != nil {
-		action = l.commands().New
-	}
-	return common.Create(&cli.Command{Flags: l.flagsFor(), Action: action})
+	return common.Create(&cli.Command{Flags: l.flagsFor(), Action: l.new})
 }
 
 func (l link) Edit() common.Command {
-	action := l.edit
-	if l.repo != nil {
-		action = l.commands().Edit
-	}
-	return common.Create(&cli.Command{Flags: l.flagsFor(), Action: action})
+	return common.Create(&cli.Command{Flags: l.flagsFor(), Action: l.edit})
 }
 
 func (l link) Clone() common.Command {

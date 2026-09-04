@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -246,4 +248,26 @@ func (c *Cache) evict() {
 		delete(c.projects, c.lru[0])
 		c.lru = c.lru[1:]
 	}
+}
+
+// Environments is every (project, environment) this cache currently holds a
+// pointer for, as "project/environment".
+//
+// IT IS WHAT A NODE CAN ANSWER FOR CHEAPLY. A worker that already holds an
+// environment's compiled project serves a request for it without a fetch, so a
+// router that knows which nodes hold what can send traffic where it is already
+// warm — and that is the whole reason this is exposed rather than kept private.
+//
+// It is a HINT and never a rule: a node that holds nothing must still be
+// reachable, or a project nobody has loaded yet would have nowhere to go.
+func (c *Cache) Environments() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	out := make([]string, 0, len(c.pointers))
+	for key := range c.pointers {
+		out = append(out, strings.ReplaceAll(key, "\x00", "/"))
+	}
+	sort.Strings(out)
+	return out
 }

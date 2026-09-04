@@ -3,6 +3,8 @@ package tcc
 import (
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/git/repokey"
+
 	"github.com/taubyte/tau/tools/tau/flags"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/urfave/cli/v2"
@@ -72,8 +74,14 @@ func (st *Store) Select(ctx *cli.Context, g Group) (string, Doc, error) {
 	return name, doc, nil
 }
 
-// RepositoryName is the full name of the git repository backing a resource of a
-// repository-backed kind.
+// RepositoryName is the canonical key of the git repository backing a resource
+// of a repository-backed kind: `host/owner/name`, parsed from the clone URL the
+// document carries.
+//
+// IT IS THE KEY AND NOT THE URL. Two spellings of one repository —
+// `git@host:acme/pay` and `https://host/acme/pay.git` — are the same
+// repository, and anything that indexes or compares them has to say so once.
+// pkg/git/repokey is where that is said.
 func RepositoryName(dir string, doc Doc) (string, error) {
 	g, err := GroupFor(dir)
 	if err != nil {
@@ -87,6 +95,14 @@ func RepositoryName(dir string, doc Doc) (string, error) {
 	if repo == nil {
 		return "", fmt.Errorf("%s is not backed by a repository", g.Name)
 	}
-	name, _ := Get(doc, repo.Under(doc, repo.Fullname)).(string)
-	return name, nil
+	url, _ := Get(doc, repo.URL).(string)
+	if url == "" {
+		return "", nil
+	}
+
+	key, err := repokey.Parse(url)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", g.Name, err)
+	}
+	return key.String(), nil
 }
