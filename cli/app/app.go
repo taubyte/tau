@@ -59,7 +59,6 @@ func newApp() *cli.App {
 			buildInfoCommand(),
 			startCommand(),
 			configCommand(),
-			publishCommand(),
 			exportDataCommand(),
 		},
 	}
