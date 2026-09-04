@@ -418,10 +418,11 @@ func TestClosingAReaderReleasesItsOwnBlockedRead(t *testing.T) {
 	require.Equal(t, "x", readN(t, other, 1))
 }
 
-// THE FILE CAN GO WHILE READERS ARE STILL ON IT. That is the handoff: the bytes
-// are shipped, the name is unlinked, and whoever was watching drains what is
-// left.
-func TestUnlinkKeepsForkedReadersAndRefusesNewOnes(t *testing.T) {
+// UNLINK ENDS THE LOG, AND WHOEVER WAS READING FINISHES. That is the handoff:
+// ship the bytes, unlink, let the watchers drain. What ends is the log — the
+// name, the writing and this log's hold on the inode — and what does not is a
+// reader that already forked.
+func TestUnlinkEndsTheLogAndLetsItsReadersDrain(t *testing.T) {
 	l := newLog(t)
 	write(t, l, "kept\n")
 
@@ -431,14 +432,78 @@ func TestUnlinkKeepsForkedReadersAndRefusesNewOnes(t *testing.T) {
 
 	require.NoError(t, l.Unlink())
 	require.NoError(t, l.Unlink(), "unlinking twice is the same unlink")
+	require.NoFileExists(t, l.Path())
 
-	// The writer still writes, and the reader still reads — both hold a
-	// descriptor, and the inode outlives the name.
-	write(t, l, "after\n")
-	require.Equal(t, "kept\nafter\n", readN(t, r, 11))
+	// The reader holds the inode: it reads what was there and then ends,
+	// because the log is over.
+	got, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, "kept\n", string(got))
+
+	_, err = l.Write([]byte("after\n"))
+	require.ErrorIs(t, err, ErrClosed, "a log that has been let go is not written to")
 
 	_, err = l.Fork(0)
-	require.ErrorIs(t, err, os.ErrNotExist, "there is no path left to fork from")
+	require.ErrorIs(t, err, ErrClosed, "and there is no inode left for a new reader to borrow")
+}
+
+// A NAME REMOVED BY SOMEBODY ELSE COSTS NOTHING AT ALL, and this is the one
+// that used to lose a whole build's log. The directory these live in is
+// somewhere the OS sweeps; a sweeper can take the NAME, and after Create
+// nothing here ever resolves that name again — so the writer keeps appending to
+// the inode it holds, a reader forked before the sweep keeps reading it, and a
+// reader forked AFTER the sweep still gets every byte.
+func TestASweptNameCostsTheLogNothing(t *testing.T) {
+	l := newLog(t)
+	write(t, l, "cloning\n")
+
+	early, err := l.Fork(0)
+	require.NoError(t, err)
+	defer early.Close()
+
+	require.NoError(t, os.Remove(l.Path()), "somebody else's sweep, not this log's Unlink")
+	require.NoFileExists(t, l.Path())
+
+	write(t, l, "compiling\n")
+	require.Equal(t, "cloning\ncompiling\n", readN(t, early, 18))
+
+	late, err := l.Fork(0)
+	require.NoError(t, err, "a fork borrows the descriptor this log holds, never the path")
+	defer late.Close()
+	require.Equal(t, "cloning\ncompiling\n", readN(t, late, 18))
+	require.Equal(t, int64(18), l.Size())
+}
+
+// AND A NAME THAT NOW BELONGS TO SOMEBODY ELSE'S FILE IS THE SHARPER HALF OF
+// IT. A sweep that removes the name loses a log; a name REUSED — moved aside
+// and re-created, which is what a rotation or a second process picking the same
+// path does — hands a reader that resolves the path a different inode with
+// somebody else's bytes in it, and nothing about that reads as an error. The
+// log is the inode this log opened, so both the writer and every fork stay on
+// it whatever the directory says afterwards.
+func TestANameTakenOverByAnotherFileIsNotThisLog(t *testing.T) {
+	l := newLog(t)
+	write(t, l, "the build's own output\n")
+
+	moved := l.Path() + ".moved"
+	require.NoError(t, os.Rename(l.Path(), moved))
+	require.NoError(t, os.WriteFile(l.Path(), []byte("somebody else's file\n"), 0o600))
+
+	write(t, l, "and more of it\n")
+	closing(t, l)
+
+	whole, err := l.Fork(0)
+	require.NoError(t, err)
+	defer whole.Close()
+	got, err := io.ReadAll(whole)
+	require.NoError(t, err)
+	require.Equal(t, "the build's own output\nand more of it\n", string(got),
+		"a reader that resolved the path again would be reading a stranger's bytes")
+
+	onDisk, err := os.ReadFile(moved)
+	require.NoError(t, err)
+	require.Equal(t, "the build's own output\nand more of it\n", string(onDisk),
+		"and the appends went to the inode the writer holds, wherever its name went")
 }
 
 // THE CAP IS A BOUND ON A STRANGER'S OUTPUT, and it says where it stopped
@@ -534,11 +599,44 @@ func TestAFailedWriteIsReportedOnceAndToEveryone(t *testing.T) {
 	_, err = l.Write([]byte("later\n"))
 	require.ErrorIs(t, err, os.ErrClosed, "the failure is sticky")
 
-	// And what was written before it is still readable.
-	whole, err := l.Fork(0)
+	// WHAT IS LEFT TO READ IS NOT ASSERTED HERE, and that is the injection's
+	// doing rather than the log's: taking the descriptor away is the one way to
+	// make write(2) fail on demand, and every reader borrows that same
+	// descriptor. A write that fails for the reason this stands in for — a full
+	// disk — leaves the file perfectly readable, and it is the test below that
+	// pins what a reader is then told.
+}
+
+// AND IT REACHES A READER OF A LOG THAT HAS ALREADY BEEN CLOSED, which is the
+// one that matters and the one nothing could see.
+//
+// EVERY PRODUCTION READ OF A WHOLE LOG IS A READ OF A CLOSED ONE: the run ends,
+// the writer closes, and only then is the log read back and handed to a byte
+// store. A reader that asked "is this log closed" before "did this log fail"
+// answered io.EOF on a log that had lost bytes — so the handoff could not tell
+// that log from a complete one, and a job settled Success naming a log missing
+// the lines that said why. Everything readable is still handed out first (the
+// break above the two): what changed is which of them speaks when there is no
+// more.
+func TestALogThatLostBytesSaysSoAfterItIsClosed(t *testing.T) {
+	l := newLog(t)
+	write(t, l, "cloning\n")
+
+	require.NoError(t, l.file.Close())
+	_, err := l.Write([]byte("compiling\n"))
+	require.ErrorIs(t, err, os.ErrClosed)
+
+	// The run is over, so the log is closed and then read back whole.
+	require.NoError(t, l.Close())
+
+	r, err := l.Fork(l.Size())
 	require.NoError(t, err)
-	defer whole.Close()
-	require.Equal(t, "before\n", readN(t, whole, 7))
+	defer r.Close()
+
+	_, err = r.Read(make([]byte, 16))
+	require.ErrorIs(t, err, os.ErrClosed,
+		"a closed log that lost bytes must say so, or nothing downstream can tell it from a whole one")
+	require.NotErrorIs(t, err, io.EOF, "and io.EOF is what a complete log ends with")
 }
 
 // A FILE THAT GOT SHORTER THAN THE LOG SAYS IS A FAULT, not an end: something
@@ -583,23 +681,65 @@ func TestAnEmptyLogThatIsClosedEndsImmediately(t *testing.T) {
 	require.Zero(t, l.Size())
 }
 
-// Closing a reader whose descriptor is already gone reports it rather than
-// swallowing it: a Close that cannot say it failed is a Close nobody can check.
-func TestAReaderReportsADescriptorItCouldNotClose(t *testing.T) {
+// THE LAST HOLDER CLOSES THE FILE AND IS THE ONE THAT REPORTS IT. There is one
+// descriptor per log, so which call closes it is whichever call lets go last —
+// here the reader, because it outlived the log. A Close that cannot say it
+// failed is a Close nobody can check.
+func TestTheLastHolderClosesTheFileAndReportsIt(t *testing.T) {
 	l := newLog(t)
 	r, err := l.Fork(0)
 	require.NoError(t, err)
 
-	require.NoError(t, r.file.Close())
+	require.NoError(t, l.file.Close())
+	require.NoError(t, l.Unlink(), "a log a reader is still on has not let go of the inode")
 	require.ErrorIs(t, r.Close(), os.ErrClosed)
 }
 
-// And the same for the writer, whose Close is the one that matters: it is what
-// releases every reader.
-func TestTheLogReportsADescriptorItCouldNotClose(t *testing.T) {
+// AND A READER THAT IS NOT THE LAST ONE CLOSES NOTHING. Its Close costs the
+// count and nothing else, so the writer and every other reader carry on.
+func TestClosingOneReaderLeavesTheLogToTheRest(t *testing.T) {
+	l := newLog(t)
+	write(t, l, "one\n")
+
+	first, err := l.Fork(0)
+	require.NoError(t, err)
+	second, err := l.Fork(0)
+	require.NoError(t, err)
+	defer second.Close()
+
+	require.NoError(t, first.Close())
+
+	write(t, l, "two\n")
+	require.Equal(t, "one\ntwo\n", readN(t, second, 8))
+	closing(t, l)
+}
+
+// And a log nobody is reading lets go of the inode in Unlink, so that is the
+// call that reports a descriptor it could not close.
+func TestUnlinkReportsADescriptorItCouldNotClose(t *testing.T) {
 	l := newLog(t)
 	require.NoError(t, l.file.Close())
-	require.ErrorIs(t, l.Close(), os.ErrClosed)
+	require.ErrorIs(t, l.Unlink(), os.ErrClosed)
+}
+
+// CLOSE ENDS THE WRITING AND NOTHING ELSE, so the read that matters most — the
+// whole log, handed over once the build is done — happens after it.
+func TestAClosedLogIsStillReadAndIsEndedByUnlink(t *testing.T) {
+	l := newLog(t)
+	write(t, l, "built\n")
+	require.NoError(t, l.Close())
+	require.NoError(t, l.Close(), "closing twice is the same close")
+
+	whole, err := l.Fork(0)
+	require.NoError(t, err)
+	got, err := io.ReadAll(whole)
+	require.NoError(t, err)
+	require.Equal(t, "built\n", string(got))
+	require.NoError(t, whole.Close())
+
+	require.NoError(t, l.Unlink())
+	_, err = l.Fork(0)
+	require.ErrorIs(t, err, ErrClosed)
 }
 
 func TestUnlinkReportsAFailureThatIsNotAMissingFile(t *testing.T) {
@@ -629,7 +769,7 @@ func TestAReadThatFailsForAnotherReasonIsNotATruncation(t *testing.T) {
 
 	r, err := l.Fork(0)
 	require.NoError(t, err)
-	require.NoError(t, r.file.Close())
+	require.NoError(t, l.file.Close())
 
 	_, err = r.Read(make([]byte, 4))
 	require.ErrorIs(t, err, os.ErrClosed)

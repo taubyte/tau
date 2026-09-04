@@ -294,7 +294,7 @@ func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 	var cancelErr error
 	cancelled := gated(t, h, jobRecordKey(id)).on(t, func() { cancelErr = h.cancel(id) })
 
-	require.NoError(t, h.settle(d, produced{}, nil))
+	require.NoError(t, h.settle(t.Context(), d, nil, nil))
 	<-cancelled
 
 	requireCancelKept(t, h, id, cancelErr)

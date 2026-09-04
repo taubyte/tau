@@ -99,6 +99,18 @@ type Config struct {
 	// nothing will ever come back for. Somewhere the OS already cleans is the
 	// honest place for that, and an operator who wants a bigger or faster disk
 	// for it names one.
+	//
+	// AND THE SWEEP THAT COMES WITH THAT PLACE COSTS NOTHING, which is a fact
+	// about livelog rather than about this directory: a log is the INODE its
+	// writer holds, opened once, and every reader preads that same descriptor.
+	// A tmp sweeper takes the NAME; the run keeps appending, the watchers keep
+	// reading, and the handoff at the end of the build reads the whole file. It
+	// was not always so — a reader used to open the path again, so a name
+	// removed mid-build lost the entire log with every byte of it still on
+	// disk, and the publish said nothing about it — and that is why the two
+	// halves are written down together: this line chooses a directory the OS
+	// deletes from, and it is only honest while nothing resolves a log's name
+	// twice.
 	LogDir string `yaml:"logDir"`
 
 	// MaxLogBytes bounds one attempt's log. Zero means DefaultMaxLogBytes.

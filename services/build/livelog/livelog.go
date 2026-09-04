@@ -53,7 +53,26 @@ type Log struct {
 	mu   sync.Mutex
 	cond *sync.Cond
 
+	// file is THE LOG. Everything reads and writes this one descriptor: the
+	// writer appends to it and every reader preads it at its own offset, so a
+	// log is the INODE THIS DESCRIPTOR HOLDS and never the name it was opened
+	// under. Nothing here re-resolves that name after Create.
 	file *os.File
+	// refs is how many holders that descriptor has — the log itself, plus one
+	// per live reader — and the descriptor is closed by whichever of them lets
+	// go last. It is what keeps POSIX's promise about an unlinked inode inside
+	// this process: a reader forked before the log ended keeps reading after
+	// it, and the file goes when nobody is left.
+	//
+	// THE LOG'S OWN HOLD IS DROPPED BY Unlink AND NOT BY Close, because the two
+	// verbs own different things: Close ends the WRITING, Unlink ends the LOG.
+	// So "the log is over, it is not gone" is a fact about the descriptor
+	// rather than about a name that still happens to be on a disk.
+	refs int
+	// gone is Unlink's idempotence and the reason a fork after it is refused
+	// deterministically: the log has let go of the inode, so there is nothing
+	// left to borrow even while a reader is still draining one.
+	gone bool
 	// size is the bytes a reader may read. It advances only AFTER write(2) has
 	// returned, which is the whole of "a reader never sees a partial write":
 	// there is no offset at which a reader can observe half of a Write, because
@@ -108,11 +127,17 @@ func Create(path string, opts ...Option) (*Log, error) {
 		}
 	}
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, 0o600)
+	// O_RDWR, NOT O_WRONLY, and that is the whole of "a log is an inode". This
+	// open is the ONLY time a name is turned into a file here; every read
+	// afterwards is a pread on what it returned. Opened write-only, the readers
+	// had to open the path again — and a path is not a file. It can be gone by
+	// then (the log directory is somewhere the OS sweeps), or, worse, be
+	// somebody else's file with the same name.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("livelog: creating %s: %w", path, err)
 	}
-	l.file = f
+	l.file, l.refs = f, 1
 	return l, nil
 }
 
@@ -181,51 +206,97 @@ func (l *Log) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// Close ends the log. Every reader blocked at the end is released with a clean
-// io.EOF, and a fork taken afterwards still reads the whole file.
+// Close ENDS THE WRITING. Every reader blocked at the end is released with a
+// clean io.EOF, and a fork taken afterwards still reads the whole file: the log
+// is over, it is not gone. Unlink is what makes it gone.
 //
-// It is idempotent, because the caller that closes on the way out of a run and
-// the caller that closes because the run failed are the same caller twice.
+// IT CLOSES NO DESCRIPTOR, and that is the split. A log whose descriptor went
+// when the writer finished would have nothing left for the one read that
+// matters — the handoff at the end of a build reads the WHOLE log, after the
+// writer has closed, and a viewer that arrived a moment late reads it too. So
+// the writing ends here and the inode is let go by Unlink, which is the verb
+// that undoes Create.
+//
+// It cannot fail, and it returns an error anyway so that a caller closing an
+// io.WriteCloser does not have to know that. It is idempotent, because the
+// caller that closes on the way out of a run and the caller that closes because
+// the run failed are the same caller twice.
 func (l *Log) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if l.closed {
-		return nil
-	}
 	l.closed = true
-	err := l.file.Close()
 	l.cond.Broadcast()
-	if err != nil {
-		return fmt.Errorf("livelog: closing %s: %w", l.path, err)
-	}
 	return nil
 }
 
-// Unlink removes the file's NAME, which is what the verb means and why it is
-// not called Remove: readers that already forked keep reading the inode to the
-// end (POSIX: it outlives the name for as long as a descriptor is open), the
-// writer keeps appending to it, and only a Fork taken afterwards fails, because
-// a fork is the one operation that needs a path.
+// release drops one hold on the descriptor and closes it when the last one
+// goes. Called with mu held.
 //
-// Unlinking a log that is still open is therefore allowed and is not a mistake.
-// It is idempotent.
+// THE COUNT IS THE POSIX RULE, MOVED INSIDE THIS PROCESS. An unlinked inode
+// lives while a descriptor is open; here one descriptor is open while a holder
+// is left, and the holders are the writer and the readers that forked off it.
+func (l *Log) release() error {
+	l.refs--
+	if l.refs > 0 {
+		return nil
+	}
+	return l.file.Close()
+}
+
+// Unlink ENDS THE LOG. It is what undoes Create, and it does the two halves of
+// that in one call: the NAME goes, and this log lets go of the inode it has
+// held since Create. Writing ends with it, and so does forking.
+//
+// READERS ALREADY FORKED DRAIN IT TO THE END. They hold the inode themselves,
+// the last one out closes it, and that is POSIX's own rule about an unlinked
+// file kept inside this process rather than borrowed from the kernel — so the
+// handoff this exists for works: ship the bytes, unlink, let whoever is
+// watching finish.
+//
+// A NAME REMOVED BY SOMEBODY ELSE IS NOT THIS CALL, and the difference is the
+// whole of why a log is an inode. The log directory is somewhere the OS sweeps;
+// a sweeper takes the NAME and can take nothing else, because after Create
+// nothing here resolves that name again. This call is a decision by the owner
+// of the log that the log is over; a sweep is not.
+//
+// It is idempotent. It reports what it could not do — a removal that failed for
+// a reason other than the file already being gone, and a descriptor that could
+// not be closed — and it does the rest anyway.
 func (l *Log) Unlink() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	var failed []error
 	if err := os.Remove(l.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("livelog: removing %s: %w", l.path, err)
+		failed = append(failed, fmt.Errorf("livelog: removing %s: %w", l.path, err))
 	}
-	return nil
+
+	l.closed = true
+	l.cond.Broadcast()
+	if !l.gone {
+		l.gone = true
+		if err := l.release(); err != nil {
+			failed = append(failed, fmt.Errorf("livelog: closing %s: %w", l.path, err))
+		}
+	}
+	return errors.Join(failed...)
 }
 
 // Fork hands back a reader positioned at offset.
 //
-// IT TAKES ITS OWN DESCRIPTOR, and that is what makes the two hard cases work:
-// a fork taken after the writer closed still reads the whole file, and a reader
-// already forked survives the file being unlinked under it. Sharing the
-// writer's descriptor would break both.
+// IT BORROWS THE LOG'S DESCRIPTOR RATHER THAN OPENING THE PATH, and that is
+// what makes the three hard cases work: a fork taken after the writer closed
+// still reads the whole file, a reader already forked survives the log being
+// unlinked under it, and a fork taken after somebody else removed or REUSED the
+// name reads this log rather than nothing or a stranger's file. There is one
+// open file description per log and every reader preads it at its own offset,
+// so no reader can be pointed at a different inode than the writer is on — and
+// none of them costs a descriptor.
+//
+// IT FAILS ONLY ON A LOG THAT HAS BEEN UNLINKED, because that is the one call
+// after which this log holds no inode to lend. Not on a closed one: a build
+// that has finished is exactly the log the handoff reads.
 //
 // AND NOTHING WRITTEN BETWEEN THE FORK AND THE FIRST READ IS MISSED, because a
 // fork is a NUMBER and not a subscription. The naive tail — snapshot what is
@@ -238,14 +309,12 @@ func (l *Log) Fork(offset int64) (*Reader, error) {
 	if offset < 0 || offset > l.size {
 		return nil, fmt.Errorf("%w: %d is not in [0,%d]", ErrOffset, offset, l.size)
 	}
-
-	// Under the lock, so that an Unlink cannot land between the check and the
-	// open and leave the caller with an error that reads like a missing file.
-	f, err := os.Open(l.path)
-	if err != nil {
-		return nil, fmt.Errorf("livelog: forking a reader of %s: %w", l.path, err)
+	if l.gone {
+		return nil, fmt.Errorf("livelog: forking a reader of %s: %w", l.path, ErrClosed)
 	}
-	return &Reader{l: l, file: f, at: offset}, nil
+
+	l.refs++
+	return &Reader{l: l, at: offset}, nil
 }
 
 // Reader follows a Log from one offset.
@@ -257,8 +326,7 @@ func (l *Log) Fork(offset int64) (*Reader, error) {
 // called from another goroutine: Close is how a blocked Read is abandoned when
 // whoever was watching goes away.
 type Reader struct {
-	l    *Log
-	file *os.File
+	l *Log
 	// at is guarded by l.mu, so that Close and Offset can be called while a
 	// Read is in flight.
 	at     int64
@@ -311,14 +379,23 @@ func (r *Reader) Read(p []byte) (int, error) {
 		if r.at < l.size {
 			break
 		}
-		if l.closed {
-			l.mu.Unlock()
-			return 0, io.EOF
-		}
+		// THE ERROR IS ASKED BEFORE THE CLOSE, and that order is the whole of
+		// whether the sticky error is reachable at all. A log that lost bytes
+		// is closed on its way out like every other — the run ends, the writer
+		// closes, and only then is the whole thing read back — so a reader that
+		// asked "is it closed" first got a clean io.EOF at the end of a log
+		// that was missing the lines saying why it stopped, and the one thing
+		// downstream of it, the handoff to a byte store, could not tell that
+		// log from a complete one. Everything readable has already been handed
+		// out by the break above; what is left to say is why there is no more.
 		if l.err != nil {
 			err := l.err
 			l.mu.Unlock()
 			return 0, err
+		}
+		if l.closed {
+			l.mu.Unlock()
+			return 0, io.EOF
 		}
 		// A wait releases the lock, so an append, a close or this reader's own
 		// Close all get in — and each of them broadcasts.
@@ -335,7 +412,15 @@ func (r *Reader) Read(p []byte) (int, error) {
 	// OUTSIDE THE LOCK, because [at, at+want) can no longer change: this file
 	// only grows, and everything below size has been written already. So a slow
 	// reader on a big buffer never holds the writer up.
-	n, err := r.file.ReadAt(p[:want], at)
+	//
+	// IT IS THE LOG'S OWN DESCRIPTOR, PREAD AT THIS READER'S OFFSET. ReadAt
+	// carries the offset in the syscall, so it neither reads nor moves the
+	// description's own file offset — which is why one descriptor can serve the
+	// writer's appends and every reader at once, and why the stdlib takes no
+	// read lock for it. The descriptor cannot go while this reader holds a ref;
+	// a Close racing this read is os.File's own business, and it answers
+	// ErrClosed rather than reading a recycled fd.
+	n, err := r.l.file.ReadAt(p[:want], at)
 
 	l.mu.Lock()
 	r.at = at + int64(n)
@@ -365,9 +450,14 @@ func (r *Reader) Close() error {
 	// Under the lock and before the descriptor goes: a Read blocked in Wait
 	// must see closed rather than a file it can no longer read.
 	l.cond.Broadcast()
+	// AND THE DESCRIPTOR GOES ONLY IF THIS WAS THE LAST HOLDER. A reader
+	// closing while the build still writes costs nothing but the count; the
+	// reader that lets go after the writer has finished is the one that closes
+	// the file, and it is the one that reports a failure to.
+	err := l.release()
 	l.mu.Unlock()
 
-	if err := r.file.Close(); err != nil {
+	if err != nil {
 		return fmt.Errorf("livelog: closing a reader of %s: %w", l.path, err)
 	}
 	return nil

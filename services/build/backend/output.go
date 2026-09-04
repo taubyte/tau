@@ -22,10 +22,25 @@ import (
 // and three of the last four escapes this package found went through it: a
 // second row spliced beside its own, a one-line row-verb wrapper applied from
 // it, and a job id flowing into its subject. Each moved another repository's
-// ref anchor on the happy path of every build. Deleting it deletes the class,
-// not a component: there is no writer outside a section left to guard.
+// ref anchor on the happy path of every build. Deleting it deletes that class,
+// not a component: NO REPLICATED ROW IS WRITTEN OUTSIDE A SECTION ANY MORE.
 //
-// SO A LOG HAS THREE LIVES AND ONLY THE LAST ONE TOUCHES THE STORE:
+// WHICH IS NOT THE SAME SENTENCE AS "NOTHING IS", and this file is where the
+// difference lives. There are two stores: the raft one, and the asset store —
+// durable on another node before it returns (config.go), the only door in this
+// package that leaves this machine. Asset() below opens it WHILE THE BUILD
+// RUNS, from the runner's goroutine, outside every section, and it has to: a
+// section is jobLock, and holding it for the length of a compile would put
+// every job on this node behind the slowest build on it. So the writer outside
+// every section did not go away, it changed what it may write — CONTENT, whose
+// cid goes into a map in the run's own memory and reaches a record only from
+// inside the section that settles the job — and it is enumerated rather than
+// asserted: population_test.go's TestEveryWriteToTheAssetStoreIsNamedAndPlaced
+// says who may name the store, who may call Put, and where each of them is. It
+// was written because a second door on the Service here, storing an object per
+// viewer from Follow, was GREEN across every package under services/build.
+//
+// SO A LOG HAS THREE LIVES AND ONLY THE LAST ONE LEAVES THIS NODE:
 //
 //	while the build runs   the writer appends to a FILE (services/build/livelog).
 //	                       No consensus, no RPC per line, no entry per row.
@@ -64,9 +79,11 @@ type produced struct {
 // runOutput is one run's half of Output: the log file it writes and the assets
 // it hands over.
 //
-// It reaches no store. There is nothing here that can name a key, compose a
-// row, or apply an entry — which is why this type is not in any of the censuses
-// population_test.go keeps over the writers.
+// IT REACHES NO REPLICATED STORE. There is nothing here that can name a key,
+// compose a row, or apply an entry, which is why this type is in none of the
+// censuses over the ROW writers. It does reach the asset store, from both of
+// its methods and from outside every section in one of them, and that is the
+// census it IS in.
 type runOutput struct {
 	s       *Service
 	job     string
@@ -138,6 +155,13 @@ func (o *runOutput) Write(p []byte) (int, error) {
 // once, by the section that settles the job. That is the split the sink did not
 // have: publishing content as it is produced is safe, and publishing a POINTER
 // from outside a section is what was not.
+//
+// SO THIS IS THE WRITER OUTSIDE EVERY SECTION, said plainly rather than left to
+// be found: it is called by the RUNNER, on a stranger's build, from a goroutine
+// holding no lock, and what it leaves behind is bytes and a cid in o.built that
+// only publish reads. Nothing in this package calls it, nothing else writes
+// that map, and nothing else reads it — all three are census lines, because
+// each of them was a way for a cid to be spent where no section could see it.
 func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Reader) error {
 	if resourceID == "" {
 		return errors.New("build: an asset needs a resource id")
@@ -145,11 +169,11 @@ func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Rea
 	if content == nil {
 		return errors.New("build: an asset needs content")
 	}
-	if o.s.assets == nil {
+	if o.s.assetStore == nil {
 		return errUnavailable("build: this node has no asset store to put %s in", resourceID)
 	}
 
-	cid, err := o.s.assets.Put(ctx, content)
+	cid, err := o.s.assetStore.Put(ctx, content)
 	if err != nil {
 		return fmt.Errorf("build: job %s: storing %s: %w", o.job, resourceID, err)
 	}
@@ -165,6 +189,16 @@ func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Rea
 
 // publish ends the log and hands it to the asset store.
 //
+// IT IS CALLED FROM INSIDE THE SECTION THAT SETTLES THE JOB, AFTER THE ACK, and
+// that placement is rule 2 applied to the bytes as well as to the record. Ack
+// is this service's only compare-and-swap: evaluated before it — which is where
+// this was, as an argument to settle() — a node whose claim had expired or
+// which had lost leadership shipped the whole log to the store and then wrote
+// no record naming it, which is the orphan run() refuses to make on the
+// shutdown path for exactly the same reason. The publish is now made only on
+// the branches that record what it returns, so a log reaches the store when,
+// and only when, a cid for it reaches a job.
+//
 // IT IS THE ONE PLACE THE WHOLE LOG IS READ, and it reads it by forking a
 // reader like any other watcher — so the bytes stream from the file to the
 // store, this process never holds the build's output in memory, and the read is
@@ -174,41 +208,130 @@ func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Rea
 // matters here — a cancel, the claim deadline, a build that ran out of time —
 // and those are exactly the runs whose logs somebody wants. So the deadline is
 // the operator's PublishTimeout off a context the cancellation cannot reach,
-// and it is bounded well inside ClaimMargin (config.go) because what follows it
-// is the ack, and the ack is the commit point.
+// and it is bounded well inside ClaimMargin (config.go), which is what the
+// whole of this settle is spent out of.
 //
-// A LOG THAT COULD NOT BE STORED LEAVES THE JOB WITH NO LOG CID, and does not
-// fail the build: a compile that succeeded did not stop succeeding because the
-// asset store was unreachable for ten seconds. What a reader sees is a job with
-// no log, which is the truth.
-func (o *runOutput) publish(ctx context.Context) produced {
+// THE TWO WAYS IT CAN FAIL ARE NOT THE SAME FAILURE, and telling them apart is
+// the whole of the error it returns:
+//
+//	THE STORE COULD NOT TAKE IT   the job keeps its outcome and carries no log
+//	                              cid. A compile that succeeded did not stop
+//	                              succeeding because the asset store was
+//	                              unreachable for ten seconds, and what a reader
+//	                              sees is a job with no log, which is the truth.
+//	THE LOG COULD NOT BE READ     this node cannot say what the build printed,
+//	                              and that is REPORTED rather than swallowed. A
+//	                              run this node could not open a log for is
+//	                              already a failed build (invoke); a run whose
+//	                              log this node cannot read back is the same
+//	                              fact at the other end, and settling it Success
+//	                              with an empty map is a job that says a build
+//	                              printed nothing.
+//
+// Which of the two happened is not in the error Put returns — it is one error
+// for both — so the reader is wrapped and asked afterwards. A store that fails
+// AND consumed a broken reader is the log's failure, because the object it
+// might have written is not the log either way.
+//
+// AND THERE IS A THIRD WAY TO GET A CID THAT IS NOT THE LOG, with no error in
+// it at all: a store that STOPS READING and answers anyway. Nobody is asked for
+// the rest, so nothing has anything to report, and the record ends up naming an
+// object that is a PREFIX of the build's output — which reads as a complete log
+// to everything downstream. So the bytes are COUNTED on the way out and
+// compared with what the log says it holds. It is the same sentence as the two
+// above: what may go on the record is this log, whole, or nothing.
+func (o *runOutput) publish(ctx context.Context) (produced, error) {
+	// A NIL OUTPUT IS A RUN THAT NEVER STARTED — this node could not open a log
+	// for it — and it produced nothing. settle is the only caller, and it hands
+	// over whatever the run left rather than branching on whether there was
+	// one.
+	if o == nil {
+		return produced{}, nil
+	}
+
 	o.end()
 
 	o.mu.Lock()
 	p := produced{attempt: o.attempt, assets: merged(o.built, nil)}
 	o.mu.Unlock()
 
-	if o.s.assets == nil {
-		return p
+	if o.s.assetStore == nil {
+		return p, nil
 	}
 
 	// The fork is taken AFTER end() closed the log, so the read stops at the
-	// last byte instead of blocking for a writer that is gone.
+	// last byte instead of blocking for a writer that is gone. It still reaches
+	// the bytes: a log holds its inode until it is unlinked, and unlinking is
+	// discard's (livelog).
 	whole, err := o.log.Fork(0)
 	if err != nil {
-		return p
+		return p, errInternal("build: job %s: reading back the log it wrote: %v", o.job, err)
 	}
 	defer whole.Close()
 
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), o.s.cfg.PublishTimeout)
-	defer cancel()
+	// `stop`, not `cancel`: this package declares Service.cancel, and the
+	// censuses in population_test.go read the NAME at a call site — a local
+	// spelled cancel() makes this body read as one that opens a section, which
+	// inside another section is a deadlock rather than a defect somebody sees.
+	// The check fails closed, which is what it is for; the rename is the answer
+	// to it.
+	ctx, stop := context.WithTimeout(context.WithoutCancel(ctx), o.s.cfg.PublishTimeout)
+	defer stop()
 
-	cid, err := o.s.assets.Put(ctx, whole)
+	source := &handover{from: whole}
+	cid, err := o.s.assetStore.Put(ctx, source)
+	if source.err != nil {
+		return p, errInternal("build: job %s: reading back the log it wrote: %v", o.job, source.err)
+	}
 	if err != nil {
-		return p
+		return p, nil
+	}
+	// THE STORE'S FAILURE IS ANSWERED FIRST, above, because a Put that gave up
+	// halfway is the store's fault and costs the log rather than the build. A
+	// Put that SUCCEEDED holding less than the whole log is the other thing.
+	if size := o.log.Size(); source.n != size {
+		return p, errInternal("build: job %s: the asset store took %d of the %d bytes of its log",
+			o.job, source.n, size)
 	}
 	p.logCID = cid
-	return p
+	return p, nil
+}
+
+// handover is the log on its way into the asset store: HOW MUCH OF IT WENT, and
+// the first read that failed.
+//
+// IT EXISTS BECAUSE Put RETURNS ONE ERROR FOR TWO FAULTS. The store reads what
+// it is handed, so a store that reports "could not store this" is reporting
+// either its own failure or the reader's, and the job's outcome is different
+// for each: an unreachable store costs the log, an unreadable log costs the
+// build. Asking the reader afterwards is what separates them, and it is asked
+// even when Put SUCCEEDED — a store that swallowed a read error and answered
+// with a cid stored something that is not this log, and naming it on the record
+// would be worse than having no log at all.
+//
+// AND THE COUNT IS FOR THE FAULT THAT RAISES NO ERROR ANYWHERE: a store that
+// simply stops reading. There is nothing to report, because nothing was asked;
+// what comes back is a cid over a prefix. Counting is the only way to tell that
+// from a log, and it costs an addition per read.
+//
+// It assumes Put consumes the reader before it returns, which is what taking an
+// io.Reader means: a store that read it on another goroutine would be reading
+// bytes whose lifetime it was not given — and the count then catches that too,
+// because what was consumed by the time Put answered is what it can honestly
+// have stored.
+type handover struct {
+	from io.Reader
+	n    int64
+	err  error
+}
+
+func (h *handover) Read(p []byte) (int, error) {
+	n, err := h.from.Read(p)
+	h.n += int64(n)
+	if err != nil && !errors.Is(err, io.EOF) && h.err == nil {
+		h.err = err
+	}
+	return n, err
 }
 
 // discard is the cleanup run defers: the log is closed whatever happened, and

@@ -378,6 +378,15 @@ func (f *fakeAssets) count() int {
 	return f.puts
 }
 
+// objects is how many distinct pieces of content the store actually KEPT, which
+// is not the same question as count(): a Put that was attempted and failed —
+// because the reader it was handed failed — is one put and no object.
+func (f *fakeAssets) objects() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.stored)
+}
+
 func (f *fakeRunner) seen() []Work {
 	f.mu.Lock()
 	defer f.mu.Unlock()

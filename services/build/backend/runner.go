@@ -116,7 +116,7 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 		// is a FAILED build rather than a build with no log — a node that
 		// cannot record what a build printed should not be the node that runs
 		// it, and settling it as failed is what hands the job to another one.
-		return s.settle(d, produced{}, runErr)
+		return s.settle(ctx, d, nil, runErr)
 	}
 	// Whatever happens below, the log is closed — which releases anybody
 	// watching it — and the file goes. It is scratch: what outlives the run is
@@ -147,7 +147,16 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 	// the commit point: an abandoned delivery writes no record, so a log shipped
 	// there would be bytes in the asset store that no job ever names, and
 	// nothing in this design deletes those. The rebuild writes its own.
-	return s.settle(d, out.publish(ctx), runErr)
+	//
+	// THE OUTPUT IS HANDED OVER RATHER THAN PUBLISHED HERE, and that is the
+	// same sentence applied to the two ways a delivery is lost that this
+	// function cannot see coming. `settle(d, out.publish(ctx), err)` published
+	// BEFORE it acked — Go evaluates the argument first — so a claim that had
+	// expired and a leadership flap each shipped a whole log to the store and
+	// then wrote no record naming it: the very orphan the paragraph above
+	// declines to make, made on the two paths where nobody chose it. settle
+	// publishes after its ack, on the branches that record what it returns.
+	return s.settle(ctx, d, out, runErr)
 }
 
 // begin is the claim's own transition, and it is ONE SECTION: the barrier, the
@@ -319,7 +328,7 @@ func (s *Service) invoke(ctx context.Context, work Work) (out *runOutput, err er
 //     Open with no item and, once finish has dropped its open row, nothing for
 //     reconcile to walk either. So the item goes back, in this section, where
 //     the reopening could not have raced it.
-func (s *Service) settle(d queue.Delivery, p produced, runErr error) error {
+func (s *Service) settle(ctx context.Context, d queue.Delivery, out *runOutput, runErr error) error {
 	return s.withJob(d.ID, func(j *held) error {
 		if err := j.ack(s.work, d); err != nil {
 			return err
@@ -336,12 +345,35 @@ func (s *Service) settle(d queue.Delivery, p produced, runErr error) error {
 			// v1 went to the trouble of a second RPC to carry it (monkey's
 			// cancelHandler hands patrick the accumulated logs). Here it is a
 			// field on the record this section already holds.
+			//
+			// AND A LOG THIS NODE COULD NOT READ BACK IS THE ONE FAILURE A
+			// CANCELLED JOB CANNOT RECORD: the status is not this run's to
+			// move, and a cancelled job that carries no log claims nothing
+			// untrue. So what is dropped here is the log, not the outcome.
+			p, _ := out.publish(ctx)
 			return j.logged(p)
 		}
 
 		rec := j.rec()
 		if rec.status() != buildv1.JobStatus_JobStatusClaimed {
 			return j.requeue()
+		}
+
+		// THE PUBLISH IS HERE: past the ack, past the record that is gone and
+		// the one this delivery is no longer about, and past the terminal
+		// branch that ships its own. Shipping the bytes is what must not happen
+		// on a delivery this node no longer holds (output.go), and the ack is
+		// the only thing that says it still does.
+		p, logErr := out.publish(ctx)
+		if runErr == nil {
+			// A LOG THAT COULD NOT BE READ BACK FAILS THE BUILD IT BELONGS TO.
+			// It is invoke's rule at the other end of the run — a node that
+			// cannot open a log for a build is not the node that runs it — and
+			// the alternative is the defect this came from: a job settling
+			// Success carrying Logs: map[], with nothing anywhere saying that a
+			// log was lost. A run that ALREADY failed keeps its own reason,
+			// which is the one its caller needs.
+			runErr = logErr
 		}
 
 		if runErr != nil {

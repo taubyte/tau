@@ -331,8 +331,14 @@ func indexRowKeys(all map[string]string) map[string]bool {
 //
 // THERE WERE THREE, and the third was the attempt rows — a log or asset row per
 // entry, written by the one writer outside every section. There is no such row
-// and no such writer: a log is a file (services/build/livelog) and its cid is a
+// and no such KEY: a log is a file (services/build/livelog) and its cid is a
 // field of the record, so the class is gone rather than empty.
+//
+// THE WRITER OUTSIDE EVERY SECTION IS NOT GONE, THOUGH, and saying it was is
+// how it went unwatched for a round. It writes BYTES to the asset store now,
+// during the build, and bytes compose no key — so it is invisible to this
+// census by construction rather than by accident, and the census that does
+// watch it is TestEveryWriteToTheAssetStoreIsNamedAndPlaced.
 func TestEveryKeyThisPackageWritesIsInSomeCensus(t *testing.T) {
 	keys := classes(t)
 	whole := wholeKeys(keys)
@@ -1815,13 +1821,21 @@ func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
 // takes the STORE and not the rows, and Batch is named NOWHERE in this package —
 // which is what is checked, instead of what its argument was spelled.
 //
-// AND THERE IS NO EXEMPTION LEFT. There was one, named rather than implicit: a
-// log or asset row was content keyed by (job, attempt), written DURING the
-// build by a writer outside every section on purpose, and a whole test existed
-// to check the clauses of that sentence. The writer is gone (output.go) — a log
-// is a file, and its cid reaches the store once, from the section that settles
-// the job — so the list below is the whole population rather than the
-// population minus one.
+// AND THERE IS NO EXEMPTION LEFT IN THIS ONE. There was one, named rather than
+// implicit: a log or asset row was content keyed by (job, attempt), written
+// DURING the build by a writer outside every section on purpose, and a whole
+// test existed to check the clauses of that sentence. There is no such row —
+// a log is a file, and its cid reaches the raft store once, from the section
+// that settles the job — so the list below is the whole population of ROW
+// writers rather than that population minus one.
+//
+// THE WRITE THAT WAS EXEMPT MOVED RATHER THAN STOPPED. A build still produces
+// content while it runs and still cannot hold jobLock while it does, so the
+// bytes go to the ASSET store from outside every section — which this census
+// cannot see, because it is a census of rows, and which
+// TestEveryWriteToTheAssetStoreIsNamedAndPlaced is. An exemption deleted along
+// with its subject is a class closed; an exemption deleted because the subject
+// moved to another store is the same hole one room over.
 func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 	all := pkgFuncs(t)
 
@@ -1914,6 +1928,159 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 				"%s writes %s and is not one of the checked paths above", name, verb)
 		}
 	}
+}
+
+// THE ASSET STORE IS THE OTHER STORE, AND IT IS WRITTEN FROM OUTSIDE EVERY
+// SECTION — WHICH IS WHY IT NEEDS A CENSUS OF ITS OWN.
+//
+// The round that deleted attemptSink said it deleted the CLASS: the one writer
+// in this package outside every section, gone, and four ends with it. That was
+// true of the class as the sentence defined it — a replicated row — and this
+// package has two stores. What replaced the sink opens the second one:
+// Assets.Put is durable on another node before it returns (config.go), it is
+// the only door in this package that leaves this machine at all, and a build
+// calls it WHILE IT RUNS, from the runner's goroutine, with no section
+// anywhere.
+//
+// AND NOTHING SAW IT. Measured on the committed tree of this round, before this
+// test existed: a second door on the Service in output.go —
+//
+//	func (s *Service) watched(jobID string, from int64) {
+//		s.assetStore.Put(context.Background(), strings.NewReader(...))
+//	}
+//
+// called from Follow, is one durable object per viewer that no record names,
+// made from a path with no section, in the file that replaced the sink. Every
+// package under services/build was GREEN, all fifteen censuses in this file
+// included. It is the sink's own shape one store over: content nothing has to
+// agree about, written by whoever felt like it, and unreferenced — and nothing
+// in this service deletes an asset (config.go says so out loud), so an orphan
+// made here is permanent.
+//
+// IT CANNOT BE BROUGHT INSIDE A SECTION, and that is not a preference. A
+// section is jobLock; a build holds its output open for the whole of a compile;
+// so a Put inside one would serialize every job on this node behind the slowest
+// build running on it, and the loop that claims work would be waiting on a
+// stranger's build script. What CAN be true is what is checked here: there are
+// exactly two doors, only one of them is inside a section, and the one outside
+// leaves nothing behind but bytes whose cid this package cannot spend.
+//
+// THE TWO ARE NOT THE SAME KIND OF WRITE, which is the whole reason both are
+// allowed:
+//
+//	runOutput.Asset    CONTENT, during the run, outside every section. Its cid
+//	                   goes into a map in the run's own goroutine and no
+//	                   further. Storing it is idempotent and content-addressed,
+//	                   so a run that later fails costs the store the same bytes
+//	                   twice under one id.
+//	runOutput.publish  THE POINTER, inside the section that settles the job and
+//	                   after its ack, because a cid that reaches the store on a
+//	                   delivery this node no longer holds is an object no record
+//	                   will ever name.
+func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
+	all := pkgFuncs(t)
+
+	// WHO MAY NAME THE STORE AT ALL. This is the field rather than the verb, so
+	// a door that reaches it and calls something else on it — a store that
+	// grows a second method, a wrapper — fails here without anybody having
+	// thought of that method's name.
+	require.ElementsMatch(t, []string{"WithAssets", "runOutput.Asset", "runOutput.publish"},
+		names(callers(all, "assetStore")),
+		"a fourth function names the asset store: the option that installs it, the run's own "+
+			"content door and the publish inside settle's section are the whole population, and "+
+			"anything else is a write to another node that no section decided")
+
+	// AND WHO MAY CALL IT. The field check above cannot see a door HANDED the
+	// store — `func stash(a Assets, …)` names no field — and this one cannot
+	// see a second method on it, so neither is redundant.
+	require.ElementsMatch(t, []string{"runOutput.Asset", "runOutput.publish"},
+		names(callers(all, "Put")),
+		"a third caller of Put stores bytes on another node from a place this file has not "+
+			"placed, and a store this package cannot unreference keeps them")
+
+	// THE ONE THAT SHIPS THE LOG IS SETTLE'S, AND IT IS INSIDE SETTLE'S OWN
+	// SECTION. `settle(d, out.publish(ctx), err)` — an argument, so evaluated
+	// BEFORE the call — shipped a whole log to the store and then wrote no
+	// record naming it whenever the ack it was about to make would have failed:
+	// a claim that had expired, a leadership flap. Both are measured
+	// behaviourally (runner_test.go); this is the same fact as a position.
+	require.ElementsMatch(t, []string{"Service.settle"}, names(callers(all, "publish")),
+		"a publish outside settle is a log shipped on a delivery nothing has acked, which is the "+
+			"orphan the shutdown path already declines to make")
+	inside, chain := inBody(all, "Service.settle", "publish")
+	require.True(t, inside,
+		"settle publishes outside the section it acks in, so the ack cannot have decided it — %s", chain)
+
+	// AND THE ONE OUTSIDE EVERY SECTION IS NOT THIS PACKAGE'S TO CALL. Asset is
+	// a door for the RUNNER — a stranger's build, handing over bytes it made —
+	// and a caller here would be this package storing something of its own from
+	// outside a section, which is the sink again with the store swapped.
+	require.Empty(t, names(callers(all, "Asset")),
+		"something in this package puts an asset: the door outside every section belongs to the "+
+			"runner, and what it may leave behind is content and not a decision")
+
+	// AND THE VERB IS ONLY EVER CALLED, NEVER TAKEN. This is the one respelling
+	// that walked past every line above, and it is `mk := e.ops.Set` one store
+	// over: `door := o.s.assetStore.Put`, taken inside a caller this file
+	// ALLOWS and stashed in a package-level var, leaves the taker reading as an
+	// ordinary caller and gives the call through it the name of a variable
+	// nobody enumerated. Measured GREEN against the four lines above before
+	// this one was written.
+	require.Empty(t, takenAsAValue(t, "Put"),
+		"the asset store's verb is taken as a value rather than called, so what is done through "+
+			"it is done in a function whose name the call does not carry")
+
+	// AND WHAT THE OUTSIDE DOOR LEAVES BEHIND REACHES A RECORD BY ONE PATH.
+	// Asset writes the cid into the run's own map and publish reads it, inside
+	// the section, into the value settle records. A third toucher is a cid
+	// spent somewhere no section is.
+	require.Contains(t, fieldsOn(t, "runOutput"), "built",
+		"the run's cids are the field the two checks below name, so a rename would make them vacuous")
+	written := map[string][]token.Pos{}
+	for n, f := range all {
+		if at := f.writesTo["built"]; len(at) > 0 {
+			written[n] = at
+		}
+	}
+	require.ElementsMatch(t, []string{"runOutput.Asset"}, names(written),
+		"a second writer of the run's cids is a second opinion about what this run produced")
+	require.ElementsMatch(t, []string{"runOutput.Asset", "runOutput.publish"}, names(callers(all, "built")),
+		"and a third toucher of them is a cid read somewhere the section that records it cannot see")
+}
+
+// takenAsAValue is every place a method named verb appears as a VALUE rather
+// than as the thing being called.
+//
+// A METHOD VALUE IS NOT A CALL. The function that takes one still reads as an
+// ordinary caller of the verb, and the call THROUGH it carries the name of
+// whatever the value was assigned to — so an enumeration of who may call
+// something walks past the place it is actually called. It is how a row maker
+// escaped three censuses at once (rowVerbs, above), and it is why the door onto
+// the asset store is asked the same question.
+func takenAsAValue(t *testing.T, verb string) []string {
+	t.Helper()
+
+	var out []string
+	for _, file := range parsePackage(t).Files {
+		called := map[token.Pos]bool{}
+		ast.Inspect(file, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+					called[sel.Sel.NamePos] = true
+				}
+			}
+			return true
+		})
+		ast.Inspect(file, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != verb || called[sel.Sel.NamePos] {
+				return true
+			}
+			out = append(out, types.ExprString(sel))
+			return true
+		})
+	}
+	return out
 }
 
 // onTheHolding is every function that calls verb ON A HANDLE'S HOLDING —

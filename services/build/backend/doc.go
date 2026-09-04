@@ -115,13 +115,33 @@
 //	                       readers, each at its own offset. Service.Follow is
 //	                       the seam; v1 has no version of this at all.
 //	when the build ends    the file goes to the asset store and the cid goes on
-//	                       the record, in the entry that settles the job.
+//	                       the record, in the entry that settles the job — and
+//	                       it goes there only if the WHOLE log reached the
+//	                       store, counted rather than assumed, because a cid
+//	                       over a prefix reads like a log to everything
+//	                       downstream of it.
 //
 // WHAT THAT DELETED IS A CLASS OF DEFECT, not a component. The sink was THE ONE
-// WRITER IN THIS PACKAGE OUTSIDE EVERY SECTION, by design, because a build
-// produces rows while it runs — and three of the last four escapes found here
-// went through it. There is no writer outside a section now, and four of the
-// ends below went with it.
+// WRITER OF A REPLICATED ROW IN THIS PACKAGE OUTSIDE EVERY SECTION, by design,
+// because a build produces rows while it runs — and three of the last four
+// escapes found here went through it. No row is written outside a section now,
+// and four of the ends below went with it.
+//
+// A WRITER OUTSIDE EVERY SECTION IS NOT THE SAME THING AS A ROW, AND THE ROUND
+// THAT SAID SO OVERCLAIMED. There are two stores here. Deleting the sink closed
+// the raft one; the ASSET store — durable on another node before it returns,
+// the only door in this package that leaves this machine — is opened by a build
+// WHILE IT RUNS, from the runner's goroutine, with no section anywhere, and it
+// always was. It cannot be otherwise: a section is jobLock, so a Put inside one
+// would hold every job on this node behind the slowest build running on it.
+// What changed with the sink is what that writer may leave behind — CONTENT,
+// whose cid goes no further than the run's own memory until the section that
+// settles the job records it — and what was missing until now is that anything
+// counted it. Nothing did: a second door on the Service in output.go, storing
+// an object per viewer from Follow, was GREEN across every package under
+// services/build, all fifteen censuses included. Six of the ends below are the
+// answer, and they are the first this package has ADDED rather than removed
+// since the sink went.
 //
 // It still does not serve log or artifact BYTES to a caller. v1's
 // GET /logs/{cid} is an open IPFS gateway gated only by a token being valid —
@@ -219,24 +239,49 @@
 // with the door it guarded. It is compiled in everywhere: a check that is only
 // in the test build is a production binary running code no test ran.
 //
-// SO THE TOWER IS THE STATIC HALF, AND IT ENDS AT NINE LINES FORMING EIGHT ENDS
-// — DOWN from thirteen and twelve, because four of the twelve were the sink's
-// and the sink is gone. All of them are in population_test.go. Each was
-// MEASURED ONE AT A TIME when it was written: GO_TEST_EXIT=1 on the tree of its
-// round, and GO_TEST_EXIT=0 with that ONE line hollowed and nothing else
-// changed. The one exception is marked, and it takes two.
+// SO THE TOWER IS THE STATIC HALF, AND IT ENDS AT FIFTEEN LINES FORMING
+// FOURTEEN ENDS — nine and eight of them over the rows, six more over the
+// other store. All of them are in population_test.go. Each was MEASURED ONE AT
+// A TIME when it was written: GO_TEST_EXIT=1 on the tree of its round, and
+// GO_TEST_EXIT=0 with that ONE line hollowed and nothing else changed. The one
+// exception is marked, and it takes two.
 //
-// THE COUNT IS A RECOUNT AND NOT A NEW MEASUREMENT, said plainly. Nothing was
-// added to this list; four were removed with their subject, and the two lists
-// inside end 5 and end 8 shrank by the rows and the caller the deletion took.
-// What was re-measured is that the survivors still FIRE on the file that
-// replaced the sink: a row method on runOutput, in output.go, composing another
-// repository's anchor and applying a batch of its own. Two lines named it —
-// "runOutput.forge makes a row and hangs off "runOutput", which names no
-// subject a key can be composed from" (line 4) and Apply's caller list (line 8)
-// — because a census that silently stopped reading a NEW file would be the
-// failure mode line 2 exists for, and a new file is exactly what this round
-// added.
+// SIX WERE ADDED THIS ROUND AND TWO SPELLINGS WERE CORRECTED, which is the
+// first time the list has grown since the sink went. The six are the asset
+// store's: a build's content leaves this node from outside every section, and
+// nothing had ever counted the doors it leaves by (lines 9 to 14). Line 13
+// caught the others out: the four written before it were all GREEN against
+// `door := o.s.assetStore.Put`, taken inside a caller they allow and called
+// through a package-level var.
+//
+// AND TWO OF THE ATTACKS BELOW WERE SPELT SO THAT THE MEASUREMENT THEY CLAIM
+// COULD NOT BE REPRODUCED. Both are corrected in place, and both were the same
+// error — an attack that trips OTHER tests as well is not a measurement of the
+// line it is written against:
+//
+//   - line 7 read "a second replicated batch beside an entry's own rows",
+//     which is a Batch spliced INSIDE commit. Measured: four tests, two of them
+//     behavioural (TestAPushThatFailsAfterTheRecordIsReported and
+//     TestCancelReportsAWithdrawalThatFailedAndTheNextCancelFinishesIt), so
+//     hollowing line 7 leaves the tree RED. Only an isolated placement — a door
+//     onto the store's batch that nothing calls yet — makes line 7 the sole
+//     catcher, and that is what it now says.
+//   - line 5's "ninth row method" trips THREE lines when the row it writes is
+//     an OPEN row, because the record-and-open-row pairing catches that one
+//     too. Spelled as a project-index row it is the two the line claims, both
+//     of which must go for GO_TEST_EXIT=0.
+//
+// The count itself was a recount when the sink went, and that still holds for
+// the nine: nothing was added then, four were removed with their subject, and
+// the two lists inside end 5 and end 8 shrank by the rows and the caller the
+// deletion took. What was re-measured then is that the survivors still FIRE on
+// the file that replaced the sink: a row method on runOutput, in output.go,
+// composing another repository's anchor and applying a batch of its own. Two
+// lines named it — "runOutput.forge makes a row and hangs off "runOutput",
+// which names no subject a key can be composed from" (line 4) and Apply's
+// caller list (line 8) — because a census that silently stopped reading a NEW
+// file would be the failure mode line 2 exists for, and a new file is exactly
+// what that round added.
 //
 //	in parsePackage, the scan's own input:
 //	 1 the files parsed are the files listed  the filter told to skip errors.go,
@@ -255,17 +300,40 @@
 //	in TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob:
 //	 4 every key names the subject its        an open row keyed s.rec.ID, which
 //	   writer was constructed on                is begin's own old defect
-//	 5 these eight rows and no others, AND    a ninth row method — TWO LINES,
-//	   who may name Set and Delete              and both must go
+//	 5 these eight rows and no others, AND    a ninth row method writing a
+//	   who may name Set and Delete              PROJECT-INDEX row — TWO LINES,
+//	                                           and both must go. An OPEN row
+//	                                           instead trips a third, in the
+//	                                           pairing test below
 //	 6 an entry's rows are never assigned,    an entry handed the rows of
 //	   only added to                            another entry
 //
 //	in TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord:
-//	 7 Batch is named NOWHERE in this         a second replicated batch beside
-//	   package                                  an entry's own rows
+//	 7 Batch is named NOWHERE in this         a door onto the store's batch, on
+//	   package                                  the Service, that nothing calls
+//	                                           yet. Spliced inside commit
+//	                                           instead it trips four tests, two
+//	                                           of them behavioural
 //	 8 Apply has exactly ONE caller           a second Apply, on a Service
 //
-// AND EVERY ONE OF THE EIGHT HOLDS A NAME. That is the distinction this round
+//	in TestEveryWriteToTheAssetStoreIsNamedAndPlaced, over the OTHER store:
+//	 9 who may NAME the asset store           an accessor handing it out, which
+//	                                           calls nothing on it
+//	10 who may CALL Put                       a door HANDED the store, which
+//	                                           names no field
+//	11 publish has exactly ONE caller         a second publish door, unused —
+//	                                           and a door is used next round
+//	12 nothing here calls Asset               this package storing something of
+//	                                           its own through the runner's door
+//	13 Put is CALLED and never taken          the method value, stashed in a
+//	                                           package var — the taker is an
+//	                                           allowed caller and the call
+//	                                           through it names nothing
+//	14 who may TOUCH the run's cids           a reader of them outside the two,
+//	                                           spending a cid where no section
+//	                                           can see it
+//
+// AND EVERY ONE OF THE FOURTEEN HOLDS A NAME. That is the distinction this round
 // was made to state, and it is the honest one: the ACTS are the compiler's and
 // the counts', and what is left up here reads an IDENTIFIER — a file name, a
 // method name, a type name, a field name, the text of an argument. A scan cannot
@@ -296,7 +364,7 @@
 // code under it — which is the same exposure as the nine lines themselves, one
 // level in, and is where this stops.
 //
-// AND THREE MORE LINES STAND OVER GROUND THE EIGHT ALREADY COVER. They are
+// AND SIX MORE LINES STAND OVER GROUND THE THIRTEEN ALREADY COVER. They are
 // written down because a round that counts its own exposure at five when it is
 // eight is worse than one that counts nothing: the next reader stops looking.
 // Each was measured the same way — hollow it, run the control it was written
@@ -310,15 +378,38 @@
 //	  come off the record the section READ    anchor taken off the record being
 //	                                           WRITTEN instead
 //	one function names a job record key       pairs with line 5
+//	the publish is inside settle's OWN        the two runner tests that assert a
+//	  section                                  lost delivery ships nothing catch
+//	                                           a settle that publishes first —
+//	                                           hollowing this leaves both red
+//	who may WRITE the run's cids              a new writer is a new toucher, so
+//	                                           line 14 has it; an allowed
+//	                                           toucher that writes trips five
+//	                                           behavioural tests
+//	the run's cid field still exists          line 14 and the writer line above
+//	                                           are matches against NON-EMPTY
+//	                                           lists, so a rename fails them on
+//	                                           its own — unlike the two
+//	                                           require.Empty lines this shape
+//	                                           was written for
 //
-// HOW THE COUNT MOVED, and it is not a rearrangement: FOUR OF THE TWELVE LOST
-// THEIR SUBJECT AT ONCE. All four were the sink — who may call its door, who
-// may make one, who may mint the attempt it is for, and that nothing re-points
-// that attempt — and there is no sink. Three of the six extra lines went the
-// same way: "the sink keys its rows by its own attempt", "'write' in the
-// closing verb set", and the sink's own row count. Nothing was ADDED to either
-// list, which is the honest shape of a deletion: the writer this package spent
-// four rounds fencing in is not fenced better, it is not there.
+// HOW THE COUNT MOVED, TWICE. The round before this one took FOUR OF THE TWELVE
+// AWAY AT ONCE: all four were the sink — who may call its door, who may make
+// one, who may mint the attempt it is for, and that nothing re-points that
+// attempt — and there is no sink. Three of the six extra lines went the same
+// way: "the sink keys its rows by its own attempt", "'write' in the closing
+// verb set", and the sink's own row count. Nothing was ADDED then, which is the
+// honest shape of a deletion: the writer that package spent four rounds fencing
+// in was not fenced better, it was not there.
+//
+// AND THAT IS WHERE THE OVERCLAIM WAS. "There is no writer outside a section"
+// was true of ROWS and read as true of writes, and the sentence went into three
+// files. A build's content still leaves this node from outside every section,
+// because it must; what was missing was any census of the door it leaves by.
+// This round adds six ends and three lines over covered ground — the first
+// addition since the sink — and corrects the sentence in the three places it
+// was written: here, output.go, and the two censuses that said the class was
+// closed.
 //
 // TWO GUARDS ARE ON THE CENSUSES' INPUT rather than on a write, and they are not
 // ends. TestEveryKeyThisPackageWritesIsInSomeCensus requires every whole key
@@ -330,7 +421,7 @@
 // and asserts that the first is still counted as naming the verb and the second
 // is a key no builder built.
 //
-// EVERYTHING TOUCHING THEM IS HELD, which is why the set is eight and not
+// EVERYTHING TOUCHING THEM IS HELD, which is why the set is fourteen and not
 // ninety. Measured one at a time, each of these fails BY NAME rather than
 // passing:
 //
@@ -374,7 +465,7 @@
 //	                                          scan cannot match a non-empty
 //	                                          expectation
 //
-// WHY IT CANNOT BE SMALLER. The eight are four regions and no line of one
+// WHY IT CANNOT BE SMALLER. The fourteen are five regions and no line of one
 // covers another. WHICH FILES ARE READ is under everything, because a scan reads
 // what it is given. WHICH ROWS EXIST and EACH ROW NAMES ITS OWN SUBJECT cannot
 // be folded together: a row naming the wrong subject is IN the census, and a
@@ -382,10 +473,12 @@
 // WHAT MAKES A ROW is a third — the type says a row comes from Set or Delete,
 // and only an enumeration can say those two are called from where a key was
 // composed, and only line 3 can say a verb was called at all rather than taken.
-// WHO MAY WRITE AT ALL is the fourth, and it is ONE half now rather than two:
-// the entry's, which is Apply and the absence of Batch. The other half was the
-// sink's — a door, a constructor, a minting call and a field — and it is gone
-// with it. Under all of them is the thing no Go test escapes: a test fails by calling Errorf, so
+// WHO MAY WRITE A ROW AT ALL is the fourth, and it is ONE half now rather than
+// two: the entry's, which is Apply and the absence of Batch. The other half was
+// the sink's — a door, a constructor, a minting call and a field — and it is
+// gone with it. WHO MAY WRITE TO THE OTHER STORE is the fifth, and no line of
+// the first four reaches it: they are all about rows, and what leaves this node
+// during a build is bytes. Under all of them is the thing no Go test escapes: a test fails by calling Errorf, so
 // somewhere there is a first call nothing else watches, and a check on that
 // check is another Errorf with the same property one level out — the regress
 // this package's history walked nine times.
@@ -414,13 +507,22 @@
 // them is a product decision about what a transition may change, and it is the
 // owner's.
 //
+// AND THE DOOR OUT OF THIS NODE IS COUNTED BUT NOT BOUNDED. The census says who
+// may call Put and from where; it says nothing about HOW MUCH, and nothing
+// else does either — MaxLogBytes caps the log a build may write and there is no
+// equivalent for the artifacts it hands over, in number or in bytes, so what a
+// build script stores is what a build script decides. It compounds with the
+// debt config.go already names: nothing in this service unreferences an asset.
+// A bound belongs with the storage service that does not exist yet, and it is
+// the owner's call where it goes.
+//
 // WHAT THIS IS THE SAME AS. It is the exposure every Go test suite already
 // carries and does not write down. A TestMain that returns before m.Run(). A
 // build tag on the file the assertions live in. population_test.go never added
 // to the package at all. `go test` never run in CI. Each is a small edit that
 // leaves a green run and no trace, and no test framework defends against any of
-// them. These eight are written here instead, in the open, with the measurement
-// beside them.
+// them. These fourteen are written here instead, in the open, with the
+// measurement beside them.
 //
 // MEASURE THE MECHANISM'S OWN PACKAGES EITHER WAY. backend/section and
 // backend/row are exercised by their own tests and by this package's, and the

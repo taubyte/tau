@@ -30,9 +30,14 @@ type Service struct {
 	dead  *queue.Queue
 
 	runner Runner
-	assets Assets
-	authz  Authorizer
-	now    func() time.Time
+	// assetStore is the ONE DOOR IN THIS PACKAGE THAT LEAVES THIS MACHINE, and
+	// it is named for the door rather than for what goes through it: the record
+	// has an Assets map and a run has the cids it collected, so a field spelled
+	// `assets` was one identifier standing for three things and a census keyed
+	// on it could not ask about any of them (population_test.go).
+	assetStore Assets
+	authz      Authorizer
+	now        func() time.Time
 
 	serverOptions []rpc.ServerOption
 
@@ -109,7 +114,7 @@ func WithAssets(a Assets) Option {
 		if a == nil {
 			return errors.New("build: asset store must not be nil")
 		}
-		s.assets = a
+		s.assetStore = a
 		return nil
 	}
 }

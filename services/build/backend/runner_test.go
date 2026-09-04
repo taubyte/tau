@@ -208,7 +208,8 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	h.runner.run = func(context.Context, Work, Output) error {
+	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "a build whose claim went\n")
 		// Somebody else takes the job while this run is going: the lease
 		// elapses and the queue redelivers it.
 		h.clock.advance(h.cfg.Queue.VisibilityTimeout + time.Second)
@@ -224,6 +225,9 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 	require.Equal(t, buildv1.JobStatus_JobStatusClaimed, rec.status(),
 		"the loser must not write a terminal status")
 	require.Empty(t, h.lastCommit(testRepo, testRef), "and must not move the anchor")
+	require.Zero(t, h.assets.count(),
+		"and must ship nothing: an ack it cannot make is a log no record will ever name, "+
+			"which is the orphan the shutdown path already declines to create")
 }
 
 // The same rule for the other way a claim stops being ours.
@@ -238,7 +242,8 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	h.runner.run = func(context.Context, Work, Output) error {
+	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "a build whose node stopped leading\n")
 		h.store.stepDown()
 		return nil
 	}
@@ -251,6 +256,7 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 
 	_, claimed := h.work.Depth()
 	require.Equal(t, 1, claimed, "and the delivery a follower could not settle comes back")
+	require.Zero(t, h.assets.count(), "and nothing it built or printed reached the store")
 }
 
 // A worker that DIED is the case redelivery exists for: the claim expires, the

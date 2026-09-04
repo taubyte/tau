@@ -60,8 +60,9 @@
 // # Bounded memory, and who blocks
 //
 // A reader holds no buffer of its own: it reads from the file at its own
-// offset, so a reader that is slower than the writer costs one file descriptor
-// and the bytes it asked for — never a queue of what it has not caught up to.
+// offset, so a reader that is slower than the writer costs an offset and the
+// bytes it asked for — not even a descriptor, and never a queue of what it has
+// not caught up to.
 // The FILE is the buffer, which is what a file is for. So the writer never
 // blocks on a reader and a reader can never make the build wait, at any lag.
 //
@@ -70,11 +71,57 @@
 // it, the writer appends one truncation notice and then discards, and says so
 // with ErrFull.
 //
-// # What an unlinked file does
+// # A LOG IS AN INODE, AND THE NAME IS ONLY HOW IT WAS FOUND
 //
-// Unlink removes the path. On POSIX a descriptor already open keeps reading the
-// inode, so every reader that had forked keeps working to the end and the
-// writer keeps appending — and a fork taken AFTER the removal fails, because
-// there is no path left to open. That is exactly the shape the handoff wants:
-// ship the bytes, unlink, and let the readers still attached drain.
+// Create resolves the path ONCE, and nothing here ever resolves it again: the
+// writer appends to that descriptor and every reader PREADS THAT SAME
+// DESCRIPTOR at its own offset. A fork borrows it; it does not open anything.
+//
+// It was the other way around for one round, and the round cost a whole class
+// of build its log. A fork opened the path again, and the directory these files
+// live in is somewhere the OS sweeps on its own schedule — so a name removed
+// while a build ran left the whole log unreadable, with every byte of it still
+// on the inode the writer had open. The handoff at the end of the build then
+// found nothing to read and said nothing about it. The name is a convenience
+// for an operator looking at a disk. It is not what a log is, and the sweep is
+// now something this package cannot notice.
+//
+// WHAT ONE SHARED DESCRIPTOR COSTS, all three of them:
+//
+//   - PORTABILITY: none that was not already spent. Reading is os.File.ReadAt,
+//     which is pread(2) on unix and an offset read on Windows — no dup(2), no
+//     /proc/self/fd, nothing outside the standard library. The one place it is
+//     weaker is Windows, where the runtime emulates pread by seeking under the
+//     file's own lock, so many readers serialize there; this package already
+//     says it assumes a local POSIX filesystem.
+//   - CONCURRENCY: a pread carries its offset in the syscall, so it neither
+//     reads nor moves the description's file offset and cannot be torn by the
+//     appends going on beside it. The runtime does not take the file's read
+//     lock for it either, so a slow reader on a big buffer does not hold the
+//     writer or another reader up. What a reader must not do is Read or Seek
+//     the shared descriptor, and it has no way to: a Reader holds an offset.
+//   - DESCRIPTORS: one per log rather than one per reader, which is the
+//     direction that helps — a build being watched by fifty viewers costs the
+//     same one descriptor as a build being watched by nobody.
+//
+// # What ends a log, and what merely removes its name
+//
+// Close ends the WRITING: readers drain what is there and then see io.EOF, and
+// a fork taken afterwards still reads the whole file, because the handoff at
+// the end of a build is exactly that fork.
+//
+// Unlink ends the LOG. It is what undoes Create — the name goes and this log
+// lets go of the inode — and a reader that had already forked keeps the inode
+// alive until it is done, the last holder closing the file. That is POSIX's own
+// rule about an unlinked file, kept inside this process by a count rather than
+// borrowed from the kernel, and it is the shape the handoff wants: ship the
+// bytes, unlink, and let the readers still attached drain.
+//
+// A NAME REMOVED BY SOMEBODY ELSE IS NEITHER. It is not a decision by the owner
+// of this log that the log is over, so it changes nothing at all — and neither
+// does a name TAKEN OVER, which is the sharper half: rotated aside and
+// re-created, or claimed by a second process, the path now leads to another
+// inode with a stranger's bytes in it and nothing about that reads as an error.
+// A reader here cannot be pointed at it, because no reader here resolves a
+// name.
 package livelog

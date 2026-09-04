@@ -208,7 +208,7 @@ func TestAnAbandonedRunPublishesNothingAndLeavesNoFile(t *testing.T) {
 // because there is nowhere for the bytes to be.
 func TestANodeWithNoAssetStoreBuildsAndKeepsNothing(t *testing.T) {
 	h := newHarness(t, func(s *Service) error {
-		s.assets = nil
+		s.assetStore = nil
 		return nil
 	})
 	id := h.push(t, testRef, testCommit)
@@ -455,7 +455,8 @@ func TestEndingARunTwiceIsTheSameEnding(t *testing.T) {
 	require.NoError(t, err)
 	fmt.Fprint(out, "one line\n")
 
-	p := out.publish(t.Context())
+	p, err := out.publish(t.Context())
+	require.NoError(t, err)
 	require.Equal(t, "one line\n", h.assets.content(t, p.logCID))
 
 	out.discard()
@@ -464,19 +465,149 @@ func TestEndingARunTwiceIsTheSameEnding(t *testing.T) {
 	require.Empty(t, logFiles(t, h))
 }
 
-// A log whose file is gone before the publish is a log with no cid rather than
-// a build that fails at the last step.
-func TestAPublishWithNothingLeftToReadStoresNothing(t *testing.T) {
+// A LOG WHOSE NAME IS GONE IS STILL THE LOG. This is what the log directory
+// being somewhere the OS sweeps costs, which is nothing: the run opened the
+// file once, and what it holds is the inode. A publish that had to open the
+// path again found nothing, stored nothing, and said nothing about it.
+func TestALogWhoseNameWentIsPublishedAnyway(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
 	out, err := h.output(Work{JobID: id, Attempt: 1})
 	require.NoError(t, err)
 	fmt.Fprint(out, "one line\n")
+
+	// Not out.log.Unlink(): somebody ELSE'S removal of the name, which is what
+	// a tmp sweep is.
+	require.NoError(t, os.Remove(out.log.Path()))
+
+	p, err := out.publish(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "one line\n", h.assets.content(t, p.logCID))
+}
+
+// AND A LOG THIS NODE REALLY CANNOT READ IS A FAILURE IT REPORTS, never an
+// empty map handed back as if there were nothing to say.
+func TestAPublishThatCannotReadItsLogSaysSo(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	out, err := h.output(Work{JobID: id, Attempt: 1})
+	require.NoError(t, err)
+	fmt.Fprint(out, "one line\n")
+
+	// Unlink is the log's own end — the name goes AND this log lets go of the
+	// inode — so there is nothing left to read back.
 	require.NoError(t, out.log.Unlink())
 
-	require.Empty(t, out.publish(t.Context()).logCID)
-	require.Zero(t, h.assets.count())
+	p, err := out.publish(t.Context())
+	require.ErrorContains(t, err, "reading back the log it wrote")
+	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+	require.Empty(t, p.logCID)
+	require.Zero(t, h.assets.count(), "and nothing half-read reaches the store")
+}
+
+// A LOG THAT LOST BYTES IS NOT PUBLISHED AS A COMPLETE ONE, and this is the
+// production end of livelog's read order: a failure a reader hits is asked
+// about BEFORE the close, because every read of a whole log is a read of a
+// closed one. Here the file gets shorter than the log says it is — somebody
+// outside this process rewrote it — which is the fault a reader stops on
+// instead of reporting whatever is at that offset now.
+//
+// WHAT MUST NOT HAPPEN IS THE SETTLE THIS DEFECT CAME FROM: a job carrying
+// Success and Logs: map[], with nothing anywhere saying that a build's output
+// was lost. A build whose log this node cannot read back is a failed build, and
+// it says which failure it was.
+func TestALogThatLostBytesFailsTheBuildRatherThanBeingStoredShort(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	h.runner.run = func(_ context.Context, w Work, out Output) error {
+		fmt.Fprint(out, "cloning\n")
+		// Not this package's doing: the file is shortened under the run, which
+		// is what the log's own size measurement is against.
+		return os.Truncate(logFile(h, w), 0)
+	}
+	require.True(t, h.mustStep(t))
+
+	rec := h.mustRecord(t, id)
+	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status(),
+		"a log this node cannot read back is a failed build, not a build with no log")
+	require.Contains(t, rec.Reason, "reading back the log it wrote")
+	require.Empty(t, rec.Logs, "and nothing names a short log")
+	require.Zero(t, h.assets.objects(), "which the store did not take either")
+}
+
+// AND THE READER IS ASKED EVEN WHEN THE STORE SAID YES.
+//
+// Put returns ONE error for two faults — its own and the reader's — so a store
+// that swallowed a read error and answered with a cid has stored something that
+// is not this log, and the record naming it would be worse than a record with
+// no log at all: it reads as a complete build log for as long as anybody looks
+// at it.
+func TestAStoreThatSwallowedAReadErrorDoesNotGetToNameTheLog(t *testing.T) {
+	h := newHarness(t, WithAssets(&swallowingStore{}))
+	id := h.push(t, testRef, testCommit)
+
+	h.runner.run = func(_ context.Context, w Work, out Output) error {
+		fmt.Fprint(out, "cloning\n")
+		return os.Truncate(logFile(h, w), 0)
+	}
+	require.True(t, h.mustStep(t))
+
+	rec := h.mustRecord(t, id)
+	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Contains(t, rec.Reason, "reading back the log it wrote")
+	require.Empty(t, rec.Logs, "the cid it answered with names bytes that are not the log")
+}
+
+// AND A STORE THAT STOPPED READING DOES NOT GET TO NAME IT EITHER.
+//
+// A read that ENDED EARLY raises no error anywhere: the reader was never asked
+// for the rest, so it has nothing to report, and Put answers with the cid of
+// whatever it took. What that cid addresses is a PREFIX of the build's output —
+// and a job pointing at it says "here is the log", which is the same lie as
+// Success with an empty map, only harder to notice. So the publish counts what
+// left the file and compares it with what the log says it holds.
+func TestAStoreThatStoppedReadingDoesNotGetToNameTheLog(t *testing.T) {
+	h := newHarness(t, WithAssets(&shortStore{}))
+	id := h.push(t, testRef, testCommit)
+
+	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "cloning\ncompiling\nlinking\n")
+		return nil
+	}
+	require.True(t, h.mustStep(t))
+
+	rec := h.mustRecord(t, id)
+	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Contains(t, rec.Reason, "took 4 of the 26 bytes")
+	require.Empty(t, rec.Logs, "a cid over a prefix of the log is not this log")
+}
+
+// shortStore reads four bytes, stops, and answers with a cid — a store that
+// broke the half of its contract an io.Reader cannot state.
+type shortStore struct{}
+
+func (*shortStore) Put(_ context.Context, content io.Reader) (string, error) {
+	raw := make([]byte, 4)
+	n, _ := content.Read(raw)
+	return assetCID(raw[:n]), nil
+}
+
+// swallowingStore is an asset store that reads what it is handed, ignores a
+// read that failed, and answers with a cid anyway. It is the store the check
+// above exists for and the one an interface cannot forbid.
+type swallowingStore struct{}
+
+func (*swallowingStore) Put(_ context.Context, content io.Reader) (string, error) {
+	raw, _ := io.ReadAll(content)
+	return assetCID(raw), nil
+}
+
+// logFile is where a run's log is, named the way output() names it.
+func logFile(h *harness, w Work) string {
+	return filepath.Join(h.cfg.LogDir, seg(w.JobID)+"."+stamp(int64(w.Attempt))+".log")
 }
 
 // The writer's own refusal reaches the runner unchanged when it is not the cap:
@@ -600,15 +731,23 @@ func TestSettleWritesNothingForARecordThatIsGone(t *testing.T) {
 // replicated entry that changes no field is a cost with no fact in it, and this
 // is the path every cancelled job takes on a node with no asset store.
 func TestACancelledJobWithNoOutputCostsNoEntry(t *testing.T) {
-	h := newHarness(t)
+	h := newHarness(t, func(s *Service) error {
+		s.assetStore = nil
+		return nil
+	})
 	id := h.push(t, testRef, testCommit)
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusCancelled, "cancelled"))
 
+	out, err := h.output(Work{JobID: id, Attempt: 1})
+	require.NoError(t, err)
+	defer out.discard()
+	fmt.Fprint(out, "nowhere to put this\n")
+
 	before := h.store.appliedEntries()
-	require.NoError(t, h.settle(d, produced{}, nil))
+	require.NoError(t, h.settle(t.Context(), d, out, nil))
 	require.Equal(t, before+1, h.store.appliedEntries(),
 		"the ack is the one write: nothing produced is nothing to record")
 }
@@ -631,9 +770,15 @@ func TestALogIsFiledUnderTheRunsAttemptAndNotTheRecordsAtSettleTime(t *testing.T
 	require.NoError(t, err)
 	h.store.put(t, jobRecordKey(id), value)
 
-	require.NoError(t, h.settle(d, produced{attempt: 3, logCID: "cid-of-run-3"}, nil))
+	out, err := h.output(Work{JobID: id, Attempt: 3})
+	require.NoError(t, err)
+	defer out.discard()
+	fmt.Fprint(out, "what run three printed\n")
 
-	require.Equal(t, map[string]string{stamp(3): "cid-of-run-3"}, h.mustRecord(t, id).Logs)
+	require.NoError(t, h.settle(t.Context(), d, out, nil))
+
+	require.Equal(t, map[string]string{stamp(3): assetCID([]byte("what run three printed\n"))},
+		h.mustRecord(t, id).Logs)
 }
 
 // AND RECORDING IT ON A TERMINAL JOB MOVES NOTHING ELSE. The status, the reason
@@ -649,16 +794,21 @@ func TestRecordingALogOnACancelledJobMovesNothingElse(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusCancelled, "cancelled"))
 
+	out, err := h.output(Work{JobID: id, Attempt: 1})
+	require.NoError(t, err)
+	defer out.discard()
+	fmt.Fprint(out, "cancelled midway\n")
+
 	before := h.mustRecord(t, id)
 	h.clock.advance(time.Hour)
 
-	require.NoError(t, h.settle(d, produced{attempt: 1, logCID: "cid-x"}, nil))
+	require.NoError(t, h.settle(t.Context(), d, out, nil))
 
 	after := h.mustRecord(t, id)
 	require.Equal(t, before.Status, after.Status)
 	require.Equal(t, before.Reason, after.Reason)
 	require.Equal(t, before.UpdatedAt, after.UpdatedAt, "the clock moved and the record must not")
-	require.Equal(t, map[string]string{stamp(1): "cid-x"}, after.Logs)
+	require.Equal(t, map[string]string{stamp(1): assetCID([]byte("cancelled midway\n"))}, after.Logs)
 
 	_, retained := h.store.Get(terminalIndexKey(time.Unix(after.UpdatedAt, 0), id))
 	require.True(t, retained, "the retention row still names the instant the record carries")
