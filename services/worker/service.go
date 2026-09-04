@@ -38,6 +38,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 
@@ -57,6 +58,14 @@ type Service struct {
 	// are refused by name rather than run without them.
 	artifacts Artifacts
 	secrets   Secrets
+
+	// meter is where this service says what it accounted for. Nil is the
+	// ordinary case; see meter.go.
+	meter Meter
+
+	// now is this service's clock, so a test that moves time moves what an
+	// invocation is billed for.
+	now func() time.Time
 
 	projects *project.Cache
 
@@ -137,6 +146,11 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 		return nil, err
 	}
 
+	now := o.now
+	if now == nil {
+		now = time.Now
+	}
+
 	return &Service{
 		host:          h,
 		cfg:           cfg,
@@ -144,6 +158,8 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 		pool:          o.pool,
 		artifacts:     o.artifacts,
 		secrets:       o.secrets,
+		meter:         o.meter,
+		now:           now,
 		projects:      projects,
 		serverOptions: o.serverOptions,
 	}, nil
@@ -151,11 +167,26 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 
 // Invoke resolves a target and runs one request against it.
 func (s *Service) Invoke(ctx context.Context, t Target, req *invoke.Request) (*invoke.Response, error) {
+	// THE CLOCK STARTS AT THE RESOLVE, because that is when this cloud started
+	// spending on the request: reading a pointer, fetching an object and
+	// starting a cold instance are all work a caller caused, and a duration
+	// that began after them would bill a cold start as if it were free.
+	started := s.now()
+
 	spec, err := s.Resolve(ctx, t)
 	if err != nil {
+		s.emit(ctx, accounted(t, "", 0, OpRefuse, s.now().Sub(started)))
 		return nil, err
 	}
-	return s.pool.Do(ctx, spec, req)
+
+	res, err := s.pool.Do(ctx, spec, req)
+	if err != nil {
+		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))
+		return nil, err
+	}
+
+	s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpInvoke, s.now().Sub(started)))
+	return res, nil
 }
 
 // Start listens and serves. Calling it twice, or after Close, is an error.

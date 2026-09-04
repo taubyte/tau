@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -445,4 +446,81 @@ func TestTheEgressAllowlistReachesTheTier(t *testing.T) {
 	h2 := newHarness(t)
 	invokeOver(t, h2, target("function", "reserve_stock"))
 	require.Empty(t, h2.Runtime.specs()[0].Egress)
+}
+
+// ── what this service accounted for ──────────────────────────────────────
+
+// AN INVOCATION IS THE OTHER OBVIOUSLY BILLED THING A CLOUD DOES. Requests and
+// GB-seconds are what every serverless platform charges in, and this service
+// knew neither — it resolved a spec, ran it, and answered.
+type meter struct {
+	mu     sync.Mutex
+	events []Accounted
+}
+
+func (m *meter) Record(_ context.Context, ev Accounted) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, ev)
+}
+
+func (m *meter) seen() []Accounted {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]Accounted(nil), m.events...)
+}
+
+func TestAnInvocationIsAccounted(t *testing.T) {
+	m := &meter{}
+	h := newHarness(t, WithMeter(m))
+
+	invokeOver(t, h, target("application", "api"))
+
+	events := m.seen()
+	require.Len(t, events, 1)
+	ev := events[0]
+
+	require.Equal(t, OpInvoke, ev.Op)
+	require.Equal(t, "shop", ev.Project)
+	require.Equal(t, "prod", ev.Environment)
+	require.Equal(t, "application", ev.Kind)
+	require.Equal(t, "api", ev.Name)
+
+	// WHAT IT WAS ALLOWED, not what it used — which is what every platform
+	// bills, because what it used is not observable from here.
+	require.Equal(t, int64(512_000_000), ev.Memory)
+
+	// A BILL SOMEBODY DISPUTES IS RECONCILED AGAINST A DEPLOY.
+	require.NotEmpty(t, ev.Revision)
+}
+
+// A REFUSAL IS THE EVENT A CALLER MOST WANTS EXPLAINED, and it is the one an
+// invocation counter cannot show: the figures look identical whether a request
+// was served or turned away.
+func TestARefusedInvocationIsAccounted(t *testing.T) {
+	m := &meter{}
+	h := newHarness(t, WithMeter(m))
+
+	_, err := h.Worker.Invoke(t.Context(), Target{
+		Project: "shop", Environment: "prod", Kind: "function", Name: "not-a-function",
+	}, &invoke.Request{})
+	require.Error(t, err)
+
+	events := m.seen()
+	require.Len(t, events, 1)
+	require.Equal(t, OpRefuse, events[0].Op)
+	require.Equal(t, "not-a-function", events[0].Name)
+	require.Empty(t, events[0].Revision, "nothing resolved, so nothing to reconcile against")
+}
+
+// A node with no meter invokes exactly as it did, and the events are not
+// constructed at all.
+func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
+	h := newHarness(t)
+	res := invokeOver(t, h, target("application", "api"))
+	require.Equal(t, int32(200), res.GetStatus())
+}
+
+func TestWithMeterRefusesNil(t *testing.T) {
+	require.Error(t, WithMeter(nil)(&options{}))
 }

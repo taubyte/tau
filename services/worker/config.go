@@ -103,6 +103,7 @@ type options struct {
 	artifacts Artifacts
 	secrets   Secrets
 	now       func() time.Time
+	meter     Meter
 
 	serverOptions []rpc.ServerOption
 }
@@ -130,6 +131,18 @@ func WithPool(p Pool) Option {
 }
 
 // WithClock injects the local clock. Tests use it; production does not.
+// WithMeter is where this service says what it accounted for — invocations,
+// what each was allowed and how long it took. Nil emits nothing.
+func WithMeter(m Meter) Option {
+	return func(o *options) error {
+		if m == nil {
+			return errors.New("worker: a nil meter")
+		}
+		o.meter = m
+		return nil
+	}
+}
+
 func WithClock(now func() time.Time) Option {
 	return func(o *options) error {
 		if now == nil {
