@@ -65,7 +65,8 @@ import (
 
 // Service answers DNS queries from a stats view.
 type Service struct {
-	cfg Config
+	cfg  Config
+	opts options
 
 	mu      sync.Mutex
 	servers []*dns.Server
@@ -73,12 +74,25 @@ type Service struct {
 }
 
 // New builds the service. It does not listen — Listen does.
-func New(cfg Config) (*Service, error) {
+//
+// cfg is the operator's declared values; opts inject the collaborators. New
+// defaults and validates cfg exactly once, then applies the options, then
+// checks that everything required actually arrived.
+func New(cfg Config, opts ...Option) (*Service, error) {
 	c, err := cfg.withDefaults()
 	if err != nil {
 		return nil, err
 	}
-	return &Service{cfg: c}, nil
+	var o options
+	for _, apply := range opts {
+		if err := apply(&o); err != nil {
+			return nil, err
+		}
+	}
+	if o.router == nil {
+		return nil, ErrNoRouter
+	}
+	return &Service{cfg: c, opts: o}, nil
 }
 
 // Answer builds the reply to one query. It is the whole of this service's
@@ -116,7 +130,7 @@ func (s *Service) Answer(req *dns.Msg) *dns.Msg {
 	// A name under the node zone is one node's own name, minted for an SRV
 	// target. It resolves to that node's addresses and nothing else.
 	if peer, ok := s.peerOf(name); ok {
-		node, found := s.cfg.Router.Get(peer)
+		node, found := s.opts.router.Get(peer)
 		if !found || node.Age > s.cfg.MaxAge {
 			reply.Rcode = dns.RcodeServerFailure
 			return reply
@@ -130,7 +144,7 @@ func (s *Service) Answer(req *dns.Msg) *dns.Msg {
 		return reply
 	}
 
-	nodes := s.cfg.Router.Route(name, s.cfg.MaxAge)
+	nodes := s.opts.router.Route(name, s.cfg.MaxAge)
 	if len(nodes) == 0 {
 		// See the package doc: this is SERVFAIL and not NXDOMAIN, because
 		// "nothing is serving it right now" is not "it does not exist", and
@@ -176,7 +190,7 @@ func (s *Service) answerSRV(reply *dns.Msg, name, qname string) *dns.Msg {
 		svc = rest
 	}
 
-	nodes := s.cfg.Router.Route(svc, s.cfg.MaxAge)
+	nodes := s.opts.router.Route(svc, s.cfg.MaxAge)
 	if len(nodes) == 0 {
 		reply.Rcode = dns.RcodeServerFailure
 		return reply

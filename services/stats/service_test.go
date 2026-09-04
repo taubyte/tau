@@ -86,11 +86,11 @@ func fixedSnapshot(s Snapshot) Reporter {
 
 func newService(t *testing.T, bus Bus, r Reporter, adjust func(*Config)) *Service {
 	t.Helper()
-	cfg := Config{Bus: bus, Reporter: r, Interval: 20 * time.Millisecond}
+	cfg := Config{Interval: 20 * time.Millisecond}
 	if adjust != nil {
 		adjust(&cfg)
 	}
-	s, err := New(newHost(t), cfg)
+	s, err := New(newHost(t), cfg, WithBus(bus), WithReporter(r))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s
@@ -295,37 +295,45 @@ func (b *closingBus) Subscribe(context.Context) (<-chan []byte, error) { return 
 func TestAnIncarnationIsChosenPerRun(t *testing.T) {
 	bus := &memBus{}
 	old := newService(t, bus, fixedSnapshot(Snapshot{Load: 0.9, Ready: true, Serving: []string{"shop"}}), nil)
+	require.NotZero(t, old.incarnation, "it comes from the clock")
 
-	h := newHost(t)
-	newer, err := New(h, Config{Bus: bus, Reporter: fixedSnapshot(Snapshot{}), Interval: time.Second}, WithIncarnation(2))
+	at := time.Unix(1_700_000_000, 0)
+	pinned, err := New(newHost(t), Config{Interval: time.Second},
+		WithBus(bus), WithReporter(fixedSnapshot(Snapshot{})), WithClock(func() time.Time { return at }))
 	require.NoError(t, err)
-	t.Cleanup(func() { newer.Close() })
-
-	require.NotZero(t, old.incarnation, "production takes it from the clock")
-	require.Equal(t, uint64(2), newer.incarnation)
+	t.Cleanup(func() { pinned.Close() })
+	require.Equal(t, uint64(at.UnixNano()), pinned.incarnation,
+		"and an injected clock decides it, which is how a test says 'the run after that one'")
 }
 
 func TestConfigRefusesWhatItCannotWorkWithout(t *testing.T) {
 	h := newHost(t)
 
-	_, err := New(h, Config{Reporter: fixedSnapshot(Snapshot{})})
+	_, err := New(h, Config{}, WithReporter(fixedSnapshot(Snapshot{})))
 	require.ErrorIs(t, err, ErrNoBus)
 
-	_, err = New(h, Config{Bus: &memBus{}})
+	_, err = New(h, Config{}, WithBus(&memBus{}))
 	require.ErrorIs(t, err, ErrNoReporter)
 
-	_, err = New(nil, Config{Bus: &memBus{}, Reporter: fixedSnapshot(Snapshot{})})
+	_, err = New(h, Config{}, WithBus(nil))
+	require.ErrorIs(t, err, ErrNoBus, "an option refuses its own bad argument")
+
+	_, err = New(h, Config{}, WithReporter(nil))
+	require.ErrorIs(t, err, ErrNoReporter)
+
+	_, err = New(h, Config{}, WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{})), WithClock(nil))
+	require.Error(t, err)
+
+	_, err = New(nil, Config{}, WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{})))
 	require.Error(t, err, "a service with no host does not know who it is")
 
-	_, err = New(h, Config{Bus: &memBus{}, Reporter: fixedSnapshot(Snapshot{}), Interval: -time.Second})
+	_, err = New(h, Config{Interval: -time.Second}, WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{})))
 	require.Error(t, err)
 
 	// Fresh shorter than the interval would make every row stale before its
 	// replacement was even sent.
-	_, err = New(h, Config{
-		Bus: &memBus{}, Reporter: fixedSnapshot(Snapshot{}),
-		Interval: time.Minute, Fresh: time.Second,
-	})
+	_, err = New(h, Config{Interval: time.Minute, Fresh: time.Second},
+		WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{})))
 	require.Error(t, err)
 }
 
@@ -333,7 +341,7 @@ func TestConfigRefusesWhatItCannotWorkWithout(t *testing.T) {
 // make a healthy node vanish.
 func TestTheFreshnessWindowIsAMultipleOfTheInterval(t *testing.T) {
 	h := newHost(t)
-	s, err := New(h, Config{Bus: &memBus{}, Reporter: fixedSnapshot(Snapshot{}), Interval: time.Second})
+	s, err := New(h, Config{Interval: time.Second}, WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{})))
 	require.NoError(t, err)
 	require.Equal(t, freshIntervals*time.Second, s.cfg.Fresh)
 	require.Equal(t, forgetIntervals*time.Second, s.cfg.Forget)

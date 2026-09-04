@@ -30,11 +30,15 @@ type Router interface {
 	Get(peer string) (stats.Node, bool)
 }
 
-// Config is what an operator declared, plus the one thing injected.
+// Config is what an operator declared, and ONLY that: every field below is a
+// value somebody writes in yaml, so it decodes, marshals and round-trips.
+//
+// THE INJECTED DEPENDENCY IS NOT HERE. Where the answers come from is handed
+// over at construction with WithRouter, because a live object cannot be
+// decoded from a config file and a struct that mixes the two has no honest
+// serialized form. That split was put to codex@xhigh and agreed:
+// "operator configuration is data, not constructor customization".
 type Config struct {
-	// Router is where the answers come from. Required.
-	Router Router
-
 	// TTL is what this server tells resolvers about how long to cache an
 	// answer. Default 30s.
 	//
@@ -87,10 +91,26 @@ const (
 
 var ErrNoRouter = errors.New("dns: a server with no router has nothing to answer from")
 
-func (c Config) withDefaults() (Config, error) {
-	if c.Router == nil {
-		return Config{}, ErrNoRouter
+// Option injects what this service is built from. Operator values go in Config;
+// live collaborators come through here.
+type Option func(*options) error
+
+type options struct {
+	router Router
+}
+
+// WithRouter is where the answers come from. Required.
+func WithRouter(r Router) Option {
+	return func(o *options) error {
+		if r == nil {
+			return ErrNoRouter
+		}
+		o.router = r
+		return nil
 	}
+}
+
+func (c Config) withDefaults() (Config, error) {
 	if c.TTL == 0 {
 		c.TTL = DefaultTTL
 	}

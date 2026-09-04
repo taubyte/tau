@@ -76,15 +76,14 @@ type ReporterFunc func(context.Context) (Snapshot, error)
 
 func (f ReporterFunc) Snapshot(ctx context.Context) (Snapshot, error) { return f(ctx) }
 
-// Config is what an operator declared, plus the two things injected by whatever
-// composes the node.
+// Config is what an operator declared, and ONLY that: three durations somebody
+// writes in yaml, so it decodes, marshals and round-trips.
+//
+// THE INJECTED COLLABORATORS ARE NOT HERE. The bus, this node's reporter and the
+// clock are handed over at construction with With… , because a live object
+// cannot be decoded from a config file. Put to codex@xhigh and agreed:
+// "operator configuration is data, not constructor customization".
 type Config struct {
-	// Bus is where reports go and come from. Required.
-	Bus Bus
-
-	// Reporter is this node's own numbers. Required.
-	Reporter Reporter
-
 	// Interval is how often this node broadcasts. Default 5s.
 	//
 	// IT IS THE FRESHNESS BUDGET, not a tuning knob in isolation: a reader
@@ -99,9 +98,48 @@ type Config struct {
 	// Forget is how long a silent peer is remembered. Default 20x Interval,
 	// and it must exceed Fresh.
 	Forget time.Duration
+}
 
-	// Now is the local clock. Tests inject one; production leaves it nil.
-	Now func() time.Time
+// Option injects what this service is built from.
+type Option func(*options) error
+
+type options struct {
+	bus      Bus
+	reporter Reporter
+	now      func() time.Time
+}
+
+// WithBus is where reports go and come from. Required.
+func WithBus(b Bus) Option {
+	return func(o *options) error {
+		if b == nil {
+			return ErrNoBus
+		}
+		o.bus = b
+		return nil
+	}
+}
+
+// WithReporter is this node's own numbers. Required.
+func WithReporter(r Reporter) Option {
+	return func(o *options) error {
+		if r == nil {
+			return ErrNoReporter
+		}
+		o.reporter = r
+		return nil
+	}
+}
+
+// WithClock injects the local clock. Tests use it; production does not.
+func WithClock(now func() time.Time) Option {
+	return func(o *options) error {
+		if now == nil {
+			return errors.New("stats: a nil clock")
+		}
+		o.now = now
+		return nil
+	}
 }
 
 // Defaults, expressed as multiples of Interval so the three cannot drift apart.
@@ -117,12 +155,6 @@ var (
 )
 
 func (c Config) withDefaults() (Config, error) {
-	if c.Bus == nil {
-		return Config{}, ErrNoBus
-	}
-	if c.Reporter == nil {
-		return Config{}, ErrNoReporter
-	}
 	if c.Interval == 0 {
 		c.Interval = DefaultInterval
 	}
@@ -139,12 +171,9 @@ func (c Config) withDefaults() (Config, error) {
 		return Config{}, fmt.Errorf("stats: fresh %s is shorter than the %s interval: every row would be stale before its replacement was sent",
 			c.Fresh, c.Interval)
 	}
-	if c.Now == nil {
-		c.Now = time.Now
-	}
 	return c, nil
 }
 
-func (c Config) viewOptions() stats.Options {
-	return stats.Options{Fresh: c.Fresh, Forget: c.Forget, Now: c.Now}
+func (c Config) viewOptions(now func() time.Time) stats.Options {
+	return stats.Options{Fresh: c.Fresh, Forget: c.Forget, Now: now}
 }

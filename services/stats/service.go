@@ -31,6 +31,7 @@ import (
 // numbers and keeps a view of everyone else's.
 type Service struct {
 	cfg  Config
+	opts options
 	peer string
 	view *stats.View
 
@@ -44,15 +45,6 @@ type Service struct {
 	done    chan struct{}
 }
 
-// Option adjusts a Service at construction.
-type Option func(*Service)
-
-// WithIncarnation sets the run identifier explicitly. Production leaves it to
-// the clock; tests use it to say "this is the run after that one".
-func WithIncarnation(n uint64) Option {
-	return func(s *Service) { s.incarnation = n }
-}
-
 // New builds the service. It does not start it — Start does, so a caller can
 // construct, inspect and then decide.
 //
@@ -60,30 +52,43 @@ func WithIncarnation(n uint64) Option {
 // this node's identity, and taking the bundle to get an id is what makes dream
 // parity a retrofit instead of an adapter.
 func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
+	if h == nil {
+		return nil, errors.New("stats: a service with no host does not know who it is reporting as")
+	}
 	c, err := cfg.withDefaults()
 	if err != nil {
 		return nil, err
 	}
-	if h == nil {
-		return nil, errors.New("stats: a service with no host does not know who it is reporting as")
+
+	var o options
+	for _, apply := range opts {
+		if err := apply(&o); err != nil {
+			return nil, err
+		}
+	}
+	if o.bus == nil {
+		return nil, ErrNoBus
+	}
+	if o.reporter == nil {
+		return nil, ErrNoReporter
+	}
+	if o.now == nil {
+		o.now = time.Now
 	}
 
-	view, err := stats.New(c.viewOptions())
+	view, err := stats.New(c.viewOptions(o.now))
 	if err != nil {
 		return nil, err
 	}
 
-	s := &Service{
+	return &Service{
 		cfg:         c,
+		opts:        o,
 		peer:        h.ID().String(),
 		view:        view,
-		incarnation: uint64(c.Now().UnixNano()),
+		incarnation: uint64(o.now().UnixNano()),
 		done:        make(chan struct{}),
-	}
-	for _, o := range opts {
-		o(s)
-	}
-	return s, nil
+	}, nil
 }
 
 // Start begins broadcasting and listening. It returns once both are running.
@@ -101,7 +106,7 @@ func (s *Service) Start(ctx context.Context) error {
 	s.cancel = cancel
 	s.mu.Unlock()
 
-	reports, err := s.cfg.Bus.Subscribe(ctx)
+	reports, err := s.opts.bus.Subscribe(ctx)
 	if err != nil {
 		cancel()
 		s.mu.Lock()
@@ -196,7 +201,7 @@ func (s *Service) broadcast(ctx context.Context) {
 // what Age is for. Retrying inside a tick would only make a struggling node
 // send more.
 func (s *Service) report(ctx context.Context) {
-	snap, err := s.cfg.Reporter.Snapshot(ctx)
+	snap, err := s.opts.reporter.Snapshot(ctx)
 	if err != nil {
 		return
 	}
@@ -234,7 +239,7 @@ func (s *Service) report(ctx context.Context) {
 		Port:        snap.Port,
 	})
 
-	s.cfg.Bus.Publish(ctx, b)
+	s.opts.bus.Publish(ctx, b)
 }
 
 // Peer is this node's identity, as it reports it.
