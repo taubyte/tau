@@ -1,71 +1,81 @@
 #!/usr/bin/env bash
 # Run a command inside a rootless, memory-capped cgroup-v2 scope so a runaway
-# test/VM (OOM, fork bomb) is killed inside its own cgroup — never the host.
+# test dies inside its own cgroup — never the host.
 #
-# Used two ways:
-#   scripts/cap -- go test -count=1 -p 2 ./...
-#   scripts/cap 6G -- go test -count=1 -p 2 ./...   # explicit, for the one hog
-#   scripts/cap -- go test -bench . -benchtime 3000000x ./services/build/backend/
+#   scripts/cap -- go test -count=1 -p 2 ./pkg/stats/
+#   scripts/cap 2G -- go test -count=1 ./services/dns/
 #
-# Pair it with -p 2 (or -p 4 at most): this box has 20 cores and the default -p
-# OOMs the linkers, which is where an unexplained "[build failed]" with no
-# compiler diagnostic comes from.
+# MEM defaults to $TAU_CAP_MEM or 3G.
+#
+# ★★★ THE THING I HAD WRONG FOUR TIMES, taken from warpjs-itr2/scripts/cap after
+# the fourth desktop death:
+#
+# MemoryMax is the HARD ceiling and it WORKS — every kernel OOM since the cap was
+# adopted is "Memory cgroup out of memory", contained, host survived.
+#
+# But a job is free to thrash right up against MemoryMax, and the sustained
+# reclaim that causes is SYSTEM-WIDE memory PRESSURE (PSI). systemd-oomd watches
+# pressure, not limits, and kills the cgroup under the most pressure — which on a
+# desktop is GNOME Shell or a terminal scope, NOT the test. Verified on this box
+# 2026-09-04: 11 oomd kills in one boot, victims being vte-spawn scopes and
+# gnome-software, with every kernel kill contained and zero global OOMs. The caps
+# held and the session died anyway.
+#
+# MemoryHigh is the missing half: it THROTTLES the cgroup and reclaims inside it
+# before the pressure escapes, so the job slows down instead of the desktop
+# dying. 75% of MemoryMax.
+#
+# ★★★ AND AN UNAVAILABLE systemd-run IS NOW A HARD ERROR. The previous version
+# fell through to a bare `exec "$@"`, which is a script that reports success
+# while capping nothing. "Always safe to invoke" is not the same as "always
+# capping", and the difference is only visible after the machine is gone.
+#
+# TAU_NO_CAP=1 bypasses deliberately (CI with no user systemd session).
 #
 # ── DO NOT RUN BROAD SWEEPS ON THIS MACHINE ──────────────────────────────
 #
-# Three host crashes, and every one of them happened during a `go test ./...`
-# style sweep. Not one happened during a single-package run. That correlation
-# is the most reliable thing known about this problem, and it outranks any
-# theory about which limit was missing: run tests PER PACKAGE, or per small
-# group, and never the tree at once. `-p 1` does not make a sweep safe --- it
-# was `-p 1` the third time.
-#
-# THREE ceilings, and the third is the one that was missing:
-#   MEM   ($TAU_CAP_MEM,   default 3G)  — memory, per invocation.
-#   TOTAL ($TAU_CAP_TOTAL, default 8G)  — memory, every capped run on this host
-#                                         added up, inside one shared slice.
-#   CPU   ($TAU_CAP_CPU,   default 400%) — cores, across that same slice.
-#
-# Plus MemoryHigh, which is the one that keeps the DESKTOP alive. MemoryMax is
-# a wall: a process that reaches it is killed, but on its way there it lives AT
-# the boundary, and a cgroup at its hard limit with no swap drives continuous
-# global direct reclaim — the kernel evicts page cache system-wide and the box
-# stops answering while the accounting still looks fine. MemoryHigh throttles
-# the cgroup and reclaims INSIDE it before that happens.
-#
-# A per-invocation cap does not bound N invocations: several concurrent runs,
-# each honestly under its own limit, took the host down anyway. The shared slice
-# fixes that for memory.
-#
-# THEN IT HAPPENED AGAIN WITH MEMORY TO SPARE. The slice was at 6.2G of 16G with
-# 22G free and the host still had to be reset, because nothing bounded CPU: a
-# full suite reached load 32 on 20 cores and the desktop stopped responding. A
-# machine does not have to run out of memory to become unusable. CPUQuota on the
-# slice is the bound that was missing, and it is the one that keeps the rest of
-# the box answerable while tests run.
-#
-# Set TAU_NO_CAP=1 to bypass (e.g. CI without a user systemd session). Falls
-# back to direct exec where systemd-run --user is unavailable, so it is always
-# safe to invoke.
+# Four host deaths, every one during a `go test ./...` style sweep, none during a
+# single-package run. `-p 1` does not make a sweep safe — the third one was
+# already -p 1. Tests run PER PACKAGE here, or on the Mac (scripts/mac-test.sh),
+# which is where anything heavy belongs.
 mem="${TAU_CAP_MEM:-3G}"
 case "${1:-}" in
   [0-9]*[GMK]) mem="$1"; shift ;;
 esac
 [ "${1:-}" = "--" ] && shift
 
-runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-if [ "${TAU_NO_CAP:-0}" != "1" ] \
-   && command -v systemd-run >/dev/null 2>&1 \
-   && [ -S "$runtime/systemd/private" ]; then
-  # The slice is transient, so it loses the ceiling whenever it empties. Set it
-  # on every run; it is idempotent and costs nothing.
-  systemctl --user set-property tau-cap.slice \
-    MemoryMax="${TAU_CAP_TOTAL:-8G}" MemoryHigh="${TAU_CAP_TOTAL_HIGH:-6G}" \
-    MemorySwapMax=0 CPUQuota="${TAU_CAP_CPU:-400%}" IOWeight=10 \
-    >/dev/null 2>&1 || true
-  high="${TAU_CAP_HIGH:-$(( ${mem%[GMK]} * 3 / 4 ))${mem//[0-9]/}}"
-  exec systemd-run --user --scope -q --collect --slice=tau-cap.slice \
-    -p MemoryMax="$mem" -p MemoryHigh="$high" -p MemorySwapMax=0 \
-    -p TasksMax=4096 -- "$@"
+# MemoryHigh = 75% of MemoryMax, in the same unit. 768M per G rather than
+# `* 3 / 4` because integer division on a small G value truncates hard: 2G would
+# become 1G, which is 50% and not 75%.
+high="$mem"
+case "$mem" in
+  *G) high="$(( ${mem%G} * 768 ))M" ;;
+  *M) high="$(( ${mem%M} * 3 / 4 ))M" ;;
+  *K) high="$(( ${mem%K} * 3 / 4 ))K" ;;
+esac
+
+if [ "${TAU_NO_CAP:-0}" = "1" ]; then
+  exec "$@"
 fi
-exec "$@"
+
+runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if ! command -v systemd-run >/dev/null 2>&1 || [ ! -S "$runtime/systemd/private" ]; then
+  echo "scripts/cap: REFUSING to run uncapped — systemd-run --user is unavailable." >&2
+  echo "  This box has been taken down four times by uncapped or under-capped test runs." >&2
+  echo "  Set TAU_NO_CAP=1 to override deliberately." >&2
+  exit 70
+fi
+
+# A shared slice bounds every capped run ADDED UP, which the per-scope ceiling
+# cannot: five runs each honestly under their own limit still summed past the
+# host. CPUQuota is here for the same reason — a sweep reaching load 32 makes the
+# desktop unusable without any memory limit being crossed. Failure to set these
+# is not fatal; the per-scope caps below are the ones that must hold.
+systemctl --user set-property tau-cap.slice \
+  MemoryMax="${TAU_CAP_TOTAL:-8G}" MemoryHigh="${TAU_CAP_TOTAL_HIGH:-6G}" \
+  MemorySwapMax=0 CPUQuota="${TAU_CAP_CPU:-400%}" IOWeight=10 \
+  >/dev/null 2>&1 || true
+
+exec systemd-run --user --scope -q --collect --slice=tau-cap.slice \
+  -p MemoryMax="$mem" -p MemoryHigh="$high" -p MemorySwapMax=0 \
+  -p TasksMax=4096 -- "$@"
