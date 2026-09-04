@@ -171,12 +171,12 @@ export function fileOf(n: { kind: string; name: string; scope: string; home?: st
 /** Every derived field of a kind, computed by the engine. */
 function derivedOf(kind: string, res: Compiled): { label: string; value: string }[] | undefined {
   const specs = SHAPES.kinds[kind]?.derived;
-  if (!specs?.length || !window.tccV2) return undefined;
+  if (!specs?.length || !window.tcc) return undefined;
   const out: { label: string; value: string }[] = [];
   for (const spec of specs) {
     const inputs = spec.from.map((f) => (typeof res[f] === "string" ? (res[f] as string) : ""));
     if (inputs.some((i) => i === "")) continue;
-    const value = window.tccV2.derive(spec.derivation, ...inputs);
+    const value = window.tcc.derive(spec.derivation, ...inputs);
     if (value) out.push({ label: spec.label || spec.field, value });
   }
   return out.length ? out : undefined;

@@ -38,7 +38,13 @@ func main() {
 	// compiler renders no yaml — writing config is the decompiler's job, and this is the
 	// only place that does it.
 	api.Set("generated", js.FuncOf(generatedFn))
-	js.Global().Set("tccV2", api)
+	// ONE NAME, AND THIS IS IT. Two consumers read this global — the generated
+	// npm client and the explorer — and they had drifted onto two spellings of
+	// it, so the client threw "tcc wasm did not register globalThis.tcc"
+	// against a binary that had registered everything it was asked to under
+	// another name. A version suffix on a runtime global is the transition that
+	// is over.
+	js.Global().Set("tcc", api)
 	select {}
 }
 

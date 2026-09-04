@@ -51,12 +51,12 @@ async function main() {
   setCategories(kinds);
   // What this vocabulary's shapes are — which block hands traffic on, which fields name
   // another resource — so the graph draws a vocabulary it has never seen.
-  setShapes(window.tccV2!.shapes());
+  setShapes(window.tcc!.shapes());
   render();
 }
 
 function compile(): CompileOk | { error: string } {
-  return window.tccV2!.compile(files, { branch: "main" });
+  return window.tcc!.compile(files, { branch: "main" });
 }
 
 // Which lowered resources are showing what they BECOME. A box flips; the state is the
@@ -227,7 +227,7 @@ function loweredById(id: string) {
 let generatedFiles: Record<string, string> | null = null;
 function generatedDocument(kind: string, name: string): string {
   if (!generatedFiles) {
-    const out = window.tccV2?.generated(files, { branch: "main" });
+    const out = window.tcc?.generated(files, { branch: "main" });
     generatedFiles = out && !("error" in out) ? out : {};
   }
   // Same path fileOf builds for a real resource — layout.resource from tcc, not a

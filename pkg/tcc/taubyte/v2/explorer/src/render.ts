@@ -56,9 +56,9 @@ function scalarClass(v: unknown) {
 let scalarsByField: Map<string, string> | null = null;
 
 function scalarOf(field: string): string | undefined {
-  if (!scalarsByField && window.tccV2) {
+  if (!scalarsByField && window.tcc) {
     scalarsByField = new Map();
-    collectScalars(window.tccV2.schema(), scalarsByField);
+    collectScalars(window.tcc.schema(), scalarsByField);
   }
   return scalarsByField?.get(field);
 }
