@@ -1,5 +1,5 @@
-// Package engine is the seam a compute engine plugs into, and the invocation
-// model every engine shares.
+// Package invoke is the seam a compute runtime plugs into, and the invocation
+// model every runtime shares.
 //
 // v2 runs code on more than one tier on purpose: a wasm component is the
 // differentiator, a container is what runs the code people already have (and
