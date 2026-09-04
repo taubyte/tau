@@ -58,7 +58,6 @@ func newApp() *cli.App {
 		Commands: []*cli.Command{
 			buildInfoCommand(),
 			startCommand(),
-			v2Command(),
 			configCommand(),
 			exportDataCommand(),
 		},

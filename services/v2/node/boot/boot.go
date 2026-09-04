@@ -128,6 +128,17 @@ func (f File) withDefaults() (File, error) {
 	if f.SwarmKey == "" && !f.Open {
 		return File{}, ErrNoSwarmKey
 	}
+
+	// AND THE KEYS ARE CHECKED WHERE THE FILE IS READ. A key that is not
+	// base64 is a typo in a file, and finding it after a libp2p host and a
+	// datastore have been built reports it as a boot failure rather than as
+	// the line it is.
+	if _, err := decode("swarmkey", f.SwarmKey); err != nil {
+		return File{}, err
+	}
+	if _, err := decode("privatekey", f.PrivateKey); err != nil {
+		return File{}, err
+	}
 	return f, nil
 }
 
