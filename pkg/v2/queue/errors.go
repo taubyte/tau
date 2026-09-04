@@ -15,8 +15,14 @@ var (
 	// still hold items: they can be delayed, backing off, or already claimed.
 	ErrNoItem = errors.New("queue: no deliverable item")
 
-	// ErrNotFound is returned by Ack and Nack for an id the queue does not hold.
+	// ErrNotFound is returned by Ack, Nack and Remove for an id the queue does
+	// not hold.
 	ErrNotFound = errors.New("queue: item not found")
+
+	// ErrClaimed is returned by Remove for an item a consumer currently holds.
+	// A claim is released by its holder's Ack or by its deadline, never by the
+	// producer that pushed the item.
+	ErrClaimed = errors.New("queue: item is claimed")
 
 	// ErrStaleDelivery is returned by Ack and Nack when the delivery no longer
 	// owns the item — its claim expired and the item was redelivered or

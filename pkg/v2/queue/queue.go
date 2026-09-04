@@ -145,6 +145,46 @@ func (q *Queue) Push(id string, data []byte) error {
 	}, q.cfg.ApplyTimeout)
 }
 
+// Remove withdraws an item nobody has claimed: Push's counterpart, for a
+// producer that no longer wants the work done. Ready, delayed and backing off
+// are all the same case — the item is deleted and its id is pushable again.
+//
+// AN ITEM A CONSUMER HOLDS IS REFUSED, with [ErrClaimed]. The claim is this
+// package's mutual exclusion, and deleting one would let the same id be pushed
+// and claimed a second time while the first consumer is still working on it —
+// two consumers of one item, which is the whole thing this queue exists to
+// prevent. A claimed item leaves by its holder's Ack or by its deadline, and a
+// producer that wants it gone waits for one of those.
+//
+// [ErrNotFound] for an id the queue does not hold, so a producer that cannot
+// tell whether its withdrawal landed may repeat it.
+func (q *Queue) Remove(id string) error {
+	q.group.mu.Lock()
+	defer q.group.mu.Unlock()
+
+	if err := q.prepare(); err != nil {
+		return err
+	}
+
+	raw, exists := q.group.store.Get(q.keys.index(id))
+	if !exists {
+		return fmt.Errorf("%w: %q", ErrNotFound, id)
+	}
+	key := string(raw)
+	state, err := q.keys.parse(key)
+	if err != nil {
+		return err
+	}
+	if state.state == claimedSegment {
+		return fmt.Errorf("%w: %q", ErrClaimed, id)
+	}
+
+	return q.group.store.Batch([]raft.BatchOp{
+		del(key),
+		del(q.keys.index(id)),
+	}, q.cfg.ApplyTimeout)
+}
+
 // Claim hands out the item that has been deliverable longest, and makes it
 // invisible until its deadline. It returns [ErrNoItem] when nothing is
 // deliverable — the queue may still hold items that are delayed, backing off or
@@ -214,8 +254,9 @@ func (q *Queue) Claim() (Delivery, error) {
 	}, nil
 }
 
-// Ack removes an item for good. It is the only thing that discards one:
-// everything else moves it.
+// Ack removes an item for good. It is the only thing that discards a CLAIMED
+// one — everything else moves it — and [Queue.Remove] is the only thing that
+// discards an item nobody holds.
 //
 // It succeeds after the claim's deadline has passed, so long as the item has not
 // actually been redelivered — a consumer that ran late has still done the work,
