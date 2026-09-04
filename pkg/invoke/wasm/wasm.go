@@ -21,14 +21,25 @@
 // is two exports rather than two components. The world declares the SHAPE; the
 // host calls whatever the configuration says.
 //
+// # Two worlds, and a component is recognised by what it exports
+//
+// A component exporting `wasi:http/incoming-handler` is the standard world —
+// what wasmtime serve, Spin and wasmCloud run — and it runs here unmodified.
+// One exporting a bare function is the world above. Nothing declares which; the
+// instance says what it exports and this reads it.
+//
 // # The sandbox is empty by default, and that is the whole posture
 //
 // A guest gets no filesystem, no sockets, no environment beyond what the
-// resource declared, and no clock beyond WASI's. Everything a function is
-// allowed to reach is something the configuration granted it — which is the
-// same rule the container tier's restricted egress states, arrived at from the
-// other direction: there, a firewall takes reach away; here, there was never
-// any to take.
+// resource declared, and no clock beyond WASI's. The one door out is HTTP, and
+// it is GOVERNED rather than absent: `egress` on the resource says where, and
+// empty means nowhere (egress.go). A component that exports the standard world
+// usually imports the outgoing half beside it, so refusing that outright would
+// refuse a large share of what this tier exists to be able to run.
+//
+// It is the same rule the container tier states with a firewall, arrived at
+// with the only mechanism a wasm guest has — there is no socket to filter,
+// because the guest never gets one.
 //
 // # One runtime per instance, and why
 //
@@ -45,6 +56,9 @@ import (
 	"io"
 	"sort"
 
+	"net/http"
+	"strings"
+
 	"github.com/samyfodil/wazy"
 	"github.com/samyfodil/wazy/component"
 	"github.com/samyfodil/wazy/imports/wasip2"
@@ -58,6 +72,14 @@ const Name = "wasm"
 // SettingCall is where the export's name arrives, spelled as the vocabulary
 // spells it.
 const SettingCall = "execution/call"
+
+// httpWorld is the standard world's export. A component exporting it is driven
+// as an HTTP handler; anything else is called by name.
+//
+// IT IS MATCHED WITHOUT ITS VERSION, because a component is built against
+// whichever wasi:http its toolchain shipped — 0.2.0 through 0.2.12 and onward —
+// and refusing one for its minor version would refuse components that work.
+const httpWorld = "wasi:http/incoming-handler"
 
 // pageSize is WebAssembly's, and the unit a memory ceiling is expressed in.
 const pageSize = 64 << 10
@@ -88,6 +110,10 @@ type Runtime struct {
 	assets Assets
 	cache  wazy.CompilationCache
 
+	// transport is what an allowed outbound request is finally sent over. Nil
+	// is the process default; a test points it at a scratch backend.
+	transport http.RoundTripper
+
 	// stdout and stderr are where a guest's own writes go.
 	//
 	// THEY GO NOWHERE BY DEFAULT, and that is a gap rather than a decision: a
@@ -109,6 +135,13 @@ func WithOutput(stdout, stderr io.Writer) Option {
 	return func(r *Runtime) {
 		r.stdout, r.stderr = stdout, stderr
 	}
+}
+
+// WithTransport is what an allowed outbound request is sent over. It does not
+// change WHICH requests are allowed — that is the resource's egress and is not
+// a knob — only where an allowed one goes.
+func WithTransport(t http.RoundTripper) Option {
+	return func(r *Runtime) { r.transport = t }
 }
 
 // New builds the tier.
@@ -169,7 +202,27 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		export = DefaultExport
 	}
 
-	return &function{runtime: runtime, instance: instance, export: export}, nil
+	return &function{
+		runtime:  runtime,
+		instance: instance,
+		export:   export,
+		http:     exportsHTTPWorld(instance),
+	}, nil
+}
+
+// exportsHTTPWorld reports whether this component is the standard world.
+//
+// IT ASKS THE INSTANCE rather than the configuration, because which world a
+// component implements is a property of the artifact and nothing an author
+// should have to restate — a component built for wasmtime serve carries the
+// answer with it.
+func exportsHTTPWorld(instance *component.Instance) bool {
+	for _, name := range instance.InstanceExports() {
+		if strings.HasPrefix(name, httpWorld) {
+			return true
+		}
+	}
+	return false
 }
 
 // sandbox is what a guest may reach.
@@ -182,6 +235,14 @@ func (r *Runtime) sandbox(spec invoke.Spec) []component.Option {
 		Stdout: r.stdout,
 		Stderr: r.stderr,
 		Env:    environment(spec.Env),
+
+		// THE STANDARD WORLD IS ALWAYS REGISTERED, because whether a component
+		// needs it cannot be known before instantiating it — its imports are
+		// what instantiation resolves. What that would otherwise hand a guest,
+		// an unrestricted HTTP client, is closed by the allowlist rather than
+		// by leaving the world out.
+		EnableHTTP: true,
+		HTTPClient: egressFor(spec.Egress, r.transport),
 	})
 }
 
@@ -223,6 +284,10 @@ type function struct {
 	runtime  wazy.Runtime
 	instance *component.Instance
 	export   string
+
+	// http says this component is the standard world, so it is driven as an
+	// HTTP handler rather than called by name.
+	http bool
 }
 
 // Close takes the instance and its runtime with it.
@@ -237,6 +302,10 @@ func (f *function) Close() error {
 
 // Serve hands one request to the guest.
 func (f *function) Serve(ctx context.Context, req *invoke.Request) (*invoke.Response, error) {
+	if f.http {
+		return f.serveHTTP(ctx, req)
+	}
+
 	out, err := f.instance.Call(ctx, f.export, requestValue(req))
 	if err != nil {
 		return nil, fmt.Errorf("wasm: calling %s: %w", f.export, err)

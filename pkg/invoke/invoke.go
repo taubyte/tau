@@ -94,6 +94,20 @@ type Spec struct {
 	// be this package holding a registry's grammar.
 	Artifact string
 
+	// Egress is where this workload may reach on the network, as the resource
+	// declared it. Empty means nowhere.
+	//
+	// IT IS HERE AND NOT IN Settings because every tier that runs code has one,
+	// which is the same test Memory passes: a container gets a firewall, a wasm
+	// guest gets an HTTP client that refuses everything else, and a tier that
+	// ignored it would be a tier where a workload's reach is the node's problem
+	// instead of its own.
+	//
+	// EMPTY IS DENY AND NOT ALLOW. A resource that declared no egress declared
+	// no egress; reading an absent list as "anywhere" would make the safe
+	// spelling the one nobody writes.
+	Egress []string
+
 	// Settings are the tier-specific values the composer read off the resource.
 	//
 	// EVERYTHING ELSE IN THIS STRUCT IS SOMETHING EVERY TIER HAS — a memory

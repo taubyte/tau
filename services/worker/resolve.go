@@ -101,6 +101,11 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, r proj
 		spec.Concurrency = int(concurrency)
 	}
 	spec.Settings = settingsOf(r)
+
+	// WHERE A WORKLOAD MAY REACH IS THE RESOURCE'S, and empty is nowhere. The
+	// tier enforces it; this only carries it, because which mechanism does the
+	// enforcing is the tier's business and the allowlist is the author's.
+	spec.Egress = r.Strings("egress")
 	return spec, nil
 }
 

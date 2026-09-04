@@ -415,3 +415,19 @@ func TestTheServeBlockReachesTheTier(t *testing.T) {
 	invokeOver(t, h2, target("application", "api"))
 	require.Nil(t, h2.Runtime.specs()[0].Settings)
 }
+
+// WHERE A WORKLOAD MAY REACH IS THE RESOURCE'S, and empty is nowhere. The tier
+// enforces it; the worker only carries it, because which mechanism does the
+// enforcing is the tier's business and the allowlist is the author's.
+func TestTheEgressAllowlistReachesTheTier(t *testing.T) {
+	h := newHarness(t)
+
+	invokeOver(t, h, target("function", "charge_card"))
+	require.Equal(t, []string{"api.stripe.com"}, h.Runtime.specs()[0].Egress)
+
+	// A resource that declared none carries none, which the tier reads as
+	// nowhere rather than as anywhere.
+	h2 := newHarness(t)
+	invokeOver(t, h2, target("function", "reserve_stock"))
+	require.Empty(t, h2.Runtime.specs()[0].Egress)
+}
