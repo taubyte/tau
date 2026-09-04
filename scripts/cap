@@ -11,11 +11,27 @@
 # OOMs the linkers, which is where an unexplained "[build failed]" with no
 # compiler diagnostic comes from.
 #
+# ── DO NOT RUN BROAD SWEEPS ON THIS MACHINE ──────────────────────────────
+#
+# Three host crashes, and every one of them happened during a `go test ./...`
+# style sweep. Not one happened during a single-package run. That correlation
+# is the most reliable thing known about this problem, and it outranks any
+# theory about which limit was missing: run tests PER PACKAGE, or per small
+# group, and never the tree at once. `-p 1` does not make a sweep safe --- it
+# was `-p 1` the third time.
+#
 # THREE ceilings, and the third is the one that was missing:
 #   MEM   ($TAU_CAP_MEM,   default 3G)  — memory, per invocation.
 #   TOTAL ($TAU_CAP_TOTAL, default 8G)  — memory, every capped run on this host
 #                                         added up, inside one shared slice.
 #   CPU   ($TAU_CAP_CPU,   default 400%) — cores, across that same slice.
+#
+# Plus MemoryHigh, which is the one that keeps the DESKTOP alive. MemoryMax is
+# a wall: a process that reaches it is killed, but on its way there it lives AT
+# the boundary, and a cgroup at its hard limit with no swap drives continuous
+# global direct reclaim — the kernel evicts page cache system-wide and the box
+# stops answering while the accounting still looks fine. MemoryHigh throttles
+# the cgroup and reclaims INSIDE it before that happens.
 #
 # A per-invocation cap does not bound N invocations: several concurrent runs,
 # each honestly under its own limit, took the host down anyway. The shared slice
@@ -44,9 +60,12 @@ if [ "${TAU_NO_CAP:-0}" != "1" ] \
   # The slice is transient, so it loses the ceiling whenever it empties. Set it
   # on every run; it is idempotent and costs nothing.
   systemctl --user set-property tau-cap.slice \
-    MemoryMax="${TAU_CAP_TOTAL:-8G}" MemorySwapMax=0 \
-    CPUQuota="${TAU_CAP_CPU:-400%}" >/dev/null 2>&1 || true
+    MemoryMax="${TAU_CAP_TOTAL:-8G}" MemoryHigh="${TAU_CAP_TOTAL_HIGH:-6G}" \
+    MemorySwapMax=0 CPUQuota="${TAU_CAP_CPU:-400%}" IOWeight=10 \
+    >/dev/null 2>&1 || true
+  high="${TAU_CAP_HIGH:-$(( ${mem%[GMK]} * 3 / 4 ))${mem//[0-9]/}}"
   exec systemd-run --user --scope -q --collect --slice=tau-cap.slice \
-    -p MemoryMax="$mem" -p MemorySwapMax=0 -p TasksMax=4096 -- "$@"
+    -p MemoryMax="$mem" -p MemoryHigh="$high" -p MemorySwapMax=0 \
+    -p TasksMax=4096 -- "$@"
 fi
 exec "$@"
