@@ -30,6 +30,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/kvdb"
+	"github.com/taubyte/tau/pkg/raft"
 )
 
 // Protocol is what a universe calls a v2 node.
@@ -105,6 +106,14 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 		node.WithHost(h),
 		node.WithPubSub(p.Messaging()),
 		node.WithDatabases(kvdb.New(p)),
+		// THE SAME RAFT A MACHINE OPENS, over the universe's own peer. dream is
+		// not a machine but it does have a peer.Node, which is the whole of
+		// what raft.New wants — so parity here is the real thing rather than a
+		// stand-in, and a build queue in a universe replicates the way it does
+		// in a fleet.
+		node.WithRaft(func(namespace string) (raft.Cluster, error) {
+			return raft.New(p, namespace)
+		}),
 		node.WithRuntimes(tiers...),
 	)
 	if err != nil {
