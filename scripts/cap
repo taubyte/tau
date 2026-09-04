@@ -4,17 +4,25 @@
 #
 # Used two ways:
 #   scripts/cap -- go test -count=1 -p 2 ./...
-#   scripts/cap 10G -- go test -count=1 -p 4 ./...
+#   scripts/cap 8G -- go test -count=1 -p 4 ./...
 #   scripts/cap -- go test -bench . -benchtime 3000000x ./services/build/backend/
 #
 # Pair it with -p 2 (or -p 4 at most): this box has 20 cores and the default -p
 # OOMs the linkers, which is where an unexplained "[build failed]" with no
 # compiler diagnostic comes from.
 #
-# MEM defaults to $TAU_CAP_MEM or 6G. Set TAU_NO_CAP=1 to bypass (e.g. CI
-# without a user systemd session). Falls back to direct exec where systemd-run
-# --user is unavailable, so it is always safe to invoke.
-mem="${TAU_CAP_MEM:-6G}"
+# TWO ceilings, and the second is the one that matters:
+#   MEM   ($TAU_CAP_MEM, default 4G)   — per invocation.
+#   TOTAL ($TAU_CAP_TOTAL, default 16G) — every capped run on this host, added
+#                                         up, inside one shared slice.
+# A per-invocation cap does not bound N invocations. Several concurrent test
+# runs, each honestly under its own 6G, took the host down anyway. The shared
+# slice is what makes the bound true no matter how many are launched.
+#
+# Set TAU_NO_CAP=1 to bypass (e.g. CI without a user systemd session). Falls
+# back to direct exec where systemd-run --user is unavailable, so it is always
+# safe to invoke.
+mem="${TAU_CAP_MEM:-4G}"
 case "${1:-}" in
   [0-9]*[GMK]) mem="$1"; shift ;;
 esac
@@ -24,7 +32,11 @@ runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 if [ "${TAU_NO_CAP:-0}" != "1" ] \
    && command -v systemd-run >/dev/null 2>&1 \
    && [ -S "$runtime/systemd/private" ]; then
-  exec systemd-run --user --scope -q --collect \
+  # The slice is transient, so it loses the ceiling whenever it empties. Set it
+  # on every run; it is idempotent and costs nothing.
+  systemctl --user set-property tau-cap.slice \
+    MemoryMax="${TAU_CAP_TOTAL:-16G}" MemorySwapMax=0 >/dev/null 2>&1 || true
+  exec systemd-run --user --scope -q --collect --slice=tau-cap.slice \
     -p MemoryMax="$mem" -p MemorySwapMax=0 -p TasksMax=4096 -- "$@"
 fi
 exec "$@"
