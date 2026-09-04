@@ -183,7 +183,12 @@ func Order(vs []Version) []Version {
 
 // index is the shard store as this service reads and writes it. It is the only
 // thing in this package that builds a datastore query.
-type index struct{ store Datastore }
+type index struct {
+	store Datastore
+
+	// meter is the emission seam (meter.go). Nil is the ordinary case.
+	meter Meter
+}
 
 // row is one scanned key and value.
 type row struct {

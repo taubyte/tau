@@ -89,12 +89,20 @@ func (u Usage) Used() uint64 {
 // Add records bytes this node wrote into an instance. It is a
 // read-modify-write on THIS writer's own row, which no other node writes.
 func (i index) Add(ctx context.Context, a Address, writer string, bytes uint64) error {
-	return i.bump(ctx, a, writer, usageAdded, bytes)
+	if err := i.bump(ctx, a, writer, usageAdded, bytes); err != nil {
+		return err
+	}
+	i.record(ctx, a, writer, OpAdd, bytes)
+	return nil
 }
 
 // Remove records bytes this node released from an instance.
 func (i index) Remove(ctx context.Context, a Address, writer string, bytes uint64) error {
-	return i.bump(ctx, a, writer, usageRemoved, bytes)
+	if err := i.bump(ctx, a, writer, usageRemoved, bytes); err != nil {
+		return err
+	}
+	i.record(ctx, a, writer, OpRemove, bytes)
+	return nil
 }
 
 // Checkpoint records the truth the sweep recomputed from live version sizes,
@@ -198,5 +206,12 @@ func (i index) Admit(ctx context.Context, a Address, capacity, incoming uint64) 
 		// somebody wrote rather than a field they never reached.
 		return true, u, nil
 	}
-	return u.Used()+incoming <= capacity, u, nil
+	if u.Used()+incoming > capacity {
+		// Admit runs on the holder and knows nothing about which node is
+		// asking, so the refusal is attributed to the instance rather than to
+		// a writer. A sink totalling refusals wants the instance anyway.
+		i.record(ctx, a, "", OpRefuse, incoming)
+		return false, u, nil
+	}
+	return true, u, nil
 }

@@ -204,15 +204,15 @@ func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 	sort.Strings(names)
 
 	require.Equal(t, []string{
-		"Address", "Blocks", "Bucket", "Catalog", "Clock", "Config", "Datastore",
+		"Accounted", "Address", "Blocks", "Bucket", "Catalog", "Clock", "Config", "Datastore",
 		"DeadObject", "DefaultMaxSkew",
 		"ErrEmptyIdentity", "ErrEmptyObjectName", "ErrGateClosed", "ErrLocalClockSkew",
 		"ErrLogicalOverflow", "ErrNoAddress", "ErrNotFound", "ErrNotThisServicesRow",
 		"ErrRemoteClockSkew", "ErrStampRange", "ErrWriterMismatch",
-		"Gates", "Local", "Marker", "MisplacementDrop",
+		"Gates", "Local", "Marker", "Meter", "MisplacementDrop",
 		"NewAddress", "NewBloomMarker", "NewBucket", "NewClock", "NewExactMarker",
-		"NewLocal", "NewSweeper", "Newest", "Order", "PackStamp", "ParseVersionKey",
-		"Purpose",
+		"NewLocal", "NewSweeper", "Newest", "Op", "OpAdd", "OpRefuse", "OpRemove",
+		"Order", "PackStamp", "ParseVersionKey", "Purpose",
 		"Reference", "ShardOpener", "Shards", "SweepResult", "Sweeper",
 		"UnpackStamp", "Usage", "Version", "VersionKey", "VersionRecord",
 	}, dedupe(names))
