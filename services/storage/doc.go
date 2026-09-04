@@ -218,6 +218,12 @@
 //	     Taking it would close both block-layer residuals and make reclamation
 //	     purely local; it costs cross-tenant and cross-bucket dedup. gc.go
 //	     works without it.
+//	O-2  is content addressing AUTHOR-VISIBLE? THIS DESIGN ASSUMES NOT, and
+//	     VersionRecord.RootCID says so: a cid is an address, not a credential,
+//	     and it is resolved by the service rather than handed to a guest. If
+//	     the cid-shaped ABI items stay, the tenancy story needs a second answer
+//	     below the host boundary and this design does not have one. Upstream of
+//	     this package, and the assumption is load-bearing.
 //	O-3  a shard is a CROSS-TENANT REPLICATION UNIT: its R holders replicate
 //	     rows for every bucket that hashes into it. That is a large improvement
 //	     on v1's single cleartext registry of every project, and it is NOT
