@@ -237,9 +237,20 @@ import (
 // either. Both acks are now methods on the handle the section handed the body.
 //
 // WHAT IS DELIBERATELY OUTSIDE, so that the rule is not read as "everything":
-// the build, and the round trip to auth. A section that held either would hold
-// this lock for an hour, or across a network call to another service — and the
-// whole point of it is that it is only ever held across writes to one store.
+// the build, the round trip to auth, AND THE HANDOFF OF THE LOG TO THE ASSET
+// STORE. A section that held any of them would hold this lock for an hour, or
+// across a network call to another service — and the whole point of it is that
+// it is only ever held across writes to one store.
+//
+// THE THIRD OF THOSE WAS INSIDE FOR A ROUND, which is why it is now named here
+// rather than left to the reader. The publish had been an argument to settle,
+// evaluated before the ack; the round that fixed that moved it into settle's
+// body, and a body is this lock. One slow storage node then stalled webhook
+// ingestion and every user-facing cancel and retry on the node for up to
+// PublishTimeout per settled build — measured: an unrelated repository's
+// Enqueue still waiting after 300ms, and away 0.58ms after the store was
+// released. settle is two sections with the publish between them now, and
+// output_test.go keeps the measurement.
 var jobLock section.Lock[jobRecord]
 
 // jobReader is WHICH JOB a section is about and where its record comes from,
@@ -821,15 +832,23 @@ func (h *held) succeed(p produced) error {
 	return h.ends(buildv1.JobStatus_JobStatusSuccess, "", p).anchor().commit("finishing")
 }
 
-// logged records what a run produced on a record that is ALREADY TERMINAL, and
-// changes nothing else about it.
+// logged records what a run produced WITHOUT MOVING THE STATUS, and changes
+// nothing else about the record.
 //
-// It is the cancel case. The status must not move — a cancelled job must not be
-// overwritten with the outcome of the run that was cancelled — but the cid of
-// what that run printed is the one thing whoever cancelled it wants, and it is
-// a field on the record this section already read. v1 needed a second RPC in
-// the other direction to carry it (monkey's cancelHandler hands patrick the
-// accumulated logs so patrick can write them beside the status).
+// It is the cancel case first: a cancelled job must not be overwritten with the
+// outcome of the run that was cancelled, but the cid of what that run printed
+// is the one thing whoever cancelled it wants, and it is a field on the record
+// this section already read. v1 needed a second RPC in the other direction to
+// carry it (monkey's cancelHandler hands patrick the accumulated logs so
+// patrick can write them beside the status).
+//
+// AND IT IS THE REOPENED JOB'S TOO. A cancel and a retry landing while the log
+// went to the store leave a record that is Open on a new attempt — not
+// terminal, and not this run's — and the same sentence applies for the same
+// reason: the status is not this run's to move and the log is still somebody's
+// to read. What makes both safe is that a log is filed under the RUN'S attempt
+// and never the record's (output.go's produced), so nothing here can land on a
+// line another run owns.
 //
 // A run that produced nothing writes nothing: an entry with no rows is refused
 // by row.Entry.Apply anyway, and a replicated entry that changes no field is a

@@ -269,6 +269,14 @@ func (f *fakeRepositories) Project(_ context.Context, key string) (string, error
 	return id, nil
 }
 
+// add registers another repository, for a test that needs a push this node
+// will accept for something other than the job it is running.
+func (f *fakeRepositories) add(key string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.projects[key] = "project-of-" + key
+}
+
 func (f *fakeRepositories) fail(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -314,6 +322,10 @@ type fakeAssets struct {
 	// block holds a Put until a test releases it, which is how the publish
 	// deadline is measured.
 	block chan struct{}
+	// onPut fires on ENTRY to Put, before the block below, so a test can tell
+	// when a publish has actually reached the store rather than guessing at it
+	// with a sleep.
+	onPut func()
 }
 
 func newAssets() *fakeAssets { return &fakeAssets{stored: map[string][]byte{}} }
@@ -321,8 +333,13 @@ func newAssets() *fakeAssets { return &fakeAssets{stored: map[string][]byte{}} }
 func (f *fakeAssets) Put(ctx context.Context, content io.Reader) (string, error) {
 	f.mu.Lock()
 	block, err := f.block, f.err
+	onPut := f.onPut
 	f.puts++
 	f.mu.Unlock()
+
+	if onPut != nil {
+		onPut()
+	}
 
 	if block != nil {
 		select {

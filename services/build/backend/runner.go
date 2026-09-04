@@ -279,17 +279,18 @@ func (s *Service) invoke(ctx context.Context, work Work) (out *runOutput, err er
 	return out, s.runner.Run(ctx, work, out)
 }
 
-// settle ends the delivery and writes what the run decided — THE ACK AND THE
-// RECORD WRITE IT DECIDES, ONE SECTION.
+// settle ends the delivery and writes what the run decided — THE ACK, THEN THE
+// HANDOFF OF THE LOG, THEN THE RECORD. Two sections with the network call
+// BETWEEN them, and the order of those three is the whole of this function.
 //
 // ACK IS THE COMMIT POINT, and it comes before anything this run produced is
 // published. It is the only compare-and-swap this service has: the queue
 // refuses an ack whose delivery it no longer holds, so a node whose claim
-// expired — or which lost leadership mid-run — learns it here and PUBLISHES
-// NOTHING. Content-addressed rows already written are harmless; a pointer
-// written by a node that no longer speaks for the group is not. v1 asked
-// whether it still owned the job only when REPORTING, after it had already
-// stashed assets and pushed keys to tns.
+// expired — or which lost leadership mid-run — learns it in the FIRST section
+// and PUBLISHES NOTHING. Content-addressed rows already written are harmless; a
+// pointer written by a node that no longer speaks for the group is not. v1
+// asked whether it still owned the job only when REPORTING, after it had
+// already stashed assets and pushed keys to tns.
 //
 // IT USED TO BE THE SECTION'S BARRIER AS WELL, taken before the read because
 // queue.Ack blocks until everything committed is applied. THE TWO JOBS WANT
@@ -302,38 +303,103 @@ func (s *Service) invoke(ctx context.Context, work Work) (out *runOutput, err er
 // across two sections was allowed to destroy the item.
 //
 // SO THE BARRIER IS withJob'S, LIKE EVERY OTHER SECTION'S, and the ack is an
-// ordinary write inside the body. It costs one replicated entry per settled
-// build — barrier_test.go spends it — and it buys the rule with no exception in
-// it: every write in this package is made by the body that read the record. The
-// ack still precedes every write this run publishes, which is the whole of what
-// "the commit point" means.
+// ordinary write inside the body. It buys the rule with no exception in it:
+// every write in this package is made by the body that read the record.
 //
-// THE RECORD IS RE-READ because the whole build happened outside this lock, and
-// three different things can have written it in the meantime. Each is a
-// different answer:
+// AND THE PUBLISH IS OUTSIDE BOTH OF THEM, WHICH IS WHY THERE ARE TWO. A
+// section is jobLock, and jobLock is ONE LOCK OVER THE WHOLE JOB TABLE
+// (section.go): every transition of every job on this node takes it — a claim,
+// a settle, a Cancel, a Retry, an Enqueue's resume, the dead-letter drain,
+// every row of a reconcile pass. runOutput.publish hands a whole log to the
+// ASSET STORE, which is the only door in this package that leaves this machine
+// and is bounded only by PublishTimeout. Held across it, one slow storage node
+// stalls WEBHOOK INGESTION and every user-facing cancel and retry on this node
+// for up to that timeout per settled build — and the timeout is spent off a
+// context.WithoutCancel, so a shutdown cannot cut it short either. Measured:
+// with the store blocked, an unrelated repository's Enqueue was still waiting
+// after 300ms and completed 0.58ms after the store was released.
+// section.go says what is deliberately outside a section — the build, and the
+// round trip to auth — and this is the third: a round trip to storage.
 //
-//   - terminal. A Cancel wrote it while the run was going, and a cancelled job
-//     must not be overwritten with the outcome of the run that was cancelled.
-//     Its item is the one the ack just removed, which is correct: the job is
-//     over.
+// THE FIRST SECTION IS THE ACK AND ONE QUESTION: is what this run produced
+// still wanted by anybody? It is not, on the two branches that record nothing —
+// a job whose record is gone, and a job that was cancelled and retried while
+// the build ran, whose new attempt this run knows nothing about. Publishing on
+// either would put a log in the asset store that no record will ever name, and
+// nothing in this service unreferences an asset. That is why the question is
+// asked before the publish rather than after it.
+//
+// THE SECOND SECTION READS AGAIN, AND MUST. The publish takes as long as the
+// asset store takes, and three different things can write the record in that
+// time — the same three the single section already had to re-read for:
+//
+//   - terminal. A Cancel wrote it while the run was going, or while the log was
+//     going to the store, and a cancelled job must not be overwritten with the
+//     outcome of the run that was cancelled. Its log is still recorded: the cid
+//     of what that run printed is the one thing whoever cancelled it wants.
 //   - Claimed, by this run. The ordinary case, and the only one this run's
 //     outcome describes.
-//   - OPEN. Somebody cancelled the job and then retried it while the build ran,
-//     so the record is a NEW attempt that this run knows nothing about — and
-//     the retry's push was deduplicated against the very delivery the ack above
-//     just destroyed (pkg/v2/queue: Push is a no-op for an id the queue holds,
-//     Ack deletes that id's index row). Writing this run's outcome over it
-//     tells the caller its retry failed with the error of the build it
+//   - OPEN. Somebody cancelled the job and then retried it, so the record is a
+//     NEW attempt — and the retry's push was deduplicated against the very
+//     delivery the ack destroyed (pkg/v2/queue: Push is a no-op for an id the
+//     queue holds, Ack deletes that id's index row). Writing this run's outcome
+//     over it tells the caller its retry failed with the error of the build it
 //     cancelled; leaving it alone but saying nothing leaves a job that reads
 //     Open with no item and, once finish has dropped its open row, nothing for
 //     reconcile to walk either. So the item goes back, in this section, where
 //     the reopening could not have raced it.
+//
+// AND THE PUBLISH IS BEFORE THE RECORD RATHER THAN AFTER IT, which is what
+// keeps the second section's branch honest: A LOG THIS NODE COULD NOT READ BACK
+// FAILS THE BUILD IT BELONGS TO, and a job whose outcome had already been
+// written could only be told so by moving a terminal record — which is the one
+// thing no transition here does.
+//
+// WHAT THE ORDER COSTS is one replicated entry — the second section's barrier —
+// per settled build, and a WINDOW between the ack and the record write that is
+// as wide as the publish. A node that stops leading inside it leaves an object
+// in the asset store that no record names and a job reading Claimed with no
+// item, which reconcile pushes back after its cutoff. doc.go names it under
+// what is not covered at all, with its width; it is the same window the single
+// section had, one apply wide, made as wide as a storage round trip. The trade
+// is deliberate: the window costs one unreferenced object on a leadership flap,
+// and the lock costs every job on the node on every slow store.
 func (s *Service) settle(ctx context.Context, d queue.Delivery, out *runOutput, runErr error) error {
-	return s.withJob(d.ID, func(j *held) error {
+	var wanted bool
+	err := s.withJob(d.ID, func(j *held) error {
 		if err := j.ack(s.work, d); err != nil {
 			return err
 		}
+		if !j.found() {
+			return nil
+		}
+		// A record that is neither terminal nor this run's claim is the
+		// reopening above: its item goes back and this run's output is nobody's.
+		if !j.rec().terminal() && j.rec().status() != buildv1.JobStatus_JobStatusClaimed {
+			return j.requeue()
+		}
+		wanted = true
+		return nil
+	})
+	if err != nil || !wanted {
+		return err
+	}
 
+	// OUTSIDE EVERY SECTION, holding nothing. Past the ack, so this delivery was
+	// still this node's when it was given up; past the read, so there is a
+	// record for the cid to reach.
+	p, logErr := out.publish(ctx)
+	if runErr == nil {
+		// A LOG THAT COULD NOT BE READ BACK FAILS THE BUILD IT BELONGS TO. It is
+		// invoke's rule at the other end of the run — a node that cannot open a
+		// log for a build is not the node that runs it — and the alternative is
+		// the defect this came from: a job settling Success carrying Logs:
+		// map[], with nothing anywhere saying that a log was lost. A run that
+		// ALREADY failed keeps its own reason, which is the one its caller needs.
+		runErr = logErr
+	}
+
+	return s.withJob(d.ID, func(j *held) error {
 		if !j.found() {
 			return nil
 		}
@@ -350,30 +416,27 @@ func (s *Service) settle(ctx context.Context, d queue.Delivery, out *runOutput, 
 			// CANCELLED JOB CANNOT RECORD: the status is not this run's to
 			// move, and a cancelled job that carries no log claims nothing
 			// untrue. So what is dropped here is the log, not the outcome.
-			p, _ := out.publish(ctx)
 			return j.logged(p)
 		}
-
-		rec := j.rec()
-		if rec.status() != buildv1.JobStatus_JobStatusClaimed {
+		if j.rec().status() != buildv1.JobStatus_JobStatusClaimed {
+			// THE REOPENED JOB KEEPS THIS RUN'S LOG, and that is the one thing
+			// this branch does that the single section did not have to. The
+			// first section found a record this run's outcome was about and the
+			// log went to the store on the strength of it; a cancel and a retry
+			// landing during the handoff make the record a NEW attempt, and
+			// dropping the cid here would leave an object the store keeps and
+			// nothing names. It is filed under the RUN'S attempt, not the
+			// record's, so it sits beside whatever the rebuild writes rather
+			// than on top of it — which is what produced carries its own
+			// attempt for. The status is untouched: this run's outcome is not
+			// this record's.
+			//
+			// RECORD FIRST, PUSH SECOND, like every other place the two appear
+			// together (held.requeue).
+			if err := j.logged(p); err != nil {
+				return err
+			}
 			return j.requeue()
-		}
-
-		// THE PUBLISH IS HERE: past the ack, past the record that is gone and
-		// the one this delivery is no longer about, and past the terminal
-		// branch that ships its own. Shipping the bytes is what must not happen
-		// on a delivery this node no longer holds (output.go), and the ack is
-		// the only thing that says it still does.
-		p, logErr := out.publish(ctx)
-		if runErr == nil {
-			// A LOG THAT COULD NOT BE READ BACK FAILS THE BUILD IT BELONGS TO.
-			// It is invoke's rule at the other end of the run — a node that
-			// cannot open a log for a build is not the node that runs it — and
-			// the alternative is the defect this came from: a job settling
-			// Success carrying Logs: map[], with nothing anywhere saying that a
-			// log was lost. A run that ALREADY failed keeps its own reason,
-			// which is the one its caller needs.
-			runErr = logErr
 		}
 
 		if runErr != nil {

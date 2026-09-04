@@ -27,17 +27,26 @@ import (
 // WHICH IS NOT THE SAME SENTENCE AS "NOTHING IS", and this file is where the
 // difference lives. There are two stores: the raft one, and the asset store —
 // durable on another node before it returns (config.go), the only door in this
-// package that leaves this machine. Asset() below opens it WHILE THE BUILD
-// RUNS, from the runner's goroutine, outside every section, and it has to: a
-// section is jobLock, and holding it for the length of a compile would put
-// every job on this node behind the slowest build on it. So the writer outside
-// every section did not go away, it changed what it may write — CONTENT, whose
-// cid goes into a map in the run's own memory and reaches a record only from
-// inside the section that settles the job — and it is enumerated rather than
-// asserted: population_test.go's TestEveryWriteToTheAssetStoreIsNamedAndPlaced
-// says who may name the store, who may call Put, and where each of them is. It
-// was written because a second door on the Service here, storing an object per
-// viewer from Follow, was GREEN across every package under services/build.
+// package that leaves this machine. BOTH OF ITS DOORS ARE OUTSIDE EVERY
+// SECTION, and neither may be otherwise: a section is jobLock, one lock over
+// the whole job table, so a Put held inside one puts every job on this node —
+// every claim, every webhook's Enqueue, every Cancel — behind a round trip to
+// another machine.
+//
+//	Asset()    opened WHILE THE BUILD RUNS, from the runner's goroutine. Inside
+//	           a section it would be the length of a compile.
+//	publish()  opened BETWEEN settle's two sections. Inside one it was up to
+//	           PublishTimeout per settled build, which is where it sat for a
+//	           round and what runner.go's settle now says out loud.
+//
+// So the writer outside every section did not go away, it changed what it may
+// write — CONTENT, whose cid goes into a map in the run's own memory and
+// reaches a record only from inside the section that settles the job — and it
+// is enumerated rather than asserted: population_test.go's
+// TestEveryWriteToTheAssetStoreIsNamedAndPlaced says who may name the store,
+// who may call Put, and where each of them is. It was written because a second
+// door on the Service here, storing an object per viewer from Follow, was GREEN
+// across every package under services/build.
 //
 // SO A LOG HAS THREE LIVES AND ONLY THE LAST ONE LEAVES THIS NODE:
 //
@@ -199,15 +208,24 @@ func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Rea
 
 // publish ends the log and hands it to the asset store.
 //
-// IT IS CALLED FROM INSIDE THE SECTION THAT SETTLES THE JOB, AFTER THE ACK, and
-// that placement is rule 2 applied to the bytes as well as to the record. Ack
-// is this service's only compare-and-swap: evaluated before it — which is where
-// this was, as an argument to settle() — a node whose claim had expired or
-// which had lost leadership shipped the whole log to the store and then wrote
-// no record naming it, which is the orphan run() refuses to make on the
-// shutdown path for exactly the same reason. The publish is now made only on
-// the branches that record what it returns, so a log reaches the store when,
-// and only when, a cid for it reaches a job.
+// IT IS CALLED BETWEEN THE TWO SECTIONS THAT SETTLE THE JOB: past the ack, and
+// before the entry that records what it returns. Both halves of that are the
+// placement, and neither is free.
+//
+// PAST THE ACK, because ack is this service's only compare-and-swap. Evaluated
+// before it — which is where this was, as an argument to settle() — a node
+// whose claim had expired or which had lost leadership shipped the whole log to
+// the store and then wrote no record naming it, which is the orphan run()
+// refuses to make on the shutdown path for exactly the same reason. It is also
+// made only when the first section found a record this run's output still
+// belongs to, so the two branches that record nothing ship nothing.
+//
+// AND OUTSIDE BOTH OF THEM, because a section is jobLock and jobLock is one
+// lock over every job on this node. Inside settle's body — which is where the
+// fix for the paragraph above put it, for a round — one slow storage node
+// stalled webhook ingestion and every user-facing cancel and retry for up to
+// PublishTimeout per settled build. runner.go's settle argues the order; this
+// is the half of it this function is responsible for knowing.
 //
 // IT IS THE ONE PLACE THE WHOLE LOG IS READ, and it reads it by forking a
 // reader like any other watcher — so the bytes stream from the file to the

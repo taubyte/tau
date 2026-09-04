@@ -114,12 +114,14 @@
 //	                       blocking at the end rather than seeing EOF. Many
 //	                       readers, each at its own offset. Service.Follow is
 //	                       the seam; v1 has no version of this at all.
-//	when the build ends    the file goes to the asset store and the cid goes on
-//	                       the record, in the entry that settles the job — and
-//	                       it goes there only if the WHOLE log reached the
-//	                       store, counted rather than assumed, because a cid
-//	                       over a prefix reads like a log to everything
-//	                       downstream of it.
+//	when the build ends    the file goes to the asset store — between settle's
+//	                       two sections, so the ack is in front of it and no
+//	                       lock is held across it — and the cid goes on the
+//	                       record, in the entry that settles the job. It goes
+//	                       there only if the WHOLE log reached the store,
+//	                       counted rather than assumed, because a cid over a
+//	                       prefix reads like a log to everything downstream of
+//	                       it.
 //
 // WHAT THAT DELETED IS A CLASS OF DEFECT, not a component. The sink was THE ONE
 // WRITER OF A REPLICATED ROW IN THIS PACKAGE OUTSIDE EVERY SECTION, by design,
@@ -132,8 +134,14 @@
 // the raft one; the ASSET store — durable on another node before it returns,
 // the only door in this package that leaves this machine — is opened by a build
 // WHILE IT RUNS, from the runner's goroutine, with no section anywhere, and it
-// always was. It cannot be otherwise: a section is jobLock, so a Put inside one
-// would hold every job on this node behind the slowest build running on it.
+// always was. It cannot be otherwise: a section is jobLock, ONE LOCK OVER THE
+// WHOLE JOB TABLE, so a Put inside one holds every claim, every webhook's
+// Enqueue and every Cancel on this node behind a round trip to another machine.
+// THE OTHER DOOR SAT INSIDE ONE FOR A ROUND — the handoff of the finished log,
+// moved into settle's body by the round that stopped it happening before the
+// ack, with the same three files that argue it must not be edited in that very
+// commit. settle is two sections now with the handoff between them; runner.go
+// says what the order costs, and output_test.go measures the stall it removed.
 // What changed with the sink is what that writer may leave behind — CONTENT,
 // whose cid goes no further than the run's own memory until the section that
 // settles the job records it — and what was missing until now is that anything
@@ -321,8 +329,17 @@
 //	                                           calls nothing on it
 //	10 who may CALL Put                       a door HANDED the store, which
 //	                                           names no field
-//	11 publish has exactly ONE caller         a second publish door, unused —
-//	                                           and a door is used next round
+//	11 publish has ONE caller, is BETWEEN    a second publish door, unused —
+//	   settle's two sections, and settle        and a door is used next round.
+//	   itself is called from no section         The position is the same line
+//	                                           and is asked from four sides,
+//	                                           because it has been wrong in
+//	                                           three different ways: in front of
+//	                                           the ack is the orphan, inside a
+//	                                           section is the stall, and a
+//	                                           settle called from somebody
+//	                                           else's body is the stall with
+//	                                           every local position still right
 //	12 nothing here calls Asset               this package storing something of
 //	                                           its own through the runner's door
 //	13 Put is CALLED and never taken          the method value, stashed in a
@@ -378,10 +395,14 @@
 //	  come off the record the section READ    anchor taken off the record being
 //	                                           WRITTEN instead
 //	one function names a job record key       pairs with line 5
-//	the publish is inside settle's OWN        the two runner tests that assert a
-//	  section                                  lost delivery ships nothing catch
-//	                                           a settle that publishes first —
-//	                                           hollowing this leaves both red
+//	the publish is BETWEEN settle's two       both directions are caught
+//	  sections                                 behaviourally: the two runner
+//	                                           tests that assert a lost delivery
+//	                                           ships nothing catch a publish
+//	                                           moved in FRONT of the ack, and
+//	                                           TestASlowAssetStoreDoesNotStall-
+//	                                           EveryOtherJobOnTheNode catches
+//	                                           one moved INSIDE a section
 //	who may WRITE the run's cids              a new writer is a new toucher, so
 //	                                           line 14 has it; an allowed
 //	                                           toucher that writes trips five

@@ -41,17 +41,27 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 			"the dead letter's claim, the sweep, and the work queue's claim — all pkg/v2/queue's own")
 	})
 
-	// ONE JOB CLAIMED, BUILT AND SETTLED COSTS THREE MORE: begin's lead(),
-	// settle's lead(), and settle's ack.
+	// ONE JOB CLAIMED, BUILT AND SETTLED COSTS FOUR MORE: begin's lead(), and
+	// then settle's THREE — the ack's section, the ack itself, and the record's
+	// section.
 	//
-	// SETTLE'S IS THE ONE THIS ROUND ADDED, and it is what "every write carries
-	// the read that decided it" costs. The ack used to be both the section's
-	// barrier and its first write, taken before the read so that the record
-	// below it was read at an applied prefix — and a write taken before the
-	// read cannot carry one, so the ack took a bare section instead and a body
-	// that split the deciding read from the ack across two sections was allowed
-	// to destroy the item. The barrier is now lead(), like every other
-	// section's, and the ack is an ordinary write behind the read.
+	// THE FIRST OF SETTLE'S TWO was what "every write carries the read that
+	// decided it" cost. The ack used to be both the section's barrier and its
+	// first write, taken before the read so that the record below it was read at
+	// an applied prefix — and a write taken before the read cannot carry one, so
+	// the ack took a bare section instead and a body that split the deciding
+	// read from the ack across two sections was allowed to destroy the item. The
+	// barrier is lead() now, like every other section's, and the ack is an
+	// ordinary write behind the read.
+	//
+	// AND THE SECOND IS WHAT GETTING THE ASSET STORE OUT OF jobLock COSTS. The
+	// ack and the record write cannot be one section any more, because the
+	// handoff of the log goes BETWEEN them: a section is jobLock, which is one
+	// lock over the whole job table, and a Put held inside one stalls every
+	// claim, every webhook's Enqueue and every Cancel on this node for as long
+	// as the store takes. Two sections means two reads, and the second read is
+	// decided on a prefix that may be minutes newer than the first — so it takes
+	// its own barrier, like every other section that writes a terminal record.
 	//
 	// PER BUILD — minutes of work — against a loop that spends three a second
 	// regardless. Every other number in this file is unchanged: the identity
@@ -62,8 +72,8 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 
 		n := spent(h, func() { require.True(t, h.mustStep(t)) })
 		t.Logf("barriers=%d", n)
-		require.Equal(t, int64(6), n,
-			"the three above, plus begin's lead(), settle's lead() and settle's ack")
+		require.Equal(t, int64(7), n,
+			"the three above, plus begin's lead(), settle's two lead()s and settle's ack")
 		require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
 	})
 

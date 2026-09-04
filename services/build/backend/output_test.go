@@ -726,6 +726,13 @@ func TestSettleWritesNothingForARecordThatIsGone(t *testing.T) {
 	ready, claimed := h.work.Depth()
 	require.Zero(t, ready)
 	require.Zero(t, claimed, "the delivery is still acknowledged")
+
+	// AND IT SHIPS NOTHING EITHER, which is why the publish is asked for only
+	// after a section has found a record for the cid to reach. The store keeps
+	// what it is handed and nothing in this service unreferences an asset, so a
+	// log sent on this path is a permanent object no job will ever name.
+	require.Zero(t, h.assets.count(),
+		"there is no record to name a log, so the log does not go")
 }
 
 // A RUN THAT PRODUCED NOTHING WRITES NOTHING ONTO A TERMINAL RECORD. A
@@ -890,4 +897,140 @@ func TestTheDefaultLogDirectoryIsThisAccountsAlone(t *testing.T) {
 	require.Equal(t, defaultLogDir(), cfg.LogDir)
 	require.Contains(t, cfg.LogDir, strconv.Itoa(os.Getuid()))
 	require.NotEqual(t, filepath.Join(os.TempDir(), "tau-build-logs"), cfg.LogDir)
+}
+
+// A SECTION IS jobLock, AND jobLock IS ONE LOCK OVER THE WHOLE JOB TABLE. Every
+// transition of every job on this node takes it — a claim, a settle, a Cancel,
+// a Retry, an Enqueue's resume, the dead-letter drain, every row of a reconcile
+// pass — so a round trip to the asset store made while it is held is one slow
+// storage node stalling WEBHOOK INGESTION and every user-facing cancel and
+// retry, for up to PublishTimeout per settled build. section.go, output.go and
+// population_test.go all say a Put must not be inside one; this is the
+// measurement that says the code agrees.
+//
+// MEASURED BEFORE THE PUBLISH MOVED OUT: the enqueue below was still blocked
+// after 300ms with the store stalled, and completed 0.58ms after it was
+// released.
+//
+// THE PROBE IS AN UNRELATED REPOSITORY on purpose. Two transitions of two
+// different jobs already serialize against each other by design (section.go
+// argues why one table-wide mutex is the right price); what must not happen is
+// that they serialize behind a NETWORK CALL.
+func TestASlowAssetStoreDoesNotStallEveryOtherJobOnTheNode(t *testing.T) {
+	const elsewhere = "github.com/acme/unrelated"
+
+	h := newHarness(t)
+	h.repos.add(elsewhere)
+	id := h.push(t, testRef, testCommit)
+
+	storing := make(chan struct{})
+	release := make(chan struct{})
+	h.assets.block = release
+	h.assets.onPut = func() { close(storing) }
+
+	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "a build whose log is going to a store that has stopped\n")
+		return nil
+	}
+
+	settled := make(chan error, 1)
+	go func() { _, err := h.step(context.Background()); settled <- err }()
+	<-storing
+
+	enqueued := make(chan error, 1)
+	go func() {
+		_, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+			RepositoryKey: elsewhere, Ref: testRef, CommitSha: testCommit,
+		})
+		enqueued <- err
+	}()
+
+	select {
+	case err := <-enqueued:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("a push for another repository is waiting on this node's asset store")
+	}
+
+	close(release)
+	require.NoError(t, <-settled)
+	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+}
+
+// A CANCEL AND A RETRY CAN LAND WHILE THE LOG IS GOING TO THE STORE, and that
+// is the window the second section exists to read again. The first section
+// found a record this run's outcome was about, so the bytes went; by the time
+// the cid comes back the record is a NEW attempt that this run knows nothing
+// about, and this run's outcome must not be written over it.
+//
+// WHAT MUST NOT HAPPEN IS THE LOG BEING DROPPED. The store has kept it and
+// nothing in this service unreferences an asset, so a branch that returned
+// without recording the cid would leave a permanent object no job names — the
+// orphan the ack in front of the publish exists to prevent, made by the branch
+// after it instead. It is filed under the RUN'S attempt, beside whatever the
+// rebuild writes.
+func TestAJobReopenedWhileItsLogWasStoredKeepsThatLog(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	storing := make(chan struct{})
+	release := make(chan struct{})
+	h.assets.block = release
+	h.assets.onPut = func() { close(storing) }
+
+	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "what the cancelled attempt printed\n")
+		return nil
+	}
+
+	stepped := make(chan error, 1)
+	go func() { _, err := h.step(context.Background()); stepped <- err }()
+	<-storing
+
+	// Both transitions take jobLock, which the publish is no longer holding.
+	require.NoError(t, h.cancel(id))
+	require.NoError(t, h.retry(id))
+	close(release)
+	require.NoError(t, <-stepped)
+
+	rec := h.mustRecord(t, id)
+	require.Equal(t, buildv1.JobStatus_JobStatusOpen, rec.status(),
+		"the run that was cancelled does not get to write over the attempt that replaced it")
+	require.Equal(t,
+		map[string]string{stamp(1): assetCID([]byte("what the cancelled attempt printed\n"))},
+		rec.Logs, "and what it printed is still readable, under its own attempt")
+	require.Equal(t, 1, h.assets.objects())
+
+	ready, _ := h.work.Depth()
+	require.Equal(t, 1, ready, "the retry's item is there, and the requeue deduplicated against it")
+}
+
+// AND THE REOPENED JOB'S LOG IS A WRITE LIKE ANY OTHER: a store that refuses it
+// is reported, rather than swallowed on the way to the push.
+func TestAReopenedJobsLogReportsAStoreThatRefusedIt(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	storing := make(chan struct{})
+	release := make(chan struct{})
+	h.assets.block = release
+	h.assets.onPut = func() { close(storing) }
+	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "built\n")
+		return nil
+	}
+
+	stepped := make(chan error, 1)
+	go func() { _, err := h.step(context.Background()); stepped <- err }()
+	<-storing
+
+	require.NoError(t, h.cancel(id))
+	require.NoError(t, h.retry(id))
+	h.store.failBatches(errors.New("the log is written and the store said no"))
+	close(release)
+
+	err := <-stepped
+	require.ErrorContains(t, err, "the store said no")
+	require.ErrorContains(t, err, "recording the output of")
 }

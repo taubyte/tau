@@ -1957,26 +1957,35 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 // in this service deletes an asset (config.go says so out loud), so an orphan
 // made here is permanent.
 //
-// IT CANNOT BE BROUGHT INSIDE A SECTION, and that is not a preference. A
-// section is jobLock; a build holds its output open for the whole of a compile;
-// so a Put inside one would serialize every job on this node behind the slowest
-// build running on it, and the loop that claims work would be waiting on a
-// stranger's build script. What CAN be true is what is checked here: there are
-// exactly two doors, only one of them is inside a section, and the one outside
-// leaves nothing behind but bytes whose cid this package cannot spend.
+// NEITHER OF THEM MAY BE INSIDE A SECTION, and that is not a preference. A
+// section is jobLock, which is ONE LOCK OVER THE WHOLE JOB TABLE: every
+// transition of every job on this node takes it. A Put inside one holds a claim
+// loop, a webhook's Enqueue, a user's Cancel and a reconcile pass behind a
+// round trip to another machine — for the length of a compile in Asset's case,
+// and for up to PublishTimeout in publish's.
 //
-// THE TWO ARE NOT THE SAME KIND OF WRITE, which is the whole reason both are
-// allowed:
+// AND ONE OF THEM WAS, FOR A ROUND. publish had been an ARGUMENT to settle,
+// evaluated before the call and therefore before the ack, and the round that
+// fixed that moved it inside settle's body — which put the store's round trip
+// under jobLock on the happy path of every build, in the same commit whose own
+// comments said in three places that it must not be. It is two sections now
+// with the publish between them, so the ack is still first and the lock is
+// still not held across the network: settle says why the order is that one and
+// what it costs.
+//
+// THE TWO DOORS ARE NOT THE SAME KIND OF WRITE, which is the whole reason both
+// are allowed:
 //
 //	runOutput.Asset    CONTENT, during the run, outside every section. Its cid
 //	                   goes into a map in the run's own goroutine and no
 //	                   further. Storing it is idempotent and content-addressed,
 //	                   so a run that later fails costs the store the same bytes
 //	                   twice under one id.
-//	runOutput.publish  THE POINTER, inside the section that settles the job and
-//	                   after its ack, because a cid that reaches the store on a
+//	runOutput.publish  THE POINTER'S BYTES, between settle's two sections:
+//	                   after the ack, because a cid that reaches the store on a
 //	                   delivery this node no longer holds is an object no record
-//	                   will ever name.
+//	                   will ever name, and before the record, because the cid it
+//	                   returns is a field of the entry that settles the job.
 func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 	all := pkgFuncs(t)
 
@@ -1998,18 +2007,54 @@ func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 		"a third caller of Put stores bytes on another node from a place this file has not "+
 			"placed, and a store this package cannot unreference keeps them")
 
-	// THE ONE THAT SHIPS THE LOG IS SETTLE'S, AND IT IS INSIDE SETTLE'S OWN
-	// SECTION. `settle(d, out.publish(ctx), err)` — an argument, so evaluated
-	// BEFORE the call — shipped a whole log to the store and then wrote no
-	// record naming it whenever the ack it was about to make would have failed:
-	// a claim that had expired, a leadership flap. Both are measured
-	// behaviourally (runner_test.go); this is the same fact as a position.
+	// THE ONE THAT SHIPS THE LOG IS SETTLE'S, AND IT IS BETWEEN SETTLE'S TWO
+	// SECTIONS. Its position has been wrong in both directions, one round each,
+	// and this is the check that pins the only place it is right:
+	//
+	//	BEFORE THE ACK   `settle(d, out.publish(ctx), err)` — an argument, so
+	//	                 evaluated before the call — shipped a whole log to the
+	//	                 store and then wrote no record naming it whenever the
+	//	                 ack it was about to make would have failed: a claim that
+	//	                 had expired, a leadership flap. Measured behaviourally
+	//	                 by the two runner tests that assert a lost delivery
+	//	                 ships nothing.
+	//	INSIDE A SECTION the fix for that put it in settle's body, which held
+	//	                 jobLock — the whole node's job table — across the round
+	//	                 trip to another machine. Measured behaviourally by
+	//	                 TestASlowAssetStoreDoesNotStallEveryOtherJobOnTheNode.
+	//
+	// So this asserts the position, and both of the tests above catch a move.
 	require.ElementsMatch(t, []string{"Service.settle"}, names(callers(all, "publish")),
 		"a publish outside settle is a log shipped on a delivery nothing has acked, which is the "+
 			"orphan the shutdown path already declines to make")
-	inside, chain := inBody(all, "Service.settle", "publish")
-	require.True(t, inside,
-		"settle publishes outside the section it acks in, so the ack cannot have decided it — %s", chain)
+
+	settle := all["Service.settle"]
+	require.Len(t, settle.bodies, 2,
+		"settle is the ack's section, the publish, and the record's section — one section means "+
+			"one of the two is in the wrong place")
+	shipping := settle.posns["publish"]
+	require.Len(t, shipping, 1, "the log is handed over once, on one path")
+	require.False(t, covered(settle.bodies, shipping[0]),
+		"settle publishes inside one of its own sections, which holds jobLock — every job on "+
+			"this node — across a round trip to the asset store")
+	require.Greater(t, shipping[0], settle.bodies[0].to,
+		"settle publishes before the section that acks, so a delivery this node had already lost "+
+			"still ships a log no record will name")
+	require.Less(t, shipping[0], settle.bodies[1].from,
+		"settle publishes after the section that records, so the cid cannot reach the entry that "+
+			"settles the job and a log this node could not read back cannot fail it")
+	require.True(t, covered([]span{settle.bodies[0]}, settle.at["ack"]),
+		"the ack is not in the first of settle's sections, so it is not what the publish is past")
+
+	// AND "OUTSIDE SETTLE'S OWN SECTIONS" IS NOT "OUTSIDE EVERY SECTION" until
+	// settle's caller is asked. A settle called from inside somebody else's
+	// body holds jobLock through all three of its parts, and every position
+	// checked above is still exactly where it is.
+	require.ElementsMatch(t, []string{"Service.run"}, names(callers(all, "settle")),
+		"a second caller of settle is a second place the publish's position is decided")
+	require.Empty(t, all["Service.run"].bodies,
+		"run opens a section of its own, so everything settle does inside it — the publish "+
+			"included — is under jobLock however settle is spelled")
 
 	// AND THE ONE OUTSIDE EVERY SECTION IS NOT THIS PACKAGE'S TO CALL. Asset is
 	// a door for the RUNNER — a stranger's build, handing over bytes it made —

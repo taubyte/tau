@@ -151,8 +151,9 @@ func (s *Service) list(projectID string, emit func(*buildv1.JobRef) error) error
 // the stop below.
 //
 // A job running on ANOTHER backend node needs no forwarding either — its run
-// settles against a record that is already terminal and publishes nothing, and
-// it is bounded by the claim deadline regardless.
+// settles against a record that is already terminal, so it writes what that run
+// PRINTED and never a status, and it is bounded by the claim deadline
+// regardless.
 //
 // v1 needed three hops for this: the HTTP handler read which monkey was
 // assigned, called that monkey's own p2p service, and monkey then called
