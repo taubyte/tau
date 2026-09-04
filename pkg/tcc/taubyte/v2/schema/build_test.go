@@ -119,14 +119,49 @@ func TestAWrongPairIsRefusedByShape(t *testing.T) {
 			"id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPZ\nexecution:\n    memory: 1MB\nbuild:\n    dockerfile:\n        target: prod\n",
 			"required attribute 'build/dockerfile/path'"},
 		{"the output is a path in the repository", "/function/probe.yaml",
-			probeFn + "build:\n    commands:\n        image: node:22\n        run: make\n        output: \".\"\n",
-			"is the repository root, which is not a place this field can name"},
+			probeFn + "build:\n    commands:\n        image: node:22\n        run: make\n        output: \"../dist\"\n",
+			"climbs out of the repository"},
+		{"and the root has exactly one spelling", "/function/probe.yaml",
+			probeFn + "build:\n    commands:\n        image: node:22\n        run: make\n        output: \"./\"\n",
+			"must not end in /"},
+		{"an empty output is not one of the three states", "/function/probe.yaml",
+			probeFn + "build:\n    commands:\n        image: node:22\n        run: make\n        output: \"\"\n",
+			"empty: write a path, or \".\" for the repository root"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := buildDoc(t, tc.path, tc.body)
 			assert.ErrorContains(t, err, tc.want)
 		})
 	}
+}
+
+// A BUILD MAY PUBLISH IN PLACE, which is the plainest static site there is and was the
+// one shape this block could not carry. THREE STATES, ALL DISTINCT: omitted is the
+// output directory the builder hands the build, `.` is the source tree's own root, a
+// path is somewhere under it. `output` took the path grammar at first, which refuses the
+// root, on the reasoning that omitted already named it — it does not, it names a
+// directory outside the source tree entirely. So a build that writes beside its own
+// index.html had no spelling, and the build half of any descriptor publishing to the
+// root could not be stated.
+//
+// The compiled object has to keep the two absences apart as well, or the vocabulary can
+// say the thing and nothing downstream can read it back.
+func TestABuildMayPublishToTheRoot(t *testing.T) {
+	const head = "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVt\nserve:\n    mode: spa\n"
+	const cmds = "build:\n    commands:\n        image: node:22\n        install: npm ci\n        run: npm run build\n"
+
+	flat, err := buildDoc(t, "/website/publishroot.yaml", head+cmds+"        output: \".\"\n")
+	assert.NilError(t, err)
+	site := namedResource(t, resources(t, flat, "website"), "publishroot")
+	assert.Equal(t, nested(site, "build", "output"), ".",
+		"the root has to be IN the object: a build that published in place is not a build that said nothing")
+
+	// and the state it is not
+	flat, err = buildDoc(t, "/website/publishroot.yaml", head+cmds)
+	assert.NilError(t, err)
+	site = namedResource(t, resources(t, flat, "website"), "publishroot")
+	_, present := nestedOK(site, "build", "output")
+	assert.Assert(t, !present, "an unwritten output left something in the object: %v", site["build"])
 }
 
 // A CONSTRAINT, NOT A PREFERENCE, so it is held by a test rather than by a sentence.
@@ -206,6 +241,19 @@ func TestTheEngineSeamIsAValue(t *testing.T) {
 	// a kind that runs nothing declares nothing, and the absence is the statement
 	for _, kind := range []string{"cache", "database", "cron", "zone", "model", "agent", "workflow"} {
 		assert.Assert(t, len(schema.EnginesOf(kind)) == 0, "%s declares an engine and is not built", kind)
+	}
+
+	// AND A KIND WITH A CHOICE HAS SOMETHING TO MAKE IT WITH. runsAsContainer reads
+	// `runtime` first and falls back to a kind's single engine, so a kind declaring two
+	// tiers and no attribute choosing between them would answer "not a container" for
+	// both of them — the safe direction, and silent. checks.go says that is unreachable
+	// while `worker` is the only kind with two; this is what makes that true rather than
+	// observed.
+	for _, kind := range built {
+		if len(schema.EnginesOf(kind)) > 1 {
+			assert.Equal(t, kind, "worker",
+				"%s declares more than one engine, so something has to choose between them", kind)
+		}
 	}
 
 	// the one kind with a choice: the attribute's set IS the kind's set

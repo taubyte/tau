@@ -122,6 +122,27 @@ func TestAScalarWhereABlockBelongsIsStillAnError(t *testing.T) {
 	}
 }
 
+// AN EMPTY VALUE IS TOLD WHAT THE FIELD CAN TAKE, AND NOTHING ELSE. One checker serves
+// every field that takes a repository path, and it knows exactly one thing about them:
+// the grammar. What OMITTING one means is different on each — the bare `source` is the
+// resource's own location, `build/output` is the directory the builder hands the build,
+// `source.git.path` is that repository's root — and each says so in its own Doc. The
+// sentence used to end "or leave it out for this resource's own location": one field's
+// meaning of absent, delivered by a shared checker to fields where it is not true. It
+// also offered `.` to the fields that refuse it.
+func TestAnEmptyValueIsToldOnlyWhatTheFieldTakes(t *testing.T) {
+	loc := schema.RepoLocationChecker()("")
+	assert.ErrorContains(t, loc, "empty: write a path")
+	assert.ErrorContains(t, loc, "\".\" for the repository root")
+
+	path := schema.RepoPathChecker()("")
+	assert.ErrorContains(t, path, "empty: write a path")
+	for _, borrowed := range []string{"repository root", "own location"} {
+		assert.Assert(t, !strings.Contains(path.Error(), borrowed),
+			"a field that refuses the root is told about %q: %v", borrowed, path)
+	}
+}
+
 // THE PATTERN AND THE CHECKER ARE ONE GRAMMAR, with no string excused from the
 // comparison. It carved out "" on both sides, which is the one string they disagreed
 // about — a test that proves agreement by removing the disagreement proves nothing. They were written to mirror each other

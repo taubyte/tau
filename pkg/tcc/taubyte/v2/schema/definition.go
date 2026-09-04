@@ -740,6 +740,16 @@ func BuildWaysOf(engine string) []string {
 // options: write a tau-shaped file into a repository we were given READ access to, or
 // state the build here. This is the second. Nothing of theirs is touched.
 //
+// WHAT THIS FIXES IS THE BUILD HALF, and claiming more would be the defect this file
+// keeps catching in itself. A descriptor from somewhere else is not a build file: a
+// compose service or a fly.toml describes a whole workload — what it listens on, what
+// it mounts, what it waits for, how it is restarted, where it runs — and each of those
+// is a separate question here, some answered by another block and some not answered at
+// all. So no descriptor "becomes importable" because this landed, and a selection
+// argument resting on one would be untrue. The claim is the narrow one, and it is
+// enough: how an artifact is produced is now something the config can state, on every
+// kind that is built, and a descriptor imports the part of itself this covers.
+//
 // THE MECHANISM DOES NOT CHANGE. pkg/builder already runs the build inside an OCI
 // image with its network confined, treats what the repository supplies as untrusted,
 // and takes what the build left in its output directory. What changes is where the
@@ -772,7 +782,9 @@ func BuildWaysOf(engine string) []string {
 //   - NO `output` — whatever the command left in the builder's output directory, which
 //     is the contract `.taubyte/build.sh` has always had. A value names a directory or
 //     a file in the SOURCE tree and the platform takes it from there, which is what
-//     makes an imported `dist` work with no script anywhere.
+//     makes an imported `dist` work with no script anywhere. `.` is that tree's own
+//     root, and it is a THIRD state rather than a spelling of this one: the build
+//     published in place instead of into a directory it was handed.
 //   - NO `target` — the last stage of the Dockerfile.
 //
 // INSTALL AND RUN ARE TWO FIELDS, not one shell line joined with `&&`. They are two
@@ -834,18 +846,33 @@ func buildAttributes(ways ...string) []*Attribute {
 			// and it is why there is no separate toolchain-version block anywhere here.
 			// A version pin is a tag.
 			//
-			// Accessor because the leaf is `image` and so is the source branch's: two
-			// attributes of one kind whose paths end in the same word are one field to
-			// a generated client, and it keeps the first (accessor_test).
+			// Accessor because the leaf is `image` and so is `source/image`'s, and
+			// `worker` declares both — a generated client names a declared field by the
+			// last segment of its path, so two of them are one name and it keeps the
+			// first. accessor_test does NOT hold this pair: a path with an Either() in
+			// it has no single location and the test excludes it (addressableName). So
+			// the override is the only thing between the two rather than a second line
+			// of defence, which is worth knowing before deleting it.
 			String(Key("build", "image"), inRunner("image"), Accessor("BuildImage"),
 				RequiredWhen(Key("build", "kind"), runners...), PerEnv(), InSection("build"),
 				Doc("Toolchain", "OCI image the build runs in, e.g. \"node:22\" or \"golang:1.23\". The source is mounted into it and the product is taken from the output directory.")),
 
-			// IsRepoPath, not IsRepoLocation: `.` is refused for the reason source.go
-			// already writes down — omitted already names a place, so the root would be
-			// a second spelling of it.
-			String(Key("build", "output"), inRunner("output"), IsRepoPath(), PerEnv(), InSection("build"),
-				Doc("Output", "Where the build left its product, relative to the source — \"dist\", \"build\", \"main.wasm\". Omitted means the build wrote to the output directory the builder gave it.")),
+			// IsRepoLocation, because THREE STATES ARE DISTINCT HERE and the vocabulary
+			// has to be able to say each of them. Omitted is the output directory the
+			// BUILDER hands the build, which is not in the source tree at all and is the
+			// contract `.taubyte/build.sh` has always had. `.` is the source tree's own
+			// root: the build published in place. A path is somewhere under it.
+			//
+			// This was IsRepoPath first, under a comment citing source.go for a rule
+			// source.go states the other way round: the root is a second spelling only
+			// where ABSENT ALREADY NAMES IT, and here absent names somewhere else. What
+			// that cost was narrow and load-bearing: a build that writes beside its own
+			// index.html had no spelling here at all, which is a `publish = "."`, an
+			// `outputDirectory` of `"."`, and every monorepo whose base directory IS
+			// what it serves — the plainest static site there is, and the first thing a
+			// static-site import meets.
+			String(Key("build", "output"), inRunner("output"), IsRepoLocation(), PerEnv(), InSection("build"),
+				Doc("Output", "Where the build left its product, relative to the source — \"dist\", \"build\", \"main.wasm\". \".\" is the source root, for a build that publishes in place. Omitted means the build wrote to the output directory the builder gave it.")),
 		)
 	}
 
@@ -895,8 +922,12 @@ func buildAttributes(ways ...string) []*Attribute {
 		// was an import that silently could not carry the most common thing a container
 		// project states about itself.
 		out = append(out,
-			// Accessor for the same collision `image` has: `build/dockerfile/path` and
-			// `source/path` both end in `path`.
+			// Accessor because `build/dockerfile/path` and `build/script/path` end in
+			// the same word, and `worker` is the kind that declares both branches — so
+			// a client would name one `Path` and silently drop the other. That pair, on
+			// that kind, is what accessor_test reports when either override is removed.
+			// `source/path` is not part of it: the engine derives that path from the
+			// key, and the test names such a field by its key instead.
 			String(Key("build", "dockerfile"), Path("build", dockerfileWay, "path"), IsRepoPath(),
 				Accessor("Dockerfile"), RequiredWhen(Key("build", "kind"), dockerfileWay), InSection("build"),
 				Doc("Dockerfile", "Path to the Dockerfile, relative to the source.")),
