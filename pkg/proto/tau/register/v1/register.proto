@@ -108,6 +108,20 @@ message CompiledProject {
   bytes compiled = 1;
 }
 
+message ProjectRequest {
+  string project = 1;
+}
+
+// Deployments is which environments of a project have ever been published.
+//
+// A LIST AND NOT A STREAM. A project's deployments are the handful its author
+// declared — production, staging, preview, a shadow or two — not a population
+// that grows with use, so a stream would be ceremony around a slice that
+// always fits in one message.
+message Deployments {
+  repeated string environments = 1;
+}
+
 message HostRequest {
   string fqdn = 1;
 }
@@ -128,6 +142,17 @@ service RegisterService {
   // Object is one compiled project by its content address. A caller makes this
   // call once per id and never again.
   rpc Object(ObjectRequest) returns (CompiledProject);
+
+  // Environments is which deployments a project has, sorted.
+  //
+  // IT IS WHAT A CODE BUILD ASKS FIRST. A push to a code repository knows a
+  // project and a branch; which deployments that branch feeds is in the
+  // compiled object, and reading the compiled object needs the name of a
+  // deployment to read it from.
+  //
+  // A project nobody has published answers with an empty list rather than
+  // NotFound: the question has an answer and the answer is none.
+  rpc Environments(ProjectRequest) returns (Deployments);
 
   // ResolveHost says whose environment answers on a name. It is the first thing
   // a gateway does with a request, before it can match a route or reach

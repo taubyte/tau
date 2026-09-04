@@ -138,6 +138,20 @@ type Pointer struct {
 type Store interface {
 	Get(ctx context.Context, key string) ([]byte, bool, error)
 	Put(ctx context.Context, key string, value []byte) error
+
+	// List is every key under a prefix, in any order.
+	//
+	// IT IS A PREFIX AND NOT A QUERY, which is the whole of what this state
+	// machine ever asks of a store: the key grammar puts a project's pointers
+	// under one prefix on purpose, so "which deployments does this project
+	// have" is a scan of one range rather than an index somebody has to keep
+	// in step with the pointers.
+	//
+	// A store that cannot enumerate is not usable here, and that is a
+	// deliberate widening: the alternative was a second index of environment
+	// names beside the pointers, written by the same writer, which is one more
+	// thing that can disagree with the thing it describes.
+	List(ctx context.Context, prefix string) ([]string, error)
 }
 
 // keys. THE SEPARATOR MAY NOT APPEAR IN A NAME, and that is checked rather than
@@ -401,6 +415,51 @@ func (r *Register) Resolve(ctx context.Context, project, environment string) (Po
 }
 
 // Object is one compiled project by its content address.
+// Environments is every deployment of a project that has ever been published,
+// sorted.
+//
+// IT IS WHAT A CODE BUILD ASKS FIRST. A push to a code repository knows a
+// project and a branch; which deployments that branch feeds is in the compiled
+// object, and reading the compiled object needs the name of a deployment to
+// read it from. This is that name.
+//
+// A project nobody has published is an empty list and not an error: the
+// question "which deployments does it have" has an answer, and the answer is
+// none.
+func (r *Register) Environments(ctx context.Context, project string) ([]string, error) {
+	// THE CALLER'S MISTAKE IS NOT DATA LOSS. ErrMalformedPointer is a stored
+	// row that is present and unreadable, and reporting a bad argument with it
+	// would tell a caller who sent an empty project that this register had lost
+	// something.
+	if project == "" {
+		return nil, ErrNoProject
+	}
+	if strings.Contains(project, sep) {
+		return nil, fmt.Errorf("%w: project %q", ErrSeparator, project)
+	}
+
+	prefix := pointerPrefix + project + sep
+	keys, err := r.store.List(ctx, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("register: listing %s's deployments: %w", project, err)
+	}
+
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		name := strings.TrimPrefix(key, prefix)
+		// A KEY WITH A SEPARATOR LEFT IN IT IS NOT ONE OF THIS PROJECT'S. The
+		// grammar refuses the separator inside a name, so anything still
+		// carrying one under this prefix belongs to a longer project name that
+		// happens to start the same way.
+		if name == "" || strings.Contains(name, sep) {
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 func (r *Register) Object(ctx context.Context, id ObjectID) ([]byte, error) {
 	if id == "" {
 		return nil, ErrNoObject
@@ -482,6 +541,19 @@ func (s *MemStore) Get(_ context.Context, key string) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 	return append([]byte(nil), v...), true, nil
+}
+
+func (s *MemStore) List(_ context.Context, prefix string) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var out []string
+	for k := range s.m {
+		if strings.HasPrefix(k, prefix) {
+			out = append(out, k)
+		}
+	}
+	return out, nil
 }
 
 func (s *MemStore) Put(_ context.Context, key string, value []byte) error {

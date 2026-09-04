@@ -78,6 +78,9 @@ const (
 	RegisterServiceResolveProcedure = "/tau.register.v1.RegisterService/Resolve"
 	// RegisterServiceObjectProcedure is the fully-qualified name of the RegisterService's Object RPC.
 	RegisterServiceObjectProcedure = "/tau.register.v1.RegisterService/Object"
+	// RegisterServiceEnvironmentsProcedure is the fully-qualified name of the RegisterService's
+	// Environments RPC.
+	RegisterServiceEnvironmentsProcedure = "/tau.register.v1.RegisterService/Environments"
 	// RegisterServiceResolveHostProcedure is the fully-qualified name of the RegisterService's
 	// ResolveHost RPC.
 	RegisterServiceResolveHostProcedure = "/tau.register.v1.RegisterService/ResolveHost"
@@ -93,6 +96,16 @@ type RegisterServiceClient interface {
 	// Object is one compiled project by its content address. A caller makes this
 	// call once per id and never again.
 	Object(context.Context, *connect.Request[v1.ObjectRequest]) (*connect.Response[v1.CompiledProject], error)
+	// Environments is which deployments a project has, sorted.
+	//
+	// IT IS WHAT A CODE BUILD ASKS FIRST. A push to a code repository knows a
+	// project and a branch; which deployments that branch feeds is in the
+	// compiled object, and reading the compiled object needs the name of a
+	// deployment to read it from.
+	//
+	// A project nobody has published answers with an empty list rather than
+	// NotFound: the question has an answer and the answer is none.
+	Environments(context.Context, *connect.Request[v1.ProjectRequest]) (*connect.Response[v1.Deployments], error)
 	// ResolveHost says whose environment answers on a name. It is the first thing
 	// a gateway does with a request, before it can match a route or reach
 	// anything.
@@ -132,6 +145,12 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(registerServiceMethods.ByName("Object")),
 			connect.WithClientOptions(opts...),
 		),
+		environments: connect.NewClient[v1.ProjectRequest, v1.Deployments](
+			httpClient,
+			baseURL+RegisterServiceEnvironmentsProcedure,
+			connect.WithSchema(registerServiceMethods.ByName("Environments")),
+			connect.WithClientOptions(opts...),
+		),
 		resolveHost: connect.NewClient[v1.HostRequest, v1.HostAnswer](
 			httpClient,
 			baseURL+RegisterServiceResolveHostProcedure,
@@ -143,10 +162,11 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // registerServiceClient implements RegisterServiceClient.
 type registerServiceClient struct {
-	publish     *connect.Client[v1.PublishRequest, v1.PublishResponse]
-	resolve     *connect.Client[v1.ResolveRequest, v1.Pointer]
-	object      *connect.Client[v1.ObjectRequest, v1.CompiledProject]
-	resolveHost *connect.Client[v1.HostRequest, v1.HostAnswer]
+	publish      *connect.Client[v1.PublishRequest, v1.PublishResponse]
+	resolve      *connect.Client[v1.ResolveRequest, v1.Pointer]
+	object       *connect.Client[v1.ObjectRequest, v1.CompiledProject]
+	environments *connect.Client[v1.ProjectRequest, v1.Deployments]
+	resolveHost  *connect.Client[v1.HostRequest, v1.HostAnswer]
 }
 
 // Publish calls tau.register.v1.RegisterService.Publish.
@@ -164,6 +184,11 @@ func (c *registerServiceClient) Object(ctx context.Context, req *connect.Request
 	return c.object.CallUnary(ctx, req)
 }
 
+// Environments calls tau.register.v1.RegisterService.Environments.
+func (c *registerServiceClient) Environments(ctx context.Context, req *connect.Request[v1.ProjectRequest]) (*connect.Response[v1.Deployments], error) {
+	return c.environments.CallUnary(ctx, req)
+}
+
 // ResolveHost calls tau.register.v1.RegisterService.ResolveHost.
 func (c *registerServiceClient) ResolveHost(ctx context.Context, req *connect.Request[v1.HostRequest]) (*connect.Response[v1.HostAnswer], error) {
 	return c.resolveHost.CallUnary(ctx, req)
@@ -179,6 +204,16 @@ type RegisterServiceHandler interface {
 	// Object is one compiled project by its content address. A caller makes this
 	// call once per id and never again.
 	Object(context.Context, *connect.Request[v1.ObjectRequest]) (*connect.Response[v1.CompiledProject], error)
+	// Environments is which deployments a project has, sorted.
+	//
+	// IT IS WHAT A CODE BUILD ASKS FIRST. A push to a code repository knows a
+	// project and a branch; which deployments that branch feeds is in the
+	// compiled object, and reading the compiled object needs the name of a
+	// deployment to read it from.
+	//
+	// A project nobody has published answers with an empty list rather than
+	// NotFound: the question has an answer and the answer is none.
+	Environments(context.Context, *connect.Request[v1.ProjectRequest]) (*connect.Response[v1.Deployments], error)
 	// ResolveHost says whose environment answers on a name. It is the first thing
 	// a gateway does with a request, before it can match a route or reach
 	// anything.
@@ -214,6 +249,12 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 		connect.WithSchema(registerServiceMethods.ByName("Object")),
 		connect.WithHandlerOptions(opts...),
 	)
+	registerServiceEnvironmentsHandler := connect.NewUnaryHandler(
+		RegisterServiceEnvironmentsProcedure,
+		svc.Environments,
+		connect.WithSchema(registerServiceMethods.ByName("Environments")),
+		connect.WithHandlerOptions(opts...),
+	)
 	registerServiceResolveHostHandler := connect.NewUnaryHandler(
 		RegisterServiceResolveHostProcedure,
 		svc.ResolveHost,
@@ -228,6 +269,8 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 			registerServiceResolveHandler.ServeHTTP(w, r)
 		case RegisterServiceObjectProcedure:
 			registerServiceObjectHandler.ServeHTTP(w, r)
+		case RegisterServiceEnvironmentsProcedure:
+			registerServiceEnvironmentsHandler.ServeHTTP(w, r)
 		case RegisterServiceResolveHostProcedure:
 			registerServiceResolveHostHandler.ServeHTTP(w, r)
 		default:
@@ -249,6 +292,10 @@ func (UnimplementedRegisterServiceHandler) Resolve(context.Context, *connect.Req
 
 func (UnimplementedRegisterServiceHandler) Object(context.Context, *connect.Request[v1.ObjectRequest]) (*connect.Response[v1.CompiledProject], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v1.RegisterService.Object is not implemented"))
+}
+
+func (UnimplementedRegisterServiceHandler) Environments(context.Context, *connect.Request[v1.ProjectRequest]) (*connect.Response[v1.Deployments], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v1.RegisterService.Environments is not implemented"))
 }
 
 func (UnimplementedRegisterServiceHandler) ResolveHost(context.Context, *connect.Request[v1.HostRequest]) (*connect.Response[v1.HostAnswer], error) {

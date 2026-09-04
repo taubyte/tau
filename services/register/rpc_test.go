@@ -230,3 +230,29 @@ func TestAClaimedNameIsAlreadyExists(t *testing.T) {
 	}))
 	require.Equal(t, connect.CodeAlreadyExists, codeOf(t, err))
 }
+
+// A CODE BUILD ASKS THIS FIRST, from whichever node runs a register — so it
+// goes over the wire like everything else on the request path.
+func TestEnvironmentsOverTheWire(t *testing.T) {
+	h := newHarness(t, pkgregister.NewMemStore())
+
+	publish(t, h, "shop", "production", 1, `{"object":{"id":"a"}}`)
+	publish(t, h, "shop", "staging", 1, `{"object":{"id":"b"}}`)
+	publish(t, h, "other", "production", 1, `{"object":{"id":"c"}}`)
+
+	got, err := h.Client.Environments(t.Context(), connect.NewRequest(&registerv1.ProjectRequest{Project: "shop"}))
+	require.NoError(t, err)
+	require.Equal(t, []string{"production", "staging"}, got.Msg.GetEnvironments())
+
+	// A PROJECT NOBODY HAS PUBLISHED IS AN EMPTY LIST, not NotFound: the
+	// question has an answer and the answer is none. A caller made to treat
+	// that as an error would have to tell it apart from a register that was
+	// simply unreachable.
+	got, err = h.Client.Environments(t.Context(), connect.NewRequest(&registerv1.ProjectRequest{Project: "never-deployed"}))
+	require.NoError(t, err)
+	require.Empty(t, got.Msg.GetEnvironments())
+
+	// A project name that is not one keeps its code across the wire.
+	_, err = h.Client.Environments(t.Context(), connect.NewRequest(&registerv1.ProjectRequest{Project: ""}))
+	require.Equal(t, connect.CodeInvalidArgument, codeOf(t, err))
+}

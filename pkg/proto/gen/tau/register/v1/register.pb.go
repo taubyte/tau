@@ -407,6 +407,100 @@ func (x *CompiledProject) GetCompiled() []byte {
 	return nil
 }
 
+type ProjectRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectRequest) Reset() {
+	*x = ProjectRequest{}
+	mi := &file_tau_register_v1_register_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectRequest) ProtoMessage() {}
+
+func (x *ProjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v1_register_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectRequest.ProtoReflect.Descriptor instead.
+func (*ProjectRequest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v1_register_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ProjectRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+// Deployments is which environments of a project have ever been published.
+//
+// A LIST AND NOT A STREAM. A project's deployments are the handful its author
+// declared — production, staging, preview, a shadow or two — not a population
+// that grows with use, so a stream would be ceremony around a slice that
+// always fits in one message.
+type Deployments struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Environments  []string               `protobuf:"bytes,1,rep,name=environments,proto3" json:"environments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Deployments) Reset() {
+	*x = Deployments{}
+	mi := &file_tau_register_v1_register_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Deployments) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Deployments) ProtoMessage() {}
+
+func (x *Deployments) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v1_register_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Deployments.ProtoReflect.Descriptor instead.
+func (*Deployments) Descriptor() ([]byte, []int) {
+	return file_tau_register_v1_register_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Deployments) GetEnvironments() []string {
+	if x != nil {
+		return x.Environments
+	}
+	return nil
+}
+
 type HostRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Fqdn          string                 `protobuf:"bytes,1,opt,name=fqdn,proto3" json:"fqdn,omitempty"`
@@ -416,7 +510,7 @@ type HostRequest struct {
 
 func (x *HostRequest) Reset() {
 	*x = HostRequest{}
-	mi := &file_tau_register_v1_register_proto_msgTypes[6]
+	mi := &file_tau_register_v1_register_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -428,7 +522,7 @@ func (x *HostRequest) String() string {
 func (*HostRequest) ProtoMessage() {}
 
 func (x *HostRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v1_register_proto_msgTypes[6]
+	mi := &file_tau_register_v1_register_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -441,7 +535,7 @@ func (x *HostRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostRequest.ProtoReflect.Descriptor instead.
 func (*HostRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v1_register_proto_rawDescGZIP(), []int{6}
+	return file_tau_register_v1_register_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *HostRequest) GetFqdn() string {
@@ -461,7 +555,7 @@ type HostAnswer struct {
 
 func (x *HostAnswer) Reset() {
 	*x = HostAnswer{}
-	mi := &file_tau_register_v1_register_proto_msgTypes[7]
+	mi := &file_tau_register_v1_register_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +567,7 @@ func (x *HostAnswer) String() string {
 func (*HostAnswer) ProtoMessage() {}
 
 func (x *HostAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v1_register_proto_msgTypes[7]
+	mi := &file_tau_register_v1_register_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,7 +580,7 @@ func (x *HostAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostAnswer.ProtoReflect.Descriptor instead.
 func (*HostAnswer) Descriptor() ([]byte, []int) {
-	return file_tau_register_v1_register_proto_rawDescGZIP(), []int{7}
+	return file_tau_register_v1_register_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *HostAnswer) GetProject() string {
@@ -525,17 +619,22 @@ const file_tau_register_v1_register_proto_rawDesc = "" +
 	"\rObjectRequest\x12\x16\n" +
 	"\x06object\x18\x01 \x01(\tR\x06object\"-\n" +
 	"\x0fCompiledProject\x12\x1a\n" +
-	"\bcompiled\x18\x01 \x01(\fR\bcompiled\"!\n" +
+	"\bcompiled\x18\x01 \x01(\fR\bcompiled\"*\n" +
+	"\x0eProjectRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\"1\n" +
+	"\vDeployments\x12\"\n" +
+	"\fenvironments\x18\x01 \x03(\tR\fenvironments\"!\n" +
 	"\vHostRequest\x12\x12\n" +
 	"\x04fqdn\x18\x01 \x01(\tR\x04fqdn\"H\n" +
 	"\n" +
 	"HostAnswer\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
-	"\venvironment\x18\x02 \x01(\tR\venvironment2\xbb\x02\n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment2\x8a\x03\n" +
 	"\x0fRegisterService\x12L\n" +
 	"\aPublish\x12\x1f.tau.register.v1.PublishRequest\x1a .tau.register.v1.PublishResponse\x12D\n" +
 	"\aResolve\x12\x1f.tau.register.v1.ResolveRequest\x1a\x18.tau.register.v1.Pointer\x12J\n" +
-	"\x06Object\x12\x1e.tau.register.v1.ObjectRequest\x1a .tau.register.v1.CompiledProject\x12H\n" +
+	"\x06Object\x12\x1e.tau.register.v1.ObjectRequest\x1a .tau.register.v1.CompiledProject\x12M\n" +
+	"\fEnvironments\x12\x1f.tau.register.v1.ProjectRequest\x1a\x1c.tau.register.v1.Deployments\x12H\n" +
 	"\vResolveHost\x12\x1c.tau.register.v1.HostRequest\x1a\x1b.tau.register.v1.HostAnswerB\xc3\x01\n" +
 	"\x13com.tau.register.v1B\rRegisterProtoP\x01Z?github.com/taubyte/tau/pkg/proto/gen/tau/register/v1;registerv1\xa2\x02\x03TRX\xaa\x02\x0fTau.Register.V1\xca\x02\x0fTau\\Register\\V1\xe2\x02\x1bTau\\Register\\V1\\GPBMetadata\xea\x02\x11Tau::Register::V1b\x06proto3"
 
@@ -551,7 +650,7 @@ func file_tau_register_v1_register_proto_rawDescGZIP() []byte {
 	return file_tau_register_v1_register_proto_rawDescData
 }
 
-var file_tau_register_v1_register_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_tau_register_v1_register_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_tau_register_v1_register_proto_goTypes = []any{
 	(*Pointer)(nil),         // 0: tau.register.v1.Pointer
 	(*PublishRequest)(nil),  // 1: tau.register.v1.PublishRequest
@@ -559,20 +658,24 @@ var file_tau_register_v1_register_proto_goTypes = []any{
 	(*ResolveRequest)(nil),  // 3: tau.register.v1.ResolveRequest
 	(*ObjectRequest)(nil),   // 4: tau.register.v1.ObjectRequest
 	(*CompiledProject)(nil), // 5: tau.register.v1.CompiledProject
-	(*HostRequest)(nil),     // 6: tau.register.v1.HostRequest
-	(*HostAnswer)(nil),      // 7: tau.register.v1.HostAnswer
+	(*ProjectRequest)(nil),  // 6: tau.register.v1.ProjectRequest
+	(*Deployments)(nil),     // 7: tau.register.v1.Deployments
+	(*HostRequest)(nil),     // 8: tau.register.v1.HostRequest
+	(*HostAnswer)(nil),      // 9: tau.register.v1.HostAnswer
 }
 var file_tau_register_v1_register_proto_depIdxs = []int32{
 	1, // 0: tau.register.v1.RegisterService.Publish:input_type -> tau.register.v1.PublishRequest
 	3, // 1: tau.register.v1.RegisterService.Resolve:input_type -> tau.register.v1.ResolveRequest
 	4, // 2: tau.register.v1.RegisterService.Object:input_type -> tau.register.v1.ObjectRequest
-	6, // 3: tau.register.v1.RegisterService.ResolveHost:input_type -> tau.register.v1.HostRequest
-	2, // 4: tau.register.v1.RegisterService.Publish:output_type -> tau.register.v1.PublishResponse
-	0, // 5: tau.register.v1.RegisterService.Resolve:output_type -> tau.register.v1.Pointer
-	5, // 6: tau.register.v1.RegisterService.Object:output_type -> tau.register.v1.CompiledProject
-	7, // 7: tau.register.v1.RegisterService.ResolveHost:output_type -> tau.register.v1.HostAnswer
-	4, // [4:8] is the sub-list for method output_type
-	0, // [0:4] is the sub-list for method input_type
+	6, // 3: tau.register.v1.RegisterService.Environments:input_type -> tau.register.v1.ProjectRequest
+	8, // 4: tau.register.v1.RegisterService.ResolveHost:input_type -> tau.register.v1.HostRequest
+	2, // 5: tau.register.v1.RegisterService.Publish:output_type -> tau.register.v1.PublishResponse
+	0, // 6: tau.register.v1.RegisterService.Resolve:output_type -> tau.register.v1.Pointer
+	5, // 7: tau.register.v1.RegisterService.Object:output_type -> tau.register.v1.CompiledProject
+	7, // 8: tau.register.v1.RegisterService.Environments:output_type -> tau.register.v1.Deployments
+	9, // 9: tau.register.v1.RegisterService.ResolveHost:output_type -> tau.register.v1.HostAnswer
+	5, // [5:10] is the sub-list for method output_type
+	0, // [0:5] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -589,7 +692,7 @@ func file_tau_register_v1_register_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_register_v1_register_proto_rawDesc), len(file_tau_register_v1_register_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

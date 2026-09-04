@@ -74,6 +74,15 @@ func (c *Client) Resolve(ctx context.Context, project, environment string) (pkgr
 }
 
 // ResolveHost says whose environment answers on a name.
+// Environments is which deployments a project has, sorted.
+func (c *Client) Environments(ctx context.Context, project string) ([]string, error) {
+	res, err := c.svc.Environments(ctx, connect.NewRequest(&registerv1.ProjectRequest{Project: project}))
+	if err != nil {
+		return nil, unwire(err)
+	}
+	return res.Msg.GetEnvironments(), nil
+}
+
 func (c *Client) ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error) {
 	res, err := c.svc.ResolveHost(ctx, connect.NewRequest(&registerv1.HostRequest{Fqdn: fqdn}))
 	if err != nil {

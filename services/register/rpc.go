@@ -75,6 +75,14 @@ func (h *handler) Object(ctx context.Context, req *connect.Request[registerv1.Ob
 
 // ResolveHost says whose environment answers on a name — the first thing a
 // gateway does with a request.
+func (h *handler) Environments(ctx context.Context, req *connect.Request[registerv1.ProjectRequest]) (*connect.Response[registerv1.Deployments], error) {
+	environments, err := h.s.reg.Environments(ctx, req.Msg.GetProject())
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(&registerv1.Deployments{Environments: environments}), nil
+}
+
 func (h *handler) ResolveHost(ctx context.Context, req *connect.Request[registerv1.HostRequest]) (*connect.Response[registerv1.HostAnswer], error) {
 	project, environment, err := h.s.reg.ResolveHost(ctx, req.Msg.GetFqdn())
 	if err != nil {

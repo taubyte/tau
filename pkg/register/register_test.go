@@ -418,3 +418,98 @@ func (s *sometimesFailingStore) Put(ctx context.Context, key string, value []byt
 	}
 	return s.MemStore.Put(ctx, key, value)
 }
+
+// ── which deployments a project has ──────────────────────────────────────
+
+// IT IS WHAT A CODE BUILD ASKS FIRST. A push to a code repository knows a
+// project and a branch; which deployments that branch feeds is in the compiled
+// object, and reading the compiled object needs the name of a deployment to
+// read it from.
+func TestEnvironments(t *testing.T) {
+	r, _ := newRegister(t)
+
+	for _, env := range []string{"production", "staging", "preview"} {
+		_, err := r.Publish(ctx, Publication{
+			Project: "shop", Environment: env, Revision: 1,
+			Compiled: []byte(`{"object":{"id":"` + env + `"}}`),
+		})
+		require.NoError(t, err)
+	}
+	// Another project's deployments are not this one's.
+	_, err := r.Publish(ctx, Publication{
+		Project: "other", Environment: "production", Revision: 1,
+		Compiled: []byte(`{"object":{"id":"x"}}`),
+	})
+	require.NoError(t, err)
+
+	got, err := r.Environments(ctx, "shop")
+	require.NoError(t, err)
+	require.Equal(t, []string{"preview", "production", "staging"}, got)
+
+	got, err = r.Environments(ctx, "other")
+	require.NoError(t, err)
+	require.Equal(t, []string{"production"}, got)
+}
+
+// A PROJECT NOBODY HAS PUBLISHED IS AN EMPTY LIST AND NOT AN ERROR: the
+// question has an answer and the answer is none.
+func TestEnvironmentsOfAProjectNobodyPublished(t *testing.T) {
+	r, _ := newRegister(t)
+	got, err := r.Environments(ctx, "never-deployed")
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
+// A PROJECT WHOSE NAME PREFIXES ANOTHER'S must not collect its deployments —
+// the separator is refused inside a name precisely so this scan can be a prefix
+// scan, and this is the test that says so.
+func TestOneProjectDoesNotCollectAnothersDeployments(t *testing.T) {
+	r, _ := newRegister(t)
+
+	for _, p := range []struct{ project, environment string }{
+		{"shop", "production"},
+		{"shopfront", "production"},
+		{"shopfront", "staging"},
+	} {
+		_, err := r.Publish(ctx, Publication{
+			Project: p.project, Environment: p.environment, Revision: 1,
+			Compiled: []byte(`{"object":{"id":"` + p.project + p.environment + `"}}`),
+		})
+		require.NoError(t, err)
+	}
+
+	got, err := r.Environments(ctx, "shop")
+	require.NoError(t, err)
+	require.Equal(t, []string{"production"}, got)
+
+	got, err = r.Environments(ctx, "shopfront")
+	require.NoError(t, err)
+	require.Equal(t, []string{"production", "staging"}, got)
+}
+
+func TestEnvironmentsRefusesWhatIsNotAProject(t *testing.T) {
+	r, _ := newRegister(t)
+
+	// THE CALLER'S MISTAKE IS NOT DATA LOSS: ErrMalformedPointer is a stored
+	// row that is present and unreadable, and the wire turns it into DataLoss.
+	_, err := r.Environments(ctx, "")
+	require.ErrorIs(t, err, ErrNoProject)
+
+	_, err = r.Environments(ctx, "shop"+sep+"prod")
+	require.ErrorIs(t, err, ErrSeparator)
+}
+
+// A store that cannot look is not a project with no deployments.
+func TestEnvironmentsWhenTheStoreCannotLook(t *testing.T) {
+	r, err := New(WithStore(unlistable{NewMemStore()}))
+	require.NoError(t, err)
+
+	_, err = r.Environments(ctx, "shop")
+	require.ErrorContains(t, err, "the store is unreachable")
+}
+
+type unlistable struct{ *MemStore }
+
+func (unlistable) List(context.Context, string) ([]string, error) {
+	return nil, errors.New("the store is unreachable")
+}

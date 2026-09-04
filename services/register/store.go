@@ -52,6 +52,19 @@ func (s kvStore) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	}
 }
 
+// List is kvdb's own prefix listing.
+//
+// A KEY THAT DOES NOT EXIST UNDER THE PREFIX IS AN EMPTY LIST, not an error,
+// which is the same distinction Get keeps: "nothing published" and "could not
+// look" are different answers and a caller acts on them differently.
+func (s kvStore) List(ctx context.Context, prefix string) ([]string, error) {
+	keys, err := s.db.List(ctx, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("register: listing %s: %w", prefix, err)
+	}
+	return keys, nil
+}
+
 func (s kvStore) Put(ctx context.Context, key string, value []byte) error {
 	if err := s.db.Put(ctx, key, value); err != nil {
 		return fmt.Errorf("register: writing %s: %w", key, err)
