@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -389,4 +390,110 @@ func TestAProxysNameIsNotServedHere(t *testing.T) {
 
 	w := h.do(t, http.MethodGet, "http://"+proxy+".tau.example.io/", "")
 	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// ── what crossed the edge ────────────────────────────────────────────────
+
+// BANDWIDTH IS THE THIRD BILLED UNIT and this is the only service that sees
+// every byte in and out. A worker sees a request that already arrived; what
+// crossed the edge — including everything refused before a worker was asked —
+// is visible here and nowhere else.
+type meter struct {
+	mu     sync.Mutex
+	events []Accounted
+}
+
+func (m *meter) Record(_ context.Context, ev Accounted) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, ev)
+}
+
+func (m *meter) only(t *testing.T) Accounted {
+	t.Helper()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Len(t, m.events, 1)
+	return m.events[0]
+}
+
+func TestAServedRequestIsAccounted(t *testing.T) {
+	m := &meter{}
+	h := newHarness(t, Config{}, WithMeter(m))
+
+	res := h.do(t, http.MethodPost, "http://ask.example.com/", "a body")
+	require.Equal(t, http.StatusOK, res.Code)
+
+	ev := m.only(t)
+	require.Equal(t, OpServe, ev.Op)
+	require.Equal(t, "ask.example.com", ev.Host)
+	require.Equal(t, "shop", ev.Project)
+	require.Equal(t, "prod", ev.Environment)
+	require.Equal(t, http.StatusOK, ev.Status)
+	require.Equal(t, int64(len("a body")), ev.In)
+	require.Positive(t, ev.Out, "and what the workload answered with")
+}
+
+// A REQUEST FOR A NAME NOTHING ANSWERS ON BELONGS TO NO PROJECT, which is a
+// real answer and one a sink has to be able to total separately — the host is
+// the only attribution it has.
+func TestAnUnknownNameIsAccountedAgainstNoProject(t *testing.T) {
+	m := &meter{}
+	h := newHarness(t, Config{}, WithMeter(m))
+
+	res := h.do(t, http.MethodGet, "http://nobody.example.com/", "")
+	require.Equal(t, http.StatusNotFound, res.Code)
+
+	ev := m.only(t)
+	require.Equal(t, OpRefuse, ev.Op)
+	require.Equal(t, "nobody.example.com", ev.Host)
+	require.Empty(t, ev.Project)
+	require.Equal(t, http.StatusNotFound, ev.Status)
+}
+
+// A FLOOD THAT NEVER REACHES A WORKLOAD costs this cloud bandwidth and CPU and
+// shows up in no invocation count — which is exactly the traffic somebody
+// disputing a bill asks about.
+func TestARefusedRouteIsAccounted(t *testing.T) {
+	m := &meter{}
+	h := newHarness(t, Config{}, WithMeter(m))
+
+	// The name has a route and it is POST-only, so a GET is refused with 405 —
+	// which is a refusal like any other and is exactly the kind a worker never
+	// hears about.
+	res := h.do(t, http.MethodGet, "http://ask.example.com/nothing-here", "")
+	require.Equal(t, http.StatusMethodNotAllowed, res.Code)
+
+	ev := m.only(t)
+	require.Equal(t, OpRefuse, ev.Op)
+	require.Equal(t, "shop", ev.Project, "the name resolved even though the route did not")
+	require.Equal(t, http.StatusMethodNotAllowed, ev.Status)
+}
+
+// EVERY EXIT IS ACCOUNTED, and there are many: a deferred emission is the only
+// shape that survives one more being added.
+func TestEveryExitIsAccounted(t *testing.T) {
+	for name, url := range map[string]string{
+		"unknown name": "http://nobody.example.com/",
+		"no route":     "http://ask.example.com/nope",
+		"served":       "http://ask.example.com/",
+	} {
+		m := &meter{}
+		h := newHarness(t, Config{}, WithMeter(m))
+		h.do(t, http.MethodGet, url, "")
+
+		ev := m.only(t)
+		require.NotZero(t, ev.Status, name)
+		require.NotZero(t, ev.Op, name)
+	}
+}
+
+// A node with no meter serves exactly as it did.
+func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
+	h := newHarness(t, Config{})
+	require.Equal(t, http.StatusOK, h.do(t, http.MethodPost, "http://ask.example.com/", "").Code)
+}
+
+func TestWithMeterRefusesNil(t *testing.T) {
+	require.Error(t, WithMeter(nil)(&options{}))
 }

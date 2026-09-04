@@ -66,6 +66,10 @@ type Service struct {
 	limits   *limiter
 	now      func() time.Time
 
+	// meter is where this service says what it accounted for. Nil is the
+	// ordinary case; see meter.go.
+	meter Meter
+
 	// mu guards the host table: which project owns a name, and when that was
 	// last asked.
 	mu    sync.Mutex
@@ -126,6 +130,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		projects: projects,
 		limits:   newLimiter(o.now, cfg.MaxHosts),
 		now:      o.now,
+		meter:    o.meter,
 		owner:    map[string]ownerEntry{},
 	}, nil
 }
@@ -137,13 +142,25 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.Timeout)
 	defer cancel()
 
+	// EVERY EXIT FROM THIS FUNCTION IS ACCOUNTED, and there are seventeen of
+	// them. A deferred emission is the only shape that survives one more being
+	// added — which is what happened to every counter that was written as a
+	// line before each `return`.
+	billed := &crossing{w: w, started: s.now()}
+	w = billed
+	defer func() { s.emit(ctx, billed.accounted(s.now())) }()
+
 	name := hostOf(r)
+	billed.host = name
 	if name == "" {
 		refuse(w, http.StatusBadRequest, "no host")
 		return
 	}
 
 	projectName, environment, err := s.ownerOf(ctx, name)
+	if err == nil {
+		billed.project, billed.environment = projectName, environment
+	}
 	if err != nil {
 		if errors.Is(err, register.ErrNoHost) {
 			refuse(w, http.StatusNotFound, "no site answers on "+name)
@@ -210,6 +227,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.cfg.MaxBody))
+	billed.in = int64(len(body))
 	if err != nil {
 		refuse(w, http.StatusRequestEntityTooLarge, "the request body is too large")
 		return
@@ -225,6 +243,11 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		refuse(w, statusFor(err), "this route could not be served")
 		return
 	}
+
+	// A WORKLOAD ANSWERED, which is what separates a served request from every
+	// refusal this handler makes on its own — and the refusals are the half no
+	// invocation count can show.
+	billed.served = true
 
 	for key, values := range res.Headers {
 		for _, v := range values {

@@ -96,6 +96,7 @@ type options struct {
 	workers Workers
 	source  project.Registry
 	now     func() time.Time
+	meter   Meter
 }
 
 // WithHosts is where "whose name is this" is answered. Required.
@@ -132,6 +133,18 @@ func WithSource(s project.Registry) Option {
 }
 
 // WithClock injects the local clock. Tests use it; production does not.
+// WithMeter is where this service says what it accounted for — the bytes that
+// crossed the edge, in both directions, served and refused. Nil emits nothing.
+func WithMeter(m Meter) Option {
+	return func(o *options) error {
+		if m == nil {
+			return errors.New("gateway: a nil meter")
+		}
+		o.meter = m
+		return nil
+	}
+}
+
 func WithClock(now func() time.Time) Option {
 	return func(o *options) error {
 		if now == nil {
