@@ -343,11 +343,48 @@ message LogChunk {
   int64 next_offset = 2;
 }
 
+// ArtifactRequest asks what one resource of one deployment currently runs.
+message ArtifactRequest {
+  string project = 1;
+  string environment = 2;
+  string resource = 3;
+}
+
+// Built is what a resource currently runs.
+//
+// The message is not called Artifact because the rpc below is, and a message
+// may not share a name with a method of the service that returns it —
+// register.proto's CompiledProject is the same rename for the same reason.
+message Built {
+  // cid is the content id of what the last successful build of that resource
+  // produced.
+  string cid = 1;
+}
+
 service JobService {
   rpc Get(JobRef) returns (Job);
   rpc List(ProjectRef) returns (stream JobRef);
   rpc Cancel(JobRef) returns (Empty);
   rpc Retry(JobRef) returns (Empty);
+
+  // Artifact is the content id of what one resource of one deployment
+  // currently runs.
+  //
+  // IT IS A ROW AND NOT A SEARCH. The row is written in the same replicated
+  // entry as the record of the build that produced it, so "this job succeeded"
+  // and "this is what that deployment now runs" cannot end up disagreeing — and
+  // a reader pays one read rather than a walk over a project's job history
+  // looking for the newest one that built this resource.
+  //
+  // ONLY A SUCCESSFUL BUILD MOVES IT. A failed run's log is kept, because that
+  // is the output somebody wants; what a deployment RUNS must not become
+  // something a build failed to finish.
+  //
+  // A resource nothing has built answers NotFound. That is not the same as a
+  // resource that needs no build — an image is pulled, a component is built as
+  // its own resource — and the caller is the one that knows which it asked
+  // about.
+  rpc Artifact(ArtifactRequest) returns (Built);
 
   // Follow streams a RUNNING build's output, from `offset` to the end of it.
   //

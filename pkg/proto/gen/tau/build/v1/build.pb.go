@@ -730,6 +730,118 @@ func (x *LogChunk) GetNextOffset() int64 {
 	return 0
 }
 
+// ArtifactRequest asks what one resource of one deployment currently runs.
+type ArtifactRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Environment   string                 `protobuf:"bytes,2,opt,name=environment,proto3" json:"environment,omitempty"`
+	Resource      string                 `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArtifactRequest) Reset() {
+	*x = ArtifactRequest{}
+	mi := &file_tau_build_v1_build_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArtifactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArtifactRequest) ProtoMessage() {}
+
+func (x *ArtifactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_build_v1_build_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArtifactRequest.ProtoReflect.Descriptor instead.
+func (*ArtifactRequest) Descriptor() ([]byte, []int) {
+	return file_tau_build_v1_build_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ArtifactRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *ArtifactRequest) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *ArtifactRequest) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+// Built is what a resource currently runs.
+//
+// The message is not called Artifact because the rpc below is, and a message
+// may not share a name with a method of the service that returns it —
+// register.proto's CompiledProject is the same rename for the same reason.
+type Built struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// cid is the content id of what the last successful build of that resource
+	// produced.
+	Cid           string `protobuf:"bytes,1,opt,name=cid,proto3" json:"cid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Built) Reset() {
+	*x = Built{}
+	mi := &file_tau_build_v1_build_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Built) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Built) ProtoMessage() {}
+
+func (x *Built) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_build_v1_build_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Built.ProtoReflect.Descriptor instead.
+func (*Built) Descriptor() ([]byte, []int) {
+	return file_tau_build_v1_build_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Built) GetCid() string {
+	if x != nil {
+		return x.Cid
+	}
+	return ""
+}
+
 var File_tau_build_v1_build_proto protoreflect.FileDescriptor
 
 const file_tau_build_v1_build_proto_rawDesc = "" +
@@ -769,7 +881,13 @@ const file_tau_build_v1_build_proto_rawDesc = "" +
 	"\bLogChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1f\n" +
 	"\vnext_offset\x18\x02 \x01(\x03R\n" +
-	"nextOffset*w\n" +
+	"nextOffset\"i\n" +
+	"\x0fArtifactRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +
+	"\bresource\x18\x03 \x01(\tR\bresource\"\x19\n" +
+	"\x05Built\x12\x10\n" +
+	"\x03cid\x18\x01 \x01(\tR\x03cid*w\n" +
 	"\tJobStatus\x12\x11\n" +
 	"\rJobStatusOpen\x10\x00\x12\x14\n" +
 	"\x10JobStatusClaimed\x10\x01\x12\x14\n" +
@@ -777,13 +895,14 @@ const file_tau_build_v1_build_proto_rawDesc = "" +
 	"\x0fJobStatusFailed\x10\x03\x12\x16\n" +
 	"\x12JobStatusCancelled\x10\x042H\n" +
 	"\fQueueService\x128\n" +
-	"\aEnqueue\x12\x17.tau.build.v1.PushEvent\x1a\x14.tau.build.v1.JobRef2\xa0\x02\n" +
+	"\aEnqueue\x12\x17.tau.build.v1.PushEvent\x1a\x14.tau.build.v1.JobRef2\xe0\x02\n" +
 	"\n" +
 	"JobService\x12.\n" +
 	"\x03Get\x12\x14.tau.build.v1.JobRef\x1a\x11.tau.build.v1.Job\x128\n" +
 	"\x04List\x12\x18.tau.build.v1.ProjectRef\x1a\x14.tau.build.v1.JobRef0\x01\x123\n" +
 	"\x06Cancel\x12\x14.tau.build.v1.JobRef\x1a\x13.tau.build.v1.Empty\x122\n" +
-	"\x05Retry\x12\x14.tau.build.v1.JobRef\x1a\x13.tau.build.v1.Empty\x12?\n" +
+	"\x05Retry\x12\x14.tau.build.v1.JobRef\x1a\x13.tau.build.v1.Empty\x12>\n" +
+	"\bArtifact\x12\x1d.tau.build.v1.ArtifactRequest\x1a\x13.tau.build.v1.Built\x12?\n" +
 	"\x06Follow\x12\x1b.tau.build.v1.FollowRequest\x1a\x16.tau.build.v1.LogChunk0\x01B\xab\x01\n" +
 	"\x10com.tau.build.v1B\n" +
 	"BuildProtoP\x01Z9github.com/taubyte/tau/pkg/proto/gen/tau/build/v1;buildv1\xa2\x02\x03TBX\xaa\x02\fTau.Build.V1\xca\x02\fTau\\Build\\V1\xe2\x02\x18Tau\\Build\\V1\\GPBMetadata\xea\x02\x0eTau::Build::V1b\x06proto3"
@@ -801,40 +920,44 @@ func file_tau_build_v1_build_proto_rawDescGZIP() []byte {
 }
 
 var file_tau_build_v1_build_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_tau_build_v1_build_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_tau_build_v1_build_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_tau_build_v1_build_proto_goTypes = []any{
-	(JobStatus)(0),        // 0: tau.build.v1.JobStatus
-	(*Empty)(nil),         // 1: tau.build.v1.Empty
-	(*PushEvent)(nil),     // 2: tau.build.v1.PushEvent
-	(*JobRef)(nil),        // 3: tau.build.v1.JobRef
-	(*Job)(nil),           // 4: tau.build.v1.Job
-	(*ProjectRef)(nil),    // 5: tau.build.v1.ProjectRef
-	(*FollowRequest)(nil), // 6: tau.build.v1.FollowRequest
-	(*LogChunk)(nil),      // 7: tau.build.v1.LogChunk
-	nil,                   // 8: tau.build.v1.Job.LogsEntry
-	nil,                   // 9: tau.build.v1.Job.AssetCidEntry
+	(JobStatus)(0),          // 0: tau.build.v1.JobStatus
+	(*Empty)(nil),           // 1: tau.build.v1.Empty
+	(*PushEvent)(nil),       // 2: tau.build.v1.PushEvent
+	(*JobRef)(nil),          // 3: tau.build.v1.JobRef
+	(*Job)(nil),             // 4: tau.build.v1.Job
+	(*ProjectRef)(nil),      // 5: tau.build.v1.ProjectRef
+	(*FollowRequest)(nil),   // 6: tau.build.v1.FollowRequest
+	(*LogChunk)(nil),        // 7: tau.build.v1.LogChunk
+	(*ArtifactRequest)(nil), // 8: tau.build.v1.ArtifactRequest
+	(*Built)(nil),           // 9: tau.build.v1.Built
+	nil,                     // 10: tau.build.v1.Job.LogsEntry
+	nil,                     // 11: tau.build.v1.Job.AssetCidEntry
 }
 var file_tau_build_v1_build_proto_depIdxs = []int32{
-	0, // 0: tau.build.v1.Job.status:type_name -> tau.build.v1.JobStatus
-	8, // 1: tau.build.v1.Job.logs:type_name -> tau.build.v1.Job.LogsEntry
-	9, // 2: tau.build.v1.Job.asset_cid:type_name -> tau.build.v1.Job.AssetCidEntry
-	2, // 3: tau.build.v1.QueueService.Enqueue:input_type -> tau.build.v1.PushEvent
-	3, // 4: tau.build.v1.JobService.Get:input_type -> tau.build.v1.JobRef
-	5, // 5: tau.build.v1.JobService.List:input_type -> tau.build.v1.ProjectRef
-	3, // 6: tau.build.v1.JobService.Cancel:input_type -> tau.build.v1.JobRef
-	3, // 7: tau.build.v1.JobService.Retry:input_type -> tau.build.v1.JobRef
-	6, // 8: tau.build.v1.JobService.Follow:input_type -> tau.build.v1.FollowRequest
-	3, // 9: tau.build.v1.QueueService.Enqueue:output_type -> tau.build.v1.JobRef
-	4, // 10: tau.build.v1.JobService.Get:output_type -> tau.build.v1.Job
-	3, // 11: tau.build.v1.JobService.List:output_type -> tau.build.v1.JobRef
-	1, // 12: tau.build.v1.JobService.Cancel:output_type -> tau.build.v1.Empty
-	1, // 13: tau.build.v1.JobService.Retry:output_type -> tau.build.v1.Empty
-	7, // 14: tau.build.v1.JobService.Follow:output_type -> tau.build.v1.LogChunk
-	9, // [9:15] is the sub-list for method output_type
-	3, // [3:9] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0,  // 0: tau.build.v1.Job.status:type_name -> tau.build.v1.JobStatus
+	10, // 1: tau.build.v1.Job.logs:type_name -> tau.build.v1.Job.LogsEntry
+	11, // 2: tau.build.v1.Job.asset_cid:type_name -> tau.build.v1.Job.AssetCidEntry
+	2,  // 3: tau.build.v1.QueueService.Enqueue:input_type -> tau.build.v1.PushEvent
+	3,  // 4: tau.build.v1.JobService.Get:input_type -> tau.build.v1.JobRef
+	5,  // 5: tau.build.v1.JobService.List:input_type -> tau.build.v1.ProjectRef
+	3,  // 6: tau.build.v1.JobService.Cancel:input_type -> tau.build.v1.JobRef
+	3,  // 7: tau.build.v1.JobService.Retry:input_type -> tau.build.v1.JobRef
+	8,  // 8: tau.build.v1.JobService.Artifact:input_type -> tau.build.v1.ArtifactRequest
+	6,  // 9: tau.build.v1.JobService.Follow:input_type -> tau.build.v1.FollowRequest
+	3,  // 10: tau.build.v1.QueueService.Enqueue:output_type -> tau.build.v1.JobRef
+	4,  // 11: tau.build.v1.JobService.Get:output_type -> tau.build.v1.Job
+	3,  // 12: tau.build.v1.JobService.List:output_type -> tau.build.v1.JobRef
+	1,  // 13: tau.build.v1.JobService.Cancel:output_type -> tau.build.v1.Empty
+	1,  // 14: tau.build.v1.JobService.Retry:output_type -> tau.build.v1.Empty
+	9,  // 15: tau.build.v1.JobService.Artifact:output_type -> tau.build.v1.Built
+	7,  // 16: tau.build.v1.JobService.Follow:output_type -> tau.build.v1.LogChunk
+	10, // [10:17] is the sub-list for method output_type
+	3,  // [3:10] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_tau_build_v1_build_proto_init() }
@@ -848,7 +971,7 @@ func file_tau_build_v1_build_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_build_v1_build_proto_rawDesc), len(file_tau_build_v1_build_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

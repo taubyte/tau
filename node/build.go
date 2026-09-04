@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -339,6 +341,80 @@ func (b buildRegister) reader() (artifact.Register, error) {
 		return b.node.register.Local(), nil
 	}
 	return b.node.registerClientNow()
+}
+
+// artifacts is what a BUILT resource currently runs.
+//
+// IT DROPS THE KIND, and that is this composer's line to write rather than a
+// shape either side bends to: a resource id is already unique, so it is not
+// part of the key a build wrote, and the worker passes a kind because a caller
+// looking up a resource has one in hand.
+//
+// THE ANSWER IS CACHED, briefly. A worker resolves this per invocation and the
+// row only moves when a build finishes, so a lookup per request would be an
+// RPC per request for an answer that changes on a deploy's timescale. The TTL
+// IS THAT TIMESCALE — how long a node may keep running the previous artifact
+// after a new one is built — which is the same thing the register's pointer TTL
+// is, and it is set from the same place.
+type artifacts struct {
+	node *Node
+
+	mu   sync.Mutex
+	seen map[string]builtAt
+}
+
+type builtAt struct {
+	cid  string
+	when time.Time
+}
+
+func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, resource string) (string, error) {
+	key := strings.Join([]string{project, environment, resource}, "\x00")
+
+	if cid, ok := a.cached(key); ok {
+		return cid, nil
+	}
+
+	pool, err := a.node.dial(build.Protocol, BuildBackend)
+	if err != nil {
+		return "", err
+	}
+	client, err := clients.Builds(pool)
+	if err != nil {
+		return "", err
+	}
+
+	cid, err := client.Artifact(ctx, project, environment, resource)
+	if err != nil {
+		// A FAILED LOOKUP IS NOT CACHED. "Nothing has built this yet" is a
+		// state that ends the moment a build finishes, and remembering it would
+		// keep a node refusing a resource for a TTL after it became runnable.
+		return "", err
+	}
+
+	a.mu.Lock()
+	a.seen[key] = builtAt{cid: cid, when: a.node.clock()}
+	a.mu.Unlock()
+	return cid, nil
+}
+
+func (a *artifacts) cached(key string) (string, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	at, ok := a.seen[key]
+	if !ok || a.node.clock().Sub(at.when) >= a.node.cfg.Worker.Pointer() {
+		return "", false
+	}
+	return at.cid, true
+}
+
+// clock is this node's, so a test that moves time moves everything on it.
+func (n *Node) clock() time.Time {
+	if n.opts.now != nil {
+		return n.opts.now()
+	}
+	return time.Now()
 }
 
 // publisher is where a deploy publishes.

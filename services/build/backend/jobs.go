@@ -264,6 +264,54 @@ func (s *Service) retry(id string) error {
 // fast one sends full ones with no rule here deciding which.
 const followChunk = 16 << 10
 
+func (h *jobHandler) Artifact(ctx context.Context, req *connect.Request[buildv1.ArtifactRequest]) (*connect.Response[buildv1.Built], error) {
+	cid, err := h.s.artifact(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment(), req.Msg.GetResource())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&buildv1.Built{Cid: cid}), nil
+}
+
+// artifact reads what one resource of one deployment currently runs.
+//
+// THE AUTHORIZATION IS THE PROJECT'S, not a job's, and it is the one place in
+// this service where that is true — every other read is about a job and is
+// authorized on the job's repository. A worker asking what to run has no job in
+// hand, and the thing it is asking about belongs to the project. That is why it
+// is ActArtifact rather than ActRead: an authorizer told "read" with a project
+// in the subject would either check it against jobs and refuse everything, or
+// stop checking and allow everything.
+func (s *Service) artifact(ctx context.Context, project, environment, resource string) (string, error) {
+	switch {
+	case project == "":
+		return "", errInvalidArgument("build: project is required")
+	case environment == "":
+		return "", errInvalidArgument("build: environment is required")
+	case resource == "":
+		return "", errInvalidArgument("build: resource is required")
+	}
+
+	if err := s.allow(ctx, ActArtifact, project); err != nil {
+		return "", err
+	}
+	if err := s.lead(); err != nil {
+		return "", err
+	}
+
+	cid, ok := s.store.Get(artifactKey(project, environment, resource))
+	if !ok {
+		// A RESOURCE NOTHING HAS BUILT IS NotFound, and that is not the same as
+		// a resource that needs no build — an image is pulled and a component
+		// is built as its own resource. Which of those was asked about is the
+		// caller's to know.
+		return "", errNotFound("build: nothing has been built for %s/%s's %s", project, environment, resource)
+	}
+	if len(cid) == 0 {
+		return "", errInternal("build: %s/%s's %s names an empty artifact", project, environment, resource)
+	}
+	return string(cid), nil
+}
+
 func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv1.FollowRequest], stream *connect.ServerStream[buildv1.LogChunk]) error {
 	if err := h.s.allow(ctx, ActRead, req.Msg.GetJobId()); err != nil {
 		return err

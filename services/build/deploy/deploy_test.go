@@ -52,7 +52,7 @@ func (c *checkout) Checkout(context.Context, string, string, string) (string, fu
 // out collects the build log a developer watches.
 type out struct{ strings.Builder }
 
-func (o *out) Asset(context.Context, string, io.Reader) error { return nil }
+func (o *out) Asset(context.Context, string, string, io.Reader) error { return nil }
 
 // backend.Output's Asset takes an io.Reader; this deploy produces no assets, so
 // it is here only to satisfy the interface.

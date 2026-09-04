@@ -24,7 +24,7 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	h.runner.run = func(_ context.Context, w Work, out Output) error {
 		during = h.status(t, w.JobID)
 		fmt.Fprintf(out, "building %s\n", w.CommitSHA)
-		return out.Asset(context.Background(), "website/home", strings.NewReader("the artifact"))
+		return out.Asset(context.Background(), "prod", "website/home", strings.NewReader("the artifact"))
 	}
 
 	require.True(t, h.mustStep(t))
@@ -57,8 +57,8 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	// WHAT THE RUN PRODUCED IS ON THE JOB AS CONTENT IDS, and the bytes are in
 	// the asset store — one Put for the artifact, during the run, and one for
 	// the log, at the end of it.
-	require.Equal(t, map[string]string{"website/home": assetCID([]byte("the artifact"))}, job.GetAssetCid())
-	require.Equal(t, "the artifact", h.assets.content(t, job.GetAssetCid()["website/home"]))
+	require.Equal(t, map[string]string{"prod/website/home": assetCID([]byte("the artifact"))}, job.GetAssetCid())
+	require.Equal(t, "the artifact", h.assets.content(t, job.GetAssetCid()["prod/website/home"]))
 
 	logCID, logged := job.GetLogs()[stamp(1)]
 	require.True(t, logged, "the log of attempt 1 is keyed by the attempt: %v", job.GetLogs())

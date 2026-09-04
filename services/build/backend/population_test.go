@@ -211,6 +211,9 @@ func sampleKeys() map[string]string {
 		"jobRecordKey":       jobRecordKey(sampleID),
 		"projectIndexPrefix": projectIndexPrefix(sampleProject),
 		"projectIndexKey":    projectIndexKey(sampleProject, sampleID),
+		"assetKey":           assetKey("prod", sampleID),
+		"artifactKey":        artifactKey(sampleProject, "prod", sampleID),
+		"artifactPrefix":     artifactPrefix(sampleProject),
 		"openIndexPrefix":    openIndexPrefix(testRepo),
 		"openIndexKey":       openIndexKey(testRepo, sampleID),
 		"openIndexRoot":      openIndexRoot(),
@@ -293,7 +296,8 @@ func wholeKeys(all map[string]string) map[string]bool {
 
 // indexRowKeys is EVERY ROW OF THIS PACKAGE'S THAT IS NOT THE RECORD AND NOT AN
 // ATTEMPT ROW: the open index reconcile repairs and MaxOpenPerRepo counts, the
-// project index a caller lists by, the retention index, and the ref anchor. A
+// project index a caller lists by, the retention index, the ref anchor, and the
+// artifact row that says what a deployment currently runs. A
 // write of one is neither a record write nor a queue write, and without a
 // column of its own it was invisible to the table. It is a union of CLASSES, so
 // a second spelling of any of them is in it.
@@ -308,7 +312,7 @@ func wholeKeys(all map[string]string) map[string]bool {
 // being missed the same way.
 func indexRowKeys(all map[string]string) map[string]bool {
 	out := map[string]bool{}
-	for _, like := range []string{"openIndexKey", "projectIndexKey", "terminalIndexKey", "refLastKey"} {
+	for _, like := range []string{"openIndexKey", "projectIndexKey", "terminalIndexKey", "refLastKey", "artifactKey"} {
 		for name := range sameKeyAs(all, like) {
 			out[name] = true
 		}
@@ -1565,6 +1569,20 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 			"belonging to the job the read was taken on.",
 	}
 
+	// AND ONE MORE, WHOSE PARTS COME FROM THIS RUN'S OWN OUTPUT. The artifact
+	// row says what a deployment now runs, so it is keyed by (project,
+	// deployment, resource) and read by a WORKER rather than by any job. Its
+	// project comes off the record this section read; its other two are fields
+	// of the `produced` value this same entry is writing onto that record, so
+	// the rows it makes and the record it writes name the same artifacts by
+	// construction. They are a typed pair rather than a parsed string
+	// precisely so that can be said here.
+	fromThisRunsOutput := map[string]string{
+		"artifactKey": "the artifact row is keyed by (project, deployment, resource): the project " +
+			"comes off the record THIS SECTION READ, and the other two are fields of the produced " +
+			"value this entry is writing onto that record.",
+	}
+
 	// HOW EACH WRITER NAMES ITS SUBJECT, spelled against the receiver so that a
 	// method that renamed its receiver cannot make the check vacuous.
 	subjects := map[string]string{
@@ -1613,6 +1631,22 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 					}
 					return true
 				}
+				if why, exempt := fromThisRunsOutput[builder]; exempt {
+					for _, arg := range args {
+						// THE OUTPUT'S PARTS ARE FIELDS OF A LOOP VARIABLE over
+						// this run's assets, never a literal and never a
+						// composed string: a key part that was neither the
+						// record's nor this run's is exactly the escape this
+						// census exists for.
+						require.True(t,
+							strings.HasPrefix(arg, e+".h.rec().") ||
+								strings.HasPrefix(arg, "ref."),
+							"%s builds %s from %q, which is neither a field of the record this "+
+								"section READ nor a field of what this run produced. %s",
+							owner, builder, arg, why)
+					}
+					return true
+				}
 				require.Contains(t, args, e+"."+subject,
 					"%s builds %s from %v, and none of those is the subject its writer was "+
 						"constructed on — a key a row did not take from its own writer is a row "+
@@ -1635,6 +1669,7 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 		"stated.inProject":       {"projectIndexKey"},
 		"stated.retained":        {"terminalIndexKey"},
 		"stated.anchor":          {"refLastKey"},
+		"stated.artifacts":       {"artifactKey"},
 	}, rows, "one row kind per method, and every method named")
 
 	// AND THOSE TWO VERBS ARE THE ONLY THINGS THAT MAKE A ROW AT ALL. row.Entry's
@@ -1650,6 +1685,7 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 	all := pkgFuncs(t)
 	require.ElementsMatch(t, []string{
 		"entry.record", "stated.open", "stated.inProject", "stated.retained", "stated.anchor",
+		"stated.artifacts",
 	}, names(callers(all, "Set")),
 		"a row with a value in it is made by a method in the table above and by nothing else — "+
 			"including a method that only takes the method VALUE, which counts here exactly as a "+

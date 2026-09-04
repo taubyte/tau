@@ -230,8 +230,15 @@ func (n *Node) openWorker() error {
 		worker.WithRegister(n.registerSource()),
 		worker.WithPool(pool),
 	}
-	if n.opts.artifacts != nil {
+	// WHAT A BUILT RESOURCE RUNS COMES FROM THE BUILD SERVICE, unless a
+	// composer injected something else. An injected one wins because it is the
+	// more specific statement: somebody who handed this node an artifact
+	// resolver meant that one.
+	switch {
+	case n.opts.artifacts != nil:
 		options = append(options, worker.WithArtifacts(n.opts.artifacts))
+	case n.stats != nil:
+		options = append(options, worker.WithArtifacts(&artifacts{node: n, seen: map[string]builtAt{}}))
 	}
 	if n.opts.secrets != nil {
 		options = append(options, worker.WithSecrets(n.opts.secrets))

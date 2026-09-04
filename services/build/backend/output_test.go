@@ -215,7 +215,7 @@ func TestANodeWithNoAssetStoreBuildsAndKeepsNothing(t *testing.T) {
 	var assetErr error
 	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
 		fmt.Fprint(out, "building\n")
-		assetErr = out.Asset(ctx, "website/home", strings.NewReader("the artifact"))
+		assetErr = out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact"))
 		return nil
 	}
 	require.True(t, h.mustStep(t))
@@ -238,7 +238,7 @@ func TestAnAssetStoreThatRefusesTheLogLeavesTheJobWithoutOne(t *testing.T) {
 	id := h.push(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
-		require.NoError(t, out.Asset(ctx, "website/home", strings.NewReader("the artifact")))
+		require.NoError(t, out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact")))
 		fmt.Fprint(out, "built\n")
 		h.assets.fail(errors.New("hoarder is down"))
 		return nil
@@ -248,7 +248,7 @@ func TestAnAssetStoreThatRefusesTheLogLeavesTheJobWithoutOne(t *testing.T) {
 	rec := h.mustRecord(t, id)
 	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, rec.status())
 	require.Empty(t, rec.Logs, "the log had nowhere to go")
-	require.Equal(t, map[string]string{"website/home": assetCID([]byte("the artifact"))}, rec.Assets,
+	require.Equal(t, map[string]string{"prod/website/home": assetCID([]byte("the artifact"))}, rec.Assets,
 		"and what DID reach the store is still named by the record")
 }
 
@@ -340,8 +340,8 @@ func TestAnAssetNeedsAResourceAndContent(t *testing.T) {
 	h.push(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
-		require.Error(t, out.Asset(ctx, "", strings.NewReader("x")))
-		require.Error(t, out.Asset(ctx, "website/home", nil))
+		require.Error(t, out.Asset(ctx, "prod", "", strings.NewReader("x")))
+		require.Error(t, out.Asset(ctx, "prod", "website/home", nil))
 		return nil
 	}
 	require.True(t, h.mustStep(t))
@@ -357,8 +357,8 @@ func TestAnAssetStoreThatReturnsNoCidIsRefused(t *testing.T) {
 
 	var err error
 	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
-		err = (&runOutput{s: h.Service, job: "j", built: map[string]string{}}).
-			Asset(ctx, "website/home", strings.NewReader("x"))
+		err = (&runOutput{s: h.Service, job: "j", built: map[assetRef]string{}}).
+			Asset(ctx, "prod", "website/home", strings.NewReader("x"))
 		return nil
 	}
 	h.assets.emptyCID = true
@@ -672,7 +672,7 @@ func TestAnAssetStoreThatRefusesAnArtifactTellsTheRunner(t *testing.T) {
 
 	h.assets.fail(errors.New("hoarder is down"))
 	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
-		return out.Asset(ctx, "website/home", strings.NewReader("the artifact"))
+		return out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact"))
 	}
 	require.True(t, h.mustStep(t))
 

@@ -89,6 +89,18 @@ type fakeBackend struct {
 	cancel  func(id string) error
 	retry   func(id string) error
 	follow  func(jobID string, offset int64, send func(*buildv1.LogChunk) error) error
+	built   func(project, environment, resource string) (string, error)
+}
+
+func (f *fakeBackend) Artifact(_ context.Context, req *connect.Request[buildv1.ArtifactRequest]) (*connect.Response[buildv1.Built], error) {
+	if f.built == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, nil)
+	}
+	cid, err := f.built(req.Msg.GetProject(), req.Msg.GetEnvironment(), req.Msg.GetResource())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&buildv1.Built{Cid: cid}), nil
 }
 
 func (f *fakeBackend) Follow(_ context.Context, req *connect.Request[buildv1.FollowRequest], stream *connect.ServerStream[buildv1.LogChunk]) error {

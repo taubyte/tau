@@ -482,9 +482,11 @@ type stated struct {
 
 // writes opens an entry about this job. It is the only constructor there is.
 func (h *held) writes() *entry {
-	// FOUR IS THE WIDEST ENTRY THIS PACKAGE WRITES — a terminal record, its
-	// open row, its retention row and the ref anchor — so the rows below never
-	// regrow the slice a body composes them into.
+	// FOUR IS THE FIXED PART OF THE WIDEST ENTRY THIS PACKAGE WRITES — a
+	// terminal record, its open row, its retention row and the ref anchor.
+	// A successful build adds one artifact row per resource it produced, which
+	// is a number the job decides rather than this file, so the slice grows for
+	// those and for nothing else.
 	return &entry{h: h, ops: row.Sized(4)}
 }
 
@@ -577,6 +579,39 @@ func (e *entry) dropRetained() *entry {
 // A SECTION THAT FOUND NO RECORD HAS NOTHING TO ANCHOR, and says so rather than
 // writing "build/index/ref///last" — a row under two empty segments, which no
 // build of anything would ever read back.
+// artifacts points this project's deployments at what this job just built.
+//
+// IT IS IN THE SAME ENTRY AS THE RECORD, which is what makes "this job
+// succeeded" and "this is what that deployment now runs" one fact rather than
+// two that can disagree. A separate write would leave a window where a job
+// reads Success and the thing it built is not yet what anybody runs — and a
+// crash inside that window would leave it that way permanently.
+//
+// THE KEY IS COMPOSED FROM THIS JOB'S OWN PROJECT and the asset names the run
+// produced, seg-escaped, so a runner choosing an environment or a resource id
+// cannot reach outside its project's subtree.
+//
+// ONLY A SUCCESSFUL BUILD MOVES IT. A failed run's log is worth keeping — that
+// is the point of recording output on failure — but what a deployment RUNS must
+// not become something a build failed to finish.
+func (s stated) artifacts(p produced) stated {
+	if !s.h.found() {
+		s.err = errInternal("job %s: artifacts decided on a record this section did not find", s.h.id())
+		return s
+	}
+
+	if s.h.rec().ProjectID == "" {
+		// A job with no project is one nothing can address an artifact under.
+		// It is not an error — there is simply nowhere to file what it built.
+		return s
+	}
+
+	for ref, cid := range p.assets {
+		s.ops.Set(artifactKey(s.h.rec().ProjectID, ref.environment, ref.resource), []byte(cid))
+	}
+	return s
+}
+
 func (s stated) anchor() stated {
 	if !s.h.found() {
 		s.err = errInternal("job %s: a ref anchor decided on a record this section did not find", s.h.id())
@@ -829,7 +864,7 @@ func (h *held) fail(reason string, p produced) error {
 // webhook (build.proto: "read from its own job history, never from the
 // frontend").
 func (h *held) succeed(p produced) error {
-	return h.ends(buildv1.JobStatus_JobStatusSuccess, "", p).anchor().commit("finishing")
+	return h.ends(buildv1.JobStatus_JobStatusSuccess, "", p).artifacts(p).anchor().commit("finishing")
 }
 
 // logged records what a run produced WITHOUT MOVING THE STATUS, and changes

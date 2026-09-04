@@ -68,6 +68,20 @@ type Config struct {
 	MaxProjects int
 }
 
+// Pointer is PointerTTL with the default applied.
+//
+// A CONSUMER READING THE RAW FIELD GETS ZERO whenever an operator left it
+// unset, and zero here means "trust nothing, ask every time" — which is the
+// opposite of what an unset field asks for and is a network hop added to the
+// request path. The same shape bit stats.Config.Fresh, where every register in
+// the fleet looked absent because every row was older than nothing.
+func (c Config) Pointer() time.Duration {
+	if c.PointerTTL <= 0 {
+		return DefaultPointerTTL
+	}
+	return c.PointerTTL
+}
+
 // Defaults.
 const (
 	DefaultPointerTTL  = 5 * time.Second

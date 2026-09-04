@@ -78,10 +78,22 @@ import (
 // it says by then is somebody else's business. Filing a log under the attempt
 // the RECORD happens to carry would put this run's output on another run's
 // line the one time the two differ.
+// assetRef is which artifact a cid is: one resource, in one deployment.
+//
+// IT IS A PAIR AND NOT A COMPOSED STRING, and that is what lets the section
+// that files it compose a key from two fields of this run's own output rather
+// than by parsing one back apart. A key built out of a parsed string is a key
+// whose parts nothing can be said about — and everything this package's
+// censuses ask is about where a key's parts came from.
+type assetRef struct {
+	environment string
+	resource    string
+}
+
 type produced struct {
 	attempt uint32
 	logCID  string
-	assets  map[string]string
+	assets  map[assetRef]string
 }
 
 // runOutput is one run's half of Output: the log file it writes and the assets
@@ -101,7 +113,7 @@ type runOutput struct {
 	// mu guards built, because Asset may be called from whatever goroutine the
 	// runner builds a resource on while another writes the log.
 	mu    sync.Mutex
-	built map[string]string
+	built map[assetRef]string
 	// ended is this type's own idempotence: discard is deferred by run and
 	// publish closes on its way in, so the two meet on every path.
 	ended bool
@@ -146,7 +158,7 @@ func (s *Service) output(w Work) (*runOutput, error) {
 
 	return &runOutput{
 		s: s, job: w.JobID, attempt: w.Attempt, log: log,
-		built: map[string]string{},
+		built: map[assetRef]string{},
 	}, nil
 }
 
@@ -181,7 +193,10 @@ func (o *runOutput) Write(p []byte) (int, error) {
 // only publish reads. Nothing in this package calls it, nothing else writes
 // that map, and nothing else reads it — all three are census lines, because
 // each of them was a way for a cid to be spent where no section could see it.
-func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Reader) error {
+func (o *runOutput) Asset(ctx context.Context, environment, resourceID string, content io.Reader) error {
+	if environment == "" {
+		return errors.New("build: an asset needs the deployment it was built for")
+	}
 	if resourceID == "" {
 		return errors.New("build: an asset needs a resource id")
 	}
@@ -202,7 +217,7 @@ func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Rea
 
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	o.built[resourceID] = cid
+	o.built[assetRef{environment: environment, resource: resourceID}] = cid
 	return nil
 }
 
@@ -302,7 +317,7 @@ func (o *runOutput) publish(ctx context.Context) (produced, error) {
 	o.end()
 
 	o.mu.Lock()
-	p := produced{attempt: o.attempt, assets: merged(o.built, nil)}
+	p := produced{attempt: o.attempt, assets: copied(o.built)}
 	o.mu.Unlock()
 
 	if o.s.assetStore == nil {

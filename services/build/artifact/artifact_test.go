@@ -95,7 +95,7 @@ func (o *out) Write(p []byte) (int, error) {
 	return o.log.Write(p)
 }
 
-func (o *out) Asset(_ context.Context, key string, content io.Reader) error {
+func (o *out) Asset(_ context.Context, environment, resourceID string, content io.Reader) error {
 	if o.err != nil {
 		return o.err
 	}
@@ -105,7 +105,9 @@ func (o *out) Asset(_ context.Context, key string, content io.Reader) error {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	o.assets[key] = string(body)
+	// The same shape the backend composes, so what these tests read back is
+	// what a real record holds.
+	o.assets[environment+"/"+resourceID] = string(body)
 	return nil
 }
 

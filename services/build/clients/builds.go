@@ -202,3 +202,32 @@ func (c *BuildClient) Follow(ctx context.Context, jobID string, from int64, emit
 	})
 	return offset, err
 }
+
+// Artifact is the content id of what one resource of one deployment currently
+// runs.
+//
+// IT IS THE READ A WORKER MAKES, and the only one in this client that is about
+// a project rather than a job. A resource nothing has built comes back as a
+// connect.CodeNotFound error, unchanged — the code is preserved rather than
+// flattened, because "nothing has built this yet" is a wait and "the cloud is
+// unreachable" is a retry, and they are the same string.
+func (c *BuildClient) Artifact(ctx context.Context, project, environment, resource string) (string, error) {
+	var cid string
+	err := c.pool.Do(ctx, func(client *rpc.Client) error {
+		jobs := buildv1connect.NewJobServiceClient(client.HTTP(), client.URL())
+		resp, err := jobs.Artifact(ctx, connect.NewRequest(&buildv1.ArtifactRequest{
+			Project:     project,
+			Environment: environment,
+			Resource:    resource,
+		}))
+		if err != nil {
+			return err
+		}
+		cid = resp.Msg.GetCid()
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return cid, nil
+}

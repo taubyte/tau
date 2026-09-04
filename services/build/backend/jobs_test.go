@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -58,7 +59,7 @@ func TestGetCarriesTheCidsOfEveryAttemptAndResource(t *testing.T) {
 	rec := h.mustRecord(t, id)
 	rec.Attempt = 2
 	rec.Logs = map[string]string{stamp(1): "cid-log-1", stamp(2): "cid-log-2"}
-	rec.Assets = map[string]string{"website/home": "cid-a-2"}
+	rec.Assets = map[string]string{"prod/website/home": "cid-a-2"}
 	value, err := rec.encode()
 	require.NoError(t, err)
 	h.store.put(t, jobRecordKey(id), value)
@@ -75,7 +76,7 @@ func TestGetCarriesTheCidsOfEveryAttemptAndResource(t *testing.T) {
 
 	require.Equal(t, map[string]string{stamp(1): "cid-log-1", stamp(2): "cid-log-2"}, job.GetLogs(),
 		"keyed by the attempt, which sorts causally — v1 keys this map by a wall clock")
-	require.Equal(t, map[string]string{"website/home": "cid-a-2"}, job.GetAssetCid())
+	require.Equal(t, map[string]string{"prod/website/home": "cid-a-2"}, job.GetAssetCid())
 }
 
 // AND THE MAPS A CALLER IS HANDED ARE NOT THE RECORD'S. Two reads of one job
@@ -422,4 +423,103 @@ func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
 	require.NoError(t, h.retry(id))
 
 	require.Empty(t, h.store.Keys(terminal), "a reopened job is not retained history")
+}
+
+// ── what a deployment runs ───────────────────────────────────────────────
+
+// THE ARTIFACT ROW IS WRITTEN IN THE SAME ENTRY AS THE RECORD of the build that
+// produced it, so "this job succeeded" and "this is what that deployment now
+// runs" cannot end up disagreeing — and a reader pays one read rather than a
+// walk over a project's job history looking for the newest build of a resource.
+func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
+	h := newWireHarness(t, WithAssets(newAssets()))
+	id := h.push(t, testRef, testCommit)
+
+	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+		return out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact"))
+	}
+	require.True(t, h.mustStep(t))
+
+	cid, err := h.built(t, h.mustRecord(t, id).ProjectID, "prod", "website/home")
+	require.NoError(t, err)
+	require.Equal(t, assetCID([]byte("the artifact")), cid)
+
+	// AND IT IS THE SAME CID THE RECORD CARRIES, because both come out of one
+	// entry and one produced value.
+	require.Equal(t, cid, h.mustRecord(t, id).Assets["prod/website/home"])
+}
+
+// ONE RESOURCE, TWO DEPLOYMENTS, TWO ARTIFACTS. A build stanza is
+// per-environment, so a key that was only the resource id would have preview's
+// build silently overwrite production's.
+func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
+	h := newWireHarness(t, WithAssets(newAssets()))
+	id := h.push(t, testRef, testCommit)
+
+	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+		if err := out.Asset(ctx, "prod", "website/home", strings.NewReader("production")); err != nil {
+			return err
+		}
+		return out.Asset(ctx, "preview", "website/home", strings.NewReader("preview"))
+	}
+	require.True(t, h.mustStep(t))
+
+	project := h.mustRecord(t, id).ProjectID
+	production, err := h.built(t, project, "prod", "website/home")
+	require.NoError(t, err)
+	preview, err := h.built(t, project, "preview", "website/home")
+	require.NoError(t, err)
+
+	require.NotEqual(t, production, preview)
+	require.Equal(t, assetCID([]byte("production")), production)
+	require.Equal(t, assetCID([]byte("preview")), preview)
+}
+
+// A FAILED BUILD'S OUTPUT IS KEPT AND ITS ARTIFACT IS NOT PUBLISHED. The log of
+// a build that failed is the output somebody wants; what a deployment RUNS must
+// not become something a build failed to finish.
+func TestAFailedBuildDoesNotMoveWhatADeploymentRuns(t *testing.T) {
+	h := newWireHarness(t, WithAssets(newAssets()))
+	id := h.push(t, testRef, testCommit)
+
+	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+		if err := out.Asset(ctx, "prod", "website/home", strings.NewReader("half a build")); err != nil {
+			return err
+		}
+		return errors.New("the toolchain fell over")
+	}
+	require.True(t, h.mustStep(t))
+
+	record := h.mustRecord(t, id)
+	require.Equal(t, buildv1.JobStatus_JobStatusFailed, record.status())
+	require.NotEmpty(t, record.Assets, "what the failed run produced is still on the record")
+
+	_, err := h.built(t, record.ProjectID, "prod", "website/home")
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+}
+
+func TestArtifactRefusesWhatItCannotAsk(t *testing.T) {
+	h := newWireHarness(t)
+
+	for _, args := range [][3]string{
+		{"", "prod", "website/home"},
+		{"shop", "", "website/home"},
+		{"shop", "prod", ""},
+	} {
+		_, err := h.built(t, args[0], args[1], args[2])
+		require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), args)
+	}
+
+	// A RESOURCE NOTHING HAS BUILT IS NotFound, and that is not the same as a
+	// resource that needs no build — an image is pulled and a component is
+	// built as its own resource. Which of those was asked about is the caller's
+	// to know.
+	_, err := h.built(t, "shop", "prod", "website/home")
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+
+	// AND IT IS ITS OWN ACTION, so an authorizer can tell "what does this
+	// project run" from "read this job" — the subject means something else in
+	// each, and one told "read" with a project in it would either check it
+	// against jobs and refuse everything or stop checking and allow everything.
+	require.Contains(t, h.authorizer.acts, ActArtifact)
 }

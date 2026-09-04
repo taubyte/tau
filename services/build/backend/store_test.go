@@ -160,20 +160,23 @@ func TestWithLeavesTheRecordItWasBuiltFromAlone(t *testing.T) {
 	before := jobRecord{
 		Attempt: 1,
 		Logs:    map[string]string{stamp(1): "cid-log-1"},
-		Assets:  map[string]string{"website/home": "cid-a-1"},
+		Assets:  map[string]string{"prod/website/home": "cid-a-1"},
 	}
 
 	after := before.with(produced{
 		attempt: 1,
 		logCID:  "cid-log-2",
-		assets:  map[string]string{"website/home": "cid-a-2"},
+		assets:  map[assetRef]string{{environment: "prod", resource: "website/home"}: "cid-a-2"},
 	})
 
 	require.Equal(t, map[string]string{stamp(1): "cid-log-1"}, before.Logs, "the record read is untouched")
-	require.Equal(t, map[string]string{"website/home": "cid-a-1"}, before.Assets)
+	require.Equal(t, map[string]string{"prod/website/home": "cid-a-1"}, before.Assets)
 	require.Equal(t, map[string]string{stamp(1): "cid-log-2"}, after.Logs,
 		"and a second run of one attempt replaces that attempt's log")
-	require.Equal(t, map[string]string{"website/home": "cid-a-2"}, after.Assets)
+	// THE RECORD'S KEY IS THE ONE A READER COMPOSES: deployment then resource,
+	// so a worker asking what a resource runs in production arrives at the same
+	// string the build wrote.
+	require.Equal(t, map[string]string{"prod/website/home": "cid-a-2"}, after.Assets)
 
 	// A run that produced nothing changes nothing, so a transition with no
 	// output does not have to say so.

@@ -72,6 +72,7 @@ const (
 	projectSegment  = "project"
 	openSegment     = "open"
 	refSegment      = "ref"
+	artifactSegment = "artifact"
 	lastSegment     = "last"
 	terminalSegment = "terminal"
 
@@ -127,6 +128,37 @@ func projectIndexPrefix(projectID string) string {
 
 func projectIndexKey(projectID, id string) string {
 	return projectIndexPrefix(projectID) + seg(id)
+}
+
+// assetKey is how one built artifact is named on a record and in the index.
+//
+// IT IS COMPOSED HERE AND NOT BY THE RUNNER, because the half of it that a
+// reader has to reproduce is a grammar rather than a string: a worker asking
+// "what does this resource run in production" has a project, a deployment and a
+// resource id, and it has to arrive at the same key the build wrote. A runner
+// that composed it would be a runner deciding a key shape two other packages
+// depend on.
+//
+// A BUILD STANZA IS PER-DEPLOYMENT, so the deployment is in the key: one
+// resource can have a different artifact in preview than in production, and a
+// key that was only the resource id would have preview's build silently
+// overwrite production's.
+func assetKey(environment, resourceID string) string {
+	return environment + "/" + resourceID
+}
+
+// artifactKey is the index row: what a project's deployment currently runs for
+// one resource.
+//
+// THE PROJECT HALF IS THE JOB'S OWN and the rest is seg-escaped, so a runner
+// choosing an environment or a resource id cannot compose a key outside its
+// project's subtree — the same containment openIndexKey relies on.
+func artifactKey(projectID, environment, resourceID string) string {
+	return artifactPrefix(projectID) + seg(assetKey(environment, resourceID))
+}
+
+func artifactPrefix(projectID string) string {
+	return rootSegment + "/" + artifactSegment + "/" + seg(projectID) + "/"
 }
 
 func openIndexPrefix(repositoryKey string) string {
@@ -301,9 +333,21 @@ func (r jobRecord) with(p produced) jobRecord {
 		r.Logs = merged(r.Logs, map[string]string{stamp(int64(p.attempt)): p.logCID})
 	}
 	if len(p.assets) > 0 {
-		r.Assets = merged(r.Assets, p.assets)
+		named := make(map[string]string, len(p.assets))
+		for ref, cid := range p.assets {
+			named[assetKey(ref.environment, ref.resource)] = cid
+		}
+		r.Assets = merged(r.Assets, named)
 	}
 	return r
+}
+
+// copied is a map of its own, for the same reason merged(m, nil) is: what a run
+// hands to a section must not be the map that run is still writing into.
+func copied[K comparable, V any](from map[K]V) map[K]V {
+	out := make(map[K]V, len(from))
+	maps.Copy(out, from)
+	return out
 }
 
 // merged is one map over another, into a third. merged(m, nil) is a copy, which

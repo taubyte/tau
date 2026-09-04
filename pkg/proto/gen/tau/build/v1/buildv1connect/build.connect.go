@@ -161,6 +161,8 @@ const (
 	JobServiceCancelProcedure = "/tau.build.v1.JobService/Cancel"
 	// JobServiceRetryProcedure is the fully-qualified name of the JobService's Retry RPC.
 	JobServiceRetryProcedure = "/tau.build.v1.JobService/Retry"
+	// JobServiceArtifactProcedure is the fully-qualified name of the JobService's Artifact RPC.
+	JobServiceArtifactProcedure = "/tau.build.v1.JobService/Artifact"
 	// JobServiceFollowProcedure is the fully-qualified name of the JobService's Follow RPC.
 	JobServiceFollowProcedure = "/tau.build.v1.JobService/Follow"
 )
@@ -253,6 +255,24 @@ type JobServiceClient interface {
 	List(context.Context, *connect.Request[v1.ProjectRef]) (*connect.ServerStreamForClient[v1.JobRef], error)
 	Cancel(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Empty], error)
 	Retry(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Empty], error)
+	// Artifact is the content id of what one resource of one deployment
+	// currently runs.
+	//
+	// IT IS A ROW AND NOT A SEARCH. The row is written in the same replicated
+	// entry as the record of the build that produced it, so "this job succeeded"
+	// and "this is what that deployment now runs" cannot end up disagreeing — and
+	// a reader pays one read rather than a walk over a project's job history
+	// looking for the newest one that built this resource.
+	//
+	// ONLY A SUCCESSFUL BUILD MOVES IT. A failed run's log is kept, because that
+	// is the output somebody wants; what a deployment RUNS must not become
+	// something a build failed to finish.
+	//
+	// A resource nothing has built answers NotFound. That is not the same as a
+	// resource that needs no build — an image is pulled, a component is built as
+	// its own resource — and the caller is the one that knows which it asked
+	// about.
+	Artifact(context.Context, *connect.Request[v1.ArtifactRequest]) (*connect.Response[v1.Built], error)
 	// Follow streams a RUNNING build's output, from `offset` to the end of it.
 	//
 	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
@@ -304,6 +324,12 @@ func NewJobServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(jobServiceMethods.ByName("Retry")),
 			connect.WithClientOptions(opts...),
 		),
+		artifact: connect.NewClient[v1.ArtifactRequest, v1.Built](
+			httpClient,
+			baseURL+JobServiceArtifactProcedure,
+			connect.WithSchema(jobServiceMethods.ByName("Artifact")),
+			connect.WithClientOptions(opts...),
+		),
 		follow: connect.NewClient[v1.FollowRequest, v1.LogChunk](
 			httpClient,
 			baseURL+JobServiceFollowProcedure,
@@ -315,11 +341,12 @@ func NewJobServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 
 // jobServiceClient implements JobServiceClient.
 type jobServiceClient struct {
-	get    *connect.Client[v1.JobRef, v1.Job]
-	list   *connect.Client[v1.ProjectRef, v1.JobRef]
-	cancel *connect.Client[v1.JobRef, v1.Empty]
-	retry  *connect.Client[v1.JobRef, v1.Empty]
-	follow *connect.Client[v1.FollowRequest, v1.LogChunk]
+	get      *connect.Client[v1.JobRef, v1.Job]
+	list     *connect.Client[v1.ProjectRef, v1.JobRef]
+	cancel   *connect.Client[v1.JobRef, v1.Empty]
+	retry    *connect.Client[v1.JobRef, v1.Empty]
+	artifact *connect.Client[v1.ArtifactRequest, v1.Built]
+	follow   *connect.Client[v1.FollowRequest, v1.LogChunk]
 }
 
 // Get calls tau.build.v1.JobService.Get.
@@ -342,6 +369,11 @@ func (c *jobServiceClient) Retry(ctx context.Context, req *connect.Request[v1.Jo
 	return c.retry.CallUnary(ctx, req)
 }
 
+// Artifact calls tau.build.v1.JobService.Artifact.
+func (c *jobServiceClient) Artifact(ctx context.Context, req *connect.Request[v1.ArtifactRequest]) (*connect.Response[v1.Built], error) {
+	return c.artifact.CallUnary(ctx, req)
+}
+
 // Follow calls tau.build.v1.JobService.Follow.
 func (c *jobServiceClient) Follow(ctx context.Context, req *connect.Request[v1.FollowRequest]) (*connect.ServerStreamForClient[v1.LogChunk], error) {
 	return c.follow.CallServerStream(ctx, req)
@@ -353,6 +385,24 @@ type JobServiceHandler interface {
 	List(context.Context, *connect.Request[v1.ProjectRef], *connect.ServerStream[v1.JobRef]) error
 	Cancel(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Empty], error)
 	Retry(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Empty], error)
+	// Artifact is the content id of what one resource of one deployment
+	// currently runs.
+	//
+	// IT IS A ROW AND NOT A SEARCH. The row is written in the same replicated
+	// entry as the record of the build that produced it, so "this job succeeded"
+	// and "this is what that deployment now runs" cannot end up disagreeing — and
+	// a reader pays one read rather than a walk over a project's job history
+	// looking for the newest one that built this resource.
+	//
+	// ONLY A SUCCESSFUL BUILD MOVES IT. A failed run's log is kept, because that
+	// is the output somebody wants; what a deployment RUNS must not become
+	// something a build failed to finish.
+	//
+	// A resource nothing has built answers NotFound. That is not the same as a
+	// resource that needs no build — an image is pulled, a component is built as
+	// its own resource — and the caller is the one that knows which it asked
+	// about.
+	Artifact(context.Context, *connect.Request[v1.ArtifactRequest]) (*connect.Response[v1.Built], error)
 	// Follow streams a RUNNING build's output, from `offset` to the end of it.
 	//
 	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
@@ -400,6 +450,12 @@ func NewJobServiceHandler(svc JobServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(jobServiceMethods.ByName("Retry")),
 		connect.WithHandlerOptions(opts...),
 	)
+	jobServiceArtifactHandler := connect.NewUnaryHandler(
+		JobServiceArtifactProcedure,
+		svc.Artifact,
+		connect.WithSchema(jobServiceMethods.ByName("Artifact")),
+		connect.WithHandlerOptions(opts...),
+	)
 	jobServiceFollowHandler := connect.NewServerStreamHandler(
 		JobServiceFollowProcedure,
 		svc.Follow,
@@ -416,6 +472,8 @@ func NewJobServiceHandler(svc JobServiceHandler, opts ...connect.HandlerOption) 
 			jobServiceCancelHandler.ServeHTTP(w, r)
 		case JobServiceRetryProcedure:
 			jobServiceRetryHandler.ServeHTTP(w, r)
+		case JobServiceArtifactProcedure:
+			jobServiceArtifactHandler.ServeHTTP(w, r)
 		case JobServiceFollowProcedure:
 			jobServiceFollowHandler.ServeHTTP(w, r)
 		default:
@@ -441,6 +499,10 @@ func (UnimplementedJobServiceHandler) Cancel(context.Context, *connect.Request[v
 
 func (UnimplementedJobServiceHandler) Retry(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.build.v1.JobService.Retry is not implemented"))
+}
+
+func (UnimplementedJobServiceHandler) Artifact(context.Context, *connect.Request[v1.ArtifactRequest]) (*connect.Response[v1.Built], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.build.v1.JobService.Artifact is not implemented"))
 }
 
 func (UnimplementedJobServiceHandler) Follow(context.Context, *connect.Request[v1.FollowRequest], *connect.ServerStream[v1.LogChunk]) error {

@@ -12,6 +12,7 @@ import (
 	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/worker"
 )
 
 var _ frontend.Backend = (*BuildClient)(nil)
@@ -341,4 +342,52 @@ func TestFollowNeedsSomewhereToPutIt(t *testing.T) {
 	c := newBuilds(t, &fakeBackend{})
 	_, err := c.Follow(t.Context(), "job", 0, nil)
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+}
+
+// ── what a deployment runs ───────────────────────────────────────────────
+
+// THIS CLIENT DOES NOT SATISFY worker.Artifacts, and the difference is one
+// argument: that seam passes a KIND as well, because a caller looking up a
+// resource has one in hand. A resource id is already unique, so the kind is not
+// part of the key a build wrote — and dropping it is the composer's line to
+// write, in view of both, rather than a shape either package bends to.
+var _ = worker.Artifacts(nil)
+
+func TestArtifact(t *testing.T) {
+	c := newBuilds(t, &fakeBackend{built: func(project, environment, resource string) (string, error) {
+		require.Equal(t, "shop", project)
+		require.Equal(t, "prod", environment)
+		require.Equal(t, "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc", resource)
+		return "bafybuilt", nil
+	}})
+
+	cid, err := c.Artifact(t.Context(), "shop", "prod", "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc")
+	require.NoError(t, err)
+	require.Equal(t, "bafybuilt", cid)
+}
+
+// A RESOURCE NOTHING HAS BUILT KEEPS ITS CODE. "Nothing has built this yet" is
+// a wait and "the cloud is unreachable" is a retry, and they are the same
+// string — so the code is what tells them apart.
+func TestArtifactThatIsNotThere(t *testing.T) {
+	c := newBuilds(t, &fakeBackend{built: func(string, string, string) (string, error) {
+		return "", connect.NewError(connect.CodeNotFound, errors.New("nothing has been built for that"))
+	}})
+
+	_, err := c.Artifact(t.Context(), "shop", "prod", "resource")
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+}
+
+// AND Unavailable WALKS, because the row is replicated and any leader answers.
+func TestArtifactWalksPastAFollower(t *testing.T) {
+	c := newBuilds(t,
+		&fakeBackend{built: func(string, string, string) (string, error) {
+			return "", connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
+		}},
+		&fakeBackend{built: func(string, string, string) (string, error) { return "bafybuilt", nil }},
+	)
+
+	cid, err := c.Artifact(t.Context(), "shop", "prod", "resource")
+	require.NoError(t, err)
+	require.Equal(t, "bafybuilt", cid)
 }

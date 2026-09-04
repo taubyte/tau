@@ -26,9 +26,10 @@
 //
 // A build stanza is per-environment — the toolchain, both commands and where
 // the product lands can all differ — so one resource can have a different
-// artifact in preview than in production. Artifacts are therefore filed under
-// `<environment>/<resource id>`, and a key that was only the resource id would
-// have preview's build silently overwrite production's.
+// artifact in preview than in production. Each artifact is therefore handed
+// over WITH the deployment it was built for; what key those two compose is the
+// backend's grammar, because a worker asking what a resource runs has to arrive
+// at the same one.
 package artifact
 
 import (
@@ -220,7 +221,7 @@ func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output)
 			return fmt.Errorf("artifact: building %s/%s for %s: %w", item.Kind, item.Name, item.Environment, err)
 		}
 
-		err = out.Asset(ctx, item.Environment+"/"+item.ID, product)
+		err = out.Asset(ctx, item.Environment, item.ID, product)
 		product.Close()
 		if err != nil {
 			return fmt.Errorf("artifact: storing %s/%s for %s: %w", item.Kind, item.Name, item.Environment, err)

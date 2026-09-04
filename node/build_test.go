@@ -14,6 +14,7 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build/frontend"
 	authService "github.com/taubyte/tau/services/v2/auth"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // ── the one combination a node refuses ───────────────────────────────────
@@ -351,4 +352,79 @@ func TestTheContainerBackendIsTheOperatorsChoice(t *testing.T) {
 		require.ErrorContains(t, err, "containerd",
 			"the message names the socket it looked for, so an operator sees which path was tried")
 	}
+}
+
+// ── what a built resource runs ───────────────────────────────────────────
+
+// THE ANSWER IS CACHED, briefly, because a worker resolves it per invocation
+// and the row only moves when a build finishes. The TTL is the deploy
+// propagation budget — how long a node may keep running the previous artifact —
+// which is the same thing the register's pointer TTL is.
+func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	n, _, _ := makeNode(t,
+		Config{Services: []string{Stats}, Worker: worker.Config{PointerTTL: time.Minute}},
+		WithClock(func() time.Time { return now }))
+
+	a := &artifacts{node: n, seen: map[string]builtAt{}}
+	a.seen["shop\x00prod\x00res"] = builtAt{cid: "bafyone", when: now}
+
+	cid, err := a.Artifact(t.Context(), "shop", "prod", "function", "res")
+	require.NoError(t, err)
+	require.Equal(t, "bafyone", cid)
+
+	// Past the budget it is asked again — and with no build backend anywhere,
+	// asking waits for one until the caller gives up rather than serving
+	// something stale forever.
+	now = now.Add(2 * time.Minute)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	_, err = a.Artifact(ctx, "shop", "prod", "function", "res")
+	require.Error(t, err)
+}
+
+// A FAILED LOOKUP IS NOT CACHED. "Nothing has built this yet" ends the moment a
+// build finishes, and remembering it would keep a node refusing a resource for
+// a whole TTL after it became runnable.
+func TestAFailedArtifactLookupIsNotRemembered(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
+	require.NoError(t, n.Start(t.Context()))
+
+	a := &artifacts{node: n, seen: map[string]builtAt{}}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	_, err := a.Artifact(ctx, "shop", "prod", "function", "res")
+	require.Error(t, err)
+	require.Empty(t, a.seen)
+}
+
+// A CONSUMER READING THE RAW TTL GETS ZERO whenever an operator left it unset,
+// and zero means "ask every time" — the opposite of what an unset field asks
+// for. It is the same shape that made every register in the fleet look absent.
+func TestTheDeployBudgetHasAnEffectiveValue(t *testing.T) {
+	require.Equal(t, worker.DefaultPointerTTL, worker.Config{}.Pointer())
+	require.Equal(t, worker.DefaultPointerTTL, worker.Config{PointerTTL: -1}.Pointer())
+	require.Equal(t, time.Minute, worker.Config{PointerTTL: time.Minute}.Pointer())
+}
+
+// A NODE WIRES THE BUILD SERVICE AS ITS ARTIFACT RESOLVER, unless a composer
+// injected one — an injected one wins because it is the more specific
+// statement.
+func TestTheWorkerResolvesArtifactsThroughTheBuildService(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
+	require.NotNil(t, n.worker)
+
+	injected := artifactsFunc(func(context.Context, string, string, string, string) (string, error) {
+		return "bafyinjected", nil
+	})
+	with, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}}, WithArtifacts(injected))
+	require.NotNil(t, with.worker)
+}
+
+type artifactsFunc func(ctx context.Context, project, environment, kind, resource string) (string, error)
+
+func (f artifactsFunc) Artifact(ctx context.Context, project, environment, kind, resource string) (string, error) {
+	return f(ctx, project, environment, kind, resource)
 }

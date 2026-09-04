@@ -387,7 +387,15 @@ type Output interface {
 	// Asset hands over one built artifact — the bytes, not a cid, because
 	// where they go is this service's decision and not the runner's. It reads
 	// content to EOF.
-	Asset(ctx context.Context, resourceID string, content io.Reader) error
+	//
+	// IT TAKES THE DEPLOYMENT AS WELL AS THE RESOURCE, and the key those two
+	// compose is this service's grammar rather than the runner's: a worker
+	// asking what a resource runs in production has to arrive at the same key
+	// the build wrote, and a runner that composed it would be a runner deciding
+	// a shape two other packages depend on. A build stanza is per-deployment,
+	// so one resource can have a different artifact in preview than in
+	// production.
+	Asset(ctx context.Context, environment, resourceID string, content io.Reader) error
 }
 
 // Assets is the byte store a build's output goes to: v1's hoarder, which in v2
@@ -465,6 +473,16 @@ const (
 	ActRead
 	ActCancel
 	ActRetry
+
+	// ActArtifact is a read about a PROJECT rather than about a job: what one
+	// resource of one deployment currently runs.
+	//
+	// IT IS ITS OWN ACTION BECAUSE THE SUBJECT MEANS SOMETHING ELSE. Every
+	// other action's subject is a job id, and an authorizer told "read" with a
+	// project in the subject would either check it against jobs and refuse
+	// everything, or stop checking and allow everything. A new question gets a
+	// new name.
+	ActArtifact
 )
 
 func (a Action) String() string {
@@ -477,6 +495,8 @@ func (a Action) String() string {
 		return "cancel"
 	case ActRetry:
 		return "retry"
+	case ActArtifact:
+		return "artifact"
 	default:
 		return fmt.Sprintf("action(%d)", int(a))
 	}

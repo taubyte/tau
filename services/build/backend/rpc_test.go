@@ -206,3 +206,16 @@ func TestAnUnknownJobIsNotFoundOverEveryJobRPC(t *testing.T) {
 	_, err = h.Jobs.Retry(t.Context(), connect.NewRequest(&buildv1.JobRef{Id: unknownJobID}))
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
+
+// built asks over the wire what one resource of one deployment runs.
+func (h *wireHarness) built(t *testing.T, project, environment, resource string) (string, error) {
+	t.Helper()
+
+	res, err := h.Jobs.Artifact(t.Context(), connect.NewRequest(&buildv1.ArtifactRequest{
+		Project: project, Environment: environment, Resource: resource,
+	}))
+	if err != nil {
+		return "", err
+	}
+	return res.Msg.GetCid(), nil
+}
