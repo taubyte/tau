@@ -158,3 +158,47 @@ func (c *BuildClient) Retry(ctx context.Context, jobID string) error {
 		return err
 	})
 }
+
+// Follow streams a running build's output to emit, from `from` to the end of
+// it, and returns the offset it reached.
+//
+// THE OFFSET IS WHAT MAKES A RETRY SAFE, and it is the whole difference from
+// List above. List cannot be retried once it has handed an id onwards, because
+// the next peer would start again from the beginning and the caller would see
+// the same ids twice — so it strips the Unavailable code to stop the walk. Here
+// the request carries where the caller got to, so a walk to the next peer
+// RESUMES rather than repeats, and the code is left alone deliberately: only
+// the node writing the log can answer, every other one says Unavailable, and
+// walking past them is exactly how the writer is found.
+//
+// An emit that fails is the CALLER's failure — a hung-up HTTP client, most
+// likely — and is never a routing problem, so it stops the walk with its own
+// error.
+func (c *BuildClient) Follow(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error) {
+	if emit == nil {
+		return from, connect.NewError(connect.CodeInternal, errors.New("build: follow needs somewhere to put the output"))
+	}
+
+	offset := from
+	err := c.pool.Do(ctx, func(client *rpc.Client) error {
+		jobs := buildv1connect.NewJobServiceClient(client.HTTP(), client.URL())
+		stream, err := jobs.Follow(ctx, connect.NewRequest(&buildv1.FollowRequest{
+			JobId:  jobID,
+			Offset: offset,
+		}))
+		if err != nil {
+			return err
+		}
+		defer stream.Close()
+
+		for stream.Receive() {
+			msg := stream.Msg()
+			if err := emit(msg.GetData(), msg.GetNextOffset()); err != nil {
+				return fmt.Errorf("build: following %q: %w", jobID, err)
+			}
+			offset = msg.GetNextOffset()
+		}
+		return stream.Err()
+	})
+	return offset, err
+}

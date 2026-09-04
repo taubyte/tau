@@ -571,6 +571,165 @@ func (x *ProjectRef) GetId() string {
 	return ""
 }
 
+// JobService answers what the frontend's GitHub-token-authenticated HTTP
+// job API (out of scope here, see this file's header) needs from the
+// backend, which is where every job record actually lives.
+//
+// Cancel and Retry are each ONE RPC where v1 needed a round trip between
+// two services to do the equivalent thing, and stating why is worth doing
+// once, here, rather than leaving it to be rediscovered:
+//
+//   - v1's cancel is a three-hop dance: the HTTP handler
+//     (services/patrick/api.go's cancelJob) reads which monkey is assigned,
+//     calls that monkey's OWN p2p service to stop it
+//     (clients/p2p/monkey's Cancel), and monkey — separately — reports back
+//     to patrick with the accumulated logs so patrick can write
+//     JobStatusCancelled (services/monkey/api_monkeys.go's cancelHandler
+//     calling `m.patrickClient.Cancel(jid, monkey.Job.Logs)`). That
+//     round trip exists only because monkey (execution) and patrick (the
+//     job record) are different services. In v2 the backend is both, so
+//     stopping the run and writing the terminal status are two lines in
+//     one process; Cancel(JobRef) returns (Empty) is the whole surface a
+//     caller outside the backend ever needs, and no log payload crosses
+//     because the backend already holds the logs it is about to write.
+//     A backend node that does not itself hold the running job forwards
+//     to the one that does using this SAME RPC against that specific peer
+//     (service-conventions.md §3's `pool.Peer(ctx, pid)`, the peer read
+//     from the same claim record the raft queue already tracks) — that is
+//     an implementation detail of one backend node calling another, not a
+//     second method here.
+//   - Retry returns Empty, not the job's id: v1's retryJob
+//     (services/patrick/api.go) always re-queues the SAME id it was given
+//     and returns exactly that id back — `{"retry": jid}` — which the
+//     caller already sent as the request. Echoing it back is the identical
+//     redundancy auth.proto's RepositoryService.Register comment argues
+//     against for its own response, and the fix is the same one: return
+//     Empty, because success/failure is the only fact this call can tell
+//     the caller that it did not already know.
+//
+// FollowRequest asks for a running build's output.
+//
+// THE OFFSET IS WHY THIS IS NOT A DOWNLOAD. A log is written while it is read,
+// so a viewer joining late resumes at 0 and catches up, and one whose
+// connection dropped resumes at the offset it had and misses nothing in
+// between. v1 has no equivalent: patrick can hand over a log only once the
+// build has ended and the whole of it has reached IPFS, so "watch this build"
+// was not a thing that could be asked for.
+//
+// It is a BYTE offset and not a line or a record number, because that is what
+// livelog's Reader takes and translating between the two would put a second
+// idea of "where am I" on the wire.
+type FollowRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	JobId string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	// offset to resume from. Zero is the beginning of this attempt's log.
+	Offset        int64 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FollowRequest) Reset() {
+	*x = FollowRequest{}
+	mi := &file_tau_build_v1_build_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FollowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FollowRequest) ProtoMessage() {}
+
+func (x *FollowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_build_v1_build_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FollowRequest.ProtoReflect.Descriptor instead.
+func (*FollowRequest) Descriptor() ([]byte, []int) {
+	return file_tau_build_v1_build_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *FollowRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *FollowRequest) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+// LogChunk is some bytes of a build's output and where they ended.
+//
+// `next_offset` IS WHAT A RESUMING CLIENT SENDS BACK. It is carried per chunk
+// rather than derived by the client from the length it has received, because
+// the two disagree the moment a client drops a chunk it could not write — and a
+// resume computed from a count that lost bytes silently skips them.
+type LogChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	NextOffset    int64                  `protobuf:"varint,2,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogChunk) Reset() {
+	*x = LogChunk{}
+	mi := &file_tau_build_v1_build_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogChunk) ProtoMessage() {}
+
+func (x *LogChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_build_v1_build_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogChunk.ProtoReflect.Descriptor instead.
+func (*LogChunk) Descriptor() ([]byte, []int) {
+	return file_tau_build_v1_build_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *LogChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *LogChunk) GetNextOffset() int64 {
+	if x != nil {
+		return x.NextOffset
+	}
+	return 0
+}
+
 var File_tau_build_v1_build_proto protoreflect.FileDescriptor
 
 const file_tau_build_v1_build_proto_rawDesc = "" +
@@ -603,7 +762,14 @@ const file_tau_build_v1_build_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x1c\n" +
 	"\n" +
 	"ProjectRef\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id*w\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\">\n" +
+	"\rFollowRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
+	"\x06offset\x18\x02 \x01(\x03R\x06offset\"?\n" +
+	"\bLogChunk\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1f\n" +
+	"\vnext_offset\x18\x02 \x01(\x03R\n" +
+	"nextOffset*w\n" +
 	"\tJobStatus\x12\x11\n" +
 	"\rJobStatusOpen\x10\x00\x12\x14\n" +
 	"\x10JobStatusClaimed\x10\x01\x12\x14\n" +
@@ -611,13 +777,14 @@ const file_tau_build_v1_build_proto_rawDesc = "" +
 	"\x0fJobStatusFailed\x10\x03\x12\x16\n" +
 	"\x12JobStatusCancelled\x10\x042H\n" +
 	"\fQueueService\x128\n" +
-	"\aEnqueue\x12\x17.tau.build.v1.PushEvent\x1a\x14.tau.build.v1.JobRef2\xdf\x01\n" +
+	"\aEnqueue\x12\x17.tau.build.v1.PushEvent\x1a\x14.tau.build.v1.JobRef2\xa0\x02\n" +
 	"\n" +
 	"JobService\x12.\n" +
 	"\x03Get\x12\x14.tau.build.v1.JobRef\x1a\x11.tau.build.v1.Job\x128\n" +
 	"\x04List\x12\x18.tau.build.v1.ProjectRef\x1a\x14.tau.build.v1.JobRef0\x01\x123\n" +
 	"\x06Cancel\x12\x14.tau.build.v1.JobRef\x1a\x13.tau.build.v1.Empty\x122\n" +
-	"\x05Retry\x12\x14.tau.build.v1.JobRef\x1a\x13.tau.build.v1.EmptyB\xab\x01\n" +
+	"\x05Retry\x12\x14.tau.build.v1.JobRef\x1a\x13.tau.build.v1.Empty\x12?\n" +
+	"\x06Follow\x12\x1b.tau.build.v1.FollowRequest\x1a\x16.tau.build.v1.LogChunk0\x01B\xab\x01\n" +
 	"\x10com.tau.build.v1B\n" +
 	"BuildProtoP\x01Z9github.com/taubyte/tau/pkg/proto/gen/tau/build/v1;buildv1\xa2\x02\x03TBX\xaa\x02\fTau.Build.V1\xca\x02\fTau\\Build\\V1\xe2\x02\x18Tau\\Build\\V1\\GPBMetadata\xea\x02\x0eTau::Build::V1b\x06proto3"
 
@@ -634,33 +801,37 @@ func file_tau_build_v1_build_proto_rawDescGZIP() []byte {
 }
 
 var file_tau_build_v1_build_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_tau_build_v1_build_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_tau_build_v1_build_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_tau_build_v1_build_proto_goTypes = []any{
-	(JobStatus)(0),     // 0: tau.build.v1.JobStatus
-	(*Empty)(nil),      // 1: tau.build.v1.Empty
-	(*PushEvent)(nil),  // 2: tau.build.v1.PushEvent
-	(*JobRef)(nil),     // 3: tau.build.v1.JobRef
-	(*Job)(nil),        // 4: tau.build.v1.Job
-	(*ProjectRef)(nil), // 5: tau.build.v1.ProjectRef
-	nil,                // 6: tau.build.v1.Job.LogsEntry
-	nil,                // 7: tau.build.v1.Job.AssetCidEntry
+	(JobStatus)(0),        // 0: tau.build.v1.JobStatus
+	(*Empty)(nil),         // 1: tau.build.v1.Empty
+	(*PushEvent)(nil),     // 2: tau.build.v1.PushEvent
+	(*JobRef)(nil),        // 3: tau.build.v1.JobRef
+	(*Job)(nil),           // 4: tau.build.v1.Job
+	(*ProjectRef)(nil),    // 5: tau.build.v1.ProjectRef
+	(*FollowRequest)(nil), // 6: tau.build.v1.FollowRequest
+	(*LogChunk)(nil),      // 7: tau.build.v1.LogChunk
+	nil,                   // 8: tau.build.v1.Job.LogsEntry
+	nil,                   // 9: tau.build.v1.Job.AssetCidEntry
 }
 var file_tau_build_v1_build_proto_depIdxs = []int32{
 	0, // 0: tau.build.v1.Job.status:type_name -> tau.build.v1.JobStatus
-	6, // 1: tau.build.v1.Job.logs:type_name -> tau.build.v1.Job.LogsEntry
-	7, // 2: tau.build.v1.Job.asset_cid:type_name -> tau.build.v1.Job.AssetCidEntry
+	8, // 1: tau.build.v1.Job.logs:type_name -> tau.build.v1.Job.LogsEntry
+	9, // 2: tau.build.v1.Job.asset_cid:type_name -> tau.build.v1.Job.AssetCidEntry
 	2, // 3: tau.build.v1.QueueService.Enqueue:input_type -> tau.build.v1.PushEvent
 	3, // 4: tau.build.v1.JobService.Get:input_type -> tau.build.v1.JobRef
 	5, // 5: tau.build.v1.JobService.List:input_type -> tau.build.v1.ProjectRef
 	3, // 6: tau.build.v1.JobService.Cancel:input_type -> tau.build.v1.JobRef
 	3, // 7: tau.build.v1.JobService.Retry:input_type -> tau.build.v1.JobRef
-	3, // 8: tau.build.v1.QueueService.Enqueue:output_type -> tau.build.v1.JobRef
-	4, // 9: tau.build.v1.JobService.Get:output_type -> tau.build.v1.Job
-	3, // 10: tau.build.v1.JobService.List:output_type -> tau.build.v1.JobRef
-	1, // 11: tau.build.v1.JobService.Cancel:output_type -> tau.build.v1.Empty
-	1, // 12: tau.build.v1.JobService.Retry:output_type -> tau.build.v1.Empty
-	8, // [8:13] is the sub-list for method output_type
-	3, // [3:8] is the sub-list for method input_type
+	6, // 8: tau.build.v1.JobService.Follow:input_type -> tau.build.v1.FollowRequest
+	3, // 9: tau.build.v1.QueueService.Enqueue:output_type -> tau.build.v1.JobRef
+	4, // 10: tau.build.v1.JobService.Get:output_type -> tau.build.v1.Job
+	3, // 11: tau.build.v1.JobService.List:output_type -> tau.build.v1.JobRef
+	1, // 12: tau.build.v1.JobService.Cancel:output_type -> tau.build.v1.Empty
+	1, // 13: tau.build.v1.JobService.Retry:output_type -> tau.build.v1.Empty
+	7, // 14: tau.build.v1.JobService.Follow:output_type -> tau.build.v1.LogChunk
+	9, // [9:15] is the sub-list for method output_type
+	3, // [3:9] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
 	3, // [3:3] is the sub-list for extension extendee
 	0, // [0:3] is the sub-list for field type_name
@@ -677,7 +848,7 @@ func file_tau_build_v1_build_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_build_v1_build_proto_rawDesc), len(file_tau_build_v1_build_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

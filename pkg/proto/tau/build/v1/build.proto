@@ -314,9 +314,53 @@ message ProjectRef {
 //     against for its own response, and the fix is the same one: return
 //     Empty, because success/failure is the only fact this call can tell
 //     the caller that it did not already know.
+// FollowRequest asks for a running build's output.
+//
+// THE OFFSET IS WHY THIS IS NOT A DOWNLOAD. A log is written while it is read,
+// so a viewer joining late resumes at 0 and catches up, and one whose
+// connection dropped resumes at the offset it had and misses nothing in
+// between. v1 has no equivalent: patrick can hand over a log only once the
+// build has ended and the whole of it has reached IPFS, so "watch this build"
+// was not a thing that could be asked for.
+//
+// It is a BYTE offset and not a line or a record number, because that is what
+// livelog's Reader takes and translating between the two would put a second
+// idea of "where am I" on the wire.
+message FollowRequest {
+  string job_id = 1;
+  // offset to resume from. Zero is the beginning of this attempt's log.
+  int64 offset = 2;
+}
+
+// LogChunk is some bytes of a build's output and where they ended.
+//
+// `next_offset` IS WHAT A RESUMING CLIENT SENDS BACK. It is carried per chunk
+// rather than derived by the client from the length it has received, because
+// the two disagree the moment a client drops a chunk it could not write — and a
+// resume computed from a count that lost bytes silently skips them.
+message LogChunk {
+  bytes data = 1;
+  int64 next_offset = 2;
+}
+
 service JobService {
   rpc Get(JobRef) returns (Job);
   rpc List(ProjectRef) returns (stream JobRef);
   rpc Cancel(JobRef) returns (Empty);
   rpc Retry(JobRef) returns (Empty);
+
+  // Follow streams a RUNNING build's output, from `offset` to the end of it.
+  //
+  // ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
+  // Unavailable rather than NotFound — which is what makes a caller's pool walk
+  // to the next backend instead of stopping at the first that does not have it.
+  // The alternative, forwarding to the claim record's holder the way Cancel
+  // does, would put a proxy hop in front of a stream that is already a proxy
+  // hop behind the public role.
+  //
+  // A FINISHED BUILD'S LOG IS NOT HERE. What survives a run is a content id in
+  // the asset store, and reading one back is that store's business — this
+  // answers FailedPrecondition and names the id, rather than returning an empty
+  // stream that reads like a build with no output.
+  rpc Follow(FollowRequest) returns (stream LogChunk);
 }

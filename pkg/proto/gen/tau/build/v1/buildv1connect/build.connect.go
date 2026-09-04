@@ -161,6 +161,8 @@ const (
 	JobServiceCancelProcedure = "/tau.build.v1.JobService/Cancel"
 	// JobServiceRetryProcedure is the fully-qualified name of the JobService's Retry RPC.
 	JobServiceRetryProcedure = "/tau.build.v1.JobService/Retry"
+	// JobServiceFollowProcedure is the fully-qualified name of the JobService's Follow RPC.
+	JobServiceFollowProcedure = "/tau.build.v1.JobService/Follow"
 )
 
 // QueueServiceClient is a client for the tau.build.v1.QueueService service.
@@ -251,6 +253,20 @@ type JobServiceClient interface {
 	List(context.Context, *connect.Request[v1.ProjectRef]) (*connect.ServerStreamForClient[v1.JobRef], error)
 	Cancel(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Empty], error)
 	Retry(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Empty], error)
+	// Follow streams a RUNNING build's output, from `offset` to the end of it.
+	//
+	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
+	// Unavailable rather than NotFound — which is what makes a caller's pool walk
+	// to the next backend instead of stopping at the first that does not have it.
+	// The alternative, forwarding to the claim record's holder the way Cancel
+	// does, would put a proxy hop in front of a stream that is already a proxy
+	// hop behind the public role.
+	//
+	// A FINISHED BUILD'S LOG IS NOT HERE. What survives a run is a content id in
+	// the asset store, and reading one back is that store's business — this
+	// answers FailedPrecondition and names the id, rather than returning an empty
+	// stream that reads like a build with no output.
+	Follow(context.Context, *connect.Request[v1.FollowRequest]) (*connect.ServerStreamForClient[v1.LogChunk], error)
 }
 
 // NewJobServiceClient constructs a client for the tau.build.v1.JobService service. By default, it
@@ -288,6 +304,12 @@ func NewJobServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(jobServiceMethods.ByName("Retry")),
 			connect.WithClientOptions(opts...),
 		),
+		follow: connect.NewClient[v1.FollowRequest, v1.LogChunk](
+			httpClient,
+			baseURL+JobServiceFollowProcedure,
+			connect.WithSchema(jobServiceMethods.ByName("Follow")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -297,6 +319,7 @@ type jobServiceClient struct {
 	list   *connect.Client[v1.ProjectRef, v1.JobRef]
 	cancel *connect.Client[v1.JobRef, v1.Empty]
 	retry  *connect.Client[v1.JobRef, v1.Empty]
+	follow *connect.Client[v1.FollowRequest, v1.LogChunk]
 }
 
 // Get calls tau.build.v1.JobService.Get.
@@ -319,12 +342,31 @@ func (c *jobServiceClient) Retry(ctx context.Context, req *connect.Request[v1.Jo
 	return c.retry.CallUnary(ctx, req)
 }
 
+// Follow calls tau.build.v1.JobService.Follow.
+func (c *jobServiceClient) Follow(ctx context.Context, req *connect.Request[v1.FollowRequest]) (*connect.ServerStreamForClient[v1.LogChunk], error) {
+	return c.follow.CallServerStream(ctx, req)
+}
+
 // JobServiceHandler is an implementation of the tau.build.v1.JobService service.
 type JobServiceHandler interface {
 	Get(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Job], error)
 	List(context.Context, *connect.Request[v1.ProjectRef], *connect.ServerStream[v1.JobRef]) error
 	Cancel(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Empty], error)
 	Retry(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Empty], error)
+	// Follow streams a RUNNING build's output, from `offset` to the end of it.
+	//
+	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
+	// Unavailable rather than NotFound — which is what makes a caller's pool walk
+	// to the next backend instead of stopping at the first that does not have it.
+	// The alternative, forwarding to the claim record's holder the way Cancel
+	// does, would put a proxy hop in front of a stream that is already a proxy
+	// hop behind the public role.
+	//
+	// A FINISHED BUILD'S LOG IS NOT HERE. What survives a run is a content id in
+	// the asset store, and reading one back is that store's business — this
+	// answers FailedPrecondition and names the id, rather than returning an empty
+	// stream that reads like a build with no output.
+	Follow(context.Context, *connect.Request[v1.FollowRequest], *connect.ServerStream[v1.LogChunk]) error
 }
 
 // NewJobServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -358,6 +400,12 @@ func NewJobServiceHandler(svc JobServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(jobServiceMethods.ByName("Retry")),
 		connect.WithHandlerOptions(opts...),
 	)
+	jobServiceFollowHandler := connect.NewServerStreamHandler(
+		JobServiceFollowProcedure,
+		svc.Follow,
+		connect.WithSchema(jobServiceMethods.ByName("Follow")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.build.v1.JobService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case JobServiceGetProcedure:
@@ -368,6 +416,8 @@ func NewJobServiceHandler(svc JobServiceHandler, opts ...connect.HandlerOption) 
 			jobServiceCancelHandler.ServeHTTP(w, r)
 		case JobServiceRetryProcedure:
 			jobServiceRetryHandler.ServeHTTP(w, r)
+		case JobServiceFollowProcedure:
+			jobServiceFollowHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -391,4 +441,8 @@ func (UnimplementedJobServiceHandler) Cancel(context.Context, *connect.Request[v
 
 func (UnimplementedJobServiceHandler) Retry(context.Context, *connect.Request[v1.JobRef]) (*connect.Response[v1.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.build.v1.JobService.Retry is not implemented"))
+}
+
+func (UnimplementedJobServiceHandler) Follow(context.Context, *connect.Request[v1.FollowRequest], *connect.ServerStream[v1.LogChunk]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("tau.build.v1.JobService.Follow is not implemented"))
 }

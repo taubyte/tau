@@ -88,6 +88,14 @@ type fakeBackend struct {
 	list    func(projectID string, send func(*buildv1.JobRef) error) error
 	cancel  func(id string) error
 	retry   func(id string) error
+	follow  func(jobID string, offset int64, send func(*buildv1.LogChunk) error) error
+}
+
+func (f *fakeBackend) Follow(_ context.Context, req *connect.Request[buildv1.FollowRequest], stream *connect.ServerStream[buildv1.LogChunk]) error {
+	if f.follow == nil {
+		return connect.NewError(connect.CodeUnimplemented, nil)
+	}
+	return f.follow(req.Msg.GetJobId(), req.Msg.GetOffset(), stream.Send)
 }
 
 func (f *fakeBackend) Enqueue(_ context.Context, req *connect.Request[buildv1.PushEvent]) (*connect.Response[buildv1.JobRef], error) {

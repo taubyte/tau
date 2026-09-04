@@ -55,6 +55,7 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("GET /job/{jid}", s.admitted("jid", s.handleGetJob))
 	mux.HandleFunc("POST /cancel/{jid}", s.admitted("jid", s.handleCancelJob))
 	mux.HandleFunc("POST /retry/{jid}", s.admitted("jid", s.handleRetryJob))
+	mux.HandleFunc("GET /job/{jid}/logs", s.admitted("jid", s.handleFollowJob))
 
 	// No /ping. v1 has one, unauthenticated, and a liveness endpoint is a
 	// decision about what this process will tell the internet about itself

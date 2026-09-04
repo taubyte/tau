@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -36,16 +37,16 @@ import (
 // v2. They wait on the byte store the runner will publish to, which does not
 // exist yet.
 //
-// AND A THIRD IS COMING THAT v1 HAS NO VERSION OF: following a build WHILE IT
-// RUNS. The backend writes a run's log to a file a reader can fork off at any
-// offset and holds the seam open (backend's Service.Follow), so the route is a
-// fork and an io.Copy — GET /job/{jid}/logs with an offset, resumable by a
-// client that reconnects. It is the SAME authorization as everything here, on
-// the caller's write access to the job's repository, through admitted() like
-// every other route in this file. What it waits on is not the byte store but
-// the ROUTING: the file is on the backend node running that build, and which
-// node that is, and how a request reaches it, is what the move to leased
-// stateless executors decides.
+// AND A THIRD IS HERE THAT v1 HAS NO VERSION OF: following a build WHILE IT
+// RUNS. GET /job/{jid}/logs, with an offset, resumable by a client that
+// reconnects, under the same authorization as everything else in this file.
+//
+// THE ROUTING QUESTION THIS WAITED ON IS ANSWERED, and the answer is a status
+// code. The log file is on whichever backend node is running that build; every
+// other node says Unavailable rather than NotFound, and a pooled caller walks
+// to the next peer on exactly that code — so "ask the cloud" finds the writer
+// without anything holding a table of which node runs what. The request carries
+// the offset the caller reached, so a walk RESUMES instead of repeating.
 
 // jobJSON is how a Job reaches a caller: protojson over the generated message,
 // with the proto's own field names.
@@ -75,6 +76,89 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write(body)
+}
+
+// handleFollowJob is GET /job/{jid}/logs.
+//
+// IT IS NOT BOUNDED BY BackendTimeout, and that is the one thing about it that
+// is not like the routes above. BackendTimeout bounds ONE CALL OUT OF THIS
+// PROCESS on the assumption that a call returns; a follow returns when the
+// build ends, which is the whole point of it. It is bounded by the caller
+// hanging up and by the build finishing, and by nothing else.
+//
+// THE AUTHORIZATION IS DECIDED ONCE, BEFORE THE FIRST BYTE. A build can run for
+// an hour and re-checking write access every chunk would ask the provider a
+// question per chunk; a caller whose access is revoked mid-build keeps the
+// stream it already opened and is refused the next one. That is the same
+// bargain every streaming API makes, and it is written down rather than
+// discovered.
+func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
+	authorize, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	if _, err := s.mayTouchJob(authorize, token, jobID); err != nil {
+		cancel()
+		respond(w, err)
+		return
+	}
+	cancel()
+
+	from, err := offsetOf(r)
+	if err != nil {
+		respond(w, err)
+		return
+	}
+
+	// THE HEADERS GO BEFORE THE FIRST CHUNK IS ASKED FOR, so a viewer sees the
+	// connection open on a build that has produced nothing yet rather than
+	// waiting on a blank response for the first line of output.
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// A proxy that buffered this would defeat the whole route.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, _ := w.(http.Flusher)
+	if flusher != nil {
+		flusher.Flush()
+	}
+
+	// THE OFFSET IS ECHOED IN A TRAILER-SHAPED HEADER NOWHERE, deliberately:
+	// the response is the log and nothing else, so a client resuming counts the
+	// bytes it wrote and adds them to the offset it asked for. That is the same
+	// arithmetic the backend does and it needs no framing on this hop.
+	_, err = s.backend.Follow(r.Context(), jobID, from, func(data []byte, _ int64) error {
+		if _, err := w.Write(data); err != nil {
+			return err
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+		return nil
+	})
+	if err != nil {
+		// THE STATUS IS ALREADY SENT. There is nothing to respond with, so the
+		// failure is logged and the connection ends — which is what a client
+		// tailing a log sees as "it stopped", and what its offset lets it
+		// recover from.
+		s.log("following job %s: %v", jobID, err)
+	}
+}
+
+// offsetOf reads ?offset=N.
+//
+// A NEGATIVE OFFSET IS REFUSED RATHER THAN CLAMPED. It means the caller
+// computed one, and a caller whose arithmetic went backwards should hear about
+// it rather than silently start over from the beginning of somebody's build.
+func offsetOf(r *http.Request) (int64, error) {
+	raw := r.URL.Query().Get("offset")
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 {
+		return 0, problem(http.StatusBadRequest, "offset must be a non-negative integer")
+	}
+	return n, nil
 }
 
 // handleCancelJob is POST /cancel/{jid}.

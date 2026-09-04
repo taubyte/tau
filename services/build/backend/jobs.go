@@ -2,6 +2,8 @@ package backend
 
 import (
 	"context"
+	"errors"
+	"io"
 	"slices"
 
 	"connectrpc.com/connect"
@@ -251,4 +253,78 @@ func (s *Service) retry(id string) error {
 		}
 		return nil
 	})
+}
+
+// followChunk is how much of a log one message carries.
+//
+// IT IS SMALL ON PURPOSE. A follower is a person watching a build, so latency
+// to the first byte matters and throughput does not — a chunk that waited to
+// fill would hold back the line that says what went wrong. livelog's Reader
+// blocks until there is something, so a slow build sends short chunks and a
+// fast one sends full ones with no rule here deciding which.
+const followChunk = 16 << 10
+
+func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv1.FollowRequest], stream *connect.ServerStream[buildv1.LogChunk]) error {
+	if err := h.s.allow(ctx, ActRead, req.Msg.GetJobId()); err != nil {
+		return err
+	}
+	return h.s.follow(ctx, req.Msg.GetJobId(), req.Msg.GetOffset(), stream.Send)
+}
+
+// follow streams a running build's output to send, from offset to the end.
+//
+// IT IS SEPARATE FROM THE HANDLER for the same reason job() and list() are: the
+// connect adapter decides authorization and nothing else, so what this does can
+// be driven without a stream on either side of it.
+func (s *Service) follow(ctx context.Context, jobID string, offset int64, send func(*buildv1.LogChunk) error) error {
+	if offset < 0 {
+		return errInvalidArgument("build: offset %d is before the start of the log", offset)
+	}
+
+	reader, err := s.Follow(jobID, offset)
+	if err != nil {
+		// A NODE THAT IS NOT WRITING THIS LOG IS Unavailable ON THE WIRE, not
+		// NotFound. The in-process answer is honest — the log is not here — but
+		// a caller's pool walks to the next backend on Unavailable and stops on
+		// NotFound, so answering NotFound would make "ask the cloud" mean "ask
+		// whichever node the resolver happened to name first".
+		//
+		// It is narrowed to exactly that case: an offset past the end, a job id
+		// that is not one, and a job this caller may not read all keep their
+		// own codes, so a bad request does not walk the whole fleet.
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			return errUnavailable("%v", err)
+		}
+		return err
+	}
+	defer reader.Close()
+
+	buf := make([]byte, followChunk)
+	for {
+		// THE CONTEXT IS CHECKED BEFORE THE READ, because livelog's Reader
+		// blocks until the writer appends or closes: a viewer that hung up
+		// during a quiet stretch of a long build would otherwise be noticed
+		// only when the build ended.
+		if ctx.Err() != nil {
+			return nil
+		}
+
+		n, err := reader.Read(buf)
+		if n > 0 {
+			offset += int64(n)
+			if sendErr := send(&buildv1.LogChunk{Data: buf[:n], NextOffset: offset}); sendErr != nil {
+				return sendErr
+			}
+		}
+		if err != nil {
+			// EOF IS THE BUILD ENDING, WHICH IS A COMPLETE ANSWER. livelog does
+			// not return it early — a reader that catches up blocks — so
+			// reaching it means the writer closed and a follower has seen the
+			// whole log.
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return errUnavailable("build: following job %s: %v", jobID, err)
+		}
+	}
 }

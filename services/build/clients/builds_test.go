@@ -241,3 +241,104 @@ func TestEveryPeerUnavailableIsErrNoBackend(t *testing.T) {
 
 	require.ErrorIs(t, c.Cancel(t.Context(), "job-1"), ErrNoBackend)
 }
+
+// ── following a running build ────────────────────────────────────────────
+
+// chunks is a Follow the fake backend serves from a fixed string.
+func chunks(text string, size int) func(string, int64, func(*buildv1.LogChunk) error) error {
+	return func(_ string, offset int64, send func(*buildv1.LogChunk) error) error {
+		if offset > int64(len(text)) {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("offset past the end"))
+		}
+		for at := offset; at < int64(len(text)); {
+			end := min(at+int64(size), int64(len(text)))
+			if err := send(&buildv1.LogChunk{Data: []byte(text[at:end]), NextOffset: end}); err != nil {
+				return err
+			}
+			at = end
+		}
+		return nil
+	}
+}
+
+func TestFollow(t *testing.T) {
+	c := newBuilds(t, &fakeBackend{follow: chunks("cloning\ncompiling\ndone\n", 5)})
+
+	var got []byte
+	end, err := c.Follow(t.Context(), "job", 0, func(data []byte, _ int64) error {
+		got = append(got, data...)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "cloning\ncompiling\ndone\n", string(got))
+	require.Equal(t, int64(len("cloning\ncompiling\ndone\n")), end)
+}
+
+// A CALLER RESUMES WHERE IT WAS and sees neither a gap nor a repeat.
+func TestFollowResumes(t *testing.T) {
+	c := newBuilds(t, &fakeBackend{follow: chunks("first\nsecond\n", 64)})
+
+	var got []byte
+	_, err := c.Follow(t.Context(), "job", int64(len("first\n")), func(data []byte, _ int64) error {
+		got = append(got, data...)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "second\n", string(got))
+}
+
+// THE OFFSET IS WHAT MAKES THE WALK SAFE, and it is the whole difference from
+// List: a peer that cannot serve says Unavailable, the pool moves on, and the
+// request carries where the caller got to — so the next peer RESUMES rather
+// than starting the log again.
+func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
+	mn := newMocknet(t)
+	caller := newHost(t, mn)
+
+	// The first peer serves a little and then goes Unavailable — the shape of a
+	// backend whose claim lapsed mid-build.
+	partial := serveBuild(t, mn, &fakeBackend{follow: func(_ string, offset int64, send func(*buildv1.LogChunk) error) error {
+		if offset == 0 {
+			if err := send(&buildv1.LogChunk{Data: []byte("cloning\n"), NextOffset: 8}); err != nil {
+				return err
+			}
+		}
+		return connect.NewError(connect.CodeUnavailable, errors.New("not writing this log"))
+	}})
+	// The second has the whole thing and is asked for the rest of it.
+	whole := serveBuild(t, mn, &fakeBackend{follow: chunks("cloning\ncompiling\n", 64)})
+
+	p, err := NewPool(caller, discovery.Static(partial.ID(), whole.ID()), build.Protocol, 4)
+	require.NoError(t, err)
+	t.Cleanup(p.Close)
+
+	c, err := Builds(p)
+	require.NoError(t, err)
+
+	var got []byte
+	end, err := c.Follow(t.Context(), "job", 0, func(data []byte, _ int64) error {
+		got = append(got, data...)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "cloning\ncompiling\n", string(got), "the second peer resumed at 8 rather than repeating")
+	require.Equal(t, int64(len("cloning\ncompiling\n")), end)
+}
+
+// An emit that fails is the CALLER's failure — a hung-up HTTP client — and is
+// never a routing problem, so it stops rather than being retried elsewhere.
+func TestFollowStopsOnTheCallersFailure(t *testing.T) {
+	c := newBuilds(t, &fakeBackend{follow: chunks("output\n", 2)})
+
+	_, err := c.Follow(t.Context(), "job", 0, func([]byte, int64) error {
+		return errors.New("client went away")
+	})
+	require.ErrorContains(t, err, "client went away")
+	require.NotEqual(t, connect.CodeUnavailable, connect.CodeOf(err))
+}
+
+func TestFollowNeedsSomewhereToPutIt(t *testing.T) {
+	c := newBuilds(t, &fakeBackend{})
+	_, err := c.Follow(t.Context(), "job", 0, nil)
+	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+}

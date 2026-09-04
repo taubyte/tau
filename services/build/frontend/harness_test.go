@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -95,6 +96,17 @@ type fakeBackend struct {
 	list    func(projectID string, emit func(string) error) error
 	cancel  func(id string) error
 	retry   func(id string) error
+	follow  func(id string, from int64, emit func([]byte, int64) error) (int64, error)
+}
+
+func (f *fakeBackend) Follow(ctx context.Context, id string, from int64, emit func([]byte, int64) error) (int64, error) {
+	f.mu.Lock()
+	f.ctx = ctx
+	f.mu.Unlock()
+	if f.follow != nil {
+		return f.follow(id, from, emit)
+	}
+	return from, connect.NewError(connect.CodeUnavailable, errors.New("no build of that job is running"))
 }
 
 func (f *fakeBackend) Enqueue(ctx context.Context, key, ref, sha string) (string, error) {
