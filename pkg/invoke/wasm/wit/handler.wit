@@ -1,0 +1,65 @@
+// The world a tau function is compiled to.
+//
+// # Why this and not wasi:http/incoming-handler
+//
+// A tau invocation is not always HTTP. A pubsub delivery and a peer-to-peer
+// call are invocations too, and pkg/invoke's Request says so in as many words —
+// so a world that could only carry an HTTP exchange would make the other two
+// second-class at the ABI, which is the one place that is expensive to undo.
+//
+// This world mirrors that Request exactly, which is what lets one tier serve
+// every trigger. Supporting `wasi:http/incoming-handler` as a SECOND world is
+// worth doing — it is what makes a component built for wasmtime serve, Spin or
+// wasmCloud run here unmodified — and it is additive: a component exporting it
+// is recognised by what it exports, not by a flag.
+//
+// # The export is named by the author
+//
+// `execution/call` in the project's configuration names the export, so a
+// project with two functions in one component is two exports rather than two
+// components. That is why this world declares the SHAPE and not the name: the
+// host calls whatever the config says, and what it requires is the signature.
+package taubyte:handler@0.1.0;
+
+// THE TYPES ARE IN THE WORLD AND NOT IN AN INTERFACE, which is not a style
+// choice: a `use` from an imported interface leaves the export's signature
+// referring to a type the host has to resolve separately, and a host reading
+// the component's own type section then cannot flatten the call at all. Inline,
+// the export carries its whole shape with it — which is what lets any embedder
+// call it knowing only this file.
+world handler {
+    // A header, once. It is a list of pairs rather than a map because a header
+    // may legitimately appear more than once — Set-Cookie is the example that
+    // breaks every map-shaped API.
+    record header {
+        name: string,
+        value: string,
+    }
+
+    // What a guest is handed.
+    //
+    // Method and path are empty for an invocation that is not HTTP-shaped,
+    // which is a case a header list and a body still describe perfectly well:
+    // a pubsub delivery is a body and some metadata.
+    record request {
+        method: string,
+        path: string,
+        headers: list<header>,
+        body: list<u8>,
+    }
+
+    // What a guest answers with.
+    //
+    // A guest that fails does so by returning a status, not by trapping: a trap
+    // takes the instance with it, and an instance is warm state worth keeping
+    // across a handled error.
+    record response {
+        status: u16,
+        headers: list<header>,
+        body: list<u8>,
+    }
+
+    // The name is the author's — `execution/call` — and this declares the
+    // signature every one of them has.
+    export handle: func(req: request) -> response;
+}

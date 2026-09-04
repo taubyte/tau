@@ -332,7 +332,8 @@ func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
 	t.Cleanup(func() { mn.Close() })
 	h := newHost(t, mn)
 
-	// No container backend, no injected runtime — and a worker still starts.
+	// No container backend, no injected runtime — and a worker still starts,
+	// with both tiers that need only the asset store.
 	n, err := New(Config{Services: []string{Stats, Worker}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
 		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
@@ -341,6 +342,10 @@ func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NotNil(t, n.worker)
+
+	// Both of them: a static site and a wasm component are what the smallest
+	// possible cloud runs, and neither needs a daemon.
+	require.ElementsMatch(t, []string{"static", "wasm"}, tierNames(n))
 
 	// And with neither, it refuses rather than starting a worker that can run
 	// nothing.
@@ -466,4 +471,13 @@ type artifactsFunc func(ctx context.Context, project, environment, kind, resourc
 
 func (f artifactsFunc) Artifact(ctx context.Context, project, environment, kind, resource string) (string, error) {
 	return f(ctx, project, environment, kind, resource)
+}
+
+// tierNames is what this node's pool can run.
+func tierNames(n *Node) []string {
+	var out []string
+	for _, rt := range n.tiers() {
+		out = append(out, rt.Name())
+	}
+	return out
 }

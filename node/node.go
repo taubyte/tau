@@ -43,6 +43,7 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/static"
+	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/project"
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -70,8 +71,9 @@ type Node struct {
 	buildBackend  *backend.Service
 	buildFrontend *frontend.Service
 
-	pool    *invoke.Pool
-	workers *placement.Workers
+	pool     *invoke.Pool
+	runtimes []invoke.Runtime
+	workers  *placement.Workers
 
 	// closers are everything opened during construction, in the order it was
 	// opened. Close walks them backwards.
@@ -198,6 +200,11 @@ func (n *Node) openRegister() error {
 	return nil
 }
 
+// tiers is what this node's pool can run. It is here for the composition's own
+// tests: which tiers a node ended up with is decided by three separate
+// conditions, and reading them back is how that is checked rather than asserted.
+func (n *Node) tiers() []invoke.Runtime { return n.runtimes }
+
 func (n *Node) openWorker() error {
 	if !n.cfg.runs(Worker) {
 		return nil
@@ -216,16 +223,23 @@ func (n *Node) openWorker() error {
 		tiers = append(tiers, tier)
 	}
 
-	// A SITE NEEDS NO DAEMON AND NO OPERATOR CHOICE. Its cold start is a fetch
-	// and an unpack, so a node that can reach the asset store can serve one —
-	// which means a static website runs on the smallest possible cloud, and
-	// that is most of what an imported project is.
+	// NEITHER A SITE NOR A COMPONENT NEEDS A DAEMON OR AN OPERATOR CHOICE.
+	// Both cold-start out of the asset store, so a node that can reach it
+	// serves both — which means the smallest possible cloud runs a static
+	// website and a wasm function, and that is most of what anybody deploys.
 	if n.opts.assets != nil {
 		site, err := static.New(n.opts.assets)
 		if err != nil {
 			return err
 		}
-		tiers = append(tiers, site)
+
+		component, err := wasm.New(n.opts.assets)
+		if err != nil {
+			return err
+		}
+		n.closers = append(n.closers, closerFunc(func() { component.Close() }))
+
+		tiers = append(tiers, site, component)
 	}
 
 	if len(tiers) == 0 {
@@ -237,6 +251,7 @@ func (n *Node) openWorker() error {
 		return err
 	}
 	n.pool = pool
+	n.runtimes = tiers
 	n.closers = append(n.closers, closerFunc(func() { pool.Close() }))
 
 	options := []worker.Option{
