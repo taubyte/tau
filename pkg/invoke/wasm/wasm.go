@@ -69,9 +69,27 @@ import (
 // Name is the string the config vocabulary uses for this tier.
 const Name = "wasm"
 
-// SettingCall is where the export's name arrives, spelled as the vocabulary
-// spells it.
-const SettingCall = "execution/call"
+// The two settings this tier reads, spelled as the vocabulary spells them.
+const (
+	// SettingCall is the exported symbol to enter the component at.
+	SettingCall = "execution/call"
+
+	// SettingImplements is which host interface the component was built
+	// against. The schema defaults it to WorldHandler, so a resource that says
+	// nothing still says handler.
+	SettingImplements = "implements"
+)
+
+// WorldHandler is the only host interface this tier serves: a component that
+// takes a request and answers with a response.
+//
+// THE OTHERS ARE REFUSED BY NAME. An authorizer takes a caller and an
+// operation; a gateway-transformer takes a parsed HTTP request; a router
+// answers with a destination. Calling one of them with a handler's signature
+// would not fail cleanly — it would hand a component bytes it reads as
+// something else, which is the failure the vocabulary added `implements` to
+// prevent.
+const WorldHandler = "handler"
 
 // httpWorld is the standard world's export. A component exporting it is driven
 // as an HTTP handler; anything else is called by name.
@@ -92,6 +110,10 @@ const DefaultExport = "handle"
 var (
 	ErrNoAssets   = errors.New("wasm: nothing to fetch a component from")
 	ErrNoArtifact = errors.New("wasm: the spec names no artifact")
+
+	// ErrNotAHandler is a component built against a host interface this tier
+	// does not serve.
+	ErrUnsupportedWorld = errors.New("wasm: this tier runs the handler interface and nothing else yet")
 
 	// ErrNotAHandler is a component whose export does not have the shape
 	// wit/handler.wit declares. It is reported against the EXPORT rather than
@@ -171,6 +193,14 @@ func (r *Runtime) Close() error { return r.cache.Close(context.Background()) }
 func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance, error) {
 	if spec.Artifact == "" {
 		return nil, fmt.Errorf("%w: %s", ErrNoArtifact, spec.Name)
+	}
+
+	// THE WORLD IS CHECKED BEFORE ANYTHING IS FETCHED. A component built as an
+	// authorizer would instantiate perfectly well and then be called with a
+	// handler's signature, which is the failure `implements` exists to prevent
+	// — so it is refused here rather than discovered at the first request.
+	if world := spec.Settings[SettingImplements]; world != "" && world != WorldHandler {
+		return nil, fmt.Errorf("%w: %s is %q", ErrUnsupportedWorld, spec.Name, world)
 	}
 
 	content, err := r.assets.Get(ctx, spec.Artifact)

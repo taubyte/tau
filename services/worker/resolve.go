@@ -109,29 +109,41 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, r proj
 	return spec, nil
 }
 
-// settingsOf is the `serve` block, flattened, for whichever tier runs this.
+// settingsOf is what a tier needs off the resource that is not common to every
+// tier.
 //
-// IT IS ONE BLOCK AND NOT THE WHOLE RESOURCE. `serve` is by definition how a
-// thing is served, so it is the block a tier reads and the one this can hand
-// over without deciding what any tier needs — a static site's mode and index
-// live there, and so will whatever a later tier is told about serving. Passing
-// the entire resource would put every access rule and every variable into every
-// Spec, which is a wider thing to hold for one that is not read.
+// THREE THINGS, NAMED, AND NOT THE WHOLE RESOURCE. Passing everything would put
+// every access rule and every variable into every Spec, which is a wider thing
+// to hold for something that is not read:
 //
-// Nothing here is per-environment beyond what the compile already resolved:
-// this reads the compiled object, so a `mode_preview` is already `mode`.
+//	serve/*          how a thing is served — a static site's mode and index.
+//	execution/call   the exported symbol a wasm component is entered at.
+//	implements       which host interface it was built against.
+//
+// The last two are the vocabulary's own words. `implements` defaults to
+// `handler` in the schema, so a resource that says nothing still says handler;
+// this carries what the compile resolved rather than restating the default.
+//
+// Nothing here is per-environment beyond what the compile already did: this
+// reads the compiled object, so a `mode_preview` is already `mode`.
 func settingsOf(r project.Resource) map[string]string {
-	block, ok := r.Map("serve")
-	if !ok || len(block) == 0 {
-		return nil
-	}
+	out := map[string]string{}
 
-	out := make(map[string]string, len(block))
-	for key, value := range block {
-		if s, ok := value.(string); ok {
-			out["serve/"+key] = s
+	if block, ok := r.Map("serve"); ok {
+		for key, value := range block {
+			if s, ok := value.(string); ok {
+				out["serve/"+key] = s
+			}
 		}
 	}
+
+	if call := r.String("execution", "call"); call != "" {
+		out["execution/call"] = call
+	}
+	if world := r.String("implements"); world != "" {
+		out["implements"] = world
+	}
+
 	if len(out) == 0 {
 		return nil
 	}

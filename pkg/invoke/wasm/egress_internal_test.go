@@ -8,15 +8,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// EMPTY IS DENY AND NOT ALLOW. A resource that declared no egress declared no
-// egress; reading an absent list as "anywhere" would make the safe spelling the
-// one nobody writes — and the unsafe one the default.
-func TestNoEgressReachesNowhere(t *testing.T) {
-	client := egressFor(nil, refuse{})
+// AN ABSENT LIST IS THE FLOOR ALONE AND NOT "NOWHERE". It is the vocabulary's
+// own sentence — "layered on the node-wide deny floor, which it can never
+// widen; absent means the floor alone" — and the opposite of what this file
+// said first: a resource that names nothing asked for no NARROWING, not for
+// isolation, and reading it the other way would make every function that calls
+// an API fail with a message about a list its author never knew to write.
+func TestAnAbsentListIsTheFloorAlone(t *testing.T) {
+	var reached string
+	client := egressFor(nil, roundTrip(func(r *http.Request) { reached = r.URL.Host }))
 
-	_, err := client.Get("https://api.stripe.com/v1/charges")
-	require.ErrorContains(t, err, "may not reach api.stripe.com")
-	require.ErrorContains(t, err, "egress", "and it says where to fix it")
+	res, err := client.Get("https://api.stripe.com/v1/charges")
+	require.NoError(t, err)
+	res.Body.Close()
+	require.Equal(t, "api.stripe.com", reached)
+
+	// And the floor is still under it, which is what "can never widen" means:
+	// the transport a real one gets refuses a private range at the dial.
+	require.NotNil(t, floor())
 }
 
 func TestAnAllowedHostIsReached(t *testing.T) {

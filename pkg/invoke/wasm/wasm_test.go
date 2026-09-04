@@ -327,3 +327,44 @@ func TestASinkThatAnswersNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status)
 }
+
+// THE HOST INTERFACE IS CHECKED BEFORE ANYTHING IS FETCHED. A component built
+// as an authorizer instantiates perfectly well and is then called with a
+// handler's signature — it would not fail cleanly, it would be handed bytes it
+// reads as something else, which is the failure `implements` exists to prevent.
+func TestAWorldThisTierDoesNotServe(t *testing.T) {
+	r := tier(t, handler(t))
+
+	for _, world := range []string{"authorizer", "gateway-transformer", "proxy-router"} {
+		_, err := r.Start(t.Context(), invoke.Spec{
+			Name:     "shop/prod/function/gate",
+			Artifact: "bafycomponent",
+			Settings: map[string]string{wasm.SettingImplements: world},
+		})
+		require.ErrorIs(t, err, wasm.ErrUnsupportedWorld, world)
+		require.ErrorContains(t, err, world)
+	}
+
+	// `handler` is served, and so is a resource that says nothing — the schema
+	// defaults it, so an empty setting is the default rather than an absence.
+	for _, world := range []string{wasm.WorldHandler, ""} {
+		instance, err := r.Start(t.Context(), invoke.Spec{
+			Artifact: "bafycomponent",
+			Settings: map[string]string{wasm.SettingImplements: world},
+		})
+		require.NoError(t, err, world)
+		instance.Close()
+	}
+}
+
+// THE ENTRYPOINT IS THE AUTHOR'S, and it arrives as the vocabulary spells it.
+func TestTheEntrypointComesFromTheConfiguration(t *testing.T) {
+	instance := start(t, tier(t, handler(t)), invoke.Spec{
+		Name:     "shop/prod/function/checkout",
+		Settings: map[string]string{wasm.SettingCall: "handle", wasm.SettingImplements: "handler"},
+	})
+
+	res, err := instance.Serve(t.Context(), &invoke.Request{Method: "GET"})
+	require.NoError(t, err)
+	require.Equal(t, 200, res.Status)
+}

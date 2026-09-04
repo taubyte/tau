@@ -409,11 +409,26 @@ func TestTheServeBlockReachesTheTier(t *testing.T) {
 	require.Equal(t, "static", spec.Runtime, "read off the kind's Engines()")
 	require.Equal(t, "spa", spec.Settings["serve/mode"])
 
-	// A resource with no serve block carries no settings, rather than an empty
-	// map every tier has to check for.
+	// A resource with none of the three carries no settings, rather than an
+	// empty map every tier has to check for.
 	h2 := newHarness(t)
 	invokeOver(t, h2, target("application", "api"))
 	require.Nil(t, h2.Runtime.specs()[0].Settings)
+}
+
+// THE ENTRYPOINT AND THE WORLD ARE THE VOCABULARY'S OWN WORDS, and a wasm tier
+// cannot run anything without them: without the entrypoint it calls the world's
+// default name instead of the author's, and without the world it calls a
+// component built for another interface with the wrong signature.
+func TestTheEntrypointAndTheWorldReachTheTier(t *testing.T) {
+	h := newHarness(t)
+
+	invokeOver(t, h, target("function", "checkout"))
+	spec := h.Runtime.specs()[0]
+
+	require.Equal(t, "checkout", spec.Settings["execution/call"])
+	require.Equal(t, "handler", spec.Settings["implements"],
+		"the schema defaults it, so a resource that says nothing still says handler")
 }
 
 // WHERE A WORKLOAD MAY REACH IS THE RESOURCE'S, and empty is nowhere. The tier
