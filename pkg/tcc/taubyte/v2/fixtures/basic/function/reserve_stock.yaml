@@ -1,5 +1,12 @@
 id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc
-description: holds the items in the order so nobody else can buy them
+description: holds the items in the order so nobody else can buy them - and it says how it is made, so no file in the repository has to
+source: services/reserve
+build:
+    commands:
+        image: rust:1.83
+        install: cargo fetch --locked
+        run: cargo build --release --target wasm32-wasip2
+        output: target/wasm32-wasip2/release/reserve.wasm
 execution:
     call: reserve
     timeout: 15s

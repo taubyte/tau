@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -23,6 +24,16 @@ import (
 //	source: {component: paylib}   another component of this project (+ `namespace`)
 //	source: {builtin: agent}      a program the platform ships; a lowering sets it
 //	source: {git: <url>, branch: …, path: …}   another repository, by its clone URL
+//	source: {image: <ref>}        an artifact somebody else already built
+//
+// AN IMAGE IS A SOURCE, NOT A BUILD, and it took a `build:` block to notice. An OCI
+// reference answers exactly the question this helper was written for — where does this
+// resource's content come from — and the answer is "from somebody else, finished". It
+// used to be a top-level `image:` beside `source:` on three kinds, each with its own
+// copy of the pull secret, which re-created precisely the defect this switch was made
+// to remove: two blocks both saying where the content is, with nothing stopping a
+// document from writing both. Here they are branches of one Either and the pair is
+// unrepresentable.
 //
 // THE COMMON CASE IS A BARE PATH. A switch whose default branch takes one argument
 // should not make an author write the branch's name to give it: `source: agents/support`
@@ -55,6 +66,26 @@ func contentSource(section string, branches ...string) []*engine.Attribute {
 					Doc("Component", "A component of this project to build from.")),
 				String(Key("source", "namespace"), IsNamespacePath(), InSection(section), ShowWhen(Key("source", "kind"), "component"),
 					Doc("Component Namespace", "Where that component lives. Omitted means this resource's own scope, then its parents.")))
+		case "image":
+			attrs = append(attrs,
+				// PerEnv: a preview deployment running a different tag is the same
+				// resource with one line beside the other, which is what every other
+				// ceiling and image reference here already does.
+				String(Key("source", "image"), Path("source", "image"), PerEnv(), InSection(section),
+					Doc("Image", "OCI image reference this runs. Somebody else built it, so there is nothing here to build.")),
+				// The credential is a SECRET named, never a token held — the reason a
+				// database's credentials are too. And it lives inside this branch
+				// because this is the only branch it means anything in: it hung off
+				// three kinds beside a top-level `image:`, and on one of them — the
+				// worker, whose image was demanded only when its runtime was the
+				// container tier — it could be written on a wasm workload that pulls
+				// nothing at all.
+				String(Key("source", "image_pull_secret", "namespace"), IsNamespacePath(), InSection(section),
+					ShowWhen(Key("source", "kind"), "image"),
+					Doc("Image Pull Secret Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
+				String(Key("source", "image_pull_secret", "name"), IsVariableName(), Ref("secret", Inbound()), InSection(section),
+					ShowWhen(Key("source", "kind"), "image"),
+					Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with. Omit for a public registry.")))
 		case "builtin":
 			attrs = append(attrs, String(Key("source", "builtin"), Path("source", "builtin"), IsVariableName(), InSection(section),
 				Doc("Built-in Program", "A program the platform itself ships, by name. Not for authors: a lowering sets it, and the set is closed by what exists.")))
@@ -80,11 +111,20 @@ func contentSource(section string, branches ...string) []*engine.Attribute {
 const repoPathSegment = `[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*`
 
 // repoPathRoot is the repository root, and it is the one dot-only path that means
-// something. It is NOT a spelling of "absent": absent is the resource's OWN location,
-// LayoutOf().Content, the directory beside its document — so `.` is the only way to
-// say "my content is the whole repository", which is a website or a component in a
-// repository of its own. Refusing it removed a state the vocabulary could express and
-// left nothing in its place.
+// something.
+//
+// WHETHER A FIELD MAY NAME IT IS THE FIELD'S OWN QUESTION, and there is one test: what
+// does leaving the field OUT mean? Where absent already names the root — `source.git.path`
+// says "omitted means that repository's root" — `.` is a second spelling of a state the
+// document can already reach, and that is what F29 refused. Where absent names something
+// ELSE, the root is a place with no other spelling, and refusing it removes a state the
+// vocabulary could express and leaves nothing in its place.
+//
+// Two fields are the second case, and they are unlike each other, which is why this is a
+// test and not a roster: the bare `source`, where absent is the resource's OWN location
+// (`LayoutOf().Content`, the directory beside its document), and `build/output`, where
+// absent is the output directory the BUILDER hands the build and is not in the source
+// tree at all. Ask it of every field that takes a path.
 const repoPathRoot = "."
 
 // repoPathPattern is the grammar, and repoPathChecker enforces exactly it. They were
@@ -96,12 +136,12 @@ const repoPathRoot = "."
 // checker's only job is to say WHICH rule was broken.
 const repoPathPattern = `^` + repoPathSegment + `(/` + repoPathSegment + `)*$`
 
-// repoLocationPattern is the same grammar plus the root, and it belongs to exactly one
-// field: the bare `source`, where the value is a DIRECTORY in this repository and the
-// root is a place absent does not name. Everywhere else `.` means nothing — a file
-// field cannot be a directory, and `source.git.path` already says omitted is that
-// repository's root, so `.` there is the second spelling F29 refused. One grammar for
-// all of them put the root everywhere the moment it was legal anywhere.
+// repoLocationPattern is the same grammar plus the root, and a field takes it exactly
+// when the test above says so: it names a DIRECTORY, and absent means somewhere other
+// than the root. A field naming a FILE never takes it, whatever absent means there,
+// because the root is not a file — `build/script`, `build/dockerfile` and an agent's
+// `instructions` are all paths to something to open. Two grammars rather than one,
+// because one grammar put the root everywhere the moment it was legal anywhere.
 const repoLocationPattern = `^(\.|` + repoPathSegment + `(/` + repoPathSegment + `)*)$`
 
 var (
@@ -120,8 +160,9 @@ func IsRepoPath() engine.Option {
 	}
 }
 
-// IsRepoLocation is IsRepoPath plus `.`, the repository root. Only the bare `source`
-// takes it: it names a directory, and the root is a place absent does not name.
+// IsRepoLocation is IsRepoPath plus `.`, the repository root. A field takes it when it
+// names a directory and absent means somewhere other than the root — see repoPathRoot
+// for the test and for the two fields that pass it.
 func IsRepoLocation() engine.Option {
 	return func(a *engine.Attribute) {
 		engine.Annotate("pattern", repoLocationPattern)(a)
@@ -146,8 +187,20 @@ func repoPathCheck(p string, root bool) error {
 	// that survives because a checker let it through, not because it says something.
 	// An attribute nobody wrote never reaches this; an author who wrote an empty value
 	// meant one of the other three.
+	//
+	// AND THE SENTENCE SAYS ONLY WHAT THIS CHECKER KNOWS, which is the grammar: a path,
+	// plus the root where the field takes it. What OMITTING the field means it does not
+	// know and cannot — it is different on every field that takes a path, and each one
+	// writes its own in its own Doc. This used to end "or leave it out for this
+	// resource's own location", which is the bare `source`'s meaning of absent shipped
+	// by a shared checker to `build/output`, to `source.git.path` and to an agent's
+	// `instructions`, where it is true of none of them; and it offered `.` on the
+	// fields that refuse it.
 	if p == "" {
-		return fmt.Errorf("empty: write a path, \"%s\" for the repository root, or leave it out for this resource's own location", repoPathRoot)
+		if root {
+			return fmt.Errorf("empty: write a path, or %q for the repository root", repoPathRoot)
+		}
+		return errors.New("empty: write a path")
 	}
 	// One grammar, several ways to break it. The regex has already said no;
 	// these say why, in the author's terms rather than the pattern's.

@@ -1,0 +1,17 @@
+id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVs
+description: the storefront - a build that arrived from another platform's descriptor and needed no file written into the repository
+source: apps/shop
+build:
+    commands:
+        image: node:22
+        install: pnpm install --frozen-lockfile
+        run: pnpm build
+        output: dist
+serve:
+    mode: spa
+variables:
+    API_BASE:
+        value: https://api.example.com
+    NPM_TOKEN:
+        secret:
+            name: stripe

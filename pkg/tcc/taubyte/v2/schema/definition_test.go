@@ -268,9 +268,16 @@ func TestWorkerEntrypointIsRequiredOnTheWasmTierOnly(t *testing.T) {
 		"a tier with no default has to be written")
 	assert.NilError(t, compile("runtime: wasm\n"+wasmLimits))
 	assert.ErrorContains(t, compile("runtime: wasm\n"+limits), "required attribute 'execution/call'")
-	assert.NilError(t, compile("runtime: container\nimage: busybox\n"+limits),
+	assert.NilError(t, compile("runtime: container\nsource:\n    image: busybox\n"+limits),
 		"a container names an image, not an exported symbol")
-	assert.ErrorContains(t, compile("runtime: container\n"+limits), "required attribute 'image'")
+	// A CONTAINER WITH NEITHER AN IMAGE NOR A BUILD IS NO LONGER A LOAD ERROR, and
+	// that is the price of unifying the two ways of having something to run. `image:`
+	// used to be a field of this kind with a RequiredWhen on the tier; it is a branch of
+	// `source:` now, and the other way — declaring the build that produces one — lives
+	// in a second block, so no single key can demand "one of these two". It is
+	// checkBuild's, which is where every other cross-block exclusion in this vocabulary
+	// already is.
+	assert.NilError(t, compile("runtime: container\n"+limits))
 
 	// The kind that is ALWAYS a component keeps the unconditional demand. A gate
 	// written inside the shared helper would have named an attribute it does not
@@ -689,7 +696,7 @@ func TestNamespaceScope(t *testing.T) {
 	assert.Equal(t, kv["name"], "sessions")
 
 	app := namedResource(t, resources(t, compileBasic(t), "application"), "api")
-	assert.Equal(t, app["image"], "ghcr.io/acme/api:1.4", "applications is a compute kind, not a scope")
+	assert.Equal(t, nested(app, "source", "image"), "ghcr.io/acme/api:1.4", "applications is a compute kind, not a scope")
 	// what the platform assigns is never authored: the port is handed to the
 	// workload and tunnelled, and how many instances run is placement
 	for _, gone := range []string{"port", "replicas"} {
@@ -1302,7 +1309,7 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/application/a.yaml", []byte(
-		"id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nimage: img\nexecution:\n    memory: 1MB\nports:\n    p:\n        number: 80\n"), 0o644))
+		"id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nsource:\n    image: img\nexecution:\n    memory: 1MB\nports:\n    p:\n        number: 80\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/queue/q.yaml",
 		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"), 0o644))
 	// a generated host needs no certificate even when TLS stops here — the cloud
@@ -1699,7 +1706,7 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/application/db.yaml",
-			[]byte("id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nimage: img\nexecution:\n    memory: 1MB\nports:\n    pg:\n        number: 5432\n"), 0o644))
+			[]byte("id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nsource:\n    image: img\nexecution:\n    memory: 1MB\nports:\n    pg:\n        number: 5432\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(id+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)

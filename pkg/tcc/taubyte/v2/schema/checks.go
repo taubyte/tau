@@ -110,6 +110,7 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	out = append(out, checkPortsAreFed(all)...)
 	out = append(out, checkDelivery(all)...)
 	out = append(out, checkVariables(all)...)
+	out = append(out, checkBuild(all)...)
 	out = append(out, checkTransformerWorlds(all)...)
 	out = append(out, checkMountedSites(all)...)
 	out = append(out, checkHostWorlds(all)...)
@@ -444,7 +445,7 @@ func checkPortsAreFed(all []compiled) []Finding {
 func checkDelivery(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
-		if res.str("image") == "" {
+		if !runsAsContainer(res) {
 			continue // dispatched, not posted to
 		}
 		for group, val := range res.fields {
@@ -480,6 +481,28 @@ func checkDelivery(all []compiled) []Finding {
 	return out
 }
 
+// runsAsContainer answers "does this have a host ABI, or does something have to be
+// posted to a port". It used to be answered by looking for an `image:` field, which was
+// true only while a container was always somebody else's: a workload BUILT from a
+// Dockerfile has no image reference and would have read as a dispatched WASM component,
+// so a queue consumer missing its deliver port would have gone unreported.
+//
+// The tier is the KIND's, read back off Engines(), or `runtime` where the kind declares
+// more than one and therefore has a choice to make. That is the §8c rule applied to a
+// check: a consumer — and an audit is one — does not keep its own table of which kinds
+// are containers.
+//
+// A kind that declared two engines and no way to choose between them would answer no
+// here, which is the safe direction (nothing is reported) and is unreachable while
+// `worker` is the only such kind — TestTheEngineSeamIsAValue holds that.
+func runsAsContainer(res compiled) bool {
+	if tier := res.str("runtime"); tier != "" {
+		return tier == containerEngine
+	}
+	engines := EnginesOf(res.kind)
+	return len(engines) == 1 && engines[0] == containerEngine
+}
+
 // checkVariables: exactly one of value or secret. The DSL cannot state a mutual
 // exclusion, so it is stated here.
 func checkVariables(all []compiled) []Finding {
@@ -508,6 +531,57 @@ func checkVariables(all []compiled) []Finding {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("variable %q has neither a value nor a secret", name),
 					"The name is declared and nothing is behind it, so the workload reads an empty string.", res.id})
+			}
+		}
+	}
+	return out
+}
+
+// checkBuild: three statements about a build that need TWO BLOCKS to make, which is one
+// more than a switch can reach. `source:` and `build:` are different attributes at
+// different paths, so §3's Either has no single key to hang an exclusion between them
+// on, and they land here beside the other cross-block exclusions this file already
+// owes — checkVariables' value-or-secret is the same shape.
+//
+//	an image AND a build      the image is finished; nothing the build says would run
+//	neither, on a container   there is no artifact and no recipe for one
+//	a build the tier cannot use   a Dockerfile makes an image, not a component
+//
+// The last one reads `runtime` because that is this vocabulary's word for "which of my
+// engines", and only a kind declaring more than one has it to answer. Which kinds those
+// are is EnginesOf's, not a list here.
+func checkBuild(all []compiled) []Finding {
+	var out []Finding
+	for _, res := range all {
+		if len(EnginesOf(res.kind)) == 0 {
+			continue // nothing builds it, and nothing here applies
+		}
+		way := res.at("build", "kind")
+		fromImage := res.at("source", "kind") == "image"
+
+		switch {
+		case fromImage && way != "":
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				"takes its content from an image and also declares a build",
+				"The image is already built, so nothing the build says would run. Take one out: name the image, or name the build that produces one.", res.id})
+		case !fromImage && way == "" && runsAsContainer(res):
+			// A repository alone is enough for a wasm component or a static site —
+			// that is what the absent block means everywhere else. It is not enough
+			// for an image: nothing here turns a directory into one without being
+			// told how.
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				"names no image and declares no build",
+				"A container runs an image. Either point source at one somebody built, or declare the build that makes it.", res.id})
+		}
+
+		// The way of building and the tier that runs the product, on a kind that
+		// chooses between tiers. A Dockerfile produces an image; commands and a script
+		// produce what the builder found in its output directory.
+		if tier := res.str("runtime"); tier != "" && way != "" {
+			if produces := BuildWaysOf(tier); !slices.Contains(produces, way) {
+				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+					fmt.Sprintf("runs on the %s tier and is built with %q", tier, way),
+					fmt.Sprintf("That way of building does not produce what a %s tier runs. Use one of: %s.", tier, strings.Join(produces, ", ")), res.id})
 			}
 		}
 	}
@@ -1262,11 +1336,11 @@ func checkExternal(all []compiled, r Resolver) []Finding {
 					err.Error(), res.id})
 			}
 		}
-		if image := res.str("image"); image != "" {
+		if image := res.at("source", "image"); image != "" {
 			// The pull secret is a REFERENCE, so it is `{secret: <id>}` — reading it as
 			// a string hands the resolver an empty credential and asks whether the image
 			// pulls anonymously, which is a different question.
-			if err := r.ImagePullable(image, res.at("image_pull_secret", "name")); err != nil {
+			if err := r.ImagePullable(image, res.at("source", "image_pull_secret", "name")); err != nil {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("image %q cannot be pulled", image),
 					err.Error(), res.id})

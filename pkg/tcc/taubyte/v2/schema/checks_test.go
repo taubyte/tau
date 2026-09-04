@@ -45,7 +45,7 @@ func hasNo(t *testing.T, found []schema.Finding, substr string) {
 	}
 }
 
-const appBody = "id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nimage: img\nexecution:\n    memory: 1MB\n"
+const appBody = "id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nsource:\n    image: img\nexecution:\n    memory: 1MB\n"
 
 // An http workload nothing fronts answers nobody. A consumer in the same position is
 // correct, and the difference is the whole reason severity is not a count.

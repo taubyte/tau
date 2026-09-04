@@ -1,7 +1,8 @@
 id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdM
 description: the container tier - somebody else's image, so there is no exported symbol to name
 runtime: container
-image: docker.io/acme/exporter:2.1
+source:
+    image: docker.io/acme/exporter:2.1
 execution:
     timeout: 30m
     memory: 512MB
