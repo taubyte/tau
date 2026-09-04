@@ -49,6 +49,10 @@ type Config struct {
 	// each other's traffic.
 	Cloud string
 
+	// Container is the container tier this node runs, if any. See
+	// container.go, and in particular what its Runtime field is for.
+	Container ContainerConfig
+
 	// Per-service operator configuration. Each is that service's own; nothing
 	// here reinterprets it.
 	Stats   stats.Config

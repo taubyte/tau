@@ -183,11 +183,25 @@ func (n *Node) buildWorker() error {
 	if !n.cfg.runs(Worker) {
 		return nil
 	}
-	if len(n.opts.runtimes) == 0 {
-		return errors.New("node: a worker with no compute tier can run nothing")
+	tiers := append([]invoke.Runtime(nil), n.opts.runtimes...)
+
+	// A DECLARED TIER IS BUILT HERE; an injected one was built by whoever
+	// composed this. Both end up in the same pool, and a node can have both —
+	// a container backend an operator named and a wasm engine the process
+	// already holds.
+	if n.cfg.Container.declared() {
+		tier, err := n.cfg.Container.tier()
+		if err != nil {
+			return err
+		}
+		tiers = append(tiers, tier)
 	}
 
-	pool, err := invoke.NewPool(invoke.WithRuntime(n.opts.runtimes...))
+	if len(tiers) == 0 {
+		return errors.New("node: a worker with no compute tier can run nothing; declare a container backend or inject one")
+	}
+
+	pool, err := invoke.NewPool(invoke.WithRuntime(tiers...))
 	if err != nil {
 		return err
 	}
