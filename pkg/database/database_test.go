@@ -379,3 +379,54 @@ func TestEveryTypeHasASurfaceAndTheyAreDistinct(t *testing.T) {
 	require.False(t, implements("graph", &kvConn{}), "an unknown type is satisfied by nothing")
 	require.False(t, implements(KV, &conn{}), "a bare Conn satisfies no type")
 }
+
+// TestAnExternalEngineCanBeRegistered. The probe used to be a spec with no
+// address, which is openable by an engine that runs here and by none that
+// connects to a server — so postgres, mysql, mongo and every other external
+// engine in the vocabulary could not be registered at all.
+func TestAnExternalEngineCanBeRegistered(t *testing.T) {
+	seen := make(chan Spec, 4)
+
+	r := NewRegistry()
+	require.NoError(t, r.Register(t.Context(), &external{
+		name:  "postgres",
+		types: []Type{SQL},
+		seen:  seen,
+	}))
+
+	require.Equal(t, []string{"postgres"}, r.EnginesFor(SQL))
+
+	probe := <-seen
+	require.NotEmpty(t, probe.Address, "an external engine was probed with nowhere to connect")
+	require.Contains(t, probe.Address, ".invalid",
+		"the probe address must be unresolvable, or a registration could reach something")
+}
+
+// external refuses to open without an address, which is what every engine that
+// speaks to a server does.
+type external struct {
+	name  string
+	types []Type
+	seen  chan Spec
+}
+
+func (e *external) Name() string  { return e.name }
+func (e *external) Types() []Type { return e.types }
+
+func (e *external) Open(_ context.Context, spec Spec) (Conn, error) {
+	select {
+	case e.seen <- spec:
+	default:
+	}
+	if spec.Address == "" {
+		return nil, errors.New("an external database needs an address")
+	}
+	return &externalConn{}, nil
+}
+
+type externalConn struct{}
+
+func (c *externalConn) Close() error { return nil }
+
+func (c *externalConn) Query(context.Context, string, ...any) (Rows, error) { return nil, nil }
+func (c *externalConn) Exec(context.Context, string, ...any) (int64, error) { return 0, nil }

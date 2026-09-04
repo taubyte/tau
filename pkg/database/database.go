@@ -269,7 +269,7 @@ func (r *Registry) Register(ctx context.Context, e Engine) error {
 	// network, and holding the registry across it would block every other
 	// registration and lookup on one slow server.
 	for _, t := range types {
-		conn, err := e.Open(ctx, Spec{Type: t, Engine: name, Name: "probe"})
+		conn, err := e.Open(ctx, probeSpec(t, name))
 		if err != nil {
 			return fmt.Errorf("database: %s cannot open a %s: %w", name, t, err)
 		}
@@ -292,6 +292,29 @@ func (r *Registry) Register(ctx context.Context, e Engine) error {
 		r.engines[t][name] = e
 	}
 	return nil
+}
+
+// probeSpec is a well-formed spec that names nowhere.
+//
+// IT CARRIES AN ADDRESS BECAUSE AN EXTERNAL ENGINE NEEDS ONE. The probe used to
+// be `{Type, Engine, Name}` and nothing else, which is openable by an engine
+// that runs here and by none that connects to a server — so postgres, mysql,
+// mongo and every other external engine in the vocabulary could not be
+// registered at all. The address is in the reserved `.invalid` TLD (RFC 2606),
+// so it can never resolve and nothing can be reached through it by accident.
+//
+// WHICH MEANS AN ENGINE MUST NOT CONNECT IN Open. That is the ordinary shape —
+// database/sql opens lazily and so does every client library worth using — and
+// it is what makes this a proof of the SURFACE rather than a health check
+// against a server that has nothing to do with whether the code is correct.
+func probeSpec(t Type, engine string) Spec {
+	return Spec{
+		Type:     t,
+		Engine:   engine,
+		Name:     "probe",
+		Address:  "probe.invalid:0",
+		Database: "probe",
+	}
 }
 
 // Open connects to what spec names.
