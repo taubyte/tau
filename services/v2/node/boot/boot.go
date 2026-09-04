@@ -39,10 +39,14 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
+	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services/v2/node"
 )
 
@@ -146,8 +150,22 @@ func (f File) withDefaults() (File, error) {
 type Running struct {
 	Node *node.Node
 
+	// Found is what answered for the service Reach was asked for, captured at
+	// the moment it answered.
+	//
+	// IT IS NOT RE-ASKED. A second Route can come back empty — the view has a
+	// freshness window and the node that answered may have fallen out of it
+	// between the two calls — and a caller that re-asked would be handed an
+	// empty slice with no way to tell "gone" from "never was". Start leaves
+	// this nil.
+	Found []stats.Node
+
 	peer   peer.Node
 	server *http.Server
+
+	// temporary is a data directory this process made and owns, removed on
+	// Close. A node started from an operator's file has none.
+	temporary string
 }
 
 // Start builds the machine's resources, starts the node, and serves its gateway
@@ -167,7 +185,21 @@ func Start(ctx context.Context, f File) (*Running, error) {
 		return nil, err
 	}
 
-	p, err := peer.New(ctx, f.Root, privateKey, swarmKey, f.Listen, f.Announce, !f.Open, len(f.Bootstrap) == 0)
+	bootstrap, err := addrInfos(f.Bootstrap)
+	if err != nil {
+		return nil, err
+	}
+
+	// A NODE WITH PEERS DIALS THEM; A NODE WITH NONE IS THE FIRST ONE. Those are
+	// different constructors, and handing the second one an empty peer list is
+	// not the same thing as the first: it bootstraps against nobody and then
+	// waits for a swarm it will never be introduced to.
+	var p peer.Node
+	if len(bootstrap) > 0 {
+		p, err = peer.NewWithBootstrapList(ctx, f.Root, privateKey, swarmKey, f.Listen, f.Announce, !f.Open, bootstrap)
+	} else {
+		p, err = peer.New(ctx, f.Root, privateKey, swarmKey, f.Listen, f.Announce, !f.Open, false)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("boot: libp2p: %w", err)
 	}
@@ -195,6 +227,32 @@ func Start(ctx context.Context, f File) (*Running, error) {
 	return r, nil
 }
 
+// addrInfos reads the config's bootstrap list.
+//
+// EVERY ADDRESS CARRIES A PEER ID. A bare /ip4/…/tcp/… names a socket and not
+// who is on the other end of it, which on a private swarm is the whole
+// question — so an address without /p2p/ is refused here rather than dropped
+// silently into a node that then finds nobody.
+func addrInfos(addresses []string) ([]libp2ppeer.AddrInfo, error) {
+	if len(addresses) == 0 {
+		return nil, nil
+	}
+
+	out := make([]libp2ppeer.AddrInfo, 0, len(addresses))
+	for _, address := range addresses {
+		ma, err := multiaddr.NewMultiaddr(address)
+		if err != nil {
+			return nil, fmt.Errorf("boot: bootstrap %q: %w", address, err)
+		}
+		info, err := libp2ppeer.AddrInfoFromP2pAddr(ma)
+		if err != nil {
+			return nil, fmt.Errorf("boot: bootstrap %q: %w", address, err)
+		}
+		out = append(out, *info)
+	}
+	return out, nil
+}
+
 // serve binds the gateway's handler, when there is one and somewhere to put it.
 func (r *Running) serve(address string) error {
 	handler := r.Node.Handler()
@@ -219,6 +277,15 @@ func (r *Running) serve(address string) error {
 	return nil
 }
 
+// Host is the libp2p host this node answers on, for a caller that started one
+// to find the fleet and now has to dial what it found.
+func (r *Running) Host() host.Host {
+	if r.peer == nil {
+		return nil
+	}
+	return r.peer.Peer()
+}
+
 // Address is where the gateway is being served, or "".
 func (r *Running) Address() string {
 	if r.server == nil {
@@ -240,6 +307,9 @@ func (r *Running) Close() error {
 	}
 	if r.peer != nil {
 		r.peer.Close()
+	}
+	if r.temporary != "" {
+		os.RemoveAll(r.temporary)
 	}
 	return err
 }
@@ -281,4 +351,51 @@ func decode(name, value string) ([]byte, error) {
 		return nil, fmt.Errorf("boot: %s is not base64: %w", name, err)
 	}
 	return out, nil
+}
+
+// Reach starts the smallest node that can find the fleet: it runs stats and
+// nothing else, joins the swarm this file describes, and waits until it has
+// seen a node running the service asked for.
+//
+// IT IS A NODE AND NOT A DIAL. Which node runs a service is a routing question
+// answered from live measurements, and a command that dialled a peer an
+// operator typed would be a second answer to it — one that is wrong whenever
+// the fleet moved. This joins, listens, and asks the same view everything else
+// asks.
+func Reach(ctx context.Context, f File, service string, within time.Duration) (*Running, error) {
+	f.Node = node.Config{Services: []string{node.Stats}, Cloud: f.Node.Cloud, Stats: f.Node.Stats}
+	f.HTTP = ""
+
+	// A CLIENT DOES NOT KEEP THE FLEET'S DATA. Its own directory, removed with
+	// it, so running one never touches what a node on this machine holds.
+	root, err := os.MkdirTemp("", "tau-reach-")
+	if err != nil {
+		return nil, fmt.Errorf("boot: %w", err)
+	}
+	f.Root = root
+
+	running, err := Start(ctx, f)
+	if err != nil {
+		os.RemoveAll(root)
+		return nil, err
+	}
+	running.temporary = root
+
+	deadline := time.After(within)
+	for {
+		if found := running.Node.Stats().Route(service, f.Node.Stats.Freshness()); len(found) > 0 {
+			running.Found = found
+			return running, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			running.Close()
+			return nil, ctx.Err()
+		case <-deadline:
+			running.Close()
+			return nil, fmt.Errorf("boot: no %s answered within %s; is the fleet reachable and is the swarm key right", service, within)
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
