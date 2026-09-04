@@ -57,6 +57,7 @@
 package register
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -74,6 +75,14 @@ var (
 	ErrNoObject      = errors.New("register: no such object")
 	ErrStaleRevision = errors.New("register: a revision that does not move forward")
 	ErrSeparator     = errors.New("register: a name may not contain the key separator")
+
+	// ErrMalformedPointer is a pointer row that is present and unreadable.
+	//
+	// IT IS NOT ErrNotPublished, and the difference is the point: a runtime
+	// told "not published" would answer 404 for an environment that has been
+	// serving for months, and nothing in that answer says the store is the
+	// broken part.
+	ErrMalformedPointer = errors.New("register: a pointer that cannot be read")
 )
 
 // ObjectID is the content address of a compiled project: the hex sha256 of its
@@ -104,9 +113,20 @@ type Pointer struct {
 // transaction: a register reads one pointer or one object at a time by an exact
 // key, and anything wider would be a door this package does not need and a
 // consumer would have to implement.
+//
+// GET SEPARATES "NOT THERE" FROM "COULD NOT LOOK". A store that answered both
+// with a bare miss would make Resolve say "nothing is published" while the
+// store was unreachable, and an environment that has been running for months
+// would read as never deployed. Those two answers make a caller do opposite
+// things, so they are two results.
+//
+// BOTH TAKE A CONTEXT because a production store is a replicated one on the
+// other side of the swarm, and this is called from a request that has a
+// deadline. A store call that could not be abandoned would outlive the request
+// that wanted it.
 type Store interface {
-	Get(key string) ([]byte, bool)
-	Put(key string, value []byte) error
+	Get(ctx context.Context, key string) ([]byte, bool, error)
+	Put(ctx context.Context, key string, value []byte) error
 }
 
 // keys. THE SEPARATOR MAY NOT APPEAR IN A NAME, and that is checked rather than
@@ -171,7 +191,7 @@ func WithStore(s Store) Option {
 // that sees a pointer can always fetch what it names. A pointer that arrived
 // before its object would be an environment that resolves to nothing, which is
 // worse than one that has not been updated yet.
-func (r *Register) Publish(project, environment string, revision uint64, compiled []byte) (ObjectID, error) {
+func (r *Register) Publish(ctx context.Context, project, environment string, revision uint64, compiled []byte) (ObjectID, error) {
 	if err := checkName(project, ErrNoProject); err != nil {
 		return "", err
 	}
@@ -187,17 +207,26 @@ func (r *Register) Publish(project, environment string, revision uint64, compile
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if current, ok := r.pointer(project, environment); ok && revision <= current.Revision {
+	// A MALFORMED POINTER DOES NOT BLOCK A PUBLISH. Reading is where a broken
+	// row must be reported; writing is where it gets fixed. Refusing here
+	// would leave an environment that can only be repaired by hand, and the
+	// incoming revision is authoritative either way — there is nothing to
+	// compare it against.
+	current, ok, err := r.pointer(ctx, project, environment)
+	if err != nil && !errors.Is(err, ErrMalformedPointer) {
+		return "", err
+	}
+	if ok && revision <= current.Revision {
 		return "", fmt.Errorf("%w: %s/%s holds %d, was offered %d",
 			ErrStaleRevision, project, environment, current.Revision, revision)
 	}
 
 	// The object first. Writing the same object twice is free and idempotent:
 	// its key is its content.
-	if err := r.store.Put(objectKey(id), compiled); err != nil {
+	if err := r.store.Put(ctx, objectKey(id), compiled); err != nil {
 		return "", fmt.Errorf("register: storing the compiled project: %w", err)
 	}
-	if err := r.store.Put(pointerKey(project, environment), encodePointer(Pointer{Object: id, Revision: revision})); err != nil {
+	if err := r.store.Put(ctx, pointerKey(project, environment), encodePointer(Pointer{Object: id, Revision: revision})); err != nil {
 		return "", fmt.Errorf("register: moving %s/%s: %w", project, environment, err)
 	}
 	return id, nil
@@ -209,14 +238,17 @@ func (r *Register) Publish(project, environment string, revision uint64, compile
 // It returns the POINTER and not the object, because the pointer is the part
 // that changes. A caller that already holds the object this names has nothing
 // left to do — that is the whole reason objects are content-addressed.
-func (r *Register) Resolve(project, environment string) (Pointer, error) {
+func (r *Register) Resolve(ctx context.Context, project, environment string) (Pointer, error) {
 	if err := checkName(project, ErrNoProject); err != nil {
 		return Pointer{}, err
 	}
 	if err := checkName(environment, ErrNoEnvironment); err != nil {
 		return Pointer{}, err
 	}
-	p, ok := r.pointer(project, environment)
+	p, ok, err := r.pointer(ctx, project, environment)
+	if err != nil {
+		return Pointer{}, err
+	}
 	if !ok {
 		return Pointer{}, fmt.Errorf("%w: %s/%s", ErrNotPublished, project, environment)
 	}
@@ -224,27 +256,36 @@ func (r *Register) Resolve(project, environment string) (Pointer, error) {
 }
 
 // Object is one compiled project by its content address.
-func (r *Register) Object(id ObjectID) ([]byte, error) {
+func (r *Register) Object(ctx context.Context, id ObjectID) ([]byte, error) {
 	if id == "" {
 		return nil, ErrNoObject
 	}
-	b, ok := r.store.Get(objectKey(id))
+	b, ok, err := r.store.Get(ctx, objectKey(id))
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrNoObject, id)
 	}
 	return b, nil
 }
 
-func (r *Register) pointer(project, environment string) (Pointer, bool) {
-	b, ok := r.store.Get(pointerKey(project, environment))
+// pointer reads one pointer. A row that is present but unreadable is an ERROR
+// and not a miss: it is a corrupted deploy, and answering "not published" would
+// send the caller to redeploy over a store that is broken underneath.
+func (r *Register) pointer(ctx context.Context, project, environment string) (Pointer, bool, error) {
+	b, ok, err := r.store.Get(ctx, pointerKey(project, environment))
+	if err != nil {
+		return Pointer{}, false, fmt.Errorf("register: reading %s/%s: %w", project, environment, err)
+	}
 	if !ok {
-		return Pointer{}, false
+		return Pointer{}, false, nil
 	}
 	p, err := decodePointer(b)
 	if err != nil {
-		return Pointer{}, false
+		return Pointer{}, false, err
 	}
-	return p, true
+	return p, true, nil
 }
 
 func checkName(s string, empty error) error {
@@ -267,14 +308,14 @@ func encodePointer(p Pointer) []byte {
 func decodePointer(b []byte) (Pointer, error) {
 	rev, obj, ok := strings.Cut(string(b), " ")
 	if !ok {
-		return Pointer{}, fmt.Errorf("register: malformed pointer %q", b)
+		return Pointer{}, fmt.Errorf("%w: %q", ErrMalformedPointer, b)
 	}
 	var r uint64
 	if _, err := fmt.Sscanf(rev, "%d", &r); err != nil {
-		return Pointer{}, fmt.Errorf("register: malformed pointer revision %q", rev)
+		return Pointer{}, fmt.Errorf("%w: revision %q", ErrMalformedPointer, rev)
 	}
 	if obj == "" {
-		return Pointer{}, fmt.Errorf("register: pointer names no object")
+		return Pointer{}, fmt.Errorf("%w: it names no object", ErrMalformedPointer)
 	}
 	return Pointer{Object: ObjectID(obj), Revision: r}, nil
 }
@@ -288,17 +329,17 @@ type MemStore struct {
 
 func NewMemStore() *MemStore { return &MemStore{m: map[string][]byte{}} }
 
-func (s *MemStore) Get(key string) ([]byte, bool) {
+func (s *MemStore) Get(_ context.Context, key string) ([]byte, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	v, ok := s.m[key]
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
-	return append([]byte(nil), v...), true
+	return append([]byte(nil), v...), true, nil
 }
 
-func (s *MemStore) Put(key string, value []byte) error {
+func (s *MemStore) Put(_ context.Context, key string, value []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.m[key] = append([]byte(nil), value...)

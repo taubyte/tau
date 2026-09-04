@@ -1,13 +1,20 @@
 package register
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+// ctx is the tests' context. Nothing here exercises cancellation — the
+// MemStore never blocks — so one background context reads better than the same
+// two lines in thirty tests.
+var ctx = context.Background()
 
 func newRegister(t *testing.T) (*Register, *MemStore) {
 	t.Helper()
@@ -24,15 +31,15 @@ func TestTheRuntimeReadsAPointerAndKeepsTheObject(t *testing.T) {
 	r, _ := newRegister(t)
 	compiled := []byte(`{"function":{"checkout":{"execution":{"memory":"32MB"}}}}`)
 
-	id, err := r.Publish("shop", "prod", 1, compiled)
+	id, err := r.Publish(ctx, "shop", "prod", 1, compiled)
 	require.NoError(t, err)
 
-	p, err := r.Resolve("shop", "prod")
+	p, err := r.Resolve(ctx, "shop", "prod")
 	require.NoError(t, err)
 	require.Equal(t, id, p.Object)
 	require.Equal(t, uint64(1), p.Revision)
 
-	got, err := r.Object(p.Object)
+	got, err := r.Object(ctx, p.Object)
 	require.NoError(t, err)
 	require.Equal(t, compiled, got)
 }
@@ -43,9 +50,9 @@ func TestTheSameConfigurationIsTheSameObject(t *testing.T) {
 	r, store := newRegister(t)
 	compiled := []byte("the same bytes")
 
-	first, err := r.Publish("shop", "prod", 1, compiled)
+	first, err := r.Publish(ctx, "shop", "prod", 1, compiled)
 	require.NoError(t, err)
-	second, err := r.Publish("shop", "prod", 2, compiled)
+	second, err := r.Publish(ctx, "shop", "prod", 2, compiled)
 	require.NoError(t, err)
 	require.Equal(t, first, second)
 
@@ -65,15 +72,15 @@ func TestTheSameConfigurationIsTheSameObject(t *testing.T) {
 func TestDifferentConfigurationsAreDifferentObjects(t *testing.T) {
 	r, _ := newRegister(t)
 
-	a, err := r.Publish("shop", "prod", 1, []byte("memory: 32MB"))
+	a, err := r.Publish(ctx, "shop", "prod", 1, []byte("memory: 32MB"))
 	require.NoError(t, err)
-	b, err := r.Publish("shop", "prod", 2, []byte("memory: 64MB"))
+	b, err := r.Publish(ctx, "shop", "prod", 2, []byte("memory: 64MB"))
 	require.NoError(t, err)
 	require.NotEqual(t, a, b)
 
 	// The old object is still there, addressable, unchanged — which is what a
 	// rollback needs and what a node still running the old revision reads.
-	old, err := r.Object(a)
+	old, err := r.Object(ctx, a)
 	require.NoError(t, err)
 	require.Equal(t, []byte("memory: 32MB"), old)
 }
@@ -83,18 +90,18 @@ func TestDifferentConfigurationsAreDifferentObjects(t *testing.T) {
 func TestEnvironmentsAreIndependent(t *testing.T) {
 	r, _ := newRegister(t)
 
-	prod, err := r.Publish("shop", "prod", 5, []byte("memory: 64MB"))
+	prod, err := r.Publish(ctx, "shop", "prod", 5, []byte("memory: 64MB"))
 	require.NoError(t, err)
-	staging, err := r.Publish("shop", "staging", 1, []byte("memory: 8MB"))
+	staging, err := r.Publish(ctx, "shop", "staging", 1, []byte("memory: 8MB"))
 	require.NoError(t, err)
 	require.NotEqual(t, prod, staging)
 
-	p, err := r.Resolve("shop", "prod")
+	p, err := r.Resolve(ctx, "shop", "prod")
 	require.NoError(t, err)
 	require.Equal(t, prod, p.Object)
 	require.Equal(t, uint64(5), p.Revision)
 
-	s, err := r.Resolve("shop", "staging")
+	s, err := r.Resolve(ctx, "shop", "staging")
 	require.NoError(t, err)
 	require.Equal(t, staging, s.Object)
 	require.Equal(t, uint64(1), s.Revision, "and each environment counts its own deploys")
@@ -103,14 +110,14 @@ func TestEnvironmentsAreIndependent(t *testing.T) {
 func TestProjectsAreIndependent(t *testing.T) {
 	r, _ := newRegister(t)
 
-	_, err := r.Publish("shop", "prod", 1, []byte("shop"))
+	_, err := r.Publish(ctx, "shop", "prod", 1, []byte("shop"))
 	require.NoError(t, err)
-	_, err = r.Publish("blog", "prod", 1, []byte("blog"))
+	_, err = r.Publish(ctx, "blog", "prod", 1, []byte("blog"))
 	require.NoError(t, err)
 
-	shop, err := r.Resolve("shop", "prod")
+	shop, err := r.Resolve(ctx, "shop", "prod")
 	require.NoError(t, err)
-	got, err := r.Object(shop.Object)
+	got, err := r.Object(ctx, shop.Object)
 	require.NoError(t, err)
 	require.Equal(t, []byte("shop"), got)
 }
@@ -120,19 +127,19 @@ func TestProjectsAreIndependent(t *testing.T) {
 func TestALateArrivalCannotRollAnEnvironmentBack(t *testing.T) {
 	r, _ := newRegister(t)
 
-	_, err := r.Publish("shop", "prod", 7, []byte("current"))
+	_, err := r.Publish(ctx, "shop", "prod", 7, []byte("current"))
 	require.NoError(t, err)
 
-	_, err = r.Publish("shop", "prod", 3, []byte("stale, arriving late"))
+	_, err = r.Publish(ctx, "shop", "prod", 3, []byte("stale, arriving late"))
 	require.ErrorIs(t, err, ErrStaleRevision)
 
-	_, err = r.Publish("shop", "prod", 7, []byte("the same revision again"))
+	_, err = r.Publish(ctx, "shop", "prod", 7, []byte("the same revision again"))
 	require.ErrorIs(t, err, ErrStaleRevision, "the same revision is not forward either")
 
-	p, err := r.Resolve("shop", "prod")
+	p, err := r.Resolve(ctx, "shop", "prod")
 	require.NoError(t, err)
 	require.Equal(t, uint64(7), p.Revision)
-	got, _ := r.Object(p.Object)
+	got, _ := r.Object(ctx, p.Object)
 	require.Equal(t, []byte("current"), got, "nothing moved")
 }
 
@@ -143,16 +150,16 @@ func TestARollbackIsAForwardPublish(t *testing.T) {
 	r, _ := newRegister(t)
 	tuesday := []byte("the good one")
 
-	good, err := r.Publish("shop", "prod", 1, tuesday)
+	good, err := r.Publish(ctx, "shop", "prod", 1, tuesday)
 	require.NoError(t, err)
-	_, err = r.Publish("shop", "prod", 2, []byte("the bad one"))
+	_, err = r.Publish(ctx, "shop", "prod", 2, []byte("the bad one"))
 	require.NoError(t, err)
 
-	back, err := r.Publish("shop", "prod", 3, tuesday)
+	back, err := r.Publish(ctx, "shop", "prod", 3, tuesday)
 	require.NoError(t, err)
 	require.Equal(t, good, back, "the same configuration is the same object, so nothing is re-stored")
 
-	p, err := r.Resolve("shop", "prod")
+	p, err := r.Resolve(ctx, "shop", "prod")
 	require.NoError(t, err)
 	require.Equal(t, uint64(3), p.Revision, "and the revision moved forward")
 	require.Equal(t, good, p.Object)
@@ -161,7 +168,7 @@ func TestARollbackIsAForwardPublish(t *testing.T) {
 func TestNothingPublishedIsSaidPlainly(t *testing.T) {
 	r, _ := newRegister(t)
 
-	_, err := r.Resolve("shop", "prod")
+	_, err := r.Resolve(ctx, "shop", "prod")
 	require.ErrorIs(t, err, ErrNotPublished)
 	require.Contains(t, err.Error(), "shop/prod", "a caller needs to know which one")
 }
@@ -169,10 +176,10 @@ func TestNothingPublishedIsSaidPlainly(t *testing.T) {
 func TestAnUnknownObjectIsSaidPlainly(t *testing.T) {
 	r, _ := newRegister(t)
 
-	_, err := r.Object("")
+	_, err := r.Object(ctx, "")
 	require.ErrorIs(t, err, ErrNoObject)
 
-	_, err = r.Object(IDOf([]byte("never published")))
+	_, err = r.Object(ctx, IDOf([]byte("never published")))
 	require.ErrorIs(t, err, ErrNoObject)
 }
 
@@ -182,41 +189,41 @@ func TestAnUnknownObjectIsSaidPlainly(t *testing.T) {
 func TestANameMayNotContainTheSeparator(t *testing.T) {
 	r, _ := newRegister(t)
 
-	_, err := r.Publish("a/prod", "prod", 1, []byte("x"))
+	_, err := r.Publish(ctx, "a/prod", "prod", 1, []byte("x"))
 	require.ErrorIs(t, err, ErrSeparator)
 
-	_, err = r.Publish("a", "prod/prod", 1, []byte("x"))
+	_, err = r.Publish(ctx, "a", "prod/prod", 1, []byte("x"))
 	require.ErrorIs(t, err, ErrSeparator)
 
-	_, err = r.Resolve("a/prod", "prod")
+	_, err = r.Resolve(ctx, "a/prod", "prod")
 	require.ErrorIs(t, err, ErrSeparator)
 
 	// And the collision it prevents, demonstrated: the two legal spellings do
 	// not meet.
-	_, err = r.Publish("a", "prod", 1, []byte("first"))
+	_, err = r.Publish(ctx, "a", "prod", 1, []byte("first"))
 	require.NoError(t, err)
-	_, err = r.Resolve("a", "prod")
+	_, err = r.Resolve(ctx, "a", "prod")
 	require.NoError(t, err)
 }
 
 func TestPublishRefusesWhatCannotBeAddressed(t *testing.T) {
 	r, _ := newRegister(t)
 
-	_, err := r.Publish("", "prod", 1, []byte("x"))
+	_, err := r.Publish(ctx, "", "prod", 1, []byte("x"))
 	require.ErrorIs(t, err, ErrNoProject)
 
-	_, err = r.Publish("shop", "", 1, []byte("x"))
+	_, err = r.Publish(ctx, "shop", "", 1, []byte("x"))
 	require.ErrorIs(t, err, ErrNoEnvironment)
 
-	_, err = r.Publish("shop", "prod", 1, nil)
+	_, err = r.Publish(ctx, "shop", "prod", 1, nil)
 	require.ErrorIs(t, err, ErrEmptyObject)
 
-	_, err = r.Publish("shop", "prod", 1, []byte{})
+	_, err = r.Publish(ctx, "shop", "prod", 1, []byte{})
 	require.ErrorIs(t, err, ErrEmptyObject)
 
-	_, err = r.Resolve("", "prod")
+	_, err = r.Resolve(ctx, "", "prod")
 	require.ErrorIs(t, err, ErrNoProject)
-	_, err = r.Resolve("shop", "")
+	_, err = r.Resolve(ctx, "shop", "")
 	require.ErrorIs(t, err, ErrNoEnvironment)
 }
 
@@ -228,7 +235,7 @@ func TestTheObjectIsWrittenBeforeThePointer(t *testing.T) {
 	r, err := New(WithStore(store))
 	require.NoError(t, err)
 
-	_, err = r.Publish("shop", "prod", 1, []byte("compiled"))
+	_, err = r.Publish(ctx, "shop", "prod", 1, []byte("compiled"))
 	require.NoError(t, err)
 
 	require.Len(t, store.writes, 2)
@@ -243,10 +250,10 @@ func TestAFailedObjectWriteMovesNothing(t *testing.T) {
 	r, err := New(WithStore(store))
 	require.NoError(t, err)
 
-	_, err = r.Publish("shop", "prod", 1, []byte("compiled"))
+	_, err = r.Publish(ctx, "shop", "prod", 1, []byte("compiled"))
 	require.Error(t, err)
 
-	_, err = r.Resolve("shop", "prod")
+	_, err = r.Resolve(ctx, "shop", "prod")
 	require.ErrorIs(t, err, ErrNotPublished, "nothing points at the object that was never stored")
 }
 
@@ -255,26 +262,57 @@ func TestAFailedPointerWriteIsReported(t *testing.T) {
 	r, err := New(WithStore(store))
 	require.NoError(t, err)
 
-	_, err = r.Publish("shop", "prod", 1, []byte("compiled"))
+	_, err = r.Publish(ctx, "shop", "prod", 1, []byte("compiled"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "shop/prod")
 }
 
-// TestAMalformedPointerReadsAsUnpublished rather than as a pointer to nowhere.
-func TestAMalformedPointerReadsAsUnpublished(t *testing.T) {
+// TestAMalformedPointerIsNotAnUnpublishedOne. Answering ErrNotPublished for a
+// corrupted row would have the runtime report 404 for an environment that has
+// been serving for months, and nothing in that answer names the broken part.
+func TestAMalformedPointerIsNotAnUnpublishedOne(t *testing.T) {
 	r, store := newRegister(t)
-	require.NoError(t, store.Put(pointerKey("shop", "prod"), []byte("not a pointer")))
 
-	_, err := r.Resolve("shop", "prod")
-	require.ErrorIs(t, err, ErrNotPublished)
+	for _, row := range []string{"not a pointer", "notanumber abc", "1 "} {
+		require.NoError(t, store.Put(ctx, pointerKey("shop", "prod"), []byte(row)))
 
-	require.NoError(t, store.Put(pointerKey("shop", "prod"), []byte("notanumber abc")))
-	_, err = r.Resolve("shop", "prod")
-	require.ErrorIs(t, err, ErrNotPublished)
+		_, err := r.Resolve(ctx, "shop", "prod")
+		require.ErrorIs(t, err, ErrMalformedPointer, "row %q", row)
+		require.NotErrorIs(t, err, ErrNotPublished)
+	}
+}
 
-	require.NoError(t, store.Put(pointerKey("shop", "prod"), []byte("1 ")))
-	_, err = r.Resolve("shop", "prod")
-	require.ErrorIs(t, err, ErrNotPublished, "a pointer naming no object is not a pointer")
+// TestAPublishRepairsAMalformedPointer. Reading is where a broken row is
+// reported; writing is where it gets fixed. A publish that refused would leave
+// an environment repairable only by hand.
+func TestAPublishRepairsAMalformedPointer(t *testing.T) {
+	r, store := newRegister(t)
+	require.NoError(t, store.Put(ctx, pointerKey("shop", "prod"), []byte("garbage")))
+
+	_, err := r.Publish(ctx, "shop", "prod", 1, []byte("compiled"))
+	require.NoError(t, err)
+
+	p, err := r.Resolve(ctx, "shop", "prod")
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), p.Revision)
+}
+
+// TestAnUnreachableStoreSaysSo rather than reporting an empty register. The two
+// answers make a caller do opposite things.
+func TestAnUnreachableStoreSaysSo(t *testing.T) {
+	r, err := New(WithStore(&unreadableStore{NewMemStore()}))
+	require.NoError(t, err)
+
+	_, err = r.Resolve(ctx, "shop", "prod")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrNotPublished)
+
+	_, err = r.Object(ctx, IDOf([]byte("x")))
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrNoObject)
+
+	_, err = r.Publish(ctx, "shop", "prod", 1, []byte("compiled"))
+	require.Error(t, err, "a publish cannot check the revision it must beat")
 }
 
 // TestConcurrentPublishesToOneEnvironmentPickOneWinner, and it is the highest
@@ -288,16 +326,16 @@ func TestConcurrentPublishesToOneEnvironmentPickOneWinner(t *testing.T) {
 		wg.Add(1)
 		go func(rev int) {
 			defer wg.Done()
-			r.Publish("shop", "prod", uint64(rev+1), fmt.Appendf(nil, "revision %d", rev+1))
+			r.Publish(ctx, "shop", "prod", uint64(rev+1), fmt.Appendf(nil, "revision %d", rev+1))
 		}(i)
 	}
 	wg.Wait()
 
-	p, err := r.Resolve("shop", "prod")
+	p, err := r.Resolve(ctx, "shop", "prod")
 	require.NoError(t, err)
 	require.Equal(t, uint64(20), p.Revision, "the highest revision is what stands")
 
-	got, err := r.Object(p.Object)
+	got, err := r.Object(ctx, p.Object)
 	require.NoError(t, err)
 	require.Equal(t, []byte("revision 20"), got, "and the object matches the revision that won")
 }
@@ -313,18 +351,21 @@ func TestNewRefusesNoStore(t *testing.T) {
 func TestTheMemStoreDoesNotAliasItsCaller(t *testing.T) {
 	s := NewMemStore()
 	val := []byte("original")
-	require.NoError(t, s.Put("k", val))
+	require.NoError(t, s.Put(ctx, "k", val))
 	val[0] = 'X'
 
-	got, ok := s.Get("k")
+	got, ok, err := s.Get(ctx, "k")
+	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, []byte("original"), got)
 
 	got[0] = 'Y'
-	again, _ := s.Get("k")
+	again, _, err := s.Get(ctx, "k")
+	require.NoError(t, err)
 	require.Equal(t, []byte("original"), again)
 
-	_, ok = s.Get("missing")
+	_, ok, err = s.Get(ctx, "missing")
+	require.NoError(t, err)
 	require.False(t, ok)
 	require.Equal(t, []string{"k"}, s.Keys())
 }
@@ -337,11 +378,11 @@ type orderedStore struct {
 	writes []string
 }
 
-func (s *orderedStore) Put(key string, value []byte) error {
+func (s *orderedStore) Put(ctx context.Context, key string, value []byte) error {
 	s.mu.Lock()
 	s.writes = append(s.writes, key)
 	s.mu.Unlock()
-	return s.MemStore.Put(key, value)
+	return s.MemStore.Put(ctx, key, value)
 }
 
 type failingStore struct {
@@ -349,9 +390,17 @@ type failingStore struct {
 	failOn string
 }
 
-func (s *failingStore) Put(key string, value []byte) error {
-	if len(key) >= len(s.failOn) && key[:len(s.failOn)] == s.failOn {
+func (s *failingStore) Put(ctx context.Context, key string, value []byte) error {
+	if strings.HasPrefix(key, s.failOn) {
 		return errors.New("the store refused")
 	}
-	return s.MemStore.Put(key, value)
+	return s.MemStore.Put(ctx, key, value)
+}
+
+// unreadableStore answers every read with a failure, which is what a store on
+// the other side of an unreachable swarm looks like.
+type unreadableStore struct{ *MemStore }
+
+func (s *unreadableStore) Get(context.Context, string) ([]byte, bool, error) {
+	return nil, false, errors.New("the store is unreachable")
 }

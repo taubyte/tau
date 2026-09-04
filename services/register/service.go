@@ -1,0 +1,171 @@
+// Package register serves pkg/register over p2p: three RPCs, declared in
+// pkg/proto/tau/register/v1/register.proto.
+//
+// v1 called this tns. The name said name resolution; the job is holding what
+// has been published and answering lookups, which is a register.
+//
+// # This package is a skin, and deliberately a thin one
+//
+// Everything the register MEANS — content addressing, the pointer/object
+// split, a revision that never goes backwards, a key a name cannot escape —
+// is pkg/register, a state machine over a map with no host, no stream and no
+// goroutine in it. So all of that is a unit test there, and what is left here
+// is: decode a request, call it, map a Go error onto a wire status.
+//
+// That split is why there is no second copy of any rule below. A handler that
+// checked a revision itself would be a second opinion about revisions, and
+// the day the two disagreed the one that answered would be whichever the
+// request happened to reach.
+//
+// # What an operator declares about a register node
+//
+// Nothing yet, which is why this package has no Config. The register's whole
+// behaviour comes from the store it is given and the requests it receives, and
+// a Config struct with no fields in it would be a slot inviting one.
+//
+// Replication is the STORE's question, not this service's — pkg/register's
+// package doc says so and means it. A node handed a CRDT-backed store is a
+// replica of the whole register; a node handed a map is a single-node
+// development register. Neither is a mode this package knows about.
+package register
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
+
+	"github.com/libp2p/go-libp2p/core/host"
+
+	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/register"
+)
+
+// Service is the register's state: the host it answers on and the register it
+// answers from.
+type Service struct {
+	host host.Host
+	reg  *register.Register
+
+	serverOptions []rpc.ServerOption
+
+	// startMu guards server: Start and Close both read-then-write it, and
+	// nothing about this type promises one Service is only ever touched from
+	// one goroutine.
+	startMu   sync.Mutex
+	server    *rpc.Server
+	closeOnce sync.Once
+	closeErr  error
+	closed    atomic.Bool
+}
+
+// Option injects what this service is built from. Operator declarations would
+// go in a Config; there are none, so everything here is a live collaborator.
+type Option func(*options) error
+
+type options struct {
+	store         register.Store
+	serverOptions []rpc.ServerOption
+}
+
+// WithStore is where objects and pointers live. Required.
+//
+// It takes a STORE rather than a built *register.Register because the register
+// is a pure value over a store and there is nothing for a composer to decide
+// about it. What a composer does decide is where the rows go — a map for a
+// development node, a replicated store for a cluster — and that is this
+// argument.
+func WithStore(s register.Store) Option {
+	return func(o *options) error {
+		if s == nil {
+			return ErrNoStore
+		}
+		o.store = s
+		return nil
+	}
+}
+
+// WithServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen
+// in Start without this package needing an option of its own for each one.
+func WithServerOptions(opts ...rpc.ServerOption) Option {
+	return func(o *options) error {
+		o.serverOptions = append(o.serverOptions, opts...)
+		return nil
+	}
+}
+
+var (
+	ErrNoStore = errors.New("register: a register with no store holds nothing")
+	ErrNoHost  = errors.New("register: no host to answer on")
+)
+
+// New validates and allocates. It binds nothing and opens nothing — no
+// listener until Start — so a node can construct every service before starting
+// any of them.
+//
+// A nil host is an error rather than a node this service invents for itself: a
+// service that can mint its own libp2p identity can be started two ways, one of
+// which is never how production starts it.
+func New(h host.Host, opts ...Option) (*Service, error) {
+	if h == nil {
+		return nil, ErrNoHost
+	}
+
+	var o options
+	for _, apply := range opts {
+		if err := apply(&o); err != nil {
+			return nil, fmt.Errorf("register: option: %w", err)
+		}
+	}
+	if o.store == nil {
+		return nil, ErrNoStore
+	}
+
+	reg, err := register.New(register.WithStore(o.store))
+	if err != nil {
+		// Unreachable while o.store is checked above. Kept rather than
+		// dropped so a change to pkg/register's construction rules cannot
+		// pass silently through here.
+		return nil, err
+	}
+
+	return &Service{host: h, reg: reg, serverOptions: o.serverOptions}, nil
+}
+
+// Start listens and serves. Calling it twice, or after Close, is an error
+// rather than a second listener leaking or a silent no-op.
+func (s *Service) Start(ctx context.Context) error {
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+
+	if s.closed.Load() {
+		return errors.New("register: closed")
+	}
+	if s.server != nil {
+		return errors.New("register: already started")
+	}
+
+	server, err := rpc.Listen(ctx, s.host, Protocol, s.mount(), s.serverOptions...)
+	if err != nil {
+		return fmt.Errorf("register: listen on %s: %w", Protocol, err)
+	}
+	s.server = server
+	return nil
+}
+
+// Close is idempotent and stops the one thing this service started: serving.
+// It does not close the store, and cannot — register.Store has no Close,
+// because the store was handed in by whatever composed the node and is shared
+// with the services composed beside it.
+func (s *Service) Close() error {
+	s.closeOnce.Do(func() {
+		s.closed.Store(true)
+		s.startMu.Lock()
+		if s.server != nil {
+			s.closeErr = s.server.Close()
+		}
+		s.startMu.Unlock()
+	})
+	return s.closeErr
+}
