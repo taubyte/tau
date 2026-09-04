@@ -354,9 +354,26 @@ var (
 	loaded   *source
 	loadErr  error
 
-	overlaid   sync.Mutex
-	overlaidBy = map[string]*source{}
+	overlaid    sync.Mutex
+	overlaidBy  = map[string]*source{}
+	overlaidLRU []string
 )
+
+// overlayCacheSize is how many overlaid type-checks are kept alive at once.
+//
+// THIS NUMBER IS A MEMORY BOUND AND NOT A TUNING KNOB. Each entry is a full
+// type-check of the suite — syntax, types and per-expression type info for
+// every package — and this cache used to be unbounded. Fifteen call sites each
+// use a distinct filename, so every key is distinct and nothing was ever
+// evicted: the run ended with sixteen live type-checks in it, which measured
+// 2.85 GB of LIVE heap and is why a soft memory limit could not move the peak.
+// Nothing was leaking; it was all reachable, on purpose, forever.
+//
+// The cache still earns its place, because the same overlay IS asked for again
+// — the subtests that build one run under more than one harness. What it does
+// not need is to remember all of them. Three is enough for consecutive reuse
+// and bounds retention at four loads including the base.
+const overlayCacheSize = 3
 
 // suiteSource type-checks the suite's own source. Test files are not part of
 // it: this file, and the proofs beside it, are the thing doing the asserting.
@@ -410,6 +427,11 @@ func (s *source) withIn(t *testing.T, dir, name, content string) *source {
 		t.Fatalf("type-checking the suite's own source with %s added: %v", name, err)
 	}
 	overlaidBy[key] = got
+	overlaidLRU = append(overlaidLRU, key)
+	for len(overlaidLRU) > overlayCacheSize {
+		delete(overlaidBy, overlaidLRU[0])
+		overlaidLRU = overlaidLRU[1:]
+	}
 	return got
 }
 
