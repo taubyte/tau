@@ -33,11 +33,13 @@
 package node
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -239,7 +241,12 @@ func (n *Node) openWorker() error {
 			return err
 		}
 
-		component, err := wasm.New(n.opts.assets)
+		// A FUNCTION'S println GOES SOMEWHERE. It is the first thing anybody
+		// reaches for and it went nowhere; a node's log is not where a
+		// developer would look first, but it is somewhere, and what it takes to
+		// do better — per-invocation attribution — is a change to every tier's
+		// interface rather than to this wiring.
+		component, err := wasm.New(n.opts.assets, wasm.WithOutput(workloadLog))
 		if err != nil {
 			return err
 		}
@@ -305,6 +312,51 @@ func appendUnnamed(have []invoke.Runtime, add ...invoke.Runtime) []invoke.Runtim
 		have = append(have, rt)
 	}
 	return have
+}
+
+// workloadLog is where one workload's own output goes.
+//
+// BOTH STREAMS GO TO THE SAME PLACE, and the level is the difference: a guest
+// that writes to stderr is saying something went wrong, and a node's operator
+// filtering on level should see it.
+func workloadLog(spec invoke.Spec) (stdout, stderr io.Writer) {
+	return logLine(func(line string) { logger.Infof("%s: %s", spec.Name, line) }),
+		logLine(func(line string) { logger.Warnf("%s: %s", spec.Name, line) })
+}
+
+// logLine turns a stream of bytes into whole lines.
+//
+// A LOGGER TAKES A MESSAGE AND A WRITER TAKES BYTES, and a guest writes
+// whenever its buffer flushes — so without this one println can arrive as three
+// log entries and two printlns as one. What is left unflushed when an instance
+// goes away is lost, which is the same bargain every line-buffered logger
+// makes.
+func logLine(emit func(string)) io.Writer {
+	return &lineWriter{emit: emit}
+}
+
+type lineWriter struct {
+	mu      sync.Mutex
+	partial []byte
+	emit    func(string)
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.partial = append(w.partial, p...)
+	for {
+		at := bytes.IndexByte(w.partial, '\n')
+		if at < 0 {
+			return len(p), nil
+		}
+		line := strings.TrimRight(string(w.partial[:at]), "\r")
+		w.partial = w.partial[at+1:]
+		if line != "" {
+			w.emit(line)
+		}
+	}
 }
 
 func (n *Node) openGateway() error {

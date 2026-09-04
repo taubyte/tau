@@ -114,15 +114,19 @@ type Runtime struct {
 	// is the process default; a test points it at a scratch backend.
 	transport http.RoundTripper
 
-	// stdout and stderr are where a guest's own writes go.
+	// output is where a guest's own writes go, per workload.
 	//
-	// THEY GO NOWHERE BY DEFAULT, and that is a gap rather than a decision: a
-	// function's println is the first thing anybody reaches for and
-	// invoke.Instance has nowhere to put it — Serve returns a response, not a
-	// log. Closing it means a per-invocation sink on that interface, which is
+	// IT IS A FUNCTION OF THE SPEC because a tier is built once and runs many
+	// workloads: a single writer handed in at construction would interleave
+	// every function on the node into one stream with nothing saying which
+	// wrote what.
+	//
+	// WHAT IS STILL MISSING is per-INVOCATION attribution. stdout belongs to an
+	// instance rather than to a call, so at a concurrency above one — which the
+	// Lambda model's default of one is deliberately not — two requests' output
+	// interleaves. Closing that means a sink on invoke.Instance.Serve, which is
 	// a change to every tier.
-	stdout io.Writer
-	stderr io.Writer
+	output func(spec invoke.Spec) (stdout, stderr io.Writer)
 }
 
 var _ invoke.Runtime = (*Runtime)(nil)
@@ -130,11 +134,12 @@ var _ invoke.Runtime = (*Runtime)(nil)
 // Option configures a Runtime.
 type Option func(*Runtime)
 
-// WithOutput is where a guest's stdout and stderr go. Both nil discards them.
-func WithOutput(stdout, stderr io.Writer) Option {
-	return func(r *Runtime) {
-		r.stdout, r.stderr = stdout, stderr
-	}
+// WithOutput is where a guest's stdout and stderr go, chosen per workload.
+//
+// A nil function, or one that answers nil, discards them — which is what a node
+// with nowhere to put them does, rather than holding a buffer nothing reads.
+func WithOutput(sink func(spec invoke.Spec) (stdout, stderr io.Writer)) Option {
+	return func(r *Runtime) { r.output = sink }
 }
 
 // WithTransport is what an allowed outbound request is sent over. It does not
@@ -231,9 +236,14 @@ func exportsHTTPWorld(instance *component.Instance) bool {
 // environment but the resource's own. Every one of those is a grant somebody
 // has to make rather than something to be taken away later.
 func (r *Runtime) sandbox(spec invoke.Spec) []component.Option {
+	var stdout, stderr io.Writer
+	if r.output != nil {
+		stdout, stderr = r.output(spec)
+	}
+
 	return wasip2.WithWASI(wasip2.WASIConfig{
-		Stdout: r.stdout,
-		Stderr: r.stderr,
+		Stdout: stdout,
+		Stderr: stderr,
 		Env:    environment(spec.Env),
 
 		// THE STANDARD WORLD IS ALWAYS REGISTERED, because whether a component

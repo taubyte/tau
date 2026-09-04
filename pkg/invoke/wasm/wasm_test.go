@@ -288,3 +288,42 @@ func TestItIsAPoolTier(t *testing.T) {
 	require.Equal(t, 1, pool.Warm(spec))
 	require.Equal(t, 1, pool.Warm(next))
 }
+
+// A GUEST'S OWN OUTPUT GOES WHERE THE COMPOSER SAYS, per workload — a tier is
+// built once and runs many, so a single writer handed in at construction would
+// interleave every function on the node into one stream with nothing saying
+// which wrote what.
+func TestAGuestsOutputIsRoutedPerWorkload(t *testing.T) {
+	var asked []string
+	r, err := wasm.New(&store{content: handler(t)},
+		wasm.WithOutput(func(spec invoke.Spec) (io.Writer, io.Writer) {
+			asked = append(asked, spec.Name)
+			return io.Discard, io.Discard
+		}))
+	require.NoError(t, err)
+	defer r.Close()
+
+	for _, name := range []string{"shop/prod/function/checkout", "shop/prod/function/reserve"} {
+		instance, err := r.Start(t.Context(), invoke.Spec{Name: name, Artifact: "bafycomponent"})
+		require.NoError(t, err)
+		instance.Close()
+	}
+	require.Equal(t, []string{"shop/prod/function/checkout", "shop/prod/function/reserve"}, asked)
+}
+
+// A sink that answers nil discards, which is what a node with nowhere to put a
+// guest's output does rather than holding a buffer nothing reads.
+func TestASinkThatAnswersNothing(t *testing.T) {
+	r, err := wasm.New(&store{content: handler(t)},
+		wasm.WithOutput(func(invoke.Spec) (io.Writer, io.Writer) { return nil, nil }))
+	require.NoError(t, err)
+	defer r.Close()
+
+	instance, err := r.Start(t.Context(), invoke.Spec{Name: "fn", Artifact: "bafycomponent"})
+	require.NoError(t, err)
+	defer instance.Close()
+
+	res, err := instance.Serve(t.Context(), &invoke.Request{Method: "GET"})
+	require.NoError(t, err)
+	require.Equal(t, 200, res.Status)
+}

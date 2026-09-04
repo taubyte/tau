@@ -11,6 +11,7 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build/frontend"
@@ -503,4 +504,62 @@ func TestAnInjectedTierWins(t *testing.T) {
 	// nothing else answers for it.
 	require.ElementsMatch(t, []string{"wasm", "static"}, tierNames(n))
 	require.Same(t, n.opts.runtimes[0], n.tiers()[0])
+}
+
+// A FUNCTION'S println GOES SOMEWHERE. A logger takes a message and a writer
+// takes bytes, and a guest writes whenever its buffer flushes — so without
+// line assembly one println arrives as three log entries and two printlns as
+// one.
+func TestAWorkloadsOutputIsAssembledIntoLines(t *testing.T) {
+	var lines []string
+	w := logLine(func(line string) { lines = append(lines, line) })
+
+	// One line arriving in three writes is one line.
+	for _, part := range []string{"star", "ting the ", "handler\n"} {
+		n, err := w.Write([]byte(part))
+		require.NoError(t, err)
+		require.Equal(t, len(part), n, "a writer reports what it took, not what it emitted")
+	}
+	require.Equal(t, []string{"starting the handler"}, lines)
+
+	// Two lines in one write are two.
+	lines = nil
+	_, err := w.Write([]byte("one\ntwo\n"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"one", "two"}, lines)
+
+	// A carriage return is the line ending's, not the message's.
+	lines = nil
+	_, err = w.Write([]byte("windows\r\n"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"windows"}, lines)
+
+	// A blank line is not a log entry, and an unterminated one waits rather
+	// than being emitted half-written.
+	lines = nil
+	_, err = w.Write([]byte("\n\nstill typ"))
+	require.NoError(t, err)
+	require.Empty(t, lines)
+
+	_, err = w.Write([]byte("ing\n"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"still typing"}, lines)
+}
+
+// BOTH STREAMS GO TO THE SAME PLACE and the level is the difference, so an
+// operator filtering on level sees a guest saying something went wrong.
+func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
+	stdout, stderr := workloadLog(invoke.Spec{Name: "shop/prod/function/checkout"})
+	require.NotNil(t, stdout)
+	require.NotNil(t, stderr)
+	require.NotSame(t, stdout, stderr)
+
+	// Writing to either is safe and reports what it took.
+	n, err := stdout.Write([]byte("hello\n"))
+	require.NoError(t, err)
+	require.Equal(t, 6, n)
+
+	n, err = stderr.Write([]byte("something broke\n"))
+	require.NoError(t, err)
+	require.Equal(t, 16, n)
 }
