@@ -18,6 +18,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	registerService "github.com/taubyte/tau/services/register"
 	registerDream "github.com/taubyte/tau/services/register/dream"
@@ -74,7 +75,9 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	require.NoError(t, err)
 	defer publisher.Close()
 
-	_, err = publisher.Publish(t.Context(), "shop", "prod", 1, compiled(t))
+	_, err = publisher.Publish(t.Context(), register.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(t),
+	})
 	require.NoError(t, err)
 
 	// And invoke, over the wire, on the worker.
@@ -132,7 +135,9 @@ func TestAUniverseWithNoTierSaysSo(t *testing.T) {
 	require.NoError(t, err)
 	defer publisher.Close()
 
-	_, err = publisher.Publish(t.Context(), "shop", "prod", 1, compiled(t))
+	_, err = publisher.Publish(t.Context(), register.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(t),
+	})
 	require.NoError(t, err)
 
 	client := dialWorker(t, nodes[registers[0]], workers[0])

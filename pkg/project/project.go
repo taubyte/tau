@@ -87,6 +87,11 @@ type Project struct {
 
 	root map[string]any
 
+	// located is the index read backwards: a resource id to the address a
+	// caller would look it up by. A resolved reference and a reachable name
+	// both arrive as ids, and both need the other direction.
+	located map[string]where
+
 	// index is tcc's flat index with the trailing `links` segment taken off,
 	// so a key is exactly `projects/<pid>/<scope…>/<kind>/<name>` and a lookup
 	// is one map hit. Listings scan it, which is fine because a listing is a
@@ -113,7 +118,8 @@ func Load(compiled []byte) (*Project, error) {
 
 	flat, _ := doc[indexesKey].(map[string]any)
 
-	return &Project{id: id, name: name, root: root, index: readIndex(flat)}, nil
+	index := readIndex(flat)
+	return &Project{id: id, name: name, root: root, index: index, located: locate(index, id)}, nil
 }
 
 // readIndex takes the trailing `links` off every key and keeps the values as

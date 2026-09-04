@@ -80,7 +80,9 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 	reg, err := register.New(register.WithStore(store))
 	require.NoError(t, err)
 
-	_, err = reg.Publish(t.Context(), "shop", "prod", 1, compiled(t))
+	_, err = reg.Publish(t.Context(), register.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(t),
+	})
 	require.NoError(t, err)
 
 	counting := &countingRegister{Register: reg}

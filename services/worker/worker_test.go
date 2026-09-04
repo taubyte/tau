@@ -171,7 +171,9 @@ func TestADeployTakesEffectWhenTheBudgetIsSpent(t *testing.T) {
 
 	// A second deploy: the same project with one number changed.
 	next := withAPIMemory(t, compiled(t), 1_024_000_000)
-	_, err := h.Register.Register.Publish(t.Context(), "shop", "prod", 2, next)
+	_, err := h.Register.Register.Publish(t.Context(), register.Publication{
+		Project: "shop", Environment: "prod", Revision: 2, Compiled: next,
+	})
 	require.NoError(t, err)
 
 	// Inside the budget nothing changes, which is the cost being paid for.
@@ -216,7 +218,9 @@ func TestTheProjectCacheIsBounded(t *testing.T) {
 
 	for revision := range uint64(5) {
 		next := withAPIMemory(t, compiled(t), 100_000_000+int64(revision))
-		_, err := h.Register.Register.Publish(t.Context(), "shop", "prod", revision+2, next)
+		_, err := h.Register.Register.Publish(t.Context(), register.Publication{
+			Project: "shop", Environment: "prod", Revision: revision + 2, Compiled: next,
+		})
 		require.NoError(t, err)
 
 		h.clock.advance(time.Second)

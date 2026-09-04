@@ -14,9 +14,10 @@
 // POINTER is what moves: one per (project, environment), small, and the only
 // thing a hot reader has to re-read.
 //
-//	Publish  — the build backend, after tcc compiled the user's config
-//	Resolve  — the runtime, asking which object an environment runs now
-//	Object   — the runtime, once, the first time it sees an id
+//	Publish      — the build backend, after tcc compiled the user's config
+//	Resolve      — the runtime, asking which object an environment runs now
+//	Object       — the runtime, once, the first time it sees an id
+//	ResolveHost  — a gateway, asking whose name a request just arrived for
 //
 // So Resolve returns a POINTER and not an object. Returning the object would
 // be correct and would also move a whole compiled project across the wire on
@@ -77,6 +78,9 @@ const (
 	RegisterServiceResolveProcedure = "/tau.register.v1.RegisterService/Resolve"
 	// RegisterServiceObjectProcedure is the fully-qualified name of the RegisterService's Object RPC.
 	RegisterServiceObjectProcedure = "/tau.register.v1.RegisterService/Object"
+	// RegisterServiceResolveHostProcedure is the fully-qualified name of the RegisterService's
+	// ResolveHost RPC.
+	RegisterServiceResolveHostProcedure = "/tau.register.v1.RegisterService/ResolveHost"
 )
 
 // RegisterServiceClient is a client for the tau.register.v1.RegisterService service.
@@ -89,6 +93,14 @@ type RegisterServiceClient interface {
 	// Object is one compiled project by its content address. A caller makes this
 	// call once per id and never again.
 	Object(context.Context, *connect.Request[v1.ObjectRequest]) (*connect.Response[v1.CompiledProject], error)
+	// ResolveHost says whose environment answers on a name. It is the first thing
+	// a gateway does with a request, before it can match a route or reach
+	// anything.
+	//
+	// It answers with an ADDRESS and not a route: what the name serves is in the
+	// compiled object, which the caller fetches once and keeps. A register that
+	// returned routes would be a register that parsed the vocabulary.
+	ResolveHost(context.Context, *connect.Request[v1.HostRequest]) (*connect.Response[v1.HostAnswer], error)
 }
 
 // NewRegisterServiceClient constructs a client for the tau.register.v1.RegisterService service. By
@@ -120,14 +132,21 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(registerServiceMethods.ByName("Object")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveHost: connect.NewClient[v1.HostRequest, v1.HostAnswer](
+			httpClient,
+			baseURL+RegisterServiceResolveHostProcedure,
+			connect.WithSchema(registerServiceMethods.ByName("ResolveHost")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // registerServiceClient implements RegisterServiceClient.
 type registerServiceClient struct {
-	publish *connect.Client[v1.PublishRequest, v1.PublishResponse]
-	resolve *connect.Client[v1.ResolveRequest, v1.Pointer]
-	object  *connect.Client[v1.ObjectRequest, v1.CompiledProject]
+	publish     *connect.Client[v1.PublishRequest, v1.PublishResponse]
+	resolve     *connect.Client[v1.ResolveRequest, v1.Pointer]
+	object      *connect.Client[v1.ObjectRequest, v1.CompiledProject]
+	resolveHost *connect.Client[v1.HostRequest, v1.HostAnswer]
 }
 
 // Publish calls tau.register.v1.RegisterService.Publish.
@@ -145,6 +164,11 @@ func (c *registerServiceClient) Object(ctx context.Context, req *connect.Request
 	return c.object.CallUnary(ctx, req)
 }
 
+// ResolveHost calls tau.register.v1.RegisterService.ResolveHost.
+func (c *registerServiceClient) ResolveHost(ctx context.Context, req *connect.Request[v1.HostRequest]) (*connect.Response[v1.HostAnswer], error) {
+	return c.resolveHost.CallUnary(ctx, req)
+}
+
 // RegisterServiceHandler is an implementation of the tau.register.v1.RegisterService service.
 type RegisterServiceHandler interface {
 	// Publish stores a compiled project and points an environment at it.
@@ -155,6 +179,14 @@ type RegisterServiceHandler interface {
 	// Object is one compiled project by its content address. A caller makes this
 	// call once per id and never again.
 	Object(context.Context, *connect.Request[v1.ObjectRequest]) (*connect.Response[v1.CompiledProject], error)
+	// ResolveHost says whose environment answers on a name. It is the first thing
+	// a gateway does with a request, before it can match a route or reach
+	// anything.
+	//
+	// It answers with an ADDRESS and not a route: what the name serves is in the
+	// compiled object, which the caller fetches once and keeps. A register that
+	// returned routes would be a register that parsed the vocabulary.
+	ResolveHost(context.Context, *connect.Request[v1.HostRequest]) (*connect.Response[v1.HostAnswer], error)
 }
 
 // NewRegisterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -182,6 +214,12 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 		connect.WithSchema(registerServiceMethods.ByName("Object")),
 		connect.WithHandlerOptions(opts...),
 	)
+	registerServiceResolveHostHandler := connect.NewUnaryHandler(
+		RegisterServiceResolveHostProcedure,
+		svc.ResolveHost,
+		connect.WithSchema(registerServiceMethods.ByName("ResolveHost")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.register.v1.RegisterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RegisterServicePublishProcedure:
@@ -190,6 +228,8 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 			registerServiceResolveHandler.ServeHTTP(w, r)
 		case RegisterServiceObjectProcedure:
 			registerServiceObjectHandler.ServeHTTP(w, r)
+		case RegisterServiceResolveHostProcedure:
+			registerServiceResolveHostHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -209,4 +249,8 @@ func (UnimplementedRegisterServiceHandler) Resolve(context.Context, *connect.Req
 
 func (UnimplementedRegisterServiceHandler) Object(context.Context, *connect.Request[v1.ObjectRequest]) (*connect.Response[v1.CompiledProject], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v1.RegisterService.Object is not implemented"))
+}
+
+func (UnimplementedRegisterServiceHandler) ResolveHost(context.Context, *connect.Request[v1.HostRequest]) (*connect.Response[v1.HostAnswer], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v1.RegisterService.ResolveHost is not implemented"))
 }

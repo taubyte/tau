@@ -39,7 +39,13 @@ var _ registerv1connect.RegisterServiceHandler = (*handler)(nil)
 // trust model — swarm membership is the boundary and the swarm key is what
 // enforces it. See .notes/tee/v2-seam.md.
 func (h *handler) Publish(ctx context.Context, req *connect.Request[registerv1.PublishRequest]) (*connect.Response[registerv1.PublishResponse], error) {
-	id, err := h.s.reg.Publish(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment(), req.Msg.GetRevision(), req.Msg.GetCompiled())
+	id, err := h.s.reg.Publish(ctx, pkgregister.Publication{
+		Project:     req.Msg.GetProject(),
+		Environment: req.Msg.GetEnvironment(),
+		Revision:    req.Msg.GetRevision(),
+		Compiled:    req.Msg.GetCompiled(),
+		Hosts:       req.Msg.GetHosts(),
+	})
 	if err != nil {
 		return nil, wire(err)
 	}
@@ -67,6 +73,16 @@ func (h *handler) Object(ctx context.Context, req *connect.Request[registerv1.Ob
 	return connect.NewResponse(&registerv1.CompiledProject{Compiled: compiled}), nil
 }
 
+// ResolveHost says whose environment answers on a name — the first thing a
+// gateway does with a request.
+func (h *handler) ResolveHost(ctx context.Context, req *connect.Request[registerv1.HostRequest]) (*connect.Response[registerv1.HostAnswer], error) {
+	project, environment, err := h.s.reg.ResolveHost(ctx, req.Msg.GetFqdn())
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(&registerv1.HostAnswer{Project: project, Environment: environment}), nil
+}
+
 // wire is the one code table: every connect.NewError in this package goes
 // through it, so the mapping from a register failure to a wire status is
 // decided once.
@@ -84,8 +100,15 @@ func wire(err error) error {
 		return connect.NewError(connect.CodeInvalidArgument, err)
 
 	case errors.Is(err, pkgregister.ErrNotPublished),
-		errors.Is(err, pkgregister.ErrNoObject):
+		errors.Is(err, pkgregister.ErrNoObject),
+		errors.Is(err, pkgregister.ErrNoHost):
 		return connect.NewError(connect.CodeNotFound, err)
+
+	// A name another project holds is a well-formed publish the state refuses,
+	// and a retry with the same name will never succeed — which is exactly what
+	// AlreadyExists says and FailedPrecondition does not.
+	case errors.Is(err, pkgregister.ErrHostClaimed):
+		return connect.NewError(connect.CodeAlreadyExists, err)
 
 	// A revision that does not move forward is a well-formed request the
 	// state refuses, which is exactly FailedPrecondition — and crucially not

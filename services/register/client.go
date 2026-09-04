@@ -49,9 +49,10 @@ func NewClient(h host.Host, p libp2ppeer.ID) (*Client, error) {
 // Close releases the stream. Calls after it fail.
 func (c *Client) Close() { c.conn.Close() }
 
-func (c *Client) Publish(ctx context.Context, project, environment string, revision uint64, compiled []byte) (pkgregister.ObjectID, error) {
+func (c *Client) Publish(ctx context.Context, p pkgregister.Publication) (pkgregister.ObjectID, error) {
 	res, err := c.svc.Publish(ctx, connect.NewRequest(&registerv1.PublishRequest{
-		Project: project, Environment: environment, Revision: revision, Compiled: compiled,
+		Project: p.Project, Environment: p.Environment, Revision: p.Revision,
+		Compiled: p.Compiled, Hosts: p.Hosts,
 	}))
 	if err != nil {
 		return "", unwire(err)
@@ -70,6 +71,15 @@ func (c *Client) Resolve(ctx context.Context, project, environment string) (pkgr
 		Object:   pkgregister.ObjectID(res.Msg.GetObject()),
 		Revision: res.Msg.GetRevision(),
 	}, nil
+}
+
+// ResolveHost says whose environment answers on a name.
+func (c *Client) ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error) {
+	res, err := c.svc.ResolveHost(ctx, connect.NewRequest(&registerv1.HostRequest{Fqdn: fqdn}))
+	if err != nil {
+		return "", "", unwire(err)
+	}
+	return res.Msg.GetProject(), res.Msg.GetEnvironment(), nil
 }
 
 func (c *Client) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
@@ -95,9 +105,12 @@ func unwire(err error) error {
 
 	switch cerr.Code() {
 	case connect.CodeNotFound:
-		if sentinel := matching(cerr.Message(), pkgregister.ErrNotPublished, pkgregister.ErrNoObject); sentinel != nil {
+		if sentinel := matching(cerr.Message(),
+			pkgregister.ErrNotPublished, pkgregister.ErrNoObject, pkgregister.ErrNoHost); sentinel != nil {
 			return fmt.Errorf("%w: %s", sentinel, cerr.Message())
 		}
+	case connect.CodeAlreadyExists:
+		return fmt.Errorf("%w: %s", pkgregister.ErrHostClaimed, cerr.Message())
 	case connect.CodeFailedPrecondition:
 		return fmt.Errorf("%w: %s", pkgregister.ErrStaleRevision, cerr.Message())
 	case connect.CodeDataLoss:

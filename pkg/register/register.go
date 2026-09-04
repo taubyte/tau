@@ -72,9 +72,20 @@ var (
 	ErrNoEnvironment = errors.New("register: a pointer with no environment addresses nothing")
 	ErrEmptyObject   = errors.New("register: an empty compiled project is not a project")
 	ErrNotPublished  = errors.New("register: nothing is published for this environment")
+	ErrNoHost        = errors.New("register: nothing answers on this name")
 	ErrNoObject      = errors.New("register: no such object")
 	ErrStaleRevision = errors.New("register: a revision that does not move forward")
 	ErrSeparator     = errors.New("register: a name may not contain the key separator")
+
+	// ErrHostClaimed is a name another project already answers on.
+	//
+	// FIRST CLAIM WINS, AND A LATER ONE IS REFUSED. Two projects on one cloud
+	// can both write `shop.example.com` into their config, and whichever
+	// deployed second would otherwise take the first one's traffic — which is
+	// a takeover performed by an ordinary deploy. That the claimant owns the
+	// zone at all is a different question and not this package's: it is proved
+	// once, elsewhere, before a name is ever published.
+	ErrHostClaimed = errors.New("register: another project already answers on this name")
 
 	// ErrMalformedPointer is a pointer row that is present and unreadable.
 	//
@@ -137,6 +148,8 @@ const (
 	sep           = "/"
 	objectPrefix  = "o" + sep
 	pointerPrefix = "p" + sep
+	hostPrefix    = "h" + sep
+	claimsPrefix  = "c" + sep
 )
 
 func objectKey(id ObjectID) string { return objectPrefix + string(id) }
@@ -144,6 +157,20 @@ func objectKey(id ObjectID) string { return objectPrefix + string(id) }
 func pointerKey(project, environment string) string {
 	return pointerPrefix + project + sep + environment
 }
+
+// hostKey holds who answers on a name; claimsKey holds which names one
+// environment claimed last time, so a republish can release the ones it dropped.
+func hostKey(fqdn string) string { return hostPrefix + strings.ToLower(fqdn) }
+
+func claimsKey(project, environment string) string {
+	return claimsPrefix + project + sep + environment
+}
+
+// owner is the value under a host key. An EMPTY value is an unclaimed name
+// rather than a missing row: the store has Get and Put and no Delete, so
+// releasing a name is writing a tombstone over it. That is also the honest
+// shape for a replicated store, where a deletion is a tombstone anyway.
+func owner(project, environment string) string { return project + sep + environment }
 
 // Register holds compiled projects and what each environment points at.
 type Register struct {
@@ -191,17 +218,18 @@ func WithStore(s Store) Option {
 // that sees a pointer can always fetch what it names. A pointer that arrived
 // before its object would be an environment that resolves to nothing, which is
 // worse than one that has not been updated yet.
-func (r *Register) Publish(ctx context.Context, project, environment string, revision uint64, compiled []byte) (ObjectID, error) {
-	if err := checkName(project, ErrNoProject); err != nil {
+func (r *Register) Publish(ctx context.Context, p Publication) (ObjectID, error) {
+	if err := checkName(p.Project, ErrNoProject); err != nil {
 		return "", err
 	}
-	if err := checkName(environment, ErrNoEnvironment); err != nil {
+	if err := checkName(p.Environment, ErrNoEnvironment); err != nil {
 		return "", err
 	}
-	if len(compiled) == 0 {
+	if len(p.Compiled) == 0 {
 		return "", ErrEmptyObject
 	}
 
+	project, environment, revision, compiled := p.Project, p.Environment, p.Revision, p.Compiled
 	id := IDOf(compiled)
 
 	r.mu.Lock()
@@ -226,10 +254,127 @@ func (r *Register) Publish(ctx context.Context, project, environment string, rev
 	if err := r.store.Put(ctx, objectKey(id), compiled); err != nil {
 		return "", fmt.Errorf("register: storing the compiled project: %w", err)
 	}
+	// THE NAMES BEFORE THE POINTER, for the same reason as the object: a
+	// pointer that moved while the names still sent traffic somewhere else
+	// would be a deploy that took effect for some requests and not others. A
+	// refused claim leaves the environment on the revision it was already
+	// running.
+	if err := r.claim(ctx, project, environment, p.Hosts); err != nil {
+		return "", err
+	}
+
 	if err := r.store.Put(ctx, pointerKey(project, environment), encodePointer(Pointer{Object: id, Revision: revision})); err != nil {
 		return "", fmt.Errorf("register: moving %s/%s: %w", project, environment, err)
 	}
 	return id, nil
+}
+
+// claim takes the names this publish declares and releases the ones the last
+// one held and this one does not.
+func (r *Register) claim(ctx context.Context, project, environment string, hosts []string) error {
+	mine := owner(project, environment)
+
+	held, err := r.claims(ctx, project, environment)
+	if err != nil {
+		return err
+	}
+
+	wanted := map[string]bool{}
+	for _, h := range hosts {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+			wanted[h] = true
+		}
+	}
+
+	// EVERY CLAIM IS CHECKED BEFORE ANY IS WRITTEN. A publish that took half
+	// the names and then hit one somebody else holds would leave the cloud
+	// answering for a deploy that did not happen.
+	for _, h := range sortedKeys(wanted) {
+		at, found, err := r.store.Get(ctx, hostKey(h))
+		if err != nil {
+			return fmt.Errorf("register: reading the claim on %s: %w", h, err)
+		}
+		if found && len(at) > 0 && string(at) != mine {
+			return fmt.Errorf("%w: %s is %s's", ErrHostClaimed, h, at)
+		}
+	}
+
+	for _, h := range sortedKeys(wanted) {
+		if err := r.store.Put(ctx, hostKey(h), []byte(mine)); err != nil {
+			return fmt.Errorf("register: claiming %s: %w", h, err)
+		}
+	}
+	for _, h := range held {
+		if wanted[h] {
+			continue
+		}
+		// A tombstone rather than a deletion: see owner().
+		if err := r.store.Put(ctx, hostKey(h), nil); err != nil {
+			return fmt.Errorf("register: releasing %s: %w", h, err)
+		}
+	}
+
+	return r.store.Put(ctx, claimsKey(project, environment), []byte(strings.Join(sortedKeys(wanted), "\n")))
+}
+
+func (r *Register) claims(ctx context.Context, project, environment string) ([]string, error) {
+	b, found, err := r.store.Get(ctx, claimsKey(project, environment))
+	if err != nil {
+		return nil, fmt.Errorf("register: reading %s/%s's names: %w", project, environment, err)
+	}
+	if !found || len(b) == 0 {
+		return nil, nil
+	}
+	return strings.Split(string(b), "\n"), nil
+}
+
+// ResolveHost is the read a gateway makes: a request arrived for this name, so
+// whose is it.
+//
+// IT IS CASE-INSENSITIVE because DNS is, and a Host header carries whatever the
+// client typed. A table keyed by what the author happened to write would miss
+// half the requests for the same name.
+func (r *Register) ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error) {
+	fqdn = strings.ToLower(strings.TrimSpace(fqdn))
+	if fqdn == "" {
+		return "", "", ErrNoHost
+	}
+
+	at, found, err := r.store.Get(ctx, hostKey(fqdn))
+	if err != nil {
+		return "", "", fmt.Errorf("register: reading the claim on %s: %w", fqdn, err)
+	}
+	if !found || len(at) == 0 {
+		return "", "", fmt.Errorf("%w: %s", ErrNoHost, fqdn)
+	}
+
+	project, environment, ok := strings.Cut(string(at), sep)
+	if !ok || project == "" || environment == "" {
+		return "", "", fmt.Errorf("%w: %q claims %s", ErrMalformedPointer, at, fqdn)
+	}
+	return project, environment, nil
+}
+
+// Publication is one publish. It is a value rather than five parameters because
+// the names an environment answers on are part of what a deploy declares, and a
+// sixth positional argument is where a caller starts passing them in the wrong
+// order.
+type Publication struct {
+	Project     string
+	Environment string
+	Revision    uint64
+
+	// Compiled is tcc's output, opaque here.
+	Compiled []byte
+
+	// Hosts are the fully-qualified names this environment answers on.
+	//
+	// THE REGISTER DOES NOT DERIVE THEM, and that is the same rule as not
+	// parsing the object: a name is the label a resource chose, the zone that
+	// answers for it and — for a generated one — the cloud's own fqdn, which is
+	// not in the config at all. Deriving them here would put the vocabulary and
+	// the operator's cloud name inside a package that is meant to hold neither.
+	Hosts []string
 }
 
 // Resolve is the read the runtime makes: what does this environment run, and
@@ -353,6 +498,17 @@ func (s *MemStore) Keys() []string {
 	defer s.mu.RUnlock()
 	out := make([]string, 0, len(s.m))
 	for k := range s.m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sortedKeys is a stable order for a set, so a claim list and the writes that
+// build it read the same way every time.
+func sortedKeys(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
 		out = append(out, k)
 	}
 	sort.Strings(out)

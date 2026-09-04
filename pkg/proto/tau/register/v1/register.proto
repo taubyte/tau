@@ -12,9 +12,10 @@ syntax = "proto3";
 // POINTER is what moves: one per (project, environment), small, and the only
 // thing a hot reader has to re-read.
 //
-//   Publish  — the build backend, after tcc compiled the user's config
-//   Resolve  — the runtime, asking which object an environment runs now
-//   Object   — the runtime, once, the first time it sees an id
+//   Publish      — the build backend, after tcc compiled the user's config
+//   Resolve      — the runtime, asking which object an environment runs now
+//   Object       — the runtime, once, the first time it sees an id
+//   ResolveHost  — a gateway, asking whose name a request just arrived for
 //
 // So Resolve returns a POINTER and not an object. Returning the object would
 // be correct and would also move a whole compiled project across the wire on
@@ -65,6 +66,21 @@ message PublishRequest {
 
   // compiled is tcc's output, opaque here.
   bytes compiled = 4;
+
+  // hosts are the fully-qualified names this environment answers on, and they
+  // are DECLARED rather than derived.
+  //
+  // The register does not read the compiled object, so it cannot work a name
+  // out — and it could not anyway: a name is the label a resource chose, the
+  // zone that answers for it, and for a generated one the cloud's own fqdn,
+  // which is not in the config at all. Whoever publishes knows all three.
+  //
+  // FIRST CLAIM WINS. A name another project already answers on is refused,
+  // because two projects can both write `shop.example.com` and whichever
+  // deployed second would otherwise take the first one's traffic. A republish
+  // keeps what it still lists and releases what it dropped, so a renamed
+  // gateway does not hold its old name forever.
+  repeated string hosts = 5;
 }
 
 message PublishResponse {
@@ -92,6 +108,15 @@ message CompiledProject {
   bytes compiled = 1;
 }
 
+message HostRequest {
+  string fqdn = 1;
+}
+
+message HostAnswer {
+  string project = 1;
+  string environment = 2;
+}
+
 service RegisterService {
   // Publish stores a compiled project and points an environment at it.
   rpc Publish(PublishRequest) returns (PublishResponse);
@@ -103,4 +128,13 @@ service RegisterService {
   // Object is one compiled project by its content address. A caller makes this
   // call once per id and never again.
   rpc Object(ObjectRequest) returns (CompiledProject);
+
+  // ResolveHost says whose environment answers on a name. It is the first thing
+  // a gateway does with a request, before it can match a route or reach
+  // anything.
+  //
+  // It answers with an ADDRESS and not a route: what the name serves is in the
+  // compiled object, which the caller fetches once and keeps. A register that
+  // returned routes would be a register that parsed the vocabulary.
+  rpc ResolveHost(HostRequest) returns (HostAnswer);
 }

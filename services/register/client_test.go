@@ -18,7 +18,7 @@ func TestTheClientIsTheSameRegister(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
 	c := newClient(t, h)
 
-	id, err := c.Publish(t.Context(), "shop", "prod", 1, []byte("memory: 64MB"))
+	id, err := c.Publish(t.Context(), pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("memory: 64MB")})
 	require.NoError(t, err)
 
 	p, err := c.Resolve(t.Context(), "shop", "prod")
@@ -41,21 +41,21 @@ func TestEverySentinelSurvivesTheWire(t *testing.T) {
 	_, err = c.Object(t.Context(), pkgregister.IDOf([]byte("never published")))
 	require.ErrorIs(t, err, pkgregister.ErrNoObject, "and not ErrNotPublished, which shares its status code")
 
-	_, err = c.Publish(t.Context(), "", "prod", 1, []byte("x"))
+	_, err = c.Publish(t.Context(), pkgregister.Publication{Project: "", Environment: "prod", Revision: 1, Compiled: []byte("x")})
 	require.ErrorIs(t, err, pkgregister.ErrNoProject)
 
-	_, err = c.Publish(t.Context(), "shop", "", 1, []byte("x"))
+	_, err = c.Publish(t.Context(), pkgregister.Publication{Project: "shop", Environment: "", Revision: 1, Compiled: []byte("x")})
 	require.ErrorIs(t, err, pkgregister.ErrNoEnvironment)
 
-	_, err = c.Publish(t.Context(), "shop", "prod", 1, nil)
+	_, err = c.Publish(t.Context(), pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: nil})
 	require.ErrorIs(t, err, pkgregister.ErrEmptyObject)
 
-	_, err = c.Publish(t.Context(), "a/b", "prod", 1, []byte("x"))
+	_, err = c.Publish(t.Context(), pkgregister.Publication{Project: "a/b", Environment: "prod", Revision: 1, Compiled: []byte("x")})
 	require.ErrorIs(t, err, pkgregister.ErrSeparator)
 
-	_, err = c.Publish(t.Context(), "shop", "prod", 5, []byte("x"))
+	_, err = c.Publish(t.Context(), pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 5, Compiled: []byte("x")})
 	require.NoError(t, err)
-	_, err = c.Publish(t.Context(), "shop", "prod", 2, []byte("late"))
+	_, err = c.Publish(t.Context(), pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 2, Compiled: []byte("late")})
 	require.ErrorIs(t, err, pkgregister.ErrStaleRevision)
 }
 
@@ -64,7 +64,7 @@ func TestACorruptedPointerReachesTheClientAsOne(t *testing.T) {
 	h := newHarness(t, store)
 	c := newClient(t, h)
 
-	_, err := c.Publish(t.Context(), "shop", "prod", 1, []byte("compiled"))
+	_, err := c.Publish(t.Context(), pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("compiled")})
 	require.NoError(t, err)
 
 	for _, k := range store.Keys() {
@@ -114,4 +114,31 @@ func TestAStatusThatMatchesNoSentinelIsLeftAlone(t *testing.T) {
 	// reached a server — passes through untouched.
 	plain := errors.New("no route to peer")
 	require.Equal(t, plain, unwire(plain))
+}
+
+// TestTheHostTableIsTheSameThroughTheClient — the sentinels for a name nobody
+// holds and a name somebody else holds survive the wire like the rest.
+func TestTheHostTableIsTheSameThroughTheClient(t *testing.T) {
+	h := newHarness(t, pkgregister.NewMemStore())
+	c := newClient(t, h)
+
+	_, err := c.Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1,
+		Compiled: []byte("compiled"), Hosts: []string{"shop.example.com"},
+	})
+	require.NoError(t, err)
+
+	project, environment, err := c.ResolveHost(t.Context(), "shop.example.com")
+	require.NoError(t, err)
+	require.Equal(t, "shop", project)
+	require.Equal(t, "prod", environment)
+
+	_, _, err = c.ResolveHost(t.Context(), "nobody.example.com")
+	require.ErrorIs(t, err, pkgregister.ErrNoHost)
+
+	_, err = c.Publish(t.Context(), pkgregister.Publication{
+		Project: "impostor", Environment: "prod", Revision: 1,
+		Compiled: []byte("compiled"), Hosts: []string{"shop.example.com"},
+	})
+	require.ErrorIs(t, err, pkgregister.ErrHostClaimed)
 }

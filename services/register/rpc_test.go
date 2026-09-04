@@ -187,3 +187,46 @@ func TestEnvironmentsAndProjectsDoNotShareAPointer(t *testing.T) {
 		require.Equal(t, c.want, string(obj.Msg.GetCompiled()))
 	}
 }
+
+// TestAGatewayAsksWhoseNameThisIsOverTheWire — the first thing a gateway does
+// with a request, and the reason the register holds a host table at all.
+func TestResolveHostOverTheWire(t *testing.T) {
+	h := newHarness(t, pkgregister.NewMemStore())
+
+	_, err := h.Client.Publish(t.Context(), connect.NewRequest(&registerv1.PublishRequest{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("compiled"),
+		Hosts: []string{"shop.example.com"},
+	}))
+	require.NoError(t, err)
+
+	answer, err := h.Client.ResolveHost(t.Context(), connect.NewRequest(&registerv1.HostRequest{
+		Fqdn: "SHOP.example.com",
+	}))
+	require.NoError(t, err)
+	require.Equal(t, "shop", answer.Msg.GetProject())
+	require.Equal(t, "prod", answer.Msg.GetEnvironment())
+
+	_, err = h.Client.ResolveHost(t.Context(), connect.NewRequest(&registerv1.HostRequest{
+		Fqdn: "nobody.example.com",
+	}))
+	require.Equal(t, connect.CodeNotFound, codeOf(t, err))
+}
+
+// TestAClaimedNameIsAlreadyExistsAndNotFailedPrecondition. A retry with the
+// same name will never succeed, and the two codes tell a caller opposite
+// things about whether to try again.
+func TestAClaimedNameIsAlreadyExists(t *testing.T) {
+	h := newHarness(t, pkgregister.NewMemStore())
+
+	_, err := h.Client.Publish(t.Context(), connect.NewRequest(&registerv1.PublishRequest{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("compiled"),
+		Hosts: []string{"shop.example.com"},
+	}))
+	require.NoError(t, err)
+
+	_, err = h.Client.Publish(t.Context(), connect.NewRequest(&registerv1.PublishRequest{
+		Project: "impostor", Environment: "prod", Revision: 1, Compiled: []byte("compiled"),
+		Hosts: []string{"shop.example.com"},
+	}))
+	require.Equal(t, connect.CodeAlreadyExists, codeOf(t, err))
+}

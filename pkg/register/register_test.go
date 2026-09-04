@@ -31,7 +31,7 @@ func TestTheRuntimeReadsAPointerAndKeepsTheObject(t *testing.T) {
 	r, _ := newRegister(t)
 	compiled := []byte(`{"function":{"checkout":{"execution":{"memory":"32MB"}}}}`)
 
-	id, err := r.Publish(ctx, "shop", "prod", 1, compiled)
+	id, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled})
 	require.NoError(t, err)
 
 	p, err := r.Resolve(ctx, "shop", "prod")
@@ -50,9 +50,9 @@ func TestTheSameConfigurationIsTheSameObject(t *testing.T) {
 	r, store := newRegister(t)
 	compiled := []byte("the same bytes")
 
-	first, err := r.Publish(ctx, "shop", "prod", 1, compiled)
+	first, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled})
 	require.NoError(t, err)
-	second, err := r.Publish(ctx, "shop", "prod", 2, compiled)
+	second, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 2, Compiled: compiled})
 	require.NoError(t, err)
 	require.Equal(t, first, second)
 
@@ -72,9 +72,9 @@ func TestTheSameConfigurationIsTheSameObject(t *testing.T) {
 func TestDifferentConfigurationsAreDifferentObjects(t *testing.T) {
 	r, _ := newRegister(t)
 
-	a, err := r.Publish(ctx, "shop", "prod", 1, []byte("memory: 32MB"))
+	a, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("memory: 32MB")})
 	require.NoError(t, err)
-	b, err := r.Publish(ctx, "shop", "prod", 2, []byte("memory: 64MB"))
+	b, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 2, Compiled: []byte("memory: 64MB")})
 	require.NoError(t, err)
 	require.NotEqual(t, a, b)
 
@@ -90,9 +90,9 @@ func TestDifferentConfigurationsAreDifferentObjects(t *testing.T) {
 func TestEnvironmentsAreIndependent(t *testing.T) {
 	r, _ := newRegister(t)
 
-	prod, err := r.Publish(ctx, "shop", "prod", 5, []byte("memory: 64MB"))
+	prod, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 5, Compiled: []byte("memory: 64MB")})
 	require.NoError(t, err)
-	staging, err := r.Publish(ctx, "shop", "staging", 1, []byte("memory: 8MB"))
+	staging, err := r.Publish(ctx, Publication{Project: "shop", Environment: "staging", Revision: 1, Compiled: []byte("memory: 8MB")})
 	require.NoError(t, err)
 	require.NotEqual(t, prod, staging)
 
@@ -110,9 +110,9 @@ func TestEnvironmentsAreIndependent(t *testing.T) {
 func TestProjectsAreIndependent(t *testing.T) {
 	r, _ := newRegister(t)
 
-	_, err := r.Publish(ctx, "shop", "prod", 1, []byte("shop"))
+	_, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("shop")})
 	require.NoError(t, err)
-	_, err = r.Publish(ctx, "blog", "prod", 1, []byte("blog"))
+	_, err = r.Publish(ctx, Publication{Project: "blog", Environment: "prod", Revision: 1, Compiled: []byte("blog")})
 	require.NoError(t, err)
 
 	shop, err := r.Resolve(ctx, "shop", "prod")
@@ -127,13 +127,13 @@ func TestProjectsAreIndependent(t *testing.T) {
 func TestALateArrivalCannotRollAnEnvironmentBack(t *testing.T) {
 	r, _ := newRegister(t)
 
-	_, err := r.Publish(ctx, "shop", "prod", 7, []byte("current"))
+	_, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 7, Compiled: []byte("current")})
 	require.NoError(t, err)
 
-	_, err = r.Publish(ctx, "shop", "prod", 3, []byte("stale, arriving late"))
+	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 3, Compiled: []byte("stale, arriving late")})
 	require.ErrorIs(t, err, ErrStaleRevision)
 
-	_, err = r.Publish(ctx, "shop", "prod", 7, []byte("the same revision again"))
+	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 7, Compiled: []byte("the same revision again")})
 	require.ErrorIs(t, err, ErrStaleRevision, "the same revision is not forward either")
 
 	p, err := r.Resolve(ctx, "shop", "prod")
@@ -150,12 +150,12 @@ func TestARollbackIsAForwardPublish(t *testing.T) {
 	r, _ := newRegister(t)
 	tuesday := []byte("the good one")
 
-	good, err := r.Publish(ctx, "shop", "prod", 1, tuesday)
+	good, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: tuesday})
 	require.NoError(t, err)
-	_, err = r.Publish(ctx, "shop", "prod", 2, []byte("the bad one"))
+	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 2, Compiled: []byte("the bad one")})
 	require.NoError(t, err)
 
-	back, err := r.Publish(ctx, "shop", "prod", 3, tuesday)
+	back, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 3, Compiled: tuesday})
 	require.NoError(t, err)
 	require.Equal(t, good, back, "the same configuration is the same object, so nothing is re-stored")
 
@@ -189,10 +189,10 @@ func TestAnUnknownObjectIsSaidPlainly(t *testing.T) {
 func TestANameMayNotContainTheSeparator(t *testing.T) {
 	r, _ := newRegister(t)
 
-	_, err := r.Publish(ctx, "a/prod", "prod", 1, []byte("x"))
+	_, err := r.Publish(ctx, Publication{Project: "a/prod", Environment: "prod", Revision: 1, Compiled: []byte("x")})
 	require.ErrorIs(t, err, ErrSeparator)
 
-	_, err = r.Publish(ctx, "a", "prod/prod", 1, []byte("x"))
+	_, err = r.Publish(ctx, Publication{Project: "a", Environment: "prod/prod", Revision: 1, Compiled: []byte("x")})
 	require.ErrorIs(t, err, ErrSeparator)
 
 	_, err = r.Resolve(ctx, "a/prod", "prod")
@@ -200,7 +200,7 @@ func TestANameMayNotContainTheSeparator(t *testing.T) {
 
 	// And the collision it prevents, demonstrated: the two legal spellings do
 	// not meet.
-	_, err = r.Publish(ctx, "a", "prod", 1, []byte("first"))
+	_, err = r.Publish(ctx, Publication{Project: "a", Environment: "prod", Revision: 1, Compiled: []byte("first")})
 	require.NoError(t, err)
 	_, err = r.Resolve(ctx, "a", "prod")
 	require.NoError(t, err)
@@ -209,16 +209,16 @@ func TestANameMayNotContainTheSeparator(t *testing.T) {
 func TestPublishRefusesWhatCannotBeAddressed(t *testing.T) {
 	r, _ := newRegister(t)
 
-	_, err := r.Publish(ctx, "", "prod", 1, []byte("x"))
+	_, err := r.Publish(ctx, Publication{Project: "", Environment: "prod", Revision: 1, Compiled: []byte("x")})
 	require.ErrorIs(t, err, ErrNoProject)
 
-	_, err = r.Publish(ctx, "shop", "", 1, []byte("x"))
+	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "", Revision: 1, Compiled: []byte("x")})
 	require.ErrorIs(t, err, ErrNoEnvironment)
 
-	_, err = r.Publish(ctx, "shop", "prod", 1, nil)
+	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: nil})
 	require.ErrorIs(t, err, ErrEmptyObject)
 
-	_, err = r.Publish(ctx, "shop", "prod", 1, []byte{})
+	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte{}})
 	require.ErrorIs(t, err, ErrEmptyObject)
 
 	_, err = r.Resolve(ctx, "", "prod")
@@ -235,12 +235,12 @@ func TestTheObjectIsWrittenBeforeThePointer(t *testing.T) {
 	r, err := New(WithStore(store))
 	require.NoError(t, err)
 
-	_, err = r.Publish(ctx, "shop", "prod", 1, []byte("compiled"))
+	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("compiled")})
 	require.NoError(t, err)
 
-	require.Len(t, store.writes, 2)
-	require.True(t, store.writes[0][:2] == "o/", "the object went first, got %q", store.writes[0])
-	require.True(t, store.writes[1][:2] == "p/", "the pointer went second, got %q", store.writes[1])
+	first, last := store.writes[0], store.writes[len(store.writes)-1]
+	require.True(t, strings.HasPrefix(first, "o/"), "the object went first, got %q", first)
+	require.True(t, strings.HasPrefix(last, "p/"), "the pointer went last, got %q", last)
 }
 
 // TestAFailedObjectWriteMovesNothing. Half a publish must not leave an
@@ -250,7 +250,7 @@ func TestAFailedObjectWriteMovesNothing(t *testing.T) {
 	r, err := New(WithStore(store))
 	require.NoError(t, err)
 
-	_, err = r.Publish(ctx, "shop", "prod", 1, []byte("compiled"))
+	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("compiled")})
 	require.Error(t, err)
 
 	_, err = r.Resolve(ctx, "shop", "prod")
@@ -262,7 +262,7 @@ func TestAFailedPointerWriteIsReported(t *testing.T) {
 	r, err := New(WithStore(store))
 	require.NoError(t, err)
 
-	_, err = r.Publish(ctx, "shop", "prod", 1, []byte("compiled"))
+	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("compiled")})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "shop/prod")
 }
@@ -289,7 +289,7 @@ func TestAPublishRepairsAMalformedPointer(t *testing.T) {
 	r, store := newRegister(t)
 	require.NoError(t, store.Put(ctx, pointerKey("shop", "prod"), []byte("garbage")))
 
-	_, err := r.Publish(ctx, "shop", "prod", 1, []byte("compiled"))
+	_, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("compiled")})
 	require.NoError(t, err)
 
 	p, err := r.Resolve(ctx, "shop", "prod")
@@ -311,7 +311,7 @@ func TestAnUnreachableStoreSaysSo(t *testing.T) {
 	require.Error(t, err)
 	require.NotErrorIs(t, err, ErrNoObject)
 
-	_, err = r.Publish(ctx, "shop", "prod", 1, []byte("compiled"))
+	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("compiled")})
 	require.Error(t, err, "a publish cannot check the revision it must beat")
 }
 
@@ -326,7 +326,7 @@ func TestConcurrentPublishesToOneEnvironmentPickOneWinner(t *testing.T) {
 		wg.Add(1)
 		go func(rev int) {
 			defer wg.Done()
-			r.Publish(ctx, "shop", "prod", uint64(rev+1), fmt.Appendf(nil, "revision %d", rev+1))
+			r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: uint64(rev + 1), Compiled: fmt.Appendf(nil, "revision %d", rev+1)})
 		}(i)
 	}
 	wg.Wait()
@@ -403,4 +403,18 @@ type unreadableStore struct{ *MemStore }
 
 func (s *unreadableStore) Get(context.Context, string) ([]byte, bool, error) {
 	return nil, false, errors.New("the store is unreachable")
+}
+
+// sometimesFailingStore refuses only a tombstone — an empty value under a host
+// key — which is what releasing a name writes.
+type sometimesFailingStore struct {
+	*MemStore
+	fail bool
+}
+
+func (s *sometimesFailingStore) Put(ctx context.Context, key string, value []byte) error {
+	if s.fail && strings.HasPrefix(key, hostPrefix) && len(value) == 0 {
+		return errors.New("the store refused")
+	}
+	return s.MemStore.Put(ctx, key, value)
 }
