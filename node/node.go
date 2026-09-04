@@ -227,6 +227,12 @@ func (n *Node) openWorker() error {
 	// Both cold-start out of the asset store, so a node that can reach it
 	// serves both — which means the smallest possible cloud runs a static
 	// website and a wasm function, and that is most of what anybody deploys.
+	//
+	// AN INJECTED TIER WINS OVER A BUILT ONE, by name. Somebody who handed this
+	// node a wasm runtime meant that one — a test observing what a node asks to
+	// start, a composer with an engine this package does not know about — and
+	// building a second under the same name is not a choice between them, it is
+	// a pool that refuses to open.
 	if n.opts.assets != nil {
 		site, err := static.New(n.opts.assets)
 		if err != nil {
@@ -239,7 +245,7 @@ func (n *Node) openWorker() error {
 		}
 		n.closers = append(n.closers, closerFunc(func() { component.Close() }))
 
-		tiers = append(tiers, site, component)
+		tiers = appendUnnamed(tiers, site, component)
 	}
 
 	if len(tiers) == 0 {
@@ -282,6 +288,23 @@ func (n *Node) openWorker() error {
 	n.worker = svc
 	n.closers = append(n.closers, svc)
 	return nil
+}
+
+// appendUnnamed adds every tier whose name nothing already answers for.
+func appendUnnamed(have []invoke.Runtime, add ...invoke.Runtime) []invoke.Runtime {
+	named := make(map[string]bool, len(have))
+	for _, rt := range have {
+		named[rt.Name()] = true
+	}
+
+	for _, rt := range add {
+		if named[rt.Name()] {
+			continue
+		}
+		named[rt.Name()] = true
+		have = append(have, rt)
+	}
+	return have
 }
 
 func (n *Node) openGateway() error {

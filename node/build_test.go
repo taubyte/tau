@@ -481,3 +481,26 @@ func tierNames(n *Node) []string {
 	}
 	return out
 }
+
+// AN INJECTED TIER WINS OVER A BUILT ONE, by name. Somebody who handed this
+// node a wasm runtime meant that one — and building a second under the same
+// name is not a choice between them, it is a pool that refuses to open.
+func TestAnInjectedTierWins(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+
+	n, err := New(Config{Services: []string{Stats, Worker}},
+		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
+		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
+		WithAssets(&countingAssets{}),
+		WithRuntimes(&tier{name: "wasm"}),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { n.Close() })
+
+	// One wasm, and it is the injected one; static is still built, because
+	// nothing else answers for it.
+	require.ElementsMatch(t, []string{"wasm", "static"}, tierNames(n))
+	require.Same(t, n.opts.runtimes[0], n.tiers()[0])
+}
