@@ -1,0 +1,230 @@
+package node
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/host"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/project"
+	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/worker"
+)
+
+// TWO NODES IS WHERE THE COMPOSITION IS ACTUALLY TESTED.
+//
+// One node proves the wiring; it does not prove the part that matters, which is
+// that a node finds what it does not run. A worker with no register has to
+// learn from stats which node has one and dial it — and every hop below is the
+// production one: a real gossipsub, a real p2p stream, the real client.
+
+// fleet is n nodes on one mocknet, each told what to run.
+func fleet(t *testing.T, configs ...Config) []*Node {
+	t.Helper()
+
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+
+	hosts := make([]host.Host, len(configs))
+	for i := range configs {
+		h, err := mn.GenPeer()
+		require.NoError(t, err)
+		hosts[i] = h
+	}
+	require.NoError(t, mn.LinkAll())
+	require.NoError(t, mn.ConnectAllButSelf())
+
+	out := make([]*Node, len(configs))
+	for i, cfg := range configs {
+		ps, err := pubsub.NewGossipSub(t.Context(), hosts[i])
+		require.NoError(t, err)
+
+		n, err := New(cfg,
+			WithHost(hosts[i]),
+			WithPubSub(ps),
+			WithDatabases(&memFactory{}),
+			WithRuntimes(&tier{name: "wasm"}),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() { n.Close() })
+
+		require.NoError(t, n.Start(t.Context()))
+		out[i] = n
+	}
+	return out
+}
+
+// sees waits until one node's view has another serving a name.
+func sees(t *testing.T, watcher *Node, name string) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		return len(watcher.Stats().Route(name, time.Minute)) > 0
+	}, 30*time.Second, 100*time.Millisecond, "%s never appeared in the view", name)
+}
+
+// TestAWorkerFindsARegisterItDoesNotRun. The whole point of a composition that
+// reports what it runs.
+func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
+	nodes := fleet(t,
+		Config{Services: []string{Register, Stats}},
+		Config{Services: []string{Worker, Stats}},
+	)
+	registry, compute := nodes[0], nodes[1]
+
+	_, err := registry.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
+	})
+	require.NoError(t, err)
+
+	sees(t, compute, Register)
+
+	spec, err := compute.Worker().Resolve(t.Context(), workerTarget())
+	require.NoError(t, err)
+	require.Equal(t, "wasm", spec.Runtime)
+	require.Equal(t, int64(33554432), spec.Memory)
+}
+
+// TestTheStreamToARemoteRegisterIsKept, so a read on the request path is not a
+// dial on the request path.
+func TestTheStreamToARemoteRegisterIsKept(t *testing.T) {
+	nodes := fleet(t,
+		Config{Services: []string{Register, Stats}},
+		Config{Services: []string{Worker, Stats}},
+	)
+	registry, compute := nodes[0], nodes[1]
+
+	_, err := registry.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
+	})
+	require.NoError(t, err)
+	sees(t, compute, Register)
+
+	first, err := compute.remoteRegister()
+	require.NoError(t, err)
+
+	again, err := compute.remoteRegister()
+	require.NoError(t, err)
+	require.Same(t, first, again, "a second read opened a second stream")
+}
+
+// TestAGatewayReachesAWorkerOnAnotherNode — the request path across the swarm,
+// with placement choosing the node.
+func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
+	nodes := fleet(t,
+		Config{Services: []string{Register, Stats, Gateway}},
+		Config{Services: []string{Worker, Stats}},
+	)
+	edge, compute := nodes[0], nodes[1]
+
+	_, err := edge.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1,
+		Compiled: compiled(), Hosts: []string{"shop.example.com"},
+	})
+	require.NoError(t, err)
+
+	sees(t, edge, Worker)
+	sees(t, compute, Register)
+
+	// The gateway has no worker of its own, so this can only have gone over
+	// the swarm. It reaches the tier and stops there, which is what this
+	// test's tier does.
+	res, err := edge.workers.Invoke(t.Context(), workerTarget(), &invoke.Request{Method: "GET", Path: "/"})
+	require.Error(t, err, "the tier starts nothing in this test")
+	require.Nil(t, res)
+	require.NotContains(t, err.Error(), "no worker is ready", "a worker was found and asked")
+}
+
+// TestAWarmWorkerIsAdvertisedAndPreferred. A worker that has already loaded an
+// environment says so, and placement asks for that name first.
+func TestAWarmWorkerIsAdvertised(t *testing.T) {
+	nodes := fleet(t,
+		Config{Services: []string{Register, Stats}},
+		Config{Services: []string{Worker, Stats}},
+	)
+	registry, compute := nodes[0], nodes[1]
+
+	_, err := registry.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
+	})
+	require.NoError(t, err)
+	sees(t, compute, Register)
+
+	_, err = compute.Worker().Resolve(t.Context(), workerTarget())
+	require.NoError(t, err)
+
+	// The claim reaches the other node's view on the next report.
+	sees(t, registry, worker.Descriptor.Name+"/shop/prod")
+}
+
+// TestANodeThatRunsBothUsesNeitherTheSwarmNorAStream.
+func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
+	nodes := fleet(t, Config{})
+	only := nodes[0]
+
+	_, err := only.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
+	})
+	require.NoError(t, err)
+
+	_, err = only.Worker().Resolve(t.Context(), workerTarget())
+	require.NoError(t, err)
+
+	require.Nil(t, only.registerClient, "it dialled itself")
+}
+
+// TestTheSeamsAreHandedThrough: an artifact resolver and a secret resolver
+// reach the worker that needs them.
+func TestTheSeamsReachTheWorker(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+
+	asked := make(chan string, 4)
+	n, err := New(Config{Services: []string{Register, Worker}},
+		WithHost(h),
+		WithDatabases(&memFactory{}),
+		WithRuntimes(&tier{name: "wasm"}),
+		WithArtifacts(artifactFunc(func(_ context.Context, _, _, kind, id string) (string, error) {
+			asked <- "artifact"
+			return "registry/built@sha256:" + id, nil
+		})),
+		WithSecrets(secretFunc(func(_ context.Context, _, _, id string) (string, error) {
+			asked <- "secret"
+			return "sk_" + id, nil
+		})),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { n.Close() })
+
+	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsBothSeams(),
+	})
+	require.NoError(t, err)
+
+	spec, err := n.Worker().Resolve(t.Context(), project.Address{
+		Project: "shop", Environment: "prod", Kind: "function", Name: "built",
+	})
+	require.NoError(t, err)
+	require.Contains(t, spec.Artifact, "registry/built@sha256:")
+	require.Contains(t, spec.Env["TOKEN"], "sk_")
+
+	require.Len(t, asked, 2)
+}
+
+type artifactFunc func(ctx context.Context, project, environment, kind, resourceID string) (string, error)
+
+func (f artifactFunc) Artifact(ctx context.Context, project, environment, kind, resourceID string) (string, error) {
+	return f(ctx, project, environment, kind, resourceID)
+}
+
+type secretFunc func(ctx context.Context, project, environment, secretID string) (string, error)
+
+func (f secretFunc) Secret(ctx context.Context, project, environment, secretID string) (string, error) {
+	return f(ctx, project, environment, secretID)
+}

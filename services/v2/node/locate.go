@@ -58,7 +58,11 @@ func (n *Node) remoteRegister() (registerReader, error) {
 		return nil, fmt.Errorf("%w: this node runs neither a register nor stats to find one", ErrNoRegister)
 	}
 
-	nodes := n.stats.Route(Register, n.cfg.Stats.Fresh)
+	// THE TOLERANCE IS THE STATS CONFIG'S EFFECTIVE ONE, not its raw field.
+	// Reading Config.Fresh directly gave zero whenever the operator left it
+	// unset — every row is older than nothing — so every register in the fleet
+	// looked like no register at all.
+	nodes := n.stats.Route(Register, n.cfg.Stats.Freshness())
 	if len(nodes) == 0 {
 		return nil, ErrNoRegister
 	}

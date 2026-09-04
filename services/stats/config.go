@@ -177,3 +177,20 @@ func (c Config) withDefaults() (Config, error) {
 func (c Config) viewOptions(now func() time.Time) stats.Options {
 	return stats.Options{Fresh: c.Fresh, Forget: c.Forget, Now: now}
 }
+
+// Freshness is how old a row may be and still be current under this config,
+// with the same defaults New applies.
+//
+// IT IS EXPORTED BECAUSE A CONSUMER CHOOSING A ROUTING TOLERANCE MUST NOT
+// RE-DERIVE IT. A caller that read Config.Fresh directly got zero whenever the
+// operator left it unset — every row is older than nothing, so every lookup
+// found no candidates and the service it was looking for appeared not to exist.
+// That is exactly the failure a defaulted value is supposed to prevent, and the
+// only way to prevent it once is to answer the question here.
+func (c Config) Freshness() time.Duration {
+	defaulted, err := c.withDefaults()
+	if err != nil {
+		return freshIntervals * DefaultInterval
+	}
+	return defaulted.Fresh
+}
