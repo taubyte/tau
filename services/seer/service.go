@@ -12,6 +12,7 @@ import (
 
 	pebbleds "github.com/ipfs/go-ds-pebble"
 	"github.com/ipfs/go-log/v2"
+	authApi "github.com/taubyte/tau/clients/p2p/auth"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
@@ -68,6 +69,12 @@ func New(ctx context.Context, cfg tauConfig.Config, opts ...Options) (*Service, 
 	if srv.tns, err = tnsClient.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("new tns api failed with: %s", err)
 	}
+	// The gateway routes serve things a project owns, and the project's linked
+	// repositories are what says who may see them. Auth is where that link
+	// lives, so seer needs to be able to ask.
+	if srv.authClient, err = authApi.New(ctx, clientNode); err != nil {
+		return nil, fmt.Errorf("new auth api failed with: %s", err)
+	}
 	if srv.ds, err = pebbleds.NewDatastore(
 		path.Join(cfg.Root(), "storage", srv.shape, "seer"),
 		nil,
@@ -119,6 +126,9 @@ func (srv *Service) Close() error {
 	time.Sleep(100 * time.Millisecond)
 
 	srv.tns.Close()
+	if srv.authClient != nil {
+		srv.authClient.Close()
+	}
 	srv.ds.Close()
 
 	srv.dns.Stop()

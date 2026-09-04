@@ -10,6 +10,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 
+	authClient "github.com/taubyte/tau/core/services/auth"
 	tnsClient "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/pkg/config"
 	http "github.com/taubyte/tau/pkg/http"
@@ -65,6 +66,7 @@ type Service struct {
 	ds datastore.Batching
 
 	tns         tnsClient.Client
+	authClient  authClient.Client
 	dnsResolver iface.Resolver
 
 	poe poe.Engine
