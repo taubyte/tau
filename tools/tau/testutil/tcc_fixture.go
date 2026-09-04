@@ -9,16 +9,48 @@ import (
 	"github.com/taubyte/tau/tools/tau/session"
 )
 
-// TCCFixtureProjectRoot returns the absolute path to the TCC fixture project root
-// (pkg/tcc/taubyte/v1/fixtures). The project config repo is at <returned path>/config.
-// Use this with config.Project{Location: TCCFixtureProjectRoot()} so that Interface()
-// opens the schema project from the TCC fixtures.
-func TCCFixtureProjectRoot() (string, error) {
+// TCCFixtureSource is the project every CLI test reads: the vocabulary's own
+// fixture.
+//
+// IT IS THE SCHEMA'S FIXTURE AND NOT ONE OF THE CLI'S OWN, and that is the
+// whole point. The previous one lived under pkg/tcc/taubyte/v1/fixtures and
+// went with v1 when v1 was deleted — so every store, build, validate and
+// resource test in this tool broke at once, silently, because the copy of a
+// directory that does not exist succeeds and produces an empty project.
+//
+// Pointing at the schema's fixture means the CLI is tested against whatever the
+// vocabulary currently says, which is the same rule the rest of this tool
+// follows: the DSL is the source of truth.
+func TCCFixtureSource() (string, error) {
 	root, err := findRepoRoot()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, "pkg", "tcc", "taubyte", "v1", "fixtures"), nil
+	return filepath.Join(root, "pkg", "tcc", "taubyte", "v2", "fixtures", "basic"), nil
+}
+
+// TCCFixtureProjectRoot materialises the fixture as a PROJECT: a directory with
+// the config repo at <returned path>/config, which is the layout every CLI path
+// expects.
+//
+// The schema's fixture is a bare config tree — it is what a config repository
+// contains, not a checkout of one — so the layout is built here rather than
+// duplicated on disk.
+func TCCFixtureProjectRoot() (string, error) {
+	src, err := TCCFixtureSource()
+	if err != nil {
+		return "", err
+	}
+
+	root, err := os.MkdirTemp("", "tau-fixture-")
+	if err != nil {
+		return "", err
+	}
+	project := filepath.Join(root, "project")
+	if err := os.CopyFS(filepath.Join(project, "config"), os.DirFS(src)); err != nil {
+		return "", err
+	}
+	return project, nil
 }
 
 const TCCFixtureProjectName = "fixture"
@@ -29,11 +61,7 @@ const TCCFixtureProjectName = "fixture"
 // or applicationLib.List(), etc.
 func WithTCCFixtureEnv(t *testing.T) {
 	t.Helper()
-	fixtureRoot, err := TCCFixtureProjectRoot()
-	if err != nil {
-		t.Fatalf("TCC fixture path: %v", err)
-	}
-	withFixtureEnv(t, fixtureRoot)
+	WithTCCFixtureCopyEnv(t)
 }
 
 // WithTCCFixtureCopyEnv is WithTCCFixtureEnv over a throwaway copy of the
@@ -41,14 +69,25 @@ func WithTCCFixtureEnv(t *testing.T) {
 // copy's root.
 func WithTCCFixtureCopyEnv(t *testing.T) string {
 	t.Helper()
-	src, err := TCCFixtureProjectRoot()
+
+	src, err := TCCFixtureSource()
 	if err != nil {
 		t.Fatalf("TCC fixture path: %v", err)
 	}
+
 	root := filepath.Join(t.TempDir(), "project")
-	if err := os.CopyFS(root, os.DirFS(src)); err != nil {
+	if err := os.CopyFS(filepath.Join(root, "config"), os.DirFS(src)); err != nil {
 		t.Fatalf("copying fixtures: %v", err)
 	}
+
+	// A FIXTURE THAT COPIED NOTHING IS AN EMPTY PROJECT, and every assertion
+	// against it fails somewhere far from the cause. CopyFS over a missing
+	// source is not an error, which is how the last one went unnoticed.
+	entries, err := os.ReadDir(filepath.Join(root, "config"))
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("the fixture at %s is empty; nothing was copied", src)
+	}
+
 	withFixtureEnv(t, root)
 	return root
 }

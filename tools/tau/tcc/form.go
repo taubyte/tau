@@ -35,6 +35,15 @@ type sectionSpec struct {
 type refSpec struct {
 	Group  string `json:"group"`
 	Prefix string `json:"prefix"`
+
+	// KindFrom names the sibling field whose value says which group this
+	// reference points at.
+	//
+	// A HANDLER BLOCK HAS NO GROUP OF ITS OWN. A gateway's route, a proxy's
+	// forward and a channel's serve each name a resource whose KIND the author
+	// picked one field earlier, so the target group is not knowable from the
+	// schema alone — it is read out of the document being edited.
+	KindFrom string `json:"kind-from"`
 }
 
 type node struct {
@@ -55,6 +64,15 @@ type node struct {
 	DynPath              string          `json:"x-tau-path"`
 	ShowWhen             *condition      `json:"x-tau-show-when"`
 	Sections             []sectionSpec   `json:"x-tau-sections"`
+
+	// Required is what the schema says an author must answer, and
+	// RequiredWhen is the same thing once a condition holds.
+	//
+	// NEITHER WAS READ BEFORE, and the CLI prompted for every field in order
+	// and asked nothing twice — so a resource could be created without the one
+	// value it cannot run without, and the compiler said so afterwards.
+	Required     bool       `json:"x-tau-required"`
+	RequiredWhen *condition `json:"x-tau-required-when"`
 }
 
 // props keeps JSON object member order — field order in the CLI is the DSL's
@@ -136,6 +154,12 @@ type Field struct {
 	Alternatives []string
 	BranchSuffix []string
 	IsSelector   bool
+
+	// Required says an author must answer this. RequiredWhen says the same
+	// thing once its condition holds — a field that is only required inside the
+	// branch that was taken.
+	Required     bool
+	RequiredWhen *Condition
 }
 
 // Section groups fields for prompting and display.
@@ -290,6 +314,7 @@ func FormFor(def string) (*Form, error) {
 			Enum:        l.n.Enum,
 			Scalar:      l.n.Scalar,
 			Ref:         l.n.Ref,
+			Required:    l.n.Required,
 		}
 		if fd.Label == "" {
 			fd.Label = l.key
@@ -303,6 +328,9 @@ func FormFor(def string) (*Form, error) {
 		fd.Widget = widgetFor(l.n, fd.IsSelector)
 		if l.n.ShowWhen != nil {
 			fd.ShowWhen = resolve(l.n.ShowWhen)
+		}
+		if l.n.RequiredWhen != nil {
+			fd.RequiredWhen = resolve(l.n.RequiredWhen)
 		}
 		f.Fields = append(f.Fields, fd)
 	}
@@ -358,22 +386,72 @@ func widgetFor(n *node, selector bool) Widget {
 	return WidgetText
 }
 
-// assignFlags names each field's flag by its leaf key, qualifying with the
-// parent segment only where two fields would collide (bridges/mqtt/enable vs
-// bridges/websocket/enable).
+// assignFlags names each field's flag by its leaf key, widening the ones that
+// clash by one parent segment at a time until nothing shares a flag.
+//
+// ONE PARENT WAS NOT ENOUGH, and the kind that proved it is `database`:
+// kv/distributed/size, document/distributed/size, sql/distributed/size and
+// vector/distributed/size all qualify to `distributed-size`, so three of the
+// four were unreachable from the command line and the fourth silently answered
+// for all of them. The widening loop cannot have that failure at any depth.
+//
+// A field whose whole path is exhausted keeps what it has: two fields with the
+// same path are the same field, which the schema does not produce.
 func assignFlags(fields []Field) {
-	count := map[string]int{}
-	for _, f := range fields {
-		count[f.Key]++
-	}
+	depth := make([]int, len(fields))
 	for i := range fields {
-		f := &fields[i]
-		if count[f.Key] == 1 || len(f.Path) < 2 {
-			f.Flag = f.Key
-			continue
-		}
-		f.Flag = f.Path[len(f.Path)-2] + "-" + f.Key
+		depth[i] = 1
+		fields[i].Flag = flagAt(fields[i], 1)
 	}
+
+	for {
+		sharing := map[string][]int{}
+		for i := range fields {
+			sharing[fields[i].Flag] = append(sharing[fields[i].Flag], i)
+		}
+
+		widened := false
+		for _, indices := range sharing {
+			if len(indices) < 2 {
+				continue
+			}
+			for _, i := range indices {
+				if depth[i] >= len(fields[i].Path) {
+					continue // nothing left to qualify with
+				}
+				depth[i]++
+				fields[i].Flag = flagAt(fields[i], depth[i])
+				widened = true
+			}
+		}
+		if !widened {
+			return
+		}
+	}
+}
+
+// flagAt is a field's flag with depth-1 parent segments in front of its key.
+func flagAt(f Field, depth int) string {
+	parents := f.Path
+	if len(parents) > 0 {
+		parents = parents[:len(parents)-1]
+	}
+	if take := depth - 1; take < len(parents) {
+		parents = parents[len(parents)-take:]
+	}
+
+	parts := make([]string, 0, len(parents)+1)
+	for _, p := range parents {
+		// A dynamic segment carries the raw `{a|b}` form and a path can hold a
+		// slash; neither belongs in a flag name.
+		parts = append(parts, flagSegment(p))
+	}
+	return strings.Join(append(parts, flagSegment(f.Key)), "-")
+}
+
+func flagSegment(s string) string {
+	s = strings.NewReplacer("/", "-", "{", "", "}", "", "|", "-").Replace(s)
+	return strings.Trim(s, "-")
 }
 
 // resolver maps a show-when's declared field id to a value path: an exact

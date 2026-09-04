@@ -829,6 +829,17 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 		if r.Prefix != "" {
 			ref["prefix"] = r.Prefix
 		}
+		// A REFERENCE WHOSE TARGET KIND IS ANOTHER FIELD'S VALUE HAS NO GROUP
+		// OF ITS OWN, and dropping that made the emitted schema say `{"group":
+		// ""}` — a reference to nothing. A consumer reading it could neither
+		// complete it nor check it, which is every handler block in the
+		// vocabulary: a gateway's route, a proxy's forward, a channel's serve.
+		//
+		// So the sibling that decides is named, and a consumer reads that
+		// field's current value to know which group to look in.
+		if r.KindFrom != "" {
+			ref["kind-from"] = r.KindFrom
+		}
 		s[g.ext+"ref"] = ref // value(s) must name a defined <group>; compiler-enforced
 	}
 	if v, ok := a.Meta["emitValidation"].(engine.ValidationEmit); ok {

@@ -2,6 +2,7 @@ package build
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,8 +39,11 @@ func TestBuildContext_WorkDirForFunction_NoApp(t *testing.T) {
 		projectConfig: config.Project{Location: "/project"},
 		selectedApp:   "",
 	}
+	// THE DIRECTORY IS THE VOCABULARY'S, not a constant this test remembers.
+	// It used to be spelled here as v1's plural, which is exactly the disagreement
+	// that made `tau new --template` write code where `tau build` never looked.
 	wd := bc.workDirForFunction("myfunc")
-	assert.Assert(t, wd == "/project/code/functions/myfunc" || (strings.Contains(wd, "functions") && strings.Contains(wd, "myfunc")))
+	assert.Equal(t, wd, path.Join("/project", "code", codeDir("function"), "myfunc"))
 }
 
 func TestBuildContext_WorkDirForFunction_WithApp(t *testing.T) {
@@ -48,7 +52,7 @@ func TestBuildContext_WorkDirForFunction_WithApp(t *testing.T) {
 		selectedApp:   "myapp",
 	}
 	wd := bc.workDirForFunction("myfunc")
-	assert.Assert(t, strings.Contains(wd, "myapp") && strings.Contains(wd, "myfunc"))
+	assert.Equal(t, wd, path.Join("/project", "code", scopeDir(), "myapp", codeDir("function"), "myfunc"))
 }
 
 func TestBuildContext_WorkDirForWebsite(t *testing.T) {

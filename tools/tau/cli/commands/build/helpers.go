@@ -10,14 +10,45 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/legacy/specs/builders/wasm"
-	commonSpec "github.com/taubyte/tau/legacy/specs/common"
-	functionSpec "github.com/taubyte/tau/legacy/specs/function"
 	"github.com/taubyte/tau/tools/tau/common"
 	"github.com/taubyte/tau/tools/tau/config"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
+	"github.com/taubyte/tau/tools/tau/tcc"
 )
 
 var errInvalidRepoName = errors.New("invalid repository name: expected \"user/repo\"")
+
+// WHERE CODE LIVES IS THE VOCABULARY'S ANSWER, not legacy/specs'.
+//
+// These read `functions/` and `applications/` out of v1's spec constants while
+// everything else in this tool writes `function/` and the container kind's own
+// directory (generic/code.go uses the group's Dir). So `tau new function
+// --template` wrote code where `tau build function` would never look for it,
+// and both were right about their own half.
+//
+// Resolved through tcc so there is one answer, and a rename of either kind moves
+// both together.
+func codeDir(kind string) string {
+	g, err := tcc.GroupFor(kind)
+	if err != nil {
+		return kind
+	}
+	return g.Dir
+}
+
+// scopeDir is the directory a container's instances live under.
+func scopeDir() string {
+	groups, err := tcc.Groups()
+	if err != nil {
+		return ""
+	}
+	for _, g := range groups {
+		if g.Container {
+			return g.Dir
+		}
+	}
+	return ""
+}
 
 // verifyWorkDirExists returns an error if workDir does not exist or is not a directory.
 func verifyWorkDirExists(workDir string) error {
@@ -56,9 +87,9 @@ func getBuildContext() (*buildContext, error) {
 // workDirForFunction returns the local path for the given function.
 func (c *buildContext) workDirForFunction(functionName string) string {
 	if len(c.selectedApp) > 0 {
-		return path.Join(c.projectConfig.CodeLoc(), commonSpec.ApplicationPathVariable.String(), c.selectedApp, functionSpec.PathVariable.String(), functionName)
+		return path.Join(c.projectConfig.CodeLoc(), scopeDir(), c.selectedApp, codeDir("function"), functionName)
 	}
-	return path.Join(c.projectConfig.CodeLoc(), functionSpec.PathVariable.String(), functionName)
+	return path.Join(c.projectConfig.CodeLoc(), codeDir("function"), functionName)
 }
 
 // workDirForWebsite returns the local path for the website repo (repoName is "user/repo", we use the second segment).
@@ -83,9 +114,9 @@ func (c *buildContext) workDirForLibrary(repoName string) (string, error) {
 // (mirrors workDirForFunction under builds/ instead of code/).
 func buildsDirForFunction(projectLocation, app, functionName string) string {
 	if len(app) > 0 {
-		return path.Join(projectLocation, common.BuildsDir, commonSpec.ApplicationPathVariable.String(), app, functionSpec.PathVariable.String(), functionName)
+		return path.Join(projectLocation, common.BuildsDir, scopeDir(), app, codeDir("function"), functionName)
 	}
-	return path.Join(projectLocation, common.BuildsDir, functionSpec.PathVariable.String(), functionName)
+	return path.Join(projectLocation, common.BuildsDir, codeDir("function"), functionName)
 }
 
 // ResolveArtifactPath returns the path to artifact.zip or main.wasm under the
@@ -105,9 +136,9 @@ func ResolveArtifactPath(projectLocation, app, functionName string) (string, err
 // (code repo path: code/.../functions/<name> or code/apps/<app>/functions/<name>).
 func SourceDirForFunction(projectLocation, app, functionName string) string {
 	if len(app) > 0 {
-		return path.Join(projectLocation, common.CodeRepoDir, commonSpec.ApplicationPathVariable.String(), app, functionSpec.PathVariable.String(), functionName)
+		return path.Join(projectLocation, common.CodeRepoDir, scopeDir(), app, codeDir("function"), functionName)
 	}
-	return path.Join(projectLocation, common.CodeRepoDir, functionSpec.PathVariable.String(), functionName)
+	return path.Join(projectLocation, common.CodeRepoDir, codeDir("function"), functionName)
 }
 
 // LatestModTimeInDir returns the latest modification time of any file under dir (recursive).

@@ -8,6 +8,7 @@ import (
 
 	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/session"
+	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/taubyte/tau/tools/tau/testutil"
 )
 
@@ -64,21 +65,29 @@ func copyDir(t *testing.T, srcDir, dstDir string) {
 	}
 }
 
+// THE FIXTURE IS THE v2 VOCABULARY. It used to carry a `trigger` block and a
+// `domains` list, which is what a v1 function declared: v2 functions declare
+// nothing about how they are reached — an inbound edge does — so the whole
+// block compiled to nothing and the project could not be read.
 const pingFunctionConfigYAML = `id: QmPingE2EFixture00000000000000000000000000001
 description: HTTP ping for e2e
-trigger:
-    type: http
-    method: get
-    paths:
-        - /ping
-domains:
-    - test_domain1
 source: .
 execution:
     timeout: 20s
-    memory: 32GB
+    memory: 32MB
     call: ping
 `
+
+// functionDir is where a function is authored, read off the vocabulary rather
+// than spelled here — the plural was v1's and this fixture wrote to a directory
+// nothing reads.
+func functionDir() string {
+	g, err := tcc.GroupFor("function")
+	if err != nil {
+		return "function"
+	}
+	return g.Dir
+}
 
 // WithE2EPingProjectEnv creates a temp dir with a project containing the ping fixture
 // (code + config), sets config and session in memory so the selected project is that
@@ -88,14 +97,14 @@ func WithE2EPingProjectEnv(t *testing.T) (dir, projectPath string) {
 	t.Helper()
 	dir = t.TempDir()
 	projectPath = filepath.Join(dir, "e2e_project")
-	if err := os.MkdirAll(filepath.Join(projectPath, "config", "functions"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(projectPath, "config", functionDir()), 0755); err != nil {
 		t.Fatalf("mkdir config: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(projectPath, "code", "functions", "ping"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(projectPath, "code", functionDir(), "ping"), 0755); err != nil {
 		t.Fatalf("mkdir code: %v", err)
 	}
-	copyDir(t, pingFixturePath(t), filepath.Join(projectPath, "code", "functions", "ping"))
-	if err := os.WriteFile(filepath.Join(projectPath, "config", "functions", "ping.yaml"), []byte(pingFunctionConfigYAML), 0644); err != nil {
+	copyDir(t, pingFixturePath(t), filepath.Join(projectPath, "code", functionDir(), "ping"))
+	if err := os.WriteFile(filepath.Join(projectPath, "config", functionDir(), "ping.yaml"), []byte(pingFunctionConfigYAML), 0644); err != nil {
 		t.Fatalf("write ping.yaml: %v", err)
 	}
 	sessionPath := filepath.Join(dir, "session")

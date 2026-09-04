@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/tau/core/builders"
 	specsbuilders "github.com/taubyte/tau/legacy/specs/builders"
 	ci "github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/taubyte/tau/tools/tau/testutil"
 	"gotest.tools/v3/assert"
 )
@@ -84,19 +85,21 @@ func TestRunBuildFunction_ResourceNotCloned(t *testing.T) {
 	assert.Assert(t, err != nil)
 }
 
+// A kind the vocabulary does not have is not a build target.
+func TestRunBuildUnknownKind(t *testing.T) {
+	testutil.WithTCCFixtureEnv(t)
+	err := testutil.RunCommand(Command, "tau", "build", "library", "--name", "anything")
+	assert.Assert(t, err != nil)
+}
+
 func TestRunBuildWebsite_NoProjectSelected(t *testing.T) {
 	err := testutil.RunCommand(Command, "tau", "build", "website", "--name", "someweb")
 	assert.Assert(t, err != nil)
 }
 
-func TestRunBuildLibrary_NoProjectSelected(t *testing.T) {
-	err := testutil.RunCommand(Command, "tau", "build", "library", "--name", "somelib")
-	assert.Assert(t, err != nil)
-}
-
 func TestRunBuildWebsite_ResourceNotCloned(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	err := testutil.RunCommand(Command, "tau", "build", "website", "--name", "test_website1")
+	err := testutil.RunCommand(Command, "tau", "build", "website", "--name", "not_a_website")
 	assert.Assert(t, err != nil)
 }
 
@@ -107,69 +110,62 @@ func TestRunBuildLibrary_ResourceNotCloned(t *testing.T) {
 }
 
 // Success-path tests (with mock builder)
+//
+// THE FIXTURE ROOT COMES FROM THE ENV HELPER AND NOT FROM A SECOND CALL. Each
+// call materialises its own copy, so asking twice gave a working directory in
+// one project and a selected project in another — which is why these looked
+// like they were testing a build and were testing nothing.
+//
+// The kind and the resource are found in the fixture rather than named: the
+// three that were named here were v1's, and one of them (`library`) is not a
+// kind any more.
 
-func TestRunBuildFunction_WithMockBuilder_Success(t *testing.T) {
-	testutil.WithTCCFixtureEnv(t)
-	fixtureRoot, err := testutil.TCCFixtureProjectRoot()
-	assert.NilError(t, err)
-	workDir := filepath.Join(fixtureRoot, "code", "functions", "test_function1_glob")
-	assert.NilError(t, os.MkdirAll(workDir, 0755))
-	defer os.RemoveAll(filepath.Join(fixtureRoot, "code"))
+// aBuildableResource is a kind this command builds that the vocabulary still
+// has and the fixture has an instance of.
+//
+// THE KINDS THIS COMMAND BUILDS ARE A FIXED SET, declared as its subcommands,
+// and that set is where `library` still is — a kind v2 does not have. Reading
+// the subcommands rather than the vocabulary is what makes the mismatch visible
+// instead of a test that names one of them and breaks.
+func aBuildableResource(t *testing.T) (kind, name string) {
+	t.Helper()
 
-	restore := setMockBuilder(func(context.Context, io.Writer, string) (builders.Builder, error) {
-		return &mockBuilder{output: &mockOutput{data: []byte("wasm")}}, nil
-	})
-	defer restore()
+	st, err := tcc.Open()
+	assert.NilError(t, err)
 
-	dir := t.TempDir()
-	outFile := filepath.Join(dir, "out.wasm")
-	err = testutil.RunCommand(Command, "tau", "build", "function", "--name", "test_function1_glob", "-o", outFile)
-	assert.NilError(t, err)
-	content, err := os.ReadFile(outFile)
-	assert.NilError(t, err)
-	assert.DeepEqual(t, content, []byte("wasm"))
+	for _, sub := range Command.Subcommands {
+		g, err := tcc.GroupFor(sub.Name)
+		if err != nil {
+			continue // a kind this command builds and the vocabulary dropped
+		}
+		names, err := st.List(g.Dir)
+		if err != nil || len(names) == 0 {
+			continue
+		}
+		return sub.Name, names[0]
+	}
+
+	t.Fatal("this command builds no kind the fixture has an instance of")
+	return "", ""
 }
 
-func TestRunBuildWebsite_WithMockBuilder_Success(t *testing.T) {
-	testutil.WithTCCFixtureEnv(t)
-	fixtureRoot, err := testutil.TCCFixtureProjectRoot()
-	assert.NilError(t, err)
-	workDir := filepath.Join(fixtureRoot, "websites", "photo_booth")
-	assert.NilError(t, os.MkdirAll(workDir, 0755))
-	defer os.RemoveAll(filepath.Join(fixtureRoot, "websites"))
+func TestRunBuild_WithMockBuilder_Success(t *testing.T) {
+	root := testutil.WithTCCFixtureCopyEnv(t)
+	kind, name := aBuildableResource(t)
+
+	// The build reads the resource's code out of the project's code
+	// repository, so it has to be there.
+	assert.NilError(t, os.MkdirAll(filepath.Join(root, "code", kind, name), 0o755))
 
 	restore := setMockBuilder(func(context.Context, io.Writer, string) (builders.Builder, error) {
-		return &mockBuilder{output: &mockOutput{data: []byte("zip")}}, nil
+		return &mockBuilder{output: &mockOutput{data: []byte("built")}}, nil
 	})
 	defer restore()
 
-	dir := t.TempDir()
-	outFile := filepath.Join(dir, "out.zip")
-	err = testutil.RunCommand(Command, "tau", "build", "website", "--name", "test_website1", "-o", outFile)
-	assert.NilError(t, err)
+	outFile := filepath.Join(t.TempDir(), "out")
+	assert.NilError(t, testutil.RunCommand(Command, "tau", "build", kind, "--name", name, "-o", outFile))
+
 	content, err := os.ReadFile(outFile)
 	assert.NilError(t, err)
-	assert.DeepEqual(t, content, []byte("zip"))
-}
-
-func TestRunBuildLibrary_WithMockBuilder_Success(t *testing.T) {
-	testutil.WithTCCFixtureEnv(t)
-	fixtureRoot, err := testutil.TCCFixtureProjectRoot()
-	assert.NilError(t, err)
-	workDir := filepath.Join(fixtureRoot, "libraries", "library1")
-	assert.NilError(t, os.MkdirAll(workDir, 0755))
-	defer os.RemoveAll(filepath.Join(fixtureRoot, "libraries"))
-
-	restore := setMockBuilder(func(context.Context, io.Writer, string) (builders.Builder, error) {
-		return &mockBuilder{output: &mockOutput{data: []byte("libwasm")}}, nil
-	})
-	defer restore()
-
-	dir := t.TempDir()
-	outFile := filepath.Join(dir, "out.wasm")
-	err = testutil.RunCommand(Command, "tau", "build", "library", "--name", "test_library1", "-o", outFile)
-	assert.NilError(t, err)
-	content, err := os.ReadFile(outFile)
-	assert.NilError(t, err)
-	assert.DeepEqual(t, content, []byte("libwasm"))
+	assert.DeepEqual(t, content, []byte("built"))
 }

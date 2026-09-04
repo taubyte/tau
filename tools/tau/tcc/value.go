@@ -1,6 +1,9 @@
 package tcc
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // Runtime value helpers over a resource document (the plain nested map the
 // session reads and writes). Mirrors web-console src/tcc/descriptor.ts.
@@ -103,7 +106,7 @@ func (f *Form) Visible(fd Field, d Doc) bool {
 	}
 	if !fd.IsSelector && len(fd.Alternatives) == 0 {
 		for _, sel := range f.selectors {
-			if len(fd.Path) <= len(sel.BranchPrefix) {
+			if !under(fd, sel) {
 				continue
 			}
 			at := fd.Path[len(sel.BranchPrefix)]
@@ -117,5 +120,70 @@ func (f *Form) Visible(fd Field, d Doc) bool {
 	return true
 }
 
+// under reports whether a field sits inside a selector's subtree.
+//
+// THE PREFIX HAS TO MATCH AND NOT JUST THE DEPTH. Comparing only the segment at
+// the selector's depth made a field belong to every selector that happened to
+// share an alternative NAME — and a database's four types all offer
+// `distributed`, so `document/distributed/size` was checked against the `kv`
+// selector, whose branch is closed whenever `document` is open. Every engine
+// field of every database was invisible in the CLI, and no test noticed because
+// the one that would have named a kind that had been renamed.
+func under(fd, sel Field) bool {
+	if len(fd.Path) <= len(sel.BranchPrefix) {
+		return false
+	}
+	for i, seg := range sel.BranchPrefix {
+		if fd.Path[i] != seg {
+			return false
+		}
+	}
+	return true
+}
+
 // Selectors are the dynamic branch discriminators, in DSL order.
 func (f *Form) Selectors() []Field { return f.selectors }
+
+// TargetGroup is the kind a reference field points at, read out of the document
+// when the schema does not say.
+//
+// A HANDLER BLOCK HAS NO GROUP OF ITS OWN. A gateway's route, a proxy's forward
+// and a channel's serve each name a resource whose KIND the author picked one
+// field earlier — so the schema emits `kind-from` naming that field, and this
+// reads its current value.
+//
+// It returns "" when the field is not a reference, or when the deciding field
+// has not been answered yet, which is exactly when there is nothing to complete
+// from.
+func TargetGroup(d Doc, f Field) string {
+	if f.Ref == nil {
+		return ""
+	}
+	if f.Ref.Group != "" {
+		return f.Ref.Group
+	}
+	if f.Ref.KindFrom == "" {
+		return ""
+	}
+
+	kind, _ := Get(d, strings.Split(f.Ref.KindFrom, "/")).(string)
+	return kind
+}
+
+// Needed reports whether a field must be answered for the document as it
+// currently stands.
+//
+// A FIELD CAN BE REQUIRED CONDITIONALLY, and reading only the unconditional
+// flag misses most of them: a worker's runtime, a gateway's path, a handler's
+// name — each is required once the branch it belongs to is the one the author
+// took. Asking for all of them regardless would demand values for branches
+// nobody opened.
+func (f *Form) Needed(fd Field, d Doc) bool {
+	if !f.Visible(fd, d) {
+		return false
+	}
+	if fd.Required {
+		return true
+	}
+	return fd.RequiredWhen != nil && matches(fd.RequiredWhen, d)
+}

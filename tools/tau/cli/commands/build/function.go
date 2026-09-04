@@ -20,7 +20,7 @@ func runBuildFunction(ctx *cli.Context) error {
 		return err
 	}
 
-	name, _, err := tcc.SelectResource(ctx, "functions")
+	name, _, err := tcc.SelectResource(ctx, "function")
 	if err != nil {
 		return err
 	}

@@ -5641,7 +5641,8 @@
           "x-tau-dynamic": true,
           "x-tau-path": "serve/{application|function}/name",
           "x-tau-ref": {
-            "group": ""
+            "group": "",
+            "kind-from": "serve/kind"
           },
           "x-tau-required": true,
           "x-tau-section": "channel"
@@ -12799,7 +12800,8 @@
           "x-tau-dynamic": true,
           "x-tau-path": "route/handler/{function|application|website|gateway|mcp|agent}/name",
           "x-tau-ref": {
-            "group": ""
+            "group": "",
+            "kind-from": "route/handler/kind"
           },
           "x-tau-required-when": {
             "field": "route/target",
@@ -18125,7 +18127,8 @@
           "x-tau-dynamic": true,
           "x-tau-path": "forward/{application}/name",
           "x-tau-ref": {
-            "group": ""
+            "group": "",
+            "kind-from": "forward/kind"
           },
           "x-tau-required-when": {
             "field": "routing",

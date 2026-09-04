@@ -22,84 +22,153 @@ func TestGetSet(t *testing.T) {
 	Set(d, nil, "x") // no-op, no panic
 }
 
-func TestBranchHelpers(t *testing.T) {
-	f, err := FormFor("Storage")
+// selectorSomewhere finds any kind with a branch selector, and the field whose
+// write path follows it.
+//
+// NOTHING HERE NAMES A KIND. The first version picked Storage and asserted
+// against `object` and `streaming`; the vocabulary moved and the test broke
+// while the code was right. What matters is the behaviour of a selector,
+// whichever kind happens to declare one.
+func selectorSomewhere(t *testing.T) (*Form, Field, Field) {
+	t.Helper()
+
+	groups, err := Groups()
 	assert.NilError(t, err)
-	var sel Field
-	for _, fd := range f.Fields {
-		if fd.IsSelector {
-			sel = fd
+
+	for _, g := range groups {
+		f, err := FormFor(g.Def)
+		assert.NilError(t, err)
+
+		var sel Field
+		for _, fd := range f.Fields {
+			if fd.IsSelector && len(fd.Alternatives) > 1 {
+				sel = fd
+			}
+		}
+		if sel.Key == "" {
+			continue
+		}
+
+		// A field under the branch: one that is dynamic and is not the
+		// selector itself.
+		for _, fd := range f.Fields {
+			if !fd.IsSelector && len(fd.Alternatives) > 1 && len(fd.BranchSuffix) > 0 {
+				return f, sel, fd
+			}
 		}
 	}
 
+	t.Fatal("no kind in this vocabulary declares a branch selector with a field under it")
+	return nil, Field{}, Field{}
+}
+
+// TestABranchIsChosenAndTheWritePathFollows. Before anything is chosen the
+// write path defaults to the first alternative; choosing another moves it and
+// takes the abandoned branch's values with it.
+func TestBranchHelpers(t *testing.T) {
+	_, sel, under := selectorSomewhere(t)
+
+	first := sel.Alternatives[0]
+	second := sel.Alternatives[1]
+
 	d := Doc{}
-	// nothing chosen yet -> WritePath defaults to the first alternative
 	assert.Equal(t, ActiveBranch(d, sel), "")
-	size := field(f, "size")
-	assert.DeepEqual(t, WritePath(d, size), []string{"object", "size"})
+	assert.DeepEqual(t, WritePath(d, under), branchPath(under, first))
 
-	// choose streaming: the write path follows, object branch is gone
-	SwitchBranch(d, sel, "streaming")
-	assert.Equal(t, ActiveBranch(d, sel), "streaming")
-	assert.DeepEqual(t, WritePath(d, size), []string{"streaming", "size"})
-	assert.Assert(t, Get(d, []string{"object"}) == nil)
+	SwitchBranch(d, sel, second)
+	assert.Equal(t, ActiveBranch(d, sel), second)
+	assert.DeepEqual(t, WritePath(d, under), branchPath(under, second))
 
-	// a non-dynamic field's write path is just its path
-	assert.DeepEqual(t, WritePath(d, field(f, "match")), []string{"match"})
+	// THE ABANDONED BRANCH IS GONE. Leaving it behind would compile a document
+	// that opens two branches of a switch, which the loader refuses — and the
+	// author would be looking at a form that shows one.
+	assert.Assert(t, Get(d, append(append([]string{}, under.BranchPrefix...), first)) == nil)
 }
 
+// branchPath is where a dynamic field writes under one alternative.
+func branchPath(f Field, alternative string) []string {
+	out := append([]string{}, f.BranchPrefix...)
+	out = append(out, alternative)
+	return append(out, f.BranchSuffix...)
+}
+
+// TestANonDynamicFieldWritesWhereItSays.
+func TestAPlainFieldsWritePathIsItsPath(t *testing.T) {
+	f, _, _ := selectorSomewhere(t)
+
+	for _, fd := range f.Fields {
+		if len(fd.Alternatives) > 0 {
+			continue
+		}
+		assert.DeepEqual(t, WritePath(Doc{}, fd), fd.Path)
+		return
+	}
+	t.Fatal("every field of this kind is dynamic, which cannot be right")
+}
+
+// TestAConditionalFieldIsHiddenUntilItsConditionHolds, wherever the vocabulary
+// declares one.
 func TestVisibility(t *testing.T) {
-	f, err := FormFor("Function")
+	groups, err := Groups()
 	assert.NilError(t, err)
 
-	method := field(f, "trigger/method") // section "http", show-when type in {http,https}
-	channel := field(f, "trigger/channel")
+	checked := 0
+	for _, g := range groups {
+		f, err := FormFor(g.Def)
+		assert.NilError(t, err)
 
-	d := Doc{"trigger": map[string]any{"type": "http"}}
-	assert.Assert(t, f.Visible(method, d))
-	assert.Assert(t, !f.Visible(channel, d)) // pubsub section hidden
+		for _, fd := range f.Fields {
+			c := fd.ShowWhen
+			if c == nil || len(c.In) == 0 {
+				continue
+			}
 
-	d = Doc{"trigger": map[string]any{"type": "pubsub"}}
-	assert.Assert(t, !f.Visible(method, d))
-	assert.Assert(t, f.Visible(channel, d))
+			// Held: the deciding field carries a value the condition names.
+			//
+			// A DYNAMIC FIELD NEEDS ITS BRANCH OPEN AS WELL. Visibility is two
+			// questions — is the show-when satisfied, and is this the branch
+			// the document actually took — and a readiness probe is both: it
+			// says `kind: http` and lives under `readiness/http`.
+			held := Doc{}
+			Set(held, c.Path, c.In[0])
+			openBranch(f, held, fd)
+			assert.Assert(t, f.Visible(fd, held),
+				"%s.%s is hidden while %s is %q, which its own condition allows",
+				g.Def, join(fd.Path), join(c.Path), c.In[0])
+
+			// Not held: a value the condition does not name.
+			denied := Doc{}
+			Set(denied, c.Path, "a-value-no-condition-names")
+			openBranch(f, denied, fd)
+			assert.Assert(t, !f.Visible(fd, denied),
+				"%s.%s is shown while %s is something its condition does not name",
+				g.Def, join(fd.Path), join(c.Path))
+
+			checked++
+		}
+	}
+
+	assert.Assert(t, checked > 0, "nothing in the vocabulary is conditional, which cannot be right")
 }
 
-// A plain field under a dynamic branch is visible only while its branch is
-// active, even though it carries no explicit show-when.
-func TestBranchLeafVisibility(t *testing.T) {
-	f, err := FormFor("Storage")
-	assert.NilError(t, err)
-	versioning := field(f, "object/versioning")
-	ttl := field(f, "streaming/ttl")
-
-	d := Doc{"object": map[string]any{}}
-	assert.Assert(t, f.Visible(versioning, d))
-	assert.Assert(t, !f.Visible(ttl, d))
-
-	d = Doc{"streaming": map[string]any{}}
-	assert.Assert(t, !f.Visible(versioning, d))
-	assert.Assert(t, f.Visible(ttl, d))
-}
-
-func TestShapes(t *testing.T) {
-	// repo-backed by shape
-	web, _ := FormFor("Website")
-	repo := web.Repo()
-	assert.Assert(t, repo != nil)
-	assert.Equal(t, repo.Fullname, "fullname")
-	doc := Doc{"source": map[string]any{"github": map[string]any{"fullname": "u/r"}}}
-	assert.DeepEqual(t, repo.Under(doc, repo.Fullname), []string{"source", "github", "fullname"})
-	assert.Assert(t, !web.CodeBacked())
-
-	// code-backed by shape
-	fn, _ := FormFor("Function")
-	assert.Assert(t, fn.Repo() == nil)
-	assert.Assert(t, fn.CodeBacked())
-
-	// neither
-	db, _ := FormFor("Database")
-	assert.Assert(t, db.Repo() == nil)
-	assert.Assert(t, !db.CodeBacked())
+// openBranch puts the branch a field lives under into the document.
+//
+// THE BRANCH IS THE SELECTOR'S AND NOT THE FIELD'S. `readiness/http/port` is
+// not itself dynamic — it is a plain field sitting under one alternative of the
+// `readiness` selector — so what has to be opened is that selector's branch,
+// found the same way Visible finds it.
+func openBranch(form *Form, d Doc, fd Field) {
+	for _, sel := range form.Selectors() {
+		if !under(fd, sel) {
+			continue
+		}
+		at := fd.Path[len(sel.BranchPrefix)]
+		for _, alt := range sel.Alternatives {
+			if at == alt {
+				SwitchBranch(d, sel, alt)
+			}
+		}
+	}
 }
 
 func field(f *Form, path string) Field {

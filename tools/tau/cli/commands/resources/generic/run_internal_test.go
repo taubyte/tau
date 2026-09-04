@@ -10,15 +10,13 @@ import (
 
 // runSpec projects the slice of a function document the local runner needs,
 // parsing the DSL's human forms.
+// A LOCAL RUN NEEDS THE ENTRYPOINT AND THE LIMITS, and nothing else. A function
+// declares no trigger in v2 — how it is reached is an inbound edge's business —
+// so the request served is the one the caller typed, not one the config
+// predicted.
 func TestRunSpec(t *testing.T) {
 	doc := tcc.Doc{
 		"id": "QmX",
-		"trigger": map[string]any{
-			"type":    "https",
-			"method":  "POST",
-			"paths":   []any{"/a", "/b"},
-			"domains": []any{"d1"},
-		},
 		"execution": map[string]any{
 			"call":    "handle",
 			"memory":  "16MB",
@@ -28,30 +26,26 @@ func TestRunSpec(t *testing.T) {
 	spec, err := runSpec("fn", doc)
 	assert.NilError(t, err)
 	assert.Equal(t, spec.Name, "fn")
-	assert.Equal(t, spec.Type, "https")
-	assert.Equal(t, spec.Method, "POST")
-	assert.DeepEqual(t, spec.Paths, []string{"/a", "/b"})
-	assert.DeepEqual(t, spec.Domains, []string{"d1"})
 	assert.Equal(t, spec.Call, "handle")
 	assert.Equal(t, spec.Memory, uint64(16*1024*1024))
 	assert.Equal(t, spec.Timeout, uint64(30*time.Second))
 }
 
-func TestRunSpecRejectsNonHTTP(t *testing.T) {
-	_, err := runSpec("fn", tcc.Doc{"trigger": map[string]any{"type": "pubsub"}})
-	assert.ErrorContains(t, err, "HTTP(S)")
+// A function with no entrypoint cannot be run, and saying so beats loading a
+// wasm and calling nothing.
+func TestRunSpecNeedsAnEntrypoint(t *testing.T) {
+	_, err := runSpec("fn", tcc.Doc{"execution": map[string]any{"memory": "16MB"}})
+	assert.ErrorContains(t, err, "entrypoint")
 }
 
 func TestRunSpecBadScalars(t *testing.T) {
 	_, err := runSpec("fn", tcc.Doc{
-		"trigger":   map[string]any{"type": "http"},
-		"execution": map[string]any{"memory": "banana"},
+		"execution": map[string]any{"call": "handle", "memory": "banana"},
 	})
 	assert.ErrorContains(t, err, "memory")
 
 	_, err = runSpec("fn", tcc.Doc{
-		"trigger":   map[string]any{"type": "http"},
-		"execution": map[string]any{"timeout": "20x"},
+		"execution": map[string]any{"call": "handle", "timeout": "20x"},
 	})
 	assert.ErrorContains(t, err, "timeout")
 }

@@ -38,12 +38,22 @@ func (s *RepoShape) Under(doc Doc, leaf string) []string {
 	return append(WritePath(doc, s.Provider), leaf)
 }
 
-// CodeBacked reports whether a kind carries its own code in the code repo: the
+// CodeBacked reports whether a kind names where its code comes from — it
+// declares a `source`.
+//
+// THE RULE USED TO BE "a top-level `source` that is a reference", which was v1's
+// shape and matches nothing in v2: a source is a block now, and which branch of
+// it an author took (a built component, a path in the repository, a builtin) is
+// the discriminator beside it. Under the old rule no kind was code-backed, so
+// the CLI offered `run` on nothing and no test noticed, because the test named a
+// kind that had been renamed.
+//
+// The old doc, kept because it says what this used to mean: the
 // DSL gives it a scalar `source` that either points at a library or is "." for
 // inline code.
 func (f *Form) CodeBacked() bool {
 	for _, fd := range f.Fields {
-		if len(fd.Path) == 1 && fd.Path[0] == "source" && fd.Ref != nil {
+		if len(fd.Path) > 0 && fd.Path[0] == "source" {
 			return true
 		}
 	}

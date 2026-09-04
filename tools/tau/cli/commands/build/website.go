@@ -17,12 +17,12 @@ func runBuildWebsite(ctx *cli.Context) error {
 		return err
 	}
 
-	_, doc, err := tcc.SelectResource(ctx, "websites")
+	_, doc, err := tcc.SelectResource(ctx, "website")
 	if err != nil {
 		return err
 	}
 
-	repoName, err := tcc.RepositoryName("websites", doc)
+	repoName, err := tcc.RepositoryName("website", doc)
 	if err != nil {
 		return err
 	}

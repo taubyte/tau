@@ -195,18 +195,22 @@ func (l link) runAction(ctx *cli.Context) error {
 // runSpec is the slice of a resource's document the local runner needs. Values
 // come from the DSL's own paths, parsed with the same human forms the config
 // uses ("30s", "32MB").
+// A FUNCTION DECLARES NO TRIGGER. This used to refuse anything whose
+// `trigger/type` was not http or https, which is a v1 field: v2 functions say
+// nothing about how they are reached — an inbound edge does — so every function
+// was refused with an empty type and `tau run` could not run one.
+//
+// What a local run needs is the entrypoint and the limits, and those are all
+// still here. The request it serves is the one the caller typed on the command
+// line, not one the config predicted.
 func runSpec(name string, doc tcc.Doc) (*structureSpec.Function, error) {
-	trigger, _ := tcc.Get(doc, []string{"trigger", "type"}).(string)
-	if trigger != "http" && trigger != "https" {
-		return nil, fmt.Errorf("run is only supported for HTTP(S) triggers (got %q)", trigger)
-	}
-
-	spec := &structureSpec.Function{Name: name, Type: trigger}
+	spec := &structureSpec.Function{Name: name, Type: "http"}
 	spec.Id, _ = tcc.Get(doc, []string{"id"}).(string)
-	spec.Method, _ = tcc.Get(doc, []string{"trigger", "method"}).(string)
-	spec.Paths = stringList(tcc.Get(doc, []string{"trigger", "paths"}))
-	spec.Domains = stringList(tcc.Get(doc, []string{"trigger", "domains"}))
 	spec.Call, _ = tcc.Get(doc, []string{"execution", "call"}).(string)
+
+	if spec.Call == "" {
+		return nil, fmt.Errorf("%q names no entrypoint: set execution/call", name)
+	}
 
 	if s, ok := tcc.Get(doc, []string{"execution", "memory"}).(string); ok && s != "" {
 		size, err := units.ParseBase2Bytes(s)

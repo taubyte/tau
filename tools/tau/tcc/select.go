@@ -8,18 +8,30 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// GroupFor is the resource kind authored under a config directory.
-func GroupFor(dir string) (Group, error) {
+// GroupFor is the resource kind a caller names, by its config directory or by
+// its command name.
+//
+// BOTH SPELLINGS ANSWER because the CLI already promises both: every kind's
+// command carries its directory as an alias, so a caller who types the plural
+// reaches the same command and would otherwise reach nothing here. It is also
+// what stopped `tau build function` working — v1's directories were the plurals
+// and three call sites in this tool still spell them that way.
+func GroupFor(name string) (Group, error) {
 	groups, err := Groups()
 	if err != nil {
 		return Group{}, err
 	}
 	for _, g := range groups {
-		if g.Dir == dir {
+		if g.Dir == name {
 			return g, nil
 		}
 	}
-	return Group{}, fmt.Errorf("no resource kind under %q", dir)
+	for _, g := range groups {
+		if g.Name == name {
+			return g, nil
+		}
+	}
+	return Group{}, fmt.Errorf("no resource kind under %q", name)
 }
 
 // SelectResource resolves one resource of a kind from --name/arg0, or offers a
