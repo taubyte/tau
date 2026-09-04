@@ -90,6 +90,21 @@ type group struct {
 	// available or can be created, by pigeonhole, so the code under the mutex
 	// never has to wait.
 	sem chan struct{}
+
+	// starting is closed when the cold start currently in flight finishes, and
+	// is nil when none is.
+	//
+	// WITHOUT IT A BURST ON A COLD SPEC STARTS AN INSTANCE PER REQUEST. Every
+	// arrival finds no warm slot, and every one of them starts its own — so a
+	// spec with concurrency 4 that could have served the whole burst from one
+	// instance instead starts MaxInstances of them. With a wasm module that is
+	// wasteful; with a container it is seconds of latency and hundreds of
+	// megabytes each, for a burst that one instance would have absorbed.
+	//
+	// So the first arrival starts, and the rest WAIT for it and then look
+	// again. They only start their own if the instance that appears is already
+	// full to its concurrency.
+	starting chan struct{}
 }
 
 type slot struct {
@@ -176,44 +191,71 @@ func (p *Pool) Do(ctx context.Context, spec Spec, req *Request) (*Response, erro
 // package does — seconds for a container — and holding the pool's mutex across
 // it would make one cold start block every other spec on the node.
 func (p *Pool) acquire(ctx context.Context, eng Engine, spec Spec) (*slot, error) {
-	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
-		return nil, ErrPoolClosed
-	}
-	g := p.groupFor(spec)
-	for _, s := range g.slots {
-		if s.inUse < spec.Concurrency {
-			s.inUse++
+	for {
+		p.mu.Lock()
+		if p.closed {
 			p.mu.Unlock()
-			return s, nil
+			return nil, ErrPoolClosed
 		}
-	}
-	if len(g.slots) >= p.opts.MaxInstances {
-		// Cannot happen while the semaphore is sized MaxInstances*Concurrency,
-		// and it is checked anyway: the alternative to this branch is starting
-		// an unbounded number of instances if that sizing ever changes.
-		p.mu.Unlock()
-		return nil, ErrAtCapacity
-	}
-	p.mu.Unlock()
+		g := p.groupFor(spec)
+		for _, s := range g.slots {
+			if s.inUse < spec.Concurrency {
+				s.inUse++
+				p.mu.Unlock()
+				return s, nil
+			}
+		}
+		if len(g.slots) >= p.opts.MaxInstances {
+			// Cannot happen while the semaphore is sized
+			// MaxInstances*Concurrency, and it is checked anyway: the
+			// alternative to this branch is starting an unbounded number of
+			// instances if that sizing ever changes.
+			p.mu.Unlock()
+			return nil, ErrAtCapacity
+		}
 
-	inst, err := eng.Start(ctx, spec)
-	if err != nil {
-		return nil, fmt.Errorf("engine: starting %s/%s: %w", spec.Name, spec.Revision, err)
-	}
+		// Somebody else is already starting one. Wait for it and look again
+		// rather than starting a second — see group.starting.
+		if g.starting != nil {
+			wait := g.starting
+			p.mu.Unlock()
+			select {
+			case <-wait:
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 
-	p.mu.Lock()
-	if p.closed {
+		started := make(chan struct{})
+		g.starting = started
 		p.mu.Unlock()
-		inst.Close()
-		return nil, ErrPoolClosed
+
+		// STARTING HAPPENS OUTSIDE THE LOCK. A cold start is the slowest thing
+		// this package does — seconds for a container — and holding the pool's
+		// mutex across it would make one cold start block every other spec on
+		// the node.
+		inst, err := eng.Start(ctx, spec)
+
+		p.mu.Lock()
+		g = p.groupFor(spec)
+		g.starting = nil
+		close(started) // whatever happened, the waiters must look again
+
+		if err != nil {
+			p.mu.Unlock()
+			return nil, fmt.Errorf("engine: starting %s/%s: %w", spec.Name, spec.Revision, err)
+		}
+		if p.closed {
+			p.mu.Unlock()
+			inst.Close()
+			return nil, ErrPoolClosed
+		}
+		s := &slot{inst: inst, inUse: 1, lastUsed: p.opts.Now()}
+		g.slots = append(g.slots, s)
+		p.mu.Unlock()
+		return s, nil
 	}
-	g = p.groupFor(spec)
-	s := &slot{inst: inst, inUse: 1, lastUsed: p.opts.Now()}
-	g.slots = append(g.slots, s)
-	p.mu.Unlock()
-	return s, nil
 }
 
 // release returns a slot, or discards it if the request failed.

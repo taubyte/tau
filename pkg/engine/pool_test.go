@@ -545,3 +545,116 @@ func (e *slowStartEngine) Start(ctx context.Context, spec Spec) (Instance, error
 	<-e.proceed
 	return e.fakeEngine.Start(ctx, spec)
 }
+
+// TestABurstOnAColdSpecStartsOneInstance, not one per request. Without
+// single-flight every arrival finds no warm slot and starts its own, so a spec
+// whose concurrency could absorb the whole burst from one instance instead
+// starts MaxInstances of them — seconds of latency and hundreds of megabytes
+// each, once the engine is containers.
+func TestABurstOnAColdSpecStartsOneInstance(t *testing.T) {
+	e := newFakeEngine("fake")
+	slow := make(chan struct{})
+	gate := &gatedStartEngine{fakeEngine: e, gate: slow}
+
+	p, err := NewPool(Options{Engines: []Engine{gate}})
+	require.NoError(t, err)
+	t.Cleanup(func() { p.Close() })
+
+	s := spec("shop", "r1")
+	s.Concurrency = 8
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := p.Do(context.Background(), s, &Request{})
+			require.NoError(t, err)
+		}()
+	}
+
+	// Let every request pile up behind the one cold start.
+	require.Eventually(t, func() bool { return gate.waiting() >= 1 }, 3*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	close(slow)
+	wg.Wait()
+
+	started, _ := e.counts()
+	require.Equal(t, 1, started, "eight concurrent cold requests, one cold start")
+	require.Equal(t, 1, p.Warm(s))
+}
+
+// TestAWaiterStartsItsOwnWhenTheFirstInstanceIsFull. Single-flight must not
+// become a cap: at concurrency 1 the second request needs a second instance.
+func TestAWaiterStartsItsOwnWhenTheFirstInstanceIsFull(t *testing.T) {
+	e := newFakeEngine("fake")
+	hold := make(chan struct{})
+	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
+		<-hold
+		return &Response{Status: 200}, nil
+	}
+	p, _ := newPool(t, e, nil)
+
+	s := spec("shop", "r1")
+	s.Concurrency = 1
+
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Add(1)
+		go func() { defer wg.Done(); p.Do(context.Background(), s, &Request{}) }()
+	}
+
+	require.Eventually(t, func() bool { return p.Warm(s) == 3 }, 3*time.Second, time.Millisecond,
+		"three requests at concurrency 1 still need three instances")
+	close(hold)
+	wg.Wait()
+}
+
+// TestAFailedColdStartReleasesTheWaiters rather than leaving them parked.
+func TestAFailedColdStartReleasesTheWaiters(t *testing.T) {
+	e := newFakeEngine("fake")
+	e.startErr = errors.New("image not found")
+	p, _ := newPool(t, e, nil)
+
+	s := spec("shop", "r1")
+	s.Concurrency = 4
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := p.Do(context.Background(), s, &Request{})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		require.Error(t, err, "every waiter is told, none is left hanging")
+	}
+}
+
+type gatedStartEngine struct {
+	*fakeEngine
+	gate chan struct{}
+
+	mu  sync.Mutex
+	inW int
+}
+
+func (e *gatedStartEngine) waiting() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.inW
+}
+
+func (e *gatedStartEngine) Start(ctx context.Context, spec Spec) (Instance, error) {
+	e.mu.Lock()
+	e.inW++
+	e.mu.Unlock()
+	<-e.gate
+	return e.fakeEngine.Start(ctx, spec)
+}
