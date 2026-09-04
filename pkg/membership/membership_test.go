@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/v2/placement"
+	"github.com/taubyte/tau/pkg/placement"
 )
 
 // clock is the local clock, injected. Every test in this file runs in

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/tau/pkg/v2/stats"
+	"github.com/taubyte/tau/pkg/stats"
 )
 
 // config.go declares what this service is built from, and every interface here
@@ -40,7 +40,7 @@ type Bus interface {
 
 // Reporter is what this node knows about itself. It is injected because a
 // number this service computed itself would be a number this service has an
-// opinion about, and the package doc of pkg/v2/stats says why it must not:
+// opinion about, and the package doc of pkg/stats says why it must not:
 // load means something different per workload, and the node is the only party
 // that knows its own.
 type Reporter interface {

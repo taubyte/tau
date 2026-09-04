@@ -11,7 +11,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/v2/queue"
+	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/livelog"
 )

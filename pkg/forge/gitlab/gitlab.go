@@ -11,7 +11,7 @@
 //
 // # What GitLab makes different, and why that is the point
 //
-// This is the second driver over pkg/v2/forge, and it was written to find where
+// This is the second driver over pkg/forge, and it was written to find where
 // that interface was still shaped like GitHub. Four things here are not GitHub's
 // shape:
 //
@@ -61,8 +61,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 // Compile-time face assertions. A face method whose signature is one type wrong

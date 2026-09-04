@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/discovery"
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
 	"github.com/taubyte/tau/services/build/backend"
 )
 

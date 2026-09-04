@@ -9,7 +9,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 
-	"github.com/taubyte/tau/pkg/v2/placement"
+	"github.com/taubyte/tau/pkg/placement"
 )
 
 // shard.go is why this service does not have one replicated database per

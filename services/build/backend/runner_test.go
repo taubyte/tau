@@ -11,8 +11,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/pkg/v2/queue"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build"
 )
 

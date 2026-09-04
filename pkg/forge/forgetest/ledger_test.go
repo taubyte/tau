@@ -19,8 +19,8 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/taubyte/tau/pkg/v2/forge/fake"
-	"github.com/taubyte/tau/pkg/v2/forge/forgetest/hermetic"
+	"github.com/taubyte/tau/pkg/forge/fake"
+	"github.com/taubyte/tau/pkg/forge/forgetest/hermetic"
 )
 
 // THE INVERSE GUARD.

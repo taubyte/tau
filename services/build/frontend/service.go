@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
 )
 
 // Service is build's public half: an http.Server, a mux, and the four

@@ -19,8 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
 // This package's whole fixture is four fakes and an httptest recorder. There is

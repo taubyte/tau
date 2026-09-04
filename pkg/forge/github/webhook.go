@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 // Scheme is what this driver registers NEW hooks with. It does not implement

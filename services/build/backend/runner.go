@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/pkg/v2/queue"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/pkg/queue"
 )
 
 // step performs exactly ONE cycle of the claim loop, and the loop Start spawns
@@ -168,7 +168,7 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 // here rather than in run. The drop branch's write IS the ack: the read said
 // this job has finished, and acking is what that read decided. Made after the
 // section closed it was a queue write nothing serialized against a push, and
-// pkg/v2/queue's Push deduplicates against the index row of a claimed item
+// pkg/queue's Push deduplicates against the index row of a claimed item
 // while Ack deletes that very row, so a reopening that landed in the window
 // made a no-op push and this ack destroyed the item it was deduplicated
 // against — a job reading Open with nothing queued for it.
@@ -341,7 +341,7 @@ func (s *Service) invoke(ctx context.Context, work Work) (out *runOutput, err er
 //     outcome describes.
 //   - OPEN. Somebody cancelled the job and then retried it, so the record is a
 //     NEW attempt — and the retry's push was deduplicated against the very
-//     delivery the ack destroyed (pkg/v2/queue: Push is a no-op for an id the
+//     delivery the ack destroyed (pkg/queue: Push is a no-op for an id the
 //     queue holds, Ack deletes that id's index row). Writing this run's outcome
 //     over it tells the caller its retry failed with the error of the build it
 //     cancelled; leaving it alone but saying nothing leaves a job that reads

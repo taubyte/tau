@@ -7,12 +7,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/v2/forge"
-	"github.com/taubyte/tau/pkg/v2/forge/fake"
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/fake"
 )
 
 // The conformance suite is where this forge is really exercised
-// (pkg/v2/forge/forgetest). What is left here is the handful of things a
+// (pkg/forge/forgetest). What is left here is the handful of things a
 // consumer meets before the suite does: how it refuses a shape that cannot
 // exist, and what an anonymous session can and cannot see.
 

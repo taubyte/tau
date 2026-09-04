@@ -3,14 +3,14 @@ package storage
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/pkg/v2/placement"
+	"github.com/taubyte/tau/pkg/placement"
 )
 
-// placement.go binds pkg/v2/placement to this service's two questions. There
+// placement.go binds pkg/placement to this service's two questions. There
 // are TWO, they run over ONE member set, and their independence is the single
 // structural decision that lets a bucket be larger than one node.
 //
-// The HRW itself is not here — it is pkg/v2/placement, because database and
+// The HRW itself is not here — it is pkg/placement, because database and
 // cache want the identical computation and because service-conventions.md
 // names hand-rolled in-service placement as the thing not to port. What is
 // here is the part that is storage's: which resource strings to name, and

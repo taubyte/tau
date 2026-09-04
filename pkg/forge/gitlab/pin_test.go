@@ -37,8 +37,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 const (

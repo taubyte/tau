@@ -11,8 +11,8 @@ import (
 
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/rpc"
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
 )
 
 func TestNewPoolRefusesWhatItCannotDialWith(t *testing.T) {

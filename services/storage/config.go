@@ -62,7 +62,7 @@ type Config struct {
 	GraceGC time.Duration
 
 	// Liveness and Stabilize are the two membership timescales
-	// (pkg/v2/membership). Defaults 5s and 60s.
+	// (pkg/membership). Defaults 5s and 60s.
 	Liveness  time.Duration
 	Stabilize time.Duration
 }

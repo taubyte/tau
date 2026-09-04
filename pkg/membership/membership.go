@@ -1,7 +1,7 @@
 // Package membership is who is here, on two timescales, decided against one
 // clock — the local one.
 //
-// A service that places data by computation (pkg/v2/placement) needs a member
+// A service that places data by computation (pkg/placement) needs a member
 // list, and the member list is the ONLY input to the answer. So the shape of
 // this package decides two unrelated things at once, and conflating them is
 // what v1 paid for:
@@ -45,7 +45,7 @@
 //
 // WHETHER A MEMBER IS TRUSTED. A beat is a claim. The only claim a member gets
 // to make about itself here is Accepts, and Accepts can only ever remove it
-// from a placement set (pkg/v2/placement). There is no capacity, no load and no
+// from a placement set (pkg/placement). There is no capacity, no load and no
 // weight, so there is nothing to lie usefully about.
 package membership
 
@@ -56,7 +56,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/taubyte/tau/pkg/v2/placement"
+	"github.com/taubyte/tau/pkg/placement"
 )
 
 // ErrStaleIncarnation is returned by Observe for a beat from an incarnation
@@ -256,7 +256,7 @@ func (s *Set) Get(peer string) (Member, bool) {
 	return member(peer, st, now, s.opts.Liveness), true
 }
 
-// LivePlacement and StablePlacement hand a member list to pkg/v2/placement in
+// LivePlacement and StablePlacement hand a member list to pkg/placement in
 // the shape that package takes. They exist so no caller writes the Accepts
 // mapping slightly differently — a caller that dropped it would be scoring a
 // declining node into a placement set, which is the one direction the decline

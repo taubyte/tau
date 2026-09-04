@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/pkg/raft"
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 )
 
 // THE PREFIX RULE, AGAINST A REAL STORE. raft's Keys is a plain HasPrefix, so a

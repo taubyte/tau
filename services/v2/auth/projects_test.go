@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
 )
 
 // ProjectService.Create and .Get carry no caller identity requirement (see

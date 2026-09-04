@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/taubyte/tau/pkg/v2/forge/fake"
+	"github.com/taubyte/tau/pkg/forge/fake"
 )
 
 // THE FAULTS BEHIND THE LEDGER'S OWN RULES.
@@ -146,7 +146,7 @@ func ledgerFaultOrphanInAMarker(t tb, r *runner, question step) {
 func violateOrphanThroughAMethodValue(t *testing.T) *ledger {
 	src := suiteSource(t).with(t, "ledger_fault_orphan_through_a_method_value.go", `package forgetest
 
-import "github.com/taubyte/tau/pkg/v2/forge/forgetest/outside"
+import "github.com/taubyte/tau/pkg/forge/forgetest/outside"
 
 func (r *runner) ledgerFaultOrphanThroughAMethodValue(t tb) {
 	outside.Check(t.Errorf, r.s.Host != "", "a claim reached through a method value that no fault in this suite can kill")

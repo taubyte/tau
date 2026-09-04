@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
 )
 
 func TestCertificate_SetAndGet(t *testing.T) {

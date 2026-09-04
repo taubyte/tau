@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
 )
 
 // testProjectID is a valid CIDv0-shaped id — the same shape utils/id.Generate

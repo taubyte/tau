@@ -10,7 +10,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
 )
 
 // This file covers RepositoryService's handler directly — no wire, no

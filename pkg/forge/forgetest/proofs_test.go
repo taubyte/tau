@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
-	"github.com/taubyte/tau/pkg/v2/forge/fake"
 )
 
 // A proof is one subject that is WRONG in a named way, and the complete list of

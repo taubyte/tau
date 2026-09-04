@@ -13,7 +13,7 @@ import (
 )
 
 // pluginPin ties a local buf plugin binary to the go.mod module whose
-// required version its output is pinned to. Both of pkg/v2/proto's local
+// required version its output is pinned to. Both of pkg/proto's local
 // plugins live inside the module they generate code against — protoc-gen-go
 // in google.golang.org/protobuf, protoc-gen-connect-go in
 // connectrpc.com/connect — so the same go.mod requirement that pins the
@@ -24,7 +24,7 @@ type pluginPin struct {
 	Module string
 }
 
-// pluginPins are pkg/v2/proto/buf.gen.yaml's two local plugins.
+// pluginPins are pkg/proto/buf.gen.yaml's two local plugins.
 //
 // protoc-gen-go stamps its own version into every file it generates
 // ("// protoc-gen-go vX.Y.Z"), so a version mismatch already surfaces as a

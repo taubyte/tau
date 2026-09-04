@@ -45,7 +45,7 @@ syntax = "proto3";
 // is the change that deserves the review.
 //
 // What a compiled descriptor CANNOT see is which role serves which block —
-// pkg/v2/proto/rules_test.go names that gap rather than pretending to close
+// pkg/proto/rules_test.go names that gap rather than pretending to close
 // it, and refuses the capability NAMES (clone, checkout, run/exec a
 // container, push an image, publish) as the nearest mechanical proxy.
 //

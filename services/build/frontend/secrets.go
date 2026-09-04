@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
 )
 
 // secrets.go holds auth's answer about a hook for a little while, and the

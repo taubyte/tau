@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/taubyte/tau/pkg/v2/forge/fake"
+	"github.com/taubyte/tau/pkg/forge/fake"
 )
 
 // THE LEDGER IS A PROGRAM, AND IT HAD NO GUARDS OF ITS OWN.

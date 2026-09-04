@@ -38,7 +38,7 @@
 // forge being reachable, because nothing here reaches one: a Subject is
 // supplied by the driver's own tests, over httptest or over memory.
 //
-// The suite is itself tested, and then the test is tested. pkg/v2/forge/fake can
+// The suite is itself tested, and then the test is tested. pkg/forge/fake can
 // be told to be wrong in named ways, and this package's tests assert that each
 // one fails the suite — which is the only way to know that an assertion asserts.
 //
@@ -48,7 +48,7 @@
 // separate rounds added one or deleted a live one with every test still green.
 // So the suite's own assertions are a population the ledger walks, and each one
 // is a claim needing a fault, a STEP that is on its way to a claim, or a value
-// this package does not produce at all — with the test in pkg/v2/forge that
+// this package does not produce at all — with the test in pkg/forge that
 // holds it named on the line. See ledger_test.go, and plumbing.go for the
 // spelling that tells a step from a claim.
 //
@@ -83,7 +83,7 @@
 //
 // MEASURED, one at a time, over
 //
-//	go test -count=1 -p 4 ./pkg/v2/forge/forgetest/... ./pkg/v2/forge/fake/... ./pkg/v2/forge/
+//	go test -count=1 -p 4 ./pkg/forge/forgetest/... ./pkg/forge/fake/... ./pkg/forge/
 //
 // with the LastDeployKeyReadOnly contract deleted from optional.go, which on
 // its own is GO_TEST_EXIT=1:
@@ -198,7 +198,7 @@
 //
 // MEASURE IT WITH -coverpkg. Plain -cover counts only the statements a
 // package's OWN tests reach, and the two packages a conformance suite is made
-// of are run by everybody else: pkg/v2/forge/fake is exercised by this
+// of are run by everybody else: pkg/forge/fake is exercised by this
 // package's tests and by consumers', so plain -cover calls it 28.0% where the
 // pinned measurement says 96.1%. This package reads about the same either way
 // (99.3% plain, 99.3% pinned) only because its tests run the whole suite
@@ -206,17 +206,17 @@
 // it is 98.5%, and the loader on its own is 100.0%. One command is true for all
 // of them, and it names the package being measured:
 //
-//	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/forgetest/...          ./pkg/v2/forge/...
-//	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/forgetest/hermetic     ./pkg/v2/forge/...
-//	go test -count=1 -p 4 -coverpkg=./pkg/v2/forge/fake/...               ./pkg/v2/forge/...
+//	go test -count=1 -p 4 -coverpkg=./pkg/forge/forgetest/...          ./pkg/forge/...
+//	go test -count=1 -p 4 -coverpkg=./pkg/forge/forgetest/hermetic     ./pkg/forge/...
+//	go test -count=1 -p 4 -coverpkg=./pkg/forge/fake/...               ./pkg/forge/...
 package forgetest
 
 import (
 	"net/http"
 	"time"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 // Request is one request a subject made. A driver's tests fill these in from

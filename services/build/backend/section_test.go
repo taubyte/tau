@@ -11,8 +11,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/pkg/raft"
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/services/build/backend/section"
 )
 
@@ -609,7 +609,7 @@ func TestAHandleCannotBePointedAtAnotherJob(t *testing.T) {
 //
 // A delivery names a job. Acking a neighbour's delivery from inside this job's
 // section destroys an item nothing in this section read anything about — and
-// pkg/v2/queue's Ack deletes the very index row a concurrent push deduplicates
+// pkg/queue's Ack deletes the very index row a concurrent push deduplicates
 // against, which is how a job ends up reading Open with nothing queued for it.
 func TestAnAckOfAnotherJobsDeliveryIsRefused(t *testing.T) {
 	h := newHarness(t)

@@ -1211,8 +1211,8 @@ const file_tau_auth_v1_auth_proto_rawDesc = "" +
 	"\x14SetStaticCertificate\x12\".tau.auth.v1.SetCertificateRequest\x1a\x12.tau.auth.v1.Empty\x12A\n" +
 	"\bGetCache\x12\x1c.tau.auth.v1.CacheKeyRequest\x1a\x17.tau.auth.v1.CacheEntry\x12<\n" +
 	"\bSetCache\x12\x1c.tau.auth.v1.SetCacheRequest\x1a\x12.tau.auth.v1.Empty\x12?\n" +
-	"\vDeleteCache\x12\x1c.tau.auth.v1.CacheKeyRequest\x1a\x12.tau.auth.v1.EmptyB\xa6\x01\n" +
-	"\x0fcom.tau.auth.v1B\tAuthProtoP\x01Z:github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1;authv1\xa2\x02\x03TAX\xaa\x02\vTau.Auth.V1\xca\x02\vTau\\Auth\\V1\xe2\x02\x17Tau\\Auth\\V1\\GPBMetadata\xea\x02\rTau::Auth::V1b\x06proto3"
+	"\vDeleteCache\x12\x1c.tau.auth.v1.CacheKeyRequest\x1a\x12.tau.auth.v1.EmptyB\xa3\x01\n" +
+	"\x0fcom.tau.auth.v1B\tAuthProtoP\x01Z7github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1;authv1\xa2\x02\x03TAX\xaa\x02\vTau.Auth.V1\xca\x02\vTau\\Auth\\V1\xe2\x02\x17Tau\\Auth\\V1\\GPBMetadata\xea\x02\rTau::Auth::V1b\x06proto3"
 
 var (
 	file_tau_auth_v1_auth_proto_rawDescOnce sync.Once

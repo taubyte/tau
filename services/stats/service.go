@@ -4,11 +4,11 @@
 // It is one half of v1's seer; dns is the other. The split is not tidiness: the
 // two halves have different shapes at scale (answering a query is read-mostly
 // and latency-bound, collecting usage is write-heavy and staleness-tolerant)
-// and different trust properties, which pkg/v2/stats' doc argues in full.
+// and different trust properties, which pkg/stats' doc argues in full.
 //
 // THIS PACKAGE IS THE NETWORK HALF AND NOTHING ELSE. Every decision about what
 // a report means — how old is too old, who wins a tie, whether a saturated node
-// is still an answer — lives in pkg/v2/stats, which has no host, no bus and no
+// is still an answer — lives in pkg/stats, which has no host, no bus and no
 // goroutine in it. What is here is a ticker, an encoder and a subscription, so
 // that the interesting rules stay unit-testable and this file stays boring.
 package stats
@@ -23,8 +23,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"google.golang.org/protobuf/proto"
 
-	statsv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/stats/v1"
-	"github.com/taubyte/tau/pkg/v2/stats"
+	statsv1 "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v1"
+	"github.com/taubyte/tau/pkg/stats"
 )
 
 // Service is a node's stats participation: it broadcasts this node's own
@@ -240,7 +240,7 @@ func (s *Service) Peer() string { return s.peer }
 
 // Route is the read dns and gateway make: who can answer for this name, no
 // older than maxAge, least loaded first. The caller states the tolerance — see
-// pkg/v2/stats for why there is no default.
+// pkg/stats for why there is no default.
 func (s *Service) Route(name string, maxAge time.Duration) []stats.Node {
 	return s.view.Route(name, maxAge)
 }

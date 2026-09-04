@@ -5,7 +5,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1/buildv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v1/buildv1connect"
 )
 
 // mount assembles build.proto's two generated connect handlers behind one mux,

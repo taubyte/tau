@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/tau/pkg/v2/stats"
+	"github.com/taubyte/tau/pkg/stats"
 )
 
 // config.go declares what this service is built from. Every interface is
@@ -43,7 +43,7 @@ type Config struct {
 	// MaxAge is how stale a stats row may be and still be answered from.
 	// Default 30s.
 	//
-	// dns states its own tolerance because pkg/v2/stats deliberately has no
+	// dns states its own tolerance because pkg/stats deliberately has no
 	// default: a DNS answer that will be cached for TTL is a different
 	// question from a gateway picking a backend for one request. The two are
 	// related — an answer cached for TTL, built from a row already MaxAge old,

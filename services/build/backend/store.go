@@ -9,7 +9,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
 // store.go is the key layout — the only file in this package that builds a
@@ -77,7 +77,7 @@ const (
 
 	// stampWidth zero-pads a decimal so that byte order is chronological
 	// order and attempt 2 sorts after attempt 10 never happens (root
-	// AGENTS.md rule 7). It is pkg/v2/queue's width, for the same reason.
+	// AGENTS.md rule 7). It is pkg/queue's width, for the same reason.
 	stampWidth = 20
 )
 
@@ -235,7 +235,7 @@ func idFromIndexKey(key string) (string, error) {
 // cid on the entry that settles the job.
 //
 // cbor with integer keys, which is what pkg/raft stores its own values in and
-// what pkg/v2/queue's own record uses, for the reason stated there: this never
+// what pkg/queue's own record uses, for the reason stated there: this never
 // crosses a wire and no other language reads it. v2's "protobuf, never cbor"
 // rule is about STREAMS; a stored record is not one, and the proto Job is a
 // READ shape assembled from this and nothing else.

@@ -445,7 +445,7 @@ func TestFindRepoRoot(t *testing.T) {
 
 func TestPrintReport(t *testing.T) {
 	var b strings.Builder
-	PrintReport(&b, Result{Dir: "pkg/v2/proto", Checked: 3, Diffs: []Diff{
+	PrintReport(&b, Result{Dir: "pkg/proto", Checked: 3, Diffs: []Diff{
 		{Rel: "a.pb.go", Kind: "generated"},
 		{Rel: "b.pb.go", Kind: "committed"},
 		{Rel: "c.pb.go", Kind: "differs"},
@@ -455,7 +455,7 @@ func TestPrintReport(t *testing.T) {
 		"only in regenerated output",
 		"only in the committed tree (orphaned",
 		"regenerated output differs",
-		"pkg/v2/proto: 3 generated files checked, 3 with differences",
+		"pkg/proto: 3 generated files checked, 3 with differences",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("report missing %q, got:\n%s", want, out)
@@ -463,8 +463,8 @@ func TestPrintReport(t *testing.T) {
 	}
 
 	b.Reset()
-	PrintReport(&b, Result{Dir: "pkg/v2/proto", Checked: 5})
-	if !strings.Contains(b.String(), "pkg/v2/proto: 5 generated files checked, 0 with differences") {
+	PrintReport(&b, Result{Dir: "pkg/proto", Checked: 5})
+	if !strings.Contains(b.String(), "pkg/proto: 5 generated files checked, 0 with differences") {
 		t.Fatalf("clean report missing the summary line, got:\n%s", b.String())
 	}
 }

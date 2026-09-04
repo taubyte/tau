@@ -32,8 +32,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/packages"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 // assertOneRoute is the other half of the table: a request that matches no
@@ -295,7 +295,7 @@ func TestThisDriverBuildsAnHTTPRequestInExactlyOnePlace(t *testing.T) {
 	loaded, err := packages.Load(&packages.Config{
 		Mode:  packages.NeedName | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
 		Tests: false,
-	}, "github.com/taubyte/tau/pkg/v2/forge/gitlab")
+	}, "github.com/taubyte/tau/pkg/forge/gitlab")
 	require.NoError(t, err)
 	require.Len(t, loaded, 1)
 	pkg := loaded[0]
@@ -578,7 +578,7 @@ func TestThisDriverTurnsAStringIntoAPathInExactlyOnePlace(t *testing.T) {
 	loaded, err := packages.Load(&packages.Config{
 		Mode:  packages.NeedName | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
 		Tests: false,
-	}, "github.com/taubyte/tau/pkg/v2/forge/gitlab")
+	}, "github.com/taubyte/tau/pkg/forge/gitlab")
 	require.NoError(t, err)
 	require.Len(t, loaded, 1)
 	pkg := loaded[0]

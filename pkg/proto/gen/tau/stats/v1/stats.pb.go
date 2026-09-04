@@ -22,17 +22,17 @@
 //   * the fan-out is every node, so N RPC calls per report per node is N^2
 //     dials to move data that nobody has to acknowledge;
 //   * a lost report is not an error. The next one is along shortly, and the
-//     reader already knows how old what it holds is (pkg/v2/stats puts Age on
+//     reader already knows how old what it holds is (pkg/stats puts Age on
 //     every row). An RPC's delivery guarantee would be paid for and discarded;
 //   * a read is LOCAL. Routing latency is on every request, and the whole
 //     point of collecting reports continuously is that answering "who serves
 //     this name" never becomes a network round trip, let alone a quorum.
 //
 // So what crosses the wire is one message, and the thing that consumes it is
-// pkg/v2/stats — a state machine with no host, no pubsub and no goroutine in
+// pkg/stats — a state machine with no host, no pubsub and no goroutine in
 // it, so what this message means is a unit test.
 //
-// A REPORT IS A CLAIM. pkg/v2/membership deliberately carries no capacity, no
+// A REPORT IS A CLAIM. pkg/membership deliberately carries no capacity, no
 // load and no weight, because its output is placement and placement must not
 // be steerable by a node describing itself. Routing is the inverse — it is a
 // decision made FROM the claims — so every field below is self-reported and
@@ -204,9 +204,9 @@ const file_tau_stats_v1_stats_proto_rawDesc = "" +
 	"\x04load\x18\x03 \x01(\x01R\x04load\x12\x18\n" +
 	"\aserving\x18\x04 \x03(\tR\aserving\x12\x14\n" +
 	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x1c\n" +
-	"\taddresses\x18\x06 \x03(\tR\taddressesB\xae\x01\n" +
+	"\taddresses\x18\x06 \x03(\tR\taddressesB\xab\x01\n" +
 	"\x10com.tau.stats.v1B\n" +
-	"StatsProtoP\x01Z<github.com/taubyte/tau/pkg/v2/proto/gen/tau/stats/v1;statsv1\xa2\x02\x03TSX\xaa\x02\fTau.Stats.V1\xca\x02\fTau\\Stats\\V1\xe2\x02\x18Tau\\Stats\\V1\\GPBMetadata\xea\x02\x0eTau::Stats::V1b\x06proto3"
+	"StatsProtoP\x01Z9github.com/taubyte/tau/pkg/proto/gen/tau/stats/v1;statsv1\xa2\x02\x03TSX\xaa\x02\fTau.Stats.V1\xca\x02\fTau\\Stats\\V1\xe2\x02\x18Tau\\Stats\\V1\\GPBMetadata\xea\x02\x0eTau::Stats::V1b\x06proto3"
 
 var (
 	file_tau_stats_v1_stats_proto_rawDescOnce sync.Once

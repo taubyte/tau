@@ -42,7 +42,7 @@
 # requirement above, before buf generate runs at all.
 #
 # Regenerate with `make proto-v2` from the repo root, or `buf generate` from
-# this directory. `go test ./pkg/v2/proto/...` (part of the ordinary `go test
+# this directory. `go test ./pkg/proto/...` (part of the ordinary `go test
 # ./...` sweep, so CI runs it too) fails loudly if the committed gen/ tree
 # drifts from what those plugins produce, or if the plugins on PATH are the
 # wrong version — see drift_test.go.
@@ -51,7 +51,7 @@ managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/taubyte/tau/pkg/v2/proto/gen
+      value: github.com/taubyte/tau/pkg/proto/gen
 plugins:
   # pinned to v1.36.11 — the google.golang.org/protobuf version in go.mod
   - local: protoc-gen-go

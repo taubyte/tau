@@ -9,10 +9,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1/buildv1connect"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v1/buildv1connect"
 	"github.com/taubyte/tau/services/build"
 )
 

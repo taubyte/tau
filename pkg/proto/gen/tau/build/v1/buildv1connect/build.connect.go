@@ -48,7 +48,7 @@
 // is the change that deserves the review.
 //
 // What a compiled descriptor CANNOT see is which role serves which block —
-// pkg/v2/proto/rules_test.go names that gap rather than pretending to close
+// pkg/proto/rules_test.go names that gap rather than pretending to close
 // it, and refuses the capability NAMES (clone, checkout, run/exec a
 // container, push an image, publish) as the nearest mechanical proxy.
 //
@@ -124,7 +124,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	v1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 	http "net/http"
 	strings "strings"
 )

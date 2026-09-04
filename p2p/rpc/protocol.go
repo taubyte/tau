@@ -24,7 +24,7 @@ import (
 // "/tns/v1" survived a run of wire changes without a bump. It is also why
 // every v2 package carries the "tau." prefix: v1 answers on "/auth/v1", and
 // the two coexist in one swarm and one binary for the whole span between the
-// first v2 service and the swap. pkg/v2/proto's TestTheRulesBufCannotCheck
+// first v2 service and the swap. pkg/proto's TestTheRulesBufCannotCheck
 // checks that no v2 package derives an id v1 already answers on.
 func Protocol(serviceName string) protocol.ID {
 	pkg := serviceName

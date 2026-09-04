@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
 // ingress_test.go holds the three properties net/http's own ServeMux gives and

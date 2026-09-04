@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 // listPageSize is GitHub's maximum. Pagination here is a page counter that

@@ -126,7 +126,7 @@ func TestTheSharedPackageStaysThreeImportsWide(t *testing.T) {
 	require.ElementsMatch(t, []string{
 		"github.com/libp2p/go-libp2p/core/protocol",
 		"github.com/taubyte/tau/p2p/rpc",
-		"github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1/buildv1connect",
+		"github.com/taubyte/tau/pkg/proto/gen/tau/build/v1/buildv1connect",
 	}, got)
 }
 

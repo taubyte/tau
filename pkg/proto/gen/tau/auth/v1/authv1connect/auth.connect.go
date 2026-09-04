@@ -60,7 +60,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
+	v1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
 	http "net/http"
 	strings "strings"
 )

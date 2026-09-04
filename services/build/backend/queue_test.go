@@ -12,8 +12,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/pkg/raft"
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/services/build/backend/row"
 )
 
@@ -524,7 +524,7 @@ func (s *staleStore) Barrier(timeout time.Duration) error {
 // handed leadership back; the entries that say so are committed here and not
 // applied, so a local read does not see them. That is why the write is decided
 // behind a barrier and not on what the delivery read on its way in — the same
-// argument pkg/v2/queue makes before it hands out an item.
+// argument pkg/queue makes before it hands out an item.
 func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
 	gate := newGatedRepositories(testRepo)
 	var store *staleStore
@@ -616,7 +616,7 @@ func (s *recordingStore) written() int {
 // The hook holds the first delivery inside its entry and waits on a deadline
 // rather than on a signal from the second, because when this is correct the
 // second delivery is parked and has no signal to send. That is the whole point,
-// and it is pkg/v2/queue/exclusive_test.go's shape for the same reason.
+// and it is pkg/queue/exclusive_test.go's shape for the same reason.
 func TestASecondDeliveryCannotDecideWhileTheFirstIsWriting(t *testing.T) {
 	var store *recordingStore
 	h := newHarness(t, func(s *Service) error {

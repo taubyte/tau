@@ -82,7 +82,7 @@ func TestAStaticCatalogSatisfiesTheDependency(t *testing.T) {
 // GC, not compaction scheduling. The one structure that would earn it — a
 // per-bucket index range-split table — is deferred, and doc.go says why.
 func TestRaftAppearsNowhere(t *testing.T) {
-	for _, dir := range []string{".", "../../pkg/v2/placement", "../../pkg/v2/membership"} {
+	for _, dir := range []string{".", "../../pkg/placement", "../../pkg/membership"} {
 		fset := token.NewFileSet()
 		pkgs, err := parser.ParseDir(fset, dir, nil, parser.ImportsOnly)
 		require.NoError(t, err)
@@ -94,7 +94,7 @@ func TestRaftAppearsNowhere(t *testing.T) {
 					path := strings.Trim(imp.Path.Value, `"`)
 					require.NotContains(t, path, "pkg/raft", "%s imports raft", name)
 					require.NotContains(t, path, "hashicorp/raft", "%s imports raft", name)
-					require.NotContains(t, path, "pkg/v2/queue", "%s imports the raft-backed queue", name)
+					require.NotContains(t, path, "pkg/queue", "%s imports the raft-backed queue", name)
 				}
 			}
 		}

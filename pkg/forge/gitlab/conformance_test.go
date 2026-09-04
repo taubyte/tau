@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/v2/forge"
-	"github.com/taubyte/tau/pkg/v2/forge/forgetest"
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/forgetest"
 )
 
 // baseCapabilities is what this driver can answer for any credential on any

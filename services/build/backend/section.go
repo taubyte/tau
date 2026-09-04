@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/pkg/v2/queue"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build/backend/row"
 	"github.com/taubyte/tau/services/build/backend/section"
 )
@@ -174,7 +174,7 @@ import (
 // goroutines while the claim loop runs on its own, and raft ORDERS their two
 // entries without noticing that the second was decided on a read taken before
 // the first — and the store has no compare-and-swap for them to arbitrate with.
-// So they take a lock, which is the same three-part argument pkg/v2/queue makes
+// So they take a lock, which is the same three-part argument pkg/queue makes
 // for its own claim, over the same store, for the same reason.
 //
 // IT IS ONE LOCK OVER THE WHOLE TABLE AND THE SECTIONS ARE PER JOB. The lock is
@@ -199,7 +199,7 @@ import (
 //     lock is never asked to arbitrate across processes. A store without that
 //     property needs a CONDITIONAL WRITE instead, and raft.BatchOp has exactly
 //     two operations, Set and Delete — there is nothing to condition on.
-//   - the queue's own claim and sweep are outside it. Both are pkg/v2/queue's
+//   - the queue's own claim and sweep are outside it. Both are pkg/queue's
 //     transitions rather than this table's: they are decided under the queue's
 //     group lock, on no job record. The record write a claim pairs with is
 //     begin's, and that is a section.
@@ -209,15 +209,15 @@ import (
 // constructed over one store, and runner_test.go's follower is exactly that.
 // Two locks there would be two unsynchronised writers of one table.
 //
-// LOCK ORDER IS jobLock, THEN pkg/v2/queue's GROUP LOCK, never the reverse. A
+// LOCK ORDER IS jobLock, THEN pkg/queue's GROUP LOCK, never the reverse. A
 // transition holds this across the queue write that pairs with its record write
-// — a push, a withdrawal, an ack — and pkg/v2/queue calls nothing in this
+// — a push, a withdrawal, an ack — and pkg/queue calls nothing in this
 // package, so the order cannot invert. IT IS ALSO NOT REENTRANT: a body that
 // reached for withJob again would deadlock against itself, which is why
 // population_test.go enumerates that nothing under a body does.
 //
 // THAT ORDER IS ALSO WHY THE OUTCOME OF A LOST PAIRING IS HARD TO REPRODUCE.
-// pkg/v2/queue takes its group lock before it touches the store, so an ack
+// pkg/queue takes its group lock before it touches the store, so an ack
 // already holds it by the time anything a test can hook has run, and a racing
 // push queues up behind rather than landing in front. The harm needs the racer
 // to win that lock; the fact does not — which is why the mechanism is a handle

@@ -12,13 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	statsv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/stats/v1"
+	statsv1 "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v1"
 )
 
 // Every dependency here is a fake: a mocknet host for identity, an in-memory
 // bus, and a function for this node's own numbers. Nothing binds a port and
 // nothing needs a universe — the point of pushing every rule down into
-// pkg/v2/stats is that this file only has to prove the plumbing.
+// pkg/stats is that this file only has to prove the plumbing.
 
 func newHost(t testing.TB) host.Host {
 	t.Helper()

@@ -8,7 +8,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/v2/stats"
+	"github.com/taubyte/tau/pkg/stats"
 )
 
 // fakeRouter is a table of nodes and a record of what was asked.

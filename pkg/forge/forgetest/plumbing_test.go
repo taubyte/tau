@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/taubyte/tau/pkg/v2/forge"
+	"github.com/taubyte/tau/pkg/forge"
 )
 
 // THE WORDS A STEP SAYS ARE LOAD-BEARING NOW, so they are tested here rather

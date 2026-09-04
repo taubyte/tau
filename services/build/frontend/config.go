@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
 // Defaults. Fields on Config set through New, never mutable package globals —

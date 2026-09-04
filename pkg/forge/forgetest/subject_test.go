@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/v2/forge"
-	"github.com/taubyte/tau/pkg/v2/forge/fake"
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/fake"
 )
 
 // subjectFor is the adapter a driver's own tests write once: it wires a forge

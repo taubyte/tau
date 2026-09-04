@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/forgetest"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
-	"github.com/taubyte/tau/pkg/v2/forge/forgetest"
 )
 
 // instance is a GitLab, in one process, over httptest. NOTHING HERE REACHES THE

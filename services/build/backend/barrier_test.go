@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
 // barrier_test.go SPENDS the barrier budget, because "every section takes its
@@ -38,7 +38,7 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 		})
 		t.Logf("barriers=%d", n)
 		require.Equal(t, int64(3), n,
-			"the dead letter's claim, the sweep, and the work queue's claim — all pkg/v2/queue's own")
+			"the dead letter's claim, the sweep, and the work queue's claim — all pkg/queue's own")
 	})
 
 	// ONE JOB CLAIMED, BUILT AND SETTLED COSTS FOUR MORE: begin's lead(), and

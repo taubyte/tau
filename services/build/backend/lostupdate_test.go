@@ -10,8 +10,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/pkg/raft"
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
 	"github.com/taubyte/tau/services/build/backend/row"
 )
 
@@ -33,7 +33,7 @@ import (
 // waiting for a signal from the racing one, because when this is correct the
 // racing one is parked and has no signal to send. That is
 // TestASecondDeliveryCannotDecideWhileTheFirstIsWriting's shape, and
-// pkg/v2/queue/exclusive_test.go's, for the same reason.
+// pkg/queue/exclusive_test.go's, for the same reason.
 
 // window is how long a gate holds a transition after its read: long enough for
 // an unsynchronised sibling to read AND write, so that a lost update is
@@ -106,7 +106,7 @@ func (s *readGatedStore) onRead(t *testing.T, key string, nth int, racer func())
 // onFirstUnder arms the gate on the first read of ANY key under prefix, which
 // is how a test gets between two writes that live in two different keyspaces —
 // a section's read of a job record and the queue write that read decided. The
-// queue's own keys are the only handle a test outside pkg/v2/queue has on the
+// queue's own keys are the only handle a test outside pkg/queue has on the
 // instant its ack begins.
 func (s *readGatedStore) onFirstUnder(t *testing.T, prefix string, racer func()) <-chan struct{} {
 	t.Helper()

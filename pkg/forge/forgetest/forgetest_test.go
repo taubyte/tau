@@ -3,8 +3,8 @@ package forgetest
 import (
 	"testing"
 
-	"github.com/taubyte/tau/pkg/v2/forge"
-	"github.com/taubyte/tau/pkg/v2/forge/fake"
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/fake"
 )
 
 // TestEveryShapePasses runs the suite against an in-memory forge wearing each

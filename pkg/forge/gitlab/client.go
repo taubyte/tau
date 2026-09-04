@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 // Compile-time face assertions for the client. One line per face, for the

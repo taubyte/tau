@@ -1,6 +1,6 @@
 package forgetest
 
-import "github.com/taubyte/tau/pkg/v2/forge/forgetest/hermetic"
+import "github.com/taubyte/tau/pkg/forge/forgetest/hermetic"
 
 // EVERY BINARY THAT RUNS THIS SUITE READS SOURCE UNDER AN ENVIRONMENT NOBODY
 // HAD TO REMEMBER TO SET.

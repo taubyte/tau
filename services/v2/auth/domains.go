@@ -8,8 +8,8 @@ import (
 	"github.com/ipfs/go-cid"
 	dv "github.com/taubyte/domain-validation"
 
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
 )
 
 // domainHandler implements authv1connect.DomainServiceHandler. See

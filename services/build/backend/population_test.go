@@ -176,7 +176,7 @@ var rowVerbs = map[string]bool{"Set": true, "Delete": true}
 // see and the runtime holds. Both were measured GREEN before this line.
 var neverTaken = map[string]bool{"Set": true, "Delete": true, "Apply": true}
 
-// barrierVerbs are the pkg/v2/queue calls that take a barrier of their own:
+// barrierVerbs are the pkg/queue calls that take a barrier of their own:
 // every one of them goes through prepare(), which refuses a follower and then
 // blocks until everything committed is applied.
 var barrierVerbs = map[string]bool{
@@ -746,7 +746,7 @@ func writesIndex(all map[string]funcs, qualified string, rows map[string]bool) b
 }
 
 // barriers reports whether a call takes a barrier, directly or through this
-// package's own functions or pkg/v2/queue's prepare().
+// package's own functions or pkg/queue's prepare().
 func barriers(all map[string]funcs, call string) bool {
 	if call == "Barrier" || barrierVerbs[call] {
 		return true

@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 // Every function here runs one of TWO contracts and never zero. Absence is a
@@ -311,7 +311,7 @@ func (r *runner) deliveries(t tb, hook forge.Hook) {
 		"the driver read a push the payload does not describe")
 
 	// EVERY WAY A DELIVERY CAN BE MALFORMED IS ASSERTED ONE PACKAGE DOWN, in
-	// pkg/v2/forge's TestEverySchemeRefusesEveryWayADeliveryCanBeWrong, and it
+	// pkg/forge's TestEverySchemeRefusesEveryWayADeliveryCanBeWrong, and it
 	// belongs there. A flipped byte, a truncated header, a signature under
 	// another secret: the core refuses all of them BEFORE any driver code runs,
 	// so no fault a driver or a probe can carry reaches those assertions. Here

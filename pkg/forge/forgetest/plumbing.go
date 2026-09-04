@@ -3,7 +3,7 @@ package forgetest
 import (
 	"errors"
 
-	"github.com/taubyte/tau/pkg/v2/forge"
+	"github.com/taubyte/tau/pkg/forge"
 )
 
 // PLUMBING IS NOT AN ASSERTION, AND THIS FILE IS WHERE THE SUITE SAYS SO.

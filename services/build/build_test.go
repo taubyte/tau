@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1/buildv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v1/buildv1connect"
 )
 
 // The protocol id belongs to the proto PACKAGE, not to either service block
@@ -20,7 +20,7 @@ func TestBothServiceBlocksDeriveOneProtocolID(t *testing.T) {
 
 // v1 answers on "/patrick/v1" and "/monkey/v1" today, and both processes run
 // in the same swarm and the same binary as this one until the swap. The "tau."
-// segment in the proto package is what keeps them apart; pkg/v2/proto's
+// segment in the proto package is what keeps them apart; pkg/proto's
 // TestTheRulesBufCannotCheck holds it for every v2 package, reading v1's ids
 // out of services/common/names.go. Restated here as the one-line form because
 // this is the constant a reader of this package sees.
@@ -54,7 +54,7 @@ func TestSilenceIsPrivate(t *testing.T) {
 }
 
 // QueueDomain is the literal build.proto and service-conventions.md §4 both
-// fix. It is a key segment in pkg/v2/queue's own layout, which escapes it, so
+// fix. It is a key segment in pkg/queue's own layout, which escapes it, so
 // the "/" in it is not a path boundary anywhere.
 func TestQueueDomainIsTheLiteralTheProtoFixes(t *testing.T) {
 	require.Equal(t, "build/queue", QueueDomain)

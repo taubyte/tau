@@ -44,7 +44,7 @@ import (
 
 	"github.com/miekg/dns"
 
-	"github.com/taubyte/tau/pkg/v2/stats"
+	"github.com/taubyte/tau/pkg/stats"
 )
 
 // Service answers DNS queries from a stats view.

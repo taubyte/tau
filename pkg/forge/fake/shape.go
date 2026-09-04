@@ -25,7 +25,7 @@
 // is proven against divergences we are not paying to write drivers for.
 package fake
 
-import "github.com/taubyte/tau/pkg/v2/forge"
+import "github.com/taubyte/tau/pkg/forge"
 
 // Handles is how this forge numbers the resources it owns. It is a shape
 // because Bitbucket's webhook id is a UUID where GitHub's, GitLab's and

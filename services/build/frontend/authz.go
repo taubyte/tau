@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
 // authz.go is the only file in this package that decides whether a caller may

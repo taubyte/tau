@@ -8,8 +8,8 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
 )
 
 // AuthProtocol is "/tau/auth/v1", derived from auth's schema exactly the way

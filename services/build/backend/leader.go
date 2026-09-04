@@ -5,7 +5,7 @@ import "github.com/taubyte/tau/services/build"
 // EVERY RPC IN THIS SERVICE IS LEADER-ONLY, READS INCLUDED, and it is one rule
 // rather than five.
 //
-// THE WRITES HAVE NO CHOICE. pkg/v2/queue refuses Push, Claim, Ack, Nack and
+// THE WRITES HAVE NO CHOICE. pkg/queue refuses Push, Claim, Ack, Nack and
 // Sweep off the leader and deliberately does not retry — "a follower therefore
 // consumes nothing" — and its ErrNotLeader IS raft.ErrNotLeader.
 //

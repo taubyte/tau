@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/v2/queue"
+	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build"
 )
 

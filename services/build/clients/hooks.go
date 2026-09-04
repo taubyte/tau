@@ -9,8 +9,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	authv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
+	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
 )
 
 // HookClient answers one question against tau.auth.v1's HookService: what does

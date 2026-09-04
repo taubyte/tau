@@ -4,7 +4,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
 )
 
 // Protocol is the libp2p protocol id this service listens on: "/" plus the
@@ -19,7 +19,7 @@ import (
 // listener with ErrProtocolTaken, and libp2p on its own would have silently
 // let it replace the first. The prefix was missing from the schema when this
 // package was written and this constant carried it by hand, with the drift
-// written out here; pkg/v2/proto's TestTheRulesBufCannotCheck now holds it
+// written out here; pkg/proto's TestTheRulesBufCannotCheck now holds it
 // for every v2 package, reading v1's live ids out of names.go rather than
 // arguing that a collision is impossible.
 var Protocol = rpc.Protocol(authv1connect.ProjectServiceName)

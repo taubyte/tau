@@ -18,7 +18,7 @@ import (
 // The stubs below exist for the branches a working forge never reaches: a Bind
 // that fails, a driver with no Signatures face, a hook handle that comes back
 // empty. Everything a working forge DOES reach is covered by running
-// pkg/v2/forge/fake through pkg/v2/forge/forgetest, which is the real test of
+// pkg/forge/fake through pkg/forge/forgetest, which is the real test of
 // this package.
 
 const stubHost = "git.example.invalid"
@@ -649,7 +649,7 @@ func TestErrorsSayWhichQuestionWentUnanswered(t *testing.T) {
 // suite's delivery mutations live now, and it is the place the fault that can
 // kill them lives.
 //
-// They used to run in pkg/v2/forge/forgetest, once per driver, as
+// They used to run in pkg/forge/forgetest, once per driver, as
 // `reject("a body with one byte changed", …)` and six more like it. Nothing a
 // driver or a probe does decides whether VerifyPush refuses a mutated delivery:
 // the core verifies BEFORE any driver code runs, so no fault a conformance

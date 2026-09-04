@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 // Request is what this forge records instead of sending. A real driver's tests

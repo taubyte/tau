@@ -82,7 +82,7 @@
 // package's own tests stand it up on mocknet.GenPeer() and raft.NewMockCluster()
 // with nothing else running.
 //
-// The store is ONE store — pkg/v2/queue's Store, method for method — so the
+// The store is ONE store — pkg/queue's Store, method for method — so the
 // fact that decides a claim and the fact that records it are written by one
 // writer against one log. Two stores is exactly the seam v1's /jobs/ record and
 // its separate /assigned/ row fell through.

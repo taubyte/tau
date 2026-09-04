@@ -31,9 +31,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/forgetest"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
-	"github.com/taubyte/tau/pkg/v2/forge/forgetest"
 )
 
 const (

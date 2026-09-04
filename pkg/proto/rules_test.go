@@ -65,7 +65,7 @@ func TestTheRulesBufCannotCheck(t *testing.T) {
 	}
 
 	s := load(t, root)
-	t.Logf("pkg/v2/proto: %d .proto files (%d on disk), %d packages, %d messages, "+
+	t.Logf("pkg/proto: %d .proto files (%d on disk), %d packages, %d messages, "+
 		"%d fields, %d oneofs, %d enums, %d enum values, %d services, %d rpcs; "+
 		"%d v1 protocol ids read from services/common/names.go",
 		len(s.files), s.onDisk, len(s.packages), len(s.messages), len(s.fields),
@@ -523,9 +523,9 @@ type schema struct {
 func load(t *testing.T, root string) *schema {
 	t.Helper()
 
-	dir := filepath.Join(root, "pkg/v2/proto")
+	dir := filepath.Join(root, "pkg/proto")
 	if _, err := exec.LookPath("buf"); err != nil {
-		t.Fatalf("buf not found on PATH (required to compile pkg/v2/proto): %v", err)
+		t.Fatalf("buf not found on PATH (required to compile pkg/proto): %v", err)
 	}
 
 	out := filepath.Join(t.TempDir(), "descriptor.binpb")
@@ -534,7 +534,7 @@ func load(t *testing.T, root string) *schema {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("buf build in pkg/v2/proto: %v\n%s", err, stderr.String())
+		t.Fatalf("buf build in pkg/proto: %v\n%s", err, stderr.String())
 	}
 	raw, err := os.ReadFile(out)
 	if err != nil {

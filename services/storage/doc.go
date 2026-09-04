@@ -97,7 +97,7 @@
 // than one node. TestIndexAndBytePlacementAreIndependent is that claim.
 //
 // Placement reads the STABLE membership set, never the live one
-// (pkg/v2/membership). Liveness is a five-second question about whether a peer
+// (pkg/membership). Liveness is a five-second question about whether a peer
 // may be acknowledged to; placement is a sixty-second question about whether it
 // should own data. v1 had one timescale and paid for it in thrash.
 //
@@ -299,7 +299,7 @@
 // lands here, including when the blocks were already present, because that is
 // the dedup hole.
 //
-// THE MEMBERSHIP TRANSPORT. pkg/v2/membership.Observe is the door; the
+// THE MEMBERSHIP TRANSPORT. pkg/membership.Observe is the door; the
 // heartbeat topic, the incarnation and the direct dials to co-holders are the
 // service round's. Membership stays on pubsub rather than RPC deliberately:
 // liveness rides multi-hop gossip while a durability barrier needs a direct

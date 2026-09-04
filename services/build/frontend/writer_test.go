@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
 // A caller that hangs up mid-response is the ordinary case for a listing of a

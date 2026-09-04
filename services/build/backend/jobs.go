@@ -6,7 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
 // jobHandler is the connect adapter for JobService. As in queue.go, each method

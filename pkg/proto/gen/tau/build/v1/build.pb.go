@@ -49,7 +49,7 @@
 // is the change that deserves the review.
 //
 // What a compiled descriptor CANNOT see is which role serves which block —
-// pkg/v2/proto/rules_test.go names that gap rather than pretending to close
+// pkg/proto/rules_test.go names that gap rather than pretending to close
 // it, and refuses the capability NAMES (clone, checkout, run/exec a
 // container, push an image, publish) as the nearest mechanical proxy.
 //
@@ -617,9 +617,9 @@ const file_tau_build_v1_build_proto_rawDesc = "" +
 	"\x03Get\x12\x14.tau.build.v1.JobRef\x1a\x11.tau.build.v1.Job\x128\n" +
 	"\x04List\x12\x18.tau.build.v1.ProjectRef\x1a\x14.tau.build.v1.JobRef0\x01\x123\n" +
 	"\x06Cancel\x12\x14.tau.build.v1.JobRef\x1a\x13.tau.build.v1.Empty\x122\n" +
-	"\x05Retry\x12\x14.tau.build.v1.JobRef\x1a\x13.tau.build.v1.EmptyB\xae\x01\n" +
+	"\x05Retry\x12\x14.tau.build.v1.JobRef\x1a\x13.tau.build.v1.EmptyB\xab\x01\n" +
 	"\x10com.tau.build.v1B\n" +
-	"BuildProtoP\x01Z<github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1;buildv1\xa2\x02\x03TBX\xaa\x02\fTau.Build.V1\xca\x02\fTau\\Build\\V1\xe2\x02\x18Tau\\Build\\V1\\GPBMetadata\xea\x02\x0eTau::Build::V1b\x06proto3"
+	"BuildProtoP\x01Z9github.com/taubyte/tau/pkg/proto/gen/tau/build/v1;buildv1\xa2\x02\x03TBX\xaa\x02\fTau.Build.V1\xca\x02\fTau\\Build\\V1\xe2\x02\x18Tau\\Build\\V1\\GPBMetadata\xea\x02\x0eTau::Build::V1b\x06proto3"
 
 var (
 	file_tau_build_v1_build_proto_rawDescOnce sync.Once

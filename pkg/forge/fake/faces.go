@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/v2/forge"
 )
 
 // deployToken is the DEPLOYMENT's credential, baked into the driver and

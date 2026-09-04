@@ -18,17 +18,17 @@ syntax = "proto3";
 //   * the fan-out is every node, so N RPC calls per report per node is N^2
 //     dials to move data that nobody has to acknowledge;
 //   * a lost report is not an error. The next one is along shortly, and the
-//     reader already knows how old what it holds is (pkg/v2/stats puts Age on
+//     reader already knows how old what it holds is (pkg/stats puts Age on
 //     every row). An RPC's delivery guarantee would be paid for and discarded;
 //   * a read is LOCAL. Routing latency is on every request, and the whole
 //     point of collecting reports continuously is that answering "who serves
 //     this name" never becomes a network round trip, let alone a quorum.
 //
 // So what crosses the wire is one message, and the thing that consumes it is
-// pkg/v2/stats — a state machine with no host, no pubsub and no goroutine in
+// pkg/stats — a state machine with no host, no pubsub and no goroutine in
 // it, so what this message means is a unit test.
 //
-// A REPORT IS A CLAIM. pkg/v2/membership deliberately carries no capacity, no
+// A REPORT IS A CLAIM. pkg/membership deliberately carries no capacity, no
 // load and no weight, because its output is placement and placement must not
 // be steerable by a node describing itself. Routing is the inverse — it is a
 // decision made FROM the claims — so every field below is self-reported and

@@ -5,24 +5,24 @@ version: v2
 # generate is dev-time and this team always has the submodule.
 #
 # Membership here is what gives a module the workspace's shared lint/breaking
-# config below instead of buf's bare defaults — pkg/v2/proto and
+# config below instead of buf's bare defaults — pkg/proto and
 # pkg/spore-drive/proto carry no buf.yaml of their own for exactly that
 # reason.
 #
 # A bare `buf lint`/`buf build`/`buf generate` run from the repo root walks
 # every module above and fails outright ("had no .proto files") on an OSS
-# clone: the submodule is unpopulated, and pkg/v2/proto has no schema
-# committed yet either (see pkg/v2/proto/buf.gen.yaml's own doc). This is
+# clone: the ee submodule is unpopulated, and pkg/proto has no schema
+# committed yet either (see pkg/proto/buf.gen.yaml's own doc). This is
 # accepted, not fixed, because nothing in this repo's tooling ever invokes
 # buf that way — every module is driven individually, cd'd into first
-# (`make proto-v2` for pkg/v2/proto, each proto tree's own generate.sh for
+# (`make proto-v2` for pkg/proto, each proto tree's own generate.sh for
 # the rest), which is unaffected by any other module's state. A developer
 # who runs a bare `buf lint` by hand will hit it; that is buf's own
 # workspace behavior, not a bug in this file.
 modules:
   - path: pkg/spore-drive/proto
   - path: pkg/taucorder/proto
-  - path: pkg/v2/proto
+  - path: pkg/proto
   - path: ee/proto
 lint:
   use:

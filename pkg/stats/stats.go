@@ -3,7 +3,7 @@
 //
 // # Why this is not membership
 //
-// pkg/v2/membership answers who is here and who should own data, and its doc
+// pkg/membership answers who is here and who should own data, and its doc
 // ends by refusing exactly what this package provides:
 //
 //	There is no capacity, no load and no weight, so there is nothing to lie

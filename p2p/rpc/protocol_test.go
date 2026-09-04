@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/auth/v1/authv1connect"
-	"github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1/buildv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v1/buildv1connect"
 )
 
 // The three rows of service-conventions.md §2d's table that exist today,

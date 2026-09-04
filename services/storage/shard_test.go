@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/v2/placement"
+	"github.com/taubyte/tau/pkg/placement"
 )
 
 func members(n int) []placement.Member {

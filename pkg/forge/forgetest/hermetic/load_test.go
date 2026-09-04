@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/taubyte/tau/pkg/v2/forge/forgetest/hermetic"
+	"github.com/taubyte/tau/pkg/forge/forgetest/hermetic"
 )
 
 // TestThePinIsOnTheProcess is Pin's own fault. The ledger next door excuses a

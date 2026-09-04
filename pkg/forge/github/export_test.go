@@ -3,7 +3,7 @@ package github
 import (
 	"net/url"
 
-	"github.com/taubyte/tau/pkg/v2/forge"
+	"github.com/taubyte/tau/pkg/forge"
 )
 
 // THE ROUTING TABLE, FOR THE SWEEP. The rest of this package's tests are

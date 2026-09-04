@@ -7,11 +7,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
-// queueKeyRoot is the prefix every key pkg/v2/queue writes lives under
-// (pkg/v2/queue/store.go: "queue/<name>/..."). A test in this package cannot
+// queueKeyRoot is the prefix every key pkg/queue writes lives under
+// (pkg/queue/store.go: "queue/<name>/..."). A test in this package cannot
 // name one of those keys — the keyspace is unexported — but it can name the
 // root, which is all a gate needs.
 const queueKeyRoot = "queue/"
@@ -20,7 +20,7 @@ const queueKeyRoot = "queue/"
 // record writes racing, but a record write and the QUEUE WRITE THAT PAIRS WITH
 // IT, decided by one read and made in two places.
 //
-// pkg/v2/queue's Push deduplicates against the index row of a CLAIMED item
+// pkg/queue's Push deduplicates against the index row of a CLAIMED item
 // ("if _, exists := store.Get(q.keys.index(id)); exists { return nil }") and
 // Ack DELETES that very row. So a push that lands while this node holds a
 // delivery is a no-op, and the ack that follows destroys the item it was
@@ -90,7 +90,7 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 //
 // THE RACER IS RELEASED AT THE RECORD READ, WHICH IS WHERE THE DECISION IS
 // TAKEN. Armed inside the ack instead — on the first read of the queue's own
-// keyspace — it reproduces nothing: pkg/v2/queue takes its GROUP LOCK before it
+// keyspace — it reproduces nothing: pkg/queue takes its GROUP LOCK before it
 // touches the store (Ack is group.mu.Lock() and then prepare()), so by then the
 // racer's Push can only queue up behind, the push lands after the ack however
 // this package is written, and the job comes out correct either way. The first
@@ -120,7 +120,7 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 // been left is REFUSED rather than made — the mutant that puts the defect back
 // does not destroy an item quietly, it returns an error from run(), and the
 // require.NoError below is what catches it. That is an outcome, in this
-// package, with no seam in pkg/v2/queue and no lock to win: measured, the
+// package, with no seam in pkg/queue and no lock to win: measured, the
 // leave-and-re-enter form of this defect fails at that line rather than at the
 // needle. TestTheQueueWritesAreRefusedInsideADifferentLiveSection asserts the
 // same thing from the other side — including while a DIFFERENT section is

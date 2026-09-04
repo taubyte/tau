@@ -5,7 +5,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
 // queueHandler is the connect adapter for QueueService. Every method on it is

@@ -16,9 +16,9 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
-	buildv1 "github.com/taubyte/tau/pkg/v2/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/pkg/v2/queue"
 )
 
 // THE FLIPPABLE STORE SHIPS WITH THIS PACKAGE, and it is not a convenience.
@@ -26,7 +26,7 @@ import (
 // its Batch always succeeds, so the ENTIRE leadership half of this service —
 // which is every RPC in it — is untestable with the tree's existing double.
 // Anyone assuming otherwise would have green tests over an untested failure
-// path. It is pkg/v2/queue/fake_test.go's fake, which exists for exactly the
+// path. It is pkg/queue/fake_test.go's fake, which exists for exactly the
 // same reason.
 type fakeStore struct {
 	*raft.MockCluster

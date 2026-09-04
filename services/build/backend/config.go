@@ -11,8 +11,8 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/pkg/v2/queue"
 	"github.com/taubyte/tau/services/build"
 )
 
@@ -238,7 +238,7 @@ func (c Config) withDefaults() (Config, error) {
 	// job twice. v1's 60s re-announce against a one-hour build timeout is that
 	// bug with different constants.
 	//
-	// pkg/v2/queue has no Extend, so a lease cannot be renewed mid-run. That is
+	// pkg/queue has no Extend, so a lease cannot be renewed mid-run. That is
 	// worked around rather than added to a shared package at 98% coverage:
 	// the lease simply has to be longer than the build, and the default derives
 	// it so an operator who set neither cannot get it wrong.
@@ -255,7 +255,7 @@ func (c Config) withDefaults() (Config, error) {
 }
 
 // Store is the replicated store this service persists into. It is
-// pkg/v2/queue's Store, method for method, deliberately: the fact that decides
+// pkg/queue's Store, method for method, deliberately: the fact that decides
 // a claim ("this item is claimed") and the fact that records it ("this job's
 // status is Claimed") are then written by ONE writer against ONE log, in a
 // fixed order, and can disagree only in the direction a redelivery repairs.
