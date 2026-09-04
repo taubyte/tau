@@ -26,20 +26,20 @@ import (
 // be two answers to "how long after a deploy does the old code stop being
 // served", which is a promise a platform makes once.
 
-// Source is where compiled projects come from: the two reads a register offers,
+// Registry is where compiled projects come from: the two reads a register offers,
 // and no publish.
 //
 // A CONSUMER OF THIS CACHE CANNOT PUBLISH, and the interface is where that is
 // enforced rather than in a comment. Both *register.Register and a register
 // client satisfy it, so a node that runs both services wires them together with
 // no network and nothing can tell.
-type Source interface {
+type Registry interface {
 	Resolve(ctx context.Context, project, environment string) (register.Pointer, error)
 	Object(ctx context.Context, id register.ObjectID) ([]byte, error)
 }
 
 var (
-	ErrNoSource = errors.New("project: a cache with no source has nothing to read")
+	ErrNoRegistry = errors.New("project: a cache with nothing to read from has nothing to answer")
 
 	// DefaultTTL is how long a resolved pointer is trusted. It IS the deploy
 	// propagation budget and it is the only thing it is: the object a pointer
@@ -97,8 +97,8 @@ func WithClock(now func() time.Time) CacheOption {
 
 // Cache reads compiled projects and keeps them.
 type Cache struct {
-	source Source
-	opts   cacheOptions
+	registry Registry
+	opts     cacheOptions
 
 	// mu guards both maps. It is a plain mutex rather than an RWMutex: every
 	// path that reads also writes — the pointer path refreshes, the project
@@ -126,10 +126,10 @@ type projectEntry struct {
 	err   error
 }
 
-// NewCache builds a cache over a source.
-func NewCache(source Source, opts ...CacheOption) (*Cache, error) {
-	if source == nil {
-		return nil, ErrNoSource
+// NewCache builds a cache over a registry.
+func NewCache(registry Registry, opts ...CacheOption) (*Cache, error) {
+	if registry == nil {
+		return nil, ErrNoRegistry
 	}
 
 	o := cacheOptions{ttl: DefaultTTL, max: DefaultMax, now: time.Now}
@@ -140,7 +140,7 @@ func NewCache(source Source, opts ...CacheOption) (*Cache, error) {
 	}
 
 	return &Cache{
-		source:   source,
+		registry: registry,
 		opts:     o,
 		pointers: map[string]pointerEntry{},
 		projects: map[register.ObjectID]*projectEntry{},
@@ -179,7 +179,7 @@ func (c *Cache) pointer(ctx context.Context, project, environment string) (regis
 		return entry.pointer, nil
 	}
 
-	p, err := c.source.Resolve(ctx, project, environment)
+	p, err := c.registry.Resolve(ctx, project, environment)
 	if err != nil {
 		return register.Pointer{}, err
 	}
@@ -205,7 +205,7 @@ func (c *Cache) object(ctx context.Context, id register.ObjectID) (*Project, err
 	c.evict()
 	c.mu.Unlock()
 
-	compiled, err := c.source.Object(ctx, id)
+	compiled, err := c.registry.Object(ctx, id)
 	if err == nil {
 		entry.proj, err = Load(compiled)
 	}

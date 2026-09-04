@@ -85,8 +85,8 @@ func TestThisIsThePublicService(t *testing.T) {
 // three interfaces and nothing else stands up.
 func TestAWorkersInterfaceIsAllItNeeds(t *testing.T) {
 	var _ Workers = (*recordingWorkers)(nil)
-	var _ project.Source = (*fakeSource)(nil)
+	var _ project.Registry = (*fakeSource)(nil)
 	var _ Hosts = brokenHosts{}
 }
 
-type fakeSource struct{ project.Source }
+type fakeSource struct{ project.Registry }

@@ -264,7 +264,7 @@ func TestBytesThatDoNotLoadAreReported(t *testing.T) {
 
 func TestTheCacheRefusesNonsense(t *testing.T) {
 	_, err := project.NewCache(nil)
-	require.ErrorIs(t, err, project.ErrNoSource)
+	require.ErrorIs(t, err, project.ErrNoRegistry)
 
 	src := newSource(t)
 	for _, opt := range []project.CacheOption{

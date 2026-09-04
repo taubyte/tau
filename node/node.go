@@ -412,7 +412,7 @@ func (n *Node) Stats() *stats.Service { return n.stats }
 type source struct{ node *Node }
 
 var (
-	_ project.Source = (*source)(nil)
+	_ project.Registry = (*source)(nil)
 	_ gateway.Hosts  = (*source)(nil)
 )
 

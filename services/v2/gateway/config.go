@@ -94,7 +94,7 @@ type Option func(*options) error
 type options struct {
 	hosts   Hosts
 	workers Workers
-	source  project.Source
+	source  project.Registry
 	now     func() time.Time
 }
 
@@ -121,7 +121,7 @@ func WithWorkers(w Workers) Option {
 }
 
 // WithSource is where compiled projects are read from. Required.
-func WithSource(s project.Source) Option {
+func WithSource(s project.Registry) Option {
 	return func(o *options) error {
 		if s == nil {
 			return ErrNoSource
