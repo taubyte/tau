@@ -25,9 +25,11 @@ import (
 // that a failure arrives as the right status code — neither of which a direct
 // handler call would show.
 type harness struct {
-	Service *Service
-	Store   pkgregister.Store
-	Client  registerv1connect.RegisterServiceClient
+	Service    *Service
+	Store      pkgregister.Store
+	Client     registerv1connect.RegisterServiceClient
+	CallerHost host.Host
+	ServerHost host.Host
 }
 
 func newHarness(t testing.TB, store pkgregister.Store) *harness {
@@ -49,10 +51,22 @@ func newHarness(t testing.TB, store pkgregister.Store) *harness {
 	t.Cleanup(c.Close)
 
 	return &harness{
-		Service: s,
-		Store:   store,
-		Client:  registerv1connect.NewRegisterServiceClient(c.HTTP(), c.URL()),
+		Service:    s,
+		Store:      store,
+		Client:     registerv1connect.NewRegisterServiceClient(c.HTTP(), c.URL()),
+		CallerHost: caller,
+		ServerHost: server,
 	}
+}
+
+// newClient is the typed client this package vends, dialled over the same
+// mocknet as the raw one.
+func newClient(t testing.TB, h *harness) *Client {
+	t.Helper()
+	c, err := NewClient(h.CallerHost, h.ServerHost.ID())
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+	return c
 }
 
 func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {
