@@ -5,10 +5,10 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/register"
@@ -36,17 +36,16 @@ func (p projects) Configures(_ context.Context, _, repositoryKey string) (bool, 
 // checkout hands over a fixture instead of cloning. The clone is tested
 // separately, against a real repository; what this stands in for is the network.
 type checkout struct {
-	fs       afero.Fs
 	dir      string
 	err      error
 	released bool
 }
 
-func (c *checkout) Checkout(context.Context, string, string, string) (afero.Fs, string, func(), error) {
+func (c *checkout) Checkout(context.Context, string, string, string) (string, func(), error) {
 	if c.err != nil {
-		return nil, "", nil, c.err
+		return "", nil, c.err
 	}
-	return c.fs, c.dir, func() { c.released = true }, nil
+	return c.dir, func() { c.released = true }, nil
 }
 
 // out collects the build log a developer watches.
@@ -64,21 +63,27 @@ type ioReader = interface {
 	Read(p []byte) (n int, err error)
 }
 
-func fixture(t *testing.T, src string) (afero.Fs, string) {
+// fixture copies a config tree onto disk, because that is what a checkout hands
+// back — a directory on this machine, for the same reason a build needs one.
+func fixture(t *testing.T, src string) string {
 	t.Helper()
 
-	fs := afero.NewMemMapFs()
-	require.NoError(t, afero.Walk(afero.NewOsFs(), src, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+	dst := t.TempDir()
+	require.NoError(t, filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
 			return err
+		}
+		target := filepath.Join(dst, strings.TrimPrefix(path, src))
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		return afero.WriteFile(fs, "/config"+path[len(src):], data, 0o644)
+		return os.WriteFile(target, data, 0o644)
 	}))
-	return fs, "/config"
+	return dst
 }
 
 func registry(t *testing.T) *register.Register {
@@ -117,8 +122,7 @@ func runner(t *testing.T, c *checkout, r deploy.Register, opts ...deploy.Option)
 // A PUSH TO THE CONFIG REPOSITORY IS THE DEPLOY. Nothing else writes the
 // register, and nobody typed an environment or a revision.
 func TestAPushPublishes(t *testing.T) {
-	fs, dir := fixture(t, basicFixture)
-	c := &checkout{fs: fs, dir: dir}
+	c := &checkout{dir: fixture(t, basicFixture)}
 	r := registry(t)
 
 	var log out
@@ -142,8 +146,7 @@ func TestAPushPublishes(t *testing.T) {
 // shadow written inside it live; `release/*` is staging's, and neither is typed
 // anywhere.
 func TestTheBranchDecidesTheDeployments(t *testing.T) {
-	fs, dir := fixture(t, envsFixture)
-	c := &checkout{fs: fs, dir: dir}
+	c := &checkout{dir: fixture(t, envsFixture)}
 	r := registry(t)
 
 	var log out
@@ -171,11 +174,11 @@ func TestTheBranchDecidesTheDeployments(t *testing.T) {
 // EACH DEPLOYMENT IS ITS OWN COMPILE, which is the whole point of a
 // per-environment limit. Two deployments of one commit are two objects.
 func TestEachDeploymentIsItsOwnObject(t *testing.T) {
-	fs, dir := fixture(t, envsFixture)
+	dir := fixture(t, envsFixture)
 	r := registry(t)
 
 	var log out
-	require.NoError(t, runner(t, &checkout{fs: fs, dir: dir}, r).Run(t.Context(), work(), &log))
+	require.NoError(t, runner(t, &checkout{dir: dir}, r).Run(t.Context(), work(), &log))
 
 	production, err := r.Resolve(t.Context(), "shop", "production")
 	require.NoError(t, err)
@@ -190,8 +193,7 @@ func TestEachDeploymentIsItsOwnObject(t *testing.T) {
 // project is content-addressed, so bumping the revision would churn every
 // reader's pointer to say the same thing.
 func TestAnUnchangedPushDoesNotMoveThePointer(t *testing.T) {
-	fs, dir := fixture(t, basicFixture)
-	c := &checkout{fs: fs, dir: dir}
+	c := &checkout{dir: fixture(t, basicFixture)}
 	r := registry(t)
 
 	var log out
@@ -208,16 +210,16 @@ func TestAnUnchangedPushDoesNotMoveThePointer(t *testing.T) {
 // name is reported rather than published: half a name in a routing table is one
 // no request will ever carry.
 func TestAGeneratedNameNeedsTheCloudsZone(t *testing.T) {
-	fs, dir := fixture(t, basicFixture)
+	dir := fixture(t, basicFixture)
 	r := registry(t)
 
 	var without out
-	require.NoError(t, runner(t, &checkout{fs: fs, dir: dir}, r).Run(t.Context(), work(), &without))
+	require.NoError(t, runner(t, &checkout{dir: dir}, r).Run(t.Context(), work(), &without))
 	require.Contains(t, without.String(), "<cloud fqdn>")
 
 	told := registry(t)
 	var with out
-	require.NoError(t, runner(t, &checkout{fs: fs, dir: dir}, told,
+	require.NoError(t, runner(t, &checkout{dir: dir}, told,
 		deploy.WithCloudFqdn("acme.example")).Run(t.Context(), work(), &with))
 
 	require.Contains(t, with.String(), "acme.example")
@@ -236,41 +238,40 @@ func TestAGeneratedNameNeedsTheCloudsZone(t *testing.T) {
 // A CODE BUILD IS NAMED, NOT PASSED. One that returned success having produced
 // nothing would look exactly like a deploy that worked.
 func TestACodeRepositoryIsRefusedByName(t *testing.T) {
-	fs, dir := fixture(t, basicFixture)
+	dir := fixture(t, basicFixture)
 
 	w := work()
 	w.RepositoryKey = "github.com/acme/shop-code"
 
-	err := runner(t, &checkout{fs: fs, dir: dir}, registry(t)).Run(t.Context(), w, &out{})
+	err := runner(t, &checkout{dir: dir}, registry(t)).Run(t.Context(), w, &out{})
 	require.ErrorIs(t, err, deploy.ErrNotConfiguration)
 }
 
 func TestWhatElseItRefuses(t *testing.T) {
-	fs, dir := fixture(t, basicFixture)
+	dir := fixture(t, basicFixture)
 	r := registry(t)
 
 	// A tag is not a deployment: nothing in an environment table matches one.
 	w := work()
 	w.Ref = "refs/tags/v1.0.0"
-	err := runner(t, &checkout{fs: fs, dir: dir}, r).Run(t.Context(), w, &out{})
+	err := runner(t, &checkout{dir: dir}, r).Run(t.Context(), w, &out{})
 	require.ErrorIs(t, err, deploy.ErrNotABranch)
 
 	// A branch no deployment claims, on a project whose table claims some.
-	envs, envsDir := fixture(t, envsFixture)
-	strict := &checkout{fs: envs, dir: envsDir}
+	strict := &checkout{dir: fixture(t, envsFixture)}
 
 	// Every branch is a preview in that fixture, so the case needs a table
 	// with no catch-all. This is the message an author sees when they push a
 	// branch nothing is wired to.
-	narrow := afero.NewMemMapFs()
-	require.NoError(t, afero.WriteFile(narrow, "/config/project.yaml", []byte(
+	narrow := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(narrow, "project.yaml"), []byte(
 		"id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\n"+
 			"name: narrow\n"+
 			"environments:\n    production:\n        branches: [main]\n"), 0o644))
 
 	w = work()
 	w.Ref = "refs/heads/wip"
-	err = runner(t, &checkout{fs: narrow, dir: "/config"}, r).Run(t.Context(), w, &out{})
+	err = runner(t, &checkout{dir: narrow}, r).Run(t.Context(), w, &out{})
 	require.ErrorIs(t, err, deploy.ErrNoDeployment)
 	require.ErrorContains(t, err, "production")
 
@@ -311,17 +312,18 @@ func TestWhatItCannotBeBuiltWithout(t *testing.T) {
 // exists for a worker that died; retrying a compile error is waste, and the
 // author needs the message rather than five copies of it.
 func TestConfigThatDoesNotCompile(t *testing.T) {
-	broken := afero.NewMemMapFs()
-	require.NoError(t, afero.WriteFile(broken, "/config/project.yaml",
+	broken := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(broken, "project.yaml"),
 		[]byte("id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nname: broken\n"), 0o644))
-	require.NoError(t, afero.WriteFile(broken, "/config/zone/bad.yaml",
+	require.NoError(t, os.MkdirAll(filepath.Join(broken, "zone"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(broken, "zone", "bad.yaml"),
 		[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Za\nnot_a_key: 1\n"), 0o644))
 
-	err := runner(t, &checkout{fs: broken, dir: "/config"}, registry(t)).Run(t.Context(), work(), &out{})
+	err := runner(t, &checkout{dir: broken}, registry(t)).Run(t.Context(), work(), &out{})
 	require.ErrorContains(t, err, "not_a_key")
 
 	// A directory with no project at all.
-	err = runner(t, &checkout{fs: afero.NewMemMapFs(), dir: "/nothing"}, registry(t)).
+	err = runner(t, &checkout{dir: filepath.Join(t.TempDir(), "nothing")}, registry(t)).
 		Run(t.Context(), work(), &out{})
 	require.Error(t, err)
 }
@@ -329,11 +331,11 @@ func TestConfigThatDoesNotCompile(t *testing.T) {
 // AUTH FAILING IS NOT "THIS IS A CODE REPOSITORY". One says the deploy cannot
 // be decided; the other says it was decided against.
 func TestAuthFailingIsNotARefusal(t *testing.T) {
-	fs, dir := fixture(t, basicFixture)
+	dir := fixture(t, basicFixture)
 
 	d, err := deploy.New(
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config", err: errors.New("auth is down")}),
-		deploy.WithCheckout(&checkout{fs: fs, dir: dir}),
+		deploy.WithCheckout(&checkout{dir: dir}),
 		deploy.WithLocalRegister(registry(t)),
 	)
 	require.NoError(t, err)
@@ -347,8 +349,7 @@ func TestAuthFailingIsNotARefusal(t *testing.T) {
 // deployment compiled — so an author whose config is broken hears about the
 // config rather than about the fleet.
 func TestNoRegisterFailsAfterTheCompile(t *testing.T) {
-	fs, dir := fixture(t, basicFixture)
-	c := &checkout{fs: fs, dir: dir}
+	c := &checkout{dir: fixture(t, basicFixture)}
 
 	d, err := deploy.New(
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
@@ -368,11 +369,11 @@ func TestNoRegisterFailsAfterTheCompile(t *testing.T) {
 // A PUBLISH THAT FAILS FAILS THE JOB. A deploy that reported success having
 // published nothing is the failure mode this whole path exists to avoid.
 func TestAPublishThatFails(t *testing.T) {
-	fs, dir := fixture(t, basicFixture)
+	dir := fixture(t, basicFixture)
 
 	d, err := deploy.New(
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
-		deploy.WithCheckout(&checkout{fs: fs, dir: dir}),
+		deploy.WithCheckout(&checkout{dir: dir}),
 		deploy.WithLocalRegister(refusing{}),
 	)
 	require.NoError(t, err)
@@ -382,7 +383,7 @@ func TestAPublishThatFails(t *testing.T) {
 	// And a register that cannot even be read.
 	d, err = deploy.New(
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
-		deploy.WithCheckout(&checkout{fs: fs, dir: dir}),
+		deploy.WithCheckout(&checkout{dir: dir}),
 		deploy.WithLocalRegister(unreadable{}),
 	)
 	require.NoError(t, err)

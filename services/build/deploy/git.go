@@ -10,7 +10,6 @@ import (
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/spf13/afero"
 
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -94,17 +93,17 @@ func SSH(repositoryKey string) (string, error) {
 }
 
 // Checkout clones into a directory this process owns and removes.
-func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit string) (afero.Fs, string, func(), error) {
+func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit string) (string, func(), error) {
 	url, err := c.url(repositoryKey)
 	if err != nil {
-		return nil, "", nil, err
+		return "", nil, err
 	}
 
 	// ITS OWN DIRECTORY, REMOVED WITH IT. A build reads a stranger's repository;
 	// leaving it next to the node's data is how one build sees another's.
 	root, err := os.MkdirTemp("", "tau-deploy-")
 	if err != nil {
-		return nil, "", nil, err
+		return "", nil, err
 	}
 	release := func() { os.RemoveAll(root) }
 
@@ -118,7 +117,7 @@ func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit stri
 		key, err := c.credentials.DeployKey(ctx, repositoryKey)
 		if err != nil {
 			release()
-			return nil, "", nil, fmt.Errorf("deploy: reading %s's key: %w", repositoryKey, err)
+			return "", nil, fmt.Errorf("deploy: reading %s's key: %w", repositoryKey, err)
 		}
 		if key != "" {
 			options = append(options, git.SSHKey(key))
@@ -128,15 +127,15 @@ func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit stri
 	repo, err := git.New(ctx, options...)
 	if err != nil {
 		release()
-		return nil, "", nil, err
+		return "", nil, err
 	}
 
 	if err := checkoutCommit(repo.Repo(), commit); err != nil {
 		release()
-		return nil, "", nil, err
+		return "", nil, err
 	}
 
-	return afero.NewOsFs(), repo.Dir(), release, nil
+	return repo.Dir(), release, nil
 }
 
 // checkoutCommit moves the worktree to one exact commit.

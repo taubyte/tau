@@ -91,10 +91,16 @@ type Projects interface {
 // IT TAKES THE COMMIT AND NOT ONLY THE BRANCH. A branch moves; the job is about
 // one commit, and a deploy that read whatever the branch pointed at by the time
 // it ran would publish something no push ever asked for.
+//
+// IT HANDS BACK A DIRECTORY ON THIS MACHINE, not a filesystem abstraction, and
+// that is a deliberate narrowing: the other thing a push becomes is a BUILD,
+// which runs the repository's own commands in a container against a bind-mounted
+// directory. There is no way to bind-mount an afero.Fs, so a seam that returned
+// one would be a seam only half of its callers could use.
 type Checkout interface {
-	// Checkout returns a filesystem and the path within it holding the tree at
-	// `commit`, plus a function that releases whatever it took.
-	Checkout(ctx context.Context, repositoryKey, branch, commit string) (fs afero.Fs, dir string, done func(), err error)
+	// Checkout returns the directory holding the tree at `commit`, plus a
+	// function that releases whatever it took.
+	Checkout(ctx context.Context, repositoryKey, branch, commit string) (dir string, done func(), err error)
 }
 
 // Register is the slice of the register a deploy writes: read what is there,
@@ -170,12 +176,13 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 		return ErrNotConfiguration
 	}
 
-	fs, dir, done, err := d.checkout.Checkout(ctx, w.RepositoryKey, branch, w.CommitSHA)
+	dir, done, err := d.checkout.Checkout(ctx, w.RepositoryKey, branch, w.CommitSHA)
 	if err != nil {
 		return fmt.Errorf("deploy: reading %s at %s: %w", w.RepositoryKey, short(w.CommitSHA), err)
 	}
 	defer done()
 
+	fs := afero.NewOsFs()
 	names, err := deployments(fs, dir, branch)
 	if err != nil {
 		return err

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/services/build/deploy"
@@ -85,10 +84,10 @@ func TestACloneReadsTheCommitAndNotTheBranch(t *testing.T) {
 	clone := deploy.NewClone(nil, deploy.WithURL(func(string) (string, error) { return path, nil }))
 
 	for name, want := range map[string]string{first: "example.com", second: "moved.example"} {
-		fs, dir, done, err := clone.Checkout(t.Context(), "local/repo", "main", name)
+		dir, done, err := clone.Checkout(t.Context(), "local/repo", "main", name)
 		require.NoError(t, err)
 
-		zone, err := afero.ReadFile(fs, filepath.Join(dir, "zone", "example_com.yaml"))
+		zone, err := os.ReadFile(filepath.Join(dir, "zone", "example_com.yaml"))
 		require.NoError(t, err)
 		require.Contains(t, string(zone), want)
 
@@ -107,14 +106,14 @@ func TestACommitThatIsNotThere(t *testing.T) {
 	path, _, _ := repository(t)
 	clone := deploy.NewClone(nil, deploy.WithURL(func(string) (string, error) { return path, nil }))
 
-	_, _, _, err := clone.Checkout(t.Context(), "local/repo", "main",
+	_, _, err := clone.Checkout(t.Context(), "local/repo", "main",
 		"1111111111111111111111111111111111111111")
 	require.ErrorContains(t, err, "rewritten")
 
-	_, _, _, err = clone.Checkout(t.Context(), "local/repo", "main", "")
+	_, _, err = clone.Checkout(t.Context(), "local/repo", "main", "")
 	require.ErrorContains(t, err, "names no commit")
 
-	_, _, _, err = clone.Checkout(t.Context(), "local/repo", "main",
+	_, _, err = clone.Checkout(t.Context(), "local/repo", "main",
 		"0000000000000000000000000000000000000000")
 	require.ErrorContains(t, err, "not a commit")
 }
@@ -192,28 +191,27 @@ func TestReadingAPrivateRepository(t *testing.T) {
 
 	// A repository that needs no key: auth says so with an empty string and no
 	// error, and the clone proceeds unauthenticated.
-	fs, dir, done, err := deploy.NewClone(keys{}, local).Checkout(t.Context(), "local/repo", "main", first)
+	dir, done, err := deploy.NewClone(keys{}, local).Checkout(t.Context(), "local/repo", "main", first)
 	require.NoError(t, err)
-	require.NotNil(t, fs)
-	done()
 	require.NotEmpty(t, dir)
+	done()
 
 	// AUTH FAILING IS NOT A PUBLIC REPOSITORY. Falling back to an
 	// unauthenticated clone would turn an outage into a build that cannot see
 	// the code and says the repository is empty.
-	_, _, _, err = deploy.NewClone(keys{err: errors.New("auth is down")}, local).
+	_, _, err = deploy.NewClone(keys{err: errors.New("auth is down")}, local).
 		Checkout(t.Context(), "local/repo", "main", first)
 	require.ErrorContains(t, err, "auth is down")
 	require.ErrorContains(t, err, "local/repo")
 
 	// A key that is not one fails at the clone rather than being ignored.
-	_, _, _, err = deploy.NewClone(keys{key: "not a pem"}, local).
+	_, _, err = deploy.NewClone(keys{key: "not a pem"}, local).
 		Checkout(t.Context(), "local/repo", "main", first)
 	require.Error(t, err)
 }
 
 // A repository key that is not one never reaches the network.
 func TestAKeyThatIsNotARepository(t *testing.T) {
-	_, _, _, err := deploy.NewClone(nil).Checkout(t.Context(), "", "main", "abc")
+	_, _, err := deploy.NewClone(nil).Checkout(t.Context(), "", "main", "abc")
 	require.ErrorContains(t, err, "not a repository")
 }

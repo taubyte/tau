@@ -141,3 +141,25 @@ func TestABuildableSaysWhichRepositoryItNeeds(t *testing.T) {
 	elsewhere := byName["component/paylib"]
 	require.Equal(t, "https://github.com/acme/paylib", elsewhere.Source.Git)
 }
+
+// A RESOURCE THAT DECLARES NO SOURCE IS NOT ONE WHOSE SOURCE IS THE REPOSITORY
+// ROOT. A bare path is written as a plain string, so an absent source reads as
+// a path of "" — and without a flag saying whether the author wrote one at all,
+// every resource carrying a build stanza and no source would be built from the
+// checkout root.
+func TestAnAbsentSourceIsNotTheRepositoryRoot(t *testing.T) {
+	p := load(t)
+
+	// A database declares neither.
+	r, _, err := p.Resource(nil, "database", "orders")
+	require.NoError(t, err)
+
+	source := r.Source()
+	require.False(t, source.Declared)
+	require.False(t, source.Built())
+
+	// And one that does declare one says so.
+	r, _, err = p.Resource(nil, "function", "reserve_stock")
+	require.NoError(t, err)
+	require.True(t, r.Source().Declared)
+}

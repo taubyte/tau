@@ -30,6 +30,17 @@ const (
 
 // Source is where a resource's content comes from.
 type Source struct {
+	// Declared says the author wrote a source at all.
+	//
+	// IT IS NOT DERIVABLE FROM THE OTHER FIELDS. A bare path is the common
+	// case and is written as a plain string, so a resource that declares NO
+	// source reads as a path of "" — which is indistinguishable from a
+	// resource whose source is the repository root, and that is a real thing
+	// to write. Without this, every resource in a project that happened to
+	// carry a build stanza and no source would be built from the checkout
+	// root.
+	Declared bool
+
 	// Kind is one of the Source* constants. Empty means a path in the
 	// project's own code repository, which is the common case and the reason
 	// the vocabulary lets it be written as a bare string.
@@ -55,7 +66,7 @@ type Source struct {
 // is pulled and a builtin is already here; a component is built as its own
 // resource rather than again as this one.
 func (s Source) Built() bool {
-	return s.Kind == SourcePath || s.Kind == SourceGit
+	return s.Declared && (s.Kind == SourcePath || s.Kind == SourceGit)
 }
 
 // Build is how a resource is made.
@@ -94,11 +105,17 @@ func (r Resource) Source() Source {
 	// A BARE PATH IS A STRING WHERE THE OTHERS ARE OBJECTS, which is the
 	// vocabulary letting the common case be written the short way. Reading it
 	// as an object would find nothing and report a resource with no source.
-	if path, ok := descend(r, "source").(string); ok {
-		return Source{Path: path}
+	switch v := descend(r, "source").(type) {
+	case string:
+		return Source{Declared: true, Path: v}
+	case map[string]any:
+	default:
+		// No source block at all.
+		return Source{}
 	}
 
 	return Source{
+		Declared:  true,
 		Kind:      r.String("source", "kind"),
 		Path:      r.String("source", "path"),
 		Git:       r.String("source", "git"),
