@@ -95,6 +95,72 @@ func EnvironmentNames(envs []Environment) []string {
 	return out
 }
 
+// EnvironmentsIn reads the table out of a COMPILED object.
+//
+// THE TABLE SURVIVES THE COMPILE, which is what lets a consumer that holds only
+// what the register published resolve a branch without going back to git. A
+// build triggered by a push to a CODE repository needs exactly that: it knows
+// the project and the branch, and everything else it needs is already in the
+// object the deploy left behind.
+//
+// It takes the object with or without its `object` wrapper, the same way
+// ReachableNames does, because a caller holding one rarely knows which it has.
+func EnvironmentsIn(object map[string]any) []Environment {
+	root := object
+	if inner, ok := object["object"].(map[string]any); ok {
+		root = inner
+	}
+
+	table, ok := root[environmentsKey].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return environmentsFrom(table, "")
+}
+
+// environmentsFrom is environmentsIn over a decoded map rather than a yaseer
+// query. The two readers are deliberately separate — one reads a document
+// before a compile and one reads what the compile produced, and neither is a
+// special case of the other — but they answer the same shape, in the same
+// order, and the tests hold them to it.
+func environmentsFrom(table map[string]any, of string) []Environment {
+	out := make([]Environment, 0, len(table))
+	for name, raw := range table {
+		at, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		env := Environment{Name: name, Of: of}
+		env.Branches = stringsIn(at[branchesKey])
+		if of == "" {
+			env.Regions = stringsIn(at[regionsKey])
+			if shadows, ok := at[shadowsKey].(map[string]any); ok {
+				env.Shadows = environmentsFrom(shadows, name)
+			}
+		}
+		out = append(out, env)
+	}
+
+	// Sorted for the reason environmentsIn is: the source is a map either way.
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func stringsIn(v any) []string {
+	list, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // Deployments is every deployment a pushed branch feeds, shadows included, in
 // declaration order.
 //

@@ -1,8 +1,11 @@
 package schema_test
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
+	"github.com/spf13/afero"
 	"gotest.tools/v3/assert"
 
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -61,4 +64,66 @@ func TestTheGlobCrossesSlashes(t *testing.T) {
 // schema naming a deployment its author did not.
 func TestNoTableFeedsNothing(t *testing.T) {
 	assert.Assert(t, schema.Deployments(nil, "main") == nil)
+}
+
+// THE TWO READERS ANSWER THE SAME SHAPE. One reads a document before a compile
+// and one reads what the compile produced; neither is a special case of the
+// other, and a drift between them would mean a config repository's deploy and a
+// code repository's build disagreed about which deployments a branch feeds.
+func TestTheTableReadsTheSameBeforeAndAfterACompile(t *testing.T) {
+	before := envsOfFixture(t)
+
+	c, err := schema.New(
+		schema.WithLocal(envFixture),
+		schema.WithProjectEnvironments(afero.NewOsFs(), envFixture),
+		schema.WithEnvironment("production"),
+		schema.WithBranch("main"),
+	)
+	assert.NilError(t, err)
+
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+
+	raw, err := json.Marshal(obj.Flat())
+	assert.NilError(t, err)
+
+	var decoded map[string]any
+	assert.NilError(t, json.Unmarshal(raw, &decoded))
+
+	after := schema.EnvironmentsIn(decoded)
+	assert.DeepEqual(t, before, after)
+
+	// And so does the branch resolution that reads them.
+	for _, branch := range []string{"main", "master", "release/1.4", "feature/x"} {
+		assert.DeepEqual(t,
+			schema.DeploymentNames(before, branch),
+			schema.DeploymentNames(after, branch))
+	}
+}
+
+// An object with no table, and one whose table is not one, are both "no
+// deployments declared" rather than a panic — the input is a decoded JSON map
+// and nothing has vetted its shape.
+func TestATableThatIsNotOne(t *testing.T) {
+	assert.Assert(t, schema.EnvironmentsIn(nil) == nil)
+	assert.Assert(t, schema.EnvironmentsIn(map[string]any{}) == nil)
+	assert.Assert(t, schema.EnvironmentsIn(map[string]any{"environments": "nope"}) == nil)
+
+	// Entries that are not objects are skipped; the ones beside them survive.
+	got := schema.EnvironmentsIn(map[string]any{"environments": map[string]any{
+		"broken": "nope",
+		"real":   map[string]any{"branches": []any{"main", 7, "next"}},
+	}})
+	assert.Equal(t, len(got), 1)
+	assert.Equal(t, got[0].Name, "real")
+	// A non-string in a branch list is dropped rather than stringified into a
+	// branch nobody will ever push.
+	assert.DeepEqual(t, got[0].Branches, []string{"main", "next"})
+
+	// It reads an object with or without its wrapper, like ReachableNames.
+	wrapped := schema.EnvironmentsIn(map[string]any{"object": map[string]any{
+		"environments": map[string]any{"prod": map[string]any{"branches": []any{"main"}}},
+	}})
+	assert.Equal(t, len(wrapped), 1)
+	assert.Equal(t, wrapped[0].Name, "prod")
 }

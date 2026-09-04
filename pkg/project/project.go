@@ -55,6 +55,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 var (
@@ -87,6 +89,12 @@ type Project struct {
 	name string
 
 	root map[string]any
+
+	// environments is the deployment table, read once. A compiled project is
+	// immutable, so a consumer may ask per push without paying for the walk
+	// per push.
+	environmentsOnce sync.Once
+	environments     []schema.Environment
 
 	// located is the index read backwards: a resource id to the address a
 	// caller would look it up by. A resolved reference and a reachable name
