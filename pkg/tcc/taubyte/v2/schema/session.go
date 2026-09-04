@@ -140,8 +140,33 @@ func (v2FieldValidator) RequiredFields(group string) []session.RequiredField {
 // disagreed about it.
 type v2Generator struct{}
 
+// GeneratedBy answers for a resource kind, and for THE PROJECT ITSELF.
+//
+// The project's `id` is an attribute of the compile root and not of any group,
+// so a lookup by group name finds nothing for it — and a session addresses the
+// root as one segment, which resGroup reports as no group at all. The effect
+// was that Session.Generate could mint an id for every resource in a project
+// and not for the project, so nothing could create one: the first thing a
+// caller has to do was the one thing this could not answer.
 func (v2Generator) GeneratedBy(group string, field []string) string {
+	if group == "" || group == engine.LeafOf(CompileRoot()) {
+		return rootGeneratedBy(field)
+	}
 	return engine.GeneratedBy(GenerationRoot(), group, field)
+}
+
+// rootGeneratedBy reads a generated attribute off the compile root.
+func rootGeneratedBy(field []string) string {
+	if len(field) != 1 {
+		return ""
+	}
+	for _, a := range CompileRoot().Attributes {
+		if a.Name == field[0] {
+			kind, _ := a.Meta["generated"].(string)
+			return kind
+		}
+	}
+	return ""
 }
 
 func (v2Generator) Generate(kind string, seed ...any) (string, error) {

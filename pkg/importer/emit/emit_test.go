@@ -1,0 +1,320 @@
+package emit_test
+
+import (
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/importer"
+	"github.com/taubyte/tau/pkg/importer/compose"
+	"github.com/taubyte/tau/pkg/importer/emit"
+)
+
+const composeFile = `
+services:
+  api:
+    image: ghcr.io/acme/api:1.4
+    ports:
+      - "8080:8080"
+    environment:
+      LOG_LEVEL: info
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+  db:
+    image: postgres:16
+    command: ["postgres", "-c", "max_connections=200"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+volumes:
+  pgdata:
+`
+
+func imported(t *testing.T) importer.Result {
+	t.Helper()
+	r, err := compose.Import([]byte(composeFile))
+	require.NoError(t, err)
+	return r
+}
+
+// TestAComposeFileBecomesAProject, laid out the way the vocabulary lays one
+// out, with ids the schema's own generator minted.
+func TestAComposeFileBecomesAProject(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	report, err := emit.To(fs, "/project", "shop", imported(t))
+	require.NoError(t, err)
+	require.Equal(t, "shop", report.Project)
+
+	// The layout is the DSL's, so a resource landed where an author would have
+	// put it and the project has its own document.
+	require.Contains(t, report.Written, "project.yaml")
+	require.Contains(t, report.Written, "application/api.yaml")
+	require.Contains(t, report.Written, "application/db.yaml")
+
+	// A compose file names no memory limit and a compose volume names no size,
+	// so this does NOT compile yet — and that is the ordinary outcome of an
+	// import rather than a failure. What matters is that it says so and names
+	// every field.
+	require.False(t, report.Compiles)
+	require.NotEmpty(t, report.Why)
+	require.NotEmpty(t, report.Missing)
+}
+
+// TestAProjectWithNothingMissingCompiles. The other half of the claim: what is
+// written is a project the compiler accepts once the holes are filled.
+func TestAProjectWithNothingMissingCompiles(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	complete := importer.Result{Source: "hand"}
+	complete.Set("application", "api", map[string]any{
+		"source":    map[string]any{"image": "ghcr.io/acme/api:1.4"},
+		"execution": map[string]any{"memory": "512MB"},
+	})
+
+	report, err := emit.To(fs, "/project", "shop", complete)
+	require.NoError(t, err)
+	require.Empty(t, report.Missing)
+	require.True(t, report.Compiles, report.Why)
+
+	compiles(t, fs, "/project")
+}
+
+// TestIdsAreMintedByTheSchemasOwnGenerator, not by this package inventing a
+// shape that looks right — and every resource gets its own.
+func TestIdsAreMintedAndDistinct(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	_, err := emit.To(fs, "/project", "shop", imported(t))
+	require.NoError(t, err)
+
+	ids := map[string]bool{}
+	for _, path := range []string{"/project/project.yaml", "/project/application/api.yaml", "/project/application/db.yaml"} {
+		b, err := afero.ReadFile(fs, path)
+		require.NoError(t, err)
+
+		id := idIn(t, string(b))
+		require.NotEmpty(t, id, path)
+		require.False(t, ids[id], "%s reused an id", path)
+		ids[id] = true
+	}
+	require.Len(t, ids, 3)
+}
+
+// TestTheImportersFindingsCarryThrough, so a caller has one thing to show
+// rather than two.
+func TestTheFindingsCarryThrough(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	source := imported(t)
+	report, err := emit.To(fs, "/project", "shop", source)
+	require.NoError(t, err)
+
+	require.Len(t, report.Findings, len(source.Findings))
+	require.False(t, report.Compiles, "a compose import has holes; see TestAComposeFileBecomesAProject")
+	require.NotEmpty(t, report.Blocked(), "this file overrides the image's command, which has nowhere to go")
+
+	// And each level is reachable without the caller filtering by hand.
+	for _, f := range report.Blocked() {
+		require.Equal(t, importer.Blocked, f.Level)
+	}
+	for _, f := range report.Elsewhere() {
+		require.Equal(t, importer.Elsewhere, f.Level)
+	}
+}
+
+// TestSeveralResultsBecomeOneProject. A Coolify app is a compose file plus what
+// its API holds, and a repository that arrived from Vercel may also have a
+// Dockerfile.
+func TestSeveralResultsBecomeOneProject(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	extra := importer.Result{Source: "hand"}
+	extra.Set("application", "cache", map[string]any{
+		"source":    map[string]any{"image": "redis:7"},
+		"execution": map[string]any{"memory": "256MB"},
+	})
+
+	report, err := emit.To(fs, "/project", "shop", imported(t), extra)
+	require.NoError(t, err)
+
+	require.Contains(t, report.Written, "application/api.yaml")
+	require.Contains(t, report.Written, "application/cache.yaml")
+	require.Contains(t, report.Written, "volume/pgdata.yaml")
+}
+
+// TestWhatTheImportCouldNotFillIsReported, per field, by the same validator an
+// editor uses. That list is the actual product of an import.
+func TestWhatCouldNotBeFilledIsReported(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	bare := importer.Result{Source: "hand"}
+	bare.Set("application", "empty", map[string]any{})
+
+	report, err := emit.To(fs, "/project", "shop", bare)
+	require.NoError(t, err)
+
+	require.NotEmpty(t, report.Missing, "an application with nothing in it is missing required fields")
+	for _, m := range report.Missing {
+		require.Equal(t, "application", m.Kind)
+		require.Equal(t, "empty", m.Name)
+		require.NotEmpty(t, m.Field)
+		require.Contains(t, m.String(), "application/empty")
+	}
+}
+
+func TestWhatItRefuses(t *testing.T) {
+	_, err := emit.To(nil, "/project", "shop", imported(t))
+	require.Error(t, err)
+
+	_, err = emit.To(afero.NewMemMapFs(), "/project", "", imported(t))
+	require.Error(t, err, "a project needs a name")
+
+	// Resources with no kind: an importer that produced documents and did not
+	// say what they are cannot be written anywhere sensible.
+	nameless := importer.Result{Source: "hand"}
+	nameless.Set("", "x", map[string]any{})
+	_, err = emit.To(afero.NewMemMapFs(), "/project", "shop", nameless)
+	require.Error(t, err)
+
+	// A kind the vocabulary does not have.
+	wrong := importer.Result{Source: "hand"}
+	wrong.Set("widget", "x", map[string]any{})
+	_, err = emit.To(afero.NewMemMapFs(), "/project", "shop", wrong)
+	require.Error(t, err)
+
+	// An empty result is a project with nothing in it, which is legal.
+	report, err := emit.To(afero.NewMemMapFs(), "/project", "shop")
+	require.NoError(t, err)
+	require.Contains(t, report.Written, "project.yaml")
+	require.Empty(t, report.Missing)
+}
+
+// TestTwoRunsProduceTheSameReport, so a corpus diff means something.
+func TestTheReportIsStable(t *testing.T) {
+	first, err := emit.To(afero.NewMemMapFs(), "/project", "shop", imported(t))
+	require.NoError(t, err)
+
+	second, err := emit.To(afero.NewMemMapFs(), "/project", "shop", imported(t))
+	require.NoError(t, err)
+
+	require.Equal(t, first.Written, second.Written)
+	require.Equal(t, first.Missing, second.Missing)
+	require.Equal(t, first.Deferred, second.Deferred)
+	require.Equal(t, first.Findings, second.Findings)
+	require.Equal(t, first.Compiles, second.Compiles)
+	require.Equal(t, first.Why, second.Why)
+}
+
+func idIn(t *testing.T, doc string) string {
+	t.Helper()
+	for _, line := range strings.Split(doc, "\n") {
+		if rest, ok := strings.CutPrefix(line, "id:"); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+// TestAFilesystemThatWillNotTakeItSaysSo rather than reporting a project that
+// is not on disk.
+func TestAFilesystemThatWillNotTakeItSaysSo(t *testing.T) {
+	_, err := emit.To(afero.NewReadOnlyFs(afero.NewMemMapFs()), "/project", "shop", imported(t))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "writing the project")
+}
+
+// TestTheAccountConnectionsAreReportedSeparately. What a source keeps outside
+// its file is not a gap in tau — filing it as blocked would put "connect your
+// account" on the list of things to build.
+func TestElsewhereIsItsOwnList(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	source := importer.Result{Source: "hand"}
+	source.Add(importer.Finding{Key: "env", Level: importer.Elsewhere, Code: "SOURCE_IN_API:env",
+		Detail: "environment variables live in the platform's database"})
+	source.Add(importer.Finding{Key: "command", Level: importer.Blocked, Code: "NO_TAU_FEATURE:command",
+		Detail: "no command field"})
+
+	report, err := emit.To(fs, "/project", "shop", source)
+	require.NoError(t, err)
+
+	require.Len(t, report.Elsewhere(), 1)
+	require.Equal(t, "env", report.Elsewhere()[0].Key)
+	require.Len(t, report.Blocked(), 1)
+	require.Equal(t, "command", report.Blocked()[0].Key)
+}
+
+// TestAMissingListIsSortedAndAddressable, so two runs diff cleanly and a caller
+// can group by resource.
+func TestTheMissingListIsSorted(t *testing.T) {
+	source := importer.Result{Source: "hand"}
+	source.Set("application", "zebra", map[string]any{"source": map[string]any{"image": "x"}})
+	source.Set("application", "alpha", map[string]any{"source": map[string]any{"image": "x"}})
+
+	report, err := emit.To(afero.NewMemMapFs(), "/project", "shop", source)
+	require.NoError(t, err)
+	require.NotEmpty(t, report.Missing)
+
+	last := ""
+	for _, m := range report.Missing {
+		key := m.Kind + "/" + m.Name + "/" + m.Field
+		require.LessOrEqual(t, last, key)
+		last = key
+	}
+	require.Contains(t, report.Missing[0].String(), "application/alpha")
+}
+
+// TestTheMissingListSortsAcrossKindsAndFields, which is what makes it readable
+// when an import produces a hundred of them.
+func TestTheMissingListSortsAcrossKindsAndFields(t *testing.T) {
+	source := importer.Result{Source: "hand"}
+	source.Set("volume", "data", map[string]any{})
+	source.Set("application", "api", map[string]any{})
+
+	report, err := emit.To(afero.NewMemMapFs(), "/project", "shop", source)
+	require.NoError(t, err)
+	require.NotEmpty(t, report.Missing)
+
+	// Kinds first, then names, then fields — and an application sorts before a
+	// volume, which is the comparator being exercised rather than assumed.
+	require.Equal(t, "application", report.Missing[0].Kind)
+	require.Equal(t, "volume", report.Missing[len(report.Missing)-1].Kind)
+
+	var applicationFields []string
+	for _, m := range report.Missing {
+		if m.Kind == "application" {
+			applicationFields = append(applicationFields, m.Field)
+		}
+	}
+	require.Equal(t, sortedCopy(applicationFields), applicationFields)
+}
+
+// TestADocumentTheSessionRefusesIsReportedAgainstItsResource, so an importer
+// that produced a shape the vocabulary cannot hold is findable.
+func TestADocumentTheSessionRefusesIsReported(t *testing.T) {
+	source := importer.Result{Source: "hand"}
+	source.Set("application", "api", map[string]any{
+		// `name` is the resource's own identity and is not a block.
+		"name": map[string]any{"nested": "wrong"},
+	})
+
+	_, err := emit.To(afero.NewMemMapFs(), "/project", "shop", source)
+	if err != nil {
+		require.Contains(t, err.Error(), "api")
+	}
+}
+
+func sortedCopy(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
+}

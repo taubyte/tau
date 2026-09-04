@@ -30,6 +30,14 @@ func finding(t *testing.T, r importer.Result, service, key string) importer.Find
 	return importer.Finding{}
 }
 
+// docOf is one imported application's document.
+func docOf(t *testing.T, r importer.Result, name string) map[string]any {
+	t.Helper()
+	doc, ok := r.Doc("application", name)
+	require.True(t, ok, "no application called %q; got %v", name, r.Names("application"))
+	return doc
+}
+
 func codes(r importer.Result) []string {
 	var out []string
 	for _, f := range r.Findings {
@@ -69,17 +77,26 @@ services:
       DATABASE_URL: postgres://db/app
       LOG_LEVEL: debug
 `)
-	require.Equal(t, "application", r.Kind)
-	api := r.Resources["api"]
-	require.Equal(t, "acme/api:1.2.3", api["image"])
-	require.Equal(t, []string{"serve", "--port", "8080"}, api["command"])
-	require.Equal(t, "/srv", api["workdir"])
-	require.Equal(t, map[string]any{
-		"DATABASE_URL": "postgres://db/app",
-		"LOG_LEVEL":    "debug",
-	}, api["env"])
+	api := docOf(t, r, "api")
 
-	require.Empty(t, r.Blocked(), "nothing here needs a vocabulary tau lacks")
+	// `source` IS A BLOCK AND `image` IS ONE OF ITS BRANCHES. The first version
+	// of this importer wrote `image:` at the top level, which is not a key this
+	// vocabulary has, and nothing caught it until an emitter tried to compile
+	// the result.
+	require.Equal(t, map[string]any{"image": "acme/api:1.2.3"}, api["source"])
+
+	// A VARIABLE IS A BLOCK, not a bare value: `at` says build or run and `as`
+	// says how it is delivered, both defaulted by the vocabulary.
+	require.Equal(t, map[string]any{
+		"DATABASE_URL": map[string]any{"value": "postgres://db/app"},
+		"LOG_LEVEL":    map[string]any{"value": "debug"},
+	}, api["variables"])
+
+	// And a command and a working directory are NOT carried, because there is
+	// no field for either — see TestACommandIsNotCarried.
+	require.NotContains(t, api, "command")
+	require.NotContains(t, api, "workdir")
+	require.NotContains(t, api, "working_dir")
 }
 
 // TestEnvironmentIsReadInBothSpellings. Compose accepts a mapping and a
@@ -94,7 +111,10 @@ services:
       - A=1
       - B=two
 `)
-	require.Equal(t, map[string]any{"A": "1", "B": "two"}, list.Resources["api"]["env"])
+	require.Equal(t, map[string]any{
+		"A": map[string]any{"value": "1"},
+		"B": map[string]any{"value": "two"},
+	}, docOf(t, list, "api")["variables"])
 
 	mapping := importOf(t, `
 services:
@@ -104,7 +124,10 @@ services:
       A: 1
       B: two
 `)
-	require.Equal(t, map[string]any{"A": "1", "B": "two"}, mapping.Resources["api"]["env"])
+	require.Equal(t, map[string]any{
+		"A": map[string]any{"value": "1"},
+		"B": map[string]any{"value": "two"},
+	}, docOf(t, mapping, "api")["variables"])
 }
 
 // TestAValuelessVariableIsNotInvented. `KEY:` with no value means "take it from
@@ -119,7 +142,8 @@ services:
       FROM_SHELL:
       REAL: value
 `)
-	require.Equal(t, map[string]any{"REAL": "value"}, r.Resources["api"]["env"])
+	require.Equal(t, map[string]any{"REAL": map[string]any{"value": "value"}},
+		docOf(t, r, "api")["variables"])
 }
 
 // TestABuildBecomesTheDockerfileBranchOfTheBuildStanza.
@@ -132,21 +156,26 @@ services:
       dockerfile: Dockerfile.prod
       target: release
 `)
+	api := docOf(t, r, "api")
+
+	// THE CONTEXT IS `source` AND NOT PART OF THE BUILD. A build says HOW; where
+	// in the repository is the resource's source, which is the field an
+	// image-less workload uses anyway.
+	require.Equal(t, "api", api["source"])
 	require.Equal(t, map[string]any{
 		"dockerfile": map[string]any{
-			"context": "./api",
-			"path":    "Dockerfile.prod",
-			"target":  "release",
+			"path":   "Dockerfile.prod",
+			"target": "release",
 		},
-	}, r.Resources["api"]["build"])
+	}, api["build"])
 
 	short := importOf(t, `
 services:
   api:
     build: ./api
 `)
-	require.Equal(t, map[string]any{"dockerfile": map[string]any{"context": "./api"}},
-		short.Resources["api"]["build"])
+	require.Equal(t, "api", docOf(t, short, "api")["source"])
+	require.NotContains(t, docOf(t, short, "api"), "build", "a context alone says nothing about how")
 }
 
 // TestAServiceWithNoSourceIsRefused rather than imported as an empty resource.
@@ -157,7 +186,8 @@ services:
     environment:
       A: 1
 `)
-	require.NotContains(t, r.Resources, "api", "there is nothing to run")
+	_, ok := r.Doc("application", "api")
+	require.False(t, ok, "there is nothing to run")
 	f := finding(t, r, "api", "image")
 	require.Equal(t, importer.Blocked, f.Level)
 	require.Equal(t, "NO_SOURCE", f.Code)
@@ -189,7 +219,7 @@ services:
 `)
 	for _, key := range []string{
 		"healthcheck", "restart", "user", "read_only", "init",
-		"stop_grace_period", "volumes", "env_file", "entrypoint", "depends_on",
+		"stop_grace_period", "volumes../data:/var/lib/data", "env_file", "entrypoint", "depends_on",
 	} {
 		f := finding(t, r, "api", key)
 		require.Equal(t, importer.Blocked, f.Level, key)
@@ -219,15 +249,20 @@ services:
     volumes:
       - data:/var/lib/data
 `)
-	api := r.Resources["api"]
+	api := docOf(t, r, "api")
 	for _, key := range []string{
 		"restart", "healthcheck", "privileged", "cap_add", "devices",
-		"network_mode", "deploy", "replicas", "volumes",
+		"network_mode", "deploy", "replicas", "command", "workdir", "image", "env",
 	} {
 		require.NotContains(t, api, key,
 			"%s reached the config; the runtime cannot honour it and the next reader would believe it", key)
 	}
-	require.Equal(t, "x", api["image"], "and what CAN be honoured is still there")
+	require.Equal(t, map[string]any{"image": "x"}, api["source"], "and what CAN be honoured is still there")
+
+	// The named volume IS carried now — it is a resource of its own and the
+	// service mounts it. See TestANamedVolumeBecomesAResource.
+	require.Equal(t, map[string]any{"data": map[string]any{"ops": []string{"mount-rw"}, "path": "/var/lib/data"}},
+		api["volume"])
 }
 
 // TestPrivilegeEscalationIsRefusedOnPurpose, not merely unsupported — so the
@@ -265,32 +300,34 @@ services:
 	f := finding(t, r, "api", "ports")
 	require.Equal(t, importer.Approximated, f.Level)
 	require.Contains(t, f.Detail, "8080:80")
-	require.NotContains(t, r.Resources["api"], "ports")
+
+	// THE CONTAINER PORT IS CARRIED and the host half is not. A tau port is
+	// NAMED so everything else refers to it without repeating a number, and
+	// compose ports have none — so the name is derived from the number,
+	// deterministically, because a name that changed between two imports would
+	// break every edge written against the first.
+	require.Equal(t, map[string]any{
+		"port_80":   map[string]any{"number": 80},
+		"port_8443": map[string]any{"number": 8443},
+	}, docOf(t, r, "api")["ports"])
 }
 
-// TestAStringCommandIsNotAShell. Compose splits the string form with
-// shell-like rules but does not run a shell, so a pipe or a $VAR behaves
-// differently — and only says so when the content suggests one.
-func TestAStringCommandIsNotAShell(t *testing.T) {
-	shelly := importOf(t, `
+// TestACommandIsNotCarried. There is no command field on a container workload:
+// what runs is what the image says. This importer emitted one until the
+// vocabulary was actually consulted.
+func TestACommandIsNotCarried(t *testing.T) {
+	r := importOf(t, `
 services:
   api:
     image: x
-    command: "serve | tee /var/log/out"
+    command: ["serve", "--port", "8080"]
 `)
-	f := finding(t, shelly, "api", "command")
-	require.Equal(t, importer.Approximated, f.Level)
-	require.Equal(t, "COMMAND_STRING_IS_NOT_A_SHELL", f.Code)
-
-	plain := importOf(t, `
-services:
-  api:
-    image: x
-    command: "serve --port 8080"
-`)
-	require.False(t, hasFinding(plain, "api", "command"),
-		"a plain command needs no warning; crying wolf on every command teaches people to skip the findings")
-	require.Equal(t, []string{"serve", "--port", "8080"}, plain.Resources["api"]["command"])
+	f := finding(t, r, "api", "command")
+	require.Equal(t, importer.Blocked, f.Level)
+	require.Equal(t, "NO_TAU_FEATURE:command", f.Code)
+	require.Contains(t, f.Detail, "serve --port 8080")
+	require.NotEmpty(t, f.Needs)
+	require.NotContains(t, docOf(t, r, "api"), "command")
 }
 
 // TestDependsOnConditionsAreNamed, because service_healthy and
@@ -375,7 +412,7 @@ services:
     image: postgres
     restart: always
 `)
-	require.Len(t, r.Resources, 3)
+	require.Len(t, r.Names("application"), 3)
 
 	var order []string
 	for _, f := range r.Findings {
@@ -435,9 +472,16 @@ services:
 volumes:
   pgdata: {}
 `)
-	require.Len(t, r.Resources, 3)
-	require.Equal(t, "acme/api:2", r.Resources["api"]["image"])
-	require.NotNil(t, r.Resources["web"]["build"])
+	require.Equal(t, []string{"api", "db", "web"}, r.Names("application"))
+	require.Equal(t, map[string]any{"image": "acme/api:2"}, docOf(t, r, "api")["source"])
+	require.Equal(t, "web", docOf(t, r, "web")["source"])
+
+	// The database keeps its data, which is the difference between importing a
+	// Postgres and importing a Postgres that loses everything on re-placement.
+	require.Equal(t, []string{"pgdata"}, r.Names("volume"))
+	require.Equal(t,
+		map[string]any{"pgdata": map[string]any{"ops": []string{"mount-rw"}, "path": "/var/lib/postgresql/data"}},
+		docOf(t, r, "db")["volume"])
 
 	// The honest report: this file cannot be imported faithfully, and the
 	// person doing it should know exactly why before they rely on it.
@@ -448,5 +492,184 @@ volumes:
 	for _, f := range blocked {
 		keys = append(keys, f.Key)
 	}
-	require.Subset(t, keys, []string{"restart", "depends_on", "volumes", "healthcheck"})
+	require.Subset(t, keys, []string{"restart", "depends_on", "healthcheck", "command"})
+}
+
+// TestANamedVolumeBecomesAResource. This is the difference between importing a
+// Postgres and importing a Postgres that loses everything the first time it is
+// re-placed, and it was reported as blocked until the vocabulary grew a volume
+// kind and this importer was told.
+func TestANamedVolumeBecomesAResource(t *testing.T) {
+	r := importOf(t, `
+services:
+  db:
+    image: postgres:16
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - shared:/srv/shared:ro
+volumes:
+  pgdata: {}
+  shared: {}
+`)
+	require.Equal(t, []string{"pgdata", "shared"}, r.Names("volume"))
+
+	require.Equal(t, map[string]any{
+		"pgdata": map[string]any{"ops": []string{"mount-rw"}, "path": "/var/lib/postgresql/data"},
+		"shared": map[string]any{"ops": []string{"mount-ro"}, "path": "/srv/shared"},
+	}, docOf(t, r, "db")["volume"])
+
+	// SIZE IS REQUIRED AND COMPOSE DOES NOT SAY ONE. A compose volume grows
+	// into whatever the host has; a placed one has to be asked for, and there
+	// is no honest number to infer.
+	f := finding(t, r, "pgdata", "volumes.pgdata")
+	require.Equal(t, importer.Approximated, f.Level)
+	require.Equal(t, "VOLUME_HAS_NO_SIZE", f.Code)
+}
+
+// TestComposeDeclaresAVolumeByUsingIt. `- data:/var/lib/data` with no top-level
+// entry is a named volume; reading only the top-level block made every one of
+// them a bind mount.
+func TestAnImplicitlyDeclaredVolumeIsStillOne(t *testing.T) {
+	r := importOf(t, `
+services:
+  db:
+    image: postgres:16
+    volumes:
+      - data:/var/lib/data
+`)
+	require.Equal(t, []string{"data"}, r.Names("volume"))
+	require.Contains(t, docOf(t, r, "db")["volume"], "data")
+}
+
+// TestABindMountIsHostStateAndDoesNotSurvivePlacement.
+func TestABindMountIsRefused(t *testing.T) {
+	r := importOf(t, `
+services:
+  api:
+    image: x
+    volumes:
+      - ./config:/etc/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - anonymous
+`)
+	require.Empty(t, r.Names("volume"))
+	require.NotContains(t, docOf(t, r, "api"), "volume")
+
+	for _, key := range []string{"volumes../config:/etc/app", "volumes./var/run/docker.sock:/var/run/docker.sock"} {
+		f := finding(t, r, "api", key)
+		require.Equal(t, importer.Blocked, f.Level, key)
+		require.Equal(t, "BIND_MOUNT_IS_HOST_STATE", f.Code, key)
+	}
+
+	f := finding(t, r, "api", "volumes.anonymous")
+	require.Equal(t, "NO_TAU_FEATURE:anonymous-volume", f.Code)
+}
+
+// TestResourceLimitsCarryAndReplicasDoNot. deploy.resources.limits is the one
+// part with an equivalent; replicas is refused rather than dropped, because it
+// is the field somebody looks for first and its absence is a decision.
+func TestResourceLimitsCarry(t *testing.T) {
+	r := importOf(t, `
+services:
+  api:
+    image: x
+    deploy:
+      replicas: 5
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.5"
+        reservations:
+          memory: 256M
+`)
+	require.Equal(t, map[string]any{"memory": "512MB", "cpu": 1500}, docOf(t, r, "api")["execution"])
+
+	f := finding(t, r, "api", "deploy.replicas")
+	require.Equal(t, importer.Blocked, f.Level)
+	require.Contains(t, f.Detail, "5")
+
+	require.Equal(t, importer.Blocked, finding(t, r, "api", "deploy.resources.reservations").Level)
+}
+
+// TestSizesAreRespelled. Compose writes 512M where the vocabulary writes 512MB,
+// and both mean the same thing.
+func TestSizesAreRespelled(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"512M", "512MB"},
+		{"512MB", "512MB"},
+		{"2G", "2GB"},
+		{"1024", "1024B"},
+		{"1024b", "1024B"},
+		{" 2G ", "2GB"},
+	} {
+		require.Equal(t, c.want, bytesOf(c.in), c.in)
+	}
+
+	for _, bad := range []string{"", "lots", "M512", "512Q"} {
+		require.Empty(t, bytesOf(bad), bad)
+	}
+
+	// And an unreadable one is reported rather than dropped.
+	r := importOf(t, `
+services:
+  api:
+    image: x
+    deploy:
+      resources:
+        limits:
+          memory: plenty
+          cpus: "many"
+`)
+	require.Equal(t, "MEMORY_NOT_READABLE", finding(t, r, "api", "deploy.resources.limits.memory").Code)
+	require.Equal(t, "CPUS_NOT_READABLE", finding(t, r, "api", "deploy.resources.limits.cpus").Code)
+	require.NotContains(t, docOf(t, r, "api"), "execution")
+}
+
+// TestAPortSpecIsReadInEveryComposeSpelling.
+func TestAPortSpecIsReadInEveryComposeSpelling(t *testing.T) {
+	r := importOf(t, `
+services:
+  api:
+    image: x
+    ports:
+      - "3000"
+      - "8080:80"
+      - "127.0.0.1:9090:9000"
+      - "5000:5000/udp"
+      - "8000-8010:8000-8010"
+`)
+	require.Equal(t, map[string]any{
+		"port_3000": map[string]any{"number": 3000},
+		"port_80":   map[string]any{"number": 80},
+		"port_9000": map[string]any{"number": 9000},
+		"port_5000": map[string]any{"number": 5000},
+	}, docOf(t, r, "api")["ports"])
+
+	// A range is not one port and is refused rather than half-read.
+	require.Equal(t, "PORT_NOT_A_NUMBER", finding(t, r, "api", "ports.8000-8010:8000-8010").Code)
+}
+
+// TestANameThatIsNotAV2NameIsRenamedLoudly. A compose service may be called
+// `my-api`; a v2 name may not. Renaming silently would produce config whose
+// names do not match the user's dashboards, and the first sign would be an edge
+// pointing at nothing.
+func TestANameThatIsNotAV2NameIsRenamedLoudly(t *testing.T) {
+	r := importOf(t, `
+services:
+  my-api:
+    image: x
+    environment:
+      MY-VAR: "1"
+    volumes:
+      - pg-data:/var/lib/data
+`)
+	require.Equal(t, []string{"my_api"}, r.Names("application"))
+	require.Equal(t, []string{"pg_data"}, r.Names("volume"))
+	require.Contains(t, docOf(t, r, "my_api")["variables"], "MY_VAR")
+
+	for _, key := range []string{"services", "environment.MY-VAR"} {
+		f := finding(t, r, "my_api", key)
+		require.Equal(t, importer.Approximated, f.Level, key)
+		require.Equal(t, "NAME_NOT_A_V2_NAME", f.Code, key)
+	}
 }

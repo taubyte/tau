@@ -15,6 +15,14 @@ func importOf(t *testing.T, s string) importer.Result {
 	return r
 }
 
+// docOf is one imported function's document.
+func docOf(t *testing.T, r importer.Result, name string) map[string]any {
+	t.Helper()
+	doc, ok := r.Doc("function", name)
+	require.True(t, ok, "no function called %q; got %v", name, r.Names("function"))
+	return doc
+}
+
 func finding(t *testing.T, r importer.Result, resource, key string) importer.Finding {
 	t.Helper()
 	for _, f := range r.Findings {
@@ -67,7 +75,8 @@ Resources:
       MemorySize: 512
       Timeout: 30
 `)
-	require.Equal(t, map[string]any{"memory": "512MB", "timeout": "30s"}, sam.Resources["Checkout"])
+	require.Equal(t, map[string]any{"memory": "512MB", "timeout": "30s"},
+		docOf(t, sam, "Checkout")["execution"])
 
 	sls := importOf(t, `
 service: shop
@@ -79,7 +88,8 @@ functions:
     handler: src/checkout.handler
     timeout: 15
 `)
-	require.Equal(t, map[string]any{"memory": "256MB", "timeout": "15s"}, sls.Resources["checkout"])
+	require.Equal(t, map[string]any{"memory": "256MB", "timeout": "15s"},
+		docOf(t, sls, "checkout")["execution"])
 }
 
 // TestGlobalsAndProviderSupplyDefaults, or a function that set nothing would
@@ -96,8 +106,8 @@ Resources:
     Properties:
       Handler: worker.handler
 `)
-	require.Equal(t, "1024MB", r.Resources["Worker"]["memory"])
-	require.Equal(t, "60s", r.Resources["Worker"]["timeout"])
+	require.Equal(t, map[string]any{"memory": "1024MB", "timeout": "60s"},
+		docOf(t, r, "Worker")["execution"])
 }
 
 // TestACloudFormationIntrinsicIsNotAValue. !Ref and Fn::GetAtt resolve against a
@@ -118,7 +128,8 @@ Resources:
             Fn::GetAtt: [Queue, Arn]
           PLAIN: literal
 `)
-	require.Equal(t, map[string]any{"PLAIN": "literal"}, r.Resources["Api"]["env"])
+	require.Equal(t, map[string]any{"PLAIN": map[string]any{"value": "literal"}},
+		docOf(t, r, "Api")["variables"])
 
 	require.Equal(t, importer.Blocked, finding(t, r, "Api", "environment.TABLE_NAME").Level)
 	require.Equal(t, "CLOUDFORMATION_INTRINSIC", finding(t, r, "Api", "environment.QUEUE_URL").Code)
@@ -246,8 +257,7 @@ Resources:
       Handler: api.handler
       MemorySize: 128
 `)
-	require.Contains(t, r.Resources, "Api")
-	require.NotContains(t, r.Resources, "Orders")
+	require.Equal(t, []string{"Api"}, r.Names("function"))
 }
 
 func TestAFileWithNoFunctionsIsRefused(t *testing.T) {
@@ -269,11 +279,11 @@ functions:
     vpc: {subnetIds: [subnet-1]}
     snapStart: true
 `)
-	doc := r.Resources["api"]
-	for _, key := range []string{"layers", "vpc", "snapStart", "handler"} {
+	doc := docOf(t, r, "api")
+	for _, key := range []string{"layers", "vpc", "snapStart", "handler", "memory", "timeout", "env"} {
 		require.NotContains(t, doc, key, "%s reached the config", key)
 	}
-	require.Equal(t, "512MB", doc["memory"])
+	require.Equal(t, "512MB", doc["execution"].(map[string]any)["memory"])
 }
 
 // TestTheThinEdges — a function declared with nothing under it, the same
@@ -301,7 +311,7 @@ Resources:
           Type: HttpApi
 `)
 	// Properties absent entirely: Globals still apply, and nothing panics.
-	require.Equal(t, "10s", r.Resources["Bare"]["timeout"])
+	require.Equal(t, "10s", docOf(t, r, "Bare")["execution"].(map[string]any)["timeout"])
 
 	// One finding per trigger TYPE, not per trigger. Two HTTP routes are one
 	// fact about the handler.
@@ -309,7 +319,7 @@ Resources:
 
 	// A map is not an intrinsic just for being a map — but it is not a string
 	// either, so it is refused for the right reason.
-	require.NotContains(t, r.Resources["Twice"], "env")
+	require.NotContains(t, docOf(t, r, "Twice"), "variables")
 	require.Equal(t, "ENV_NOT_A_SCALAR", finding(t, r, "Twice", "environment.SHAPE").Code)
 }
 
@@ -327,8 +337,11 @@ functions:
       EMPTY:
 `)
 	require.Equal(t, map[string]any{
-		"PORT": "8080", "DEBUG": "true", "RATIO": "0.5", "EMPTY": "",
-	}, r.Resources["api"]["env"])
+		"PORT":  map[string]any{"value": "8080"},
+		"DEBUG": map[string]any{"value": "true"},
+		"RATIO": map[string]any{"value": "0.5"},
+		"EMPTY": map[string]any{"value": ""},
+	}, docOf(t, r, "api")["variables"])
 }
 
 // TestDefaultsInheritDownBothDialects — env set once at the top applies to every
@@ -346,7 +359,8 @@ Resources:
     Properties:
       Handler: api.handler
 `)
-	require.Equal(t, map[string]any{"STAGE": "prod"}, sam.Resources["Api"]["env"])
+	require.Equal(t, map[string]any{"STAGE": map[string]any{"value": "prod"}},
+		docOf(t, sam, "Api")["variables"])
 
 	sls := importOf(t, `
 provider:
@@ -362,7 +376,8 @@ functions:
       - sqs:
           arn: arn:aws:sqs:us-east-1:1234:jobs
 `)
-	require.Equal(t, map[string]any{"STAGE": "prod"}, sls.Resources["api"]["env"])
+	require.Equal(t, map[string]any{"STAGE": map[string]any{"value": "prod"}},
+		docOf(t, sls, "api")["variables"])
 	require.Equal(t, importer.Approximated, finding(t, sls, "api", "events.http").Level)
 	require.Equal(t, "NO_TAU_FEATURE:event-source", finding(t, sls, "api", "events.sqs").Code)
 }

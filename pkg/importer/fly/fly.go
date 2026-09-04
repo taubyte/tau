@@ -22,7 +22,6 @@ package fly
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/BurntSushi/toml"
 
@@ -124,9 +123,13 @@ func Import(data []byte) (importer.Result, error) {
 		Code:   "SOURCE_WRITE_ONLY:secret",
 		Detail: "fly secrets are set out of band and are write-only; this file never contains them"})
 
-	name := f.App
-	if name == "" {
-		name = "app"
+	source := f.App
+	if source == "" {
+		source = "app"
+	}
+	name, renamed := importer.Name(source)
+	if renamed {
+		r.Add(importer.Renamed(name, "app", source, name))
 	}
 
 	base := map[string]any{}
@@ -134,11 +137,22 @@ func Import(data []byte) (importer.Result, error) {
 		importBuild(&r, base, f.Build)
 	}
 	if len(f.Env) > 0 {
-		env := map[string]any{}
-		for k, v := range f.Env {
-			env[k] = v
+		// A VARIABLE IS A BLOCK, not a bare value: `at` says build or run and
+		// `as` says how it is delivered, both defaulted by the vocabulary.
+		variables := map[string]any{}
+		for _, key := range sortedKeys(f.Env) {
+			stem, renamed := importer.Name(key)
+			if stem == "" {
+				continue
+			}
+			if renamed {
+				r.Add(importer.Renamed(name, "env."+key, key, stem))
+			}
+			variables[stem] = map[string]any{"value": f.Env[key]}
 		}
-		base["env"] = env
+		if len(variables) > 0 {
+			base["variables"] = variables
+		}
 	}
 	importVM(&r, base, f.VM)
 
@@ -147,9 +161,9 @@ func Import(data []byte) (importer.Result, error) {
 	// empty resource is one that runs nothing while looking like it runs
 	// something. Everything else in the file is still reported, which is why
 	// this sets a flag rather than returning early.
-	_, hasImage := base["image"]
+	_, hasSource := base["source"]
 	_, hasBuild := base["build"]
-	runnable := hasImage || hasBuild
+	runnable := hasSource || hasBuild
 	if !runnable {
 		r.Add(importer.Finding{Key: "build", Level: importer.Blocked, Code: "NO_SOURCE",
 			Detail: "this file names neither an image nor a Dockerfile build, so there is nothing to run; " +
@@ -163,16 +177,25 @@ func Import(data []byte) (importer.Result, error) {
 		// nothing to emit
 	case len(f.Processes) > 0:
 		for _, p := range sortedKeys(f.Processes) {
-			doc := clone(base)
-			doc["command"] = strings.Fields(f.Processes[p])
-			r.Set(name+"-"+p, doc)
+			process, _ := importer.Name(name + "_" + p)
+			r.Set(appKind, process, clone(base))
+
+			// THE COMMAND IS WHAT MADE THEM DIFFERENT AND IT IS NOT CARRIED.
+			// There is no command field on a container workload — what runs is
+			// what the image says — so N processes become N resources that are
+			// otherwise identical, which is worse than it looks and is said
+			// here rather than discovered.
+			r.Add(importer.Finding{Resource: process, Key: "processes." + p, Level: importer.Blocked,
+				Code:   "NO_TAU_FEATURE:command",
+				Needs:  "a command override on the compute kind",
+				Detail: "the process ran \"" + f.Processes[p] + "\"; the image's own command is what runs here, so this resource is its sibling until that is fixed"})
 		}
 		r.Add(importer.Finding{Key: "processes", Level: importer.Approximated,
 			Code: "APP_FANS_OUT",
 			Detail: fmt.Sprintf("%d processes became %d resources; they shared one filesystem and one network on Fly, "+
 				"so a process reaching a sibling over localhost will not find it", len(f.Processes), len(f.Processes))})
 	default:
-		r.Set(name, base)
+		r.Set(appKind, name, base)
 	}
 
 	importHTTP(&r, f.HTTPService)
@@ -203,10 +226,13 @@ func Import(data []byte) (importer.Result, error) {
 	return r, nil
 }
 
+// appKind is what a Fly app becomes.
+const appKind = "application"
+
 func importBuild(r *importer.Result, doc map[string]any, b *build) {
 	switch {
 	case b.Image != "":
-		doc["image"] = b.Image
+		doc["source"] = map[string]any{"image": b.Image}
 	case b.Builder != "":
 		// A CNB builder is a whole lifecycle, not a Dockerfile.
 		r.Add(importer.Finding{Key: "build.builder", Level: importer.Blocked,
@@ -237,7 +263,7 @@ func importBuild(r *importer.Result, doc map[string]any, b *build) {
 func importVM(r *importer.Result, doc map[string]any, vms []vm) {
 	for _, v := range vms {
 		if v.Memory != "" {
-			doc["memory"] = v.Memory
+			doc["execution"] = map[string]any{"memory": v.Memory}
 		}
 		if v.Size != "" && v.Memory == "" {
 			// A SIZE PRESET IS A NAME FOR TWO NUMBERS, and the numbers are what
@@ -295,23 +321,26 @@ func importStatics(r *importer.Result, statics []static) {
 				Detail: "a static served straight from a bucket needs storage to answer S3"})
 			continue
 		}
-		doc := map[string]any{"serve": map[string]any{"index": s.IndexDocument}}
-		if s.GuestPath != "" {
-			doc["path"] = s.GuestPath
-		}
-		r.Set("static"+strings.ReplaceAll(s.URLPrefix, "/", "-"), doc)
-		r.Add(importer.Finding{Key: "statics", Level: importer.Approximated,
-			Code:   "ROUTING_BECOMES_AN_EDGE",
-			Detail: "url_prefix " + s.URLPrefix + " becomes the mount of an inbound edge, which is a 1:1 map only under longest-prefix matching"})
+		// A FLY STATIC IS A DIRECTORY INSIDE THE IMAGE, and a v2 website is a
+		// repository built into one. They are not the same thing: there is
+		// nothing here to build, and the files are already inside an artifact
+		// somebody else made. Emitting a website whose build says nothing
+		// would produce a site that serves nothing.
+		r.Add(importer.Finding{Key: "statics." + s.URLPrefix, Level: importer.Blocked,
+			Code:  "STATIC_IS_INSIDE_THE_IMAGE",
+			Needs: "serving a path out of a container image, or a build that produces it",
+			Detail: "guest_path " + s.GuestPath + " is a directory inside the app's own image; a website here is a " +
+				"repository built into one, so there is nothing to point at"})
 	}
 }
 
 func importMounts(r *importer.Result, mounts []mount) {
 	for _, m := range mounts {
-		r.Add(importer.Finding{Key: "mounts", Level: importer.Blocked,
-			Code:   "NO_TAU_FEATURE:volumes",
-			Needs:  "a volume kind with a mount on the compute kind",
-			Detail: "volume " + m.Source + " at " + m.Destination + " has nowhere to be declared"})
+		r.Add(importer.Finding{Key: "mounts." + m.Source, Level: importer.Blocked,
+			Code:  "MOUNT_IS_PER_PROCESS_GROUP",
+			Needs: "nothing — a volume kind exists; which workload mounts it is what this file does not say",
+			Detail: "volume " + m.Source + " at " + m.Destination + " is attached to a process group, and this file " +
+				"does not say which workload should mount it here"})
 		if m.Snapshots != nil {
 			r.Add(importer.Finding{Key: "mounts.snapshot_retention", Level: importer.Blocked,
 				Code:   "NO_TAU_FEATURE:snapshots",

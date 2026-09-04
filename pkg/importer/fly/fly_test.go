@@ -26,6 +26,14 @@ func finding(t *testing.T, r importer.Result, key string) importer.Finding {
 	return importer.Finding{}
 }
 
+// docOf is one imported application's document.
+func docOf(t *testing.T, r importer.Result, name string) map[string]any {
+	t.Helper()
+	doc, ok := r.Doc("application", name)
+	require.True(t, ok, "no application called %q; got %v", name, r.Names("application"))
+	return doc
+}
+
 func has(r importer.Result, key string) bool {
 	for _, f := range r.Findings {
 		if f.Key == key {
@@ -68,7 +76,7 @@ app = "shop"
 [[vm]]
   memory = "512mb"
 `)
-	doc := r.Resources["shop"]
+	doc := docOf(t, r, "shop")
 	require.Equal(t, map[string]any{
 		"dockerfile": map[string]any{
 			"path":   "Dockerfile.prod",
@@ -76,8 +84,11 @@ app = "shop"
 			"args":   map[string]any{"NODE_ENV": "production"},
 		},
 	}, doc["build"])
-	require.Equal(t, map[string]any{"DATABASE_URL": "postgres://db/app"}, doc["env"])
-	require.Equal(t, "512mb", doc["memory"])
+
+	// A VARIABLE IS A BLOCK, and a limit lives under `execution` — both are
+	// where the vocabulary puts them, not where fly.toml does.
+	require.Equal(t, map[string]any{"DATABASE_URL": map[string]any{"value": "postgres://db/app"}}, doc["variables"])
+	require.Equal(t, map[string]any{"memory": "512mb"}, doc["execution"])
 }
 
 // TestOneAppFansOutIntoNResources — the main structural transform, and the
@@ -93,11 +104,18 @@ app = "shop"
   web = "npm start"
   worker = "npm run worker"
 `)
-	require.Len(t, r.Resources, 2)
-	require.Equal(t, []string{"npm", "start"}, r.Resources["shop-web"]["command"])
-	require.Equal(t, []string{"npm", "run", "worker"}, r.Resources["shop-worker"]["command"])
-	require.Equal(t, "acme/shop:1", r.Resources["shop-web"]["image"],
+	require.Equal(t, []string{"shop_web", "shop_worker"}, r.Names("application"))
+	require.Equal(t, map[string]any{"image": "acme/shop:1"}, docOf(t, r, "shop_web")["source"],
 		"each carries the app's build")
+
+	// THE COMMAND IS WHAT MADE THEM DIFFERENT AND IT IS NOT CARRIED. There is
+	// no command field on a container workload, so N processes become N
+	// resources that are otherwise identical — worse than it looks, and said
+	// rather than discovered.
+	for _, process := range []string{"shop_web", "shop_worker"} {
+		require.NotContains(t, docOf(t, r, process), "command", process)
+	}
+	require.Equal(t, "NO_TAU_FEATURE:command", finding(t, r, "processes.web").Code)
 
 	f := finding(t, r, "processes")
 	require.Equal(t, importer.Approximated, f.Level)
@@ -113,7 +131,10 @@ app = "shop"
 [[vm]]
   size = "shared-cpu-1x"
 `)
-	require.NotContains(t, r.Resources["shop"], "size")
+	// The app names nothing to run, so nothing is emitted — the size is still
+	// reported, which is why this file's flag exists rather than an early
+	// return.
+	require.Empty(t, r.Names("application"))
 	f := finding(t, r, "vm.size")
 	require.Equal(t, importer.Approximated, f.Level)
 	require.Contains(t, f.Detail, "shared-cpu-1x")
@@ -143,7 +164,8 @@ app = "shop"
 	require.Equal(t, importer.Blocked, f.Level)
 	require.Equal(t, "NEEDS_CNB_LIFECYCLE", f.Code)
 	require.NotEmpty(t, f.Needs)
-	require.NotContains(t, r.Resources["shop"], "build")
+	_, ok := r.Doc("application", "shop")
+	require.False(t, ok, "a builder is not a source, so there is nothing to run")
 }
 
 // TestTheScalingModelDiffersAndSaysSo. Fly starts and stops machines it already
@@ -191,15 +213,23 @@ app = "shop"
   destination = "/var/lib/data"
   snapshot_retention = 7
 `)
-	m := finding(t, r, "mounts")
+	// A VOLUME KIND EXISTS NOW, and this is still blocked for a different
+	// reason: a Fly mount is attached to a process group, and the file does not
+	// say which workload should mount it here.
+	m := finding(t, r, "mounts.data")
 	require.Equal(t, importer.Blocked, m.Level)
+	require.Equal(t, "MOUNT_IS_PER_PROCESS_GROUP", m.Code)
 	require.Contains(t, m.Detail, "/var/lib/data")
 
 	s := finding(t, r, "mounts.snapshot_retention")
 	require.Contains(t, s.Needs, "snapshot chain")
 }
 
-func TestStaticsBecomeAResourceAndAnEdge(t *testing.T) {
+// TestAStaticIsInsideTheImageAndIsNotAWebsite. A Fly static serves a directory
+// out of the app's own image; a website here is a repository built into one.
+// Emitting a website whose build says nothing would produce a site that serves
+// nothing.
+func TestAStaticIsNotAWebsite(t *testing.T) {
 	r := importOf(t, `
 app = "shop"
 [[statics]]
@@ -207,8 +237,12 @@ app = "shop"
   url_prefix = "/assets"
   index_document = "index.html"
 `)
-	require.Contains(t, r.Resources, "static-assets")
-	require.Equal(t, "ROUTING_BECOMES_AN_EDGE", finding(t, r, "statics").Code)
+	require.Empty(t, r.Names("website"))
+
+	f := finding(t, r, "statics./assets")
+	require.Equal(t, importer.Blocked, f.Level)
+	require.Equal(t, "STATIC_IS_INSIDE_THE_IMAGE", f.Code)
+	require.Contains(t, f.Detail, "/app/public")
 }
 
 func TestATigrisBackedStaticNeedsS3(t *testing.T) {
@@ -266,7 +300,21 @@ func TestAnAppWithNoNameStillImports(t *testing.T) {
 [build]
   image = "acme/thing:1"
 `)
-	require.Contains(t, r.Resources, "app")
+	require.Equal(t, []string{"app"}, r.Names("application"))
+}
+
+// TestAnAppNameThatIsNotAV2NameIsRenamedLoudly.
+func TestAnAppNameIsSanitised(t *testing.T) {
+	r := importOf(t, `
+app = "my-shop"
+[build]
+  image = "acme/thing:1"
+`)
+	require.Equal(t, []string{"my_shop"}, r.Names("application"))
+
+	f := finding(t, r, "app")
+	require.Equal(t, importer.Approximated, f.Level)
+	require.Equal(t, "NAME_NOT_A_V2_NAME", f.Code)
 }
 
 func TestMalformedTomlIsRefused(t *testing.T) {

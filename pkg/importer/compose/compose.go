@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -79,6 +80,31 @@ type file struct {
 	Version  string             `yaml:"version"`
 }
 
+// deploy is the part of compose's deploy stanza that has an equivalent.
+//
+// REPLICAS DELIBERATELY DOES NOT. How many instances run, and where, is the
+// platform's decision — it places, it reconciles, it re-places when a node
+// dies. A replica count carried across would be a number nothing honours.
+type deploy struct {
+	Replicas  *int `yaml:"replicas"`
+	Resources struct {
+		Limits struct {
+			Memory string `yaml:"memory"`
+			CPUs   string `yaml:"cpus"`
+		} `yaml:"limits"`
+		Reservations struct {
+			Memory string `yaml:"memory"`
+			CPUs   string `yaml:"cpus"`
+		} `yaml:"reservations"`
+	} `yaml:"resources"`
+}
+
+func (d deploy) isZero() bool {
+	return d.Replicas == nil &&
+		d.Resources.Limits.Memory == "" && d.Resources.Limits.CPUs == "" &&
+		d.Resources.Reservations.Memory == "" && d.Resources.Reservations.CPUs == ""
+}
+
 type service struct {
 	Image      string    `yaml:"image"`
 	Build      yaml.Node `yaml:"build"`
@@ -106,7 +132,7 @@ type service struct {
 	CapAdd          []string  `yaml:"cap_add"`
 	Devices         []string  `yaml:"devices"`
 	NetworkMode     string    `yaml:"network_mode"`
-	Deploy          yaml.Node `yaml:"deploy"`
+	Deploy          deploy    `yaml:"deploy"`
 	Labels          yaml.Node `yaml:"labels"`
 	Profiles        []string  `yaml:"profiles"`
 	StopGracePeriod string    `yaml:"stop_grace_period"`
@@ -128,7 +154,7 @@ func Import(data []byte) (importer.Result, error) {
 		return importer.Result{}, ErrNotCompose
 	}
 
-	r := importer.Result{Source: Source, Kind: kind}
+	r := importer.Result{Source: Source}
 
 	// Top-level concerns that are not per-service.
 	if len(f.Networks) > 0 {
@@ -147,41 +173,139 @@ func Import(data []byte) (importer.Result, error) {
 			Detail: "compose configs are files mounted from the host; they are not carried"})
 	}
 
+	// Named volumes become resources of their own, and a service that mounts
+	// one names it. A bind mount is host state and is refused per service.
+	volumes := importVolumes(&r, declaredVolumes(f))
+
 	for _, name := range sortedKeys(f.Services) {
-		importService(&r, name, f.Services[name])
+		importService(&r, kind, name, f.Services[name], volumes)
 	}
 
 	r.Sort()
 	return r, nil
 }
 
-func importService(r *importer.Result, name string, s service) {
+// importVolumes turns the top-level `volumes:` block into volume resources, and
+// returns the map from a compose volume name to the v2 name it got.
+//
+// A NAMED VOLUME IS A RESOURCE NOW. It was reported as blocked when this
+// importer was written, because the vocabulary had no volume kind. It has one,
+// and a compose deployment whose database keeps its data in a named volume is
+// the single most common shape in the segment — so this is the difference
+// between importing a Postgres and importing a Postgres that loses its data.
+func importVolumes(r *importer.Result, declared map[string]any) map[string]string {
+	out := map[string]string{}
+
+	for _, source := range sortedKeys(declared) {
+		name, renamed := importer.Name(source)
+		if name == "" {
+			continue
+		}
+		if renamed {
+			r.Add(importer.Renamed(source, "volumes", source, name))
+		}
+		out[source] = name
+
+		// SIZE IS REQUIRED AND COMPOSE DOES NOT SAY ONE. A compose volume grows
+		// into whatever the host has; a placed one has to be asked for. There
+		// is no honest number to invent, so the field is left for a person and
+		// reported.
+		r.Set(volumeKind, name, map[string]any{
+			"description": "imported from a compose named volume",
+		})
+		r.Add(importer.Finding{Resource: name, Key: "volumes." + source, Level: importer.Approximated,
+			Code:  "VOLUME_HAS_NO_SIZE",
+			Needs: "nothing — the field exists; the value does not",
+			Detail: "a compose volume grows into whatever the host has and names no size; a placed volume has to be asked " +
+				"for one, and there is no honest number to infer, so it is left to be filled in"})
+	}
+	return out
+}
+
+// volumeKind is what a compose named volume becomes.
+const volumeKind = "volume"
+
+// declaredVolumes is the top-level `volumes:` block plus the ones only a mount
+// mentions.
+//
+// COMPOSE DECLARES A VOLUME BY USING IT. `- data:/var/lib/data` with no
+// top-level entry is a named volume; only a source that looks like a path is a
+// bind mount. Reading just the top-level block made every implicitly declared
+// volume a bind mount, which is the same database losing its data as before.
+func declaredVolumes(f file) map[string]any {
+	out := map[string]any{}
+	for name, v := range f.Volumes {
+		out[name] = v
+	}
+
+	for _, name := range sortedKeys(f.Services) {
+		for _, spec := range stringsOf(f.Services[name].Volumes) {
+			source, _, ok := strings.Cut(spec, ":")
+			if !ok || isPath(source) {
+				continue
+			}
+			if _, held := out[source]; !held {
+				out[source] = nil
+			}
+		}
+	}
+	return out
+}
+
+// isPath reports whether a mount source is a path on the machine rather than a
+// volume name. Compose's own rule: anything beginning with `/`, `.` or `~`.
+func isPath(source string) bool {
+	return strings.HasPrefix(source, "/") ||
+		strings.HasPrefix(source, ".") ||
+		strings.HasPrefix(source, "~") ||
+		strings.Contains(source, "/")
+}
+
+func importService(r *importer.Result, kind, source string, s service, volumes map[string]string) {
+	name, renamed := importer.Name(source)
+	if name == "" {
+		return
+	}
+	if renamed {
+		r.Add(importer.Renamed(name, "services", source, name))
+	}
+
 	doc := map[string]any{}
 
+	// SOURCE IS A BLOCK AND `image` IS ONE OF ITS BRANCHES. The first version
+	// of this wrote `image:` at the top level, which is not a key this
+	// vocabulary has — the emitter refused to compile it, which is exactly what
+	// the emitter is for.
 	switch {
 	case s.Image != "":
-		doc["image"] = s.Image
+		doc["source"] = map[string]any{"image": s.Image}
 	case !s.Build.IsZero():
-		// A build stanza exists in the vocabulary, and the dockerfile branch is
-		// what a compose build maps onto.
-		doc["build"] = map[string]any{"dockerfile": buildToDockerfile(s.Build)}
+		// THE CONTEXT IS `source` AND NOT PART OF THE BUILD STANZA. A build
+		// says HOW to build; where in the repository is the resource's source,
+		// which is the same field an image-less workload would use anyway.
+		build := buildToDockerfile(s.Build)
+		if context, ok := build["context"].(string); ok && context != "" && context != "." {
+			doc["source"] = strings.TrimPrefix(context, "./")
+		}
+		delete(build, "context")
+		if len(build) > 0 {
+			doc["build"] = map[string]any{"dockerfile": build}
+		}
 	default:
 		r.Add(importer.Finding{Resource: name, Key: "image", Level: importer.Blocked, Code: "NO_SOURCE",
 			Detail: "the service names neither an image nor a build; there is nothing to run"})
 		return
 	}
 
+	// A COMMAND IS NOT CARRIED, and it was before this was checked against the
+	// vocabulary. There is no command field on a container workload: what runs
+	// is what the image says, which is the same reason an entrypoint override
+	// cannot be expressed.
 	if cmd := stringsOf(s.Command); len(cmd) > 0 {
-		doc["command"] = cmd
-		// A COMPOSE STRING COMMAND IS NOT `sh -c`. Compose splits a string form
-		// with shell-like rules but does not run a shell, so a command relying
-		// on a pipe or a variable expansion behaves differently. Reported when
-		// the source used the string form and the content suggests a shell.
-		if s.Command.Kind == yaml.ScalarNode && looksShelly(s.Command.Value) {
-			r.Add(importer.Finding{Resource: name, Key: "command", Level: importer.Approximated,
-				Code:   "COMMAND_STRING_IS_NOT_A_SHELL",
-				Detail: "the string form is split, not run by a shell; a pipe, a redirect or a $VAR will not behave as it does under compose"})
-		}
+		r.Add(importer.Finding{Resource: name, Key: "command", Level: importer.Blocked,
+			Code:   "NO_TAU_FEATURE:command",
+			Needs:  "a command override on the compute kind",
+			Detail: "the image's own command is what runs: \"" + strings.Join(cmd, " ") + "\" is not carried"})
 	}
 	if ep := stringsOf(s.Entrypoint); len(ep) > 0 {
 		// Entrypoint and command compose differently in the image; carrying
@@ -189,14 +313,33 @@ func importService(r *importer.Result, name string, s service) {
 		r.Add(importer.Finding{Resource: name, Key: "entrypoint", Level: importer.Blocked,
 			Code:   "NO_TAU_FEATURE:entrypoint",
 			Needs:  "an entrypoint field distinct from command on the compute kind",
-			Detail: "entrypoint and command combine in the image; tau has one command field, so an entrypoint override cannot be expressed"})
+			Detail: "entrypoint and command combine in the image; tau has neither field, so an override cannot be expressed"})
 	}
 	if s.WorkingDir != "" {
-		doc["workdir"] = s.WorkingDir
+		r.Add(importer.Finding{Resource: name, Key: "working_dir", Level: importer.Blocked,
+			Code:   "NO_TAU_FEATURE:working_dir",
+			Needs:  "a working-directory field on the compute kind",
+			Detail: "the image's own WORKDIR is what applies"})
 	}
 
+	// A VARIABLE IS A BLOCK, not a bare value: `at` says whether it exists at
+	// build or at run, and `as` says how it is delivered. Both are defaulted by
+	// the vocabulary, so what is written here is the value.
 	if env := envOf(s.Environment); len(env) > 0 {
-		doc["env"] = env
+		variables := map[string]any{}
+		for _, key := range sortedKeys(env) {
+			stem, renamed := importer.Name(key)
+			if stem == "" {
+				continue
+			}
+			if renamed {
+				r.Add(importer.Renamed(name, "environment."+key, key, stem))
+			}
+			variables[stem] = map[string]any{"value": env[key]}
+		}
+		if len(variables) > 0 {
+			doc["variables"] = variables
+		}
 	}
 	if len(stringsOf(s.EnvFile)) > 0 {
 		// COMPOSE ENV PRECEDENCE IS SEVEN LAYERS. Interpolation, shell env,
@@ -208,20 +351,16 @@ func importService(r *importer.Result, name string, s service) {
 			Detail: "env_file is one of seven precedence layers compose merges; its contents are on the importer's machine, not in this file"})
 	}
 
-	if ports := portsOf(s.Ports); len(ports) > 0 {
-		// A published port is how the world reaches it, which in tau is a
-		// domain and an inbound edge rather than a host port.
-		r.Add(importer.Finding{Resource: name, Key: "ports", Level: importer.Approximated,
-			Code: "PORTS_ARE_NOT_HOST_PORTS",
-			Detail: fmt.Sprintf("published %s: tau gives a workload a port and routes to it by name, so a host port mapping has no equivalent and is dropped",
-				strings.Join(ports, ", "))})
+	if ports := importPorts(r, name, s.Ports); len(ports) > 0 {
+		doc["ports"] = ports
 	}
 
-	if vols := stringsOf(s.Volumes); len(vols) > 0 {
-		r.Add(importer.Finding{Resource: name, Key: "volumes", Level: importer.Blocked,
-			Code:   "NO_TAU_FEATURE:volumes",
-			Needs:  "a volume kind with a mount on the compute kind",
-			Detail: "a bind mount is host state and does not survive placement; a named volume needs a volume resource tau does not yet have"})
+	if mounts := importMounts(r, name, s.Volumes, volumes); len(mounts) > 0 {
+		doc["volume"] = mounts
+	}
+
+	if execution := importLimits(r, name, s.Deploy); len(execution) > 0 {
+		doc["execution"] = execution
 	}
 
 	if deps := dependsOn(s.DependsOn); len(deps) > 0 {
@@ -240,8 +379,12 @@ func importService(r *importer.Result, name string, s service) {
 		key, needs, detail string
 		present            bool
 	}{
-		{"healthcheck", "health.{test,interval,timeout,start_period,retries} plus a definition of what a failing check does",
-			"tau has no health-check vocabulary", !s.Healthcheck.IsZero()},
+		// READINESS AND LIVENESS EXIST, and a compose healthcheck still does
+		// not fit them: tau probes over HTTP or through a function, and a
+		// compose check is a command run inside the container. The Needs names
+		// the gap precisely rather than claiming there is no health vocabulary.
+		{"healthcheck", "a command-based probe beside the http and function ones",
+			"tau probes over http or through a function; a compose healthcheck is a command run inside the container, and translating one into the other would be guessing at a url", !s.Healthcheck.IsZero()},
 		{"restart", "a restart policy, and a controller that honours it",
 			"tau re-places a workload when a node dies; it has no per-service restart policy", s.Restart != ""},
 		{"user", "a user field on the compute kind", "the container runs as whatever the image says", s.User != ""},
@@ -262,13 +405,6 @@ func importService(r *importer.Result, name string, s service) {
 			Code: "NO_TAU_FEATURE:" + b.key, Needs: b.needs, Detail: b.detail})
 	}
 
-	if !s.Deploy.IsZero() {
-		r.Add(importer.Finding{Resource: name, Key: "deploy", Level: importer.Blocked,
-			Code:  "NO_TAU_FEATURE:deploy",
-			Needs: "resource limits on the compute kind",
-			Detail: "deploy.resources.limits is the one part with an equivalent, and replicas is deliberately absent: " +
-				"how many run and where is the platform's decision"})
-	}
 	if !s.Labels.IsZero() {
 		r.Add(importer.Finding{Resource: name, Key: "labels", Level: importer.Ignored, Code: "IGNORED:labels",
 			Detail: "labels are metadata for other tooling and have no runtime meaning here"})
@@ -282,7 +418,192 @@ func importService(r *importer.Result, name string, s service) {
 			Detail: "expose documents a port for other compose services; reachability here is an inbound edge"})
 	}
 
-	r.Set(name, doc)
+	r.Set(kind, name, doc)
+}
+
+// importPorts turns compose's `HOST:CONTAINER` strings into named ports.
+//
+// THE NAME IS DERIVED AND THE HOST HALF IS DROPPED. A tau port is named so that
+// everything else refers to it without repeating a number, and compose ports
+// have no names — so the container port becomes `port_<n>`, deterministically,
+// because a name that changed between two imports would break every edge
+// written against the first.
+//
+// The host half has no equivalent and is not silently lost: the platform
+// assigns the external port and routes to the workload by name, which is the
+// whole reason a host mapping cannot be carried.
+func importPorts(r *importer.Result, resource string, ports []string) map[string]any {
+	if len(ports) == 0 {
+		return nil
+	}
+
+	out := map[string]any{}
+	var mapped []string
+
+	for _, spec := range ports {
+		container, host := containerPort(spec)
+		if container == 0 {
+			r.Add(importer.Finding{Resource: resource, Key: "ports." + spec, Level: importer.Blocked,
+				Code:   "PORT_NOT_A_NUMBER",
+				Detail: "\"" + spec + "\" is a range or a form this importer cannot read as one port"})
+			continue
+		}
+		out[fmt.Sprintf("port_%d", container)] = map[string]any{"number": container}
+		if host != "" {
+			mapped = append(mapped, spec)
+		}
+	}
+
+	if len(mapped) > 0 {
+		r.Add(importer.Finding{Resource: resource, Key: "ports", Level: importer.Approximated,
+			Code: "HOST_PORT_HAS_NO_EQUIVALENT",
+			Detail: "the container ports are carried; the host half of " + strings.Join(mapped, ", ") +
+				" is not — the platform assigns the external port and routes to the workload by name"})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// containerPort reads the container port and the host half out of one compose
+// port string: "8080", "8080:80", "127.0.0.1:8080:80", any of them with "/tcp".
+func containerPort(spec string) (container int, host string) {
+	spec, _, _ = strings.Cut(spec, "/")
+	parts := strings.Split(spec, ":")
+
+	last := parts[len(parts)-1]
+	n, err := strconv.Atoi(last)
+	if err != nil || n < 1 || n > 65535 {
+		return 0, ""
+	}
+	if len(parts) > 1 {
+		host = strings.Join(parts[:len(parts)-1], ":")
+	}
+	return n, host
+}
+
+// importMounts turns a service's volumes into mounts on the workload.
+//
+// A NAMED VOLUME MOUNTS AND A BIND MOUNT DOES NOT. A bind mount is a path on
+// the machine that ran compose; a placed workload has no such machine, and
+// carrying the path would produce a mount that resolves to nothing.
+func importMounts(r *importer.Result, resource string, declared yaml.Node, volumes map[string]string) map[string]any {
+	out := map[string]any{}
+
+	for _, spec := range stringsOf(declared) {
+		parts := strings.Split(spec, ":")
+		if len(parts) < 2 {
+			r.Add(importer.Finding{Resource: resource, Key: "volumes." + spec, Level: importer.Blocked,
+				Code:   "NO_TAU_FEATURE:anonymous-volume",
+				Needs:  "an anonymous volume, or a name to give it",
+				Detail: "\"" + spec + "\" is an anonymous volume; a placed workload's storage has to be a resource somebody can find again"})
+			continue
+		}
+
+		source, path := parts[0], parts[1]
+		name, ok := volumes[source]
+		if !ok {
+			r.Add(importer.Finding{Resource: resource, Key: "volumes." + spec, Level: importer.Blocked,
+				Code:   "BIND_MOUNT_IS_HOST_STATE",
+				Needs:  "nothing — a bind mount is not a thing a placed workload can have",
+				Detail: "\"" + source + "\" is a path on the machine that ran compose; a workload placed on another node has no such path"})
+			continue
+		}
+
+		op := "mount-rw"
+		if slices.Contains(parts[2:], "ro") {
+			op = "mount-ro"
+		}
+		out[name] = map[string]any{"ops": []string{op}, "path": path}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// importLimits carries the one part of compose's deploy stanza that has an
+// equivalent.
+//
+// REPLICAS IS REFUSED RATHER THAN DROPPED. It is the field somebody will look
+// for first, and its absence is a decision: how many instances run and where is
+// the platform's, not the config's.
+func importLimits(r *importer.Result, resource string, d deploy) map[string]any {
+	if d.isZero() {
+		return nil
+	}
+
+	out := map[string]any{}
+
+	if memory := d.Resources.Limits.Memory; memory != "" {
+		if v := bytesOf(memory); v != "" {
+			out["memory"] = v
+		} else {
+			r.Add(importer.Finding{Resource: resource, Key: "deploy.resources.limits.memory", Level: importer.Blocked,
+				Code:   "MEMORY_NOT_READABLE",
+				Detail: "\"" + memory + "\" is not a size this importer can read"})
+		}
+	}
+	if cpus := d.Resources.Limits.CPUs; cpus != "" {
+		if v, err := strconv.ParseFloat(cpus, 64); err == nil && v > 0 {
+			// MILLICORES, because that is what the vocabulary counts in. A
+			// compose `cpus: "2"` is two whole cores.
+			out["cpu"] = int(v * 1000)
+		} else {
+			r.Add(importer.Finding{Resource: resource, Key: "deploy.resources.limits.cpus", Level: importer.Blocked,
+				Code:   "CPUS_NOT_READABLE",
+				Detail: "\"" + cpus + "\" is not a cpu count this importer can read"})
+		}
+	}
+
+	if d.Replicas != nil {
+		r.Add(importer.Finding{Resource: resource, Key: "deploy.replicas", Level: importer.Blocked,
+			Code:  "NO_TAU_FEATURE:replicas",
+			Needs: "nothing — its absence is a decision",
+			Detail: fmt.Sprintf("deploy.replicas: %d is not carried: how many instances run and where is the platform's decision, "+
+				"which is what re-placing a workload when a node dies depends on", *d.Replicas)})
+	}
+	if d.Resources.Reservations.Memory != "" || d.Resources.Reservations.CPUs != "" {
+		r.Add(importer.Finding{Resource: resource, Key: "deploy.resources.reservations", Level: importer.Blocked,
+			Code:   "NO_TAU_FEATURE:reservations",
+			Needs:  "a guaranteed floor beside the ceiling on the compute kind",
+			Detail: "tau's execution limits are a ceiling; a reservation is a floor the scheduler promises, which has no equivalent"})
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// bytesOf turns a compose size into the vocabulary's own spelling. Compose
+// writes `512M` where this writes `512MB`, and both mean the same thing.
+func bytesOf(size string) string {
+	size = strings.TrimSpace(size)
+	if size == "" {
+		return ""
+	}
+
+	digits := 0
+	for digits < len(size) && size[digits] >= '0' && size[digits] <= '9' {
+		digits++
+	}
+	if digits == 0 {
+		return ""
+	}
+
+	number, unit := size[:digits], strings.ToUpper(strings.TrimSpace(size[digits:]))
+	switch unit {
+	case "":
+		return number + "B"
+	case "B", "KB", "MB", "GB", "TB":
+		return number + unit
+	case "K", "M", "G", "T":
+		return number + unit + "B"
+	}
+	return ""
 }
 
 // buildToDockerfile maps a compose build (string or mapping) onto the build
@@ -395,8 +716,6 @@ func dependsOn(n yaml.Node) []string {
 	}
 	return out
 }
-
-func portsOf(ports []string) []string { return ports }
 
 // looksShelly reports whether a string command relies on a shell.
 func looksShelly(s string) bool {

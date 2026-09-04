@@ -246,25 +246,41 @@ func collect(f file) []fn {
 	return out
 }
 
+// functionKind is what a Lambda becomes.
+const functionKind = "function"
+
 func importFunction(r *importer.Result, x fn) {
+	name, renamed := importer.Name(x.name)
+	if name == "" {
+		return
+	}
+	if renamed {
+		r.Add(importer.Renamed(name, "functions", x.name, name))
+	}
+
 	doc := map[string]any{}
 
 	// The two clean rows: tau has per-resource limits and they are the same
-	// numbers.
+	// numbers. They live under `execution`, which is where the vocabulary puts
+	// them.
+	execution := map[string]any{}
 	if x.memory > 0 {
-		doc["memory"] = fmt.Sprintf("%dMB", x.memory)
+		execution["memory"] = fmt.Sprintf("%dMB", x.memory)
 	}
 	if x.timeout > 0 {
-		doc["timeout"] = fmt.Sprintf("%ds", x.timeout)
+		execution["timeout"] = fmt.Sprintf("%ds", x.timeout)
+	}
+	if len(execution) > 0 {
+		doc["execution"] = execution
 	}
 	if len(x.env) > 0 {
-		env := map[string]any{}
+		variables := map[string]any{}
 		for k, v := range x.env {
 			// A CloudFormation intrinsic is not a value. !Ref, !GetAtt and
 			// !Sub resolve against a stack that will not exist here, so
 			// carrying one would put a dangling reference in the config.
 			if isIntrinsic(v) {
-				r.Add(importer.Finding{Resource: x.name, Key: "environment." + k,
+				r.Add(importer.Finding{Resource: name, Key: "environment." + k,
 					Level: importer.Blocked, Code: "CLOUDFORMATION_INTRINSIC",
 					Needs:  "",
 					Detail: "the value is a CloudFormation reference resolved against a stack that does not exist here"})
@@ -275,26 +291,36 @@ func importFunction(r *importer.Result, x fn) {
 			// the process would read as a real value.
 			t, ok := scalar(v)
 			if !ok {
-				r.Add(importer.Finding{Resource: x.name, Key: "environment." + k,
+				r.Add(importer.Finding{Resource: name, Key: "environment." + k,
 					Level: importer.Blocked, Code: "ENV_NOT_A_SCALAR",
 					Detail: "the value is a structure, and an environment variable can only carry a string"})
 				continue
 			}
-			env[k] = t
+			stem, renamedKey := importer.Name(k)
+			if stem == "" {
+				continue
+			}
+			if renamedKey {
+				r.Add(importer.Renamed(name, "environment."+k, k, stem))
+			}
+			// A VARIABLE IS A BLOCK, not a bare value: `at` says build or run
+			// and `as` says how it is delivered, both defaulted by the
+			// vocabulary.
+			variables[stem] = map[string]any{"value": t}
 		}
-		if len(env) > 0 {
-			doc["env"] = env
+		if len(variables) > 0 {
+			doc["variables"] = variables
 		}
 	}
 	if len(doc) > 0 {
-		r.Set(x.name, doc)
+		r.Set(functionKind, name, doc)
 	}
 
 	if x.container {
 		// A LAMBDA CONTAINER IMAGE IS THE HARDER ONE, not the easier one. It
 		// embeds AWS's runtime interface client, which polls an endpoint for
 		// work rather than listening for a request.
-		r.Add(importer.Finding{Resource: x.name, Key: "image", Level: importer.Blocked,
+		r.Add(importer.Finding{Resource: name, Key: "image", Level: importer.Blocked,
 			Code:  "IMAGE_POLLS_FOR_WORK",
 			Needs: "a compatibility layer that is its own project",
 			Detail: "a Lambda container image embeds AWS's runtime client and polls an endpoint for work; " +
@@ -302,19 +328,19 @@ func importFunction(r *importer.Result, x fn) {
 	}
 
 	if x.snapStart {
-		r.Add(importer.Finding{Resource: x.name, Key: "snapStart", Level: importer.Approximated,
+		r.Add(importer.Finding{Resource: name, Key: "snapStart", Level: importer.Approximated,
 			Code: "SNAPSTART_HAS_NO_EQUIVALENT",
 			Detail: "this function is tuned around SnapStart; tau has no snapshot tier, so its cold-start profile " +
 				"changes by an order of magnitude and nothing else in the manifest reveals that"})
 	}
 	if x.layers > 0 {
-		r.Add(importer.Finding{Resource: x.name, Key: "layers", Level: importer.Blocked,
+		r.Add(importer.Finding{Resource: name, Key: "layers", Level: importer.Blocked,
 			Code:   "NO_TAU_FEATURE:layers",
 			Needs:  "a shared dependency artifact mounted into a build",
 			Detail: fmt.Sprintf("%d layer(s) supply code this function expects at runtime and are not in the repository", x.layers)})
 	}
 	if x.vpc {
-		r.Add(importer.Finding{Resource: x.name, Key: "vpc", Level: importer.Blocked,
+		r.Add(importer.Finding{Resource: name, Key: "vpc", Level: importer.Blocked,
 			Code:   "NO_TAU_FEATURE:vpc",
 			Needs:  "a private network the workload joins",
 			Detail: "the function reaches private resources through a VPC; tau's egress policy is a different model"})
@@ -326,6 +352,7 @@ func importFunction(r *importer.Result, x fn) {
 // importEvents says what each trigger would need. A Lambda's event shape is per
 // trigger, so this is also where "not Fetch-shaped" becomes concrete.
 func importEvents(r *importer.Result, x fn) {
+	name, _ := importer.Name(x.name)
 	seen := map[string]bool{}
 	for _, e := range x.events {
 		if seen[e] {
@@ -335,17 +362,17 @@ func importEvents(r *importer.Result, x fn) {
 
 		switch strings.ToLower(e) {
 		case "api", "httpapi", "http":
-			r.Add(importer.Finding{Resource: x.name, Key: "events." + e,
+			r.Add(importer.Finding{Resource: name, Key: "events." + e,
 				Level: importer.Approximated, Code: "ROUTING_BECOMES_AN_EDGE",
 				Detail: "an HTTP trigger becomes an inbound edge; the handler still receives an API Gateway event " +
 					"rather than a request, so the code changes even though the routing carries"})
 		case "schedule":
-			r.Add(importer.Finding{Resource: x.name, Key: "events." + e,
+			r.Add(importer.Finding{Resource: name, Key: "events." + e,
 				Level: importer.Blocked, Code: "NO_TAU_FEATURE:cron",
 				Needs:  "a scheduled trigger",
 				Detail: "a scheduled invocation has nowhere to be declared"})
 		default:
-			r.Add(importer.Finding{Resource: x.name, Key: "events." + e,
+			r.Add(importer.Finding{Resource: name, Key: "events." + e,
 				Level: importer.Blocked, Code: "NO_TAU_FEATURE:event-source",
 				Needs:  "an inbound edge from the corresponding tau resource",
 				Detail: fmt.Sprintf("a %s trigger delivers an AWS-shaped event from an AWS service; both the source and the payload would have to be replaced", e)})

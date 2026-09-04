@@ -40,13 +40,19 @@ func TestTheAppDefinitionIsTheComposeFile(t *testing.T) {
 services:
   api:
     image: acme/api:1
+    restart: always
     volumes:
       - data:/var/lib/data
 `)
 	require.Equal(t, Source, r.Source)
-	require.Equal(t, "acme/api:1", r.Resources["api"]["image"])
-	require.Equal(t, importer.Blocked, finding(t, r, "volumes").Level,
-		"compose's own findings survive the delegation")
+	doc, ok := r.Doc("application", "api")
+	require.True(t, ok)
+	require.Equal(t, map[string]any{"image": "acme/api:1"}, doc["source"])
+
+	// compose's own work survives the delegation, both halves of it: what it
+	// carried and what it refused.
+	require.Equal(t, []string{"data"}, r.Names("volume"))
+	require.Equal(t, importer.Blocked, finding(t, r, "restart").Level)
 }
 
 // TestInheritedVariablesAreNamed. A compose file full of ${{project.KEY}} is not

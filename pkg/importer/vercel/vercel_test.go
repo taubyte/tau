@@ -34,11 +34,23 @@ func TestTheBuildHalfIsWhatTheFileIsFor(t *testing.T) {
       "outputDirectory": ".next"
     }`)
 
+	// WHAT THE FILE DESCRIBES IS A WEBSITE: a repository built by a command
+	// into a directory that is then served. The field names are the
+	// vocabulary's own and not Vercel's.
+	doc, ok := r.Doc("website", SiteName)
+	require.True(t, ok, "got %v", r.Resources)
 	require.Equal(t, map[string]any{
-		"command": "next build",
-		"install": "pnpm i",
-		"output":  ".next",
-	}, r.Resources["build"])
+		"commands": map[string]any{
+			"install": "pnpm i",
+			"run":     "next build",
+			"output":  ".next",
+		},
+	}, doc["build"])
+
+	// THE BUILD IMAGE IS REQUIRED AND VERCEL DOES NOT NAME ONE.
+	f := finding(t, r, SiteName, "build.image")
+	require.Equal(t, importer.Blocked, f.Level)
+	require.Equal(t, "SOURCE_IN_API:node-version", f.Code)
 }
 
 // TestTheHalfThatIsNotInTheFileIsReportedAsElsewhere, not as a gap in tau.
@@ -67,8 +79,15 @@ func TestFunctionLimitsAreTheOneCleanMapping(t *testing.T) {
       }
     }`)
 
-	require.Equal(t, map[string]any{"memory": "3008MB", "timeout": "300s"},
-		r.Resources["api/heavy.ts"])
+	doc, ok := r.Doc("function", "api_heavy_ts")
+	require.True(t, ok, "got %v", r.Names("function"))
+	require.Equal(t, map[string]any{"memory": "3008MB", "timeout": "300s"}, doc["execution"])
+
+	// A GLOB IS NOT A RESOURCE. `api/heavy.ts` names a file; a pattern names
+	// however many the repository has, and this file does not say how many.
+	f := finding(t, r, "api_heavy_ts", "functions.api/heavy.ts")
+	require.Equal(t, importer.Approximated, f.Level)
+	require.Equal(t, "GLOB_IS_NOT_A_RESOURCE", f.Code)
 }
 
 // TestAnEdgeFunctionIsFetchShapedAndSaysSo, and a Node one needs a JS tier.

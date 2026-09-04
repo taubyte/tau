@@ -96,20 +96,35 @@ func Import(data []byte) (importer.Result, error) {
 
 	r := importer.Result{Source: Source}
 
-	// THE BUILD HALF IS WHAT THE FILE IS FOR, and it maps onto the build stanza
-	// this vocabulary now has.
-	build := map[string]any{}
-	if f.BuildCommand != nil && *f.BuildCommand != "" {
-		build["command"] = *f.BuildCommand
-	}
+	// THE BUILD HALF IS WHAT THE FILE IS FOR, and what it describes is a
+	// website: a repository built by a command into a directory that is then
+	// served. That is the `build/commands` branch of the website kind, and the
+	// field names are the vocabulary's own rather than Vercel's.
+	commands := map[string]any{}
 	if f.InstallCommand != nil && *f.InstallCommand != "" {
-		build["install"] = *f.InstallCommand
+		commands["install"] = *f.InstallCommand
+	}
+	if f.BuildCommand != nil && *f.BuildCommand != "" {
+		commands["run"] = *f.BuildCommand
 	}
 	if f.OutputDirectory != nil && *f.OutputDirectory != "" {
-		build["output"] = *f.OutputDirectory
+		commands["output"] = *f.OutputDirectory
 	}
-	if len(build) > 0 {
-		r.Set("build", build)
+	if len(commands) > 0 {
+		r.Set(siteKind, SiteName, map[string]any{
+			"description": "imported from vercel.json",
+			"build":       map[string]any{"commands": commands},
+		})
+
+		// THE BUILD IMAGE IS REQUIRED AND VERCEL DOES NOT NAME ONE. Vercel
+		// picks a Node version from a project setting and a package.json
+		// field, neither of which is in this file — and guessing one would
+		// build the site against a runtime nobody chose.
+		r.Add(importer.Finding{Resource: SiteName, Key: "build.image", Level: importer.Blocked,
+			Code:  "SOURCE_IN_API:node-version",
+			Needs: "nothing — the field exists; the value does not",
+			Detail: "the image a build runs in has to be named, and Vercel picks it from a project setting and " +
+				"package.json's engines field rather than from this file"})
 	}
 
 	if f.Framework != nil && *f.Framework != "" {
@@ -155,6 +170,17 @@ func Import(data []byte) (importer.Result, error) {
 	return r, nil
 }
 
+// siteKind and functionKind are what the two halves of a Vercel project become.
+const (
+	siteKind     = "website"
+	functionKind = "function"
+
+	// SiteName is what the imported website is called. Vercel's file carries no
+	// project name — the name is a dashboard setting — so one is chosen here
+	// rather than left empty, and it is stated so a caller can rename it.
+	SiteName = "site"
+)
+
 func importFunctions(r *importer.Result, fns map[string]function) {
 	names := make([]string, 0, len(fns))
 	for k := range fns {
@@ -167,15 +193,36 @@ func importFunctions(r *importer.Result, fns map[string]function) {
 		doc := map[string]any{}
 
 		// memory and maxDuration are the one clean mapping: tau has per-resource
-		// limits, and they are the same two numbers.
+		// limits, and they are the same two numbers. They live under
+		// `execution`, which is where the vocabulary puts them.
+		execution := map[string]any{}
 		if fn.Memory > 0 {
-			doc["memory"] = fmt.Sprintf("%dMB", fn.Memory)
+			execution["memory"] = fmt.Sprintf("%dMB", fn.Memory)
 		}
 		if fn.MaxDuration > 0 {
-			doc["timeout"] = fmt.Sprintf("%ds", fn.MaxDuration)
+			execution["timeout"] = fmt.Sprintf("%ds", fn.MaxDuration)
 		}
+		if len(execution) > 0 {
+			doc["execution"] = execution
+		}
+
+		// A GLOB IS NOT A RESOURCE. `api/**/*.ts` configures every file it
+		// matches; each of those is a function here, and this file does not say
+		// how many there are or what they are called. One resource is emitted
+		// per glob, named after it, and the mismatch is reported rather than
+		// hidden behind a plausible-looking name.
+		name, _ := importer.Name(glob)
+		if name == "" {
+			continue
+		}
+		r.Add(importer.Finding{Resource: name, Key: "functions." + glob, Level: importer.Approximated,
+			Code:  "GLOB_IS_NOT_A_RESOURCE",
+			Needs: "nothing — the shapes differ",
+			Detail: "\"" + glob + "\" configures every file it matches, and each of those is its own function here; " +
+				"one resource was made for the pattern and it has to be split by hand"})
+
 		if len(doc) > 0 {
-			r.Set(glob, doc)
+			r.Set(functionKind, name, doc)
 		}
 
 		switch {

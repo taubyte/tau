@@ -81,17 +81,27 @@ func (f Finding) String() string {
 	return s + " — " + f.Detail
 }
 
+// Resource is one thing an import produced: a v2 kind, a name, and the document
+// as the vocabulary spells it.
+//
+// THE KIND IS PER RESOURCE AND NOT PER RESULT. One compose file becomes
+// applications AND the volumes they mount; a Vercel project becomes functions
+// and a website. A Result that named one kind for all of them forced an
+// importer to either drop what did not fit or lie about it.
+type Resource struct {
+	Kind string
+	Name string
+	Doc  map[string]any
+}
+
 // Result is what an import produced.
 type Result struct {
 	// Source names where it came from: "compose", "vercel", "fly".
 	Source string
 
-	// Kind is the v2 kind the resources were imported as, when they are all one
-	// kind. Empty when an importer produces several.
-	Kind string
-
-	// Resources is the imported configuration, by name.
-	Resources map[string]map[string]any
+	// Resources is the imported configuration, IN ORDER, so two runs of one
+	// importer produce the same project and a corpus diff means something.
+	Resources []Resource
 
 	// Findings is everything not carried faithfully.
 	Findings []Finding
@@ -100,12 +110,38 @@ type Result struct {
 // Add records a finding.
 func (r *Result) Add(f Finding) { r.Findings = append(r.Findings, f) }
 
-// Set records an imported resource.
-func (r *Result) Set(name string, doc map[string]any) {
-	if r.Resources == nil {
-		r.Resources = map[string]map[string]any{}
+// Set records an imported resource, replacing one already recorded under the
+// same kind and name.
+func (r *Result) Set(kind, name string, doc map[string]any) {
+	for i, existing := range r.Resources {
+		if existing.Kind == kind && existing.Name == name {
+			r.Resources[i].Doc = doc
+			return
+		}
 	}
-	r.Resources[name] = doc
+	r.Resources = append(r.Resources, Resource{Kind: kind, Name: name, Doc: doc})
+}
+
+// Doc is one imported resource's document, for a caller that knows what it is
+// looking for.
+func (r Result) Doc(kind, name string) (map[string]any, bool) {
+	for _, res := range r.Resources {
+		if res.Kind == kind && res.Name == name {
+			return res.Doc, true
+		}
+	}
+	return nil, false
+}
+
+// Names is every resource of one kind, in the order they were produced.
+func (r Result) Names(kind string) []string {
+	var out []string
+	for _, res := range r.Resources {
+		if res.Kind == kind {
+			out = append(out, res.Name)
+		}
+	}
+	return out
 }
 
 // Sort puts the findings in a stable order, so two runs of one importer diff
