@@ -158,14 +158,46 @@ fn reply(status: u16, body: Vec<u8>) -> Response {
     }
 }
 
+// header reads one request header, case-insensitively — a header name is not
+// case-sensitive and a fixture that assumed it was would fail on whatever
+// spelling the platform happened to use.
+fn header(req: &Request, name: &str) -> Option<String> {
+    req.headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case(name))
+        .map(|h| h.value.clone())
+}
+
 impl Guest for Component {
     fn handle(req: Request) -> Response {
+        // A VALIDATOR IS A HANDLER, because the world the config names does not
+        // exist: `implements: instance-validator` is one of seven host worlds
+        // and only `handler` is built. So an instance decision arrives as a
+        // request carrying the instance in a header, and this fixture answers
+        // it — refusing anything called `denied` so a test can drive both arms
+        // of the decision rather than only the yes.
+        if let Some(instance) = header(&req, "x-taubyte-instance") {
+            return if instance == "denied" {
+                reply(403, b"refused".to_vec())
+            } else {
+                reply(200, instance.into_bytes())
+            };
+        }
+
         // The path is "/<op>/<cache>/<key>", so a test drives every branch
         // through one export.
         let parts: Vec<&str> = req.path.trim_start_matches('/').splitn(3, '/').collect();
         let op = parts.first().copied().unwrap_or("");
-        let name = parts.get(1).copied().unwrap_or("");
         let key = parts.get(2).copied().unwrap_or("");
+
+        // `~` IN THE NAME IS A `/`, and it is here because this fixture's path
+        // is itself slash-separated. A store that holds many instances is
+        // addressed as `label/instance` in the host ABI, so a test needs a way
+        // to say one through a path that already uses the separator — writing
+        // `sessions~room-42` is that way, and it is the fixture's encoding
+        // rather than anything the interface knows about.
+        let name = parts.get(1).copied().unwrap_or("").replace('~', "/");
+        let name = name.as_str();
 
         match op {
             "get" => match cache::get(name, key) {

@@ -139,17 +139,15 @@ func (r *Runtime) cacheImports(spec invoke.Spec) []component.Option {
 
 	// open resolves a label to a cache, or to the arm that says why not.
 	open := func(ctx context.Context, label, op string) (Cache, *component.VariantValue) {
-		grant, ok := grants[label]
-		if !ok {
-			return nil, failure(errNoSuchCache, label)
-		}
 		// A REFUSED GRANT SAYS WHY, because "denied" alone would send an
-		// author looking at their own ops list for a reason that is not there.
-		if grant.Refused != "" {
-			return nil, failure(errDenied, grant.Refused)
-		}
-		if !grant.Allows(op) {
-			return nil, failure(errDenied, label+" cannot "+op)
+		// author looking at their own ops list for a reason that is not there
+		// — and the same is true of an instance a validator turned down.
+		grant, why := r.addressed(ctx, grants, label, op)
+		if why != nil {
+			if why.missing {
+				return nil, failure(errNoSuchCache, why.detail)
+			}
+			return nil, failure(errDenied, why.detail)
 		}
 
 		if r.caches == nil {

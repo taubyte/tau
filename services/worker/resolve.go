@@ -151,7 +151,7 @@ func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Gr
 				Label:    reach.Label,
 				Handle:   project.Handle(t.Project, t.Environment, id),
 				Ops:      reach.Ops,
-				Settings: settingsFor(reach.Kind, reach, target),
+				Settings: merged(settingsFor(reach.Kind, reach, target), instanceSettings(target)),
 				Refused:  unservable(reach, target),
 			})
 		}
@@ -172,6 +172,24 @@ const (
 	// engine this cloud actually holds, for both a cache and a stream.
 	distributedEngine = "distributed"
 )
+
+// merged is two setting maps as one, with nil for neither.
+//
+// IT IS AN OVERLAY AND NOT A MERGE STRATEGY: the two maps carry different keys
+// by construction — a kind's own attributes and the `instances:` block — so
+// there is nothing to resolve and a collision would be a bug in one of them.
+func merged(first, second map[string]string) map[string]string {
+	if len(second) == 0 {
+		return first
+	}
+	if first == nil {
+		return second
+	}
+	for key, value := range second {
+		first[key] = value
+	}
+	return first
+}
 
 // settingsFor is what the TARGET (and, for a mount, the entry) declared, in the
 // vocabulary's own attribute paths.
@@ -323,20 +341,44 @@ func unservable(reach project.Reach, target project.Resource) string {
 		return why
 	}
 
-	// AN `instances:` BLOCK IS ON FOUR KINDS AND IS HONOURED BY NONE, which is
-	// the authorizer's defect one level up: the target named who admits an
-	// instance and how many there may be, and serving the grant anyway hands a
-	// workload ONE store where the config says many, admitted by nobody and
-	// counted against no ceiling.
+	// AN `instances:` BLOCK IS NO LONGER A REFUSAL. It was one for as long as
+	// nothing honoured it — the target named who admits an instance and how
+	// many there may be, and serving the grant anyway handed a workload ONE
+	// store where the config says many. What honours it now is the tier: the
+	// instance travels in the label, an Admitter runs the validator, and the
+	// ceiling is counted. See pkg/invoke/wasm/instance.go.
 	//
-	// It is checked after the kind's own reasons so that a target refused for
-	// something else keeps the sentence that names it.
-	if target.String("instances", "admission") != "" {
-		return fmt.Sprintf("%s %q holds many instances, admitted by the validator %q, and nothing here "+
-			"calls one — serving it would hand this workload a single store the config never described",
-			reach.Kind, reach.Label, target.String("instances", "validator", "name"))
-	}
+	// What travels for it is settingsOfInstances, merged in reachesOf, because
+	// the block is on four kinds and settingsFor is per kind.
 	return ""
+}
+
+// instanceSettings carries the `instances:` block, which is cross-kind — cache,
+// database, storage and bus each declare it — so it is merged onto whatever the
+// kind's own settings were rather than repeated in four places.
+//
+// THE ADMISSION SWITCH IS WHAT SAYS THE BLOCK IS THERE. It is a Captures()
+// attribute, so its presence is the declaration and a target without one holds
+// exactly one instance.
+func instanceSettings(target project.Resource) map[string]string {
+	admission := target.String("instances", "admission")
+	if admission == "" {
+		return nil
+	}
+
+	out := map[string]string{settingAdmission: admission}
+	if name := target.String("instances", "validator", "name"); name != "" {
+		out[settingValidator] = name
+	}
+	if namespace := target.String("instances", "validator", "namespace"); namespace != "" {
+		out[settingValidated] = namespace
+	}
+	// A LIMIT OF ZERO IS AN ANSWER AND NOT AN ABSENCE — the vocabulary makes it
+	// required precisely so that "no ceiling" is a sentence somebody wrote.
+	if limit, ok := target.Int("instances", "limit"); ok {
+		out[settingLimit] = strconv.FormatInt(limit, 10)
+	}
+	return out
 }
 
 // unservableKind is what one kind declares that this cloud would have to serve
@@ -416,6 +458,12 @@ const (
 	// Where the platform posts an item to a consumer that has no host ABI.
 	settingDeliverPort = "deliver/port"
 	settingDeliverPath = "deliver/path"
+
+	// The `instances:` block, spelled as pkg/invoke/wasm reads it.
+	settingAdmission = "instances/admission"
+	settingLimit     = "instances/limit"
+	settingValidator = "instances/validator/name"
+	settingValidated = "instances/validator/namespace"
 
 	// What a storage declared: which data model, how big, and whether old
 	// versions are kept.

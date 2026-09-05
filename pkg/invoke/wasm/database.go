@@ -119,16 +119,13 @@ func (r *Runtime) databaseImports(spec invoke.Spec) []component.Option {
 	grants := databaseGrantsOf(spec)
 
 	// resolve is the shared half: which database, and may this verb touch it.
-	resolve := func(label, op string) (invoke.Grant, *component.VariantValue) {
-		grant, ok := grants[label]
-		if !ok {
-			return grant, databaseFailure(errNoSuchDatabase, label)
-		}
-		if grant.Refused != "" {
-			return grant, databaseFailure(errDatabaseDenied, grant.Refused)
-		}
-		if !grant.Allows(op) {
-			return grant, databaseFailure(errDatabaseDenied, label+" cannot "+op)
+	resolve := func(ctx context.Context, label, op string) (invoke.Grant, *component.VariantValue) {
+		grant, why := r.addressed(ctx, grants, label, op)
+		if why != nil {
+			if why.missing {
+				return grant, databaseFailure(errNoSuchDatabase, why.detail)
+			}
+			return grant, databaseFailure(errDatabaseDenied, why.detail)
 		}
 		if r.databases == nil {
 			return grant, databaseFailure(errDatabaseUnavailable, "this node has nothing to open a database with")
@@ -174,7 +171,7 @@ func (r *Runtime) databaseImports(spec invoke.Spec) []component.Option {
 			return nil, err
 		}
 
-		grant, refused := resolve(label, opQuery)
+		grant, refused := resolve(ctx, label, opQuery)
 		if refused != nil {
 			return errorResult(refused), nil
 		}
@@ -208,7 +205,7 @@ func (r *Runtime) databaseImports(spec invoke.Spec) []component.Option {
 			return nil, err
 		}
 
-		grant, refused := resolve(label, opExec)
+		grant, refused := resolve(ctx, label, opExec)
 		if refused != nil {
 			return errorResult(refused), nil
 		}

@@ -62,6 +62,7 @@ type Service struct {
 	hosts   Hosts
 	workers Workers
 	buses   Buses
+	admits  Admits
 
 	projects *project.Cache
 	limits   *limiter
@@ -129,6 +130,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		hosts:    o.hosts,
 		workers:  o.workers,
 		buses:    o.buses,
+		admits:   o.admits,
 		projects: projects,
 		limits:   newLimiter(o.now, cfg.MaxHosts),
 		now:      o.now,

@@ -93,15 +93,12 @@ func (r *Runtime) vectorImports(spec invoke.Spec) []component.Option {
 	grants := vectorGrantsOf(spec)
 
 	open := func(ctx context.Context, label, op string) (Vectors, *component.VariantValue) {
-		grant, ok := grants[label]
-		if !ok {
-			return nil, vectorFailure(errNoSuchVector, label)
-		}
-		if grant.Refused != "" {
-			return nil, vectorFailure(errVectorDenied, grant.Refused)
-		}
-		if !grant.Allows(op) {
-			return nil, vectorFailure(errVectorDenied, label+" cannot "+op)
+		grant, why := r.addressed(ctx, grants, label, op)
+		if why != nil {
+			if why.missing {
+				return nil, vectorFailure(errNoSuchVector, why.detail)
+			}
+			return nil, vectorFailure(errVectorDenied, why.detail)
 		}
 		if r.vectors == nil {
 			return nil, vectorFailure(errVectorUnavailable, "this node has nothing to open a database with")

@@ -171,20 +171,104 @@ func TestAGatewayWithNoBusBackingRefuses(t *testing.T) {
 	require.Equal(t, http.StatusNotImplemented, w.Code)
 }
 
-// A BUS THAT ADMITS INSTANCES THROUGH A FUNCTION IS REFUSED, rather than
-// attached to as if the block were not there. The fixture's `chat` is that
-// shape: 200 instances, admitted by `may_open`, and a socket that ignored it
-// would let anybody open any room.
-func TestABusThatValidatesInstancesIsRefused(t *testing.T) {
+// A BUS THAT HOLDS MANY INSTANCES IS ATTACHED TO BY PATH, and the path IS the
+// instance. The fixture's `chat` is that shape: 200 instances, admitted by
+// `may_open`, and a browser naming a room.
+func TestAnInstanceOfABusIsAttachedToByPath(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{}, WithBuses(buses))
+	admit := &fakeAdmits{}
+	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(admit))
+	fqdn, id := busNamed(t, "chat", "")
+
+	conn, res, err := websocket.DefaultDialer.Dial(
+		"ws://"+h.listen(t)+"/room-42", http.Header{"Host": []string{fqdn}})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusSwitchingProtocols, res.StatusCode)
+	defer conn.Close()
+
+	buses.waitForOne(t)
+	require.Equal(t, []string{project.Handle("shop", "prod", id) + "/room-42"}, buses.asked(),
+		"the instance is part of the handle, so a workload publishing to chat/room-42 meets this browser")
+
+	// AND THE VALIDATOR WAS ASKED FIRST, which is this kind's only inbound
+	// control: the instance name is the caller's, so the project has to have a
+	// point at which it says no.
+	require.Equal(t, []string{"room-42"}, admit.seen())
+	require.Equal(t, "may_open", admit.settings()[0]["instances/validator/name"])
+}
+
+// AND A VALIDATOR THAT SAYS NO IS A REFUSAL, before anything is subscribed to.
+func TestAnInstanceTheValidatorRefusedIsNotAttached(t *testing.T) {
+	buses := &fakeBuses{}
+	admit := &fakeAdmits{refuse: errors.New("may_open refused it")}
+	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(admit))
 	fqdn, _ := busNamed(t, "chat", "")
 
 	w := recorder()
-	h.Gateway.Handler().ServeHTTP(w, upgradeRequest(fqdn))
+	r := upgradeRequest(fqdn)
+	r.URL.Path = "/room-42"
+	h.Gateway.Handler().ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Empty(t, buses.asked(), "nothing was subscribed to")
+
+	// AND THE REFUSAL SAYS NOTHING ABOUT THE DEPLOYMENT. Naming the function
+	// would describe somebody's project to anyone who asked.
+	require.NotContains(t, w.Body.String(), "may_open")
+}
+
+// A BUS THAT HOLDS MANY CANNOT BE ATTACHED TO AS ITSELF, and one that holds one
+// cannot be attached to as an instance. Serving either would be a caller
+// getting a topic its author never described.
+func TestABusIsAddressedTheWayItsBlockSaysItIs(t *testing.T) {
+	buses := &fakeBuses{}
+	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
+
+	many, _ := busNamed(t, "chat", "")
+	w := recorder()
+	h.Gateway.Handler().ServeHTTP(w, upgradeRequest(many))
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Contains(t, w.Body.String(), "holds many instances")
+
+	one, _ := busNamed(t, "presence", "")
+	w = recorder()
+	r := upgradeRequest(one)
+	r.URL.Path = "/room-42"
+	h.Gateway.Handler().ServeHTTP(w, r)
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Contains(t, w.Body.String(), "holds one topic")
+
+	require.Empty(t, buses.asked())
+}
+
+// AN INSTANCE NAME IS A KEY AND NOT A PATH, so a second segment is not a deeper
+// instance — it is not an instance at all.
+func TestAPathWithTwoSegmentsIsNotAnInstance(t *testing.T) {
+	buses := &fakeBuses{}
+	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
+	fqdn, _ := busNamed(t, "chat", "")
+
+	w := recorder()
+	r := upgradeRequest(fqdn)
+	r.URL.Path = "/room-42/sub"
+	h.Gateway.Handler().ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Empty(t, buses.asked())
+}
+
+// A GATEWAY WITH NOTHING TO ASK REFUSES EVERY INSTANCE, because a security
+// control that is silently absent is worse than one that is loudly missing.
+func TestABusWithInstancesNeedsAnAdmission(t *testing.T) {
+	h := newHarness(t, Config{}, WithBuses(&fakeBuses{}))
+	fqdn, _ := busNamed(t, "chat", "")
+
+	w := recorder()
+	r := upgradeRequest(fqdn)
+	r.URL.Path = "/room-42"
+	h.Gateway.Handler().ServeHTTP(w, r)
+
 	require.Equal(t, http.StatusNotImplemented, w.Code)
-	require.Contains(t, w.Body.String(), "validator")
-	require.Empty(t, buses.asked(), "and nothing was attached before it was refused")
 }
 
 // A BUS THAT CANNOT BE ATTACHED TO IS AN HTTP STATUS. Attaching happens BEFORE
@@ -245,6 +329,35 @@ func TestAnUpgradeAtANameWithNoBusIsARequest(t *testing.T) {
 	h.Gateway.Handler().ServeHTTP(w, upgradeRequest("ask.example.com"))
 	require.Equal(t, http.StatusMethodNotAllowed, w.Code, "`ask` is POST-only, which is the route answering")
 	require.Empty(t, buses.asked(), "and nothing was attached for it")
+}
+
+// fakeAdmits records what it was asked to admit.
+type fakeAdmits struct {
+	mu       sync.Mutex
+	asked    []string
+	declared []map[string]string
+	refuse   error
+}
+
+func (f *fakeAdmits) AdmitInstance(_ context.Context, _ string, settings map[string]string, instance string) error {
+	f.mu.Lock()
+	f.asked = append(f.asked, instance)
+	f.declared = append(f.declared, settings)
+	err := f.refuse
+	f.mu.Unlock()
+	return err
+}
+
+func (f *fakeAdmits) seen() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.asked...)
+}
+
+func (f *fakeAdmits) settings() []map[string]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]map[string]string(nil), f.declared...)
 }
 
 // fakeBuses records what was attached to and hands back attachments a test

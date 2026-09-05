@@ -147,17 +147,18 @@ func (r *Runtime) publishImports(iface string, grants map[string]invoke.Grant, m
 			return nil, fmt.Errorf("stream.publish: %w", err)
 		}
 
-		grant, ok := grants[label]
-		if !ok {
-			return errorResult(streamFailure(missing, label)), nil
-		}
 		// A REFUSED GRANT SAYS WHY — an engine this cloud has no driver for
-		// reads as a typo otherwise.
-		if grant.Refused != "" {
-			return errorResult(streamFailure(errStreamDenied, grant.Refused)), nil
-		}
-		if !grant.Allows(opPublish) {
-			return errorResult(streamFailure(errStreamDenied, label+" cannot publish")), nil
+		// reads as a typo otherwise — and so does an instance a validator
+		// turned down. A BUS MAY HOLD MANY INSTANCES and a stream may not, so
+		// the same resolver settles both: the block's presence is what decides,
+		// and neither this function nor the caller has to know which kind it is
+		// talking to.
+		grant, why := r.addressed(ctx, grants, label, opPublish)
+		if why != nil {
+			if why.missing {
+				return errorResult(streamFailure(missing, why.detail)), nil
+			}
+			return errorResult(streamFailure(errStreamDenied, why.detail)), nil
 		}
 		if to == nil {
 			// Unreachable while Start refuses a granted spec on a tier with no

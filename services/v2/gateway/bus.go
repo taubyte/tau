@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,13 +38,17 @@ import (
 // would be a second wire format for one topic — and the sender gets its own
 // message back, because that is what "everything attached" says.
 //
-// # What it does not do yet
+// # A bus that holds many instances is addressed by path
 //
-// A bus that declares `instances:` admits each instance through a validator
-// function, and that function's host interface does not exist. Such a bus is
-// refused rather than attached to as if the block were not there, which is the
-// same answer this service already gives a router and a fail-closed
-// transformer.
+// `instances:` is this kind's only inbound control, and it is the vocabulary's
+// own: "the thing attaching is a BROWSER, so the instance name is the caller's,
+// and the project has to have a point at which it says no". So the path IS the
+// instance — `wss://chat.example.com/room-42` — and the bus's validator decides
+// whether that room may exist before anything is subscribed to.
+//
+// A bus with no `instances:` block holds one topic and is attached to at `/`.
+// Naming an instance on one, or omitting it on the other, is refused rather than
+// quietly served as the resource itself.
 
 // busKind is what an ephemeral n:n bus is called in the vocabulary.
 const busKind = "bus"
@@ -113,6 +118,41 @@ func (s *Service) busesAt(p *project.Project, name string) []attachable {
 // to a bus's name is not one, and is told so rather than attached.
 func upgrading(r *http.Request) bool { return websocket.IsWebSocketUpgrade(r) }
 
+// instanceOf is the instance a path names: "/room-42" is one, "/" is none, and
+// anything with a second segment is not an instance name at all.
+func instanceOf(path string) (string, bool) {
+	trimmed := strings.Trim(path, "/")
+	if strings.Contains(trimmed, "/") {
+		return "", false
+	}
+	return trimmed, true
+}
+
+// instanceSettings is the compiled `instances:` block, or nil when this bus
+// holds one topic.
+//
+// THE ADMISSION SWITCH IS WHAT SAYS THE BLOCK IS THERE, which is the
+// vocabulary's own shape: it is a Captures() attribute, so its presence is the
+// declaration.
+func instanceSettings(resource project.Resource) map[string]string {
+	admission := resource.String("instances", "admission")
+	if admission == "" {
+		return nil
+	}
+
+	out := map[string]string{"instances/admission": admission}
+	if name := resource.String("instances", "validator", "name"); name != "" {
+		out["instances/validator/name"] = name
+	}
+	if namespace := resource.String("instances", "validator", "namespace"); namespace != "" {
+		out["instances/validator/namespace"] = namespace
+	}
+	if limit, ok := resource.Int("instances", "limit"); ok {
+		out["instances/limit"] = strconv.FormatInt(limit, 10)
+	}
+	return out
+}
+
 // attach holds one browser on one bus until either end goes away.
 func (s *Service) attach(w http.ResponseWriter, r *http.Request, billed *crossing, buses []attachable, projectName, environment string) {
 	if s.buses == nil {
@@ -130,10 +170,41 @@ func (s *Service) attach(w http.ResponseWriter, r *http.Request, billed *crossin
 	}
 
 	bus := buses[0]
-	if bus.resource.String("instances", "admission") != "" {
-		refuse(w, http.StatusNotImplemented,
-			"this bus admits instances through a validator function, which is not implemented")
+
+	instance, ok := instanceOf(r.URL.Path)
+	if !ok {
+		// An instance name is a KEY and not a path — it is looked up exactly,
+		// and a separator in it would make one instance reachable by two names.
+		refuse(w, http.StatusNotFound, "that is not an instance of this bus")
 		return
+	}
+
+	handle := project.Handle(projectName, environment, bus.id)
+	settings := instanceSettings(bus.resource)
+
+	switch {
+	case settings == nil && instance != "":
+		refuse(w, http.StatusNotFound, "this bus holds one topic and is attached to at /")
+		return
+	case settings != nil && instance == "":
+		refuse(w, http.StatusNotFound, "this bus holds many instances; attach to one of them")
+		return
+	case settings != nil:
+		if s.admits == nil {
+			refuse(w, http.StatusNotImplemented, "attaching to an instance of a bus is not available here")
+			return
+		}
+		if err := s.admits.AdmitInstance(r.Context(), handle, settings, instance); err != nil {
+			// WHAT A VALIDATOR SAID, WITHOUT SAYING WHOSE. A refusal that named
+			// the function would describe somebody's deployment to anyone who
+			// asked, which is the rule `refuse` keeps.
+			refuse(w, http.StatusForbidden, "this instance was not admitted")
+			return
+		}
+		// THE INSTANCE IS PART OF THE HANDLE, which is what the tier does for
+		// every other kind — so a workload publishing to `chat/room-42` and a
+		// browser attached to `/room-42` are on one topic.
+		handle += "/" + instance
 	}
 
 	// r.Context() AND NOT THE REQUEST BUDGET. The timeout above bounds a
@@ -145,7 +216,7 @@ func (s *Service) attach(w http.ResponseWriter, r *http.Request, billed *crossin
 	// ATTACHED BEFORE UPGRADED, so a bus that cannot be reached is still an
 	// HTTP status. After the upgrade the only way to say anything is a close
 	// frame, which a browser reports as a network error.
-	at, err := s.buses.Attach(ctx, project.Handle(projectName, environment, bus.id))
+	at, err := s.buses.Attach(ctx, handle)
 	if err != nil {
 		refuse(w, statusFor(err), "this bus could not be attached to")
 		return

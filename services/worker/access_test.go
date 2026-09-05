@@ -262,51 +262,65 @@ var errNoBackend = errors.New("nothing should reach the backend")
 
 // ── instances ────────────────────────────────────────────────────────────────
 
-// TestAStoreThatHoldsManyInstancesIsRefusedByName.
+// TestASTOREThatHoldsManyCarriesTheBlockRatherThanARefusal.
 //
-// `instances:` says a store holds many, that a named function decides which of
-// them may exist, and how many there may be at once. Nothing here calls one and
-// nothing counts them — so serving the grant would hand a workload ONE store,
-// with the admission control silently absent and the ceiling unenforced. That
-// is the authorizer's defect a level up, and it gets the authorizer's answer.
+// `instances:` was a refusal for as long as nothing honoured it: the target
+// named who admits an instance and how many there may be, and serving the grant
+// anyway handed a workload ONE store where the config says many. What honours it
+// now is the tier — the instance travels in the label, the validator is invoked,
+// the ceiling is counted — so what the composer owes is the block, intact.
 //
-// FOUR KINDS CAN DECLARE IT — cache, database, storage and bus — and checkout
-// reaches two of them, which is why the check is on the grant rather than on
-// any one kind's settings.
-func TestAStoreThatHoldsManyInstancesIsRefused(t *testing.T) {
+// FOUR KINDS CAN DECLARE IT — cache, database, storage and bus — which is why
+// it is merged onto every grant rather than living in one kind's settings.
+func TestAStoreThatHoldsManyInstancesCarriesItsAdmission(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, nil, "function", "checkout")
 
 	for _, want := range []struct{ kind, label string }{
 		{databaseKind, "tokens"},
-		{"storage", "receipts"},
+		{storageKind, "receipts"},
 	} {
 		g, ok := grantFor(spec, want.kind, want.label)
 		require.True(t, ok, "checkout reaches %s/%s", want.kind, want.label)
-		require.NotEmpty(t, g.Refused, "%s/%s admits instances and nothing admits them", want.kind, want.label)
-		require.Contains(t, g.Refused, "many instances")
-		require.Contains(t, g.Refused, "may_open", "it names which validator")
+		require.Empty(t, g.Refused, "%s/%s is servable now", want.kind, want.label)
+
+		require.Equal(t, "validator", g.Settings[settingAdmission])
+		require.Equal(t, "may_open", g.Settings[settingValidator], "which function decides")
+		require.Equal(t, "/shop", g.Settings[settingValidated], "and where it lives")
+		require.NotEmpty(t, g.Settings[settingLimit], "the ceiling the author wrote")
 	}
 
-	// AND THE WORKLOAD STILL RUNS. Access degrades per target: the one grant
-	// that needed the unservable thing is refused and the rest are not.
-	g, ok := grantFor(spec, streamKind, "orders")
-	require.True(t, ok)
-	require.Empty(t, g.Refused, "a target with no instances block is untouched")
+	// AND THE KIND'S OWN SETTINGS SURVIVE THE MERGE. The two maps carry
+	// different keys by construction, and a merge that dropped one would be a
+	// database with no data model.
+	g, _ := grantFor(spec, databaseKind, "tokens")
+	require.Equal(t, "kv", g.Settings[settingType])
 }
 
-// TestAKindsOwnReasonIsReportedOverInstances. shop's `sessions` is BOTH
-// single-writer and a store of many instances, and an author is told the thing
-// they can act on rather than whichever check ran first.
-func TestAKindsOwnReasonIsReportedOverInstances(t *testing.T) {
+// TestASTOREThatHoldsONEDeclaresNothing, so a target with no `instances:` block
+// is addressed as itself and the tier knows the difference.
+func TestAStoreThatHoldsOneCarriesNoAdmission(t *testing.T) {
+	h := newHarness(t)
+	spec := resolveIn(t, h, nil, "function", "checkout")
+
+	g, ok := grantFor(spec, streamKind, "orders")
+	require.True(t, ok)
+	require.Empty(t, g.Settings[settingAdmission])
+}
+
+// TestAKINDSOwnReasonStillWins. shop's `sessions` is single-writer AND a store
+// of many instances; the refusal is about the first, because that is the one an
+// author can act on and the second is no longer a refusal at all.
+func TestAKindsOwnReasonIsStillReported(t *testing.T) {
 	h := newHarness(t)
 
-	// checkout's `sessions` entry names `/shop`, so it resolves to the one
-	// that declares both.
 	g, ok := grantFor(resolveIn(t, h, nil, "function", "checkout"), cacheKind, "sessions")
 	require.True(t, ok)
 	require.Contains(t, g.Refused, "single-writer")
-	require.NotContains(t, g.Refused, "many instances")
+
+	// And it still carries the block, so a cloud that served single-writer
+	// would need no second change to serve its instances.
+	require.Equal(t, "validator", g.Settings[settingAdmission])
 }
 
 // grantFor is one grant by kind and label.

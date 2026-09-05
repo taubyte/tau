@@ -96,15 +96,12 @@ func (r *Runtime) kvImports(spec invoke.Spec) []component.Option {
 	grants := kvGrantsOf(spec)
 
 	open := func(ctx context.Context, label, op string) (KV, *component.VariantValue) {
-		grant, ok := grants[label]
-		if !ok {
-			return nil, kvFailure(errNoSuchKV, label)
-		}
-		if grant.Refused != "" {
-			return nil, kvFailure(errKVDenied, grant.Refused)
-		}
-		if !grant.Allows(op) {
-			return nil, kvFailure(errKVDenied, label+" cannot "+op)
+		grant, why := r.addressed(ctx, grants, label, op)
+		if why != nil {
+			if why.missing {
+				return nil, kvFailure(errNoSuchKV, why.detail)
+			}
+			return nil, kvFailure(errKVDenied, why.detail)
 		}
 		if r.kv == nil {
 			return nil, kvFailure(errKVUnavailable, "this node has nothing to open a database with")

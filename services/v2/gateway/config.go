@@ -47,6 +47,24 @@ type Buses interface {
 	Attach(ctx context.Context, handle string) (Attachment, error)
 }
 
+// Admits decides whether a browser may attach to one instance of a bus.
+//
+// IT IS THE VOCABULARY'S OWN CONTROL and the only one this kind has. A bus with
+// a `host:` is reachable from the internet; `instances:` is where the project
+// says WHICH of them may exist and who decides — "the thing attaching is a
+// BROWSER, so the instance name is the caller's, and the project has to have a
+// point at which it says no". Without this, the only buses a cloud could serve
+// were the ones that named nobody.
+type Admits interface {
+	// AdmitInstance runs the bus's validator for one instance. The handle is
+	// the resolved resource; the settings are the compiled `instances:` block.
+	//
+	// THE METHOD IS NAMED FOR WHAT IT ADMITS rather than being a bare Admit,
+	// for the reason KVs.OpenKV is: one type answers this and the tier's own
+	// admission at once, and Go cannot have two methods of one name.
+	AdmitInstance(ctx context.Context, handle string, settings map[string]string, instance string) error
+}
+
 // Attachment is one connection's view of a bus: what arrives, and what it
 // sends. Close releases it and nobody else's.
 type Attachment interface {
@@ -126,6 +144,7 @@ type options struct {
 	workers Workers
 	source  project.Registry
 	buses   Buses
+	admits  Admits
 	now     func() time.Time
 	meter   Meter
 }
@@ -184,6 +203,19 @@ func WithBuses(b Buses) Option {
 			return errors.New("gateway: a nil bus backing")
 		}
 		o.buses = b
+		return nil
+	}
+}
+
+// WithAdmission is what decides whether a caller may attach to one instance of
+// a bus. A gateway without one refuses every bus that declares `instances:`,
+// which is a security control silently absent otherwise.
+func WithAdmission(a Admits) Option {
+	return func(o *options) error {
+		if a == nil {
+			return errors.New("gateway: a nil admission")
+		}
+		o.admits = a
 		return nil
 	}
 }

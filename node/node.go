@@ -83,6 +83,11 @@ type Node struct {
 	// which is a node that mounts nothing.
 	disks *volumes
 
+	// admit decides whether one instance of a store that holds many may exist.
+	// It is shared by the wasm tier and the gateway: a workload opening
+	// `chat/room-42` and a browser attaching to `/room-42` ask one question.
+	admit *admissions
+
 	// bus is this node's one bus backing, shared by the wasm tier's publish and
 	// the gateway's attach. Both reach the same topic, and a second would be a
 	// second join of it — a mesh each, with the browser on the one the workload
@@ -339,6 +344,11 @@ func (n *Node) openWorker() error {
 		objects := &buckets{node: n}
 		n.closers = append(n.closers, objects)
 
+		// WHO MAY OPEN ONE INSTANCE OF A STORE THAT HOLDS MANY. It invokes the
+		// validator the target named, which is why it is here and not in the
+		// tier: the tier runs one workload and cannot reach another.
+		admit := n.admissions()
+
 		// ONE VAULT FOR THE NODE, not one per consumer. It holds a stream to a
 		// remote secrets service and opening a second would be a second stream
 		// to the same peer; the worker below is handed this same value.
@@ -356,6 +366,7 @@ func (n *Node) openWorker() error {
 			wasm.WithVectors(servers),
 			wasm.WithQueues(n.workQueues()),
 			wasm.WithStorage(objects),
+			wasm.WithAdmission(admit),
 			wasm.WithSecrets(n.vault))
 		if err != nil {
 			return err
@@ -515,6 +526,13 @@ func (n *Node) openGateway() error {
 	// delivering anything.
 	if n.opts.pubsub != nil {
 		gatewayOptions = append(gatewayOptions, gateway.WithBuses(&buses{streams: n.busStreams()}))
+	}
+
+	// AND WHO MAY ATTACH TO ONE INSTANCE OF ONE, which is the same decision the
+	// tier asks about a workload — one implementation, because two answers to
+	// it would be two security policies for one config block.
+	if n.worker != nil {
+		gatewayOptions = append(gatewayOptions, gateway.WithAdmission(n.admissions()))
 	}
 	if n.opts.now != nil {
 		gatewayOptions = append(gatewayOptions, gateway.WithClock(n.opts.now))
@@ -707,6 +725,16 @@ func (n *Node) PubSub() stats.PubSub { return n.opts.pubsub }
 // a browser has to listen on exactly what a publish reaches — the same argument
 // StreamTopic carries.
 func (n *Node) BusTopic(handle string) string { return topicFor("bus", n.cfg.Cloud, handle) }
+
+// admissions is this node's one admitter, shared by the wasm tier and the
+// gateway. CONSTRUCTION ONLY, like the other backings.
+func (n *Node) admissions() *admissions {
+	if n.admit == nil {
+		n.admit = &admissions{node: n}
+		n.closers = append(n.closers, n.admit)
+	}
+	return n.admit
+}
 
 // disksOrNil is this node's volume backing, or nil when it has no root to put
 // one in. CONSTRUCTION ONLY, like the other two.

@@ -186,6 +186,10 @@ type Runtime struct {
 	// from.
 	storage Buckets
 
+	// admission decides whether one instance of a store that holds many may
+	// exist. Nil refuses every one — see instance.go.
+	admission Admitter
+
 	// secrets backs `taubyte:handler/secret` — the rotation path, beside the
 	// environment variable that carries a secret at start.
 	secrets Secrets

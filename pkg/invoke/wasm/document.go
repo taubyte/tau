@@ -97,15 +97,12 @@ func (r *Runtime) documentImports(spec invoke.Spec) []component.Option {
 	grants := documentGrantsOf(spec)
 
 	open := func(ctx context.Context, label, op string) (Documents, *component.VariantValue) {
-		grant, ok := grants[label]
-		if !ok {
-			return nil, docFailure(errNoSuchDoc, label)
-		}
-		if grant.Refused != "" {
-			return nil, docFailure(errDocDenied, grant.Refused)
-		}
-		if !grant.Allows(op) {
-			return nil, docFailure(errDocDenied, label+" cannot "+op)
+		grant, why := r.addressed(ctx, grants, label, op)
+		if why != nil {
+			if why.missing {
+				return nil, docFailure(errNoSuchDoc, why.detail)
+			}
+			return nil, docFailure(errDocDenied, why.detail)
 		}
 		if r.documents == nil {
 			return nil, docFailure(errDocUnavailable, "this node has nothing to open a database with")

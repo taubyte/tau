@@ -49,6 +49,12 @@ type memFactory struct {
 	opened []string
 	closed int
 	err    error
+
+	// byPath is one store per NAME, which is what a real factory gives: a
+	// database is named, and opening it twice is opening the same rows. A fake
+	// that handed back a fresh map each time would hide every place two
+	// consumers are meant to see each other's writes.
+	byPath map[string]*memKV
 }
 
 func (f *memFactory) New(_ log.StandardLogger, path string, _ int) (kvdb.KVDB, error) {
@@ -59,7 +65,16 @@ func (f *memFactory) New(_ log.StandardLogger, path string, _ int) (kvdb.KVDB, e
 		return nil, f.err
 	}
 	f.opened = append(f.opened, path)
-	return &memKV{rows: map[string][]byte{}, factory: f}, nil
+
+	if f.byPath == nil {
+		f.byPath = map[string]*memKV{}
+	}
+	if held, ok := f.byPath[path]; ok {
+		return held, nil
+	}
+	db := &memKV{rows: map[string][]byte{}, factory: f}
+	f.byPath[path] = db
+	return db, nil
 }
 
 func (f *memFactory) Close() {}

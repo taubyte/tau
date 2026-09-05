@@ -138,15 +138,12 @@ func (r *Runtime) storageImports(spec invoke.Spec) []component.Option {
 	grants := storageGrantsOf(spec)
 
 	open := func(ctx context.Context, label, op string) (Bucket, *component.VariantValue) {
-		grant, ok := grants[label]
-		if !ok {
-			return nil, storageFailure(errNoSuchStorage, label)
-		}
-		if grant.Refused != "" {
-			return nil, storageFailure(errStorageDenied, grant.Refused)
-		}
-		if !grant.Allows(op) {
-			return nil, storageFailure(errStorageDenied, label+" cannot "+op)
+		grant, why := r.addressed(ctx, grants, label, op)
+		if why != nil {
+			if why.missing {
+				return nil, storageFailure(errNoSuchStorage, why.detail)
+			}
+			return nil, storageFailure(errStorageDenied, why.detail)
 		}
 		if r.storage == nil {
 			return nil, storageFailure(errStorageUnavailable, "this node has nothing to open a bucket with")
