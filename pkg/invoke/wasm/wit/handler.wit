@@ -305,6 +305,62 @@ interface vector {
     delete: func(name: string, id: string) -> result<_, error>;
 }
 
+// Object storage, as the vocabulary's `storage` kind at `type: object`.
+//
+// # Content-addressed underneath, named on top
+//
+// The bytes go into the same content-addressed store a build's artifacts do, so
+// two objects with the same content are one object; what this interface adds is
+// a NAME for them, per bucket, per deployment. That is why a delete removes the
+// name and not the bytes: the bytes may be another name's, and collecting the
+// ones nothing points at is a different job from this one.
+//
+// # `head` exists because `get` is the expensive question
+//
+// A caller that wants to know whether an object is there, or how big it is,
+// should not have to pull it through the ABI to find out — and the ABI carries
+// a `list<u8>`, so pulling it means materialising the whole thing in the
+// guest's memory. `head` answers the metadata alone.
+//
+// # `full` is its own arm
+//
+// A bucket declares a size and this cloud enforces it. A write refused for
+// space is a condition the caller can act on — write less, delete something —
+// and folding it into `unavailable` would read as an outage.
+//
+// # `type: streaming` is a DIFFERENT interface and this is not it
+//
+// The other storage type is an append-only log with a ttl, and its verbs move
+// bytes a caller does not hold all of at once. Serving it through these
+// functions would mean a guest holding a stream in memory to write it, so a
+// storage declaring it is refused by name rather than half-served.
+interface storage {
+    variant error {
+        no-such-storage(string),
+        denied(string),
+        not-found,
+        // The bucket is at the size its author declared.
+        full(string),
+        unavailable(string),
+    }
+
+    // What is known about one object without reading it.
+    record entry {
+        name: string,
+        size: u64,
+        // Unix seconds when it was last written.
+        modified: s64,
+    }
+
+    get: func(name: string, key: string) -> result<list<u8>, error>;
+    head: func(name: string, key: string) -> result<entry, error>;
+    put: func(name: string, key: string, value: list<u8>) -> result<_, error>;
+    delete: func(name: string, key: string) -> result<_, error>;
+    // Objects under a prefix, sorted by name. It is not called `list` because
+    // that is a WIT keyword.
+    entries: func(name: string, prefix: string) -> result<list<entry>, error>;
+}
+
 // A work queue, as the vocabulary's `queue` kind.
 //
 // # Only `send`, and the other verb is a different mechanism
@@ -400,6 +456,7 @@ interface bus {
 }
 
 world handler {
+    import storage;
     import bus;
     import secret;
     import queue;

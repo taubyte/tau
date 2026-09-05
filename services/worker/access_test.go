@@ -370,3 +370,34 @@ func TestAStreamOnTheSwarmsOwnEngineIsServed(t *testing.T) {
 	require.Empty(t, unservable(
 		project.Reach{Kind: streamKind, Label: "orders"}, project.Resource{}))
 }
+
+// ── storage ──────────────────────────────────────────────────────────────────
+
+// TestASTORAGEAccessEntryBecomesAGrant carrying the data model and the ceiling,
+// which is the same shape a database's does — the type is the key to the block
+// the rest lives under.
+func TestAStorageAccessEntryCarriesItsTypeAndSize(t *testing.T) {
+	h := newHarness(t)
+	spec := resolveIn(t, h, nil, "function", "checkout")
+
+	g, ok := grantFor(spec, storageKind, "receipts")
+	require.True(t, ok, "checkout reaches receipts")
+	require.Equal(t, "object", g.Settings[settingStorageType])
+	require.Equal(t, "1000000000", g.Settings[settingStorageSize], "the 1GB the author wrote")
+	require.Equal(t, "true", g.Settings[settingVersioning])
+}
+
+// TestASTREAMINGStoreIsRefusedByName. Its verbs move bytes a caller does not
+// hold all of at once, so serving it through the object functions would mean a
+// guest holding a whole stream in memory to write it.
+func TestAStreamingStorageIsRefused(t *testing.T) {
+	require.Equal(t, "", unservable(
+		project.Reach{Kind: storageKind, Label: "receipts"},
+		project.Resource{"type": "object"}))
+
+	why := unservable(
+		project.Reach{Kind: storageKind, Label: "events"},
+		project.Resource{"type": "streaming"})
+	require.Contains(t, why, "streaming")
+	require.Contains(t, why, "object storage")
+}

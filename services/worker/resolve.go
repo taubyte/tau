@@ -163,6 +163,7 @@ const (
 	cacheKind    = "cache"
 	volumeKind   = "volume"
 	streamKind   = "stream"
+	storageKind  = "storage"
 	busKind      = "bus"
 	databaseKind = "database"
 	queueKind    = "queue"
@@ -184,6 +185,8 @@ func settingsFor(kind string, reach project.Reach, target project.Resource) map[
 		return databaseSettings(target)
 	case queueKind:
 		return queueSettings(reach, target)
+	case storageKind:
+		return storageSettings(target)
 	}
 	return nil
 }
@@ -224,6 +227,33 @@ func queueSettings(reach project.Reach, target project.Resource) map[string]stri
 
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+// storageSettings carries the data model and the ceiling.
+//
+// THE TYPE IS THE KEY TO THE REST, exactly as a database's is: `object` and
+// `streaming` each own their block, so the size lives under whichever one the
+// author wrote.
+func storageSettings(target project.Resource) map[string]string {
+	model := target.String("type")
+	if model == "" {
+		return nil
+	}
+
+	// THE COMPILED KEY IS NOT THE AUTHORED PATH, and the two differ per field
+	// here. `size` is written under the type block — `object: {size: 1GB}` —
+	// and compiles to a FLAT `size`, because the vocabulary declares it
+	// Key("size") with Path(Either("object","streaming"), "size"). `versioning`
+	// is Key("object","versioning") and stays nested. Reading either the way
+	// the other is spelled returns nothing at all.
+	out := map[string]string{settingStorageType: model}
+	if size, ok := target.Int("size"); ok {
+		out[settingStorageSize] = strconv.FormatInt(size, 10)
+	}
+	if versioning, ok := target.Bool(objectStorage, "versioning"); ok && versioning {
+		out[settingVersioning] = "true"
 	}
 	return out
 }
@@ -324,6 +354,18 @@ func unservableKind(reach project.Reach, target project.Resource) string {
 				reach.Kind, reach.Label, engine)
 		}
 		return ""
+	case storageKind:
+		// STREAMING IS A DIFFERENT INTERFACE AND THIS CLOUD HAS ONLY ONE. Its
+		// verbs move bytes a caller does not hold all of at once, so serving it
+		// through the object functions would mean a guest holding a whole
+		// stream in memory to write it.
+		if model := target.String("type"); model != "" && model != objectStorage {
+			return fmt.Sprintf("storage %q is %q, and this cloud serves object storage — "+
+				"a streaming store's verbs are not these and half-serving them would mean "+
+				"holding a whole stream in a guest's memory",
+				reach.Label, model)
+		}
+		return ""
 	case cacheKind:
 	default:
 		// THE OTHER KINDS ARE NOT REFUSED HERE. What a tier can do with a grant
@@ -374,6 +416,15 @@ const (
 	// Where the platform posts an item to a consumer that has no host ABI.
 	settingDeliverPort = "deliver/port"
 	settingDeliverPath = "deliver/path"
+
+	// What a storage declared: which data model, how big, and whether old
+	// versions are kept.
+	settingStorageType = "type"
+	settingStorageSize = "size"
+	settingVersioning  = "versioning"
+
+	// objectStorage is the one data model this cloud serves.
+	objectStorage = "object"
 
 	// settingType is a database's data model, and the prefix every other
 	// connection setting is filed under.

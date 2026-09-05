@@ -13,7 +13,7 @@
 mod bindings;
 
 use bindings::taubyte::handler::{
-    bus, cache, database, document, kv, queue, secret, stream, vector,
+    bus, cache, database, document, kv, queue, secret, storage, stream, vector,
 };
 use bindings::{Guest, Header, Request, Response};
 
@@ -112,6 +112,19 @@ fn why_queue(e: &queue::Error) -> String {
         queue::Error::Denied(why) => format!("denied:{}", why),
         queue::Error::NotWritable(why) => format!("not-writable:{}", why),
         queue::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
+// why_storage names a storage error arm. `full` is its own arm because a
+// caller acts on it, and a test asserting on the body proves the host produced
+// that one rather than folding it into an outage.
+fn why_storage(e: &storage::Error) -> String {
+    match e {
+        storage::Error::NoSuchStorage(name) => format!("no-such-storage:{}", name),
+        storage::Error::Denied(why) => format!("denied:{}", why),
+        storage::Error::NotFound => "not-found".to_string(),
+        storage::Error::Full(why) => format!("full:{}", why),
+        storage::Error::Unavailable(why) => format!("unavailable:{}", why),
     }
 }
 
@@ -289,6 +302,43 @@ impl Guest for Component {
             "secret" => match secret::get(name) {
                 Ok(value) => reply(200, value),
                 Err(e) => reply(403, why_secret(&e).into_bytes()),
+            },
+            // Object storage. The key is the object's name and the body is
+            // its bytes.
+            "obj-put" => match storage::put(name, key, &req.body) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_storage(&e).into_bytes()),
+            },
+            "obj-get" => match storage::get(name, key) {
+                Ok(value) => reply(200, value),
+                Err(e) => reply(404, why_storage(&e).into_bytes()),
+            },
+            // `head` is the whole reason storage is not kv: what is known about
+            // an object without pulling it through the ABI.
+            "obj-head" => match storage::head(name, key) {
+                Ok(entry) => reply(
+                    200,
+                    format!("{}:{}:{}", entry.name, entry.size, entry.modified).into_bytes(),
+                ),
+                Err(e) => reply(404, why_storage(&e).into_bytes()),
+            },
+            "obj-delete" => match storage::delete(name, key) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_storage(&e).into_bytes()),
+            },
+            // The key is the prefix. The answer is one name per line, so a
+            // record list survives both directions of the ABI observably.
+            "obj-list" => match storage::entries(name, key) {
+                Ok(found) => reply(
+                    200,
+                    found
+                        .iter()
+                        .map(|e| format!("{}:{}", e.name, e.size))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                        .into_bytes(),
+                ),
+                Err(e) => reply(403, why_storage(&e).into_bytes()),
             },
             "broadcast" => match bus::publish(name, &req.body) {
                 Ok(()) => reply(204, Vec::new()),

@@ -336,6 +336,9 @@ func (n *Node) openWorker() error {
 		servers := &databases{node: n}
 		n.closers = append(n.closers, servers)
 
+		objects := &buckets{node: n}
+		n.closers = append(n.closers, objects)
+
 		// ONE VAULT FOR THE NODE, not one per consumer. It holds a stream to a
 		// remote secrets service and opening a second would be a second stream
 		// to the same peer; the worker below is handed this same value.
@@ -352,6 +355,7 @@ func (n *Node) openWorker() error {
 			wasm.WithDocuments(servers),
 			wasm.WithVectors(servers),
 			wasm.WithQueues(n.workQueues()),
+			wasm.WithStorage(objects),
 			wasm.WithSecrets(n.vault))
 		if err != nil {
 			return err

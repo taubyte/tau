@@ -312,9 +312,16 @@ func TestAGrantForWatchBuysNothing(t *testing.T) {
 }
 
 // TestAGrantForAnotherKindIsNotACacheGrant, so a `storage:` entry cannot be
-// spent on a cache.
+// spent on a cache — the label matches and the kind does not.
 func TestAGrantOfAnotherKindDoesNotOpenACache(t *testing.T) {
-	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h"))), invoke.Spec{
+	instance := start(t, tier(t,
+		cacher(t),
+		wasm.WithCaches(newCaches("h")),
+		// The storage grant is servable, so the tier needs a backing for it —
+		// which is beside the point of this test and is what makes it one:
+		// the grant is REAL and still is not a cache.
+		wasm.WithStorage(newBuckets()),
+	), invoke.Spec{
 		Name: "fn",
 		Reaches: []invoke.Grant{
 			{Kind: "storage", Label: "sessions", Handle: "h", Ops: []string{"get", "put"}},
@@ -462,7 +469,11 @@ func TestAComponentWithOtherGrantsStarts(t *testing.T) {
 		Name: "fn",
 		Reaches: []invoke.Grant{
 			{Kind: "cache", Label: "sessions", Handle: "h", Ops: []string{"get"}},
-			{Kind: "storage", Label: "receipts", Ops: []string{"put"}},
+			// A KIND THIS TIER HAS NO INTERFACE FOR. `log` is one; `storage`
+			// used to be the example here and stopped being one when it
+			// gained an interface, which is the direction this is meant to
+			// travel.
+			{Kind: "log", Label: "audit", Ops: []string{"append"}},
 		},
 	})
 	require.Equal(t, 404, call(t, instance, "/get/sessions/k", nil).Status)

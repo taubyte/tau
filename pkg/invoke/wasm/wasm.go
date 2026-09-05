@@ -182,6 +182,10 @@ type Runtime struct {
 	// queues backs `taubyte:handler/queue`.
 	queues Queues
 
+	// storage is the object store this tier serves `taubyte:handler/storage`
+	// from.
+	storage Buckets
+
 	// secrets backs `taubyte:handler/secret` — the rotation path, beside the
 	// environment variable that carries a secret at start.
 	secrets Secrets
@@ -295,7 +299,12 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}
 
 	imports = append(imports, r.queueImports(spec)...)
+	if r.storage == nil && len(servableStorage(spec)) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoStorage, spec.Name)
+	}
+
 	imports = append(imports, r.secretImports(spec)...)
+	imports = append(imports, r.storageImports(spec)...)
 
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {
