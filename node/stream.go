@@ -10,6 +10,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	gateway "github.com/taubyte/tau/services/v2/gateway"
 )
 
 // stream.go backs `taubyte:handler/stream` on this node.
@@ -103,6 +104,72 @@ func topicFor(kind, cloud, handle string) string {
 // streamTopic is topicFor on the stream kind, which is what Node.StreamTopic
 // exposes.
 func streamTopic(cloud, handle string) string { return topicFor("stream", cloud, handle) }
+
+// subscribe opens one subscription to the topic a handle names.
+//
+// ONE PER CALLER AND NOT ONE PER TOPIC. gossipsub delivers to every
+// subscription on a joined topic, so a browser attaching gets its own and
+// cancelling it touches nobody else's — which is what lets the topic stay
+// joined for the life of the node while attachments come and go.
+func (s *streams) subscribe(handle string) (*pubsub.Topic, *pubsub.Subscription, error) {
+	topic, err := s.topic(handle)
+	if err != nil {
+		return nil, nil, err
+	}
+	sub, err := topic.Subscribe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("node: subscribing to the topic for %s: %w", handle, err)
+	}
+	return topic, sub, nil
+}
+
+// buses is the node's gateway.Buses: a browser's view of the same topics the
+// wasm tier publishes to.
+//
+// IT HOLDS THE SAME *streams THE TIER DOES, so the topic is joined once. Two
+// joins of one topic is two meshes for it, and the browser would be on the one
+// the workload is not.
+type buses struct{ streams *streams }
+
+var _ gateway.Buses = (*buses)(nil)
+
+func (b *buses) Attach(ctx context.Context, handle string) (gateway.Attachment, error) {
+	topic, sub, err := b.streams.subscribe(handle)
+	if err != nil {
+		return nil, err
+	}
+	return &attachment{topic: topic, sub: sub}, nil
+}
+
+// attachment is one browser on one bus.
+type attachment struct {
+	topic *pubsub.Topic
+	sub   *pubsub.Subscription
+}
+
+var _ gateway.Attachment = (*attachment)(nil)
+
+func (a *attachment) Next(ctx context.Context) ([]byte, error) {
+	msg, err := a.sub.Next(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// THE PAYLOAD AND NOTHING ELSE. A workload publishing to this topic writes
+	// the bytes it was given, so a browser has to receive exactly those — an
+	// envelope here would be a second wire format for one topic.
+	return msg.Data, nil
+}
+
+func (a *attachment) Publish(ctx context.Context, message []byte) error {
+	return a.topic.Publish(ctx, message)
+}
+
+// Close cancels this attachment's subscription and leaves the topic joined, for
+// the same reason the topic was joined once.
+func (a *attachment) Close() error {
+	a.sub.Cancel()
+	return nil
+}
 
 // Close releases the topics this node joined.
 func (s *streams) Close() error {

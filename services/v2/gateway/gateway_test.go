@@ -409,6 +409,14 @@ func (m *meter) Record(_ context.Context, ev Accounted) {
 	m.events = append(m.events, ev)
 }
 
+// recorded is every event so far. only() is the shape most tests want; an
+// attachment is emitted when the socket closes, so its test waits for it.
+func (m *meter) recorded() []Accounted {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]Accounted(nil), m.events...)
+}
+
 func (m *meter) only(t *testing.T) Accounted {
 	t.Helper()
 	m.mu.Lock()

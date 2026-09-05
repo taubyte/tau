@@ -6,6 +6,10 @@ package dream_test
 // one gateway, one name.
 const projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
 
+// zoneID is the project's own zone, `example.com`. It is a constant because
+// more than one fixture in this package puts a name in it.
+const zoneID = "QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL"
+
 func compiled() []byte {
 	return []byte(`{
 		"object": {
@@ -21,7 +25,7 @@ func compiled() []byte {
 			"gateway": {
 				"QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zk": {
 					"name": "shop",
-					"host": {"kind": "zone", "name": "shop", "zone": {"in": {"name": "QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL"}}},
+					"host": {"kind": "zone", "name": "shop", "zone": {"in": {"name": "` + zoneID + `"}}},
 					"routing": "route",
 					"route": {
 						"path": "/", "match": "prefix", "target": "handler",
@@ -30,7 +34,7 @@ func compiled() []byte {
 				}
 			},
 			"zone": {
-				"QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL": {
+				"` + zoneID + `": {
 					"name": "example_com",
 					"fqdn": "example.com"
 				}
@@ -42,7 +46,7 @@ func compiled() []byte {
 			"projects/` + projectID + `/gateway/shop/links": [
 				"branches/main/projects/` + projectID + `/gateway/QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zk"],
 			"projects/` + projectID + `/zone/example_com/links": [
-				"branches/main/projects/` + projectID + `/zone/QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL"]
+				"branches/main/projects/` + projectID + `/zone/` + zoneID + `"]
 		}
 	}`)
 }

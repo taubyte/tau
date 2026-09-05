@@ -61,6 +61,7 @@ type Service struct {
 	cfg     Config
 	hosts   Hosts
 	workers Workers
+	buses   Buses
 
 	projects *project.Cache
 	limits   *limiter
@@ -127,6 +128,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		cfg:      cfg,
 		hosts:    o.hosts,
 		workers:  o.workers,
+		buses:    o.buses,
 		projects: projects,
 		limits:   newLimiter(o.now, cfg.MaxHosts),
 		now:      o.now,
@@ -176,8 +178,23 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A BUS ANSWERS ON A NAME TOO, and what tells the two apart is the request
+	// rather than the name: an author may put an HTTP gateway and a bus on one
+	// host, and only one of them is being asked for.
+	if buses := s.busesAt(proj, name); len(buses) > 0 && upgrading(r) {
+		s.attach(w, r, billed, buses, projectName, environment)
+		return
+	}
+
 	candidates := s.candidatesAt(proj, name, projectName)
 	if len(candidates) == 0 {
+		if len(s.busesAt(proj, name)) > 0 {
+			// The name is real and the request is not the one it serves. 404
+			// here would send somebody looking for a typo in a name that
+			// resolves.
+			refuse(w, http.StatusUpgradeRequired, "this name is a bus: attach to it with a websocket")
+			return
+		}
 		// The register says this project owns the name and the compiled
 		// project has nothing at it — a deploy that removed the gateway but
 		// whose claim has not been released, or a name in a zone this node
@@ -288,21 +305,9 @@ func (s *Service) unbuilt(m match) (int, string) {
 }
 
 // candidatesAt is every gateway resource in this project answering on a name.
-//
-// A GENERATED NAME LOSES THE CLOUD'S SEGMENT FIRST. The compiled project
-// carries `<label>.<project label>` because the cloud's own fqdn is not in the
-// config; this is the node that knows it, so it takes it off the request rather
-// than putting it into the project.
 func (s *Service) candidatesAt(p *project.Project, name, projectName string) []candidate {
-	lookup := strings.ToLower(name)
-	if s.cfg.CloudFqdn != "" {
-		if trimmed, ok := strings.CutSuffix(lookup, "."+strings.ToLower(s.cfg.CloudFqdn)); ok {
-			lookup = trimmed
-		}
-	}
-
 	var out []candidate
-	for _, h := range p.At(lookup) {
+	for _, h := range p.At(s.lookupName(name)) {
 		if h.Kind != gatewayKind {
 			continue
 		}

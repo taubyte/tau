@@ -75,7 +75,14 @@ type Node struct {
 	// vault is this node's one reader of secret values, shared by the worker
 	// and the wasm tier. It holds a stream to a remote secrets service, so a
 	// second would be a second stream to the same peer.
-	vault         *vault
+	vault *vault
+
+	// bus is this node's one bus backing, shared by the wasm tier's publish and
+	// the gateway's attach. Both reach the same topic, and a second would be a
+	// second join of it — a mesh each, with the browser on the one the workload
+	// is not.
+	bus *streams
+
 	auth          *authService.Service
 	buildBackend  *backend.Service
 	buildFrontend *frontend.Service
@@ -300,9 +307,6 @@ func (n *Node) openWorker() error {
 		publisher := &streams{node: n, kind: "stream"}
 		n.closers = append(n.closers, publisher)
 
-		attached := &streams{node: n, kind: "bus"}
-		n.closers = append(n.closers, attached)
-
 		servers := &databases{node: n}
 		n.closers = append(n.closers, servers)
 
@@ -319,7 +323,7 @@ func (n *Node) openWorker() error {
 			wasm.WithOutput(workloadLog),
 			wasm.WithCaches(&caches{node: n}),
 			wasm.WithStreams(publisher),
-			wasm.WithBus(attached),
+			wasm.WithBus(n.busStreams()),
 			wasm.WithDatabases(servers),
 			wasm.WithKV(servers),
 			wasm.WithDocuments(servers),
@@ -477,6 +481,14 @@ func (n *Node) openGateway() error {
 		gateway.WithSource(source),
 		gateway.WithWorkers(workers),
 	}
+
+	// A BUS IS ATTACHED TO OVER GOSSIP, so a node with none says so by not
+	// offering the option at all — the gateway then refuses a bus's name with
+	// "not available here" rather than accepting the connection and never
+	// delivering anything.
+	if n.opts.pubsub != nil {
+		gatewayOptions = append(gatewayOptions, gateway.WithBuses(&buses{streams: n.busStreams()}))
+	}
 	if n.opts.now != nil {
 		gatewayOptions = append(gatewayOptions, gateway.WithClock(n.opts.now))
 	}
@@ -625,6 +637,18 @@ func (n *Node) PubSub() stats.PubSub { return n.opts.pubsub }
 // a browser has to listen on exactly what a publish reaches — the same argument
 // StreamTopic carries.
 func (n *Node) BusTopic(handle string) string { return topicFor("bus", n.cfg.Cloud, handle) }
+
+// busStreams is this node's bus backing, opened on first use.
+//
+// It is a method rather than a line in openWorker because both the wasm tier
+// and the gateway want it and a node may run either without the other.
+func (n *Node) busStreams() *streams {
+	if n.bus == nil {
+		n.bus = &streams{node: n, kind: "bus"}
+		n.closers = append(n.closers, n.bus)
+	}
+	return n.bus
+}
 
 // StreamTopic is what a stream's handle goes on the wire as.
 //

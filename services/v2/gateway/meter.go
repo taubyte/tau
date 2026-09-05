@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"bufio"
 	"context"
+	"net"
 	"net/http"
 	"time"
 )
@@ -42,6 +44,17 @@ const (
 	// invocation count, which is exactly the traffic somebody disputing a bill
 	// asks about.
 	OpRefuse Op = "refuse"
+
+	// OpAttach is a browser that was attached to a bus, reported once when it
+	// leaves.
+	//
+	// IT IS NEITHER OF THE OTHER TWO. No workload was invoked, so calling it a
+	// serve would inflate the number a caller checks their invocation bill
+	// against; and it is not a refusal, because the edge did exactly what it
+	// was asked. What it is instead is the one thing here with a DURATION that
+	// means something — a connection held for an hour costs a socket for an
+	// hour — which is a unit a sink totals differently from a request.
+	OpAttach Op = "attach"
 )
 
 // Accounted is one request that crossed the edge.
@@ -104,6 +117,23 @@ type crossing struct {
 	// route, a rate limit, a body over the ceiling — is a refusal, and it is
 	// the half a worker cannot see.
 	served bool
+
+	// attached says this crossing was a websocket on a bus.
+	attached bool
+}
+
+// Hijack passes the connection up, because a websocket cannot be spoken
+// through an http.ResponseWriter and this wrapper sits between the two.
+//
+// WITHOUT IT EVERY ATTACH FAILS, and it fails inside gorilla's Upgrade with
+// "response does not implement http.Hijacker" — a message that names this
+// file's counter and nothing about a bus.
+func (c *crossing) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := c.w.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return h.Hijack()
 }
 
 func (c *crossing) Header() http.Header { return c.w.Header() }
@@ -137,7 +167,10 @@ func (c *crossing) Flush() {
 
 func (c *crossing) accounted(now time.Time) Accounted {
 	op := OpRefuse
-	if c.served {
+	switch {
+	case c.attached:
+		op = OpAttach
+	case c.served:
 		op = OpServe
 	}
 	status := c.status

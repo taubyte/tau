@@ -33,6 +33,36 @@ type Workers interface {
 	Invoke(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Response, error)
 }
 
+// Buses attaches a caller to an ephemeral bus.
+//
+// IT IS NOT Workers. Invoking is request-and-answer and ends; an attachment is
+// held open for as long as the browser is there, and nothing about it is
+// routed — every node that can reach the swarm reaches the same topic, so the
+// node that accepted the connection is the node that serves it.
+type Buses interface {
+	// Attach opens one caller's view of the bus a handle names. The handle is
+	// project.Handle of the resolved resource, which is what a workload's
+	// grant carries — the two have to agree or a browser and a workload never
+	// meet.
+	Attach(ctx context.Context, handle string) (Attachment, error)
+}
+
+// Attachment is one connection's view of a bus: what arrives, and what it
+// sends. Close releases it and nobody else's.
+type Attachment interface {
+	// Next blocks until a message arrives, ctx ends, or the attachment closes.
+	Next(ctx context.Context) ([]byte, error)
+
+	// Publish sends one message to everything attached, INCLUDING THE SENDER.
+	// A bus is n:n and that is what attached means; a client that wants to
+	// ignore its own traffic puts something in the payload that says so,
+	// because an envelope added here would be a wire format a workload
+	// publishing to the same topic does not write.
+	Publish(ctx context.Context, message []byte) error
+
+	Close() error
+}
+
 // Config is what an operator declared, and ONLY that.
 type Config struct {
 	// CloudFqdn is the zone this cloud serves, e.g. "tau.example.io".
@@ -95,6 +125,7 @@ type options struct {
 	hosts   Hosts
 	workers Workers
 	source  project.Registry
+	buses   Buses
 	now     func() time.Time
 	meter   Meter
 }
@@ -132,7 +163,6 @@ func WithSource(s project.Registry) Option {
 	}
 }
 
-// WithClock injects the local clock. Tests use it; production does not.
 // WithMeter is where this service says what it accounted for — the bytes that
 // crossed the edge, in both directions, served and refused. Nil emits nothing.
 func WithMeter(m Meter) Option {
@@ -145,6 +175,20 @@ func WithMeter(m Meter) Option {
 	}
 }
 
+// WithBuses is what attaches a browser to a bus. Optional: a gateway without
+// one refuses a bus's name and serves every other kind, because attaching
+// needs the swarm's gossip and a node may run a gateway without it.
+func WithBuses(b Buses) Option {
+	return func(o *options) error {
+		if b == nil {
+			return errors.New("gateway: a nil bus backing")
+		}
+		o.buses = b
+		return nil
+	}
+}
+
+// WithClock injects the local clock. Tests use it; production does not.
 func WithClock(now func() time.Time) Option {
 	return func(o *options) error {
 		if now == nil {

@@ -57,6 +57,22 @@ type Address struct {
 	Name string
 }
 
+// Handle is how a resolved resource is named to whatever backs its kind: the
+// deployment it belongs to, then the resource's own id.
+//
+// IT IS HERE FOR THE REASON Address IS, and the case that forced it is a bus. A
+// worker builds one when it composes a workload's grants, and a gateway builds
+// one when it attaches a browser — and the two have to be the SAME STRING or a
+// browser and a workload publishing to what the author wrote as one bus never
+// meet. Two spellings agree by coincidence and diverge on the first edit to
+// either.
+//
+// The id and not the label, because a label is scoped: three namespaces can
+// each hold a `chat`.
+func Handle(project, environment, id string) string {
+	return strings.Join([]string{project, environment, id}, "/")
+}
+
 // Hosts is every name this project answers on, sorted.
 //
 // It is a WALK and not a lookup, and it runs once: the result is memoized

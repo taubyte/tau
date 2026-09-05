@@ -149,7 +149,7 @@ func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Gr
 			out = append(out, invoke.Grant{
 				Kind:     reach.Kind,
 				Label:    reach.Label,
-				Handle:   strings.Join([]string{t.Project, t.Environment, id}, "/"),
+				Handle:   project.Handle(t.Project, t.Environment, id),
 				Ops:      reach.Ops,
 				Settings: settingsFor(reach.Kind, reach, target),
 				Refused:  unservable(reach, target),
