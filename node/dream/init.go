@@ -71,19 +71,39 @@ func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
 // one. Nothing in production reads it.
 var built struct {
 	sync.Mutex
-	byPeer map[string]*node.Node
+	byPeer map[string]running
+}
+
+type running struct {
+	node   *node.Node
+	assets *assets.Store
 }
 
 // Node is the node running on a peer, for a test that has its id.
 func Node(peerID string) (*node.Node, bool) {
 	built.Lock()
 	defer built.Unlock()
-	n, ok := built.byPeer[peerID]
-	return n, ok
+	r, ok := built.byPeer[peerID]
+	return r.node, ok
+}
+
+// Assets is the content store that node reads a component out of.
+//
+// IT IS HERE SO A TEST CAN PUT ONE IN. Everything else a node runs is reachable
+// through the node; the asset store is built for it rather than handed to it,
+// and a test that wants a REAL component to run has to be able to address one.
+// In a cloud the build service writes here and a cid reaches the worker through
+// the artifact seam; in a universe with no build service, a resource naming its
+// component directly needs the bytes to already be in the store.
+func Assets(peerID string) (*assets.Store, bool) {
+	built.Lock()
+	defer built.Unlock()
+	r, ok := built.byPeer[peerID]
+	return r.assets, ok
 }
 
 func init() {
-	built.byPeer = map[string]*node.Node{}
+	built.byPeer = map[string]running{}
 	if err := dreamv2.Register(Protocol, create); err != nil {
 		panic(err)
 	}
@@ -133,7 +153,7 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 
 	id := h.ID().String()
 	built.Lock()
-	built.byPeer[id] = n
+	built.byPeer[id] = running{node: n, assets: store}
 	built.Unlock()
 
 	return closer{id: id, node: n}, nil

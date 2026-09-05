@@ -67,7 +67,7 @@ func (c *caches) Open(ctx context.Context, grant invoke.Grant) (wasmtier.Cache, 
 	defer c.mu.Unlock()
 
 	if held, ok := c.opened[grant.Handle]; ok {
-		return held, nil
+		return translated{held}, nil
 	}
 
 	store, err := c.store()
@@ -88,7 +88,52 @@ func (c *caches) Open(ctx context.Context, grant invoke.Grant) (wasmtier.Cache, 
 		c.opened = map[string]*cache.Cache{}
 	}
 	c.opened[grant.Handle] = opened
-	return opened, nil
+	return translated{opened}, nil
+}
+
+// translated is the adapter's other half: it turns pkg/cache's sentinels into
+// the tier's.
+//
+// THE TIER MUST NOT IMPORT pkg/cache. Its seam is four methods and two
+// sentinels, so any backing can satisfy it — a mushql-backed one, a cloud
+// bucket, an in-process map. Translating here is what keeps that true, and it
+// is the ONE thing three passing unit tests could not catch between them: a
+// miss that arrived as an unknown error was reported to the guest as
+// `unavailable`, so every cache miss read as an outage and an author would
+// have written a retry around the thing a cache does most.
+type translated struct{ *cache.Cache }
+
+func (t translated) Get(ctx context.Context, key string) ([]byte, error) {
+	value, err := t.Cache.Get(ctx, key)
+	return value, asTierError(err)
+}
+
+func (t translated) Put(ctx context.Context, key string, value []byte) error {
+	return asTierError(t.Cache.Put(ctx, key, value))
+}
+
+func (t translated) Delete(ctx context.Context, key string) error {
+	return asTierError(t.Cache.Delete(ctx, key))
+}
+
+func (t translated) List(ctx context.Context, prefix string) ([]string, error) {
+	names, err := t.Cache.List(ctx, prefix)
+	return names, asTierError(err)
+}
+
+// asTierError keeps the original as the wrapped cause, so a log still says
+// which key and which cache while the guest sees the arm it can act on.
+func asTierError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, cache.ErrNotFound):
+		return fmt.Errorf("%w: %w", wasmtier.ErrNotFound, err)
+	case errors.Is(err, cache.ErrTooLarge):
+		return fmt.Errorf("%w: %w", wasmtier.ErrTooLarge, err)
+	default:
+		return err
+	}
 }
 
 // The setting keys services/worker writes, which are the vocabulary's own

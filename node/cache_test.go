@@ -1,13 +1,16 @@
 package node
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/cache"
 	"github.com/taubyte/tau/pkg/invoke"
+	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
 // grant is one cache entry as services/worker builds it.
@@ -56,7 +59,11 @@ func TestOpeningTheSameHandleTwiceIsTheSameCache(t *testing.T) {
 	require.NoError(t, err)
 	again, err := c.Open(ctx, grant("shop/prod/QmA", nil))
 	require.NoError(t, err)
-	require.Same(t, first, again)
+
+	// The wrapper is a value, so the identity that matters is the cache under
+	// it — one open, one seed.
+	require.Same(t, first.(translated).Cache, again.(translated).Cache)
+	require.Len(t, c.opened, 1)
 }
 
 // TestTwoHandlesAreTwoCaches, which is what the prefix buys — and the check
@@ -166,4 +173,44 @@ func TestTheCacheDatabaseIsClosedWithTheNode(t *testing.T) {
 	require.NoError(t, n.Close())
 	_, closed := factory.counts()
 	require.Positive(t, closed)
+}
+
+// ── the sentinels the tier acts on ───────────────────────────────────────────
+
+// TestAMissArrivesAsTheTIERSMiss, WHICH THREE PASSING UNIT TESTS DID NOT CATCH.
+//
+// pkg/cache has its own ErrNotFound and pkg/invoke/wasm has another; the tier
+// maps anything it does not recognise onto the guest's `unavailable` arm. So a
+// cache miss — the common case, the thing a cache is FOR — was reported to
+// every guest as an outage, and an author would have written a retry around it.
+// Each package was right on its own and the composition was wrong, which is why
+// the dream test that runs a real component through a real store exists.
+func TestPkgCacheSentinelsBecomeTierSentinels(t *testing.T) {
+	c, _ := backing(t)
+	ctx := t.Context()
+
+	held, err := c.Open(ctx, grant("shop/prod/QmA", map[string]string{cacheSize: "10"}))
+	require.NoError(t, err)
+
+	_, err = held.Get(ctx, "never-written")
+	require.ErrorIs(t, err, wasmtier.ErrNotFound, "a miss is the tier's miss")
+	require.ErrorIs(t, err, cache.ErrNotFound, "and the cause is still readable in a log")
+
+	err = held.Put(ctx, "k", make([]byte, 100))
+	require.ErrorIs(t, err, wasmtier.ErrTooLarge)
+
+	// And the SECOND open of the same handle answers the same way — the cached
+	// path returned the raw cache once, which is how this was found.
+	again, err := c.Open(ctx, grant("shop/prod/QmA", nil))
+	require.NoError(t, err)
+	_, err = again.Get(ctx, "never-written")
+	require.ErrorIs(t, err, wasmtier.ErrNotFound, "the reused cache is wrapped too")
+}
+
+// TestAnythingElseIsLeftAlone, so a store that could not answer stays
+// distinguishable from one that had nothing to say.
+func TestAnUnrecognisedFailureIsNotTranslated(t *testing.T) {
+	other := errors.New("the swarm is unreachable")
+	require.Equal(t, other, asTierError(other))
+	require.NoError(t, asTierError(nil))
 }
