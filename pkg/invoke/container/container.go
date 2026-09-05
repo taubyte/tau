@@ -111,12 +111,39 @@ type Option func(*options) error
 
 type options struct {
 	backend       Backend
+	volumes       Volumes
 	readyTimeout  time.Duration
 	readyInterval time.Duration
 	stopTimeout   time.Duration
 	port          func() (int, error)
 	dial          func(ctx context.Context, network, addr string) (net.Conn, error)
 	warn          func(format string, args ...any)
+}
+
+// Volumes gives this tier the host directory a mount grant names.
+//
+// IT IS A SEAM BECAUSE THE BYTES ARE NOT THIS PACKAGE'S. Where a volume lives,
+// how it survives being moved and what its quota costs are all the composer's —
+// this tier's whole job is to put the path it is handed at the path the author
+// wrote. A tier without one refuses a workload that declared a mount, which is
+// what ErrNoMounts is for.
+type Volumes interface {
+	// Mount resolves one mount grant to a directory on this host. It is called
+	// on the request path, once per cold start, so it must not walk anything
+	// large that it has already walked.
+	Mount(ctx context.Context, grant invoke.Grant) (string, error)
+}
+
+// WithVolumes is what turns a declared filesystem into a real one. Without it
+// a workload that declares a mount is refused.
+func WithVolumes(v Volumes) Option {
+	return func(o *options) error {
+		if v == nil {
+			return errors.New("container: a nil volume backing")
+		}
+		o.volumes = v
+		return nil
+	}
 }
 
 // WithBackend is the container backend. Required.
@@ -304,7 +331,8 @@ var _ invoke.Runtime = (*Runtime)(nil)
 
 // Start brings up one container and waits until it is listening.
 func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance, error) {
-	if err := mountGap(spec); err != nil {
+	mounts, err := e.mounts(ctx, spec)
+	if err != nil {
 		return nil, err
 	}
 	e.egressGap(spec)
@@ -342,7 +370,7 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, err
 	}
 
-	id, err := e.opts.backend.Create(ctx, e.config(img, port, api.address()))
+	id, err := e.opts.backend.Create(ctx, e.config(img, port, api.address(), mounts))
 	if err != nil {
 		api.Close()
 		return nil, fmt.Errorf("container: creating %s: %w", img.Ref, err)
@@ -381,7 +409,7 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 // endpoint, loopback and the private network — while leaving the public internet
 // reachable, because a function that cannot make an outbound call is not a
 // serverless function. It is fail-closed in the backend: no firewall, no start.
-func (e *Runtime) config(img Image, port int, runtimeAPI string) *core.ContainerConfig {
+func (e *Runtime) config(img Image, port int, runtimeAPI string, mounts []core.VolumeMount) *core.ContainerConfig {
 	env := make([]string, 0, len(img.Env)+2)
 	for k, v := range img.Env {
 		if k == "PORT" {
@@ -422,6 +450,11 @@ func (e *Runtime) config(img Image, port int, runtimeAPI string) *core.Container
 			}},
 			RestrictEgress: true,
 		},
+		// WHAT THE AUTHOR DECLARED IT MOUNTS. Both backends take a host path;
+		// neither takes a named volume on containerd, and nothing here creates
+		// one — the directory is the composer's and this puts it where the
+		// access entry said.
+		Volumes: mounts,
 	}
 	if img.Memory > 0 {
 		cfg.Resources = &core.ResourceLimits{Memory: img.Memory}
@@ -654,27 +687,68 @@ func (i *instance) serveLambda(ctx context.Context, req *invoke.Request) (*invok
 // into the same nftables set the floor uses — which is a real piece of work
 // with a real hazard (a name's addresses change under you, and DNS rebinding
 // is the attack that lives in that gap), not a line here.
-// mountGap refuses a workload whose declared filesystem this tier cannot give
-// it. See ErrNoMounts for why this one is a refusal and the rest are warnings.
-func mountGap(spec invoke.Spec) error {
+// mounts resolves every filesystem this workload declared, or refuses.
+//
+// A MOUNT WITH NO PATH IS REFUSED TOO. The vocabulary makes the path Required
+// on the entry precisely because a mount with nowhere to appear is not a mount,
+// and the kind that needs it most is a database in a container, where pointing
+// postgres at the wrong directory means it initialises an empty one on local
+// disk and loses everything.
+func (e *Runtime) mounts(ctx context.Context, spec invoke.Spec) ([]core.VolumeMount, error) {
 	mounted := spec.Mounted()
 	if len(mounted) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	where := make([]string, 0, len(mounted))
-	for _, m := range mounted {
-		at := m.Settings["path"]
-		if at == "" {
-			at = "an unnamed path"
+	if e.opts.volumes == nil {
+		where := make([]string, 0, len(mounted))
+		for _, m := range mounted {
+			at := m.Settings[settingMountPath]
+			if at == "" {
+				at = "an unnamed path"
+			}
+			where = append(where, m.Label+" at "+at)
 		}
-		where = append(where, m.Label+" at "+at)
-	}
-	sort.Strings(where)
+		sort.Strings(where)
 
-	return fmt.Errorf("%w: %s wants %s — started without it, everything written there is discarded with the container",
-		ErrNoMounts, spec.Name, strings.Join(where, ", "))
+		return nil, fmt.Errorf("%w: %s wants %s — started without it, everything written there is discarded with the container",
+			ErrNoMounts, spec.Name, strings.Join(where, ", "))
+	}
+
+	out := make([]core.VolumeMount, 0, len(mounted))
+	for _, m := range mounted {
+		at := m.Settings[settingMountPath]
+		if at == "" {
+			return nil, fmt.Errorf("%w: %s mounts %s at no path", ErrNoMounts, spec.Name, m.Label)
+		}
+		if m.Refused != "" {
+			return nil, fmt.Errorf("%w: %s mounts %s, and %s", ErrNoMounts, spec.Name, m.Label, m.Refused)
+		}
+
+		source, err := e.opts.volumes.Mount(ctx, m)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s mounts %s: %w", ErrNoMounts, spec.Name, m.Label, err)
+		}
+
+		// READ-ONLY UNLESS THE GRANT ASKED TO WRITE, which is the access
+		// block's own distinction: `mount-ro` and `mount-rw` are two verbs and
+		// serving the first as the second would widen a grant.
+		out = append(out, core.VolumeMount{
+			Source:      source,
+			Destination: at,
+			ReadOnly:    !m.Allows(opMountRW),
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Destination < out[j].Destination })
+	return out, nil
 }
+
+// The vocabulary's own names for what a mount entry says.
+const (
+	settingMountPath = "path"
+	opMountRW        = "mount-rw"
+)
 
 // unserved warns about every other capability the workload declared and this
 // tier does not provide.

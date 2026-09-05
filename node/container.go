@@ -106,10 +106,25 @@ func (c ContainerConfig) declared() bool { return c.Backend != "" }
 //
 // config_test.go's census holds it: no method on a config type in this package
 // returns a resource.
-func containerTier(c ContainerConfig) (invoke.Runtime, error) {
+func containerTier(c ContainerConfig, disks container.Volumes) (invoke.Runtime, error) {
 	backend, err := containerBackend(c)
 	if err != nil {
 		return nil, err
+	}
+
+	options := []container.Option{
+		container.WithBackend(backend),
+		// THE ONE THING THIS TIER CANNOT DO IS SAID OUT LOUD. A resource's
+		// egress allowlist is not enforceable by an nftables floor, so an
+		// operator whose author wrote one is told rather than left to assume
+		// it took effect.
+		container.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }),
+	}
+	// A NODE WITH NOWHERE TO PUT A DIRECTORY MOUNTS NOTHING, and the tier says
+	// so on the workload that declared one rather than starting it with an
+	// empty layer. See node/volume.go.
+	if disks != nil {
+		options = append(options, container.WithVolumes(disks))
 	}
 
 	// THE SPEC ALREADY CARRIES THE ARTIFACT. A worker reads the image, the
@@ -117,12 +132,5 @@ func containerTier(c ContainerConfig) (invoke.Runtime, error) {
 	// nothing left for an image resolver to look up — container.ImageFromSpec
 	// is that, and the injected ImageFunc stays for a registry mirror or a
 	// local override.
-	return container.New(container.ImageFromSpec,
-		container.WithBackend(backend),
-		// THE ONE THING THIS TIER CANNOT DO IS SAID OUT LOUD. A resource's
-		// egress allowlist is not enforceable by an nftables floor, so an
-		// operator whose author wrote one is told rather than left to assume
-		// it took effect.
-		container.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }),
-	)
+	return container.New(container.ImageFromSpec, options...)
 }

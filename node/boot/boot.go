@@ -236,6 +236,10 @@ func Start(ctx context.Context, f File) (*Running, error) {
 			return raft.New(p, namespace)
 		}),
 		node.WithAssets(store),
+		// A VOLUME IS THE ONE THING A NODE KEEPS AS A DIRECTORY, so it gets the
+		// root the rest of this file already has. Without it a container that
+		// declares a mount is refused rather than started with an empty layer.
+		node.WithRoot(f.Root),
 	)
 	if err != nil {
 		p.Close()

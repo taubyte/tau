@@ -44,6 +44,7 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/invoke/container"
 	"github.com/taubyte/tau/pkg/invoke/static"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/project"
@@ -77,6 +78,11 @@ type Node struct {
 	// second would be a second stream to the same peer.
 	vault *vault
 
+	// disks is this node's volume backing: a directory per handle under the
+	// root, checkpointed into the asset store. Nil on a node with no root,
+	// which is a node that mounts nothing.
+	disks *volumes
+
 	// bus is this node's one bus backing, shared by the wasm tier's publish and
 	// the gateway's attach. Both reach the same topic, and a second would be a
 	// second join of it — a mesh each, with the browser on the one the workload
@@ -109,9 +115,10 @@ type Node struct {
 	// loopsStop ends the background loops this node runs, and each Done is
 	// closed when that loop has stopped. All three are nil on a node that runs
 	// neither a worker nor consensus.
-	loopsStop    context.CancelFunc
-	dispatchDone chan struct{}
-	cronDone     chan struct{}
+	loopsStop      context.CancelFunc
+	dispatchDone   chan struct{}
+	cronDone       chan struct{}
+	checkpointDone chan struct{}
 
 	startMu   sync.Mutex
 	started   bool
@@ -290,7 +297,7 @@ func (n *Node) openWorker() error {
 	// a container backend an operator named and a wasm engine the process
 	// already holds.
 	if n.cfg.Container.declared() {
-		tier, err := containerTier(n.cfg.Container)
+		tier, err := containerTier(n.cfg.Container, n.disksOrNil())
 		if err != nil {
 			return err
 		}
@@ -596,6 +603,12 @@ func (n *Node) Start(ctx context.Context) error {
 		// before invoking anything, which is a raft write.
 		n.cronDone = make(chan struct{})
 		go (&crons{node: n}).loop(loopCtx, n.cronDone)
+
+		// AND THE CHECKPOINTS, which is what makes a volume survive its node.
+		if n.disks != nil {
+			n.checkpointDone = make(chan struct{})
+			go n.disks.loop(loopCtx, n.checkpointDone)
+		}
 	}
 
 	n.started = true
@@ -623,6 +636,9 @@ func (n *Node) Close() error {
 			n.loopsStop()
 			<-n.dispatchDone
 			<-n.cronDone
+			if n.checkpointDone != nil {
+				<-n.checkpointDone
+			}
 		}
 		n.closeRegisterClient()
 		for i := len(n.closers) - 1; i >= 0; i-- {
@@ -687,6 +703,23 @@ func (n *Node) PubSub() stats.PubSub { return n.opts.pubsub }
 // a browser has to listen on exactly what a publish reaches — the same argument
 // StreamTopic carries.
 func (n *Node) BusTopic(handle string) string { return topicFor("bus", n.cfg.Cloud, handle) }
+
+// disksOrNil is this node's volume backing, or nil when it has no root to put
+// one in. CONSTRUCTION ONLY, like the other two.
+//
+// A NIL RETURN IS THE STATEMENT. A tier handed nothing refuses a workload that
+// declares a mount, which is the only unserved capability that would lose data
+// rather than fail.
+func (n *Node) disksOrNil() container.Volumes {
+	if n.opts.root == "" {
+		return nil
+	}
+	if n.disks == nil {
+		n.disks = &volumes{node: n}
+		n.closers = append(n.closers, n.disks)
+	}
+	return n.disks
+}
 
 // workQueues is this node's queue backing, built on first use by the wasm tier
 // that sends and by the dispatcher that claims.

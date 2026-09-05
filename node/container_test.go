@@ -79,7 +79,7 @@ func TestTheIsolationHandlerIsCarried(t *testing.T) {
 	// Building it needs containerd; what is checked here is that nothing
 	// silently drops the handler on the way, which is the failure that would
 	// run untrusted code under runc without a word.
-	_, err := containerTier(cfg)
+	_, err := containerTier(cfg, nil)
 	if err != nil {
 		require.NotErrorIs(t, err, ErrUnknownBackend,
 			"containerd is a backend this node builds; the error is the daemon's")

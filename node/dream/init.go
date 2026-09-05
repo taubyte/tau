@@ -17,6 +17,7 @@ package dream
 import (
 	"context"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -127,6 +128,14 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 		return nil, err
 	}
 
+	// A DIRECTORY PER PEER, under the universe's own temporary root, so two
+	// nodes in one universe do not share a volume by accident — which would
+	// make a test of "the bytes moved" pass without anything moving.
+	root, err := os.MkdirTemp("", "tau-node-"+h.ID().ShortString()+"-")
+	if err != nil {
+		return nil, err
+	}
+
 	n, err := node.New(
 		node.Config{Services: servicesIn(cfg), Cloud: u.Name()},
 		node.WithHost(h),
@@ -141,6 +150,9 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 			return raft.New(p, namespace)
 		}),
 		node.WithAssets(store),
+		// THE UNIVERSE'S OWN DIRECTORY, so a volume in a dream is a volume: a
+		// real directory, checkpointed and restored the way it is on a machine.
+		node.WithRoot(root),
 		node.WithRuntimes(tiers...),
 	)
 	if err != nil {
@@ -156,7 +168,7 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 	built.byPeer[id] = running{node: n, assets: store}
 	built.Unlock()
 
-	return closer{id: id, node: n}, nil
+	return closer{id: id, node: n, root: root}, nil
 }
 
 // servicesIn reads the services a node runs out of the universe's config. None
@@ -192,13 +204,19 @@ func Services(names ...string) map[string]int {
 type closer struct {
 	id   string
 	node *node.Node
+	root string
 }
 
 func (c closer) Close() error {
 	built.Lock()
 	delete(built.byPeer, c.id)
 	built.Unlock()
-	return c.node.Close()
+
+	err := c.node.Close()
+	if c.root != "" {
+		os.RemoveAll(c.root)
+	}
+	return err
 }
 
 // absent exists only so a pool can be built at all. Its name matches no tier in

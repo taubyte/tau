@@ -20,7 +20,9 @@ import (
 // container — and nothing anywhere says so until somebody goes looking for the
 // data.
 //
-// So it refuses, and the message names what was wanted and where.
+// So it refuses — WHEN THERE IS NOTHING TO GIVE IT. A tier handed a Volumes
+// backing puts the directory it is handed at the path the author wrote, which
+// is what makes an imported compose stack with a database run at all.
 
 // mountTier is a runtime over a backend that starts and listens, so a test can
 // tell "it refused" from "it could not have started anyway".
@@ -120,4 +122,123 @@ func TestNoAccessMeansNoWarning(t *testing.T) {
 	for _, w := range warnings {
 		require.NotContains(t, w, "does not serve", w)
 	}
+}
+
+// ── and what happens when there IS something to mount ────────────────────────
+
+// fakeVolumes hands back a path per label and records what it was asked for.
+type fakeVolumes struct {
+	err   error
+	asked []invoke.Grant
+}
+
+func (f *fakeVolumes) Mount(_ context.Context, grant invoke.Grant) (string, error) {
+	f.asked = append(f.asked, grant)
+	if f.err != nil {
+		return "", f.err
+	}
+	return "/srv/tau/volumes/" + grant.Label, nil
+}
+
+// TestTHEDIRECTORYReachesTheContainerAtThePathTheAuthorWrote, which is the
+// whole of what this tier does with a volume.
+func TestADeclaredMountBecomesAContainerMount(t *testing.T) {
+	disks := &fakeVolumes{}
+	rt := newFakeBackend()
+	rt.imagePresent = true
+	tier := newRuntime(t, rt, Image{Ref: "postgres:16"}, func() []Option {
+		return []Option{WithVolumes(disks)}
+	})
+
+	_, err := tier.Start(context.Background(), invoke.Spec{
+		Name:     "shop/prod/application/db",
+		Artifact: "postgres:16",
+		Reaches:  []invoke.Grant{mountGrant("pgdata", "/var/lib/postgresql/data")},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, rt.created, 1)
+	mounts := rt.created[0].Volumes
+	require.Len(t, mounts, 1)
+	require.Equal(t, "/srv/tau/volumes/pgdata", mounts[0].Source)
+	require.Equal(t, "/var/lib/postgresql/data", mounts[0].Destination)
+	require.False(t, mounts[0].ReadOnly, "the grant asked to write")
+
+	require.Len(t, disks.asked, 1)
+	require.Equal(t, "pgdata", disks.asked[0].Label)
+}
+
+// TestREADONLYIsTheGRANTSOwnDistinction. `mount-ro` and `mount-rw` are two
+// verbs, and serving the first as the second would widen a grant.
+func TestAReadOnlyGrantIsMountedReadOnly(t *testing.T) {
+	rt := newFakeBackend()
+	rt.imagePresent = true
+	tier := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, func() []Option {
+		return []Option{WithVolumes(&fakeVolumes{})}
+	})
+
+	grant := mountGrant("assets", "/srv/assets")
+	grant.Ops = []string{"mount-ro"}
+
+	_, err := tier.Start(context.Background(), invoke.Spec{
+		Name: "shop/prod/application/web", Artifact: "acme/shop:1",
+		Reaches: []invoke.Grant{grant},
+	})
+	require.NoError(t, err)
+	require.True(t, rt.created[0].Volumes[0].ReadOnly)
+}
+
+// TestTWOMountsAreSortedByWhereTheyLand, so a container's config is the same on
+// every node rather than depending on a map walk.
+func TestMountsAreOrderedByDestination(t *testing.T) {
+	rt := newFakeBackend()
+	rt.imagePresent = true
+	tier := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, func() []Option {
+		return []Option{WithVolumes(&fakeVolumes{})}
+	})
+
+	_, err := tier.Start(context.Background(), invoke.Spec{
+		Name: "shop/prod/application/db", Artifact: "acme/shop:1",
+		Reaches: []invoke.Grant{
+			mountGrant("wal", "/var/lib/wal"),
+			mountGrant("pgdata", "/var/lib/postgresql/data"),
+		},
+	})
+	require.NoError(t, err)
+
+	mounts := rt.created[0].Volumes
+	require.Len(t, mounts, 2)
+	require.Equal(t, "/var/lib/postgresql/data", mounts[0].Destination)
+	require.Equal(t, "/var/lib/wal", mounts[1].Destination)
+}
+
+// TestAVOLUMEThisCloudRefusedIsNotMountedAnyway. A refused grant is the
+// composer saying it will not serve this target, and starting the container
+// without it is the exact data loss the refusal exists to prevent.
+func TestARefusedMountGrantStillRefusesTheWorkload(t *testing.T) {
+	tier := mountTier(t, func() []Option { return []Option{WithVolumes(&fakeVolumes{})} })
+
+	grant := mountGrant("pgdata", "/var/lib/postgresql/data")
+	grant.Refused = "this cloud has no disk for it"
+
+	_, err := tier.Start(context.Background(), invoke.Spec{
+		Name: "shop/prod/application/db", Artifact: "postgres:16",
+		Reaches: []invoke.Grant{grant},
+	})
+	require.ErrorIs(t, err, ErrNoMounts)
+	require.ErrorContains(t, err, "this cloud has no disk for it")
+}
+
+// TestABackingThatCannotGiveADirectoryRefuses rather than starting without one.
+func TestAVolumeBackingThatFailsRefusesTheWorkload(t *testing.T) {
+	tier := mountTier(t, func() []Option {
+		return []Option{WithVolumes(&fakeVolumes{err: fmt.Errorf("no room")})}
+	})
+
+	_, err := tier.Start(context.Background(), invoke.Spec{
+		Name: "shop/prod/application/db", Artifact: "postgres:16",
+		Reaches: []invoke.Grant{mountGrant("pgdata", "/var/lib/postgresql/data")},
+	})
+	require.ErrorIs(t, err, ErrNoMounts)
+	require.ErrorContains(t, err, "no room")
 }

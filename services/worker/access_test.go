@@ -215,6 +215,34 @@ func TestTheFixturesDatabaseIsRefusedRatherThanStartedWithoutItsDisk(t *testing.
 	require.ErrorContains(t, err, "pgdata at /var/lib/postgresql/data")
 }
 
+// TestAndWithADiskItSTARTS, which is the other half of the same story and the
+// reason the refusal is conditional rather than permanent. A compose import
+// whose database keeps its data in a named volume is the most common shape
+// there is, and while nothing could give it one, an imported stack could not
+// run at all.
+func TestTheFixturesDatabaseStartsWhenSomethingCanGiveItTheDisk(t *testing.T) {
+	h := newHarness(t)
+	spec := resolveIn(t, h, nil, "application", "db")
+
+	tier, err := container.New(func(invoke.Spec) (container.Image, error) {
+		return container.Image{Ref: "postgres:16"}, nil
+	}, container.WithBackend(refusingBackend{}), container.WithVolumes(handingBack{}))
+	require.NoError(t, err)
+
+	// It gets past the mount check and dies at the backend, which is what this
+	// harness has instead of a container daemon.
+	_, err = tier.Start(t.Context(), spec)
+	require.NotErrorIs(t, err, container.ErrNoMounts)
+	require.ErrorContains(t, err, "nothing should reach the backend")
+}
+
+// handingBack is a volume backing with a directory for everything.
+type handingBack struct{}
+
+func (handingBack) Mount(_ context.Context, grant invoke.Grant) (string, error) {
+	return "/srv/tau/volumes/" + grant.Label, nil
+}
+
 // refusingBackend fails every call, so a test that got past the mount check
 // would fail on the backend rather than passing by accident.
 type refusingBackend struct{}

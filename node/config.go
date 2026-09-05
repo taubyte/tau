@@ -123,6 +123,7 @@ type options struct {
 	engines   *database.Registry
 	raft      func(namespace string) (raft.Cluster, error)
 	assets    Assets
+	root      string
 	runtimes  []invoke.Runtime
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
@@ -226,6 +227,27 @@ func WithAssets(a Assets) Option {
 			return errors.New("node: a nil asset store")
 		}
 		o.assets = a
+		return nil
+	}
+}
+
+// WithRoot is where this node keeps what has to be a real directory.
+//
+// ONE THING NEEDS IT AND THAT IS THE POINT: a volume is a POSIX filesystem a
+// container mounts, so it cannot live in the DAG the way everything else this
+// node keeps does. Everything else — the register's rows, a cache, a queue, an
+// artifact — is content-addressed or replicated, which is why a node has had no
+// directory of its own until now.
+//
+// A NODE WITHOUT ONE MOUNTS NOTHING, and says so: a container declaring a
+// volume is refused rather than started with an empty layer, which is the one
+// unserved capability that loses data instead of failing.
+func WithRoot(dir string) Option {
+	return func(o *options) error {
+		if dir == "" {
+			return errors.New("node: an empty root is not a directory")
+		}
+		o.root = dir
 		return nil
 	}
 }
