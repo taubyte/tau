@@ -178,6 +178,10 @@ type Runtime struct {
 
 	// queues backs `taubyte:handler/queue`.
 	queues Queues
+
+	// secrets backs `taubyte:handler/secret` — the rotation path, beside the
+	// environment variable that carries a secret at start.
+	secrets Secrets
 }
 
 var _ invoke.Runtime = (*Runtime)(nil)
@@ -278,7 +282,12 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}
 
 	imports = append(imports, r.vectorImports(spec)...)
+	if r.secrets == nil && len(secretGrantsOf(spec)) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoSecrets, spec.Name)
+	}
+
 	imports = append(imports, r.queueImports(spec)...)
+	imports = append(imports, r.secretImports(spec)...)
 
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {

@@ -12,7 +12,7 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::taubyte::handler::{cache, database, document, kv, queue, stream, vector};
+use bindings::taubyte::handler::{cache, database, document, kv, queue, secret, stream, vector};
 use bindings::{Guest, Header, Request, Response};
 
 struct Component;
@@ -110,6 +110,16 @@ fn why_queue(e: &queue::Error) -> String {
         queue::Error::Denied(why) => format!("denied:{}", why),
         queue::Error::NotWritable(why) => format!("not-writable:{}", why),
         queue::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
+// why_secret names a secret error arm.
+fn why_secret(e: &secret::Error) -> String {
+    match e {
+        secret::Error::NoSuchSecret(name) => format!("no-such-secret:{}", name),
+        secret::Error::Denied(why) => format!("denied:{}", why),
+        secret::Error::NotSet => "not-set".to_string(),
+        secret::Error::Unavailable(why) => format!("unavailable:{}", why),
     }
 }
 
@@ -262,6 +272,12 @@ impl Guest for Component {
             "send" => match queue::send(name, key, &req.body) {
                 Ok(()) => reply(204, Vec::new()),
                 Err(e) => reply(403, why_queue(&e).into_bytes()),
+            },
+            // Read at the moment of the call, which is what makes a rotation
+            // take effect without a redeploy.
+            "secret" => match secret::get(name) {
+                Ok(value) => reply(200, value),
+                Err(e) => reply(403, why_secret(&e).into_bytes()),
             },
             // A round trip through the cache in one call: write the body, read
             // it back, and answer with what came back. It is the only branch

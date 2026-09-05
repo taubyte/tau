@@ -8,6 +8,8 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/pkg/invoke"
+	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
@@ -134,6 +136,31 @@ func (v *vault) remote() (*secretsService.Client, error) {
 	}
 	v.client, v.at = c, id
 	return c, nil
+}
+
+// Secret is pkg/invoke/wasm's Secrets: the value a grant names, read at the
+// moment the guest asks rather than at start.
+//
+// IT IS THE SAME VAULT the worker resolves a run-time variable from, which is
+// what makes the two paths agree — a rotated secret reaches a variable at the
+// next deploy and reaches this at the next call, and both read the same row.
+func (v *vault) SecretFor(ctx context.Context, grant invoke.Grant) ([]byte, error) {
+	project, environment, id := splitHandle(grant.Handle)
+	if project == "" || environment == "" || id == "" {
+		return nil, fmt.Errorf("node: %q does not address a secret", grant.Handle)
+	}
+
+	value, err := v.Secret(ctx, project, environment, id)
+	if err != nil {
+		if errors.Is(err, secretsService.ErrNotSet) {
+			// THE TIER'S ARM, so a guest is told "nothing is set" rather than
+			// "the node is unhappy" — the same translation node/cache.go makes
+			// and the same bug it was written to stop.
+			return nil, fmt.Errorf("%w: %w", wasmtier.ErrNotSet, err)
+		}
+		return nil, err
+	}
+	return []byte(value), nil
 }
 
 // Close releases the stream to a remote vault, if one was opened.

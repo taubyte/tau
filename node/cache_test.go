@@ -214,3 +214,62 @@ func TestAnUnrecognisedFailureIsNotTranslated(t *testing.T) {
 	require.Equal(t, other, asTierError(other))
 	require.NoError(t, asTierError(nil))
 }
+
+// ── reading a secret at the moment of the call ───────────────────────────────
+
+// TestTheVaultServesBothPaths: the worker resolves a run-time variable from it
+// at start, and the tier reads it per call. Both read the same row, which is
+// what makes a rotation reach one at the next deploy and the other at the next
+// call.
+func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	require.NoError(t, n.Start(t.Context()))
+	ctx := t.Context()
+
+	require.NoError(t, n.Secrets().Local().Set(ctx, "shop", "prod", "QmStripe", []byte("sk_live")))
+
+	grant := invoke.Grant{
+		Kind: "secret", Label: "stripe", Handle: "shop/prod/QmStripe", Ops: []string{"get"},
+	}
+
+	value, err := n.vault.SecretFor(ctx, grant)
+	require.NoError(t, err)
+	require.Equal(t, "sk_live", string(value))
+
+	// The worker's own path reads the same row.
+	same, err := n.vault.Secret(ctx, "shop", "prod", "QmStripe")
+	require.NoError(t, err)
+	require.Equal(t, "sk_live", same)
+
+	// AND A ROTATION IS SEEN, which is the whole reason the tier reads per call.
+	require.NoError(t, n.Secrets().Local().Set(ctx, "shop", "prod", "QmStripe", []byte("rotated")))
+	value, err = n.vault.SecretFor(ctx, grant)
+	require.NoError(t, err)
+	require.Equal(t, "rotated", string(value))
+}
+
+// TestAMissIsTheTIERSMiss, so a guest is told "nothing is set" rather than "the
+// node is unhappy".
+func TestAnUnsetSecretIsTheTiersArm(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	require.NoError(t, n.Start(t.Context()))
+
+	_, err := n.vault.SecretFor(t.Context(), invoke.Grant{
+		Kind: "secret", Label: "stripe", Handle: "shop/prod/QmNeverSet", Ops: []string{"get"},
+	})
+	require.ErrorIs(t, err, wasmtier.ErrNotSet)
+}
+
+// TestAHandleThatAddressesNothingIsRefused rather than reaching a row composed
+// out of empty segments.
+func TestAMalformedSecretHandleIsRefused(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	require.NoError(t, n.Start(t.Context()))
+
+	for _, handle := range []string{"", "shop", "shop/prod", "shop//QmStripe"} {
+		_, err := n.vault.SecretFor(t.Context(), invoke.Grant{
+			Kind: "secret", Label: "stripe", Handle: handle, Ops: []string{"get"},
+		})
+		require.ErrorContains(t, err, "does not address a secret", "handle %q", handle)
+	}
+}

@@ -70,7 +70,12 @@ type Node struct {
 	worker   *worker.Service
 	gateway  *gateway.Service
 
-	secrets       *secretsService.Service
+	secrets *secretsService.Service
+
+	// vault is this node's one reader of secret values, shared by the worker
+	// and the wasm tier. It holds a stream to a remote secrets service, so a
+	// second would be a second stream to the same peer.
+	vault         *vault
 	auth          *authService.Service
 	buildBackend  *backend.Service
 	buildFrontend *frontend.Service
@@ -287,15 +292,11 @@ func (n *Node) openWorker() error {
 		// developer would look first, but it is somewhere, and what it takes to
 		// do better — per-invocation attribution — is a change to every tier's
 		// interface rather than to this wiring.
-		// THE CACHE BACKING IS ALWAYS GIVEN, and it opens nothing until a
-		// workload actually reaches one. A tier composed without it refuses
-		// every resource that declares a cache — which on a node with a
-		// database factory would be a refusal for no reason.
 		// THE BACKINGS ARE ALWAYS GIVEN, and each opens nothing until a
 		// workload actually reaches one. A tier composed without them refuses
-		// every resource that declares a cache or a stream — which on a node
-		// that has a database factory and a pubsub would be a refusal for no
-		// reason.
+		// every resource that declares a cache, a stream, a database, a queue
+		// or a secret — which on a node that has the resources for them would
+		// be a refusal for no reason.
 		publisher := &streams{node: n}
 		n.closers = append(n.closers, publisher)
 
@@ -305,6 +306,12 @@ func (n *Node) openWorker() error {
 		work := &queues{node: n}
 		n.closers = append(n.closers, work)
 
+		// ONE VAULT FOR THE NODE, not one per consumer. It holds a stream to a
+		// remote secrets service and opening a second would be a second stream
+		// to the same peer; the worker below is handed this same value.
+		n.vault = &vault{node: n}
+		n.closers = append(n.closers, n.vault)
+
 		component, err := wasm.New(n.opts.assets,
 			wasm.WithOutput(workloadLog),
 			wasm.WithCaches(&caches{node: n}),
@@ -313,7 +320,8 @@ func (n *Node) openWorker() error {
 			wasm.WithKV(servers),
 			wasm.WithDocuments(servers),
 			wasm.WithVectors(servers),
-			wasm.WithQueues(work))
+			wasm.WithQueues(work),
+			wasm.WithSecrets(n.vault))
 		if err != nil {
 			return err
 		}
@@ -355,10 +363,14 @@ func (n *Node) openWorker() error {
 	switch {
 	case n.opts.secrets != nil:
 		options = append(options, worker.WithSecrets(n.opts.secrets))
+	case n.vault != nil:
+		options = append(options, worker.WithSecrets(n.vault))
 	case n.secrets != nil || n.stats != nil:
-		v := &vault{node: n}
-		n.closers = append(n.closers, v)
-		options = append(options, worker.WithSecrets(v))
+		// A worker with no wasm tier — an injected one, or a node with no
+		// asset store — never built the shared vault above.
+		n.vault = &vault{node: n}
+		n.closers = append(n.closers, n.vault)
+		options = append(options, worker.WithSecrets(n.vault))
 	}
 	if n.opts.now != nil {
 		options = append(options, worker.WithClock(n.opts.now))
