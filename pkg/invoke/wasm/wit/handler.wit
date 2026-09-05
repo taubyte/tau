@@ -21,6 +21,76 @@
 // host calls whatever the config says, and what it requires is the signature.
 package taubyte:handler@0.1.0;
 
+// The key-value cache a workload reaches, as the vocabulary's `cache` kind.
+//
+// # It is in this package rather than one of its own
+//
+// A wit directory is ONE package, with everything else under deps/. A second
+// top-level package here would mean vendoring this one's own dependencies to
+// reach it, for an interface that only ever ships beside this world. So the
+// import a guest writes is `taubyte:handler/cache@0.1.0`, which reads oddly for
+// a moment and then stops mattering.
+//
+// # The cache is named by its LABEL and not by its id
+//
+// A workload declares what it reaches in its own configuration:
+//
+//     cache:
+//         sessions:
+//             ops: [get, put]
+//
+// and `sessions` is the string it passes here. The author wrote that label and
+// never sees the id it resolves to, which is also what makes the guest
+// portable between environments: staging's `sessions` and production's are
+// different caches and the same code.
+//
+// # Every op is checked against that declaration
+//
+// A label the resource did not declare is `no-such-cache`, and an op it did not
+// ask for is `denied` — both before the store is touched. The configuration is
+// the grant; there is no second place to widen it.
+interface cache {
+    // What went wrong, as arms an author can act on differently.
+    //
+    // `not-found` IS NOT AN ERROR CONDITION and is the common case: a cache
+    // miss is what a cache is for. It carries no payload because there is
+    // nothing to say beyond the key the caller already has.
+    variant error {
+        // The label is not in this resource's `cache:` block. A typo, or a
+        // grant nobody wrote.
+        no-such-cache(string),
+        // The label is declared, but not with this op.
+        denied(string),
+        not-found,
+        // One value larger than the whole cache. Evicting everything would
+        // still not make it fit.
+        too-large,
+        // The store could not answer. Distinct from a miss on purpose: a
+        // caller retries one and recomputes for the other.
+        unavailable(string),
+    }
+
+    // get returns a value, or not-found.
+    get: func(name: string, key: string) -> result<list<u8>, error>;
+
+    // put writes one. It is an upsert, and it evicts rather than refusing when
+    // the cache is at its declared size — losing an entry costs a
+    // recomputation, which is the whole premise of this kind.
+    put: func(name: string, key: string, value: list<u8>) -> result<_, error>;
+
+    // delete removes one. Deleting what is not there succeeds.
+    delete: func(name: string, key: string) -> result<_, error>;
+
+    // list names the live entries under a prefix, sorted. An expired entry is
+    // not listed.
+    //
+    // `%list` ESCAPES A WIT KEYWORD, and the escape is worth it: the verb the
+    // configuration writes is `list`, and a function called anything else here
+    // would be a second spelling of one verb — the shape the vocabulary's own
+    // notes call a parallel table.
+    %list: func(name: string, prefix: string) -> result<list<string>, error>;
+}
+
 // THE TYPES ARE IN THE WORLD AND NOT IN AN INTERFACE, which is not a style
 // choice: a `use` from an imported interface leaves the export's signature
 // referring to a type the host has to resolve separately, and a host reading
@@ -28,6 +98,11 @@ package taubyte:handler@0.1.0;
 // the export carries its whole shape with it — which is what lets any embedder
 // call it knowing only this file.
 world handler {
+    // A GUEST NEED NOT USE IT. A world's imports are what the host PROVIDES,
+    // so a component built against this world that never calls the cache is
+    // byte-identical to one built before the import existed.
+    import cache;
+
     // A header, once. It is a list of pairs rather than a map because a header
     // may legitimately appear more than once — Set-Cookie is the example that
     // breaks every map-shaped API.

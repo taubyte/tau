@@ -287,7 +287,13 @@ func (n *Node) openWorker() error {
 		// developer would look first, but it is somewhere, and what it takes to
 		// do better — per-invocation attribution — is a change to every tier's
 		// interface rather than to this wiring.
-		component, err := wasm.New(n.opts.assets, wasm.WithOutput(workloadLog))
+		// THE CACHE BACKING IS ALWAYS GIVEN, and it opens nothing until a
+		// workload actually reaches one. A tier composed without it refuses
+		// every resource that declares a cache — which on a node with a
+		// database factory would be a refusal for no reason.
+		component, err := wasm.New(n.opts.assets,
+			wasm.WithOutput(workloadLog),
+			wasm.WithCaches(&caches{node: n}))
 		if err != nil {
 			return err
 		}

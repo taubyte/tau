@@ -95,7 +95,7 @@ type Spec struct {
 	Artifact string
 
 	// Egress is where this workload may reach on the network, as the resource
-	// declared it. Empty means nowhere.
+	// declared it.
 	//
 	// IT IS HERE AND NOT IN Settings because every tier that runs code has one,
 	// which is the same test Memory passes: a container gets a firewall, a wasm
@@ -103,9 +103,16 @@ type Spec struct {
 	// ignored it would be a tier where a workload's reach is the node's problem
 	// instead of its own.
 	//
-	// EMPTY IS DENY AND NOT ALLOW. A resource that declared no egress declared
-	// no egress; reading an absent list as "anywhere" would make the safe
-	// spelling the one nobody writes.
+	// EMPTY IS THE NODE-WIDE FLOOR ALONE, AND NOT "NOWHERE". The vocabulary
+	// calls this "the per-workload allowlist of hosts a workload may reach,
+	// layered on top of the node-wide deny floor (pkg/netguard) which it can
+	// never widen... absent means the floor alone" — so a resource that named
+	// nothing asked for no NARROWING, not for isolation.
+	//
+	// THIS COMMENT SAID THE OPPOSITE and the tier that believed it refused
+	// every function that calls an API, with a message about a list its author
+	// never knew to write. The rule lives in pkg/invoke/wasm/egress.go; this is
+	// the field it reads.
 	Egress []string
 
 	// Settings are the tier-specific values the composer read off the resource.
@@ -126,6 +133,80 @@ type Spec struct {
 	// Env is what the workload is given. A tier may add to it — the container
 	// tier sets PORT — and may not have it overridden.
 	Env map[string]string
+
+	// Reaches is what this workload declared it may touch: the compiled
+	// `cache:`, `database:`, `storage:` blocks, one entry per target.
+	//
+	// ONE FIELD RATHER THAN ONE PER KIND. The vocabulary has seventeen kinds
+	// and the access block is keyed by all of them, so a field each would be a
+	// struct that grows with the schema — and a tier that runs code cares about
+	// exactly the kinds it implements and should filter, not be handed a
+	// pre-sorted struct with fifteen empty members.
+	//
+	// IT IS THE GRANT AND THERE IS NO SECOND PLACE TO WIDEN IT. A tier
+	// refusing a target that is not here, and an op that is not on it, is the
+	// whole of the authorization a capability gets — the configuration said it
+	// and the compiled object carries it.
+	Reaches []Grant
+}
+
+// Grant is one entry of a resource's access block.
+type Grant struct {
+	// Kind is the vocabulary's own kind name: "cache", "database", "storage".
+	Kind string
+
+	// Label is what the author wrote and what the guest passes. It is not the
+	// target's id, and that is what makes one component portable between
+	// environments: staging's `sessions` and production's are different caches
+	// and the same code.
+	Label string
+
+	// Handle is opaque here, exactly as Artifact is: the string whatever backs
+	// this kind understands as "which one". A composer builds it; this package
+	// has no opinion about its shape.
+	Handle string
+
+	// Ops are the verbs the resource asked for, as the vocabulary spells them
+	// — "get", "put", "delete", "list". The target decides what it actually
+	// grants; this is what was requested.
+	Ops []string
+
+	// Settings are what the TARGET declared, as the composer read them off it
+	// — a cache's `keys/ttl` and `keys/size`, a storage's quota. They are here
+	// rather than looked up by whatever backs the kind, because the composer
+	// has the compiled project open and the backing does not: a store that had
+	// to resolve a handle back into a resource would need the register on the
+	// request path.
+	//
+	// THE KEYS ARE THE VOCABULARY'S OWN PATHS, joined with "/", so a reader
+	// finds the attribute by searching the schema for the string.
+	Settings map[string]string
+
+	// Refused, when set, is why this cloud will not serve this target — and
+	// every op on it fails with this sentence.
+	//
+	// IT IS A REFUSED GRANT AND NOT A MISSING ONE, and the difference is the
+	// whole reason the field exists. A composer that dropped the entry would
+	// tell a guest "no such cache", which reads as a typo; one that dropped
+	// the WORKLOAD would take a whole resource down because one of the things
+	// it reaches cannot be served. Access is declared per target, so it
+	// degrades per target, and the author is told which and why at the call
+	// that needed it.
+	Refused string
+}
+
+// Allows reports whether this grant carries a verb. A refused grant allows
+// nothing, whatever its ops say.
+func (g Grant) Allows(op string) bool {
+	if g.Refused != "" {
+		return false
+	}
+	for _, have := range g.Ops {
+		if have == op {
+			return true
+		}
+	}
+	return false
 }
 
 func (s Spec) validate() error {

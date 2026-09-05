@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -68,7 +69,7 @@ type Secrets interface {
 // expected to differ between an environment and the next — a worker that had
 // captured either at construction would serve a number the author changed and
 // nothing would happen.
-func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, r project.Resource, resourceID string) (invoke.Spec, error) {
+func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *project.Project, r project.Resource, resourceID string) (invoke.Spec, error) {
 	runtime, err := runtimeOf(t.Kind, r)
 	if err != nil {
 		return invoke.Spec{}, err
@@ -84,12 +85,18 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, r proj
 		return invoke.Spec{}, err
 	}
 
+	reaches, err := reachesOf(t, proj, r)
+	if err != nil {
+		return invoke.Spec{}, err
+	}
+
 	spec := invoke.Spec{
 		Runtime:  runtime,
 		Name:     strings.Join([]string{t.Project, t.Environment, t.Kind, resourceID}, "/"),
 		Revision: string(p.Object),
 		Artifact: artifact,
 		Env:      env,
+		Reaches:  reaches,
 	}
 	if memory, ok := r.Int("execution", "memory"); ok {
 		spec.Memory = memory
@@ -102,11 +109,106 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, r proj
 	}
 	spec.Settings = settingsOf(r)
 
-	// WHERE A WORKLOAD MAY REACH IS THE RESOURCE'S, and empty is nowhere. The
-	// tier enforces it; this only carries it, because which mechanism does the
-	// enforcing is the tier's business and the allowlist is the author's.
+	// WHERE A WORKLOAD MAY REACH ON THE NETWORK IS THE RESOURCE'S, and an
+	// absent list is the node-wide floor alone rather than nowhere — the
+	// vocabulary's own sentence. The tier enforces it; this only carries it,
+	// because which mechanism does the enforcing is the tier's business and
+	// the allowlist is the author's.
 	spec.Egress = r.Strings("egress")
 	return spec, nil
+}
+
+// reachesOf turns the access block into grants the tier can enforce.
+//
+// A LABEL IS RESOLVED HERE AND A HANDLE IS WHAT TRAVELS. The label is scoped —
+// the fixture has three caches called `sessions` in three namespaces — so a
+// tier handed the label would have to resolve it, which means the tier would
+// need the compiled project. The id it resolves to is unambiguous, and the
+// handle is the id with the deployment it belongs to in front of it.
+//
+// A TARGET THIS CLOUD CANNOT SERVE IS A REFUSED GRANT AND NOT A REFUSED
+// WORKLOAD. Access is declared per target, so it degrades per target: the
+// resource runs, everything else it reaches works, and the one call that needed
+// the unservable thing is told which and why. Refusing the whole resource would
+// take a function down over one of the things it touches — and the
+// vocabulary's own fixture has exactly that shape.
+func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Grant, error) {
+	var out []invoke.Grant
+
+	for _, reach := range r.Reaches(cacheKind) {
+		target, id, err := proj.Reached(t.Scope, reach)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s wants %w", ErrNoTarget, t.Name, err)
+		}
+
+		out = append(out, invoke.Grant{
+			Kind:     reach.Kind,
+			Label:    reach.Label,
+			Handle:   strings.Join([]string{t.Project, t.Environment, id}, "/"),
+			Ops:      reach.Ops,
+			Settings: cacheSettings(target),
+			Refused:  unservable(reach, target),
+		})
+	}
+	return out, nil
+}
+
+const cacheKind = "cache"
+
+// unservable says why this cloud would have to serve a target WEAKER than it
+// was declared, or "" when it would not. Both reasons are one line for an
+// author to change.
+func unservable(reach project.Reach, target project.Resource) string {
+	// AN AUTHORIZER IS A DECISION SOMEBODY ELSE MAKES, per operation, and
+	// nothing calls one yet. Serving the cache anyway would be granting the
+	// access the target explicitly said is not its own to grant — which is the
+	// one failure mode worse than refusing.
+	if name := target.String("authorizer", "name"); name != "" {
+		return fmt.Sprintf("%s %q is guarded by the authorizer %q, and nothing here calls one — "+
+			"serving it would grant access its own configuration says somebody else decides",
+			reach.Kind, reach.Label, name)
+	}
+
+	// SINGLE-WRITER MEANS NOTHING IS SILENTLY DISCARDED, and the store behind a
+	// cache here is a CRDT: concurrent writes merge last-writer-wins and the
+	// loser is gone with no error. That is what `crdt` asks for and the
+	// opposite of what this asks for, so it is refused rather than served as
+	// if the author had written the other value.
+	//
+	// `gossip` IS ACCEPTED and is served STRONGER than declared: gossip is
+	// eventually consistent and lossy, a CRDT is eventually consistent and
+	// not. An author who accepted a dropped entry gets one that arrives.
+	if consensus := target.String("consensus"); consensus == singleWriter {
+		return fmt.Sprintf("%s %q declares consensus %q, and the store behind a cache here merges "+
+			"concurrent writes last-writer-wins — a write that lost would be gone with no error",
+			reach.Kind, reach.Label, consensus)
+	}
+	return ""
+}
+
+const singleWriter = "single-writer"
+
+// The vocabulary's own paths, so a reader finds the attribute by searching the
+// schema for the string.
+const (
+	settingTTL  = "keys/ttl"
+	settingSize = "keys/size"
+)
+
+// cacheSettings is what the TARGET declared, carried to whatever backs the
+// kind — which has the handle and not the compiled project.
+func cacheSettings(target project.Resource) map[string]string {
+	out := map[string]string{}
+	if ttl, ok := target.Duration("ttl"); ok {
+		out[settingTTL] = ttl.String()
+	}
+	if size, ok := target.Int("size"); ok {
+		out[settingSize] = strconv.FormatInt(size, 10)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // settingsOf is what a tier needs off the resource that is not common to every
@@ -245,5 +347,5 @@ func (s *Service) Resolve(ctx context.Context, t Target) (invoke.Spec, error) {
 		return invoke.Spec{}, err
 	}
 
-	return s.spec(ctx, t, pointer, resource, resourceID)
+	return s.spec(ctx, t, pointer, proj, resource, resourceID)
 }

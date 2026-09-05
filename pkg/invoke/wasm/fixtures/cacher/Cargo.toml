@@ -1,0 +1,25 @@
+[package]
+name = "cacher"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen-rt = { version = "0.39", features = ["bitflags"] }
+
+[package.metadata.component]
+package = "taubyte:cacher"
+
+[package.metadata.component.target]
+# THE CANONICAL WORLD, not a copy of it. A fixture with its own wit/ directory
+# is a fixture that can drift from the world the host implements, and the whole
+# point of this fixture is that the two agree.
+path = "../../wit"
+world = "handler"
+
+[profile.release]
+opt-level = "s"
+strip = true

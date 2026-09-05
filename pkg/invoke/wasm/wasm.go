@@ -149,6 +149,10 @@ type Runtime struct {
 	// interleaves. Closing that means a sink on invoke.Instance.Serve, which is
 	// a change to every tier.
 	output func(spec invoke.Spec) (stdout, stderr io.Writer)
+
+	// caches backs `taubyte:handler/cache`. Nil is a tier that runs everything
+	// reaching no cache — see cache.go.
+	caches Caches
 }
 
 var _ invoke.Runtime = (*Runtime)(nil)
@@ -203,6 +207,15 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, fmt.Errorf("%w: %s is %q", ErrUnsupportedWorld, spec.Name, world)
 	}
 
+	// A GRANT WITH NOTHING BEHIND IT IS A CONSTRUCTION FAULT, so it is refused
+	// here rather than at the first call: a workload that would fail every
+	// request that touches its cache should not be started and then look
+	// healthy until somebody exercises that path.
+	if r.caches == nil && len(grantsOf(spec)) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoCaches, spec.Name)
+	}
+	imports := r.cacheImports(spec)
+
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {
 		return nil, fmt.Errorf("wasm: fetching %s: %w", spec.Artifact, err)
@@ -226,7 +239,7 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 
 	runtime := wazy.NewRuntimeWithConfig(ctx, config)
 
-	instance, err := component.Instantiate(ctx, runtime, code, r.sandbox(spec)...)
+	instance, err := component.Instantiate(ctx, runtime, code, append(r.sandbox(spec), imports...)...)
 	if err != nil {
 		runtime.Close(ctx)
 		return nil, fmt.Errorf("wasm: instantiating %s: %w", spec.Name, err)

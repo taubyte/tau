@@ -111,6 +111,16 @@ func (k *memKV) Put(_ context.Context, key string, v []byte) error {
 	return nil
 }
 
+func (k *memKV) Delete(_ context.Context, key string) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if _, ok := k.rows[key]; !ok {
+		return ds.ErrNotFound
+	}
+	delete(k.rows, key)
+	return nil
+}
+
 func (k *memKV) Close() {
 	k.factory.mu.Lock()
 	k.factory.closed++
