@@ -1,0 +1,164 @@
+package emit_test
+
+import (
+	"sort"
+	"testing"
+
+	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/importer"
+	"github.com/taubyte/tau/pkg/importer/compose"
+	"github.com/taubyte/tau/pkg/importer/coolify"
+	"github.com/taubyte/tau/pkg/importer/dokploy"
+	"github.com/taubyte/tau/pkg/importer/emit"
+	"github.com/taubyte/tau/pkg/importer/fly"
+	"github.com/taubyte/tau/pkg/importer/vercel"
+	"github.com/taubyte/tau/pkg/invoke/container"
+	"github.com/taubyte/tau/pkg/invoke/static"
+	"github.com/taubyte/tau/pkg/invoke/wasm"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+)
+
+// runnable_test is the competitive claim, checked rather than asserted: a
+// project imported from somewhere else must not merely COMPILE, it must be
+// something this platform can actually run.
+//
+// THOSE ARE DIFFERENT PROPERTIES and only the first was ever tested. An
+// importer emitting a kind whose engine nothing implements produces a project
+// that passes every test in this package, deploys, and then refuses every
+// request with "no engine registered for this spec" — which is discovered by a
+// user rather than by us.
+//
+// So this walks every importer's output back through the vocabulary: which
+// kinds did it emit, which engine does each kind declare, and is there a tier
+// that answers to that name.
+
+// implemented is every engine this repository has a tier for, by the name the
+// vocabulary uses. A tier added here without a kind, or a kind added there
+// without a tier, is what the test below is about.
+var implemented = map[string]bool{
+	container.Name: true,
+	static.Name:    true,
+	wasm.Name:      true,
+}
+
+// theFlyFile, theVercelOutput and the compose file above are one representative
+// descriptor each — enough to make every importer emit its kinds.
+const theFlyFile = `
+app = "shop"
+primary_region = "iad"
+
+[build]
+  image = "ghcr.io/acme/shop:1.4"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+[[vm]]
+  memory = "512mb"
+  cpus = 1
+`
+
+const theVercelOutput = `{
+  "buildCommand": "next build",
+  "installCommand": "pnpm i",
+  "outputDirectory": ".next",
+  "functions": {
+    "api/orders.ts": { "memory": 512, "maxDuration": 30 }
+  }
+}`
+
+// emitted is every (kind, name) one importer produced.
+func emitted(t *testing.T, results ...importer.Result) map[string][]string {
+	t.Helper()
+
+	fs := afero.NewMemMapFs()
+	report, err := emit.To(fs, "/project", "shop", results...)
+	require.NoError(t, err)
+
+	byKind := map[string][]string{}
+	for _, r := range results {
+		for _, res := range r.Resources {
+			byKind[res.Kind] = append(byKind[res.Kind], res.Name)
+		}
+	}
+	require.NotEmpty(t, byKind, "an importer that emits nothing imports nothing")
+
+	// It is also written, which is what the rest of this package proves; the
+	// report is read here only so a failure to write is not silent.
+	require.NotEmpty(t, report.Written)
+	return byKind
+}
+
+// EVERY KIND EVERY IMPORTER EMITS HAS A TIER THAT RUNS IT. This is the whole of
+// "can import projects from vercel, fly.io, dokploy and coolify with ease",
+// reduced to the one thing that can be checked mechanically.
+func TestEverythingAnImporterEmitsCanBeRun(t *testing.T) {
+	fly, err := fly.Import([]byte(theFlyFile))
+	require.NoError(t, err)
+
+	vercelResult, err := vercel.Import([]byte(theVercelOutput))
+	require.NoError(t, err)
+
+	coolifyResult, err := coolify.Import([]byte(composeFile))
+	require.NoError(t, err)
+
+	dokployResult, err := dokploy.Import([]byte(composeFile))
+	require.NoError(t, err)
+
+	composeResult, err := compose.Import([]byte(composeFile))
+	require.NoError(t, err)
+
+	for source, result := range map[string]importer.Result{
+		"fly.io":  fly,
+		"vercel":  vercelResult,
+		"coolify": coolifyResult,
+		"dokploy": dokployResult,
+		"compose": composeResult,
+	} {
+		for kind, names := range emitted(t, result) {
+			engines := schema.EnginesOf(kind)
+			if len(engines) == 0 {
+				// A kind that runs nothing — a volume, a zone — is not a
+				// compute resource and needs no tier. That is a real answer
+				// rather than a hole: EnginesOf is empty for exactly those.
+				continue
+			}
+
+			for _, engine := range engines {
+				require.True(t, implemented[engine],
+					"%s imports %s/%v, which the vocabulary says runs on %q — and nothing implements that engine. "+
+						"An imported project would compile, deploy, and refuse every request.",
+					source, kind, names, engine)
+			}
+		}
+	}
+}
+
+// AND THE OTHER DIRECTION: every engine the vocabulary names is either
+// implemented or listed here as knowingly absent. A third engine added to the
+// schema with no tier is a project that deploys and does not run, and this is
+// where that is noticed.
+func TestEveryEngineTheVocabularyNamesIsImplemented(t *testing.T) {
+	named := map[string]bool{}
+	for _, kind := range schema.Kinds() {
+		for _, engine := range schema.EnginesOf(kind) {
+			named[engine] = true
+		}
+	}
+	require.NotEmpty(t, named)
+
+	var missing []string
+	for engine := range named {
+		if !implemented[engine] {
+			missing = append(missing, engine)
+		}
+	}
+	sort.Strings(missing)
+
+	require.Empty(t, missing,
+		"the vocabulary names an engine nothing implements: %v. A resource declaring it compiles, "+
+			"deploys, and refuses every request with \"no engine registered for this spec\".", missing)
+}
