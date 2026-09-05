@@ -191,3 +191,77 @@ func TestACacheAndAStreamInOneWorkload(t *testing.T) {
 	require.Equal(t, 204, call(t, instance, "/publish/orders/", []byte("m")).Status)
 	require.Len(t, sent.messages("QmOrders"), 1)
 }
+
+// ── the bus ──────────────────────────────────────────────────────────────────
+
+func busGrant(label, handle string, ops ...string) []invoke.Grant {
+	return []invoke.Grant{{Kind: "bus", Label: label, Handle: handle, Ops: ops}}
+}
+
+// TestAGuestPublishesToABus. The sending is a stream's; what differs is the
+// kind, and the handle carries that.
+func TestAComponentPublishesToABus(t *testing.T) {
+	sent := newPublisher()
+	instance := start(t, tier(t, cacher(t), wasm.WithBus(sent)), invoke.Spec{
+		Name: "fn", Reaches: busGrant("chat", "shop/prod/QmChat", "publish"),
+	})
+
+	res := call(t, instance, "/broadcast/chat/", []byte("hello"))
+	require.Equal(t, 204, res.Status, string(res.Body))
+	require.Equal(t, [][]byte{[]byte("hello")}, sent.messages("shop/prod/QmChat"))
+}
+
+// TestABusAndAStreamAreTWODOORS, even when a project uses one label for both —
+// which is why the two interfaces exist rather than one with a kind argument.
+func TestABusGrantIsNotAStreamGrant(t *testing.T) {
+	streams := newPublisher()
+	buses := newPublisher()
+
+	instance := start(t, tier(t, cacher(t), wasm.WithStreams(streams), wasm.WithBus(buses)),
+		invoke.Spec{
+			Name: "fn",
+			Reaches: []invoke.Grant{
+				{Kind: "stream", Label: "orders", Handle: "QmStream", Ops: []string{"publish"}},
+				{Kind: "bus", Label: "orders", Handle: "QmBus", Ops: []string{"publish"}},
+			},
+		})
+
+	require.Equal(t, 204, call(t, instance, "/publish/orders/", []byte("to the stream")).Status)
+	require.Equal(t, 204, call(t, instance, "/broadcast/orders/", []byte("to the bus")).Status)
+
+	require.Equal(t, [][]byte{[]byte("to the stream")}, streams.messages("QmStream"))
+	require.Equal(t, [][]byte{[]byte("to the bus")}, buses.messages("QmBus"))
+}
+
+func TestAnUndeclaredBusIsRefused(t *testing.T) {
+	sent := newPublisher()
+	instance := start(t, tier(t, cacher(t), wasm.WithBus(sent)), invoke.Spec{
+		Name: "fn", Reaches: busGrant("chat", "h", "publish"),
+	})
+
+	res := call(t, instance, "/broadcast/somebody-elses/", []byte("x"))
+	require.Equal(t, 403, res.Status)
+	require.Equal(t, "no-such-bus:somebody-elses", string(res.Body))
+	require.Empty(t, sent.messages("h"))
+}
+
+// TestSubscribeOnABusBuysNothingEither. It is an ATTACHMENT — a websocket at
+// the bus's own host, or a workload the platform delivers to — and the
+// attaching is the gateway's to serve.
+func TestAGrantForBusSubscribeDoesNotPublish(t *testing.T) {
+	sent := newPublisher()
+	instance := start(t, tier(t, cacher(t), wasm.WithBus(sent)), invoke.Spec{
+		Name: "fn", Reaches: busGrant("chat", "h", "subscribe"),
+	})
+
+	res := call(t, instance, "/broadcast/chat/", []byte("x"))
+	require.Equal(t, 403, res.Status)
+	require.Equal(t, "denied:chat cannot publish", string(res.Body))
+}
+
+func TestATierWithNoBusRefusesAWorkloadThatPublishesToOne(t *testing.T) {
+	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
+		Name: "fn", Artifact: "bafy", Reaches: busGrant("chat", "h", "publish"),
+	})
+	require.ErrorIs(t, err, wasm.ErrNoBus)
+}

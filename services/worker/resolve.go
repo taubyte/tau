@@ -163,6 +163,7 @@ const (
 	cacheKind    = "cache"
 	volumeKind   = "volume"
 	streamKind   = "stream"
+	busKind      = "bus"
 	databaseKind = "database"
 	queueKind    = "queue"
 
@@ -280,7 +281,7 @@ func volumeSettings(reach project.Reach, target project.Resource) map[string]str
 // author to change.
 func unservable(reach project.Reach, target project.Resource) string {
 	switch reach.Kind {
-	case streamKind:
+	case streamKind, busKind:
 		// AN EXTERNAL ENGINE IS A DRIVER AND A RELEASE, not a config value —
 		// the schema says so where it closes the set. This cloud publishes to
 		// the swarm's own gossipsub and has no Kafka or NATS client, so a

@@ -83,3 +83,49 @@ func TestClosingReleasesTheTopics(t *testing.T) {
 	require.Empty(t, s.topics)
 	require.NoError(t, s.Close(), "Close is idempotent")
 }
+
+// ── the bus ──────────────────────────────────────────────────────────────────
+
+// TestABusAndAStreamDoNotCROSS, even on one handle: two kinds may share an id
+// space and a project with both would otherwise deliver each other's messages.
+func TestTheKindIsInTheTopic(t *testing.T) {
+	require.NotEqual(t,
+		topicFor("stream", "cloud", "shop/prod/QmX"),
+		topicFor("bus", "cloud", "shop/prod/QmX"))
+
+	require.Contains(t, topicFor("bus", "cloud", "h"), "/tau/bus/")
+	require.Contains(t, topicFor("stream", "cloud", "h"), "/tau/stream/")
+}
+
+// TestBusTopicIsTheContractWhateverAttaches. Whatever comes to attach a browser
+// has to listen on exactly what a publish reaches.
+func TestTheNodeExposesBothTopics(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}})
+
+	require.Equal(t, topicFor("bus", n.cfg.Cloud, "h"), n.BusTopic("h"))
+	require.Equal(t, topicFor("stream", n.cfg.Cloud, "h"), n.StreamTopic("h"))
+	require.NotEqual(t, n.BusTopic("h"), n.StreamTopic("h"))
+}
+
+// TestOneBackingPerKind, so a bus and a stream on one node join different
+// topics through different values.
+func TestAStreamAndABusAreSeparateBackings(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}})
+	ctx := t.Context()
+
+	stream := &streams{node: n, kind: "stream"}
+	bus := &streams{node: n, kind: "bus"}
+
+	require.NoError(t, stream.Publish(ctx, "shop/prod/QmX", []byte("a")))
+	require.NoError(t, bus.Publish(ctx, "shop/prod/QmX", []byte("b")))
+
+	require.Len(t, stream.topics, 1)
+	require.Len(t, bus.topics, 1)
+
+	// BOTH ARE KEYED BY HANDLE, so the maps look alike — what has to differ is
+	// the gossipsub topic each joined, which is the thing on the wire.
+	require.NotEqual(t,
+		stream.topics["shop/prod/QmX"].String(),
+		bus.topics["shop/prod/QmX"].String(),
+		"one handle, two topics")
+}

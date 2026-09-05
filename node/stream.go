@@ -31,8 +31,14 @@ import (
 // leaving a subscriber waiting.
 
 // streams is the node's Streams: gossipsub, one joined topic per handle.
+//
+// ONE TYPE SERVES BOTH KINDS, with `kind` in the topic. A stream and a bus send
+// the same way and keep different things — a subscriber gets every message on a
+// stream, and a bus keeps nothing at all — so what differs is who is listening
+// and for how long, not how a workload publishes.
 type streams struct {
 	node *Node
+	kind string
 
 	mu     sync.Mutex
 	topics map[string]*pubsub.Topic
@@ -69,7 +75,7 @@ func (s *streams) topic(handle string) (*pubsub.Topic, error) {
 	// deployment. Two clouds sharing a machine, or bridged by a stray peer,
 	// must not deliver each other's messages — which is the same reason
 	// stats.NewBus scopes its topic by cloud.
-	joined, err := s.node.opts.pubsub.Join(streamTopic(s.node.cfg.Cloud, handle))
+	joined, err := s.node.opts.pubsub.Join(topicFor(s.kind, s.node.cfg.Cloud, handle))
 	if err != nil {
 		return nil, fmt.Errorf("node: joining the topic for %s: %w", handle, err)
 	}
@@ -81,15 +87,22 @@ func (s *streams) topic(handle string) (*pubsub.Topic, error) {
 	return joined, nil
 }
 
-// streamTopic is what goes on the wire.
+// topicFor is what goes on the wire.
 //
 // IT IS NOT THE LABEL AN AUTHOR WROTE. The handle already carries the project,
-// the deployment and the stream's id, so two projects using the name `orders`
+// the deployment and the resource's id, so two projects using the name `orders`
 // never meet — which is the property the vocabulary states and this is where it
 // is kept.
-func streamTopic(cloud, handle string) string {
-	return strings.Join([]string{"/tau/stream", cloud, handle}, "/")
+//
+// THE KIND IS IN IT because a stream and a bus are different resources that may
+// share an id space; a project with both would otherwise cross them.
+func topicFor(kind, cloud, handle string) string {
+	return strings.Join([]string{"/tau", kind, cloud, handle}, "/")
 }
+
+// streamTopic is topicFor on the stream kind, which is what Node.StreamTopic
+// exposes.
+func streamTopic(cloud, handle string) string { return topicFor("stream", cloud, handle) }
 
 // Close releases the topics this node joined.
 func (s *streams) Close() error {

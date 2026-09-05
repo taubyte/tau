@@ -12,7 +12,9 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::taubyte::handler::{cache, database, document, kv, queue, secret, stream, vector};
+use bindings::taubyte::handler::{
+    bus, cache, database, document, kv, queue, secret, stream, vector,
+};
 use bindings::{Guest, Header, Request, Response};
 
 struct Component;
@@ -120,6 +122,15 @@ fn why_secret(e: &secret::Error) -> String {
         secret::Error::Denied(why) => format!("denied:{}", why),
         secret::Error::NotSet => "not-set".to_string(),
         secret::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
+// why_bus names a bus error arm.
+fn why_bus(e: &bus::Error) -> String {
+    match e {
+        bus::Error::NoSuchBus(name) => format!("no-such-bus:{}", name),
+        bus::Error::Denied(why) => format!("denied:{}", why),
+        bus::Error::Unavailable(why) => format!("unavailable:{}", why),
     }
 }
 
@@ -278,6 +289,10 @@ impl Guest for Component {
             "secret" => match secret::get(name) {
                 Ok(value) => reply(200, value),
                 Err(e) => reply(403, why_secret(&e).into_bytes()),
+            },
+            "broadcast" => match bus::publish(name, &req.body) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_bus(&e).into_bytes()),
             },
             // A round trip through the cache in one call: write the body, read
             // it back, and answer with what came back. It is the only branch

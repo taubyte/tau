@@ -163,6 +163,9 @@ type Runtime struct {
 	// streams backs `taubyte:handler/stream`. Nil is the same story.
 	streams Streams
 
+	// bus backs `taubyte:handler/bus` — the same sending, a different kind.
+	bus Streams
+
 	// databases backs `taubyte:handler/database`, and the same again.
 	databases Databases
 
@@ -261,7 +264,12 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, fmt.Errorf("%w: %s", ErrNoDatabases, spec.Name)
 	}
 
+	if r.bus == nil && len(busGrantsOf(spec)) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoBus, spec.Name)
+	}
+
 	imports := append(r.cacheImports(spec), r.streamImports(spec)...)
+	imports = append(imports, r.busImports(spec)...)
 	if r.kv == nil && len(kvGrantsOf(spec)) > 0 {
 		return nil, fmt.Errorf("%w: %s", ErrNoKV, spec.Name)
 	}

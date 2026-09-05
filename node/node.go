@@ -297,8 +297,11 @@ func (n *Node) openWorker() error {
 		// every resource that declares a cache, a stream, a database, a queue
 		// or a secret — which on a node that has the resources for them would
 		// be a refusal for no reason.
-		publisher := &streams{node: n}
+		publisher := &streams{node: n, kind: "stream"}
 		n.closers = append(n.closers, publisher)
+
+		attached := &streams{node: n, kind: "bus"}
+		n.closers = append(n.closers, attached)
 
 		servers := &databases{node: n}
 		n.closers = append(n.closers, servers)
@@ -316,6 +319,7 @@ func (n *Node) openWorker() error {
 			wasm.WithOutput(workloadLog),
 			wasm.WithCaches(&caches{node: n}),
 			wasm.WithStreams(publisher),
+			wasm.WithBus(attached),
 			wasm.WithDatabases(servers),
 			wasm.WithKV(servers),
 			wasm.WithDocuments(servers),
@@ -616,6 +620,11 @@ func (n *Node) Stats() *stats.Service { return n.stats }
 // something to it — a stream subscriber, a test listening for what a workload
 // published.
 func (n *Node) PubSub() stats.PubSub { return n.opts.pubsub }
+
+// BusTopic is what a bus's handle goes on the wire as. Whatever comes to attach
+// a browser has to listen on exactly what a publish reaches — the same argument
+// StreamTopic carries.
+func (n *Node) BusTopic(handle string) string { return topicFor("bus", n.cfg.Cloud, handle) }
 
 // StreamTopic is what a stream's handle goes on the wire as.
 //
