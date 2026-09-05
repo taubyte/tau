@@ -162,6 +162,9 @@ type Runtime struct {
 
 	// streams backs `taubyte:handler/stream`. Nil is the same story.
 	streams Streams
+
+	// databases backs `taubyte:handler/database`, and the same again.
+	databases Databases
 }
 
 var _ invoke.Runtime = (*Runtime)(nil)
@@ -237,7 +240,12 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, fmt.Errorf("%w: %s", ErrNoStreams, spec.Name)
 	}
 
+	if r.databases == nil && len(databaseGrantsOf(spec)) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoDatabases, spec.Name)
+	}
+
 	imports := append(r.cacheImports(spec), r.streamImports(spec)...)
+	imports = append(imports, r.databaseImports(spec)...)
 
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {

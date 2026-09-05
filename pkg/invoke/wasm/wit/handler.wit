@@ -136,7 +136,67 @@ interface %stream {
     publish: func(name: string, message: list<u8>) -> result<_, error>;
 }
 
+// A SQL database, as the vocabulary's `database` kind at `type: sql`.
+//
+// # Two verbs, and `exec` is a write because the host cannot classify SQL
+//
+// The vocabulary says so where it declares them: nothing here parses a
+// statement to decide whether it changes anything, so an author who asked for
+// `query` gets reads and an author who needs to write asks for `exec`.
+//
+// # A row is flat on purpose
+//
+// `values` is ROW-MAJOR with `columns` giving the width, rather than a list of
+// lists. Nesting a list of variants inside a list inside a record is three
+// composites deep in the canonical ABI, and the flat shape carries exactly the
+// same information for a guest that already has the column count. Chunking it
+// back into rows is one line in any language's bindings.
+//
+// # The other three types are not here
+//
+// `kv`, `document` and `vector` are the same kind with different verbs, and
+// each is its own interface when it lands. Folding four operation sets into one
+// would be four interfaces wearing a trenchcoat — pkg/database says exactly
+// that about the Conn it does not have.
+interface database {
+    // A SQL value, in and out. NULL is its own case rather than an absent
+    // option, because a column that IS null and a column that was not selected
+    // are different answers and a guest has to be able to tell them apart.
+    variant value {
+        null,
+        text(string),
+        integer(s64),
+        real(f64),
+        boolean(bool),
+        blob(list<u8>),
+    }
+
+    record rows {
+        columns: list<string>,
+        // Row-major: columns.len() values per row. See the interface doc.
+        values: list<value>,
+    }
+
+    variant error {
+        // The label is not in this resource's `database:` block.
+        no-such-database(string),
+        // Declared, but not with this verb — or the target is on an engine
+        // this cloud has no adapter registered for.
+        denied(string),
+        // The server could not be reached.
+        unavailable(string),
+        // The server answered, and what it said was no: a syntax error, a
+        // constraint, a permission. It is ITS OWN ARM because a caller retries
+        // an outage and fixes a statement.
+        failed(string),
+    }
+
+    query: func(name: string, statement: string, args: list<value>) -> result<rows, error>;
+    exec: func(name: string, statement: string, args: list<value>) -> result<s64, error>;
+}
+
 world handler {
+    import database;
     import %stream;
     // A GUEST NEED NOT USE IT. A world's imports are what the host PROVIDES,
     // so a component built against this world that never calls the cache is

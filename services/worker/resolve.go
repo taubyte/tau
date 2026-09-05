@@ -160,9 +160,10 @@ func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Gr
 }
 
 const (
-	cacheKind  = "cache"
-	volumeKind = "volume"
-	streamKind = "stream"
+	cacheKind    = "cache"
+	volumeKind   = "volume"
+	streamKind   = "stream"
+	databaseKind = "database"
 
 	// distributedEngine is the vocabulary's name for the swarm's own — the one
 	// engine this cloud actually holds, for both a cache and a stream.
@@ -177,8 +178,42 @@ func settingsFor(kind string, reach project.Reach, target project.Resource) map[
 		return cacheSettings(target)
 	case volumeKind:
 		return volumeSettings(reach, target)
+	case databaseKind:
+		return databaseSettings(target)
 	}
 	return nil
+}
+
+// databaseSettings carries the data model and, from the block that model names,
+// the connection.
+//
+// THE TYPE IS THE KEY TO EVERYTHING ELSE. A database's engine, host, database
+// name, tls and credential all live under the type's own block — `sql: {engine:
+// postgres, host: …}` — because the engines a type may have are not the same,
+// which is the schema's own reason for putting them there.
+func databaseSettings(target project.Resource) map[string]string {
+	model := target.String("type")
+	if model == "" {
+		return nil
+	}
+
+	out := map[string]string{settingType: model}
+	for _, field := range []string{"engine", "host", "database", "tls"} {
+		if value := target.String(model, field); value != "" {
+			out[model+"/"+field] = value
+		}
+	}
+	// THE CREDENTIAL IS A REFERENCE AND STAYS ONE. What resolves it is the
+	// vault, on the node, at the moment a connection is opened — carrying the
+	// value here would put a password in a spec that is logged, cached and
+	// compared.
+	if name := target.String(model, "credentials", "name"); name != "" {
+		out[settingCredentials] = name
+	}
+	if namespace := target.String(model, "credentials", "namespace"); namespace != "" {
+		out[settingCredentialsScope] = namespace
+	}
+	return out
 }
 
 // volumeSettings carries the quota and, from the ENTRY rather than the target,
@@ -260,6 +295,12 @@ const (
 	settingSize      = "keys/size"
 	settingQuota     = "quota"
 	settingMountPath = "path"
+
+	// settingType is a database's data model, and the prefix every other
+	// connection setting is filed under.
+	settingType             = "type"
+	settingCredentials      = "credentials/name"
+	settingCredentialsScope = "credentials/namespace"
 )
 
 // cacheSettings is what the TARGET declared, carried to whatever backs the

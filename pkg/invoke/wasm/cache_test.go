@@ -471,12 +471,15 @@ func TestAComponentDeclaringAMountIsRefused(t *testing.T) {
 
 // TestAGrantOfAnotherKindStillStarts, so the refusal is about mounts and not
 // about access blocks.
+//
+// `storage` and not `database`: a kind this tier serves refuses at Start when
+// nothing backs it, which is a different rule and has its own test.
 func TestAComponentWithOtherGrantsStarts(t *testing.T) {
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h"))), invoke.Spec{
 		Name: "fn",
 		Reaches: []invoke.Grant{
 			{Kind: "cache", Label: "sessions", Handle: "h", Ops: []string{"get"}},
-			{Kind: "database", Label: "ledger", Ops: []string{"query"}},
+			{Kind: "storage", Label: "receipts", Ops: []string{"put"}},
 		},
 	})
 	require.Equal(t, 404, call(t, instance, "/get/sessions/k", nil).Status)

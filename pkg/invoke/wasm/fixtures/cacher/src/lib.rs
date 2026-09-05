@@ -12,7 +12,7 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::taubyte::handler::{cache, stream};
+use bindings::taubyte::handler::{cache, database, stream};
 use bindings::{Guest, Header, Request, Response};
 
 struct Component;
@@ -35,6 +35,29 @@ fn why_stream(e: &stream::Error) -> String {
         stream::Error::NoSuchStream(name) => format!("no-such-stream:{}", name),
         stream::Error::Denied(why) => format!("denied:{}", why),
         stream::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
+// why_db names a database error arm.
+fn why_db(e: &database::Error) -> String {
+    match e {
+        database::Error::NoSuchDatabase(name) => format!("no-such-database:{}", name),
+        database::Error::Denied(why) => format!("denied:{}", why),
+        database::Error::Unavailable(why) => format!("unavailable:{}", why),
+        database::Error::Failed(why) => format!("failed:{}", why),
+    }
+}
+
+// render turns one value into text a test can read, keeping the CASE visible —
+// which is what proves an integer crossed as an integer and not as its digits.
+fn render(v: &database::Value) -> String {
+    match v {
+        database::Value::Null => "null".to_string(),
+        database::Value::Text(s) => format!("text:{}", s),
+        database::Value::Integer(i) => format!("integer:{}", i),
+        database::Value::Real(f) => format!("real:{}", f),
+        database::Value::Boolean(b) => format!("boolean:{}", b),
+        database::Value::Blob(b) => format!("blob:{}", b.len()),
     }
 }
 
@@ -81,6 +104,45 @@ impl Guest for Component {
                 Ok(()) => reply(204, Vec::new()),
                 Err(e) => reply(403, why_stream(&e).into_bytes()),
             },
+            // The statement is the body, and the answer is the result set
+            // rendered so every value's CASE is visible.
+            "query" => {
+                let sql = String::from_utf8_lossy(&req.body).to_string();
+                match database::query(name, &sql, &[]) {
+                    Ok(rows) => {
+                        let mut out = rows.columns.join(",");
+                        for v in &rows.values {
+                            out.push('|');
+                            out.push_str(&render(v));
+                        }
+                        reply(200, out.into_bytes())
+                    }
+                    Err(e) => reply(500, why_db(&e).into_bytes()),
+                }
+            }
+            "exec" => {
+                let sql = String::from_utf8_lossy(&req.body).to_string();
+                match database::exec(name, &sql, &[]) {
+                    Ok(n) => reply(200, format!("{}", n).into_bytes()),
+                    Err(e) => reply(500, why_db(&e).into_bytes()),
+                }
+            }
+            // Every argument case, bound in one call, so the lowering of each
+            // is exercised rather than only the string one.
+            "bind" => {
+                let args = vec![
+                    database::Value::Null,
+                    database::Value::Text("hello".to_string()),
+                    database::Value::Integer(-42),
+                    database::Value::Real(1.5),
+                    database::Value::Boolean(true),
+                    database::Value::Blob(vec![1, 2, 3]),
+                ];
+                match database::exec(name, "insert", &args) {
+                    Ok(n) => reply(200, format!("{}", n).into_bytes()),
+                    Err(e) => reply(500, why_db(&e).into_bytes()),
+                }
+            }
             // A round trip through the cache in one call: write the body, read
             // it back, and answer with what came back. It is the only branch
             // that proves the bytes a guest wrote are the bytes it gets.

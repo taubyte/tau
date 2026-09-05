@@ -11,6 +11,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build"
@@ -116,6 +117,7 @@ type options struct {
 	host      host.Host
 	pubsub    stats.PubSub
 	databases kvdb.Factory
+	engines   *database.Registry
 	raft      func(namespace string) (raft.Cluster, error)
 	assets    Assets
 	runtimes  []invoke.Runtime
@@ -151,6 +153,23 @@ func WithPubSub(ps stats.PubSub) Option {
 
 // WithDatabases is where a register keeps what has been published. Required
 // when this node runs one.
+// WithDatabaseEngines is what a workload's `database:` access is served from.
+//
+// IT IS A REGISTRY AND NOT A DRIVER, because database/sql is itself a registry:
+// a deployment imports the driver it wants, registers an engine over it, and
+// hands the result here. This repository links none, which is what lets one
+// binary serve a cloud that has Postgres and a cloud that does not — see
+// pkg/database's own doc, which decided this before this option existed.
+func WithDatabaseEngines(r *database.Registry) Option {
+	return func(o *options) error {
+		if r == nil {
+			return errors.New("node: a nil database registry")
+		}
+		o.engines = r
+		return nil
+	}
+}
+
 func WithDatabases(f kvdb.Factory) Option {
 	return func(o *options) error {
 		if f == nil {

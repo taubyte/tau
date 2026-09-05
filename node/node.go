@@ -299,10 +299,14 @@ func (n *Node) openWorker() error {
 		publisher := &streams{node: n}
 		n.closers = append(n.closers, publisher)
 
+		servers := &databases{node: n}
+		n.closers = append(n.closers, servers)
+
 		component, err := wasm.New(n.opts.assets,
 			wasm.WithOutput(workloadLog),
 			wasm.WithCaches(&caches{node: n}),
-			wasm.WithStreams(publisher))
+			wasm.WithStreams(publisher),
+			wasm.WithDatabases(servers))
 		if err != nil {
 			return err
 		}
