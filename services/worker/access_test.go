@@ -231,3 +231,55 @@ func (refusingBackend) Inspect(context.Context, core.ContainerID) (*core.Contain
 func (refusingBackend) Image(string) core.Image { return nil }
 
 var errNoBackend = errors.New("nothing should reach the backend")
+
+// ── streams ──────────────────────────────────────────────────────────────────
+
+func streamGrants(t *testing.T, spec invoke.Spec) map[string]invoke.Grant {
+	t.Helper()
+
+	out := map[string]invoke.Grant{}
+	for _, g := range spec.Reaches {
+		if g.Kind == streamKind {
+			out[g.Label] = g
+		}
+	}
+	return out
+}
+
+// TestAStreamAccessEntryBecomesAGrant. checkout publishes to `orders`, which
+// the fixture puts on the swarm's own engine.
+func TestAStreamAccessEntryBecomesAGrant(t *testing.T) {
+	h := newHarness(t)
+	grants := streamGrants(t, resolveIn(t, h, nil, "function", "checkout"))
+
+	require.Contains(t, grants, "orders")
+	require.Equal(t, []string{"publish"}, grants["orders"].Ops)
+	require.Empty(t, grants["orders"].Refused, "the distributed engine is the one this cloud holds")
+	require.Contains(t, grants["orders"].Handle, "shop/prod/")
+}
+
+// TestAnExternalStreamEngineIsRefusedByName. Kafka and NATS are each a wire
+// protocol and a driver — a release, not a config value, which is what the
+// schema says where it closes the set — so publishing into nothing would be
+// the silent kind of failure.
+func TestAStreamOnAnEngineThisCloudLacksIsRefused(t *testing.T) {
+	for _, engine := range []string{"kafka", "nats"} {
+		reason := unservable(
+			project.Reach{Kind: streamKind, Label: "orders"},
+			project.Resource{"engine": engine},
+		)
+		require.Contains(t, reason, engine, "it names which engine")
+		require.Contains(t, reason, "no driver")
+		require.Contains(t, reason, "gossipsub", "and what it does have")
+	}
+}
+
+func TestAStreamOnTheSwarmsOwnEngineIsServed(t *testing.T) {
+	require.Empty(t, unservable(
+		project.Reach{Kind: streamKind, Label: "orders"},
+		project.Resource{"engine": distributedEngine}))
+
+	// An engine nobody wrote is the swarm's own — the vocabulary's default.
+	require.Empty(t, unservable(
+		project.Reach{Kind: streamKind, Label: "orders"}, project.Resource{}))
+}

@@ -12,7 +12,7 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::taubyte::handler::cache;
+use bindings::taubyte::handler::{cache, stream};
 use bindings::{Guest, Header, Request, Response};
 
 struct Component;
@@ -26,6 +26,15 @@ fn how(e: &cache::Error) -> String {
         cache::Error::NotFound => "not-found".to_string(),
         cache::Error::TooLarge => "too-large".to_string(),
         cache::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
+// whyStream names a stream error arm, so a test asserts WHICH refusal came back.
+fn why_stream(e: &stream::Error) -> String {
+    match e {
+        stream::Error::NoSuchStream(name) => format!("no-such-stream:{}", name),
+        stream::Error::Denied(why) => format!("denied:{}", why),
+        stream::Error::Unavailable(why) => format!("unavailable:{}", why),
     }
 }
 
@@ -65,6 +74,12 @@ impl Guest for Component {
             "list" => match cache::list(name, key) {
                 Ok(names) => reply(200, names.join(",").into_bytes()),
                 Err(e) => reply(403, how(&e).into_bytes()),
+            },
+            // The other capability, driven the same way: the path names the
+            // stream and the body is the message.
+            "publish" => match stream::publish(name, &req.body) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_stream(&e).into_bytes()),
             },
             // A round trip through the cache in one call: write the body, read
             // it back, and answer with what came back. It is the only branch

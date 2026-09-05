@@ -291,9 +291,18 @@ func (n *Node) openWorker() error {
 		// workload actually reaches one. A tier composed without it refuses
 		// every resource that declares a cache — which on a node with a
 		// database factory would be a refusal for no reason.
+		// THE BACKINGS ARE ALWAYS GIVEN, and each opens nothing until a
+		// workload actually reaches one. A tier composed without them refuses
+		// every resource that declares a cache or a stream — which on a node
+		// that has a database factory and a pubsub would be a refusal for no
+		// reason.
+		publisher := &streams{node: n}
+		n.closers = append(n.closers, publisher)
+
 		component, err := wasm.New(n.opts.assets,
 			wasm.WithOutput(workloadLog),
-			wasm.WithCaches(&caches{node: n}))
+			wasm.WithCaches(&caches{node: n}),
+			wasm.WithStreams(publisher))
 		if err != nil {
 			return err
 		}
@@ -579,6 +588,18 @@ func (n *Node) Secrets() *secretsService.Service { return n.secrets }
 
 // Stats is this node's view of the fleet, or nil.
 func (n *Node) Stats() *stats.Service { return n.stats }
+
+// PubSub is the gossip this node was given, for a composer that has to attach
+// something to it — a stream subscriber, a test listening for what a workload
+// published.
+func (n *Node) PubSub() stats.PubSub { return n.opts.pubsub }
+
+// StreamTopic is what a stream's handle goes on the wire as.
+//
+// IT IS EXPORTED BECAUSE IT IS A CONTRACT, not a detail: whatever comes to
+// dispatch a `subscribe` has to listen on exactly what a publish reaches, and a
+// second derivation of it is the parallel table this vocabulary keeps deleting.
+func (n *Node) StreamTopic(handle string) string { return streamTopic(n.cfg.Cloud, handle) }
 
 // source reads the register for this node's own services.
 type source struct{ node *Node }

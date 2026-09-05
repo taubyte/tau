@@ -162,6 +162,11 @@ func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Gr
 const (
 	cacheKind  = "cache"
 	volumeKind = "volume"
+	streamKind = "stream"
+
+	// distributedEngine is the vocabulary's name for the swarm's own — the one
+	// engine this cloud actually holds, for both a cache and a stream.
+	distributedEngine = "distributed"
 )
 
 // settingsFor is what the TARGET (and, for a mount, the entry) declared, in the
@@ -197,11 +202,25 @@ func volumeSettings(reach project.Reach, target project.Resource) map[string]str
 // was declared, or "" when it would not. Both reasons are one line for an
 // author to change.
 func unservable(reach project.Reach, target project.Resource) string {
-	if reach.Kind != cacheKind {
+	switch reach.Kind {
+	case streamKind:
+		// AN EXTERNAL ENGINE IS A DRIVER AND A RELEASE, not a config value —
+		// the schema says so where it closes the set. This cloud publishes to
+		// the swarm's own gossipsub and has no Kafka or NATS client, so a
+		// stream on one is refused by name rather than published into nothing.
+		if engine := target.String("engine"); engine != "" && engine != distributedEngine {
+			return fmt.Sprintf("%s %q is on the %q engine, and this cloud has no driver for it — "+
+				"it publishes to the swarm's own gossipsub and nothing else",
+				reach.Kind, reach.Label, engine)
+		}
+		return ""
+	case cacheKind:
+	default:
 		// THE OTHER KINDS ARE NOT REFUSED HERE. What a tier can do with a grant
 		// is the tier's to say — a volume is a mount, a database is a
-		// connection — and this function only knows the two properties a CACHE
-		// declares that this cloud would have to serve weaker than written.
+		// connection — and this function only knows the properties a CACHE and
+		// a STREAM declare that this cloud would have to serve weaker than
+		// written.
 		return ""
 	}
 

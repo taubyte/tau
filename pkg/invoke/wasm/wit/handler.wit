@@ -97,7 +97,47 @@ interface cache {
 // the component's own type section then cannot flatten the call at all. Inline,
 // the export carries its whole shape with it — which is what lets any embedder
 // call it knowing only this file.
+// A pubsub stream, as the vocabulary's `stream` kind.
+//
+// # Only publish
+//
+// The kind declares two verbs and they are not alike. `publish` is a call a
+// workload makes. `subscribe` is a DELIVERY — the platform invokes a workload
+// when a message arrives, which is a trigger and not a function a guest calls —
+// so there is nothing here for it, and a resource that asked for it is told so
+// by the op check rather than left wondering.
+//
+// # A stream is named by its LABEL, like a cache
+//
+//     stream:
+//         orders:
+//             ops: [publish]
+//
+// and `orders` is what a guest passes. What goes on the wire has the
+// deployment's identity in front of it, so two projects publishing to a stream
+// they both call `orders` never meet.
+// `%stream` ESCAPES A WIT KEYWORD, for the reason `%list` does below: the kind
+// the vocabulary declares is called `stream`, and an interface named anything
+// else here would be a second spelling of one word.
+interface %stream {
+    variant error {
+        // The label is not in this resource's `stream:` block.
+        no-such-stream(string),
+        // Declared, but not with `publish` — or the target is on an engine this
+        // cloud has no driver for, which is a refusal an author can read.
+        denied(string),
+        unavailable(string),
+    }
+
+    // publish sends one message. It returns when the message has been handed to
+    // the swarm, NOT when anybody received it: a pubsub stream reaches every
+    // subscriber and promises nothing about when, which is the kind's own
+    // statement rather than a limit of this implementation.
+    publish: func(name: string, message: list<u8>) -> result<_, error>;
+}
+
 world handler {
+    import %stream;
     // A GUEST NEED NOT USE IT. A world's imports are what the host PROVIDES,
     // so a component built against this world that never calls the cache is
     // byte-identical to one built before the import existed.

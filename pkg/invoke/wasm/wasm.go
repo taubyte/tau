@@ -159,6 +159,9 @@ type Runtime struct {
 	// caches backs `taubyte:handler/cache`. Nil is a tier that runs everything
 	// reaching no cache — see cache.go.
 	caches Caches
+
+	// streams backs `taubyte:handler/stream`. Nil is the same story.
+	streams Streams
 }
 
 var _ invoke.Runtime = (*Runtime)(nil)
@@ -230,7 +233,11 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	if r.caches == nil && len(grantsOf(spec)) > 0 {
 		return nil, fmt.Errorf("%w: %s", ErrNoCaches, spec.Name)
 	}
-	imports := r.cacheImports(spec)
+	if r.streams == nil && len(streamGrantsOf(spec)) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoStreams, spec.Name)
+	}
+
+	imports := append(r.cacheImports(spec), r.streamImports(spec)...)
 
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {
