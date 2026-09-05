@@ -203,21 +203,32 @@ func TestAnEmptyValueIsNotNothing(t *testing.T) {
 	require.Empty(t, res.Body)
 }
 
-// TestAValueLargerThanOnePageSurvivesBothDirections, so the list<u8> lowering
-// is exercised past the size where a single-page copy would be enough — in and
-// out, since a roundtrip lowers it into the guest, up to the host, and back.
+// TestAMegabyteSurvivesBothDirections, in and out — a roundtrip lowers the
+// value into the guest, up to the host, and back.
 //
-// 8KiB AND NOT MORE, AND THE CEILING IS NOT THIS PACKAGE'S: see
-// TestALargeValueHitsAPlatformCeilingThatIsNotOurs below. THE NUMBER MOVES DOWN
-// AS THE FIXTURE GROWS, because the limit is what is left below the guest's
-// memory end and each capability the fixture learns costs some of it — it was
-// 24KiB with three interfaces and is 8KiB with six.
+// IT USED TO BE 8KiB, AND THE NUMBER WAS NOT THIS PACKAGE'S. wazy's canonical
+// ABI bounds-checked an allocation against a Go slice of the guest's memory
+// CAPTURED BEFORE cabi_realloc, so a value that made the guest grow was
+// rejected on a growth that had succeeded. The limit was never a size but "what
+// is left below the end", so it shrank as this fixture learned capabilities —
+// 24KiB at three interfaces, 8KiB at six.
+//
+// FIXED UPSTREAM in wazy 35e45b48 (#58): Realloc.GrowMem returns the
+// post-realloc view and every site checks against that.
+//
+// AND IT IS NOT THREE ONE-LINE BOUNDS CHECKS, which an earlier note here said
+// and was wrong. The same stale-slice shape runs through storeRecord, storeList
+// and encodeScalarList: a record whose first field is a string grows the
+// memory, and fields 1..n then write at low, still-in-range offsets — they pass
+// a leaf check and land in a detached backing array. Patching the three leaves
+// would have turned a loud error into silent corruption; the live view has to
+// be threaded back out through the store tree.
 func TestALargeValueSurvivesBothDirections(t *testing.T) {
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h"))), invoke.Spec{
-		Name: "fn", Reaches: grants("sessions", "h", "get", "put"),
+		Name: "fn", Memory: 32 << 20, Reaches: grants("sessions", "h", "get", "put"),
 	})
 
-	value := make([]byte, 8<<10)
+	value := make([]byte, 1<<20)
 	for i := range value {
 		value[i] = byte(i % 251)
 	}
@@ -227,52 +238,21 @@ func TestALargeValueSurvivesBothDirections(t *testing.T) {
 	require.Equal(t, value, res.Body)
 }
 
-// TestALargeValueHitsAPlatformCeilingThatIsNotOurs, AND IT IS A DEFECT RATHER
-// THAN A DESIGN — measured here so it is known rather than discovered.
-//
-// wazy's canonical-ABI lowering bounds-checks an allocation against a Go slice
-// of the guest's memory CAPTURED BEFORE cabi_realloc runs: allocStoreString,
-// allocStoreBytes and allocStoreList in internal/component/abi/memory.go all
-// compare `len(mem)` to a pointer the realloc returned. A realloc that GROWS
-// the memory invalidates that slice, so any value whose allocation crosses the
-// guest's current memory end is rejected as "allocated memory out of bounds"
-// even though the growth succeeded.
-//
-// So the limit is not a size, it is "whatever is left below the end", and it
-// moves with what the instance has already allocated — which is why this test
-// searches rather than asserting a number. `execution/memory` does not raise
-// it, because the memory limit is not what is being hit.
-//
-// WHAT IT COSTS THIS PLATFORM: no wasm workload can be handed a request body,
-// or hand back a cache value, past a few tens of kilobytes. Every serverless
-// platform this competes with accepts megabytes.
-//
-// The fix is one line at each of the three sites — re-read the memory after
-// Grow — and it belongs in wazy, which this repository does not write to.
-func TestALargeValueHitsAPlatformCeilingThatIsNotOurs(t *testing.T) {
-	var largestThatWorked int
+// TestAGuestTakesARequestBodyWORTHTAKING. Every serverless platform this
+// competes with accepts megabytes; until the guest's memory grew correctly this
+// one accepted tens of kilobytes, which is the difference between a platform
+// and a demo.
+func TestAMultiMegabyteBodyCrosses(t *testing.T) {
+	instance := start(t, tier(t, handler(t)), invoke.Spec{Name: "fn", Memory: 64 << 20})
 
-	for size := 4 << 10; size <= 8<<20; size *= 2 {
-		// A FRESH INSTANCE EACH TIME, because the ceiling is what is left
-		// below the end and a previous call moved it.
-		instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h"))), invoke.Spec{
-			Name: "fn", Reaches: grants("sessions", "h", "get", "put"),
-		})
-
-		_, err := instance.Serve(t.Context(), &invoke.Request{
-			Method: "POST", Path: "/roundtrip/sessions/big", Body: make([]byte, size),
-		})
-		if err != nil {
-			require.ErrorContains(t, err, "allocated memory out of bounds",
-				"a large value failed for some OTHER reason, which is worth reading")
-			t.Logf("the ceiling is between %d and %d bytes", largestThatWorked, size)
-			return
-		}
-		largestThatWorked = size
+	body := make([]byte, 6<<20) // AWS Lambda's own synchronous ceiling.
+	for i := range body {
+		body[i] = byte(i % 251)
 	}
 
-	t.Fatalf("8MiB crossed intact: wazy grew the memory correctly and the ceiling is gone. "+
-		"Delete this test and raise the sizes in the ones around it. (largest tried: %d)", largestThatWorked)
+	res, err := instance.Serve(t.Context(), &invoke.Request{Method: "GET", Path: "/", Body: body})
+	require.NoError(t, err)
+	require.Equal(t, append([]byte("GET "), body...), res.Body)
 }
 
 // ── the grant is the authorization ───────────────────────────────────────────
