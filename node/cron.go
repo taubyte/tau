@@ -60,7 +60,13 @@ type crons struct {
 	// node has anything in flight.
 	mu      sync.Mutex
 	running map[string]bool
-	queued  map[string]bool
+
+	// queued is the slot a held tick is owed, not merely that one is owed.
+	// Holding a bool re-ran the slot the goroutine started on, so a run held
+	// at 03:05 while 03:00 was still going repeated 03:00 — a period that had
+	// already happened — and 03:05 never ran at all, with raft already
+	// recording it as fired.
+	queued map[string]time.Time
 }
 
 const (
@@ -164,7 +170,7 @@ func (c *crons) fire(ctx context.Context, cluster raft.Cluster, schedule worker.
 		return false
 	}
 
-	if !c.begin(schedule) {
+	if !c.begin(schedule, slot) {
 		// The tick was dropped by `on_overlap`, and it is still recorded —
 		// that is what "skip this tick" means, and a slot left unrecorded
 		// would be tried again ten seconds later against the same run.
@@ -200,12 +206,12 @@ func record(cluster raft.Cluster, key string, at time.Time, name string) bool {
 }
 
 // begin applies `on_overlap` and reports whether this tick runs now.
-func (c *crons) begin(schedule worker.Schedule) bool {
+func (c *crons) begin(schedule worker.Schedule, slot time.Time) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.running == nil {
-		c.running, c.queued = map[string]bool{}, map[string]bool{}
+		c.running, c.queued = map[string]bool{}, map[string]time.Time{}
 	}
 	if !c.running[schedule.Handle] {
 		c.running[schedule.Handle] = true
@@ -221,25 +227,28 @@ func (c *crons) begin(schedule worker.Schedule) bool {
 		// Held until the one in flight ends. ONE DEEP AND NOT A BACKLOG: the
 		// vocabulary's own warning about this value is that it "turns a slow
 		// job into an unbounded backlog", and a queue of one says "the next
-		// tick still owes a run" without becoming that.
-		c.queued[schedule.Handle] = true
+		// tick still owes a run" without becoming that. A second tick arriving
+		// while one is already held replaces it, which keeps the most recent
+		// period rather than the stalest.
+		c.queued[schedule.Handle] = slot
 		return false
 	default: // skip, and the vocabulary's default
 		return false
 	}
 }
 
-// end releases the schedule and runs the tick that was held, if there was one.
-func (c *crons) end(schedule worker.Schedule) bool {
+// end releases the schedule and answers the slot a held tick is owed, if there
+// was one.
+func (c *crons) end(schedule worker.Schedule) (time.Time, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.queued[schedule.Handle] {
+	if held, owed := c.queued[schedule.Handle]; owed {
 		delete(c.queued, schedule.Handle)
-		return true
+		return held, true
 	}
 	delete(c.running, schedule.Handle)
-	return false
+	return time.Time{}, false
 }
 
 // run invokes every target, spread across the jitter window.
@@ -288,10 +297,14 @@ func (c *crons) run(ctx context.Context, schedule worker.Schedule, slot time.Tim
 		}
 
 		// A TICK HELD BY `on_overlap: queue` RUNS HERE, in this goroutine,
-		// which is what keeps "queue" from being "allow with extra steps".
-		if !c.end(schedule) {
+		// which is what keeps "queue" from being "allow with extra steps" —
+		// and it runs the slot it was HELD FOR, so what a consumer is told it
+		// is a run of is the period that was owed.
+		held, owed := c.end(schedule)
+		if !owed {
 			return
 		}
+		slot = held
 	}
 }
 

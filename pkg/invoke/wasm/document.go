@@ -102,6 +102,9 @@ func (r *Runtime) documentImports(spec invoke.Spec) []component.Option {
 			if why.missing {
 				return nil, docFailure(errNoSuchDoc, why.detail)
 			}
+			if why.unavailable {
+				return nil, docFailure(errDocUnavailable, why.detail)
+			}
 			return nil, docFailure(errDocDenied, why.detail)
 		}
 		if r.documents == nil {

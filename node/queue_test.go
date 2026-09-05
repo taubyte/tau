@@ -96,8 +96,12 @@ func TestEveryQueueSharesOneCluster(t *testing.T) {
 		require.NoError(t, q.Send(ctx, sendGrant(handle, nil), "1", []byte("x")))
 	}
 
-	require.Len(t, q.seen, 3, "three queues")
 	require.NotNil(t, q.group, "one group")
+	for _, handle := range []string{"shop/prod/QmA", "shop/prod/QmB", "other/prod/QmA"} {
+		ready, _, ok := q.Depth(handle)
+		require.True(t, ok, handle)
+		require.Equal(t, 1, ready, handle)
+	}
 }
 
 // TestARedeployThatCHANGESTheDeliveryBlockTakesEffECT. The handle carries the
@@ -206,12 +210,20 @@ func TestAQueueNeedsRaft(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRaft)
 }
 
-// TestDepthOfAQueueNobodyOpened is not an error: it is a question about
-// something this node is not holding.
+// TestDepthOfAQueueNOBODYOpenedIsZeroAndNotARefusal.
+//
+// It used to answer "not held", which made a queue nobody opened and a queue
+// that is empty the same answer — and a DEAD LETTER is never opened by anybody,
+// because it deliberately has no consumer. So "nothing was ever buried here"
+// could not be asserted, and a workflow step that buried every run through it
+// passed an end-to-end test.
 func TestDepthOfAnUnopenedQueue(t *testing.T) {
 	q := queueing(t)
-	_, _, ok := q.Depth("shop/prod/QmNever")
-	require.False(t, ok)
+
+	ready, claimed, ok := q.Depth("shop/prod/QmNever")
+	require.True(t, ok, "this node has consensus, so it can answer")
+	require.Zero(t, ready)
+	require.Zero(t, claimed)
 }
 
 // TestClosingIsIdempotent, because the pool may close a node twice and a queue

@@ -127,9 +127,8 @@ func TestAFailedStepIsTheQueuesBusiness(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "answered 500")
 
-	ready, _, ok := n.QueueDepth("shop/prod/QmCharge")
-	require.False(t, ok, "nothing was handed on")
-	require.Zero(t, ready)
+	ready, claimed, _ := n.QueueDepth("shop/prod/QmCharge")
+	require.Zero(t, ready+claimed, "nothing was handed on")
 }
 
 // TestATIERThatCannotStartTheFunctionIsAFailedStep and not a consumed item.
@@ -140,13 +139,39 @@ func TestAStepWhoseFunctionCannotRunFails(t *testing.T) {
 	require.Error(t, d.runStep(t.Context(), stepConsumer(true), delivery("order-1", []byte("x"))))
 }
 
-// TestADRIVERGrantedNothingToInvokeIsACompiledObjectThatDidNotComeFromTcc, and
-// says so rather than acking work it never ran.
-func TestADriverWithNoTargetFails(t *testing.T) {
+// TestASTEPThatOnlyWAITSHandsTheItemOnUnchanged. The vocabulary's own fixture
+// has one — `- name: settle / wait: 30s` — and the lowering gives it a queue
+// whose `delay` IS the pause and a driver with no call to grant. By the time
+// this runs the wait has already been served, so the driver's only job is to
+// pass the item along.
+//
+// Refusing here instead sent every run through such a step to the dead letter.
+func TestAWaitOnlyStepHandsTheItemOn(t *testing.T) {
+	answers := &answering{name: "wasm", status: 200}
+	n, d := stepping(t, answers)
+
+	consumer := stepConsumer(true)
+	consumer.Invokes = nil
+
+	require.NoError(t, d.runStep(t.Context(), consumer, delivery("order-1", []byte("carried"))))
+	require.Empty(t, answers.seen(), "a step that waits invokes nothing")
+
+	// AND WHAT IT CARRIES IS UNCHANGED: the run's state is the message.
+	held, err := n.work.queue(consumer.Sends[0])
+	require.NoError(t, err)
+	item, err := held.Claim()
+	require.NoError(t, err)
+	require.Equal(t, "carried", string(item.Data))
+}
+
+// TestADRIVERGrantedNEITHERIsACompiledObjectThatDidNotComeFromTcc — it is
+// neither a step that calls nor a step that waits — and says so rather than
+// acking work it never ran.
+func TestADriverWithNoTargetAndNoNextFails(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	_, d := stepping(t, answers)
 
-	consumer := stepConsumer(true)
+	consumer := stepConsumer(false)
 	consumer.Invokes = nil
 
 	require.ErrorIs(t, d.runStep(t.Context(), consumer, delivery("order-1", nil)), ErrNoStepTarget)

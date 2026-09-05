@@ -382,7 +382,7 @@ func (d *databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 		// `tokens` — so a kv engine keying its rows on the label would put two
 		// databases in one key space. It is the id for every engine and not
 		// just that one, because Spec.Name is what ADDRESSES the resource.
-		Name:     id,
+		Name:     databaseName(id),
 		Address:  grant.Settings[model+"/host"],
 		Database: grant.Settings[model+"/database"],
 	}
@@ -420,6 +420,22 @@ func (d *databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 	}
 	return spec, nil
 }
+
+// databaseName is the id an engine keys its rows under.
+//
+// AN ADMITTED INSTANCE IS PART OF THE HANDLE — `<project>/<env>/<id>/<instance>`
+// — which every backing that prefixes by handle isolates for free. A database
+// is the one that does not: pkg/database's engines build a key prefix from
+// Spec.Name and REFUSE a name containing "/", so an instance's handle made
+// every kv, document and vector database permanently unopenable, with the
+// error cached under the handle for the life of the node.
+//
+// So the separator is folded here, where the handle is read back apart, rather
+// than changed in the handle — which node/cache.go, node/storage.go and the
+// gateway's bus attach all depend on. A resource id is a CID and carries no
+// ":", and an instance name is already refused if it carries a "/", so the
+// mapping is injective and two instances never share a key space.
+func databaseName(id string) string { return strings.ReplaceAll(id, "/", ":") }
 
 // engines is the registry this node serves from, with tau's own kv engine in
 // it.

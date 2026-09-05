@@ -57,9 +57,9 @@ const (
 	headerAttempts = "X-Taubyte-Attempt"
 )
 
-// ErrNoStepTarget is a driver granted nothing to invoke. It is a compiled
-// object that did not come from tcc: the lowering writes that grant for every
-// step, from the step's own `call`.
+// ErrNoStepTarget is a driver granted nothing to invoke AND nothing to hand on
+// to — which is neither a step that calls nor a step that waits, so it is a
+// compiled object that did not come from tcc.
 var ErrNoStepTarget = errors.New("node: a workflow step's driver was granted no function to invoke")
 
 // runStep is one delivery: invoke, then hand on.
@@ -69,8 +69,22 @@ var ErrNoStepTarget = errors.New("node: a workflow step's driver was granted no 
 // declared — see node/dispatch.go, which acks on success and leaves a failure
 // to the queue exactly as it does for any other consumer.
 func (d *dispatcher) runStep(ctx context.Context, consumer worker.Consumer, item queue.Delivery) error {
+	// A STEP THAT ONLY WAITS INVOKES NOTHING, and the vocabulary's own fixture
+	// has one: `- name: settle / wait: 30s`. The lowering gives such a step a
+	// queue with the wait as its `delay` and a driver with no `call` to grant,
+	// so THE PAUSE HAS ALREADY BEEN SERVED by the time this runs — the item was
+	// held back for the delay before it could be claimed. All that is left is
+	// to hand it on unchanged.
+	//
+	// Refusing here instead sent every run through such a step to the dead
+	// letter: no interval is declared on the produced queue, so nothing was
+	// nacked, the claim expired, and `max_attempts` of 1 buried it. The author
+	// saw a run that stopped existing.
 	if len(consumer.Invokes) == 0 {
-		return fmt.Errorf("%w: %s", ErrNoStepTarget, consumer.Target.Name)
+		if len(consumer.Sends) == 0 {
+			return fmt.Errorf("%w: %s", ErrNoStepTarget, consumer.Target.Name)
+		}
+		return wrapNotLeader(d.sendOn(ctx, consumer.Sends[0], item.ID, item.Data))
 	}
 
 	res, err := d.node.worker.Invoke(ctx, consumer.Invokes[0], &invoke.Request{

@@ -3,7 +3,7 @@ package wasm_test
 import (
 	"context"
 	"errors"
-	"strings"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -168,15 +168,18 @@ func TestAnUngrantedVerbNeverReachesTheValidator(t *testing.T) {
 }
 
 // TestANINSTANCENameIsAKeyAndNotAPath. It is looked up exactly, and a separator
-// in it would make one instance reachable by two names.
+// in it would make one instance reachable by two names — and worse, the store
+// path-cleans a key, so `..` would resolve into somebody else's.
 func TestAnInstanceNameMayNotBeAPath(t *testing.T) {
 	admit := &admitting{}
 	instance, _ := instanced(t, admit, "h/a")
 
-	res := call(t, instance, "/get/sessions~a~b/k", nil)
-	require.Equal(t, 404, res.Status)
-	require.Contains(t, string(res.Body), "may not be empty or contain /")
-	require.Empty(t, admit.seen())
+	for _, name := range []string{"sessions~a~b", "sessions~"} {
+		res := call(t, instance, "/get/"+name+"/k", nil)
+		require.Equal(t, 404, res.Status, name)
+		require.Contains(t, string(res.Body), "may not be empty or contain /", name)
+	}
+	require.Empty(t, admit.seen(), "and no validator was bothered")
 }
 
 // TestALABELTheConfigNeverGrantedIsStillRefusedByNAME, instance or not — the
@@ -203,11 +206,26 @@ func TestEveryCallAsksTheAdmitter(t *testing.T) {
 	require.Len(t, admit.seen(), 3, "the tier asks per open; caching the answer is the Admitter's job")
 }
 
-// TestTHESPLITIsUnambiguousBecauseALabelCannotHoldASlash. The vocabulary's own
-// pattern for a label is `^[a-zA-Z_][a-zA-Z0-9_]*$`, which is the whole reason
-// the instance can travel in it.
-func TestALabelCannotContainTheSeparator(t *testing.T) {
-	for _, label := range []string{"sessions", "_private", "a1_b2"} {
-		require.False(t, strings.Contains(label, "/"), label)
-	}
+// TestAVALIDATORThatCouldNotBeRUNIsUnavailableAndNotDenied. Telling a caller
+// its instance was turned down when the cloud never asked sends somebody to
+// argue with a policy that did not fire.
+func TestAnUnreachableValidatorIsNotARefusal(t *testing.T) {
+	admit := &admitting{refuse: errors.New("the validator could not be run: no such function")}
+	instance, _ := instanced(t, admit, "h/room")
+
+	res := call(t, instance, "/get/sessions~room/k", nil)
+	require.Equal(t, 404, res.Status)
+	require.Contains(t, string(res.Body), "unavailable:", "got %q", res.Body)
+	require.NotContains(t, string(res.Body), "denied:")
+}
+
+// AND A VALIDATOR THAT SAID NO STILL READS AS A DECISION, which is the arm on
+// the other side of that line.
+func TestARefusedInstanceIsDenied(t *testing.T) {
+	admit := &admitting{refuse: fmt.Errorf("%w: may_open refused it", wasm.ErrNotAdmitted)}
+	instance, _ := instanced(t, admit, "h/room")
+
+	res := call(t, instance, "/get/sessions~room/k", nil)
+	require.Equal(t, 404, res.Status)
+	require.Contains(t, string(res.Body), "denied:", "got %q", res.Body)
 }

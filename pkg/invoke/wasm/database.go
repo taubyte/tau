@@ -125,6 +125,9 @@ func (r *Runtime) databaseImports(spec invoke.Spec) []component.Option {
 			if why.missing {
 				return grant, databaseFailure(errNoSuchDatabase, why.detail)
 			}
+			if why.unavailable {
+				return grant, databaseFailure(errDatabaseUnavailable, why.detail)
+			}
 			return grant, databaseFailure(errDatabaseDenied, why.detail)
 		}
 		if r.databases == nil {

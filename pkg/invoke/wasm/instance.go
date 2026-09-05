@@ -83,18 +83,26 @@ const (
 	settingValidated = "instances/validator/namespace"
 )
 
-// reason is why an open did not happen, in the two shapes every interface here
-// has an arm for.
+// reason is why an open did not happen, in the three shapes every interface
+// here has an arm for.
 type reason struct {
 	// missing says the label names nothing this workload was granted, which
 	// every interface reports as its own `no-such-…` arm because it reads as a
 	// typo rather than as an outage.
 	missing bool
-	detail  string
+
+	// unavailable says the platform could not answer, as against a decision it
+	// answered with. A VALIDATOR THAT COULD NOT BE RUN IS NOT A REFUSAL: telling
+	// a caller its instance was turned down when the cloud never asked sends
+	// somebody to argue with a policy that did not fire.
+	unavailable bool
+
+	detail string
 }
 
 func missingLabel(label string) *reason { return &reason{missing: true, detail: label} }
 func denied(detail string) *reason      { return &reason{detail: detail} }
+func unreachable(detail string) *reason { return &reason{unavailable: true, detail: detail} }
 
 // addressed resolves what a guest named: which grant, whether it is legal to
 // address that resource this way, and whether this instance is admitted.
@@ -103,7 +111,7 @@ func denied(detail string) *reason      { return &reason{detail: detail} }
 // because seven copies of "is this the resource or one of its instances" is
 // seven places for the answer to differ.
 func (r *Runtime) addressed(ctx context.Context, grants map[string]invoke.Grant, name, op string) (invoke.Grant, *reason) {
-	label, instance, _ := strings.Cut(name, "/")
+	label, instance, addressed := strings.Cut(name, "/")
 
 	grant, ok := grants[label]
 	if !ok {
@@ -114,6 +122,13 @@ func (r *Runtime) addressed(ctx context.Context, grants map[string]invoke.Grant,
 	}
 	if !grant.Allows(op) {
 		return invoke.Grant{}, denied(label + " cannot " + op)
+	}
+
+	// A SEPARATOR WITH NOTHING AFTER IT IS A NAMED INSTANCE THAT IS EMPTY, not
+	// an unnamed one. Reporting it as "name one" would tell a caller to do the
+	// thing it just tried.
+	if addressed && instance == "" {
+		return invoke.Grant{}, denied("an instance name may not be empty or contain /")
 	}
 
 	many := grant.Settings[settingAdmission] != ""
@@ -134,17 +149,22 @@ func (r *Runtime) addressed(ctx context.Context, grants map[string]invoke.Grant,
 		return grant, nil
 	}
 
-	if instance == "" || strings.Contains(instance, "/") {
-		// An instance name is a KEY, not a path: it is looked up exactly, and
-		// a separator in it would make one instance reachable by two names.
+	if strings.Contains(instance, "/") {
+		// An instance name is a KEY, not a path: it is looked up exactly, a
+		// separator in it would make one instance reachable by two names, and
+		// the store path-cleans a key so `..` would resolve into another
+		// store's rows rather than missing.
 		return invoke.Grant{}, denied("an instance name may not be empty or contain /")
 	}
 
 	if r.admission == nil {
-		return invoke.Grant{}, denied(ErrNoAdmission.Error())
+		return invoke.Grant{}, unreachable(ErrNoAdmission.Error())
 	}
 	if err := r.admission.Admit(ctx, grant, instance); err != nil {
-		return invoke.Grant{}, denied(err.Error())
+		if errors.Is(err, ErrNotAdmitted) {
+			return invoke.Grant{}, denied(err.Error())
+		}
+		return invoke.Grant{}, unreachable(err.Error())
 	}
 
 	// THE INSTANCE IS PART OF THE HANDLE, which is what makes every backing

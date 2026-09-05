@@ -302,8 +302,8 @@ func (p *Project) scopeCursor(scope []string) ([]string, error) {
 //
 // THE NAMESPACE IS TRIED FIRST and the rest in a fixed order, so a project with
 // a namespace and a workflow of one name resolves the same way on every node.
-// The compiler refuses that collision (checkCollisions); the order is here so
-// that a compiled object which somehow carries one is not resolved by map walk.
+// The compiler refuses that collision; the order is here so that a compiled
+// object which somehow carries one is not resolved by a map walk.
 func (p *Project) scopeAt(cursor []string, name string) (kind, id string, ok bool) {
 	for _, candidate := range scopeKinds() {
 		links := p.index[strings.Join(append(append([]string{}, cursor...), candidate, name), "/")]
@@ -443,6 +443,16 @@ func (r Resource) Int(path ...string) (int64, bool) {
 		return 0, false
 	}
 	return int64(v), true
+}
+
+// Float reads a number that is not a whole one.
+//
+// IT IS NOT Int. A vocabulary Float — a retry factor, a similarity threshold —
+// compiles to a JSON number, and reading one with Int truncates 1.5 to 1 while
+// reading it with String answers nothing at all. Both are silent.
+func (r Resource) Float(path ...string) (float64, bool) {
+	v, ok := descend(r, path...).(float64)
+	return v, ok
 }
 
 // Duration reads a duration. tcc compiles one to NANOSECONDS, so this is Int

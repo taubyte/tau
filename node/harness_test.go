@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 
+	"path"
+
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-log/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -96,43 +98,67 @@ type memKV struct {
 func (k *memKV) Get(_ context.Context, key string) ([]byte, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	v, ok := k.rows[key]
+	v, ok := k.rows[datastoreKey(key)]
 	if !ok {
 		return nil, ds.ErrNotFound
 	}
 	return v, nil
 }
 
-// List is a prefix scan, and it returns WHOLE KEYS the way a real kvdb does —
-// pkg/register trims the prefix off what comes back, so a double that answered
-// relative keys would make every deployment name read as a whole pointer key.
+// List is a prefix scan answering WHOLE KEYS, in the shape a real kvdb answers
+// with — see datastoreKey.
 func (k *memKV) List(_ context.Context, prefix string) ([]string, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 
+	at := datastoreKey(prefix)
 	var out []string
 	for key := range k.rows {
-		if strings.HasPrefix(key, prefix) {
+		if strings.HasPrefix(key, at) {
 			out = append(out, key)
 		}
 	}
 	return out, nil
 }
 
+// datastoreKey is what pkg/kvdb does to every key it is handed: it wraps it in
+// a datastore path, which makes the key absolute and path-CLEANS it.
+//
+// THE DOUBLE HAS TO DO IT TOO. Without it this fake was more permissive than
+// the store it stands in for, in both directions at once — a listed key came
+// back without the leading slash a real one carries, which made a prefix trim
+// look correct when in production it trimmed nothing; and a key holding `..`
+// was a distinct map entry here while a real store resolves it into somebody
+// else's. Both of those are bugs this package shipped, and this fake is why
+// their tests passed.
+func datastoreKey(key string) string {
+	cleaned := path.Clean("/" + key)
+	if cleaned == "/" {
+		return "/"
+	}
+	// A prefix keeps its trailing separator, which is what makes a prefix scan
+	// a scan of one bucket rather than of every sibling that starts the same.
+	if strings.HasSuffix(key, "/") {
+		return cleaned + "/"
+	}
+	return cleaned
+}
+
 func (k *memKV) Put(_ context.Context, key string, v []byte) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.rows[key] = v
+	k.rows[datastoreKey(key)] = v
 	return nil
 }
 
 func (k *memKV) Delete(_ context.Context, key string) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if _, ok := k.rows[key]; !ok {
+	at := datastoreKey(key)
+	if _, ok := k.rows[at]; !ok {
 		return ds.ErrNotFound
 	}
-	delete(k.rows, key)
+	delete(k.rows, at)
 	return nil
 }
 

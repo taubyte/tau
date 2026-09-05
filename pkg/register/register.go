@@ -446,7 +446,18 @@ func (r *Register) Environments(ctx context.Context, project string) ([]string, 
 
 	out := make([]string, 0, len(keys))
 	for _, key := range keys {
-		name := strings.TrimPrefix(key, prefix)
+		// THE PREFIX IS CUT WHEREVER IT IS AND NOT TRIMMED FROM THE FRONT. A
+		// store answers a listing with the key it holds, which it normalised
+		// into a datastore path — so what comes back is `/pointers/shop/prod`
+		// and a front-anchored trim of `pointers/shop/` matches nothing, leaves
+		// the whole key, and the separator check below then drops every
+		// environment this project has. That is this function returning empty
+		// on a real store while its test passed against a double that answered
+		// the un-normalised key.
+		_, name, found := strings.Cut(key, prefix)
+		if !found {
+			continue
+		}
 		// A KEY WITH A SEPARATOR LEFT IN IT IS NOT ONE OF THIS PROJECT'S. The
 		// grammar refuses the separator inside a name, so anything still
 		// carrying one under this prefix belongs to a longer project name that

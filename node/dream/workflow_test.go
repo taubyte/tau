@@ -205,11 +205,29 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 			depth(steps["checkout_reserve"]) == 0 && depth(steps["checkout_settle"]) == 0
 	}, 180*time.Second, time.Second, "the run never finished; it was seen in %v", &seenSteps{&seen})
 
+	// SETTLE IS OBSERVED BECAUSE IT HOLDS. Its queue carries the 30s delay its
+	// author wrote, so an item sits in it far longer than this poll — which is
+	// what makes "the run passed through the step that waits" something that
+	// can be watched at all.
 	require.Contains(t, seen, "checkout_settle", "the run never reached the step that waits")
+
+	// AND `charge` IS NOT ASSERTED THE SAME WAY, deliberately: it drains as soon
+	// as it is claimed, so a poll never catches it holding anything and an
+	// assertion that it was seen occupied would fail on a run that worked. What
+	// shows the run reached it is below — the settle queue emptied and NOTHING
+	// WAS BURIED, so the item left settle and no step gave up on it.
 
 	// NOTHING REACHED THE DEAD LETTER, which is where a run stops when a step
 	// exhausts its attempts — so every step succeeded rather than going quiet.
-	require.Zero(t, depth(handleOf(t, n, "checkout_failed")), "a step gave up and the run was buried")
+	//
+	// THIS IS THE ASSERTION THAT WAS VACUOUS, and it is why the wait-only step
+	// that buried every run through it shipped: the handle it read named
+	// nothing, so an unopened queue and an empty one were the same answer. It
+	// resolves the real handle now and asserts the queue was never opened at
+	// all — nothing was ever buried, rather than nothing is buried right now.
+	ready, claimed, ok := n.QueueDepth(deadLetterOf(t, n))
+	require.True(t, ok, "this node cannot read what was buried")
+	require.Zero(t, ready+claimed, "a step gave up and the run was buried")
 }
 
 // handleOf is the handle one of the workflow's produced queues is opened under.
@@ -218,37 +236,48 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 // thing that was broken: the queues live at `workflow/<id>/queue/<name>`, and
 // nothing could address them while every scope segment was assumed to be a
 // namespace.
-func handleOf(t *testing.T, n *node.Node, name string) string {
+//
+// IT FAILS THE TEST RATHER THAN ANSWERING SOMETHING. An earlier version fell
+// back to a handle it assembled itself when a queue had no driver — which the
+// dead letter deliberately does not — and that handle named nothing, so
+// QueueDepth reported "never opened", the assertion read it as empty, and a
+// run that was being buried on every pass looked like a run that finished.
+func handleOf(t *testing.T, n *node.Node, step string) string {
 	t.Helper()
 
 	spec, err := n.Worker().Resolve(t.Context(), project.Address{
 		Project: "shop", Environment: "prod", Scope: []string{"checkout"},
-		Kind: "function", Name: name,
+		Kind: "function", Name: step,
 	})
-	if err != nil {
-		// The dead-letter queue has no driver — deliberately — so it is
-		// addressed through a step that names it.
-		spec, err = n.Worker().Resolve(t.Context(), project.Address{
-			Project: "shop", Environment: "prod", Scope: []string{"checkout"},
-			Kind: "function", Name: "checkout_charge",
-		})
-		require.NoError(t, err)
-		for _, g := range spec.Reaches {
-			if g.Kind == "queue" && g.Settings["dead_letter/name"] != "" {
-				_, _, id := splitHandleForTest(g.Handle)
-				_ = id
-				return project.Handle("shop", "prod", g.Settings["dead_letter/name"])
-			}
-		}
-		t.Fatalf("no dead letter for %s", name)
-	}
+	require.NoError(t, err, "no driver for %s", step)
 
 	for _, g := range spec.Reaches {
-		if g.Kind == "queue" && g.Label == name {
+		if g.Kind == "queue" && g.Label == step {
 			return g.Handle
 		}
 	}
-	t.Fatalf("%s receives from no queue of its own name", name)
+	t.Fatalf("%s receives from no queue of its own name", step)
+	return ""
+}
+
+// deadLetterOf is where a run stops when a step gives up. It has NO consumer by
+// design, so it is named by the step that routes into it rather than resolved
+// as a driver of its own.
+func deadLetterOf(t *testing.T, n *node.Node) string {
+	t.Helper()
+
+	spec, err := n.Worker().Resolve(t.Context(), project.Address{
+		Project: "shop", Environment: "prod", Scope: []string{"checkout"},
+		Kind: "function", Name: "checkout_charge",
+	})
+	require.NoError(t, err)
+
+	for _, g := range spec.Reaches {
+		if dead := g.Settings["dead_letter/name"]; g.Kind == "queue" && dead != "" {
+			return project.Handle("shop", "prod", dead)
+		}
+	}
+	t.Fatal("no step routes into a dead letter")
 	return ""
 }
 
@@ -266,18 +295,4 @@ func (s *seenSteps) String() string {
 		}
 	}
 	return strings.Join(out, " ")
-}
-
-func splitHandleForTest(handle string) (string, string, string) {
-	parts := [3]string{}
-	i, start := 0, 0
-	for at := 0; at < len(handle) && i < 2; at++ {
-		if handle[at] == '/' {
-			parts[i] = handle[start:at]
-			i++
-			start = at + 1
-		}
-	}
-	parts[2] = handle[start:]
-	return parts[0], parts[1], parts[2]
 }

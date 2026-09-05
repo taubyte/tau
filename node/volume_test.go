@@ -17,25 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/raft"
 )
-
-// sharedRaft hands a second node the cluster the first one opened, which is
-// what makes two nodes in a test one cloud: the bytes are node-local and the
-// pointer to the checkpoint is not.
-func sharedRaft(t *testing.T, of *Node) func(string) (raft.Cluster, error) {
-	t.Helper()
-
-	cluster, err := of.work.consensus()
-	require.NoError(t, err)
-	return func(string) (raft.Cluster, error) { return keptOpen{cluster}, nil }
-}
-
-// keptOpen is the shared cluster with Close taken off, because the node that
-// borrowed it is not the node that owns it.
-type keptOpen struct{ raft.Cluster }
-
-func (keptOpen) Close() error { return nil }
 
 // volume_test is about bytes that have to survive two things: the container
 // they were written from, and the node it ran on.
@@ -114,11 +96,17 @@ func TestANodeWithNoRootRefuses(t *testing.T) {
 
 // TestTHEBYTESSurviveTheNode: a checkpoint is written, a second node with the
 // same store and a different root restores it.
+//
+// NEITHER NODE IS SPECIAL. The pointer is a replicated kvdb row rather than a
+// raft write, so the node holding the volume records it wherever placement put
+// the workload — which is the whole point: a leader-only write meant every
+// other node checkpointed nothing, silently.
 func TestAVolumeIsRestoredOnAnotherNode(t *testing.T) {
 	store := &memAssets{blobs: map[string][]byte{}}
+	replicated := &memFactory{}
 
 	first, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
-		WithRoot(t.TempDir()), WithAssets(store))
+		WithRoot(t.TempDir()), WithAssets(store), WithDatabases(replicated))
 	require.NoError(t, first.Start(t.Context()))
 	<-first.work.forming
 
@@ -131,13 +119,13 @@ func TestAVolumeIsRestoredOnAnotherNode(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "base", "1"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "base", "1", "rows"), []byte("alice"), 0o640))
 
-	require.NoError(t, source.checkpoint(t.Context(), source.open[grant.Handle]))
+	_, err = source.checkpoint(t.Context(), source.open[grant.Handle])
+	require.NoError(t, err)
 
 	// A SECOND NODE, sharing the store and the consensus and holding none of
 	// the bytes — which is what placement moving a workload looks like.
 	second, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
-		WithRoot(t.TempDir()), WithAssets(store),
-		WithRaft(sharedRaft(t, first)))
+		WithRoot(t.TempDir()), WithAssets(store), WithDatabases(replicated))
 	require.NoError(t, second.Start(t.Context()))
 	<-second.work.forming
 
@@ -164,7 +152,8 @@ func TestAnExistingDirectoryIsNotRestoredOver(t *testing.T) {
 	dir, err := v.Mount(t.Context(), grant)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows"), []byte("old"), 0o640))
-	require.NoError(t, v.checkpoint(t.Context(), v.open[grant.Handle]))
+	_, err = v.checkpoint(t.Context(), v.open[grant.Handle])
+	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows"), []byte("new"), 0o640))
 
@@ -178,21 +167,40 @@ func TestAnExistingDirectoryIsNotRestoredOver(t *testing.T) {
 	require.Equal(t, "new", string(rows), "the checkpoint overwrote live data")
 }
 
-// TestTheCheckpointRecordsWHERE, in the same raft cluster the queues and crons
-// use — one consensus group for one deployment's coordinated state.
-func TestACheckpointIsRecordedInConsensus(t *testing.T) {
-	n, v := mounting(t)
+// TestTheCheckpointRecordsWHERE, in a replicated row any node may write.
+func TestACheckpointIsRecorded(t *testing.T) {
+	_, v := mounting(t)
+	ctx := t.Context()
 	grant := mountGrant("shop/prod/QmData", nil)
 
-	_, err := v.Mount(t.Context(), grant)
+	_, err := v.Mount(ctx, grant)
 	require.NoError(t, err)
-	require.NoError(t, v.checkpoint(t.Context(), v.open[grant.Handle]))
+	_, err = v.checkpoint(ctx, v.open[grant.Handle])
+	require.NoError(t, err)
 
-	cluster, err := n.work.consensus()
+	db, err := v.store()
 	require.NoError(t, err)
-	recorded, held := cluster.Get(checkpointPrefix + grant.Handle)
-	require.True(t, held)
+	recorded, err := db.Get(ctx, checkpointPrefix+grant.Handle)
+	require.NoError(t, err)
 	require.NotEmpty(t, recorded)
+}
+
+// TestTHEDECLAREDIntervalReachesTheVolume, which it did not: the composer never
+// carried `checkpoint/interval`, so a volume asking to be checkpointed every
+// ten seconds was checkpointed every minute and a restore lost fifty seconds
+// more than its author budgeted for.
+func TestTheDeclaredIntervalIsUsed(t *testing.T) {
+	_, v := mounting(t)
+
+	_, err := v.Mount(t.Context(), mountGrant("shop/prod/QmData",
+		map[string]string{settingCheckpointFreq: "10s"}))
+	require.NoError(t, err)
+	require.Equal(t, 10*time.Second, v.open["shop/prod/QmData"].every)
+
+	// And a volume that declared none takes the vocabulary's own default.
+	_, err = v.Mount(t.Context(), mountGrant("shop/prod/QmOther", nil))
+	require.NoError(t, err)
+	require.Equal(t, defaultCheckpoint, v.open["shop/prod/QmOther"].every)
 }
 
 // TestONLYWhatIsDueIsWalked, so a volume asking for a checkpoint an hour apart
@@ -212,8 +220,9 @@ func TestOnlyDueVolumesAreCheckpointed(t *testing.T) {
 }
 
 // TestTHEQUOTAIsMeasuredAndSaid. It is not a wall — see volume.go for why — and
-// what it must not be is silent.
-func TestGoingOverTheQuotaIsReported(t *testing.T) {
+// what it must not be is silent: what the walk found is answered, so the
+// measurement is a value rather than a log line somebody hopes was printed.
+func TestGoingOverTheQuotaIsMeasured(t *testing.T) {
 	_, v := mounting(t)
 	grant := mountGrant("shop/prod/QmData", map[string]string{settingVolumeQuota: "8"})
 
@@ -222,7 +231,11 @@ func TestGoingOverTheQuotaIsReported(t *testing.T) {
 	require.EqualValues(t, 8, v.open[grant.Handle].quota, "the author's number reached the volume")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows"), bytes.Repeat([]byte("x"), 64), 0o640))
-	require.NoError(t, v.checkpoint(t.Context(), v.open[grant.Handle]))
+
+	size, err := v.checkpoint(t.Context(), v.open[grant.Handle])
+	require.NoError(t, err)
+	require.EqualValues(t, 64, size, "the walk measured what is there")
+	require.Greater(t, size, v.open[grant.Handle].quota, "and it is over the declared ceiling")
 }
 
 // ── what a checkpoint must not be able to do ─────────────────────────────────

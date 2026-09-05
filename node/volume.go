@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/container"
 )
@@ -35,6 +36,24 @@ import (
 // That is why the tier refused, and it was right to while there was nothing to
 // give it. It is also the single most common shape a compose import produces,
 // so refusing it meant an imported stack with a database could not run at all.
+//
+// # Every node that holds a volume checkpoints it
+//
+// The pointer used to be a raft write, which is LEADER-ONLY — and a volume is
+// mounted wherever placement put the workload, not on the leader. So on every
+// other node the checkpoint returned success without writing anything: nothing
+// reached the store, no pointer was recorded, and the node counted the volume
+// as checkpointed. The workload then moved and restored an empty directory.
+// That is the exact silent loss the mount refusal existed to prevent, one level
+// up.
+//
+// It is a replicated kvdb row now, which any node may write. The key is written
+// by the node HOLDING the volume, so it is not a key two nodes race — with one
+// exception worth naming: the vocabulary lets more than one workload mount a
+// volume read-write, and two nodes each holding their own copy of that
+// directory is already divergent data before any pointer is written. A volume
+// that is genuinely shared needs a shared filesystem, which is a different
+// piece of work; nothing here pretends otherwise.
 //
 // # A moved workload restores, and what it loses is stated
 //
@@ -71,7 +90,13 @@ type volumes struct {
 	node *Node
 
 	mu   sync.Mutex
+	db   kvdb.KVDB
 	open map[string]*volume
+
+	// opening is the handles a restore is in flight for, so a second cold
+	// start of one workload waits rather than mounting a half-unpacked
+	// directory.
+	opening map[string]chan struct{}
 }
 
 var _ container.Volumes = (*volumes)(nil)
@@ -99,10 +124,11 @@ var (
 )
 
 const (
-	// checkpointPrefix is where a volume's last checkpoint is recorded, in the
-	// same raft namespace a project's queues and crons use — one consensus
-	// group for one deployment's coordinated state.
+	// checkpointPrefix is where a volume's last checkpoint is recorded.
 	checkpointPrefix = "volume/at/"
+
+	// volumeDatabase is the one database's name, for cacheDatabase's reason.
+	volumeDatabase = "volumes"
 
 	// defaultCheckpoint is what the vocabulary defaults `checkpoint/interval`
 	// to. It is here for a compiled object that carried none.
@@ -121,12 +147,43 @@ func (v *volumes) Mount(ctx context.Context, grant invoke.Grant) (string, error)
 		return "", ErrNoRoot
 	}
 
-	v.mu.Lock()
-	held, ok := v.open[grant.Handle]
-	v.mu.Unlock()
-	if ok {
-		return held.dir, nil
+	// ONE OPENER PER HANDLE. Two cold starts of one workload race here, and the
+	// loser used to get the directory back while the winner was still unpacking
+	// into it — a container mounting a half-restored database. The second
+	// caller waits for the first rather than repeating its work.
+	for {
+		v.mu.Lock()
+		if held, ok := v.open[grant.Handle]; ok {
+			v.mu.Unlock()
+			return held.dir, nil
+		}
+		if opening, busy := v.opening[grant.Handle]; busy {
+			v.mu.Unlock()
+			select {
+			case <-opening:
+				continue
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+		if v.opening == nil {
+			v.opening = map[string]chan struct{}{}
+		}
+		v.opening[grant.Handle] = make(chan struct{})
+		v.mu.Unlock()
+		break
 	}
+
+	// WHOEVER CLAIMED IT RELEASES IT, on every path out — a failed restore that
+	// left the channel open would wedge every later mount of this volume.
+	defer func() {
+		v.mu.Lock()
+		if opening, held := v.opening[grant.Handle]; held {
+			close(opening)
+			delete(v.opening, grant.Handle)
+		}
+		v.mu.Unlock()
+	}()
 
 	dir := filepath.Join(v.node.opts.root, "volumes", escapeHandle(grant.Handle))
 	fresh, err := ensureDir(dir)
@@ -163,15 +220,15 @@ func (v *volumes) Mount(ctx context.Context, grant invoke.Grant) (string, error)
 
 // restore unpacks the last checkpoint, or does nothing when there is not one.
 func (v *volumes) restore(ctx context.Context, handle, dir string) error {
-	cluster, err := v.node.work.consensus()
+	db, err := v.store()
 	if err != nil {
-		// No consensus yet: nothing can be read and nothing has been written,
-		// so an empty directory is the honest answer rather than a failure.
+		// Nowhere to have recorded one, so there is nothing to read back and an
+		// empty directory is the honest answer rather than a failure.
 		return nil
 	}
 
-	recorded, held := cluster.Get(checkpointPrefix + handle)
-	if !held || len(recorded) == 0 {
+	recorded, err := db.Get(ctx, checkpointPrefix+handle)
+	if err != nil || len(recorded) == 0 {
 		return nil
 	}
 	if v.node.opts.assets == nil {
@@ -191,21 +248,18 @@ func (v *volumes) restore(ctx context.Context, handle, dir string) error {
 	return nil
 }
 
-// checkpoint walks one volume, puts it in the store and records where.
-func (v *volumes) checkpoint(ctx context.Context, held *volume) error {
+// checkpoint walks one volume, puts it in the store and records where. It
+// answers how many bytes it walked, which is what the quota is measured
+// against — returned rather than only logged so that the measurement is
+// something a test can assert on rather than a line somebody hopes was
+// printed.
+func (v *volumes) checkpoint(ctx context.Context, held *volume) (int64, error) {
 	if v.node.opts.assets == nil {
-		return ErrNoStore
+		return 0, ErrNoStore
 	}
-	cluster, err := v.node.work.consensus()
+	db, err := v.store()
 	if err != nil {
-		return err
-	}
-
-	// A FOLLOWER RECORDS NOTHING. The bytes are this node's and the pointer is
-	// the cloud's, so a node that cannot write the pointer would put an object
-	// in the store that nothing ever names.
-	if !cluster.IsLeader() {
-		return nil
+		return 0, err
 	}
 
 	// STREAMED RATHER THAN BUFFERED, because the thing being tarred is a
@@ -223,7 +277,7 @@ func (v *volumes) checkpoint(ctx context.Context, held *volume) error {
 	read.Close()
 	size := <-walked
 	if err != nil {
-		return fmt.Errorf("node: checkpointing %s: %w", held.handle, err)
+		return 0, fmt.Errorf("node: checkpointing %s: %w", held.handle, err)
 	}
 
 	// THE QUOTA IS MEASURED HERE AND NOWHERE ELSE, because this is the one pass
@@ -233,7 +287,28 @@ func (v *volumes) checkpoint(ctx context.Context, held *volume) error {
 		logger.Warnf("volume: %s holds %d bytes and declared a quota of %d", held.handle, size, held.quota)
 	}
 
-	return cluster.Set(checkpointPrefix+held.handle, []byte(id), applyTimeout)
+	return size, db.Put(ctx, checkpointPrefix+held.handle, []byte(id))
+}
+
+// store opens the one database this node records checkpoints in, once.
+func (v *volumes) store() (kvdb.KVDB, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	if v.db != nil {
+		return v.db, nil
+	}
+	if v.node.opts.databases == nil {
+		return nil, ErrNoCacheStore
+	}
+
+	db, err := v.node.opts.databases.New(logger, volumeDatabase, rebroadcastSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("node: opening the volumes database: %w", err)
+	}
+	v.db = db
+	v.node.addCloser(closerFunc(db.Close))
+	return db, nil
 }
 
 // due is every volume whose interval has elapsed.
@@ -255,7 +330,7 @@ func (v *volumes) due(now time.Time, last map[string]time.Time) []*volume {
 func (v *volumes) step(ctx context.Context, now time.Time, last map[string]time.Time) int {
 	var written int
 	for _, held := range v.due(now, last) {
-		if err := v.checkpoint(ctx, held); err != nil {
+		if _, err := v.checkpoint(ctx, held); err != nil {
 			logger.Warnf("volume: %s: %s", held.handle, err)
 			continue
 		}
@@ -428,6 +503,14 @@ func untar(r io.Reader, dir string) error {
 			// A LINK IS CHECKED WHERE IT POINTS, not only where it is written:
 			// a relative target climbing out is the same escape as a name that
 			// does, and it is followed by whatever mounts this next.
+			//
+			// AN ABSOLUTE TARGET IS CHECKED FIRST, because joining it onto the
+			// entry's directory discards the leading separator and turns
+			// `/etc/passwd` into a path inside the volume that passes — while
+			// the link written on disk still points at /etc/passwd.
+			if filepath.IsAbs(filepath.FromSlash(header.Linkname)) {
+				return fmt.Errorf("node: a checkpoint entry links to %q, which is outside the volume", header.Linkname)
+			}
 			if _, err := within(dir, filepath.Join(filepath.Dir(header.Name), header.Linkname)); err != nil {
 				return err
 			}

@@ -123,6 +123,19 @@ func (a *admissions) Admit(ctx context.Context, grant invoke.Grant, instance str
 
 // admit is the decision, whoever asked.
 func (a *admissions) admit(ctx context.Context, grant invoke.Grant, instance string) error {
+	// AN INSTANCE NAME IS A KEY AND THE STORE PATH-CLEANS ONE. `..` is not a
+	// name that misses — it RESOLVES, to `<project>/<environment>`, so admitting
+	// it would write one row that every other store in the deployment then reads
+	// as its own admission and every instance of every one of them is admitted
+	// without a validator ever being asked.
+	//
+	// The guard is here rather than in each caller because both meet here: the
+	// wasm tier refuses a "/" already, and the gateway takes the instance from
+	// a URL path where "." and ".." are ordinary segments.
+	if err := singleSegment(instance); err != nil {
+		return err
+	}
+
 	key := grant.Handle + "/" + instance
 
 	a.mu.Lock()
@@ -162,6 +175,14 @@ func (a *admissions) admit(ctx context.Context, grant invoke.Grant, instance str
 		return err
 	}
 	a.remember(key)
+	return nil
+}
+
+// singleSegment refuses an instance name that is not one clean path segment.
+func singleSegment(instance string) error {
+	if instance == "" || instance == "." || instance == ".." || strings.Contains(instance, "/") {
+		return fmt.Errorf("%w: %q is not an instance name", wasmtier.ErrNotAdmitted, instance)
+	}
 	return nil
 }
 

@@ -189,7 +189,11 @@ func (b *bucket) Head(ctx context.Context, key string) (wasmtier.Object, error) 
 
 func (b *bucket) Put(ctx context.Context, key string, value []byte) error {
 	if key == "" {
-		return errors.New("node: an object with no name cannot be found again")
+		return fmt.Errorf("%w: an object with no name cannot be found again", ErrBadObjectName)
+	}
+	at, err := b.named(key)
+	if err != nil {
+		return err
 	}
 
 	// THE CEILING IS CHECKED BEFORE THE BYTES GO IN, and what is checked is
@@ -219,19 +223,28 @@ func (b *bucket) Put(ctx context.Context, key string, value []byte) error {
 	if err != nil {
 		return err
 	}
-	return b.db.Put(ctx, b.prefix+key, row)
+	return b.db.Put(ctx, at, row)
 }
 
 func (b *bucket) Delete(ctx context.Context, key string) error {
 	if _, err := b.row(ctx, key); err != nil {
 		return err
 	}
+	at, err := b.named(key)
+	if err != nil {
+		return err
+	}
 	// THE ROW AND NOT THE BYTES — see the file doc.
-	return b.db.Delete(ctx, b.prefix+key)
+	return b.db.Delete(ctx, at)
 }
 
 func (b *bucket) Entries(ctx context.Context, prefix string) ([]wasmtier.Object, error) {
-	keys, err := b.db.List(ctx, b.prefix+prefix)
+	at, err := b.named(prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	keys, err := b.db.List(ctx, at)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +286,12 @@ func (b *bucket) held(ctx context.Context) (int64, error) {
 
 // row reads one object's index entry.
 func (b *bucket) row(ctx context.Context, key string) (objectRow, error) {
-	value, err := b.db.Get(ctx, b.prefix+key)
+	at, err := b.named(key)
+	if err != nil {
+		return objectRow{}, err
+	}
+
+	value, err := b.db.Get(ctx, at)
 	if err != nil {
 		if errors.Is(err, ds.ErrNotFound) {
 			return objectRow{}, wasmtier.ErrNotFound
@@ -288,10 +306,50 @@ func (b *bucket) row(ctx context.Context, key string) (objectRow, error) {
 	return row, nil
 }
 
-// name is the object's own name, with this bucket's prefix off it. A kvdb List
-// answers with WHOLE keys.
+// name is the object's own name, with this bucket's prefix off it.
+//
+// A kvdb List ANSWERS WITH A LEADING SLASH, because the store normalises every
+// key through a datastore path — so trimming the prefix as this package spells
+// it (no leading slash) trimmed nothing, `row` then looked the object up under
+// the prefix twice over and missed, and `Entries` answered empty for a bucket
+// that was full. `held` counted the same nothing, which made the declared size
+// a ceiling on one object rather than on the bucket.
 func (b *bucket) name(key string) string {
-	return strings.TrimPrefix(key, b.prefix)
+	return strings.TrimPrefix(strings.TrimPrefix(key, "/"), strings.TrimPrefix(b.prefix, "/"))
+}
+
+// ErrBadObjectName is a name that would not stay inside its bucket.
+var ErrBadObjectName = errors.New("node: an object name may not be empty or contain a path segment of . or ..")
+
+// named is the key one object sits at, or an error when the name would leave
+// this bucket.
+//
+// THE STORE PATH-CLEANS EVERY KEY, so `../../prod/QmOther/secret` appended to
+// this bucket's prefix does not miss — it RESOLVES, into another deployment's
+// bucket. A guest in staging could read, overwrite and delete production
+// objects, with no error anywhere on the path.
+//
+// It refuses rather than cleaning, which is the same answer node/volume.go's
+// `within` gives a checkpoint entry and for the same reason: nothing legitimate
+// names a parent, so a name that does is not one of ours and is worth failing
+// on rather than silently rewriting into some other object.
+func (b *bucket) named(key string) (string, error) {
+	if err := insideBucket(key); err != nil {
+		return "", err
+	}
+	return b.prefix + key, nil
+}
+
+// insideBucket refuses a guest-supplied name that would not stay in its bucket.
+// An empty prefix is legal — it is every object — so this is shared by the
+// lookups and by Entries.
+func insideBucket(name string) error {
+	for _, segment := range strings.Split(name, "/") {
+		if segment == "." || segment == ".." {
+			return fmt.Errorf("%w: %q", ErrBadObjectName, name)
+		}
+	}
+	return nil
 }
 
 func (b *bucket) clock() time.Time {

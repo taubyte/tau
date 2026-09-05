@@ -143,6 +143,9 @@ func (r *Runtime) storageImports(spec invoke.Spec) []component.Option {
 			if why.missing {
 				return nil, storageFailure(errNoSuchStorage, why.detail)
 			}
+			if why.unavailable {
+				return nil, storageFailure(errStorageUnavailable, why.detail)
+			}
 			return nil, storageFailure(errStorageDenied, why.detail)
 		}
 		if r.storage == nil {

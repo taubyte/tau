@@ -240,12 +240,18 @@ func startedBy(proj *project.Project, t Target, workflow project.Resource, id st
 		return nil
 	}
 
-	_, startID, err := proj.Resource(append(append([]string{}, scope...), own), kind, name)
+	start, startID, err := proj.Resource(append(append([]string{}, scope...), own), kind, name)
 	if err != nil {
 		grant.Refused = fmt.Sprintf("workflow %q starts at %s/%s, which is not in it: %s", grant.Label, kind, name, err)
 		return nil
 	}
 
+	// THE START QUEUE'S OWN SETTINGS TRAVEL WITH IT. A queue is opened from the
+	// settings on the grant, so without these a `start` opened the first step's
+	// queue with pkg/queue's defaults while the DISPATCHER opened the same queue
+	// with what its author wrote — two configurations for one queue, and which
+	// one was in force depended on who got there first.
+	grant.Settings = merged(grant.Settings, queueSettings(project.Reach{}, start))
 	grant.Settings = merged(grant.Settings, map[string]string{
 		settingStartKind:   kind,
 		settingStartHandle: project.Handle(t.Project, t.Environment, startID),
@@ -299,8 +305,13 @@ func queueSettings(reach project.Reach, target project.Resource) map[string]stri
 	if n, ok := target.Int("max_attempts"); ok {
 		out["max_attempts"] = strconv.FormatInt(n, 10)
 	}
-	if f := target.String("retry", "factor"); f != "" {
-		out["retry/factor"] = f
+	// A COMPILED NUMBER IS A NUMBER. `retry/factor` is a Float in the
+	// vocabulary, so reading it as a string answered "" and the multiplier
+	// never travelled — an author who wrote `factor: 2` got a flat interval and
+	// nothing said so. Float rather than Int because 1.5 is a legal factor and
+	// truncating it would be the same defect one step quieter.
+	if f, ok := target.Float("retry", "factor"); ok {
+		out["retry/factor"] = strconv.FormatFloat(f, 'g', -1, 64)
 	}
 	if name := target.String("dead_letter", "name"); name != "" {
 		out["dead_letter/name"] = name
@@ -395,6 +406,13 @@ func volumeSettings(reach project.Reach, target project.Resource) map[string]str
 	out := map[string]string{}
 	if quota, ok := target.Int("quota"); ok {
 		out[settingQuota] = strconv.FormatInt(quota, 10)
+	}
+	// HOW OFTEN IT IS CHECKPOINTED, which is the author's number and was not
+	// travelling at all: the node fell back to its own default, so a volume
+	// asking to be checkpointed every 10s was checkpointed every minute and a
+	// restore lost fifty seconds more than the author budgeted for.
+	if every, ok := target.Duration("checkpoint", "interval"); ok {
+		out[settingCheckpointEvery] = every.String()
 	}
 	if path := reach.Path; path != "" {
 		out[settingMountPath] = path
@@ -526,6 +544,9 @@ const (
 	settingSize      = "keys/size"
 	settingQuota     = "quota"
 	settingMountPath = "path"
+
+	// How often a volume is walked into the content-addressed store.
+	settingCheckpointEvery = "checkpoint/interval"
 
 	// Where the platform posts an item to a consumer that has no host ABI.
 	settingDeliverPort = "deliver/port"

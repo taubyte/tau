@@ -109,7 +109,13 @@ type Node struct {
 
 	// closers are everything opened during construction, in the order it was
 	// opened. Close walks them backwards.
-	closers []io.Closer
+	//
+	// TWO OPENERS ARE ON THE REQUEST PATH — a cache's store and a database's,
+	// each opened lazily under its own mutex — so the slice is shared between
+	// goroutines even though most of it is filled during construction. One lock
+	// for it, taken by addCloser and by Close.
+	closersMu sync.Mutex
+	closers   []io.Closer
 
 	// registerMu guards the stream to a remote register, which is opened on
 	// first use and re-opened if the node it names changes.
@@ -637,6 +643,17 @@ func (n *Node) Start(ctx context.Context) error {
 	return nil
 }
 
+// addCloser records something to close with the node.
+//
+// IT IS SAFE FROM ANY GOROUTINE, which the bare append was not: a cache's
+// store and a database's are opened on the first request that needs one, so two
+// concurrent cold starts appended to one slice at once.
+func (n *Node) addCloser(c io.Closer) {
+	n.closersMu.Lock()
+	n.closers = append(n.closers, c)
+	n.closersMu.Unlock()
+}
+
 // Handler is what this node serves on the internet, or nil when it runs no
 // gateway.
 func (n *Node) Handler() http.Handler {
@@ -663,8 +680,13 @@ func (n *Node) Close() error {
 			}
 		}
 		n.closeRegisterClient()
-		for i := len(n.closers) - 1; i >= 0; i-- {
-			if err := n.closers[i].Close(); err != nil && n.closeErr == nil {
+
+		n.closersMu.Lock()
+		closers := append([]io.Closer(nil), n.closers...)
+		n.closersMu.Unlock()
+
+		for i := len(closers) - 1; i >= 0; i-- {
+			if err := closers[i].Close(); err != nil && n.closeErr == nil {
 				n.closeErr = err
 			}
 		}

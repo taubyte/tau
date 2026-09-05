@@ -98,6 +98,9 @@ func (r *Runtime) vectorImports(spec invoke.Spec) []component.Option {
 			if why.missing {
 				return nil, vectorFailure(errNoSuchVector, why.detail)
 			}
+			if why.unavailable {
+				return nil, vectorFailure(errVectorUnavailable, why.detail)
+			}
 			return nil, vectorFailure(errVectorDenied, why.detail)
 		}
 		if r.vectors == nil {

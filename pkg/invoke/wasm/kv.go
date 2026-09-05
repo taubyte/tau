@@ -101,6 +101,9 @@ func (r *Runtime) kvImports(spec invoke.Spec) []component.Option {
 			if why.missing {
 				return nil, kvFailure(errNoSuchKV, why.detail)
 			}
+			if why.unavailable {
+				return nil, kvFailure(errKVUnavailable, why.detail)
+			}
 			return nil, kvFailure(errKVDenied, why.detail)
 		}
 		if r.kv == nil {

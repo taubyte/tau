@@ -147,6 +147,9 @@ func (r *Runtime) cacheImports(spec invoke.Spec) []component.Option {
 			if why.missing {
 				return nil, failure(errNoSuchCache, why.detail)
 			}
+			if why.unavailable {
+				return nil, failure(errUnavailable, why.detail)
+			}
 			return nil, failure(errDenied, why.detail)
 		}
 

@@ -102,3 +102,19 @@ func TestACronWithNoEdgesIsNotListed(t *testing.T) {
 			"%s is listed with nothing to fire or start", s.Name)
 	}
 }
+
+// TestTHESTARTQueueSCONFIGTravelsWithTheGrant. A queue is opened from the
+// settings on the grant, so a `start` that carried only the entry record opened
+// the first step's queue with pkg/queue's defaults while the dispatcher opened
+// the same queue with what its author wrote.
+func TestAStartCarriesTheQueuesOwnConfig(t *testing.T) {
+	h := newHarness(t)
+	holding(t, h, "function", "checkout")
+
+	start := schedulesOf(t, h)["nightly"].Starts[0]
+	require.Equal(t, "4", start.Settings["max_attempts"],
+		"the retry budget the FIRST STEP declared — `attempts: 4` on `reserve`")
+	require.Equal(t, "5s", start.Settings["retry/interval"],
+		"and its backoff, which the workflow shell itself carries nothing of")
+	require.NotEmpty(t, start.Settings["visibility_timeout"])
+}

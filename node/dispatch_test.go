@@ -292,7 +292,7 @@ func TestAProjectThatConsumesNothingIsNotWalkedForItems(t *testing.T) {
 // only meaningful if the platform is the one pushing — so this is where that
 // sentence becomes true.
 func TestConcurrencyIsTheWorkloadsOwnNumber(t *testing.T) {
-	answers := &answering{name: "wasm", status: 200}
+	answers := &answering{name: "wasm", status: 200, block: make(chan struct{})}
 	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5, Concurrency: 8}))
 
 	require.Equal(t, 8, n.Worker().Consumers(t.Context())[0].Concurrency)
@@ -300,7 +300,19 @@ func TestConcurrencyIsTheWorkloadsOwnNumber(t *testing.T) {
 	for i := range 20 {
 		push(t, n, "job-"+strconv.Itoa(i), []byte("x"))
 	}
-	require.Equal(t, 20, d.step(t.Context()), "one cycle drains what is there")
+
+	// EIGHT AT ONCE, WHICH IS THE ASSERTION. Counting only the twenty that came
+	// out passes with the number ignored entirely — one goroutine draining
+	// serially delivers twenty too — so what is watched is how many are inside
+	// the workload while the cycle runs.
+	drained := make(chan int, 1)
+	go func() { drained <- d.step(t.Context()) }()
+
+	require.Eventually(t, func() bool { return answers.inflight() == 8 },
+		5*time.Second, 10*time.Millisecond, "the workload was not given eight at once")
+	close(answers.block)
+
+	require.Equal(t, 20, <-drained, "one cycle drains what is there")
 }
 
 // TestAWorkloadThatDeclaredNoConcurrencyGetsOneAtATime, which is the answer

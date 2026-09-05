@@ -158,6 +158,9 @@ func (r *Runtime) publishImports(iface string, grants map[string]invoke.Grant, m
 			if why.missing {
 				return errorResult(streamFailure(missing, why.detail)), nil
 			}
+			if why.unavailable {
+				return errorResult(streamFailure(errStreamUnavailable, why.detail)), nil
+			}
 			return errorResult(streamFailure(errStreamDenied, why.detail)), nil
 		}
 		if to == nil {

@@ -60,11 +60,6 @@ type queues struct {
 	group   *queue.Group
 	cluster raft.Cluster
 	formErr error
-
-	// seen is every handle this node has opened, and it exists for Depth
-	// alone: "what is this queue holding" is a different question from "is
-	// this node holding it at all", and only the second needs remembering.
-	seen map[string]bool
 }
 
 // queueDomain is the raft namespace every declared queue lives in. It is not
@@ -175,12 +170,6 @@ func (q *queues) queue(grant invoke.Grant) (*queue.Queue, error) {
 		return nil, fmt.Errorf("node: opening the queue %q: %w", grant.Label, err)
 	}
 
-	q.mu.Lock()
-	if q.seen == nil {
-		q.seen = map[string]bool{}
-	}
-	q.seen[grant.Handle] = true
-	q.mu.Unlock()
 	return opened, nil
 }
 
@@ -227,19 +216,28 @@ func configOf(grant invoke.Grant) queue.Config {
 	return cfg
 }
 
-// Depth is what a queue holds, for an operator asking. A handle this node has
-// never opened is not an error: it is a question about something this node is
-// not holding.
+// Depth is what a queue holds, for an operator asking.
 //
-// THE CONFIG IS THE NAME AND NOTHING ELSE, because a depth is a count of keys
-// under the queue's own prefix and the prefix is derived from the name — none
-// of the timing, retry or dead-letter fields moves a key.
+// IT IS NOT GATED ON THIS NODE HAVING OPENED IT, and that gate was a real
+// mistake: a DEAD LETTER is never opened by anybody — it deliberately has no
+// consumer — and an item is buried into it by the source queue writing its
+// keys directly. So "this node never opened it" and "it is empty" were one
+// answer, and an assertion that nothing had been buried could not fail. That is
+// how a workflow step that buried every run through it passed an end-to-end
+// test.
+//
+// `ok` says only whether this node has consensus to read at all. What a queue
+// holds is a count of keys under its own prefix, and a queue nobody has written
+// to holds nothing, which is the honest answer rather than a refusal to say.
+//
+// THE CONFIG IS THE NAME AND NOTHING ELSE, because the prefix is derived from
+// the name — none of the timing, retry or dead-letter fields moves a key.
 func (q *queues) Depth(handle string) (ready, claimed int, ok bool) {
 	q.mu.Lock()
-	group, held := q.group, q.seen[handle]
+	group := q.group
 	q.mu.Unlock()
 
-	if group == nil || !held {
+	if group == nil {
 		return 0, 0, false
 	}
 	opened, err := group.Open(queue.Config{Name: handle})
@@ -264,7 +262,6 @@ func (q *queues) Close() error {
 
 	q.mu.Lock()
 	cluster := q.cluster
-	q.seen = nil
 	q.group = nil
 	q.cluster = nil
 	q.mu.Unlock()
