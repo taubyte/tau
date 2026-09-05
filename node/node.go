@@ -83,6 +83,11 @@ type Node struct {
 	// is not.
 	bus *streams
 
+	// work is this node's queue backing, shared by the wasm tier's `send` and
+	// the dispatcher's claim. One raft cluster and one open Queue per handle,
+	// so two consumers of one queue are one consumer of it.
+	work *queues
+
 	auth          *authService.Service
 	buildBackend  *backend.Service
 	buildFrontend *frontend.Service
@@ -100,6 +105,11 @@ type Node struct {
 	registerMu     sync.Mutex
 	registerClient *registerService.Client
 	registerAt     libp2ppeer.ID
+
+	// dispatchStop ends the queue claim loop and dispatchDone is closed when it
+	// has. Both are nil on a node that runs no dispatcher.
+	dispatchStop context.CancelFunc
+	dispatchDone chan struct{}
 
 	startMu   sync.Mutex
 	started   bool
@@ -266,6 +276,13 @@ func (n *Node) openWorker() error {
 	}
 	tiers := append([]invoke.Runtime(nil), n.opts.runtimes...)
 
+	// THE BACKINGS ARE BUILT WHETHER OR NOT A WASM TIER USES THEM, because the
+	// dispatcher reads the queue one from its own goroutine and a field
+	// created later would be a field written while it is being read. They open
+	// nothing until something reaches one.
+	n.workQueues()
+	n.busStreams()
+
 	// A DECLARED TIER IS BUILT HERE; an injected one was built by whoever
 	// composed this. Both end up in the same pool, and a node can have both —
 	// a container backend an operator named and a wasm engine the process
@@ -310,9 +327,6 @@ func (n *Node) openWorker() error {
 		servers := &databases{node: n}
 		n.closers = append(n.closers, servers)
 
-		work := &queues{node: n}
-		n.closers = append(n.closers, work)
-
 		// ONE VAULT FOR THE NODE, not one per consumer. It holds a stream to a
 		// remote secrets service and opening a second would be a second stream
 		// to the same peer; the worker below is handed this same value.
@@ -328,7 +342,7 @@ func (n *Node) openWorker() error {
 			wasm.WithKV(servers),
 			wasm.WithDocuments(servers),
 			wasm.WithVectors(servers),
-			wasm.WithQueues(work),
+			wasm.WithQueues(n.workQueues()),
 			wasm.WithSecrets(n.vault))
 		if err != nil {
 			return err
@@ -557,6 +571,24 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 
+	// THE QUEUE CLUSTER FORMS IN THE BACKGROUND from here, because raft's
+	// bootstrap waits up to thirty seconds for peers and a guest's first
+	// `queue.send` must not be what pays for that.
+	if n.work != nil {
+		n.work.form()
+	}
+
+	// THE DISPATCHER LAST, and only on a node that has both halves. It reads
+	// what the worker holds and claims from the queues this node opened, so a
+	// node running neither has nothing to drain — and one running a worker
+	// without raft opens no queue and simply finds none.
+	if n.worker != nil && n.opts.raft != nil {
+		loopCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
+		n.dispatchStop = stop
+		n.dispatchDone = make(chan struct{})
+		go (&dispatcher{node: n}).loop(loopCtx, n.dispatchDone)
+	}
+
 	n.started = true
 	return nil
 }
@@ -574,6 +606,13 @@ func (n *Node) Handler() http.Handler {
 // idempotent, and it closes what was built even when Start was never called.
 func (n *Node) Close() error {
 	n.closeOnce.Do(func() {
+		// THE CLAIM LOOP GOES FIRST AND IS WAITED FOR, because everything it
+		// touches is closed below it: a cycle still running while the queue
+		// group is torn down is a claim against a store that is going away.
+		if n.dispatchStop != nil {
+			n.dispatchStop()
+			<-n.dispatchDone
+		}
 		n.closeRegisterClient()
 		for i := len(n.closers) - 1; i >= 0; i-- {
 			if err := n.closers[i].Close(); err != nil && n.closeErr == nil {
@@ -638,10 +677,40 @@ func (n *Node) PubSub() stats.PubSub { return n.opts.pubsub }
 // StreamTopic carries.
 func (n *Node) BusTopic(handle string) string { return topicFor("bus", n.cfg.Cloud, handle) }
 
-// busStreams is this node's bus backing, opened on first use.
+// workQueues is this node's queue backing, built on first use by the wasm tier
+// that sends and by the dispatcher that claims.
+//
+// CONSTRUCTION ONLY, like busStreams. It writes a field and appends a closer,
+// and once Start has spawned the dispatcher that field is being read from
+// another goroutine — so openWorker asks for it whether or not this node has a
+// wasm tier, and nothing calls it afterwards.
+func (n *Node) workQueues() *queues {
+	if n.work == nil {
+		n.work = &queues{node: n}
+		n.closers = append(n.closers, n.work)
+	}
+	return n.work
+}
+
+// QueueDepth is what one of this node's queues holds: items waiting and items
+// claimed. A handle this node has never opened is not an error — it is a
+// question about something this node is not holding.
+//
+// IT IS FOR AN OPERATOR AND FOR A TEST, like Loaded and Held, and it reads
+// local state without a barrier — so on a follower it can lag. Nothing decides
+// anything on it.
+func (n *Node) QueueDepth(handle string) (ready, claimed int, ok bool) {
+	if n.work == nil {
+		return 0, 0, false
+	}
+	return n.work.Depth(handle)
+}
+
+// busStreams is this node's bus backing, built on first use.
 //
 // It is a method rather than a line in openWorker because both the wasm tier
-// and the gateway want it and a node may run either without the other.
+// and the gateway want it and a node may run either without the other. Like
+// workQueues it is CONSTRUCTION ONLY: it writes a field and appends a closer.
 func (n *Node) busStreams() *streams {
 	if n.bus == nil {
 		n.bus = &streams{node: n, kind: "bus"}

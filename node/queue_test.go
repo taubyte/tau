@@ -23,7 +23,25 @@ func sendGrant(handle string, settings map[string]string) invoke.Grant {
 func queueing(t *testing.T) *queues {
 	t.Helper()
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	return &queues{node: n}
+
+	// The node forms this in the background when it starts, because raft's
+	// bootstrap waits for peers and a guest's send must not pay for that. A
+	// test drives it directly and waits, because the mock cluster is instant
+	// and what is under test is what happens AFTER it forms.
+	q := &queues{node: n}
+	q.form()
+	<-q.forming
+	return q
+}
+
+// TestASendBeforeTheClusterHasFormedIsARetry, and not a missing queue: the
+// cloud's consensus for queues is still coming up, which is a condition that
+// clears on its own.
+func TestSendingBeforeTheClusterFormsIsRefused(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+
+	err := (&queues{node: n}).Send(t.Context(), sendGrant("shop/prod/QmJobs", nil), "1", []byte("x"))
+	require.ErrorIs(t, err, ErrQueuesForming)
 }
 
 // TestAnItemIsPushed, over the same replicated queue the build service runs
@@ -78,8 +96,29 @@ func TestEveryQueueSharesOneCluster(t *testing.T) {
 		require.NoError(t, q.Send(ctx, sendGrant(handle, nil), "1", []byte("x")))
 	}
 
-	require.Len(t, q.open, 3, "three queues")
+	require.Len(t, q.seen, 3, "three queues")
 	require.NotNil(t, q.group, "one group")
+}
+
+// TestARedeployThatCHANGESTheDeliveryBlockTakesEffECT. The handle carries the
+// resource id and an id does not change when its `max_attempts` does, so a
+// queue cached under the handle would keep enforcing the number from before
+// the redeploy until the node restarted.
+func TestAChangedDeliveryBlockIsNotPinnedByTheFirstOpen(t *testing.T) {
+	q := queueing(t)
+	ctx := t.Context()
+
+	require.NoError(t, q.Send(ctx, sendGrant("shop/prod/QmJobs", map[string]string{
+		"max_attempts": "3", "visibility_timeout": "45s",
+	}), "1", []byte("x")))
+
+	// The same handle, redeployed with a different ceiling.
+	held, err := q.queue(sendGrant("shop/prod/QmJobs", map[string]string{
+		"max_attempts": "9", "visibility_timeout": "10m",
+	}))
+	require.NoError(t, err)
+	require.EqualValues(t, 9, held.Config().MaxAttempts)
+	require.Equal(t, 10*time.Minute, held.Config().VisibilityTimeout)
 }
 
 // ── what the resource declared ───────────────────────────────────────────────
@@ -100,7 +139,9 @@ func TestTheDeclaredDeliveryIsUsed(t *testing.T) {
 	})
 	require.NoError(t, q.Send(t.Context(), grant, "1", []byte("x")))
 
-	cfg := q.open["shop/prod/QmJobs"].Config()
+	held, err := q.queue(grant)
+	require.NoError(t, err)
+	cfg := held.Config()
 	require.Equal(t, 45*time.Second, cfg.VisibilityTimeout)
 	require.Equal(t, 2*time.Second, cfg.Delay)
 	require.Equal(t, uint32(9), cfg.MaxAttempts)
@@ -117,9 +158,12 @@ func TestTheDeclaredDeliveryIsUsed(t *testing.T) {
 // this file inventing them.
 func TestNothingDeclaredIsTheDefaults(t *testing.T) {
 	q := queueing(t)
-	require.NoError(t, q.Send(t.Context(), sendGrant("shop/prod/QmJobs", nil), "1", []byte("x")))
+	grant := sendGrant("shop/prod/QmJobs", nil)
+	require.NoError(t, q.Send(t.Context(), grant, "1", []byte("x")))
 
-	cfg := q.open["shop/prod/QmJobs"].Config()
+	held, err := q.queue(grant)
+	require.NoError(t, err)
+	cfg := held.Config()
 	require.Positive(t, cfg.VisibilityTimeout)
 	require.Positive(t, cfg.MaxAttempts)
 	require.Contains(t, cfg.DeadLetter, "shop/prod/QmJobs", "its own name plus the suffix")
@@ -137,7 +181,9 @@ func TestADelayHoldsAnItemBack(t *testing.T) {
 	require.Zero(t, claimed)
 
 	// And nothing may claim it yet.
-	_, err := q.open["shop/prod/QmLater"].Claim()
+	held, err := q.queue(grant)
+	require.NoError(t, err)
+	_, err = held.Claim()
 	require.Error(t, err, "an item under its delay is not deliverable")
 }
 

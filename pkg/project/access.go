@@ -55,6 +55,16 @@ type Reach struct {
 	// mounting one volume can put it in different places, which is what
 	// mountAttributes exists for.
 	Path string
+
+	// DeliverPort and DeliverPath are where the platform POSTS an item for a
+	// verb the platform delivers — a queue's `receive`, a stream's `subscribe`.
+	//
+	// ON THE ENTRY FOR THE SAME REASON Path IS: one container can consume two
+	// queues on two paths, and the entry is where that is already written. A
+	// WASM consumer needs neither — it is dispatched and has no port — so both
+	// are ordinarily empty and the platform calls the workload's entrypoint.
+	DeliverPort string
+	DeliverPath string
 }
 
 // target is the name to look the reach up under.
@@ -96,6 +106,8 @@ func (r Resource) Reaches(kind string) []Reach {
 		}
 		reach.Timeout, _ = entry.Duration("timeout")
 		reach.Path = entry.String("path")
+		reach.DeliverPort = entry.String("deliver", "port")
+		reach.DeliverPath = entry.String("deliver", "path")
 		out = append(out, reach)
 	}
 

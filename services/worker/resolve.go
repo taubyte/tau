@@ -183,7 +183,7 @@ func settingsFor(kind string, reach project.Reach, target project.Resource) map[
 	case databaseKind:
 		return databaseSettings(target)
 	case queueKind:
-		return queueSettings(target)
+		return queueSettings(reach, target)
 	}
 	return nil
 }
@@ -193,7 +193,7 @@ func settingsFor(kind string, reach project.Reach, target project.Resource) map[
 //
 // THE DEAD LETTER IS A REFERENCE and its compiled value is another queue's id,
 // which is what a consumer opens to drain it.
-func queueSettings(target project.Resource) map[string]string {
+func queueSettings(reach project.Reach, target project.Resource) map[string]string {
 	out := map[string]string{}
 
 	for _, path := range [][]string{
@@ -211,6 +211,15 @@ func queueSettings(target project.Resource) map[string]string {
 	}
 	if name := target.String("dead_letter", "name"); name != "" {
 		out["dead_letter/name"] = name
+	}
+
+	// WHERE AN ITEM IS POSTED comes from the ENTRY, because it is per use: one
+	// container consuming two queues answers them on two paths.
+	if port := reach.DeliverPort; port != "" {
+		out[settingDeliverPort] = port
+	}
+	if path := reach.DeliverPath; path != "" {
+		out[settingDeliverPath] = path
 	}
 
 	if len(out) == 0 {
@@ -361,6 +370,10 @@ const (
 	settingSize      = "keys/size"
 	settingQuota     = "quota"
 	settingMountPath = "path"
+
+	// Where the platform posts an item to a consumer that has no host ABI.
+	settingDeliverPort = "deliver/port"
+	settingDeliverPath = "deliver/path"
 
 	// settingType is a database's data model, and the prefix every other
 	// connection setting is filed under.
