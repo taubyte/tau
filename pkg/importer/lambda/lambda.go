@@ -386,20 +386,21 @@ func importFunction(r *importer.Result, x fn) {
 	}
 
 	if x.container {
-		// A LAMBDA CONTAINER IMAGE IS THE HARDER ONE, not the easier one. It
-		// embeds AWS's runtime interface client, which polls an endpoint for
-		// work rather than listening for a request.
+		// A LAMBDA CONTAINER IMAGE POLLS FOR WORK rather than listening for a
+		// request, and this platform SPEAKS THAT PROTOCOL — the container tier
+		// serves the Lambda Runtime API on a loopback port and puts its address
+		// in AWS_LAMBDA_RUNTIME_API, so the image runs unmodified with nothing
+		// injected into it.
 		//
-		// IT IS STILL EMITTED, with its image, as an `application` on the
-		// container tier — because the alternative was a wasm `function` with
-		// nothing to run and the image thrown away. What it will not do is
-		// serve, and that is what this says.
-		r.Add(importer.Finding{Resource: name, Key: "image", Level: importer.Blocked,
-			Code:  "IMAGE_POLLS_FOR_WORK",
-			Needs: "a runtime-interface shim in front of the image",
-			Detail: "a Lambda container image embeds AWS's runtime client and polls an endpoint for work; it does " +
-				"not listen for a request, so it starts here and serves nothing until something speaks the " +
-				"runtime interface to it"})
+		// WHAT IS LEFT IS THE EVENT'S SHAPE, and it is a real difference rather
+		// than a caveat: a handler written for an S3 notification or an SQS
+		// batch will not recognise what arrives.
+		r.Add(importer.Finding{Resource: name, Key: "image", Level: importer.Approximated,
+			Code: "IMAGE_INVOKED_OVER_HTTP",
+			Detail: "this image polls the Lambda Runtime API, which the container tier serves — so it runs " +
+				"unmodified. It is invoked over HTTP and the event is API Gateway payload format 2.0, the shape " +
+				"a Function URL delivers; a handler written for an S3, SQS or EventBridge event will not " +
+				"recognise it. There is no extensions API and no function ARN"})
 	}
 
 	if x.snapStart {

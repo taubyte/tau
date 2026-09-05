@@ -135,8 +135,13 @@ Resources:
 	require.Equal(t, "CLOUDFORMATION_INTRINSIC", finding(t, r, "Api", "environment.QUEUE_URL").Code)
 }
 
-// TestAContainerImageIsTheHarderOneNotTheEasier. It embeds AWS's runtime client
-// and polls for work; it does not listen for a request.
+// TestAContainerImageRunsAndSaysWhatDiffers.
+//
+// It embeds AWS's runtime client and polls for work rather than listening —
+// which used to make it the one import this platform could not finish. The
+// container tier now serves the Lambda Runtime API, so the image runs
+// unmodified; what is left is the shape of the event it receives, and that is
+// a real difference rather than a caveat.
 func TestAContainerImageIsTheHarderOneNotTheEasier(t *testing.T) {
 	r := importOf(t, `
 Resources:
@@ -147,9 +152,11 @@ Resources:
       ImageUri: 1234.dkr.ecr.us-east-1.amazonaws.com/app:1
 `)
 	f := finding(t, r, "Img", "image")
-	require.Equal(t, importer.Blocked, f.Level)
-	require.Equal(t, "IMAGE_POLLS_FOR_WORK", f.Code)
-	require.Contains(t, f.Detail, "polls")
+	require.Equal(t, importer.Approximated, f.Level, "it runs")
+	require.Equal(t, "IMAGE_INVOKED_OVER_HTTP", f.Code)
+	require.Contains(t, f.Detail, "polls the Lambda Runtime API")
+	require.Contains(t, f.Detail, "runs unmodified")
+	require.Contains(t, f.Detail, "API Gateway payload format 2.0")
 }
 
 // TestSnapStartIsFlaggedLoudly. Nothing else in the manifest reveals that a

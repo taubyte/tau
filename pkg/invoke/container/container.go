@@ -334,16 +334,26 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		}
 	}
 
-	id, err := e.opts.backend.Create(ctx, e.config(img, port))
+	// THE RUNTIME API IS BOUND BEFORE THE CONTAINER IS CREATED, because the
+	// client polls as soon as it starts and an address that is not listening
+	// yet is a client that backs off.
+	api, err := newLambdaAPI()
 	if err != nil {
+		return nil, err
+	}
+
+	id, err := e.opts.backend.Create(ctx, e.config(img, port, api.address()))
+	if err != nil {
+		api.Close()
 		return nil, fmt.Errorf("container: creating %s: %w", img.Ref, err)
 	}
 
 	inst := &instance{
-		eng:  e,
-		id:   id,
-		port: port,
-		spec: spec,
+		eng:    e,
+		id:     id,
+		port:   port,
+		spec:   spec,
+		lambda: api,
 	}
 
 	if err := e.opts.backend.Start(ctx, id); err != nil {
@@ -371,8 +381,8 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 // endpoint, loopback and the private network — while leaving the public internet
 // reachable, because a function that cannot make an outbound call is not a
 // serverless function. It is fail-closed in the backend: no firewall, no start.
-func (e *Runtime) config(img Image, port int) *core.ContainerConfig {
-	env := make([]string, 0, len(img.Env)+1)
+func (e *Runtime) config(img Image, port int, runtimeAPI string) *core.ContainerConfig {
+	env := make([]string, 0, len(img.Env)+2)
 	for k, v := range img.Env {
 		if k == "PORT" {
 			// Refused rather than honoured: the engine dials the port it
@@ -384,6 +394,14 @@ func (e *Runtime) config(img Image, port int) *core.ContainerConfig {
 		env = append(env, k+"="+v)
 	}
 	env = append(env, "PORT="+strconv.Itoa(port))
+
+	// THE LAMBDA RUNTIME API'S ADDRESS IS ALWAYS SET, and an image that is not
+	// a Lambda ignores a variable it does not read. Setting it only for images
+	// somebody declared to be Lambdas would mean asking an author to describe
+	// an image they did not build.
+	if runtimeAPI != "" {
+		env = append(env, "AWS_LAMBDA_RUNTIME_API="+runtimeAPI)
+	}
 
 	cfg := &core.ContainerConfig{
 		Image:   img.Ref,
@@ -439,6 +457,16 @@ type instance struct {
 	port int
 	spec invoke.Spec
 
+	// lambda is this instance's Lambda Runtime API. It is always bound and
+	// mostly unused: which of the two shapes an image is cannot be known before
+	// it runs, so the address is always in the environment and whichever signal
+	// arrives first decides. See lambda.go.
+	lambda *lambdaAPI
+
+	// polls is set when the runtime client polled before the container
+	// listened, which is what makes this a Lambda image rather than a server.
+	polls bool
+
 	mu     sync.Mutex
 	closed bool
 }
@@ -447,7 +475,10 @@ var _ invoke.Instance = (*instance)(nil)
 
 func (i *instance) addr() string { return "127.0.0.1:" + strconv.Itoa(i.port) }
 
-// waitReady dials until the container accepts, or the budget runs out.
+// waitReady waits for EITHER signal: the container accepting on its port, or
+// the Lambda runtime client asking for work. Whichever comes first is what this
+// image is, and there is no third state — a container that does neither runs out
+// of budget exactly as it did before.
 //
 // IT ALSO WATCHES FOR THE CONTAINER DYING. An image whose entrypoint exits
 // immediately — a bad command, a missing file, a crash on boot — would otherwise
@@ -460,6 +491,14 @@ func (i *instance) waitReady(ctx context.Context) error {
 	defer t.Stop()
 
 	for {
+		select {
+		case <-i.lambda.polled:
+			// A LAMBDA IMAGE, and it is ready the moment it asks for work.
+			i.polls = true
+			return nil
+		default:
+		}
+
 		conn, err := i.eng.opts.dial(ctx, "tcp", i.addr())
 		if err == nil {
 			conn.Close()
@@ -474,9 +513,13 @@ func (i *instance) waitReady(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-i.lambda.polled:
+			i.polls = true
+			return nil
 		case <-t.C:
 			if time.Now().After(deadline) {
-				return fmt.Errorf("%w on %s within %s", ErrNotReady, i.addr(), i.eng.opts.readyTimeout)
+				return fmt.Errorf("%w on %s within %s, and nothing polled the lambda runtime api either",
+					ErrNotReady, i.addr(), i.eng.opts.readyTimeout)
 			}
 		}
 	}
@@ -500,6 +543,10 @@ func (i *instance) Serve(ctx context.Context, req *invoke.Request) (*invoke.Resp
 	}
 	if req == nil {
 		req = &invoke.Request{}
+	}
+
+	if i.polls {
+		return i.serveLambda(ctx, req)
 	}
 
 	method := req.Method
@@ -562,9 +609,29 @@ func (i *instance) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), i.eng.opts.stopTimeout)
 	defer cancel()
 
+	// THE RUNTIME API GOES FIRST, so a client blocked on a long poll is
+	// released rather than held while the container is stopped.
+	apiErr := i.lambda.Close()
 	stopErr := i.eng.opts.backend.Stop(ctx, i.id)
 	removeErr := i.eng.opts.backend.Remove(ctx, i.id)
-	return errors.Join(stopErr, removeErr)
+	return errors.Join(apiErr, stopErr, removeErr)
+}
+
+// serveLambda renders the request as an event, hands it to the polling client,
+// and reads back what the handler returned.
+func (i *instance) serveLambda(ctx context.Context, req *invoke.Request) (*invoke.Response, error) {
+	id := requestID()
+
+	event, err := lambdaEvent(req, id)
+	if err != nil {
+		return nil, fmt.Errorf("container: rendering the event for %s: %w", i.spec.Name, err)
+	}
+
+	result, err := i.lambda.invoke(ctx, id, event)
+	if err != nil {
+		return nil, err
+	}
+	return lambdaResponse(result), nil
 }
 
 // egressGap says out loud that this tier cannot narrow what a resource

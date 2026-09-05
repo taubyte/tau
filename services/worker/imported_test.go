@@ -258,19 +258,18 @@ func TestTwoImportsBecomeOneRunnableProject(t *testing.T) {
 	require.Greater(t, len(specs), 1, "both platforms' workloads are there")
 }
 
-// TestALambdaImageStartsOnTheContainerTierAndSaysWhatItWillNotDo.
+// TestALambdaImageRunsOnTheContainerTier.
 //
 // A container-packaged Lambda is the reason the container engine exists as a
-// serverless tier at all, and it is also the one import this platform CANNOT
-// finish: the image embeds AWS's runtime interface client, which polls an
-// endpoint for work rather than listening for a request. So it starts and
-// serves nothing.
+// serverless tier at all, and it used to be the one import this platform could
+// not finish: the image embeds AWS's runtime interface client, which polls for
+// work rather than listening. The tier now serves that protocol
+// (pkg/invoke/container/lambda.go), so the image runs unmodified.
 //
-// WHAT IS ASSERTED IS BOTH HALVES. The resource is emitted, on the right tier,
-// with the image the file named — because emitting a wasm `function` with the
-// image thrown away was the previous behaviour and it lost the only thing the
-// file said about what runs. And the refusal is reported by name, so nobody
-// discovers it by deploying.
+// WHAT IS ASSERTED IS BOTH HALVES. The resource is emitted on the right tier
+// with the image the file named — and what still DIFFERS is reported, because
+// the event a handler receives is an HTTP one and a handler written for an S3
+// notification will not recognise it.
 func TestALambdaImageStartsOnTheContainerTier(t *testing.T) {
 	result, err := lambda.Import([]byte(theSAMTemplate))
 	require.NoError(t, err)
@@ -288,15 +287,18 @@ func TestALambdaImageStartsOnTheContainerTier(t *testing.T) {
 	}
 	require.True(t, sawContainer, "a Lambda image runs on the container tier: %v", specs)
 
-	// AND IT SAYS WHAT IT WILL NOT DO. An import that started something which
-	// answers nothing, without saying so, is worse than one that refused.
-	var blocked bool
+	// AND IT SAYS WHAT STILL DIFFERS. An import that runs but hands a handler
+	// an event it was never written for fails inside the handler, where the
+	// reason is hardest to see.
+	var reported bool
 	for _, f := range result.Findings {
-		if f.Code == "IMAGE_POLLS_FOR_WORK" {
-			blocked = true
-			require.Equal(t, importer.Blocked, f.Level)
-			require.Contains(t, f.Detail, "serves nothing")
+		if f.Code == "IMAGE_INVOKED_OVER_HTTP" {
+			reported = true
+			require.Equal(t, importer.Approximated, f.Level, "it runs")
+			require.Contains(t, f.Detail, "runs unmodified")
+			require.Contains(t, f.Detail, "API Gateway payload format 2.0")
+			require.Contains(t, f.Detail, "S3", "and which handlers will not recognise it")
 		}
 	}
-	require.True(t, blocked, "the one thing this cannot do was not reported")
+	require.True(t, reported, "what still differs was not reported")
 }
