@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/project"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -54,6 +55,12 @@ type Schedule struct {
 	// Fires is every target this cron edges to, in the form Invoke takes.
 	Fires []Target
 
+	// Starts is every workflow it begins a run of, as the grant that says
+	// where a start lands. A cron that starts a pipeline is the ordinary shape
+	// — the fixture's own does it — and starting one is a SEND rather than an
+	// invocation, so it cannot travel as a Target.
+	Starts []invoke.Grant
+
 	// Refused, when set, is why this cloud will not fire it — and it names the
 	// target rather than the cron, for the reason a grant does.
 	Refused string
@@ -101,11 +108,15 @@ func schedulesIn(proj *project.Project, name, environment string, scope []string
 		}
 	}
 
-	namespaces, err := proj.Namespaces(scope)
+	// EVERY SCOPE AND NOT ONLY EVERY NAMESPACE. A kind that lowers becomes a
+	// container of what it produced — a workflow holds its steps' queues and
+	// drivers — and a walk that asked for namespaces walked straight past all
+	// of them.
+	scopes, err := proj.Scopes(scope)
 	if err != nil {
 		return out
 	}
-	for _, namespace := range namespaces {
+	for _, namespace := range scopes {
 		out = append(out, schedulesIn(proj, name, environment, append(append([]string{}, scope...), namespace))...)
 	}
 	return out
@@ -141,6 +152,21 @@ func scheduleOf(proj *project.Project, name, environment string, scope []string,
 	// expected to name.
 	for _, kind := range schema.Kinds() {
 		for _, reach := range resource.Reaches(kind) {
+			// A WORKFLOW IS STARTED AND NOT INVOKED. It runs on no tier — it is
+			// queues — so firing it means sending to its first step, and the
+			// grant the composer built already carries where that is.
+			if kind == workflowKind && contains(reach.Ops, opStart) {
+				grant, err := startGrant(proj, name, environment, scope, reach)
+				if err != nil {
+					if out.Refused == "" {
+						out.Refused = err.Error()
+					}
+					continue
+				}
+				out.Starts = append(out.Starts, grant)
+				continue
+			}
+
 			if why := unfireable(kind, reach); why != "" {
 				if out.Refused == "" {
 					out.Refused = why
@@ -157,12 +183,36 @@ func scheduleOf(proj *project.Project, name, environment string, scope []string,
 		}
 	}
 
-	if len(out.Fires) == 0 && out.Refused == "" {
+	if len(out.Fires) == 0 && len(out.Starts) == 0 && out.Refused == "" {
 		// A cron that edges to nothing is a clock nobody set an alarm on. It is
 		// legal and it is not something to run a loop for.
 		return Schedule{}, false
 	}
 	return out, true
+}
+
+// startGrant is the grant a cron spends to begin a run, built the same way a
+// workload's is — through the workflow's own `entry/start` record, so the two
+// callers cannot disagree about where a start lands.
+func startGrant(proj *project.Project, name, environment string, scope []string, reach project.Reach) (invoke.Grant, error) {
+	target, id, err := proj.Reached(scope, reach)
+	if err != nil {
+		return invoke.Grant{}, err
+	}
+
+	grant := invoke.Grant{
+		Kind:   reach.Kind,
+		Label:  reach.Label,
+		Handle: project.Handle(name, environment, id),
+		Ops:    reach.Ops,
+	}
+	if err := startedBy(proj, Target{Project: name, Environment: environment}, target, id, &grant); err != nil {
+		return invoke.Grant{}, err
+	}
+	if grant.Refused != "" {
+		return invoke.Grant{}, fmt.Errorf("%s", grant.Refused)
+	}
+	return grant, nil
 }
 
 // unfireable says why a target cannot be invoked on a tick, or "" when it can.

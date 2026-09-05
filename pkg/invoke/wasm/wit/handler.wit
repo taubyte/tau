@@ -305,6 +305,44 @@ interface vector {
     delete: func(name: string, id: string) -> result<_, error>;
 }
 
+// Starting a run of a pipeline, as the vocabulary's `workflow` kind.
+//
+// # One verb, because a workflow has one
+//
+// `start` is the whole of what a caller may do to a workflow. There is no
+// cancel and no status: a run's state is the MESSAGE — what it carries travels
+// from one step's queue to the next, and which queue it is in is which step it
+// is at — so there is nothing to read and nothing to stop that is not an item
+// sitting in a queue.
+//
+// # It is not `queue.send` with a nicer name
+//
+// A workflow lowers to one queue per step, and starting one IS sending to the
+// first step's queue. But which queue that is, is the WORKFLOW's to say — it
+// records it on itself, so no caller works it out from a name — and an author
+// who wrote `workflow: checkout: {ops: [start]}` granted a workflow and not a
+// queue. Spending that grant through the queue interface would let a caller
+// reach any step of the pipeline directly, which is a different permission.
+//
+// # The id is the run's, and it is the caller's
+//
+// Starting the same id twice is one run: the queue underneath deduplicates, so
+// a producer that could not tell whether its start landed may repeat it. A
+// caller with nothing natural to use should send something it can reproduce —
+// the order this run is about, not a fresh random.
+interface workflow {
+    variant error {
+        no-such-workflow(string),
+        denied(string),
+        // The node that took the call is not the one that may write, which is
+        // the queue's own rule. A caller retries this.
+        not-writable(string),
+        unavailable(string),
+    }
+
+    start: func(name: string, id: string, input: list<u8>) -> result<_, error>;
+}
+
 // Object storage, as the vocabulary's `storage` kind at `type: object`.
 //
 // # Content-addressed underneath, named on top
@@ -456,6 +494,7 @@ interface bus {
 }
 
 world handler {
+    import workflow;
     import storage;
     import bus;
     import secret;

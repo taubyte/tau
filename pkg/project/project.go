@@ -52,6 +52,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -271,20 +272,85 @@ func (p *Project) under(cursor []string, depth int) [][]string {
 // IT GOES THROUGH THE INDEX RATHER THAN THE OBJECT, because the object is keyed
 // by id and the caller has names. That is exactly what the index is for, and
 // doing it any other way would mean scanning every namespace for its `name`.
+// scopeCursor turns a chain of scope NAMES into the index segments they are
+// keyed by.
+//
+// A SCOPE IS NOT ALWAYS A NAMESPACE. Every level of the index is
+// `<scope-kind>/<id>`, and the scope-kind is `namespace` only for a namespace:
+// a kind that LOWERS becomes a container of its own, so a workflow's produced
+// queues live under `workflow/<id>/queue/<name>`. Assuming the literal
+// `namespace` here is what made every resource a lowering produced — every
+// workflow step's queue and driver, every agent's loop and memory —
+// unreachable from the read path while the compiler emitted them correctly.
 func (p *Project) scopeCursor(scope []string) ([]string, error) {
 	cursor := []string{projectsSeg, p.id}
 	for _, name := range scope {
-		links := p.index[strings.Join(append(append([]string{}, cursor...), namespaceSeg, name), "/")]
-		if len(links) == 0 {
-			return nil, fmt.Errorf("%w: namespace %q", ErrNotFound, strings.Join(scope, "/"))
+		kind, id, ok := p.scopeAt(cursor, name)
+		if !ok {
+			return nil, fmt.Errorf("%w: scope %q", ErrNotFound, strings.Join(scope, "/"))
 		}
-		id := lastSegment(links[len(links)-1])
 		if id == "" {
-			return nil, fmt.Errorf("%w: namespace %q", ErrBadIndex, name)
+			return nil, fmt.Errorf("%w: scope %q", ErrBadIndex, name)
 		}
-		cursor = append(cursor, namespaceSeg, id)
+		cursor = append(cursor, kind, id)
 	}
 	return cursor, nil
+}
+
+// scopeAt is the scope one name refers to at this cursor: which kind of
+// container it is, and its id.
+//
+// THE NAMESPACE IS TRIED FIRST and the rest in a fixed order, so a project with
+// a namespace and a workflow of one name resolves the same way on every node.
+// The compiler refuses that collision (checkCollisions); the order is here so
+// that a compiled object which somehow carries one is not resolved by map walk.
+func (p *Project) scopeAt(cursor []string, name string) (kind, id string, ok bool) {
+	for _, candidate := range scopeKinds() {
+		links := p.index[strings.Join(append(append([]string{}, cursor...), candidate, name), "/")]
+		if len(links) == 0 {
+			continue
+		}
+		return candidate, lastSegment(links[len(links)-1]), true
+	}
+	return "", "", false
+}
+
+// scopeKinds is every kind that may be a scope, the namespace first.
+//
+// It is read off the vocabulary rather than listed here, so a kind that gains a
+// lowering becomes addressable without a second edit — which is the failure
+// this function exists because of.
+var scopeKinds = sync.OnceValue(func() []string {
+	out := []string{namespaceSeg}
+	for _, kind := range schema.ScopeKindNames() {
+		if kind != namespaceSeg {
+			out = append(out, kind)
+		}
+	}
+	return out
+})
+
+// Scopes are the names of every scope container directly under one scope,
+// whatever KIND of container each is.
+//
+// IT IS NOT Namespaces. A walk of the whole project — what should this node be
+// draining, what should it be firing — has to descend into a workflow's own
+// scope as readily as into a namespace, and one that asked only for namespaces
+// walked past every resource a lowering produced.
+func (p *Project) Scopes(scope []string) ([]string, error) {
+	cursor, err := p.scopeCursor(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []string
+	for _, kind := range scopeKinds() {
+		for _, tail := range p.under(append(append([]string{}, cursor...), kind), 1) {
+			out = append(out, tail[0])
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // at reads one resource at exactly this scope, with no outward walk.

@@ -79,8 +79,36 @@ func TestTwoConsumersOfOneQueueShareItsHandle(t *testing.T) {
 	holding(t, h, "function", "checkout")
 
 	all := consumersOf(t, h)
-	require.Len(t, all, 2)
 	require.Equal(t, all["relay"].Queue.Handle, all["worker_pool"].Queue.Handle)
+}
+
+// TestAWORKFLOWSStepsAreConsumersToo, and they are the reason the walk descends
+// into a scope that is not a namespace.
+//
+// A workflow LOWERS to one queue and one driver per step, indexed under the
+// workflow itself — `workflow/<id>/queue/checkout_reserve`. Nothing found them
+// until the read path stopped assuming every scope segment was a `namespace`,
+// so a workflow compiled, deployed, and had every step's queue drained by
+// nobody.
+func TestAWorkflowsStepDriversAreFound(t *testing.T) {
+	h := newHarness(t)
+	holding(t, h, "function", "checkout")
+
+	all := consumersOf(t, h)
+	for _, step := range []string{"checkout_reserve", "checkout_charge", "checkout_settle"} {
+		got, ok := all[step]
+		require.True(t, ok, "%s was not found: %v", step, all)
+		require.Equal(t, []string{"checkout"}, got.Target.Scope, "it lives inside the workflow")
+		require.Equal(t, step, got.Queue.Label, "and receives from the queue of its own name")
+	}
+
+	// THE RETRY BUDGET IS THE STEP'S, which is the whole reason the lowering
+	// gives each one its own queue rather than sharing.
+	require.Equal(t, "4", all["checkout_reserve"].Queue.Settings["max_attempts"])
+	require.Equal(t, "1", all["checkout_charge"].Queue.Settings["max_attempts"])
+
+	// AND A STEP THAT WAITS IS A QUEUE THAT HOLDS ITS WORK BACK.
+	require.Equal(t, "30s", all["checkout_settle"].Queue.Settings["delay"])
 }
 
 // TestAWorkloadThatOnlySENDSIsNotAConsumer. `send` is a host function the guest

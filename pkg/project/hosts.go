@@ -73,6 +73,21 @@ func Handle(project, environment, id string) string {
 	return strings.Join([]string{project, environment, id}, "/")
 }
 
+// Locate is where a resource id lives: its kind, the scope chain it is in, and
+// its name.
+//
+// IT IS THE INDEX READ BACKWARDS, which the package already builds for its own
+// hosts walk. A consumer holding an ID — a resolved reference, a lowering's
+// produced scope — needs the other direction, and working it out by walking
+// every scope is the search the index exists to avoid.
+func (p *Project) Locate(id string) (kind string, scope []string, name string, ok bool) {
+	where, held := p.located[id]
+	if !held {
+		return "", nil, "", false
+	}
+	return where.kind, where.scope, where.name, true
+}
+
 // Hosts is every name this project answers on, sorted.
 //
 // It is a WALK and not a lookup, and it runs once: the result is memoized
@@ -146,12 +161,22 @@ type where struct {
 // a consumer holding an id — a resolved reference, a reachable name — needs the
 // other direction. Both come out of the same table, so they cannot disagree.
 func locate(index map[string][]string, projectID string) map[string]where {
-	// namespace ids to their names first, so a scope can be reported the way an
+	scopes := map[string]bool{}
+	for _, kind := range scopeKinds() {
+		scopes[kind] = true
+	}
+
+	// scope ids to their names first, so a scope can be reported the way an
 	// author writes it rather than as a chain of ids.
+	//
+	// EVERY KIND THAT IS A SCOPE, not only `namespace`: a workflow is a
+	// container of the queues and drivers it lowered to, and reading only
+	// namespaces here reported every one of them as sitting at the project
+	// root — under the keys the root's own resources use.
 	names := map[string]string{}
 	for key, links := range index {
 		seg := strings.Split(key, "/")
-		if len(seg) < 2 || seg[len(seg)-2] != namespaceSeg {
+		if len(seg) < 2 || !scopes[seg[len(seg)-2]] {
 			continue
 		}
 		names[lastSegment(links[len(links)-1])] = seg[len(seg)-1]
@@ -172,7 +197,7 @@ func locate(index map[string][]string, projectID string) map[string]where {
 
 		w := where{kind: seg[len(seg)-2], name: seg[len(seg)-1]}
 		for i := 0; i+1 < len(seg)-2; i += 2 {
-			if seg[i] != namespaceSeg {
+			if !scopes[seg[i]] {
 				break
 			}
 			w.scope = append(w.scope, names[seg[i+1]])

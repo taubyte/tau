@@ -52,6 +52,21 @@ type Consumer struct {
 	// declared; a workload that declared none is called at "/".
 	Path string
 
+	// Builtin is the platform program this consumer runs, empty for ordinary
+	// code. A workflow step's driver is one.
+	Builtin string
+
+	// Invokes is what a builtin driver was granted `invoke` on, resolved into
+	// addresses. It is filled here rather than worked out downstream because
+	// the compiled grant carries a LABEL and a namespace, and turning those
+	// into an address needs the project — which this walk has open and a
+	// dispatcher does not.
+	Invokes []Target
+
+	// Sends is what it was granted `send` on: for a step driver, the next
+	// step's queue. The last step has none, which is exactly where a run ends.
+	Sends []invoke.Grant
+
 	// Concurrency is how many items this workload may hold at once, off its
 	// own `limits/concurrency`.
 	//
@@ -126,11 +141,15 @@ func (s *Service) consumersIn(ctx context.Context, proj *project.Project, name, 
 		}
 	}
 
-	namespaces, err := proj.Namespaces(scope)
+	// EVERY SCOPE AND NOT ONLY EVERY NAMESPACE. A kind that lowers becomes a
+	// container of what it produced — a workflow holds its steps' queues and
+	// drivers — and a walk that asked for namespaces walked straight past all
+	// of them.
+	scopes, err := proj.Scopes(scope)
 	if err != nil {
 		return out
 	}
-	for _, namespace := range namespaces {
+	for _, namespace := range scopes {
 		out = append(out, s.consumersIn(ctx, proj, name, environment, append(append([]string{}, scope...), namespace))...)
 	}
 	return out
@@ -177,10 +196,58 @@ func (s *Service) consumersOf(ctx context.Context, proj *project.Project, name, 
 			Queue:       grant,
 			Path:        deliverPath(reach.DeliverPath),
 			Concurrency: spec.Concurrency,
+			Builtin:     spec.Builtin,
+			Invokes:     invokedBy(resource, name, environment, scope),
+			Sends:       sentToBy(spec, grant.Label),
 		})
 	}
 	return out
 }
+
+// invokedBy is every function this resource may invoke, as an address.
+//
+// A DRIVER IS PLATFORM CODE AND THE FUNCTION IS THE AUTHOR'S. What the lowering
+// grants a step's driver is `invoke` on exactly the function the step named, so
+// this is one entry for a step and is a list because nothing about the shape
+// says it has to be.
+func invokedBy(resource project.Resource, name, environment string, scope []string) []Target {
+	var out []Target
+	for _, reach := range resource.Reaches(functionKind) {
+		if !contains(reach.Ops, opInvoke) {
+			continue
+		}
+		out = append(out, Target{
+			Project: name, Environment: environment,
+			Scope: project.ScopeOf(scope, reach.Namespace),
+			Kind:  functionKind, Name: reach.Target(),
+		})
+	}
+	return out
+}
+
+// sentToBy is every queue this resource may send to, except the one it receives
+// from.
+//
+// THE EXCEPTION IS THE POINT. A step driver holds two queue grants — its own,
+// to receive from, and the next step's, to hand on to — and a driver that sent
+// to its own would be a run that never leaves the step it is on.
+func sentToBy(spec invoke.Spec, receiving string) []invoke.Grant {
+	var out []invoke.Grant
+	for _, g := range spec.Reaches {
+		if g.Kind != queueKind || g.Label == receiving || !g.Allows(opSend) {
+			continue
+		}
+		out = append(out, g)
+	}
+	return out
+}
+
+// The vocabulary's own words for what a driver is granted.
+const (
+	functionKind = "function"
+	opInvoke     = "invoke"
+	opSend       = "send"
+)
 
 // deliverPath is where an item is posted. A workload that declared none is
 // called at the root, which is what a WASM consumer wants — it is dispatched

@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/project"
 )
 
 // schedule_test is the cron half of the enumeration, against the vocabulary's
@@ -58,17 +60,35 @@ func TestACronsTargetsComeOffItsAccessBlock(t *testing.T) {
 	require.Equal(t, "prod", got.Fires[0].Environment)
 }
 
-// TestATargetNothingRunsIsSAIDRatherThanDropped. The fixture's cron also starts
-// a workflow, and nothing in this cloud runs one — so the cron still fires its
-// function and the reason the other edge does nothing is on the schedule.
-func TestAnUnrunnableTargetIsReported(t *testing.T) {
+// TestACRONMayStartAWorkflow, which is what the fixture's own does — and a
+// workflow is STARTED rather than invoked, because it runs on no tier: it is
+// queues, and a start is a send to the first step's.
+func TestACronStartsAWorkflow(t *testing.T) {
 	h := newHarness(t)
 	holding(t, h, "function", "checkout")
 
 	got := schedulesOf(t, h)["nightly"]
-	require.NotEmpty(t, got.Refused)
-	require.Contains(t, got.Refused, "workflow")
-	require.NotEmpty(t, got.Fires, "and the edge that CAN be fired still is")
+	require.Empty(t, got.Refused, "both of its edges are servable now")
+	require.Len(t, got.Starts, 1)
+
+	start := got.Starts[0]
+	require.Equal(t, "checkout", start.Label)
+	require.Equal(t, "queue", start.Settings[settingStartKind])
+	require.NotEmpty(t, start.Settings[settingStartHandle],
+		"where a start lands, off the workflow's own entry record")
+	require.Equal(t, "send", start.Settings[settingStartAs])
+
+	// AND THE HANDLE IS THE FIRST STEP'S QUEUE and not the workflow's own,
+	// which is the whole point of the entry record.
+	require.NotContains(t, start.Settings[settingStartHandle], start.Handle[len("shop/prod/"):])
+}
+
+// TestATargetNothingRunsIsSAIDRatherThanDropped, which is still the answer for
+// a kind that runs on nothing and is not started either.
+func TestAnUnrunnableTargetIsReported(t *testing.T) {
+	require.Contains(t,
+		unfireable("log", project.Reach{Kind: "log", Label: "audit"}),
+		"nothing in this cloud runs a log")
 }
 
 // TestACronThatEdgesToNothingIsNotAScheduleToRun. A clock nobody set an alarm
@@ -78,6 +98,7 @@ func TestACronWithNoEdgesIsNotListed(t *testing.T) {
 	holding(t, h, "function", "checkout")
 
 	for _, s := range h.Worker.Schedules(t.Context()) {
-		require.NotEmpty(t, s.Fires, "%s is listed with nothing to fire", s.Name)
+		require.False(t, len(s.Fires) == 0 && len(s.Starts) == 0,
+			"%s is listed with nothing to fire or start", s.Name)
 	}
 }

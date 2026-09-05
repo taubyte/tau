@@ -134,6 +134,17 @@ type Spec struct {
 	// tier sets PORT — and may not have it overridden.
 	Env map[string]string
 
+	// Builtin is the platform program this workload runs, empty for ordinary
+	// code.
+	//
+	// IT IS NOT AN ARTIFACT AND HAS NONE. `source: {kind: builtin}` says the
+	// program is one the runtime itself ships — a workflow step's driver, an
+	// agent's loop — so there is nothing for a build service to have produced
+	// and nothing for a store to hold. A resource carrying one that reached the
+	// artifact seam would be asked for the output of a build that never
+	// happened.
+	Builtin string
+
 	// Reaches is what this workload declared it may touch: the compiled
 	// `cache:`, `database:`, `storage:` blocks, one entry per target.
 	//

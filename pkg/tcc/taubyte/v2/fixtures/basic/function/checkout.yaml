@@ -28,3 +28,6 @@ database:
 log:
     audit:
         ops: [append]
+workflow:
+    checkout:
+        ops: [start]

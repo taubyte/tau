@@ -13,7 +13,7 @@
 mod bindings;
 
 use bindings::taubyte::handler::{
-    bus, cache, database, document, kv, queue, secret, storage, stream, vector,
+    bus, cache, database, document, kv, queue, secret, storage, stream, vector, workflow,
 };
 use bindings::{Guest, Header, Request, Response};
 
@@ -128,6 +128,16 @@ fn why_storage(e: &storage::Error) -> String {
     }
 }
 
+// why_workflow names a workflow error arm.
+fn why_workflow(e: &workflow::Error) -> String {
+    match e {
+        workflow::Error::NoSuchWorkflow(name) => format!("no-such-workflow:{}", name),
+        workflow::Error::Denied(why) => format!("denied:{}", why),
+        workflow::Error::NotWritable(why) => format!("not-writable:{}", why),
+        workflow::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
 // why_secret names a secret error arm.
 fn why_secret(e: &secret::Error) -> String {
     match e {
@@ -176,6 +186,14 @@ impl Guest for Component {
         // request carrying the instance in a header, and this fixture answers
         // it — refusing anything called `denied` so a test can drive both arms
         // of the decision rather than only the yes.
+        // A STEP'S FUNCTION IS A HANDLER TOO, and what a step hands on is what
+        // its function returned — so this echoes the body. That makes the run's
+        // state visible from outside: what came out of the last step is what
+        // went into the first.
+        if header(&req, "x-taubyte-step").is_some() {
+            return reply(200, req.body.clone());
+        }
+
         if let Some(instance) = header(&req, "x-taubyte-instance") {
             return if instance == "denied" {
                 reply(403, b"refused".to_vec())
@@ -334,6 +352,11 @@ impl Guest for Component {
             "secret" => match secret::get(name) {
                 Ok(value) => reply(200, value),
                 Err(e) => reply(403, why_secret(&e).into_bytes()),
+            },
+            // The key is the run's id and the body is what the run carries.
+            "start" => match workflow::start(name, key, &req.body) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_workflow(&e).into_bytes()),
             },
             // Object storage. The key is the object's name and the body is
             // its bytes.

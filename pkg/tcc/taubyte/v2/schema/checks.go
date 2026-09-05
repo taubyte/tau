@@ -133,6 +133,22 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	return out
 }
 
+// ScopeKindNames is every kind whose instances are SCOPES: a namespace, and
+// every kind that lowers into a container of its own.
+//
+// EXPORTED BECAUSE THE READ PATH NEEDS IT. A consumer resolving `(scope, kind,
+// name)` walks index segments of the form `<scope-kind>/<id>`, and until this
+// was askable outside the package every such consumer assumed the literal
+// `namespace` — which made every resource a lowering produced unreachable.
+func ScopeKindNames() []string {
+	out := make([]string, 0, len(scopeGroups()))
+	for kind := range scopeGroups() {
+		out = append(out, kind)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // scopeGroups is every group whose instances are scopes in the COMPILED shape. A
 // lowerable kind joins namespace here without becoming another vocabulary kind.
 func scopeGroups() map[string]bool {

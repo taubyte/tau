@@ -129,7 +129,7 @@ func (c *crons) step(ctx context.Context, now time.Time) int {
 			// The cron edges to something this cloud does not run. Firing the
 			// rest of its targets is still right; saying so once is not this
 			// loop's job every ten seconds.
-			if len(schedule.Fires) == 0 {
+			if len(schedule.Fires) == 0 && len(schedule.Starts) == 0 {
 				continue
 			}
 		}
@@ -255,6 +255,18 @@ func (c *crons) run(ctx context.Context, schedule worker.Schedule, slot time.Tim
 				c.end(schedule)
 				return
 			case <-time.After(time.Duration(rand.Int64N(int64(schedule.Jitter)))):
+			}
+		}
+
+		// A WORKFLOW IS STARTED AND NOT INVOKED, so it happens before the
+		// invocations and by a different mechanism: a run begins as an item in
+		// its first step's queue, and the id is the slot — so a tick that fired
+		// twice is one run rather than two, which is the same guarantee the
+		// replicated claim gives.
+		for _, start := range schedule.Starts {
+			id := schedule.Name + "@" + strconv.FormatInt(slot.Unix(), 10)
+			if err := c.node.work.Send(ctx, start, id, nil); err != nil {
+				logger.Warnf("cron: %s starting %s: %s", schedule.Name, start.Label, err)
 			}
 		}
 

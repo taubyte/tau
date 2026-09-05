@@ -107,6 +107,11 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 	if concurrency, ok := r.Int("limits", "concurrency"); ok {
 		spec.Concurrency = int(concurrency)
 	}
+	// WHAT THE PLATFORM ITSELF RUNS, if anything. It travels beside the
+	// artifact rather than instead of it so that a tier reads one field to
+	// know which it has.
+	spec.Builtin = r.String("source", sourceBuiltin)
+
 	spec.Settings = settingsOf(r)
 
 	// WHERE A WORKLOAD MAY REACH ON THE NETWORK IS THE RESOURCE'S, and an
@@ -146,14 +151,28 @@ func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Gr
 				return nil, fmt.Errorf("%w: %s wants %w", ErrNoTarget, t.Name, err)
 			}
 
-			out = append(out, invoke.Grant{
+			grant := invoke.Grant{
 				Kind:     reach.Kind,
 				Label:    reach.Label,
 				Handle:   project.Handle(t.Project, t.Environment, id),
 				Ops:      reach.Ops,
 				Settings: merged(settingsFor(reach.Kind, reach, target), instanceSettings(target)),
 				Refused:  unservable(reach, target),
-			})
+			}
+
+			// STARTING A WORKFLOW IS SENDING TO ITS FIRST STEP'S QUEUE, and the
+			// workflow itself says so — the lowering writes `entry/start` onto
+			// the shell precisely so that no consumer has to work it out from a
+			// naming convention. What the grant carries is that queue's handle,
+			// so a tier performing `start` sends and does not have to know what
+			// a workflow is.
+			if reach.Kind == workflowKind && contains(reach.Ops, opStart) {
+				if err := startedBy(proj, t, target, id, &grant); err != nil {
+					return nil, err
+				}
+			}
+
+			out = append(out, grant)
 		}
 	}
 	return out, nil
@@ -164,6 +183,7 @@ const (
 	volumeKind   = "volume"
 	streamKind   = "stream"
 	storageKind  = "storage"
+	workflowKind = "workflow"
 	busKind      = "bus"
 	databaseKind = "database"
 	queueKind    = "queue"
@@ -171,6 +191,9 @@ const (
 	// distributedEngine is the vocabulary's name for the swarm's own — the one
 	// engine this cloud actually holds, for both a cache and a stream.
 	distributedEngine = "distributed"
+
+	// sourceBuiltin is the vocabulary's word for a program the runtime ships.
+	sourceBuiltin = "builtin"
 )
 
 // merged is two setting maps as one, with nil for neither.
@@ -190,6 +213,55 @@ func merged(first, second map[string]string) map[string]string {
 	}
 	return first
 }
+
+// startedBy fills in where a `start` on a workflow lands.
+//
+// THE SHELL RECORDS IT AS AN ORDINARY VALUE — `entry: {start: {kind: queue,
+// name: checkout_reserve, as: send}}` — because a lowering that left it to a
+// naming convention would be a second place for the convention to be wrong. The
+// queue lives INSIDE the workflow, which is a scope of its own, so this is also
+// where a consumer needs the read path to understand a scope that is not a
+// namespace.
+func startedBy(proj *project.Project, t Target, workflow project.Resource, id string, grant *invoke.Grant) error {
+	kind := workflow.String("entry", "start", "kind")
+	name := workflow.String("entry", "start", "name")
+	if kind == "" || name == "" {
+		// A workflow whose shell carries no entry is a compiled object that did
+		// not come from tcc; starting it would mean guessing.
+		grant.Refused = fmt.Sprintf("workflow %q records no entry point, so there is nowhere for a start to land", grant.Label)
+		return nil
+	}
+
+	// WHERE THE WORKFLOW ITSELF IS, which is not where the asker is: a bare
+	// name resolves outward, so the workflow may have been found in a parent.
+	_, scope, own, ok := proj.Locate(id)
+	if !ok {
+		grant.Refused = fmt.Sprintf("workflow %q could not be located in this project", grant.Label)
+		return nil
+	}
+
+	_, startID, err := proj.Resource(append(append([]string{}, scope...), own), kind, name)
+	if err != nil {
+		grant.Refused = fmt.Sprintf("workflow %q starts at %s/%s, which is not in it: %s", grant.Label, kind, name, err)
+		return nil
+	}
+
+	grant.Settings = merged(grant.Settings, map[string]string{
+		settingStartKind:   kind,
+		settingStartHandle: project.Handle(t.Project, t.Environment, startID),
+		settingStartAs:     workflow.String("entry", "start", "as"),
+	})
+	return nil
+}
+
+// The keys the shell's entry record becomes.
+const (
+	opStart = "start"
+
+	settingStartKind   = "entry/start/kind"
+	settingStartHandle = "entry/start/handle"
+	settingStartAs     = "entry/start/as"
+)
 
 // settingsFor is what the TARGET (and, for a mount, the entry) declared, in the
 // vocabulary's own attribute paths.
@@ -573,6 +645,13 @@ func (s *Service) artifactOf(ctx context.Context, t Target, r project.Resource, 
 		return r.String("source", "image"), nil
 	case "component":
 		return r.String("source", "component"), nil
+	case sourceBuiltin:
+		// A BUILTIN HAS NO ARTIFACT AND ASKING FOR ONE IS THE BUG. The program
+		// is one the runtime ships — a workflow step's driver, an agent's loop
+		// — so there was never a build, and falling through to the artifact
+		// seam asked the build service for the output of one. That is why every
+		// workflow this compiler produced resolved to ErrNoArtifact.
+		return "", nil
 	}
 
 	if s.artifacts == nil {

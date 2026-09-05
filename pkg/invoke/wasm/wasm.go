@@ -307,8 +307,13 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, fmt.Errorf("%w: %s", ErrNoStorage, spec.Name)
 	}
 
+	if r.queues == nil && len(servableWorkflows(spec)) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoWorkflows, spec.Name)
+	}
+
 	imports = append(imports, r.secretImports(spec)...)
 	imports = append(imports, r.storageImports(spec)...)
+	imports = append(imports, r.workflowImports(spec)...)
 
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {

@@ -189,6 +189,20 @@ func (d *dispatcher) deliver(ctx context.Context, consumer worker.Consumer, held
 	runCtx, stop := context.WithDeadline(ctx, item.Deadline)
 	defer stop()
 
+	// A BUILTIN IS RUN HERE AND NOT ON A TIER. `source: {kind: builtin}` names a
+	// program the runtime ships, so there is no artifact to start and the
+	// delivery that would have started one is this delivery. See step.go.
+	if consumer.Builtin == stepBuiltin {
+		if err := d.runStep(runCtx, consumer, item); err != nil {
+			logger.Warnf("dispatch: %s on %s/%s: %s",
+				consumer.Target.Name, consumer.Queue.Label, item.ID, err)
+			d.failed(consumer, held, item)
+			return
+		}
+		held.Ack(item)
+		return
+	}
+
 	res, err := d.node.worker.Invoke(runCtx, consumer.Target, &invoke.Request{
 		Method: http.MethodPost,
 		Path:   consumer.Path,
