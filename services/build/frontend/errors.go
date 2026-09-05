@@ -61,6 +61,11 @@ var (
 	// route back into the id oracle this check exists to close".
 	errDenied = problem(http.StatusNotFound, "not found")
 
+	// errTooLarge is a body that exceeded its cap. It is the caller's to fix
+	// and saying so leaks nothing: the limit is a property of the route, not
+	// of anything this cloud holds.
+	errTooLarge = problem(http.StatusRequestEntityTooLarge, "request body too large")
+
 	// errUpstream is anything this process could not get an answer to. It never
 	// carries the upstream's own words: a stranger learns that this cloud is
 	// unhappy, not which of its services is.

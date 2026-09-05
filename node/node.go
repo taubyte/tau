@@ -52,6 +52,7 @@ import (
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 	registerService "github.com/taubyte/tau/services/register"
+	secretsService "github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/stats"
 	authService "github.com/taubyte/tau/services/v2/auth"
 	gateway "github.com/taubyte/tau/services/v2/gateway"
@@ -69,6 +70,7 @@ type Node struct {
 	worker   *worker.Service
 	gateway  *gateway.Service
 
+	secrets       *secretsService.Service
 	auth          *authService.Service
 	buildBackend  *backend.Service
 	buildFrontend *frontend.Service
@@ -131,6 +133,11 @@ func (n *Node) open() error {
 		return err
 	}
 	if err := n.openAuth(); err != nil {
+		return err
+	}
+	// BEFORE THE WORKER, which resolves a secret on the request path and takes
+	// the vault as a collaborator rather than looking one up per invocation.
+	if err := n.openSecrets(); err != nil {
 		return err
 	}
 	if err := n.openWorker(); err != nil {
@@ -198,6 +205,40 @@ func (n *Node) openRegister() error {
 		return err
 	}
 	n.register = svc
+	n.closers = append(n.closers, svc)
+	return nil
+}
+
+// openSecrets starts this node's vault.
+//
+// ITS OWN DATABASE, not a table beside the register's. The two stores have
+// different writers, different lifecycles and different trust properties —
+// see services/secrets' package doc — and sharing one would have made a
+// rotation a redeploy.
+func (n *Node) openSecrets() error {
+	if !n.cfg.runs(Secrets) {
+		return nil
+	}
+	if n.opts.databases == nil {
+		return ErrNoDatabases
+	}
+
+	db, err := n.opts.databases.New(logger, Secrets, rebroadcastSeconds)
+	if err != nil {
+		return err
+	}
+	n.closers = append(n.closers, closerFunc(db.Close))
+
+	store, err := secretsService.NewKVStore(db)
+	if err != nil {
+		return err
+	}
+
+	svc, err := secretsService.New(n.opts.host, secretsService.WithStore(store))
+	if err != nil {
+		return err
+	}
+	n.secrets = svc
 	n.closers = append(n.closers, svc)
 	return nil
 }
@@ -281,8 +322,17 @@ func (n *Node) openWorker() error {
 	case n.stats != nil:
 		options = append(options, worker.WithArtifacts(&artifacts{node: n, seen: map[string]builtAt{}}))
 	}
-	if n.opts.secrets != nil {
+	// A SECRET IS RESOLVED THE SAME WAY AN ARTIFACT IS, and by the same rule:
+	// an injected resolver wins, then this node's own vault or one in the
+	// fleet. Without either, a resource that names a secret is refused with
+	// ErrNoSecrets rather than started without it.
+	switch {
+	case n.opts.secrets != nil:
 		options = append(options, worker.WithSecrets(n.opts.secrets))
+	case n.secrets != nil || n.stats != nil:
+		v := &vault{node: n}
+		n.closers = append(n.closers, v)
+		options = append(options, worker.WithSecrets(v))
 	}
 	if n.opts.now != nil {
 		options = append(options, worker.WithClock(n.opts.now))
@@ -427,6 +477,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.register != nil {
 		order = append(order, n.register)
 	}
+	if n.secrets != nil {
+		order = append(order, n.secrets)
+	}
 	if n.worker != nil {
 		order = append(order, n.worker)
 	}
@@ -514,6 +567,9 @@ func (n *Node) Register() *registerService.Service { return n.register }
 
 // Worker is this node's worker, or nil.
 func (n *Node) Worker() *worker.Service { return n.worker }
+
+// Secrets is this node's vault, or nil if it runs none.
+func (n *Node) Secrets() *secretsService.Service { return n.secrets }
 
 // Stats is this node's view of the fleet, or nil.
 func (n *Node) Stats() *stats.Service { return n.stats }

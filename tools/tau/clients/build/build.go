@@ -19,6 +19,7 @@
 package build
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -47,6 +48,14 @@ type Client interface {
 	Follow(ctx context.Context, jobID string, from int64, w io.Writer) (int64, error)
 	Cancel(ctx context.Context, jobID string) error
 	Retry(ctx context.Context, jobID string) error
+
+	// Secrets are the names set in one environment. NAMES AND NEVER VALUES:
+	// the frontend has no route that reads a value back, so neither does this.
+	Secrets(ctx context.Context, projectID, environment string) ([]string, error)
+	// SetSecret writes a value. It is an upsert, so rotating is setting again
+	// — no commit, no build, no redeploy.
+	SetSecret(ctx context.Context, projectID, environment, name string, value []byte) error
+	DeleteSecret(ctx context.Context, projectID, environment, name string) error
 }
 
 // HTTP is a Client over the frontend's routes.
@@ -195,6 +204,73 @@ func (h *HTTP) Retry(ctx context.Context, jobID string) error {
 	return h.post(ctx, "/retry/", jobID)
 }
 
+// Secrets lists what is set in one environment.
+func (h *HTTP) Secrets(ctx context.Context, projectID, environment string) ([]string, error) {
+	route, err := secretScope(projectID, environment)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := h.get(ctx, route)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+
+	var names []string
+	if err := json.NewDecoder(body).Decode(&names); err != nil {
+		return nil, fmt.Errorf("build: reading the secrets of %s/%s: %w", projectID, environment, err)
+	}
+	return names, nil
+}
+
+func (h *HTTP) SetSecret(ctx context.Context, projectID, environment, name string, value []byte) error {
+	route, err := secretRoute(projectID, environment, name)
+	if err != nil {
+		return err
+	}
+	return h.drain(h.send(ctx, http.MethodPut, route, bytes.NewReader(value)))
+}
+
+func (h *HTTP) DeleteSecret(ctx context.Context, projectID, environment, name string) error {
+	route, err := secretRoute(projectID, environment, name)
+	if err != nil {
+		return err
+	}
+	return h.drain(h.send(ctx, http.MethodDelete, route, nil))
+}
+
+func secretScope(projectID, environment string) (string, error) {
+	switch {
+	case projectID == "":
+		return "", errors.New("build: no project")
+	case environment == "":
+		return "", errors.New("build: no environment")
+	}
+	return "/secrets/" + url.PathEscape(projectID) + "/" + url.PathEscape(environment), nil
+}
+
+func secretRoute(projectID, environment, name string) (string, error) {
+	scope, err := secretScope(projectID, environment)
+	if err != nil {
+		return "", err
+	}
+	if name == "" {
+		return "", errors.New("build: no secret name")
+	}
+	return scope + "/" + url.PathEscape(name), nil
+}
+
+// drain closes a response whose body carries nothing the caller did not
+// already know. Reading it to the end is what lets the connection be reused.
+func (h *HTTP) drain(body io.ReadCloser, err error) error {
+	if err != nil {
+		return err
+	}
+	io.Copy(io.Discard, body)
+	return body.Close()
+}
+
 func (h *HTTP) post(ctx context.Context, route, jobID string) error {
 	if jobID == "" {
 		return errors.New("build: no job")
@@ -214,24 +290,38 @@ func (h *HTTP) get(ctx context.Context, route string) (io.ReadCloser, error) {
 	return h.do(ctx, http.MethodGet, route)
 }
 
-// do sends one request and hands back a body the caller closes.
+func (h *HTTP) do(ctx context.Context, method, route string) (io.ReadCloser, error) {
+	return h.send(ctx, method, route, nil)
+}
+
+// send sends one request and hands back a body the caller closes.
 //
 // AN ERROR STATUS IS READ AND CLOSED HERE, because the caller of a failed call
 // has no body to stream and would have to remember to close one anyway.
-func (h *HTTP) do(ctx context.Context, method, route string) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, method, h.base+route, nil)
+//
+// EVERY 2xx IS A SUCCESS, not just 200. A secret write answers 204, and a
+// client that treated the absence of a body as a failure would report a write
+// that happened as one that did not — which for a rotation means setting it
+// twice and never knowing which value is live.
+func (h *HTTP) send(ctx context.Context, method, route string, body io.Reader) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, method, h.base+route, body)
 	if err != nil {
 		return nil, err
 	}
 	if h.token != "" {
 		req.Header.Set("Authorization", "Bearer "+h.token)
 	}
+	if body != nil {
+		// The value is sent raw. Declaring it as anything else would invite a
+		// proxy to transcode a credential.
+		req.Header.Set("Content-Type", "application/octet-stream")
+	}
 
 	resp, err := h.http.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return resp.Body, nil
 	}
 
@@ -263,6 +353,8 @@ func statusError(resp *http.Response) error {
 		return fmt.Errorf("%w: %s", ErrNotFound, detail)
 	case http.StatusTooManyRequests:
 		return fmt.Errorf("%w: %s", ErrRateLimited, detail)
+	case http.StatusRequestEntityTooLarge:
+		return fmt.Errorf("%w: %s", ErrTooLarge, detail)
 	}
 	return fmt.Errorf("build: %s: %s", resp.Status, detail)
 }
@@ -271,4 +363,5 @@ var (
 	ErrUnauthorized = errors.New("build: this cloud did not accept the token; `tau login` again")
 	ErrNotFound     = errors.New("build: no such job, or not one this token may see")
 	ErrRateLimited  = errors.New("build: too many requests")
+	ErrTooLarge     = errors.New("build: that value is larger than a secret may be")
 )

@@ -74,6 +74,12 @@ var (
 	ErrNoCheckout = errors.New("artifact: no way to read a repository")
 	ErrNoProjects = errors.New("artifact: no way to tell which repository backs a project's code")
 	ErrNoEngine   = errors.New("artifact: nothing to run a build in")
+
+	// ErrNoSecrets is a build whose author declared a build-time secret on a
+	// cloud with no vault. It is a refusal rather than a build run without the
+	// value: a build that quietly lost its token fails somewhere further in,
+	// with a message about a dependency it could not fetch.
+	ErrNoSecrets = errors.New("artifact: this build needs a secret and this cloud has nothing to resolve one with")
 )
 
 // Register is the read a build makes of what is deployed.
@@ -90,6 +96,19 @@ type Register interface {
 // and which repository that IS lives in auth.
 type Projects interface {
 	CodeRepository(ctx context.Context, projectID string) (string, error)
+}
+
+// Secrets resolves a build-time secret — the token a private dependency needs,
+// the credential a registry wants.
+//
+// IT IS THE SAME SHAPE services/worker RESOLVES A RUN-TIME SECRET WITH, and
+// deliberately: one vault, one method, two callers. What differs is WHICH
+// variables reach it, and the config says so with `at`.
+//
+// OPTIONAL. A cloud with no vault builds everything that needs no secret and
+// refuses, by name, the builds that do.
+type Secrets interface {
+	Secret(ctx context.Context, project, environment, secretID string) (string, error)
 }
 
 // Checkout puts one commit of a repository on this machine. It is the same seam
@@ -141,6 +160,7 @@ type Builder struct {
 	projects Projects
 	checkout Checkout
 	engine   Engine
+	secrets  Secrets
 }
 
 // New builds one.
@@ -163,7 +183,10 @@ func New(opts ...Option) (*Builder, error) {
 		return nil, ErrNoEngine
 	}
 
-	return &Builder{register: o.register, projects: o.projects, checkout: o.checkout, engine: o.engine}, nil
+	return &Builder{
+		register: o.register, projects: o.projects,
+		checkout: o.checkout, engine: o.engine, secrets: o.secrets,
+	}, nil
 }
 
 // Build runs every build this push touches.
@@ -206,7 +229,7 @@ func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output)
 	// stale. A partially rebuilt deployment looks exactly like a healthy one.
 	specs := make([]Spec, len(work))
 	for i, item := range work {
-		spec, err := specOf(item, dir)
+		spec, err := b.specOf(ctx, w.ProjectID, item, dir)
 		if err != nil {
 			return err
 		}
@@ -351,7 +374,7 @@ func backedBy(b project.Buildable, pushed, own string) (bool, error) {
 }
 
 // specOf turns one item into a build to run.
-func specOf(i item, checkout string) (Spec, error) {
+func (b *Builder) specOf(ctx context.Context, projectID string, i item, checkout string) (Spec, error) {
 	spec := Spec{
 		Image:  i.Build.Image,
 		Dir:    joinWithin(checkout, i.Path),
@@ -390,18 +413,37 @@ func specOf(i item, checkout string) (Spec, error) {
 		if v.At != buildTime {
 			continue
 		}
-		if v.FromSecret() {
-			// A SECRET NEEDS A RESOLVER AND THERE IS NONE, so the build is
-			// refused rather than run without it. A build that quietly lost its
-			// token fails somewhere further in, with a message about a
-			// dependency it could not fetch.
-			return Spec{}, fmt.Errorf("artifact: %s/%s's build needs the secret %s in %s, and this cloud has nothing to resolve a secret with",
-				i.Kind, i.Name, v.Secret, v.Name)
-		}
 		if spec.Variables == nil {
 			spec.Variables = map[string]string{}
 		}
-		spec.Variables[v.Name] = v.Value
+
+		if !v.FromSecret() {
+			spec.Variables[v.Name] = v.Value
+			continue
+		}
+
+		// A SECRET NEEDS A RESOLVER, and with none the build is refused rather
+		// than run without it. A build that quietly lost its token fails
+		// somewhere further in, with a message about a dependency it could not
+		// fetch.
+		if b.secrets == nil {
+			return Spec{}, fmt.Errorf("%w: %s/%s's %s wants %s",
+				ErrNoSecrets, i.Kind, i.Name, v.Name, v.Secret)
+		}
+
+		// THE ENVIRONMENT IS THE ITEM'S. One repository push builds for every
+		// deployment its branch feeds, and each of those reads its own
+		// environment's value — so staging builds with staging's token and
+		// production with production's, out of one plan.
+		value, err := b.secrets.Secret(ctx, projectID, i.Environment, v.Secret)
+		if err != nil {
+			// THE VALUE CANNOT BE IN THIS MESSAGE and neither can anything
+			// resolved so far: this error reaches the job log, which the
+			// repository's readers can read.
+			return Spec{}, fmt.Errorf("artifact: %s/%s's %s needs the secret %s in %s: %w",
+				i.Kind, i.Name, v.Name, v.Secret, i.Environment, err)
+		}
+		spec.Variables[v.Name] = value
 	}
 
 	if spec.Image == "" {

@@ -3,6 +3,7 @@ package tcc
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -126,6 +127,26 @@ func (st *Store) ProjectID() (string, error) {
 	}
 	id, _ := v.(string)
 	return id, nil
+}
+
+// Environments are the deployments this project declares, sorted.
+//
+// THEY LIVE ON THE PROJECT ROOT and not in a group, which is why this is not
+// List: an environment is not a resource, it is a column every per-environment
+// attribute is written against.
+func (st *Store) Environments() []string {
+	v, err := st.s.Get(st.s.Root(), []string{"environments"})
+	if err != nil {
+		return nil
+	}
+	declared, _ := v.(map[string]any)
+
+	out := make([]string, 0, len(declared))
+	for name := range declared {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // SetProject writes fields of the project's own root document (id, name,

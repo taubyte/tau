@@ -240,6 +240,25 @@ type Projects interface {
 	Repositories(ctx context.Context, projectID string) ([]string, error)
 }
 
+// Vault is the secrets service as this role sees it — three calls, and
+// deliberately NOT the fourth.
+//
+// THERE IS NO Get. A developer sets a secret and lists what is set; nothing on
+// this ingress reads a value back. That is the difference between a stolen
+// token being "they can overwrite my secrets" and "they have every secret this
+// project holds" — and it costs a developer nothing, because the value is
+// theirs already and rotating is setting again. Every platform this competes
+// with is write-only after the set for the same reason.
+//
+// OPTIONAL. A frontend composed without one answers every route below with the
+// same 404 a denial gets, because a cloud that holds no secrets should not
+// distinguish itself from one that holds none of yours.
+type Vault interface {
+	Set(ctx context.Context, project, environment, name string, value []byte) error
+	Delete(ctx context.Context, project, environment, name string) error
+	List(ctx context.Context, project, environment string) ([]string, error)
+}
+
 // Backend is build's private half, as this role sees it: build.proto's five
 // RPCs and nothing else. It is an interface here rather than
 // services/build/clients' concrete client so that every route in this package

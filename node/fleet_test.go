@@ -230,3 +230,94 @@ type secretFunc func(ctx context.Context, project, environment, secretID string)
 func (f secretFunc) Secret(ctx context.Context, project, environment, secretID string) (string, error) {
 	return f(ctx, project, environment, secretID)
 }
+
+// TestAWorkerResolvesASecretFromItsOwnVault — the composed path, with nothing
+// injected. A project whose function names a secret is the ordinary case for
+// anything imported from a platform that had environment variables, so this is
+// the wiring between "it compiles" and "it runs".
+func TestAWorkerResolvesASecretFromItsOwnVault(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	require.NoError(t, n.Start(t.Context()))
+
+	require.NoError(t, n.Secrets().Local().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
+
+	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsASecret(),
+	})
+	require.NoError(t, err)
+
+	spec, err := n.Worker().Resolve(t.Context(), workerTarget())
+	require.NoError(t, err)
+	require.Equal(t, "sk_live", spec.Env["TOKEN"])
+}
+
+// TestAWorkerFindsAVaultOnAnotherNode. A node that runs compute and no vault
+// learns from stats which node holds one and dials it — the same rule as the
+// register, over the real gossipsub and the real stream.
+func TestAWorkerFindsAVaultOnAnotherNode(t *testing.T) {
+	nodes := fleet(t,
+		Config{Services: []string{Register, Secrets, Stats}},
+		Config{Services: []string{Worker, Stats}},
+	)
+	holder, compute := nodes[0], nodes[1]
+
+	require.NoError(t, holder.Secrets().Local().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
+
+	_, err := holder.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsASecret(),
+	})
+	require.NoError(t, err)
+
+	sees(t, compute, Register)
+	sees(t, compute, Secrets)
+
+	spec, err := compute.Worker().Resolve(t.Context(), workerTarget())
+	require.NoError(t, err)
+	require.Equal(t, "sk_live", spec.Env["TOKEN"])
+}
+
+// TestAWorkerWithNoVaultAnywhereRefusesRatherThanRunning. A workload started
+// without its database password does not fail where the password is missing;
+// it fails somewhere else, later, as an application that looks broken.
+func TestAWorkerWithNoVaultAnywhereRefusesRatherThanRunning(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	require.NoError(t, n.Start(t.Context()))
+
+	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsASecret(),
+	})
+	require.NoError(t, err)
+
+	_, err = n.Worker().Resolve(t.Context(), workerTarget())
+	require.ErrorIs(t, err, ErrNoSecrets)
+}
+
+// TestABuiltResourceWithNoBuildServiceIsRefusedRatherThanWaited. This runs on
+// the request path: a lookup that waits until its context ends is a request
+// that hangs until the client gives up, on a cloud where nothing was ever
+// going to answer.
+func TestABuiltResourceWithNoBuildServiceIsRefused(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	require.NoError(t, n.Start(t.Context()))
+
+	require.NoError(t, n.Secrets().Local().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
+	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsBothSeams(),
+	})
+	require.NoError(t, err)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := n.Worker().Resolve(t.Context(), project.Address{
+			Project: "shop", Environment: "prod", Kind: "function", Name: "built",
+		})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, ErrNoBuildBackend)
+	case <-time.After(10 * time.Second):
+		t.Fatal("it waited instead of refusing")
+	}
+}

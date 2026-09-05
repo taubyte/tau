@@ -237,17 +237,31 @@ func work(repository string) backend.Work {
 	}
 }
 
-func builder(t *testing.T, r artifact.Register, c *checkout, e *engine, code string) *artifact.Builder {
+func builder(t *testing.T, r artifact.Register, c *checkout, e *engine, code string, opts ...artifact.Option) *artifact.Builder {
 	t.Helper()
-	b, err := artifact.New(
+	b, err := artifact.New(append([]artifact.Option{
 		artifact.WithRegister(r),
 		artifact.WithProjects(projects{code: code}),
 		artifact.WithCheckout(c),
 		artifact.WithEngine(e),
-	)
+	}, opts...)...)
 	require.NoError(t, err)
 	return b
 }
+
+// vault is a Secrets over a map keyed the way the real one is:
+// project/environment/name.
+type vault map[string]string
+
+func (v vault) Secret(_ context.Context, project, environment, secretID string) (string, error) {
+	value, ok := v[project+"/"+environment+"/"+secretID]
+	if !ok {
+		return "", errNoSuchSecret
+	}
+	return value, nil
+}
+
+var errNoSuchSecret = errors.New("nothing is set under that name")
 
 func source(t *testing.T) string {
 	t.Helper()
@@ -610,7 +624,61 @@ func TestABuildThatNeedsASecret(t *testing.T) {
 	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, codeRepo).
 		Build(t.Context(), work(paylibRepo), newOut())
 
-	require.ErrorContains(t, err, "nothing to resolve a secret with")
+	require.ErrorIs(t, err, artifact.ErrNoSecrets)
 	require.ErrorContains(t, err, "GITHUB_TOKEN")
 	require.Empty(t, e.seen())
+}
+
+// TestABuildTimeSecretReachesTheBuild, which is the private-dependency token
+// and the registry credential — the thing between an imported project and a
+// build that completes.
+func TestABuildTimeSecretReachesTheBuild(t *testing.T) {
+	e := &engine{}
+	held := vault{projectID + "/prod/QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy": "ghp_thetoken"}
+
+	require.NoError(t, builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, codeRepo,
+		artifact.WithSecrets(held)).
+		Build(t.Context(), work(paylibRepo), newOut()))
+
+	specs := e.seen()
+	require.Len(t, specs, 1)
+	require.Equal(t, "ghp_thetoken", specs[0].Variables["GITHUB_TOKEN"])
+}
+
+// TestAVaultThatRefusesFailsTheBuildBeforeAnythingRuns. Every spec is read
+// before any build runs, so a resource whose secret cannot be resolved must
+// not leave the others rebuilt and that one stale.
+func TestAVaultThatRefusesFailsTheBuildBeforeAnythingRuns(t *testing.T) {
+	e := &engine{}
+
+	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, codeRepo,
+		artifact.WithSecrets(vault{})).
+		Build(t.Context(), work(paylibRepo), newOut())
+
+	require.ErrorIs(t, err, errNoSuchSecret)
+	require.ErrorContains(t, err, "GITHUB_TOKEN")
+	require.Empty(t, e.seen(), "nothing was built")
+}
+
+// TestTheValueNeverReachesTheJobLog. This error is written into the job
+// record, which everyone who can read the repository can read.
+func TestTheValueNeverReachesTheJobLog(t *testing.T) {
+	out := newOut()
+	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, &engine{}, codeRepo,
+		artifact.WithSecrets(vault{})).
+		Build(t.Context(), work(paylibRepo), out)
+
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "ghp_")
+}
+
+func TestASecretsResolverMustNotBeNil(t *testing.T) {
+	_, err := artifact.New(
+		artifact.WithRegister(deployed(t, basicFixture)),
+		artifact.WithProjects(projects{code: codeRepo}),
+		artifact.WithCheckout(&checkout{dir: t.TempDir()}),
+		artifact.WithEngine(&engine{}),
+		artifact.WithSecrets(nil),
+	)
+	require.ErrorContains(t, err, "secrets must not be nil")
 }

@@ -57,6 +57,14 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("POST /retry/{jid}", s.admitted("jid", s.handleRetryJob))
 	mux.HandleFunc("GET /job/{jid}/logs", s.admitted("jid", s.handleFollowJob))
 
+	// The secret routes: written by a developer, out of band, because the value
+	// is the one thing that must not be in git (secretapi.go). Same
+	// authorization as everything above — write access to a repository the
+	// project is made of — and no route that reads a value back.
+	mux.HandleFunc("GET /secrets/{projectId}/{environment}", s.admitted("projectId", s.handleListSecrets))
+	mux.HandleFunc("PUT /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleSetSecret))
+	mux.HandleFunc("DELETE /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleDeleteSecret))
+
 	// No /ping. v1 has one, unauthenticated, and a liveness endpoint is a
 	// decision about what this process will tell the internet about itself
 	// before anyone has asked for it — including that it is here. Nothing in

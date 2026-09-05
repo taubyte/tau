@@ -29,6 +29,7 @@ type Service struct {
 	projects Projects
 	backend  Backend
 	identity Identity
+	vault    Vault
 	cfg      Config
 
 	now    func() time.Time
@@ -69,6 +70,7 @@ type options struct {
 	projects Projects
 	backend  Backend
 	identity Identity
+	vault    Vault
 
 	tune func(*http.Server)
 	now  func() time.Time
@@ -108,6 +110,20 @@ func WithBackend(b Backend) Option {
 			return errors.New("build: no backend to queue into")
 		}
 		o.backend = b
+		return nil
+	}
+}
+
+// WithVault is where a project's secret values are written. Optional: a
+// frontend without one refuses the secret routes the way it refuses a project
+// the caller may not touch, so a cloud with no vault is not an oracle for
+// whether it has one.
+func WithVault(v Vault) Option {
+	return func(o *options) error {
+		if v == nil {
+			return errors.New("build: no vault to write secrets into")
+		}
+		o.vault = v
 		return nil
 	}
 }
@@ -213,6 +229,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		projects: o.projects,
 		backend:  o.backend,
 		identity: o.identity,
+		vault:    o.vault,
 		cfg:      effective,
 		tune:     o.tune,
 		now:      o.now,

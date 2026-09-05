@@ -46,6 +46,10 @@ const maxAuthConnections = 4
 // gossiped and changes on its own schedule; there is nothing to subscribe to.
 const pollInterval = 250 * time.Millisecond
 
+// ErrNoBuildBackend is a resource the platform builds, on a node that can find
+// nothing that builds.
+var ErrNoBuildBackend = errors.New("node: no build service is reachable")
+
 // fromStats is a discovery.Resolver over the view every other locator on this
 // node reads.
 //
@@ -218,12 +222,27 @@ func (n *Node) openBuildBackend() error {
 			return err
 		}
 
-		builder, err := artifact.New(
+		buildOptions := []artifact.Option{
 			artifact.WithRegister(buildRegister{n}),
 			artifact.WithProjects(projects),
 			artifact.WithCheckout(clone),
 			artifact.WithEngine(engine),
-		)
+		}
+		// THE SAME VAULT THE WORKER READS, and by the same rule — an injected
+		// resolver wins, then this node's own or one in the fleet. What
+		// differs is which variables reach it: `at: build` says the value is
+		// baked into the artifact, and the config decides that, not this
+		// wiring.
+		switch {
+		case n.opts.secrets != nil:
+			buildOptions = append(buildOptions, artifact.WithSecrets(n.opts.secrets))
+		case n.secrets != nil || n.stats != nil:
+			v := &vault{node: n}
+			n.closers = append(n.closers, v)
+			buildOptions = append(buildOptions, artifact.WithSecrets(v))
+		}
+
+		builder, err := artifact.New(buildOptions...)
 		if err != nil {
 			return err
 		}
@@ -290,12 +309,24 @@ func (n *Node) openBuildFrontend() error {
 		return err
 	}
 
-	svc, err := frontend.New(n.cfg.BuildFrontend,
+	frontendOptions := []frontend.Option{
 		frontend.WithHooks(hooks),
 		frontend.WithProjects(projects),
 		frontend.WithBackend(builds),
 		frontend.WithIdentity(identity),
-	)
+	}
+	// THE PUBLIC ROLE NEVER HOLDS A VAULT ITSELF. It is the one process a
+	// stranger reaches, and withDefaults already refuses it running the
+	// backend for the same reason — so this is always the stream onto a node
+	// that does, and it exists at all only because a node running stats can
+	// find one.
+	if n.stats != nil {
+		v := &vault{node: n}
+		n.closers = append(n.closers, v)
+		frontendOptions = append(frontendOptions, frontend.WithVault(v))
+	}
+
+	svc, err := frontend.New(n.cfg.BuildFrontend, frontendOptions...)
 	if err != nil {
 		return err
 	}
@@ -373,6 +404,22 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 
 	if cid, ok := a.cached(key); ok {
 		return cid, nil
+	}
+
+	// THE VIEW IS ASKED BEFORE THE POOL IS, and the reason is that this runs on
+	// the REQUEST PATH. fromStats.Peers waits until a peer appears or the
+	// context ends, which is right for a pool opened at startup — services come
+	// up concurrently — and wrong here: on a cloud running no build backend at
+	// all there is nothing to wait for, and a request whose context has no
+	// deadline waits forever instead of being refused.
+	//
+	// So it is the same rule the register and the vault already keep: ask the
+	// view, and if the view knows nobody, say so. A backend that appears a
+	// moment later is picked up by the next request, because a failed lookup is
+	// not cached.
+	if len((&fromStats{node: a.node, name: BuildBackend}).Known()) == 0 {
+		return "", fmt.Errorf("%w: %s/%s is built by the platform and no build service is reachable",
+			ErrNoBuildBackend, project, environment)
 	}
 
 	pool, err := a.node.dial(build.Protocol, BuildBackend)

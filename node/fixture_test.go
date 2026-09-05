@@ -13,7 +13,10 @@ import (
 // the wiring, and a project small enough to read in one screen makes what the
 // node did with it obvious.
 
-const projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
+const (
+	projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
+	secretID  = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy"
+)
 
 func compiled() []byte {
 	return []byte(`{
@@ -61,6 +64,33 @@ func workerTarget() project.Address {
 }
 
 func gatewayConfig() gateway.Config { return gateway.Config{} }
+
+// needsASecret is a project whose one function names a secret and nothing
+// else — a component source, so the artifact seam is not in the way. It is the
+// ordinary shape of anything imported from a platform that had environment
+// variables.
+func needsASecret() []byte {
+	return []byte(`{
+		"object": {
+			"id": "` + projectID + `",
+			"name": "shop",
+			"function": {
+				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
+					"name": "checkout",
+					"execution": {"call": "handle", "memory": 33554432},
+					"source": {"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv"},
+					"variables": {
+						"TOKEN": {"as": "env", "at": "run", "secret": {"name": "` + secretID + `"}}
+					}
+				}
+			}
+		},
+		"indexes": {
+			"projects/` + projectID + `/function/checkout/links": [
+				"branches/main/projects/` + projectID + `/function/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"]
+		}
+	}`)
+}
 
 // needsBothSeams is a project whose one function is built by the platform and
 // wants a secret — the two things a worker refuses to invent.

@@ -34,6 +34,7 @@ const (
 	Stats    = "stats"
 	Gateway  = "gateway"
 	Auth     = "auth"
+	Secrets  = "secrets"
 )
 
 // The two halves of the build service, named by the build service itself
@@ -63,7 +64,7 @@ var (
 // an allocated address per resource. Both are real services; neither is a line
 // in this file, and listing them before they can be started would make an
 // operator's config lie.
-var All = []string{Register, Worker, Stats, Gateway, Auth, BuildBackend}
+var All = []string{Register, Worker, Stats, Gateway, Auth, Secrets, BuildBackend}
 
 // BuildFrontend is NOT in All. All is what a single-node development cloud
 // starts, and that node runs the backend; putting the public half in the

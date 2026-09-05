@@ -10,6 +10,7 @@ type options struct {
 	projects Projects
 	checkout Checkout
 	engine   Engine
+	secrets  Secrets
 }
 
 // WithRegister is where a build reads the configuration it builds against.
@@ -41,6 +42,18 @@ func WithCheckout(c Checkout) Option {
 			return errors.New("checkout must not be nil")
 		}
 		o.checkout = c
+		return nil
+	}
+}
+
+// WithSecrets resolves a build-time secret. Optional: a cloud without one
+// builds everything that needs no secret, and refuses the rest by name.
+func WithSecrets(s Secrets) Option {
+	return func(o *options) error {
+		if s == nil {
+			return errors.New("secrets must not be nil")
+		}
+		o.secrets = s
 		return nil
 	}
 }
