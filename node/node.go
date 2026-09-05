@@ -106,10 +106,12 @@ type Node struct {
 	registerClient *registerService.Client
 	registerAt     libp2ppeer.ID
 
-	// dispatchStop ends the queue claim loop and dispatchDone is closed when it
-	// has. Both are nil on a node that runs no dispatcher.
-	dispatchStop context.CancelFunc
+	// loopsStop ends the background loops this node runs, and each Done is
+	// closed when that loop has stopped. All three are nil on a node that runs
+	// neither a worker nor consensus.
+	loopsStop    context.CancelFunc
 	dispatchDone chan struct{}
+	cronDone     chan struct{}
 
 	startMu   sync.Mutex
 	started   bool
@@ -584,9 +586,16 @@ func (n *Node) Start(ctx context.Context) error {
 	// without raft opens no queue and simply finds none.
 	if n.worker != nil && n.opts.raft != nil {
 		loopCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
-		n.dispatchStop = stop
+		n.loopsStop = stop
+
 		n.dispatchDone = make(chan struct{})
 		go (&dispatcher{node: n}).loop(loopCtx, n.dispatchDone)
+
+		// AND THE CLOCK, on the same condition and for the same reason: a cron
+		// fires exactly once across a fleet because the leader records the slot
+		// before invoking anything, which is a raft write.
+		n.cronDone = make(chan struct{})
+		go (&crons{node: n}).loop(loopCtx, n.cronDone)
 	}
 
 	n.started = true
@@ -606,12 +615,14 @@ func (n *Node) Handler() http.Handler {
 // idempotent, and it closes what was built even when Start was never called.
 func (n *Node) Close() error {
 	n.closeOnce.Do(func() {
-		// THE CLAIM LOOP GOES FIRST AND IS WAITED FOR, because everything it
-		// touches is closed below it: a cycle still running while the queue
-		// group is torn down is a claim against a store that is going away.
-		if n.dispatchStop != nil {
-			n.dispatchStop()
+		// THE BACKGROUND LOOPS GO FIRST AND ARE WAITED FOR, because everything
+		// they touch is closed below them: a cycle still running while the
+		// queue group is torn down is a claim against a store that is going
+		// away.
+		if n.loopsStop != nil {
+			n.loopsStop()
 			<-n.dispatchDone
+			<-n.cronDone
 		}
 		n.closeRegisterClient()
 		for i := len(n.closers) - 1; i >= 0; i-- {

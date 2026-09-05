@@ -1,0 +1,80 @@
+package boot
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/database"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+)
+
+// engines_test is the one direction that matters: EVERY EXTERNAL ENGINE THE
+// VOCABULARY NAMES IS ONE A MACHINE CAN OPEN.
+//
+// A project writing `sql: {postgres: {host: db.example.com}}` compiles and
+// deploys whatever this file says. Before it, that project answered its first
+// query with "no database engine is registered in this build" — discovered by a
+// user rather than by us, which is the shape this repository keeps deleting.
+
+// TestTheDriversAreLinkedAndTheEnginesRegister. A registration opens a probe
+// connection and checks the surface, so this also proves the adapters answer
+// the operations `sql` declares.
+func TestTheExternalSqlEnginesRegister(t *testing.T) {
+	registry, err := databaseEngines(t.Context())
+	require.NoError(t, err)
+
+	names := map[string]bool{}
+	for _, e := range registry.EnginesFor(database.SQL) {
+		names[e] = true
+	}
+	require.True(t, names["postgres"], "registered: %v", names)
+	require.True(t, names["mysql"], "registered: %v", names)
+}
+
+// TestEVERYEXTERNALENGINETheVocabularyNamesCanBeOpened, and the ones that
+// cannot are listed here as knowingly absent.
+//
+// A fifth engine added to the schema with no adapter is a project that
+// compiles, deploys and refuses every query — and this is where that is
+// noticed rather than in somebody's logs.
+func TestEveryExternalDatabaseEngineIsAdapted(t *testing.T) {
+	registry, err := databaseEngines(t.Context())
+	require.NoError(t, err)
+
+	// registered is what a machine can open, by data model.
+	registered := map[string]map[string]bool{}
+	for _, model := range []database.Type{database.KV, database.Document, database.SQL, database.Vector} {
+		registered[string(model)] = map[string]bool{}
+		for _, name := range registry.EnginesFor(model) {
+			registered[string(model)][name] = true
+		}
+	}
+
+	// TAU'S OWN ARE THE NODE'S TO REGISTER and are not in this registry — it
+	// opens them on first use against the swarm's store, so they are absent
+	// here by design rather than missing.
+	tauEngine := "distributed"
+
+	// absent is every external engine nothing here adapts, with the reason.
+	absent := map[string]string{
+		"mongo": "no document adapter yet; the vocabulary declares the engine and nothing opens one",
+	}
+
+	var missing []string
+	for model, engines := range schema.DatabaseEngines() {
+		for _, engine := range engines {
+			if engine == tauEngine || registered[model][engine] {
+				continue
+			}
+			if _, known := absent[engine]; known {
+				continue
+			}
+			missing = append(missing, model+"/"+engine)
+		}
+	}
+
+	require.Empty(t, missing,
+		"the vocabulary names a database engine a machine cannot open: %v. A project declaring it "+
+			"compiles, deploys, and answers every query with \"no database engine is registered\".", missing)
+}

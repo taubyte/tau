@@ -105,14 +105,27 @@ require (
 
 require github.com/expr-lang/expr v1.17.8
 
+// The database drivers a machine links, imported for their side effects by
+// node/boot. See node/boot/engines.go: pkg/database and its engines stay
+// driver-free, and the composition root is where a driver registers itself.
+require (
+	github.com/go-sql-driver/mysql v1.10.1
+	github.com/jackc/pgx/v5 v5.10.0
+)
+
 require (
 	cel.dev/expr v0.25.1 // indirect
+	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/google/nftables v0.3.0 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
 	github.com/mdlayher/socket v0.5.0 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 )

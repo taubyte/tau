@@ -338,10 +338,15 @@ var errNoAnswer = errors.New("this tier answers nothing")
 type answering struct {
 	name string
 
+	// block, when set, holds every invocation open until it is closed — which
+	// is how a test makes a run still be in flight when the clock comes round.
+	block chan struct{}
+
 	mu     sync.Mutex
 	status int
 	fail   bool
 	reqs   []*invoke.Request
+	inside int
 }
 
 func (a *answering) Name() string { return a.name }
@@ -356,14 +361,35 @@ func (a *answering) seen() []*invoke.Request {
 	return append([]*invoke.Request(nil), a.reqs...)
 }
 
+// inflight is how many invocations are inside Serve right now.
+func (a *answering) inflight() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.inside
+}
+
 type answeringInstance struct{ tier *answering }
 
-func (i *answeringInstance) Serve(_ context.Context, req *invoke.Request) (*invoke.Response, error) {
+func (i *answeringInstance) Serve(ctx context.Context, req *invoke.Request) (*invoke.Response, error) {
 	i.tier.mu.Lock()
 	i.tier.reqs = append(i.tier.reqs, req)
-	status, fail := i.tier.status, i.tier.fail
+	i.tier.inside++
+	status, fail, block := i.tier.status, i.tier.fail, i.tier.block
 	i.tier.mu.Unlock()
 
+	defer func() {
+		i.tier.mu.Lock()
+		i.tier.inside--
+		i.tier.mu.Unlock()
+	}()
+
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	if fail {
 		return nil, errNoAnswer
 	}

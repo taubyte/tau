@@ -274,3 +274,24 @@ func (q *queues) Close() error {
 	}
 	return nil
 }
+
+// consensus is the raft cluster this node's coordinated state lives in, or why
+// there is not one yet. It never blocks — see queue.go for why forming it is a
+// background job.
+//
+// IT IS THE QUEUES' CLUSTER AND THAT IS DELIBERATE. A cron's "what has already
+// fired" and a project's work are coordinated state about the same deployment;
+// a second cluster would be a second consensus group, a second election and a
+// second log for one project.
+func (q *queues) consensus() (raft.Cluster, error) {
+	if _, err := q.ready(); err != nil {
+		return nil, err
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.cluster == nil {
+		return nil, ErrQueuesForming
+	}
+	return q.cluster, nil
+}

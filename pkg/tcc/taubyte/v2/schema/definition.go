@@ -1227,6 +1227,24 @@ var databaseTypes = []databaseType{
 // external servers speak the model.
 func (t databaseType) engines() []string { return append([]string{tauEngine}, t.external...) }
 
+// DatabaseEngines is every engine each data model may name, keyed by the model.
+//
+// IT IS READ OFF THE TABLE RATHER THAN KEPT BESIDE IT, for the reason EnginesOf
+// is: whatever has to answer "can this cloud open one of those" — a composer
+// registering adapters, a test asking whether any engine is unadapted — must be
+// asking the same question the compiler answers, or a fifth engine lands in the
+// vocabulary and nothing notices that nothing opens it.
+//
+// tau's own engine is in every list, and it is the node's to register rather
+// than a composer's: it is backed by the swarm the node is already on.
+func DatabaseEngines() map[string][]string {
+	out := make(map[string][]string, len(databaseTypes))
+	for _, t := range databaseTypes {
+		out[t.name] = t.engines()
+	}
+	return out
+}
+
 func databaseTypeNames() []string {
 	out := make([]string, 0, len(databaseTypes))
 	for _, t := range databaseTypes {

@@ -67,6 +67,11 @@ type Reach struct {
 	DeliverPath string
 }
 
+// Target is the target's own name, which is the label unless the entry said
+// otherwise — the only way to reach two resources that share a name in
+// different namespaces.
+func (r Reach) Target() string { return r.target() }
+
 // target is the name to look the reach up under.
 func (r Reach) target() string {
 	if r.Name != "" {
@@ -135,6 +140,16 @@ func (p *Project) Reached(asker []string, reach Reach) (Resource, string, error)
 	}
 	return resource, id, nil
 }
+
+// ScopeOf turns a declared namespace into the chain Resource wants, from the
+// scope of whoever declared it.
+//
+// EXPORTED BECAUSE THE ACCESS BLOCK IS NOT THE ONLY PLACE A NAMESPACE IS
+// WRITTEN. A gateway route's handler names one, and a cron's target names one,
+// and each of them was resolving it with a copy of half this rule — an absolute
+// path handled and a relative one silently read as absolute. Direction is the
+// whole claim, so it is stated once.
+func ScopeOf(asker []string, namespace string) []string { return scopeOf(asker, namespace) }
 
 // scopeOf turns a declared namespace into the chain Resource wants.
 //

@@ -214,8 +214,18 @@ func Start(ctx context.Context, f File) (*Running, error) {
 		return nil, err
 	}
 
+	// WHAT THIS MACHINE CAN CONNECT TO, built before the node so that a build
+	// with a broken engine refuses to start rather than serving every database
+	// query with a message about a registry. See engines.go.
+	dbEngines, err := databaseEngines(ctx)
+	if err != nil {
+		p.Close()
+		return nil, err
+	}
+
 	n, err := node.New(f.Node,
 		node.WithHost(p.Peer()),
+		node.WithDatabaseEngines(dbEngines),
 		node.WithPubSub(p.Messaging()),
 		node.WithDatabases(kvdb.New(p)),
 		// RAFT IS OPENED HERE BECAUSE raft.New TAKES A peer.Node — a host, a
