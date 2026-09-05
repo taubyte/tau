@@ -12,7 +12,7 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::taubyte::handler::{cache, database, document, kv, stream, vector};
+use bindings::taubyte::handler::{cache, database, document, kv, queue, stream, vector};
 use bindings::{Guest, Header, Request, Response};
 
 struct Component;
@@ -101,6 +101,16 @@ fn floats(body: &[u8]) -> Vec<f32> {
         .filter(|s| !s.trim().is_empty())
         .filter_map(|s| s.trim().parse::<f32>().ok())
         .collect()
+}
+
+// why_queue names a queue error arm.
+fn why_queue(e: &queue::Error) -> String {
+    match e {
+        queue::Error::NoSuchQueue(name) => format!("no-such-queue:{}", name),
+        queue::Error::Denied(why) => format!("denied:{}", why),
+        queue::Error::NotWritable(why) => format!("not-writable:{}", why),
+        queue::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
 }
 
 fn reply(status: u16, body: Vec<u8>) -> Response {
@@ -247,6 +257,11 @@ impl Guest for Component {
             "vec-delete" => match vector::delete(name, key) {
                 Ok(()) => reply(204, Vec::new()),
                 Err(e) => reply(403, why_vec(&e).into_bytes()),
+            },
+            // The key is the item's id and the body is its payload.
+            "send" => match queue::send(name, key, &req.body) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_queue(&e).into_bytes()),
             },
             // A round trip through the cache in one call: write the body, read
             // it back, and answer with what came back. It is the only branch

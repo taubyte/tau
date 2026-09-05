@@ -103,7 +103,10 @@ var (
 	ErrNoHost      = errors.New("node: no host to answer on")
 	ErrNoDatabases = errors.New("node: a register needs somewhere to keep what is published")
 	ErrNoPubSub    = errors.New("node: stats needs somewhere to gossip")
-	ErrNoRaft      = errors.New("node: the build backend's queue is replicated through raft, and nothing here opens one")
+	// ErrNoRaft is a node that needs consensus and was given none. TWO THINGS
+	// need it: the build backend's job queue and any queue a project declares,
+	// and both are replicated work queues for the same reason.
+	ErrNoRaft = errors.New("node: a replicated queue needs raft, and nothing here opens one")
 
 	// ErrBothHalves is the one service combination this composition refuses.
 	ErrBothHalves = errors.New("node: " + build.Frontend.Name + " and " + build.Backend.Name +

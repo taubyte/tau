@@ -164,6 +164,7 @@ const (
 	volumeKind   = "volume"
 	streamKind   = "stream"
 	databaseKind = "database"
+	queueKind    = "queue"
 
 	// distributedEngine is the vocabulary's name for the swarm's own — the one
 	// engine this cloud actually holds, for both a cache and a stream.
@@ -180,8 +181,41 @@ func settingsFor(kind string, reach project.Reach, target project.Resource) map[
 		return volumeSettings(reach, target)
 	case databaseKind:
 		return databaseSettings(target)
+	case queueKind:
+		return queueSettings(target)
 	}
 	return nil
+}
+
+// queueSettings carries the delivery block: what the queue promises about
+// timing, retries and where an exhausted item goes.
+//
+// THE DEAD LETTER IS A REFERENCE and its compiled value is another queue's id,
+// which is what a consumer opens to drain it.
+func queueSettings(target project.Resource) map[string]string {
+	out := map[string]string{}
+
+	for _, path := range [][]string{
+		{"visibility_timeout"}, {"delay"}, {"retry", "interval"}, {"retry", "ceiling"},
+	} {
+		if d, ok := target.Duration(path...); ok {
+			out[strings.Join(path, "/")] = d.String()
+		}
+	}
+	if n, ok := target.Int("max_attempts"); ok {
+		out["max_attempts"] = strconv.FormatInt(n, 10)
+	}
+	if f := target.String("retry", "factor"); f != "" {
+		out["retry/factor"] = f
+	}
+	if name := target.String("dead_letter", "name"); name != "" {
+		out["dead_letter/name"] = name
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // databaseSettings carries the data model and, from the block that model names,

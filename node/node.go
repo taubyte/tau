@@ -302,6 +302,9 @@ func (n *Node) openWorker() error {
 		servers := &databases{node: n}
 		n.closers = append(n.closers, servers)
 
+		work := &queues{node: n}
+		n.closers = append(n.closers, work)
+
 		component, err := wasm.New(n.opts.assets,
 			wasm.WithOutput(workloadLog),
 			wasm.WithCaches(&caches{node: n}),
@@ -309,7 +312,8 @@ func (n *Node) openWorker() error {
 			wasm.WithDatabases(servers),
 			wasm.WithKV(servers),
 			wasm.WithDocuments(servers),
-			wasm.WithVectors(servers))
+			wasm.WithVectors(servers),
+			wasm.WithQueues(work))
 		if err != nil {
 			return err
 		}

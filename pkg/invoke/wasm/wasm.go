@@ -175,6 +175,9 @@ type Runtime struct {
 	// vectors backs `taubyte:handler/vector` — the fourth and last data model
 	// the `database` kind declares.
 	vectors VectorStores
+
+	// queues backs `taubyte:handler/queue`.
+	queues Queues
 }
 
 var _ invoke.Runtime = (*Runtime)(nil)
@@ -270,7 +273,12 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}
 
 	imports = append(imports, r.documentImports(spec)...)
+	if r.queues == nil && len(queueGrantsOf(spec)) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoQueues, spec.Name)
+	}
+
 	imports = append(imports, r.vectorImports(spec)...)
+	imports = append(imports, r.queueImports(spec)...)
 
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {
