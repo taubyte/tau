@@ -89,12 +89,21 @@ func WithDatabases(d Databases) Option {
 	return func(r *Runtime) { r.databases = d }
 }
 
-const databaseKind = "database"
+const (
+	databaseKind = "database"
+	sqlModel     = "sql"
+)
 
+// databaseGrantsOf is the database grants whose data model is SQL.
+//
+// THE KIND IS `database` AND THE TYPE SELECTS THE INTERFACE. Four data models
+// live under one kind with different verbs, so filtering by kind alone would
+// make a kv database refuse to start on a tier that serves only sql — and the
+// two are served by different interfaces.
 func databaseGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for _, g := range spec.Reaches {
-		if g.Kind != databaseKind {
+		if g.Kind != databaseKind || g.Settings["type"] != sqlModel {
 			continue
 		}
 		if out == nil {

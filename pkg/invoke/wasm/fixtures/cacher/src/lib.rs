@@ -12,7 +12,7 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::taubyte::handler::{cache, database, stream};
+use bindings::taubyte::handler::{cache, database, kv, stream};
 use bindings::{Guest, Header, Request, Response};
 
 struct Component;
@@ -58,6 +58,16 @@ fn render(v: &database::Value) -> String {
         database::Value::Real(f) => format!("real:{}", f),
         database::Value::Boolean(b) => format!("boolean:{}", b),
         database::Value::Blob(b) => format!("blob:{}", b.len()),
+    }
+}
+
+// why_kv names a kv error arm.
+fn why_kv(e: &kv::Error) -> String {
+    match e {
+        kv::Error::NoSuchDatabase(name) => format!("no-such-database:{}", name),
+        kv::Error::Denied(why) => format!("denied:{}", why),
+        kv::Error::NotFound => "not-found".to_string(),
+        kv::Error::Unavailable(why) => format!("unavailable:{}", why),
     }
 }
 
@@ -143,6 +153,24 @@ impl Guest for Component {
                     Err(e) => reply(500, why_db(&e).into_bytes()),
                 }
             }
+            // The kv data model, driven the same way as the cache so a test
+            // can see the two are different doors onto different kinds.
+            "kv-get" => match kv::get(name, key) {
+                Ok(value) => reply(200, value),
+                Err(e) => reply(404, why_kv(&e).into_bytes()),
+            },
+            "kv-put" => match kv::put(name, key, &req.body) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_kv(&e).into_bytes()),
+            },
+            "kv-delete" => match kv::delete(name, key) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_kv(&e).into_bytes()),
+            },
+            "kv-keys" => match kv::keys(name, key) {
+                Ok(names) => reply(200, names.join(",").into_bytes()),
+                Err(e) => reply(403, why_kv(&e).into_bytes()),
+            },
             // A round trip through the cache in one call: write the body, read
             // it back, and answer with what came back. It is the only branch
             // that proves the bytes a guest wrote are the bytes it gets.

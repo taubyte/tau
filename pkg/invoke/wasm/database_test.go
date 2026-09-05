@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -58,8 +59,14 @@ func (s *server) seen() ([]string, [][]any) {
 	return append([]string(nil), s.statements...), append([][]any(nil), s.bound...)
 }
 
+// dbGrant is a SQL database grant. The `type` setting is what selects the
+// interface — four data models live under one kind — so a grant without it
+// reaches neither.
 func dbGrant(label, handle string, ops ...string) []invoke.Grant {
-	return []invoke.Grant{{Kind: "database", Label: label, Handle: handle, Ops: ops}}
+	return []invoke.Grant{{
+		Kind: "database", Label: label, Handle: handle, Ops: ops,
+		Settings: map[string]string{"type": "sql"},
+	}}
 }
 
 // ── the round trip ───────────────────────────────────────────────────────────
@@ -164,7 +171,8 @@ func TestARefusedDatabaseCarriesItsReason(t *testing.T) {
 		Name: "fn",
 		Reaches: []invoke.Grant{{
 			Kind: "database", Label: "ledger", Handle: "h", Ops: []string{"query"},
-			Refused: `database "ledger" is tau's own sql engine, which this cloud does not ship`,
+			Settings: map[string]string{"type": "sql"},
+			Refused:  `database "ledger" is tau's own sql engine, which this cloud does not ship`,
 		}},
 	})
 
@@ -235,7 +243,8 @@ func TestACacheAStreamAndADatabaseInOneWorkload(t *testing.T) {
 			Reaches: []invoke.Grant{
 				{Kind: "cache", Label: "sessions", Handle: "QmCache", Ops: []string{"get", "put"}},
 				{Kind: "stream", Label: "orders", Handle: "QmOrders", Ops: []string{"publish"}},
-				{Kind: "database", Label: "ledger", Handle: "QmLedger", Ops: []string{"exec"}},
+				{Kind: "database", Label: "ledger", Handle: "QmLedger", Ops: []string{"exec"},
+					Settings: map[string]string{"type": "sql"}},
 			},
 		})
 
@@ -246,4 +255,148 @@ func TestACacheAStreamAndADatabaseInOneWorkload(t *testing.T) {
 	statements, _ := db.seen()
 	require.Equal(t, []string{"insert"}, statements)
 	require.Len(t, sent.messages("QmOrders"), 1)
+}
+
+// ── the kv data model ────────────────────────────────────────────────────────
+
+// keyValues is a kv database, as this tier sees one.
+type keyValues struct {
+	mu     sync.Mutex
+	values map[string][]byte
+	err    error
+	opened int
+}
+
+func newKeyValues() *keyValues { return &keyValues{values: map[string][]byte{}} }
+
+func (s *keyValues) Open(_ context.Context, _ invoke.Grant) (wasm.KV, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.opened++
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s, nil
+}
+
+func (s *keyValues) Get(_ context.Context, key string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.values[key]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", wasm.ErrNotFound, key)
+	}
+	return v, nil
+}
+
+func (s *keyValues) Put(_ context.Context, key string, value []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values[key] = value
+	return nil
+}
+
+func (s *keyValues) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.values, key)
+	return nil
+}
+
+func (s *keyValues) Keys(_ context.Context, prefix string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for k := range s.values {
+		if strings.HasPrefix(k, prefix) {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func kvGrant(label, handle string, ops ...string) []invoke.Grant {
+	return []invoke.Grant{{
+		Kind: "database", Label: label, Handle: handle, Ops: ops,
+		Settings: map[string]string{"type": "kv", "kv/engine": "distributed"},
+	}}
+}
+
+// TestAGuestReadsAndWritesAKvDatabase — tau's own engine, which is the one a
+// project gets with nothing to provision.
+func TestAComponentUsesAKvDatabase(t *testing.T) {
+	db := newKeyValues()
+	instance := start(t, tier(t, cacher(t), wasm.WithKV(db)), invoke.Spec{
+		Name: "fn", Reaches: kvGrant("tokens", "shop/prod/QmTokens", "get", "put", "delete", "list"),
+	})
+
+	require.Equal(t, 204, call(t, instance, "/kv-put/tokens/session:1", []byte("alice")).Status)
+
+	res := call(t, instance, "/kv-get/tokens/session:1", nil)
+	require.Equal(t, 200, res.Status, string(res.Body))
+	require.Equal(t, "alice", string(res.Body))
+
+	res = call(t, instance, "/kv-keys/tokens/session:", nil)
+	require.Equal(t, 200, res.Status)
+	require.Equal(t, "session:1", string(res.Body))
+
+	require.Equal(t, 204, call(t, instance, "/kv-delete/tokens/session:1", nil).Status)
+
+	res = call(t, instance, "/kv-get/tokens/session:1", nil)
+	require.Equal(t, 404, res.Status)
+	require.Equal(t, "not-found", string(res.Body), "a miss is its own arm and not an outage")
+}
+
+// TestAKvGrantIsNotASqlGrant, so one label cannot be spent on the other door —
+// which matters because both are the `database` kind.
+func TestTheDataModelSelectsTheInterface(t *testing.T) {
+	db := newKeyValues()
+	server := &server{}
+
+	instance := start(t, tier(t, cacher(t), wasm.WithKV(db), wasm.WithDatabases(server)),
+		invoke.Spec{
+			Name:    "fn",
+			Reaches: kvGrant("tokens", "shop/prod/QmTokens", "get", "put"),
+		})
+
+	// The sql door does not see a kv database.
+	res := call(t, instance, "/query/tokens/", []byte("select 1"))
+	require.Equal(t, 500, res.Status)
+	require.Equal(t, "no-such-database:tokens", string(res.Body))
+
+	statements, _ := server.seen()
+	require.Empty(t, statements)
+}
+
+func TestAnUngrantedKvVerbIsDenied(t *testing.T) {
+	db := newKeyValues()
+	instance := start(t, tier(t, cacher(t), wasm.WithKV(db)), invoke.Spec{
+		Name: "fn", Reaches: kvGrant("tokens", "h", "get"),
+	})
+
+	res := call(t, instance, "/kv-put/tokens/k", []byte("v"))
+	require.Equal(t, 403, res.Status)
+	require.Equal(t, "denied:tokens cannot put", string(res.Body))
+}
+
+// TestWatchBuysNothing: the vocabulary declares it and the store underneath has
+// no change feed, so a resource asking for it is told rather than handed a
+// channel that never delivers.
+func TestAGrantForWatchDoesNotRead(t *testing.T) {
+	db := newKeyValues()
+	instance := start(t, tier(t, cacher(t), wasm.WithKV(db)), invoke.Spec{
+		Name: "fn", Reaches: kvGrant("tokens", "h", "watch"),
+	})
+
+	res := call(t, instance, "/kv-get/tokens/k", nil)
+	require.Equal(t, 404, res.Status)
+	require.Equal(t, "denied:tokens cannot get", string(res.Body))
+}
+
+func TestATierWithNoKvRefusesAWorkloadThatNeedsOne(t *testing.T) {
+	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
+		Name: "fn", Artifact: "bafy", Reaches: kvGrant("tokens", "h", "get"),
+	})
+	require.ErrorIs(t, err, wasm.ErrNoKV)
 }

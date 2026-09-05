@@ -306,7 +306,8 @@ func (n *Node) openWorker() error {
 			wasm.WithOutput(workloadLog),
 			wasm.WithCaches(&caches{node: n}),
 			wasm.WithStreams(publisher),
-			wasm.WithDatabases(servers))
+			wasm.WithDatabases(servers),
+			wasm.WithKV(servers))
 		if err != nil {
 			return err
 		}

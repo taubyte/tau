@@ -153,7 +153,9 @@ func TestAGrantOpensTheDatabaseItNames(t *testing.T) {
 	require.Equal(t, "orders", spec.Database)
 	require.Equal(t, "shop", spec.Project)
 	require.Equal(t, "prod", spec.Environment)
-	require.Equal(t, "ledger", spec.Name, "the label the author wrote")
+	require.Equal(t, "QmLedger", spec.Name,
+		"the RESOLVED id: a label is local to the resource that wrote it, and two "+
+			"different databases may both be called `ledger`")
 	require.True(t, spec.Credentials.TLS)
 }
 
@@ -369,4 +371,151 @@ func TestClosingReleasesTheConnections(t *testing.T) {
 	require.NoError(t, d.Close())
 	require.Equal(t, 1, engine.conn.closed)
 	require.NoError(t, d.Close(), "Close is idempotent")
+}
+
+// ── tau's own kv engine ──────────────────────────────────────────────────────
+
+func kvGrantFor(handle string) invoke.Grant {
+	return invoke.Grant{
+		Kind: "database", Label: "tokens", Handle: handle,
+		Ops:      []string{"get", "put", "delete", "list"},
+		Settings: map[string]string{"type": "kv", "kv/engine": "distributed"},
+	}
+}
+
+// TestAKvDatabaseNEEDSNOTHINGPROVISIONED, which is the whole difference between
+// declaring a database and going to get one first. No composer registered an
+// engine here.
+func TestAKvDatabaseWorksWithNoEngineRegistered(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+	ctx := t.Context()
+
+	db, err := d.Open(ctx, kvGrantFor("shop/prod/QmTokens"))
+	require.NoError(t, err)
+
+	require.NoError(t, db.Put(ctx, "session:1", []byte("alice")))
+
+	value, err := db.Get(ctx, "session:1")
+	require.NoError(t, err)
+	require.Equal(t, "alice", string(value))
+
+	keys, err := db.Keys(ctx, "session:")
+	require.NoError(t, err)
+	require.Equal(t, []string{"session:1"}, keys)
+
+	require.NoError(t, db.Delete(ctx, "session:1"))
+	_, err = db.Get(ctx, "session:1")
+	require.ErrorIs(t, err, wasmtier.ErrNotFound, "the tier's miss, so it is not read as an outage")
+}
+
+// TestTheKvStoreIsOpenedOnceAndOnlyIfUsed, which is the same rule the cache
+// backing keeps: a node serving no kv database opens nothing.
+func TestTheKvStoreIsLazyAndShared(t *testing.T) {
+	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+
+	opened, _ := factory.counts()
+	require.NotContains(t, opened, databaseStore, "nothing has asked for a database yet")
+
+	for _, handle := range []string{"shop/prod/QmA", "shop/prod/QmB", "other/prod/QmA"} {
+		db, err := d.Open(t.Context(), kvGrantFor(handle))
+		require.NoError(t, err)
+		require.NoError(t, db.Put(t.Context(), "k", []byte("v")))
+	}
+
+	opened, _ = factory.counts()
+	var stores int
+	for _, name := range opened {
+		if name == databaseStore {
+			stores++
+		}
+	}
+	require.Equal(t, 1, stores, "three databases, one store: %v", opened)
+}
+
+// TestTwoKvDatabasesDoNotSeeEachOther, and neither do two deployments of one.
+func TestKvDatabasesAreIsolated(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+	ctx := t.Context()
+
+	mine, err := d.Open(ctx, kvGrantFor("shop/prod/QmA"))
+	require.NoError(t, err)
+	theirs, err := d.Open(ctx, kvGrantFor("shop/prod/QmB"))
+	require.NoError(t, err)
+	staging, err := d.Open(ctx, kvGrantFor("shop/staging/QmA"))
+	require.NoError(t, err)
+
+	require.NoError(t, mine.Put(ctx, "k", []byte("mine")))
+	require.NoError(t, theirs.Put(ctx, "k", []byte("theirs")))
+	require.NoError(t, staging.Put(ctx, "k", []byte("staging")))
+
+	for _, c := range []struct {
+		db   wasmtier.KV
+		want string
+	}{{mine, "mine"}, {theirs, "theirs"}, {staging, "staging"}} {
+		value, err := c.db.Get(ctx, "k")
+		require.NoError(t, err)
+		require.Equal(t, c.want, string(value))
+	}
+}
+
+// TestAComposersOwnKvEngineWins, so a deployment that has something better than
+// the swarm's own store is not overridden by it.
+func TestARegisteredKvEngineIsNotReplaced(t *testing.T) {
+	engine := &fakeKV{}
+	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+		WithDatabaseEngines(registryWith(t, engine)))
+
+	d := &databases{node: n}
+	db, err := d.Open(t.Context(), kvGrantFor("shop/prod/QmA"))
+	require.NoError(t, err)
+	require.NoError(t, db.Put(t.Context(), "k", []byte("v")))
+
+	require.Equal(t, 1, engine.opened, "the composer's engine served it")
+
+	opened, _ := factory.counts()
+	require.NotContains(t, opened, databaseStore, "and the node's own store was never opened")
+}
+
+// TestAKvDatabaseNeedsSomewhereToPutIt, so a node with no database factory
+// says so rather than panicking on the first write.
+func TestAKvDatabaseNeedsAStore(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+
+	n, err := New(Config{Services: []string{Worker, Stats}},
+		WithHost(h), WithPubSub(newPubSub(t, h)), WithRuntimes(&tier{name: "wasm"}))
+	require.NoError(t, err)
+	t.Cleanup(func() { n.Close() })
+
+	_, err = (&databases{node: n}).Open(t.Context(), kvGrantFor("shop/prod/QmA"))
+	require.ErrorIs(t, err, ErrNoCacheStore)
+}
+
+// fakeKV is a composer's own kv engine.
+type fakeKV struct{ opened int }
+
+func (f *fakeKV) Name() string           { return "distributed" }
+func (f *fakeKV) Types() []database.Type { return []database.Type{database.KV} }
+func (f *fakeKV) Open(_ context.Context, spec database.Spec) (database.Conn, error) {
+	if spec.Project != "" {
+		f.opened++
+	}
+	return &fakeKVConn{}, nil
+}
+
+type fakeKVConn struct{}
+
+func (fakeKVConn) Get(context.Context, string) ([]byte, error) { return nil, nil }
+func (fakeKVConn) Put(context.Context, string, []byte) error   { return nil }
+func (fakeKVConn) Delete(context.Context, string) error        { return nil }
+func (fakeKVConn) Close() error                                { return nil }
+func (fakeKVConn) List(context.Context, string) ([]string, error) {
+	return nil, nil
+}
+func (fakeKVConn) Watch(context.Context, string) (<-chan string, error) {
+	return nil, errors.New("not served")
 }

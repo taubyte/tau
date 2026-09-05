@@ -7,7 +7,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/database"
+	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
@@ -35,15 +37,19 @@ import (
 // run-time variable from — so a password is never in a spec, which is logged,
 // cached, compared and handed to a tier.
 
-// databases is the node's Databases: one registry, one connection per handle.
+// databases is the node's Databases and KVs: one registry, one connection per
+// handle, whichever data model the grant names.
 type databases struct {
 	node *Node
 
-	mu   sync.Mutex
-	open map[string]database.SQLConn
+	mu       sync.Mutex
+	open     map[string]database.Conn
+	registry *database.Registry
+	db       kvdb.KVDB
 }
 
 var _ wasmtier.Databases = (*databases)(nil)
+var _ wasmtier.KVs = (*databases)(nil)
 
 var (
 	// ErrNoEngines is a node asked for a database with no engine registered.
@@ -123,55 +129,113 @@ func refused(err error) error {
 // handle behind it pools, so opening per invocation would discard the pool on
 // every request and hand the server a new connection each time.
 func (d *databases) conn(ctx context.Context, grant invoke.Grant) (database.SQLConn, error) {
+	opened, err := d.openFor(ctx, grant, database.SQL)
+	if err != nil {
+		return nil, err
+	}
+
+	sqlConn, ok := opened.(database.SQLConn)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s answers no sql surface", ErrNotSQL, grant.Settings["sql/engine"])
+	}
+	return sqlConn, nil
+}
+
+// Open is the kv half of this backing: the same registry, the same one
+// connection per handle, a different data model.
+func (d *databases) Open(ctx context.Context, grant invoke.Grant) (wasmtier.KV, error) {
+	opened, err := d.openFor(ctx, grant, database.KV)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, ok := opened.(database.KVConn)
+	if !ok {
+		return nil, fmt.Errorf("node: %s answers no kv surface", grant.Settings["kv/engine"])
+	}
+	return keyValue{conn}, nil
+}
+
+// keyValue adapts pkg/database's KVConn to what the tier asks for. The two
+// differ in one name — `List` there, `Keys` here — because `list` is a WIT
+// keyword and the guest's function could not be called that.
+type keyValue struct{ database.KVConn }
+
+func (k keyValue) Keys(ctx context.Context, prefix string) ([]string, error) {
+	return k.KVConn.List(ctx, prefix)
+}
+
+func (k keyValue) Get(ctx context.Context, key string) ([]byte, error) {
+	value, err := k.KVConn.Get(ctx, key)
+	if err != nil && errors.Is(err, kvengine.ErrNotFound) {
+		// THE TIER'S MISS AND NOT THE ENGINE'S, which is the same translation
+		// node/cache.go makes and the same bug it was written to stop: an
+		// unrecognised error becomes `unavailable`, so every miss would read
+		// as an outage.
+		return nil, fmt.Errorf("%w: %w", wasmtier.ErrNotFound, err)
+	}
+	return value, err
+}
+
+// openFor resolves one grant into a connection of the given data model, and
+// keeps it.
+//
+// A CONNECTION IS KEPT BECAUSE A POOL IS WHAT database/sql ALREADY IS, and
+// because a kv connection is a prefix over a store that is already open —
+// re-deriving either per invocation would be work for no answer.
+func (d *databases) openFor(ctx context.Context, grant invoke.Grant, want database.Type) (database.Conn, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if held, ok := d.open[grant.Handle]; ok {
 		return held, nil
 	}
-	if d.node.opts.engines == nil {
-		return nil, ErrNoEngines
-	}
-
-	spec, err := d.specOf(ctx, grant)
+	registry, err := d.engines(ctx, want)
 	if err != nil {
 		return nil, err
 	}
 
-	opened, err := d.node.opts.engines.Open(ctx, spec)
+	spec, err := d.specOf(ctx, grant, want)
+	if err != nil {
+		return nil, err
+	}
+
+	opened, err := registry.Open(ctx, spec)
 	if err != nil {
 		return nil, fmt.Errorf("node: opening %s %q: %w", spec.Engine, grant.Label, err)
 	}
 
-	sqlConn, ok := opened.(database.SQLConn)
-	if !ok {
-		opened.Close()
-		return nil, fmt.Errorf("%w: %s answers no sql surface", ErrNotSQL, spec.Engine)
-	}
-
 	if d.open == nil {
-		d.open = map[string]database.SQLConn{}
+		d.open = map[string]database.Conn{}
 	}
-	d.open[grant.Handle] = sqlConn
-	return sqlConn, nil
+	d.open[grant.Handle] = opened
+	return opened, nil
 }
 
 // specOf turns a grant into what pkg/database opens from.
-func (d *databases) specOf(ctx context.Context, grant invoke.Grant) (database.Spec, error) {
+func (d *databases) specOf(ctx context.Context, grant invoke.Grant, want database.Type) (database.Spec, error) {
 	model := grant.Settings[databaseTypeSetting]
-	if database.Type(model) != database.SQL {
+	if database.Type(model) != want {
 		return database.Spec{}, fmt.Errorf("%w: %q is %q", ErrNotSQL, grant.Label, model)
 	}
 
-	project, environment, _ := splitHandle(grant.Handle)
+	project, environment, id := splitHandle(grant.Handle)
 	spec := database.Spec{
-		Type:        database.SQL,
-		Engine:      grant.Settings[model+"/engine"],
+		Type:   want,
+		Engine: grant.Settings[model+"/engine"],
+
 		Project:     project,
 		Environment: environment,
-		Name:        grant.Label,
-		Address:     grant.Settings[model+"/host"],
-		Database:    grant.Settings[model+"/database"],
+
+		// THE RESOLVED ID AND NOT THE AUTHOR'S LABEL. A label is local to the
+		// resource that wrote it — two workloads may call one database
+		// different things, and two different databases may both be called
+		// `tokens` — so a kv engine keying its rows on the label would put two
+		// databases in one key space. It is the id for every engine and not
+		// just that one, because Spec.Name is what ADDRESSES the resource.
+		Name:     id,
+		Address:  grant.Settings[model+"/host"],
+		Database: grant.Settings[model+"/database"],
 	}
 
 	// TLS IS ON UNLESS THE AUTHOR WROTE `disable`, which is the vocabulary's
@@ -195,6 +259,66 @@ func (d *databases) specOf(ctx context.Context, grant invoke.Grant) (database.Sp
 	}
 	return spec, nil
 }
+
+// engines is the registry this node serves from, with tau's own kv engine in
+// it.
+//
+// THE kv ENGINE IS REGISTERED BY THIS NODE AND NOT BY A COMPOSER, which is what
+// makes `type: kv` work with nothing to provision: a project declares a
+// database and gets one from the swarm it is already on. Every other engine
+// reaches a server somebody else runs, so those are the composer's to register
+// — see WithDatabaseEngines.
+//
+// It is opened on FIRST USE. A node that serves no kv database never opens the
+// store, which is the same rule the cache backing keeps.
+func (d *databases) engines(ctx context.Context, want database.Type) (*database.Registry, error) {
+	if d.registry == nil {
+		d.registry = d.node.opts.engines
+	}
+	if want != database.KV {
+		if d.registry == nil {
+			return nil, ErrNoEngines
+		}
+		return d.registry, nil
+	}
+
+	if d.registry == nil {
+		d.registry = database.NewRegistry()
+	}
+	if len(d.registry.EnginesFor(database.KV)) > 0 {
+		// Already there — either this call opened it, or a composer registered
+		// their own, and theirs wins.
+		return d.registry, nil
+	}
+
+	if d.node.opts.databases == nil {
+		return nil, ErrNoCacheStore
+	}
+	if d.db == nil {
+		db, err := d.node.opts.databases.New(logger, databaseStore, rebroadcastSeconds)
+		if err != nil {
+			return nil, fmt.Errorf("node: opening the database store: %w", err)
+		}
+		d.db = db
+		d.node.closers = append(d.node.closers, closerFunc(db.Close))
+	}
+
+	engine, err := kvengine.New(cacheStore{d.db})
+	if err != nil {
+		return nil, err
+	}
+	if err := d.registry.Register(ctx, engine); err != nil {
+		return nil, fmt.Errorf("node: registering tau's own kv engine: %w", err)
+	}
+	return d.registry, nil
+}
+
+// databaseStore is the one kvdb every kv database on this node lives in.
+//
+// SEPARATE FROM THE CACHES', because they are different kinds with different
+// lifetimes: a cache evicts and a database does not, and one CRDT holding both
+// would make a cache's churn the database's replication traffic.
+const databaseStore = "databases"
 
 // The setting keys services/worker writes.
 const (

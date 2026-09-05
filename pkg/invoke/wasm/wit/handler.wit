@@ -195,8 +195,38 @@ interface database {
     exec: func(name: string, statement: string, args: list<value>) -> result<s64, error>;
 }
 
+// A key-value database, as the vocabulary's `database` kind at `type: kv`.
+//
+// # Why it is not the cache interface
+//
+// The verbs are the same four and the kinds are not. A cache MAY lose an entry
+// — that is what it is for — and a database may not, so there is no ttl here
+// and nothing evicts. Sharing one interface would let an author reach a system
+// of record through a door labelled "this may vanish".
+//
+// # `watch` is declared by the vocabulary and not served
+//
+// A change feed is a stream, and the store underneath does not expose one. A
+// resource that asks for it is told by the op check rather than handed a
+// channel that never delivers.
+interface kv {
+    variant error {
+        no-such-database(string),
+        denied(string),
+        not-found,
+        unavailable(string),
+    }
+
+    get: func(name: string, key: string) -> result<list<u8>, error>;
+    put: func(name: string, key: string, value: list<u8>) -> result<_, error>;
+    delete: func(name: string, key: string) -> result<_, error>;
+    // Keys under a prefix, sorted, without the database's own scoping on them.
+    keys: func(name: string, prefix: string) -> result<list<string>, error>;
+}
+
 world handler {
     import database;
+    import kv;
     import %stream;
     // A GUEST NEED NOT USE IT. A world's imports are what the host PROVIDES,
     // so a component built against this world that never calls the cache is

@@ -165,6 +165,9 @@ type Runtime struct {
 
 	// databases backs `taubyte:handler/database`, and the same again.
 	databases Databases
+
+	// kv backs `taubyte:handler/kv` — the same kind at a different data model.
+	kv KVs
 }
 
 var _ invoke.Runtime = (*Runtime)(nil)
@@ -245,7 +248,12 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}
 
 	imports := append(r.cacheImports(spec), r.streamImports(spec)...)
+	if r.kv == nil && len(kvGrantsOf(spec)) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoKV, spec.Name)
+	}
+
 	imports = append(imports, r.databaseImports(spec)...)
+	imports = append(imports, r.kvImports(spec)...)
 
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {
