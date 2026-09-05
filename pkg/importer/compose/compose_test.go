@@ -414,9 +414,15 @@ services:
 `)
 	require.Len(t, r.Names("application"), 3)
 
+	// EVERY SERVICE APPEARS, IN ORDER, AND MORE THAN ONCE. Each carries a
+	// restart-policy finding and a defaulted-memory one, so what is asserted is
+	// the ORDER rather than the count — a service's findings sit together and
+	// the services are sorted.
 	var order []string
 	for _, f := range r.Findings {
-		order = append(order, f.Resource)
+		if len(order) == 0 || order[len(order)-1] != f.Resource {
+			order = append(order, f.Resource)
+		}
 	}
 	require.Equal(t, []string{"api", "db", "web"}, order, "sorted, so two runs diff cleanly")
 }
@@ -620,9 +626,26 @@ services:
           memory: plenty
           cpus: "many"
 `)
-	require.Equal(t, "MEMORY_NOT_READABLE", finding(t, r, "api", "deploy.resources.limits.memory").Code)
 	require.Equal(t, "CPUS_NOT_READABLE", finding(t, r, "api", "deploy.resources.limits.cpus").Code)
-	require.NotContains(t, docOf(t, r, "api"), "execution")
+
+	// THE UNREADABLE SIZE IS REPORTED AND THEN DEFAULTED, which is two
+	// findings on one field and both are wanted: the first says the value in
+	// the file could not be read, the second says what was written instead.
+	// Emitting no ceiling at all was the old behaviour and it produced a
+	// project that imported and would not compile — `execution/memory` is
+	// required on this kind.
+	var codes []string
+	for _, f := range r.Findings {
+		if f.Resource == "api" && f.Key == "deploy.resources.limits.memory" {
+			codes = append(codes, f.Code)
+		}
+	}
+	require.Contains(t, codes, "MEMORY_NOT_READABLE")
+	require.Contains(t, codes, "MEMORY_DEFAULTED")
+
+	execution, ok := docOf(t, r, "api")["execution"].(map[string]any)
+	require.True(t, ok, "a ceiling is always written")
+	require.Equal(t, defaultMemory, execution["memory"])
 }
 
 // TestAPortSpecIsReadInEveryComposeSpelling.

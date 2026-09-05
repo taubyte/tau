@@ -22,8 +22,10 @@ package fly
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/alecthomas/units"
 
 	"github.com/taubyte/tau/pkg/importer"
 )
@@ -260,10 +262,60 @@ func importBuild(r *importer.Result, doc map[string]any, b *build) {
 	}
 }
 
+// flySize turns a Fly memory string into one tau's vocabulary parses.
+//
+// Fly writes "512mb", "1gb", or a BARE NUMBER, which its own documentation
+// defines as megabytes. tau parses with units.ParseStrictBytes, which is
+// case-sensitive — so every one of those three needs work and the bare number
+// needs a unit invented for it, from Fly's rule rather than from a guess.
+func flySize(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", false
+	}
+
+	digits := strings.IndexFunc(s, func(r rune) bool { return r < '0' || r > '9' })
+	if digits == -1 {
+		// A bare number is megabytes, which is Fly's own default and not a
+		// choice made here.
+		s += "MB"
+		digits = len(s) - 2
+	}
+
+	number, unit := s[:digits], strings.TrimSpace(s[digits:])
+	if number == "" {
+		return "", false
+	}
+
+	// "mb" -> "MB", "gib" -> "GiB": the binary units carry a lowercase "i"
+	// and the rest are upper.
+	upper := strings.ToUpper(unit)
+	if len(upper) == 3 && upper[1] == 'I' {
+		upper = string(upper[0]) + "i" + string(upper[2])
+	}
+
+	out := number + upper
+	if _, err := units.ParseStrictBytes(out); err != nil {
+		return "", false
+	}
+	return out, true
+}
+
 func importVM(r *importer.Result, doc map[string]any, vms []vm) {
 	for _, v := range vms {
 		if v.Memory != "" {
-			doc["execution"] = map[string]any{"memory": v.Memory}
+			// FLY'S SPELLING IS NOT TAU'S, and carrying it across unchanged
+			// produced a project that IMPORTED and would not compile —
+			// `512mb` against a parser that wants `512MB`. It is a
+			// translation and not an approximation: the same number of bytes,
+			// written the way this vocabulary writes it.
+			if size, ok := flySize(v.Memory); ok {
+				doc["execution"] = map[string]any{"memory": size}
+			} else {
+				r.Add(importer.Finding{Key: "vm.memory", Level: importer.Blocked,
+					Code:   "SIZE_NOT_UNDERSTOOD",
+					Detail: "memory " + v.Memory + " is not a size this importer can read, so the resource is emitted without one"})
+			}
 		}
 		if v.Size != "" && v.Memory == "" {
 			// A SIZE PRESET IS A NAME FOR TWO NUMBERS, and the numbers are what

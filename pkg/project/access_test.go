@@ -37,10 +37,15 @@ func TestAResourceReadsItsOwnAccessBlock(t *testing.T) {
 	require.Equal(t, []string{"get"}, caches[0].Ops)
 	require.Equal(t, "cache", caches[0].Kind)
 
-	databases := r.Reaches("database")
-	require.Len(t, databases, 2)
-	require.Equal(t, "ledger", databases[0].Label)
-	require.Equal(t, "profiles", databases[1].Label, "sorted by label")
+	// SORTED BY LABEL, and it is asserted over many reads because the map
+	// underneath is not ordered: an unsorted answer differs between two
+	// resolves of one revision, which is a spec that changes without a deploy.
+	for range 20 {
+		databases := r.Reaches("database")
+		require.Len(t, databases, 2)
+		require.Equal(t, "ledger", databases[0].Label)
+		require.Equal(t, "profiles", databases[1].Label, "sorted by label")
+	}
 }
 
 func TestAKindNothingWasDeclaredForIsEmpty(t *testing.T) {

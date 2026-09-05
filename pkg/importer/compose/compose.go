@@ -359,9 +359,23 @@ func importService(r *importer.Result, kind, source string, s service, volumes m
 		doc["volume"] = mounts
 	}
 
-	if execution := importLimits(r, name, s.Deploy); len(execution) > 0 {
-		doc["execution"] = execution
+	execution := importLimits(r, name, s.Deploy)
+	if execution == nil {
+		execution = map[string]any{}
 	}
+	// THE VOCABULARY REQUIRES A CEILING AND COMPOSE DOES NOT, so one is chosen
+	// here and SAID. A compose service with no `deploy.resources.limits.memory`
+	// gets the host's memory, which is not a number tau can write — and
+	// emitting the resource without one produced a project that imported and
+	// then would not compile, which is the worst of the three outcomes.
+	if _, ok := execution["memory"]; !ok {
+		execution["memory"] = defaultMemory
+		r.Add(importer.Finding{Resource: name, Key: "deploy.resources.limits.memory", Level: importer.Approximated,
+			Code: "MEMORY_DEFAULTED",
+			Detail: "this service declares no memory limit, so it had the host's; tau requires a per-resource ceiling " +
+				"and " + defaultMemory + " was chosen — raise it before this runs anything that needs more"})
+	}
+	doc["execution"] = execution
 
 	if deps := dependsOn(s.DependsOn); len(deps) > 0 {
 		// depends_on is a HINT here and writes no config: service_healthy and
@@ -530,6 +544,11 @@ func importMounts(r *importer.Result, resource string, declared yaml.Node, volum
 // REPLICAS IS REFUSED RATHER THAN DROPPED. It is the field somebody will look
 // for first, and its absence is a decision: how many instances run and where is
 // the platform's, not the config's.
+// defaultMemory is what a service with no declared limit is given. It is not a
+// measurement of anything: it is a number small enough to be noticed and large
+// enough to start most images, and the finding beside it says so.
+const defaultMemory = "512MB"
+
 func importLimits(r *importer.Result, resource string, d deploy) map[string]any {
 	if d.isZero() {
 		return nil

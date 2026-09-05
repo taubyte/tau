@@ -41,15 +41,21 @@ func TestTheBuildHalfIsWhatTheFileIsFor(t *testing.T) {
 	require.True(t, ok, "got %v", r.Resources)
 	require.Equal(t, map[string]any{
 		"commands": map[string]any{
+			// THE IMAGE IS WRITTEN, not left out. Vercel names none, and
+			// emitting the block without one produced a project that imported
+			// and would not compile — with an EMPTY to-do list, because a
+			// required field at a dynamic path is invisible to the session's
+			// own required-field check.
+			"image":   defaultBuildImage,
 			"install": "pnpm i",
 			"run":     "next build",
 			"output":  ".next",
 		},
 	}, doc["build"])
 
-	// THE BUILD IMAGE IS REQUIRED AND VERCEL DOES NOT NAME ONE.
+	// AND THE CHOICE IS REPORTED, because it is a runtime nobody chose.
 	f := finding(t, r, SiteName, "build.image")
-	require.Equal(t, importer.Blocked, f.Level)
+	require.Equal(t, importer.Approximated, f.Level)
 	require.Equal(t, "SOURCE_IN_API:node-version", f.Code)
 }
 
@@ -81,7 +87,13 @@ func TestFunctionLimitsAreTheOneCleanMapping(t *testing.T) {
 
 	doc, ok := r.Doc("function", "api_heavy_ts")
 	require.True(t, ok, "got %v", r.Names("function"))
-	require.Equal(t, map[string]any{"memory": "3008MB", "timeout": "300s"}, doc["execution"])
+	// `call` NAMES THE EXPORT THE HOST CALLS and Vercel has no such field: its
+	// Node runtime calls the module's default export, written by convention as
+	// `export default function handler`. The vocabulary requires a name, so the
+	// convention is what is written, and it is reported.
+	require.Equal(t, map[string]any{
+		"memory": "3008MB", "timeout": "300s", "call": defaultCall,
+	}, doc["execution"])
 
 	// A GLOB IS NOT A RESOURCE. `api/heavy.ts` names a file; a pattern names
 	// however many the repository has, and this file does not say how many.

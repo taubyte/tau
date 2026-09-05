@@ -88,7 +88,51 @@ app = "shop"
 	// A VARIABLE IS A BLOCK, and a limit lives under `execution` — both are
 	// where the vocabulary puts them, not where fly.toml does.
 	require.Equal(t, map[string]any{"DATABASE_URL": map[string]any{"value": "postgres://db/app"}}, doc["variables"])
-	require.Equal(t, map[string]any{"memory": "512mb"}, doc["execution"])
+
+	// AND THE SIZE IS RESPELLED. Fly writes "512mb"; this vocabulary parses
+	// with a case-sensitive reader that wants "512MB", so carrying the string
+	// across unchanged produced a project that imported and would not compile.
+	require.Equal(t, map[string]any{"memory": "512MB"}, doc["execution"])
+}
+
+// TestFlySizesAreRespelled, in every spelling fly.toml uses.
+func TestFlySizesAreRespelled(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"512mb", "512MB"},
+		{"512MB", "512MB"},
+		{"1gb", "1GB"},
+		{"2GiB", "2GiB"},
+		{"2gib", "2GiB"},
+		{" 256mb ", "256MB"},
+		// A BARE NUMBER IS MEGABYTES, which is Fly's own rule and not a guess.
+		{"2048", "2048MB"},
+	} {
+		got, ok := flySize(c.in)
+		require.True(t, ok, c.in)
+		require.Equal(t, c.want, got, c.in)
+	}
+
+	for _, bad := range []string{"", "lots", "mb512", "512qb", "  "} {
+		_, ok := flySize(bad)
+		require.False(t, ok, bad)
+	}
+}
+
+// TestASizeThatCannotBeReadIsReportedRatherThanWritten, so a resource never
+// carries a value the compiler will refuse.
+func TestAnUnreadableSizeIsReported(t *testing.T) {
+	r := importOf(t, `
+app = "shop"
+
+[build]
+  image = "ghcr.io/acme/shop:1"
+
+[[vm]]
+  memory = "plenty"
+`)
+	require.Equal(t, "SIZE_NOT_UNDERSTOOD", finding(t, r, "vm.memory").Code)
+	require.NotContains(t, docOf(t, r, "shop"), "execution",
+		"a value the compiler would refuse is never written")
 }
 
 // TestOneAppFansOutIntoNResources — the main structural transform, and the

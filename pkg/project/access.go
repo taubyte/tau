@@ -95,6 +95,11 @@ func (r Resource) Reaches(kind string) []Reach {
 	if len(out) == 0 {
 		return nil
 	}
+
+	// SORTED, because Resource.Keys walks a map and does not sort — so two
+	// reads of one resource returned its grants in different orders, which is
+	// a spec that differs between two resolves of the same revision.
+	sort.Slice(out, func(i, j int) bool { return out[i].Label < out[j].Label })
 	return out
 }
 

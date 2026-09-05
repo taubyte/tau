@@ -37,6 +37,20 @@ import (
 	"github.com/taubyte/tau/pkg/importer"
 )
 
+// defaultMemory and defaultCall are what a function that names neither is
+// given. Neither is a measurement: the vocabulary requires both, Vercel's file
+// carries neither, and a resource emitted without them does not compile. Each
+// is reported where it is chosen.
+const (
+	defaultMemory = "128MB"
+	defaultCall   = "handler"
+
+	// defaultBuildImage is the toolchain a Vercel build runs in when the file
+	// does not say. Vercel's own default has tracked Node LTS; this is not a
+	// measurement of anything and the finding beside it says so.
+	defaultBuildImage = "node:22"
+)
+
 // Source is what this importer is called in a finding.
 const Source = "vercel"
 
@@ -111,20 +125,30 @@ func Import(data []byte) (importer.Result, error) {
 		commands["output"] = *f.OutputDirectory
 	}
 	if len(commands) > 0 {
+		// THE BUILD IMAGE IS REQUIRED AND VERCEL DOES NOT NAME ONE. Vercel
+		// picks a Node version from a project setting and a package.json
+		// field, neither of which is in this file.
+		//
+		// SO ONE IS WRITTEN, AND THAT IS A REVERSAL. This emitted the block
+		// without an image and reported the hole, which read as the careful
+		// choice and was the worst of the three: the project imported, the
+		// to-do list was EMPTY — a dynamic path is invisible to the session's
+		// required-field check — and tcc then refused the whole thing over a
+		// field nothing had named. Between a build against a runtime nobody
+		// chose and a project that cannot compile at all, the first is the one
+		// a person can see and change.
+		commands["image"] = defaultBuildImage
+
 		r.Set(siteKind, SiteName, map[string]any{
 			"description": "imported from vercel.json",
 			"build":       map[string]any{"commands": commands},
 		})
 
-		// THE BUILD IMAGE IS REQUIRED AND VERCEL DOES NOT NAME ONE. Vercel
-		// picks a Node version from a project setting and a package.json
-		// field, neither of which is in this file — and guessing one would
-		// build the site against a runtime nobody chose.
-		r.Add(importer.Finding{Resource: SiteName, Key: "build.image", Level: importer.Blocked,
-			Code:  "SOURCE_IN_API:node-version",
-			Needs: "nothing — the field exists; the value does not",
+		r.Add(importer.Finding{Resource: SiteName, Key: "build.image", Level: importer.Approximated,
+			Code: "SOURCE_IN_API:node-version",
 			Detail: "the image a build runs in has to be named, and Vercel picks it from a project setting and " +
-				"package.json's engines field rather than from this file"})
+				"package.json's engines field rather than from this file; " + defaultBuildImage +
+				" was written — change it if the build needs another runtime"})
 	}
 
 	if f.Framework != nil && *f.Framework != "" {
@@ -202,9 +226,29 @@ func importFunctions(r *importer.Result, fns map[string]function) {
 		if fn.MaxDuration > 0 {
 			execution["timeout"] = fmt.Sprintf("%ds", fn.MaxDuration)
 		}
-		if len(execution) > 0 {
-			doc["execution"] = execution
+		// THE VOCABULARY REQUIRES BOTH AND VERCEL'S FILE CARRIES NEITHER
+		// RELIABLY, so both are chosen here and said. A resource emitted
+		// without them imported and then would not compile.
+		if _, ok := execution["memory"]; !ok {
+			execution["memory"] = defaultMemory
+			r.Add(importer.Finding{Resource: glob, Key: "functions.memory", Level: importer.Approximated,
+				Code: "MEMORY_DEFAULTED",
+				Detail: "this function declares no memory, so it had Vercel's own default; tau requires one and " +
+					defaultMemory + " was chosen"})
 		}
+
+		// `call` NAMES THE EXPORT THE HOST CALLS, and Vercel has no equivalent
+		// field: its Node runtime calls the module's default export, which by
+		// convention is written `export default function handler`. So the
+		// convention is what is written, and it is reported because a function
+		// whose entrypoint is named anything else will not be found.
+		execution["call"] = defaultCall
+		r.Add(importer.Finding{Resource: glob, Key: "execution.call", Level: importer.Approximated,
+			Code: "ENTRYPOINT_ASSUMED",
+			Detail: "Vercel calls a function's default export and names nothing; tau names the export it calls, so " +
+				defaultCall + " was written — change it if the built component exports something else"})
+
+		doc["execution"] = execution
 
 		// A GLOB IS NOT A RESOURCE. `api/**/*.ts` configures every file it
 		// matches; each of those is a function here, and this file does not say

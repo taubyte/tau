@@ -41,6 +41,10 @@ import (
 	"github.com/taubyte/tau/pkg/importer"
 )
 
+// defaultMemory is AWS's own default, which is what a function naming no
+// MemorySize actually ran under — not a number chosen here.
+const defaultMemory = "128MB"
+
 // Source is what this importer is called in a finding.
 const Source = "lambda"
 
@@ -127,6 +131,10 @@ type fn struct {
 	vpc       bool
 	snapStart bool
 	container bool
+	// image is the container image, when the function is packaged as one. It
+	// was read and dropped before: a resource emitted without it lost the one
+	// thing the file said about what actually runs.
+	image string
 }
 
 // Import reads a SAM template or a serverless.yml.
@@ -202,6 +210,7 @@ func collect(f file) []fn {
 			vpc:       p.VpcConfig != nil || g.VpcConfig != nil,
 			snapStart: p.SnapStart != nil || g.SnapStart != nil,
 			container: p.PackageType == "Image" || p.ImageUri != "",
+			image:     p.ImageUri,
 		}
 		if p.Environment != nil {
 			x.env = p.Environment.Variables
@@ -232,6 +241,7 @@ func collect(f file) []fn {
 			vpc:       s.VPC != nil || pr.VPC != nil,
 			snapStart: s.SnapStart != nil && *s.SnapStart,
 			container: s.Image != nil,
+			image:     imageOf(s.Image),
 		}
 		if x.env == nil {
 			x.env = pr.Environment
@@ -246,8 +256,31 @@ func collect(f file) []fn {
 	return out
 }
 
-// functionKind is what a Lambda becomes.
-const functionKind = "function"
+// What a Lambda becomes, and it is TWO KINDS because the packaging really is
+// two different things.
+//
+// A zip-packaged Lambda is source that a handler runs out of — tau's `function`,
+// which the vocabulary runs on wasm. A container-packaged one is an IMAGE, and
+// the only kind here that starts from an image is `application`, on the
+// container tier. Emitting both as `function` dropped the image entirely and
+// left a wasm resource with nothing to run.
+const (
+	functionKind  = "function"
+	containerKind = "application"
+)
+
+// imageOf reads the Serverless Framework's `image:`, which is a string or a
+// block with a `uri`.
+func imageOf(v any) string {
+	switch image := v.(type) {
+	case string:
+		return image
+	case map[string]any:
+		uri, _ := image["uri"].(string)
+		return uri
+	}
+	return ""
+}
 
 func importFunction(r *importer.Result, x fn) {
 	name, renamed := importer.Name(x.name)
@@ -312,19 +345,61 @@ func importFunction(r *importer.Result, x fn) {
 			doc["variables"] = variables
 		}
 	}
+	kind := functionKind
+	if x.container {
+		kind = containerKind
+		if x.image != "" {
+			doc["source"] = map[string]any{"image": x.image}
+		}
+
+		// AN application HAS NO PER-REQUEST TIMEOUT, because it is not invoked
+		// per request — its execution block is a cpu and a memory ceiling and
+		// nothing else. A Lambda's Timeout is real information this kind
+		// cannot hold, so it is dropped LOUDLY: a function tuned around a
+		// 30-second ceiling now runs until it stops.
+		if execution, ok := doc["execution"].(map[string]any); ok {
+			if _, had := execution["timeout"]; had {
+				delete(execution, "timeout")
+				r.Add(importer.Finding{Resource: name, Key: "Timeout", Level: importer.Blocked,
+					Code:  "NO_TAU_FEATURE:container-timeout",
+					Needs: "a per-invocation ceiling on the container tier",
+					Detail: fmt.Sprintf("this function is bounded at %ds; a container-packaged one becomes an "+
+						"application here, which has no per-request timeout, so nothing stops a run that hangs", x.timeout)})
+			}
+		}
+		// AN application NEEDS A CEILING AND AWS'S DEFAULT IS 128MB, which is
+		// the number a Lambda that names none actually ran under.
+		if x.memory == 0 {
+			execution := doc["execution"]
+			if execution == nil {
+				execution = map[string]any{}
+				doc["execution"] = execution
+			}
+			execution.(map[string]any)["memory"] = defaultMemory
+			r.Add(importer.Finding{Resource: name, Key: "MemorySize", Level: importer.Approximated,
+				Code:   "MEMORY_DEFAULTED",
+				Detail: "this function names no MemorySize, so it ran under AWS's default; " + defaultMemory + " was written"})
+		}
+	}
 	if len(doc) > 0 {
-		r.Set(functionKind, name, doc)
+		r.Set(kind, name, doc)
 	}
 
 	if x.container {
 		// A LAMBDA CONTAINER IMAGE IS THE HARDER ONE, not the easier one. It
 		// embeds AWS's runtime interface client, which polls an endpoint for
 		// work rather than listening for a request.
+		//
+		// IT IS STILL EMITTED, with its image, as an `application` on the
+		// container tier — because the alternative was a wasm `function` with
+		// nothing to run and the image thrown away. What it will not do is
+		// serve, and that is what this says.
 		r.Add(importer.Finding{Resource: name, Key: "image", Level: importer.Blocked,
 			Code:  "IMAGE_POLLS_FOR_WORK",
-			Needs: "a compatibility layer that is its own project",
-			Detail: "a Lambda container image embeds AWS's runtime client and polls an endpoint for work; " +
-				"it does not listen for a request, so tau's container tier cannot run it as it stands"})
+			Needs: "a runtime-interface shim in front of the image",
+			Detail: "a Lambda container image embeds AWS's runtime client and polls an endpoint for work; it does " +
+				"not listen for a request, so it starts here and serves nothing until something speaks the " +
+				"runtime interface to it"})
 	}
 
 	if x.snapStart {
