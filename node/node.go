@@ -308,7 +308,8 @@ func (n *Node) openWorker() error {
 			wasm.WithStreams(publisher),
 			wasm.WithDatabases(servers),
 			wasm.WithKV(servers),
-			wasm.WithDocuments(servers))
+			wasm.WithDocuments(servers),
+			wasm.WithVectors(servers))
 		if err != nil {
 			return err
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/pkg/database"
 	docengine "github.com/taubyte/tau/pkg/database/engines/document"
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
+	vecengine "github.com/taubyte/tau/pkg/database/engines/vector"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
@@ -54,6 +55,7 @@ var (
 	_ wasmtier.Databases      = (*databases)(nil)
 	_ wasmtier.KVs            = (*databases)(nil)
 	_ wasmtier.DocumentStores = (*databases)(nil)
+	_ wasmtier.VectorStores   = (*databases)(nil)
 )
 
 var (
@@ -239,6 +241,70 @@ func documentError(err error) error {
 	}
 }
 
+// OpenVectors is the vector half of this backing.
+func (d *databases) OpenVectors(ctx context.Context, grant invoke.Grant) (wasmtier.Vectors, error) {
+	opened, err := d.openFor(ctx, grant, database.Vector)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, ok := opened.(database.VectorConn)
+	if !ok {
+		return nil, fmt.Errorf("node: %s answers no vector surface", grant.Settings["vector/engine"])
+	}
+	return vectors{conn}, nil
+}
+
+// vectors adapts pkg/database's VectorConn to the tier's. The embedding is
+// already a float slice on both sides; what differs is the META, which the ABI
+// carries as JSON for document.go's reason.
+type vectors struct{ database.VectorConn }
+
+func (v vectors) Search(ctx context.Context, query []float32, k int) ([]wasmtier.Match, error) {
+	found, err := v.VectorConn.Search(ctx, query, k)
+	if err != nil {
+		return nil, vectorError(err)
+	}
+
+	out := make([]wasmtier.Match, 0, len(found))
+	for _, m := range found {
+		match := wasmtier.Match{ID: m.ID, Score: m.Score}
+		if len(m.Meta) > 0 {
+			raw, err := json.Marshal(m.Meta)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s", wasmtier.ErrMalformed, err)
+			}
+			match.Meta = raw
+		}
+		out = append(out, match)
+	}
+	return out, nil
+}
+
+// Upsert takes the meta as JSON. AN EMPTY META IS NO META rather than an empty
+// object, so a guest that has nothing to attach sends nothing.
+func (v vectors) Upsert(ctx context.Context, id string, embedding []float32, meta []byte) error {
+	var attached map[string]any
+	if len(meta) > 0 {
+		if err := json.Unmarshal(meta, &attached); err != nil {
+			return fmt.Errorf("%w: %s", wasmtier.ErrMalformed, err)
+		}
+	}
+	return vectorError(v.VectorConn.Upsert(ctx, id, embedding, attached))
+}
+
+func (v vectors) Delete(ctx context.Context, id string) error {
+	return vectorError(v.VectorConn.Delete(ctx, id))
+}
+
+// vectorError translates the engine's sentinels into the tier's.
+func vectorError(err error) error {
+	if err != nil && errors.Is(err, vecengine.ErrWidth) {
+		return fmt.Errorf("%w: %w", wasmtier.ErrWrongWidth, err)
+	}
+	return err
+}
+
 // keyValue adapts pkg/database's KVConn to what the tier asks for. The two
 // differ in one name — `List` there, `Keys` here — because `list` is a WIT
 // keyword and the guest's function could not be called that.
@@ -333,6 +399,18 @@ func (d *databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 	// loudly, instead of connecting to whoever answered.
 	spec.Credentials.TLS = grant.Settings[model+"/tls"] != "disable"
 
+	// PER-TYPE DECLARATIONS TRAVEL AS OPTIONS. A vector's width and metric mean
+	// nothing to the other three models, which is why they are a map here and
+	// not fields on the Spec.
+	for _, option := range []string{"dimensions", "metric"} {
+		if value := grant.Settings[model+"/"+option]; value != "" {
+			if spec.Options == nil {
+				spec.Options = map[string]string{}
+			}
+			spec.Options[option] = value
+		}
+	}
+
 	if reference := grant.Settings[databaseCredentialsSetting]; reference != "" {
 		username, password, err := d.credentials(ctx, project, environment, reference)
 		if err != nil {
@@ -361,7 +439,7 @@ func (d *databases) engines(ctx context.Context, want database.Type) (*database.
 	// TAU'S OWN ENGINES ARE THIS NODE'S TO REGISTER, and the rest are a
 	// composer's — see the doc above. kv and document are both backed by the
 	// swarm's own store.
-	if want != database.KV && want != database.Document {
+	if want != database.KV && want != database.Document && want != database.Vector {
 		if d.registry == nil {
 			return nil, ErrNoEngines
 		}
@@ -391,10 +469,13 @@ func (d *databases) engines(ctx context.Context, want database.Type) (*database.
 
 	var engine database.Engine
 	var err error
-	if want == database.KV {
+	switch want {
+	case database.KV:
 		engine, err = kvengine.New(cacheStore{d.db})
-	} else {
+	case database.Document:
 		engine, err = docengine.New(cacheStore{d.db})
+	default:
+		engine, err = vecengine.New(cacheStore{d.db})
 	}
 	if err != nil {
 		return nil, err

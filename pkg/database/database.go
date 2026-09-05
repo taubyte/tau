@@ -103,6 +103,17 @@ type Spec struct {
 	// because resolving a secret reference is the caller's job and this package
 	// must never become a thing that reads secrets.
 	Credentials Credentials
+
+	// Options are what the resource declared that only its own TYPE
+	// understands — a vector's width and metric, and whatever the next type
+	// brings.
+	//
+	// A MAP AND NOT A FIELD EACH, for the reason the Conn interface is not one
+	// interface: the four types genuinely do different things, and a Spec with
+	// `Dimensions` on it would carry a number that means nothing to three of
+	// them. The keys are the vocabulary's own attribute names, so a reader
+	// finds the attribute by searching the schema for the string.
+	Options map[string]string
 }
 
 // Credentials open an external server.

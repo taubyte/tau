@@ -261,10 +261,55 @@ interface document {
     find: func(name: string, filter: string) -> result<list<u8>, error>;
 }
 
+// A vector database, as the vocabulary's `database` kind at `type: vector`.
+//
+// # What an embedding is on the wire
+//
+// `list<f32>`, in both directions. It is the one place in this world where a
+// number list is the natural shape rather than a convenience: an embedding IS a
+// vector of floats, and carrying it as JSON text would mean parsing a thousand
+// numbers per call on both sides.
+//
+// # The metric is the resource's, not a parameter
+//
+// It has to match how the embedding model was TRAINED — cosine for normalized
+// embeddings, dot where magnitude carries meaning, euclidean for raw distance —
+// so it is declared on the database and not chosen per query. Getting it wrong
+// does not error; it ranks badly.
+//
+// Every score is "higher is closer", euclidean's being a negated distance.
+interface vector {
+    record match {
+        id: string,
+        score: f32,
+        // Whatever was stored beside the embedding, as JSON. Empty when there
+        // was none.
+        meta: string,
+    }
+
+    variant error {
+        no-such-database(string),
+        denied(string),
+        // The embedding is not this database's declared width. It is its own
+        // arm because it is a mistake in the CALLER rather than an outage:
+        // a 1536-wide query against 768-wide vectors is meaningless, not slow.
+        wrong-width(string),
+        malformed(string),
+        unavailable(string),
+    }
+
+    // k <= 0 is everything.
+    search: func(name: string, query: list<f32>, k: s32) -> result<list<match>, error>;
+    // meta is JSON, or empty for none.
+    upsert: func(name: string, id: string, embedding: list<f32>, meta: string) -> result<_, error>;
+    delete: func(name: string, id: string) -> result<_, error>;
+}
+
 world handler {
     import database;
     import kv;
     import document;
+    import vector;
     import %stream;
     // A GUEST NEED NOT USE IT. A world's imports are what the host PROVIDES,
     // so a component built against this world that never calls the cache is

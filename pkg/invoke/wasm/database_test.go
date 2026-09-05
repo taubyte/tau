@@ -576,3 +576,181 @@ func TestATierWithNoDocumentsRefusesAWorkloadThatNeedsOne(t *testing.T) {
 	})
 	require.ErrorIs(t, err, wasm.ErrNoDocuments)
 }
+
+// ── the vector data model ────────────────────────────────────────────────────
+
+// index is a vector database, as this tier sees one.
+type index struct {
+	mu       sync.Mutex
+	vectors  map[string][]float32
+	meta     map[string][]byte
+	err      error
+	searched [][]float32
+}
+
+func newIndex() *index {
+	return &index{vectors: map[string][]float32{}, meta: map[string][]byte{}}
+}
+
+func (i *index) OpenVectors(_ context.Context, _ invoke.Grant) (wasm.Vectors, error) {
+	if i.err != nil {
+		return nil, i.err
+	}
+	return i, nil
+}
+
+func (i *index) Upsert(_ context.Context, id string, embedding []float32, meta []byte) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if len(embedding) != 2 {
+		return fmt.Errorf("%w: %d against 2", wasm.ErrWrongWidth, len(embedding))
+	}
+	i.vectors[id] = embedding
+	i.meta[id] = meta
+	return nil
+}
+
+func (i *index) Delete(_ context.Context, id string) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	delete(i.vectors, id)
+	return nil
+}
+
+// Search answers by dot product, which is enough to show an ORDER crossed.
+func (i *index) Search(_ context.Context, query []float32, k int) ([]wasm.Match, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.searched = append(i.searched, query)
+
+	if len(query) != 2 {
+		return nil, fmt.Errorf("%w: %d against 2", wasm.ErrWrongWidth, len(query))
+	}
+
+	out := make([]wasm.Match, 0, len(i.vectors))
+	for id, v := range i.vectors {
+		out = append(out, wasm.Match{
+			ID: id, Score: v[0]*query[0] + v[1]*query[1], Meta: i.meta[id],
+		})
+	}
+	sort.Slice(out, func(a, b int) bool { return out[a].Score > out[b].Score })
+	if k > 0 && len(out) > k {
+		out = out[:k]
+	}
+	return out, nil
+}
+
+func (i *index) queries() [][]float32 {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return append([][]float32(nil), i.searched...)
+}
+
+func vecGrant(label, handle string, ops ...string) []invoke.Grant {
+	return []invoke.Grant{{
+		Kind: "database", Label: label, Handle: handle, Ops: ops,
+		Settings: map[string]string{
+			"type": "vector", "vector/engine": "distributed",
+			"vector/dimensions": "2", "vector/metric": "cosine",
+		},
+	}}
+}
+
+// TestAGuestUpsertsAndSearches — an embedding crosses as list<f32> in both
+// directions, which is the one place a number list is the natural shape.
+func TestAComponentSearchesAVectorDatabase(t *testing.T) {
+	idx := newIndex()
+	instance := start(t, tier(t, cacher(t), wasm.WithVectors(idx)), invoke.Spec{
+		Name: "fn", Reaches: vecGrant("knowledge", "shop/prod/QmK", "search", "upsert", "delete"),
+	})
+
+	require.Equal(t, 204, call(t, instance, "/vec-upsert/knowledge/east", []byte("1,0")).Status)
+	require.Equal(t, 204, call(t, instance, "/vec-upsert/knowledge/north", []byte("0,1")).Status)
+
+	res := call(t, instance, "/vec-search/knowledge/0", []byte("1,0"))
+	require.Equal(t, 200, res.Status, string(res.Body))
+	require.Equal(t, "east:1.000:,north:0.000:", string(res.Body),
+		"ordered by score, with the id and the meta beside it")
+
+	// THE QUERY CROSSED AS FLOATS, not as text somebody parsed twice.
+	require.Equal(t, [][]float32{{1, 0}}, idx.queries())
+
+	require.Equal(t, 204, call(t, instance, "/vec-delete/knowledge/east", nil).Status)
+	res = call(t, instance, "/vec-search/knowledge/0", []byte("1,0"))
+	require.Equal(t, "north:0.000:", string(res.Body))
+}
+
+// TestKBoundsWhatComesBack.
+func TestSearchHonoursK(t *testing.T) {
+	idx := newIndex()
+	instance := start(t, tier(t, cacher(t), wasm.WithVectors(idx)), invoke.Spec{
+		Name: "fn", Reaches: vecGrant("knowledge", "h", "search", "upsert"),
+	})
+
+	for _, id := range []string{"a", "b", "c"} {
+		require.Equal(t, 204, call(t, instance, "/vec-upsert/knowledge/"+id, []byte("1,0")).Status)
+	}
+
+	res := call(t, instance, "/vec-search/knowledge/2", []byte("1,0"))
+	require.Equal(t, 200, res.Status)
+	require.Len(t, strings.Split(string(res.Body), ","), 2)
+}
+
+// TestTheWrongWidthIsItsOwnArm, because it is a mistake in the CALLER: the
+// answer would be meaningless rather than late.
+func TestAWrongWidthEmbeddingIsNamed(t *testing.T) {
+	idx := newIndex()
+	instance := start(t, tier(t, cacher(t), wasm.WithVectors(idx)), invoke.Spec{
+		Name: "fn", Reaches: vecGrant("knowledge", "h", "search", "upsert"),
+	})
+
+	res := call(t, instance, "/vec-upsert/knowledge/a", []byte("1,0,0"))
+	require.Equal(t, 403, res.Status)
+	require.Contains(t, string(res.Body), "wrong-width:")
+
+	res = call(t, instance, "/vec-search/knowledge/0", []byte("1"))
+	require.Equal(t, 403, res.Status)
+	require.Contains(t, string(res.Body), "wrong-width:")
+}
+
+func TestAnUngrantedVectorVerbIsDenied(t *testing.T) {
+	idx := newIndex()
+	instance := start(t, tier(t, cacher(t), wasm.WithVectors(idx)), invoke.Spec{
+		Name: "fn", Reaches: vecGrant("knowledge", "h", "search"),
+	})
+
+	res := call(t, instance, "/vec-upsert/knowledge/a", []byte("1,0"))
+	require.Equal(t, 403, res.Status)
+	require.Equal(t, "denied:knowledge cannot upsert", string(res.Body))
+}
+
+func TestATierWithNoVectorsRefusesAWorkloadThatNeedsOne(t *testing.T) {
+	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
+		Name: "fn", Artifact: "bafy", Reaches: vecGrant("knowledge", "h", "search"),
+	})
+	require.ErrorIs(t, err, wasm.ErrNoVectors)
+}
+
+// TestFourDataModelsAreFourDoors, all under the `database` kind — which is the
+// whole of what that kind declares.
+func TestEveryDataModelIsItsOwnDoor(t *testing.T) {
+	idx := newIndex()
+	instance := start(t, tier(t, cacher(t),
+		wasm.WithVectors(idx), wasm.WithKV(newKeyValues()),
+		wasm.WithDocuments(newCollection()), wasm.WithDatabases(&server{})),
+		invoke.Spec{
+			Name:    "fn",
+			Reaches: vecGrant("knowledge", "h", "search", "upsert"),
+		})
+
+	// It is a vector database, so none of the other three doors sees it.
+	require.Equal(t, "no-such-database:knowledge",
+		string(call(t, instance, "/kv-get/knowledge/k", nil).Body))
+	require.Equal(t, "no-such-database:knowledge",
+		string(call(t, instance, "/doc-get/knowledge/k", nil).Body))
+	require.Equal(t, "no-such-database:knowledge",
+		string(call(t, instance, "/query/knowledge/", []byte("select 1")).Body))
+
+	// And its own door works.
+	require.Equal(t, 204, call(t, instance, "/vec-upsert/knowledge/a", []byte("1,0")).Status)
+}

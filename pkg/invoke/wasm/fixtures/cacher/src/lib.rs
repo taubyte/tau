@@ -12,7 +12,7 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::taubyte::handler::{cache, database, document, kv, stream};
+use bindings::taubyte::handler::{cache, database, document, kv, stream, vector};
 use bindings::{Guest, Header, Request, Response};
 
 struct Component;
@@ -80,6 +80,27 @@ fn why_doc(e: &document::Error) -> String {
         document::Error::Malformed(why) => format!("malformed:{}", why),
         document::Error::Unavailable(why) => format!("unavailable:{}", why),
     }
+}
+
+// why_vec names a vector error arm.
+fn why_vec(e: &vector::Error) -> String {
+    match e {
+        vector::Error::NoSuchDatabase(name) => format!("no-such-database:{}", name),
+        vector::Error::Denied(why) => format!("denied:{}", why),
+        vector::Error::WrongWidth(why) => format!("wrong-width:{}", why),
+        vector::Error::Malformed(why) => format!("malformed:{}", why),
+        vector::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
+// floats reads a comma-separated body as an embedding, so a test can send one
+// without a JSON parser in the guest.
+fn floats(body: &[u8]) -> Vec<f32> {
+    String::from_utf8_lossy(body)
+        .split(',')
+        .filter(|s| !s.trim().is_empty())
+        .filter_map(|s| s.trim().parse::<f32>().ok())
+        .collect()
 }
 
 fn reply(status: u16, body: Vec<u8>) -> Response {
@@ -204,6 +225,29 @@ impl Guest for Component {
                     Err(e) => reply(403, why_doc(&e).into_bytes()),
                 }
             }
+            // The vector data model. The body is the embedding as
+            // comma-separated floats; the key doubles as the id, or as k.
+            "vec-upsert" => match vector::upsert(name, key, &floats(&req.body), "") {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_vec(&e).into_bytes()),
+            },
+            "vec-search" => {
+                let k: i32 = key.parse().unwrap_or(0);
+                match vector::search(name, &floats(&req.body), k) {
+                    Ok(found) => {
+                        let rendered: Vec<String> = found
+                            .iter()
+                            .map(|m| format!("{}:{:.3}:{}", m.id, m.score, m.meta))
+                            .collect();
+                        reply(200, rendered.join(",").into_bytes())
+                    }
+                    Err(e) => reply(403, why_vec(&e).into_bytes()),
+                }
+            }
+            "vec-delete" => match vector::delete(name, key) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_vec(&e).into_bytes()),
+            },
             // A round trip through the cache in one call: write the body, read
             // it back, and answer with what came back. It is the only branch
             // that proves the bytes a guest wrote are the bytes it gets.

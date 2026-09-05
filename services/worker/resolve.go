@@ -197,10 +197,18 @@ func databaseSettings(target project.Resource) map[string]string {
 		return nil
 	}
 
+	// EVERY FIELD OF THE TYPE'S OWN BLOCK THAT THE PLATFORM READS. `dimensions`
+	// and `metric` are a vector's and mean nothing to the other three, which is
+	// why they travel as settings rather than as fields on anything.
 	out := map[string]string{settingType: model}
-	for _, field := range []string{"engine", "host", "database", "tls"} {
+	for _, field := range []string{"engine", "host", "database", "tls", "dimensions", "metric"} {
 		if value := target.String(model, field); value != "" {
 			out[model+"/"+field] = value
+			continue
+		}
+		// A width is an Int in the vocabulary, not a string.
+		if n, ok := target.Int(model, field); ok {
+			out[model+"/"+field] = strconv.FormatInt(n, 10)
 		}
 	}
 	// THE CREDENTIAL IS A REFERENCE AND STAYS ONE. What resolves it is the

@@ -171,6 +171,10 @@ type Runtime struct {
 
 	// documents backs `taubyte:handler/document`, and the same again.
 	documents DocumentStores
+
+	// vectors backs `taubyte:handler/vector` — the fourth and last data model
+	// the `database` kind declares.
+	vectors VectorStores
 }
 
 var _ invoke.Runtime = (*Runtime)(nil)
@@ -261,7 +265,12 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}
 
 	imports = append(imports, r.kvImports(spec)...)
+	if r.vectors == nil && len(vectorGrantsOf(spec)) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoVectors, spec.Name)
+	}
+
 	imports = append(imports, r.documentImports(spec)...)
+	imports = append(imports, r.vectorImports(spec)...)
 
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {

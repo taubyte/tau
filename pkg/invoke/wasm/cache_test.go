@@ -207,14 +207,17 @@ func TestAnEmptyValueIsNotNothing(t *testing.T) {
 // is exercised past the size where a single-page copy would be enough — in and
 // out, since a roundtrip lowers it into the guest, up to the host, and back.
 //
-// 24KiB AND NOT MORE, AND THE CEILING IS NOT THIS PACKAGE'S: see
-// TestALargeValueHitsAPlatformCeilingThatIsNotOurs below.
+// 8KiB AND NOT MORE, AND THE CEILING IS NOT THIS PACKAGE'S: see
+// TestALargeValueHitsAPlatformCeilingThatIsNotOurs below. THE NUMBER MOVES DOWN
+// AS THE FIXTURE GROWS, because the limit is what is left below the guest's
+// memory end and each capability the fixture learns costs some of it — it was
+// 24KiB with three interfaces and is 8KiB with six.
 func TestALargeValueSurvivesBothDirections(t *testing.T) {
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h"))), invoke.Spec{
 		Name: "fn", Reaches: grants("sessions", "h", "get", "put"),
 	})
 
-	value := make([]byte, 24<<10)
+	value := make([]byte, 8<<10)
 	for i := range value {
 		value[i] = byte(i % 251)
 	}

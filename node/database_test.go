@@ -618,3 +618,85 @@ func TestKvAndDocumentsDoNotCollide(t *testing.T) {
 	}
 	require.Equal(t, 1, stores, "%v", opened)
 }
+
+// ── tau's own vector engine ──────────────────────────────────────────────────
+
+func vecGrantFor(handle, metric string) invoke.Grant {
+	return invoke.Grant{
+		Kind: "database", Label: "knowledge", Handle: handle,
+		Ops: []string{"search", "upsert", "delete"},
+		Settings: map[string]string{
+			"type": "vector", "vector/engine": "distributed",
+			"vector/dimensions": "2", "vector/metric": metric,
+		},
+	}
+}
+
+// TestNearestNeighbourWithNothingProvisioned, which completes the four data
+// models the `database` kind declares.
+func TestAVectorDatabaseWorksWithNoEngineRegistered(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+	ctx := t.Context()
+
+	index, err := d.OpenVectors(ctx, vecGrantFor("shop/prod/QmK", "cosine"))
+	require.NoError(t, err)
+
+	require.NoError(t, index.Upsert(ctx, "east", []float32{1, 0}, []byte(`{"where":"east"}`)))
+	require.NoError(t, index.Upsert(ctx, "north", []float32{0, 1}, nil))
+
+	found, err := index.Search(ctx, []float32{1, 0}, 0)
+	require.NoError(t, err)
+	require.Len(t, found, 2)
+	require.Equal(t, "east", found[0].ID)
+	require.JSONEq(t, `{"where":"east"}`, string(found[0].Meta))
+	require.Empty(t, found[1].Meta, "an empty meta is no meta and not an empty object")
+
+	require.NoError(t, index.Delete(ctx, "east"))
+	found, err = index.Search(ctx, []float32{1, 0}, 0)
+	require.NoError(t, err)
+	require.Len(t, found, 1)
+}
+
+// TestTheDeclaredMetricReachesTheEngine, because it has to match how the model
+// was trained and getting it wrong ranks badly rather than erroring.
+func TestTheMetricComesOffTheResource(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+	ctx := t.Context()
+
+	// dot ranks the LONGER vector first where cosine would not.
+	index, err := d.OpenVectors(ctx, vecGrantFor("shop/prod/QmDot", "dot"))
+	require.NoError(t, err)
+
+	require.NoError(t, index.Upsert(ctx, "close", []float32{1, 0.1}, nil))
+	require.NoError(t, index.Upsert(ctx, "long", []float32{10, 5}, nil))
+
+	found, err := index.Search(ctx, []float32{1, 0}, 1)
+	require.NoError(t, err)
+	require.Equal(t, "long", found[0].ID, "dot carries magnitude")
+}
+
+// TestTheDeclaredWidthIsEnforcedThroughTheBacking.
+func TestAWrongWidthIsTheTiersError(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+	ctx := t.Context()
+
+	index, err := d.OpenVectors(ctx, vecGrantFor("shop/prod/QmK", "cosine"))
+	require.NoError(t, err)
+
+	err = index.Upsert(ctx, "a", []float32{1, 0, 0}, nil)
+	require.ErrorIs(t, err, wasmtier.ErrWrongWidth, "the tier's arm, so a guest can act on it")
+}
+
+func TestABadMetaIsMalformed(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+
+	index, err := d.OpenVectors(t.Context(), vecGrantFor("shop/prod/QmK", "cosine"))
+	require.NoError(t, err)
+
+	require.ErrorIs(t, index.Upsert(t.Context(), "a", []float32{1, 0}, []byte("not json")),
+		wasmtier.ErrMalformed)
+}
