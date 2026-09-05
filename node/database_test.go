@@ -391,7 +391,7 @@ func TestAKvDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	d := &databases{node: n}
 	ctx := t.Context()
 
-	db, err := d.Open(ctx, kvGrantFor("shop/prod/QmTokens"))
+	db, err := d.OpenKV(ctx, kvGrantFor("shop/prod/QmTokens"))
 	require.NoError(t, err)
 
 	require.NoError(t, db.Put(ctx, "session:1", []byte("alice")))
@@ -419,7 +419,7 @@ func TestTheKvStoreIsLazyAndShared(t *testing.T) {
 	require.NotContains(t, opened, databaseStore, "nothing has asked for a database yet")
 
 	for _, handle := range []string{"shop/prod/QmA", "shop/prod/QmB", "other/prod/QmA"} {
-		db, err := d.Open(t.Context(), kvGrantFor(handle))
+		db, err := d.OpenKV(t.Context(), kvGrantFor(handle))
 		require.NoError(t, err)
 		require.NoError(t, db.Put(t.Context(), "k", []byte("v")))
 	}
@@ -440,11 +440,11 @@ func TestKvDatabasesAreIsolated(t *testing.T) {
 	d := &databases{node: n}
 	ctx := t.Context()
 
-	mine, err := d.Open(ctx, kvGrantFor("shop/prod/QmA"))
+	mine, err := d.OpenKV(ctx, kvGrantFor("shop/prod/QmA"))
 	require.NoError(t, err)
-	theirs, err := d.Open(ctx, kvGrantFor("shop/prod/QmB"))
+	theirs, err := d.OpenKV(ctx, kvGrantFor("shop/prod/QmB"))
 	require.NoError(t, err)
-	staging, err := d.Open(ctx, kvGrantFor("shop/staging/QmA"))
+	staging, err := d.OpenKV(ctx, kvGrantFor("shop/staging/QmA"))
 	require.NoError(t, err)
 
 	require.NoError(t, mine.Put(ctx, "k", []byte("mine")))
@@ -469,7 +469,7 @@ func TestARegisteredKvEngineIsNotReplaced(t *testing.T) {
 		WithDatabaseEngines(registryWith(t, engine)))
 
 	d := &databases{node: n}
-	db, err := d.Open(t.Context(), kvGrantFor("shop/prod/QmA"))
+	db, err := d.OpenKV(t.Context(), kvGrantFor("shop/prod/QmA"))
 	require.NoError(t, err)
 	require.NoError(t, db.Put(t.Context(), "k", []byte("v")))
 
@@ -491,7 +491,7 @@ func TestAKvDatabaseNeedsAStore(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
-	_, err = (&databases{node: n}).Open(t.Context(), kvGrantFor("shop/prod/QmA"))
+	_, err = (&databases{node: n}).OpenKV(t.Context(), kvGrantFor("shop/prod/QmA"))
 	require.ErrorIs(t, err, ErrNoCacheStore)
 }
 
@@ -518,4 +518,103 @@ func (fakeKVConn) List(context.Context, string) ([]string, error) {
 }
 func (fakeKVConn) Watch(context.Context, string) (<-chan string, error) {
 	return nil, errors.New("not served")
+}
+
+// ── tau's own document engine ────────────────────────────────────────────────
+
+func docGrantFor(handle string) invoke.Grant {
+	return invoke.Grant{
+		Kind: "database", Label: "orders", Handle: handle,
+		Ops:      []string{"get", "put", "delete", "query"},
+		Settings: map[string]string{"type": "document", "document/engine": "distributed"},
+	}
+}
+
+// TestADocumentDatabaseAlsoNeedsNothingProvisioned, and it crosses this backing
+// as JSON — which is where pkg/database's map meets the ABI's bytes.
+func TestADocumentDatabaseWorksWithNoEngineRegistered(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+	ctx := t.Context()
+
+	docs, err := d.OpenDocuments(ctx, docGrantFor("shop/prod/QmOrders"))
+	require.NoError(t, err)
+
+	require.NoError(t, docs.Put(ctx, "order:1", []byte(`{"status":"paid","total":12.5}`)))
+
+	raw, err := docs.Get(ctx, "order:1")
+	require.NoError(t, err)
+	require.JSONEq(t, `{"status":"paid","total":12.5}`, string(raw))
+
+	found, err := docs.Find(ctx, []byte(`{"status":"paid"}`))
+	require.NoError(t, err)
+	require.JSONEq(t, `[{"status":"paid","total":12.5}]`, string(found))
+
+	require.NoError(t, docs.Delete(ctx, "order:1"))
+	_, err = docs.Get(ctx, "order:1")
+	require.ErrorIs(t, err, wasmtier.ErrNotFound, "the tier's miss, not the engine's")
+}
+
+// TestAnEmptyFilterIsEverythingAndAnEmptyAnswerIsAnArray, so a guest parses the
+// answer the same way whether or not anything matched.
+func TestFindWithNoFilterAnswersAnArray(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+	ctx := t.Context()
+
+	docs, err := d.OpenDocuments(ctx, docGrantFor("shop/prod/QmEmpty"))
+	require.NoError(t, err)
+
+	found, err := docs.Find(ctx, nil)
+	require.NoError(t, err)
+	require.JSONEq(t, `[]`, string(found), "an empty array and not null")
+}
+
+// TestBadJsonIsMalformedInBothDirections, which is its own arm because a caller
+// fixes it and does not retry it.
+func TestABadDocumentIsMalformed(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+	ctx := t.Context()
+
+	docs, err := d.OpenDocuments(ctx, docGrantFor("shop/prod/QmOrders"))
+	require.NoError(t, err)
+
+	require.ErrorIs(t, docs.Put(ctx, "1", []byte("not json")), wasmtier.ErrMalformed)
+
+	_, err = docs.Find(ctx, []byte("not json"))
+	require.ErrorIs(t, err, wasmtier.ErrMalformed)
+}
+
+// TestTheTwoOwnEnginesShareOneStoreAndNotOneKeySpace.
+func TestKvAndDocumentsDoNotCollide(t *testing.T) {
+	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	d := &databases{node: n}
+	ctx := t.Context()
+
+	kvDB, err := d.OpenKV(ctx, kvGrantFor("shop/prod/QmTokens"))
+	require.NoError(t, err)
+	docs, err := d.OpenDocuments(ctx, docGrantFor("shop/prod/QmOrders"))
+	require.NoError(t, err)
+
+	require.NoError(t, kvDB.Put(ctx, "k", []byte("kv")))
+	require.NoError(t, docs.Put(ctx, "k", []byte(`{"where":"document"}`)))
+
+	value, err := kvDB.Get(ctx, "k")
+	require.NoError(t, err)
+	require.Equal(t, "kv", string(value))
+
+	raw, err := docs.Get(ctx, "k")
+	require.NoError(t, err)
+	require.JSONEq(t, `{"where":"document"}`, string(raw))
+
+	// ONE STORE FOR BOTH, separated by the resource id in the key.
+	opened, _ := factory.counts()
+	var stores int
+	for _, name := range opened {
+		if name == databaseStore {
+			stores++
+		}
+	}
+	require.Equal(t, 1, stores, "%v", opened)
 }

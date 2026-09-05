@@ -58,8 +58,12 @@ type KV interface {
 }
 
 // KVs opens the one a grant names.
+//
+// THE METHOD IS NAMED FOR WHAT IT OPENS rather than being a bare Open: the
+// `database` kind has four data models and a node backs more than one of them,
+// so one type has to satisfy this seam and the document one at once.
 type KVs interface {
-	Open(ctx context.Context, grant invoke.Grant) (KV, error)
+	OpenKV(ctx context.Context, grant invoke.Grant) (KV, error)
 }
 
 // WithKV is what backs `taubyte:handler/kv`.
@@ -106,7 +110,7 @@ func (r *Runtime) kvImports(spec invoke.Spec) []component.Option {
 			return nil, kvFailure(errKVUnavailable, "this node has nothing to open a database with")
 		}
 
-		db, err := r.kv.Open(ctx, grant)
+		db, err := r.kv.OpenKV(ctx, grant)
 		if err != nil {
 			return nil, kvFailure(errKVUnavailable, err.Error())
 		}

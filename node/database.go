@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/database"
+	docengine "github.com/taubyte/tau/pkg/database/engines/document"
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
@@ -48,8 +50,11 @@ type databases struct {
 	db       kvdb.KVDB
 }
 
-var _ wasmtier.Databases = (*databases)(nil)
-var _ wasmtier.KVs = (*databases)(nil)
+var (
+	_ wasmtier.Databases      = (*databases)(nil)
+	_ wasmtier.KVs            = (*databases)(nil)
+	_ wasmtier.DocumentStores = (*databases)(nil)
+)
 
 var (
 	// ErrNoEngines is a node asked for a database with no engine registered.
@@ -141,9 +146,9 @@ func (d *databases) conn(ctx context.Context, grant invoke.Grant) (database.SQLC
 	return sqlConn, nil
 }
 
-// Open is the kv half of this backing: the same registry, the same one
+// OpenKV is the kv half of this backing: the same registry, the same one
 // connection per handle, a different data model.
-func (d *databases) Open(ctx context.Context, grant invoke.Grant) (wasmtier.KV, error) {
+func (d *databases) OpenKV(ctx context.Context, grant invoke.Grant) (wasmtier.KV, error) {
 	opened, err := d.openFor(ctx, grant, database.KV)
 	if err != nil {
 		return nil, err
@@ -154,6 +159,84 @@ func (d *databases) Open(ctx context.Context, grant invoke.Grant) (wasmtier.KV, 
 		return nil, fmt.Errorf("node: %s answers no kv surface", grant.Settings["kv/engine"])
 	}
 	return keyValue{conn}, nil
+}
+
+// OpenDocuments is the document half of this backing.
+func (d *databases) OpenDocuments(ctx context.Context, grant invoke.Grant) (wasmtier.Documents, error) {
+	opened, err := d.openFor(ctx, grant, database.Document)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, ok := opened.(database.DocumentConn)
+	if !ok {
+		return nil, fmt.Errorf("node: %s answers no document surface", grant.Settings["document/engine"])
+	}
+	return documents{conn}, nil
+}
+
+// documents adapts pkg/database's DocumentConn to the tier's, which speaks
+// BYTES: the ABI carries a document as JSON because the canonical ABI has no
+// arbitrary map, so this is where the two meet.
+type documents struct{ database.DocumentConn }
+
+func (d documents) Get(ctx context.Context, id string) ([]byte, error) {
+	doc, err := d.DocumentConn.Get(ctx, id)
+	if err != nil {
+		return nil, documentError(err)
+	}
+	return json.Marshal(doc)
+}
+
+func (d documents) Put(ctx context.Context, id string, raw []byte) error {
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return fmt.Errorf("%w: %s", wasmtier.ErrMalformed, err)
+	}
+	return documentError(d.DocumentConn.Put(ctx, id, doc))
+}
+
+func (d documents) Delete(ctx context.Context, id string) error {
+	return documentError(d.DocumentConn.Delete(ctx, id))
+}
+
+// Find takes a JSON filter and answers with a JSON array.
+//
+// AN EMPTY FILTER IS EVERYTHING, and an empty BODY is an empty filter — a guest
+// that wants the whole collection should not have to send `{}`.
+func (d documents) Find(ctx context.Context, raw []byte) ([]byte, error) {
+	var filter map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &filter); err != nil {
+			return nil, fmt.Errorf("%w: %s", wasmtier.ErrMalformed, err)
+		}
+	}
+
+	found, err := d.DocumentConn.Query(ctx, filter)
+	if err != nil {
+		return nil, documentError(err)
+	}
+	if found == nil {
+		// AN EMPTY ARRAY AND NOT `null`, so a guest can parse the answer the
+		// same way whether or not anything matched.
+		found = []map[string]any{}
+	}
+	return json.Marshal(found)
+}
+
+// documentError translates the engine's sentinels into the tier's, which is the
+// same job node/cache.go does and the same bug it was written to stop.
+func documentError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, docengine.ErrNotFound):
+		return fmt.Errorf("%w: %w", wasmtier.ErrNotFound, err)
+	case errors.Is(err, docengine.ErrNotAnObject):
+		return fmt.Errorf("%w: %w", wasmtier.ErrMalformed, err)
+	default:
+		return err
+	}
 }
 
 // keyValue adapts pkg/database's KVConn to what the tier asks for. The two
@@ -275,7 +358,10 @@ func (d *databases) engines(ctx context.Context, want database.Type) (*database.
 	if d.registry == nil {
 		d.registry = d.node.opts.engines
 	}
-	if want != database.KV {
+	// TAU'S OWN ENGINES ARE THIS NODE'S TO REGISTER, and the rest are a
+	// composer's — see the doc above. kv and document are both backed by the
+	// swarm's own store.
+	if want != database.KV && want != database.Document {
 		if d.registry == nil {
 			return nil, ErrNoEngines
 		}
@@ -285,9 +371,9 @@ func (d *databases) engines(ctx context.Context, want database.Type) (*database.
 	if d.registry == nil {
 		d.registry = database.NewRegistry()
 	}
-	if len(d.registry.EnginesFor(database.KV)) > 0 {
-		// Already there — either this call opened it, or a composer registered
-		// their own, and theirs wins.
+	if len(d.registry.EnginesFor(want)) > 0 {
+		// Already there — either this call registered it, or a composer
+		// registered their own, and theirs wins.
 		return d.registry, nil
 	}
 
@@ -303,12 +389,18 @@ func (d *databases) engines(ctx context.Context, want database.Type) (*database.
 		d.node.closers = append(d.node.closers, closerFunc(db.Close))
 	}
 
-	engine, err := kvengine.New(cacheStore{d.db})
+	var engine database.Engine
+	var err error
+	if want == database.KV {
+		engine, err = kvengine.New(cacheStore{d.db})
+	} else {
+		engine, err = docengine.New(cacheStore{d.db})
+	}
 	if err != nil {
 		return nil, err
 	}
 	if err := d.registry.Register(ctx, engine); err != nil {
-		return nil, fmt.Errorf("node: registering tau's own kv engine: %w", err)
+		return nil, fmt.Errorf("node: registering tau's own %s engine: %w", want, err)
 	}
 	return d.registry, nil
 }

@@ -224,9 +224,47 @@ interface kv {
     keys: func(name: string, prefix: string) -> result<list<string>, error>;
 }
 
+// A document database, as the vocabulary's `database` kind at `type: document`.
+//
+// # A document crosses as JSON
+//
+// The canonical ABI has no arbitrary map, and a document IS one — nested,
+// heterogeneous, whatever the author put in it. Declaring a variant deep enough
+// to carry that would be declaring a JSON type in WIT, which every guest would
+// then translate to and from its own JSON anyway. So the bytes ARE the JSON,
+// and a guest uses the parser it already has.
+//
+// THAT IS NOT A SHORTCUT: it is what makes this interface stable while the
+// shape of a document is the author's business. The one thing lost is that the
+// host cannot check the shape, and it does not need to — it stores what it is
+// given and answers with what it stored.
+interface document {
+    variant error {
+        no-such-database(string),
+        denied(string),
+        not-found,
+        // The bytes were not a JSON object, in or out.
+        malformed(string),
+        unavailable(string),
+    }
+
+    get: func(name: string, id: string) -> result<list<u8>, error>;
+    put: func(name: string, id: string, doc: list<u8>) -> result<_, error>;
+    delete: func(name: string, id: string) -> result<_, error>;
+    // The filter is a JSON object: equality on every field it names, with a
+    // dotted name descending into a nested one. Empty means everything.
+    //
+    // IT IS A string AND THE ANSWER IS BYTES, which is not an inconsistency: a
+    // guest builds a filter as text and would have to copy it into a byte list
+    // for nothing, while a result set is bytes it will hand straight to a
+    // parser.
+    find: func(name: string, filter: string) -> result<list<u8>, error>;
+}
+
 world handler {
     import database;
     import kv;
+    import document;
     import %stream;
     // A GUEST NEED NOT USE IT. A world's imports are what the host PROVIDES,
     // so a component built against this world that never calls the cache is

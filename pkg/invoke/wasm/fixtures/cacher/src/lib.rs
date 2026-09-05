@@ -12,7 +12,7 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::taubyte::handler::{cache, database, kv, stream};
+use bindings::taubyte::handler::{cache, database, document, kv, stream};
 use bindings::{Guest, Header, Request, Response};
 
 struct Component;
@@ -68,6 +68,17 @@ fn why_kv(e: &kv::Error) -> String {
         kv::Error::Denied(why) => format!("denied:{}", why),
         kv::Error::NotFound => "not-found".to_string(),
         kv::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
+// why_doc names a document error arm.
+fn why_doc(e: &document::Error) -> String {
+    match e {
+        document::Error::NoSuchDatabase(name) => format!("no-such-database:{}", name),
+        document::Error::Denied(why) => format!("denied:{}", why),
+        document::Error::NotFound => "not-found".to_string(),
+        document::Error::Malformed(why) => format!("malformed:{}", why),
+        document::Error::Unavailable(why) => format!("unavailable:{}", why),
     }
 }
 
@@ -171,6 +182,28 @@ impl Guest for Component {
                 Ok(names) => reply(200, names.join(",").into_bytes()),
                 Err(e) => reply(403, why_kv(&e).into_bytes()),
             },
+            // The document data model. The body is the document, or the
+            // filter, and the answer is the JSON that came back — so a test
+            // reads exactly what crossed.
+            "doc-get" => match document::get(name, key) {
+                Ok(raw) => reply(200, raw),
+                Err(e) => reply(404, why_doc(&e).into_bytes()),
+            },
+            "doc-put" => match document::put(name, key, &req.body) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_doc(&e).into_bytes()),
+            },
+            "doc-delete" => match document::delete(name, key) {
+                Ok(()) => reply(204, Vec::new()),
+                Err(e) => reply(403, why_doc(&e).into_bytes()),
+            },
+            "doc-find" => {
+                let filter = String::from_utf8_lossy(&req.body).to_string();
+                match document::find(name, &filter) {
+                    Ok(raw) => reply(200, raw),
+                    Err(e) => reply(403, why_doc(&e).into_bytes()),
+                }
+            }
             // A round trip through the cache in one call: write the body, read
             // it back, and answer with what came back. It is the only branch
             // that proves the bytes a guest wrote are the bytes it gets.

@@ -2,6 +2,7 @@ package wasm_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -269,7 +270,7 @@ type keyValues struct {
 
 func newKeyValues() *keyValues { return &keyValues{values: map[string][]byte{}} }
 
-func (s *keyValues) Open(_ context.Context, _ invoke.Grant) (wasm.KV, error) {
+func (s *keyValues) OpenKV(_ context.Context, _ invoke.Grant) (wasm.KV, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.opened++
@@ -399,4 +400,179 @@ func TestATierWithNoKvRefusesAWorkloadThatNeedsOne(t *testing.T) {
 		Name: "fn", Artifact: "bafy", Reaches: kvGrant("tokens", "h", "get"),
 	})
 	require.ErrorIs(t, err, wasm.ErrNoKV)
+}
+
+// ── the document data model ──────────────────────────────────────────────────
+
+// collection is a document database, as this tier sees one.
+type collection struct {
+	mu     sync.Mutex
+	docs   map[string][]byte
+	err    error
+	filter []string
+}
+
+func newCollection() *collection { return &collection{docs: map[string][]byte{}} }
+
+func (c *collection) OpenDocuments(_ context.Context, _ invoke.Grant) (wasm.Documents, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return c, nil
+}
+
+func (c *collection) Get(_ context.Context, id string) ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	doc, ok := c.docs[id]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", wasm.ErrNotFound, id)
+	}
+	return doc, nil
+}
+
+func (c *collection) Put(_ context.Context, id string, doc []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !json.Valid(doc) {
+		return fmt.Errorf("%w: not json", wasm.ErrMalformed)
+	}
+	c.docs[id] = doc
+	return nil
+}
+
+func (c *collection) Delete(_ context.Context, id string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.docs, id)
+	return nil
+}
+
+func (c *collection) Find(_ context.Context, filter []byte) ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.filter = append(c.filter, string(filter))
+
+	ids := make([]string, 0, len(c.docs))
+	for id := range c.docs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	out := []json.RawMessage{}
+	for _, id := range ids {
+		out = append(out, c.docs[id])
+	}
+	return json.Marshal(out)
+}
+
+func (c *collection) filters() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.filter...)
+}
+
+func docGrant(label, handle string, ops ...string) []invoke.Grant {
+	return []invoke.Grant{{
+		Kind: "database", Label: label, Handle: handle, Ops: ops,
+		Settings: map[string]string{"type": "document", "document/engine": "distributed"},
+	}}
+}
+
+// TestAGuestStoresAndFindsDocuments — the document crosses as JSON, which is
+// what keeps this interface stable while its shape is the author's business.
+func TestAComponentUsesADocumentDatabase(t *testing.T) {
+	docs := newCollection()
+	instance := start(t, tier(t, cacher(t), wasm.WithDocuments(docs)), invoke.Spec{
+		Name: "fn", Reaches: docGrant("orders", "shop/prod/QmOrders", "get", "put", "delete", "query"),
+	})
+
+	require.Equal(t, 204, call(t, instance, "/doc-put/orders/order:1",
+		[]byte(`{"status":"paid","total":12.5,"address":{"city":"algiers"}}`)).Status)
+
+	res := call(t, instance, "/doc-get/orders/order:1", nil)
+	require.Equal(t, 200, res.Status, string(res.Body))
+	require.JSONEq(t, `{"status":"paid","total":12.5,"address":{"city":"algiers"}}`, string(res.Body),
+		"nested and heterogeneous, unchanged")
+
+	res = call(t, instance, "/doc-find/orders/", []byte(`{"status":"paid"}`))
+	require.Equal(t, 200, res.Status, string(res.Body))
+	require.JSONEq(t, `[{"status":"paid","total":12.5,"address":{"city":"algiers"}}]`, string(res.Body))
+	require.Equal(t, []string{`{"status":"paid"}`}, docs.filters(), "the filter crossed as written")
+
+	require.Equal(t, 204, call(t, instance, "/doc-delete/orders/order:1", nil).Status)
+
+	res = call(t, instance, "/doc-get/orders/order:1", nil)
+	require.Equal(t, 404, res.Status)
+	require.Equal(t, "not-found", string(res.Body))
+}
+
+// TestAMalformedDocumentIsItsOwnArm, because a caller fixes it and does not
+// retry it.
+func TestABadDocumentIsMalformedAndNotAnOutage(t *testing.T) {
+	docs := newCollection()
+	instance := start(t, tier(t, cacher(t), wasm.WithDocuments(docs)), invoke.Spec{
+		Name: "fn", Reaches: docGrant("orders", "h", "put"),
+	})
+
+	res := call(t, instance, "/doc-put/orders/1", []byte("not json at all"))
+	require.Equal(t, 403, res.Status)
+	require.Contains(t, string(res.Body), "malformed:")
+}
+
+// TestAnEmptyFilterIsEverything, and an empty BODY is an empty filter.
+func TestAnEmptyFilterCrossesAsEmpty(t *testing.T) {
+	docs := newCollection()
+	instance := start(t, tier(t, cacher(t), wasm.WithDocuments(docs)), invoke.Spec{
+		Name: "fn", Reaches: docGrant("orders", "h", "query"),
+	})
+
+	res := call(t, instance, "/doc-find/orders/", nil)
+	require.Equal(t, 200, res.Status)
+	require.JSONEq(t, `[]`, string(res.Body), "an empty array and not null")
+	require.Equal(t, []string{""}, docs.filters())
+}
+
+// TestThreeDataModelsAreThreeDoors, all under the `database` kind.
+func TestEachDataModelIsItsOwnDoor(t *testing.T) {
+	docs := newCollection()
+	kv := newKeyValues()
+	sql := &server{}
+
+	instance := start(t, tier(t, cacher(t),
+		wasm.WithDocuments(docs), wasm.WithKV(kv), wasm.WithDatabases(sql)),
+		invoke.Spec{
+			Name:    "fn",
+			Reaches: docGrant("orders", "h", "get", "put", "query"),
+		})
+
+	// It is a document database, so neither of the other two doors sees it.
+	res := call(t, instance, "/kv-get/orders/k", nil)
+	require.Equal(t, 404, res.Status)
+	require.Equal(t, "no-such-database:orders", string(res.Body))
+
+	res = call(t, instance, "/query/orders/", []byte("select 1"))
+	require.Equal(t, 500, res.Status)
+	require.Equal(t, "no-such-database:orders", string(res.Body))
+
+	// And its own door works.
+	require.Equal(t, 204, call(t, instance, "/doc-put/orders/1", []byte(`{"a":1}`)).Status)
+}
+
+func TestAnUngrantedDocumentVerbIsDenied(t *testing.T) {
+	docs := newCollection()
+	instance := start(t, tier(t, cacher(t), wasm.WithDocuments(docs)), invoke.Spec{
+		Name: "fn", Reaches: docGrant("orders", "h", "get"),
+	})
+
+	res := call(t, instance, "/doc-put/orders/1", []byte(`{"a":1}`))
+	require.Equal(t, 403, res.Status)
+	require.Equal(t, "denied:orders cannot put", string(res.Body))
+}
+
+func TestATierWithNoDocumentsRefusesAWorkloadThatNeedsOne(t *testing.T) {
+	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
+		Name: "fn", Artifact: "bafy", Reaches: docGrant("orders", "h", "get"),
+	})
+	require.ErrorIs(t, err, wasm.ErrNoDocuments)
 }
