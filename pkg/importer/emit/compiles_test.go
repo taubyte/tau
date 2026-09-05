@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/importer"
+	"github.com/taubyte/tau/pkg/importer/emit"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -25,4 +27,69 @@ func compiles(t *testing.T, fs afero.Fs, dir string) {
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, obj)
+}
+
+// TestTheToDoListNamesWhatBlocksTheCompile.
+//
+// THIS IS THE PROPERTY THE WHOLE REPORT EXISTS FOR, and it did not hold. A
+// required field at a DYNAMIC path — every attribute under `build:`, whose
+// branch is selected by which key an author wrote — was invisible to the
+// session's required-field check, because the discriminator has no value of its
+// own to read. So an importer that wrote a build block without its toolchain
+// image produced exactly this: Compiles false, and Missing EMPTY.
+//
+// The person holding that report has a project that will not deploy and a
+// to-do list that names nothing.
+func TestAHoleInTheOutputIsNamedInTheReport(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	// A website built by commands, with no toolchain image — the exact shape a
+	// Vercel import produced before it started writing one.
+	result := importer.Result{Source: "test"}
+	result.Set("website", "site", map[string]any{
+		"build": map[string]any{
+			"commands": map[string]any{"run": "npm run build", "output": "dist"},
+		},
+	})
+
+	report, err := emit.To(fs, "/project", "shop", result)
+	require.NoError(t, err)
+
+	require.False(t, report.Compiles, "it does not compile")
+	require.Contains(t, report.Why, "build/commands/image")
+
+	var named []string
+	for _, m := range report.Missing {
+		named = append(named, m.Field)
+	}
+	require.Contains(t, named, "build/commands/image",
+		"the to-do list must name what blocks the compile; it named %v", named)
+}
+
+// TestABranchNOBODYWroteRequiresNothing, which is the other half and the one
+// that made the first fix wrong twice.
+//
+// A stream's engine and a gateway's routing are branches AT THE RESOURCE'S OWN
+// ROOT, so the prefix under which the key sits is EMPTY. A check that read an
+// empty prefix as "there is no branch" made every field of every branch
+// unconditionally required — and a config that compiles reported five missing
+// fields it did not need.
+func TestABranchThatWasNotSelectedRequiresNothing(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	result := importer.Result{Source: "test"}
+	// A stream on the swarm's own engine. Kafka's host and credentials are
+	// required ONLY on the kafka branch, which this did not write.
+	result.Set("stream", "orders", map[string]any{
+		"distributed": map[string]any{"local": false},
+	})
+
+	report, err := emit.To(fs, "/project", "shop", result)
+	require.NoError(t, err)
+
+	for _, m := range report.Missing {
+		require.NotContains(t, m.Field, "kafka", "a branch nobody wrote: %v", report.Missing)
+		require.NotContains(t, m.Field, "nats", "a branch nobody wrote: %v", report.Missing)
+	}
+	require.True(t, report.Compiles, "%s", report.Why)
 }

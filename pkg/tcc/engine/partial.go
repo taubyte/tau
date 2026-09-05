@@ -92,6 +92,29 @@ type RequiredField struct {
 	// required — an unset bool is false. RequiredWhen cannot express that:
 	// there, an absent discriminator means NOT required.
 	Unless bool
+
+	// WhenBranchAt is set when the discriminator has NO value of its own: its
+	// path ends in a finite matcher and it Captures(), which means the value IS
+	// THE KEY an author wrote under this prefix.
+	//
+	//	build:                 # WhenBranchAt = ["build"]
+	//	    commands:          # ...and the discriminator's value is "commands"
+	//	        image: node:22
+	//
+	// WITHOUT THIS, EVERY REQUIRED FIELD ON A BRANCH WAS SILENTLY DROPPED. The
+	// discriminator's own path is dynamic, so reading it as a field returned
+	// nothing and the condition could never be true — which took `build/image`,
+	// `build/run`, `build/script` and `build/dockerfile` out of the required
+	// set entirely. An importer emitting a build block therefore produced a
+	// project that would not compile and a to-do list that named nothing.
+	//
+	// When WhenBranch is true, When is nil: there is nothing to read as a
+	// field. WhenBranchAt may be EMPTY and that is meaningful — the branch key
+	// sits at the resource's own root, which is where a stream's engine and a
+	// gateway's routing live. A caller testing len(WhenBranchAt) instead of
+	// this bool makes every one of those unconditionally required.
+	WhenBranch   bool
+	WhenBranchAt []string
 }
 
 // fieldPaths is every plain authored location of an attribute: a static path
@@ -182,17 +205,52 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 				if sib == nil {
 					continue // names an attribute this group doesn't have
 				}
-				sp := fieldPath(sib)
-				if sp == nil {
-					continue // discriminator at a dynamic path — not addressable
-				}
-				rf.When = &FieldRef{Path: sp, Compat: compatPath(sib)}
 				rf.WhenIn = cond.In
+
+				if sp := fieldPath(sib); sp != nil {
+					rf.When = &FieldRef{Path: sp, Compat: compatPath(sib)}
+				} else if at, ok := branchPrefix(sib); ok {
+					// A CAPTURED BRANCH: the discriminator has no value of its
+					// own, its value is the key under this prefix.
+					rf.WhenBranch, rf.WhenBranchAt = true, at
+				} else {
+					continue // a dynamic path that is not a captured branch
+				}
 			}
 			out = append(out, rf)
 		}
 	}
 	return out
+}
+
+// branchPrefix is the path under which a CAPTURED discriminator's value is the
+// key, and whether the attribute is one.
+//
+// It is exactly the shape `String(Key("build","kind"), Path("build",
+// Either(ways...)), Captures())` has: plain segments, then one finite matcher,
+// and nothing after it. Anything else is a dynamic path this cannot resolve —
+// a matcher in the middle would make the prefix itself depend on a branch, and
+// a non-finite one enumerates nothing.
+func branchPrefix(a *Attribute) ([]string, bool) {
+	if !a.Captures || len(a.Path) == 0 {
+		return nil, false
+	}
+
+	prefix := make([]string, 0, len(a.Path)-1)
+	for i, seg := range a.Path {
+		if i == len(a.Path)-1 {
+			if _, ok := seg.(FiniteMatcher); !ok {
+				return nil, false
+			}
+			return prefix, true
+		}
+		plain, ok := seg.(string)
+		if !ok {
+			return nil, false
+		}
+		prefix = append(prefix, plain)
+	}
+	return nil, false
 }
 
 // RequiredPathOf is an attribute's authored path as a display/lookup key, or ""

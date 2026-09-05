@@ -67,6 +67,17 @@ type RequiredField struct {
 	// discriminator (a bool) is true, and an ABSENT discriminator means
 	// required, because an unset bool is false.
 	Unless bool
+
+	// WhenBranch says the discriminator's value is the KEY an author wrote
+	// under WhenBranchAt rather than a field with a value — `build: {commands:
+	// {...}}` selects the "commands" branch by being written. When it is true,
+	// When is nil.
+	//
+	// WhenBranchAt MAY BE EMPTY and that is meaningful: the branch key sits at
+	// the resource's own root, which is where a stream's engine and a gateway's
+	// routing live.
+	WhenBranch   bool
+	WhenBranchAt []string
 }
 
 // Completer supplies a DSL's field completion sources: the fixed candidates (enum
@@ -559,6 +570,17 @@ func isBlank(v any) bool {
 // with no trigger type owes no trigger-specific field, and saying otherwise
 // would flood a half-created resource with issues it cannot act on yet.
 func (s *Session) requiredNow(res []string, rf RequiredField) bool {
+	// A CAPTURED BRANCH IS READ AS A KEY AND NOT AS A VALUE. The discriminator
+	// has no field of its own — an author selects the branch BY WRITING IT — so
+	// the question is which key is present under the prefix.
+	//
+	// THIS WAS THE HOLE. With no answer for it, every conditional required
+	// field on a branch was dropped from the set, so `ValidateResource`
+	// reported nothing while the compiler refused the resource over exactly
+	// those fields.
+	if rf.WhenBranch {
+		return s.branchIn(res, rf.WhenBranchAt, rf.WhenIn)
+	}
 	if rf.When == nil {
 		return true
 	}
@@ -579,6 +601,26 @@ func (s *Session) requiredNow(res []string, rf RequiredField) bool {
 	}
 	got, ok := v.(string)
 	return ok && slices.Contains(rf.WhenIn, got)
+}
+
+// branchIn reports whether the resource selected one of `in` at this path, by
+// writing it as a key.
+func (s *Session) branchIn(res []string, at, in []string) bool {
+	v, err := s.Get(res, at)
+	if err != nil {
+		return false
+	}
+	block, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+
+	for _, want := range in {
+		if _, written := block[want]; written {
+			return true
+		}
+	}
+	return false
 }
 
 // Location reports where a resource's document lives — the repo-relative path
