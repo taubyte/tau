@@ -280,6 +280,29 @@ func volumeSettings(reach project.Reach, target project.Resource) map[string]str
 // was declared, or "" when it would not. Both reasons are one line for an
 // author to change.
 func unservable(reach project.Reach, target project.Resource) string {
+	if why := unservableKind(reach, target); why != "" {
+		return why
+	}
+
+	// AN `instances:` BLOCK IS ON FOUR KINDS AND IS HONOURED BY NONE, which is
+	// the authorizer's defect one level up: the target named who admits an
+	// instance and how many there may be, and serving the grant anyway hands a
+	// workload ONE store where the config says many, admitted by nobody and
+	// counted against no ceiling.
+	//
+	// It is checked after the kind's own reasons so that a target refused for
+	// something else keeps the sentence that names it.
+	if target.String("instances", "admission") != "" {
+		return fmt.Sprintf("%s %q holds many instances, admitted by the validator %q, and nothing here "+
+			"calls one — serving it would hand this workload a single store the config never described",
+			reach.Kind, reach.Label, target.String("instances", "validator", "name"))
+	}
+	return ""
+}
+
+// unservableKind is what one kind declares that this cloud would have to serve
+// weaker than written.
+func unservableKind(reach project.Reach, target project.Resource) string {
 	switch reach.Kind {
 	case streamKind, busKind:
 		// AN EXTERNAL ENGINE IS A DRIVER AND A RELEASE, not a config value —

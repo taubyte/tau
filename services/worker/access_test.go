@@ -232,6 +232,65 @@ func (refusingBackend) Image(string) core.Image { return nil }
 
 var errNoBackend = errors.New("nothing should reach the backend")
 
+// ── instances ────────────────────────────────────────────────────────────────
+
+// TestAStoreThatHoldsManyInstancesIsRefusedByName.
+//
+// `instances:` says a store holds many, that a named function decides which of
+// them may exist, and how many there may be at once. Nothing here calls one and
+// nothing counts them — so serving the grant would hand a workload ONE store,
+// with the admission control silently absent and the ceiling unenforced. That
+// is the authorizer's defect a level up, and it gets the authorizer's answer.
+//
+// FOUR KINDS CAN DECLARE IT — cache, database, storage and bus — and checkout
+// reaches two of them, which is why the check is on the grant rather than on
+// any one kind's settings.
+func TestAStoreThatHoldsManyInstancesIsRefused(t *testing.T) {
+	h := newHarness(t)
+	spec := resolveIn(t, h, nil, "function", "checkout")
+
+	for _, want := range []struct{ kind, label string }{
+		{databaseKind, "tokens"},
+		{"storage", "receipts"},
+	} {
+		g, ok := grantFor(spec, want.kind, want.label)
+		require.True(t, ok, "checkout reaches %s/%s", want.kind, want.label)
+		require.NotEmpty(t, g.Refused, "%s/%s admits instances and nothing admits them", want.kind, want.label)
+		require.Contains(t, g.Refused, "many instances")
+		require.Contains(t, g.Refused, "may_open", "it names which validator")
+	}
+
+	// AND THE WORKLOAD STILL RUNS. Access degrades per target: the one grant
+	// that needed the unservable thing is refused and the rest are not.
+	g, ok := grantFor(spec, streamKind, "orders")
+	require.True(t, ok)
+	require.Empty(t, g.Refused, "a target with no instances block is untouched")
+}
+
+// TestAKindsOwnReasonIsReportedOverInstances. shop's `sessions` is BOTH
+// single-writer and a store of many instances, and an author is told the thing
+// they can act on rather than whichever check ran first.
+func TestAKindsOwnReasonIsReportedOverInstances(t *testing.T) {
+	h := newHarness(t)
+
+	// checkout's `sessions` entry names `/shop`, so it resolves to the one
+	// that declares both.
+	g, ok := grantFor(resolveIn(t, h, nil, "function", "checkout"), cacheKind, "sessions")
+	require.True(t, ok)
+	require.Contains(t, g.Refused, "single-writer")
+	require.NotContains(t, g.Refused, "many instances")
+}
+
+// grantFor is one grant by kind and label.
+func grantFor(spec invoke.Spec, kind, label string) (invoke.Grant, bool) {
+	for _, g := range spec.Reaches {
+		if g.Kind == kind && g.Label == label {
+			return g, true
+		}
+	}
+	return invoke.Grant{}, false
+}
+
 // ── streams ──────────────────────────────────────────────────────────────────
 
 func streamGrants(t *testing.T, spec invoke.Spec) map[string]invoke.Grant {
