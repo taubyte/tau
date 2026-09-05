@@ -1,11 +1,15 @@
 package worker
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/containers/core"
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/invoke/container"
 	"github.com/taubyte/tau/pkg/project"
 )
 
@@ -158,5 +162,72 @@ func TestAResourceWithNoCacheAccessHasNoCacheGrants(t *testing.T) {
 	// charge_card reaches a secret and nothing else.
 	spec := resolveIn(t, h, nil, "function", "charge_card")
 	require.Empty(t, cacheGrants(t, spec))
-	require.Empty(t, spec.Reaches, "and no grant of another kind is invented")
+
+	// EVERY KIND IS CARRIED, not just the ones a tier serves — a tier has to
+	// see what it cannot do for a workload, and it cannot see that from a list
+	// filtered down to what already works.
+	require.Len(t, spec.Reaches, 1)
+	require.Equal(t, "secret", spec.Reaches[0].Kind)
+	require.Equal(t, "stripe", spec.Reaches[0].Label)
 }
+
+// TestAMountPathComesOffTheENTRY, because two workloads mounting one volume can
+// put it in different places.
+func TestAVolumeGrantCarriesItsMountPathAndQuota(t *testing.T) {
+	h := newHarness(t)
+	spec := resolveIn(t, h, nil, "application", "db")
+
+	var volume invoke.Grant
+	for _, g := range spec.Reaches {
+		if g.Kind == volumeKind {
+			volume = g
+		}
+	}
+	require.Equal(t, "pgdata", volume.Label)
+	require.Equal(t, []string{"mount-rw"}, volume.Ops)
+	require.Equal(t, "/var/lib/postgresql/data", volume.Settings[settingMountPath])
+	require.NotEmpty(t, volume.Settings[settingQuota], "the target's hard quota")
+}
+
+// TestTheFixturesPostgresIsRefusedAllTheWayThrough.
+//
+// `application/db` mounts a volume at /var/lib/postgresql/data — the canonical
+// case where an ephemeral filesystem is not a degraded service but a lost
+// database. It is worth following end to end because every link had to carry
+// something for the refusal to happen at all: the compiler wrote the entry, the
+// access reader told it from a lowered child, the worker resolved it into a
+// grant with its mount path, and the tier recognised the kind.
+//
+// BEFORE THIS, IT STARTED. Postgres came up, wrote into the container's own
+// layer, and lost everything when the container went — with nothing anywhere
+// saying so.
+func TestTheFixturesDatabaseIsRefusedRatherThanStartedWithoutItsDisk(t *testing.T) {
+	h := newHarness(t)
+	spec := resolveIn(t, h, nil, "application", "db")
+
+	tier, err := container.New(func(invoke.Spec) (container.Image, error) {
+		return container.Image{Ref: "postgres:16"}, nil
+	}, container.WithBackend(refusingBackend{}))
+	require.NoError(t, err)
+
+	_, err = tier.Start(t.Context(), spec)
+	require.ErrorIs(t, err, container.ErrNoMounts)
+	require.ErrorContains(t, err, "pgdata at /var/lib/postgresql/data")
+}
+
+// refusingBackend fails every call, so a test that got past the mount check
+// would fail on the backend rather than passing by accident.
+type refusingBackend struct{}
+
+func (refusingBackend) Create(context.Context, *core.ContainerConfig) (core.ContainerID, error) {
+	return "", errors.New("nothing should reach the backend")
+}
+func (refusingBackend) Start(context.Context, core.ContainerID) error  { return errNoBackend }
+func (refusingBackend) Stop(context.Context, core.ContainerID) error   { return errNoBackend }
+func (refusingBackend) Remove(context.Context, core.ContainerID) error { return errNoBackend }
+func (refusingBackend) Inspect(context.Context, core.ContainerID) (*core.ContainerInfo, error) {
+	return nil, errNoBackend
+}
+func (refusingBackend) Image(string) core.Image { return nil }
+
+var errNoBackend = errors.New("nothing should reach the backend")

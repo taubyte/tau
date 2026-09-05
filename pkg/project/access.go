@@ -49,6 +49,12 @@ type Reach struct {
 
 	// Timeout bounds one operation on it. Zero means the caller's own.
 	Timeout time.Duration
+
+	// Path is where a mounted filesystem appears inside the workload. It is on
+	// the ENTRY and not on the target because it is per use: two workloads
+	// mounting one volume can put it in different places, which is what
+	// mountAttributes exists for.
+	Path string
 }
 
 // target is the name to look the reach up under.
@@ -89,6 +95,7 @@ func (r Resource) Reaches(kind string) []Reach {
 			Ops:       ops,
 		}
 		reach.Timeout, _ = entry.Duration("timeout")
+		reach.Path = entry.String("path")
 		out = append(out, reach)
 	}
 

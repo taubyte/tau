@@ -448,3 +448,36 @@ func TestTwoLabelsResolveToTwoCaches(t *testing.T) {
 	res = call(t, instance, "/get/orders/k", nil)
 	require.Equal(t, "theirs", string(res.Body))
 }
+
+// ── a filesystem a component never gets ──────────────────────────────────────
+
+// TestAComponentThatDeclaresAMountIsRefused. The sandbox preopens no directory
+// on purpose, so a guest started with a declared mount would write into a WASI
+// shim's memory and lose it at the end of the INSTANCE — sooner even than the
+// container tier's, which loses it at the end of the container.
+func TestAComponentDeclaringAMountIsRefused(t *testing.T) {
+	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
+		Name: "fn", Artifact: "bafy",
+		Reaches: []invoke.Grant{{
+			Kind: invoke.MountKind, Label: "pgdata", Ops: []string{"mount-rw"},
+			Settings: map[string]string{"path": "/data"},
+		}},
+	})
+
+	require.ErrorIs(t, err, wasm.ErrNoMounts)
+	require.ErrorContains(t, err, "pgdata")
+	require.ErrorContains(t, err, "no filesystem")
+}
+
+// TestAGrantOfAnotherKindStillStarts, so the refusal is about mounts and not
+// about access blocks.
+func TestAComponentWithOtherGrantsStarts(t *testing.T) {
+	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h"))), invoke.Spec{
+		Name: "fn",
+		Reaches: []invoke.Grant{
+			{Kind: "cache", Label: "sessions", Handle: "h", Ops: []string{"get"}},
+			{Kind: "database", Label: "ledger", Ops: []string{"query"}},
+		},
+	})
+	require.Equal(t, 404, call(t, instance, "/get/sessions/k", nil).Status)
+}

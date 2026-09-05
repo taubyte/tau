@@ -111,8 +111,14 @@ var (
 	ErrNoAssets   = errors.New("wasm: nothing to fetch a component from")
 	ErrNoArtifact = errors.New("wasm: the spec names no artifact")
 
-	// ErrNotAHandler is a component built against a host interface this tier
-	// does not serve.
+	// ErrNoMounts is a component that declared a filesystem. It is refused
+	// rather than started without one — see the container tier's own
+	// ErrNoMounts for why this is the one unserved capability that refuses
+	// instead of warning.
+	ErrNoMounts = errors.New("wasm: a component is given no filesystem, and the workload declared a mount")
+
+	// ErrUnsupportedWorld is a component built against a host interface this
+	// tier does not serve.
 	ErrUnsupportedWorld = errors.New("wasm: this tier runs the handler interface and nothing else yet")
 
 	// ErrNotAHandler is a component whose export does not have the shape
@@ -205,6 +211,16 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	// — so it is refused here rather than discovered at the first request.
 	if world := spec.Settings[SettingImplements]; world != "" && world != WorldHandler {
 		return nil, fmt.Errorf("%w: %s is %q", ErrUnsupportedWorld, spec.Name, world)
+	}
+
+	// A DECLARED FILESYSTEM IS REFUSED HERE TOO, and for a stronger reason than
+	// the container tier's: a guest has no filesystem at all. The sandbox
+	// preopens no directory on purpose, so a workload that declared a mount
+	// would write into a WASI shim's memory and lose it at the end of the
+	// instance rather than at the end of the deploy.
+	if mounted := spec.Mounted(); len(mounted) > 0 {
+		return nil, fmt.Errorf("%w: %s wants %s, and a component is given no filesystem",
+			ErrNoMounts, spec.Name, mounted[0].Label)
 	}
 
 	// A GRANT WITH NOTHING BEHIND IT IS A CONSTRUCTION FAULT, so it is refused

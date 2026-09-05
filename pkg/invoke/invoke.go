@@ -195,6 +195,25 @@ type Grant struct {
 	Refused string
 }
 
+// Mounts is the kind whose grant is a FILESYSTEM rather than a call.
+//
+// It is named in this package because both tiers have to recognise it and
+// neither serves it: a workload that declared one and did not get it writes to
+// somewhere that disappears, which is the one unserved capability that loses
+// data instead of failing.
+const MountKind = "volume"
+
+// Mounted is every filesystem this workload declared it would have.
+func (s Spec) Mounted() []Grant {
+	var out []Grant
+	for _, g := range s.Reaches {
+		if g.Kind == MountKind {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 // Allows reports whether this grant carries a verb. A refused grant allows
 // nothing, whatever its ops say.
 func (g Grant) Allows(op string) bool {

@@ -135,30 +135,76 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Grant, error) {
 	var out []invoke.Grant
 
-	for _, reach := range r.Reaches(cacheKind) {
-		target, id, err := proj.Reached(t.Scope, reach)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %s wants %w", ErrNoTarget, t.Name, err)
-		}
+	// EVERY KIND, NOT JUST THE ONES A TIER SERVES. A tier has to be able to see
+	// what it CANNOT do for a workload — a container declaring a volume it will
+	// not get is data written to a layer that vanishes — and it cannot see that
+	// from a list filtered down to what already works.
+	for _, kind := range schema.Kinds() {
+		for _, reach := range r.Reaches(kind) {
+			target, id, err := proj.Reached(t.Scope, reach)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s wants %w", ErrNoTarget, t.Name, err)
+			}
 
-		out = append(out, invoke.Grant{
-			Kind:     reach.Kind,
-			Label:    reach.Label,
-			Handle:   strings.Join([]string{t.Project, t.Environment, id}, "/"),
-			Ops:      reach.Ops,
-			Settings: cacheSettings(target),
-			Refused:  unservable(reach, target),
-		})
+			out = append(out, invoke.Grant{
+				Kind:     reach.Kind,
+				Label:    reach.Label,
+				Handle:   strings.Join([]string{t.Project, t.Environment, id}, "/"),
+				Ops:      reach.Ops,
+				Settings: settingsFor(reach.Kind, reach, target),
+				Refused:  unservable(reach, target),
+			})
+		}
 	}
 	return out, nil
 }
 
-const cacheKind = "cache"
+const (
+	cacheKind  = "cache"
+	volumeKind = "volume"
+)
+
+// settingsFor is what the TARGET (and, for a mount, the entry) declared, in the
+// vocabulary's own attribute paths.
+func settingsFor(kind string, reach project.Reach, target project.Resource) map[string]string {
+	switch kind {
+	case cacheKind:
+		return cacheSettings(target)
+	case volumeKind:
+		return volumeSettings(reach, target)
+	}
+	return nil
+}
+
+// volumeSettings carries the quota and, from the ENTRY rather than the target,
+// where it appears inside the workload — a mount path is per use, which is why
+// the vocabulary puts it on the access entry.
+func volumeSettings(reach project.Reach, target project.Resource) map[string]string {
+	out := map[string]string{}
+	if quota, ok := target.Int("quota"); ok {
+		out[settingQuota] = strconv.FormatInt(quota, 10)
+	}
+	if path := reach.Path; path != "" {
+		out[settingMountPath] = path
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
 
 // unservable says why this cloud would have to serve a target WEAKER than it
 // was declared, or "" when it would not. Both reasons are one line for an
 // author to change.
 func unservable(reach project.Reach, target project.Resource) string {
+	if reach.Kind != cacheKind {
+		// THE OTHER KINDS ARE NOT REFUSED HERE. What a tier can do with a grant
+		// is the tier's to say — a volume is a mount, a database is a
+		// connection — and this function only knows the two properties a CACHE
+		// declares that this cloud would have to serve weaker than written.
+		return ""
+	}
+
 	// AN AUTHORIZER IS A DECISION SOMEBODY ELSE MAKES, per operation, and
 	// nothing calls one yet. Serving the cache anyway would be granting the
 	// access the target explicitly said is not its own to grant — which is the
@@ -191,8 +237,10 @@ const singleWriter = "single-writer"
 // The vocabulary's own paths, so a reader finds the attribute by searching the
 // schema for the string.
 const (
-	settingTTL  = "keys/ttl"
-	settingSize = "keys/size"
+	settingTTL       = "keys/ttl"
+	settingSize      = "keys/size"
+	settingQuota     = "quota"
+	settingMountPath = "path"
 )
 
 // cacheSettings is what the TARGET declared, carried to whatever backs the

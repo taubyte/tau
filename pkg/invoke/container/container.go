@@ -49,6 +49,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +68,21 @@ var (
 	ErrNotReady  = errors.New("container: the container never listened")
 	ErrClosed    = errors.New("container: instance is closed")
 	ErrExited    = errors.New("container: the container exited")
+
+	// ErrNoMounts is a workload that declared a filesystem this tier cannot
+	// give it.
+	//
+	// IT IS A REFUSAL AND THE ONLY ONE OF ITS KIND HERE, because it is the only
+	// unserved capability that LOSES DATA rather than failing. A container
+	// declaring `volume: {pgdata: {ops: [mount-rw], path: /var/lib/postgresql/data}}`
+	// and started without it writes its database into the container's own
+	// layer, which is discarded when the container is — and nothing anywhere
+	// says so until somebody looks for the data.
+	//
+	// Everything else in an access block fails LOUDLY when it is absent: a
+	// database it cannot reach is a connection error the workload reports. Those
+	// are warned about (see unserved) and started.
+	ErrNoMounts = errors.New("container: this tier cannot mount a filesystem, and the workload declared one")
 )
 
 // Backend is the slice of a container backend this runtime needs.
@@ -288,7 +304,11 @@ var _ invoke.Runtime = (*Runtime)(nil)
 
 // Start brings up one container and waits until it is listening.
 func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance, error) {
+	if err := mountGap(spec); err != nil {
+		return nil, err
+	}
 	e.egressGap(spec)
+	e.unserved(spec)
 
 	img, err := e.image(spec)
 	if err != nil {
@@ -567,6 +587,61 @@ func (i *instance) Close() error {
 // into the same nftables set the floor uses — which is a real piece of work
 // with a real hazard (a name's addresses change under you, and DNS rebinding
 // is the attack that lives in that gap), not a line here.
+// mountGap refuses a workload whose declared filesystem this tier cannot give
+// it. See ErrNoMounts for why this one is a refusal and the rest are warnings.
+func mountGap(spec invoke.Spec) error {
+	mounted := spec.Mounted()
+	if len(mounted) == 0 {
+		return nil
+	}
+
+	where := make([]string, 0, len(mounted))
+	for _, m := range mounted {
+		at := m.Settings["path"]
+		if at == "" {
+			at = "an unnamed path"
+		}
+		where = append(where, m.Label+" at "+at)
+	}
+	sort.Strings(where)
+
+	return fmt.Errorf("%w: %s wants %s — started without it, everything written there is discarded with the container",
+		ErrNoMounts, spec.Name, strings.Join(where, ", "))
+}
+
+// unserved warns about every other capability the workload declared and this
+// tier does not provide.
+//
+// A WARNING AND NOT A REFUSAL, because each of these fails where it is used: a
+// database nothing connected to it is a connection error the workload itself
+// reports, at the moment it tries. What the warning buys is that the operator
+// sees it at start rather than reading somebody's stack trace.
+func (e *Runtime) unserved(spec invoke.Spec) {
+	if e.opts.warn == nil {
+		return
+	}
+
+	kinds := map[string]bool{}
+	for _, g := range spec.Reaches {
+		if g.Kind != invoke.MountKind {
+			kinds[g.Kind] = true
+		}
+	}
+	if len(kinds) == 0 {
+		return
+	}
+
+	names := make([]string, 0, len(kinds))
+	for kind := range kinds {
+		names = append(names, kind)
+	}
+	sort.Strings(names)
+
+	e.opts.warn("container: %s declares access this tier does not serve (%s); "+
+		"nothing is injected for them and the workload will fail where it uses one",
+		spec.Name, strings.Join(names, ", "))
+}
+
 func (e *Runtime) egressGap(spec invoke.Spec) {
 	if len(spec.Egress) == 0 || e.opts.warn == nil {
 		return
