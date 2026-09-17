@@ -122,11 +122,14 @@ func Check(repoRoot, protoDir string) (Result, error) {
 	return Result{Dir: protoDir, Checked: len(rels), Diffs: diffs}, nil
 }
 
-// lookBuf resolves the buf binary on PATH, isolated in its own function so a
-// missing-toolchain error path is easy to test independently of buf actually
-// being installed.
+// lookBuf reports whether a buf can be run at all. It no longer has to be on
+// PATH — see Buf — so the only way this fails now is a Go toolchain that cannot
+// reach the module cache.
 func lookBuf() (string, error) {
-	return exec.LookPath("buf")
+	if path, err := exec.LookPath("buf"); err == nil {
+		return path, nil
+	}
+	return exec.LookPath("go")
 }
 
 // generate runs `buf generate -o out` with dir as the working directory, so
@@ -134,7 +137,7 @@ func lookBuf() (string, error) {
 // generate` there would. -o prepends to the template's out: paths rather
 // than replacing them, so a template with `out: gen` lands at out/gen.
 func generate(dir, out string) error {
-	cmd := exec.Command("buf", "generate", "-o", out)
+	cmd := Buf("generate", "-o", out)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

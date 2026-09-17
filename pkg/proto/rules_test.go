@@ -7,7 +7,6 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -524,12 +523,13 @@ func load(t *testing.T, root string) *schema {
 	t.Helper()
 
 	dir := filepath.Join(root, "pkg/proto")
-	if _, err := exec.LookPath("buf"); err != nil {
-		t.Fatalf("buf not found on PATH (required to compile pkg/proto): %v", err)
-	}
-
 	out := filepath.Join(t.TempDir(), "descriptor.binpb")
-	cmd := exec.Command("buf", "build", "-o", out)
+	// NOT `exec.Command("buf", ...)`. buf on PATH was an unstated precondition,
+	// and this test fails rather than skips when the schema cannot be built —
+	// on purpose, since a proto guard that goes quiet is worse than one that is
+	// absent. protogen.Buf falls back to the pinned version in the module cache,
+	// so "install buf first" stops being a step anybody has to know about.
+	cmd := protogen.Buf("build", "-o", out)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
