@@ -666,6 +666,14 @@ func volumeMounts(volumes []core.VolumeMount) ([]specs.Mount, error) {
 // which would leave a container with no route out at all, so the default here
 // is to share the host's — differing from docker, which bridges by default.
 // A bridged mode is refused rather than silently downgraded to one or the other.
+// portMappings is the config's mappings, or nothing when it declares no network.
+func portMappings(network *core.NetworkConfig) []core.PortMapping {
+	if network == nil {
+		return nil
+	}
+	return network.PortMappings
+}
+
 func networkSpecOpts(network *core.NetworkConfig) ([]oci.SpecOpts, error) {
 	mode := "host"
 	if network != nil && network.Mode != "" {
@@ -678,8 +686,21 @@ func networkSpecOpts(network *core.NetworkConfig) ([]oci.SpecOpts, error) {
 
 	switch mode {
 	case "host":
-		if network != nil && len(network.PortMappings) > 0 {
-			return nil, fmt.Errorf("port mappings not supported by containerd host networking: the container already shares the host's ports")
+		// A MAPPING THAT TRANSLATES A PORT IS THE ONE THIS CANNOT DO. Host
+		// networking already puts the container on the host's ports, so
+		// 8080->8080 is a request host networking has met rather than one it
+		// must refuse — and refusing it rejected every workload the container
+		// tier starts, which always names the port it will dial.
+		//
+		// A mapping to a DIFFERENT host port is a real translation, and there
+		// is nothing here to do it with: saying so beats binding the wrong
+		// number and timing out.
+		for _, m := range portMappings(network) {
+			if m.HostPort != m.ContainerPort {
+				return nil, fmt.Errorf(
+					"containerd host networking cannot map port %d to %d: the container already shares the host's ports",
+					m.ContainerPort, m.HostPort)
+			}
 		}
 		resolver, err := resolverMount(network != nil && network.RestrictEgress)
 		if err != nil {

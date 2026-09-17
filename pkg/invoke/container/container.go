@@ -436,12 +436,20 @@ func (e *Runtime) config(img Image, port int, runtimeAPI string, mounts []core.V
 		Command: img.Command,
 		Env:     env,
 		Network: &core.NetworkConfig{
-			// Host mode is the one both backends support: containerd runs
-			// without CNI and takes only host or none, and on docker it makes
-			// the allocated port mean the same number inside and out. The
-			// mapping below is redundant under host mode on docker and harmless;
-			// it is what makes bridge mode work if a backend ever prefers it.
-			Mode: "host",
+			// NO MODE IS NAMED, and that is the fix for a configuration BOTH
+			// backends refused. Naming "host" asked each of them for something
+			// it cannot do: docker cannot filter egress on host networking, so
+			// it refuses the pair outright; containerd has no CNI, so it takes
+			// host networking and refuses a port mapping beside it. Every
+			// container workload failed to create, and no test saw it because
+			// the only backend this package tests against is a fake — see
+			// backend_reality_test.go.
+			//
+			// What the tier states is the INTENT: keep this workload off the
+			// node's own network, and let it be reached on this port. How that
+			// is realised is the backend's — docker puts it on tau's restricted
+			// bridge and maps the port, containerd shares the host's namespace
+			// where the mapping is already true.
 			PortMappings: []core.PortMapping{{
 				HostPort:      port,
 				ContainerPort: port,

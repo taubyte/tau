@@ -284,8 +284,17 @@ func TestTheEngineTellsTheContainerWhichPortToUse(t *testing.T) {
 	require.Equal(t, port, created[0].Network.PortMappings[0].HostPort)
 	require.Equal(t, port, created[0].Network.PortMappings[0].ContainerPort,
 		"the number means the same thing inside and out")
-	require.Equal(t, "host", created[0].Network.Mode,
-		"host mode is the one both backends support — containerd has no CNI")
+	// THE TIER NAMES NO NETWORK MODE, and that is load-bearing rather than an
+	// omission. It used to ask for "host", which docker refuses to combine with
+	// restricted egress and containerd refuses to combine with a port mapping —
+	// so every container workload failed to create on both, and this package
+	// could not see it because the backend here is a fake that accepts
+	// anything. What the tier states is the intent; the backend realises it.
+	// See backend_reality_test.go, which asks a real daemon.
+	require.Empty(t, created[0].Network.Mode,
+		"naming a mode asks each backend for something it cannot do")
+	require.True(t, created[0].Network.RestrictEgress,
+		"and the intent that does travel is: keep it off the node's network")
 }
 
 // TestAnImageCannotOverridePort. The engine dials the port it allocated, so a
