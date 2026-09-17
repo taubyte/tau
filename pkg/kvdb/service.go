@@ -114,8 +114,15 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 	}
 
 	opts.RebroadcastInterval = time.Duration(rebroadcastIntervalSec * int(time.Second))
+	// THE KEY AND HOW BIG THE VALUE WAS, NEVER THE VALUE. Every write a
+	// workload makes — a cache entry, a database row, an object's metadata —
+	// arrives here, so logging `v` puts guest data in the node's log the moment
+	// an operator raises this logger to info, which is exactly what an operator
+	// does when something is wrong. It also copied every value written whether
+	// or not the level was on: the conversion happens at the call site, before
+	// Infof gets to check.
 	opts.PutHook = func(k ds.Key, v []byte) {
-		logger.Infof("Added: [%s] -> %s\n", k, string(v))
+		logger.Infof("Added: [%s] (%d bytes)", k, len(v))
 	}
 
 	opts.DeleteHook = func(k ds.Key) {
