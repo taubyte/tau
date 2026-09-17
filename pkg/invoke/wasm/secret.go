@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// secret.go is the host half of `taubyte:handler/secret`.
+// secret.go is the host half of `taubyte:secret/vault`.
 //
 // # It is the rotation path, not a second way to do the same thing
 //
@@ -26,7 +26,7 @@ import (
 // a secret for the life of an instance would be the environment variable again,
 // wearing a function call.
 
-const secretInterface = "taubyte:handler/secret@0.1.0"
+const secretInterface = "taubyte:secret/vault@0.1.0"
 
 // The vocabulary declares one verb for this kind, and it is a read.
 const opGetSecret = "get"
@@ -61,7 +61,7 @@ type Secrets interface {
 	SecretFor(ctx context.Context, grant invoke.Grant) ([]byte, error)
 }
 
-// WithSecrets is what backs `taubyte:handler/secret`.
+// WithSecrets is what backs `taubyte:secret/vault`.
 func WithSecrets(s Secrets) Option {
 	return func(r *Runtime) { r.secrets = s }
 }

@@ -15,7 +15,7 @@ import (
 
 func sendGrant(handle string, settings map[string]string) invoke.Grant {
 	return invoke.Grant{
-		Kind: "queue", Label: "jobs", Handle: handle,
+		Kind: "sync", Label: "jobs", Handle: handle,
 		Ops: []string{"send"}, Settings: settings,
 	}
 }
@@ -113,12 +113,12 @@ func TestAChangedDeliveryBlockIsNotPinnedByTheFirstOpen(t *testing.T) {
 	ctx := t.Context()
 
 	require.NoError(t, q.Send(ctx, sendGrant("shop/prod/QmJobs", map[string]string{
-		"max_attempts": "3", "visibility_timeout": "45s",
+		"queue/max_attempts": "3", "queue/visibility_timeout": "45s",
 	}), "1", []byte("x")))
 
 	// The same handle, redeployed with a different ceiling.
 	held, err := q.queue(sendGrant("shop/prod/QmJobs", map[string]string{
-		"max_attempts": "9", "visibility_timeout": "10m",
+		"queue/max_attempts": "9", "queue/visibility_timeout": "10m",
 	}))
 	require.NoError(t, err)
 	require.EqualValues(t, 9, held.Config().MaxAttempts)
@@ -133,13 +133,13 @@ func TestTheDeclaredDeliveryIsUsed(t *testing.T) {
 	q := queueing(t)
 
 	grant := sendGrant("shop/prod/QmJobs", map[string]string{
-		"visibility_timeout": "45s",
-		"delay":              "2s",
-		"max_attempts":       "9",
-		"retry/interval":     "5s",
-		"retry/factor":       "2",
-		"retry/ceiling":      "1m0s",
-		"dead_letter/name":   "QmDead",
+		"queue/visibility_timeout": "45s",
+		"queue/delay":              "2s",
+		"queue/max_attempts":       "9",
+		"queue/retry/interval":     "5s",
+		"queue/retry/factor":       "2",
+		"queue/retry/ceiling":      "1m0s",
+		"queue/dead_letter/name":   "QmDead",
 	})
 	require.NoError(t, q.Send(t.Context(), grant, "1", []byte("x")))
 
@@ -176,7 +176,7 @@ func TestNothingDeclaredIsTheDefaults(t *testing.T) {
 // TestADelayedItemIsNotReadyYet, which is the vocabulary's own `delay`.
 func TestADelayHoldsAnItemBack(t *testing.T) {
 	q := queueing(t)
-	grant := sendGrant("shop/prod/QmLater", map[string]string{"delay": "1h0m0s"})
+	grant := sendGrant("shop/prod/QmLater", map[string]string{"queue/delay": "1h0m0s"})
 
 	require.NoError(t, q.Send(t.Context(), grant, "1", []byte("x")))
 

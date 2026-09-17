@@ -1,4 +1,4 @@
-// The guest half of `taubyte:handler/cache`: a component that actually uses
+// The guest half of `taubyte:cache/store`: a component that actually uses
 // the capability, built by a real toolchain against the same wit the host
 // implements.
 //
@@ -12,9 +12,23 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::taubyte::handler::{
-    bus, cache, database, document, kv, queue, secret, storage, stream, vector, workflow,
-};
+// ONE PACKAGE PER CAPABILITY, so what a guest reaches is named by what it is
+// rather than by which host happens to serve it. The aliases keep the branches
+// below reading as verbs.
+use bindings::taubyte::bus::publisher as bus;
+use bindings::taubyte::cache::store as cache;
+use bindings::taubyte::channel::dialer as channel;
+use bindings::taubyte::document::store as document;
+use bindings::taubyte::kv::store as kv;
+use bindings::taubyte::log::records as logrecords;
+use bindings::taubyte::queue::producer as queue;
+use bindings::taubyte::secret::vault as secret;
+use bindings::taubyte::sql::store as database;
+use bindings::taubyte::storage::objects as storage;
+use bindings::taubyte::stream::publisher as stream;
+use bindings::taubyte::vector::store as vector;
+use bindings::taubyte::workflow::runs as workflow;
+use bindings::taubyte::workload::identity as workload;
 use bindings::{Guest, Header, Request, Response};
 
 struct Component;
@@ -38,6 +52,44 @@ fn why_stream(e: &stream::Error) -> String {
         stream::Error::Denied(why) => format!("denied:{}", why),
         stream::Error::Unavailable(why) => format!("unavailable:{}", why),
     }
+}
+
+// why_log names a log error arm.
+fn why_log(e: &logrecords::Error) -> String {
+    match e {
+        logrecords::Error::NoSuchLog(name) => format!("no-such-log:{}", name),
+        logrecords::Error::Denied(why) => format!("denied:{}", why),
+        logrecords::Error::NotWritable(why) => format!("not-writable:{}", why),
+        logrecords::Error::TooLarge(why) => format!("too-large:{}", why),
+        logrecords::Error::BadCursor(why) => format!("bad-cursor:{}", why),
+        logrecords::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
+// why_channel names a channel error arm.
+fn why_channel(e: &channel::Error) -> String {
+    match e {
+        channel::Error::NoSuchChannel(name) => format!("no-such-channel:{}", name),
+        channel::Error::Denied(why) => format!("denied:{}", why),
+        channel::Error::NoAnswer(why) => format!("no-answer:{}", why),
+        channel::Error::Failed(why) => format!("failed:{}", why),
+        channel::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
+// render_info renders every field of an object's metadata record, so a test
+// asserting one of them is asserting the whole lowering.
+fn render_info(i: &storage::Info) -> String {
+    let meta = i
+        .metadata
+        .iter()
+        .map(|m| format!("{}={}", m.name, m.value))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{}:{}:{}:{}:{}:[{}]",
+        i.key, i.size, i.modified, i.etag, i.content_type, meta
+    )
 }
 
 // why_db names a database error arm.
@@ -124,6 +176,7 @@ fn why_storage(e: &storage::Error) -> String {
         storage::Error::Denied(why) => format!("denied:{}", why),
         storage::Error::NotFound => "not-found".to_string(),
         storage::Error::Full(why) => format!("full:{}", why),
+        storage::Error::BadRequest(why) => format!("bad-request:{}", why),
         storage::Error::Unavailable(why) => format!("unavailable:{}", why),
     }
 }
@@ -259,7 +312,12 @@ impl Guest for Component {
             "exec" => {
                 let sql = String::from_utf8_lossy(&req.body).to_string();
                 match database::exec(name, &sql, &[]) {
-                    Ok(n) => reply(200, format!("{}", n).into_bytes()),
+                    // BOTH HALVES of the outcome record, which a bare row
+                    // count could not carry.
+                    Ok(o) => reply(
+                        200,
+                        format!("{}/{}", o.affected, o.last_insert_id).into_bytes(),
+                    ),
                     Err(e) => reply(500, why_db(&e).into_bytes()),
                 }
             }
@@ -275,7 +333,7 @@ impl Guest for Component {
                     database::Value::Blob(vec![1, 2, 3]),
                 ];
                 match database::exec(name, "insert", &args) {
-                    Ok(n) => reply(200, format!("{}", n).into_bytes()),
+                    Ok(o) => reply(200, format!("{}", o.affected).into_bytes()),
                     Err(e) => reply(500, why_db(&e).into_bytes()),
                 }
             }
@@ -360,41 +418,131 @@ impl Guest for Component {
             },
             // Object storage. The key is the object's name and the body is
             // its bytes.
-            "obj-put" => match storage::put(name, key, &req.body) {
-                Ok(()) => reply(204, Vec::new()),
-                Err(e) => reply(403, why_storage(&e).into_bytes()),
-            },
+            // PutObject. The content type and the user metadata travel with
+            // the bytes, and the answer is the etag they were stored under.
+            "obj-put" => {
+                let content_type = header(&req, "x-taubyte-content-type").unwrap_or_default();
+                let metadata: Vec<storage::Metadata> = req
+                    .headers
+                    .iter()
+                    .filter(|h| h.name.starts_with("x-meta-"))
+                    .map(|h| storage::Metadata {
+                        name: h.name["x-meta-".len()..].to_string(),
+                        value: h.value.clone(),
+                    })
+                    .collect();
+                match storage::put(name, key, &req.body, &content_type, &metadata) {
+                    Ok(etag) => reply(200, etag.into_bytes()),
+                    Err(e) => reply(403, why_storage(&e).into_bytes()),
+                }
+            }
+            // GetObject: the bytes AND what is known about them, which is what
+            // makes a record inside a record observable from the guest.
             "obj-get" => match storage::get(name, key) {
-                Ok(value) => reply(200, value),
+                Ok(object) => reply(200, object.body),
+                Err(e) => reply(404, why_storage(&e).into_bytes()),
+            },
+            // The same call read for its metadata half instead of its bytes.
+            "obj-meta" => match storage::get(name, key) {
+                Ok(object) => reply(200, render_info(&object.info).into_bytes()),
                 Err(e) => reply(404, why_storage(&e).into_bytes()),
             },
             // `head` is the whole reason storage is not kv: what is known about
             // an object without pulling it through the ABI.
             "obj-head" => match storage::head(name, key) {
-                Ok(entry) => reply(
-                    200,
-                    format!("{}:{}:{}", entry.name, entry.size, entry.modified).into_bytes(),
-                ),
+                Ok(info) => reply(200, render_info(&info).into_bytes()),
                 Err(e) => reply(404, why_storage(&e).into_bytes()),
             },
             "obj-delete" => match storage::delete(name, key) {
                 Ok(()) => reply(204, Vec::new()),
                 Err(e) => reply(403, why_storage(&e).into_bytes()),
             },
-            // The key is the prefix. The answer is one name per line, so a
-            // record list survives both directions of the ABI observably.
-            "obj-list" => match storage::entries(name, key) {
-                Ok(found) => reply(
-                    200,
-                    found
-                        .iter()
-                        .map(|e| format!("{}:{}", e.name, e.size))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                        .into_bytes(),
-                ),
-                Err(e) => reply(403, why_storage(&e).into_bytes()),
+            // ListObjectsV2. The key is the prefix; the delimiter, the page
+            // size and the continuation token come off headers so one branch
+            // exercises the whole request record.
+            "obj-list" => {
+                let request = storage::ListingRequest {
+                    prefix: key.to_string(),
+                    delimiter: header(&req, "x-taubyte-delimiter").unwrap_or_default(),
+                    max_keys: header(&req, "x-taubyte-max-keys")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0),
+                    continuation_token: header(&req, "x-taubyte-token").unwrap_or_default(),
+                };
+                match storage::list(name, &request) {
+                    Ok(listing) => {
+                        let mut out: Vec<String> = listing
+                            .objects
+                            .iter()
+                            .map(|i| format!("{}:{}", i.key, i.size))
+                            .collect();
+                        // A COMMON PREFIX IS BRACKETED so a test can tell one
+                        // from an object whose name happens to end in the
+                        // delimiter — the prefix already carries it.
+                        out.extend(listing.common_prefixes.iter().map(|p| format!("[{}]", p)));
+                        if listing.truncated {
+                            out.push(format!("...{}", listing.next_continuation_token));
+                        }
+                        reply(200, out.join("\n").into_bytes())
+                    }
+                    Err(e) => reply(403, why_storage(&e).into_bytes()),
+                }
+            }
+            // An append-only log. `append` answers the cursor the record
+            // landed at; `read` walks forward from one.
+            "append" => match logrecords::append(name, &req.body) {
+                Ok(cursor) => reply(200, cursor.into_bytes()),
+                Err(e) => reply(403, why_log(&e).into_bytes()),
             },
+            // The key is the cursor to read after; empty reads from the start.
+            "read" => {
+                let limit = header(&req, "x-taubyte-limit")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
+                match logrecords::read(name, key, limit) {
+                    Ok(found) => reply(
+                        200,
+                        found
+                            .iter()
+                            .map(|r| {
+                                format!(
+                                    "{}:{}:{}",
+                                    r.cursor,
+                                    r.at,
+                                    String::from_utf8_lossy(&r.data)
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                            .into_bytes(),
+                    ),
+                    Err(e) => reply(403, why_log(&e).into_bytes()),
+                }
+            }
+            // In-project addressing: what v1 called p2p.
+            "dial" => match channel::dial(name, &req.body) {
+                Ok(answer) => reply(200, answer),
+                Err(e) => reply(403, why_channel(&e).into_bytes()),
+            },
+            // What this workload IS. No grant, no label — it names nothing.
+            "whoami" => {
+                let me = workload::get();
+                reply(
+                    200,
+                    format!(
+                        "{}/{}/{}/{}/[{}]/{}/{}/{}",
+                        me.project,
+                        me.environment,
+                        me.kind,
+                        me.name,
+                        me.scope.join(","),
+                        me.revision,
+                        me.artifact,
+                        me.node,
+                    )
+                    .into_bytes(),
+                )
+            }
             "broadcast" => match bus::publish(name, &req.body) {
                 Ok(()) => reply(204, Vec::new()),
                 Err(e) => reply(403, why_bus(&e).into_bytes()),

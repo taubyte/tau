@@ -26,7 +26,7 @@ import (
 // THE KIND IS IN THE KEY. v1's by-name index has none — `projects/<pid>/<name>` is one
 // bucket for every kind, and a consumer picks its own out by reading the resource type
 // out of each value. That is a consumer parsing this vocabulary's address space, and v2
-// has twenty-four kinds sharing one namespace where v1 had eight. (That number is not
+// has twenty-three kinds sharing one namespace where v1 had eight. (That number is not
 // decoration — it is the whole reason this decision was taken, so it is pinned by a test
 // rather than left to drift the next time a kind arrives or goes.)
 //
@@ -192,8 +192,8 @@ func byName(ic interp.IndexCtx) ([]interp.IndexEntry, error) {
 }
 
 // attachIndexes gives every kind the by-name footprint, the way attachAccess gives every
-// kind its access groups: a rule that holds for all of them is not twenty-four lines
-// each of which can be forgotten when the twenty-fifth is added.
+// kind its access groups: a rule that holds for all of them is not twenty-three lines
+// each of which can be forgotten when the twenty-fourth is added.
 //
 // The POSITION is the declaration order of V2Resources, and the scope container comes
 // last. Position decides the order buckets accumulate in, so it has to be something

@@ -121,16 +121,16 @@ func TestTheCanonicalFixtureHitsBothRefusals(t *testing.T) {
 
 	require.Len(t, grants, 2)
 	require.Contains(t, grants["orders"].Refused, "authorizer")
-	require.Contains(t, grants["sessions"].Refused, "single-writer")
+	require.Contains(t, grants["sessions"].Refused, "raft")
 }
 
 // TestSingleWriterIsRefusedRatherThanSilentlyDowngraded. An author who wrote
-// single-writer asked for "nothing is silently discarded"; a CRDT merges
+// raft asked for "nothing is silently discarded"; a CRDT merges
 // concurrent writes last-writer-wins and the loser is gone with no error.
 func TestASingleWriterCacheIsRefusedByName(t *testing.T) {
-	reason := unservable(reachFor("ledger"), project.Resource{"consensus": singleWriter})
+	reason := unservable(reachFor("ledger"), project.Resource{"consensus": raftConsensus})
 
-	require.Contains(t, reason, "single-writer", "it names what was declared")
+	require.Contains(t, reason, "raft", "it names what was declared")
 	require.Contains(t, reason, "last-writer-wins", "and what it would have got instead")
 	require.Contains(t, reason, `cache "ledger"`, "and which target")
 }
@@ -144,10 +144,10 @@ func TestAGossipCacheIsServed(t *testing.T) {
 }
 
 // TestTheAuthorizerCheckComesFirst, so a cache that is both guarded and
-// single-writer says the thing an author has to fix first.
+// raft says the thing an author has to fix first.
 func TestAnAuthorizerIsNamedBeforeConsensus(t *testing.T) {
 	both := project.Resource{
-		"consensus": singleWriter,
+		"consensus": raftConsensus,
 		"authorizer": map[string]any{
 			"name": "tier_check",
 		},
@@ -308,7 +308,7 @@ func TestAStoreThatHoldsOneCarriesNoAdmission(t *testing.T) {
 	require.Empty(t, g.Settings[settingAdmission])
 }
 
-// TestAKINDSOwnReasonStillWins. shop's `sessions` is single-writer AND a store
+// TestAKINDSOwnReasonStillWins. shop's `sessions` is raft AND a store
 // of many instances; the refusal is about the first, because that is the one an
 // author can act on and the second is no longer a refusal at all.
 func TestAKindsOwnReasonIsStillReported(t *testing.T) {
@@ -316,9 +316,9 @@ func TestAKindsOwnReasonIsStillReported(t *testing.T) {
 
 	g, ok := grantFor(resolveIn(t, h, nil, "function", "checkout"), cacheKind, "sessions")
 	require.True(t, ok)
-	require.Contains(t, g.Refused, "single-writer")
+	require.Contains(t, g.Refused, "raft")
 
-	// And it still carries the block, so a cloud that served single-writer
+	// And it still carries the block, so a cloud that served raft
 	// would need no second change to serve its instances.
 	require.Equal(t, "validator", g.Settings[settingAdmission])
 }

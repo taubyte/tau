@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// database.go is the host half of `taubyte:handler/database`, for the `sql`
+// database.go is the host half of `taubyte:sql/store`, for the `sql`
 // data model.
 //
 // It is cache.go's shape again — a label resolved against the grant, an op
@@ -31,7 +31,7 @@ import (
 // means a connection pinned across calls, which is a resource in the WIT sense
 // and a decision about what a "session" is; neither is guessed at here.
 
-const databaseInterface = "taubyte:handler/database@0.1.0"
+const sqlInterface = "taubyte:sql/store@0.1.0"
 
 const (
 	opQuery = "query"
@@ -40,9 +40,9 @@ const (
 
 // The error variant's cases, in the order handler.wit declares them.
 const (
-	errNoSuchDatabase uint32 = iota
-	errDatabaseDenied
-	errDatabaseUnavailable
+	errNoSuchSQL uint32 = iota
+	errSQLDenied
+	errSQLUnavailable
 	errStatementFailed
 )
 
@@ -57,9 +57,9 @@ const (
 )
 
 var (
-	// ErrNoDatabases is a spec that grants a database on a tier composed
+	// ErrNoSQL is a spec that grants a database on a tier composed
 	// without a backing. Like ErrNoCaches it is a construction fault.
-	ErrNoDatabases = errors.New("wasm: this resource reaches a database and this tier has nothing to open one with")
+	ErrNoSQL = errors.New("wasm: this resource reaches a database and this tier has nothing to open one with")
 
 	// ErrStatementFailed is what a backing returns when the SERVER said no — a
 	// syntax error, a constraint, a permission. The tier gives it its own arm
@@ -74,19 +74,27 @@ type Rows struct {
 	Values  []any
 }
 
-// Databases is what a guest queries through.
+// SQL is what a guest queries through.
 //
 // THE WHOLE GRANT IS PASSED, as with a cache: what the backing needs beyond
 // "which one" — the engine, the address, the credential to resolve — is on it,
 // and a handle alone would make the backing resolve it back into a resource.
-type Databases interface {
+type SQL interface {
 	Query(ctx context.Context, grant invoke.Grant, statement string, args []any) (Rows, error)
-	Exec(ctx context.Context, grant invoke.Grant, statement string, args []any) (int64, error)
+	Exec(ctx context.Context, grant invoke.Grant, statement string, args []any) (Outcome, error)
 }
 
-// WithDatabases is what backs `taubyte:handler/database`.
-func WithDatabases(d Databases) Option {
-	return func(r *Runtime) { r.databases = d }
+// Outcome is what a write changed — the same two numbers every SQL client
+// reports, and 0 for either when the driver did not say. See the WIT's own note
+// on why `last-insert-id` is not portable and `RETURNING` is.
+type Outcome struct {
+	Affected     int64
+	LastInsertID int64
+}
+
+// WithDatabases is what backs `taubyte:sql/store`.
+func WithSQL(d SQL) Option {
+	return func(r *Runtime) { r.sqlStore = d }
 }
 
 const (
@@ -94,13 +102,13 @@ const (
 	sqlModel     = "sql"
 )
 
-// databaseGrantsOf is the database grants whose data model is SQL.
+// sqlGrantsOf is the database grants whose data model is SQL.
 //
 // THE KIND IS `database` AND THE TYPE SELECTS THE INTERFACE. Four data models
 // live under one kind with different verbs, so filtering by kind alone would
 // make a kv database refuse to start on a tier that serves only sql — and the
 // two are served by different interfaces.
-func databaseGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
+func sqlGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for _, g := range spec.Reaches {
 		if g.Kind != databaseKind || g.Settings["type"] != sqlModel {
@@ -114,24 +122,24 @@ func databaseGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	return out
 }
 
-// databaseImports registers query and exec for one instantiation.
-func (r *Runtime) databaseImports(spec invoke.Spec) []component.Option {
-	grants := databaseGrantsOf(spec)
+// sqlImports registers query and exec for one instantiation.
+func (r *Runtime) sqlImports(spec invoke.Spec) []component.Option {
+	grants := sqlGrantsOf(spec)
 
 	// resolve is the shared half: which database, and may this verb touch it.
 	resolve := func(ctx context.Context, label, op string) (invoke.Grant, *component.VariantValue) {
 		grant, why := r.addressed(ctx, grants, label, op)
 		if why != nil {
 			if why.missing {
-				return grant, databaseFailure(errNoSuchDatabase, why.detail)
+				return grant, sqlFailure(errNoSuchSQL, why.detail)
 			}
 			if why.unavailable {
-				return grant, databaseFailure(errDatabaseUnavailable, why.detail)
+				return grant, sqlFailure(errSQLUnavailable, why.detail)
 			}
-			return grant, databaseFailure(errDatabaseDenied, why.detail)
+			return grant, sqlFailure(errSQLDenied, why.detail)
 		}
-		if r.databases == nil {
-			return grant, databaseFailure(errDatabaseUnavailable, "this node has nothing to open a database with")
+		if r.sqlStore == nil {
+			return grant, sqlFailure(errSQLUnavailable, "this node has nothing to open a database with")
 		}
 		return grant, nil
 	}
@@ -179,9 +187,9 @@ func (r *Runtime) databaseImports(spec invoke.Spec) []component.Option {
 			return errorResult(refused), nil
 		}
 
-		rows, err := r.databases.Query(ctx, grant, statement, bound)
+		rows, err := r.sqlStore.Query(ctx, grant, statement, bound)
 		if err != nil {
-			return errorResult(databaseArm(err)), nil
+			return errorResult(sqlArm(err)), nil
 		}
 
 		columns := make([]component.Value, 0, len(rows.Columns))
@@ -200,7 +208,13 @@ func (r *Runtime) databaseImports(spec invoke.Spec) []component.Option {
 	execTbl := component.NewTypeTable()
 	execFD := execTbl.Func(
 		[]component.TypeRef{component.Prim("string"), component.Prim("string"), execTbl.List(valueType(execTbl))},
-		execTbl.Result(component.Prim("s64"), errorType(execTbl)),
+		execTbl.Result(
+			execTbl.Record(
+				"affected", component.Prim("s64"),
+				"last-insert-id", component.Prim("s64"),
+			),
+			errorType(execTbl),
+		),
 	)
 	exec := func(ctx context.Context, args []component.Value) ([]component.Value, error) {
 		label, statement, bound, err := statementArgs(opExec, args)
@@ -213,16 +227,19 @@ func (r *Runtime) databaseImports(spec invoke.Spec) []component.Option {
 			return errorResult(refused), nil
 		}
 
-		affected, err := r.databases.Exec(ctx, grant, statement, bound)
+		outcome, err := r.sqlStore.Exec(ctx, grant, statement, bound)
 		if err != nil {
-			return errorResult(databaseArm(err)), nil
+			return errorResult(sqlArm(err)), nil
 		}
-		return []component.Value{component.ResultValue{Payload: affected}}, nil
+		// A record lowers as its fields in declaration order.
+		return []component.Value{component.ResultValue{
+			Payload: []component.Value{outcome.Affected, outcome.LastInsertID},
+		}}, nil
 	}
 
 	return []component.Option{
-		component.WithImportCustom(databaseInterface, opQuery, query, queryFD, queryTbl.Resolver()),
-		component.WithImportCustom(databaseInterface, opExec, exec, execFD, execTbl.Resolver()),
+		component.WithImportCustom(sqlInterface, opQuery, query, queryFD, queryTbl.Resolver()),
+		component.WithImportCustom(sqlInterface, opExec, exec, execFD, execTbl.Resolver()),
 	}
 }
 
@@ -311,18 +328,18 @@ func lowerSQL(v any) component.Value {
 	}
 }
 
-// databaseArm maps a Go error onto the arm the guest sees.
+// sqlArm maps a Go error onto the arm the guest sees.
 //
 // A STATEMENT THE SERVER REFUSED IS NOT AN OUTAGE. A caller retries one and
 // fixes the other, and folding them together would have every syntax error
 // retried until a timeout.
-func databaseArm(err error) *component.VariantValue {
+func sqlArm(err error) *component.VariantValue {
 	if errors.Is(err, ErrStatementFailed) {
-		return databaseFailure(errStatementFailed, err.Error())
+		return sqlFailure(errStatementFailed, err.Error())
 	}
-	return databaseFailure(errDatabaseUnavailable, err.Error())
+	return sqlFailure(errSQLUnavailable, err.Error())
 }
 
-func databaseFailure(disc uint32, detail string) *component.VariantValue {
+func sqlFailure(disc uint32, detail string) *component.VariantValue {
 	return &component.VariantValue{Disc: disc, Payload: detail}
 }

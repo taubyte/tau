@@ -110,12 +110,15 @@ func TestAnObjectCrossesTheSwarm(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// WRITTEN THROUGH THE FIRST NODE'S GUEST.
+	// WRITTEN THROUGH THE FIRST NODE'S GUEST. A put answers the ETAG it stored
+	// under, which is S3's contract and is this cloud's content id.
 	res, err := first.Worker().Invoke(t.Context(), target(), &invoke.Request{
 		Method: "POST", Path: "/obj-put/receipts/2026/01", Body: []byte("a receipt"),
 	})
 	require.NoError(t, err)
-	require.Equal(t, 204, res.Status, string(res.Body))
+	require.Equal(t, 200, res.Status, string(res.Body))
+	etag := string(res.Body)
+	require.NotEmpty(t, etag)
 
 	// AND READ THROUGH THE SECOND'S, which means the compiled project reached
 	// it, its own tier started the component, its own kvdb had the row and its
@@ -129,6 +132,12 @@ func TestAnObjectCrossesTheSwarm(t *testing.T) {
 
 	// AND `head` ANSWERS THERE TOO, off the row rather than the bytes — the
 	// record survives the ABI in a universe as well as in a unit test.
+	//
+	// THE ETAG IS THE ONE THE OTHER NODE ANSWERED WITH, which is the claim the
+	// whole content-addressed story rests on: the second node computed nothing
+	// and looked nothing up by name — it read the row that replicated, and the
+	// row's content id IS what the first node wrote.
+	var head string
 	require.Eventually(t, func() bool {
 		res, err := second.Worker().Invoke(t.Context(), target(), &invoke.Request{
 			Method: "POST", Path: "/obj-head/receipts/2026/01",
@@ -136,6 +145,9 @@ func TestAnObjectCrossesTheSwarm(t *testing.T) {
 		if err != nil || res.Status != 200 {
 			return false
 		}
+		head = string(res.Body)
 		return bytes.HasPrefix(res.Body, []byte("2026/01:9:"))
 	}, 60*time.Second, 500*time.Millisecond, "head never answered on the second node")
+
+	require.Contains(t, head, ":"+etag+":", "the etag did not cross the swarm: %s", head)
 }

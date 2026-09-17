@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// kv.go is the host half of `taubyte:handler/kv` — the `database` kind at
+// kv.go is the host half of `taubyte:kv/store` — the `database` kind at
 // `type: kv`, which is tau's own engine and the one a project gets with nothing
 // to provision.
 //
@@ -20,7 +20,7 @@ import (
 // labelled "this may vanish", and sharing one host function would mean the
 // difference lived in a boolean nobody reads.
 
-const kvInterface = "taubyte:handler/kv@0.1.0"
+const kvInterface = "taubyte:kv/store@0.1.0"
 
 // The vocabulary's verbs for the kv data model. `watch` is the fifth and is not
 // served — see the interface doc.
@@ -66,7 +66,7 @@ type KVs interface {
 	OpenKV(ctx context.Context, grant invoke.Grant) (KV, error)
 }
 
-// WithKV is what backs `taubyte:handler/kv`.
+// WithKV is what backs `taubyte:kv/store`.
 func WithKV(k KVs) Option {
 	return func(r *Runtime) { r.kv = k }
 }

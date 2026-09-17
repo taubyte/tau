@@ -97,14 +97,14 @@ func TestIndexCoversWhatALoweringProduced(t *testing.T) {
 	assert.Assert(t, !asNamespace, "the scope a workflow became is indexed as a namespace")
 
 	for _, name := range []string{"checkout_reserve", "checkout_charge", "checkout_failed"} {
-		value := link(t, idx, "projects/"+project+"/workflow/"+nsID+"/queue/"+name+"/links")
+		value := link(t, idx, "projects/"+project+"/workflow/"+nsID+"/sync/"+name+"/links")
 		assert.Assert(t, strings.HasPrefix(value,
-			"branches/main/projects/"+project+"/workflow/"+nsID+"/queue/"),
+			"branches/main/projects/"+project+"/workflow/"+nsID+"/sync/"),
 			"%s is indexed at %s", name, value)
 	}
 
 	// and NOT at the project root, where the queues somebody wrote are
-	_, atRoot := idx["projects/"+project+"/queue/checkout_reserve/links"]
+	_, atRoot := idx["projects/"+project+"/sync/checkout_reserve/links"]
 	assert.Assert(t, !atRoot, "a produced queue is still indexed beside the authored ones")
-	link(t, idx, "projects/"+project+"/queue/orders/links")
+	link(t, idx, "projects/"+project+"/sync/orders/links")
 }

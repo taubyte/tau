@@ -29,9 +29,9 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	assert.Equal(t, len(got), 10, "got %v", got)
 
 	// a step's attempts becomes its queue's max-attempts, whole
-	attempts := by["attempts steps -> queue/max_attempts"]
+	attempts := by["attempts steps -> sync/queue/max_attempts"]
 	assert.DeepEqual(t, attempts, interp.Carriage{
-		Field: "attempts", In: "steps", Into: "queue", As: "max_attempts",
+		Field: "attempts", In: "steps", Into: "sync", As: "queue/max_attempts",
 	}, cmpopts.IgnoreUnexported(interp.Term{}, interp.Carriage{}))
 	assert.Assert(t, !attempts.Composed())
 
@@ -42,7 +42,7 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	// guess is wrong the moment either half contains one. `Concat(Attr("name"),
 	// Text("_"), Each("name"))` still knows which underscore it wrote, so the prefix is
 	// filled in, its length is the cut, and nothing is guessed.
-	name := by["name steps -> queue/@"]
+	name := by["name steps -> sync/@"]
 	assert.Equal(t, name.Field, "name")
 	assert.Equal(t, name.In, "steps")
 	assert.Assert(t, name.Composed())
@@ -52,16 +52,16 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	// The step's name lands in the DRIVER's name too, and the driver is what its queue
 	// writes into — one step, two produced resources, the same name in both.
 	assert.Assert(t, by["name steps -> function/@"].Composed(), "the driver is named for the step: %v", got)
-	assert.Assert(t, by["name steps -> queue/>"].Composed(), "the queue names its consumer: %v", got)
+	assert.Assert(t, by["name steps -> sync/>"].Composed(), "the queue names its consumer: %v", got)
 
 	// A WAIT COMES BACK AS THE STRING IT WAS WRITTEN AS. It is carried onto the queue's
 	// `delay`, which is a Duration — so tcc parses "30s" going in and formats it going
 	// out, and the step never held a number.
-	assert.Assert(t, !by["wait steps -> queue/delay"].Composed())
+	assert.Assert(t, !by["wait steps -> sync/queue/delay"].Composed())
 
 	// and where failure goes comes back from the queue's dead-letter, which is where the
 	// lowering put it
-	onError := by["on_error steps -> queue/dead_letter/name"]
+	onError := by["on_error steps -> sync/queue/dead_letter/name"]
 	assert.Equal(t, onError.Field, "on_error")
 	assert.Assert(t, onError.Composed())
 

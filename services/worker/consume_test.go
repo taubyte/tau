@@ -104,11 +104,11 @@ func TestAWorkflowsStepDriversAreFound(t *testing.T) {
 
 	// THE RETRY BUDGET IS THE STEP'S, which is the whole reason the lowering
 	// gives each one its own queue rather than sharing.
-	require.Equal(t, "4", all["checkout_reserve"].Queue.Settings["max_attempts"])
-	require.Equal(t, "1", all["checkout_charge"].Queue.Settings["max_attempts"])
+	require.Equal(t, "4", all["checkout_reserve"].Queue.Settings["queue/max_attempts"])
+	require.Equal(t, "1", all["checkout_charge"].Queue.Settings["queue/max_attempts"])
 
 	// AND A STEP THAT WAITS IS A QUEUE THAT HOLDS ITS WORK BACK.
-	require.Equal(t, "30s", all["checkout_settle"].Queue.Settings["delay"])
+	require.Equal(t, "30s", all["checkout_settle"].Queue.Settings["queue/delay"])
 }
 
 // TestAWorkloadThatOnlySENDSIsNotAConsumer. `send` is a host function the guest

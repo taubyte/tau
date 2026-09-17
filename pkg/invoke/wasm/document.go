@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// document.go is the host half of `taubyte:handler/document` — the `database`
+// document.go is the host half of `taubyte:document/store` — the `database`
 // kind at `type: document`.
 //
 // # The bytes are the JSON
@@ -22,7 +22,7 @@ import (
 // not read them beyond checking they decode, which is what keeps this interface
 // stable while the shape of a document stays the author's business.
 
-const documentInterface = "taubyte:handler/document@0.1.0"
+const documentInterface = "taubyte:document/store@0.1.0"
 
 const (
 	opDocGet    = "get"
@@ -73,7 +73,7 @@ type DocumentStores interface {
 	OpenDocuments(ctx context.Context, grant invoke.Grant) (Documents, error)
 }
 
-// WithDocuments is what backs `taubyte:handler/document`.
+// WithDocuments is what backs `taubyte:document/store`.
 func WithDocuments(d DocumentStores) Option {
 	return func(r *Runtime) { r.documents = d }
 }

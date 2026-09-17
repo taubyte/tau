@@ -73,7 +73,9 @@ func TestACronStartsAWorkflow(t *testing.T) {
 
 	start := got.Starts[0]
 	require.Equal(t, "checkout", start.Label)
-	require.Equal(t, "queue", start.Settings[settingStartKind])
+	require.Equal(t, "sync", start.Settings[settingStartKind])
+	require.Equal(t, "queue", start.Settings[settingSyncType],
+		"a start is a SEND, so the entry has to name the queue type and not only the kind")
 	require.NotEmpty(t, start.Settings[settingStartHandle],
 		"where a start lands, off the workflow's own entry record")
 	require.Equal(t, "send", start.Settings[settingStartAs])
@@ -87,8 +89,8 @@ func TestACronStartsAWorkflow(t *testing.T) {
 // a kind that runs on nothing and is not started either.
 func TestAnUnrunnableTargetIsReported(t *testing.T) {
 	require.Contains(t,
-		unfireable("log", project.Reach{Kind: "log", Label: "audit"}),
-		"nothing in this cloud runs a log")
+		unfireable("zone", project.Reach{Kind: "zone", Label: "example_com"}),
+		"nothing in this cloud runs a zone")
 }
 
 // TestACronThatEdgesToNothingIsNotAScheduleToRun. A clock nobody set an alarm
@@ -112,9 +114,9 @@ func TestAStartCarriesTheQueuesOwnConfig(t *testing.T) {
 	holding(t, h, "function", "checkout")
 
 	start := schedulesOf(t, h)["nightly"].Starts[0]
-	require.Equal(t, "4", start.Settings["max_attempts"],
+	require.Equal(t, "4", start.Settings["queue/max_attempts"],
 		"the retry budget the FIRST STEP declared — `attempts: 4` on `reserve`")
-	require.Equal(t, "5s", start.Settings["retry/interval"],
+	require.Equal(t, "5s", start.Settings["queue/retry/interval"],
 		"and its backoff, which the workflow shell itself carries nothing of")
-	require.NotEmpty(t, start.Settings["visibility_timeout"])
+	require.NotEmpty(t, start.Settings["queue/visibility_timeout"])
 }

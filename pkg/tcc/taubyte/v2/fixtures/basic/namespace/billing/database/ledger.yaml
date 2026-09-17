@@ -3,4 +3,4 @@ description: the books; a system of record, so a database and not a cache - and 
 sql:
     distributed:
         size: 16MB
-        consensus: single-writer
+        consensus: raft

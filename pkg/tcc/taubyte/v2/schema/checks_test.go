@@ -54,8 +54,8 @@ func TestAuditReachability(t *testing.T) {
 	has(t, found, schema.Broken, "nothing reaches it")
 
 	found = auditDocs(t, nil, map[string]string{
-		"/queue/work.yaml":    "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nvisibility_timeout: 30s\n",
-		"/application/w.yaml": appBody + "ports:\n    work:\n        number: 8080\nqueue:\n    work:\n        ops: [receive]\n        deliver:\n            port: work\n            path: /w\n",
+		"/sync/work.yaml":     "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
+		"/application/w.yaml": appBody + "ports:\n    work:\n        number: 8080\nsync:\n    work:\n        ops: [receive]\n        deliver:\n            port: work\n            path: /w\n",
 	})
 	has(t, found, schema.Note, "nothing fronts it, and nothing needs to")
 	hasNo(t, found, "nothing reaches it")
@@ -65,14 +65,14 @@ func TestAuditReachability(t *testing.T) {
 // dispatched and needs no port at all.
 func TestAuditDelivery(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
-		"/queue/work.yaml":    "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nvisibility_timeout: 30s\n",
-		"/application/w.yaml": appBody + "queue:\n    work:\n        ops: [receive]\n",
+		"/sync/work.yaml":     "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
+		"/application/w.yaml": appBody + "sync:\n    work:\n        ops: [receive]\n",
 	})
 	has(t, found, schema.Broken, "declares no deliver port")
 
 	found = auditDocs(t, nil, map[string]string{
-		"/queue/work.yaml": "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nvisibility_timeout: 30s\n",
-		"/function/f.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\nqueue:\n    work:\n        ops: [receive]\n",
+		"/sync/work.yaml":  "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
+		"/function/f.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\nsync:\n    work:\n        ops: [receive]\n",
 	})
 	hasNo(t, found, "deliver port")
 }
@@ -369,7 +369,7 @@ func TestLoweredOpsAreVerbsOfTheirTarget(t *testing.T) {
 	// and it has to actually catch one, or passing means nothing
 	bad := schema.Root(nil, schema.DefineGroup("workflow",
 		schema.DefineIter(nil, schema.Lowers(
-			schema.Into("queue",
+			schema.Into("sync",
 				schema.Named(schema.Text("x")),
 				schema.Reaches("consume", schema.From("function", schema.Text("f"))),
 			),

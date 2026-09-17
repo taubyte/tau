@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// workflow.go is the host half of `taubyte:handler/workflow`.
+// workflow.go is the host half of `taubyte:workflow/runs`.
 //
 // # It is one function over the queue backing, and it is still not `queue.send`
 //
@@ -25,7 +25,7 @@ import (
 // straight into `checkout_charge` and skip the step that reserves the stock.
 // The two doors carry different permissions, so there are two doors.
 
-const workflowInterface = "taubyte:handler/workflow@0.1.0"
+const workflowInterface = "taubyte:workflow/runs@0.1.0"
 
 // opStart is the vocabulary's one verb for a workflow.
 const opStart = "start"
@@ -127,8 +127,12 @@ func (r *Runtime) workflowImports(spec invoke.Spec) []component.Option {
 		// THE COMPOSER RESOLVED WHERE A START LANDS. A tier that read the
 		// workflow to find out would need the compiled project on the request
 		// path, which is the whole reason a grant carries a handle at all.
+		// THE TYPE IS CHECKED AND NOT ONLY THE KIND. `sync` covers a queue and a
+		// log, and a start is a SEND — so a workflow whose entry recorded a log
+		// would be starting a run into something with no delivery at all.
 		handle := grant.Settings[settingStartHandle]
-		if handle == "" || grant.Settings[settingStartKind] != "queue" {
+		if handle == "" || grant.Settings[settingStartKind] != syncKind ||
+			grant.Settings[settingSyncType] != queueType {
 			return errorResult(workflowFailure(errWorkflowUnavailable,
 				label+" records no queue to start at")), nil
 		}
@@ -141,7 +145,7 @@ func (r *Runtime) workflowImports(spec invoke.Spec) []component.Option {
 		// the backing enforces what it always does and this function invents no
 		// permission: what was checked above is the workflow grant.
 		if err := r.queues.Send(ctx, invoke.Grant{
-			Kind: "queue", Label: label, Handle: handle,
+			Kind: syncKind, Label: label, Handle: handle,
 			Ops: []string{"send"}, Settings: grant.Settings,
 		}, id, input); err != nil {
 			if errors.Is(err, ErrNotWritable) {

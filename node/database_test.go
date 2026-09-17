@@ -68,13 +68,13 @@ func (c *fakeConn) Query(_ context.Context, statement string, args ...any) (data
 	return c.rows, nil
 }
 
-func (c *fakeConn) Exec(_ context.Context, statement string, args ...any) (int64, error) {
+func (c *fakeConn) Exec(_ context.Context, statement string, args ...any) (database.Outcome, error) {
 	c.statements = append(c.statements, statement)
 	c.args = append(c.args, args)
 	if c.execErr != nil {
-		return 0, c.execErr
+		return database.Outcome{}, c.execErr
 	}
-	return int64(len(c.statements)), nil
+	return database.Outcome{Affected: int64(len(c.statements)), LastInsertID: int64(len(c.statements))}, nil
 }
 
 func (c *fakeConn) Close() error { c.closed++; return nil }

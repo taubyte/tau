@@ -39,7 +39,10 @@ func (w *work) pushed() [][3]string {
 }
 
 func queueGrant(label, handle string, ops ...string) []invoke.Grant {
-	return []invoke.Grant{{Kind: "queue", Label: label, Handle: handle, Ops: ops}}
+	return []invoke.Grant{{
+		Kind: "sync", Label: label, Handle: handle, Ops: ops,
+		Settings: map[string]string{"type": "queue"},
+	}}
 }
 
 // TestAGuestSendsToAQueue, with the label resolved to the handle.

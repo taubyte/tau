@@ -321,10 +321,10 @@ func TestAuditBuild(t *testing.T) {
 // built from a Dockerfile, reported as though it were a dispatched WASM component.
 func TestAContainerIsKnownByItsKindNotByAnImage(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
-		"/queue/work.yaml": "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nvisibility_timeout: 30s\n",
+		"/sync/work.yaml": "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
 		"/application/w.yaml": "id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPZ\nexecution:\n    memory: 1MB\n" +
 			"source: services/w\nbuild:\n    dockerfile:\n        path: Dockerfile\n" +
-			"queue:\n    work:\n        ops: [receive]\n",
+			"sync:\n    work:\n        ops: [receive]\n",
 	})
 	has(t, found, schema.Broken, "declares no deliver port")
 }

@@ -97,6 +97,19 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 		Artifact: artifact,
 		Env:      env,
 		Reaches:  reaches,
+
+		// WHAT THIS WORKLOAD IS, for `taubyte:workload/identity`. It comes off the
+		// PROJECT rather than off the Target, because a Target is what somebody
+		// ASKED for — a name that resolves in a parent scope, or an id — and
+		// what a workload is told about itself has to be where it actually
+		// lives.
+		Project:     t.Project,
+		Environment: t.Environment,
+		Kind:        t.Kind,
+		Label:       r.String("name"),
+	}
+	if _, scope, _, ok := proj.Locate(resourceID); ok {
+		spec.Scope = scope
 	}
 	if memory, ok := r.Int("execution", "memory"); ok {
 		spec.Memory = memory
@@ -186,7 +199,14 @@ const (
 	workflowKind = "workflow"
 	busKind      = "bus"
 	databaseKind = "database"
-	queueKind    = "queue"
+	channelKind  = "channel"
+
+	// syncKind is one kind with two primitives under it; the type selects which,
+	// and settingSyncType is how that travels to a tier.
+	syncKind        = "sync"
+	queueType       = "queue"
+	logType         = "log"
+	settingSyncType = "type"
 
 	// distributedEngine is the vocabulary's name for the swarm's own — the one
 	// engine this cloud actually holds, for both a cache and a stream.
@@ -251,7 +271,7 @@ func startedBy(proj *project.Project, t Target, workflow project.Resource, id st
 	// queue with pkg/queue's defaults while the DISPATCHER opened the same queue
 	// with what its author wrote — two configurations for one queue, and which
 	// one was in force depended on who got there first.
-	grant.Settings = merged(grant.Settings, queueSettings(project.Reach{}, start))
+	grant.Settings = merged(grant.Settings, syncSettings(project.Reach{}, start))
 	grant.Settings = merged(grant.Settings, map[string]string{
 		settingStartKind:   kind,
 		settingStartHandle: project.Handle(t.Project, t.Environment, startID),
@@ -279,42 +299,78 @@ func settingsFor(kind string, reach project.Reach, target project.Resource) map[
 		return volumeSettings(reach, target)
 	case databaseKind:
 		return databaseSettings(target)
-	case queueKind:
-		return queueSettings(reach, target)
+	case syncKind:
+		return syncSettings(reach, target)
 	case storageKind:
 		return storageSettings(target)
 	}
 	return nil
 }
 
-// queueSettings carries the delivery block: what the queue promises about
-// timing, retries and where an exhausted item goes.
+// syncSettings carries what a coordination resource declares about itself.
+//
+// THE TYPE TRAVELS FIRST, and every consumer needs it: `sync` is one kind with a
+// queue and a log under it, whose verbs and whose backings are different things,
+// so a tier filtering on kind alone would hand a log's grant to the queue
+// interface. It is the same fact `databaseSettings` and `storageSettings` carry
+// for their own kinds.
+//
+// AND EVERY OTHER KEY IS THE VOCABULARY'S OWN ATTRIBUTE PATH, which now begins
+// with the type — `queue/visibility_timeout`, `log/retention/age` — because the
+// block that is written IS the type.
 //
 // THE DEAD LETTER IS A REFERENCE and its compiled value is another queue's id,
 // which is what a consumer opens to drain it.
-func queueSettings(reach project.Reach, target project.Resource) map[string]string {
-	out := map[string]string{}
+func syncSettings(reach project.Reach, target project.Resource) map[string]string {
+	model := target.String("type")
+	if model == "" {
+		return nil
+	}
+	out := map[string]string{settingSyncType: model}
+
+	// WHAT HAPPENS TO TWO CONCURRENT WRITES, for every type. A tier that cannot
+	// serve the answer refuses the target by name rather than serving a weaker
+	// promise than the author wrote.
+	if consensus := target.String(model, "consensus"); consensus != "" {
+		out[model+"/consensus"] = consensus
+	}
+
+	switch model {
+	case logType:
+		for _, path := range [][]string{{"retention", "age"}} {
+			if d, ok := target.Duration(append([]string{model}, path...)...); ok {
+				out[model+"/"+strings.Join(path, "/")] = d.String()
+			}
+		}
+		if n, ok := target.Int(model, "retention", "size"); ok {
+			out[model+"/retention/size"] = strconv.FormatInt(n, 10)
+		}
+		return out
+	case queueType:
+	default:
+		return out
+	}
 
 	for _, path := range [][]string{
 		{"visibility_timeout"}, {"delay"}, {"retry", "interval"}, {"retry", "ceiling"},
 	} {
-		if d, ok := target.Duration(path...); ok {
-			out[strings.Join(path, "/")] = d.String()
+		if d, ok := target.Duration(append([]string{queueType}, path...)...); ok {
+			out[queueType+"/"+strings.Join(path, "/")] = d.String()
 		}
 	}
-	if n, ok := target.Int("max_attempts"); ok {
-		out["max_attempts"] = strconv.FormatInt(n, 10)
+	if n, ok := target.Int(queueType, "max_attempts"); ok {
+		out[queueType+"/max_attempts"] = strconv.FormatInt(n, 10)
 	}
 	// A COMPILED NUMBER IS A NUMBER. `retry/factor` is a Float in the
 	// vocabulary, so reading it as a string answered "" and the multiplier
 	// never travelled — an author who wrote `factor: 2` got a flat interval and
 	// nothing said so. Float rather than Int because 1.5 is a legal factor and
 	// truncating it would be the same defect one step quieter.
-	if f, ok := target.Float("retry", "factor"); ok {
-		out["retry/factor"] = strconv.FormatFloat(f, 'g', -1, 64)
+	if f, ok := target.Float(queueType, "retry", "factor"); ok {
+		out[queueType+"/retry/factor"] = strconv.FormatFloat(f, 'g', -1, 64)
 	}
-	if name := target.String("dead_letter", "name"); name != "" {
-		out["dead_letter/name"] = name
+	if name := target.String(queueType, "dead_letter", "name"); name != "" {
+		out[queueType+"/dead_letter/name"] = name
 	}
 
 	// WHERE AN ITEM IS POSTED comes from the ENTRY, because it is per use: one
@@ -326,9 +382,6 @@ func queueSettings(reach project.Reach, target project.Resource) map[string]stri
 		out[settingDeliverPath] = path
 	}
 
-	if len(out) == 0 {
-		return nil
-	}
 	return out
 }
 
@@ -498,6 +551,33 @@ func unservableKind(reach project.Reach, target project.Resource) string {
 				reach.Label, model)
 		}
 		return ""
+	case syncKind:
+		// A CRDT LOG IS A DIFFERENT LOG, not a slower one: append anywhere, and
+		// an order that converges rather than one a single writer decided. This
+		// cloud keeps the raft promise and has no convergent log yet,
+		// so a target asking for the other one is refused BY NAME — the
+		// workload still deploys and still reaches everything else it declared.
+		if reach.Kind == syncKind && target.String("type") == logType {
+			if c := target.String(logType, "consensus"); c != "" && c != "raft" {
+				return fmt.Sprintf("log %q asks for %q consensus, and this cloud serves raft logs — "+
+					"a convergent log is a different promise, not a slower one",
+					reach.Label, c)
+			}
+		}
+		return ""
+	case channelKind:
+		// A CHANNEL IS A LIBP2P PROTOCOL AND THIS CLOUD HAS NO TRANSPORT FOR IT
+		// YET. The ABI is there — `taubyte:channel/dialer` — and what is
+		// missing is the half that dials: registering a protocol handler per
+		// channel and routing to whichever workload serves it.
+		//
+		// IT IS REFUSED PER TARGET RATHER THAN PER WORKLOAD, which is the whole
+		// reason Grant.Refused exists: a project that declares a channel still
+		// deploys, everything else in it still runs, and a dial is told why in
+		// a sentence instead of the deployment failing to start at all.
+		return fmt.Sprintf("channel %q is carried over libp2p and this cloud has no transport "+
+			"for one yet — the interface is served and nothing answers it",
+			reach.Label)
 	case cacheKind:
 	default:
 		// THE OTHER KINDS ARE NOT REFUSED HERE. What a tier can do with a grant
@@ -518,16 +598,16 @@ func unservableKind(reach project.Reach, target project.Resource) string {
 			reach.Kind, reach.Label, name)
 	}
 
-	// SINGLE-WRITER MEANS NOTHING IS SILENTLY DISCARDED, and the store behind a
-	// cache here is a CRDT: concurrent writes merge last-writer-wins and the
-	// loser is gone with no error. That is what `crdt` asks for and the
+	// `raft` MEANS NOTHING IS SILENTLY DISCARDED, and the store behind a cache
+	// here is a CRDT: concurrent writes merge last-writer-wins and the loser is
+	// gone with no error. That is what `crdt` asks for and the
 	// opposite of what this asks for, so it is refused rather than served as
 	// if the author had written the other value.
 	//
 	// `gossip` IS ACCEPTED and is served STRONGER than declared: gossip is
 	// eventually consistent and lossy, a CRDT is eventually consistent and
 	// not. An author who accepted a dropped entry gets one that arrives.
-	if consensus := target.String("consensus"); consensus == singleWriter {
+	if consensus := target.String("consensus"); consensus == raftConsensus {
 		return fmt.Sprintf("%s %q declares consensus %q, and the store behind a cache here merges "+
 			"concurrent writes last-writer-wins — a write that lost would be gone with no error",
 			reach.Kind, reach.Label, consensus)
@@ -535,7 +615,7 @@ func unservableKind(reach project.Reach, target project.Resource) string {
 	return ""
 }
 
-const singleWriter = "single-writer"
+const raftConsensus = "raft"
 
 // The vocabulary's own paths, so a reader finds the attribute by searching the
 // schema for the string.

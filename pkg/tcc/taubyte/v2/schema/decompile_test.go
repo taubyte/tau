@@ -147,7 +147,7 @@ func TestDecompileAllTheWayWritesWhatWasLowered(t *testing.T) {
 	// has lowered IS the scope its queues are in, so the directory a reader opens is
 	// `workflow/checkout` — not a manufactured kind beside it, and not a namespace.
 	for _, name := range []string{"checkout_reserve", "checkout_charge", "checkout_failed"} {
-		_, err := out.Stat("/workflow/checkout/queue/" + name + ".yaml")
+		_, err := out.Stat("/workflow/checkout/sync/" + name + ".yaml")
 		assert.NilError(t, err)
 	}
 	// The workflow's own fields moved into the container's leaf, which is what taking

@@ -153,5 +153,8 @@ func ShowWhen[T string | AKey](field T, in ...string) engine.Option {
 func RequiredWhen[T string | AKey](field T, in ...string) engine.Option {
 	return engine.RequiredWhen(field, in...)
 }
+func DefaultWhen[T string | AKey](field T, in ...string) engine.Option {
+	return engine.DefaultWhen(field, in...)
+}
 func RequiredUnless[T string | AKey](field T) engine.Option { return engine.RequiredUnless(field) }
 func KindFrom[T string | AKey](field T) engine.RefOpt       { return engine.KindFrom(field) }

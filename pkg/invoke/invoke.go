@@ -62,6 +62,22 @@ type Spec struct {
 	// package does not parse it.
 	Name string
 
+	// Project, Environment, Kind, Label and Scope are WHAT THIS WORKLOAD IS, as
+	// its own configuration spells it — the deployment, the vocabulary's kind,
+	// the name its author wrote, and the namespaces it lives in outermost
+	// first.
+	//
+	// THEY ARE NOT Name SPLIT UP. Name is an id joined for logging and cannot
+	// answer the authored name or the scope at all, and a consumer parsing it
+	// back apart would be reading a format nobody promised. They are what
+	// `taubyte:workload/identity` answers with, and a tier that has none of them
+	// answers empty rather than guessing.
+	Project     string
+	Environment string
+	Kind        string
+	Label       string
+	Scope       []string
+
 	// Revision is the immutable build identity. See the package doc: it is
 	// part of identity, so a new build never shares an instance with the old.
 	Revision string

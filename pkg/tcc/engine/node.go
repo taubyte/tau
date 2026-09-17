@@ -347,6 +347,32 @@ func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
 	if !ok {
 		return false
 	}
+	return conditionHolds(n, c, query)
+}
+
+// defaultHere is whether an absent attribute's default belongs in THIS document.
+//
+// A DEFAULT UNDER A BRANCH NOBODY TOOK IS A VALUE FILED IN THE WRONG PLACE, and it is
+// worse than a stray key: a discriminated kind reads its type off which block exists, so
+// materialising `queue/visibility_timeout` on a resource whose block is `log:` invents
+// the queue branch and makes the type ambiguous. The same defect the vocabulary refuses
+// to let an AUTHOR write — `postgres: { size: 1GB }` is an unknown key rather than a
+// number under a branch nobody took — the loader was creating for itself.
+//
+// An attribute with no `defaultWhen` keeps its default unconditionally, which is every
+// attribute that had one before this existed.
+func defaultHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
+	c, conditional := attr.Meta["defaultWhen"].(ConditionSpec)
+	if !conditional {
+		return true
+	}
+	return conditionHolds(n, c, query)
+}
+
+// conditionHolds evaluates one ConditionSpec against the document — the shared half of
+// requiredHere and defaultHere, which ask the same question of the same sibling and
+// differ only in what they do with the answer.
+func conditionHolds(n *Node, c ConditionSpec, query *yaseer.Query) bool {
 	for _, sib := range n.Attributes {
 		if sib.Name != c.Field {
 			continue
@@ -609,7 +635,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 				filePath, line, column := aq.Location()
 				return located(filePath, line, column, fmt.Errorf("required attribute '%s'", requiredName(attr, resolved)))
 			}
-			if attr.Default != nil {
+			if attr.Default != nil && defaultHere(n, attr, query) {
 				switch o := obj.(type) {
 				case object.Object[object.Refrence]:
 					place(o, attr, attr.Default)

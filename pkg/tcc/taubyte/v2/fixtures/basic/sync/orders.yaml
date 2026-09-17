@@ -1,0 +1,7 @@
+id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o
+queue:
+    consensus: raft
+    visibility_timeout: 45s
+    max_attempts: 3
+    dead_letter:
+        name: orders_dead

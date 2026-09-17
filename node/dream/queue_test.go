@@ -52,7 +52,7 @@ func withQueue(componentCID string) []byte {
 					"cache": map[string]any{
 						"sessions": map[string]any{"ops": []any{"get", "put"}},
 					},
-					"queue": map[string]any{
+					"sync": map[string]any{
 						"jobs": map[string]any{
 							"ops":     []any{"send", "receive"},
 							"deliver": map[string]any{"path": "/put/sessions/done"},
@@ -66,14 +66,20 @@ func withQueue(componentCID string) []byte {
 					"size": 1000000, "ttl": float64(time.Hour),
 				},
 			},
-			"queue": map[string]any{
+			"sync": map[string]any{
 				jobsID: map[string]any{
-					"name":               "jobs",
-					"visibility_timeout": float64(30 * time.Second),
-					"max_attempts":       float64(3),
-					"dead_letter":        map[string]any{"name": jobsDeadID},
+					"name": "jobs", "type": "queue",
+					"queue": map[string]any{
+						"consensus":          "raft",
+						"visibility_timeout": float64(30 * time.Second),
+						"max_attempts":       float64(3),
+						"dead_letter":        map[string]any{"name": jobsDeadID},
+					},
 				},
-				jobsDeadID: map[string]any{"name": "jobs_dead"},
+				jobsDeadID: map[string]any{
+					"name": "jobs_dead", "type": "queue",
+					"queue": map[string]any{"consensus": "raft"},
+				},
 			},
 		},
 		"indexes": map[string]any{
@@ -81,10 +87,10 @@ func withQueue(componentCID string) []byte {
 				"branches/main/projects/" + cacheProjectID + "/function/" + cacheFuncID},
 			"projects/" + cacheProjectID + "/cache/sessions/links": []any{
 				"branches/main/projects/" + cacheProjectID + "/cache/" + cacheID},
-			"projects/" + cacheProjectID + "/queue/jobs/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/queue/" + jobsID},
-			"projects/" + cacheProjectID + "/queue/jobs_dead/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/queue/" + jobsDeadID},
+			"projects/" + cacheProjectID + "/sync/jobs/links": []any{
+				"branches/main/projects/" + cacheProjectID + "/sync/" + jobsID},
+			"projects/" + cacheProjectID + "/sync/jobs_dead/links": []any{
+				"branches/main/projects/" + cacheProjectID + "/sync/" + jobsDeadID},
 		},
 	}
 

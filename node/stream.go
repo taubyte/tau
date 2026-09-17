@@ -13,7 +13,7 @@ import (
 	gateway "github.com/taubyte/tau/services/v2/gateway"
 )
 
-// stream.go backs `taubyte:handler/stream` on this node.
+// stream.go backs `taubyte:stream/publisher` on this node.
 //
 // # A topic is joined once and kept
 //

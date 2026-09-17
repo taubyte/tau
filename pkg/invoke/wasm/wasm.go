@@ -9,11 +9,21 @@
 // what a guest exports is described by the artifact itself and any toolchain
 // that emits a component can produce one.
 //
-// wit/handler.wit is that world. The types live in the world rather than in an
-// imported interface for a reason that is mechanical: a `use` from an imported
-// interface leaves the export's signature referring to a type a host reading
-// the component's own type section cannot resolve, and the call cannot be
-// flattened at all.
+// wit/handler.wit is that world. The REQUEST AND RESPONSE types live in the
+// world rather than in an imported interface for a reason that is mechanical: a
+// `use` from an imported interface leaves the export's signature referring to a
+// type a host reading the component's own type section cannot resolve, and the
+// call cannot be flattened at all.
+//
+// # One package per capability, and one host component per package
+//
+// Everything the world IMPORTS is its own WIT package under wit/deps —
+// taubyte:cache, taubyte:sql, taubyte:storage, thirteen of them — each with its
+// own version and its own world, so a capability moves without moving what a
+// guest of another was built against, and a world serving a subset of them is
+// expressible at all. host.go is the matching register on this side: one row
+// per package, so a capability is a file on each side rather than two more
+// lines in an instantiation.
 //
 // # The export is named by the author
 //
@@ -156,33 +166,33 @@ type Runtime struct {
 	// a change to every tier.
 	output func(spec invoke.Spec) (stdout, stderr io.Writer)
 
-	// caches backs `taubyte:handler/cache`. Nil is a tier that runs everything
+	// caches backs `taubyte:cache/store`. Nil is a tier that runs everything
 	// reaching no cache — see cache.go.
 	caches Caches
 
-	// streams backs `taubyte:handler/stream`. Nil is the same story.
+	// streams backs `taubyte:stream/publisher`. Nil is the same story.
 	streams Streams
 
-	// bus backs `taubyte:handler/bus` — the same sending, a different kind.
+	// bus backs `taubyte:bus/publisher` — the same sending, a different kind.
 	bus Streams
 
-	// databases backs `taubyte:handler/database`, and the same again.
-	databases Databases
+	// sqlStore backs `taubyte:sql/store`, and the same again.
+	sqlStore SQL
 
-	// kv backs `taubyte:handler/kv` — the same kind at a different data model.
+	// kv backs `taubyte:kv/store` — the same kind at a different data model.
 	kv KVs
 
-	// documents backs `taubyte:handler/document`, and the same again.
+	// documents backs `taubyte:document/store`, and the same again.
 	documents DocumentStores
 
-	// vectors backs `taubyte:handler/vector` — the fourth and last data model
+	// vectors backs `taubyte:vector/store` — the fourth and last data model
 	// the `database` kind declares.
 	vectors VectorStores
 
-	// queues backs `taubyte:handler/queue`.
+	// queues backs `taubyte:queue/producer`.
 	queues Queues
 
-	// storage is the object store this tier serves `taubyte:handler/storage`
+	// storage is the object store this tier serves `taubyte:storage/objects`
 	// from.
 	storage Buckets
 
@@ -190,9 +200,20 @@ type Runtime struct {
 	// exist. Nil refuses every one — see instance.go.
 	admission Admitter
 
-	// secrets backs `taubyte:handler/secret` — the rotation path, beside the
+	// secrets backs `taubyte:secret/vault` — the rotation path, beside the
 	// environment variable that carries a secret at start.
 	secrets Secrets
+
+	// logs backs `taubyte:log/records` — the `sync` kind's other type.
+	logs Logs
+
+	// channels backs `taubyte:channel/dialer` — in-project addressing, which
+	// v1 called p2p.
+	channels Channels
+
+	// node is the peer this tier runs on, for `taubyte:workload/identity`. "" is a
+	// tier composed without one, which answers "" rather than inventing a name.
+	node string
 }
 
 var _ invoke.Runtime = (*Runtime)(nil)
@@ -257,63 +278,12 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 			ErrNoMounts, spec.Name, mounted[0].Label)
 	}
 
-	// A GRANT WITH NOTHING BEHIND IT IS A CONSTRUCTION FAULT, so it is refused
-	// here rather than at the first call: a workload that would fail every
-	// request that touches its cache should not be started and then look
-	// healthy until somebody exercises that path.
-	if r.caches == nil && len(grantsOf(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoCaches, spec.Name)
+	// EVERY CAPABILITY'S HOST HALF, and the refusal for one that is granted
+	// with nothing behind it. See host.go: the register is the list of them.
+	imports, err := r.imports(spec)
+	if err != nil {
+		return nil, err
 	}
-	if r.streams == nil && len(streamGrantsOf(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoStreams, spec.Name)
-	}
-
-	if r.databases == nil && len(databaseGrantsOf(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoDatabases, spec.Name)
-	}
-
-	if r.bus == nil && len(busGrantsOf(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoBus, spec.Name)
-	}
-
-	imports := append(r.cacheImports(spec), r.streamImports(spec)...)
-	imports = append(imports, r.busImports(spec)...)
-	if r.kv == nil && len(kvGrantsOf(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoKV, spec.Name)
-	}
-
-	imports = append(imports, r.databaseImports(spec)...)
-	if r.documents == nil && len(documentGrantsOf(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoDocuments, spec.Name)
-	}
-
-	imports = append(imports, r.kvImports(spec)...)
-	if r.vectors == nil && len(vectorGrantsOf(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoVectors, spec.Name)
-	}
-
-	imports = append(imports, r.documentImports(spec)...)
-	if r.queues == nil && len(queueGrantsOf(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoQueues, spec.Name)
-	}
-
-	imports = append(imports, r.vectorImports(spec)...)
-	if r.secrets == nil && len(secretGrantsOf(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoSecrets, spec.Name)
-	}
-
-	imports = append(imports, r.queueImports(spec)...)
-	if r.storage == nil && len(servableStorage(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoStorage, spec.Name)
-	}
-
-	if r.queues == nil && len(servableWorkflows(spec)) > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNoWorkflows, spec.Name)
-	}
-
-	imports = append(imports, r.secretImports(spec)...)
-	imports = append(imports, r.storageImports(spec)...)
-	imports = append(imports, r.workflowImports(spec)...)
 
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {

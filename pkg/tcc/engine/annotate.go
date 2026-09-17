@@ -115,6 +115,19 @@ func RequiredWhen[T string | AKey](field T, in ...string) Option {
 // "condition cannot hold, so not required". Encoding it as a value list would
 // also break silently, because the value is read as a bool on one side and
 // compared as a string on the other.
+// DefaultWhen scopes a default to a branch: the value is materialised only when the
+// sibling discriminator holds one of these values, and the attribute is left absent
+// otherwise.
+//
+// IT EXISTS FOR DISCRIMINATED KINDS. A kind whose `type` selects a block — `database`,
+// `storage`, `sync` — has per-type attributes, and an unconditional default on one of
+// them is written into every resource of every OTHER type: a log would carry a queue's
+// visibility timeout, which invents a branch its author never took and makes the type
+// ambiguous. See defaultHere.
+func DefaultWhen[T string | AKey](field T, in ...string) Option {
+	return Annotate("defaultWhen", ConditionSpec{Field: FieldName(field), In: in})
+}
+
 func RequiredUnless[T string | AKey](field T) Option {
 	return Annotate("requiredUnless", FieldName(field))
 }

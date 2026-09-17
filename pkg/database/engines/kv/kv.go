@@ -22,9 +22,9 @@
 // with no error. That is the CRDT underneath and it is what `consensus: crdt`
 // asks for; the vocabulary says the same thing where it declares the type. The
 // rule that falls out is AGENTS.md's: never a key two writers can write
-// differently. `consensus: single-writer` orders writes to a key and is NOT
-// served here — it needs the writes routed through a raft leader, which is a
-// different store.
+// differently. `consensus: raft` orders writes to a key and is NOT served here
+// — it needs the writes routed through a raft leader, which is a different
+// store.
 //
 // THERE IS NO COMPARE-AND-SWAP AND NO TRANSACTION, and no kind in this
 // vocabulary offers one.

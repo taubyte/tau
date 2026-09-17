@@ -25,7 +25,7 @@ stream:
 database:
     tokens:
         ops: [get, put]
-log:
+sync:
     audit:
         ops: [append]
 workflow:

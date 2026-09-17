@@ -17,7 +17,7 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// database.go backs `taubyte:handler/database` on this node, over pkg/database.
+// database.go backs `taubyte:sql/store` on this node, over pkg/database.
 //
 // # No driver is linked here, and that is pkg/database's decision rather than
 // # this file's
@@ -52,7 +52,7 @@ type databases struct {
 }
 
 var (
-	_ wasmtier.Databases      = (*databases)(nil)
+	_ wasmtier.SQL            = (*databases)(nil)
 	_ wasmtier.KVs            = (*databases)(nil)
 	_ wasmtier.DocumentStores = (*databases)(nil)
 	_ wasmtier.VectorStores   = (*databases)(nil)
@@ -104,18 +104,18 @@ func (d *databases) Query(ctx context.Context, grant invoke.Grant, statement str
 	return out, nil
 }
 
-// Exec runs a statement that writes and answers with how many rows moved.
-func (d *databases) Exec(ctx context.Context, grant invoke.Grant, statement string, args []any) (int64, error) {
+// Exec runs a statement that writes and answers with what it changed.
+func (d *databases) Exec(ctx context.Context, grant invoke.Grant, statement string, args []any) (wasmtier.Outcome, error) {
 	conn, err := d.conn(ctx, grant)
 	if err != nil {
-		return 0, err
+		return wasmtier.Outcome{}, err
 	}
 
-	affected, err := conn.Exec(ctx, statement, args...)
+	outcome, err := conn.Exec(ctx, statement, args...)
 	if err != nil {
-		return 0, refused(err)
+		return wasmtier.Outcome{}, refused(err)
 	}
-	return affected, nil
+	return wasmtier.Outcome(outcome), nil
 }
 
 // refused marks an error as the SERVER'S answer rather than a failure to reach

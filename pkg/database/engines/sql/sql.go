@@ -182,22 +182,27 @@ func (c *conn) Query(ctx context.Context, statement string, args ...any) (databa
 	return &rows{Rows: r}, nil
 }
 
-// Exec answers how many rows changed.
+// Exec answers what the statement changed.
 //
-// A DRIVER THAT CANNOT SAY IS NOT AN ERROR. Several do not support
-// RowsAffected, and failing a statement that ran because its result cannot be
-// counted would be reporting success as failure.
-func (c *conn) Exec(ctx context.Context, statement string, args ...any) (int64, error) {
+// A DRIVER THAT CANNOT SAY IS NOT AN ERROR, and each half is asked
+// independently: several drivers support RowsAffected and not LastInsertId,
+// PostgreSQL supports neither and answers the second question with `RETURNING`,
+// and failing a statement that RAN because its result cannot be counted would
+// be reporting success as failure.
+func (c *conn) Exec(ctx context.Context, statement string, args ...any) (database.Outcome, error) {
 	result, err := c.db.ExecContext(ctx, statement, args...)
 	if err != nil {
-		return 0, err
+		return database.Outcome{}, err
 	}
 
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return 0, nil
+	var out database.Outcome
+	if affected, err := result.RowsAffected(); err == nil {
+		out.Affected = affected
 	}
-	return affected, nil
+	if id, err := result.LastInsertId(); err == nil {
+		out.LastInsertID = id
+	}
+	return out, nil
 }
 
 func (c *conn) Close() error { return c.db.Close() }

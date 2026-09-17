@@ -30,6 +30,7 @@ type server struct {
 
 	statements []string
 	bound      [][]any
+	lastID     int64
 }
 
 func (s *server) Query(_ context.Context, _ invoke.Grant, statement string, args []any) (wasm.Rows, error) {
@@ -43,15 +44,15 @@ func (s *server) Query(_ context.Context, _ invoke.Grant, statement string, args
 	return s.rows, nil
 }
 
-func (s *server) Exec(_ context.Context, _ invoke.Grant, statement string, args []any) (int64, error) {
+func (s *server) Exec(_ context.Context, _ invoke.Grant, statement string, args []any) (wasm.Outcome, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.statements = append(s.statements, statement)
 	s.bound = append(s.bound, args)
 	if s.err != nil {
-		return 0, s.err
+		return wasm.Outcome{}, s.err
 	}
-	return s.affected, nil
+	return wasm.Outcome{Affected: s.affected, LastInsertID: s.lastID}, nil
 }
 
 func (s *server) seen() ([]string, [][]any) {
@@ -83,7 +84,7 @@ func TestAComponentQueries(t *testing.T) {
 		},
 	}}
 
-	instance := start(t, tier(t, cacher(t), wasm.WithDatabases(db)), invoke.Spec{
+	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
 		Name: "fn", Reaches: dbGrant("ledger", "h", "query", "exec"),
 	})
 
@@ -104,14 +105,17 @@ func TestAComponentQueries(t *testing.T) {
 }
 
 func TestAComponentExecs(t *testing.T) {
-	db := &server{affected: 3}
-	instance := start(t, tier(t, cacher(t), wasm.WithDatabases(db)), invoke.Spec{
+	db := &server{affected: 3, lastID: 41}
+	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
 		Name: "fn", Reaches: dbGrant("ledger", "h", "exec"),
 	})
 
 	res := call(t, instance, "/exec/ledger/", []byte("delete from t"))
 	require.Equal(t, 200, res.Status, string(res.Body))
-	require.Equal(t, "3", string(res.Body), "the row count came back")
+
+	// BOTH HALVES OF THE OUTCOME, which is what every SQL client reports and
+	// what a write answered with a bare row count could not.
+	require.Equal(t, "3/41", string(res.Body))
 }
 
 // TestEveryArgumentCaseIsBoundAsITSELF. Binding a number as text is how a query
@@ -119,7 +123,7 @@ func TestAComponentExecs(t *testing.T) {
 // that matches neither `IS NULL` nor a NOT NULL constraint.
 func TestEveryArgumentCrossesAsItsOwnType(t *testing.T) {
 	db := &server{affected: 1}
-	instance := start(t, tier(t, cacher(t), wasm.WithDatabases(db)), invoke.Spec{
+	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
 		Name: "fn", Reaches: dbGrant("ledger", "h", "exec"),
 	})
 
@@ -137,7 +141,7 @@ func TestEveryArgumentCrossesAsItsOwnType(t *testing.T) {
 
 func TestAnUndeclaredDatabaseIsRefused(t *testing.T) {
 	db := &server{}
-	instance := start(t, tier(t, cacher(t), wasm.WithDatabases(db)), invoke.Spec{
+	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
 		Name: "fn", Reaches: dbGrant("ledger", "h", "query"),
 	})
 
@@ -154,7 +158,7 @@ func TestAnUndeclaredDatabaseIsRefused(t *testing.T) {
 // reads gets reads.
 func TestAReadGrantCannotWrite(t *testing.T) {
 	db := &server{}
-	instance := start(t, tier(t, cacher(t), wasm.WithDatabases(db)), invoke.Spec{
+	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
 		Name: "fn", Reaches: dbGrant("ledger", "h", "query"),
 	})
 
@@ -168,7 +172,7 @@ func TestAReadGrantCannotWrite(t *testing.T) {
 
 func TestARefusedDatabaseCarriesItsReason(t *testing.T) {
 	db := &server{}
-	instance := start(t, tier(t, cacher(t), wasm.WithDatabases(db)), invoke.Spec{
+	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
 		Name: "fn",
 		Reaches: []invoke.Grant{{
 			Kind: "database", Label: "ledger", Handle: "h", Ops: []string{"query"},
@@ -188,7 +192,7 @@ func TestARefusedDatabaseCarriesItsReason(t *testing.T) {
 // the other; folding them together has every syntax error retried to a timeout.
 func TestARefusedStatementIsItsOwnArm(t *testing.T) {
 	db := &server{err: fmt.Errorf("%w: syntax error at or near \"slect\"", wasm.ErrStatementFailed)}
-	instance := start(t, tier(t, cacher(t), wasm.WithDatabases(db)), invoke.Spec{
+	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
 		Name: "fn", Reaches: dbGrant("ledger", "h", "query"),
 	})
 
@@ -200,7 +204,7 @@ func TestARefusedStatementIsItsOwnArm(t *testing.T) {
 
 func TestAnUnreachableServerIsUnavailable(t *testing.T) {
 	db := &server{err: errors.New("dial tcp: connection refused")}
-	instance := start(t, tier(t, cacher(t), wasm.WithDatabases(db)), invoke.Spec{
+	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
 		Name: "fn", Reaches: dbGrant("ledger", "h", "query"),
 	})
 
@@ -216,7 +220,7 @@ func TestATierWithNoDatabasesRefusesAWorkloadThatNeedsOne(t *testing.T) {
 	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
 		Name: "fn", Artifact: "bafy", Reaches: dbGrant("ledger", "h", "query"),
 	})
-	require.ErrorIs(t, err, wasm.ErrNoDatabases)
+	require.ErrorIs(t, err, wasm.ErrNoSQL)
 }
 
 func TestATierWithNoDatabasesRunsAWorkloadThatNeedsNone(t *testing.T) {
@@ -238,7 +242,7 @@ func TestACacheAStreamAndADatabaseInOneWorkload(t *testing.T) {
 	db := &server{affected: 1}
 
 	instance := start(t, tier(t, cacher(t),
-		wasm.WithCaches(backing), wasm.WithStreams(sent), wasm.WithDatabases(db)),
+		wasm.WithCaches(backing), wasm.WithStreams(sent), wasm.WithSQL(db)),
 		invoke.Spec{
 			Name: "fn",
 			Reaches: []invoke.Grant{
@@ -355,7 +359,7 @@ func TestTheDataModelSelectsTheInterface(t *testing.T) {
 	db := newKeyValues()
 	server := &server{}
 
-	instance := start(t, tier(t, cacher(t), wasm.WithKV(db), wasm.WithDatabases(server)),
+	instance := start(t, tier(t, cacher(t), wasm.WithKV(db), wasm.WithSQL(server)),
 		invoke.Spec{
 			Name:    "fn",
 			Reaches: kvGrant("tokens", "shop/prod/QmTokens", "get", "put"),
@@ -540,7 +544,7 @@ func TestEachDataModelIsItsOwnDoor(t *testing.T) {
 	sql := &server{}
 
 	instance := start(t, tier(t, cacher(t),
-		wasm.WithDocuments(docs), wasm.WithKV(kv), wasm.WithDatabases(sql)),
+		wasm.WithDocuments(docs), wasm.WithKV(kv), wasm.WithSQL(sql)),
 		invoke.Spec{
 			Name:    "fn",
 			Reaches: docGrant("orders", "h", "get", "put", "query"),
@@ -737,7 +741,7 @@ func TestEveryDataModelIsItsOwnDoor(t *testing.T) {
 	idx := newIndex()
 	instance := start(t, tier(t, cacher(t),
 		wasm.WithVectors(idx), wasm.WithKV(newKeyValues()),
-		wasm.WithDocuments(newCollection()), wasm.WithDatabases(&server{})),
+		wasm.WithDocuments(newCollection()), wasm.WithSQL(&server{})),
 		invoke.Spec{
 			Name:    "fn",
 			Reaches: vecGrant("knowledge", "h", "search", "upsert"),

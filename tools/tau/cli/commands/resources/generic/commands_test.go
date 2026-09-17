@@ -37,15 +37,15 @@ func groups(t *testing.T) []tcc.Group {
 // CLI registers under the same word.
 //
 // `log` IS THE ONLY ONE, and it is a real collision rather than a test
-// concession: the vocabulary has a `log` KIND — an append-only stream a workload
-// writes to — and the CLI has a `log` COMMAND for reading a build's output. The
-// second shadows the first, so `tau query log` reaches the viewer and the log
-// resource cannot be created, queried or listed at all.
+// EMPTY, AND IT USED TO HOLD `log`. The vocabulary had a `log` KIND and the CLI
+// has a `log` COMMAND that reads a build's output; the command shadowed the
+// kind, so a log resource could not be created, queried or listed at all. The
+// fix was a rename nobody had to choose: `log` became a TYPE of the `sync`
+// kind, so the name the CLI addresses is `sync` and the collision is gone.
 //
-// Fixing it is a rename, and which of the two moves is a decision rather than a
-// guess. The set is asserted exactly, so this fails if the collision is fixed
-// AND if another one appears.
-var shadowed = map[string]bool{"log": true}
+// The set is asserted exactly, so this fails if a new collision appears and if
+// an entry here stops being one.
+var shadowed = map[string]bool{}
 
 // TestEveryKindIsReachableByItsOwnName. A kind the vocabulary declares and the
 // CLI cannot address is a resource nobody can create.

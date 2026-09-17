@@ -252,7 +252,7 @@ func handleOf(t *testing.T, n *node.Node, step string) string {
 	require.NoError(t, err, "no driver for %s", step)
 
 	for _, g := range spec.Reaches {
-		if g.Kind == "queue" && g.Label == step {
+		if g.Kind == "sync" && g.Label == step {
 			return g.Handle
 		}
 	}
@@ -273,7 +273,7 @@ func deadLetterOf(t *testing.T, n *node.Node) string {
 	require.NoError(t, err)
 
 	for _, g := range spec.Reaches {
-		if dead := g.Settings["dead_letter/name"]; g.Kind == "queue" && dead != "" {
+		if dead := g.Settings["queue/dead_letter/name"]; g.Kind == "sync" && dead != "" {
 			return project.Handle("shop", "prod", dead)
 		}
 	}

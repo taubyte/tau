@@ -16,7 +16,7 @@ execution:
 limits:
     max_instances: 4
     concurrency: 1
-queue:
+sync:
     orders:
         ops: [receive]
         deliver:

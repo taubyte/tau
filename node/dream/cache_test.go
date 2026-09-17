@@ -76,7 +76,7 @@ func withCache(componentCID string) []byte {
 			"cache": map[string]any{
 				cacheID: map[string]any{
 					"name": "sessions",
-					// crdt, so this cloud serves it: single-writer is refused
+					// crdt, so this cloud serves it: raft is refused
 					// by name and gossip is served stronger than asked.
 					"consensus": "crdt",
 					"size":      1000000,

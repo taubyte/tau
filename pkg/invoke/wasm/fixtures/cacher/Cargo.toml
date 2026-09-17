@@ -20,6 +20,22 @@ package = "taubyte:cacher"
 path = "../../wit"
 world = "handler"
 
+[package.metadata.component.target.dependencies]
+"taubyte:bus" = { path = "../../wit/deps/taubyte-bus" }
+"taubyte:cache" = { path = "../../wit/deps/taubyte-cache" }
+"taubyte:channel" = { path = "../../wit/deps/taubyte-channel" }
+"taubyte:document" = { path = "../../wit/deps/taubyte-document" }
+"taubyte:kv" = { path = "../../wit/deps/taubyte-kv" }
+"taubyte:log" = { path = "../../wit/deps/taubyte-log" }
+"taubyte:queue" = { path = "../../wit/deps/taubyte-queue" }
+"taubyte:secret" = { path = "../../wit/deps/taubyte-secret" }
+"taubyte:workload" = { path = "../../wit/deps/taubyte-workload" }
+"taubyte:sql" = { path = "../../wit/deps/taubyte-sql" }
+"taubyte:storage" = { path = "../../wit/deps/taubyte-storage" }
+"taubyte:stream" = { path = "../../wit/deps/taubyte-stream" }
+"taubyte:vector" = { path = "../../wit/deps/taubyte-vector" }
+"taubyte:workflow" = { path = "../../wit/deps/taubyte-workflow" }
+
 [profile.release]
 opt-level = "s"
 strip = true

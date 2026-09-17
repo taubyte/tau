@@ -167,7 +167,20 @@ type KVConn interface {
 type SQLConn interface {
 	Conn
 	Query(ctx context.Context, statement string, args ...any) (Rows, error)
-	Exec(ctx context.Context, statement string, args ...any) (int64, error)
+	Exec(ctx context.Context, statement string, args ...any) (Outcome, error)
+}
+
+// Outcome is what a write changed, in the shape every SQL client already
+// reports it: `database/sql.Result`, DBAPI's `rowcount` and `lastrowid`,
+// node-postgres's `rowCount`.
+//
+// BOTH FIELDS ARE 0 WHEN THE DRIVER DID NOT SAY, which is not an error. Several
+// drivers report neither, PostgreSQL answers the last-insert question with
+// `RETURNING` instead, and failing a statement that RAN because its result
+// cannot be counted would be reporting success as failure.
+type Outcome struct {
+	Affected     int64
+	LastInsertID int64
 }
 
 // Rows is a result set. It is deliberately not database/sql.Rows: this seam has

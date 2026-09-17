@@ -1,0 +1,6 @@
+id: QmPq5xVnB7LtWcHdKzR3JgEyUM8fasNbT2vXrQwCk6hDZm
+description: what happened, in the order it happened - raft, because a ledger whose order two readers disagree about is not one
+log:
+    consensus: raft
+    retention:
+        age: 720h

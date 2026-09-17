@@ -1149,6 +1149,226 @@ func externalEngineAttributes(at []StringMatch, named []string, engines []string
 // switch's Either, each type's engine Either, the kind's Ops(), the audit that refuses
 // an op the target's type does not have, and the JSON Schema an editor completes from —
 // and a second list of any of them drifts the day a type is added.
+// syncType is one coordination primitive: what may be done to one, and what one has
+// to say about itself.
+//
+// THE KIND IS `sync` AND THE TYPE IS THE THING. A queue, an append-only log and — when
+// they have a shape and an engine — a lock, a counter or a barrier are one kind for the
+// same reason `sql`, `kv`, `document` and `vector` are: an author asks one question and
+// the type answers it in a different shape, and a kind each would be four copies of the
+// identity, access, placement and quota machinery.
+//
+// WHAT IS IN AND WHAT IS OUT, stated so the kind does not become a drawer: DOES THE
+// RESOURCE DECIDE WHO WINS. A queue decides which consumer gets an item. A log decides
+// what order two concurrent appends happened in. A lock would decide who holds it. A
+// `stream` and a `bus` decide nothing — everything attached gets everything sent — so
+// they are fan-out and they stay their own kinds. Arbitration in, broadcast out.
+type syncType struct {
+	name string
+	// ops is what may be done to one of this type. THE PER-KIND VERB RULE IS NOT GIVEN
+	// UP: Ops() carries the union, because an access block is loaded before anything
+	// knows which resource it names, and checkSyncOps holds every entry to the verbs of
+	// the type it actually reaches — the same seam checkDatabaseOps is.
+	ops Verbs
+	// extra is what only this primitive has to say — a queue's delivery budget, a log's
+	// retention. A field every type would carry belongs in syncType.attributes.
+	extra func(syncType) []*Attribute
+	doc   string
+}
+
+var syncTypes = []syncType{
+	// Claim / visibility-timeout / ack / DLQ — not pop-and-delete. Today's pkg/raft
+	// Queue.Pop deletes before returning, so a consumer that crashes loses the job with
+	// no trace (resources.md §3.2).
+	{
+		name:  "queue",
+		ops:   Verbs{DeliveredOp("receive"), WriteOp("send")},
+		extra: queueAttributes,
+		doc:   "Work handed from one workload to another. A claim is exclusive, an unacknowledged item comes back, and one that gives up lands in a dead letter.",
+	},
+
+	// IT WAS A DECLARED PLACEHOLDER WITH NO FIELDS AT ALL, written that way on purpose:
+	// this vocabulary deletes inert things, so a kind with nothing in it either gets
+	// removed or gets completed by somebody guessing, and the note existed to stop both
+	// until the shape was given. This is the shape.
+	//
+	// `append` alone is the claim it makes. There is deliberately no `put` and no
+	// `delete`: a record that can be overwritten or removed is not an append-only log,
+	// and the verb set is the one place this vocabulary states that where every consumer
+	// reads it back.
+	//
+	// `read` is a PULL — the reader goes and asks, forward from a cursor. A FOLLOW is
+	// the other direction and would be a third verb, a DeliveredOp the way a queue's
+	// `receive` is: the platform hands each new record over as it lands. It needs a
+	// dispatcher rather than a host function and it is not here yet.
+	{
+		name:  "log",
+		ops:   Verbs{WriteOp("append"), ReadOp("read")},
+		extra: logAttributes,
+		doc:   "Records appended to the end and read forward. Nothing rewrites what is already there.",
+	},
+}
+
+func syncTypeNames() []string {
+	out := make([]string, 0, len(syncTypes))
+	for _, t := range syncTypes {
+		out = append(out, t.name)
+	}
+	return out
+}
+
+// SyncTypeOf is the type table row one name selects. Exported because the composer asks
+// the same question the compiler answers — see DatabaseEngines for why that matters.
+func SyncTypeOf(name string) (Verbs, bool) {
+	for _, t := range syncTypes {
+		if t.name == name {
+			return t.ops, true
+		}
+	}
+	return nil, false
+}
+
+// syncOps is every verb any type declares, deduplicated — what an access block may
+// spell before anything has resolved which resource it names.
+func syncOps() []Verb {
+	seen := map[string]Verb{}
+	out := []Verb{}
+	for _, t := range syncTypes {
+		for _, v := range t.ops {
+			if had, ok := seen[v.Name]; ok {
+				if had != v {
+					panic(fmt.Sprintf("sync: verb %q is declared two ways: %+v and %+v", v.Name, had, v))
+				}
+				continue
+			}
+			seen[v.Name] = v
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// syncAttributes is the kind's shape: the type switch, then one block per type.
+func syncAttributes() []*Attribute {
+	out := []*Attribute{
+		// THE TYPE IS NOT WRITTEN, it is the block that IS written — the same construct
+		// `database` and `storage` use, and the reason one of these cannot be of two
+		// types or of none.
+		String("type", Path(Either(syncTypeNames()...)), Captures(), InSection("sync"),
+			Doc("Type", "Which coordination primitive this is. It is the key everything else hangs off: a sync resource is one block named after its type.")),
+	}
+	for _, t := range syncTypes {
+		out = append(out, t.attributes()...)
+	}
+	return out
+}
+
+func (t syncType) attributes() []*Attribute {
+	shown := ShowWhen("type", t.name)
+	out := []*Attribute{
+		// WHAT HAPPENS TO TWO WRITES THAT ARRIVE AT ONCE. It is the same axis and the
+		// same two values `database.consensus` carries, for the same reason: `raft` is
+		// one holder at a time, so a write costs a round trip and nothing is silently
+		// discarded; `crdt` is the coordination-free replication tau already runs, where
+		// every node takes the write the moment it arrives and concurrent writes merge.
+		//
+		// BOTH VALUES NAME A MECHANISM, and the set used to name only one of them: it
+		// read `single-writer` beside `crdt`, a promise beside an algorithm, two
+		// different kinds of word in one InSet — and the described half was the one a
+		// reader had to decode. Naming both costs the freedom to swap the log out from
+		// under a config that says `raft`, and that cost is taken rather than hidden
+		// behind a description. What differs is still the PROMISE, and it is the Doc
+		// string's to carry: a raft log has one total order and a dense position, a crdt
+		// log converges on an order and two readers may transiently disagree about it.
+		// That is why the ABI carries an opaque cursor rather than an offset — an offset
+		// is a promise only one of these values can keep.
+		//
+		// REQUIRED FOR THE TYPE THAT IS WRITTEN, and not unconditionally: an
+		// unconditional Required() is demanded on every type's block at once, so a log
+		// would owe a `queue/consensus` too. Required at all for the reason
+		// `database.consensus` is — silence is a choice, and whichever answer it carried
+		// would be wrong for whoever never read the line.
+		//
+		// NO `gossip`, and the cache's third value is the one deliberately missing. A
+		// gossiped write can be dropped outright rather than merged, and a dropped item
+		// is work that never ran or a record that never happened. A cache can take that;
+		// nothing here can.
+		String(Key(t.name, "consensus"), Path(t.name, "consensus"), Accessor(title(t.name)+"Consensus"),
+			InSet("crdt", "raft"), RequiredWhen("type", t.name), InSection("sync"), shown,
+			Doc("Consensus", "What happens to concurrent writes. raft: one holder at a time, so a write costs a round trip, there is one total order, and nothing is silently discarded. crdt: every node takes the write the moment it arrives and they merge, with nothing refused and nothing waited for — the order converges rather than being decided.")),
+	}
+	if t.extra != nil {
+		out = append(out, t.extra(t)...)
+	}
+	return out
+}
+
+// queueAttributes is the delivery budget: what the queue promises about timing, retries
+// and where an item that gave up goes.
+func queueAttributes(t syncType) []*Attribute {
+	shown := ShowWhen("type", t.name)
+	k := func(rest ...string) AKey { return Key(append([]string{t.name}, rest...)...) }
+
+	return []*Attribute{
+		Duration(k("visibility_timeout"), Default("30s"), DefaultWhen("type", t.name), PerEnv(), InSection("delivery"), shown,
+			Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
+
+		// HOW LONG AN ITEM WAITS BEFORE ANYONE MAY HAVE IT. Every queue gets it — it is
+		// SQS's DelaySeconds and it is useful on its own — and it is also what a
+		// workflow's `wait` step becomes: a step that pauses is a queue that holds its
+		// work back, so the pause is a property of the thing that does the holding
+		// rather than a string some driver parses.
+		Duration(k("delay"), InSection("delivery"), shown,
+			Doc("Delay", "How long an item waits before it becomes deliverable at all, as a human string (e.g. \"30s\"). Absent means immediately.")),
+		Int(k("max_attempts"), Default(5), DefaultWhen("type", t.name), InSection("delivery"), shown,
+			Doc("Max Attempts", "Deliveries before the item moves to the dead-letter queue.")),
+
+		// HOW REDELIVERY IS SPACED. The queue owns it because the queue is what
+		// redelivers — a workflow step's `backoff` is copied onto the queue it becomes,
+		// and every other queue user gets the same three fields for free. Absent means
+		// the visibility timeout alone governs.
+		Duration(k("retry", "interval"), InSection("delivery"), shown,
+			Doc("Retry Interval", "Delay before a failed delivery becomes deliverable again. Absent means the visibility timeout alone governs.")),
+		Float(k("retry", "factor"), InSection("delivery"), shown,
+			Doc("Retry Factor", "Multiplier applied to the interval per further attempt: the delay for attempt n is interval times factor^(n-1), capped by the ceiling. Absent or 1 means a fixed interval.")),
+		Duration(k("retry", "ceiling"), InSection("delivery"), shown,
+			Doc("Retry Ceiling", "The delay never grows past this. Absent means it is not capped.")),
+
+		// A REFERENCE IS A BLOCK. The kind is on the Ref, so writing it into the value is
+		// the same fact twice; and `<kind>/<name>` has nowhere to say WHICH namespace, so
+		// it silently means "somewhere up from here".
+		//
+		// THE REF NAMES THE KIND AND NOT THE TYPE, because a Ref cannot say "a sync of
+		// type queue" — so checkDeadLetterIsAQueue holds it, over the compiled object
+		// where the target's type is a field on it. Same seam checkSyncOps uses, and the
+		// same reason: the generic layer carries values at paths and has no word for a
+		// type.
+		String(k("dead_letter", "namespace"), IsNamespacePath(), InSection("delivery"), shown,
+			Doc("Dead Letter Namespace", "Where that queue lives. Omitted means this queue's own scope, then its parents.")),
+		String(k("dead_letter", "name"), IsVariableName(), Ref("sync"), InSection("delivery"), shown,
+			Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts.")),
+	}
+}
+
+// logAttributes is what is KEPT. Both are Kafka's two axes and both mean drop-oldest —
+// which is the difference between a log's ceiling and a bucket's: a full bucket refuses
+// the write, a full log forgets the front.
+//
+// ABSENT MEANS FOREVER, and that is the safe direction rather than a silent choice: a
+// ledger keeps everything, and an author who never read this line gets a log that
+// remembers rather than one that quietly threw away the record they needed.
+func logAttributes(t syncType) []*Attribute {
+	shown := ShowWhen("type", t.name)
+	k := func(rest ...string) AKey { return Key(append([]string{t.name}, rest...)...) }
+
+	return []*Attribute{
+		Duration(k("retention", "age"), PerEnv(), InSection("retention"), shown,
+			Doc("Retention Age", "How long a record is kept, as a human string (e.g. \"168h\"). Absent means forever.")),
+		Bytes(k("retention", "size"), PerEnv(), InSection("retention"), shown,
+			Doc("Retention Size", "How much the log keeps before the oldest records are dropped, as a human string (e.g. \"1GB\"). Absent means it is not capped.")),
+	}
+}
+
 type databaseType struct {
 	name string
 	// external is the servers that speak this model over the network. Closed for the
@@ -1178,7 +1398,7 @@ var databaseTypes = []databaseType{
 	// WHAT `consensus: crdt` DOES NOT PROMISE, because the engine does not: concurrent
 	// writes to ONE key are merged last-writer-wins, so one of them is discarded with
 	// no error. There is no compare-and-swap and no transaction, and no kind here has
-	// one to offer either: `consensus: single-writer` is as far as this vocabulary
+	// one to offer either: `consensus: raft` is as far as this vocabulary
 	// goes, and it ORDERS the writes to a key rather than letting a caller make one
 	// conditional on what is already there. The rule that falls out is the one
 	// AGENTS.md states for every kvdb layout in this repository: never a key two
@@ -1329,17 +1549,14 @@ func (t databaseType) attributes() []*Attribute {
 			RequiredWhen(Key(t.name, "engine"), tauEngine), PerEnv(), InSection("engine"), shown,
 			Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
 
-		// WHAT HAPPENS TO TWO WRITES THAT ARRIVE AT ONE KEY AT ONCE, AND THE AUTHOR
-		// NEVER NAMES THE MECHANISM. `crdt` is the coordination-free replication tau
-		// already runs — pkg/kvdb, a Merkle-CRDT, where every node takes a write the
-		// moment it arrives and concurrent writes to one key merge last-writer-wins
-		// with nothing refused and nothing waited for. `single-writer` is one holder of
-		// the key at a time, so a write costs a round trip and nothing is silently
-		// discarded; HOW the platform gets there — raft replicating synchronously, or
-		// raft electing a master and the rest following — is a runtime decision and
-		// still not a key. Neither value is an algorithm. Both are the answer to what
-		// the store does with the second write, which is the only half of this an
-		// author can be held to.
+		// WHAT HAPPENS TO TWO WRITES THAT ARRIVE AT ONE KEY AT ONCE. `crdt` is the
+		// coordination-free replication tau already runs — pkg/kvdb, a Merkle-CRDT,
+		// where every node takes a write the moment it arrives and concurrent writes to
+		// one key merge last-writer-wins with nothing refused and nothing waited for.
+		// `raft` is pkg/raft: one elected leader holds the key, so a write costs a round
+		// trip through it, there is one total order, and nothing is silently discarded.
+		// Both values name the mechanism they run, and both answer the only half of this
+		// an author can be held to — what the store does with the second write.
 		//
 		// THE NAME IS THE QUESTION, NOT ONE OF THE ANSWERS. It was `crdt: bool`, so
 		// `crdt: false` had to say what the database is NOT and the reader had to
@@ -1367,7 +1584,7 @@ func (t databaseType) attributes() []*Attribute {
 		//
 		// A BRANCH WITH FIELDS OF ITS OWN WOULD BE AN `Either()` SWITCH INSTEAD, the
 		// shape `engine` above has. Neither value has any today, so this is the scalar
-		// choice; a lease timeout or a replica count under `single-writer` is what
+		// choice; a lease timeout or a replica count under `raft` is what
 		// would move it, and that is the owner's call rather than this field's.
 		//
 		// TWO VALUES WHERE `cache.consensus` HAS THREE, AND THE MISSING ONE IS
@@ -1377,9 +1594,9 @@ func (t databaseType) attributes() []*Attribute {
 		// which is why the set is per kind rather than shared, and why this one will
 		// not gain the third value.
 		String(Key(t.name, "consensus"), Path(t.name, tauEngine, "consensus"), Accessor(title(t.name)+"Consensus"),
-			InSet("crdt", "single-writer"), RequiredWhen(Key(t.name, "engine"), tauEngine),
+			InSet("crdt", "raft"), RequiredWhen(Key(t.name, "engine"), tauEngine),
 			InSection("engine"), shown,
-			Doc("Consensus", "What happens to concurrent writes to one key. crdt: every node takes a write the moment it arrives and the writes merge last-writer-wins, with nothing refused and nothing waited for. single-writer: one holder at a time, so a write costs a round trip and nothing is silently discarded.")),
+			Doc("Consensus", "What happens to concurrent writes to one key. crdt: every node takes a write the moment it arrives and the writes merge last-writer-wins, with nothing refused and nothing waited for. raft: one holder at a time, so a write costs a round trip and nothing is silently discarded.")),
 	}
 
 	if len(t.external) > 0 {
@@ -1647,7 +1864,7 @@ var V2Resources = []*Node{
 	// WHERE IT SITS ON THE CAP LINE IS `consensus`'s ANSWER, NOT THE KIND'S. It used to
 	// be the kind's — "eventually consistent, AP" was written here and in the GroupDoc,
 	// and it was true of everything this kind could be. It is not true of a
-	// `single-writer` cache, which costs a round trip and cannot complete a write on the
+	// `raft` cache, which costs a round trip and cannot complete a write on the
 	// side of a partition that has lost the holder. The one thing that IS true of all
 	// three is what the rest of this paragraph says: an entry is not a record.
 	DefineGroup("cache",
@@ -1679,7 +1896,7 @@ var V2Resources = []*Node{
 				// HOW IT MEETS `consensus`, STATED BECAUSE IT IS NOT SETTLED. The two
 				// are not independent: `crdt` and `gossip` both mean every peer takes
 				// the write where it lands, so both IMPLY a copy per peer, and only
-				// under `single-writer` is "where do the bytes live" still a question
+				// under `raft` is "where do the bytes live" still a question
 				// — one holder for writes, with or without replicas to read from. So
 				// this field carries information on one branch of three, and on the
 				// other two it either restates what the value already said or
@@ -1689,20 +1906,20 @@ var V2Resources = []*Node{
 				// first would decide the question in the schema and the second would
 				// drop a field one commit old. It is written down instead.
 				Bool(Key("replicated"), InSection("keys"),
-					Doc("Replicated", "Whether every peer keeps its own copy of this cache. Omitted means the data lives on one node and other peers reach it over the network. Only a question under single-writer consensus: crdt and gossip both put a copy on every peer.")),
+					Doc("Replicated", "Whether every peer keeps its own copy of this cache. Omitted means the data lives on one node and other peers reach it over the network. Only a question under raft consensus: crdt and gossip both put a copy on every peer.")),
 
 				// WHAT HAPPENS TO TWO WRITES THAT ARRIVE AT ONE KEY AT ONCE. The same
 				// question `database.consensus` asks, named the same way and answered
 				// from a wider set, and the author never names the mechanism.
 				//
-				//	single-writer  one holder of the key at a time, so a write costs a
-				//	               round trip and nothing is silently discarded
-				//	crdt           every node takes the write the moment it arrives and
-				//	               concurrent writes merge last-writer-wins: nothing is
-				//	               refused and nothing is waited for, and the write that
-				//	               loses the merge is gone with no error
-				//	gossip         the write is taken locally and spread best-effort, so
-				//	               an entry can fail to arrive or be dropped outright
+				//	raft	one holder of the key at a time, so a write costs a round
+				//		trip and nothing is silently discarded
+				//	crdt	every node takes the write the moment it arrives and
+				//		concurrent writes merge last-writer-wins: nothing is refused
+				//		and nothing is waited for, and the write that loses the merge
+				//		is gone with no error
+				//	gossip	the write is taken locally and spread best-effort, so an
+				//		entry can fail to arrive or be dropped outright
 				//
 				// THREE VALUES WHERE A DATABASE HAS TWO, AND THE DIFFERENCE IS NOT
 				// SLOPPINESS. `gossip` is eventually consistent AND LOSSY: it can drop
@@ -1721,7 +1938,7 @@ var V2Resources = []*Node{
 				// one of these three things. A field whose absence still has an answer
 				// is a choice made by silence, and whichever answer the silence carried
 				// would be wrong for somebody who never read the line — `gossip` puts
-				// lossy on every cache nobody thought about, `single-writer` puts a
+				// lossy on every cache nobody thought about, `raft` puts a
 				// round trip on all of them. Required removes the question rather than
 				// answering it, which is the same fix `database.consensus` and
 				// `worker.runtime` carry, and the same defect the original `crdt: bool`
@@ -1734,13 +1951,13 @@ var V2Resources = []*Node{
 				// one the project cannot honour. Nothing external backs a cache, so
 				// there is no branch the answer could be wrong on.
 				//
-				// NO ALGORITHM, on purpose and by the same rule the database states:
-				// `raft` is the plausible wrong answer and is exactly what this
-				// vocabulary refuses to be told, because how the platform keeps
-				// `single-writer` is its own to change without touching anybody's
-				// config.
-				String(Key("consensus"), InSet("single-writer", "crdt", "gossip"), Required(), InSection("keys"),
-					Doc("Consensus", "What happens to concurrent writes to one key. single-writer: one holder at a time, so a write costs a round trip and nothing is silently discarded. crdt: every node takes the write the moment it arrives and the writes merge last-writer-wins, with nothing refused and nothing waited for. gossip: the write is taken locally and spread best-effort, so an entry may fail to arrive or be dropped — cheapest, and fine where losing one costs a recomputation.")),
+				// EVERY VALUE NAMES ITS MECHANISM, by the same rule the database
+				// states. All three are words the ecosystem already carries, so the set
+				// reads without the Doc string; the cost is that swapping the log out
+				// from under `raft` would make a config lie, and it is taken rather
+				// than hidden behind a description.
+				String(Key("consensus"), InSet("raft", "crdt", "gossip"), Required(), InSection("keys"),
+					Doc("Consensus", "What happens to concurrent writes to one key. raft: one holder at a time, so a write costs a round trip and nothing is silently discarded. crdt: every node takes the write the moment it arrives and the writes merge last-writer-wins, with nothing refused and nothing waited for. gossip: the write is taken locally and spread best-effort, so an entry may fail to arrive or be dropped — cheapest, and fine where losing one costs a recomputation.")),
 
 				// A REFERENCE, never the material. "key material or reference" let the
 				// same field be either, and the safe reading was the one nothing enforced.
@@ -1867,42 +2084,6 @@ var V2Resources = []*Node{
 			Resource("volume", "Volume", "Volume", "volume"),
 		)),
 
-	// A DECLARED PLACEHOLDER, AND THAT IS WHAT IT IS RATHER THAN AN UNFINISHED KIND.
-	// An append-only resource: records go on the end and nothing rewrites what is
-	// already there. It has no fields of its own yet — the shape is the owner's to
-	// finish, and inventing a retention, a size or a format here would be guessing at a
-	// specification that exists and has not been given.
-	//
-	// It is written down as deliberately incomplete because this vocabulary DELETES
-	// inert things — `notification.email` for being read nowhere, and `connector` whole
-	// once every case it carried was spelled by a kind already here — so a kind with
-	// nothing in it either gets removed as inert or gets completed by somebody
-	// guessing. This is the note that stops both.
-	//
-	// IT HAS VERBS EVEN THOUGH IT HAS NO ATTRIBUTES, because the vocabulary's own rule
-	// (see V2Resources above) is that a kind with no Ops() is not a target: nothing can
-	// reach it, so an append-only log nothing can append to is a kind that does not
-	// participate. `append` and `read` are PROVISIONAL, pending the owner's shape.
-	//
-	// `append` alone is the claim the kind makes. There is deliberately no `put` and no
-	// `delete`: a record that can be overwritten or removed is not an append-only log,
-	// and a verb set is the one place this vocabulary states that where every consumer
-	// reads it back.
-	//
-	// `read` is a PULL — the reader goes and asks, with whatever offset or range the
-	// shape turns out to have. A FOLLOW is the other direction and would be a second
-	// verb, a DeliveredOp, the way a bus's `subscribe` is: the platform hands each new
-	// record over as it lands. Which of the two a log has, or whether it has both, is
-	// the owner's call and is not decided here.
-	DefineGroup("log",
-		resource(
-			commonAttributes(),
-			GroupDoc("An append-only log. Records go on the end and nothing rewrites what is there. Its shape is not specified yet."), Icon("list"), Category("data"), Placed(),
-			secIdentity, secAccess,
-			Ops(WriteOp("append"), ReadOp("read")),
-			Resource("log", "Log", "Log", "log"),
-		)),
-
 	// A declaration and a reference, never a value. The value lives outside git in
 	// the secrets service, keyed <project>/<environment>/<key>, so rotation needs no
 	// push. Read access is an edge with one verb; there is no write verb from a
@@ -1948,7 +2129,7 @@ var V2Resources = []*Node{
 	//     and a safe counter was always code somebody wrote INSIDE one. Those two notes
 	//     pointed at a runtime capability and called it a vocabulary one.
 	//   - PER-KEY ORDERING. `queue`'s doc sent an author here for it. `consensus:
-	//     single-writer` is what orders writes to a key, it is declared on the kinds that
+	//     raft` is what orders writes to a key, it is declared on the kinds that
 	//     have it, and a second spelling of the same fact is the parallel table §10 is
 	//     about.
 	//   - "A DURABLE, ADDRESSABLE THING WITH CODE IN IT". That is a `function` with the
@@ -1975,48 +2156,29 @@ var V2Resources = []*Node{
 	// is §11's, and a note is not the place to settle it. What this note fixes is only that
 	// the vocabulary stopped naming a kind it does not have.
 
-	// Claim / visibility-timeout / ack / DLQ — not pop-and-delete. Today's
-	// pkg/raft Queue.Pop deletes before returning, so a consumer that crashes
-	// loses the job with no trace (resources.md §3.2).
-	DefineGroup("queue",
+	// COORDINATION, and the type says which shape of it. A queue hands work over
+	// exactly once; an append-only log fixes what order things happened in. They were
+	// two kinds until 2026-09-05, on the argument that their verbs are not each other's
+	// — which is true and is a fact about the primitive, not about the resource. Verbs
+	// are per TYPE here, and the union an access block may spell is held to the
+	// target's own type by checkSyncOps, exactly as `database` does for its four data
+	// models.
+	//
+	// WHAT THIS BUYS is the next one: a lock, a counter, a barrier each become a row in
+	// syncTypes rather than a kind with its own identity, access, placement and quota
+	// machinery. None of them is here — a type with nothing to author is the defect
+	// `notification.email` was deleted for — but the slot they land in now exists.
+	DefineGroup("sync",
 		resource(
-			commonAttributes(
-				Duration("visibility_timeout", Default("30s"), PerEnv(), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
-
-				// HOW LONG AN ITEM WAITS BEFORE ANYONE MAY HAVE IT. Every queue gets it —
-				// it is SQS's DelaySeconds and it is useful on its own — and it is also
-				// what a workflow's `wait` step becomes: a step that pauses is a queue
-				// that holds its work back, so the pause is a property of the thing that
-				// does the holding rather than a string some driver parses.
-				Duration(Key("delay"), InSection("delivery"),
-					Doc("Delay", "How long an item waits before it becomes deliverable at all, as a human string (e.g. \"30s\"). Absent means immediately.")),
-				Int("max_attempts", Default(5), InSection("delivery"), Doc("Max Attempts", "Deliveries before the item moves to the dead-letter queue.")),
-
-				// HOW REDELIVERY IS SPACED. The queue owns it because the queue is what
-				// redelivers — a workflow step's `backoff` is copied onto the queue it
-				// becomes, and every other queue user gets the same three fields for
-				// free. Absent means the visibility timeout alone governs, which is what
-				// happened before these existed.
-				Duration(Key("retry", "interval"), InSection("delivery"),
-					Doc("Retry Interval", "Delay before a failed delivery becomes deliverable again. Absent means the visibility timeout alone governs.")),
-				Float(Key("retry", "factor"), InSection("delivery"),
-					Doc("Retry Factor", "Multiplier applied to the interval per further attempt: the delay for attempt n is interval times factor^(n-1), capped by the ceiling. Absent or 1 means a fixed interval.")),
-				Duration(Key("retry", "ceiling"), InSection("delivery"),
-					Doc("Retry Ceiling", "The delay never grows past this. Absent means it is not capped.")),
-				// A REFERENCE IS A BLOCK. The kind is on the Ref, so writing it into the
-				// value is the same fact twice; and `<kind>/<name>` has nowhere to say
-				// WHICH namespace, so it silently means "somewhere up from here". Same
-				// shape every other cross-resource pointer here already uses.
-				String(Key("dead_letter", "namespace"), IsNamespacePath(), InSection("delivery"),
-					Doc("Dead Letter Namespace", "Where that queue lives. Omitted means this queue's own scope, then its parents.")),
-				String(Key("dead_letter", "name"), IsVariableName(), Ref("queue"), InSection("delivery"),
-					Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts.")),
-			),
-			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. The order is the queue's: there is one, and it is not one per key."), Icon("list"), Category("data"), Placed(),
+			commonAttributes(syncAttributes()...),
+			GroupDoc("Coordination between workloads: a queue that hands work over exactly once, or an append-only log that fixes what order things happened in. What these have in common is that the resource decides who wins — which is what a stream and a bus deliberately do not."), Icon("list"), Category("data"), Placed(),
 			secIdentity, secAccess,
+			Section("sync", "Sync", "Which primitive it is, and what happens to concurrent writes."),
 			Section("delivery", "Delivery", "Claim, retry and dead-letter behaviour."),
-			Ops(DeliveredOp("receive"), WriteOp("send")),
-			Resource("queue", "Queue", "Queue", "queue"),
+			Section("retention", "Retention", "What is kept, and for how long."),
+			// THE UNION, and it is not a hole in the per-kind verb rule — see syncOps.
+			Ops(syncOps()...),
+			Resource("sync", "Sync", "Sync", "sync"),
 		)),
 
 	// ---- routing and naming ----
@@ -2910,7 +3072,7 @@ var V2Resources = []*Node{
 				// budget is the step's — `reserve` may be worth four attempts and
 				// `charge` exactly one. Sharing a queue would make the whole pipeline
 				// share whichever number was written last.
-				Into("queue",
+				Into("sync",
 					PerEach("steps"),
 					// THE NAME STATES ITS PARTS. `{name}_{each.name}` produced the same
 					// `checkout_reserve` and could not be read backwards — recovering
@@ -2919,22 +3081,27 @@ var V2Resources = []*Node{
 					// shell does not have to store it twice.
 					Named(Concat(Attr("name"), Text("_"), Each("name"))),
 					Carries(Concat(Text("work waiting for step "), Each("name"))),
-					Sets("max_attempts", Each("attempts")),
+					// EVERY KEY IS UNDER `queue/`, because `sync` is a typed kind and
+					// the block that is written IS the type. Writing the consensus is
+					// what makes the block exist at all — a produced queue with no
+					// authored delivery fields would otherwise have no type.
+					Sets(Key("queue", "consensus"), Text("raft")),
+					Sets(Key("queue", "max_attempts"), Each("attempts")),
 					// the schedule, onto the kind that enforces it. Unset fields drop.
 					// a step that waits is a queue that holds its work back, and the
 					// human string the step was written with is parsed by the queue's own
 					// Duration — tcc converts it, nothing downstream has to
-					Sets(Key("delay"), Each(Key("wait"))),
-					Sets(Key("retry", "interval"), Each(Key("backoff", "interval"))),
-					Sets(Key("retry", "factor"), Each(Key("backoff", "factor"))),
-					Sets(Key("retry", "ceiling"), Each(Key("backoff", "ceiling"))),
+					Sets(Key("queue", "delay"), Each(Key("wait"))),
+					Sets(Key("queue", "retry", "interval"), Each(Key("backoff", "interval"))),
+					Sets(Key("queue", "retry", "factor"), Each(Key("backoff", "factor"))),
+					Sets(Key("queue", "retry", "ceiling"), Each(Key("backoff", "ceiling"))),
 
 					// EXHAUSTION IS ROUTED, NOT GRANTED, and the queue's own mechanism
 					// does it: dead-lettering fires exactly when attempts run out, which
 					// is the one moment no code of this step is running. A step naming
 					// another step lands in that step's queue; the default lands in the
 					// terminal one.
-					Sets(Key("dead_letter", "name"), Concat(Attr("name"), Text("_"), Each("on_error"))),
+					Sets(Key("queue", "dead_letter", "name"), Concat(Attr("name"), Text("_"), Each("on_error"))),
 
 					// CONSUMED BY THE STEP'S DRIVER, never by the author's function. The
 					// function is invoked BY the driver and knows nothing about queues:
@@ -2986,7 +3153,7 @@ var V2Resources = []*Node{
 					// where the run ends.
 					Reaches("send",
 						From("function", Concat(Attr("name"), Text("_"), Each("name"))),
-						To("queue", Concat(Attr("name"), Text("_"), Next("name")))),
+						To("sync", Concat(Attr("name"), Text("_"), Next("name")))),
 				),
 
 				// The end of the line, with NO CONSUMER — deliberately. A dead-letter
@@ -2998,10 +3165,11 @@ var V2Resources = []*Node{
 				// is a fact about this kind that no consumer may be asked to work out
 				// from a naming convention. It is written as an ordinary value, so
 				// decompile takes it back off with everything else a lowering added.
-				Into("queue",
+				Into("sync",
 					Named(Concat(Attr("name"), Text("_failed"))),
 					Carries(Text("runs that gave up, kept for a person to look at - nothing consumes this")),
-					Writes(Text("queue"), On("workflow", Attr("name")), At(Text("entry"), Text("start"), Text("kind"))),
+					Sets(Key("queue", "consensus"), Text("raft")),
+					Writes(Text("sync"), On("workflow", Attr("name")), At(Text("entry"), Text("start"), Text("kind"))),
 					Writes(Concat(Attr("name"), Text("_"), Attr("start")), On("workflow", Attr("name")), At(Text("entry"), Text("start"), Text("name"))),
 					Writes(Text("send"), On("workflow", Attr("name")), At(Text("entry"), Text("start"), Text("as"))),
 				),

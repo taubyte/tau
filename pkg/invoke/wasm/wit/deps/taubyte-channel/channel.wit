@@ -1,0 +1,67 @@
+// A named byte channel between two workloads inside the project, as the
+// vocabulary's `channel` kind.
+//
+// # It is what v1 called `p2p`, and the rename is the vocabulary's
+//
+// v2 named this `channel` on purpose: `p2p` names the TRANSPORT rather than the
+// thing, the way `http` would be a poor name for a route. What it is, is a
+// named, ordered, bidirectional conduit between exactly two workloads inside
+// one project, carried by libp2p, with no edge in the path — the way in that is
+// not an ingress. So the package is `taubyte:channel` and the kind is
+// `channel`, and anyone reading v1's `services/substrate/components/p2p/` is
+// reading this.
+//
+// # The protocol is namespaced by the platform
+//
+// An author writes a name inside the project — `sync` — and what goes on the
+// wire has the project's identity prepended. Two projects that both call a
+// channel `sync` never meet, and an author who could write the full wire
+// protocol could collide with another tenant on purpose.
+//
+// # One verb, and it is a write
+//
+// `dial` is the vocabulary's only op here, and it is classified as a WRITE
+// because what travels is opaque: nothing on this side can look at the bytes
+// and decide the call only read something.
+//
+// # Request and response, and the conduit that is not here yet
+//
+// `dial` sends a body and answers with one. That is the shape almost every use
+// of v1's p2p actually had — ask the sidecar, get the answer — and it needs no
+// handle that outlives the call.
+//
+// A GENUINE CONDUIT IS A `resource`, and it is deliberately not here. Streaming
+// in both directions means an own<channel> with read and write, which means
+// `wasi:io/streams`, which means the thing on the other end has to be able to
+// hold a connection open per caller. Declaring that shape before anything
+// serves it would publish a promise no backing keeps — and the request/response
+// half is not a stepping stone to it that has to be thrown away: `dial` stays
+// exactly as it reads when a `connect` returning a resource lands beside it.
+package taubyte:channel@0.1.0;
+
+interface dialer {
+    variant error {
+        // The label is not in this resource's `channel:` block.
+        no-such-channel(string),
+        // Declared, but not with `dial`.
+        denied(string),
+        // Nothing is serving the channel: the workload that answers it is not
+        // running, or this cloud has no transport for it. Its own arm because a
+        // caller RETRIES this — the name is right and the far end is not there
+        // yet, which on a cold deploy is a matter of seconds.
+        no-answer(string),
+        // The far end answered and what it said was a failure.
+        failed(string),
+        unavailable(string),
+    }
+
+    // dial sends one message to whatever serves the channel and returns its
+    // answer. It is bounded by the CALLER's own timeout: a channel declares no
+    // deadline of its own, and the workload waiting is the one whose budget is
+    // being spent.
+    dial: func(name: string, body: list<u8>) -> result<list<u8>, error>;
+}
+
+world imports {
+    import dialer;
+}

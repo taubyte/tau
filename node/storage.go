@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,8 +19,8 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// storage.go backs `taubyte:handler/storage` on this node — the `storage` kind
-// at `type: object`.
+// storage.go backs `taubyte:storage/objects` on this node — the `storage` kind
+// at `type: object`, served as the S3 object API.
 //
 // # Content-addressed underneath, named on top
 //
@@ -83,10 +84,49 @@ const storageDatabase = "storage"
 // THE CID IS THE ONLY THING THAT COULD NOT BE RECOMPUTED. Size and modified
 // could be read back off the bytes and the DAG, and they are here because
 // `head` exists to answer without touching either.
+//
+// THE CID IS ALSO THE ETAG, which is what an etag is supposed to be: a token
+// that changes exactly when the content does. S3 gives a weak one for anything
+// multipart; a content id is strong for everything.
+//
+// METADATA IS A MAP AND NOT A LIST, because that is what it is — a header name
+// appearing twice is one header — and because encoding/json sorts a map's keys,
+// so two nodes writing the same object write the same bytes. That is the kvdb
+// rule this file's doc states, and a list whose order came from the caller
+// would break it.
 type objectRow struct {
-	CID      string `json:"cid"`
-	Size     int64  `json:"size"`
-	Modified int64  `json:"modified"`
+	CID         string            `json:"cid"`
+	Size        int64             `json:"size"`
+	Modified    int64             `json:"modified"`
+	ContentType string            `json:"content_type,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+}
+
+// info is one row as the tier's answer, with the metadata sorted so two reads
+// of one object say the same thing.
+func (r objectRow) info(key string) wasmtier.Info {
+	out := wasmtier.Info{
+		Key:         key,
+		ETag:        r.CID,
+		Size:        r.Size,
+		Modified:    r.Modified,
+		ContentType: r.ContentType,
+	}
+	if len(r.Metadata) == 0 {
+		return out
+	}
+
+	names := make([]string, 0, len(r.Metadata))
+	for name := range r.Metadata {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out.Metadata = make([]wasmtier.Metadata, 0, len(names))
+	for _, name := range names {
+		out.Metadata = append(out.Metadata, wasmtier.Metadata{Name: name, Value: r.Metadata[name]})
+	}
+	return out
 }
 
 // OpenBucket gives back the bucket a grant names.
@@ -160,10 +200,10 @@ type bucket struct {
 
 var _ wasmtier.Bucket = (*bucket)(nil)
 
-func (b *bucket) Get(ctx context.Context, key string) ([]byte, error) {
+func (b *bucket) Get(ctx context.Context, key string) (wasmtier.Object, error) {
 	row, err := b.row(ctx, key)
 	if err != nil {
-		return nil, err
+		return wasmtier.Object{}, err
 	}
 
 	content, err := b.assets.Get(ctx, row.CID)
@@ -172,28 +212,38 @@ func (b *bucket) Get(ctx context.Context, key string) ([]byte, error) {
 		// happened rather than an object that does not exist, so it is not a
 		// miss: a miss would tell the caller to write it again, which would
 		// mean writing over something that is on its way.
-		return nil, fmt.Errorf("node: reading %s: %w", row.CID, err)
+		return wasmtier.Object{}, fmt.Errorf("node: reading %s: %w", row.CID, err)
 	}
 	defer content.Close()
 
-	return io.ReadAll(content)
-}
-
-func (b *bucket) Head(ctx context.Context, key string) (wasmtier.Object, error) {
-	row, err := b.row(ctx, key)
+	body, err := io.ReadAll(content)
 	if err != nil {
 		return wasmtier.Object{}, err
 	}
-	return wasmtier.Object{Name: key, Size: row.Size, Modified: row.Modified}, nil
+	return wasmtier.Object{Info: row.info(key), Body: body}, nil
 }
 
-func (b *bucket) Put(ctx context.Context, key string, value []byte) error {
+func (b *bucket) Head(ctx context.Context, key string) (wasmtier.Info, error) {
+	row, err := b.row(ctx, key)
+	if err != nil {
+		return wasmtier.Info{}, err
+	}
+	return row.info(key), nil
+}
+
+// Put stores the bytes and the name, and answers with the etag it stored under
+// — which is the content id, so a caller that already knows the etag knows the
+// write changed nothing.
+func (b *bucket) Put(ctx context.Context, key string, value []byte, contentType string, metadata []wasmtier.Metadata) (string, error) {
 	if key == "" {
-		return fmt.Errorf("%w: an object with no name cannot be found again", ErrBadObjectName)
+		return "", fmt.Errorf("%w: an object with no name cannot be found again", ErrBadObjectName)
+	}
+	if err := withinRow(key, contentType, metadata); err != nil {
+		return "", err
 	}
 	at, err := b.named(key)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// THE CEILING IS CHECKED BEFORE THE BYTES GO IN, and what is checked is
@@ -203,27 +253,49 @@ func (b *bucket) Put(ctx context.Context, key string, value []byte) error {
 	if b.size > 0 {
 		held, err := b.held(ctx)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if previous, err := b.row(ctx, key); err == nil {
 			held -= previous.Size
 		}
 		if held+int64(len(value)) > b.size {
-			return fmt.Errorf("%w: %s holds %d of %d bytes and this write is %d",
+			return "", fmt.Errorf("%w: %s holds %d of %d bytes and this write is %d",
 				wasmtier.ErrFull, key, held, b.size, len(value))
 		}
 	}
 
 	id, err := b.assets.Put(ctx, strings.NewReader(string(value)))
 	if err != nil {
-		return fmt.Errorf("node: storing %s: %w", key, err)
+		return "", fmt.Errorf("node: storing %s: %w", key, err)
 	}
 
-	row, err := json.Marshal(objectRow{CID: id, Size: int64(len(value)), Modified: b.clock().Unix()})
+	row, err := json.Marshal(objectRow{
+		CID:         id,
+		Size:        int64(len(value)),
+		Modified:    b.clock().Unix(),
+		ContentType: contentType,
+		Metadata:    metadataMap(metadata),
+	})
 	if err != nil {
-		return err
+		return "", err
 	}
-	return b.db.Put(ctx, at, row)
+	if err := b.db.Put(ctx, at, row); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// metadataMap folds the tier's pairs into what the row holds. A name given
+// twice keeps the LAST value, which is what a header map does everywhere.
+func metadataMap(metadata []wasmtier.Metadata) map[string]string {
+	if len(metadata) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(metadata))
+	for _, entry := range metadata {
+		out[entry.Name] = entry.Value
+	}
+	return out
 }
 
 func (b *bucket) Delete(ctx context.Context, key string) error {
@@ -238,31 +310,184 @@ func (b *bucket) Delete(ctx context.Context, key string) error {
 	return b.db.Delete(ctx, at)
 }
 
-func (b *bucket) Entries(ctx context.Context, prefix string) ([]wasmtier.Object, error) {
-	at, err := b.named(prefix)
+// List is ListObjectsV2: a page of objects under a prefix, with a delimiter
+// collapsing everything past it into common prefixes.
+//
+// # The token is the last key CONSUMED, not the last one answered
+//
+// A page that ends on a common prefix has read every object under it to produce
+// that one line, and a token naming the prefix would resume before them — so
+// the same objects would be walked again and the same prefix answered on every
+// page after it. What is encoded is the last name this call looked at, so a
+// resume skips exactly what was accounted for whether it was answered as an
+// object or folded into a prefix.
+//
+// It is base64 because S3's is opaque and callers should not assemble one: a
+// token this bucket did not issue is `bad-request`, not a silently different
+// page.
+//
+// # Objects and prefixes count against max-keys together
+//
+// As S3 counts them. A page of 1000 folders is a page, and a caller that asked
+// for 10 gets at most 10 things back however they were produced.
+func (b *bucket) List(ctx context.Context, request wasmtier.ListRequest) (wasmtier.Listing, error) {
+	after, err := decodeContinuation(request.Token)
 	if err != nil {
-		return nil, err
+		return wasmtier.Listing{}, err
+	}
+
+	at, err := b.named(request.Prefix)
+	if err != nil {
+		return wasmtier.Listing{}, err
 	}
 
 	keys, err := b.db.List(ctx, at)
 	if err != nil {
-		return nil, err
+		return wasmtier.Listing{}, err
 	}
 
-	out := make([]wasmtier.Object, 0, len(keys))
+	names := make([]string, 0, len(keys))
 	for _, key := range keys {
-		name := b.name(key)
+		names = append(names, b.name(key))
+	}
+	// SORTED HERE rather than trusted: the answer's order is this call's
+	// promise, and a continuation token is only meaningful over a stable one.
+	sort.Strings(names)
+
+	limit := int(request.MaxKeys)
+	if limit <= 0 || limit > maxObjectKeys {
+		limit = maxObjectKeys
+	}
+
+	var (
+		listing  wasmtier.Listing
+		answered int
+		last     string
+		folded   = map[string]bool{}
+	)
+	for _, name := range names {
+		if after != "" && name <= after {
+			continue
+		}
+
+		prefix, collapses := collapse(name, request.Prefix, request.Delimiter)
+
+		// A NAME UNDER A PREFIX ALREADY ANSWERED IS CONSUMED BEFORE THE PAGE IS
+		// CHECKED, and that ordering is the whole correctness of the token. A
+		// page that ends on a common prefix has read every object under it to
+		// produce that one line; stopping at the first of them would hand back
+		// a cursor that resumes INSIDE the prefix, walk its siblings again and
+		// answer the same prefix on the next page — forever, for a prefix with
+		// more members than the page holds.
+		if collapses && folded[prefix] {
+			last = name
+			continue
+		}
+
+		if answered == limit {
+			// SOMETHING IS LEFT. The token is the last name consumed, which is
+			// the one before this.
+			listing.Truncated = true
+			listing.NextToken = encodeContinuation(last)
+			return listing, nil
+		}
+
+		if collapses {
+			folded[prefix] = true
+			listing.CommonPrefixes = append(listing.CommonPrefixes, prefix)
+			answered++
+			last = name
+			continue
+		}
+
 		row, err := b.row(ctx, name)
 		if err != nil {
 			// A row that vanished between the listing and the read. It is not
-			// this call's business to report somebody else's delete.
+			// this call's business to report somebody else's delete — but it
+			// IS consumed, or a resume would stop on it forever.
+			last = name
 			continue
 		}
-		out = append(out, wasmtier.Object{Name: name, Size: row.Size, Modified: row.Modified})
+		last = name
+		listing.Objects = append(listing.Objects, row.info(name))
+		answered++
+	}
+	return listing, nil
+}
+
+// maxObjectKeys is both the default page and the ceiling on a larger ask. It is
+// S3's own number, which is what every client's paging loop is written around.
+const maxObjectKeys = 1000
+
+// What one row may hold beside the content id, in S3's own numbers.
+//
+// THESE ARE A CEILING ON A REPLICATED STORE AND NOT A STYLE RULE. The bucket's
+// declared size bounds the BYTES, which go to the content-addressed store; the
+// key, the content type and the user metadata go into a kvdb row that every
+// node holding this deployment replicates, and nothing else bounds them. A
+// guest writing a megabyte of metadata per object would fill every peer's
+// datastore while the bucket reported itself empty.
+const (
+	maxObjectKeyBytes    = 1024
+	maxObjectTypeBytes   = 256
+	maxObjectMetaBytes   = 2048
+	maxObjectMetaEntries = 32
+)
+
+// withinRow refuses what would not fit in one index row.
+func withinRow(key, contentType string, metadata []wasmtier.Metadata) error {
+	switch {
+	case len(key) > maxObjectKeyBytes:
+		return fmt.Errorf("%w: a key is at most %d bytes and this one is %d",
+			wasmtier.ErrBadRequest, maxObjectKeyBytes, len(key))
+	case len(contentType) > maxObjectTypeBytes:
+		return fmt.Errorf("%w: a content type is at most %d bytes and this one is %d",
+			wasmtier.ErrBadRequest, maxObjectTypeBytes, len(contentType))
+	case len(metadata) > maxObjectMetaEntries:
+		return fmt.Errorf("%w: an object carries at most %d metadata entries and this one has %d",
+			wasmtier.ErrBadRequest, maxObjectMetaEntries, len(metadata))
 	}
 
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
+	var held int
+	for _, entry := range metadata {
+		held += len(entry.Name) + len(entry.Value)
+	}
+	if held > maxObjectMetaBytes {
+		return fmt.Errorf("%w: user metadata is at most %d bytes and this is %d",
+			wasmtier.ErrBadRequest, maxObjectMetaBytes, held)
+	}
+	return nil
+}
+
+// collapse is whether a name folds into a common prefix, and which.
+func collapse(name, prefix, delimiter string) (string, bool) {
+	if delimiter == "" {
+		return "", false
+	}
+	rest := strings.TrimPrefix(name, prefix)
+	cut := strings.Index(rest, delimiter)
+	if cut < 0 {
+		return "", false
+	}
+	return prefix + rest[:cut+len(delimiter)], true
+}
+
+// ErrBadContinuation is a token this bucket did not issue.
+var ErrBadContinuation = errors.New("node: that is not a continuation token this bucket issued")
+
+func encodeContinuation(after string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(after))
+}
+
+func decodeContinuation(token string) (string, error) {
+	if token == "" {
+		return "", nil
+	}
+	after, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", wasmtier.ErrBadRequest, ErrBadContinuation)
+	}
+	return string(after), nil
 }
 
 // held is what this bucket holds now, by scanning its index. See the file doc

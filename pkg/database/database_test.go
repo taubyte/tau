@@ -55,7 +55,9 @@ func (kvConn) Delete(context.Context, string) error                 { return nil
 type sqlConn struct{ conn }
 
 func (sqlConn) Query(context.Context, string, ...any) (Rows, error) { return nil, nil }
-func (sqlConn) Exec(context.Context, string, ...any) (int64, error) { return 0, nil }
+func (sqlConn) Exec(context.Context, string, ...any) (Outcome, error) {
+	return Outcome{}, nil
+}
 
 type docConn struct{ conn }
 
@@ -429,4 +431,6 @@ type externalConn struct{}
 func (c *externalConn) Close() error { return nil }
 
 func (c *externalConn) Query(context.Context, string, ...any) (Rows, error) { return nil, nil }
-func (c *externalConn) Exec(context.Context, string, ...any) (int64, error) { return 0, nil }
+func (c *externalConn) Exec(context.Context, string, ...any) (Outcome, error) {
+	return Outcome{}, nil
+}

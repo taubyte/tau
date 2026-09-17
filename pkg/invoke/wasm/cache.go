@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// cache.go is the host half of `taubyte:handler/cache` — the first capability a
+// cache.go is the host half of `taubyte:cache/store` — the first capability a
 // guest gets beyond answering a request.
 //
 // # The configuration is the grant, and it is checked here
@@ -40,7 +40,7 @@ import (
 
 // cacheInterface is the WIT interface these imports satisfy. The version
 // suffix is stripped when matched, so one registration serves every patch.
-const cacheInterface = "taubyte:handler/cache@0.1.0"
+const cacheInterface = "taubyte:cache/store@0.1.0"
 
 // The vocabulary's verbs for the cache kind. get/list are reads, put/delete
 // writes; `watch` is the fifth and is not implemented.
@@ -98,7 +98,7 @@ type Caches interface {
 	Open(ctx context.Context, grant invoke.Grant) (Cache, error)
 }
 
-// WithCaches is what backs `taubyte:handler/cache`. Optional: a tier without
+// WithCaches is what backs `taubyte:cache/store`. Optional: a tier without
 // one runs everything that reaches no cache, and refuses at Start anything
 // that does.
 func WithCaches(c Caches) Option {
@@ -335,6 +335,28 @@ func twoStrings(args []component.Value) (first, second string, err error) {
 		return "", "", fmt.Errorf("cache: second argument is %T, want string", args[1])
 	}
 	return first, second, nil
+}
+
+// liftU32 reads a u32 argument.
+//
+// A WIDENED SCALAR IS ACCEPTED, for the reason wazy's own ListDesc doc gives:
+// both the narrow and the widened shape cross the ABI, and which one arrives
+// depends on how a guest's bindings lowered it rather than on anything the
+// caller wrote.
+func liftU32(v component.Value) (uint32, error) {
+	switch n := v.(type) {
+	case uint32:
+		return n, nil
+	case uint64:
+		return uint32(n), nil
+	case int32:
+		return uint32(n), nil
+	case int64:
+		return uint32(n), nil
+	case nil:
+		return 0, nil
+	}
+	return 0, fmt.Errorf("expected a u32, got %T", v)
 }
 
 // byteList lowers a Go slice into the list<u8> the ABI wants.

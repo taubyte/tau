@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// vector.go is the host half of `taubyte:handler/vector` — the `database` kind
+// vector.go is the host half of `taubyte:vector/store` — the `database` kind
 // at `type: vector`, and the fourth and last data model that kind declares.
 //
 // AN EMBEDDING CROSSES AS list<f32> and not as JSON, which is the one place in
@@ -19,7 +19,7 @@ import (
 // twice per call for nothing. The META beside it is JSON, for document.go's
 // reason — it is an arbitrary object and the ABI has no type for one.
 
-const vectorInterface = "taubyte:handler/vector@0.1.0"
+const vectorInterface = "taubyte:vector/store@0.1.0"
 
 const (
 	opVectorSearch = "search"
@@ -69,7 +69,7 @@ type VectorStores interface {
 	OpenVectors(ctx context.Context, grant invoke.Grant) (Vectors, error)
 }
 
-// WithVectors is what backs `taubyte:handler/vector`.
+// WithVectors is what backs `taubyte:vector/store`.
 func WithVectors(v VectorStores) Option {
 	return func(r *Runtime) { r.vectors = v }
 }

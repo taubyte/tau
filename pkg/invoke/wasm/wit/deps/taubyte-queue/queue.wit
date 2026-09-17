@@ -1,0 +1,36 @@
+// A work queue, as the vocabulary's `queue` kind.
+//
+// # Only `send`, and the other verb is a different mechanism
+//
+// `receive` is a DELIVERY: the platform claims an item and invokes a workload
+// with it. Unlike a stream's subscribe, its semantics are settled — a claim is
+// exclusive and leader-only, so exactly one consumer gets an item and an
+// unacknowledged one comes back after its visibility timeout. What it needs is
+// a dispatcher, not a host function, and a resource that asks for it here is
+// told by the op check rather than left waiting.
+//
+// # An id is the caller's, and it is what makes a retry safe
+//
+// Pushing the same id twice replaces the item rather than queueing it again, so
+// a producer that retried a failed send does not deliver the work twice. A
+// caller with nothing natural to use should send a value it can reproduce — the
+// order it is about, not a fresh random.
+package taubyte:queue@0.1.0;
+
+interface producer {
+    variant error {
+        no-such-queue(string),
+        denied(string),
+        // The node that took the call is not the one that may write. It is its
+        // own arm because a caller RETRIES this and nothing else about the
+        // request was wrong.
+        not-writable(string),
+        unavailable(string),
+    }
+
+    send: func(name: string, id: string, data: list<u8>) -> result<_, error>;
+}
+
+world imports {
+    import producer;
+}

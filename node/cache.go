@@ -16,7 +16,7 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// cache.go backs `taubyte:handler/cache` on this node.
+// cache.go backs `taubyte:cache/store` on this node.
 //
 // # One database for every cache this node serves
 //

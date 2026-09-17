@@ -24,7 +24,7 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 
 	authored, _, err := c.Authored(context.Background())
 	assert.NilError(t, err)
-	assert.Assert(t, !hasResource(authored.Flat(), "queue", "checkout_reserve"),
+	assert.Assert(t, !hasResource(authored.Flat(), "sync", "checkout_reserve"),
 		"what was WRITTEN has only the queues somebody wrote")
 
 	obj, _, err := c.Compile(context.Background())
@@ -32,7 +32,7 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 	flat := obj.Flat()
 
 	for _, name := range []string{"checkout_reserve", "checkout_charge", "checkout_failed"} {
-		assert.Assert(t, hasResource(flat, "queue", name), "queue/%s is not in the object", name)
+		assert.Assert(t, hasResource(flat, "sync", name), "sync/%s is not in the object", name)
 	}
 	// the agent's loop and its memory, from the other lowering in the vocabulary
 	assert.Assert(t, hasResource(flat, "function", "support_infer"))
@@ -41,18 +41,18 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 	// A PRODUCED RESOURCE IS AN ORDINARY RESOURCE. It went through the same pipeline, so
 	// `max-attempts` is a number and its dead-letter reference resolved to an id like
 	// anyone else's — which is the whole claim: this is config, not a picture of it.
-	q := resource(t, flat, "queue", "checkout_reserve")
-	assert.Equal(t, q["max_attempts"], 4)
-	dead, _ := q["dead_letter"].(map[string]any)
+	q := resource(t, flat, "sync", "checkout_reserve")
+	assert.Equal(t, nested(q, "queue", "max_attempts"), 4)
+	dead, _ := nested(q, "queue", "dead_letter").(map[string]any)
 	name, _ := dead["name"].(string)
 	assert.Assert(t, name != "" && name != "checkout_failed",
-		"the reference resolved like any other: %v", q["dead_letter"])
+		"the reference resolved like any other: %v", dead)
 
 	// AND THE ACCESS IT IMPLIES IS ON THE RESOURCE THAT DECLARES IT — the entry an author
 	// would have written, on the step's DRIVER, naming the queue it receives from. The
 	// driver is produced in the same scope, so the whole pipeline is inside the box.
 	drv := resource(t, flat, "function", "checkout_reserve")
-	queues, _ := drv["queue"].(map[string]any)
+	queues, _ := drv["sync"].(map[string]any)
 	assert.Assert(t, queues != nil, "the driver declares no queue access at all: %v", drv)
 	entry, _ := queues["checkout_reserve"].(map[string]any)
 	assert.Assert(t, entry != nil, "nothing says this driver receives from its step's queue: %v", queues)
@@ -62,7 +62,7 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 	// used to be stated a second time as grants on it, outside the workflow, where the
 	// first copy could not be seen beside it.
 	fn := resource(t, flat, "function", "reserve_stock")
-	_, hasQueues := fn["queue"]
+	_, hasQueues := fn["sync"]
 	assert.Assert(t, !hasQueues, "the step's function carries queue access it should know nothing about: %v", fn)
 }
 
@@ -76,7 +76,7 @@ func TestCompileLeavesTheProjectAlone(t *testing.T) {
 
 	again, _, err := c.Authored(context.Background())
 	assert.NilError(t, err)
-	assert.Assert(t, !hasResource(again.Flat(), "queue", "checkout_reserve"),
+	assert.Assert(t, !hasResource(again.Flat(), "sync", "checkout_reserve"),
 		"reading the project again found a queue nobody wrote: the view leaked onto disk")
 }
 
@@ -103,7 +103,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 		assert.Assert(t, rec.Produced(id))
 		kinds[rec.Resources[id].Kind]++
 	}
-	assert.Equal(t, kinds["queue"], 4)
+	assert.Equal(t, kinds["sync"], 4)
 	assert.Equal(t, kinds["function"], 3, "a driver per step, whatever the step does")
 	assert.Equal(t, kinds["stream"], 0, "nothing authored asked for a stream")
 	assert.Equal(t, kinds["group"], 0)
@@ -115,9 +115,9 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	for _, g := range added {
 		byWhat[strings.Join(g.Path, "/")+" "+g.Value] = g.On
 	}
-	assert.Equal(t, byWhat["queue/checkout_reserve/ops receive"], idOf(t, flat, "function", "checkout_reserve"))
-	assert.Equal(t, byWhat["queue/checkout_settle/ops send"], idOf(t, flat, "function", "checkout_reserve"))
-	assert.Equal(t, byWhat["queue/checkout_charge/ops receive"], idOf(t, flat, "function", "checkout_charge"))
+	assert.Equal(t, byWhat["sync/checkout_reserve/ops receive"], idOf(t, flat, "function", "checkout_reserve"))
+	assert.Equal(t, byWhat["sync/checkout_settle/ops send"], idOf(t, flat, "function", "checkout_reserve"))
+	assert.Equal(t, byWhat["sync/checkout_charge/ops receive"], idOf(t, flat, "function", "checkout_charge"))
 	// and the one write that lands on something the AUTHOR wrote: where a start goes
 	assert.Equal(t, byWhat["entry/start/name checkout_reserve"], idOf(t, flat, "workflow", "checkout"))
 
@@ -241,12 +241,12 @@ func TestLoweringInsideANamespace(t *testing.T) {
 	assert.Assert(t, !scopeExists(obj.Flat(), "", "ship"), "the scope was placed at the root")
 
 	for _, r := range schema.Resources(rootOf(obj.Flat())) {
-		if r.Kind == "queue" && r.Name == "ship_pack" {
+		if r.Kind == "sync" && r.Name == "ship_pack" {
 			assert.Equal(t, r.Scope, "shop/ship")
 			return
 		}
 	}
-	t.Fatal("queue/ship_pack is not in the compiled object")
+	t.Fatal("sync/ship_pack is not in the compiled object")
 }
 
 // TWO LOWERINGS WRITE INTO ONE PRODUCED RESOURCE, AND BOTH SURVIVE. A step becomes a
@@ -278,7 +278,7 @@ func TestTwoLoweringsWriteIntoOneProducedResource(t *testing.T) {
 	assert.NilError(t, err)
 
 	drv := resource(t, obj.Flat(), "function", "retry_first")
-	queues, _ := drv["queue"].(map[string]any)
+	queues, _ := drv["sync"].(map[string]any)
 	assert.Assert(t, queues != nil, "the driver declares no queue access at all: %v", drv)
 
 	mine, _ := queues["retry_first"].(map[string]any)
@@ -327,7 +327,7 @@ func TestAnAuthoredValueIsNotReplaced(t *testing.T) {
 	assert.Assert(t, start != nil, "the record is not there at all: %v", wf["entry"])
 	assert.Equal(t, start["name"], "somewhere_else", "the lowering overwrote what the author wrote")
 	// and the fields they left empty are filled in beside it
-	assert.Equal(t, start["kind"], "queue")
+	assert.Equal(t, start["kind"], "sync")
 	assert.Equal(t, start["as"], "send")
 }
 
@@ -414,7 +414,7 @@ func TestAnAuthoredOpIsNotRecordedAsGranted(t *testing.T) {
 			"    call: relay\n"+
 			"    timeout: 5s\n"+
 			"    memory: 16MB\n"+
-			"queue:\n"+
+			"sync:\n"+
 			"    hand_only:\n"+
 			"        ops: [receive]\n"), 0o644))
 
@@ -509,9 +509,10 @@ func TestSessionAddressesNestedScopes(t *testing.T) {
 func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	free := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(free, "../fixtures/basic", "/"))
-	assert.NilError(t, afero.WriteFile(free, "/queue/checkout_reserve.yaml", []byte(
+	assert.NilError(t, afero.WriteFile(free, "/sync/checkout_reserve.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ4Aa\n"+
-			"description: a queue a person wrote, with the name a workflow also produces\n"), 0o644))
+			"description: a queue a person wrote, with the name a workflow also produces\n"+
+			"queue:\n    consensus: raft\n"), 0o644))
 
 	c, err := schema.New(schema.WithVirtual(free, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -520,7 +521,7 @@ func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 
 	scopes := map[string]bool{}
 	for _, r := range schema.Resources(rootOf(obj.Flat())) {
-		if r.Kind == "queue" && r.Name == "checkout_reserve" {
+		if r.Kind == "sync" && r.Name == "checkout_reserve" {
 			scopes[r.Scope] = true
 		}
 	}
@@ -571,10 +572,10 @@ func TestAProducedReferenceResolvesInTheProducedScope(t *testing.T) {
 	assert.NilError(t, err)
 	flat := obj.Flat()
 
-	failed := idOf(t, flat, "queue", "checkout_failed")
+	failed := idOf(t, flat, "sync", "checkout_failed")
 	for _, name := range []string{"checkout_reserve", "checkout_charge"} {
-		q := resource(t, flat, "queue", name)
-		dead, _ := q["dead_letter"].(map[string]any)
+		q := resource(t, flat, "sync", name)
+		dead, _ := nested(q, "queue", "dead_letter").(map[string]any)
 		assert.Equal(t, dead["name"], failed,
 			"%s's dead-letter reference did not resolve to the queue beside it: %v", name, dead)
 	}
@@ -583,7 +584,7 @@ func TestAProducedReferenceResolvesInTheProducedScope(t *testing.T) {
 	// scope, so the entry names it — an author writing the same thing by hand would have
 	// had to write the namespace too.
 	drv := resource(t, flat, "function", "checkout_reserve")
-	queues, _ := drv["queue"].(map[string]any)
+	queues, _ := drv["sync"].(map[string]any)
 	entry, _ := queues["checkout_reserve"].(map[string]any)
 	assert.Assert(t, entry != nil, "%v", queues)
 	assert.Equal(t, entry["namespace"], "/checkout")
@@ -634,10 +635,10 @@ func TestADriverCanFindTheStepItCameFrom(t *testing.T) {
 	// and it is not left as a string for somebody to parse: it lands on the queue's own
 	// `delay`, which is a Duration, so tcc converts it and the pause is a property of
 	// the thing that does the holding
-	q := resource(t, flat, "queue", "checkout_settle")
-	assert.Equal(t, q["delay"], int64(30000000000))
-	before := resource(t, flat, "queue", "checkout_reserve")
-	_, delayed := before["delay"]
+	q := resource(t, flat, "sync", "checkout_settle")
+	assert.Equal(t, nested(q, "queue", "delay"), int64(30000000000))
+	before := resource(t, flat, "sync", "checkout_reserve")
+	_, delayed := nestedOK(before, "queue", "delay")
 	assert.Assert(t, !delayed, "a step that does not wait produced a delayed queue: %v", before)
 
 	// the same join carries what a call is handed and where its answer goes

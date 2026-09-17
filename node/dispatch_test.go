@@ -53,7 +53,7 @@ func withConsumer(c consumer) []byte {
 		"name":      "checkout",
 		"execution": map[string]any{"call": "handle", "memory": 33554432},
 		"source":    map[string]any{"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv"},
-		"queue":     map[string]any{"jobs": entry},
+		"sync":      map[string]any{"jobs": entry},
 	}
 	if c.Concurrency > 0 {
 		workload["limits"] = map[string]any{"concurrency": float64(c.Concurrency)}
@@ -62,14 +62,18 @@ func withConsumer(c consumer) []byte {
 	// The visibility timeout is a minute so nothing expires mid-test: what a
 	// test drives is the DELIVERY, and an expiry racing it would make the
 	// counts depend on how long a step took.
-	target := map[string]any{
-		"name":               "jobs",
+	//	THE FIELDS SIT UNDER THE TYPE'S BLOCK, because `sync` is a typed kind and
+	//	the block that is written IS the type — the same shape a database's `sql`
+	//	block has.
+	queue := map[string]any{
+		"consensus":          "raft",
 		"visibility_timeout": float64(time.Minute),
 		"max_attempts":       float64(c.Attempts),
 	}
 	if c.RetryEvery > 0 {
-		target["retry"] = map[string]any{"interval": float64(c.RetryEvery)}
+		queue["retry"] = map[string]any{"interval": float64(c.RetryEvery)}
 	}
+	target := map[string]any{"name": "jobs", "type": "queue", "queue": queue}
 
 	doc := map[string]any{
 		"object": map[string]any{
@@ -78,13 +82,13 @@ func withConsumer(c consumer) []byte {
 			"function": map[string]any{
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": workload,
 			},
-			"queue": map[string]any{queueID: target},
+			"sync": map[string]any{queueID: target},
 		},
 		"indexes": map[string]any{
 			"projects/" + projectID + "/function/checkout/links": []any{
 				"branches/main/projects/" + projectID + "/function/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"},
-			"projects/" + projectID + "/queue/jobs/links": []any{
-				"branches/main/projects/" + projectID + "/queue/" + queueID},
+			"projects/" + projectID + "/sync/jobs/links": []any{
+				"branches/main/projects/" + projectID + "/sync/" + queueID},
 		},
 	}
 

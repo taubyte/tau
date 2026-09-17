@@ -1,28 +1,46 @@
-# handler.wasm
+# The two committed components
 
-A real component, built from `../wit/handler.wit` by a real toolchain. It is
-committed because the alternative is a test that needs Rust installed to run at
-all — and what it exists to prove is exactly that the host's lowering and
-lifting agree with GENERATED bindings, which a fixture built by this repository
-could not show.
+Real components, built from `../wit/` by a real toolchain. They are committed
+because the alternative is a test that needs Rust installed to run at all — and
+what they exist to prove is exactly that the host's lowering and lifting agree
+with GENERATED bindings, which a fixture built by this repository could not
+show.
 
-It is built against `../wit/handler.wit` DIRECTLY rather than a copy, so the
-fixture cannot drift from the world the host implements — which is the only
-thing it is here to prove.
+Both are built against `../wit/` DIRECTLY rather than a copy, so a fixture
+cannot drift from the world the host implements — which is the only thing they
+are here to prove.
+
+**handler.wasm** is deliberately small and deliberately not a demo — it echoes
+the path, prefixes every header it was sent, derives the status from the method
+and returns the method with the body, which between them exercise strings, a
+list of records and a byte list in both directions. It imports NONE of the
+taubyte capabilities, which is itself load-bearing: it is the proof that a
+component's import section names what it CALLS rather than what its world
+offered.
+
+**cacher.wasm** calls every one of the thirteen capabilities, one branch of its
+`handle` per operation, selected by the request path. It is what every
+capability's tests drive.
 
 Regenerate after changing the world:
 
-    cd handler
+    cd handler        # or cacher
     cargo component build --release --target wasm32-wasip2
     cp target/wasm32-wasip1/release/handler.wasm ../handler.wasm
 
 `wasm32-wasip1` is not a typo: cargo-component builds the core module for
 wasip1 and adapts it into a component, so that is where the component lands.
 
-The guest is deliberately small and deliberately not a demo — it echoes the
-path, prefixes every header it was sent, derives the status from the method and
-returns the method with the body, which between them exercise both strings,
-the list of records and the byte list in both directions.
+## Adding a capability means editing a Cargo.toml
+
+cargo-component 0.21 does **not** read `../wit/deps/`. Every capability package
+has to be named explicitly in each fixture's
+
+    [package.metadata.component.target.dependencies]
+
+with a path. wasm-tools resolves the `deps/` tree on its own and does not need
+the block; both are kept working, so a new package under `wit/deps/` is two
+lines in two Cargo.toml files as well.
 
 ## The standard world
 

@@ -1,4 +1,4 @@
 id: QmNXBpXPYRUUyq3fbGRb4bV5PPJDnyKbLwFAWdWyBoErgu
 description: a third sessions, two levels deep
 size: 2MB
-consensus: single-writer
+consensus: raft

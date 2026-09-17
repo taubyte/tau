@@ -1,0 +1,92 @@
+// What a workload is, as this cloud knows it.
+//
+// # There is no grant, and that is the whole argument for it
+//
+// Every other package here is authority over something: a store, a queue, a
+// bucket, a secret. This is authority over nothing — it answers what the
+// platform already put in the instance's own environment and headers, about the
+// instance itself. A workload cannot reach anything with it that it could not
+// reach without it.
+//
+// So it is unconditional, and it is the ONE capability in this tree that is.
+// The ambient-authority rule this cloud holds — a call that names no resource is
+// declared or it is denied — is about reach, and there is none here to declare.
+//
+// # Why it exists rather than a pile of environment variables
+//
+// It is a pile of environment variables today, effectively, and that is the
+// problem: every author invents their own names for the same six facts, every
+// framework's convention differs, and a library that wants to tag a metric with
+// the environment it is running in cannot know what this deployment called it.
+// One call with one shape means an SDK can log, trace and shard without the
+// author wiring anything.
+//
+// # What it does not answer
+//
+// ANYTHING ABOUT THE REQUEST. Which invocation this is, who called, what the
+// trace id is — those belong to a call and not to the instance, and an instance
+// serving several at once could only answer for one of them. They travel in the
+// request's own headers.
+//
+// ANYTHING ABOUT ANOTHER WORKLOAD. This is the workload asking about itself.
+//
+// # What `node` gives away, and why it is here anyway
+//
+// Guest code is an untrusted actor in this cloud, so every field here was asked
+// the same question: what does knowing it buy an attacker. `project`,
+// `environment`, `kind`, `name` and `scope` are the guest's own configuration,
+// which it was deployed with. `revision` and `artifact` name the guest ITSELF —
+// learning your own content id tells you what you already are.
+//
+// `node` is the only one that names something outside the workload, and it is
+// the peer's PUBLIC swarm identity: on an open swarm anybody dialling it
+// already sees it, and on a private one a guest cannot reach the swarm at all
+// — it gets no socket. What it buys a tenant is the ability to notice that two
+// of its own instances landed on one machine, which every cloud tells you
+// (AWS's instance-id, Kubernetes' node name) because scheduling-aware code
+// needs it.
+//
+// # It is not called `self`
+//
+// v1's host module was, and `self` is a keyword in Rust — wit-bindgen cannot
+// generate a module for a package named that and panics rather than escaping
+// it. `workload` is the vocabulary's own word for the thing anyway, which makes
+// this the same kind of rename `channel` was.
+package taubyte:workload@0.1.0;
+
+interface identity {
+    // Where this instance came from and what it is.
+    record identity {
+        // The project and the environment it is deployed in — `shop`, `prod`.
+        project: string,
+        environment: string,
+
+        // What the vocabulary calls this workload, and what its author named
+        // it: `function`, `checkout`.
+        kind: string,
+        name: string,
+
+        // The namespaces it lives in, outermost first. Empty at the project
+        // root.
+        scope: list<string>,
+
+        // The configuration revision this was deployed from. It changes on
+        // every deploy and on nothing else, which is what makes it the thing to
+        // tag a log line or a cache key with.
+        revision: string,
+
+        // The build artifact this instance is running. "" for a workload the
+        // platform itself runs rather than one that was built.
+        artifact: string,
+
+        // The peer this instance is running on. "" when the tier was composed
+        // without a node identity, which is what a test does.
+        node: string,
+    }
+
+    get: func() -> identity;
+}
+
+world imports {
+    import identity;
+}

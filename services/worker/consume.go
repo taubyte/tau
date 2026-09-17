@@ -163,7 +163,7 @@ func (s *Service) consumersOf(ctx context.Context, proj *project.Project, name, 
 	}
 
 	wanted := map[string]project.Reach{}
-	for _, reach := range resource.Reaches(queueKind) {
+	for _, reach := range resource.Reaches(syncKind) {
 		if contains(reach.Ops, receiveOp) {
 			wanted[reach.Label] = reach
 		}
@@ -188,7 +188,12 @@ func (s *Service) consumersOf(ctx context.Context, proj *project.Project, name, 
 	var out []Consumer
 	for _, grant := range spec.Reaches {
 		reach, ok := wanted[grant.Label]
-		if grant.Kind != queueKind || !ok {
+		// `receive` IS A QUEUE'S VERB AND NO OTHER TYPE'S, so an entry that asks
+		// for it has already selected the type — checkSyncOps refuses one that
+		// asks a log to be received from. The kind check alone is enough here for
+		// that reason, and the type check below is what makes it hold if a third
+		// primitive ever declares a delivery of its own.
+		if grant.Kind != syncKind || grant.Settings[settingSyncType] != queueType || !ok {
 			continue
 		}
 		out = append(out, Consumer{
@@ -234,7 +239,8 @@ func invokedBy(resource project.Resource, name, environment string, scope []stri
 func sentToBy(spec invoke.Spec, receiving string) []invoke.Grant {
 	var out []invoke.Grant
 	for _, g := range spec.Reaches {
-		if g.Kind != queueKind || g.Label == receiving || !g.Allows(opSend) {
+		if g.Kind != syncKind || g.Settings[settingSyncType] != queueType ||
+			g.Label == receiving || !g.Allows(opSend) {
 			continue
 		}
 		out = append(out, g)

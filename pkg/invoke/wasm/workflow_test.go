@@ -22,7 +22,8 @@ func startGrant(label, startHandle string, ops ...string) invoke.Grant {
 	return invoke.Grant{
 		Kind: "workflow", Label: label, Handle: "shop/prod/QmWorkflow", Ops: ops,
 		Settings: map[string]string{
-			"entry/start/kind":   "queue",
+			"entry/start/kind":   "sync",
+			"type":               "queue",
 			"entry/start/handle": startHandle,
 			"entry/start/as":     "send",
 		},

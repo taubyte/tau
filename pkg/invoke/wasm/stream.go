@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// stream.go is the host half of `taubyte:handler/stream`.
+// stream.go is the host half of `taubyte:stream/publisher`.
 //
 // It is cache.go's shape with one call instead of four, and deliberately so: a
 // second capability that resolved its label differently, or reported a refusal
@@ -25,8 +25,8 @@ import (
 // rather than leaving a guest waiting on something that never arrives.
 
 const (
-	streamInterface = "taubyte:handler/stream@0.1.0"
-	busInterface    = "taubyte:handler/bus@0.1.0"
+	streamInterface = "taubyte:stream/publisher@0.1.0"
+	busInterface    = "taubyte:bus/publisher@0.1.0"
 )
 
 const (
@@ -58,14 +58,14 @@ type Streams interface {
 	Publish(ctx context.Context, handle string, message []byte) error
 }
 
-// WithStreams is what backs `taubyte:handler/stream`. Optional: a tier without
+// WithStreams is what backs `taubyte:stream/publisher`. Optional: a tier without
 // one runs everything that publishes to nothing, and refuses at Start anything
 // that does.
 func WithStreams(s Streams) Option {
 	return func(r *Runtime) { r.streams = s }
 }
 
-// WithBus is what backs `taubyte:handler/bus`. It is the same interface as a
+// WithBus is what backs `taubyte:bus/publisher`. It is the same interface as a
 // stream's because sending is the same act; what differs is the kind, and the
 // handle carries that.
 func WithBus(s Streams) Option {

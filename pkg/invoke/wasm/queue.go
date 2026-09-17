@@ -10,7 +10,14 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// queue.go is the host half of `taubyte:handler/queue`.
+// queue.go is the host half of `taubyte:queue/producer` — the `sync` kind at
+// `type: queue`.
+//
+// THE KIND IS `sync` AND THE TYPE SELECTS THIS INTERFACE, the same way `database`
+// at `type: sql` selects sql.go's. A grant is filtered by kind AND type here for
+// exactly that reason: `sync` also covers a log, whose verbs are not these and
+// whose backing is a different thing, and a filter on kind alone would hand a
+// log's grant to the producer.
 //
 // # Only send, and that is a different absence from stream's
 //
@@ -29,7 +36,7 @@ import (
 // is a different instruction from "the store is unreachable" and a very
 // different one from "you may not".
 
-const queueInterface = "taubyte:handler/queue@0.1.0"
+const queueInterface = "taubyte:queue/producer@0.1.0"
 
 const (
 	opSend    = "send"
@@ -54,14 +61,22 @@ var (
 	ErrNotWritable = errors.New("wasm: this node may not write to that queue")
 )
 
-const queueKind = "queue"
+const (
+	// syncKind is the vocabulary's kind; queueType is the type under it that this
+	// interface serves.
+	syncKind  = "sync"
+	queueType = "queue"
+
+	// settingSyncType is where the composer writes which primitive a grant names.
+	settingSyncType = "type"
+)
 
 // Queues sends to the queue a grant names.
 type Queues interface {
 	Send(ctx context.Context, grant invoke.Grant, id string, data []byte) error
 }
 
-// WithQueues is what backs `taubyte:handler/queue`.
+// WithQueues is what backs `taubyte:queue/producer`.
 func WithQueues(q Queues) Option {
 	return func(r *Runtime) { r.queues = q }
 }
@@ -69,7 +84,7 @@ func WithQueues(q Queues) Option {
 func queueGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for _, g := range spec.Reaches {
-		if g.Kind != queueKind {
+		if g.Kind != syncKind || g.Settings[settingSyncType] != queueType {
 			continue
 		}
 		if out == nil {

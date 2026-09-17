@@ -361,16 +361,27 @@ func (n *Node) openWorker() error {
 		n.vault = &vault{node: n}
 		n.closers = append(n.closers, n.vault)
 
+		// THE PEER THIS INSTANCE RUNS ON, for `taubyte:workload/identity`. It is
+		// the host's own id rather than anything derived: what a workload is
+		// told about where it is running has to be the name the swarm knows it
+		// by, or a log line naming it cannot be followed to a machine.
+		var self string
+		if n.opts.host != nil {
+			self = n.opts.host.ID().String()
+		}
+
 		component, err := wasm.New(n.opts.assets,
 			wasm.WithOutput(workloadLog),
+			wasm.WithNode(self),
 			wasm.WithCaches(&caches{node: n}),
 			wasm.WithStreams(publisher),
 			wasm.WithBus(n.busStreams()),
-			wasm.WithDatabases(servers),
+			wasm.WithSQL(servers),
 			wasm.WithKV(servers),
 			wasm.WithDocuments(servers),
 			wasm.WithVectors(servers),
 			wasm.WithQueues(n.workQueues()),
+			wasm.WithLogs(&logs{node: n}),
 			wasm.WithStorage(objects),
 			wasm.WithAdmission(admit),
 			wasm.WithSecrets(n.vault))

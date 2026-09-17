@@ -11,7 +11,7 @@ database:
     ledger:
         namespace: /billing
         ops: [query]
-queue:
+sync:
     orders:
         namespace: /
         ops: [receive]

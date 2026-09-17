@@ -1,0 +1,162 @@
+// Object storage, as the vocabulary's `storage` kind at `type: object`.
+//
+// # It is the S3 object API, because that is what every client already speaks
+//
+// GetObject, HeadObject, PutObject, DeleteObject, ListObjectsV2. An importer
+// bringing a project off another platform, an SDK an author already has, a tool
+// that walks a bucket — all of them are written against these five calls and
+// their answers. A shape of our own would be a shape every one of them needs an
+// adapter for, which is exactly the tax v2 exists to stop charging.
+//
+// So the names here are S3's names, the etag is where an etag goes, the
+// delimiter collapses prefixes the way S3's does, and a truncated listing
+// answers with a continuation token. What is NOT copied is S3's own history:
+// no ACLs, no storage classes, no `x-amz-` header surface. Access is the
+// vocabulary's `ops:` and it is checked before the bucket is touched.
+//
+// # The etag is the content id, and that is not a coincidence
+//
+// The bytes go into the same content-addressed store a build's artifacts do, so
+// two objects with the same content are one object; what this adds is a NAME
+// for them, per bucket, per deployment. An etag is supposed to change exactly
+// when the content does — which is what a content id IS — so this cloud has a
+// strong etag for free where S3 gives a weak one for anything multipart.
+//
+// That is also why a delete removes the name and not the bytes: the bytes may
+// be another name's, and collecting the ones nothing points at is a different
+// job from this one.
+//
+// # `head` exists because `get` is the expensive question
+//
+// A caller that wants to know whether an object is there, or how big it is,
+// should not have to pull it through the ABI to find out — and the ABI carries
+// a `list<u8>`, so pulling it means materialising the whole thing in the
+// guest's memory.
+//
+// # What is deferred, and why it is deferred rather than absent
+//
+// RANGE READS (`Range: bytes=`). The reason to want one is precisely the reason
+// `head` exists — not materialising a large object — and the reason to hold it
+// is that half a story is worse than none: a range read pairs with a range
+// WRITE and with a streaming body, and all three want `wasi:io/streams` rather
+// than another `list<u8>`. Adding an offset and a length to `get` now would
+// ship the easy half and make the streaming shape a second spelling of the same
+// verb later.
+//
+// MULTIPART UPLOAD. It is a protocol, not a call: create, N parts with their
+// own etags, complete or abort, and a server that holds partial state between
+// them. What it buys is uploading something too big to hold in memory, which
+// this ABI cannot do in one `list<u8>` either — so it lands with streaming or
+// it lands as ceremony around a limit it does not lift.
+//
+// # `type: streaming` is a DIFFERENT package and this is not it
+//
+// The other storage type is an append-only log with a ttl, and its verbs move
+// bytes a caller does not hold all of at once. Serving it through these
+// functions would mean a guest holding a stream in memory to write it, so a
+// storage declaring it is refused by name rather than half-served.
+package taubyte:storage@0.1.0;
+
+interface objects {
+    // One entry of an object's user metadata — S3's `x-amz-meta-*`, without
+    // the prefix, which is a transport detail of its REST binding.
+    record metadata {
+        name: string,
+        value: string,
+    }
+
+    // What is known about one object without reading it: HeadObject's answer,
+    // and one row of a listing.
+    record info {
+        key: string,
+
+        // The entity tag. This cloud's IS the object's content id, so two
+        // objects with the same bytes carry the same etag and an etag changes
+        // exactly when the content does.
+        etag: string,
+
+        size: u64,
+
+        // Unix seconds when it was last written.
+        modified: s64,
+
+        // "" when the writer named none. The `application/octet-stream`
+        // default is the caller's to apply, not this interface's to invent.
+        content-type: string,
+
+        metadata: list<metadata>,
+    }
+
+    record object {
+        info: info,
+        body: list<u8>,
+    }
+
+    // ListObjectsV2's request. IT IS A RECORD because five positional strings
+    // and numbers at a call site say nothing about which is which, and this is
+    // the one call here with more than two knobs.
+    record listing-request {
+        prefix: string,
+
+        // The character that ends a "directory". "/" gives folders: everything
+        // past the first one collapses into `common-prefixes`. "" lists flat,
+        // which is what a program walking every object wants.
+        delimiter: string,
+
+        // 0 asks for this cloud's own ceiling, which is also the cap on
+        // anything larger.
+        max-keys: u32,
+
+        // What a previous truncated listing answered with. "" starts over.
+        continuation-token: string,
+    }
+
+    record listing {
+        objects: list<info>,
+
+        // The distinct prefixes the delimiter collapsed, sorted. Empty when no
+        // delimiter was given.
+        common-prefixes: list<string>,
+
+        truncated: bool,
+
+        // Hand back as `continuation-token`. "" when nothing was truncated.
+        next-continuation-token: string,
+    }
+
+    variant error {
+        // The label is not in this resource's `storage:` block.
+        no-such-storage(string),
+        // Declared, but not with this op — or the target is a type this cloud
+        // does not serve through these functions.
+        denied(string),
+        not-found,
+        // The bucket is at the size its author declared. It is its own arm
+        // because a caller acts on it — write less, delete something — where
+        // an `unavailable` reads as an outage.
+        full(string),
+        // The request itself does not make sense: a continuation token this
+        // bucket never issued, a key with a `..` in it. S3's 400, and its own
+        // arm because a caller FIXES this rather than retrying it.
+        bad-request(string),
+        unavailable(string),
+    }
+
+    get: func(name: string, key: string) -> result<object, error>;
+    head: func(name: string, key: string) -> result<info, error>;
+
+    // put answers the etag it stored under, so a caller can record what it
+    // wrote without a second call to find out.
+    put: func(name: string, key: string, body: list<u8>, content-type: string, metadata: list<metadata>) -> result<string, error>;
+
+    delete: func(name: string, key: string) -> result<_, error>;
+
+    // `%list` ESCAPES A WIT KEYWORD. The verb the configuration writes is
+    // `list` and so is S3's; a function named anything else would be a third
+    // spelling of one word.
+    %list: func(name: string, request: listing-request) -> result<listing, error>;
+}
+
+world imports {
+    import objects;
+}

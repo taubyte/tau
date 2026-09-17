@@ -132,9 +132,9 @@ func TestQueryAndExec(t *testing.T) {
 	require.NoError(t, rows.Err())
 	require.Equal(t, [][]int64{{1, 100}, {2, 250}}, got)
 
-	affected, err := sqlConn.Exec(t.Context(), "delete from orders where total < $1", 50)
+	outcome, err := sqlConn.Exec(t.Context(), "delete from orders where total < $1", 50)
 	require.NoError(t, err)
-	require.Equal(t, int64(3), affected)
+	require.Equal(t, int64(3), outcome.Affected)
 }
 
 // TestAnEngineNeedsANameAndADriver, and they are two names on purpose: a

@@ -136,8 +136,16 @@ func TestComponentSourceResolves(t *testing.T) {
 
 // A queue's dead-letter is a ref to another queue, so a typo is a compile error
 // rather than a silently undelivered item.
+//
+// THE FIELDS ARE UNDER `queue/` NOW, because `sync` is a typed kind and the block that
+// is written IS the type — the same shape a database's `sql/` block has.
 func TestQueueDeadLetterResolves(t *testing.T) {
-	queues := resources(t, compileBasic(t), "queue")
+	queues := map[string]any{}
+	for id, v := range resources(t, compileBasic(t), "sync") {
+		if r, ok := v.(map[string]any); ok && r["type"] == "queue" {
+			queues[id] = r["queue"]
+		}
+	}
 	assert.Equal(t, len(queues), 2)
 
 	var dl string
@@ -390,7 +398,7 @@ func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 
 // CONSENSUS IS A FIELD OF `distributed`, AND IT IS ONLY THERE. What an author states
 // is what the store has to do with the second of two writes that land on one key;
-// which shape of raft delivers `single-writer` — a synchronous replica set, or one
+// which shape of raft delivers `raft` — a synchronous replica set, or one
 // master and followers — is a runtime decision and is never in the document.
 //
 // Two things are pinned because both can rot silently. That the field reaches EVERY
@@ -422,8 +430,8 @@ func TestDatabaseConsensusIsUnderTheDistributedEngineOnly(t *testing.T) {
 	// and both answers, since a set of one is a field nobody has to write.
 	for _, tc := range []struct{ typ, body, want string }{
 		{"kv", "kv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n", "crdt"},
-		{"document", "document:\n    distributed:\n        size: 1MB\n        consensus: single-writer\n", "single-writer"},
-		{"sql", "sql:\n    distributed:\n        size: 1MB\n        consensus: single-writer\n", "single-writer"},
+		{"document", "document:\n    distributed:\n        size: 1MB\n        consensus: raft\n", "raft"},
+		{"sql", "sql:\n    distributed:\n        size: 1MB\n        consensus: raft\n", "raft"},
 		{"vector", "vector:\n    dimensions: 8\n    distributed:\n        size: 1MB\n        consensus: crdt\n", "crdt"},
 	} {
 		flat, err := db(tc.body)
@@ -488,7 +496,7 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 		return obj.Flat(), nil
 	}
 	cache := func(body string) (map[string]any, error) {
-		flat, err := compile("/cache/c.yaml", "consensus: single-writer\n"+body)
+		flat, err := compile("/cache/c.yaml", "consensus: raft\n"+body)
 		if err != nil {
 			return nil, err
 		}
@@ -542,7 +550,7 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 //
 // `gossip` is eventually consistent AND LOSSY: an entry can fail to arrive or be
 // dropped, where `crdt` merges concurrent writes and discards the loser and
-// `single-writer` discards nothing. That is affordable exactly where losing an entry
+// `raft` discards nothing. That is affordable exactly where losing an entry
 // costs a recomputation, which is the line this kind's GroupDoc already draws, and it
 // is unaffordable in a system of record — so `database` refuses the value and this
 // kind takes it. Both halves are asserted, because a set that quietly drifted into
@@ -571,13 +579,13 @@ func TestCacheConsensusIsRequiredAndTakesTheLossyValue(t *testing.T) {
 		"the key with nothing after it is the same omission")
 
 	// ALL THREE ANSWERS ARE SAYABLE.
-	for _, v := range []string{"single-writer", "crdt", "gossip"} {
+	for _, v := range []string{"raft", "crdt", "gossip"} {
 		assert.NilError(t, compile("/cache/c.yaml", "size: 1MB\nconsensus: "+v+"\n"), "consensus: %q", v)
 	}
 
-	// AND NOTHING ELSE IS — including the algorithm, which is the platform's to change
-	// without touching anybody's config, and the bool this replaced.
-	for _, v := range []string{"raft", "eventual", "true", "single_writer", "gossip "} {
+	// AND NOTHING ELSE IS — including `single-writer`, which is what `raft` used to be
+	// spelled, the underscored near-miss, and the bool this replaced.
+	for _, v := range []string{"single-writer", "eventual", "true", "single_writer", "gossip "} {
 		assert.ErrorContains(t, compile("/cache/c.yaml", "size: 1MB\nconsensus: \""+v+"\"\n"),
 			"invalid value", "consensus: %q is not one of the three answers", v)
 	}
@@ -594,7 +602,7 @@ func TestCacheConsensusIsRequiredAndTakesTheLossyValue(t *testing.T) {
 
 	root := rootOf(flat)
 	shop := namespace(t, root, "shop")
-	assert.Equal(t, namedResource(t, shop["cache"].(map[string]any), "sessions")["consensus"], "single-writer")
+	assert.Equal(t, namedResource(t, shop["cache"].(map[string]any), "sessions")["consensus"], "raft")
 	billing := namespace(t, root, "billing")
 	assert.Equal(t, namedResource(t, billing["cache"].(map[string]any), "sessions")["consensus"], "crdt")
 }
@@ -607,7 +615,7 @@ func TestCacheConsensusIsRequiredAndTakesTheLossyValue(t *testing.T) {
 //
 // The other half is the value set. `raft` is the plausible wrong answer — it is what
 // an author reaches for when the field asks about consensus — and it is exactly what
-// this vocabulary refuses to be told, because the algorithm behind `single-writer` is
+// this vocabulary refuses to be told, because the algorithm behind `raft` is
 // the platform's to change without touching anybody's config.
 //
 // AN EXTERNAL ENGINE STILL OWES NOTHING, which is the half `Required()` could not
@@ -643,10 +651,10 @@ func TestDatabaseConsensusIsRequiredAndClosed(t *testing.T) {
 	assert.ErrorContains(t, compile("kv:\n    distributed:\n        size: 1MB\n        consensus:\n"),
 		"required attribute 'kv/distributed/consensus'")
 
-	// A VALUE OUTSIDE THE SET IS REFUSED — including the one that names the algorithm,
-	// which is the mistake the closed set exists to catch: `single-writer` is a
-	// guarantee and raft is one way of keeping it, which is the platform's to change.
-	for _, v := range []string{"raft", "true", "single_writer", "eventual", "crdt "} {
+	// A VALUE OUTSIDE THE SET IS REFUSED — including `single-writer`, which is what
+	// `raft` used to be spelled here: a config written against the old name is told so
+	// rather than compiling to something this store does not do.
+	for _, v := range []string{"single-writer", "true", "single_writer", "eventual", "crdt "} {
 		assert.ErrorContains(t, compile("kv:\n    distributed:\n        size: 1MB\n        consensus: \""+v+"\"\n"),
 			"invalid value", "consensus: %q is not one of the two answers", v)
 	}
@@ -668,7 +676,7 @@ func TestDatabaseConsensusIsRequiredAndClosed(t *testing.T) {
 	assert.Equal(t, nested(namedResource(t, dbs, "knowledge"), "vector", "consensus"), "crdt")
 
 	ledger := namedResource(t, namespace(t, root(t, flat), "billing")["database"].(map[string]any), "ledger")
-	assert.Equal(t, nested(ledger, "sql", "consensus"), "single-writer")
+	assert.Equal(t, nested(ledger, "sql", "consensus"), "raft")
 }
 
 // The new kinds load at all, with their scalars parsed.
@@ -1310,8 +1318,13 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/application/a.yaml", []byte(
 		"id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nsource:\n    image: img\nexecution:\n    memory: 1MB\nports:\n    p:\n        number: 80\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/queue/q.yaml",
-		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/sync/q.yaml",
+		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nqueue:\n    consensus: raft\n"), 0o644))
+	// A LOG BESIDE IT, which is what makes the assertion below about SCOPE and not
+	// only about reachability: the queue's defaults must land on the queue and on
+	// nothing else, or a default invents a branch its author never took.
+	assert.NilError(t, afero.WriteFile(fs, "/sync/l.yaml",
+		[]byte("id: QmPq5xVnB7LtWcHdKzR3JgEyUM8fasNbT2vXrQwCk6hDZm\nlog:\n    consensus: crdt\n"), 0o644))
 	// a generated host needs no certificate even when TLS stops here — the cloud
 	// holds a wildcard for its own zone, which is the gateway's rule too
 	assert.NilError(t, afero.WriteFile(fs, "/proxy/p.yaml", []byte(
@@ -1322,8 +1335,13 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 
-	q := only(t, resources(t, obj.Flat(), "queue"))
-	assert.Equal(t, q["visibility_timeout"], int64(30000000000), "the default has to be reachable")
+	q := only(t, byType(t, obj.Flat(), "queue"))
+	assert.Equal(t, nested(q, "queue", "visibility_timeout"), int64(30000000000),
+		"the default has to be reachable")
+
+	l := only(t, byType(t, obj.Flat(), "log"))
+	_, strayed := l["queue"]
+	assert.Assert(t, !strayed, "a queue default landed on a log: %v", l)
 
 	p := only(t, resources(t, obj.Flat(), "proxy"))
 	assert.Equal(t, p["protocol"], "tcp")
@@ -1339,10 +1357,10 @@ func TestWorkflowLowers(t *testing.T) {
 	for _, d := range plan {
 		got[d.Kind+"/"+d.Name] = d.Why
 	}
-	assert.Assert(t, got["queue/checkout_reserve"] != "", "one queue per step: %v", got)
-	assert.Assert(t, got["queue/checkout_charge"] != "")
-	assert.Assert(t, got["queue/checkout_settle"] != "", "a wait is a step, so it becomes a queue and a driver like any other: %v", got)
-	assert.Assert(t, got["queue/checkout_failed"] != "", "somewhere for a step that gave up")
+	assert.Assert(t, got["sync/checkout_reserve"] != "", "one queue per step: %v", got)
+	assert.Assert(t, got["sync/checkout_charge"] != "")
+	assert.Assert(t, got["sync/checkout_settle"] != "", "a wait is a step, so it becomes a queue and a driver like any other: %v", got)
+	assert.Assert(t, got["sync/checkout_failed"] != "", "somewhere for a step that gave up")
 
 	// AND ONE DRIVER PER STEP, which is what makes the box readable when it is opened:
 	// the queues are wired to something that lives in there with them, rather than to
@@ -1376,8 +1394,8 @@ func TestWorkflowLowers(t *testing.T) {
 	sort.Strings(produced)
 	assert.DeepEqual(t, produced, []string{
 		"function/checkout_charge", "function/checkout_reserve", "function/checkout_settle",
-		"queue/checkout_charge", "queue/checkout_failed", "queue/checkout_reserve",
-		"queue/checkout_settle",
+		"sync/checkout_charge", "sync/checkout_failed", "sync/checkout_reserve",
+		"sync/checkout_settle",
 	})
 
 	// EVERY WRITE THE PLAN CARRIES, keyed by what it lands on and where. That the value
@@ -1400,15 +1418,15 @@ func TestWorkflowLowers(t *testing.T) {
 	// A queue nothing receives from is a queue nothing happens in — and what receives is
 	// the step's DRIVER, produced beside it, never the author's function: the function is
 	// invoked and knows no queues at all.
-	assert.Equal(t, writes["function/checkout_reserve queue/checkout_reserve/ops"], "receive")
+	assert.Equal(t, writes["function/checkout_reserve sync/checkout_reserve/ops"], "receive")
 
 	// FORWARD PROGRESS IS ONE GRANT. The driver sends to exactly one queue — the next
 	// step's — so "which of these means next" is not a question anybody has to answer by
 	// reading names. The last step has no next and the write is dropped.
-	assert.Equal(t, writes["function/checkout_reserve queue/checkout_settle/ops"], "send")
-	assert.Equal(t, writes["function/checkout_charge queue/checkout_charge/ops"], "receive")
+	assert.Equal(t, writes["function/checkout_reserve sync/checkout_settle/ops"], "send")
+	assert.Equal(t, writes["function/checkout_charge sync/checkout_charge/ops"], "receive")
 	for k, v := range writes {
-		assert.Assert(t, !strings.HasPrefix(k, "function/checkout_charge queue/") || v != "send",
+		assert.Assert(t, !strings.HasPrefix(k, "function/checkout_charge sync/") || v != "send",
 			"the last step sends nowhere: %s", k)
 	}
 
@@ -1431,10 +1449,10 @@ func TestWorkflowLowers(t *testing.T) {
 	// running. A second statement of it was the whole reason the arrow between two
 	// queues read as unexplained.
 	for _, d := range plan {
-		if d.Kind != "queue" || d.Name != "checkout_reserve" {
+		if d.Kind != "sync" || d.Name != "checkout_reserve" {
 			continue
 		}
-		assert.Equal(t, d.Fields["dead_letter/name"], "checkout_failed")
+		assert.Equal(t, d.Fields["queue/dead_letter/name"], "checkout_failed")
 		for _, w := range d.Writes {
 			assert.Assert(t, !strings.Contains(strings.Join(w.Path, "/"), "checkout_failed"),
 				"the dead-letter is a field, not an entry")
@@ -2015,7 +2033,7 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 }
 
 // ORCHESTRATION IS THE RUNTIME'S, AND `entity` IS WHERE THIS VOCABULARY SAID OTHERWISE.
-// It was a named, durably-stored, single-writer compute instance: a WASM entrypoint, a
+// It was a named, durably-stored, raft compute instance: a WASM entrypoint, a
 // per-instance storage ceiling, a `durable` bit journalling host calls for replay, and a
 // quorum lease as the fence. Every one of those is HOW something is run, decided while it
 // runs; none is a shape a compiler can hand a deployer. So the kind is gone, and this is
@@ -2108,7 +2126,7 @@ func TestNoShippedStringNamesADeletedKind(t *testing.T) {
 	// AND THE CHECK IS LIVE, which for a needle-in-a-haystack assertion is the half worth
 	// proving: the same scan finds a kind that IS here, so a silent pass would be a bug in
 	// the scan rather than a clean schema.
-	for _, here := range []string{"queue", "cache", "agent"} {
+	for _, here := range []string{"sync", "cache", "agent"} {
 		word := regexp.MustCompile(`(?i)\b` + here + `\b`)
 		assert.Assert(t, word.FindStringIndex(shipped) != nil,
 			"the scan cannot find %q, which is a kind this vocabulary has", here)
@@ -2131,38 +2149,73 @@ func excerpt(s string, at []int) string {
 	return "…" + s[lo:hi] + "…"
 }
 
-// A PLACEHOLDER THAT STAYS A PLACEHOLDER. `log` has no fields of its own on purpose —
-// its shape is owed and has not been given — and the two things that could quietly
-// happen to it are pinned here: somebody deleting it as inert, and somebody completing
-// it by guessing.
+// APPEND-ONLY IS STATED BY THE VERB SET AND NOWHERE ELSE. `append` alone is the type's
+// whole claim, and the absence of `put` and `delete` is where "append-only" is said
+// rather than described: a record that can be overwritten or removed is not one.
 //
-// The verbs are the part that is not a placeholder. `append` alone is the kind's whole
-// claim, and the absence of `put` and `delete` is where "append-only" is STATED rather
-// than described: a record that can be overwritten or removed is not one.
+// It was its own KIND until 2026-09-05, with no fields at all and a note saying the
+// shape was owed. The shape is given now and it is a TYPE of `sync` — so what this
+// pins moved with it, and the thing it still stops is somebody adding a write verb
+// that makes the name a lie.
 func TestALogIsAppendOnlyAndOtherwiseUnspecified(t *testing.T) {
-	assert.DeepEqual(t, opsOf(t, "log"), []string{"append:write", "read:read"})
+	ops, known := schema.SyncTypeOf("log")
+	assert.Assert(t, known, "the log type is gone")
+	assert.DeepEqual(t, ops.Names(), []string{"append", "read"})
+
 	for _, gone := range []string{"put", "delete", "exec", "upsert"} {
-		_, has := schema.EffectOf("log", gone)
+		_, has := schema.EffectOf("sync", gone)
 		assert.Assert(t, !has, "an append-only log must not declare %q", gone)
 	}
 
-	// Nothing but the common block, so a field arriving here is a decision somebody
-	// took and this is where they are asked to have taken it deliberately.
-	fs := afero.NewMemMapFs()
-	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/log/a.yaml",
-		[]byte("id: QmPq5xVnB7LtWcHdKzR3JgEyUM8fasNbT2vXrQwCk6hDZm\nretention: 30d\n"), 0o644))
-	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
-	assert.NilError(t, err)
-	_, _, err = c.Compile(context.Background())
-	assert.ErrorContains(t, err, "unknown key 'retention'",
-		"the shape is owed; a field guessed at here is not it")
+	// A FIELD BELONGS TO ONE TYPE'S BLOCK AND TO NO OTHER. A log has no delivery
+	// budget, so writing a queue's field into a log is an unknown key rather than a
+	// number filed under a branch nobody took — the same discipline `database` keeps
+	// between its `sql:` and `kv:` blocks.
+	logWith := func(body string) error {
+		fs := afero.NewMemMapFs()
+		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/sync/a.yaml",
+			[]byte("id: QmPq5xVnB7LtWcHdKzR3JgEyUM8fasNbT2vXrQwCk6hDZm\n"+body), 0o644))
+		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+		assert.NilError(t, err)
+		_, _, err = c.Compile(context.Background())
+		return err
+	}
+
+	assert.NilError(t, logWith("log:\n    consensus: crdt\n    retention:\n        age: 720h\n"))
+	assert.ErrorContains(t,
+		logWith("log:\n    consensus: crdt\n    visibility_timeout: 30s\n"),
+		"unknown key 'visibility_timeout'", "a log has no delivery budget")
+	assert.ErrorContains(t,
+		logWith("log:\n    retention:\n        age: 720h\n"),
+		"required attribute",
+		"what happens to two concurrent appends is not a question silence may answer")
 
 	// And it is a real target: something appends to it in the fixture, which is the
-	// difference between a kind and a name nothing can reach.
-	audit := namedResource(t, resources(t, compileBasic(t), "log"), "audit")
+	// difference between a type and a name nothing can reach.
+	//
+	// A LOG DOES NOT SILENTLY CARRY A QUEUE'S DEFAULTS either. A default under a
+	// branch nobody took invents that branch, and a resource with two type blocks has
+	// no type — see DefaultWhen.
+	audit := namedResource(t, byType(t, compileBasic(t), "log"), "audit")
 	assert.Equal(t, audit["name"], "audit")
+	_, strayed := audit["queue"]
+	assert.Assert(t, !strayed, "a log was given a queue block: %v", audit)
+}
+
+// byType is the sync resources of one type, which is what a consumer of a typed kind
+// actually wants — the kind alone answers queues and logs together.
+func byType(t *testing.T, flat map[string]any, want string) map[string]any {
+	t.Helper()
+
+	out := map[string]any{}
+	for id, v := range resources(t, flat, "sync") {
+		if r, ok := v.(map[string]any); ok && r["type"] == want {
+			out[id] = r
+		}
+	}
+	return out
 }
 
 // A MULTI-INSTANCE STORE SAYS HOW MANY AND WHO, AND NEITHER IS OPTIONAL.
@@ -2246,8 +2299,8 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 func TestRegionIsDeclaredOnKindsWithAFootprint(t *testing.T) {
 	assert.DeepEqual(t, schema.PlacedKinds(), []string{
 		"application", "function", "worker", "sandbox",
-		"cache", "database", "storage", "volume", "log",
-		"queue", "agent", "workflow",
+		"cache", "database", "storage", "volume", "sync",
+		"agent", "workflow",
 	})
 
 	placed := map[string]bool{}
@@ -2461,7 +2514,7 @@ func TestABusDeclaresNoConsistency(t *testing.T) {
 	}
 	assert.Assert(t, bus != nil, "there is no bus kind")
 
-	banned := regexp.MustCompile(`(?i)consensus|crdt|single-writer|linearizab|quorum`)
+	banned := regexp.MustCompile(`(?i)consensus|crdt|raft|linearizab|quorum`)
 	var walk func(n *engine.Node)
 	walk = func(n *engine.Node) {
 		for _, a := range n.Attributes {

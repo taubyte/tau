@@ -2,9 +2,9 @@
 //
 // # Why this and not wasi:http/incoming-handler
 //
-// A tau invocation is not always HTTP. A pubsub delivery and a peer-to-peer
-// call are invocations too, and pkg/invoke's Request says so in as many words —
-// so a world that could only carry an HTTP exchange would make the other two
+// A tau invocation is not always HTTP. A pubsub delivery and a channel call are
+// invocations too, and pkg/invoke's Request says so in as many words — so a
+// world that could only carry an HTTP exchange would make the other two
 // second-class at the ABI, which is the one place that is expensive to undo.
 //
 // This world mirrors that Request exactly, which is what lets one tier serve
@@ -12,6 +12,45 @@
 // worth doing — it is what makes a component built for wasmtime serve, Spin or
 // wasmCloud run here unmodified — and it is additive: a component exporting it
 // is recognised by what it exports, not by a flag.
+//
+// # One package per capability, and this world is the union
+//
+// Every capability is its own package under deps/, with its own version and its
+// own world. This world imports each of their interfaces, so what a tau function
+// may reach is this list and nothing else.
+//
+// THE SPLIT IS NOT TIDINESS. Three things fall out of it:
+//
+//   - A capability versions on its own. Adding a field to `storage` moved the
+//     version every cache guest was built against, back when there was one
+//     package.
+//
+//   - A SUBSET BECOMES EXPRESSIBLE. `implements:` already names worlds beyond
+//     the handler — an authorizer, a router, a gateway transformer — and each
+//     serves a different subset of these. A subset is a list of packages, and
+//     there was nothing to pick from when the package was the whole set. Each
+//     capability also ships a `world imports` of its own, so a guest that needs
+//     one of them can target that world alone.
+//
+//   - The host half matches it one to one. pkg/invoke/wasm registers one host
+//     component per package (host.go), so a capability is a file on each side
+//     rather than two more lines in an instantiation.
+//
+// # A guest imports only what it calls, and that is measured
+//
+// A component's import section names the interfaces it actually reaches, not
+// the ones its world offered: fixtures/handler.wasm is built against this world
+// and imports NONE of these, while fixtures/cacher.wasm imports the ones it
+// calls. So offering every capability costs a guest that uses one of them
+// nothing at all.
+//
+// # These are `import`s and not `include`s, and the reason is a toolchain
+//
+// `include taubyte:cache/imports@0.1.0;` says the same thing more compactly and
+// resolves under wasm-tools 1.253. cargo-component 0.21's wit-parser does not
+// resolve a cross-package world include from a `deps/` tree at all, and the
+// error it gives names the package rather than the include — so the shape that
+// costs a guest author an afternoon is not worth the four saved lines.
 //
 // # The export is named by the author
 //
@@ -21,493 +60,42 @@
 // host calls whatever the config says, and what it requires is the signature.
 package taubyte:handler@0.1.0;
 
-// The key-value cache a workload reaches, as the vocabulary's `cache` kind.
-//
-// # It is in this package rather than one of its own
-//
-// A wit directory is ONE package, with everything else under deps/. A second
-// top-level package here would mean vendoring this one's own dependencies to
-// reach it, for an interface that only ever ships beside this world. So the
-// import a guest writes is `taubyte:handler/cache@0.1.0`, which reads oddly for
-// a moment and then stops mattering.
-//
-// # The cache is named by its LABEL and not by its id
-//
-// A workload declares what it reaches in its own configuration:
-//
-//     cache:
-//         sessions:
-//             ops: [get, put]
-//
-// and `sessions` is the string it passes here. The author wrote that label and
-// never sees the id it resolves to, which is also what makes the guest
-// portable between environments: staging's `sessions` and production's are
-// different caches and the same code.
-//
-// # Every op is checked against that declaration
-//
-// A label the resource did not declare is `no-such-cache`, and an op it did not
-// ask for is `denied` — both before the store is touched. The configuration is
-// the grant; there is no second place to widen it.
-interface cache {
-    // What went wrong, as arms an author can act on differently.
-    //
-    // `not-found` IS NOT AN ERROR CONDITION and is the common case: a cache
-    // miss is what a cache is for. It carries no payload because there is
-    // nothing to say beyond the key the caller already has.
-    variant error {
-        // The label is not in this resource's `cache:` block. A typo, or a
-        // grant nobody wrote.
-        no-such-cache(string),
-        // The label is declared, but not with this op.
-        denied(string),
-        not-found,
-        // One value larger than the whole cache. Evicting everything would
-        // still not make it fit.
-        too-large,
-        // The store could not answer. Distinct from a miss on purpose: a
-        // caller retries one and recomputes for the other.
-        unavailable(string),
-    }
-
-    // get returns a value, or not-found.
-    get: func(name: string, key: string) -> result<list<u8>, error>;
-
-    // put writes one. It is an upsert, and it evicts rather than refusing when
-    // the cache is at its declared size — losing an entry costs a
-    // recomputation, which is the whole premise of this kind.
-    put: func(name: string, key: string, value: list<u8>) -> result<_, error>;
-
-    // delete removes one. Deleting what is not there succeeds.
-    delete: func(name: string, key: string) -> result<_, error>;
-
-    // list names the live entries under a prefix, sorted. An expired entry is
-    // not listed.
-    //
-    // `%list` ESCAPES A WIT KEYWORD, and the escape is worth it: the verb the
-    // configuration writes is `list`, and a function called anything else here
-    // would be a second spelling of one verb — the shape the vocabulary's own
-    // notes call a parallel table.
-    %list: func(name: string, prefix: string) -> result<list<string>, error>;
-}
-
-// THE TYPES ARE IN THE WORLD AND NOT IN AN INTERFACE, which is not a style
-// choice: a `use` from an imported interface leaves the export's signature
-// referring to a type the host has to resolve separately, and a host reading
-// the component's own type section then cannot flatten the call at all. Inline,
-// the export carries its whole shape with it — which is what lets any embedder
-// call it knowing only this file.
-// A pubsub stream, as the vocabulary's `stream` kind.
-//
-// # Only publish
-//
-// The kind declares two verbs and they are not alike. `publish` is a call a
-// workload makes. `subscribe` is a DELIVERY — the platform invokes a workload
-// when a message arrives, which is a trigger and not a function a guest calls —
-// so there is nothing here for it, and a resource that asked for it is told so
-// by the op check rather than left wondering.
-//
-// # A stream is named by its LABEL, like a cache
-//
-//     stream:
-//         orders:
-//             ops: [publish]
-//
-// and `orders` is what a guest passes. What goes on the wire has the
-// deployment's identity in front of it, so two projects publishing to a stream
-// they both call `orders` never meet.
-// `%stream` ESCAPES A WIT KEYWORD, for the reason `%list` does below: the kind
-// the vocabulary declares is called `stream`, and an interface named anything
-// else here would be a second spelling of one word.
-interface %stream {
-    variant error {
-        // The label is not in this resource's `stream:` block.
-        no-such-stream(string),
-        // Declared, but not with `publish` — or the target is on an engine this
-        // cloud has no driver for, which is a refusal an author can read.
-        denied(string),
-        unavailable(string),
-    }
-
-    // publish sends one message. It returns when the message has been handed to
-    // the swarm, NOT when anybody received it: a pubsub stream reaches every
-    // subscriber and promises nothing about when, which is the kind's own
-    // statement rather than a limit of this implementation.
-    publish: func(name: string, message: list<u8>) -> result<_, error>;
-}
-
-// A SQL database, as the vocabulary's `database` kind at `type: sql`.
-//
-// # Two verbs, and `exec` is a write because the host cannot classify SQL
-//
-// The vocabulary says so where it declares them: nothing here parses a
-// statement to decide whether it changes anything, so an author who asked for
-// `query` gets reads and an author who needs to write asks for `exec`.
-//
-// # A row is flat on purpose
-//
-// `values` is ROW-MAJOR with `columns` giving the width, rather than a list of
-// lists. Nesting a list of variants inside a list inside a record is three
-// composites deep in the canonical ABI, and the flat shape carries exactly the
-// same information for a guest that already has the column count. Chunking it
-// back into rows is one line in any language's bindings.
-//
-// # The other three types are not here
-//
-// `kv`, `document` and `vector` are the same kind with different verbs, and
-// each is its own interface when it lands. Folding four operation sets into one
-// would be four interfaces wearing a trenchcoat — pkg/database says exactly
-// that about the Conn it does not have.
-interface database {
-    // A SQL value, in and out. NULL is its own case rather than an absent
-    // option, because a column that IS null and a column that was not selected
-    // are different answers and a guest has to be able to tell them apart.
-    variant value {
-        null,
-        text(string),
-        integer(s64),
-        real(f64),
-        boolean(bool),
-        blob(list<u8>),
-    }
-
-    record rows {
-        columns: list<string>,
-        // Row-major: columns.len() values per row. See the interface doc.
-        values: list<value>,
-    }
-
-    variant error {
-        // The label is not in this resource's `database:` block.
-        no-such-database(string),
-        // Declared, but not with this verb — or the target is on an engine
-        // this cloud has no adapter registered for.
-        denied(string),
-        // The server could not be reached.
-        unavailable(string),
-        // The server answered, and what it said was no: a syntax error, a
-        // constraint, a permission. It is ITS OWN ARM because a caller retries
-        // an outage and fixes a statement.
-        failed(string),
-    }
-
-    query: func(name: string, statement: string, args: list<value>) -> result<rows, error>;
-    exec: func(name: string, statement: string, args: list<value>) -> result<s64, error>;
-}
-
-// A key-value database, as the vocabulary's `database` kind at `type: kv`.
-//
-// # Why it is not the cache interface
-//
-// The verbs are the same four and the kinds are not. A cache MAY lose an entry
-// — that is what it is for — and a database may not, so there is no ttl here
-// and nothing evicts. Sharing one interface would let an author reach a system
-// of record through a door labelled "this may vanish".
-//
-// # `watch` is declared by the vocabulary and not served
-//
-// A change feed is a stream, and the store underneath does not expose one. A
-// resource that asks for it is told by the op check rather than handed a
-// channel that never delivers.
-interface kv {
-    variant error {
-        no-such-database(string),
-        denied(string),
-        not-found,
-        unavailable(string),
-    }
-
-    get: func(name: string, key: string) -> result<list<u8>, error>;
-    put: func(name: string, key: string, value: list<u8>) -> result<_, error>;
-    delete: func(name: string, key: string) -> result<_, error>;
-    // Keys under a prefix, sorted, without the database's own scoping on them.
-    keys: func(name: string, prefix: string) -> result<list<string>, error>;
-}
-
-// A document database, as the vocabulary's `database` kind at `type: document`.
-//
-// # A document crosses as JSON
-//
-// The canonical ABI has no arbitrary map, and a document IS one — nested,
-// heterogeneous, whatever the author put in it. Declaring a variant deep enough
-// to carry that would be declaring a JSON type in WIT, which every guest would
-// then translate to and from its own JSON anyway. So the bytes ARE the JSON,
-// and a guest uses the parser it already has.
-//
-// THAT IS NOT A SHORTCUT: it is what makes this interface stable while the
-// shape of a document is the author's business. The one thing lost is that the
-// host cannot check the shape, and it does not need to — it stores what it is
-// given and answers with what it stored.
-interface document {
-    variant error {
-        no-such-database(string),
-        denied(string),
-        not-found,
-        // The bytes were not a JSON object, in or out.
-        malformed(string),
-        unavailable(string),
-    }
-
-    get: func(name: string, id: string) -> result<list<u8>, error>;
-    put: func(name: string, id: string, doc: list<u8>) -> result<_, error>;
-    delete: func(name: string, id: string) -> result<_, error>;
-    // The filter is a JSON object: equality on every field it names, with a
-    // dotted name descending into a nested one. Empty means everything.
-    //
-    // IT IS A string AND THE ANSWER IS BYTES, which is not an inconsistency: a
-    // guest builds a filter as text and would have to copy it into a byte list
-    // for nothing, while a result set is bytes it will hand straight to a
-    // parser.
-    find: func(name: string, filter: string) -> result<list<u8>, error>;
-}
-
-// A vector database, as the vocabulary's `database` kind at `type: vector`.
-//
-// # What an embedding is on the wire
-//
-// `list<f32>`, in both directions. It is the one place in this world where a
-// number list is the natural shape rather than a convenience: an embedding IS a
-// vector of floats, and carrying it as JSON text would mean parsing a thousand
-// numbers per call on both sides.
-//
-// # The metric is the resource's, not a parameter
-//
-// It has to match how the embedding model was TRAINED — cosine for normalized
-// embeddings, dot where magnitude carries meaning, euclidean for raw distance —
-// so it is declared on the database and not chosen per query. Getting it wrong
-// does not error; it ranks badly.
-//
-// Every score is "higher is closer", euclidean's being a negated distance.
-interface vector {
-    record match {
-        id: string,
-        score: f32,
-        // Whatever was stored beside the embedding, as JSON. Empty when there
-        // was none.
-        meta: string,
-    }
-
-    variant error {
-        no-such-database(string),
-        denied(string),
-        // The embedding is not this database's declared width. It is its own
-        // arm because it is a mistake in the CALLER rather than an outage:
-        // a 1536-wide query against 768-wide vectors is meaningless, not slow.
-        wrong-width(string),
-        malformed(string),
-        unavailable(string),
-    }
-
-    // k <= 0 is everything.
-    search: func(name: string, query: list<f32>, k: s32) -> result<list<match>, error>;
-    // meta is JSON, or empty for none.
-    upsert: func(name: string, id: string, embedding: list<f32>, meta: string) -> result<_, error>;
-    delete: func(name: string, id: string) -> result<_, error>;
-}
-
-// Starting a run of a pipeline, as the vocabulary's `workflow` kind.
-//
-// # One verb, because a workflow has one
-//
-// `start` is the whole of what a caller may do to a workflow. There is no
-// cancel and no status: a run's state is the MESSAGE — what it carries travels
-// from one step's queue to the next, and which queue it is in is which step it
-// is at — so there is nothing to read and nothing to stop that is not an item
-// sitting in a queue.
-//
-// # It is not `queue.send` with a nicer name
-//
-// A workflow lowers to one queue per step, and starting one IS sending to the
-// first step's queue. But which queue that is, is the WORKFLOW's to say — it
-// records it on itself, so no caller works it out from a name — and an author
-// who wrote `workflow: checkout: {ops: [start]}` granted a workflow and not a
-// queue. Spending that grant through the queue interface would let a caller
-// reach any step of the pipeline directly, which is a different permission.
-//
-// # The id is the run's, and it is the caller's
-//
-// Starting the same id twice is one run: the queue underneath deduplicates, so
-// a producer that could not tell whether its start landed may repeat it. A
-// caller with nothing natural to use should send something it can reproduce —
-// the order this run is about, not a fresh random.
-interface workflow {
-    variant error {
-        no-such-workflow(string),
-        denied(string),
-        // The node that took the call is not the one that may write, which is
-        // the queue's own rule. A caller retries this.
-        not-writable(string),
-        unavailable(string),
-    }
-
-    start: func(name: string, id: string, input: list<u8>) -> result<_, error>;
-}
-
-// Object storage, as the vocabulary's `storage` kind at `type: object`.
-//
-// # Content-addressed underneath, named on top
-//
-// The bytes go into the same content-addressed store a build's artifacts do, so
-// two objects with the same content are one object; what this interface adds is
-// a NAME for them, per bucket, per deployment. That is why a delete removes the
-// name and not the bytes: the bytes may be another name's, and collecting the
-// ones nothing points at is a different job from this one.
-//
-// # `head` exists because `get` is the expensive question
-//
-// A caller that wants to know whether an object is there, or how big it is,
-// should not have to pull it through the ABI to find out — and the ABI carries
-// a `list<u8>`, so pulling it means materialising the whole thing in the
-// guest's memory. `head` answers the metadata alone.
-//
-// # `full` is its own arm
-//
-// A bucket declares a size and this cloud enforces it. A write refused for
-// space is a condition the caller can act on — write less, delete something —
-// and folding it into `unavailable` would read as an outage.
-//
-// # `type: streaming` is a DIFFERENT interface and this is not it
-//
-// The other storage type is an append-only log with a ttl, and its verbs move
-// bytes a caller does not hold all of at once. Serving it through these
-// functions would mean a guest holding a stream in memory to write it, so a
-// storage declaring it is refused by name rather than half-served.
-interface storage {
-    variant error {
-        no-such-storage(string),
-        denied(string),
-        not-found,
-        // The bucket is at the size its author declared.
-        full(string),
-        unavailable(string),
-    }
-
-    // What is known about one object without reading it.
-    record entry {
-        name: string,
-        size: u64,
-        // Unix seconds when it was last written.
-        modified: s64,
-    }
-
-    get: func(name: string, key: string) -> result<list<u8>, error>;
-    head: func(name: string, key: string) -> result<entry, error>;
-    put: func(name: string, key: string, value: list<u8>) -> result<_, error>;
-    delete: func(name: string, key: string) -> result<_, error>;
-    // Objects under a prefix, sorted by name. It is not called `list` because
-    // that is a WIT keyword.
-    entries: func(name: string, prefix: string) -> result<list<entry>, error>;
-}
-
-// A work queue, as the vocabulary's `queue` kind.
-//
-// # Only `send`, and the other verb is a different mechanism
-//
-// `receive` is a DELIVERY: the platform claims an item and invokes a workload
-// with it. Unlike a stream's subscribe, its semantics are settled — a claim is
-// exclusive and leader-only, so exactly one consumer gets an item and an
-// unacknowledged one comes back after its visibility timeout. What it needs is
-// a dispatcher, not a host function, and a resource that asks for it here is
-// told by the op check rather than left waiting.
-//
-// # An id is the caller's, and it is what makes a retry safe
-//
-// Pushing the same id twice replaces the item rather than queueing it again, so
-// a producer that retried a failed send does not deliver the work twice. A
-// caller with nothing natural to use should send a value it can reproduce — the
-// order it is about, not a fresh random.
-interface queue {
-    variant error {
-        no-such-queue(string),
-        denied(string),
-        // The node that took the call is not the one that may write. It is its
-        // own arm because a caller RETRIES this and nothing else about the
-        // request was wrong.
-        not-writable(string),
-        unavailable(string),
-    }
-
-    send: func(name: string, id: string, data: list<u8>) -> result<_, error>;
-}
-
-// A secret's value, as the vocabulary's `secret` kind.
-//
-// # Why a workload would call this rather than read an environment variable
-//
-// A secret already reaches a workload as a variable — `variables: {TOKEN:
-// {secret: {name: stripe}}}` — and that is the right shape for most of them:
-// resolved once, at start, and handed over.
-//
-// THE DIFFERENCE IS ROTATION. A variable is fixed for the life of the instance,
-// so rotating a secret takes effect when the workload restarts. Reading it here
-// takes effect on the next call, which is the whole reason the value lives
-// outside git in the first place: "rotation needs no push" is not much of a
-// promise if it needs a redeploy.
-//
-// # There is no `set`, and there will not be one
-//
-// The vocabulary declares one verb and it is a read — "there is no write verb
-// from a workload, ever" is its own sentence. A secret is written out of band,
-// by whoever holds it, through a door that authorizes on the project.
-interface secret {
-    variant error {
-        no-such-secret(string),
-        denied(string),
-        // Declared, and nothing is set under that name. It is its own arm
-        // because a workload started without its database password fails
-        // somewhere else, later, as an application that looks broken — and an
-        // author needs to tell that from an outage.
-        not-set,
-        unavailable(string),
-    }
-
-    get: func(name: string) -> result<list<u8>, error>;
-}
-
-// An ephemeral message bus, as the vocabulary's `bus` kind.
-//
-// # It is not a stream, and the difference is what is kept
-//
-// A stream is a pubsub topic that reaches every subscriber. A bus is n:n and
-// EPHEMERAL — "everything attached gets what is sent, and nothing is kept" —
-// which is what makes it the thing a browser attaches to over a websocket and
-// not the thing a job is queued on.
-//
-// # Only publish, and its other verb is a different mechanism from stream's
-//
-// `subscribe` on a bus is an ATTACHMENT: a websocket at the bus's own host, or
-// a workload the platform delivers to. Fan-out is not a question here the way
-// it is for a stream — everything attached gets what is sent is the kind's own
-// definition — but the attaching is the gateway's to serve and not a function a
-// guest calls.
-interface bus {
-    variant error {
-        no-such-bus(string),
-        denied(string),
-        unavailable(string),
-    }
-
-    // publish sends one message to everything attached. It returns when the
-    // message has been handed to the swarm and promises nothing about who was
-    // attached — nothing is kept, so an unattached bus drops it.
-    publish: func(name: string, message: list<u8>) -> result<_, error>;
-}
-
 world handler {
-    import workflow;
-    import storage;
-    import bus;
-    import secret;
-    import queue;
-    import database;
-    import kv;
-    import document;
-    import vector;
-    import %stream;
-    // A GUEST NEED NOT USE IT. A world's imports are what the host PROVIDES,
-    // so a component built against this world that never calls the cache is
-    // byte-identical to one built before the import existed.
-    import cache;
+    // The four data models the `database` kind declares, each its own package
+    // because they share nothing but the kind's name.
+    import taubyte:sql/store@0.1.0;
+    import taubyte:kv/store@0.1.0;
+    import taubyte:document/store@0.1.0;
+    import taubyte:vector/store@0.1.0;
+
+    import taubyte:cache/store@0.1.0;
+    import taubyte:storage/objects@0.1.0;
+
+    // Sending: three kinds, three deliveries, and every one of the matching
+    // RECEIVE halves is a trigger rather than a function a guest calls.
+    import taubyte:%stream/publisher@0.1.0;
+    import taubyte:bus/publisher@0.1.0;
+    import taubyte:queue/producer@0.1.0;
+    import taubyte:log/records@0.1.0;
+    import taubyte:workflow/runs@0.1.0;
+
+    import taubyte:secret/vault@0.1.0;
+
+    // In-project addressing: what v1 called p2p.
+    import taubyte:channel/dialer@0.1.0;
+
+    // And what the workload is. The one capability that is authority over
+    // nothing, and so the one that needs no grant. v1 called it `self`, which
+    // is a keyword in Rust and cannot be a package name there.
+    import taubyte:workload/identity@0.1.0;
+
+    // THE REQUEST AND RESPONSE TYPES ARE IN THE WORLD AND NOT IN AN INTERFACE,
+    // which is not a style choice: a `use` from an imported interface leaves
+    // the export's signature referring to a type the host has to resolve
+    // separately, and a host reading the component's own type section then
+    // cannot flatten the call at all. Inline, the export carries its whole
+    // shape with it — which is what lets any embedder call it knowing only this
+    // file.
 
     // A header, once. It is a list of pairs rather than a map because a header
     // may legitimately appear more than once — Set-Cookie is the example that

@@ -13,7 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// queue.go backs `taubyte:handler/queue` on this node, over pkg/queue — the
+// queue.go backs `taubyte:queue/producer` on this node, over pkg/queue — the
 // same replicated work queue the build service already runs its jobs through.
 //
 // # One raft namespace for every queue a project declares
@@ -175,14 +175,21 @@ func (q *queues) queue(grant invoke.Grant) (*queue.Queue, error) {
 
 // The setting keys services/worker writes, which are the vocabulary's own
 // attribute paths.
+//
+// THEY ARE UNDER `queue/` BECAUSE `sync` IS A TYPED KIND. A queue is `sync` at
+// `type: queue`, so every field it declares lives in the block named after the
+// type — the shape a database's `sql/` and a storage's `object/` already have.
+// Reading them at the root found nothing at all, which is not an error anywhere:
+// every queue would open with pkg/queue's defaults and the author's visibility
+// timeout, retry budget and dead letter would silently stop taking effect.
 const (
-	settingVisibility   = "visibility_timeout"
-	settingDelay        = "delay"
-	settingMaxAttempts  = "max_attempts"
-	settingRetryEvery   = "retry/interval"
-	settingRetryFactor  = "retry/factor"
-	settingRetryCeiling = "retry/ceiling"
-	settingDeadLetter   = "dead_letter/name"
+	settingVisibility   = "queue/visibility_timeout"
+	settingDelay        = "queue/delay"
+	settingMaxAttempts  = "queue/max_attempts"
+	settingRetryEvery   = "queue/retry/interval"
+	settingRetryFactor  = "queue/retry/factor"
+	settingRetryCeiling = "queue/retry/ceiling"
+	settingDeadLetter   = "queue/dead_letter/name"
 )
 
 // configOf reads what the resource declared.

@@ -137,7 +137,24 @@ func grants(label, handle string, ops ...string) []invoke.Grant {
 
 func call(t *testing.T, instance invoke.Instance, path string, body []byte) *invoke.Response {
 	t.Helper()
-	res, err := instance.Serve(t.Context(), &invoke.Request{Method: "POST", Path: path, Body: body})
+	return callWith(t, instance, path, body, nil)
+}
+
+// callWith is the same, with headers — which is how the fixture is told the
+// knobs a call has more than two of: an object's content type, a listing's
+// delimiter and page.
+func callWith(t *testing.T, instance invoke.Instance, path string, body []byte, headers map[string]string) *invoke.Response {
+	t.Helper()
+
+	req := &invoke.Request{Method: "POST", Path: path, Body: body}
+	if len(headers) > 0 {
+		req.Headers = map[string][]string{}
+		for name, value := range headers {
+			req.Headers[name] = []string{value}
+		}
+	}
+
+	res, err := instance.Serve(t.Context(), req)
 	require.NoError(t, err)
 	return res
 }
@@ -469,11 +486,11 @@ func TestAComponentWithOtherGrantsStarts(t *testing.T) {
 		Name: "fn",
 		Reaches: []invoke.Grant{
 			{Kind: "cache", Label: "sessions", Handle: "h", Ops: []string{"get"}},
-			// A KIND THIS TIER HAS NO INTERFACE FOR. `log` is one; `storage`
-			// used to be the example here and stopped being one when it
-			// gained an interface, which is the direction this is meant to
-			// travel.
-			{Kind: "log", Label: "audit", Ops: []string{"append"}},
+			// A KIND THIS TIER HAS NO INTERFACE FOR. `mcp` is one; `storage`
+			// was the example here until it gained an interface, and `sync` at
+			// `type: log` was the example after that until it gained one too —
+			// which is the direction this is meant to travel.
+			{Kind: "mcp", Label: "tools", Ops: []string{"list"}},
 		},
 	})
 	require.Equal(t, 404, call(t, instance, "/get/sessions/k", nil).Status)

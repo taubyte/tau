@@ -20,12 +20,12 @@ import (
 func stepConsumer(sends bool) worker.Consumer {
 	c := worker.Consumer{
 		Target:  worker.Target{Project: "shop", Environment: "prod", Scope: []string{"checkout"}, Kind: "function", Name: "checkout_reserve"},
-		Queue:   invoke.Grant{Kind: "queue", Label: "checkout_reserve", Handle: "shop/prod/QmReserve", Ops: []string{"receive"}},
+		Queue:   invoke.Grant{Kind: "sync", Label: "checkout_reserve", Handle: "shop/prod/QmReserve", Ops: []string{"receive"}},
 		Builtin: stepBuiltin,
 		Invokes: []worker.Target{{Project: "shop", Environment: "prod", Kind: "function", Name: "reserve_stock"}},
 	}
 	if sends {
-		c.Sends = []invoke.Grant{{Kind: "queue", Label: "checkout_charge", Handle: "shop/prod/QmCharge", Ops: []string{"send"}}}
+		c.Sends = []invoke.Grant{{Kind: "sync", Label: "checkout_charge", Handle: "shop/prod/QmCharge", Ops: []string{"send"}}}
 	}
 	return c
 }
