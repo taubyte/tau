@@ -6,3 +6,6 @@ document:
         database: profiles
         credentials:
             name: stripe
+authorizer:
+    name: tier_check
+    namespace: /shop

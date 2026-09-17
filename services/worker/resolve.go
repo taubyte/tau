@@ -550,6 +550,25 @@ func volumeSettings(reach project.Reach, target project.Resource) map[string]str
 // was declared, or "" when it would not. Both reasons are one line for an
 // author to change.
 func unservable(reach project.Reach, target project.Resource) string {
+	// AN AUTHORIZER IS A DECISION SOMEBODY ELSE MAKES, and nothing calls one
+	// yet. Serving the target anyway would grant the access its own
+	// configuration says is not this platform's to grant, which is the one
+	// failure mode worse than refusing.
+	//
+	// IT IS CROSS-KIND AND IT USED TO BE CHECKED IN ONE PLACE. attachAccess
+	// gives an `authorizer:` block to EVERY kind that declares Ops() — a
+	// database, a storage, a sync, a channel, a volume — and this check sat
+	// after unservableKind's switch, which every one of those kinds returns
+	// from before reaching. So a cache guarded by an authorizer was refused and
+	// a DATABASE guarded by the same authorizer was served wide open, with
+	// nothing said either way. A control that is ignored silently on ten kinds
+	// and enforced on one is worse than one that is missing.
+	if name := target.String("authorizer", "name"); name != "" {
+		return fmt.Sprintf("%s %q is guarded by the authorizer %q, and nothing here calls one — "+
+			"serving it would grant access its own configuration says somebody else decides",
+			reach.Kind, reach.Label, name)
+	}
+
 	if why := unservableKind(reach, target); why != "" {
 		return why
 	}
@@ -660,16 +679,6 @@ func unservableKind(reach project.Reach, target project.Resource) string {
 		// a STREAM declare that this cloud would have to serve weaker than
 		// written.
 		return ""
-	}
-
-	// AN AUTHORIZER IS A DECISION SOMEBODY ELSE MAKES, per operation, and
-	// nothing calls one yet. Serving the cache anyway would be granting the
-	// access the target explicitly said is not its own to grant — which is the
-	// one failure mode worse than refusing.
-	if name := target.String("authorizer", "name"); name != "" {
-		return fmt.Sprintf("%s %q is guarded by the authorizer %q, and nothing here calls one — "+
-			"serving it would grant access its own configuration says somebody else decides",
-			reach.Kind, reach.Label, name)
 	}
 
 	// `raft` MEANS NOTHING IS SILENTLY DISCARDED, and the store behind a cache

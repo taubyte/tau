@@ -77,3 +77,28 @@ func TestOneRefusedChannelDoesNotTakeTheOthersDown(t *testing.T) {
 	require.True(t, grants["reserve"].Allows("dial"))
 	require.False(t, grants["sync"].Allows("dial"))
 }
+
+// TestAnAuthorizerIsRefusedOnEveryKindThatCanDeclareOne — attachAccess gives an
+// `authorizer:` block to every kind with Ops(), and the refusal used to sit
+// after unservableKind's switch, which every kind but `cache` returns from
+// first. So a guarded cache was refused and a guarded DATABASE was served wide
+// open, with nothing said either way.
+func TestAnAuthorizerIsRefusedOnEveryKindThatCanDeclareOne(t *testing.T) {
+	h := newHarness(t)
+
+	// A cache, which was the one kind the check could ever reach.
+	cache := cacheGrants(t, resolveIn(t, h, nil, "function", "checkout"))
+	require.Contains(t, cache["orders"].Refused, "authorizer")
+
+	// And a database, which it could not.
+	var profiles invoke.Grant
+	for _, g := range resolveIn(t, h, []string{"billing"}, "function", "invoice").Reaches {
+		if g.Kind == databaseKind && g.Label == "profiles" {
+			profiles = g
+		}
+	}
+	require.Equal(t, "profiles", profiles.Label, "the fixture's guarded database")
+	require.Contains(t, profiles.Refused, "authorizer",
+		"a control enforced on one kind and dropped on ten is worse than one that is missing")
+	require.False(t, profiles.Allows("get"))
+}
