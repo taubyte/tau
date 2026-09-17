@@ -2,30 +2,25 @@ import { expect } from "@esm-bundle/chai";
 import { compile, open, type AsyncFs, type WasmAssets } from "./index.js";
 
 // A minimal valid project bundled inline (the browser has no filesystem): a
-// function referencing a domain, so compile also emits the DNS validation.
+// function plus the zone this project answers for, so compile also emits the
+// DNS validation.
 const FILES: Record<string, string> = {
-  "/config.yaml": ["id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR", "name: TrueTest", "notification:", "  email: cto@taubyte.com", ""].join(
-    "\n",
-  ),
-  "/domains/hal.yaml": [
-    "id: QmUcVJtgGZYkqFr2J9t2jV2fJJWZBvD7FJ6RyXzJY2kAj1",
-    "fqdn: hal.computers.com",
-    "certificate:",
-    "  type: inline",
-    "  key: k",
-    "  cert: c",
+  "/project.yaml": [
+    "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR",
+    "name: truetest",
+    "description: the smallest thing that still validates a zone",
     "",
   ].join("\n"),
-  "/functions/hello.yaml": [
-    "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh",
-    "trigger:",
-    "  type: https",
-    "  method: GET",
-    "  paths:",
-    "    - /hello",
-    "domains:",
-    "  - hal",
-    "source: .",
+  "/zone/hal.yaml": [
+    "id: QmUcVJtgGZYkqFr2J9t2jV2fJJWZBvD7FJ6RyXzJY2kAj1",
+    "description: the zone this cloud answers for",
+    "fqdn: hal.computers.com",
+    "",
+  ].join("\n"),
+  "/function/hello.yaml": [
+    "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh",
+    "description: says hello - v2 functions declare no trigger, an edge reaches them",
+    "implements: handler",
     "execution:",
     "  timeout: 20s",
     "  memory: 32MB",
@@ -89,7 +84,7 @@ async function assets(): Promise<WasmAssets> {
 describe("tcc in a real browser", () => {
   it("instantiates the wasm and compiles a project", async () => {
     const res = await compile(await seeded(), "/", { branch: "main" }, await assets());
-    expect(res.object).to.have.property("functions");
+    expect(res.object).to.have.property("function");
     const dns = res.validations.find((v) => v.validator === "dns");
     expect(dns?.value).to.equal("hal.computers.com");
   });
@@ -100,7 +95,9 @@ describe("tcc in a real browser", () => {
     expect(await fn.memory()).to.equal("32MB");
     await fn.setMemory("64MB");
     expect(await fn.memory()).to.equal("64MB");
-    expect(await fn.type()).to.equal("https");
+    // v1 read `trigger.type`; v2 functions carry no trigger at all, and
+    // `implements` is the closed set they do carry.
+    expect(await fn.implements()).to.equal("handler");
     await session.close();
   });
 });

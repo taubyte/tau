@@ -21,7 +21,7 @@ export interface KindVerbs {
 }
 export interface Kind {
   group: string;
-  singular: string;
+  name: string;
   container: boolean;
   category: string;
   doc: string;

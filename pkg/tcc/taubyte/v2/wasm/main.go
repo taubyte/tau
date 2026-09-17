@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"syscall/js"
@@ -19,7 +20,25 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 )
+
+// decompile(compiledObject, fsPrimitives) : render a compiled object back to config,
+// written through the caller's own filesystem. The compiler renders no YAML, so this
+// and `generated` are the only places config is written at all.
+func decompileFn(_ js.Value, args []js.Value) any {
+	if len(args) < 2 {
+		return errResult("decompile: expected (compiledObject, fsPrimitives)")
+	}
+	d, err := schema.NewDecompiler(schema.DecompileToVirtual(&jsFs{p: args[1]}, "/"))
+	if err != nil {
+		return errResult(err.Error())
+	}
+	if err := d.Decompile(tccConvert.MapToTCCObject(jsToMap(args[0]))); err != nil {
+		return errResult(err.Error())
+	}
+	return js.Null()
+}
 
 func main() {
 	api := js.Global().Get("Object").New()
@@ -38,6 +57,37 @@ func main() {
 	// compiler renders no yaml — writing config is the decompiler's job, and this is the
 	// only place that does it.
 	api.Set("generated", js.FuncOf(generatedFn))
+	// A compiled object back to config, written through the caller's own filesystem.
+	api.Set("decompile", js.FuncOf(decompileFn))
+
+	// THE EDITABLE HALF, and it is not a second compiler. A session keeps the config
+	// resident here and hands out a handle, so the page never holds a parsed copy its
+	// next keystroke makes stale and comments survive an edit — the bytes are never
+	// re-rendered from a JS object. See session_js.go.
+	api.Set("openSession", js.FuncOf(openSessionFn))
+	api.Set("decompileSession", js.FuncOf(decompileSessionFn))
+	api.Set("sessionGet", js.FuncOf(sessionGetFn))
+	api.Set("sessionSet", js.FuncOf(sessionSetFn))
+	api.Set("sessionDelete", js.FuncOf(sessionDeleteFn))
+	api.Set("sessionList", js.FuncOf(sessionListFn))
+	api.Set("sessionCompile", js.FuncOf(sessionCompileFn))
+	api.Set("sessionValidate", js.FuncOf(sessionValidateFn))
+	api.Set("sessionValidateField", js.FuncOf(sessionValidateFieldFn))
+	api.Set("sessionValidateResource", js.FuncOf(sessionValidateResourceFn))
+	api.Set("sessionSerialize", js.FuncOf(sessionSerializeFn))
+	api.Set("sessionLocation", js.FuncOf(sessionLocationFn))
+	api.Set("sessionSetResource", js.FuncOf(sessionSetResourceFn))
+	api.Set("sessionResourceAt", js.FuncOf(sessionResourceAtFn))
+	api.Set("sessionKinds", js.FuncOf(sessionKindsFn))
+	api.Set("sessionAddress", js.FuncOf(sessionAddressFn))
+	api.Set("sessionNames", js.FuncOf(sessionNamesFn))
+	api.Set("sessionExists", js.FuncOf(sessionExistsFn))
+	api.Set("sessionGenerate", js.FuncOf(sessionGenerateFn))
+	api.Set("sessionComplete", js.FuncOf(sessionCompleteFn))
+	api.Set("sessionSave", js.FuncOf(sessionSaveFn))
+	api.Set("sessionFork", js.FuncOf(sessionForkFn))
+	api.Set("sessionMerge", js.FuncOf(sessionMergeFn))
+	api.Set("sessionClose", js.FuncOf(sessionCloseFn))
 	// ONE NAME, AND THIS IS IT. Two consumers read this global — the generated
 	// npm client and the explorer — and they had drifted onto two spellings of
 	// it, so the client threw "tcc wasm did not register globalThis.tcc"
@@ -64,7 +114,32 @@ func toJS(v any) any {
 	return js.Global().Get("JSON").Call("parse", string(b))
 }
 
-// compile({ "function/checkout.yaml": "...", ... }, { branch }) ->
+// sourceFs is the config a caller handed over, whichever of the two shapes it used.
+//
+// TWO CONSUMERS, TWO SHAPES, AND BOTH ARE RIGHT. The explorer edits the tree in
+// memory and passes { path: contents } — no filesystem, no hydration step, and a
+// compile over exactly what is on screen. The npm client owns a real browser
+// filesystem (lightning-fs) and passes the sync primitives, because it also opens
+// SESSIONS, which have to write back where they read from. Accepting one shape and
+// silently mis-reading the other is what this function exists to stop: Object.keys
+// over a filesystem yields its METHOD NAMES, so the compile ran against files called
+// `readFile` and `stat` and failed somewhere far from the cause.
+func sourceFs(v js.Value) (afero.Fs, error) {
+	if isSyncFs(v) {
+		return &jsFs{p: v}, nil
+	}
+	fs := afero.NewMemMapFs()
+	keys := js.Global().Get("Object").Call("keys", v)
+	for i := 0; i < keys.Length(); i++ {
+		path := keys.Index(i).String()
+		if err := afero.WriteFile(fs, "/"+path, []byte(v.Get(path).String()), 0o644); err != nil {
+			return nil, fmt.Errorf("writing %s: %w", path, err)
+		}
+	}
+	return fs, nil
+}
+
+// compile(files | fsPrimitives, { branch }) ->
 //
 //	{ object, validations } | { error }
 func compileFn(_ js.Value, args []js.Value) any {
@@ -72,15 +147,9 @@ func compileFn(_ js.Value, args []js.Value) any {
 		return errResult("compile: expected (files, options?)")
 	}
 
-	fs := afero.NewMemMapFs()
-	files := args[0]
-	keys := js.Global().Get("Object").Call("keys", files)
-	for i := 0; i < keys.Length(); i++ {
-		path := keys.Index(i).String()
-		body := files.Get(path).String()
-		if err := afero.WriteFile(fs, "/"+path, []byte(body), 0o644); err != nil {
-			return errResult("writing " + path + ": " + err.Error())
-		}
+	fs, err := sourceFs(args[0])
+	if err != nil {
+		return errResult(err.Error())
 	}
 
 	branch := schema.DefaultBranch
@@ -131,12 +200,21 @@ func compileFn(_ js.Value, args []js.Value) any {
 	// The project's label in a cloud's generated zone is a pure function of its id, so
 	// it can be shown rather than guessed at. Only the cloud's own fqdn is unknown
 	// here, and that stays unknown.
+	// Flat() IS { object, indexes }, AND THEY ARE SIBLINGS OF validations — the shape
+	// the client's CompileResult declares. Nesting the whole of it under `object`
+	// again put the project one level deeper than every consumer reads it and dropped
+	// `indexes` off the top level entirely, which the explorer never noticed because
+	// it renders the result as an untyped JSON tree.
 	flat := obj.Flat()
-	out := map[string]any{"object": flat}
-	if root, ok := flat["object"].(map[string]any); ok {
-		flat = root
+	out := map[string]any{}
+	for k, v := range flat {
+		out[k] = v
 	}
-	if id, ok := flat["id"].(string); ok && id != "" {
+	root, _ := flat["object"].(map[string]any)
+	if root == nil {
+		root = flat
+	}
+	if id, ok := root["id"].(string); ok && id != "" {
 		out["projectLabel"] = schema.ProjectLabel(id)
 	}
 	// The audit runs HERE, not in the page. Every one of its checks needs a second
@@ -250,13 +328,14 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	out["relations"] = rels
 
-	if len(validations) > 0 {
-		vs := make([]map[string]any, 0, len(validations))
-		for _, v := range validations {
-			vs = append(vs, map[string]any{"key": v.Key, "value": v.Value, "validator": v.Validator})
-		}
-		out["validations"] = vs
+	// ALWAYS PRESENT, EMPTY WHEN THERE ARE NONE. The client declares validations as a
+	// list, not an optional one, so omitting the key made a clean compile the case
+	// where reading the result threw.
+	vs := make([]map[string]any, 0, len(validations))
+	for _, v := range validations {
+		vs = append(vs, map[string]any{"key": v.Key, "value": v.Value, "validator": v.Validator})
 	}
+	out["validations"] = vs
 	return toJS(out)
 }
 
@@ -391,8 +470,16 @@ func kindsFn(js.Value, []js.Value) any {
 		if schema.ServedByRoute(name) {
 			reach = append(reach, "route")
 		}
+		// `name` IS THE DECLARED SINGULAR, LOWERCASED, and both halves of that
+		// matter. loader.ts types this call's result as Kind{name, group,
+		// container} and the SESSION's own kinds() already answers that way, so
+		// emitting `singular` left a typed consumer reading `kind.name` as
+		// undefined while the compiler told it the field was a string. The case
+		// is the session's too: the DSL declares `Function` as a display label,
+		// and the kind resolver matches a lowercased name — so a rich kind list
+		// that said `Function` disagreed with the session about one concept.
 		out = append(out, map[string]any{
-			"group": name, "singular": singular, "container": iter.Group,
+			"group": name, "name": strings.ToLower(singular), "container": iter.Group,
 			"category": category, "doc": doc, "icon": icon, "fields": fields,
 			"reach": reach,
 		})

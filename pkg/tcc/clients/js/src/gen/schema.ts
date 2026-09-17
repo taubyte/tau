@@ -13,89 +13,233 @@ import type {
 } from "../loader.js";
 import type { AsyncFs } from "../fs.js";
 
-export type DatabaseNetwork = "all" | "subnet" | "host";
-export type DomainCertType = "inline" | "auto";
-export type FunctionType = "http" | "https" | "pubsub" | "p2p";
-export type FunctionMethod = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
-export type LibraryProvider = "github";
+export type ApplicationKind = "image" | "git";
+export type ApplicationReadinessKind = "http" | "function";
+export type ApplicationLivenessKind = "http" | "function";
+export type ApplicationRegionPolicy = "auto" | "cdn" | "failover";
+export type ApplicationBuildKind = "dockerfile";
+export type FunctionKind = "component" | "builtin" | "git";
+export type FunctionRegionPolicy = "auto" | "cdn" | "failover";
+export type FunctionBuildKind = "commands" | "script";
+export type FunctionImplements = "handler" | "authorizer" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
+export type WorkerKind = "component" | "builtin" | "git" | "image";
+export type WorkerRegionPolicy = "auto" | "cdn" | "failover";
+export type WorkerBuildKind = "commands" | "script" | "dockerfile";
+export type WorkerImplements = "handler" | "authorizer" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
+export type WorkerRuntime = "wasm" | "container";
+export type SandboxKind = "image" | "git";
+export type SandboxRegionPolicy = "auto" | "cdn" | "failover";
+export type SandboxBuildKind = "dockerfile";
+export type CronOn_overlap = "skip" | "queue" | "allow";
+export type ComponentKind = "git";
+export type ComponentBuildKind = "commands" | "script";
+export type WebsiteKind = "git";
+export type WebsiteBuildKind = "commands" | "script";
+export type WebsiteMode = "static" | "spa";
+export type CacheInstancesAdmission = "validator";
+export type CacheRegionPolicy = "auto" | "cdn" | "failover";
+export type CacheConsensus = "raft" | "crdt" | "gossip";
+export type DatabaseType = "kv" | "document" | "sql" | "vector";
+export type DatabaseKvEngine = "distributed";
+export type DatabaseDocumentEngine = "distributed" | "mongo";
+export type DatabaseSqlEngine = "distributed" | "postgres" | "mysql";
+export type DatabaseVectorEngine = "distributed";
+export type DatabaseInstancesAdmission = "validator";
+export type DatabaseRegionPolicy = "auto" | "cdn" | "failover";
+export type DatabaseKvConsensus = "crdt" | "raft";
+export type DatabaseDocumentConsensus = "crdt" | "raft";
+export type DatabaseDocumentTls = "verify-full" | "require" | "disable";
+export type DatabaseSqlConsensus = "crdt" | "raft";
+export type DatabaseSqlTls = "verify-full" | "require" | "disable";
+export type DatabaseVectorConsensus = "crdt" | "raft";
+export type DatabaseMetric = "cosine" | "dot" | "euclidean";
 export type StorageType = "object" | "streaming";
-export type StorageNetwork = "all" | "subnet" | "host";
-export type WebsiteProvider = "github";
-
-/** The git repository backing a resource. */
-export interface RepoRef {
-  provider: string;
-  fullname: string;
-  branch?: string;
-}
+export type StorageInstancesAdmission = "validator";
+export type StorageRegionPolicy = "auto" | "cdn" | "failover";
+export type VolumeRegionPolicy = "auto" | "cdn" | "failover";
+export type VolumeOn_budget_exceeded = "alert" | "freeze-writes";
+export type SecretSource = "value" | "oidc";
+export type SyncType = "queue" | "log";
+export type SyncRegionPolicy = "auto" | "cdn" | "failover";
+export type SyncQueueConsensus = "crdt" | "raft";
+export type SyncLogConsensus = "crdt" | "raft";
+export type GatewayHostKind = "generated" | "zone";
+export type GatewayRouting = "route" | "router";
+export type GatewayRouteTarget = "handler" | "router";
+export type GatewayHandlerKind = "function" | "application" | "website" | "gateway" | "mcp" | "agent";
+export type GatewayCertSource = "generated" | "provided";
+export type GatewayMatch = "prefix" | "exact" | "regex";
+export type GatewayMethods = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
+export type ProxyHostKind = "generated" | "zone";
+export type ProxyRouting = "forward" | "router";
+export type ProxyHandlerKind = "application";
+export type ProxyProtocol = "tcp" | "udp" | "sctp";
+export type ProxyTlsMode = "none" | "terminate";
+export type ProxyCertSource = "generated" | "provided";
+export type ProxyKey = "ip" | "subnet";
+export type StreamEngine = "distributed" | "kafka" | "nats";
+export type StreamTls = "verify-full" | "require" | "disable";
+export type BusHostKind = "generated" | "zone";
+export type BusInstancesAdmission = "validator";
+export type MCPCache_scope = "none" | "public" | "principal";
+export type ChannelServeKind = "application" | "function";
+export type ModelInferenceKind = "remote" | "local";
+export type ModelFormat = "openai" | "anthropic" | "ollama";
+export type AgentKind = "git";
+export type AgentRegionPolicy = "auto" | "cdn" | "failover";
+export type WorkflowRegionPolicy = "auto" | "cdn" | "failover";
 
 /** An editable, wasm-resident project config session. */
 export class Session {
   constructor(readonly binding: SessionBinding, readonly handle: number) {}
 
-  database(name: string, app?: string): DatabaseConfig {
-    return new DatabaseConfig(this, name, app);
+  application(name: string, app?: string): ApplicationConfig {
+    return new ApplicationConfig(this, name, app);
   }
-  databaseNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["applications", app, "databases"] : ["databases"]);
-  }
-  domain(name: string, app?: string): DomainConfig {
-    return new DomainConfig(this, name, app);
-  }
-  domainNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["applications", app, "domains"] : ["domains"]);
+  applicationNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "application"] : ["application"]);
   }
   function(name: string, app?: string): FunctionConfig {
     return new FunctionConfig(this, name, app);
   }
   functionNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["applications", app, "functions"] : ["functions"]);
+    return this.binding.list(this.handle, app ? ["namespace", app, "function"] : ["function"]);
   }
-  library(name: string, app?: string): LibraryConfig {
-    return new LibraryConfig(this, name, app);
+  worker(name: string, app?: string): WorkerConfig {
+    return new WorkerConfig(this, name, app);
   }
-  libraryNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["applications", app, "libraries"] : ["libraries"]);
+  workerNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "worker"] : ["worker"]);
   }
-  messaging(name: string, app?: string): MessagingConfig {
-    return new MessagingConfig(this, name, app);
+  sandbox(name: string, app?: string): SandboxConfig {
+    return new SandboxConfig(this, name, app);
   }
-  messagingNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["applications", app, "messaging"] : ["messaging"]);
+  sandboxNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "sandbox"] : ["sandbox"]);
   }
-  service(name: string, app?: string): ServiceConfig {
-    return new ServiceConfig(this, name, app);
+  cron(name: string, app?: string): CronConfig {
+    return new CronConfig(this, name, app);
   }
-  serviceNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["applications", app, "services"] : ["services"]);
+  cronNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "cron"] : ["cron"]);
   }
-  smartOp(name: string, app?: string): SmartOpConfig {
-    return new SmartOpConfig(this, name, app);
+  component(name: string, app?: string): ComponentConfig {
+    return new ComponentConfig(this, name, app);
   }
-  smartOpNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["applications", app, "smartops"] : ["smartops"]);
-  }
-  storage(name: string, app?: string): StorageConfig {
-    return new StorageConfig(this, name, app);
-  }
-  storageNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["applications", app, "storages"] : ["storages"]);
+  componentNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "component"] : ["component"]);
   }
   website(name: string, app?: string): WebsiteConfig {
     return new WebsiteConfig(this, name, app);
   }
   websiteNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["applications", app, "websites"] : ["websites"]);
+    return this.binding.list(this.handle, app ? ["namespace", app, "website"] : ["website"]);
+  }
+  cache(name: string, app?: string): CacheConfig {
+    return new CacheConfig(this, name, app);
+  }
+  cacheNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "cache"] : ["cache"]);
+  }
+  database(name: string, app?: string): DatabaseConfig {
+    return new DatabaseConfig(this, name, app);
+  }
+  databaseNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "database"] : ["database"]);
+  }
+  storage(name: string, app?: string): StorageConfig {
+    return new StorageConfig(this, name, app);
+  }
+  storageNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "storage"] : ["storage"]);
+  }
+  volume(name: string, app?: string): VolumeConfig {
+    return new VolumeConfig(this, name, app);
+  }
+  volumeNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "volume"] : ["volume"]);
+  }
+  secret(name: string, app?: string): SecretConfig {
+    return new SecretConfig(this, name, app);
+  }
+  secretNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "secret"] : ["secret"]);
+  }
+  sync(name: string, app?: string): SyncConfig {
+    return new SyncConfig(this, name, app);
+  }
+  syncNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "sync"] : ["sync"]);
+  }
+  zone(name: string, app?: string): ZoneConfig {
+    return new ZoneConfig(this, name, app);
+  }
+  zoneNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "zone"] : ["zone"]);
+  }
+  gateway(name: string, app?: string): GatewayConfig {
+    return new GatewayConfig(this, name, app);
+  }
+  gatewayNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "gateway"] : ["gateway"]);
+  }
+  proxy(name: string, app?: string): ProxyConfig {
+    return new ProxyConfig(this, name, app);
+  }
+  proxyNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "proxy"] : ["proxy"]);
+  }
+  stream(name: string, app?: string): StreamConfig {
+    return new StreamConfig(this, name, app);
+  }
+  streamNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "stream"] : ["stream"]);
+  }
+  bus(name: string, app?: string): BusConfig {
+    return new BusConfig(this, name, app);
+  }
+  busNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "bus"] : ["bus"]);
+  }
+  mcp(name: string, app?: string): MCPConfig {
+    return new MCPConfig(this, name, app);
+  }
+  mcpNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "mcp"] : ["mcp"]);
+  }
+  channel(name: string, app?: string): ChannelConfig {
+    return new ChannelConfig(this, name, app);
+  }
+  channelNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "channel"] : ["channel"]);
+  }
+  model(name: string, app?: string): ModelConfig {
+    return new ModelConfig(this, name, app);
+  }
+  modelNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "model"] : ["model"]);
+  }
+  agent(name: string, app?: string): AgentConfig {
+    return new AgentConfig(this, name, app);
+  }
+  agentNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "agent"] : ["agent"]);
+  }
+  workflow(name: string, app?: string): WorkflowConfig {
+    return new WorkflowConfig(this, name, app);
+  }
+  workflowNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "workflow"] : ["workflow"]);
   }
 
-  application(name: string): ApplicationConfig {
-    return new ApplicationConfig(this, name);
+  namespace(name: string): NamespaceConfig {
+    return new NamespaceConfig(this, name);
   }
   project(): ProjectConfig {
     return new ProjectConfig(this);
   }
-  applicationNames(): Promise<string[]> {
-    return this.binding.list(this.handle, ["applications"]);
+  namespaceNames(): Promise<string[]> {
+    return this.binding.list(this.handle, ["namespace"]);
   }
   resourceAt(path: string): Promise<string[] | null> {
     return this.binding.resourceAt(this.handle, path);
@@ -122,23 +266,6 @@ export class Session {
    *  generated per-kind factories, with the identical document surface. */
   async resource(kind: string, name: string, app?: string): Promise<ResourceConfig> {
     return new ResourceConfig(this, await this.address(kind, name, app));
-  }
-  /** The git repository backing a resource, or null if it isn't repo-backed.
-   * The provider key is dynamic, so this takes whichever sub-object of "source"
-   * carries the repo name — no provider is named here or in the DSL walk. */
-  async resourceRepo(res: string[]): Promise<RepoRef | null> {
-    const src = await this.binding.get(this.handle, res, ["source"]).catch(() => null);
-    if (!src || typeof src !== "object" || Array.isArray(src)) return null;
-    const block = src as Record<string, unknown>;
-    const branch = typeof block["branch"] === "string" ? (block["branch"] as string) : undefined;
-    for (const [provider, v] of Object.entries(block)) {
-      if (!v || typeof v !== "object" || Array.isArray(v)) continue;
-      const fullname = (v as Record<string, unknown>)["fullname"];
-      if (typeof fullname === "string" && fullname) {
-        return { provider, fullname, ...(branch ? { branch } : {}) };
-      }
-    }
-    return null;
   }
   compile(opts?: CompileOptions): Promise<CompileResult> {
     return this.binding.compile(this.handle, opts);
@@ -213,10 +340,10 @@ export class ResourceConfig {
   }
 }
 
-/** Typed accessors for a database's config. */
-export class DatabaseConfig extends ResourceConfig {
+/** Typed accessors for a application's config. */
+export class ApplicationConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["applications", app, "databases", name] : ["databases", name]);
+    super(s, app ? ["namespace", app, "application", name] : ["application", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -259,62 +386,2651 @@ export class DatabaseConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
-  async match(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["match"])) as string | undefined;
+  async source(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
   }
-  setMatch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["match"], v);
+  setSource(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
   }
-  unsetMatch(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["match"]);
-  }
-
-  async regex(): Promise<boolean | undefined> {
-    const v = await this.s.binding.get(this.s.handle, this.res, ["regex"]);
-    return (v ?? (await this.s.binding.get(this.s.handle, this.res, ["useRegex"]))) as boolean | undefined;
-  }
-  setRegex(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["regex"], v);
-  }
-  unsetRegex(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["regex"]);
+  unsetSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
   }
 
-  async network(): Promise<DatabaseNetwork | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["access", "network"])) as DatabaseNetwork | undefined;
-  }
-  setNetwork(v: DatabaseNetwork): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["access", "network"], v);
-  }
-  unsetNetwork(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["access", "network"]);
+  /** Which application this is — the key its settings live under. */
+  async kind(): Promise<ApplicationKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["image", "git"] as readonly string[]) if (k in block) return k as ApplicationKind;
+    return undefined;
   }
 
-  async size(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["storage", "size"])) as string | undefined;
+  async image(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image"])) as string | undefined;
   }
-  setSize(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["storage", "size"], v);
+  setImage(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "image"], v);
   }
-  unsetSize(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["storage", "size"]);
+  unsetImage(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "image"]);
   }
 
-  async key(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["encryption", "key"])) as string | undefined;
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"])) as string | undefined;
   }
-  setKey(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["encryption", "key"], v);
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"], v);
   }
-  unsetKey(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["encryption", "key"]);
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"]);
+  }
+
+  async git(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
+  }
+  setGit(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
+  }
+  unsetGit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
+  }
+
+  async branch(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
+  }
+  setBranch(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
+  }
+  unsetBranch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
+  }
+
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  /** Which application this is — the key its settings live under. */
+  async readinessKind(): Promise<ApplicationReadinessKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["readiness"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["http", "function"] as readonly string[]) if (k in block) return k as ApplicationReadinessKind;
+    return undefined;
+  }
+
+  async port(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["readiness", "http", "port"])) as string | undefined;
+  }
+  setPort(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["readiness", "http", "port"], v);
+  }
+  unsetPort(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["readiness", "http", "port"]);
+  }
+
+  /** Which application this is — the key its settings live under. */
+  async livenessKind(): Promise<ApplicationLivenessKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["liveness"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["http", "function"] as readonly string[]) if (k in block) return k as ApplicationLivenessKind;
+    return undefined;
+  }
+
+  async failures(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["liveness", "failures"])) as number | undefined;
+  }
+  setFailures(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["liveness", "failures"], v);
+  }
+  unsetFailures(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["liveness", "failures"]);
+  }
+
+  async memory(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "memory"])) as string | undefined;
+  }
+  setMemory(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "memory"], v);
+  }
+  unsetMemory(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "memory"]);
+  }
+
+  async cpu(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "cpu"])) as number | undefined;
+  }
+  setCpu(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "cpu"], v);
+  }
+  unsetCpu(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "cpu"]);
+  }
+
+  async egress(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["egress"])) as string[] | undefined;
+  }
+  setEgress(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["egress"], v);
+  }
+  unsetEgress(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["egress"]);
+  }
+
+  async max_instances(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["limits", "max_instances"])) as number | undefined;
+  }
+  setMax_instances(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["limits", "max_instances"], v);
+  }
+  unsetMax_instances(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["limits", "max_instances"]);
+  }
+
+  async concurrency(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["limits", "concurrency"])) as number | undefined;
+  }
+  setConcurrency(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["limits", "concurrency"], v);
+  }
+  unsetConcurrency(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["limits", "concurrency"]);
+  }
+
+  /** Which application this is — the key its settings live under. */
+  async regionPolicy(): Promise<ApplicationRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as ApplicationRegionPolicy;
+    return undefined;
+  }
+
+  /** Lives under the application's kind, so the branch is explicit. */
+  async regionName(regionPolicy: ApplicationRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  }
+  setRegionName(regionPolicy: ApplicationRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  }
+  unsetRegionName(regionPolicy: ApplicationRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  }
+
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+  }
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+  }
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+  }
+
+  /** Which application this is — the key its settings live under. */
+  async buildKind(): Promise<ApplicationBuildKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["dockerfile"] as readonly string[]) if (k in block) return k as ApplicationBuildKind;
+    return undefined;
+  }
+
+  async dockerfile(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "path"])) as string | undefined;
+  }
+  setDockerfile(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "path"], v);
+  }
+  unsetDockerfile(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "path"]);
+  }
+
+  async target(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "target"])) as string | undefined;
+  }
+  setTarget(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "target"], v);
+  }
+  unsetTarget(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "target"]);
   }
 }
 
-/** Typed accessors for a domain's config. */
-export class DomainConfig extends ResourceConfig {
+/** Typed accessors for a function's config. */
+export class FunctionConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["applications", app, "domains", name] : ["domains", name]);
+    super(s, app ? ["namespace", app, "function", name] : ["function", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async implements(): Promise<FunctionImplements | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["implements"])) as FunctionImplements | undefined;
+  }
+  setImplements(v: FunctionImplements): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["implements"], v);
+  }
+  unsetImplements(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["implements"]);
+  }
+
+  async source(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
+  }
+  setSource(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
+  }
+  unsetSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
+  }
+
+  /** Which function this is — the key its settings live under. */
+  async kind(): Promise<FunctionKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["component", "builtin", "git"] as readonly string[]) if (k in block) return k as FunctionKind;
+    return undefined;
+  }
+
+  async component(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "component"])) as string | undefined;
+  }
+  setComponent(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "component"], v);
+  }
+  unsetComponent(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "component"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "namespace"]);
+  }
+
+  async builtin(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "builtin"])) as string | undefined;
+  }
+  setBuiltin(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "builtin"], v);
+  }
+  unsetBuiltin(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "builtin"]);
+  }
+
+  async git(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
+  }
+  setGit(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
+  }
+  unsetGit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
+  }
+
+  async branch(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
+  }
+  setBranch(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
+  }
+  unsetBranch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
+  }
+
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  async call(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "call"])) as string | undefined;
+  }
+  setCall(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "call"], v);
+  }
+  unsetCall(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "call"]);
+  }
+
+  async timeout(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "timeout"])) as string | undefined;
+  }
+  setTimeout(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "timeout"], v);
+  }
+  unsetTimeout(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "timeout"]);
+  }
+
+  async memory(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "memory"])) as string | undefined;
+  }
+  setMemory(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "memory"], v);
+  }
+  unsetMemory(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "memory"]);
+  }
+
+  async cpu(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "cpu"])) as number | undefined;
+  }
+  setCpu(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "cpu"], v);
+  }
+  unsetCpu(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "cpu"]);
+  }
+
+  async egress(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["egress"])) as string[] | undefined;
+  }
+  setEgress(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["egress"], v);
+  }
+  unsetEgress(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["egress"]);
+  }
+
+  /** Which function this is — the key its settings live under. */
+  async regionPolicy(): Promise<FunctionRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as FunctionRegionPolicy;
+    return undefined;
+  }
+
+  /** Lives under the function's kind, so the branch is explicit. */
+  async regionName(regionPolicy: FunctionRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  }
+  setRegionName(regionPolicy: FunctionRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  }
+  unsetRegionName(regionPolicy: FunctionRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  }
+
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+  }
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+  }
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+  }
+
+  /** Which function this is — the key its settings live under. */
+  async buildKind(): Promise<FunctionBuildKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["commands", "script"] as readonly string[]) if (k in block) return k as FunctionBuildKind;
+    return undefined;
+  }
+
+  /** Lives under the function's kind, so the branch is explicit. */
+  async buildImage(buildKind: FunctionBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "image"])) as string | undefined;
+  }
+  setBuildImage(buildKind: FunctionBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "image"], v);
+  }
+  unsetBuildImage(buildKind: FunctionBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "image"]);
+  }
+
+  /** Lives under the function's kind, so the branch is explicit. */
+  async buildOutput(buildKind: FunctionBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "output"])) as string | undefined;
+  }
+  setBuildOutput(buildKind: FunctionBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "output"], v);
+  }
+  unsetBuildOutput(buildKind: FunctionBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "output"]);
+  }
+
+  /** Lives under the function's kind, so the branch is explicit. */
+  async buildInstall(buildKind: FunctionBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "install"])) as string | undefined;
+  }
+  setBuildInstall(buildKind: FunctionBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "install"], v);
+  }
+  unsetBuildInstall(buildKind: FunctionBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "install"]);
+  }
+
+  /** Lives under the function's kind, so the branch is explicit. */
+  async buildRun(buildKind: FunctionBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "run"])) as string | undefined;
+  }
+  setBuildRun(buildKind: FunctionBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "run"], v);
+  }
+  unsetBuildRun(buildKind: FunctionBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "run"]);
+  }
+
+  async buildScript(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "script", "path"])) as string | undefined;
+  }
+  setBuildScript(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "script", "path"], v);
+  }
+  unsetBuildScript(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "script", "path"]);
+  }
+}
+
+/** Typed accessors for a worker's config. */
+export class WorkerConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "worker", name] : ["worker", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async implements(): Promise<WorkerImplements | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["implements"])) as WorkerImplements | undefined;
+  }
+  setImplements(v: WorkerImplements): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["implements"], v);
+  }
+  unsetImplements(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["implements"]);
+  }
+
+  async source(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
+  }
+  setSource(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
+  }
+  unsetSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
+  }
+
+  /** Which worker this is — the key its settings live under. */
+  async kind(): Promise<WorkerKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["component", "builtin", "git", "image"] as readonly string[]) if (k in block) return k as WorkerKind;
+    return undefined;
+  }
+
+  async component(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "component"])) as string | undefined;
+  }
+  setComponent(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "component"], v);
+  }
+  unsetComponent(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "component"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "namespace"]);
+  }
+
+  async builtin(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "builtin"])) as string | undefined;
+  }
+  setBuiltin(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "builtin"], v);
+  }
+  unsetBuiltin(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "builtin"]);
+  }
+
+  async git(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
+  }
+  setGit(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
+  }
+  unsetGit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
+  }
+
+  async branch(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
+  }
+  setBranch(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
+  }
+  unsetBranch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
+  }
+
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  async image(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image"])) as string | undefined;
+  }
+  setImage(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "image"], v);
+  }
+  unsetImage(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "image"]);
+  }
+
+  async call(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "call"])) as string | undefined;
+  }
+  setCall(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "call"], v);
+  }
+  unsetCall(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "call"]);
+  }
+
+  async timeout(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "timeout"])) as string | undefined;
+  }
+  setTimeout(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "timeout"], v);
+  }
+  unsetTimeout(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "timeout"]);
+  }
+
+  async memory(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "memory"])) as string | undefined;
+  }
+  setMemory(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "memory"], v);
+  }
+  unsetMemory(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "memory"]);
+  }
+
+  async cpu(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "cpu"])) as number | undefined;
+  }
+  setCpu(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "cpu"], v);
+  }
+  unsetCpu(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "cpu"]);
+  }
+
+  async egress(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["egress"])) as string[] | undefined;
+  }
+  setEgress(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["egress"], v);
+  }
+  unsetEgress(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["egress"]);
+  }
+
+  async runtime(): Promise<WorkerRuntime | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["runtime"])) as WorkerRuntime | undefined;
+  }
+  setRuntime(v: WorkerRuntime): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["runtime"], v);
+  }
+  unsetRuntime(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["runtime"]);
+  }
+
+  /** Which worker this is — the key its settings live under. */
+  async regionPolicy(): Promise<WorkerRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as WorkerRegionPolicy;
+    return undefined;
+  }
+
+  /** Lives under the worker's kind, so the branch is explicit. */
+  async regionName(regionPolicy: WorkerRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  }
+  setRegionName(regionPolicy: WorkerRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  }
+  unsetRegionName(regionPolicy: WorkerRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  }
+
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+  }
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+  }
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+  }
+
+  /** Which worker this is — the key its settings live under. */
+  async buildKind(): Promise<WorkerBuildKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["commands", "script", "dockerfile"] as readonly string[]) if (k in block) return k as WorkerBuildKind;
+    return undefined;
+  }
+
+  /** Lives under the worker's kind, so the branch is explicit. */
+  async buildImage(buildKind: WorkerBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "image"])) as string | undefined;
+  }
+  setBuildImage(buildKind: WorkerBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "image"], v);
+  }
+  unsetBuildImage(buildKind: WorkerBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "image"]);
+  }
+
+  /** Lives under the worker's kind, so the branch is explicit. */
+  async buildOutput(buildKind: WorkerBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "output"])) as string | undefined;
+  }
+  setBuildOutput(buildKind: WorkerBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "output"], v);
+  }
+  unsetBuildOutput(buildKind: WorkerBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "output"]);
+  }
+
+  /** Lives under the worker's kind, so the branch is explicit. */
+  async buildInstall(buildKind: WorkerBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "install"])) as string | undefined;
+  }
+  setBuildInstall(buildKind: WorkerBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "install"], v);
+  }
+  unsetBuildInstall(buildKind: WorkerBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "install"]);
+  }
+
+  /** Lives under the worker's kind, so the branch is explicit. */
+  async buildRun(buildKind: WorkerBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "run"])) as string | undefined;
+  }
+  setBuildRun(buildKind: WorkerBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "run"], v);
+  }
+  unsetBuildRun(buildKind: WorkerBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "run"]);
+  }
+
+  async buildScript(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "script", "path"])) as string | undefined;
+  }
+  setBuildScript(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "script", "path"], v);
+  }
+  unsetBuildScript(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "script", "path"]);
+  }
+
+  async dockerfile(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "path"])) as string | undefined;
+  }
+  setDockerfile(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "path"], v);
+  }
+  unsetDockerfile(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "path"]);
+  }
+
+  async target(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "target"])) as string | undefined;
+  }
+  setTarget(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "target"], v);
+  }
+  unsetTarget(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "target"]);
+  }
+}
+
+/** Typed accessors for a sandbox's config. */
+export class SandboxConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "sandbox", name] : ["sandbox", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async source(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
+  }
+  setSource(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
+  }
+  unsetSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
+  }
+
+  /** Which sandbox this is — the key its settings live under. */
+  async kind(): Promise<SandboxKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["image", "git"] as readonly string[]) if (k in block) return k as SandboxKind;
+    return undefined;
+  }
+
+  async image(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image"])) as string | undefined;
+  }
+  setImage(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "image"], v);
+  }
+  unsetImage(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "image"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"]);
+  }
+
+  async git(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
+  }
+  setGit(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
+  }
+  unsetGit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
+  }
+
+  async branch(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
+  }
+  setBranch(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
+  }
+  unsetBranch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
+  }
+
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  async idle(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["lifetime", "idle"])) as string | undefined;
+  }
+  setIdle(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["lifetime", "idle"], v);
+  }
+  unsetIdle(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["lifetime", "idle"]);
+  }
+
+  async max(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["lifetime", "max"])) as string | undefined;
+  }
+  setMax(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["lifetime", "max"], v);
+  }
+  unsetMax(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["lifetime", "max"]);
+  }
+
+  async egress(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["egress"])) as string[] | undefined;
+  }
+  setEgress(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["egress"], v);
+  }
+  unsetEgress(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["egress"]);
+  }
+
+  async memory(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "memory"])) as string | undefined;
+  }
+  setMemory(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "memory"], v);
+  }
+  unsetMemory(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "memory"]);
+  }
+
+  async cpu(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "cpu"])) as number | undefined;
+  }
+  setCpu(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "cpu"], v);
+  }
+  unsetCpu(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "cpu"]);
+  }
+
+  /** Which sandbox this is — the key its settings live under. */
+  async regionPolicy(): Promise<SandboxRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as SandboxRegionPolicy;
+    return undefined;
+  }
+
+  /** Lives under the sandbox's kind, so the branch is explicit. */
+  async regionName(regionPolicy: SandboxRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  }
+  setRegionName(regionPolicy: SandboxRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  }
+  unsetRegionName(regionPolicy: SandboxRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  }
+
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+  }
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+  }
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+  }
+
+  /** Which sandbox this is — the key its settings live under. */
+  async buildKind(): Promise<SandboxBuildKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["dockerfile"] as readonly string[]) if (k in block) return k as SandboxBuildKind;
+    return undefined;
+  }
+
+  async dockerfile(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "path"])) as string | undefined;
+  }
+  setDockerfile(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "path"], v);
+  }
+  unsetDockerfile(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "path"]);
+  }
+
+  async target(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "target"])) as string | undefined;
+  }
+  setTarget(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "target"], v);
+  }
+  unsetTarget(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "target"]);
+  }
+}
+
+/** Typed accessors for a cron's config. */
+export class CronConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "cron", name] : ["cron", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async schedule(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["schedule"])) as string | undefined;
+  }
+  setSchedule(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["schedule"], v);
+  }
+  unsetSchedule(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["schedule"]);
+  }
+
+  async timezone(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["timezone"])) as string | undefined;
+  }
+  setTimezone(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["timezone"], v);
+  }
+  unsetTimezone(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["timezone"]);
+  }
+
+  async on_overlap(): Promise<CronOn_overlap | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["on_overlap"])) as CronOn_overlap | undefined;
+  }
+  setOn_overlap(v: CronOn_overlap): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["on_overlap"], v);
+  }
+  unsetOn_overlap(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["on_overlap"]);
+  }
+
+  async jitter(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["jitter"])) as string | undefined;
+  }
+  setJitter(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["jitter"], v);
+  }
+  unsetJitter(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["jitter"]);
+  }
+}
+
+/** Typed accessors for a component's config. */
+export class ComponentConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "component", name] : ["component", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async source(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
+  }
+  setSource(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
+  }
+  unsetSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
+  }
+
+  /** Which component this is — the key its settings live under. */
+  async kind(): Promise<ComponentKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["git"] as readonly string[]) if (k in block) return k as ComponentKind;
+    return undefined;
+  }
+
+  async git(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
+  }
+  setGit(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
+  }
+  unsetGit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
+  }
+
+  async branch(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
+  }
+  setBranch(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
+  }
+  unsetBranch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
+  }
+
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  /** Which component this is — the key its settings live under. */
+  async buildKind(): Promise<ComponentBuildKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["commands", "script"] as readonly string[]) if (k in block) return k as ComponentBuildKind;
+    return undefined;
+  }
+
+  /** Lives under the component's kind, so the branch is explicit. */
+  async buildImage(buildKind: ComponentBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "image"])) as string | undefined;
+  }
+  setBuildImage(buildKind: ComponentBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "image"], v);
+  }
+  unsetBuildImage(buildKind: ComponentBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "image"]);
+  }
+
+  /** Lives under the component's kind, so the branch is explicit. */
+  async buildOutput(buildKind: ComponentBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "output"])) as string | undefined;
+  }
+  setBuildOutput(buildKind: ComponentBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "output"], v);
+  }
+  unsetBuildOutput(buildKind: ComponentBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "output"]);
+  }
+
+  /** Lives under the component's kind, so the branch is explicit. */
+  async buildInstall(buildKind: ComponentBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "install"])) as string | undefined;
+  }
+  setBuildInstall(buildKind: ComponentBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "install"], v);
+  }
+  unsetBuildInstall(buildKind: ComponentBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "install"]);
+  }
+
+  /** Lives under the component's kind, so the branch is explicit. */
+  async buildRun(buildKind: ComponentBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "run"])) as string | undefined;
+  }
+  setBuildRun(buildKind: ComponentBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "run"], v);
+  }
+  unsetBuildRun(buildKind: ComponentBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "run"]);
+  }
+
+  async buildScript(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "script", "path"])) as string | undefined;
+  }
+  setBuildScript(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "script", "path"], v);
+  }
+  unsetBuildScript(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "script", "path"]);
+  }
+}
+
+/** Typed accessors for a website's config. */
+export class WebsiteConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "website", name] : ["website", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async source(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
+  }
+  setSource(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
+  }
+  unsetSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
+  }
+
+  /** Which website this is — the key its settings live under. */
+  async kind(): Promise<WebsiteKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["git"] as readonly string[]) if (k in block) return k as WebsiteKind;
+    return undefined;
+  }
+
+  async git(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
+  }
+  setGit(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
+  }
+  unsetGit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
+  }
+
+  async branch(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
+  }
+  setBranch(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
+  }
+  unsetBranch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
+  }
+
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  async index(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["serve", "index"])) as string | undefined;
+  }
+  setIndex(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["serve", "index"], v);
+  }
+  unsetIndex(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["serve", "index"]);
+  }
+
+  async mode(): Promise<WebsiteMode | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["serve", "mode"])) as WebsiteMode | undefined;
+  }
+  setMode(v: WebsiteMode): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["serve", "mode"], v);
+  }
+  unsetMode(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["serve", "mode"]);
+  }
+
+  async not_found(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["serve", "not_found"])) as string | undefined;
+  }
+  setNot_found(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["serve", "not_found"], v);
+  }
+  unsetNot_found(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["serve", "not_found"]);
+  }
+
+  /** Which website this is — the key its settings live under. */
+  async buildKind(): Promise<WebsiteBuildKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["commands", "script"] as readonly string[]) if (k in block) return k as WebsiteBuildKind;
+    return undefined;
+  }
+
+  /** Lives under the website's kind, so the branch is explicit. */
+  async buildImage(buildKind: WebsiteBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "image"])) as string | undefined;
+  }
+  setBuildImage(buildKind: WebsiteBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "image"], v);
+  }
+  unsetBuildImage(buildKind: WebsiteBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "image"]);
+  }
+
+  /** Lives under the website's kind, so the branch is explicit. */
+  async buildOutput(buildKind: WebsiteBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "output"])) as string | undefined;
+  }
+  setBuildOutput(buildKind: WebsiteBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "output"], v);
+  }
+  unsetBuildOutput(buildKind: WebsiteBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "output"]);
+  }
+
+  /** Lives under the website's kind, so the branch is explicit. */
+  async buildInstall(buildKind: WebsiteBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "install"])) as string | undefined;
+  }
+  setBuildInstall(buildKind: WebsiteBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "install"], v);
+  }
+  unsetBuildInstall(buildKind: WebsiteBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "install"]);
+  }
+
+  /** Lives under the website's kind, so the branch is explicit. */
+  async buildRun(buildKind: WebsiteBuildKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "run"])) as string | undefined;
+  }
+  setBuildRun(buildKind: WebsiteBuildKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "run"], v);
+  }
+  unsetBuildRun(buildKind: WebsiteBuildKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "run"]);
+  }
+
+  async buildScript(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "script", "path"])) as string | undefined;
+  }
+  setBuildScript(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "script", "path"], v);
+  }
+  unsetBuildScript(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "script", "path"]);
+  }
+}
+
+/** Typed accessors for a cache's config. */
+export class CacheConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "cache", name] : ["cache", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  /** Which cache this is — the key its settings live under. */
+  async instancesAdmission(): Promise<CacheInstancesAdmission | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["instances"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["validator"] as readonly string[]) if (k in block) return k as CacheInstancesAdmission;
+    return undefined;
+  }
+
+  /** Lives under the cache's kind, so the branch is explicit. */
+  async instancesValidatorNamespace(instancesAdmission: CacheInstancesAdmission): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"])) as string | undefined;
+  }
+  setInstancesValidatorNamespace(instancesAdmission: CacheInstancesAdmission, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"], v);
+  }
+  unsetInstancesValidatorNamespace(instancesAdmission: CacheInstancesAdmission): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"]);
+  }
+
+  /** Lives under the cache's kind, so the branch is explicit. */
+  async instancesValidatorName(instancesAdmission: CacheInstancesAdmission): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", instancesAdmission, "name"])) as string | undefined;
+  }
+  setInstancesValidatorName(instancesAdmission: CacheInstancesAdmission, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", instancesAdmission, "name"], v);
+  }
+  unsetInstancesValidatorName(instancesAdmission: CacheInstancesAdmission): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", instancesAdmission, "name"]);
+  }
+
+  async limit(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", "limit"])) as number | undefined;
+  }
+  setLimit(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", "limit"], v);
+  }
+  unsetLimit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", "limit"]);
+  }
+
+  async size(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["size"])) as string | undefined;
+  }
+  setSize(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["size"], v);
+  }
+  unsetSize(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["size"]);
+  }
+
+  async ttl(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["ttl"])) as string | undefined;
+  }
+  setTtl(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["ttl"], v);
+  }
+  unsetTtl(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["ttl"]);
+  }
+
+  async replicated(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["replicated"])) as boolean | undefined;
+  }
+  setReplicated(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["replicated"], v);
+  }
+  unsetReplicated(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["replicated"]);
+  }
+
+  async consensus(): Promise<CacheConsensus | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["consensus"])) as CacheConsensus | undefined;
+  }
+  setConsensus(v: CacheConsensus): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["consensus"], v);
+  }
+  unsetConsensus(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["consensus"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["encryption", "key", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["encryption", "key", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["encryption", "key", "namespace"]);
+  }
+
+  /** Which cache this is — the key its settings live under. */
+  async regionPolicy(): Promise<CacheRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as CacheRegionPolicy;
+    return undefined;
+  }
+
+  /** Lives under the cache's kind, so the branch is explicit. */
+  async regionName(regionPolicy: CacheRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  }
+  setRegionName(regionPolicy: CacheRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  }
+  unsetRegionName(regionPolicy: CacheRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  }
+
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+  }
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+  }
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+  }
+}
+
+/** Typed accessors for a database's config. */
+export class DatabaseConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "database", name] : ["database", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  /** Which database this is — the key its settings live under. */
+  async type(): Promise<DatabaseType | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["kv", "document", "sql", "vector"] as readonly string[]) if (k in block) return k as DatabaseType;
+    return undefined;
+  }
+
+  /** Which database this is — the key its settings live under. */
+  async kvEngine(): Promise<DatabaseKvEngine | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["kv"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["distributed"] as readonly string[]) if (k in block) return k as DatabaseKvEngine;
+    return undefined;
+  }
+
+  async kvSize(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["kv", "distributed", "size"])) as string | undefined;
+  }
+  setKvSize(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["kv", "distributed", "size"], v);
+  }
+  unsetKvSize(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["kv", "distributed", "size"]);
+  }
+
+  async kvConsensus(): Promise<DatabaseKvConsensus | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["kv", "distributed", "consensus"])) as DatabaseKvConsensus | undefined;
+  }
+  setKvConsensus(v: DatabaseKvConsensus): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["kv", "distributed", "consensus"], v);
+  }
+  unsetKvConsensus(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["kv", "distributed", "consensus"]);
+  }
+
+  /** Which database this is — the key its settings live under. */
+  async documentEngine(): Promise<DatabaseDocumentEngine | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["document"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["distributed", "mongo"] as readonly string[]) if (k in block) return k as DatabaseDocumentEngine;
+    return undefined;
+  }
+
+  async documentSize(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["document", "distributed", "size"])) as string | undefined;
+  }
+  setDocumentSize(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["document", "distributed", "size"], v);
+  }
+  unsetDocumentSize(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["document", "distributed", "size"]);
+  }
+
+  async documentConsensus(): Promise<DatabaseDocumentConsensus | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["document", "distributed", "consensus"])) as DatabaseDocumentConsensus | undefined;
+  }
+  setDocumentConsensus(v: DatabaseDocumentConsensus): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["document", "distributed", "consensus"], v);
+  }
+  unsetDocumentConsensus(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["document", "distributed", "consensus"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async documentHost(documentEngine: DatabaseDocumentEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["document", documentEngine, "host"])) as string | undefined;
+  }
+  setDocumentHost(documentEngine: DatabaseDocumentEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["document", documentEngine, "host"], v);
+  }
+  unsetDocumentHost(documentEngine: DatabaseDocumentEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["document", documentEngine, "host"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async documentCredentialsNamespace(documentEngine: DatabaseDocumentEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["document", documentEngine, "credentials", "namespace"])) as string | undefined;
+  }
+  setDocumentCredentialsNamespace(documentEngine: DatabaseDocumentEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["document", documentEngine, "credentials", "namespace"], v);
+  }
+  unsetDocumentCredentialsNamespace(documentEngine: DatabaseDocumentEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["document", documentEngine, "credentials", "namespace"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async documentCredentialsName(documentEngine: DatabaseDocumentEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["document", documentEngine, "credentials", "name"])) as string | undefined;
+  }
+  setDocumentCredentialsName(documentEngine: DatabaseDocumentEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["document", documentEngine, "credentials", "name"], v);
+  }
+  unsetDocumentCredentialsName(documentEngine: DatabaseDocumentEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["document", documentEngine, "credentials", "name"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async documentTls(documentEngine: DatabaseDocumentEngine): Promise<DatabaseDocumentTls | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["document", documentEngine, "tls"])) as DatabaseDocumentTls | undefined;
+  }
+  setDocumentTls(documentEngine: DatabaseDocumentEngine, v: DatabaseDocumentTls): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["document", documentEngine, "tls"], v);
+  }
+  unsetDocumentTls(documentEngine: DatabaseDocumentEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["document", documentEngine, "tls"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async documentDatabase(documentEngine: DatabaseDocumentEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["document", documentEngine, "database"])) as string | undefined;
+  }
+  setDocumentDatabase(documentEngine: DatabaseDocumentEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["document", documentEngine, "database"], v);
+  }
+  unsetDocumentDatabase(documentEngine: DatabaseDocumentEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["document", documentEngine, "database"]);
+  }
+
+  /** Which database this is — the key its settings live under. */
+  async sqlEngine(): Promise<DatabaseSqlEngine | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["sql"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["distributed", "postgres", "mysql"] as readonly string[]) if (k in block) return k as DatabaseSqlEngine;
+    return undefined;
+  }
+
+  async sqlSize(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["sql", "distributed", "size"])) as string | undefined;
+  }
+  setSqlSize(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["sql", "distributed", "size"], v);
+  }
+  unsetSqlSize(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["sql", "distributed", "size"]);
+  }
+
+  async sqlConsensus(): Promise<DatabaseSqlConsensus | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["sql", "distributed", "consensus"])) as DatabaseSqlConsensus | undefined;
+  }
+  setSqlConsensus(v: DatabaseSqlConsensus): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["sql", "distributed", "consensus"], v);
+  }
+  unsetSqlConsensus(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["sql", "distributed", "consensus"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async sqlHost(sqlEngine: DatabaseSqlEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["sql", sqlEngine, "host"])) as string | undefined;
+  }
+  setSqlHost(sqlEngine: DatabaseSqlEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["sql", sqlEngine, "host"], v);
+  }
+  unsetSqlHost(sqlEngine: DatabaseSqlEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["sql", sqlEngine, "host"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async sqlCredentialsNamespace(sqlEngine: DatabaseSqlEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["sql", sqlEngine, "credentials", "namespace"])) as string | undefined;
+  }
+  setSqlCredentialsNamespace(sqlEngine: DatabaseSqlEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["sql", sqlEngine, "credentials", "namespace"], v);
+  }
+  unsetSqlCredentialsNamespace(sqlEngine: DatabaseSqlEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["sql", sqlEngine, "credentials", "namespace"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async sqlCredentialsName(sqlEngine: DatabaseSqlEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["sql", sqlEngine, "credentials", "name"])) as string | undefined;
+  }
+  setSqlCredentialsName(sqlEngine: DatabaseSqlEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["sql", sqlEngine, "credentials", "name"], v);
+  }
+  unsetSqlCredentialsName(sqlEngine: DatabaseSqlEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["sql", sqlEngine, "credentials", "name"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async sqlTls(sqlEngine: DatabaseSqlEngine): Promise<DatabaseSqlTls | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["sql", sqlEngine, "tls"])) as DatabaseSqlTls | undefined;
+  }
+  setSqlTls(sqlEngine: DatabaseSqlEngine, v: DatabaseSqlTls): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["sql", sqlEngine, "tls"], v);
+  }
+  unsetSqlTls(sqlEngine: DatabaseSqlEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["sql", sqlEngine, "tls"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async sqlDatabase(sqlEngine: DatabaseSqlEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["sql", sqlEngine, "database"])) as string | undefined;
+  }
+  setSqlDatabase(sqlEngine: DatabaseSqlEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["sql", sqlEngine, "database"], v);
+  }
+  unsetSqlDatabase(sqlEngine: DatabaseSqlEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["sql", sqlEngine, "database"]);
+  }
+
+  /** Which database this is — the key its settings live under. */
+  async vectorEngine(): Promise<DatabaseVectorEngine | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["vector"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["distributed"] as readonly string[]) if (k in block) return k as DatabaseVectorEngine;
+    return undefined;
+  }
+
+  async vectorSize(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["vector", "distributed", "size"])) as string | undefined;
+  }
+  setVectorSize(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["vector", "distributed", "size"], v);
+  }
+  unsetVectorSize(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["vector", "distributed", "size"]);
+  }
+
+  async vectorConsensus(): Promise<DatabaseVectorConsensus | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["vector", "distributed", "consensus"])) as DatabaseVectorConsensus | undefined;
+  }
+  setVectorConsensus(v: DatabaseVectorConsensus): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["vector", "distributed", "consensus"], v);
+  }
+  unsetVectorConsensus(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["vector", "distributed", "consensus"]);
+  }
+
+  async dimensions(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["vector", "dimensions"])) as number | undefined;
+  }
+  setDimensions(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["vector", "dimensions"], v);
+  }
+  unsetDimensions(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["vector", "dimensions"]);
+  }
+
+  async metric(): Promise<DatabaseMetric | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["vector", "metric"])) as DatabaseMetric | undefined;
+  }
+  setMetric(v: DatabaseMetric): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["vector", "metric"], v);
+  }
+  unsetMetric(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["vector", "metric"]);
+  }
+
+  /** Which database this is — the key its settings live under. */
+  async instancesAdmission(): Promise<DatabaseInstancesAdmission | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["instances"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["validator"] as readonly string[]) if (k in block) return k as DatabaseInstancesAdmission;
+    return undefined;
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async instancesValidatorNamespace(instancesAdmission: DatabaseInstancesAdmission): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"])) as string | undefined;
+  }
+  setInstancesValidatorNamespace(instancesAdmission: DatabaseInstancesAdmission, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"], v);
+  }
+  unsetInstancesValidatorNamespace(instancesAdmission: DatabaseInstancesAdmission): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"]);
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async instancesValidatorName(instancesAdmission: DatabaseInstancesAdmission): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", instancesAdmission, "name"])) as string | undefined;
+  }
+  setInstancesValidatorName(instancesAdmission: DatabaseInstancesAdmission, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", instancesAdmission, "name"], v);
+  }
+  unsetInstancesValidatorName(instancesAdmission: DatabaseInstancesAdmission): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", instancesAdmission, "name"]);
+  }
+
+  async limit(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", "limit"])) as number | undefined;
+  }
+  setLimit(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", "limit"], v);
+  }
+  unsetLimit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", "limit"]);
+  }
+
+  /** Which database this is — the key its settings live under. */
+  async regionPolicy(): Promise<DatabaseRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as DatabaseRegionPolicy;
+    return undefined;
+  }
+
+  /** Lives under the database's kind, so the branch is explicit. */
+  async regionName(regionPolicy: DatabaseRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  }
+  setRegionName(regionPolicy: DatabaseRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  }
+  unsetRegionName(regionPolicy: DatabaseRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  }
+
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+  }
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+  }
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
+}
+
+/** Typed accessors for a storage's config. */
+export class StorageConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "storage", name] : ["storage", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  /** Which storage this is — the key its settings live under. */
+  async type(): Promise<StorageType | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["object", "streaming"] as readonly string[]) if (k in block) return k as StorageType;
+    return undefined;
+  }
+
+  /** Which storage this is — the key its settings live under. */
+  async instancesAdmission(): Promise<StorageInstancesAdmission | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["instances"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["validator"] as readonly string[]) if (k in block) return k as StorageInstancesAdmission;
+    return undefined;
+  }
+
+  /** Lives under the storage's kind, so the branch is explicit. */
+  async instancesValidatorNamespace(instancesAdmission: StorageInstancesAdmission): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"])) as string | undefined;
+  }
+  setInstancesValidatorNamespace(instancesAdmission: StorageInstancesAdmission, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"], v);
+  }
+  unsetInstancesValidatorNamespace(instancesAdmission: StorageInstancesAdmission): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"]);
+  }
+
+  /** Lives under the storage's kind, so the branch is explicit. */
+  async instancesValidatorName(instancesAdmission: StorageInstancesAdmission): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", instancesAdmission, "name"])) as string | undefined;
+  }
+  setInstancesValidatorName(instancesAdmission: StorageInstancesAdmission, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", instancesAdmission, "name"], v);
+  }
+  unsetInstancesValidatorName(instancesAdmission: StorageInstancesAdmission): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", instancesAdmission, "name"]);
+  }
+
+  async limit(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", "limit"])) as number | undefined;
+  }
+  setLimit(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", "limit"], v);
+  }
+  unsetLimit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", "limit"]);
+  }
+
+  async versioning(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["object", "versioning"])) as boolean | undefined;
+  }
+  setVersioning(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["object", "versioning"], v);
+  }
+  unsetVersioning(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["object", "versioning"]);
+  }
+
+  async ttl(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["streaming", "ttl"])) as string | undefined;
+  }
+  setTtl(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["streaming", "ttl"], v);
+  }
+  unsetTtl(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["streaming", "ttl"]);
+  }
+
+  /** Lives under the storage's kind, so the branch is explicit. */
+  async size(type: StorageType): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, [type, "size"])) as string | undefined;
+  }
+  setSize(type: StorageType, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, [type, "size"], v);
+  }
+  unsetSize(type: StorageType): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, [type, "size"]);
+  }
+
+  /** Which storage this is — the key its settings live under. */
+  async regionPolicy(): Promise<StorageRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as StorageRegionPolicy;
+    return undefined;
+  }
+
+  /** Lives under the storage's kind, so the branch is explicit. */
+  async regionName(regionPolicy: StorageRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  }
+  setRegionName(regionPolicy: StorageRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  }
+  unsetRegionName(regionPolicy: StorageRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  }
+
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+  }
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+  }
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
+}
+
+/** Typed accessors for a volume's config. */
+export class VolumeConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "volume", name] : ["volume", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async quota(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["quota"])) as string | undefined;
+  }
+  setQuota(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["quota"], v);
+  }
+  unsetQuota(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["quota"]);
+  }
+
+  async interval(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["checkpoint", "interval"])) as string | undefined;
+  }
+  setInterval(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["checkpoint", "interval"], v);
+  }
+  unsetInterval(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["checkpoint", "interval"]);
+  }
+
+  async rpo_budget(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["checkpoint", "rpo_budget"])) as string | undefined;
+  }
+  setRpo_budget(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["checkpoint", "rpo_budget"], v);
+  }
+  unsetRpo_budget(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["checkpoint", "rpo_budget"]);
+  }
+
+  async on_budget_exceeded(): Promise<VolumeOn_budget_exceeded | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["checkpoint", "on_budget_exceeded"])) as VolumeOn_budget_exceeded | undefined;
+  }
+  setOn_budget_exceeded(v: VolumeOn_budget_exceeded): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["checkpoint", "on_budget_exceeded"], v);
+  }
+  unsetOn_budget_exceeded(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["checkpoint", "on_budget_exceeded"]);
+  }
+
+  /** Which volume this is — the key its settings live under. */
+  async regionPolicy(): Promise<VolumeRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as VolumeRegionPolicy;
+    return undefined;
+  }
+
+  /** Lives under the volume's kind, so the branch is explicit. */
+  async regionName(regionPolicy: VolumeRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  }
+  setRegionName(regionPolicy: VolumeRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  }
+  unsetRegionName(regionPolicy: VolumeRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  }
+
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+  }
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+  }
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
+}
+
+/** Typed accessors for a secret's config. */
+export class SecretConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "secret", name] : ["secret", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async source(): Promise<SecretSource | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as SecretSource | undefined;
+  }
+  setSource(v: SecretSource): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
+  }
+  unsetSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
+  }
+
+  async rotation(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["rotation"])) as string | undefined;
+  }
+  setRotation(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["rotation"], v);
+  }
+  unsetRotation(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["rotation"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
+}
+
+/** Typed accessors for a sync's config. */
+export class SyncConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "sync", name] : ["sync", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  /** Which sync this is — the key its settings live under. */
+  async type(): Promise<SyncType | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["queue", "log"] as readonly string[]) if (k in block) return k as SyncType;
+    return undefined;
+  }
+
+  async queueConsensus(): Promise<SyncQueueConsensus | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["queue", "consensus"])) as SyncQueueConsensus | undefined;
+  }
+  setQueueConsensus(v: SyncQueueConsensus): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["queue", "consensus"], v);
+  }
+  unsetQueueConsensus(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["queue", "consensus"]);
+  }
+
+  async visibility_timeout(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["queue", "visibility_timeout"])) as string | undefined;
+  }
+  setVisibility_timeout(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["queue", "visibility_timeout"], v);
+  }
+  unsetVisibility_timeout(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["queue", "visibility_timeout"]);
+  }
+
+  async delay(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["queue", "delay"])) as string | undefined;
+  }
+  setDelay(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["queue", "delay"], v);
+  }
+  unsetDelay(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["queue", "delay"]);
+  }
+
+  async max_attempts(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["queue", "max_attempts"])) as number | undefined;
+  }
+  setMax_attempts(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["queue", "max_attempts"], v);
+  }
+  unsetMax_attempts(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["queue", "max_attempts"]);
+  }
+
+  async interval(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["queue", "retry", "interval"])) as string | undefined;
+  }
+  setInterval(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["queue", "retry", "interval"], v);
+  }
+  unsetInterval(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["queue", "retry", "interval"]);
+  }
+
+  async ceiling(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["queue", "retry", "ceiling"])) as string | undefined;
+  }
+  setCeiling(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["queue", "retry", "ceiling"], v);
+  }
+  unsetCeiling(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["queue", "retry", "ceiling"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["queue", "dead_letter", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["queue", "dead_letter", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["queue", "dead_letter", "namespace"]);
+  }
+
+  async logConsensus(): Promise<SyncLogConsensus | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["log", "consensus"])) as SyncLogConsensus | undefined;
+  }
+  setLogConsensus(v: SyncLogConsensus): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["log", "consensus"], v);
+  }
+  unsetLogConsensus(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["log", "consensus"]);
+  }
+
+  async age(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["log", "retention", "age"])) as string | undefined;
+  }
+  setAge(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["log", "retention", "age"], v);
+  }
+  unsetAge(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["log", "retention", "age"]);
+  }
+
+  async size(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["log", "retention", "size"])) as string | undefined;
+  }
+  setSize(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["log", "retention", "size"], v);
+  }
+  unsetSize(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["log", "retention", "size"]);
+  }
+
+  /** Which sync this is — the key its settings live under. */
+  async regionPolicy(): Promise<SyncRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as SyncRegionPolicy;
+    return undefined;
+  }
+
+  /** Lives under the sync's kind, so the branch is explicit. */
+  async regionName(regionPolicy: SyncRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  }
+  setRegionName(regionPolicy: SyncRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  }
+  unsetRegionName(regionPolicy: SyncRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  }
+
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+  }
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+  }
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+  }
+}
+
+/** Typed accessors for a zone's config. */
+export class ZoneConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "zone", name] : ["zone", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -367,41 +3083,21 @@ export class DomainConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["fqdn"]);
   }
 
-  async certFile(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "cert"])) as string | undefined;
+  async records(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["records"])) as string[] | undefined;
   }
-  setCertFile(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["certificate", "cert"], v);
+  setRecords(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["records"], v);
   }
-  unsetCertFile(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "cert"]);
-  }
-
-  async keyFile(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "key"])) as string | undefined;
-  }
-  setKeyFile(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["certificate", "key"], v);
-  }
-  unsetKeyFile(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "key"]);
-  }
-
-  async certType(): Promise<DomainCertType | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "type"])) as DomainCertType | undefined;
-  }
-  setCertType(v: DomainCertType): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["certificate", "type"], v);
-  }
-  unsetCertType(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "type"]);
+  unsetRecords(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["records"]);
   }
 }
 
-/** Typed accessors for a function's config. */
-export class FunctionConfig extends ResourceConfig {
+/** Typed accessors for a gateway's config. */
+export class GatewayConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["applications", app, "functions", name] : ["functions", name]);
+    super(s, app ? ["namespace", app, "gateway", name] : ["gateway", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -444,228 +3140,218 @@ export class FunctionConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
-  async type(): Promise<FunctionType | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "type"])) as FunctionType | undefined;
-  }
-  setType(v: FunctionType): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["trigger", "type"], v);
-  }
-  unsetType(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "type"]);
-  }
-
-  async local(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "local"])) as boolean | undefined;
-  }
-  setLocal(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["trigger", "local"], v);
-  }
-  unsetLocal(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "local"]);
-  }
-
-  async channel(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "channel"])) as string | undefined;
-  }
-  setChannel(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["trigger", "channel"], v);
-  }
-  unsetChannel(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "channel"]);
-  }
-
-  async protocol(): Promise<string | undefined> {
-    const v = await this.s.binding.get(this.s.handle, this.res, ["trigger", "protocol"]);
-    return (v ?? (await this.s.binding.get(this.s.handle, this.res, ["trigger", "service"]))) as string | undefined;
-  }
-  setProtocol(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["trigger", "protocol"], v);
-  }
-  unsetProtocol(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "protocol"]);
-  }
-
-  async command(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "command"])) as string | undefined;
-  }
-  setCommand(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["trigger", "command"], v);
-  }
-  unsetCommand(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "command"]);
-  }
-
-  async method(): Promise<FunctionMethod | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "method"])) as FunctionMethod | undefined;
-  }
-  setMethod(v: FunctionMethod): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["trigger", "method"], v);
-  }
-  unsetMethod(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "method"]);
-  }
-
-  async domains(): Promise<string[] | undefined> {
-    const v = await this.s.binding.get(this.s.handle, this.res, ["trigger", "domains"]);
-    return (v ?? (await this.s.binding.get(this.s.handle, this.res, ["domains"]))) as string[] | undefined;
-  }
-  setDomains(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["trigger", "domains"], v);
-  }
-  unsetDomains(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "domains"]);
-  }
-
-  async paths(): Promise<string[] | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "paths"])) as string[] | undefined;
-  }
-  setPaths(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["trigger", "paths"], v);
-  }
-  unsetPaths(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "paths"]);
-  }
-
-  async source(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
-  }
-  setSource(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
-  }
-  unsetSource(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
-  }
-
-  async timeout(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "timeout"])) as string | undefined;
-  }
-  setTimeout(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["execution", "timeout"], v);
-  }
-  unsetTimeout(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["execution", "timeout"]);
-  }
-
-  async memory(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "memory"])) as string | undefined;
-  }
-  setMemory(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["execution", "memory"], v);
-  }
-  unsetMemory(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["execution", "memory"]);
-  }
-
-  async call(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "call"])) as string | undefined;
-  }
-  setCall(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["execution", "call"], v);
-  }
-  unsetCall(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["execution", "call"]);
-  }
-}
-
-/** Typed accessors for a library's config. */
-export class LibraryConfig extends ResourceConfig {
-  constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["applications", app, "libraries", name] : ["libraries", name]);
-  }
-
-  async id(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
-  }
-  setId(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
-  }
-  unsetId(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
-  }
-
-  async name(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
-  }
-  setName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
-  }
-  unsetName(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
-  }
-
-  async description(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
-  }
-  setDescription(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
-  }
-  unsetDescription(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
-  }
-
-  async tags(): Promise<string[] | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
-  }
-  setTags(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
-  }
-  unsetTags(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
-  }
-
-  async path(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
-  }
-  setPath(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
-  }
-  unsetPath(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
-  }
-
-  async branch(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
-  }
-  setBranch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
-  }
-  unsetBranch(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
-  }
-
-  /** Which library this is — the key its settings live under. */
-  async provider(): Promise<LibraryProvider | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
+  /** Which gateway this is — the key its settings live under. */
+  async hostKind(): Promise<GatewayHostKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["host"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["github"] as readonly string[]) if (k in block) return k as LibraryProvider;
+    for (const k of ["generated", "zone"] as readonly string[]) if (k in block) return k as GatewayHostKind;
     return undefined;
   }
 
-  async repoID(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "github", "id"])) as string | undefined;
+  /** Lives under the gateway's kind, so the branch is explicit. */
+  async hostName(hostKind: GatewayHostKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "name"])) as string | undefined;
   }
-  setRepoID(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "github", "id"], v);
+  setHostName(hostKind: GatewayHostKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "name"], v);
   }
-  unsetRepoID(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "github", "id"]);
+  unsetHostName(hostKind: GatewayHostKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "name"]);
   }
 
-  async repoName(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "github", "fullname"])) as string | undefined;
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", "zone", "in", "namespace"])) as string | undefined;
   }
-  setRepoName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "github", "fullname"], v);
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", "zone", "in", "namespace"], v);
   }
-  unsetRepoName(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "github", "fullname"]);
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", "zone", "in", "namespace"]);
+  }
+
+  /** Lives under the gateway's kind, so the branch is explicit. */
+  async hostZoneInName(hostKind: GatewayHostKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "in", "name"])) as string | undefined;
+  }
+  setHostZoneInName(hostKind: GatewayHostKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "in", "name"], v);
+  }
+  unsetHostZoneInName(hostKind: GatewayHostKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "in", "name"]);
+  }
+
+  /** Which gateway this is — the key its settings live under. */
+  async routing(): Promise<GatewayRouting | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["route", "router"] as readonly string[]) if (k in block) return k as GatewayRouting;
+    return undefined;
+  }
+
+  /** Which gateway this is — the key its settings live under. */
+  async routeTarget(): Promise<GatewayRouteTarget | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["route"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["handler", "router"] as readonly string[]) if (k in block) return k as GatewayRouteTarget;
+    return undefined;
+  }
+
+  async certSource(): Promise<GatewayCertSource | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "source"])) as GatewayCertSource | undefined;
+  }
+  setCertSource(v: GatewayCertSource): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "source"], v);
+  }
+  unsetCertSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "source"]);
+  }
+
+  async certSecret(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "secret", "name"])) as string | undefined;
+  }
+  setCertSecret(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "secret", "name"], v);
+  }
+  unsetCertSecret(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "secret", "name"]);
+  }
+
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "path"]);
+  }
+
+  async match(): Promise<GatewayMatch | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "match"])) as GatewayMatch | undefined;
+  }
+  setMatch(v: GatewayMatch): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "match"], v);
+  }
+  unsetMatch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "match"]);
+  }
+
+  async strip_prefix(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "strip_prefix"])) as boolean | undefined;
+  }
+  setStrip_prefix(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "strip_prefix"], v);
+  }
+  unsetStrip_prefix(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "strip_prefix"]);
+  }
+
+  async methods(): Promise<GatewayMethods | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "methods"])) as GatewayMethods | undefined;
+  }
+  setMethods(v: GatewayMethods): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "methods"], v);
+  }
+  unsetMethods(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "methods"]);
+  }
+
+  /** Which gateway this is — the key its settings live under. */
+  async handlerKind(): Promise<GatewayHandlerKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["route", "handler"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["function", "application", "website", "gateway", "mcp", "agent"] as readonly string[]) if (k in block) return k as GatewayHandlerKind;
+    return undefined;
+  }
+
+  /** Lives under the gateway's kind, so the branch is explicit. */
+  async routeHandlerNamespace(handlerKind: GatewayHandlerKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "handler", handlerKind, "namespace"])) as string | undefined;
+  }
+  setRouteHandlerNamespace(handlerKind: GatewayHandlerKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "handler", handlerKind, "namespace"], v);
+  }
+  unsetRouteHandlerNamespace(handlerKind: GatewayHandlerKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "handler", handlerKind, "namespace"]);
+  }
+
+  /** Lives under the gateway's kind, so the branch is explicit. */
+  async routeHandlerName(handlerKind: GatewayHandlerKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "handler", handlerKind, "name"])) as string | undefined;
+  }
+  setRouteHandlerName(handlerKind: GatewayHandlerKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "handler", handlerKind, "name"], v);
+  }
+  unsetRouteHandlerName(handlerKind: GatewayHandlerKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "handler", handlerKind, "name"]);
+  }
+
+  /** Lives under the gateway's kind, so the branch is explicit. */
+  async routeHandlerPort(handlerKind: GatewayHandlerKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "handler", handlerKind, "port"])) as string | undefined;
+  }
+  setRouteHandlerPort(handlerKind: GatewayHandlerKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "handler", handlerKind, "port"], v);
+  }
+  unsetRouteHandlerPort(handlerKind: GatewayHandlerKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "handler", handlerKind, "port"]);
+  }
+
+  async allow_self(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["cors", "allow_self"])) as boolean | undefined;
+  }
+  setAllow_self(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["cors", "allow_self"], v);
+  }
+  unsetAllow_self(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["cors", "allow_self"]);
+  }
+
+  async origins(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["cors", "origins"])) as string[] | undefined;
+  }
+  setOrigins(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["cors", "origins"], v);
+  }
+  unsetOrigins(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["cors", "origins"]);
+  }
+
+  async rpm(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["rate_limit", "rpm"])) as number | undefined;
+  }
+  setRpm(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["rate_limit", "rpm"], v);
+  }
+  unsetRpm(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["rate_limit", "rpm"]);
+  }
+
+  async burst(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["rate_limit", "burst"])) as number | undefined;
+  }
+  setBurst(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["rate_limit", "burst"], v);
+  }
+  unsetBurst(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["rate_limit", "burst"]);
+  }
+
+  async key(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["rate_limit", "key"])) as string | undefined;
+  }
+  setKey(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["rate_limit", "key"], v);
+  }
+  unsetKey(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["rate_limit", "key"]);
   }
 }
 
-/** Typed accessors for a messaging's config. */
-export class MessagingConfig extends ResourceConfig {
+/** Typed accessors for a proxy's config. */
+export class ProxyConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["applications", app, "messaging", name] : ["messaging", name]);
+    super(s, app ? ["namespace", app, "proxy", name] : ["proxy", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -708,61 +3394,523 @@ export class MessagingConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
-  async local(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["local"])) as boolean | undefined;
-  }
-  setLocal(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["local"], v);
-  }
-  unsetLocal(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["local"]);
+  /** Which proxy this is — the key its settings live under. */
+  async hostKind(): Promise<ProxyHostKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["host"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["generated", "zone"] as readonly string[]) if (k in block) return k as ProxyHostKind;
+    return undefined;
   }
 
-  async match(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["channel", "match"])) as string | undefined;
+  /** Lives under the proxy's kind, so the branch is explicit. */
+  async hostName(hostKind: ProxyHostKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "name"])) as string | undefined;
   }
-  setMatch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["channel", "match"], v);
+  setHostName(hostKind: ProxyHostKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "name"], v);
   }
-  unsetMatch(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["channel", "match"]);
-  }
-
-  async regex(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["channel", "regex"])) as boolean | undefined;
-  }
-  setRegex(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["channel", "regex"], v);
-  }
-  unsetRegex(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["channel", "regex"]);
+  unsetHostName(hostKind: ProxyHostKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "name"]);
   }
 
-  async mqtt(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["bridges", "mqtt", "enable"])) as boolean | undefined;
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", "zone", "in", "namespace"])) as string | undefined;
   }
-  setMqtt(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["bridges", "mqtt", "enable"], v);
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", "zone", "in", "namespace"], v);
   }
-  unsetMqtt(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["bridges", "mqtt", "enable"]);
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", "zone", "in", "namespace"]);
   }
 
-  async webSocket(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["bridges", "websocket", "enable"])) as boolean | undefined;
+  /** Lives under the proxy's kind, so the branch is explicit. */
+  async hostZoneInName(hostKind: ProxyHostKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "in", "name"])) as string | undefined;
   }
-  setWebSocket(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["bridges", "websocket", "enable"], v);
+  setHostZoneInName(hostKind: ProxyHostKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "in", "name"], v);
   }
-  unsetWebSocket(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["bridges", "websocket", "enable"]);
+  unsetHostZoneInName(hostKind: ProxyHostKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "in", "name"]);
+  }
+
+  /** Which proxy this is — the key its settings live under. */
+  async routing(): Promise<ProxyRouting | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["forward", "router"] as readonly string[]) if (k in block) return k as ProxyRouting;
+    return undefined;
+  }
+
+  async protocol(): Promise<ProxyProtocol | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["protocol"])) as ProxyProtocol | undefined;
+  }
+  setProtocol(v: ProxyProtocol): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["protocol"], v);
+  }
+  unsetProtocol(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["protocol"]);
+  }
+
+  async service(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["service"])) as string | undefined;
+  }
+  setService(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["service"], v);
+  }
+  unsetService(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["service"]);
+  }
+
+  async srv(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["srv"])) as string | undefined;
+  }
+  setSrv(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["srv"], v);
+  }
+  unsetSrv(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["srv"]);
+  }
+
+  async tlsMode(): Promise<ProxyTlsMode | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tls", "mode"])) as ProxyTlsMode | undefined;
+  }
+  setTlsMode(v: ProxyTlsMode): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tls", "mode"], v);
+  }
+  unsetTlsMode(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tls", "mode"]);
+  }
+
+  async certSource(): Promise<ProxyCertSource | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "source"])) as ProxyCertSource | undefined;
+  }
+  setCertSource(v: ProxyCertSource): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "source"], v);
+  }
+  unsetCertSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "source"]);
+  }
+
+  async certSecret(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "secret", "name"])) as string | undefined;
+  }
+  setCertSecret(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "secret", "name"], v);
+  }
+  unsetCertSecret(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "secret", "name"]);
+  }
+
+  /** Which proxy this is — the key its settings live under. */
+  async handlerKind(): Promise<ProxyHandlerKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["forward"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["application"] as readonly string[]) if (k in block) return k as ProxyHandlerKind;
+    return undefined;
+  }
+
+  /** Lives under the proxy's kind, so the branch is explicit. */
+  async forwardNamespace(handlerKind: ProxyHandlerKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["forward", handlerKind, "namespace"])) as string | undefined;
+  }
+  setForwardNamespace(handlerKind: ProxyHandlerKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["forward", handlerKind, "namespace"], v);
+  }
+  unsetForwardNamespace(handlerKind: ProxyHandlerKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["forward", handlerKind, "namespace"]);
+  }
+
+  /** Lives under the proxy's kind, so the branch is explicit. */
+  async forwardName(handlerKind: ProxyHandlerKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["forward", handlerKind, "name"])) as string | undefined;
+  }
+  setForwardName(handlerKind: ProxyHandlerKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["forward", handlerKind, "name"], v);
+  }
+  unsetForwardName(handlerKind: ProxyHandlerKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["forward", handlerKind, "name"]);
+  }
+
+  /** Lives under the proxy's kind, so the branch is explicit. */
+  async forwardPort(handlerKind: ProxyHandlerKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["forward", handlerKind, "port"])) as string | undefined;
+  }
+  setForwardPort(handlerKind: ProxyHandlerKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["forward", handlerKind, "port"], v);
+  }
+  unsetForwardPort(handlerKind: ProxyHandlerKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["forward", handlerKind, "port"]);
+  }
+
+  async connections_per_minute(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["rate_limit", "connections_per_minute"])) as number | undefined;
+  }
+  setConnections_per_minute(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["rate_limit", "connections_per_minute"], v);
+  }
+  unsetConnections_per_minute(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["rate_limit", "connections_per_minute"]);
+  }
+
+  async burst(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["rate_limit", "burst"])) as number | undefined;
+  }
+  setBurst(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["rate_limit", "burst"], v);
+  }
+  unsetBurst(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["rate_limit", "burst"]);
+  }
+
+  async concurrent(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["rate_limit", "concurrent"])) as number | undefined;
+  }
+  setConcurrent(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["rate_limit", "concurrent"], v);
+  }
+  unsetConcurrent(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["rate_limit", "concurrent"]);
+  }
+
+  async key(): Promise<ProxyKey | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["rate_limit", "key"])) as ProxyKey | undefined;
+  }
+  setKey(v: ProxyKey): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["rate_limit", "key"], v);
+  }
+  unsetKey(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["rate_limit", "key"]);
   }
 }
 
-/** Typed accessors for a service's config. */
-export class ServiceConfig extends ResourceConfig {
+/** Typed accessors for a stream's config. */
+export class StreamConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["applications", app, "services", name] : ["services", name]);
+    super(s, app ? ["namespace", app, "stream", name] : ["stream", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  /** Which stream this is — the key its settings live under. */
+  async engine(): Promise<StreamEngine | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["distributed", "kafka", "nats"] as readonly string[]) if (k in block) return k as StreamEngine;
+    return undefined;
+  }
+
+  async local(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["distributed", "local"])) as boolean | undefined;
+  }
+  setLocal(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["distributed", "local"], v);
+  }
+  unsetLocal(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["distributed", "local"]);
+  }
+
+  /** Lives under the stream's kind, so the branch is explicit. */
+  async host(engine: StreamEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, [engine, "host"])) as string | undefined;
+  }
+  setHost(engine: StreamEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, [engine, "host"], v);
+  }
+  unsetHost(engine: StreamEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, [engine, "host"]);
+  }
+
+  /** Lives under the stream's kind, so the branch is explicit. */
+  async credentialsNamespace(engine: StreamEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, [engine, "credentials", "namespace"])) as string | undefined;
+  }
+  setCredentialsNamespace(engine: StreamEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, [engine, "credentials", "namespace"], v);
+  }
+  unsetCredentialsNamespace(engine: StreamEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, [engine, "credentials", "namespace"]);
+  }
+
+  /** Lives under the stream's kind, so the branch is explicit. */
+  async credentialsName(engine: StreamEngine): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, [engine, "credentials", "name"])) as string | undefined;
+  }
+  setCredentialsName(engine: StreamEngine, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, [engine, "credentials", "name"], v);
+  }
+  unsetCredentialsName(engine: StreamEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, [engine, "credentials", "name"]);
+  }
+
+  /** Lives under the stream's kind, so the branch is explicit. */
+  async tls(engine: StreamEngine): Promise<StreamTls | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, [engine, "tls"])) as StreamTls | undefined;
+  }
+  setTls(engine: StreamEngine, v: StreamTls): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, [engine, "tls"], v);
+  }
+  unsetTls(engine: StreamEngine): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, [engine, "tls"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
+}
+
+/** Typed accessors for a bus's config. */
+export class BusConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "bus", name] : ["bus", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  /** Which bus this is — the key its settings live under. */
+  async hostKind(): Promise<BusHostKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["host"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["generated", "zone"] as readonly string[]) if (k in block) return k as BusHostKind;
+    return undefined;
+  }
+
+  /** Lives under the bus's kind, so the branch is explicit. */
+  async hostName(hostKind: BusHostKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "name"])) as string | undefined;
+  }
+  setHostName(hostKind: BusHostKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "name"], v);
+  }
+  unsetHostName(hostKind: BusHostKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "name"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", "zone", "in", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", "zone", "in", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", "zone", "in", "namespace"]);
+  }
+
+  /** Lives under the bus's kind, so the branch is explicit. */
+  async hostZoneInName(hostKind: BusHostKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "in", "name"])) as string | undefined;
+  }
+  setHostZoneInName(hostKind: BusHostKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "in", "name"], v);
+  }
+  unsetHostZoneInName(hostKind: BusHostKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "in", "name"]);
+  }
+
+  /** Which bus this is — the key its settings live under. */
+  async instancesAdmission(): Promise<BusInstancesAdmission | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["instances"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["validator"] as readonly string[]) if (k in block) return k as BusInstancesAdmission;
+    return undefined;
+  }
+
+  /** Lives under the bus's kind, so the branch is explicit. */
+  async instancesValidatorNamespace(instancesAdmission: BusInstancesAdmission): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"])) as string | undefined;
+  }
+  setInstancesValidatorNamespace(instancesAdmission: BusInstancesAdmission, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"], v);
+  }
+  unsetInstancesValidatorNamespace(instancesAdmission: BusInstancesAdmission): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", instancesAdmission, "namespace"]);
+  }
+
+  /** Lives under the bus's kind, so the branch is explicit. */
+  async instancesValidatorName(instancesAdmission: BusInstancesAdmission): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", instancesAdmission, "name"])) as string | undefined;
+  }
+  setInstancesValidatorName(instancesAdmission: BusInstancesAdmission, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", instancesAdmission, "name"], v);
+  }
+  unsetInstancesValidatorName(instancesAdmission: BusInstancesAdmission): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", instancesAdmission, "name"]);
+  }
+
+  async limit(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instances", "limit"])) as number | undefined;
+  }
+  setLimit(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instances", "limit"], v);
+  }
+  unsetLimit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instances", "limit"]);
+  }
+}
+
+/** Typed accessors for a mcp's config. */
+export class MCPConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "mcp", name] : ["mcp", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async cache_scope(): Promise<MCPCache_scope | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tools", "cache_scope"])) as MCPCache_scope | undefined;
+  }
+  setCache_scope(v: MCPCache_scope): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tools", "cache_scope"], v);
+  }
+  unsetCache_scope(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tools", "cache_scope"]);
+  }
+
+  async cache_ttl(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tools", "cache_ttl"])) as string | undefined;
+  }
+  setCache_ttl(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tools", "cache_ttl"], v);
+  }
+  unsetCache_ttl(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tools", "cache_ttl"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
+}
+
+/** Typed accessors for a channel's config. */
+export class ChannelConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "channel", name] : ["channel", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -814,12 +3962,63 @@ export class ServiceConfig extends ResourceConfig {
   unsetProtocol(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["protocol"]);
   }
+
+  /** Which channel this is — the key its settings live under. */
+  async serveKind(): Promise<ChannelServeKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["serve"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["application", "function"] as readonly string[]) if (k in block) return k as ChannelServeKind;
+    return undefined;
+  }
+
+  /** Lives under the channel's kind, so the branch is explicit. */
+  async serveNamespace(serveKind: ChannelServeKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["serve", serveKind, "namespace"])) as string | undefined;
+  }
+  setServeNamespace(serveKind: ChannelServeKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["serve", serveKind, "namespace"], v);
+  }
+  unsetServeNamespace(serveKind: ChannelServeKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["serve", serveKind, "namespace"]);
+  }
+
+  /** Lives under the channel's kind, so the branch is explicit. */
+  async serveName(serveKind: ChannelServeKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["serve", serveKind, "name"])) as string | undefined;
+  }
+  setServeName(serveKind: ChannelServeKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["serve", serveKind, "name"], v);
+  }
+  unsetServeName(serveKind: ChannelServeKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["serve", serveKind, "name"]);
+  }
+
+  /** Lives under the channel's kind, so the branch is explicit. */
+  async servePort(serveKind: ChannelServeKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["serve", serveKind, "port"])) as string | undefined;
+  }
+  setServePort(serveKind: ChannelServeKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["serve", serveKind, "port"], v);
+  }
+  unsetServePort(serveKind: ChannelServeKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["serve", serveKind, "port"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
 }
 
-/** Typed accessors for a smartop's config. */
-export class SmartOpConfig extends ResourceConfig {
+/** Typed accessors for a model's config. */
+export class ModelConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["applications", app, "smartops", name] : ["smartops", name]);
+    super(s, app ? ["namespace", app, "model", name] : ["model", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -860,6 +4059,221 @@ export class SmartOpConfig extends ResourceConfig {
   }
   unsetTags(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async identifier(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["identifier"])) as string | undefined;
+  }
+  setIdentifier(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["identifier"], v);
+  }
+  unsetIdentifier(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["identifier"]);
+  }
+
+  async format(): Promise<ModelFormat | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["format"])) as ModelFormat | undefined;
+  }
+  setFormat(v: ModelFormat): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["format"], v);
+  }
+  unsetFormat(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["format"]);
+  }
+
+  /** Which model this is — the key its settings live under. */
+  async inferenceKind(): Promise<ModelInferenceKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["inference"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["remote", "local"] as readonly string[]) if (k in block) return k as ModelInferenceKind;
+    return undefined;
+  }
+
+  async endpoint(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["inference", "remote", "endpoint"])) as string | undefined;
+  }
+  setEndpoint(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["inference", "remote", "endpoint"], v);
+  }
+  unsetEndpoint(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["inference", "remote", "endpoint"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["inference", "remote", "credentials", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["inference", "remote", "credentials", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["inference", "remote", "credentials", "namespace"]);
+  }
+
+  async port(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["inference", "local", "port"])) as string | undefined;
+  }
+  setPort(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["inference", "local", "port"], v);
+  }
+  unsetPort(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["inference", "local", "port"]);
+  }
+
+  async max_tokens(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["parameters", "max_tokens"])) as number | undefined;
+  }
+  setMax_tokens(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["parameters", "max_tokens"], v);
+  }
+  unsetMax_tokens(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["parameters", "max_tokens"]);
+  }
+
+  async stop(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["parameters", "stop"])) as string[] | undefined;
+  }
+  setStop(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["parameters", "stop"], v);
+  }
+  unsetStop(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["parameters", "stop"]);
+  }
+}
+
+/** Typed accessors for a agent's config. */
+export class AgentConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "agent", name] : ["agent", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["model", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["model", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["model", "namespace"]);
+  }
+
+  async instructions(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["instructions"])) as string | undefined;
+  }
+  setInstructions(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["instructions"], v);
+  }
+  unsetInstructions(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["instructions"]);
+  }
+
+  async dimensions(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["memory", "dimensions"])) as number | undefined;
+  }
+  setDimensions(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["memory", "dimensions"], v);
+  }
+  unsetDimensions(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["memory", "dimensions"]);
+  }
+
+  async size(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["memory", "size"])) as string | undefined;
+  }
+  setSize(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["memory", "size"], v);
+  }
+  unsetSize(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["memory", "size"]);
+  }
+
+  async steps(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["limits", "steps"])) as number | undefined;
+  }
+  setSteps(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["limits", "steps"], v);
+  }
+  unsetSteps(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["limits", "steps"]);
+  }
+
+  async concurrent(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["limits", "concurrent"])) as number | undefined;
+  }
+  setConcurrent(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["limits", "concurrent"], v);
+  }
+  unsetConcurrent(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["limits", "concurrent"]);
+  }
+
+  async timeout(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["limits", "timeout"])) as string | undefined;
+  }
+  setTimeout(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["limits", "timeout"], v);
+  }
+  unsetTimeout(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["limits", "timeout"]);
+  }
+
+  async memory(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["limits", "memory"])) as string | undefined;
+  }
+  setMemory(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["limits", "memory"], v);
+  }
+  unsetMemory(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["limits", "memory"]);
+  }
+
+  async egress(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["egress"])) as string[] | undefined;
+  }
+  setEgress(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["egress"], v);
+  }
+  unsetEgress(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["egress"]);
   }
 
   async source(): Promise<string | undefined> {
@@ -872,219 +4286,22 @@ export class SmartOpConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source"]);
   }
 
-  async timeout(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "timeout"])) as string | undefined;
-  }
-  setTimeout(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["execution", "timeout"], v);
-  }
-  unsetTimeout(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["execution", "timeout"]);
-  }
-
-  async memory(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "memory"])) as string | undefined;
-  }
-  setMemory(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["execution", "memory"], v);
-  }
-  unsetMemory(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["execution", "memory"]);
-  }
-
-  async call(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "call"])) as string | undefined;
-  }
-  setCall(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["execution", "call"], v);
-  }
-  unsetCall(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["execution", "call"]);
-  }
-}
-
-/** Typed accessors for a storage's config. */
-export class StorageConfig extends ResourceConfig {
-  constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["applications", app, "storages", name] : ["storages", name]);
-  }
-
-  async id(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
-  }
-  setId(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
-  }
-  unsetId(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
-  }
-
-  async name(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
-  }
-  setName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
-  }
-  unsetName(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
-  }
-
-  async description(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
-  }
-  setDescription(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
-  }
-  unsetDescription(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
-  }
-
-  async tags(): Promise<string[] | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
-  }
-  setTags(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
-  }
-  unsetTags(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
-  }
-
-  /** Which storage this is — the key its settings live under. */
-  async type(): Promise<StorageType | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
+  /** Which agent this is — the key its settings live under. */
+  async kind(): Promise<AgentKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["object", "streaming"] as readonly string[]) if (k in block) return k as StorageType;
+    for (const k of ["git"] as readonly string[]) if (k in block) return k as AgentKind;
     return undefined;
   }
 
-  async match(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["match"])) as string | undefined;
+  async git(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
   }
-  setMatch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["match"], v);
+  setGit(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
   }
-  unsetMatch(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["match"]);
-  }
-
-  async regex(): Promise<boolean | undefined> {
-    const v = await this.s.binding.get(this.s.handle, this.res, ["regex"]);
-    return (v ?? (await this.s.binding.get(this.s.handle, this.res, ["useRegex"]))) as boolean | undefined;
-  }
-  setRegex(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["regex"], v);
-  }
-  unsetRegex(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["regex"]);
-  }
-
-  async network(): Promise<StorageNetwork | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["access", "network"])) as StorageNetwork | undefined;
-  }
-  setNetwork(v: StorageNetwork): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["access", "network"], v);
-  }
-  unsetNetwork(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["access", "network"]);
-  }
-
-  async versioning(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["object", "versioning"])) as boolean | undefined;
-  }
-  setVersioning(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["object", "versioning"], v);
-  }
-  unsetVersioning(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["object", "versioning"]);
-  }
-
-  async ttl(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["streaming", "ttl"])) as string | undefined;
-  }
-  setTtl(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["streaming", "ttl"], v);
-  }
-  unsetTtl(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["streaming", "ttl"]);
-  }
-
-  /** Lives under the storage's kind, so the branch is explicit. */
-  async size(type: StorageType): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, [type, "size"])) as string | undefined;
-  }
-  setSize(type: StorageType, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, [type, "size"], v);
-  }
-  unsetSize(type: StorageType): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, [type, "size"]);
-  }
-}
-
-/** Typed accessors for a website's config. */
-export class WebsiteConfig extends ResourceConfig {
-  constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["applications", app, "websites", name] : ["websites", name]);
-  }
-
-  async id(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
-  }
-  setId(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
-  }
-  unsetId(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
-  }
-
-  async name(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
-  }
-  setName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
-  }
-  unsetName(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
-  }
-
-  async description(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
-  }
-  setDescription(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
-  }
-  unsetDescription(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
-  }
-
-  async tags(): Promise<string[] | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
-  }
-  setTags(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
-  }
-  unsetTags(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
-  }
-
-  async domains(): Promise<string[] | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["domains"])) as string[] | undefined;
-  }
-  setDomains(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["domains"], v);
-  }
-  unsetDomains(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["domains"]);
-  }
-
-  async paths(): Promise<string[] | undefined> {
-    const v = await this.s.binding.get(this.s.handle, this.res, ["paths"]);
-    return (v ?? (await this.s.binding.get(this.s.handle, this.res, ["source", "paths"]))) as string[] | undefined;
-  }
-  setPaths(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["paths"], v);
-  }
-  unsetPaths(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["paths"]);
+  unsetGit(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
   }
 
   async branch(): Promise<string | undefined> {
@@ -1097,39 +4314,60 @@ export class WebsiteConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
   }
 
-  /** Which website this is — the key its settings live under. */
-  async provider(): Promise<WebsiteProvider | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  /** Which agent this is — the key its settings live under. */
+  async regionPolicy(): Promise<AgentRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["github"] as readonly string[]) if (k in block) return k as WebsiteProvider;
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as AgentRegionPolicy;
     return undefined;
   }
 
-  async repoID(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "github", "id"])) as string | undefined;
+  /** Lives under the agent's kind, so the branch is explicit. */
+  async regionName(regionPolicy: AgentRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
   }
-  setRepoID(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "github", "id"], v);
+  setRegionName(regionPolicy: AgentRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
   }
-  unsetRepoID(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "github", "id"]);
+  unsetRegionName(regionPolicy: AgentRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
   }
 
-  async repoName(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "github", "fullname"])) as string | undefined;
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
   }
-  setRepoName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "github", "fullname"], v);
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
   }
-  unsetRepoName(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "github", "fullname"]);
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
   }
 }
 
-/** Typed accessors for a application's config. */
-export class ApplicationConfig extends ResourceConfig {
-  constructor(s: Session, name: string) {
-    super(s, ["applications", name]);
+/** Typed accessors for a workflow's config. */
+export class WorkflowConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "workflow", name] : ["workflow", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -1170,23 +4408,149 @@ export class ApplicationConfig extends ResourceConfig {
   }
   unsetTags(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async timeout(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["timeout"])) as string | undefined;
+  }
+  setTimeout(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["timeout"], v);
+  }
+  unsetTimeout(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["timeout"]);
+  }
+
+  async concurrency(): Promise<number | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["concurrency"])) as number | undefined;
+  }
+  setConcurrency(v: number): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["concurrency"], v);
+  }
+  unsetConcurrency(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["concurrency"]);
+  }
+
+  async start(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["start"])) as string | undefined;
+  }
+  setStart(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["start"], v);
+  }
+  unsetStart(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["start"]);
+  }
+
+  /** Which workflow this is — the key its settings live under. */
+  async regionPolicy(): Promise<WorkflowRegionPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as WorkflowRegionPolicy;
+    return undefined;
+  }
+
+  /** Lives under the workflow's kind, so the branch is explicit. */
+  async regionName(regionPolicy: WorkflowRegionPolicy): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  }
+  setRegionName(regionPolicy: WorkflowRegionPolicy, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  }
+  unsetRegionName(regionPolicy: WorkflowRegionPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  }
+
+  async main(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+  }
+  setMain(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+  }
+  unsetMain(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+  }
+
+  async standby(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+  }
+  setStandby(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+  }
+  unsetStandby(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
+}
+
+/** Typed accessors for a namespace's config. */
+export class NamespaceConfig extends ResourceConfig {
+  constructor(s: Session, name: string) {
+    super(s, ["namespace", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async regions(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions"])) as string[] | undefined;
+  }
+  setRegions(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions"], v);
+  }
+  unsetRegions(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions"]);
   }
 }
 
 /** Typed accessors for a project's config. */
 export class ProjectConfig extends ResourceConfig {
   constructor(s: Session) {
-    super(s, ["config"]);
-  }
-
-  async email(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["notification", "email"])) as string | undefined;
-  }
-  setEmail(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["notification", "email"], v);
-  }
-  unsetEmail(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["notification", "email"]);
+    super(s, ["project"]);
   }
 
   async id(): Promise<string | undefined> {
@@ -1209,6 +4573,16 @@ export class ProjectConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["name"]);
   }
 
+  async zone_label(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["zone_label"])) as string | undefined;
+  }
+  setZone_label(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["zone_label"], v);
+  }
+  unsetZone_label(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["zone_label"]);
+  }
+
   async description(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
   }
@@ -1228,35 +4602,49 @@ export class ProjectConfig extends ResourceConfig {
   unsetTags(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
+
+  async regions(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions"])) as string[] | undefined;
+  }
+  setRegions(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions"], v);
+  }
+  unsetRegions(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions"]);
+  }
 }
 
 // --- Compiled resource shapes (decoded from the TNS object) ---
 
-/** Database as decoded from the compiled config object. */
-export interface Database {
+/** Application as decoded from the compiled config object. */
+export interface Application {
   id?: string;
   name?: string;
   description?: string;
   tags?: string[];
-  match?: string;
-  useRegex?: boolean;
-  local?: boolean;
-  size?: number;
-  key?: string;
-  smartops?: string[];
-}
-
-/** Domain as decoded from the compiled config object. */
-export interface Domain {
-  id?: string;
-  name?: string;
-  description?: string;
-  tags?: string[];
-  fqdn?: string;
-  "cert-file"?: string;
-  "key-file"?: string;
-  "cert-type"?: DomainCertType;
-  smartops?: string[];
+  source?: string;
+  kind?: string;
+  image?: string;
+  namespace?: string;
+  git?: string;
+  branch?: string;
+  path?: string;
+  readinesskind?: string;
+  port?: string;
+  livenesskind?: string;
+  failures?: number;
+  memory?: number;
+  cpu?: number;
+  egress?: string[];
+  max_instances?: number;
+  concurrency?: number;
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+  buildkind?: string;
+  dockerfile?: string;
+  target?: string;
 }
 
 /** Function as decoded from the compiled config object. */
@@ -1265,71 +4653,209 @@ export interface Function {
   name?: string;
   description?: string;
   tags?: string[];
-  type?: FunctionType;
-  local?: boolean;
-  channel?: string;
-  service?: string;
-  command?: string;
-  method?: FunctionMethod;
-  domains?: string[];
-  paths?: string[];
+  implements?: FunctionImplements;
   source?: string;
-  timeout?: number;
-  memory?: number;
-  call?: string;
-  secure?: boolean;
-  smartops?: string[];
-}
-
-/** Library as decoded from the compiled config object. */
-export interface Library {
-  id?: string;
-  name?: string;
-  description?: string;
-  tags?: string[];
-  path?: string;
+  kind?: string;
+  component?: string;
+  namespace?: string;
+  builtin?: string;
+  git?: string;
   branch?: string;
-  provider?: string;
-  "repository-id"?: string;
-  "repository-name"?: string;
-  smartops?: string[];
+  path?: string;
+  call?: string;
+  timeout?: number;
+  memory?: number;
+  cpu?: number;
+  egress?: string[];
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+  buildkind?: string;
+  buildimage?: string;
+  buildoutput?: string;
+  buildinstall?: string;
+  buildrun?: string;
+  buildscript?: string;
 }
 
-/** Messaging as decoded from the compiled config object. */
-export interface Messaging {
+/** Worker as decoded from the compiled config object. */
+export interface Worker {
   id?: string;
   name?: string;
   description?: string;
   tags?: string[];
-  local?: boolean;
-  match?: string;
-  regex?: boolean;
-  mqtt?: boolean;
-  webSocket?: boolean;
-  smartops?: string[];
+  implements?: WorkerImplements;
+  source?: string;
+  kind?: string;
+  component?: string;
+  namespace?: string;
+  builtin?: string;
+  git?: string;
+  branch?: string;
+  path?: string;
+  image?: string;
+  call?: string;
+  timeout?: number;
+  memory?: number;
+  cpu?: number;
+  egress?: string[];
+  runtime?: WorkerRuntime;
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+  buildkind?: string;
+  buildimage?: string;
+  buildoutput?: string;
+  buildinstall?: string;
+  buildrun?: string;
+  buildscript?: string;
+  dockerfile?: string;
+  target?: string;
 }
 
-/** Service as decoded from the compiled config object. */
-export interface Service {
-  id?: string;
-  name?: string;
-  description?: string;
-  tags?: string[];
-  protocol?: string;
-  smartops?: string[];
-}
-
-/** SmartOp as decoded from the compiled config object. */
-export interface SmartOp {
+/** Sandbox as decoded from the compiled config object. */
+export interface Sandbox {
   id?: string;
   name?: string;
   description?: string;
   tags?: string[];
   source?: string;
-  timeout?: number;
+  kind?: string;
+  image?: string;
+  namespace?: string;
+  git?: string;
+  branch?: string;
+  path?: string;
+  idle?: number;
+  max?: number;
+  egress?: string[];
   memory?: number;
-  call?: string;
-  smartops?: string[];
+  cpu?: number;
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+  buildkind?: string;
+  dockerfile?: string;
+  target?: string;
+}
+
+/** Cron as decoded from the compiled config object. */
+export interface Cron {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  schedule?: string;
+  timezone?: string;
+  on_overlap?: CronOn_overlap;
+  jitter?: number;
+}
+
+/** Component as decoded from the compiled config object. */
+export interface Component {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  source?: string;
+  kind?: string;
+  git?: string;
+  branch?: string;
+  path?: string;
+  buildkind?: string;
+  buildimage?: string;
+  buildoutput?: string;
+  buildinstall?: string;
+  buildrun?: string;
+  buildscript?: string;
+}
+
+/** Website as decoded from the compiled config object. */
+export interface Website {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  source?: string;
+  kind?: string;
+  git?: string;
+  branch?: string;
+  path?: string;
+  index?: string;
+  mode?: WebsiteMode;
+  not_found?: string;
+  buildkind?: string;
+  buildimage?: string;
+  buildoutput?: string;
+  buildinstall?: string;
+  buildrun?: string;
+  buildscript?: string;
+}
+
+/** Cache as decoded from the compiled config object. */
+export interface Cache {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  instancesadmission?: string;
+  instancesvalidatornamespace?: string;
+  instancesvalidatorname?: string;
+  limit?: number;
+  size?: number;
+  ttl?: number;
+  replicated?: boolean;
+  consensus?: CacheConsensus;
+  namespace?: string;
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+}
+
+/** Database as decoded from the compiled config object. */
+export interface Database {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  type?: string;
+  kvengine?: string;
+  kvsize?: number;
+  kvconsensus?: DatabaseKvConsensus;
+  documentengine?: string;
+  documentsize?: number;
+  documentconsensus?: DatabaseDocumentConsensus;
+  documenthost?: string;
+  documentcredentialsnamespace?: string;
+  documentcredentialsname?: string;
+  documenttls?: DatabaseDocumentTls;
+  documentdatabase?: string;
+  sqlengine?: string;
+  sqlsize?: number;
+  sqlconsensus?: DatabaseSqlConsensus;
+  sqlhost?: string;
+  sqlcredentialsnamespace?: string;
+  sqlcredentialsname?: string;
+  sqltls?: DatabaseSqlTls;
+  sqldatabase?: string;
+  vectorengine?: string;
+  vectorsize?: number;
+  vectorconsensus?: DatabaseVectorConsensus;
+  dimensions?: number;
+  metric?: DatabaseMetric;
+  instancesadmission?: string;
+  instancesvalidatornamespace?: string;
+  instancesvalidatorname?: string;
+  limit?: number;
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+  namespace?: string;
 }
 
 /** Storage as decoded from the compiled config object. */
@@ -1339,26 +4865,247 @@ export interface Storage {
   description?: string;
   tags?: string[];
   type?: string;
-  match?: string;
-  useRegex?: boolean;
-  public?: boolean;
+  instancesadmission?: string;
+  instancesvalidatornamespace?: string;
+  instancesvalidatorname?: string;
+  limit?: number;
   versioning?: boolean;
   ttl?: number;
   size?: number;
-  smartops?: string[];
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+  namespace?: string;
 }
 
-/** Website as decoded from the compiled config object. */
-export interface Website {
+/** Volume as decoded from the compiled config object. */
+export interface Volume {
   id?: string;
   name?: string;
   description?: string;
   tags?: string[];
-  domains?: string[];
-  paths?: string[];
+  quota?: number;
+  interval?: number;
+  rpo_budget?: number;
+  on_budget_exceeded?: VolumeOn_budget_exceeded;
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+  namespace?: string;
+}
+
+/** Secret as decoded from the compiled config object. */
+export interface Secret {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  source?: SecretSource;
+  rotation?: number;
+  namespace?: string;
+}
+
+/** Sync as decoded from the compiled config object. */
+export interface Sync {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  type?: string;
+  queueconsensus?: SyncQueueConsensus;
+  visibility_timeout?: number;
+  delay?: number;
+  max_attempts?: number;
+  interval?: number;
+  ceiling?: number;
+  namespace?: string;
+  logconsensus?: SyncLogConsensus;
+  age?: number;
+  size?: number;
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+}
+
+/** Zone as decoded from the compiled config object. */
+export interface Zone {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  fqdn?: string;
+  records?: string[];
+}
+
+/** Gateway as decoded from the compiled config object. */
+export interface Gateway {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  hostkind?: string;
+  hostname?: string;
+  namespace?: string;
+  hostzoneinname?: string;
+  routing?: string;
+  routetarget?: string;
+  certsource?: GatewayCertSource;
+  certsecret?: string;
+  path?: string;
+  match?: GatewayMatch;
+  strip_prefix?: boolean;
+  methods?: GatewayMethods;
+  handlerkind?: string;
+  routehandlernamespace?: string;
+  routehandlername?: string;
+  routehandlerport?: string;
+  allow_self?: boolean;
+  origins?: string[];
+  rpm?: number;
+  burst?: number;
+  key?: string;
+}
+
+/** Proxy as decoded from the compiled config object. */
+export interface Proxy {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  hostkind?: string;
+  hostname?: string;
+  namespace?: string;
+  hostzoneinname?: string;
+  routing?: string;
+  protocol?: ProxyProtocol;
+  service?: string;
+  srv?: string;
+  tlsmode?: ProxyTlsMode;
+  certsource?: ProxyCertSource;
+  certsecret?: string;
+  handlerkind?: string;
+  forwardnamespace?: string;
+  forwardname?: string;
+  forwardport?: string;
+  connections_per_minute?: number;
+  burst?: number;
+  concurrent?: number;
+  key?: ProxyKey;
+}
+
+/** Stream as decoded from the compiled config object. */
+export interface Stream {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  engine?: string;
+  local?: boolean;
+  host?: string;
+  credentialsnamespace?: string;
+  credentialsname?: string;
+  tls?: StreamTls;
+  namespace?: string;
+}
+
+/** Bus as decoded from the compiled config object. */
+export interface Bus {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  hostkind?: string;
+  hostname?: string;
+  namespace?: string;
+  hostzoneinname?: string;
+  instancesadmission?: string;
+  instancesvalidatornamespace?: string;
+  instancesvalidatorname?: string;
+  limit?: number;
+}
+
+/** MCP as decoded from the compiled config object. */
+export interface MCP {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  cache_scope?: MCPCache_scope;
+  cache_ttl?: number;
+  namespace?: string;
+}
+
+/** Channel as decoded from the compiled config object. */
+export interface Channel {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  protocol?: string;
+  servekind?: string;
+  servenamespace?: string;
+  servename?: string;
+  serveport?: string;
+  namespace?: string;
+}
+
+/** Model as decoded from the compiled config object. */
+export interface Model {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  identifier?: string;
+  format?: ModelFormat;
+  inferencekind?: string;
+  endpoint?: string;
+  namespace?: string;
+  port?: string;
+  max_tokens?: number;
+  stop?: string[];
+}
+
+/** Agent as decoded from the compiled config object. */
+export interface Agent {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  namespace?: string;
+  instructions?: string;
+  dimensions?: number;
+  size?: number;
+  steps?: number;
+  concurrent?: number;
+  timeout?: number;
+  memory?: number;
+  egress?: string[];
+  source?: string;
+  kind?: string;
+  git?: string;
   branch?: string;
-  provider?: string;
-  "repository-id"?: string;
-  "repository-name"?: string;
-  smartops?: string[];
+  path?: string;
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+}
+
+/** Workflow as decoded from the compiled config object. */
+export interface Workflow {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  timeout?: number;
+  concurrency?: number;
+  start?: string;
+  regionpolicy?: string;
+  regionname?: string;
+  main?: string;
+  standby?: string;
+  namespace?: string;
 }
