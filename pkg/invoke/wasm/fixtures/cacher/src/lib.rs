@@ -247,6 +247,16 @@ impl Guest for Component {
             return reply(200, req.body.clone());
         }
 
+        // A CHANNEL'S FAR END IS A HANDLER TOO. What it answers is what the
+        // dialing workload receives, so this echoes the body behind the
+        // protocol name — which shows a test that the bytes crossed AND which
+        // conduit they arrived on, from one reply.
+        if let Some(protocol) = header(&req, "x-taubyte-channel") {
+            let mut answer = format!("{}:", protocol).into_bytes();
+            answer.extend_from_slice(&req.body);
+            return reply(200, answer);
+        }
+
         if let Some(instance) = header(&req, "x-taubyte-instance") {
             return if instance == "denied" {
                 reply(403, b"refused".to_vec())

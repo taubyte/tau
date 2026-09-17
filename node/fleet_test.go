@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
+	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -140,6 +142,34 @@ func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 	require.Error(t, err, "the tier starts nothing in this test")
 	require.Nil(t, res)
 	require.NotContains(t, err.Error(), "no worker is ready", "a worker was found and asked")
+}
+
+// TestAChannelDialCrossesToAnotherNode — the point of the kind. The dialing
+// node runs no worker at all, so an answer can only have been sought over the
+// swarm; what proves it is the error, which is the far node's tier failing
+// rather than `no-answer`. `no-answer` is what this would say if the dial had
+// never left the machine.
+func TestAChannelDialCrossesToAnotherNode(t *testing.T) {
+	nodes := fleet(t,
+		Config{Services: []string{Register, Stats, Gateway}},
+		Config{Services: []string{Worker, Stats}},
+	)
+	edge, compute := nodes[0], nodes[1]
+
+	_, err := edge.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
+	})
+	require.NoError(t, err)
+
+	sees(t, edge, Worker)
+	sees(t, compute, Register)
+	require.Nil(t, edge.worker, "the dialing node runs none")
+
+	_, err = (&channels{node: edge}).Dial(t.Context(), channelGrant(), []byte("hello"))
+	require.Error(t, err, "the tier starts nothing in this test")
+	require.False(t, errors.Is(err, wasmtier.ErrNoAnswer),
+		"a worker was found and asked; no-answer would mean none was")
+	require.NotContains(t, err.Error(), "no worker is ready")
 }
 
 // TestAWarmWorkerIsAdvertisedAndPreferred. A worker that has already loaded an

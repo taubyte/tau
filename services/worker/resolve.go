@@ -185,6 +185,14 @@ func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Gr
 				}
 			}
 
+			// DIALLING A CHANNEL IS INVOKING WHAT SERVES IT, and the channel
+			// itself says what that is. The grant carries the resolved address
+			// so that a tier performing `dial` invokes and does not have to
+			// know what a channel is — the same trade startedBy makes.
+			if reach.Kind == channelKind {
+				servedBy(proj, t, target, id, &grant)
+			}
+
 			out = append(out, grant)
 		}
 	}
@@ -287,6 +295,68 @@ const (
 	settingStartKind   = "entry/start/kind"
 	settingStartHandle = "entry/start/handle"
 	settingStartAs     = "entry/start/as"
+)
+
+// servedBy fills in where a `dial` on a channel lands.
+//
+// A CHANNEL NAMES WHAT ANSWERS IT — `serve: {function: {name: sync, namespace:
+// /shop}}` — and that name is resolved HERE, where the compiled project is
+// open, rather than by whatever dials. It is the rule Grant.Settings states: a
+// backing that had to resolve a name back into a resource would need the
+// register on the request path.
+//
+// THE SCOPE IS RESOLVED, NOT COPIED. An omitted namespace means the channel's
+// own scope and then its parents, and a leading "/" ignores the channel
+// entirely — one rule, stated once in project.ScopeOf, and what travels is the
+// chain it produced rather than the sentence that produced it.
+//
+// A NAME THAT RESOLVES TO NOTHING IS REFUSED HERE rather than at the first
+// dial. The schema's Ref() already fails such a config at compile, so this
+// catches a compiled object that did not come from tcc — and refusing the one
+// grant leaves the rest of the workload running, which is the whole reason
+// Grant.Refused exists.
+func servedBy(proj *project.Project, t Target, channel project.Resource, id string, grant *invoke.Grant) {
+	kind := channel.String("serve", "kind")
+	name := channel.String("serve", "name")
+	if kind == "" || name == "" {
+		grant.Refused = fmt.Sprintf("channel %q names nothing that serves it, so a dial has nowhere to land", grant.Label)
+		return
+	}
+
+	// WHERE THE CHANNEL ITSELF IS, which is not where the dialer is: a bare
+	// name resolves outward, so the channel may have been found in a parent.
+	//
+	// ITS SCOPE, NOT ITS SCOPE PLUS ITSELF — the difference from startedBy just
+	// above, and the reason that line reads differently. A workflow IS a scope,
+	// because its queues live inside it; a channel is an ordinary resource in
+	// one, so appending its own name would look for the server in a namespace
+	// that does not exist.
+	_, scope, _, ok := proj.Locate(id)
+	if !ok {
+		grant.Refused = fmt.Sprintf("channel %q could not be located in this project", grant.Label)
+		return
+	}
+
+	at := project.ScopeOf(scope, channel.String("serve", "namespace"))
+	if _, _, err := proj.Resource(at, kind, name); err != nil {
+		grant.Refused = fmt.Sprintf("channel %q is served by %s/%s, which is not in this project: %s", grant.Label, kind, name, err)
+		return
+	}
+
+	grant.Settings = merged(grant.Settings, map[string]string{
+		settingProtocol:   channel.String("protocol"),
+		settingServeKind:  kind,
+		settingServeName:  name,
+		settingServeScope: "/" + strings.Join(at, "/"),
+	})
+}
+
+// What a channel's own block becomes.
+const (
+	settingProtocol   = "protocol"
+	settingServeKind  = "serve/kind"
+	settingServeName  = "serve/name"
+	settingServeScope = "serve/namespace"
 )
 
 // settingsFor is what the TARGET (and, for a mount, the entry) declared, in the
@@ -566,18 +636,22 @@ func unservableKind(reach project.Reach, target project.Resource) string {
 		}
 		return ""
 	case channelKind:
-		// A CHANNEL IS A LIBP2P PROTOCOL AND THIS CLOUD HAS NO TRANSPORT FOR IT
-		// YET. The ABI is there — `taubyte:channel/dialer` — and what is
-		// missing is the half that dials: registering a protocol handler per
-		// channel and routing to whichever workload serves it.
+		// A NAMED PORT IS THE ONE THING A DIAL CANNOT REACH. A channel served
+		// by a container may name which of its ports the bytes go to, and the
+		// container tier gives an instance exactly one port — the one it puts
+		// in $PORT and proxies to. Nothing here resolves a second one, so a
+		// channel that names one is refused BY NAME rather than delivered to
+		// the wrong socket and timed out.
 		//
 		// IT IS REFUSED PER TARGET RATHER THAN PER WORKLOAD, which is the whole
-		// reason Grant.Refused exists: a project that declares a channel still
-		// deploys, everything else in it still runs, and a dial is told why in
-		// a sentence instead of the deployment failing to start at all.
-		return fmt.Sprintf("channel %q is carried over libp2p and this cloud has no transport "+
-			"for one yet — the interface is served and nothing answers it",
-			reach.Label)
+		// reason Grant.Refused exists: the project still deploys, everything
+		// else in it still runs, and the dial is told why in a sentence.
+		if port := target.String("serve", "port"); port != "" {
+			return fmt.Sprintf("channel %q is delivered to the port %q, and a container here is reached "+
+				"on the one port it was given — nothing resolves a second one",
+				reach.Label, port)
+		}
+		return ""
 	case cacheKind:
 	default:
 		// THE OTHER KINDS ARE NOT REFUSED HERE. What a tier can do with a grant

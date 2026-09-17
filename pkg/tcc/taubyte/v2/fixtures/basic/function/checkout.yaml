@@ -31,3 +31,8 @@ sync:
 workflow:
     checkout:
         ops: [start]
+channel:
+    reserve:
+        ops: [dial]
+    sync:
+        ops: [dial]

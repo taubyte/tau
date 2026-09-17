@@ -45,10 +45,11 @@ interface dialer {
         no-such-channel(string),
         // Declared, but not with `dial`.
         denied(string),
-        // Nothing is serving the channel: the workload that answers it is not
-        // running, or this cloud has no transport for it. Its own arm because a
-        // caller RETRIES this — the name is right and the far end is not there
-        // yet, which on a cold deploy is a matter of seconds.
+        // Nothing is serving the channel: no node in this deployment could be
+        // found to run the workload that answers it, or the channel names a
+        // workload that is not in the project. Its own arm because a caller
+        // RETRIES this — the name is right and the far end is not there yet,
+        // which on a cold deploy is a matter of seconds.
         no-answer(string),
         // The far end answered and what it said was a failure.
         failed(string),

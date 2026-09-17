@@ -185,6 +185,11 @@ func (n *Node) open() error {
 	if err := n.openWorker(); err != nil {
 		return err
 	}
+	// AFTER THE WORKER AND BEFORE THE GATEWAY, because it takes the first as a
+	// collaborator and the second takes it as one.
+	if err := n.openPlacement(); err != nil {
+		return err
+	}
 	if err := n.openGateway(); err != nil {
 		return err
 	}
@@ -384,6 +389,7 @@ func (n *Node) openWorker() error {
 			wasm.WithLogs(&logs{node: n}),
 			wasm.WithStorage(objects),
 			wasm.WithAdmission(admit),
+			wasm.WithChannels(&channels{node: n}),
 			wasm.WithSecrets(n.vault))
 		if err != nil {
 			return err
@@ -510,12 +516,20 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 	}
 }
 
-func (n *Node) openGateway() error {
-	if !n.cfg.runs(Gateway) {
-		return nil
-	}
+// openPlacement builds the router that turns an address into a node.
+//
+// IT IS NOT THE GATEWAY'S, THOUGH THE GATEWAY WAS ONCE THE ONLY CALLER. A
+// workload dialling a channel asks the same question the edge asks — which node
+// runs this workload — and a node running a worker and no gateway had nothing
+// to ask, so a dial could reach only the machine it started on.
+//
+// A NODE THAT RUNS NO STATS GETS NONE, and that is not an error here: routing
+// reads the view stats maintains, and a node without one is a node that can
+// only reach itself. Whoever needs it to leave the machine says so — the
+// gateway below refuses to start without it.
+func (n *Node) openPlacement() error {
 	if n.stats == nil {
-		return errors.New("node: a gateway routes from stats, and this node does not run one")
+		return nil
 	}
 
 	options := []placement.Option{}
@@ -529,12 +543,22 @@ func (n *Node) openGateway() error {
 	}
 	n.workers = workers
 	n.closers = append(n.closers, workers)
+	return nil
+}
+
+func (n *Node) openGateway() error {
+	if !n.cfg.runs(Gateway) {
+		return nil
+	}
+	if n.workers == nil {
+		return errors.New("node: a gateway routes from stats, and this node does not run one")
+	}
 
 	source := n.registerSource()
 	gatewayOptions := []gateway.Option{
 		gateway.WithHosts(source),
 		gateway.WithSource(source),
-		gateway.WithWorkers(workers),
+		gateway.WithWorkers(n.workers),
 	}
 
 	// A BUS IS ATTACHED TO OVER GOSSIP, so a node with none says so by not

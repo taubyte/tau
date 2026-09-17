@@ -1,0 +1,6 @@
+id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioED
+description: checkout asks the stock reserver directly - a function answers this one, so there is no port to name
+protocol: reserve
+serve:
+    function:
+        name: reserve_stock
