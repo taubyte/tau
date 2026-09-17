@@ -23,7 +23,16 @@
 #
 # MemoryHigh is the missing half: it THROTTLES the cgroup and reclaims inside it
 # before the pressure escapes, so the job slows down instead of the desktop
-# dying. 75% of MemoryMax.
+# dying. 90% of MemoryMax.
+#
+# ★ 90, NOT 75, and the difference is measured rather than tuned. At 75% a job
+# whose working set legitimately IS its budget lives permanently in reclaim:
+# `go test -c` with an RSS of 3.17G under `cap 4G` was throttled to 3.6% CPU for
+# 21 minutes without finishing. MemoryHigh is meant to catch a RUNAWAY before its
+# pressure escapes the cgroup, not to strangle a job using what it was given. 90%
+# leaves a real throttle band under the hard wall and still fires long before
+# MemoryMax. A test with a deadline in it fails under the old value for no reason
+# the test could tell you about, which is the worst kind of red.
 #
 # ★★★ AND AN UNAVAILABLE systemd-run IS NOW A HARD ERROR. The previous version
 # fell through to a bare `exec "$@"`, which is a script that reports success
@@ -44,14 +53,14 @@ case "${1:-}" in
 esac
 [ "${1:-}" = "--" ] && shift
 
-# MemoryHigh = 75% of MemoryMax, in the same unit. 768M per G rather than
-# `* 3 / 4` because integer division on a small G value truncates hard: 2G would
-# become 1G, which is 50% and not 75%.
+# MemoryHigh = 90% of MemoryMax, in the same unit. 921M per G rather than
+# `* 9 / 10` because integer division on a small G value truncates hard: 2G would
+# become 1G, which is 50% and not 90%.
 high="$mem"
 case "$mem" in
-  *G) high="$(( ${mem%G} * 768 ))M" ;;
-  *M) high="$(( ${mem%M} * 3 / 4 ))M" ;;
-  *K) high="$(( ${mem%K} * 3 / 4 ))K" ;;
+  *G) high="$(( ${mem%G} * 921 ))M" ;;
+  *M) high="$(( ${mem%M} * 9 / 10 ))M" ;;
+  *K) high="$(( ${mem%K} * 9 / 10 ))K" ;;
 esac
 
 if [ "${TAU_NO_CAP:-0}" = "1" ]; then
