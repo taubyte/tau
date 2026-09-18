@@ -201,3 +201,13 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	require.Equal(t, 200, ask("/get/sessions/a", nil).Status)
 	require.Equal(t, "alice", string(ask("/get/sessions/a", nil).Body))
 }
+
+// admitterWASM is the instance validator fixture — a real component exporting
+// `admit`, which is what the `instances:` block's validator has to be now that
+// its world is built.
+func admitterWASM(t *testing.T) []byte {
+	t.Helper()
+	code, err := os.ReadFile(filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", "admitter.wasm"))
+	require.NoError(t, err, "run `cargo component build --release` in pkg/invoke/wasm/fixtures/admitter")
+	return code
+}

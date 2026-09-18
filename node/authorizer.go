@@ -156,6 +156,20 @@ func instanceOf(handle string) string {
 	return parts[3]
 }
 
-// wasmTier is the component tier a guard is instantiated through, or nil on a
+// decides is the part of the component tier this node's own policy needs: the
+// two worlds that are not the handler.
+//
+// NARROW FOR THE REASON registerReader IS. The node does not want a component
+// runtime here, it wants something that can ask a guard and something that can
+// ask a validator — and a policy that took the whole tier could reach for
+// anything else it exposes. It is also what lets the decisions be tested
+// without a wasm toolchain, while the ABI underneath keeps its own tests
+// against real components.
+type decides interface {
+	Authorize(ctx context.Context, spec invoke.Spec, q wasmtier.Question) (wasmtier.Decision, error)
+	Admit(ctx context.Context, spec invoke.Spec, o wasmtier.Opening) (wasmtier.Verdict, error)
+}
+
+// wasmTier is what a guard or a validator is instantiated through, or nil on a
 // node that runs no components.
-func (n *Node) wasmTier() *wasmtier.Runtime { return n.wasm }
+func (n *Node) wasmTier() decides { return n.decider }

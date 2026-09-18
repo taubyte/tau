@@ -102,7 +102,7 @@ func TestANodeWithNoTierCannotAnswer(t *testing.T) {
 func TestAGuardedHandleMustNameADeployment(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
 	a := &authorizers{node: n}
-	a.node.wasm = nil
+	a.node.decider = nil
 
 	grant := guardedGrant()
 	grant.Handle = "nonsense"

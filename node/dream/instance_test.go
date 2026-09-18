@@ -28,16 +28,23 @@ import (
 // admission. Nothing short of a real component running it proves the two halves
 // meet.
 
-const manyCacheID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zi"
+const (
+	manyCacheID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zi"
+	mayOpenFunc = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zj"
+)
 
 // withInstances is a project whose one function reaches a cache that holds
 // many, and is also the validator that admits them.
 //
-// ONE COMPONENT IN BOTH ROLES, because the fixture answers a request carrying
-// an instance header as a decision and anything else as a cache operation. That
-// is the shape a validator has today: `implements: instance-validator` names a
-// host world nothing builds, so a validator IS a handler.
-func withInstances(componentCID string) []byte {
+// TWO COMPONENTS, TWO WORLDS. The guest is a handler and the validator declares
+// `implements: instance-validator` and exports `admit(opening) -> verdict`.
+//
+// It used to be ONE component in both roles, because that world was named by the
+// vocabulary and built by nothing — a validator had to BE a handler, told which
+// instance by a header and answering with an HTTP status. This test said so in
+// this comment. The world exists now, so the fixture's own shape is the one the
+// config describes.
+func withInstances(guestCID, validatorCID string) []byte {
 	doc := map[string]any{
 		"object": map[string]any{
 			"id":   cacheProjectID,
@@ -46,10 +53,16 @@ func withInstances(componentCID string) []byte {
 				cacheFuncID: map[string]any{
 					"name":      "cacher",
 					"execution": map[string]any{"call": "handle", "memory": 33554432},
-					"source":    map[string]any{"kind": "component", "component": componentCID},
+					"source":    map[string]any{"kind": "component", "component": guestCID},
 					"cache": map[string]any{
 						"rooms": map[string]any{"ops": []any{"get", "put"}},
 					},
+				},
+				mayOpenFunc: map[string]any{
+					"name":       "may_open",
+					"implements": "instance-validator",
+					"execution":  map[string]any{"call": "admit", "memory": 8388608},
+					"source":     map[string]any{"kind": "component", "component": validatorCID},
 				},
 			},
 			"cache": map[string]any{
@@ -60,7 +73,7 @@ func withInstances(componentCID string) []byte {
 					"instances": map[string]any{
 						"admission": "validator",
 						"limit":     float64(3),
-						"validator": map[string]any{"name": "cacher"},
+						"validator": map[string]any{"name": "may_open"},
 					},
 				},
 			},
@@ -68,6 +81,8 @@ func withInstances(componentCID string) []byte {
 		"indexes": map[string]any{
 			"projects/" + cacheProjectID + "/function/cacher/links": []any{
 				"branches/main/projects/" + cacheProjectID + "/function/" + cacheFuncID},
+			"projects/" + cacheProjectID + "/function/may_open/links": []any{
+				"branches/main/projects/" + cacheProjectID + "/function/" + mayOpenFunc},
 			"projects/" + cacheProjectID + "/cache/rooms/links": []any{
 				"branches/main/projects/" + cacheProjectID + "/cache/" + manyCacheID},
 		},
@@ -106,9 +121,11 @@ func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 
 	cid, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
 	require.NoError(t, err)
+	admits, err := store.Put(t.Context(), bytes.NewReader(admitterWASM(t)))
+	require.NoError(t, err)
 
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(cid),
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(cid, admits),
 	})
 	require.NoError(t, err)
 
@@ -136,10 +153,10 @@ func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 	require.Equal(t, 404, res.Status)
 	require.Equal(t, "not-found", string(res.Body))
 
-	// THE VALIDATOR'S NO IS THE ANSWER. The fixture refuses an instance called
-	// `denied`, which is a real component returning a real status through the
-	// worker — and the guest is told it was not admitted rather than that the
-	// cache is down.
+	// THE VALIDATOR'S NO IS THE ANSWER, and it now carries the validator's own
+	// words rather than an HTTP status the node had to interpret. The fixture
+	// refuses an instance called `denied`; the guest is told it was not admitted
+	// rather than that the cache is down.
 	res, err = n.Worker().Invoke(t.Context(), target(), &invoke.Request{
 		Method: "POST", Path: "/get/rooms~denied/k",
 	})
@@ -181,9 +198,11 @@ func TestTheInstanceLimitHoldsEndToEnd(t *testing.T) {
 	require.True(t, ok)
 	cid, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
 	require.NoError(t, err)
+	admits, err := store.Put(t.Context(), bytes.NewReader(admitterWASM(t)))
+	require.NoError(t, err)
 
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(cid),
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(cid, admits),
 	})
 	require.NoError(t, err)
 

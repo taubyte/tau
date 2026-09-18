@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -88,7 +87,13 @@ var (
 // same question of the same validator about the same instance, and two answers
 // to it would be two security policies for one config block.
 func (a *admissions) AdmitInstance(ctx context.Context, handle string, settings map[string]string, instance string) error {
-	return a.admit(ctx, invoke.Grant{
+	// A BROWSER IS NOT A WORKLOAD AND SAYS SO BY ITS KIND BEING EMPTY, which
+	// the world declares as the rule rather than leaving it to be inferred.
+	// The deployment it is attaching to is known — it is in the handle — and
+	// nothing else about the caller is, because there is nothing else: it came
+	// from the internet.
+	project, environment, _ := splitHandle(handle)
+	return a.admit(ctx, wasmtier.Caller{Project: project, Environment: environment}, invoke.Grant{
 		Kind: "bus", Label: labelOf(handle), Handle: handle, Settings: settings,
 	}, instance)
 }
@@ -117,12 +122,23 @@ const (
 
 // Admit runs the target's validator, once per instance, and holds the ceiling.
 // It is what the wasm tier asks.
-func (a *admissions) Admit(ctx context.Context, grant invoke.Grant, instance string) error {
-	return a.admit(ctx, grant, instance)
+func (a *admissions) Admit(ctx context.Context, spec invoke.Spec, grant invoke.Grant, instance string) error {
+	return a.admit(ctx, wasmtier.Caller{
+		Project:     spec.Project,
+		Environment: spec.Environment,
+		Kind:        spec.Kind,
+		Name:        spec.Label,
+		Scope:       spec.Scope,
+	}, grant, instance)
 }
 
 // admit is the decision, whoever asked.
-func (a *admissions) admit(ctx context.Context, grant invoke.Grant, instance string) error {
+//
+// WHO IS ASKING IS A PARAMETER AND NOT A SPEC, because one of the two callers
+// has no spec: the gateway asks this same validator about a BROWSER. A caller
+// the validator can read either way is what keeps that one implementation
+// rather than two.
+func (a *admissions) admit(ctx context.Context, who wasmtier.Caller, grant invoke.Grant, instance string) error {
 	// AN INSTANCE NAME IS A KEY AND THE STORE PATH-CLEANS ONE. `..` is not a
 	// name that misses — it RESOLVES, to `<project>/<environment>`, so admitting
 	// it would write one row that every other store in the deployment then reads
@@ -163,7 +179,7 @@ func (a *admissions) admit(ctx context.Context, grant invoke.Grant, instance str
 	if err := a.room(ctx, db, grant); err != nil {
 		return err
 	}
-	if err := a.ask(ctx, grant, instance); err != nil {
+	if err := a.ask(ctx, who, grant, instance); err != nil {
 		return err
 	}
 
@@ -208,11 +224,30 @@ func (a *admissions) room(ctx context.Context, db kvdb.KVDB, grant invoke.Grant)
 	return nil
 }
 
-// ask invokes the validator the target named.
-func (a *admissions) ask(ctx context.Context, grant invoke.Grant, instance string) error {
+// ask runs the validator the target named, as the world the vocabulary names.
+//
+// IT USED TO BE A HANDLER WEARING A HEADER. `implements: instance-validator`
+// named a world nothing built, so a validator was invoked as an ordinary
+// function with the instance in `X-Taubyte-Instance` and the answer read off an
+// HTTP status. That worked and it cost something real: a function declaring the
+// world the VOCABULARY names could not start at all, so the fixture's own
+// `may_open` was a control that compiled, published and failed its first cold
+// start. The world exists now and this drives it.
+//
+// A STATUS CODE HAD NO ROOM FOR THE DIFFERENCE THAT MATTERS. "Refused" and "did
+// not decide" both had to be non-2xx, and the second is not a refusal — telling
+// a caller their instance was turned down when nothing decided sends them to
+// argue with a policy that never fired. The verdict variant carries both, so the
+// distinction this function already made in Go is now one the validator makes.
+func (a *admissions) ask(ctx context.Context, who wasmtier.Caller, grant invoke.Grant, instance string) error {
 	name := grant.Settings[settingInstanceValidator]
-	if name == "" || a.node.worker == nil {
+	if name == "" {
 		return fmt.Errorf("%w: %s", ErrNoValidator, grant.Label)
+	}
+
+	tier := a.node.wasmTier()
+	if tier == nil || a.node.worker == nil {
+		return fmt.Errorf("%w: %s, and this node cannot run one", ErrNoValidator, grant.Label)
 	}
 
 	project, environment, id := splitHandle(grant.Handle)
@@ -220,19 +255,21 @@ func (a *admissions) ask(ctx context.Context, grant invoke.Grant, instance strin
 		return fmt.Errorf("node: the handle %q does not name a deployment", grant.Handle)
 	}
 
-	res, err := a.node.worker.Invoke(ctx, worker.Target{
+	validator, err := a.node.worker.Resolve(ctx, worker.Target{
 		Project:     project,
 		Environment: environment,
 		Scope:       splitNamespace(grant.Settings[settingInstanceScope]),
 		Kind:        "function",
 		Name:        name,
-	}, &invoke.Request{
-		Method: http.MethodPost,
-		Path:   "/",
-		Headers: map[string][]string{
-			headerInstance: {instance},
-			headerFor:      {grant.Label},
-		},
+	})
+	if err != nil {
+		return fmt.Errorf("node: the validator %q for %s could not be resolved: %w", name, grant.Label, err)
+	}
+
+	verdict, err := tier.Admit(ctx, validator, wasmtier.Opening{
+		Who:      who,
+		What:     wasmtier.Store{Kind: grant.Kind, Label: grant.Label},
+		Instance: instance,
 	})
 	if err != nil {
 		// A VALIDATOR THAT COULD NOT BE RUN IS NOT A REFUSAL. Admitting anyway
@@ -241,10 +278,16 @@ func (a *admissions) ask(ctx context.Context, grant invoke.Grant, instance strin
 		// which is a different thing to act on.
 		return fmt.Errorf("node: the validator %q for %s could not be run: %w", name, grant.Label, err)
 	}
-	if res.Status < 200 || res.Status > 299 {
-		return fmt.Errorf("%w: %s refused %q with %d", wasmtier.ErrNotAdmitted, name, instance, res.Status)
+
+	switch {
+	case verdict.Admitted:
+		return nil
+	case verdict.Undecided != "":
+		// Same distinction as above, now made by the validator rather than
+		// inferred from a status code.
+		return fmt.Errorf("node: the validator %q for %s did not decide: %s", name, grant.Label, verdict.Undecided)
 	}
-	return nil
+	return fmt.Errorf("%w: %s refused %q: %s", wasmtier.ErrNotAdmitted, name, instance, verdict.Refused)
 }
 
 func (a *admissions) remember(key string) {

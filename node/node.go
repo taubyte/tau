@@ -73,10 +73,10 @@ type Node struct {
 
 	secrets *secretsService.Service
 
-	// wasm is this node's component tier, kept because a guard is instantiated
-	// through it as a different world than the workload that triggered it. Nil
-	// on a node with no asset store, which is a node that runs no components.
-	wasm *wasm.Runtime
+	// decider is this node's component tier, narrowed to the two worlds its own
+	// policy drives — see decides in authorizer.go. Nil on a node with no asset
+	// store, which is a node that runs no components.
+	decider decides
 
 	// vault is this node's one reader of secret values, shared by the worker
 	// and the wasm tier. It holds a stream to a remote secrets service, so a
@@ -406,7 +406,7 @@ func (n *Node) openWorker() error {
 		// world instantiated from the same tier, and the node is the only thing
 		// that holds both the tier and the worker that can resolve which
 		// function to instantiate. See authorizer.go.
-		n.wasm = component
+		n.decider = component
 
 		tiers = appendUnnamed(tiers, site, component)
 	}

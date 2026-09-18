@@ -21,12 +21,14 @@ import (
 type admitting struct {
 	mu     sync.Mutex
 	asked  []string
+	by     []string
 	refuse error
 }
 
-func (a *admitting) Admit(_ context.Context, grant invoke.Grant, instance string) error {
+func (a *admitting) Admit(_ context.Context, spec invoke.Spec, grant invoke.Grant, instance string) error {
 	a.mu.Lock()
 	a.asked = append(a.asked, grant.Label+"/"+instance)
+	a.by = append(a.by, spec.Label)
 	err := a.refuse
 	a.mu.Unlock()
 	return err
@@ -228,4 +230,22 @@ func TestARefusedInstanceIsDenied(t *testing.T) {
 	res := call(t, instance, "/get/sessions~room/k", nil)
 	require.Equal(t, 404, res.Status)
 	require.Contains(t, string(res.Body), "denied:", "got %q", res.Body)
+}
+
+// TestTHEVALIDATORISTOLDWHOISASKING. A store that holds many is opened by a
+// workload, and a validator deciding for two of them has nothing else to tell
+// them apart by — the instance name is the caller's, not the caller.
+func TestTheAdmitterIsToldWhoIsOpening(t *testing.T) {
+	admit := &admitting{}
+	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h/room-42")), wasm.WithAdmission(admit)),
+		invoke.Spec{
+			Name: "fn", Label: "chat", Kind: "function",
+			Reaches: []invoke.Grant{manyGrant("sessions", "h", "get")},
+		})
+
+	call(t, instance, "/get/sessions~room-42/k", nil)
+
+	admit.mu.Lock()
+	defer admit.mu.Unlock()
+	require.Equal(t, []string{"chat"}, admit.by)
 }

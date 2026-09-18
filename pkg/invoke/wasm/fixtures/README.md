@@ -32,6 +32,17 @@ only the op it was asked about is broken in a way nothing can detect, and a host
 that keeps the answer would let the first operation a workload happened to try
 decide every later one.
 
+**admitter.wasm** is the instance validator: `taubyte:instance-validator`,
+exporting `admit(opening) -> verdict`. It replaces a stopgap rather than nothing
+— until its world was built a validator had to BE a handler, told which instance
+by a header and answering with an HTTP status, which had no room for the
+difference between a refusal and a refusal to decide.
+
+It answers from the instance name (`denied`, `unsure`, `echo`, anything else).
+The echo arm exists because `admitted` carries nothing: a yes has no room to show
+that the record arrived intact, so the refusal's string is borrowed to hand the
+opening back.
+
 **cacher.wasm** calls every one of the thirteen capabilities, one branch of its
 `handle` per operation, selected by the request path. It is what every
 capability's tests drive.

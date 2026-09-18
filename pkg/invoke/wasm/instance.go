@@ -53,7 +53,7 @@ import (
 // per call: an implementation that has already admitted an instance should say
 // so cheaply, because this is on the request path.
 type Admitter interface {
-	Admit(ctx context.Context, grant invoke.Grant, instance string) error
+	Admit(ctx context.Context, spec invoke.Spec, grant invoke.Grant, instance string) error
 }
 
 // WithAdmission is what decides whether an instance may exist. A tier without
@@ -189,7 +189,7 @@ func (r *Runtime) addressed(ctx context.Context, spec invoke.Spec, grants map[st
 	if r.admission == nil {
 		return invoke.Grant{}, unreachable(ErrNoAdmission.Error())
 	}
-	if err := r.admission.Admit(ctx, grant, instance); err != nil {
+	if err := r.admission.Admit(ctx, spec, grant, instance); err != nil {
 		if errors.Is(err, ErrNotAdmitted) {
 			return invoke.Grant{}, denied(err.Error())
 		}
