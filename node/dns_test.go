@@ -1,6 +1,7 @@
 package node
 
 import (
+	"encoding/json"
 	"net"
 	"strconv"
 	"testing"
@@ -21,7 +22,7 @@ import (
 
 // serving is a node that runs the whole chain and answers on an ephemeral port,
 // because :53 needs a privilege a test does not have.
-func serving(t *testing.T, compiled []byte) *Node {
+func serving(t *testing.T, compiled []byte, hosts ...string) *Node {
 	t.Helper()
 
 	cfg := Config{Services: []string{Register, Worker, Stats, Proxy, DNS}}
@@ -39,11 +40,17 @@ func serving(t *testing.T, compiled []byte) *Node {
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
 
+	// THE HOSTS ARE WHAT TURNS A QUERY INTO A PROJECT. A deploy publishes
+	// them beside the object — see services/build/deploy — and a zone's apex
+	// is one of them, which is the only reason dns can find the records an
+	// author wrote.
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled,
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled, Hosts: hosts,
 	})
 	require.NoError(t, err)
 
+	// A deployment is only visible to what this node SERVES once the worker
+	// holds it, so it is touched here the way a first request would.
 	_, err = n.Worker().Resolve(t.Context(),
 		project.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"})
 	require.NoError(t, err)
@@ -178,4 +185,71 @@ func TestTheReportCarriesAddressesAndNotMultiaddrs(t *testing.T) {
 
 	// And it is the host's own, not an invention.
 	require.LessOrEqual(t, len(snap.Addresses), len(h.Addrs()))
+}
+
+// withZone is a project declaring a zone it owns, and the records in it.
+func withZone(apex string, records []any) []byte {
+	doc := map[string]any{
+		"object": map[string]any{
+			"id":   projectID,
+			"name": "shop",
+			// The application is what the worker is asked to hold — see
+			// serving. A zone declares no workload of its own.
+			"application": map[string]any{
+				proxyAppID: map[string]any{
+					"name":   "db",
+					"source": map[string]any{"kind": "image", "image": "ghcr.io/acme/postgres:16"},
+				},
+			},
+			"zone": map[string]any{
+				zoneResourceID: map[string]any{"name": "own", "fqdn": apex, "records": records},
+			},
+		},
+		"indexes": map[string]any{
+			"projects/" + projectID + "/application/db/links": []any{
+				"branches/main/projects/" + projectID + "/application/" + proxyAppID},
+			"projects/" + projectID + "/zone/own/links": []any{
+				"branches/main/projects/" + projectID + "/zone/" + zoneResourceID},
+		},
+	}
+
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		panic(err)
+	}
+	return raw
+}
+
+const zoneResourceID = "QmU1Vy6xqpYjRFFZqucyZULup6svHhsajomz71zWnSz9gk"
+
+// TestARECORDANAUTHORWROTEISSERVED, end to end, through a real resolver. It is
+// the only way this cloud answers a type it cannot route — and a project that
+// moved its domain here and lost its mail has not moved its domain.
+func TestAResolverGetsTheRecordsAProjectDeclares(t *testing.T) {
+	n := serving(t, withZone("example.com", []any{
+		"@ 3600 IN MX 10 mail.example.com.",
+		"www 300 IN A 1.2.3.4",
+	}), "example.com")
+
+	ask := resolver(t, n)
+
+	mx := ask("example.com", dns.TypeMX)
+	require.Equal(t, dns.RcodeSuccess, mx.Rcode)
+	require.Len(t, mx.Answer, 1)
+	require.Equal(t, "mail.example.com.", mx.Answer[0].(*dns.MX).Mx)
+
+	a := ask("www.example.com", dns.TypeA)
+	require.Len(t, a.Answer, 1)
+	require.Equal(t, "1.2.3.4", a.Answer[0].(*dns.A).A.String())
+}
+
+// TestTHEWALKGOESUPTHELABELS: a record at `www.example.com` is found from a
+// zone declared at the apex, which is what a zone file means.
+func TestANameDeepInAZoneFindsIt(t *testing.T) {
+	n := serving(t, withZone("example.com", []any{"a.b.c 300 IN TXT \"deep\""}), "example.com")
+
+	reply := resolver(t, n)("a.b.c.example.com", dns.TypeTXT)
+	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
+	require.Len(t, reply.Answer, 1)
+	require.Equal(t, []string{"deep"}, reply.Answer[0].(*dns.TXT).Txt)
 }

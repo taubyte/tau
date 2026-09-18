@@ -358,6 +358,13 @@ func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *project.
 
 // hostsOf is the fully-qualified names a deployment answers on, and the
 // generated ones that could not be completed.
+//
+// A ZONE'S APEX IS ONE OF THEM, and it is not a resource answering at a name —
+// it is the name this project is AUTHORITATIVE for. It is published here
+// because the index this feeds is what turns a query into a project, and
+// without it nothing could find the records an author wrote: a zone that
+// declares an MX would resolve to nobody, which is the whole of what
+// "a zone served authoritatively by this cloud" promises.
 func hostsOf(p *project.Project, cloudFqdn string) (hosts, incomplete []string) {
 	for _, h := range p.Hosts() {
 		if !h.Generated {
@@ -369,6 +376,13 @@ func hostsOf(p *project.Project, cloudFqdn string) (hosts, incomplete []string) 
 			continue
 		}
 		hosts = append(hosts, h.Fqdn+"."+cloudFqdn)
+	}
+
+	// NEVER GENERATED: a zone is one the author owns and delegated here. The
+	// cloud's own zone is not declared as a resource at all — a name under it
+	// is reached with host.generated, which the loop above already completed.
+	for _, z := range p.Zones() {
+		hosts = append(hosts, z.Fqdn)
 	}
 	return hosts, incomplete
 }

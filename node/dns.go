@@ -1,9 +1,11 @@
 package node
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/taubyte/tau/services/dns"
 )
@@ -45,7 +47,17 @@ func (n *Node) openDNS() error {
 		return ErrNoStatsForDNS
 	}
 
-	svc, err := dns.New(n.cfg.DNS, dns.WithRouter(n.stats))
+	options := []dns.Option{dns.WithRouter(n.stats)}
+
+	// AUTHORED RECORDS NEED A WORKER, because the records are in the compiled
+	// project and the worker is what holds one. A dns node without one answers
+	// what it can route and nothing an author wrote — which is a real loss and
+	// is not a reason to refuse to answer at all.
+	if n.worker != nil {
+		options = append(options, dns.WithZones(&zones{node: n}))
+	}
+
+	svc, err := dns.New(n.cfg.DNS, options...)
 	if err != nil {
 		return err
 	}
@@ -82,4 +94,62 @@ func (n *Node) DNSAddrs() []net.Addr {
 		return nil
 	}
 	return n.dns.Addrs()
+}
+
+// zones resolves a query name to the records a project declares for it.
+//
+// # The walk is up the labels, and it stops at the first zone
+//
+// A query for `mail.shop.example.com` may be answered by a zone declared at
+// `shop.example.com` or at `example.com`, and the index maps an exact name to a
+// project. So the name is tried, then its parent, then its parent's — most
+// specific first, which is the same precedence a resolver would apply between
+// two delegations.
+//
+// IT STOPS AT TWO LABELS. A query for `com` or `.` is not a zone anybody here
+// declares, and walking to the root would ask the register about every public
+// suffix on every miss.
+//
+// # What it costs on a miss
+//
+// One index lookup per label, and a miss is the ordinary case for a server that
+// also answers routed names. The lookups are what the register is for and the
+// answer is cached by whatever holds the project — but a deep name that matches
+// nothing pays for its depth, which is stated rather than hidden.
+type zones struct{ node *Node }
+
+var _ dns.Zones = (*zones)(nil)
+
+func (z *zones) Records(ctx context.Context, name string) (string, []string, error) {
+	labels := strings.Split(strings.ToLower(strings.TrimSuffix(name, ".")), ".")
+
+	source := z.node.registerSource()
+	for i := 0; i+1 < len(labels); i++ {
+		apex := strings.Join(labels[i:], ".")
+
+		projectName, environment, err := source.ResolveHost(ctx, apex)
+		if err != nil {
+			continue
+		}
+
+		proj, _, err := z.node.worker.At(ctx, projectName, environment)
+		if err != nil {
+			// The index says this project owns the apex and its compiled form
+			// is not readable here. The next label up is not the answer — this
+			// one is, and it is unavailable — so the walk stops.
+			return "", nil, fmt.Errorf("node: reading %s/%s for %s: %w", projectName, environment, apex, err)
+		}
+
+		for _, declared := range proj.Zones() {
+			if declared.Fqdn == apex {
+				return declared.Fqdn, declared.Records, nil
+			}
+		}
+
+		// THE INDEX MATCHED AND THE PROJECT DECLARES NO SUCH ZONE. That is a
+		// gateway host at this name rather than a zone apex, so the walk
+		// carries on: a project may serve `shop.example.com` from a gateway
+		// and still declare `example.com` as a zone.
+	}
+	return "", nil, nil
 }

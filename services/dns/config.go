@@ -89,7 +89,13 @@ const (
 	DefaultMaxRecords = 8
 )
 
-var ErrNoRouter = errors.New("dns: a server with no router has nothing to answer from")
+var (
+	ErrNoRouter = errors.New("dns: a server with no router has nothing to answer from")
+
+	// ErrNoZones is a nil source of authored records, which is not the same as
+	// no source at all — see WithZones.
+	ErrNoZones = errors.New("dns: a nil source declares no records")
+)
 
 // Option injects what this service is built from. Operator values go in Config;
 // live collaborators come through here.
@@ -97,6 +103,7 @@ type Option func(*options) error
 
 type options struct {
 	router Router
+	zones  Zones
 }
 
 // WithRouter is where the answers come from. Required.

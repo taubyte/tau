@@ -56,6 +56,7 @@
 package dns
 
 import (
+	"context"
 	"encoding/base32"
 	"errors"
 	"fmt"
@@ -105,6 +106,16 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 // Answer builds the reply to one query. It is the whole of this service's
 // behaviour, and it touches no socket, so every rule above is a unit test.
 func (s *Service) Answer(req *dns.Msg) *dns.Msg {
+	return s.AnswerContext(context.Background(), req)
+}
+
+// AnswerContext is Answer with a deadline on whatever it has to look up.
+//
+// THE CONTEXT IS FOR THE AUTHORED RECORDS and nothing else: routing reads a
+// local view and cannot block, where finding which project owns a name is a
+// lookup somebody else answers. A resolver gives up in seconds, so a query that
+// outlives its client is work nobody will read.
+func (s *Service) AnswerContext(ctx context.Context, req *dns.Msg) *dns.Msg {
 	reply := new(dns.Msg)
 	reply.SetReply(req)
 	reply.Authoritative = true
@@ -134,6 +145,15 @@ func (s *Service) Answer(req *dns.Msg) *dns.Msg {
 		return s.answerSRV(reply, name, q.Name)
 	}
 
+	// AN AUTHORED RECORD WINS, before anything is routed. It is the more
+	// specific statement — somebody wrote it down, about that exact name, on
+	// purpose — and it is the only way this server answers a type it cannot
+	// route at all.
+	if records := s.authored(ctx, q.Name, q.Qtype); len(records) > 0 {
+		reply.Answer = records
+		return reply
+	}
+
 	// A name under the node zone is one node's own name, minted for an SRV
 	// target. It resolves to that node's addresses and nothing else.
 	if peer, ok := s.peerOf(name); ok {
@@ -153,6 +173,14 @@ func (s *Service) Answer(req *dns.Msg) *dns.Msg {
 
 	nodes := s.opts.router.Route(name, s.cfg.MaxAge)
 	if len(nodes) == 0 {
+		// A NAME A ZONE DECLARES BUT NOT AT THIS TYPE EXISTS. Asked for an A
+		// where only an MX was written, the answer is NOERROR with no records —
+		// SERVFAIL would tell a resolver this server is broken and send it to
+		// ask somebody else.
+		if s.answersFor(ctx, q.Name) {
+			return reply
+		}
+
 		// See the package doc: this is SERVFAIL and not NXDOMAIN, because
 		// "nothing is serving it right now" is not "it does not exist", and
 		// the difference is how long a resolver remembers.
@@ -360,8 +388,16 @@ func (s *Service) ttlSeconds() uint32 { return uint32(s.cfg.TTL / time.Second) }
 
 // ServeDNS makes the service a dns.Handler.
 func (s *Service) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
-	w.WriteMsg(s.Answer(req))
+	ctx, cancel := context.WithTimeout(context.Background(), lookupBudget)
+	defer cancel()
+
+	w.WriteMsg(s.AnswerContext(ctx, req))
 }
+
+// lookupBudget bounds what one query may spend finding which project owns a
+// name. A resolver gives up in a few seconds; work past that is work nobody
+// will read.
+const lookupBudget = 2 * time.Second
 
 // Listen serves on addr over both UDP and TCP.
 //

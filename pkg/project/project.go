@@ -102,6 +102,9 @@ type Project struct {
 	// both arrive as ids, and both need the other direction.
 	located map[string]where
 
+	zonesOnce sync.Once
+	zones     []Zone
+
 	// hosts is memoized: a compiled project is immutable, so the walk that
 	// produces it runs once however many requests ask.
 	hostsOnce sync.Once

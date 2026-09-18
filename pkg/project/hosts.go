@@ -206,3 +206,71 @@ func locate(index map[string][]string, projectID string) map[string]where {
 	}
 	return out
 }
+
+// Zone is one DNS zone a project claims authority over.
+//
+// IT IS NOT A Host, and the difference is which way the name points. A Host is
+// a name a RESOURCE answers at — a gateway's, a proxy's — assembled from the
+// label it chose and the zone that answers for it. A zone's own fqdn is the
+// other end of that: the apex this project is authoritative for, under which
+// those labels live and under which an author may write records of their own.
+//
+// So it is a separate walk rather than another arm of the hosts one. Hosts is
+// driven by `AnswersAt`, which names the BLOCK a kind declares its name in, and
+// a zone has no such block: its name is the resource.
+type Zone struct {
+	// Fqdn is the apex, e.g. "example.com".
+	Fqdn string
+
+	// Records are the zone-file lines the author wrote, relative to Fqdn.
+	Records []string
+
+	// Scope and Name address the resource, in the form Resource takes.
+	Scope []string
+	Name  string
+}
+
+// Zones is every zone this project is authoritative for, sorted by apex.
+//
+// It is memoized for the reason Hosts is: a compiled project is immutable, so a
+// consumer answering a query per request should not pay for the walk per
+// request.
+func (p *Project) Zones() []Zone {
+	p.zonesOnce.Do(func() { p.zones = p.walkZones() })
+	return p.zones
+}
+
+func (p *Project) walkZones() []Zone {
+	var out []Zone
+
+	for id, where := range p.located {
+		if where.kind != zoneKind {
+			continue
+		}
+		r, _, err := p.Resource(where.scope, zoneKind, where.name)
+		if err != nil {
+			continue
+		}
+
+		fqdn := strings.ToLower(strings.TrimSuffix(r.String("fqdn"), "."))
+		if fqdn == "" {
+			// A ZONE WITH NO APEX IS AUTHORITATIVE FOR NOTHING. The vocabulary
+			// requires the field; a compiled object that lost it would
+			// otherwise claim every name at once.
+			continue
+		}
+		_ = id
+
+		out = append(out, Zone{
+			Fqdn:    fqdn,
+			Records: r.Strings("records"),
+			Scope:   append([]string(nil), where.scope...),
+			Name:    where.name,
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Fqdn < out[j].Fqdn })
+	return out
+}
+
+const zoneKind = "zone"
