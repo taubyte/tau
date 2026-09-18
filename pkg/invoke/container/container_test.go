@@ -709,3 +709,119 @@ func TestWithWarnRefusesNil(t *testing.T) {
 	_, err := New(ImageFromSpec, WithWarn(nil))
 	require.Error(t, err)
 }
+
+// ── declared ports ───────────────────────────────────────────────────────
+
+// A CONTAINER THAT BINDS A FIXED PORT IS THE ORDINARY CASE AND IT DID NOT WORK.
+// The tier allocated one ephemeral port, told the workload about it in $PORT and
+// mapped that number to ITSELF — which serves a program written to be told where
+// to listen and serves nothing else. postgres binds 5432 because that is what
+// postgres does, and every off-the-shelf image anybody would import is in that
+// second group.
+
+// TestADeclaredPortIsMappedToWhatTheContainerActuallyBinds.
+func TestADeclaredPortIsTranslated(t *testing.T) {
+	backend := newFakeBackend()
+	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/postgres:16"}, nil)
+
+	_, _ = e.Start(t.Context(), invoke.Spec{
+		Name:     "shop/prod/application/db",
+		Artifact: "ghcr.io/acme/postgres:16",
+		Ports:    map[string]int{"pg": 5432},
+	})
+
+	created, _, _ := backend.snapshot()
+	require.Len(t, created, 1)
+	mapped := created[0].Network.PortMappings
+	require.Len(t, mapped, 1)
+	require.Equal(t, 5432, mapped[0].ContainerPort, "what postgres is actually listening on")
+	require.NotZero(t, mapped[0].HostPort)
+	require.NotEqual(t, 5432, mapped[0].HostPort,
+		"the host side is allocated, so two workloads that both bind 5432 do not collide")
+}
+
+// TestEVERYDeclaredPortIsMapped, not just one — a workload listening on two is
+// reachable on two.
+func TestEveryDeclaredPortIsMapped(t *testing.T) {
+	backend := newFakeBackend()
+	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/many:1"}, nil)
+
+	_, _ = e.Start(t.Context(), invoke.Spec{
+		Name:     "shop/prod/application/many",
+		Artifact: "ghcr.io/acme/many:1",
+		Ports:    map[string]int{"http": 8080, "admin": 9090, "metrics": 9100},
+	})
+
+	created, _, _ := backend.snapshot()
+	require.Len(t, created, 1)
+
+	inside := map[int]bool{}
+	hosts := map[int]bool{}
+	for _, m := range created[0].Network.PortMappings {
+		inside[m.ContainerPort] = true
+		require.False(t, hosts[m.HostPort], "two ports were given the same host side")
+		hosts[m.HostPort] = true
+	}
+	require.Equal(t, map[int]bool{8080: true, 9090: true, 9100: true}, inside)
+}
+
+// TestTheMAPPINGDoesNotDependOnAMapWalk. Two starts of one spec allocating host
+// ports in a different order would make a log read as if something had changed.
+func TestTheMappingIsOrderedByName(t *testing.T) {
+	backend := newFakeBackend()
+	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/many:1"}, nil)
+
+	spec := invoke.Spec{
+		Name:     "shop/prod/application/many",
+		Artifact: "ghcr.io/acme/many:1",
+		Ports:    map[string]int{"http": 8080, "admin": 9090, "metrics": 9100},
+	}
+	_, _ = e.Start(t.Context(), spec)
+	_, _ = e.Start(t.Context(), spec)
+
+	created, _, _ := backend.snapshot()
+	require.Len(t, created, 2)
+
+	order := func(c *core.ContainerConfig) []int {
+		var out []int
+		for _, m := range c.Network.PortMappings {
+			out = append(out, m.ContainerPort)
+		}
+		return out
+	}
+	// admin, http, metrics — by NAME, so 9090 first.
+	require.Equal(t, []int{9090, 8080, 9100}, order(created[0]))
+	require.Equal(t, order(created[0]), order(created[1]))
+}
+
+// TestAWorkloadThatDECLARESNoneKeepsThePORTContract, which is still right for
+// something built for this platform: it is told a number and binds it.
+func TestNoDeclaredPortsKeepsTheEphemeralContract(t *testing.T) {
+	backend := newFakeBackend()
+	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/api:1.4"}, nil)
+
+	_, _ = e.Start(t.Context(), invoke.Spec{Name: "fn", Artifact: "ghcr.io/acme/api:1.4"})
+
+	created, _, _ := backend.snapshot()
+	require.Len(t, created, 1)
+	mapped := created[0].Network.PortMappings
+	require.Len(t, mapped, 1)
+	require.Equal(t, mapped[0].HostPort, mapped[0].ContainerPort,
+		"nothing was declared, so the number it is told is the number it is reached on")
+	require.Equal(t, mapped[0].HostPort, portFromEnv(created[0].Env))
+}
+
+// TestPORTIsStillSetWhenPortsAreDeclared, because an image that reads it is not
+// made to stop by an author declaring where it listens.
+func TestPortIsSetToADeclaredPortsHostSide(t *testing.T) {
+	backend := newFakeBackend()
+	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/postgres:16"}, nil)
+
+	_, _ = e.Start(t.Context(), invoke.Spec{
+		Name: "db", Artifact: "ghcr.io/acme/postgres:16",
+		Ports: map[string]int{"pg": 5432},
+	})
+
+	created, _, _ := backend.snapshot()
+	require.Equal(t, created[0].Network.PortMappings[0].HostPort, portFromEnv(created[0].Env))
+}

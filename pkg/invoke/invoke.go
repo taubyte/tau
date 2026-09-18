@@ -93,6 +93,22 @@ type Spec struct {
 	// Timeout bounds one request. Zero means the pool's default.
 	Timeout time.Duration
 
+	// Ports are what this workload binds INSIDE its container, by the name its
+	// author gave them — `ports: {pg: {number: 5432}}`.
+	//
+	// A CONTAINER THAT BINDS A FIXED PORT IS THE ORDINARY CASE AND IT DID NOT
+	// WORK. The tier allocated one ephemeral port and told the workload about it
+	// in $PORT, which serves a program written to be told where to listen and
+	// serves nothing else: postgres binds 5432 because that is what postgres
+	// does, and mapping an ephemeral host port to the same ephemeral number
+	// reached nothing at all. Every image anybody would import — a database, a
+	// cache, an off-the-shelf server — is in that second group.
+	//
+	// EMPTY MEANS THE $PORT CONTRACT, which is still right for a workload built
+	// for this platform: it is told a number and binds it. The two are different
+	// products and the author picks by declaring ports or not.
+	Ports map[string]int
+
 	// Memory is the hard limit in bytes, from the resource's
 	// `execution/memory`. Zero means the runtime's own default.
 	//

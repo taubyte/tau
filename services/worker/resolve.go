@@ -119,6 +119,7 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 	if memory, ok := r.Int("execution", "memory"); ok {
 		spec.Memory = memory
 	}
+	spec.Ports = portsOf(r)
 	if timeout, ok := r.Duration("execution", "timeout"); ok {
 		spec.Timeout = timeout
 	}
@@ -234,6 +235,30 @@ const (
 	// sourceBuiltin is the vocabulary's word for a program the runtime ships.
 	sourceBuiltin = "builtin"
 )
+
+// portsOf is what this workload binds inside its container, by name.
+//
+// THE VOCABULARY HAS DECLARED THESE SINCE v2 BEGAN AND NOTHING READ THEM. A
+// container that binds a fixed port — which is every off-the-shelf image — was
+// given an ephemeral port in $PORT and mapped to that same ephemeral number, so
+// the thing it was actually listening on was reachable from nowhere.
+func portsOf(r project.Resource) map[string]int {
+	declared := r.Sub("ports")
+	if len(declared) == 0 {
+		return nil
+	}
+
+	out := make(map[string]int, len(declared))
+	for _, name := range declared.Keys() {
+		if number, ok := declared.Sub(name).Int("number"); ok && number > 0 {
+			out[name] = int(number)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
 
 // merged is two setting maps as one, with nil for neither.
 //

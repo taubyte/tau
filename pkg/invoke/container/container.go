@@ -346,9 +346,19 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, ErrNoImage
 	}
 
-	port, err := e.opts.port()
+	// WHAT THIS WORKLOAD LISTENS ON, and there are two products here.
+	//
+	// A workload that DECLARED ports binds the numbers it declared, because
+	// that is what an off-the-shelf image does: postgres binds 5432 whatever
+	// anybody tells it. One that declared none is built for this platform and
+	// is told a number in $PORT.
+	//
+	// The second was the only one this tier had, which meant the first did not
+	// work at all — an ephemeral host port mapped to the same ephemeral number,
+	// while the container listened on 5432 and nothing reached it.
+	ports, port, err := e.portsFor(spec)
 	if err != nil {
-		return nil, fmt.Errorf("container: allocating a port: %w", err)
+		return nil, err
 	}
 
 	// Pull before create. A backend whose create auto-pulls does this twice and
@@ -370,7 +380,7 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, err
 	}
 
-	id, err := e.opts.backend.Create(ctx, e.config(img, port, api.address(), mounts))
+	id, err := e.opts.backend.Create(ctx, e.config(img, ports, port, api.address(), mounts))
 	if err != nil {
 		api.Close()
 		return nil, fmt.Errorf("container: creating %s: %w", img.Ref, err)
@@ -409,7 +419,56 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 // endpoint, loopback and the private network — while leaving the public internet
 // reachable, because a function that cannot make an outbound call is not a
 // serverless function. It is fail-closed in the backend: no firewall, no start.
-func (e *Runtime) config(img Image, port int, runtimeAPI string, mounts []core.VolumeMount) *core.ContainerConfig {
+// portsFor is every port this container is reached on, and the one $PORT names.
+//
+// ON DOCKER A DECLARED PORT IS TRANSLATED: the host side is allocated and the
+// container side is the number the author declared, so two workloads that both
+// bind 5432 sit on one node without colliding.
+//
+// ON CONTAINERD IT CANNOT BE. There is no CNI, the container shares the host's
+// network namespace, and a mapping that translates is refused by the backend —
+// so the host port IS the declared number and two workloads declaring the same
+// one collide. That is a property of the backend rather than a choice made here,
+// and it is the backend that says so: this asks for the mapping either way and
+// the conformance refusal is what a containerd operator sees.
+func (e *Runtime) portsFor(spec invoke.Spec) (mapped []core.PortMapping, told int, err error) {
+	if len(spec.Ports) == 0 {
+		port, err := e.opts.port()
+		if err != nil {
+			return nil, 0, fmt.Errorf("container: allocating a port: %w", err)
+		}
+		return []core.PortMapping{{
+			HostPort: port, ContainerPort: port, Protocol: "tcp", HostIP: "127.0.0.1",
+		}}, port, nil
+	}
+
+	// SORTED, so the mapping a backend is handed does not depend on a map walk
+	// — two starts of one spec would otherwise allocate host ports in a
+	// different order and a log would read as if something had changed.
+	names := make([]string, 0, len(spec.Ports))
+	for name := range spec.Ports {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		host, err := e.opts.port()
+		if err != nil {
+			return nil, 0, fmt.Errorf("container: allocating a port for %q: %w", name, err)
+		}
+		mapped = append(mapped, core.PortMapping{
+			HostPort: host, ContainerPort: spec.Ports[name], Protocol: "tcp", HostIP: "127.0.0.1",
+		})
+	}
+
+	// $PORT IS STILL SET, to the first declared port's host side, because an
+	// image that reads it is not made to stop by an author declaring where it
+	// listens — and a workload that declares one port and reads $PORT is a
+	// perfectly ordinary thing to write.
+	return mapped, mapped[0].HostPort, nil
+}
+
+func (e *Runtime) config(img Image, ports []core.PortMapping, port int, runtimeAPI string, mounts []core.VolumeMount) *core.ContainerConfig {
 	env := make([]string, 0, len(img.Env)+2)
 	for k, v := range img.Env {
 		if k == "PORT" {
@@ -450,12 +509,7 @@ func (e *Runtime) config(img Image, port int, runtimeAPI string, mounts []core.V
 			// is realised is the backend's — docker puts it on tau's restricted
 			// bridge and maps the port, containerd shares the host's namespace
 			// where the mapping is already true.
-			PortMappings: []core.PortMapping{{
-				HostPort:      port,
-				ContainerPort: port,
-				Protocol:      "tcp",
-				HostIP:        "127.0.0.1",
-			}},
+			PortMappings:   ports,
 			RestrictEgress: true,
 		},
 		// WHAT THE AUTHOR DECLARED IT MOUNTS. Both backends take a host path;
