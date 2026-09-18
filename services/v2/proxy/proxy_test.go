@@ -278,3 +278,16 @@ func TestAProxyWithNoRegisterIsRefusedAtConstruction(t *testing.T) {
 	_, err := proxy.New(proxy.Config{}, proxy.WithWorkers(&workers{}))
 	require.ErrorIs(t, err, proxy.ErrNoProjects)
 }
+
+// derivingService is a proxy service that derives its sockets inside prefix.
+func derivingService(t *testing.T, prefix string, res map[string]any) *proxy.Service {
+	t.Helper()
+
+	s, err := proxy.New(proxy.Config{Prefix: prefix},
+		proxy.WithProjects(projects{p: compiled(t, res)}),
+		proxy.WithWorkers(&workers{}),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	return s
+}

@@ -41,6 +41,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -86,6 +87,15 @@ type Config struct {
 	// has no duration this service could know. A psql session is measured in
 	// hours.
 	ConnectTimeout time.Duration `yaml:"connectTimeout"`
+
+	// Prefix is the v6 range this cloud gives proxies addresses out of, e.g.
+	// "2001:db8:1:2::/64". Each proxy's address is DERIVED inside it — see
+	// address.go for why that is a function and not a table.
+	//
+	// EMPTY MEANS EVERY BIND IS THE OPERATOR'S, which is the shape this service
+	// had before there was anything to derive from: a socket named per
+	// resource. Both work; only one of them scales past a handful.
+	Prefix string `yaml:"prefix"`
 }
 
 // DefaultConnectTimeout is how long reaching a workload may take.
@@ -171,14 +181,105 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	return &Service{cfg: cfg, opts: o}, nil
 }
 
-// Serve binds one socket and carries every connection on it to the proxy's
-// forward target.
+// Serve binds the socket this proxy answers on and carries every connection.
+//
+// WHERE THAT IS COMES FROM THE RESOURCE unless the operator said otherwise: the
+// address is derived inside the cloud's prefix and the port is the protocol's
+// conventional one, which is exactly what a dedicated address buys — on its own
+// name, 5432 is free, and `psql -h db.shop.example.com` connects with nothing
+// looked up by hand.
 func (s *Service) Serve(ctx context.Context, b Bind) error {
-	listener, err := net.Listen("tcp", b.Listen)
+	on := b.Listen
+	if on == "" {
+		derived, err := s.SocketFor(ctx, b)
+		if err != nil {
+			return err
+		}
+		on = derived
+	}
+
+	listener, err := net.Listen("tcp", on)
 	if err != nil {
-		return fmt.Errorf("proxy: listening on %s for %s: %w", b.Listen, b.Name, err)
+		return fmt.Errorf("proxy: listening on %s for %s: %w", on, b.Name, err)
 	}
 	return s.accept(ctx, listener, b)
+}
+
+// SocketFor is the address and port this proxy answers on — exported because it
+// is also the answer DNS has to give, and a second derivation of it would agree
+// with this one only by coincidence.
+func (s *Service) SocketFor(ctx context.Context, b Bind) (string, error) {
+	if s.cfg.Prefix == "" {
+		return "", fmt.Errorf("%w: this cloud has no prefix to derive one in, and %s named no socket",
+			ErrNoAddress, b.Name)
+	}
+	prefix, err := netip.ParsePrefix(s.cfg.Prefix)
+	if err != nil {
+		return "", fmt.Errorf("%w: %q is not a prefix: %s", ErrNoAddress, s.cfg.Prefix, err)
+	}
+
+	r, id, err := s.resource(ctx, b)
+	if err != nil {
+		return "", err
+	}
+
+	addr, err := AddressIn(prefix, id)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", b.Name, err)
+	}
+
+	port, err := conventionalPort(r, b.Name)
+	if err != nil {
+		return "", err
+	}
+	return netip.AddrPortFrom(addr, port).String(), nil
+}
+
+// conventionalPort is the port clients dial, which is the one their client
+// library already assumes.
+//
+// IT IS LOOKED UP RATHER THAN TABULATED. The vocabulary's `service` is an IANA
+// service name — "postgres", "redis" — and the machine already has that table;
+// a second copy here would be a second thing to be out of date.
+//
+// A NAME NOBODY KNOWS IS REFUSED, and that is the honest answer rather than
+// picking a number: the whole promise of this kind is that a client dials the
+// port it already expects, and a proxy on a port nothing conventionally uses
+// keeps none of it. Such a proxy needs SRV, which the author can have by naming
+// a service their client looks up.
+func conventionalPort(r project.Resource, name string) (uint16, error) {
+	service := r.String("service")
+	if service == "" {
+		// THE RESOURCE'S OWN NAME, which is what the vocabulary says an omitted
+		// service means — and not the name the caller looked it up by, which may
+		// have resolved through a parent scope and be neither the resource's nor
+		// a service anybody has heard of.
+		service = r.String("name")
+	}
+	if service == "" {
+		service = name
+	}
+
+	protocol := r.String("protocol")
+	if protocol == "" {
+		protocol = "tcp"
+	}
+
+	port, err := net.LookupPort(protocol, service)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %q is not a service this machine knows a port for, "+
+			"so there is no conventional port to answer on", ErrNoAddress, service)
+	}
+	return uint16(port), nil
+}
+
+// resource reads this proxy out of its deployment.
+func (s *Service) resource(ctx context.Context, b Bind) (project.Resource, string, error) {
+	proj, _, err := s.opts.projects.At(ctx, b.Project, b.Environment)
+	if err != nil {
+		return nil, "", err
+	}
+	return proj.Resource(b.Scope, "proxy", b.Name)
 }
 
 // Accept carries every connection on an already-bound listener. It is what a
