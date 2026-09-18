@@ -48,6 +48,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/ratelimit"
 	"github.com/taubyte/tau/pkg/register"
@@ -61,6 +62,12 @@ import (
 // and half of it here would be half of it in two places.
 type Workers interface {
 	Conn(ctx context.Context, at project.Address, port string) (net.Conn, error)
+
+	// Direct asks a proxy router where one connection goes, and Shape runs one
+	// chunk of it through a transformer. Both are placed exactly as the
+	// workload is, because both are workloads of the same deployment.
+	Direct(ctx context.Context, at project.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error)
+	Shape(ctx context.Context, at project.Address, s *invoke.Stream) (*invoke.Shaping, error)
 }
 
 // Projects reads a deployment's compiled project.
@@ -114,6 +121,16 @@ type Config struct {
 	// certificate of its own.
 	Wildcard Certificate `yaml:"wildcard"`
 
+	// Peek is how many bytes a router may ask to see before deciding, and
+	// Decide is how long the whole decision may take. Defaults DefaultPeek and
+	// DefaultDecide.
+	//
+	// BOTH CEILINGS ARE THIS SERVICE'S AND NEITHER IS THE ROUTER'S TO RAISE. A
+	// router asking for more is a client holding this listener open by sending
+	// nothing.
+	Peek   int           `yaml:"peek"`
+	Decide time.Duration `yaml:"decide"`
+
 	// MaxSources bounds the rate-limit table. Default DefaultMaxSources.
 	//
 	// A PROXY UNDER A SPRAY OF ONE-CONNECTION-PER-ADDRESS TRAFFIC would
@@ -142,6 +159,20 @@ const DefaultConnectTimeout = 10 * time.Second
 
 // DefaultMaxSources is how many sources a proxy remembers a rate for.
 const DefaultMaxSources = 4096
+
+func (c Config) peekLimit() int {
+	if c.Peek < 1 {
+		return DefaultPeek
+	}
+	return c.Peek
+}
+
+func (c Config) decideTimeout() time.Duration {
+	if c.Decide <= 0 {
+		return DefaultDecide
+	}
+	return c.Decide
+}
 
 func (c Config) maxSources() int {
 	if c.MaxSources < 1 {
@@ -413,14 +444,49 @@ func (s *Service) limitsFor(key string) limits {
 	return limits{}
 }
 
-// carry takes one connection to the workload the proxy forwards to.
+// carry takes one connection to wherever it goes.
+//
+// THE ORDER IS ROUTE, THEN SHAPE, and it is the inverse of the gateway's — see
+// route.go, which says why. What the transformers see is the whole stream, the
+// bytes the router peeked at included.
 func (s *Service) carry(ctx context.Context, from net.Conn, b Bind) {
-	at, port, err := s.forwards(ctx, b)
+	defer from.Close()
+
+	proj, r, id, err := s.resource(ctx, b)
 	if err != nil {
 		// A RAW SOCKET HAS NO STATUS LINE, so the client gets what any
 		// unreachable service gives it and the reason goes to the operator.
 		s.opts.warn("proxy: %s/%s: %s", b.Environment, b.Name, err)
-		from.Close()
+		return
+	}
+	if why := unservable(r); why != "" {
+		s.opts.warn("proxy: %s/%s: %s: %s", b.Environment, b.Name, ErrUnservable, why)
+		return
+	}
+
+	// WHERE THE PROXY ITSELF IS, which is not where the bind says: an omitted
+	// namespace means the proxy's own scope and then its parents, which is the
+	// rule servedBy states for a channel.
+	_, scope, _, ok := proj.Locate(id)
+	if !ok {
+		s.opts.warn("proxy: %s could not be located in this project", b.Name)
+		return
+	}
+
+	conn := s.connectionOf(r, b, from)
+
+	var (
+		at     project.Address
+		port   string
+		peeked []byte
+	)
+	if r.String("routing") == "router" {
+		at, port, peeked, err = s.directed(ctx, r, b, scope, conn, from)
+	} else {
+		at, port, err = s.forwardedTo(r, b, scope)
+	}
+	if err != nil {
+		s.opts.warn("proxy: %s/%s: %s", b.Environment, b.Name, err)
 		return
 	}
 
@@ -430,33 +496,85 @@ func (s *Service) carry(ctx context.Context, from net.Conn, b Bind) {
 	to, err := s.opts.workers.Conn(dial, at, port)
 	if err != nil {
 		s.opts.warn("proxy: %s/%s reaching %s/%s: %s", b.Environment, b.Name, at.Kind, at.Name, err)
-		from.Close()
 		return
 	}
+	defer to.Close()
 
-	splice.Both(from, to)
-	from.Close()
-	to.Close()
+	inbound := s.chain(ctx, r, b, scope, conn, invoke.Inbound)
+	outbound := s.chain(ctx, r, b, scope, conn, invoke.Outbound)
+
+	// WHAT THE ROUTER READ IS STILL THE CLIENT'S BYTES, so it goes to the
+	// workload — through the chain, because a transformer that missed a
+	// protocol's greeting would be shaping a conversation it never saw the
+	// start of.
+	if len(peeked) > 0 {
+		out := peeked
+		if inbound != nil {
+			if out, err = inbound(peeked, false); err != nil {
+				s.opts.warn("proxy: %s/%s: %s", b.Environment, b.Name, err)
+				return
+			}
+		}
+		if len(out) > 0 {
+			if _, err := to.Write(out); err != nil {
+				return
+			}
+		}
+	}
+
+	if err := splice.Through(from, to, inbound, outbound); err != nil {
+		s.opts.warn("proxy: %s/%s: %s", b.Environment, b.Name, err)
+	}
 }
 
-// forwards is where this proxy's connections go, and whether they may go at all.
-func (s *Service) forwards(ctx context.Context, b Bind) (project.Address, string, error) {
-	proj, r, id, err := s.resource(ctx, b)
-	if err != nil {
-		return project.Address{}, "", err
+// connectionOf is what a router or a transformer is told about this
+// connection: a peer address, the name it arrived on, and the handshake if
+// there was one.
+func (s *Service) connectionOf(r project.Resource, b Bind, from net.Conn) *invoke.Connection {
+	// THE LABELS COME OFF THE RESOURCE and the NAME off the listener, because
+	// only the listener knows what the cloud's zone made of a generated host.
+	// A proxy served by hand through Accept has no listener entry, and then
+	// the name is simply empty rather than invented.
+	conn := &invoke.Connection{Protocol: r.String("service"), Transport: r.String("protocol")}
+	if conn.Protocol == "" {
+		conn.Protocol = r.String("name")
 	}
-	if why := unservable(r); why != "" {
-		return project.Address{}, "", fmt.Errorf("%w: %s", ErrUnservable, why)
+	if conn.Protocol == "" {
+		conn.Protocol = b.Name
 	}
+	if conn.Transport == "" {
+		conn.Transport = "tcp"
+	}
+	if held, ok := s.heldSocket(b.Key()); ok {
+		conn.Host = held.Host
+	}
+	if addr := from.RemoteAddr(); addr != nil {
+		conn.Source = addr.String()
+	}
+	if tlsConn, ok := from.(*tls.Conn); ok {
+		// THE HANDSHAKE HAS ALREADY HAPPENED by the time anything is read, and
+		// asking for it here is what makes the name the client asked for
+		// visible to a router without it having to parse a ClientHello.
+		if err := tlsConn.HandshakeContext(context.Background()); err == nil {
+			conn.ServerName = tlsConn.ConnectionState().ServerName
+		}
+	}
+	return conn
+}
 
-	// WHERE THE PROXY ITSELF IS, which is not where the operator's bind says:
-	// a forward's omitted namespace means the proxy's own scope and then its
-	// parents, which is the rule servedBy states for a channel.
-	_, scope, _, ok := proj.Locate(id)
-	if !ok {
-		return project.Address{}, "", fmt.Errorf("proxy %q could not be located in this project", b.Name)
+// heldSocket is where this proxy ended up listening, for whoever needs the name
+// it answers on.
+func (s *Service) heldSocket(key string) (Socket, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if b, ok := s.served[key]; ok {
+		return b.socket, true
 	}
+	return Socket{}, false
+}
 
+// forwardedTo is the workload a `routing: forward` proxy streams to.
+func (s *Service) forwardedTo(r project.Resource, b Bind, scope []string) (project.Address, string, error) {
 	kind := r.String("forward", "kind")
 	name := r.String("forward", "name")
 	if kind == "" || name == "" {
@@ -482,12 +600,6 @@ func unservable(r project.Resource) string {
 	if p := r.String("protocol"); p != "" && p != "tcp" {
 		return fmt.Sprintf("it carries %q, and this cloud carries tcp — a stream is reliable and ordered, "+
 			"which is the property a udp application chose to do without", p)
-	}
-	if r.String("routing") == "router" {
-		return "a function decides where its connections go, and this cloud runs no proxy router yet"
-	}
-	if n := len(r.List("transformers")); n > 0 {
-		return fmt.Sprintf("%d transformer(s) shape its bytes, and this cloud runs no proxy transformer yet", n)
 	}
 	return ""
 }

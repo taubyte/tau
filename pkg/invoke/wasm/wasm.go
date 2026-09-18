@@ -101,6 +101,26 @@ const (
 // prevent.
 const WorldHandler = "handler"
 
+// pooledWorlds is what Start can bring up, and worldExports is the export each
+// of them is driven through. A world with no fixed export takes the one the
+// configuration names, which only the handler does.
+var (
+	pooledWorlds = map[string]bool{
+		WorldHandler:            true,
+		WorldGatewayTransformer: true,
+		WorldGatewayRouter:      true,
+		WorldProxyTransformer:   true,
+		WorldProxyRouter:        true,
+	}
+
+	worldExports = map[string]string{
+		WorldGatewayTransformer: transformExport,
+		WorldGatewayRouter:      routeExport,
+		WorldProxyTransformer:   shapeExport,
+		WorldProxyRouter:        directExport,
+	}
+)
+
 // httpWorld is the standard world's export. A component exporting it is driven
 // as an HTTP handler; anything else is called by name.
 //
@@ -267,17 +287,17 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 
 	// WHICH WORLD THIS SPEC IS, and Start drives two of them.
 	//
-	// A handler and a gateway transformer are both POOLED — they run per
-	// request and their answers cannot be kept — so both arrive here, and the
-	// instance remembers which it is so the wrong export is never called on it.
-	// An authorizer and an instance validator have their own entry points
-	// because they are asked once and their answers ARE kept; the routers have
-	// none yet.
+	// A handler, the two transformers and the two routers are all POOLED —
+	// they run per request, per connection or per chunk, and none of their
+	// answers can be kept — so all of them arrive here, and the instance
+	// remembers which it is so the wrong export is never called on it. An
+	// authorizer and an instance validator have their own entry points because
+	// they are asked once and their answers ARE kept.
 	world := spec.Settings[SettingImplements]
 	if world == "" {
 		world = WorldHandler
 	}
-	if world != WorldHandler && world != WorldGatewayTransformer && world != WorldGatewayRouter {
+	if !pooledWorlds[world] {
 		return nil, fmt.Errorf("%w: %s is %q, which is not started", ErrUnsupportedWorld, spec.Name, world)
 	}
 
@@ -291,14 +311,11 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		export = DefaultExport
 	}
 
-	if world == WorldGatewayTransformer || world == WorldGatewayRouter {
-		// FIXED, unlike a handler's. A gateway names the FUNCTION it passes
-		// traffic through, not an export inside it, so there is no
+	if fixed, ok := worldExports[world]; ok {
+		// FIXED, unlike a handler's. A gateway or a proxy names the FUNCTION
+		// it passes traffic through, not an export inside it, so there is no
 		// `execution/call` here to carry a second name.
-		export = map[string]string{
-			WorldGatewayTransformer: transformExport,
-			WorldGatewayRouter:      routeExport,
-		}[world]
+		export = fixed
 	}
 
 	return &function{

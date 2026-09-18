@@ -65,6 +65,10 @@ const (
 	WorkerServiceTransformProcedure = "/tau.worker.v1.WorkerService/Transform"
 	// WorkerServiceRouteProcedure is the fully-qualified name of the WorkerService's Route RPC.
 	WorkerServiceRouteProcedure = "/tau.worker.v1.WorkerService/Route"
+	// WorkerServiceDirectProcedure is the fully-qualified name of the WorkerService's Direct RPC.
+	WorkerServiceDirectProcedure = "/tau.worker.v1.WorkerService/Direct"
+	// WorkerServiceShapeProcedure is the fully-qualified name of the WorkerService's Shape RPC.
+	WorkerServiceShapeProcedure = "/tau.worker.v1.WorkerService/Shape"
 )
 
 // WorkerServiceClient is a client for the tau.worker.v1.WorkerService service.
@@ -76,6 +80,10 @@ type WorkerServiceClient interface {
 	Transform(context.Context, *connect.Request[v1.TransformRequest]) (*connect.Response[v1.TransformResponse], error)
 	// Route asks one router where a request should go.
 	Route(context.Context, *connect.Request[v1.RouteRequest]) (*connect.Response[v1.RouteResponse], error)
+	// Direct asks one proxy router where a connection should go.
+	Direct(context.Context, *connect.Request[v1.DirectRequest]) (*connect.Response[v1.DirectResponse], error)
+	// Shape runs one chunk of a connection through one proxy transformer.
+	Shape(context.Context, *connect.Request[v1.ShapeRequest]) (*connect.Response[v1.ShapeResponse], error)
 }
 
 // NewWorkerServiceClient constructs a client for the tau.worker.v1.WorkerService service. By
@@ -107,6 +115,18 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workerServiceMethods.ByName("Route")),
 			connect.WithClientOptions(opts...),
 		),
+		direct: connect.NewClient[v1.DirectRequest, v1.DirectResponse](
+			httpClient,
+			baseURL+WorkerServiceDirectProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("Direct")),
+			connect.WithClientOptions(opts...),
+		),
+		shape: connect.NewClient[v1.ShapeRequest, v1.ShapeResponse](
+			httpClient,
+			baseURL+WorkerServiceShapeProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("Shape")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -115,6 +135,8 @@ type workerServiceClient struct {
 	invoke    *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
 	transform *connect.Client[v1.TransformRequest, v1.TransformResponse]
 	route     *connect.Client[v1.RouteRequest, v1.RouteResponse]
+	direct    *connect.Client[v1.DirectRequest, v1.DirectResponse]
+	shape     *connect.Client[v1.ShapeRequest, v1.ShapeResponse]
 }
 
 // Invoke calls tau.worker.v1.WorkerService.Invoke.
@@ -132,6 +154,16 @@ func (c *workerServiceClient) Route(ctx context.Context, req *connect.Request[v1
 	return c.route.CallUnary(ctx, req)
 }
 
+// Direct calls tau.worker.v1.WorkerService.Direct.
+func (c *workerServiceClient) Direct(ctx context.Context, req *connect.Request[v1.DirectRequest]) (*connect.Response[v1.DirectResponse], error) {
+	return c.direct.CallUnary(ctx, req)
+}
+
+// Shape calls tau.worker.v1.WorkerService.Shape.
+func (c *workerServiceClient) Shape(ctx context.Context, req *connect.Request[v1.ShapeRequest]) (*connect.Response[v1.ShapeResponse], error) {
+	return c.shape.CallUnary(ctx, req)
+}
+
 // WorkerServiceHandler is an implementation of the tau.worker.v1.WorkerService service.
 type WorkerServiceHandler interface {
 	// Invoke runs one request against one resource.
@@ -141,6 +173,10 @@ type WorkerServiceHandler interface {
 	Transform(context.Context, *connect.Request[v1.TransformRequest]) (*connect.Response[v1.TransformResponse], error)
 	// Route asks one router where a request should go.
 	Route(context.Context, *connect.Request[v1.RouteRequest]) (*connect.Response[v1.RouteResponse], error)
+	// Direct asks one proxy router where a connection should go.
+	Direct(context.Context, *connect.Request[v1.DirectRequest]) (*connect.Response[v1.DirectResponse], error)
+	// Shape runs one chunk of a connection through one proxy transformer.
+	Shape(context.Context, *connect.Request[v1.ShapeRequest]) (*connect.Response[v1.ShapeResponse], error)
 }
 
 // NewWorkerServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -168,6 +204,18 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workerServiceMethods.ByName("Route")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerServiceDirectHandler := connect.NewUnaryHandler(
+		WorkerServiceDirectProcedure,
+		svc.Direct,
+		connect.WithSchema(workerServiceMethods.ByName("Direct")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceShapeHandler := connect.NewUnaryHandler(
+		WorkerServiceShapeProcedure,
+		svc.Shape,
+		connect.WithSchema(workerServiceMethods.ByName("Shape")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.worker.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WorkerServiceInvokeProcedure:
@@ -176,6 +224,10 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 			workerServiceTransformHandler.ServeHTTP(w, r)
 		case WorkerServiceRouteProcedure:
 			workerServiceRouteHandler.ServeHTTP(w, r)
+		case WorkerServiceDirectProcedure:
+			workerServiceDirectHandler.ServeHTTP(w, r)
+		case WorkerServiceShapeProcedure:
+			workerServiceShapeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -195,4 +247,12 @@ func (UnimplementedWorkerServiceHandler) Transform(context.Context, *connect.Req
 
 func (UnimplementedWorkerServiceHandler) Route(context.Context, *connect.Request[v1.RouteRequest]) (*connect.Response[v1.RouteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.worker.v1.WorkerService.Route is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) Direct(context.Context, *connect.Request[v1.DirectRequest]) (*connect.Response[v1.DirectResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.worker.v1.WorkerService.Direct is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) Shape(context.Context, *connect.Request[v1.ShapeRequest]) (*connect.Response[v1.ShapeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.worker.v1.WorkerService.Shape is not implemented"))
 }

@@ -84,6 +84,17 @@ type Routes interface {
 	Route(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Routing, error)
 }
 
+// Directs is an Invoker that can also ask a PROXY router where a connection
+// goes, and Shapes one that can run a chunk through a proxy transformer. Two
+// more for the reason Routes is one: only some workers serve those worlds.
+type Directs interface {
+	Direct(ctx context.Context, at project.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error)
+}
+
+type Shapes interface {
+	Shape(ctx context.Context, at project.Address, s *invoke.Stream) (*invoke.Shaping, error)
+}
+
 var (
 	ErrNoHost    = errors.New("placement: no host to dial from")
 	ErrNoRouter  = errors.New("placement: nothing to route from")
@@ -226,6 +237,49 @@ func (w *Workers) Route(ctx context.Context, at project.Address, req *invoke.Req
 		}
 		var err error
 		out, err = r.Route(ctx, at, req)
+		return err
+	})
+	return out, err
+}
+
+// Direct asks a proxy router, on whichever node should take it, where one
+// connection goes.
+//
+// IT IS THE SAME PLACEMENT AS THE WORKLOAD'S, which is the point rather than an
+// economy: a router is a workload of the same deployment, so the node warm for
+// the project is warm for its router too.
+func (w *Workers) Direct(ctx context.Context, at project.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
+	var out *invoke.Direction
+	err := w.somewhere(ctx, at, func(inv Invoker) error {
+		d, ok := inv.(Directs)
+		if !ok {
+			return fmt.Errorf("%w: that worker runs no proxy router", ErrNoWorkers)
+		}
+		var err error
+		out, err = d.Direct(ctx, at, conn, peeked)
+		return err
+	})
+	return out, err
+}
+
+// Shape runs one chunk of a connection through a proxy transformer, on
+// whichever node should take it.
+//
+// EVERY CHUNK IS PLACED AGAIN, and that is worth saying out loud: the
+// transformer carries no state of its own — it comes in and goes out with the
+// call — so two chunks of one connection may legitimately be shaped by two
+// nodes. That is what makes a transformer on a proxy survive a node going away
+// mid-conversation, and it is the whole reason the state is not kept in the
+// instance.
+func (w *Workers) Shape(ctx context.Context, at project.Address, s *invoke.Stream) (*invoke.Shaping, error) {
+	var out *invoke.Shaping
+	err := w.somewhere(ctx, at, func(inv Invoker) error {
+		sh, ok := inv.(Shapes)
+		if !ok {
+			return fmt.Errorf("%w: that worker runs no proxy transformer", ErrNoWorkers)
+		}
+		var err error
+		out, err = sh.Shape(ctx, at, s)
 		return err
 	})
 	return out, err

@@ -1,4 +1,4 @@
-# The two committed components
+# The committed components
 
 Real components, built from `../wit/` by a real toolchain. They are committed
 because the alternative is a test that needs Rust installed to run at all — and
@@ -6,7 +6,7 @@ what they exist to prove is exactly that the host's lowering and lifting agree
 with GENERATED bindings, which a fixture built by this repository could not
 show.
 
-Both are built against `../wit/` DIRECTLY rather than a copy, so a fixture
+Every one is built against `../wit/` DIRECTLY rather than a copy, so a fixture
 cannot drift from the world the host implements — which is the only thing they
 are here to prove.
 
@@ -62,6 +62,30 @@ It drives all three arms (a destination, an answer it served itself, and
 "nothing handles this"), and the destination it returns ECHOES the path it was
 given: a router that ignored its argument and returned a constant would satisfy
 every assertion about which arm was taken.
+
+**usher.wasm** is the proxy router: `taubyte:proxy-router`, exporting
+`route(connection, list<u8>) -> decision`. It is what a proxy names instead of a
+fixed forward, and unlike the gateway's router it is handed a source address and
+some bytes rather than a parsed request — a raw connection carries nothing else.
+
+It drives all three arms, chosen by what it has been shown: fewer than four
+bytes gets `more(4)`, which is how a router asks to see enough of a protocol to
+recognise it; `nope` gets a refusal; `pg` gets a destination in another
+namespace, on a named port. Anything else gets a destination whose NAME echoes
+the host it was asked about and the four bytes it decided from, so a router that
+ignored its arguments would not pass.
+
+**sieve.wasm** is the proxy transformer: `taubyte:proxy-transformer`, exporting
+`transform(traffic) -> verdict`. It is called per chunk and per direction, and
+what it remembers between chunks is a blob the HOST carries — which is what
+keeps it a pooled instance rather than one pinned to a connection for the life
+of a psql session.
+
+It BUFFERS, and that is the point: inbound bytes are held until a newline
+arrives and the whole line goes out uppercased. A pass-through fixture would
+pass whether or not the host carried the state back at all, which is the one
+thing this world's design rests on. A line reading `stop` closes the connection,
+and outbound chunks are prefixed so a test can tell the directions apart.
 
 **cacher.wasm** calls every one of the thirteen capabilities, one branch of its
 `handle` per operation, selected by the request path. It is what every

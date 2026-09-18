@@ -382,6 +382,133 @@ type Routing struct {
 	None   string
 }
 
+// Directs is an Instance that can also be driven as a PROXY router.
+//
+// A SECOND INTERFACE FOR THE REASON Routes IS ONE, and a different one from it
+// because the question is different: a gateway router is handed a parsed
+// request, and a proxy router is handed a source address and some bytes —
+// everything else about a connection is its to recognise.
+type Directs interface {
+	Direct(ctx context.Context, conn *Connection, peeked []byte) (*Direction, error)
+}
+
+// Shapes is an Instance that can also be driven as a PROXY transformer.
+//
+// IT TAKES A CHUNK AND NOT A REQUEST, because a stream has no point at which
+// the whole of it exists to be transformed.
+type Shapes interface {
+	Shape(ctx context.Context, s *Stream) (*Shaping, error)
+}
+
+// Connection is what is known about a connection before a byte of it is
+// forwarded, and it is all a proxy can offer: a raw socket carries a peer
+// address and then bytes.
+type Connection struct {
+	// Source is where the client dialed from, as "ip:port". It is the PEER
+	// address and never anything the client sent — a proxy has no forwarded
+	// header to be lied to with, which is the one advantage of seeing no
+	// protocol.
+	Source string
+
+	// Host, Protocol and Transport are the name this proxy answers on and how
+	// a client looked it up. One router can serve several proxies, so it has
+	// to be able to tell which connection it is deciding for.
+	Host      string
+	Protocol  string
+	Transport string
+
+	// ServerName is what the client asked for in its TLS handshake, when this
+	// proxy terminated one. Empty when it did not, which is not the same as a
+	// client that sent no SNI.
+	ServerName string
+}
+
+// Endpoint is where a proxy router said a connection should go.
+//
+// IT IS Destination PLUS A PORT, and the extra field is why it is not that
+// type: a workload binds several ports and a connection has to arrive at one of
+// them, where an invocation has only the workload.
+type Endpoint struct {
+	Kind      string
+	Namespace string
+	Name      string
+	Port      string
+}
+
+// Direction is what a proxy router decided. Exactly one field is set.
+//
+// More is a DECISION and not a failure: the router ran and says it cannot tell
+// yet, which the proxy answers by waiting for that many bytes. Refused is a
+// decision too — the connection is closed and the reason goes to the operator,
+// because a raw socket has nowhere to write one.
+type Direction struct {
+	To      *Endpoint
+	More    uint32
+	Refused string
+}
+
+// Enough says the router asked for bytes it has not been shown yet. A `more`
+// that wants no more than has already arrived is a router that will never
+// decide, and the host half refuses it rather than spinning on one prefix.
+func (d *Direction) Enough(seen int) bool { return int(d.More) <= seen }
+
+// Way is which direction bytes are travelling.
+type Way uint8
+
+const (
+	// Inbound is from the client toward the workload.
+	Inbound Way = iota
+	// Outbound is from the workload back to the client.
+	Outbound
+)
+
+// Stream is one chunk for a proxy transformer to shape.
+type Stream struct {
+	Conn *Connection
+	Way  Way
+
+	// State is what this transformer handed back the last time it was called
+	// for this connection and this direction. Empty on the first chunk.
+	//
+	// THE HOST CARRIES IT so the instance does not have to. A transformer that
+	// kept its own state would need one instance per connection, pinned to the
+	// node the connection landed on for as long as it lives — which throws
+	// placement away for the length of a psql session, and pays ~13ms to do it.
+	State []byte
+
+	// Chunk is what just arrived. Empty when Last is set and nothing arrived
+	// with the close.
+	Chunk []byte
+
+	// Last says the other end is done writing this direction. It is the
+	// transformer's final chance to emit what it has been holding.
+	Last bool
+}
+
+// Shaping is what a proxy transformer decided. Exactly one is set.
+//
+// Refused is a DECISION and not a failure, exactly as a router's is: the
+// transformer ran, read the bytes and says the conversation stops. A
+// transformer that could not be RUN is a different thing, and what happens then
+// is the author's — `fail: closed` or `fail: open`, per entry.
+type Shaping struct {
+	Pass    *Shaped
+	Refused string
+}
+
+// Shaped is what a proxy transformer passed on, and what it wants handed back
+// on the next chunk of the same connection and direction.
+type Shaped struct {
+	// Out is the bytes to send on. It may be EMPTY — a transformer buffering a
+	// frame passes nothing until it has one — and it may be longer or shorter
+	// than the chunk it was given.
+	Out []byte
+
+	// State is carried by the host and handed back next time. Returning it
+	// unchanged keeps it; returning nothing forgets it.
+	State []byte
+}
+
 // Outcome is what a transformer decided: the request carries on, possibly
 // changed, or it stops here and this is the answer.
 //

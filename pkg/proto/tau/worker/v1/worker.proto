@@ -150,6 +150,131 @@ message RouteResponse {
   }
 }
 
+// Connection is what is known about a raw connection before a byte of it is
+// forwarded, and it is all a proxy has: a peer address and then bytes.
+//
+// IT IS THE PEER ADDRESS AND NEVER ANYTHING THE CLIENT SENT. A proxy has no
+// forwarded header to be lied to with, which is the one advantage of seeing no
+// protocol.
+message Connection {
+  string source = 1;
+
+  // The name this proxy answers on, and how a client looked it up. One router
+  // or one transformer can serve several proxies, so it has to be able to tell
+  // which connection it is deciding about.
+  string host = 2;
+  string protocol = 3;
+  string transport = 4;
+
+  // What the client asked for in its TLS handshake, when the proxy terminated
+  // one. Empty when it did not — which is not the same as a client that sent
+  // no SNI.
+  string server_name = 5;
+}
+
+// DirectRequest asks a PROXY ROUTER where one connection should go.
+message DirectRequest {
+  Target target = 1;
+  Connection connection = 2;
+
+  // Everything the proxy has read from the client so far. The WHOLE prefix
+  // travels on every call, which is what lets the router stay pooled: it has
+  // to remember nothing between them, so it is not pinned to the node the
+  // connection landed on.
+  bytes peeked = 3;
+}
+
+// Endpoint is Destination plus a port, and the extra field is why it is not
+// that message: a workload binds several ports and a connection has to arrive
+// at one of them, where an invocation has only the workload.
+message Endpoint {
+  string kind = 1;
+  string namespace = 2;
+  string name = 3;
+  // Which of the workload's own named ports to stream to. Empty is the one
+  // port a workload that declared none was given.
+  string port = 4;
+}
+
+// DirectResponse is what the proxy router decided.
+//
+// `more` and `refuse` are DECISIONS and not failures: the first says it cannot
+// tell yet and wants that many bytes in total, the second that this connection
+// does not belong here. A router that could not be RUN is an RPC error.
+//
+// THERE IS NO ARM THAT ANSWERS. A gateway router can serve a request itself
+// because a response is a thing this vocabulary can spell; a raw stream has no
+// such shape, and an arm that handed back bytes would be a transformer wearing
+// a router's name.
+message DirectResponse {
+  oneof decision {
+    Endpoint to = 1;
+    uint32 more = 2;
+    string refuse = 3;
+  }
+}
+
+// ShapeRequest runs one chunk of a connection through a PROXY TRANSFORMER.
+//
+// IT IS ONE CALL PER CHUNK, PER DIRECTION, and that is the cost of declaring a
+// transformer on a proxy: it is priced in bytes rather than in requests. The
+// `concurrent` limit in the vocabulary is what bounds how many conversations
+// can be paying it at once.
+message ShapeRequest {
+  Target target = 1;
+  Connection connection = 2;
+
+  // Which way these bytes are going.
+  enum Direction {
+    // From the client toward the workload.
+    DIRECTION_INBOUND = 0;
+    // From the workload back to the client.
+    DIRECTION_OUTBOUND = 1;
+  }
+  Direction way = 3;
+
+  // What this transformer handed back the last time it was called for this
+  // connection and this direction. Empty on the first chunk.
+  //
+  // THE HOST CARRIES IT so the instance does not have to. A transformer that
+  // kept its own state would need one instance per connection, pinned to the
+  // node that connection landed on for as long as it lives.
+  bytes state = 4;
+
+  // The bytes that just arrived. Empty when `last` is set and nothing arrived
+  // with the close.
+  bytes chunk = 5;
+
+  // The other end is done writing this direction: the transformer's last
+  // chance to emit what it has been holding.
+  bool last = 6;
+}
+
+// Shaped is what to pass on, and what to remember.
+message Shaped {
+  // The bytes to send on. May be EMPTY — a transformer buffering a frame
+  // passes nothing until it has one — and may be longer or shorter than the
+  // chunk it was given.
+  bytes out = 1;
+  // What to hand back on the next chunk of this connection and direction.
+  bytes state = 2;
+}
+
+// ShapeResponse is what the proxy transformer decided.
+//
+// THERE IS NO "CARRY ON UNCHANGED" ARM. A transformer that wants the bytes
+// through says so by passing them back, because a convention where an absent
+// answer meant pass-through would make a transformer that crashed
+// indistinguishable from one that agreed.
+message ShapeResponse {
+  oneof verdict {
+    Shaped pass = 1;
+    // Close the connection. The reason goes to the operator's log, because a
+    // raw socket has nowhere to write one.
+    string close = 2;
+  }
+}
+
 // Open is the first thing written on a raw connection stream, and the only
 // framed thing on it: everything after it is the workload's own bytes.
 //
@@ -192,4 +317,10 @@ service WorkerService {
 
   // Route asks one router where a request should go.
   rpc Route(RouteRequest) returns (RouteResponse);
+
+  // Direct asks one proxy router where a connection should go.
+  rpc Direct(DirectRequest) returns (DirectResponse);
+
+  // Shape runs one chunk of a connection through one proxy transformer.
+  rpc Shape(ShapeRequest) returns (ShapeResponse);
 }

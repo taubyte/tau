@@ -3,6 +3,8 @@ package proxy_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/v2/proxy"
@@ -99,6 +102,33 @@ type workers struct {
 	port string
 	err  error
 	said string
+
+	// direct and shape are the two proxy worlds. A nil one means this fake
+	// runs none, which is what a worker with no such function answers.
+	direct func(*invoke.Connection, []byte) (*invoke.Direction, error)
+	shape  func(project.Address, *invoke.Stream) (*invoke.Shaping, error)
+}
+
+func (w *workers) Direct(_ context.Context, _ project.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
+	w.mu.Lock()
+	f := w.direct
+	w.mu.Unlock()
+
+	if f == nil {
+		return nil, errors.New("that worker runs no proxy router")
+	}
+	return f(conn, peeked)
+}
+
+func (w *workers) Shape(_ context.Context, at project.Address, st *invoke.Stream) (*invoke.Shaping, error) {
+	w.mu.Lock()
+	f := w.shape
+	w.mu.Unlock()
+
+	if f == nil {
+		return nil, errors.New("that worker runs no proxy transformer")
+	}
+	return f(at, st)
 }
 
 // asked is the last address and port this was asked to reach.
@@ -145,10 +175,24 @@ type warnings struct {
 	said []string
 }
 
-func (w *warnings) add(format string, _ ...any) {
+// add FORMATS what it was given rather than keeping the template. Recording
+// the format string looked identical in a test that only counted warnings, and
+// made every assertion about a REASON impossible.
+func (w *warnings) add(format string, args ...any) {
 	w.mu.Lock()
-	w.said = append(w.said, format)
+	w.said = append(w.said, fmt.Sprintf(format, args...))
 	w.mu.Unlock()
+}
+
+// first is what the operator was told, for a test asserting on the reason
+// rather than only on there having been one.
+func (w *warnings) first() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.said) == 0 {
+		return ""
+	}
+	return w.said[0]
 }
 
 func (w *warnings) len() int {
@@ -253,18 +297,10 @@ func TestUdpIsRefusedRatherThanCarriedOverTcp(t *testing.T) {
 // proxy that asked for TLS and held a plaintext port would be a security
 // control silently not applied.
 
-func TestARouterRoutedProxyIsRefused(t *testing.T) {
-	refusedBy(t, func(r map[string]any) {
-		r["routing"] = "router"
-		r["router"] = map[string]any{"name": "picker"}
-	})
-}
-
-func TestTransformersAreRefusedRatherThanSkipped(t *testing.T) {
-	refusedBy(t, func(r map[string]any) {
-		r["transformers"] = []any{map[string]any{"name": "pg_audit"}}
-	})
-}
+// A ROUTER AND TRANSFORMERS ARE NOT REFUSED ANY MORE — route_test.go and
+// shape_test.go are where those live. What is still refused is a transformer
+// that cannot be RUN and is declared fail-closed, which is a decision at the
+// chunk rather than at the bind.
 
 // TestAWORKLOADThatCannotBeReachedClosesTheConnection, because there is nowhere
 // to put a reason on a raw socket.

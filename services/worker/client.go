@@ -155,6 +155,91 @@ func (c *Client) Route(ctx context.Context, t project.Address, req *invoke.Reque
 	return nil, ErrNoOutcome
 }
 
+// Direct asks a proxy router, on whichever node holds the deployment, where one
+// connection should go.
+func (c *Client) Direct(ctx context.Context, t project.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
+	res, err := c.svc.Direct(ctx, connect.NewRequest(&workerv1.DirectRequest{
+		Target:     targetWire(t),
+		Connection: connectionWire(conn),
+		Peeked:     peeked,
+	}))
+	if err != nil {
+		return nil, unwire(err)
+	}
+
+	switch d := res.Msg.GetDecision().(type) {
+	case *workerv1.DirectResponse_To:
+		return &invoke.Direction{To: &invoke.Endpoint{
+			Kind: d.To.GetKind(), Namespace: d.To.GetNamespace(), Name: d.To.GetName(), Port: d.To.GetPort(),
+		}}, nil
+
+	case *workerv1.DirectResponse_More:
+		return &invoke.Direction{More: d.More}, nil
+
+	case *workerv1.DirectResponse_Refuse:
+		return &invoke.Direction{Refused: d.Refuse}, nil
+	}
+
+	return nil, ErrNoOutcome
+}
+
+// Shape runs one chunk of a connection through a proxy transformer, on
+// whichever node holds the deployment.
+func (c *Client) Shape(ctx context.Context, t project.Address, stream *invoke.Stream) (*invoke.Shaping, error) {
+	if stream == nil {
+		stream = &invoke.Stream{}
+	}
+
+	way := workerv1.ShapeRequest_DIRECTION_INBOUND
+	if stream.Way == invoke.Outbound {
+		way = workerv1.ShapeRequest_DIRECTION_OUTBOUND
+	}
+
+	res, err := c.svc.Shape(ctx, connect.NewRequest(&workerv1.ShapeRequest{
+		Target:     targetWire(t),
+		Connection: connectionWire(stream.Conn),
+		Way:        way,
+		State:      stream.State,
+		Chunk:      stream.Chunk,
+		Last:       stream.Last,
+	}))
+	if err != nil {
+		return nil, unwire(err)
+	}
+
+	switch v := res.Msg.GetVerdict().(type) {
+	case *workerv1.ShapeResponse_Pass:
+		return &invoke.Shaping{Pass: &invoke.Shaped{
+			Out: v.Pass.GetOut(), State: v.Pass.GetState(),
+		}}, nil
+
+	case *workerv1.ShapeResponse_Close:
+		return &invoke.Shaping{Refused: v.Close}, nil
+	}
+
+	return nil, ErrNoOutcome
+}
+
+func targetWire(t project.Address) *workerv1.Target {
+	return &workerv1.Target{
+		Project: t.Project, Environment: t.Environment,
+		Scope: t.Scope, Kind: t.Kind, Name: t.Name,
+	}
+}
+
+func connectionWire(c *invoke.Connection) *workerv1.Connection {
+	if c == nil {
+		c = &invoke.Connection{}
+	}
+	return &workerv1.Connection{
+		Source:     c.Source,
+		Host:       c.Host,
+		Protocol:   c.Protocol,
+		Transport:  c.Transport,
+		ServerName: c.ServerName,
+	}
+}
+
 // unwire turns a status back into the sentinel a local worker would return.
 //
 // IT MATCHES ON THE MESSAGE AS WELL AS THE CODE, because several sentinels

@@ -262,6 +262,64 @@ func (s *Service) Route(ctx context.Context, t Target, req *invoke.Request) (*in
 	return out, nil
 }
 
+// Direct asks a PROXY ROUTER where one connection should go.
+//
+// METERED AND WORLD-CHECKED FOR THE REASONS Route IS, and asked once per
+// decision rather than once per connection: a router that cannot tell yet is
+// asked again with more bytes, and each of those is somebody's code running on
+// a pooled instance.
+func (s *Service) Direct(ctx context.Context, t Target, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
+	started := s.now()
+
+	spec, err := s.Resolve(ctx, t)
+	if err != nil {
+		s.emit(ctx, accounted(t, "", 0, OpRefuse, s.now().Sub(started)))
+		return nil, err
+	}
+	if world := spec.Settings[wasm.SettingImplements]; world != wasm.WorldProxyRouter {
+		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))
+		return nil, fmt.Errorf("%w: %s implements %q rather than a proxy router", ErrNoTarget, t.Name, world)
+	}
+
+	out, err := s.pool.Direct(ctx, spec, conn, peeked)
+	if err != nil {
+		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))
+		return nil, err
+	}
+
+	s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpInvoke, s.now().Sub(started)))
+	return out, nil
+}
+
+// Shape runs one chunk of a connection through a PROXY TRANSFORMER.
+//
+// IT IS METERED PER CHUNK, which is the honest reading of what it costs: a
+// transformer on a proxy runs somebody's code over every byte in both
+// directions, and a conversation that ran unbilled would be a way to run code
+// on this cloud for free for as long as a socket stays open.
+func (s *Service) Shape(ctx context.Context, t Target, stream *invoke.Stream) (*invoke.Shaping, error) {
+	started := s.now()
+
+	spec, err := s.Resolve(ctx, t)
+	if err != nil {
+		s.emit(ctx, accounted(t, "", 0, OpRefuse, s.now().Sub(started)))
+		return nil, err
+	}
+	if world := spec.Settings[wasm.SettingImplements]; world != wasm.WorldProxyTransformer {
+		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))
+		return nil, fmt.Errorf("%w: %s implements %q rather than a proxy transformer", ErrNoTarget, t.Name, world)
+	}
+
+	out, err := s.pool.Shape(ctx, spec, stream)
+	if err != nil {
+		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))
+		return nil, err
+	}
+
+	s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpInvoke, s.now().Sub(started)))
+	return out, nil
+}
+
 // Start listens and serves. Calling it twice, or after Close, is an error.
 func (s *Service) Start(ctx context.Context) error {
 	s.startMu.Lock()

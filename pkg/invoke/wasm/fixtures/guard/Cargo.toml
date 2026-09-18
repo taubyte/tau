@@ -26,6 +26,10 @@ world = "taubyte:authorizer/authorizer"
 # resolves the whole directory — handler.wit included — so a package missing here
 # fails the build with an error pointing at a world this fixture does not target.
 "taubyte:authorizer" = { path = "../../wit/deps/taubyte-authorizer" }
+"taubyte:gateway-transformer" = { path = "../../wit/deps/taubyte-gateway-transformer" }
+"taubyte:gateway-router" = { path = "../../wit/deps/taubyte-gateway-router" }
+"taubyte:proxy-transformer" = { path = "../../wit/deps/taubyte-proxy-transformer" }
+"taubyte:proxy-router" = { path = "../../wit/deps/taubyte-proxy-router" }
 "taubyte:bus" = { path = "../../wit/deps/taubyte-bus" }
 "taubyte:cache" = { path = "../../wit/deps/taubyte-cache" }
 "taubyte:channel" = { path = "../../wit/deps/taubyte-channel" }

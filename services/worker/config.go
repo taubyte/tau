@@ -49,6 +49,12 @@ type Register interface {
 type Pool interface {
 	Do(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Response, error)
 	Transform(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Outcome, error)
+
+	// Direct and Shape are the two a PROXY makes: where a connection goes, and
+	// what its bytes become on the way. Both are pooled for the reason
+	// Transform is — neither answer can be kept.
+	Direct(ctx context.Context, spec invoke.Spec, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error)
+	Shape(ctx context.Context, spec invoke.Spec, s *invoke.Stream) (*invoke.Shaping, error)
 	Route(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Routing, error)
 
 	// Conn hands out a connection that outlives the call — the instance is held

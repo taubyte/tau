@@ -159,6 +159,99 @@ func (h *handler) Route(ctx context.Context, req *connect.Request[workerv1.Route
 	return nil, connect.NewError(connect.CodeInternal, ErrNoOutcome)
 }
 
+func (h *handler) Direct(ctx context.Context, req *connect.Request[workerv1.DirectRequest]) (*connect.Response[workerv1.DirectResponse], error) {
+	t := req.Msg.GetTarget()
+	if t == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, ErrNoTarget)
+	}
+
+	out, err := h.s.Direct(ctx, targetOf(t), connectionOf(req.Msg.GetConnection()), req.Msg.GetPeeked())
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	switch {
+	case out.To != nil:
+		return connect.NewResponse(&workerv1.DirectResponse{
+			Decision: &workerv1.DirectResponse_To{To: &workerv1.Endpoint{
+				Kind: out.To.Kind, Namespace: out.To.Namespace, Name: out.To.Name, Port: out.To.Port,
+			}},
+		}), nil
+
+	case out.More > 0:
+		return connect.NewResponse(&workerv1.DirectResponse{
+			Decision: &workerv1.DirectResponse_More{More: out.More},
+		}), nil
+
+	case out.Refused != "":
+		return connect.NewResponse(&workerv1.DirectResponse{
+			Decision: &workerv1.DirectResponse_Refuse{Refuse: out.Refused},
+		}), nil
+	}
+
+	return nil, connect.NewError(connect.CodeInternal, ErrNoOutcome)
+}
+
+func (h *handler) Shape(ctx context.Context, req *connect.Request[workerv1.ShapeRequest]) (*connect.Response[workerv1.ShapeResponse], error) {
+	t := req.Msg.GetTarget()
+	if t == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, ErrNoTarget)
+	}
+
+	way := invoke.Inbound
+	if req.Msg.GetWay() == workerv1.ShapeRequest_DIRECTION_OUTBOUND {
+		way = invoke.Outbound
+	}
+
+	out, err := h.s.Shape(ctx, targetOf(t), &invoke.Stream{
+		Conn:  connectionOf(req.Msg.GetConnection()),
+		Way:   way,
+		State: req.Msg.GetState(),
+		Chunk: req.Msg.GetChunk(),
+		Last:  req.Msg.GetLast(),
+	})
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	switch {
+	case out.Pass != nil:
+		return connect.NewResponse(&workerv1.ShapeResponse{
+			Verdict: &workerv1.ShapeResponse_Pass{Pass: &workerv1.Shaped{
+				Out: out.Pass.Out, State: out.Pass.State,
+			}},
+		}), nil
+
+	case out.Refused != "":
+		return connect.NewResponse(&workerv1.ShapeResponse{
+			Verdict: &workerv1.ShapeResponse_Close{Close: out.Refused},
+		}), nil
+	}
+
+	return nil, connect.NewError(connect.CodeInternal, ErrNoOutcome)
+}
+
+// targetOf and connectionOf lift the two records every proxy call carries.
+func targetOf(t *workerv1.Target) Target {
+	return Target{
+		Project:     t.GetProject(),
+		Environment: t.GetEnvironment(),
+		Scope:       t.GetScope(),
+		Kind:        t.GetKind(),
+		Name:        t.GetName(),
+	}
+}
+
+func connectionOf(c *workerv1.Connection) *invoke.Connection {
+	return &invoke.Connection{
+		Source:     c.GetSource(),
+		Host:       c.GetHost(),
+		Protocol:   c.GetProtocol(),
+		Transport:  c.GetTransport(),
+		ServerName: c.GetServerName(),
+	}
+}
+
 func fromWire(in map[string]*workerv1.Headers) map[string][]string {
 	if len(in) == 0 {
 		return nil

@@ -248,6 +248,46 @@ func (p *Pool) Route(ctx context.Context, spec Spec, req *Request) (*Routing, er
 	return out, err
 }
 
+// Direct asks spec, as a PROXY ROUTER, where one connection should go.
+//
+// POOLED FOR THE SAME REASON Route IS, and it stays pooled across the peek loop
+// because the whole prefix is handed over on every call — so no instance has to
+// remember a connection, and none is pinned to the node it landed on.
+func (p *Pool) Direct(ctx context.Context, spec Spec, conn *Connection, peeked []byte) (*Direction, error) {
+	var out *Direction
+	err := p.on(ctx, spec, func(ctx context.Context, inst Instance) error {
+		d, ok := inst.(Directs)
+		if !ok {
+			return fmt.Errorf("%w: the %s tier runs no proxy router", ErrNoRuntime, spec.Runtime)
+		}
+		var err error
+		out, err = d.Direct(ctx, conn, peeked)
+		return err
+	})
+	return out, err
+}
+
+// Shape runs one chunk of a connection through spec as a PROXY TRANSFORMER.
+//
+// IT IS CALLED PER CHUNK, which is the one place this pool's economics differ
+// from the rest: a handler pays a pooled call per request and this pays one per
+// chunk in each direction. What keeps it pooled anyway is that the transformer
+// remembers nothing — its state comes in and goes out with the call, so any
+// warm instance of the spec can take the next chunk.
+func (p *Pool) Shape(ctx context.Context, spec Spec, s *Stream) (*Shaping, error) {
+	var out *Shaping
+	err := p.on(ctx, spec, func(ctx context.Context, inst Instance) error {
+		sh, ok := inst.(Shapes)
+		if !ok {
+			return fmt.Errorf("%w: the %s tier runs no proxy transformer", ErrNoRuntime, spec.Runtime)
+		}
+		var err error
+		out, err = sh.Shape(ctx, s)
+		return err
+	})
+	return out, err
+}
+
 // Conn opens a connection to one of spec's ports and holds the instance for as
 // long as the connection lives.
 //

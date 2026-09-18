@@ -48,6 +48,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Which way these bytes are going.
+type ShapeRequest_Direction int32
+
+const (
+	// From the client toward the workload.
+	ShapeRequest_DIRECTION_INBOUND ShapeRequest_Direction = 0
+	// From the workload back to the client.
+	ShapeRequest_DIRECTION_OUTBOUND ShapeRequest_Direction = 1
+)
+
+// Enum value maps for ShapeRequest_Direction.
+var (
+	ShapeRequest_Direction_name = map[int32]string{
+		0: "DIRECTION_INBOUND",
+		1: "DIRECTION_OUTBOUND",
+	}
+	ShapeRequest_Direction_value = map[string]int32{
+		"DIRECTION_INBOUND":  0,
+		"DIRECTION_OUTBOUND": 1,
+	}
+)
+
+func (x ShapeRequest_Direction) Enum() *ShapeRequest_Direction {
+	p := new(ShapeRequest_Direction)
+	*p = x
+	return p
+}
+
+func (x ShapeRequest_Direction) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ShapeRequest_Direction) Descriptor() protoreflect.EnumDescriptor {
+	return file_tau_worker_v1_worker_proto_enumTypes[0].Descriptor()
+}
+
+func (ShapeRequest_Direction) Type() protoreflect.EnumType {
+	return &file_tau_worker_v1_worker_proto_enumTypes[0]
+}
+
+func (x ShapeRequest_Direction) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ShapeRequest_Direction.Descriptor instead.
+func (ShapeRequest_Direction) EnumDescriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{14, 0}
+}
+
 // Target names one resource in one environment of one project.
 type Target struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
@@ -810,6 +859,587 @@ func (*RouteResponse_Answer) isRouteResponse_Decision() {}
 
 func (*RouteResponse_None) isRouteResponse_Decision() {}
 
+// Connection is what is known about a raw connection before a byte of it is
+// forwarded, and it is all a proxy has: a peer address and then bytes.
+//
+// IT IS THE PEER ADDRESS AND NEVER ANYTHING THE CLIENT SENT. A proxy has no
+// forwarded header to be lied to with, which is the one advantage of seeing no
+// protocol.
+type Connection struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Source string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	// The name this proxy answers on, and how a client looked it up. One router
+	// or one transformer can serve several proxies, so it has to be able to tell
+	// which connection it is deciding about.
+	Host      string `protobuf:"bytes,2,opt,name=host,proto3" json:"host,omitempty"`
+	Protocol  string `protobuf:"bytes,3,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	Transport string `protobuf:"bytes,4,opt,name=transport,proto3" json:"transport,omitempty"`
+	// What the client asked for in its TLS handshake, when the proxy terminated
+	// one. Empty when it did not — which is not the same as a client that sent
+	// no SNI.
+	ServerName    string `protobuf:"bytes,5,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Connection) Reset() {
+	*x = Connection{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Connection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Connection) ProtoMessage() {}
+
+func (x *Connection) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Connection.ProtoReflect.Descriptor instead.
+func (*Connection) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *Connection) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *Connection) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *Connection) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *Connection) GetTransport() string {
+	if x != nil {
+		return x.Transport
+	}
+	return ""
+}
+
+func (x *Connection) GetServerName() string {
+	if x != nil {
+		return x.ServerName
+	}
+	return ""
+}
+
+// DirectRequest asks a PROXY ROUTER where one connection should go.
+type DirectRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Target     *Target                `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	Connection *Connection            `protobuf:"bytes,2,opt,name=connection,proto3" json:"connection,omitempty"`
+	// Everything the proxy has read from the client so far. The WHOLE prefix
+	// travels on every call, which is what lets the router stay pooled: it has
+	// to remember nothing between them, so it is not pinned to the node the
+	// connection landed on.
+	Peeked        []byte `protobuf:"bytes,3,opt,name=peeked,proto3" json:"peeked,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DirectRequest) Reset() {
+	*x = DirectRequest{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DirectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DirectRequest) ProtoMessage() {}
+
+func (x *DirectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DirectRequest.ProtoReflect.Descriptor instead.
+func (*DirectRequest) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *DirectRequest) GetTarget() *Target {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *DirectRequest) GetConnection() *Connection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+func (x *DirectRequest) GetPeeked() []byte {
+	if x != nil {
+		return x.Peeked
+	}
+	return nil
+}
+
+// Endpoint is Destination plus a port, and the extra field is why it is not
+// that message: a workload binds several ports and a connection has to arrive
+// at one of them, where an invocation has only the workload.
+type Endpoint struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Kind      string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Namespace string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Name      string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	// Which of the workload's own named ports to stream to. Empty is the one
+	// port a workload that declared none was given.
+	Port          string `protobuf:"bytes,4,opt,name=port,proto3" json:"port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Endpoint) Reset() {
+	*x = Endpoint{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Endpoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Endpoint) ProtoMessage() {}
+
+func (x *Endpoint) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Endpoint.ProtoReflect.Descriptor instead.
+func (*Endpoint) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *Endpoint) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *Endpoint) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *Endpoint) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Endpoint) GetPort() string {
+	if x != nil {
+		return x.Port
+	}
+	return ""
+}
+
+// DirectResponse is what the proxy router decided.
+//
+// `more` and `refuse` are DECISIONS and not failures: the first says it cannot
+// tell yet and wants that many bytes in total, the second that this connection
+// does not belong here. A router that could not be RUN is an RPC error.
+//
+// THERE IS NO ARM THAT ANSWERS. A gateway router can serve a request itself
+// because a response is a thing this vocabulary can spell; a raw stream has no
+// such shape, and an arm that handed back bytes would be a transformer wearing
+// a router's name.
+type DirectResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Decision:
+	//
+	//	*DirectResponse_To
+	//	*DirectResponse_More
+	//	*DirectResponse_Refuse
+	Decision      isDirectResponse_Decision `protobuf_oneof:"decision"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DirectResponse) Reset() {
+	*x = DirectResponse{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DirectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DirectResponse) ProtoMessage() {}
+
+func (x *DirectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DirectResponse.ProtoReflect.Descriptor instead.
+func (*DirectResponse) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DirectResponse) GetDecision() isDirectResponse_Decision {
+	if x != nil {
+		return x.Decision
+	}
+	return nil
+}
+
+func (x *DirectResponse) GetTo() *Endpoint {
+	if x != nil {
+		if x, ok := x.Decision.(*DirectResponse_To); ok {
+			return x.To
+		}
+	}
+	return nil
+}
+
+func (x *DirectResponse) GetMore() uint32 {
+	if x != nil {
+		if x, ok := x.Decision.(*DirectResponse_More); ok {
+			return x.More
+		}
+	}
+	return 0
+}
+
+func (x *DirectResponse) GetRefuse() string {
+	if x != nil {
+		if x, ok := x.Decision.(*DirectResponse_Refuse); ok {
+			return x.Refuse
+		}
+	}
+	return ""
+}
+
+type isDirectResponse_Decision interface {
+	isDirectResponse_Decision()
+}
+
+type DirectResponse_To struct {
+	To *Endpoint `protobuf:"bytes,1,opt,name=to,proto3,oneof"`
+}
+
+type DirectResponse_More struct {
+	More uint32 `protobuf:"varint,2,opt,name=more,proto3,oneof"`
+}
+
+type DirectResponse_Refuse struct {
+	Refuse string `protobuf:"bytes,3,opt,name=refuse,proto3,oneof"`
+}
+
+func (*DirectResponse_To) isDirectResponse_Decision() {}
+
+func (*DirectResponse_More) isDirectResponse_Decision() {}
+
+func (*DirectResponse_Refuse) isDirectResponse_Decision() {}
+
+// ShapeRequest runs one chunk of a connection through a PROXY TRANSFORMER.
+//
+// IT IS ONE CALL PER CHUNK, PER DIRECTION, and that is the cost of declaring a
+// transformer on a proxy: it is priced in bytes rather than in requests. The
+// `concurrent` limit in the vocabulary is what bounds how many conversations
+// can be paying it at once.
+type ShapeRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Target     *Target                `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	Connection *Connection            `protobuf:"bytes,2,opt,name=connection,proto3" json:"connection,omitempty"`
+	Way        ShapeRequest_Direction `protobuf:"varint,3,opt,name=way,proto3,enum=tau.worker.v1.ShapeRequest_Direction" json:"way,omitempty"`
+	// What this transformer handed back the last time it was called for this
+	// connection and this direction. Empty on the first chunk.
+	//
+	// THE HOST CARRIES IT so the instance does not have to. A transformer that
+	// kept its own state would need one instance per connection, pinned to the
+	// node that connection landed on for as long as it lives.
+	State []byte `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	// The bytes that just arrived. Empty when `last` is set and nothing arrived
+	// with the close.
+	Chunk []byte `protobuf:"bytes,5,opt,name=chunk,proto3" json:"chunk,omitempty"`
+	// The other end is done writing this direction: the transformer's last
+	// chance to emit what it has been holding.
+	Last          bool `protobuf:"varint,6,opt,name=last,proto3" json:"last,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShapeRequest) Reset() {
+	*x = ShapeRequest{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShapeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShapeRequest) ProtoMessage() {}
+
+func (x *ShapeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShapeRequest.ProtoReflect.Descriptor instead.
+func (*ShapeRequest) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ShapeRequest) GetTarget() *Target {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *ShapeRequest) GetConnection() *Connection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+func (x *ShapeRequest) GetWay() ShapeRequest_Direction {
+	if x != nil {
+		return x.Way
+	}
+	return ShapeRequest_DIRECTION_INBOUND
+}
+
+func (x *ShapeRequest) GetState() []byte {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+func (x *ShapeRequest) GetChunk() []byte {
+	if x != nil {
+		return x.Chunk
+	}
+	return nil
+}
+
+func (x *ShapeRequest) GetLast() bool {
+	if x != nil {
+		return x.Last
+	}
+	return false
+}
+
+// Shaped is what to pass on, and what to remember.
+type Shaped struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The bytes to send on. May be EMPTY — a transformer buffering a frame
+	// passes nothing until it has one — and may be longer or shorter than the
+	// chunk it was given.
+	Out []byte `protobuf:"bytes,1,opt,name=out,proto3" json:"out,omitempty"`
+	// What to hand back on the next chunk of this connection and direction.
+	State         []byte `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Shaped) Reset() {
+	*x = Shaped{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Shaped) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Shaped) ProtoMessage() {}
+
+func (x *Shaped) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Shaped.ProtoReflect.Descriptor instead.
+func (*Shaped) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *Shaped) GetOut() []byte {
+	if x != nil {
+		return x.Out
+	}
+	return nil
+}
+
+func (x *Shaped) GetState() []byte {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+// ShapeResponse is what the proxy transformer decided.
+//
+// THERE IS NO "CARRY ON UNCHANGED" ARM. A transformer that wants the bytes
+// through says so by passing them back, because a convention where an absent
+// answer meant pass-through would make a transformer that crashed
+// indistinguishable from one that agreed.
+type ShapeResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Verdict:
+	//
+	//	*ShapeResponse_Pass
+	//	*ShapeResponse_Close
+	Verdict       isShapeResponse_Verdict `protobuf_oneof:"verdict"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShapeResponse) Reset() {
+	*x = ShapeResponse{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShapeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShapeResponse) ProtoMessage() {}
+
+func (x *ShapeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShapeResponse.ProtoReflect.Descriptor instead.
+func (*ShapeResponse) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ShapeResponse) GetVerdict() isShapeResponse_Verdict {
+	if x != nil {
+		return x.Verdict
+	}
+	return nil
+}
+
+func (x *ShapeResponse) GetPass() *Shaped {
+	if x != nil {
+		if x, ok := x.Verdict.(*ShapeResponse_Pass); ok {
+			return x.Pass
+		}
+	}
+	return nil
+}
+
+func (x *ShapeResponse) GetClose() string {
+	if x != nil {
+		if x, ok := x.Verdict.(*ShapeResponse_Close); ok {
+			return x.Close
+		}
+	}
+	return ""
+}
+
+type isShapeResponse_Verdict interface {
+	isShapeResponse_Verdict()
+}
+
+type ShapeResponse_Pass struct {
+	Pass *Shaped `protobuf:"bytes,1,opt,name=pass,proto3,oneof"`
+}
+
+type ShapeResponse_Close struct {
+	// Close the connection. The reason goes to the operator's log, because a
+	// raw socket has nowhere to write one.
+	Close string `protobuf:"bytes,2,opt,name=close,proto3,oneof"`
+}
+
+func (*ShapeResponse_Pass) isShapeResponse_Verdict() {}
+
+func (*ShapeResponse_Close) isShapeResponse_Verdict() {}
+
 // Open is the first thing written on a raw connection stream, and the only
 // framed thing on it: everything after it is the workload's own bytes.
 //
@@ -832,7 +1462,7 @@ type Open struct {
 
 func (x *Open) Reset() {
 	*x = Open{}
-	mi := &file_tau_worker_v1_worker_proto_msgTypes[10]
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -844,7 +1474,7 @@ func (x *Open) String() string {
 func (*Open) ProtoMessage() {}
 
 func (x *Open) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_worker_v1_worker_proto_msgTypes[10]
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -857,7 +1487,7 @@ func (x *Open) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Open.ProtoReflect.Descriptor instead.
 func (*Open) Descriptor() ([]byte, []int) {
-	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{10}
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Open) GetTarget() *Target {
@@ -893,7 +1523,7 @@ type Opened struct {
 
 func (x *Opened) Reset() {
 	*x = Opened{}
-	mi := &file_tau_worker_v1_worker_proto_msgTypes[11]
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -905,7 +1535,7 @@ func (x *Opened) String() string {
 func (*Opened) ProtoMessage() {}
 
 func (x *Opened) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_worker_v1_worker_proto_msgTypes[11]
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -918,7 +1548,7 @@ func (x *Opened) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Opened.ProtoReflect.Descriptor instead.
 func (*Opened) Descriptor() ([]byte, []int) {
-	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{11}
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Opened) GetOk() bool {
@@ -1010,18 +1640,64 @@ const file_tau_worker_v1_worker_proto_rawDesc = "" +
 	"\x06answer\x18\x02 \x01(\v2\x1d.tau.worker.v1.InvokeResponseH\x00R\x06answer\x12\x14\n" +
 	"\x04none\x18\x03 \x01(\tH\x00R\x04noneB\n" +
 	"\n" +
-	"\bdecision\"I\n" +
+	"\bdecision\"\x93\x01\n" +
+	"\n" +
+	"Connection\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x12\n" +
+	"\x04host\x18\x02 \x01(\tR\x04host\x12\x1a\n" +
+	"\bprotocol\x18\x03 \x01(\tR\bprotocol\x12\x1c\n" +
+	"\ttransport\x18\x04 \x01(\tR\ttransport\x12\x1f\n" +
+	"\vserver_name\x18\x05 \x01(\tR\n" +
+	"serverName\"\x91\x01\n" +
+	"\rDirectRequest\x12-\n" +
+	"\x06target\x18\x01 \x01(\v2\x15.tau.worker.v1.TargetR\x06target\x129\n" +
+	"\n" +
+	"connection\x18\x02 \x01(\v2\x19.tau.worker.v1.ConnectionR\n" +
+	"connection\x12\x16\n" +
+	"\x06peeked\x18\x03 \x01(\fR\x06peeked\"d\n" +
+	"\bEndpoint\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
+	"\x04port\x18\x04 \x01(\tR\x04port\"w\n" +
+	"\x0eDirectResponse\x12)\n" +
+	"\x02to\x18\x01 \x01(\v2\x17.tau.worker.v1.EndpointH\x00R\x02to\x12\x14\n" +
+	"\x04more\x18\x02 \x01(\rH\x00R\x04more\x12\x18\n" +
+	"\x06refuse\x18\x03 \x01(\tH\x00R\x06refuseB\n" +
+	"\n" +
+	"\bdecision\"\xad\x02\n" +
+	"\fShapeRequest\x12-\n" +
+	"\x06target\x18\x01 \x01(\v2\x15.tau.worker.v1.TargetR\x06target\x129\n" +
+	"\n" +
+	"connection\x18\x02 \x01(\v2\x19.tau.worker.v1.ConnectionR\n" +
+	"connection\x127\n" +
+	"\x03way\x18\x03 \x01(\x0e2%.tau.worker.v1.ShapeRequest.DirectionR\x03way\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\fR\x05state\x12\x14\n" +
+	"\x05chunk\x18\x05 \x01(\fR\x05chunk\x12\x12\n" +
+	"\x04last\x18\x06 \x01(\bR\x04last\":\n" +
+	"\tDirection\x12\x15\n" +
+	"\x11DIRECTION_INBOUND\x10\x00\x12\x16\n" +
+	"\x12DIRECTION_OUTBOUND\x10\x01\"0\n" +
+	"\x06Shaped\x12\x10\n" +
+	"\x03out\x18\x01 \x01(\fR\x03out\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\fR\x05state\"_\n" +
+	"\rShapeResponse\x12+\n" +
+	"\x04pass\x18\x01 \x01(\v2\x15.tau.worker.v1.ShapedH\x00R\x04pass\x12\x16\n" +
+	"\x05close\x18\x02 \x01(\tH\x00R\x05closeB\t\n" +
+	"\averdict\"I\n" +
 	"\x04Open\x12-\n" +
 	"\x06target\x18\x01 \x01(\v2\x15.tau.worker.v1.TargetR\x06target\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\tR\x04port\"P\n" +
 	"\x06Opened\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12 \n" +
-	"\vunreachable\x18\x03 \x01(\bR\vunreachable2\xea\x01\n" +
+	"\vunreachable\x18\x03 \x01(\bR\vunreachable2\xf5\x02\n" +
 	"\rWorkerService\x12E\n" +
 	"\x06Invoke\x12\x1c.tau.worker.v1.InvokeRequest\x1a\x1d.tau.worker.v1.InvokeResponse\x12N\n" +
 	"\tTransform\x12\x1f.tau.worker.v1.TransformRequest\x1a .tau.worker.v1.TransformResponse\x12B\n" +
-	"\x05Route\x12\x1b.tau.worker.v1.RouteRequest\x1a\x1c.tau.worker.v1.RouteResponseB\xb3\x01\n" +
+	"\x05Route\x12\x1b.tau.worker.v1.RouteRequest\x1a\x1c.tau.worker.v1.RouteResponse\x12E\n" +
+	"\x06Direct\x12\x1c.tau.worker.v1.DirectRequest\x1a\x1d.tau.worker.v1.DirectResponse\x12B\n" +
+	"\x05Shape\x12\x1b.tau.worker.v1.ShapeRequest\x1a\x1c.tau.worker.v1.ShapeResponseB\xb3\x01\n" +
 	"\x11com.tau.worker.v1B\vWorkerProtoP\x01Z;github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1;workerv1\xa2\x02\x03TWX\xaa\x02\rTau.Worker.V1\xca\x02\rTau\\Worker\\V1\xe2\x02\x19Tau\\Worker\\V1\\GPBMetadata\xea\x02\x0fTau::Worker::V1b\x06proto3"
 
 var (
@@ -1036,56 +1712,76 @@ func file_tau_worker_v1_worker_proto_rawDescGZIP() []byte {
 	return file_tau_worker_v1_worker_proto_rawDescData
 }
 
-var file_tau_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_tau_worker_v1_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_tau_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_tau_worker_v1_worker_proto_goTypes = []any{
-	(*Target)(nil),            // 0: tau.worker.v1.Target
-	(*Headers)(nil),           // 1: tau.worker.v1.Headers
-	(*InvokeRequest)(nil),     // 2: tau.worker.v1.InvokeRequest
-	(*InvokeResponse)(nil),    // 3: tau.worker.v1.InvokeResponse
-	(*TransformRequest)(nil),  // 4: tau.worker.v1.TransformRequest
-	(*ForwardedRequest)(nil),  // 5: tau.worker.v1.ForwardedRequest
-	(*TransformResponse)(nil), // 6: tau.worker.v1.TransformResponse
-	(*RouteRequest)(nil),      // 7: tau.worker.v1.RouteRequest
-	(*Destination)(nil),       // 8: tau.worker.v1.Destination
-	(*RouteResponse)(nil),     // 9: tau.worker.v1.RouteResponse
-	(*Open)(nil),              // 10: tau.worker.v1.Open
-	(*Opened)(nil),            // 11: tau.worker.v1.Opened
-	nil,                       // 12: tau.worker.v1.InvokeRequest.HeadersEntry
-	nil,                       // 13: tau.worker.v1.InvokeResponse.HeadersEntry
-	nil,                       // 14: tau.worker.v1.TransformRequest.HeadersEntry
-	nil,                       // 15: tau.worker.v1.ForwardedRequest.HeadersEntry
-	nil,                       // 16: tau.worker.v1.RouteRequest.HeadersEntry
+	(ShapeRequest_Direction)(0), // 0: tau.worker.v1.ShapeRequest.Direction
+	(*Target)(nil),              // 1: tau.worker.v1.Target
+	(*Headers)(nil),             // 2: tau.worker.v1.Headers
+	(*InvokeRequest)(nil),       // 3: tau.worker.v1.InvokeRequest
+	(*InvokeResponse)(nil),      // 4: tau.worker.v1.InvokeResponse
+	(*TransformRequest)(nil),    // 5: tau.worker.v1.TransformRequest
+	(*ForwardedRequest)(nil),    // 6: tau.worker.v1.ForwardedRequest
+	(*TransformResponse)(nil),   // 7: tau.worker.v1.TransformResponse
+	(*RouteRequest)(nil),        // 8: tau.worker.v1.RouteRequest
+	(*Destination)(nil),         // 9: tau.worker.v1.Destination
+	(*RouteResponse)(nil),       // 10: tau.worker.v1.RouteResponse
+	(*Connection)(nil),          // 11: tau.worker.v1.Connection
+	(*DirectRequest)(nil),       // 12: tau.worker.v1.DirectRequest
+	(*Endpoint)(nil),            // 13: tau.worker.v1.Endpoint
+	(*DirectResponse)(nil),      // 14: tau.worker.v1.DirectResponse
+	(*ShapeRequest)(nil),        // 15: tau.worker.v1.ShapeRequest
+	(*Shaped)(nil),              // 16: tau.worker.v1.Shaped
+	(*ShapeResponse)(nil),       // 17: tau.worker.v1.ShapeResponse
+	(*Open)(nil),                // 18: tau.worker.v1.Open
+	(*Opened)(nil),              // 19: tau.worker.v1.Opened
+	nil,                         // 20: tau.worker.v1.InvokeRequest.HeadersEntry
+	nil,                         // 21: tau.worker.v1.InvokeResponse.HeadersEntry
+	nil,                         // 22: tau.worker.v1.TransformRequest.HeadersEntry
+	nil,                         // 23: tau.worker.v1.ForwardedRequest.HeadersEntry
+	nil,                         // 24: tau.worker.v1.RouteRequest.HeadersEntry
 }
 var file_tau_worker_v1_worker_proto_depIdxs = []int32{
-	0,  // 0: tau.worker.v1.InvokeRequest.target:type_name -> tau.worker.v1.Target
-	12, // 1: tau.worker.v1.InvokeRequest.headers:type_name -> tau.worker.v1.InvokeRequest.HeadersEntry
-	13, // 2: tau.worker.v1.InvokeResponse.headers:type_name -> tau.worker.v1.InvokeResponse.HeadersEntry
-	0,  // 3: tau.worker.v1.TransformRequest.target:type_name -> tau.worker.v1.Target
-	14, // 4: tau.worker.v1.TransformRequest.headers:type_name -> tau.worker.v1.TransformRequest.HeadersEntry
-	15, // 5: tau.worker.v1.ForwardedRequest.headers:type_name -> tau.worker.v1.ForwardedRequest.HeadersEntry
-	5,  // 6: tau.worker.v1.TransformResponse.forward:type_name -> tau.worker.v1.ForwardedRequest
-	3,  // 7: tau.worker.v1.TransformResponse.answer:type_name -> tau.worker.v1.InvokeResponse
-	0,  // 8: tau.worker.v1.RouteRequest.target:type_name -> tau.worker.v1.Target
-	16, // 9: tau.worker.v1.RouteRequest.headers:type_name -> tau.worker.v1.RouteRequest.HeadersEntry
-	8,  // 10: tau.worker.v1.RouteResponse.to:type_name -> tau.worker.v1.Destination
-	3,  // 11: tau.worker.v1.RouteResponse.answer:type_name -> tau.worker.v1.InvokeResponse
-	0,  // 12: tau.worker.v1.Open.target:type_name -> tau.worker.v1.Target
-	1,  // 13: tau.worker.v1.InvokeRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 14: tau.worker.v1.InvokeResponse.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 15: tau.worker.v1.TransformRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 16: tau.worker.v1.ForwardedRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 17: tau.worker.v1.RouteRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	2,  // 18: tau.worker.v1.WorkerService.Invoke:input_type -> tau.worker.v1.InvokeRequest
-	4,  // 19: tau.worker.v1.WorkerService.Transform:input_type -> tau.worker.v1.TransformRequest
-	7,  // 20: tau.worker.v1.WorkerService.Route:input_type -> tau.worker.v1.RouteRequest
-	3,  // 21: tau.worker.v1.WorkerService.Invoke:output_type -> tau.worker.v1.InvokeResponse
-	6,  // 22: tau.worker.v1.WorkerService.Transform:output_type -> tau.worker.v1.TransformResponse
-	9,  // 23: tau.worker.v1.WorkerService.Route:output_type -> tau.worker.v1.RouteResponse
-	21, // [21:24] is the sub-list for method output_type
-	18, // [18:21] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	1,  // 0: tau.worker.v1.InvokeRequest.target:type_name -> tau.worker.v1.Target
+	20, // 1: tau.worker.v1.InvokeRequest.headers:type_name -> tau.worker.v1.InvokeRequest.HeadersEntry
+	21, // 2: tau.worker.v1.InvokeResponse.headers:type_name -> tau.worker.v1.InvokeResponse.HeadersEntry
+	1,  // 3: tau.worker.v1.TransformRequest.target:type_name -> tau.worker.v1.Target
+	22, // 4: tau.worker.v1.TransformRequest.headers:type_name -> tau.worker.v1.TransformRequest.HeadersEntry
+	23, // 5: tau.worker.v1.ForwardedRequest.headers:type_name -> tau.worker.v1.ForwardedRequest.HeadersEntry
+	6,  // 6: tau.worker.v1.TransformResponse.forward:type_name -> tau.worker.v1.ForwardedRequest
+	4,  // 7: tau.worker.v1.TransformResponse.answer:type_name -> tau.worker.v1.InvokeResponse
+	1,  // 8: tau.worker.v1.RouteRequest.target:type_name -> tau.worker.v1.Target
+	24, // 9: tau.worker.v1.RouteRequest.headers:type_name -> tau.worker.v1.RouteRequest.HeadersEntry
+	9,  // 10: tau.worker.v1.RouteResponse.to:type_name -> tau.worker.v1.Destination
+	4,  // 11: tau.worker.v1.RouteResponse.answer:type_name -> tau.worker.v1.InvokeResponse
+	1,  // 12: tau.worker.v1.DirectRequest.target:type_name -> tau.worker.v1.Target
+	11, // 13: tau.worker.v1.DirectRequest.connection:type_name -> tau.worker.v1.Connection
+	13, // 14: tau.worker.v1.DirectResponse.to:type_name -> tau.worker.v1.Endpoint
+	1,  // 15: tau.worker.v1.ShapeRequest.target:type_name -> tau.worker.v1.Target
+	11, // 16: tau.worker.v1.ShapeRequest.connection:type_name -> tau.worker.v1.Connection
+	0,  // 17: tau.worker.v1.ShapeRequest.way:type_name -> tau.worker.v1.ShapeRequest.Direction
+	16, // 18: tau.worker.v1.ShapeResponse.pass:type_name -> tau.worker.v1.Shaped
+	1,  // 19: tau.worker.v1.Open.target:type_name -> tau.worker.v1.Target
+	2,  // 20: tau.worker.v1.InvokeRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	2,  // 21: tau.worker.v1.InvokeResponse.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	2,  // 22: tau.worker.v1.TransformRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	2,  // 23: tau.worker.v1.ForwardedRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	2,  // 24: tau.worker.v1.RouteRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	3,  // 25: tau.worker.v1.WorkerService.Invoke:input_type -> tau.worker.v1.InvokeRequest
+	5,  // 26: tau.worker.v1.WorkerService.Transform:input_type -> tau.worker.v1.TransformRequest
+	8,  // 27: tau.worker.v1.WorkerService.Route:input_type -> tau.worker.v1.RouteRequest
+	12, // 28: tau.worker.v1.WorkerService.Direct:input_type -> tau.worker.v1.DirectRequest
+	15, // 29: tau.worker.v1.WorkerService.Shape:input_type -> tau.worker.v1.ShapeRequest
+	4,  // 30: tau.worker.v1.WorkerService.Invoke:output_type -> tau.worker.v1.InvokeResponse
+	7,  // 31: tau.worker.v1.WorkerService.Transform:output_type -> tau.worker.v1.TransformResponse
+	10, // 32: tau.worker.v1.WorkerService.Route:output_type -> tau.worker.v1.RouteResponse
+	14, // 33: tau.worker.v1.WorkerService.Direct:output_type -> tau.worker.v1.DirectResponse
+	17, // 34: tau.worker.v1.WorkerService.Shape:output_type -> tau.worker.v1.ShapeResponse
+	30, // [30:35] is the sub-list for method output_type
+	25, // [25:30] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_tau_worker_v1_worker_proto_init() }
@@ -1102,18 +1798,28 @@ func file_tau_worker_v1_worker_proto_init() {
 		(*RouteResponse_Answer)(nil),
 		(*RouteResponse_None)(nil),
 	}
+	file_tau_worker_v1_worker_proto_msgTypes[13].OneofWrappers = []any{
+		(*DirectResponse_To)(nil),
+		(*DirectResponse_More)(nil),
+		(*DirectResponse_Refuse)(nil),
+	}
+	file_tau_worker_v1_worker_proto_msgTypes[16].OneofWrappers = []any{
+		(*ShapeResponse_Pass)(nil),
+		(*ShapeResponse_Close)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_worker_v1_worker_proto_rawDesc), len(file_tau_worker_v1_worker_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   17,
+			NumEnums:      1,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_tau_worker_v1_worker_proto_goTypes,
 		DependencyIndexes: file_tau_worker_v1_worker_proto_depIdxs,
+		EnumInfos:         file_tau_worker_v1_worker_proto_enumTypes,
 		MessageInfos:      file_tau_worker_v1_worker_proto_msgTypes,
 	}.Build()
 	File_tau_worker_v1_worker_proto = out.File

@@ -1,0 +1,110 @@
+// The world a tau PROXY TRANSFORMER is compiled to.
+//
+// # A stream has no request to hand over, so it is handed a chunk
+//
+// A gateway transformer sees one request and answers once. A proxy carries a
+// conversation: bytes go both ways, for as long as the client keeps the socket,
+// and there is no point at which the whole of it exists to be transformed. So
+// this world is called per chunk, per direction, and says what to pass on.
+//
+// # The STATE IS CARRIED BY THE HOST, which is what keeps this pooled
+//
+// A transformer that buffers — waiting for a frame header, a length prefix, a
+// delimiter — needs to remember something between chunks, and the obvious way
+// to give it that is one instance per connection. That was not done, for two
+// reasons that are the same reason: a small component costs ~13ms to
+// instantiate, and an instance pinned to a connection is pinned to the NODE the
+// connection landed on, which throws away placement for the life of a psql
+// session.
+//
+// So what the transformer remembers is a blob it hands back, and the host holds
+// it per connection and per direction. The transformer stays an ordinary pooled
+// instance that any warm worker can run, exactly like the gateway's.
+//
+// # It runs over every byte, and that is a real cost
+//
+// One call per chunk in each direction, and on a node that runs no worker
+// itself, one RPC per chunk. That is what declaring a transformer on a proxy
+// buys, and it is priced in bytes rather than requests — the `concurrent` limit
+// in the vocabulary is what bounds how many conversations can be paying it at
+// once. Nothing here hides that.
+package taubyte:proxy-transformer@0.1.0;
+
+world proxy-transformer {
+    // The same state subset every shaping world gets, and nothing that sends.
+    import taubyte:sql/store@0.1.0;
+    import taubyte:kv/store@0.1.0;
+    import taubyte:document/store@0.1.0;
+    import taubyte:vector/store@0.1.0;
+    import taubyte:cache/store@0.1.0;
+    import taubyte:secret/vault@0.1.0;
+    import taubyte:workload/identity@0.1.0;
+
+    // What is known about the connection these bytes belong to. Same record as
+    // the router's, and deliberately: one transformer can serve several
+    // proxies, and telling them apart is the same question.
+    record connection {
+        source: string,
+        host: string,
+        protocol: string,
+        transport: string,
+        server-name: string,
+    }
+
+    // Which way these bytes are going.
+    enum direction {
+        // From the client toward the workload.
+        inbound,
+        // From the workload back to the client.
+        outbound,
+    }
+
+    // One chunk of a connection, on its way through.
+    record traffic {
+        conn: connection,
+        way: direction,
+
+        // What this transformer handed back the last time it was called for
+        // this connection and this direction. Empty on the first chunk.
+        state: list<u8>,
+
+        // The bytes that just arrived. Empty when `last` is set and nothing
+        // arrived with the close.
+        chunk: list<u8>,
+
+        // This is the final chunk in this direction: the other end is done
+        // writing. It is the transformer's last chance to emit what it has
+        // been holding, and anything still in `state` after it is discarded.
+        last: bool,
+    }
+
+    // What to pass on, and what to remember.
+    record shaped {
+        // The bytes to send on. It may be EMPTY — a transformer buffering a
+        // frame passes nothing until it has one — and it may be longer or
+        // shorter than the chunk it was given.
+        out: list<u8>,
+
+        // What to hand back on the next chunk of this connection and
+        // direction. Returning it unchanged keeps it; returning an empty list
+        // forgets it.
+        state: list<u8>,
+    }
+
+    // What the transformer decided.
+    //
+    // THERE IS NO "CARRY ON UNCHANGED" ARM. A transformer that wants the bytes
+    // through says so by passing them back, which costs a copy and makes every
+    // call say what it did — a convention where an absent answer meant
+    // pass-through would make a transformer that crashed indistinguishable from
+    // one that agreed.
+    variant verdict {
+        pass(shaped),
+
+        // Close the connection. The reason goes to the operator's log, because
+        // a raw socket has nowhere to write one.
+        close(string),
+    }
+
+    export transform: func(t: traffic) -> verdict;
+}
