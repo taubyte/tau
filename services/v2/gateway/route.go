@@ -57,6 +57,12 @@ func pick(candidates []candidate, path, method string) (m match, found, methodOn
 			continue
 		}
 
+		// A GATEWAY ROUTED BY A FUNCTION MATCHES EVERY PATH, which is what
+		// "there are no static routes" means — and it needs no branch here,
+		// because the compiler emits `route: {match: prefix}` with no path for
+		// one. An empty prefix matches anything at score 0, so it sits below
+		// every declared route including a bare `/`: where a name carries both,
+		// the one that named a path wins and the function is the fallback.
 		declared := route.String("path")
 		score, ok := pathScore(route.String("match"), declared, path)
 		if !ok {
