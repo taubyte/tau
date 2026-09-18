@@ -35,6 +35,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"time"
 )
 
@@ -322,6 +323,19 @@ type Response struct {
 type Instance interface {
 	Serve(ctx context.Context, req *Request) (*Response, error)
 	io.Closer
+}
+
+// Dials is an Instance that can hand out a CONNECTION to one of its ports.
+//
+// ONLY A CONTAINER CAN DO THIS. A component has no listening socket — it is
+// entered by a call — so widening Instance would make the wasm tier carry a
+// method that could only ever refuse. It is the seam an L4 proxy needs, and the
+// reason it is a connection rather than a request is that a proxy carries bytes
+// it cannot parse, for as long as the client holds the socket open.
+//
+// An empty name is the single port a workload that declared none was given.
+type Dials interface {
+	Dial(ctx context.Context, port string) (net.Conn, error)
 }
 
 // Transforms is an Instance that can also be driven as a gateway transformer.

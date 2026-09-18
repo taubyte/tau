@@ -55,6 +55,11 @@ type fakeBackend struct {
 // closer is what a fake "container" hands back so a test can shut it down.
 type closer interface{ Close() error }
 
+// closerFn is a Close as a function.
+type closerFn func() error
+
+func (f closerFn) Close() error { return f() }
+
 type closerFunc func() error
 
 func (f closerFunc) Close() error { return f() }
@@ -89,18 +94,32 @@ func (f *fakeBackend) Start(_ context.Context, id core.ContainerID) error {
 	listen := f.listen
 	f.mu.Unlock()
 
-	port := portFromEnv(cfg.Env)
 	if listen == nil {
 		listen = echoServer
 	}
-	srv, err := listen(port)
-	if err != nil {
-		return err
-	}
-	if srv != nil {
-		f.mu.Lock()
-		f.servers = append(f.servers, srv)
-		f.mu.Unlock()
+
+	// EVERY MAPPED PORT IS BOUND, not just the one in $PORT. A container that
+	// declares two ports listens on two, and a fake that bound one would be
+	// more permissive than the thing it stands in for in exactly the direction
+	// that hides a bug — a caller reaching the wrong socket would still find
+	// something answering. That is how the storage double let three bugs
+	// through; see the sweep of 2026-09-05.
+	bound := map[int]bool{}
+	for _, m := range cfg.Network.PortMappings {
+		if bound[m.HostPort] {
+			continue
+		}
+		bound[m.HostPort] = true
+
+		srv, err := listen(m.HostPort)
+		if err != nil {
+			return err
+		}
+		if srv != nil {
+			f.mu.Lock()
+			f.servers = append(f.servers, srv)
+			f.mu.Unlock()
+		}
 	}
 	return nil
 }
@@ -824,4 +843,92 @@ func TestPortIsSetToADeclaredPortsHostSide(t *testing.T) {
 
 	created, _, _ := backend.snapshot()
 	require.Equal(t, created[0].Network.PortMappings[0].HostPort, portFromEnv(created[0].Env))
+}
+
+// ── dialling a named port ────────────────────────────────────────────────
+
+// A PROXY CARRIES BYTES IT CANNOT PARSE, for as long as the client holds the
+// socket open, so it needs the socket rather than a round-trip. Serve buffers
+// both halves and answers a request; Dial hands over the connection.
+
+// TestDialReachesTheNamedPortAndNotWhicheverSortedFirst.
+func TestDialReachesTheNamedPort(t *testing.T) {
+	backend := newFakeBackend()
+	// Two ports, and the one we want is NOT the first by name: `admin` sorts
+	// before `pg`, so a Dial that ignored the name would reach the wrong one.
+	backend.listen = func(port int) (closer, error) { return echoOn(port, "listener-"+strconv.Itoa(port)) }
+	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/db:16"}, nil)
+
+	inst, err := e.Start(t.Context(), invoke.Spec{
+		Name: "db", Artifact: "ghcr.io/acme/db:16",
+		Ports: map[string]int{"pg": 5432, "admin": 9090},
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+
+	dials, ok := inst.(invoke.Dials)
+	require.True(t, ok, "a container instance dials")
+
+	created, _, _ := backend.snapshot()
+	want := map[int]int{}
+	for _, m := range created[0].Network.PortMappings {
+		want[m.ContainerPort] = m.HostPort
+	}
+
+	conn, err := dials.Dial(t.Context(), "pg")
+	require.NoError(t, err)
+	defer conn.Close()
+	require.Equal(t, want[5432], conn.RemoteAddr().(*net.TCPAddr).Port,
+		"the host side of the port named pg, not the one that sorted first")
+}
+
+// TestDialWithNoNameReachesTheONEPortAWorkloadThatDeclaredNoneWasGiven, which
+// keeps a proxy with no `forward.port` working against a $PORT-style workload.
+func TestDialWithNoNameReachesTheOnlyPort(t *testing.T) {
+	backend := newFakeBackend()
+	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/api:1.4"}, nil)
+
+	inst, err := e.Start(t.Context(), invoke.Spec{Name: "fn", Artifact: "ghcr.io/acme/api:1.4"})
+	require.NoError(t, err)
+	defer inst.Close()
+
+	created, _, _ := backend.snapshot()
+	conn, err := inst.(invoke.Dials).Dial(t.Context(), "")
+	require.NoError(t, err)
+	defer conn.Close()
+	require.Equal(t, portFromEnv(created[0].Env), conn.RemoteAddr().(*net.TCPAddr).Port)
+}
+
+// TestANameTHATWASNEVERDECLAREDSaysSo rather than connecting to something else.
+func TestDialRefusesAnUndeclaredPort(t *testing.T) {
+	e := newRuntime(t, newFakeBackend(), Image{Ref: "ghcr.io/acme/db:16"}, nil)
+
+	inst, err := e.Start(t.Context(), invoke.Spec{
+		Name: "db", Artifact: "ghcr.io/acme/db:16", Ports: map[string]int{"pg": 5432},
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+
+	_, err = inst.(invoke.Dials).Dial(t.Context(), "nope")
+	require.ErrorIs(t, err, ErrNoSuchPort)
+	require.ErrorContains(t, err, "db", "and says which workload")
+}
+
+// echoOn binds one port and answers every connection with a fixed line, so a
+// test can tell which socket it reached.
+func echoOn(port int, say string) (closer, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() { c.Write([]byte(say)); c.Close() }()
+		}
+	}()
+	return closerFn(func() error { return l.Close() }), nil
 }

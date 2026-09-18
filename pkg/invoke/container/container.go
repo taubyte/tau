@@ -65,9 +65,15 @@ const Name = "container"
 var (
 	ErrNoBackend = errors.New("container: no container backend")
 	ErrNoImage   = errors.New("container: a spec with no image has nothing to run")
-	ErrNotReady  = errors.New("container: the container never listened")
-	ErrClosed    = errors.New("container: instance is closed")
-	ErrExited    = errors.New("container: the container exited")
+
+	// ErrNoSuchPort is a caller naming a port this workload never declared. It
+	// is a config fault rather than a runtime one — the vocabulary's Ref would
+	// have caught a name that matched nothing — so it says which workload and
+	// which name rather than failing to connect.
+	ErrNoSuchPort = errors.New("container: that workload declares no port by that name")
+	ErrNotReady   = errors.New("container: the container never listened")
+	ErrClosed     = errors.New("container: instance is closed")
+	ErrExited     = errors.New("container: the container exited")
 
 	// ErrNoMounts is a workload that declared a filesystem this tier cannot
 	// give it.
@@ -361,6 +367,15 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, err
 	}
 
+	// WHICH HOST PORT ANSWERS WHICH NAME, kept so a caller that was told a name
+	// — a proxy's `forward.port`, a channel's `serve.port`, a gateway route's
+	// handler port — can be given a connection to the right socket rather than
+	// to whichever one happened to sort first.
+	reachable := make(map[string]int, len(spec.Ports))
+	for i, name := range sortedPortNames(spec.Ports) {
+		reachable[name] = ports[i].HostPort
+	}
+
 	// Pull before create. A backend whose create auto-pulls does this twice and
 	// the second is free; one whose create does not would otherwise fail on
 	// every genuinely cold node, which is the case this exists for.
@@ -387,11 +402,12 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}
 
 	inst := &instance{
-		eng:    e,
-		id:     id,
-		port:   port,
-		spec:   spec,
-		lambda: api,
+		eng:       e,
+		id:        id,
+		port:      port,
+		spec:      spec,
+		reachable: reachable,
+		lambda:    api,
 	}
 
 	if err := e.opts.backend.Start(ctx, id); err != nil {
@@ -442,16 +458,7 @@ func (e *Runtime) portsFor(spec invoke.Spec) (mapped []core.PortMapping, told in
 		}}, port, nil
 	}
 
-	// SORTED, so the mapping a backend is handed does not depend on a map walk
-	// — two starts of one spec would otherwise allocate host ports in a
-	// different order and a log would read as if something had changed.
-	names := make([]string, 0, len(spec.Ports))
-	for name := range spec.Ports {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
+	for _, name := range sortedPortNames(spec.Ports) {
 		host, err := e.opts.port()
 		if err != nil {
 			return nil, 0, fmt.Errorf("container: allocating a port for %q: %w", name, err)
@@ -527,6 +534,50 @@ func (e *Runtime) config(img Image, ports []core.PortMapping, port int, runtimeA
 	return cfg
 }
 
+// sortedPortNames is the declared names in a stable order.
+//
+// SORTED, so the mapping a backend is handed does not depend on a map walk —
+// two starts of one spec would otherwise allocate host ports in a different
+// order and a log would read as if something had changed. It is also what makes
+// portsFor and the reachable map agree about which allocation belongs to which
+// name, by walking the same order twice.
+func sortedPortNames(ports map[string]int) []string {
+	names := make([]string, 0, len(ports))
+	for name := range ports {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// Dial opens a connection to one of this workload's declared ports, by name.
+//
+// IT IS THE SEAM AN L4 CALLER NEEDS AND THE ONLY ONE. Serve answers a request
+// and buffers both halves; a proxy carries bytes it cannot parse, for as long as
+// the client keeps the socket open, so it needs the socket rather than a
+// round-trip. invoke.Dials is the interface, and only this tier implements it:
+// a component has no listening socket at all.
+//
+// AN EMPTY NAME IS THE ONE PORT A WORKLOAD THAT DECLARED NONE WAS GIVEN, which
+// keeps a proxy with no `forward.port` working against a $PORT-style workload.
+func (i *instance) Dial(ctx context.Context, name string) (net.Conn, error) {
+	port := i.port
+	if name != "" {
+		declared, ok := i.reachable[name]
+		if !ok {
+			return nil, fmt.Errorf("%w: %s declares no port called %q", ErrNoSuchPort, i.spec.Name, name)
+		}
+		port = declared
+	}
+
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		return nil, fmt.Errorf("container: dialling %s on %d: %w", i.spec.Name, port, err)
+	}
+	return conn, nil
+}
+
 // freePort asks the kernel for one and immediately gives it back.
 //
 // THERE IS A RACE HERE AND IT IS THE ORDINARY ONE: between closing and the
@@ -551,6 +602,11 @@ type instance struct {
 	id   core.ContainerID
 	port int
 	spec invoke.Spec
+
+	// reachable is the host port each declared port is answered on, by the
+	// name its author gave it. Empty for a workload that declared none, which
+	// is reached on `port` alone.
+	reachable map[string]int
 
 	// lambda is this instance's Lambda Runtime API. It is always bound and
 	// mostly unused: which of the two shapes an image is cannot be known before
