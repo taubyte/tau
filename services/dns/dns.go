@@ -31,10 +31,16 @@
 //
 // A workload's own port never leaves the node it runs on: the container engine
 // allocates a host port and tells the container about it, and a PROXY on that
-// node accepts the connection and forwards it over p2p. So what a client needs
-// is the node's proxy port, and an A record structurally cannot carry a port.
+// node accepts the connection and forwards it over p2p. Nobody authors the port
+// a client dials either — the kernel gives it to whichever listener asked for
+// one, per proxy and per node — so an SRV lookup is the only way a client ever
+// learns it, and an A record structurally cannot carry a port.
+//
 // SRV can — `priority weight port target` — and its weight field is where the
-// load ordering survives into the answer instead of being flattened away.
+// load ordering survives into the answer instead of being flattened away. The
+// two underscore labels are part of the question and not decoration: one name
+// can have several listeners on one node, and the service and transport are all
+// that tell them apart.
 //
 // An SRV target is a NAME and not an address (RFC 2782), so answering SRV means
 // minting one name per node under Config.NodeZone and resolving it back to that
@@ -167,7 +173,13 @@ func (s *Service) Answer(req *dns.Msg) *dns.Msg {
 }
 
 // answerSRV answers `_service._proto.name` with one record per node serving
-// name, targeting that node's own name and its proxy port.
+// name, targeting that node's own name and the port that node's listener for
+// this service actually got.
+//
+// THE UNDERSCORE LABELS ARE THE QUESTION, not decoration to be stripped. A node
+// can serve one name at several ports — a postgres proxy and an https gateway
+// on `db.example.com` are two listeners — and only the service and transport
+// tell them apart, because a raw stream carries nothing else that could.
 func (s *Service) answerSRV(reply *dns.Msg, name, qname string) *dns.Msg {
 	if s.cfg.NodeZone == "" {
 		// No zone means no name can be minted that resolves, and a target
@@ -175,19 +187,11 @@ func (s *Service) answerSRV(reply *dns.Msg, name, qname string) *dns.Msg {
 		return reply
 	}
 
-	// _https._tcp.shop.example.com -> shop.example.com. The two underscore
-	// labels are the service and protocol, and what stats knows is the rest.
-	svc := name
-	for range 2 {
-		if !strings.HasPrefix(svc, "_") {
-			break
-		}
-		_, rest, ok := strings.Cut(svc, ".")
-		if !ok {
-			reply.Rcode = dns.RcodeFormatError
-			return reply
-		}
-		svc = rest
+	// _postgres._tcp.db.example.com -> postgres, tcp, db.example.com.
+	protocol, transport, svc, ok := splitSRV(name)
+	if !ok {
+		reply.Rcode = dns.RcodeFormatError
+		return reply
 	}
 
 	nodes := s.opts.router.Route(svc, s.cfg.MaxAge)
@@ -204,9 +208,12 @@ func (s *Service) answerSRV(reply *dns.Msg, name, qname string) *dns.Msg {
 			// truncated label would resolve to somebody else, or to nothing.
 			continue
 		}
-		if n.Port == 0 {
-			// A node that has not got its proxy up says so by reporting no
-			// port. Routing to it would be routing to a refusal.
+		port := portOf(n, svc, protocol, transport)
+		if port == 0 {
+			// This node serves the name but has no listener for THIS service:
+			// a proxy that has not come up, or a name whose postgres lives on
+			// another node entirely. Routing to it would be routing to a
+			// refusal.
 			continue
 		}
 		target := dns.Fqdn(label + "." + s.cfg.NodeZone)
@@ -214,7 +221,7 @@ func (s *Service) answerSRV(reply *dns.Msg, name, qname string) *dns.Msg {
 			Hdr:      dns.RR_Header{Name: qname, Rrtype: dns.TypeSRV, Class: dns.ClassINET, Ttl: ttl},
 			Priority: 0,
 			Weight:   weightOf(n.Load),
-			Port:     n.Port,
+			Port:     port,
 			Target:   target,
 		})
 		// The target's addresses ride along, so a client does not pay a second
@@ -418,4 +425,34 @@ func (s *Service) Close() error {
 	}
 	s.servers = nil
 	return errors.Join(errs...)
+}
+
+// splitSRV takes the two underscore labels off an SRV name and hands back all
+// three parts. A name with fewer than two is not an SRV question.
+func splitSRV(name string) (protocol, transport, rest string, ok bool) {
+	protocol, after, found := strings.Cut(name, ".")
+	if !found || !strings.HasPrefix(protocol, "_") {
+		return "", "", "", false
+	}
+	transport, rest, found = strings.Cut(after, ".")
+	if !found || !strings.HasPrefix(transport, "_") || rest == "" {
+		return "", "", "", false
+	}
+	return protocol[1:], transport[1:], rest, true
+}
+
+// portOf is where this node answers that exact question, or zero.
+//
+// EVERY PART IS MATCHED, host included: a node reports one socket per proxy it
+// runs, across every project it holds, so matching on the service alone would
+// hand out another project's postgres port under this name.
+func portOf(n stats.Node, host, protocol, transport string) uint16 {
+	for _, sock := range n.Sockets {
+		if strings.EqualFold(sock.Host, host) &&
+			strings.EqualFold(sock.Protocol, protocol) &&
+			strings.EqualFold(sock.Transport, transport) {
+			return sock.Port
+		}
+	}
+	return 0
 }

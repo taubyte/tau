@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -171,6 +172,7 @@ func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
 				Serving:     r.GetServing(),
 				Ready:       r.GetReady(),
 				Addresses:   r.GetAddresses(),
+				Sockets:     socketsOf(r.GetSockets()),
 			})
 		}
 	}
@@ -219,7 +221,7 @@ func (s *Service) report(ctx context.Context) {
 		Serving:     snap.Serving,
 		Ready:       snap.Ready,
 		Addresses:   snap.Addresses,
-		Port:        uint32(snap.Port),
+		Sockets:     wireSockets(snap.Sockets),
 	})
 	if err != nil {
 		return
@@ -236,7 +238,7 @@ func (s *Service) report(ctx context.Context) {
 		Serving:     snap.Serving,
 		Ready:       snap.Ready,
 		Addresses:   snap.Addresses,
-		Port:        snap.Port,
+		Sockets:     snap.Sockets,
 	})
 
 	s.opts.bus.Publish(ctx, b)
@@ -260,3 +262,38 @@ func (s *Service) All() []stats.Node { return s.view.All() }
 
 // Get is one node's row, however old.
 func (s *Service) Get(peer string) (stats.Node, bool) { return s.view.Get(peer) }
+
+// socketsOf and wireSockets convert one message per direction.
+//
+// A PORT THAT DOES NOT FIT IS DROPPED rather than truncated. The wire carries
+// uint32 because proto3 has no uint16, so a sender that put 70000 there would
+// otherwise become port 4464 on every reader — a routable-looking answer to a
+// listener nobody has.
+func socketsOf(in []*statsv1.Socket) []stats.Socket {
+	out := make([]stats.Socket, 0, len(in))
+	for _, s := range in {
+		if s.GetPort() == 0 || s.GetPort() > math.MaxUint16 {
+			continue
+		}
+		out = append(out, stats.Socket{
+			Host:      s.GetHost(),
+			Protocol:  s.GetProtocol(),
+			Transport: s.GetTransport(),
+			Port:      uint16(s.GetPort()),
+		})
+	}
+	return out
+}
+
+func wireSockets(in []stats.Socket) []*statsv1.Socket {
+	out := make([]*statsv1.Socket, 0, len(in))
+	for _, s := range in {
+		out = append(out, &statsv1.Socket{
+			Host:      s.Host,
+			Protocol:  s.Protocol,
+			Transport: s.Transport,
+			Port:      uint32(s.Port),
+		})
+	}
+	return out
+}

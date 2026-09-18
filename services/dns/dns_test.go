@@ -304,8 +304,10 @@ func TestListenReportsAFailureToBind(t *testing.T) {
 // ───────────────────────────────── SRV ─────────────────────────────────
 //
 // A workload's own port never leaves its node: the container engine allocates a
-// host port and a proxy on that node forwards to it over p2p. So what a client
-// needs is the node's proxy port, which an A record structurally cannot carry.
+// host port and a proxy on that node forwards to it over p2p. Nobody authors
+// the port a client dials either — the kernel gives it to whichever listener
+// asked — so SRV is the only way a client ever learns it, and an A record
+// structurally cannot carry it.
 
 func srvService(name string, nodes ...stats.Node) *fakeRouter {
 	return &fakeRouter{nodes: map[string][]stats.Node{name: nodes}}
@@ -313,11 +315,16 @@ func srvService(name string, nodes ...stats.Node) *fakeRouter {
 
 func withZone(c *Config) { c.NodeZone = "nodes.example.com" }
 
+// on is one listener this node reports, in the terms an SRV query asks in.
+func on(host, protocol string, port uint16) []stats.Socket {
+	return []stats.Socket{{Host: host, Protocol: protocol, Transport: "tcp", Port: port}}
+}
+
 func TestSrvCarriesTheProxyPortAndPointsAtTheNode(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "12D3KooWidle", Load: 0.1, Ready: true, Port: 8443,
+		stats.Node{Peer: "12D3KooWidle", Load: 0.1, Ready: true, Sockets: on("shop.example.com", "https", 8443),
 			Addresses: []string{"203.0.113.1"}},
-		stats.Node{Peer: "12D3KooWbusy", Load: 0.9, Ready: true, Port: 8443,
+		stats.Node{Peer: "12D3KooWbusy", Load: 0.9, Ready: true, Sockets: on("shop.example.com", "https", 8443),
 			Addresses: []string{"203.0.113.2"}},
 	), withZone)
 
@@ -339,7 +346,7 @@ func TestSrvCarriesTheProxyPortAndPointsAtTheNode(t *testing.T) {
 // trip for something this server already had in hand.
 func TestTheSrvTargetsAddressesRideAlong(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "12D3KooWone", Ready: true, Port: 9000,
+		stats.Node{Peer: "12D3KooWone", Ready: true, Sockets: on("shop.example.com", "https", 9000),
 			Addresses: []string{"203.0.113.7", "2001:db8::1"}},
 	), withZone)
 
@@ -359,8 +366,8 @@ func TestTheSrvTargetsAddressesRideAlong(t *testing.T) {
 // something has to resolve it — and it resolves to that node and nothing else.
 func TestANodeNameResolvesToThatNodesAddresses(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "12D3KooWone", Ready: true, Port: 9000, Addresses: []string{"203.0.113.7"}},
-		stats.Node{Peer: "12D3KooWtwo", Ready: true, Port: 9000, Addresses: []string{"203.0.113.8"}},
+		stats.Node{Peer: "12D3KooWone", Ready: true, Sockets: on("shop.example.com", "https", 9000), Addresses: []string{"203.0.113.7"}},
+		stats.Node{Peer: "12D3KooWtwo", Ready: true, Sockets: on("shop.example.com", "https", 9000), Addresses: []string{"203.0.113.8"}},
 	), withZone)
 
 	reply := s.Answer(query(nodeLabel("12D3KooWtwo")+".nodes.example.com", dns.TypeA))
@@ -372,19 +379,20 @@ func TestANodeNameResolvesToThatNodesAddresses(t *testing.T) {
 
 func TestAnUnknownNodeNameIsServfail(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "12D3KooWone", Ready: true, Port: 9000, Addresses: []string{"203.0.113.7"}},
+		stats.Node{Peer: "12D3KooWone", Ready: true, Sockets: on("shop.example.com", "https", 9000), Addresses: []string{"203.0.113.7"}},
 	), withZone)
 
 	reply := s.Answer(query(nodeLabel("12D3KooWghost")+".nodes.example.com", dns.TypeA))
 	require.Equal(t, dns.RcodeServerFailure, reply.Rcode)
 }
 
-// TestANodeWithNoProxyPortIsNotAnSrvAnswer. A node that has not got its proxy up
-// says so by reporting no port; routing to it would be routing to a refusal.
+// TestANodeWithNoListenerForThisServiceIsNotAnSrvAnswer. A node still warming
+// up reports no socket for the name; routing to it would be routing to a
+// refusal.
 func TestANodeWithNoProxyPortIsNotAnSrvAnswer(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "12D3KooWup", Ready: true, Port: 8443, Addresses: []string{"203.0.113.1"}},
-		stats.Node{Peer: "12D3KooWwarming", Ready: true, Port: 0, Addresses: []string{"203.0.113.2"}},
+		stats.Node{Peer: "12D3KooWup", Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}},
+		stats.Node{Peer: "12D3KooWwarming", Ready: true, Sockets: nil, Addresses: []string{"203.0.113.2"}},
 	), withZone)
 
 	reply := s.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV))
@@ -400,7 +408,7 @@ func TestSrvWithNothingServingIsServfail(t *testing.T) {
 	// And when every serving node lacks a port, which is the same outcome for a
 	// different reason.
 	s2 := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "p", Ready: true, Port: 0, Addresses: []string{"203.0.113.1"}}), withZone)
+		stats.Node{Peer: "p", Ready: true, Sockets: nil, Addresses: []string{"203.0.113.1"}}), withZone)
 	require.Equal(t, dns.RcodeServerFailure,
 		s2.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV)).Rcode)
 }
@@ -409,7 +417,7 @@ func TestSrvWithNothingServingIsServfail(t *testing.T) {
 // nothing, so the honest answer is no records rather than an invented name.
 func TestSrvIsOffWithoutANodeZone(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "p", Ready: true, Port: 8443, Addresses: []string{"203.0.113.1"}}), nil)
+		stats.Node{Peer: "p", Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}}), nil)
 
 	reply := s.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV))
 	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
@@ -420,7 +428,7 @@ func TestSrvIsOffWithoutANodeZone(t *testing.T) {
 // and protocol, and the rest is the name a workload is deployed under.
 func TestTheServiceNameIsWhatStatsKnows(t *testing.T) {
 	r := srvService("shop.example.com",
-		stats.Node{Peer: "p", Ready: true, Port: 8443, Addresses: []string{"203.0.113.1"}})
+		stats.Node{Peer: "p", Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}})
 	s := newService(t, r, withZone)
 
 	s.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV))
@@ -433,7 +441,7 @@ func TestAnSrvAnswerIsCapped(t *testing.T) {
 	var nodes []stats.Node
 	for i := range 20 {
 		nodes = append(nodes, stats.Node{
-			Peer: fmt.Sprintf("peer%02d", i), Ready: true, Port: 8443,
+			Peer: fmt.Sprintf("peer%02d", i), Ready: true, Sockets: on("shop.example.com", "https", 8443),
 			Addresses: []string{net.IPv4(203, 0, 113, byte(i+1)).String()},
 		})
 	}
@@ -465,7 +473,7 @@ func TestANodeLabelSurvivesCaseFolding(t *testing.T) {
 	require.Equal(t, strings.ToLower(label), label, "the label is already lowercase")
 
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: peer, Ready: true, Port: 8443, Addresses: []string{"203.0.113.5"}}), withZone)
+		stats.Node{Peer: peer, Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.5"}}), withZone)
 
 	// A resolver that upper-cases the name on the way through still resolves it.
 	reply := s.Answer(query(strings.ToUpper(label)+".NODES.EXAMPLE.COM", dns.TypeA))
@@ -476,7 +484,7 @@ func TestANodeLabelSurvivesCaseFolding(t *testing.T) {
 
 func TestAnUndecodableNodeLabelIsNotANodeName(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "p", Ready: true, Port: 8443, Addresses: []string{"203.0.113.1"}}), withZone)
+		stats.Node{Peer: "p", Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}}), withZone)
 
 	// Not base32 at all — it must fall through to the ordinary service lookup
 	// rather than being read as a mangled peer id.
@@ -489,11 +497,62 @@ func TestAnUndecodableNodeLabelIsNotANodeName(t *testing.T) {
 func TestAPeerIdTooLongForALabelGetsNoSrvTarget(t *testing.T) {
 	long := strings.Repeat("z", 64) // base32 of this is well over 63 chars
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: long, Ready: true, Port: 8443, Addresses: []string{"203.0.113.1"}},
-		stats.Node{Peer: "ok", Ready: true, Port: 8443, Addresses: []string{"203.0.113.2"}},
+		stats.Node{Peer: long, Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}},
+		stats.Node{Peer: "ok", Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.2"}},
 	), withZone)
 
 	reply := s.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV))
 	require.Len(t, reply.Answer, 1)
 	require.Equal(t, nodeLabel("ok")+".nodes.example.com.", reply.Answer[0].(*dns.SRV).Target)
+}
+
+// TestONENAMETWOLISTENERS is what a single port per node could not express: a
+// postgres proxy and an https gateway on `db.example.com` are two listeners on
+// two ports, and the underscore labels are the only thing that tells them
+// apart — a raw TCP stream carries no name to demultiplex on.
+func TestTwoServicesOnOneNameAnswerWithTheirOwnPorts(t *testing.T) {
+	s := newService(t, srvService("db.example.com",
+		stats.Node{Peer: "12D3KooWboth", Ready: true, Addresses: []string{"203.0.113.9"},
+			Sockets: []stats.Socket{
+				{Host: "db.example.com", Protocol: "https", Transport: "tcp", Port: 8443},
+				{Host: "db.example.com", Protocol: "postgres", Transport: "tcp", Port: 41337},
+			}},
+	), withZone)
+
+	pg := s.Answer(query("_postgres._tcp.db.example.com", dns.TypeSRV))
+	require.Len(t, pg.Answer, 1)
+	require.Equal(t, uint16(41337), pg.Answer[0].(*dns.SRV).Port)
+
+	web := s.Answer(query("_https._tcp.db.example.com", dns.TypeSRV))
+	require.Len(t, web.Answer, 1)
+	require.Equal(t, uint16(8443), web.Answer[0].(*dns.SRV).Port)
+
+	none := s.Answer(query("_redis._tcp.db.example.com", dns.TypeSRV))
+	require.Equal(t, dns.RcodeServerFailure, none.Rcode, "nothing here speaks redis")
+}
+
+// TestAPROXYONANOTHERPROJECTSNAME: a node runs proxies for every project it
+// holds, so the host is matched too — service alone would hand out one
+// project's port under another project's name.
+func TestASocketForAnotherNameIsNotAnAnswer(t *testing.T) {
+	s := newService(t, srvService("db.example.com",
+		stats.Node{Peer: "12D3KooWmixed", Ready: true, Addresses: []string{"203.0.113.9"},
+			Sockets: on("other.example.com", "postgres", 41337)},
+	), withZone)
+
+	reply := s.Answer(query("_postgres._tcp.db.example.com", dns.TypeSRV))
+	require.Equal(t, dns.RcodeServerFailure, reply.Rcode)
+}
+
+// TestANAMEWITHONEUNDERSCORELABEL is not an SRV question, and answering it as
+// one would route `_tcp.example.com` to whatever `_tcp` happened to match.
+func TestAMalformedSrvNameIsAFormatError(t *testing.T) {
+	s := newService(t, srvService("example.com",
+		stats.Node{Peer: "p", Ready: true, Addresses: []string{"203.0.113.1"},
+			Sockets: on("example.com", "tcp", 8443)}), withZone)
+
+	for _, name := range []string{"_tcp.example.com", "_postgres.tcp.example.com", "_postgres._tcp."} {
+		reply := s.Answer(query(name, dns.TypeSRV))
+		require.Equal(t, dns.RcodeFormatError, reply.Rcode, name)
+	}
 }

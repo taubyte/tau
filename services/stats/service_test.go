@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	statsv1 "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v1"
+	"github.com/taubyte/tau/pkg/stats"
 )
 
 // Every dependency here is a fake: a mocknet host for identity, an in-memory
@@ -377,4 +378,77 @@ func TestAddressesReachTheWireAndComeBack(t *testing.T) {
 	got := s.Route("shop", time.Minute)
 	require.Len(t, got, 1)
 	require.Equal(t, []string{"203.0.113.7", "2001:db8::1"}, got[0].Addresses)
+}
+
+// TestSOCKETSREACHTHEWIREFROMBOTHDIRECTIONS. The port a client dials lives
+// nowhere else — it is not authored, not derivable and gone when the node
+// restarts — so a field dropped in either direction is a name that resolves to
+// an address and a port nobody is listening on.
+//
+// The DECODE half is the one that was broken: a node folded its own report in
+// directly and lost every other node's, so a single-node test passed and a
+// fleet answered SRV for one node only.
+func TestSocketsReachTheWireAndComeBack(t *testing.T) {
+	bus := &memBus{}
+	mine := stats.Socket{Host: "db.example.com", Protocol: "postgres", Transport: "tcp", Port: 41337}
+	s := newService(t, bus, fixedSnapshot(Snapshot{
+		Load: 0.9, Ready: true, Serving: []string{"db.example.com"},
+		Sockets: []stats.Socket{mine},
+	}), nil)
+	require.NoError(t, s.Start(context.Background()))
+
+	eventually(t, "a report to be published", func() bool { return len(bus.published()) > 0 })
+
+	var decoded statsv1.Report
+	require.NoError(t, proto.Unmarshal(bus.published()[0], &decoded))
+	require.Len(t, decoded.GetSockets(), 1)
+	require.Equal(t, uint32(41337), decoded.GetSockets()[0].GetPort())
+	require.Equal(t, "postgres", decoded.GetSockets()[0].GetProtocol())
+
+	theirs := &statsv1.Socket{Host: "db.example.com", Protocol: "postgres", Transport: "tcp", Port: 5001}
+	b, err := proto.Marshal(&statsv1.Report{
+		Peer: "other", Incarnation: 1, Load: 0.1, Ready: true,
+		Serving: []string{"db.example.com"}, Sockets: []*statsv1.Socket{theirs},
+	})
+	require.NoError(t, err)
+	bus.deliver(b)
+
+	eventually(t, "the other node to be heard", func() bool {
+		n, ok := s.Get("other")
+		return ok && len(n.Sockets) == 1
+	})
+
+	got := s.Route("db.example.com", time.Minute)
+	require.Len(t, got, 2)
+	require.Equal(t, uint16(5001), got[0].Sockets[0].Port, "the other node's own port, not this one's")
+	require.Equal(t, []stats.Socket{mine}, got[1].Sockets)
+}
+
+// TestAPORTTHATCANNOTBEAPORT is dropped rather than truncated: the wire carries
+// uint32 because proto3 has no uint16, and 70000 silently became 4464 — a
+// routable-looking answer to a listener nobody has.
+func TestASocketWithAnImpossiblePortIsDropped(t *testing.T) {
+	bus := &memBus{}
+	s := newService(t, bus, fixedSnapshot(Snapshot{Ready: true, Serving: []string{"db.example.com"}}), nil)
+	require.NoError(t, s.Start(context.Background()))
+
+	b, err := proto.Marshal(&statsv1.Report{
+		Peer: "other", Incarnation: 1, Ready: true, Serving: []string{"db.example.com"},
+		Sockets: []*statsv1.Socket{
+			{Host: "db.example.com", Protocol: "postgres", Transport: "tcp", Port: 70000},
+			{Host: "db.example.com", Protocol: "redis", Transport: "tcp", Port: 0},
+			{Host: "db.example.com", Protocol: "mysql", Transport: "tcp", Port: 3306},
+		},
+	})
+	require.NoError(t, err)
+	bus.deliver(b)
+
+	eventually(t, "the other node to be heard", func() bool {
+		_, ok := s.Get("other")
+		return ok
+	})
+
+	n, _ := s.Get("other")
+	require.Len(t, n.Sockets, 1, "the impossible one and the absent one are both gone")
+	require.Equal(t, "mysql", n.Sockets[0].Protocol)
 }

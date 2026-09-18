@@ -102,17 +102,42 @@ message Report {
   // that.
   repeated string addresses = 6;
 
-  // port is where this node's PROXY listens — the ingress that accepts a
-  // connection and forwards it over p2p to whichever workload is being asked
-  // for.
+  // sockets is every L4 proxy this node accepts connections for, and the port
+  // each one landed on.
   //
-  // ONE PORT PER NODE, NOT ONE PER WORKLOAD. The proxy demultiplexes by the
-  // name being requested, so a node has a single ingress and a workload's own
-  // port never leaves the machine it runs on. That is what lets the container
-  // engine allocate a host port freely: nothing outside the node ever dials it.
+  // ONE PORT PER PROXY, NOT ONE PER NODE, and the difference is what layer the
+  // demultiplexing happens at. An HTTP gateway reads the name out of the
+  // request, so every name it serves shares one port. A raw TCP stream carries
+  // no name at all — at L4 the port IS the address — so a proxy that shared a
+  // port with another could not tell whose connection it had just accepted.
   //
-  // It is reported rather than assumed because it is a deployment choice, and
-  // because a node that has not got its proxy up yet should be able to say so
-  // by reporting no port rather than by being routed to and refusing.
-  uint32 port = 7;
+  // NOTHING HERE IS AUTHORED. The port is whichever one the kernel gave the
+  // listener, which is why it is reported: it is a fact about this node and
+  // this run, it changes when the node restarts, and the only way a client
+  // learns it is the SRV record built out of this.
+  repeated Socket sockets = 7;
+}
+
+// Socket is one name a client can open a connection to, and where.
+//
+// It is an SRV record with the node left out: a lookup of
+// `_<protocol>._<transport>.<host>` answers with port, at whichever nodes
+// reported it. The host also appears in the report's serving list, because a
+// client resolves the name to an address before it dials the port.
+message Socket {
+  // host is the complete name a client resolves, e.g. "db.shop.example.com" —
+  // the project's part joined to the cloud's own zone where the name was
+  // generated, which is the one piece of it a compiled project cannot know.
+  string host = 1;
+
+  // protocol is the IANA service label, e.g. "postgres". It is what the first
+  // underscore label of an SRV query carries, and it is also how a client that
+  // cannot look up SRV at all knows which conventional port to try.
+  string protocol = 2;
+
+  // transport is what carries it, e.g. "tcp" — the second underscore label.
+  string transport = 3;
+
+  // port is what the kernel gave this listener on this node.
+  uint32 port = 4;
 }

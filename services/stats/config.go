@@ -66,9 +66,13 @@ type Snapshot struct {
 	// can use. See the proto field for the full argument.
 	Addresses []string
 
-	// Port is where this node's proxy listens. Zero says this node is not
-	// accepting ingress yet, which is better than being routed to and refusing.
-	Port uint16
+	// Sockets is every L4 proxy this node accepts connections for, and the
+	// port each one landed on. Empty says this node is not accepting raw
+	// connections, which is better than being routed to and refusing.
+	//
+	// See the proto field: one port per proxy and not one per node, because a
+	// raw stream carries no name to demultiplex on.
+	Sockets []stats.Socket
 }
 
 // ReporterFunc adapts a function to Reporter.

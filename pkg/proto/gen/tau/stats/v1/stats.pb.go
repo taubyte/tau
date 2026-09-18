@@ -117,19 +117,20 @@ type Report struct {
 	// traffic it cannot serve, and only the caller's health checking catches
 	// that.
 	Addresses []string `protobuf:"bytes,6,rep,name=addresses,proto3" json:"addresses,omitempty"`
-	// port is where this node's PROXY listens — the ingress that accepts a
-	// connection and forwards it over p2p to whichever workload is being asked
-	// for.
+	// sockets is every L4 proxy this node accepts connections for, and the port
+	// each one landed on.
 	//
-	// ONE PORT PER NODE, NOT ONE PER WORKLOAD. The proxy demultiplexes by the
-	// name being requested, so a node has a single ingress and a workload's own
-	// port never leaves the machine it runs on. That is what lets the container
-	// engine allocate a host port freely: nothing outside the node ever dials it.
+	// ONE PORT PER PROXY, NOT ONE PER NODE, and the difference is what layer the
+	// demultiplexing happens at. An HTTP gateway reads the name out of the
+	// request, so every name it serves shares one port. A raw TCP stream carries
+	// no name at all — at L4 the port IS the address — so a proxy that shared a
+	// port with another could not tell whose connection it had just accepted.
 	//
-	// It is reported rather than assumed because it is a deployment choice, and
-	// because a node that has not got its proxy up yet should be able to say so
-	// by reporting no port rather than by being routed to and refusing.
-	Port          uint32 `protobuf:"varint,7,opt,name=port,proto3" json:"port,omitempty"`
+	// NOTHING HERE IS AUTHORED. The port is whichever one the kernel gave the
+	// listener, which is why it is reported: it is a fact about this node and
+	// this run, it changes when the node restarts, and the only way a client
+	// learns it is the SRV record built out of this.
+	Sockets       []*Socket `protobuf:"bytes,7,rep,name=sockets,proto3" json:"sockets,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -206,7 +207,89 @@ func (x *Report) GetAddresses() []string {
 	return nil
 }
 
-func (x *Report) GetPort() uint32 {
+func (x *Report) GetSockets() []*Socket {
+	if x != nil {
+		return x.Sockets
+	}
+	return nil
+}
+
+// Socket is one name a client can open a connection to, and where.
+//
+// It is an SRV record with the node left out: a lookup of
+// `_<protocol>._<transport>.<host>` answers with port, at whichever nodes
+// reported it. The host also appears in the report's serving list, because a
+// client resolves the name to an address before it dials the port.
+type Socket struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// host is the complete name a client resolves, e.g. "db.shop.example.com" —
+	// the project's part joined to the cloud's own zone where the name was
+	// generated, which is the one piece of it a compiled project cannot know.
+	Host string `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
+	// protocol is the IANA service label, e.g. "postgres". It is what the first
+	// underscore label of an SRV query carries, and it is also how a client that
+	// cannot look up SRV at all knows which conventional port to try.
+	Protocol string `protobuf:"bytes,2,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	// transport is what carries it, e.g. "tcp" — the second underscore label.
+	Transport string `protobuf:"bytes,3,opt,name=transport,proto3" json:"transport,omitempty"`
+	// port is what the kernel gave this listener on this node.
+	Port          uint32 `protobuf:"varint,4,opt,name=port,proto3" json:"port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Socket) Reset() {
+	*x = Socket{}
+	mi := &file_tau_stats_v1_stats_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Socket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Socket) ProtoMessage() {}
+
+func (x *Socket) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_stats_v1_stats_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Socket.ProtoReflect.Descriptor instead.
+func (*Socket) Descriptor() ([]byte, []int) {
+	return file_tau_stats_v1_stats_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Socket) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *Socket) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *Socket) GetTransport() string {
+	if x != nil {
+		return x.Transport
+	}
+	return ""
+}
+
+func (x *Socket) GetPort() uint32 {
 	if x != nil {
 		return x.Port
 	}
@@ -217,15 +300,20 @@ var File_tau_stats_v1_stats_proto protoreflect.FileDescriptor
 
 const file_tau_stats_v1_stats_proto_rawDesc = "" +
 	"\n" +
-	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\xb4\x01\n" +
+	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\xd0\x01\n" +
 	"\x06Report\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12 \n" +
 	"\vincarnation\x18\x02 \x01(\x04R\vincarnation\x12\x12\n" +
 	"\x04load\x18\x03 \x01(\x01R\x04load\x12\x18\n" +
 	"\aserving\x18\x04 \x03(\tR\aserving\x12\x14\n" +
 	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x1c\n" +
-	"\taddresses\x18\x06 \x03(\tR\taddresses\x12\x12\n" +
-	"\x04port\x18\a \x01(\rR\x04portB\xab\x01\n" +
+	"\taddresses\x18\x06 \x03(\tR\taddresses\x12.\n" +
+	"\asockets\x18\a \x03(\v2\x14.tau.stats.v1.SocketR\asockets\"j\n" +
+	"\x06Socket\x12\x12\n" +
+	"\x04host\x18\x01 \x01(\tR\x04host\x12\x1a\n" +
+	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x1c\n" +
+	"\ttransport\x18\x03 \x01(\tR\ttransport\x12\x12\n" +
+	"\x04port\x18\x04 \x01(\rR\x04portB\xab\x01\n" +
 	"\x10com.tau.stats.v1B\n" +
 	"StatsProtoP\x01Z9github.com/taubyte/tau/pkg/proto/gen/tau/stats/v1;statsv1\xa2\x02\x03TSX\xaa\x02\fTau.Stats.V1\xca\x02\fTau\\Stats\\V1\xe2\x02\x18Tau\\Stats\\V1\\GPBMetadata\xea\x02\x0eTau::Stats::V1b\x06proto3"
 
@@ -241,16 +329,18 @@ func file_tau_stats_v1_stats_proto_rawDescGZIP() []byte {
 	return file_tau_stats_v1_stats_proto_rawDescData
 }
 
-var file_tau_stats_v1_stats_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_tau_stats_v1_stats_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_tau_stats_v1_stats_proto_goTypes = []any{
 	(*Report)(nil), // 0: tau.stats.v1.Report
+	(*Socket)(nil), // 1: tau.stats.v1.Socket
 }
 var file_tau_stats_v1_stats_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1, // 0: tau.stats.v1.Report.sockets:type_name -> tau.stats.v1.Socket
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_tau_stats_v1_stats_proto_init() }
@@ -264,7 +354,7 @@ func file_tau_stats_v1_stats_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_stats_v1_stats_proto_rawDesc), len(file_tau_stats_v1_stats_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

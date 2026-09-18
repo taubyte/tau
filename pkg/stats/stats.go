@@ -117,10 +117,33 @@ type Report struct {
 	// opinion would be deciding for every reader at once.
 	Addresses []string
 
-	// Port is where this node's proxy listens — one per node, since the proxy
-	// demultiplexes by name and a workload's own port never leaves the machine.
-	// Zero means the node is not accepting ingress yet, which is a thing it is
-	// entitled to say.
+	// Sockets is every L4 proxy this node accepts connections for, and the
+	// port each one landed on.
+	//
+	// ONE PORT PER PROXY, NOT ONE PER NODE, and the difference is which layer
+	// demultiplexes. A gateway reads the name out of the request, so every
+	// name it serves shares a port; a raw stream carries no name at all, so a
+	// proxy sharing a port could not tell whose connection it accepted.
+	//
+	// A socket's host also belongs in Serving: a client resolves the name to
+	// an address before it dials the port.
+	Sockets []Socket
+}
+
+// Socket is one name a client can open a connection to, and where — an SRV
+// record with the node left out.
+type Socket struct {
+	// Host is the complete name a client resolves, e.g. "db.shop.example.com".
+	Host string
+
+	// Protocol is the IANA service label, e.g. "postgres" — the first
+	// underscore label of an SRV query.
+	Protocol string
+
+	// Transport is what carries it, e.g. "tcp" — the second.
+	Transport string
+
+	// Port is what the kernel gave that listener on that node.
 	Port uint16
 }
 
@@ -132,7 +155,7 @@ type Node struct {
 	Serving     []string
 	Ready       bool
 	Addresses   []string
-	Port        uint16
+	Sockets     []Socket
 
 	// Age is how long ago this process received the report. It is on every row
 	// because a stale load figure is a confidently wrong one, and a caller
@@ -190,7 +213,7 @@ type row struct {
 	serving     []string
 	ready       bool
 	addresses   []string
-	port        uint16
+	sockets     []Socket
 	received    time.Time
 }
 
@@ -237,7 +260,7 @@ func (v *View) Observe(r Report) error {
 		serving:     serving,
 		ready:       r.Ready,
 		addresses:   append([]string(nil), r.Addresses...),
-		port:        r.Port,
+		sockets:     append([]Socket(nil), r.Sockets...),
 		received:    now,
 	}
 	return nil
@@ -338,7 +361,7 @@ func node(peer string, r *row, now time.Time) Node {
 		Serving:     append([]string(nil), r.serving...),
 		Ready:       r.ready,
 		Addresses:   append([]string(nil), r.addresses...),
-		Port:        r.port,
+		Sockets:     append([]Socket(nil), r.sockets...),
 		Age:         now.Sub(r.received),
 	}
 }
