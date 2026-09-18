@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,7 +22,16 @@ import (
 // is move bytes it cannot read, so a test that asserted on a decision without
 // moving any would prove the half that is easy.
 
-const projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
+// Every id here is a real CID, and that is not decoration: a compiled resource
+// is told apart from an access entry at the same key BY its id passing the
+// identity validator, so a made-up "QmApp" is silently not a resource and the
+// project answers on no names at all.
+const (
+	projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
+	appID     = "QmZCstKkwsL212pMaf4xk4V5AbgVfJC2NNSJdu8UZtqSpS"
+	proxyID   = "QmPZv3VQe4s7A18auX3Tjnc3Bxd6cURg94qXCJ2Smbdvqf"
+	zoneID    = "QmU1Vy6xqpYjRFFZqucyZULup6svHhsajomz71zWnSz9gk"
+)
 
 // compiled is a project with one proxy forwarding to one application.
 func compiled(t *testing.T, proxy map[string]any) *project.Project {
@@ -31,19 +42,24 @@ func compiled(t *testing.T, proxy map[string]any) *project.Project {
 			"id":   projectID,
 			"name": "shop",
 			"application": map[string]any{
-				"QmApp": map[string]any{
+				appID: map[string]any{
 					"name":   "db",
 					"source": map[string]any{"kind": "image", "image": "ghcr.io/acme/postgres:16"},
 					"ports":  map[string]any{"pg": map[string]any{"number": 5432}},
 				},
 			},
-			"proxy": map[string]any{"QmProxy": proxy},
+			"zone": map[string]any{
+				zoneID: map[string]any{"name": "shop", "fqdn": "shop.example.com"},
+			},
+			"proxy": map[string]any{proxyID: proxy},
 		},
 		"indexes": map[string]any{
 			"projects/" + projectID + "/application/db/links": []any{
-				"branches/main/projects/" + projectID + "/application/QmApp"},
+				"branches/main/projects/" + projectID + "/application/" + appID},
 			"projects/" + projectID + "/proxy/pgwire/links": []any{
-				"branches/main/projects/" + projectID + "/proxy/QmProxy"},
+				"branches/main/projects/" + projectID + "/proxy/" + proxyID},
+			"projects/" + projectID + "/zone/shop/links": []any{
+				"branches/main/projects/" + projectID + "/zone/" + zoneID},
 		},
 	}
 
@@ -59,6 +75,7 @@ func servable() map[string]any {
 		"name":     "pgwire",
 		"protocol": "tcp",
 		"service":  "postgres",
+		"host":     map[string]any{"kind": "generated", "name": "db"},
 		"forward": map[string]any{
 			"kind": "application", "name": "db", "port": "pg",
 		},
@@ -279,15 +296,174 @@ func TestAProxyWithNoRegisterIsRefusedAtConstruction(t *testing.T) {
 	require.ErrorIs(t, err, proxy.ErrNoProjects)
 }
 
-// derivingService is a proxy service that derives its sockets inside prefix.
-func derivingService(t *testing.T, prefix string, res map[string]any) *proxy.Service {
+// service is a proxy that binds its own sockets, the way a node runs it.
+func service(t *testing.T, cfg proxy.Config, res map[string]any, w *workers) (*proxy.Service, *warnings) {
 	t.Helper()
 
-	s, err := proxy.New(proxy.Config{Prefix: prefix},
+	said := &warnings{}
+	s, err := proxy.New(cfg,
 		proxy.WithProjects(projects{p: compiled(t, res)}),
+		proxy.WithWorkers(w),
+		proxy.WithWarn(said.add),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	return s, said
+}
+
+// TestNOTHINGNAMESANADDRESS: the operator gave tau its addresses long before a
+// proxy existed, and the kernel gives out the port. What Serve answers with is
+// the pair DNS publishes — the name, and the port it landed on.
+func TestServeBindsEveryAddressOnAnAllocatedPort(t *testing.T) {
+	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), &workers{said: "pong:"})
+
+	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	require.NoError(t, err)
+
+	require.NotZero(t, sock.Port, "the kernel allocated one")
+	require.Equal(t, "postgres", sock.Protocol)
+	require.Equal(t, "tcp", sock.Transport)
+	require.True(t, strings.HasSuffix(sock.Host, ".tau.example.io"),
+		"a generated name is completed by the cloud's own zone, got %q", sock.Host)
+	require.True(t, strings.HasPrefix(sock.Host, "db."), "and keeps the label the author chose, got %q", sock.Host)
+
+	require.Equal(t, []proxy.Socket{sock}, s.Serving(), "and that is what this node reports")
+}
+
+// TestBOTHFAMILIES: an empty host is every address this machine has, which is
+// the whole of what "support ipv4" needs — v4 and v6 are two spellings of a
+// listener nobody configured.
+func TestAProxyAnswersOnV4AndV6(t *testing.T) {
+	for _, dial := range []string{"127.0.0.1", "::1"} {
+		t.Run(dial, func(t *testing.T) {
+			w := &workers{said: "pong:"}
+			s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), w)
+
+			sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+			require.NoError(t, err)
+
+			c, err := net.Dial("tcp", net.JoinHostPort(dial, strconv.Itoa(int(sock.Port))))
+			if err != nil {
+				t.Skipf("no %s on this machine: %s", dial, err)
+			}
+			defer c.Close()
+
+			_, err = c.Write([]byte("ping"))
+			require.NoError(t, err)
+			require.NoError(t, c.(*net.TCPConn).CloseWrite())
+
+			c.SetReadDeadline(time.Now().Add(2 * time.Second))
+			got, err := io.ReadAll(c)
+			require.NoError(t, err)
+			require.Equal(t, "pong:ping", string(got))
+		})
+	}
+}
+
+// TestANAMETHISCLOUDCANNOTSPELL: a generated host needs the cloud's own zone,
+// and a node that was told none would publish half a name. It serves anyway —
+// the listener is up and the bytes cross — but it says so, because a proxy
+// nothing can resolve is a proxy nobody reaches.
+func TestAGeneratedNameWithNoCloudZoneIsReportedNowhere(t *testing.T) {
+	s, said := service(t, proxy.Config{}, servable(), &workers{})
+
+	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	require.NoError(t, err)
+	require.NotZero(t, sock.Port)
+	require.Empty(t, sock.Host)
+	require.Empty(t, s.Serving(), "nothing is published for a name that cannot be spelled")
+	require.Equal(t, 1, said.len(), "and the operator is told")
+}
+
+// TestAZONETHEPROJECTDECLARESNEEDSNOTHINGFROMTHEOPERATOR.
+func TestADeclaredZoneIsCompleteOnItsOwn(t *testing.T) {
+	res := servable()
+	res["host"] = map[string]any{
+		"kind": "zone", "name": "db",
+		"zone": map[string]any{"in": map[string]any{"name": zoneID}},
+	}
+	s, _ := service(t, proxy.Config{}, res, &workers{})
+
+	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	require.NoError(t, err)
+	require.Equal(t, "db.shop.example.com", sock.Host)
+}
+
+// TestAREFUSALBINDSNOTHING: unservable is checked before the listener exists,
+// so a proxy this cloud cannot serve does not hold a port while refusing every
+// connection that arrives on it.
+func TestServeRefusesBeforeItBinds(t *testing.T) {
+	res := servable()
+	res["protocol"] = "udp"
+	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, res, &workers{})
+
+	_, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	require.ErrorIs(t, err, proxy.ErrUnservable)
+	require.Empty(t, s.Serving(), "and nothing is published")
+}
+
+// TestWHATACLIENTLOOKSITUPAS: the vocabulary says an omitted service is the
+// resource's own name and an omitted protocol is tcp, and the SRV label a
+// client dials is assembled from exactly those two.
+func TestTheSrvLabelsFallBackToTheVocabularysDefaults(t *testing.T) {
+	res := servable()
+	delete(res, "service")
+	delete(res, "protocol")
+	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, res, &workers{})
+
+	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	require.NoError(t, err)
+	require.Equal(t, "pgwire", sock.Protocol, "the resource's own name, not the name it was looked up by")
+	require.Equal(t, "tcp", sock.Transport)
+}
+
+// TestAPROXYONNONAME is allowed by the vocabulary — `host` is optional — and it
+// simply answers to nobody until something points a record at it.
+func TestAProxyThatDeclaresNoHostPublishesNothing(t *testing.T) {
+	res := servable()
+	delete(res, "host")
+	s, said := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, res, &workers{})
+
+	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	require.NoError(t, err)
+	require.NotZero(t, sock.Port)
+	require.Empty(t, sock.Host)
+	require.Empty(t, s.Serving())
+	require.Equal(t, 1, said.len())
+}
+
+// TestASERVEONADEPLOYMENTTHATISNOTTHERE fails rather than binding a port for a
+// resource nothing can read.
+func TestServeFailsWhenTheProjectCannotBeRead(t *testing.T) {
+	s, err := proxy.New(proxy.Config{},
+		proxy.WithProjects(projects{p: compiled(t, servable())}),
 		proxy.WithWorkers(&workers{}),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
-	return s
+
+	_, err = s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "nosuch"})
+	require.Error(t, err)
+	require.Empty(t, s.Serving())
+}
+
+// TestAPROXYTHATFORWARDSTONOTHING is refused at the connection rather than at
+// the bind: `forward` is only required once `routing: forward` is chosen, so a
+// half-written resource compiles and has to be caught where it is used.
+func TestAProxyThatForwardsToNothingClosesTheConnection(t *testing.T) {
+	refusedBy(t, func(r map[string]any) { delete(r, "forward") })
+}
+
+// TestSERVEAFTERCLOSE publishes nothing: a service that is done accepting must
+// not leave a listener behind that nothing will ever read from.
+func TestServeAfterCloseBindsNothing(t *testing.T) {
+	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), &workers{})
+	require.NoError(t, s.Close())
+
+	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	require.Error(t, err)
+
+	_, dialErr := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(sock.Port))), time.Second)
+	require.Error(t, dialErr, "the socket it opened was closed with it")
+	require.Empty(t, s.Serving())
 }
