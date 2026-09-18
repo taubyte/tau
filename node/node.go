@@ -49,9 +49,12 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/project"
 
+	manet "github.com/multiformats/go-multiaddr/net"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
+
+	dnsService "github.com/taubyte/tau/services/dns"
 	registerService "github.com/taubyte/tau/services/register"
 	secretsService "github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/stats"
@@ -72,6 +75,7 @@ type Node struct {
 	worker   *worker.Service
 	gateway  *gateway.Service
 	proxy    *v2proxy.Service
+	dns      *dnsService.Service
 
 	secrets *secretsService.Service
 
@@ -204,6 +208,12 @@ func (n *Node) open() error {
 	// AFTER PLACEMENT AND THE WORKER, which it takes as collaborators: the
 	// first is where a connection goes, the second is what this node holds.
 	if err := n.openProxy(); err != nil {
+		return err
+	}
+	// AND DNS LAST OF THE EDGE SERVICES, because it publishes what the two
+	// above and every other node reported — it answers from the stats view and
+	// takes nothing else.
+	if err := n.openDNS(); err != nil {
 		return err
 	}
 	// THE TWO BUILD ROLES COME LAST because both dial auth, and a node running
@@ -663,6 +673,14 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 
+	// THE SOCKET IS TAKEN HERE AND NOT AT CONSTRUCTION, for the reason the
+	// gateway's is not taken at all: building a service and binding a port are
+	// different failures, and a node that took :53 before it could answer
+	// would be answering with an empty view.
+	if err := n.listenDNS(); err != nil {
+		return err
+	}
+
 	// THE QUEUE CLUSTER FORMS IN THE BACKGROUND from here, because raft's
 	// bootstrap waits up to thirty seconds for peers and a guest's first
 	// `queue.send` must not be what pays for that.
@@ -782,17 +800,68 @@ func (n *Node) Close() error {
 // number would steer traffic on fiction — zero says "as available as anything
 // else", which in a fleet of nodes that all report zero is true.
 func (n *Node) Snapshot(context.Context) (stats.Snapshot, error) {
-	addrs := make([]string, 0, len(n.opts.host.Addrs()))
-	for _, a := range n.opts.host.Addrs() {
-		addrs = append(addrs, a.String())
-	}
-
 	return stats.Snapshot{
 		Ready:     true,
 		Serving:   n.serving(),
-		Addresses: addrs,
+		Addresses: n.addresses(),
 		Sockets:   n.proxySockets(),
 	}, nil
+}
+
+// addresses is where CLIENTS reach this node — the IPs a DNS answer is made of.
+//
+// THEY ARE NOT THE MULTIADDRS THE FLEET GOSSIPS OVER, and conflating the two is
+// a real bug rather than a tidiness point, which is what this did: it reported
+// `/ip6/…/tcp/4242` verbatim, and services/dns parsed every one of them as an
+// address, failed, and answered A queries with no records at all. The proto
+// field says so in its own documentation and the code did it anyway.
+//
+// A PEERSTORE ADDRESS IS ALSO NOT ALWAYS A CLIENT ADDRESS. Behind NAT, a mesh
+// VPN or a container bridge it is routinely unreachable from the internet, so
+// what is published here is the IP half of what this host believes it is
+// listening on — a claim, in the same sense the load figure is, and the best
+// this node can make without being told.
+func (n *Node) addresses() []string {
+	seen := map[string]bool{}
+	var routable, loopback []string
+
+	for _, a := range n.opts.host.Addrs() {
+		ip, err := manet.ToIP(a)
+		if err != nil {
+			// Not an address with an IP in it — a unix socket, a circuit
+			// relay. Nothing a client can be handed in an A record.
+			continue
+		}
+		if ip.IsUnspecified() {
+			// 0.0.0.0 AND :: ARE NOT ADDRESSES, they are "every address". A
+			// client handed one has been told nothing.
+			continue
+		}
+
+		s := ip.String()
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+
+		if ip.IsLoopback() {
+			loopback = append(loopback, s)
+			continue
+		}
+		routable = append(routable, s)
+	}
+
+	// LOOPBACK ONLY WHEN THERE IS NOTHING ELSE, which is the rule that serves
+	// both ends of the range this runs on. A node with a real address that also
+	// listens on 127.0.0.1 would otherwise publish it, and some clients take
+	// the first record they are given — so a share of the fleet's traffic goes
+	// to whichever machine asked. A development cloud bound only to loopback
+	// has no other answer, and refusing to give it would mean its own names
+	// resolve to nothing on the one machine where they should.
+	if len(routable) > 0 {
+		return routable
+	}
+	return loopback
 }
 
 // serving is every name this node answers to: the services it runs, plus what

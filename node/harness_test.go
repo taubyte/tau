@@ -194,6 +194,18 @@ func makeNode(t *testing.T, cfg Config, extra ...Option) (*Node, host.Host, *mem
 	h := newHost(t, mn)
 	factory := &memFactory{}
 
+	// A DNS NODE TAKES A REAL SOCKET, and the default is :53 — which needs
+	// root or CAP_NET_BIND_SERVICE, and which a test must not take even when it
+	// has them: a suite that answered for the machine it runs on would be
+	// answering for the developer's own resolver. An ephemeral loopback port
+	// is the composer's choice here, exactly as :53 is the operator's there.
+	// An empty Services list means All, which is where the DNS node comes from
+	// in most of these tests — so the question is asked the way withDefaults
+	// answers it rather than of the list as written.
+	if (len(cfg.Services) == 0 || cfg.runs(DNS)) && cfg.DNSListen == "" {
+		cfg.DNSListen = "127.0.0.1:0"
+	}
+
 	opts := append([]Option{
 		WithHost(h),
 		WithPubSub(newPubSub(t, h)),

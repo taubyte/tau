@@ -17,6 +17,7 @@ import (
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/dns"
 	"github.com/taubyte/tau/services/stats"
 	auth "github.com/taubyte/tau/services/v2/auth"
 	gateway "github.com/taubyte/tau/services/v2/gateway"
@@ -38,6 +39,7 @@ const (
 	Auth     = "auth"
 	Secrets  = "secrets"
 	Proxy    = "proxy"
+	DNS      = "dns"
 )
 
 // The two halves of the build service, named by the build service itself
@@ -60,12 +62,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-//
-// dns IS NOT HERE YET. It answers a query and has no listener of its own — it
-// is a function from a question to an answer, and something has to bind :53 and
-// call it. It is a real service; listing it before it can be started would make
-// an operator's config lie.
-var All = []string{Register, Worker, Stats, Gateway, Auth, Secrets, Proxy, BuildBackend}
+var All = []string{Register, Worker, Stats, Gateway, Auth, Secrets, Proxy, DNS, BuildBackend}
 
 // BuildFrontend is NOT in All. All is what a single-node development cloud
 // starts, and that node runs the backend; putting the public half in the
@@ -93,6 +90,16 @@ type Config struct {
 	Gateway gateway.Config
 	Auth    auth.Config
 	Proxy   proxy.Config
+	DNS     dns.Config
+
+	// DNSListen is the port this node's dns server answers on, e.g. ":53" or
+	// ":5353". Default DefaultDNSListen.
+	//
+	// A PORT AND NOT AN ADDRESS, like everywhere else here — but unlike
+	// everywhere else the port is an operator's, because 53 is the one number
+	// in this system nothing allocates: a resolver dials it by convention and
+	// there is no record that could tell it otherwise.
+	DNSListen string
 
 	// BuildFrontend and BuildBackend are the two halves' own configuration.
 	// A node uses at most one of them.

@@ -65,6 +65,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/mr-tron/base58"
 
 	"github.com/taubyte/tau/pkg/stats"
 )
@@ -203,7 +204,7 @@ func (s *Service) answerSRV(reply *dns.Msg, name, qname string) *dns.Msg {
 	ttl := s.ttlSeconds()
 	for _, n := range nodes {
 		label := nodeLabel(n.Peer)
-		if len(label) > maxLabel {
+		if label == "" || len(label) > maxLabel {
 			// A name that cannot be spelled is not a name to hand out: a
 			// truncated label would resolve to somebody else, or to nothing.
 			continue
@@ -250,17 +251,33 @@ func (s *Service) answerSRV(reply *dns.Msg, name, qname string) *dns.Msg {
 // not a hypothetical: it is what the test for this found.
 //
 // So the label is lowercase base32 without padding, which is exactly what IPFS
-// subdomain gateways do with CIDs and for exactly this reason. Base32 survives
-// any case folding, and the encoded form of a ~52-character peer id is about 85
-// characters — inside the 63-character label limit only for shorter ids, so
-// this is checked rather than assumed: an id that will not fit produces no SRV
-// target rather than a truncated one that resolves to somebody else.
+// subdomain gateways do with CIDs and for exactly this reason: base32 survives
+// any case folding.
+//
+// IT ENCODES THE ID'S BYTES AND NOT ITS SPELLING, which is the whole of the
+// difference between working and not. Base32 costs 8 bits per 5, so re-encoding
+// the 46-character base58 TEXT produced a 74-character label — past DNS's limit
+// of 63, on every real peer id there is. The guard below then dropped every SRV
+// target, and the tests did not notice because their peers were `p` and
+// `peer00`. Encoding the decoded multihash instead — 34 to 36 bytes — gives 55
+// to 58 characters, which fits with room.
+//
+// The guard stays anyway. It is now unreachable for anything libp2p mints, and
+// that is the point: it is there for the id nobody has thought of, and a name
+// that cannot be spelled must produce NO target rather than a truncated one
+// that resolves to somebody else.
 const maxLabel = 63
 
 var nodeEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 func nodeLabel(peer string) string {
-	return strings.ToLower(nodeEncoding.EncodeToString([]byte(peer)))
+	raw, err := base58.Decode(peer)
+	if err != nil {
+		// Not an id this server can spell. Answering with something derived
+		// from it anyway would mint a name that decodes to a different peer.
+		return ""
+	}
+	return strings.ToLower(nodeEncoding.EncodeToString(raw))
 }
 
 // peerOf reports whether a name is one node's own name under the node zone.
@@ -280,7 +297,7 @@ func (s *Service) peerOf(name string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return string(raw), true
+	return base58.Encode(raw), true
 }
 
 // weightOf turns a load into an SRV weight.

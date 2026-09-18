@@ -47,6 +47,12 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 		ps, err := pubsub.NewGossipSub(t.Context(), hosts[i])
 		require.NoError(t, err)
 
+		// See makeNode: :53 is the operator's default and a test's to override,
+		// and a fleet needs a DIFFERENT port per node — which is what :0 gives.
+		if (len(cfg.Services) == 0 || cfg.runs(DNS)) && cfg.DNSListen == "" {
+			cfg.DNSListen = "127.0.0.1:0"
+		}
+
 		n, err := New(cfg,
 			WithHost(hosts[i]),
 			WithPubSub(ps),

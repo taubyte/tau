@@ -1,6 +1,13 @@
 package dns
 
 import (
+	"bytes"
+	"crypto/sha256"
+
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/mr-tron/base58"
+
 	"fmt"
 	"net"
 	"strings"
@@ -322,9 +329,9 @@ func on(host, protocol string, port uint16) []stats.Socket {
 
 func TestSrvCarriesTheProxyPortAndPointsAtTheNode(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "12D3KooWidle", Load: 0.1, Ready: true, Sockets: on("shop.example.com", "https", 8443),
+		stats.Node{Peer: peerNamed(t, "idle"), Load: 0.1, Ready: true, Sockets: on("shop.example.com", "https", 8443),
 			Addresses: []string{"203.0.113.1"}},
-		stats.Node{Peer: "12D3KooWbusy", Load: 0.9, Ready: true, Sockets: on("shop.example.com", "https", 8443),
+		stats.Node{Peer: peerNamed(t, "busy"), Load: 0.9, Ready: true, Sockets: on("shop.example.com", "https", 8443),
 			Addresses: []string{"203.0.113.2"}},
 	), withZone)
 
@@ -334,7 +341,7 @@ func TestSrvCarriesTheProxyPortAndPointsAtTheNode(t *testing.T) {
 
 	first := reply.Answer[0].(*dns.SRV)
 	require.Equal(t, uint16(8443), first.Port, "the port an A record cannot carry")
-	require.Equal(t, nodeLabel("12D3KooWidle")+".nodes.example.com.", first.Target)
+	require.Equal(t, nodeLabel(peerNamed(t, "idle"))+".nodes.example.com.", first.Target)
 	require.Equal(t, uint16(0), first.Priority, "one priority, so weight is what decides")
 
 	second := reply.Answer[1].(*dns.SRV)
@@ -346,7 +353,7 @@ func TestSrvCarriesTheProxyPortAndPointsAtTheNode(t *testing.T) {
 // trip for something this server already had in hand.
 func TestTheSrvTargetsAddressesRideAlong(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "12D3KooWone", Ready: true, Sockets: on("shop.example.com", "https", 9000),
+		stats.Node{Peer: peerNamed(t, "one"), Ready: true, Sockets: on("shop.example.com", "https", 9000),
 			Addresses: []string{"203.0.113.7", "2001:db8::1"}},
 	), withZone)
 
@@ -358,7 +365,7 @@ func TestTheSrvTargetsAddressesRideAlong(t *testing.T) {
 	for _, rr := range reply.Extra {
 		names = append(names, rr.Header().Name)
 	}
-	want := nodeLabel("12D3KooWone") + ".nodes.example.com."
+	want := nodeLabel(peerNamed(t, "one")) + ".nodes.example.com."
 	require.Equal(t, []string{want, want}, names)
 }
 
@@ -366,11 +373,11 @@ func TestTheSrvTargetsAddressesRideAlong(t *testing.T) {
 // something has to resolve it — and it resolves to that node and nothing else.
 func TestANodeNameResolvesToThatNodesAddresses(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "12D3KooWone", Ready: true, Sockets: on("shop.example.com", "https", 9000), Addresses: []string{"203.0.113.7"}},
-		stats.Node{Peer: "12D3KooWtwo", Ready: true, Sockets: on("shop.example.com", "https", 9000), Addresses: []string{"203.0.113.8"}},
+		stats.Node{Peer: peerNamed(t, "one"), Ready: true, Sockets: on("shop.example.com", "https", 9000), Addresses: []string{"203.0.113.7"}},
+		stats.Node{Peer: peerNamed(t, "two"), Ready: true, Sockets: on("shop.example.com", "https", 9000), Addresses: []string{"203.0.113.8"}},
 	), withZone)
 
-	reply := s.Answer(query(nodeLabel("12D3KooWtwo")+".nodes.example.com", dns.TypeA))
+	reply := s.Answer(query(nodeLabel(peerNamed(t, "two"))+".nodes.example.com", dns.TypeA))
 	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
 	require.Len(t, reply.Answer, 1)
 	require.Equal(t, "203.0.113.8", reply.Answer[0].(*dns.A).A.String(),
@@ -379,10 +386,10 @@ func TestANodeNameResolvesToThatNodesAddresses(t *testing.T) {
 
 func TestAnUnknownNodeNameIsServfail(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "12D3KooWone", Ready: true, Sockets: on("shop.example.com", "https", 9000), Addresses: []string{"203.0.113.7"}},
+		stats.Node{Peer: peerNamed(t, "one"), Ready: true, Sockets: on("shop.example.com", "https", 9000), Addresses: []string{"203.0.113.7"}},
 	), withZone)
 
-	reply := s.Answer(query(nodeLabel("12D3KooWghost")+".nodes.example.com", dns.TypeA))
+	reply := s.Answer(query(nodeLabel(peerNamed(t, "ghost"))+".nodes.example.com", dns.TypeA))
 	require.Equal(t, dns.RcodeServerFailure, reply.Rcode)
 }
 
@@ -391,13 +398,13 @@ func TestAnUnknownNodeNameIsServfail(t *testing.T) {
 // refusal.
 func TestANodeWithNoProxyPortIsNotAnSrvAnswer(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "12D3KooWup", Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}},
-		stats.Node{Peer: "12D3KooWwarming", Ready: true, Sockets: nil, Addresses: []string{"203.0.113.2"}},
+		stats.Node{Peer: peerNamed(t, "up"), Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}},
+		stats.Node{Peer: peerNamed(t, "warming"), Ready: true, Sockets: nil, Addresses: []string{"203.0.113.2"}},
 	), withZone)
 
 	reply := s.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV))
 	require.Len(t, reply.Answer, 1)
-	require.Equal(t, nodeLabel("12D3KooWup")+".nodes.example.com.", reply.Answer[0].(*dns.SRV).Target)
+	require.Equal(t, nodeLabel(peerNamed(t, "up"))+".nodes.example.com.", reply.Answer[0].(*dns.SRV).Target)
 }
 
 func TestSrvWithNothingServingIsServfail(t *testing.T) {
@@ -408,7 +415,7 @@ func TestSrvWithNothingServingIsServfail(t *testing.T) {
 	// And when every serving node lacks a port, which is the same outcome for a
 	// different reason.
 	s2 := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "p", Ready: true, Sockets: nil, Addresses: []string{"203.0.113.1"}}), withZone)
+		stats.Node{Peer: peerNamed(t, "p"), Ready: true, Sockets: nil, Addresses: []string{"203.0.113.1"}}), withZone)
 	require.Equal(t, dns.RcodeServerFailure,
 		s2.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV)).Rcode)
 }
@@ -417,7 +424,7 @@ func TestSrvWithNothingServingIsServfail(t *testing.T) {
 // nothing, so the honest answer is no records rather than an invented name.
 func TestSrvIsOffWithoutANodeZone(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "p", Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}}), nil)
+		stats.Node{Peer: peerNamed(t, "p"), Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}}), nil)
 
 	reply := s.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV))
 	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
@@ -428,7 +435,7 @@ func TestSrvIsOffWithoutANodeZone(t *testing.T) {
 // and protocol, and the rest is the name a workload is deployed under.
 func TestTheServiceNameIsWhatStatsKnows(t *testing.T) {
 	r := srvService("shop.example.com",
-		stats.Node{Peer: "p", Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}})
+		stats.Node{Peer: peerNamed(t, "p"), Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}})
 	s := newService(t, r, withZone)
 
 	s.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV))
@@ -441,7 +448,7 @@ func TestAnSrvAnswerIsCapped(t *testing.T) {
 	var nodes []stats.Node
 	for i := range 20 {
 		nodes = append(nodes, stats.Node{
-			Peer: fmt.Sprintf("peer%02d", i), Ready: true, Sockets: on("shop.example.com", "https", 8443),
+			Peer: peerNamed(t, fmt.Sprintf("peer%02d", i)), Ready: true, Sockets: on("shop.example.com", "https", 8443),
 			Addresses: []string{net.IPv4(203, 0, 113, byte(i+1)).String()},
 		})
 	}
@@ -467,7 +474,7 @@ func TestWeightNeverReachesZero(t *testing.T) {
 // a raw peer id in a label comes back as a different string and matches nothing.
 // This is what the node-name test caught before the encoding existed.
 func TestANodeLabelSurvivesCaseFolding(t *testing.T) {
-	const peer = "12D3KooWMixedCase"
+	peer := peerNamed(t, "MixedCase")
 	label := nodeLabel(peer)
 
 	require.Equal(t, strings.ToLower(label), label, "the label is already lowercase")
@@ -484,7 +491,7 @@ func TestANodeLabelSurvivesCaseFolding(t *testing.T) {
 
 func TestAnUndecodableNodeLabelIsNotANodeName(t *testing.T) {
 	s := newService(t, srvService("shop.example.com",
-		stats.Node{Peer: "p", Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}}), withZone)
+		stats.Node{Peer: peerNamed(t, "p"), Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}}), withZone)
 
 	// Not base32 at all — it must fall through to the ordinary service lookup
 	// rather than being read as a mangled peer id.
@@ -495,15 +502,21 @@ func TestAnUndecodableNodeLabelIsNotANodeName(t *testing.T) {
 // TestAPeerIdTooLongForALabelGetsNoSrvTarget rather than a truncated one that
 // would resolve to somebody else.
 func TestAPeerIdTooLongForALabelGetsNoSrvTarget(t *testing.T) {
-	long := strings.Repeat("z", 64) // base32 of this is well over 63 chars
+	// NOT AN ID LIBP2P WOULD MINT — every one of those fits now, which is the
+	// point of the fix. This is 50 bytes of valid base58, which is what the
+	// guard is there for: an identity nobody has thought of yet.
+	long := base58.Encode(bytes.Repeat([]byte{0xAB}, 50))
+	require.Greater(t, len(nodeLabel(long)), maxLabel, "the fixture has to actually be too long")
+
+	ok := peerNamed(t, "ok")
 	s := newService(t, srvService("shop.example.com",
 		stats.Node{Peer: long, Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.1"}},
-		stats.Node{Peer: "ok", Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.2"}},
+		stats.Node{Peer: ok, Ready: true, Sockets: on("shop.example.com", "https", 8443), Addresses: []string{"203.0.113.2"}},
 	), withZone)
 
 	reply := s.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV))
 	require.Len(t, reply.Answer, 1)
-	require.Equal(t, nodeLabel("ok")+".nodes.example.com.", reply.Answer[0].(*dns.SRV).Target)
+	require.Equal(t, nodeLabel(ok)+".nodes.example.com.", reply.Answer[0].(*dns.SRV).Target)
 }
 
 // TestONENAMETWOLISTENERS is what a single port per node could not express: a
@@ -512,7 +525,7 @@ func TestAPeerIdTooLongForALabelGetsNoSrvTarget(t *testing.T) {
 // apart — a raw TCP stream carries no name to demultiplex on.
 func TestTwoServicesOnOneNameAnswerWithTheirOwnPorts(t *testing.T) {
 	s := newService(t, srvService("db.example.com",
-		stats.Node{Peer: "12D3KooWboth", Ready: true, Addresses: []string{"203.0.113.9"},
+		stats.Node{Peer: peerNamed(t, "both"), Ready: true, Addresses: []string{"203.0.113.9"},
 			Sockets: []stats.Socket{
 				{Host: "db.example.com", Protocol: "https", Transport: "tcp", Port: 8443},
 				{Host: "db.example.com", Protocol: "postgres", Transport: "tcp", Port: 41337},
@@ -536,7 +549,7 @@ func TestTwoServicesOnOneNameAnswerWithTheirOwnPorts(t *testing.T) {
 // project's port under another project's name.
 func TestASocketForAnotherNameIsNotAnAnswer(t *testing.T) {
 	s := newService(t, srvService("db.example.com",
-		stats.Node{Peer: "12D3KooWmixed", Ready: true, Addresses: []string{"203.0.113.9"},
+		stats.Node{Peer: peerNamed(t, "mixed"), Ready: true, Addresses: []string{"203.0.113.9"},
 			Sockets: on("other.example.com", "postgres", 41337)},
 	), withZone)
 
@@ -548,11 +561,60 @@ func TestASocketForAnotherNameIsNotAnAnswer(t *testing.T) {
 // one would route `_tcp.example.com` to whatever `_tcp` happened to match.
 func TestAMalformedSrvNameIsAFormatError(t *testing.T) {
 	s := newService(t, srvService("example.com",
-		stats.Node{Peer: "p", Ready: true, Addresses: []string{"203.0.113.1"},
+		stats.Node{Peer: peerNamed(t, "p"), Ready: true, Addresses: []string{"203.0.113.1"},
 			Sockets: on("example.com", "tcp", 8443)}), withZone)
 
 	for _, name := range []string{"_tcp.example.com", "_postgres.tcp.example.com", "_postgres._tcp."} {
 		reply := s.Answer(query(name, dns.TypeSRV))
 		require.Equal(t, dns.RcodeFormatError, reply.Rcode, name)
 	}
+}
+
+// peerNamed mints a REAL peer id, deterministically, from a readable name.
+//
+// EVERY PEER IN THIS FILE USED TO BE A STRING LIKE "p" OR "peer00", and that is
+// exactly how a 74-character label — past DNS's limit of 63, on every id libp2p
+// mints — survived here: the encoding was only ever exercised on inputs no
+// fleet produces, so the guard that drops an over-long label dropped nothing in
+// a test and everything in a cloud.
+//
+// The seed is the name, so a case reads as `peerNamed(t, "idle")` and still
+// carries an id with the shape and the length of a real one.
+func peerNamed(t *testing.T, name string) string {
+	t.Helper()
+
+	seed := sha256.Sum256([]byte(name))
+	priv, _, err := crypto.GenerateEd25519Key(bytes.NewReader(seed[:]))
+	require.NoError(t, err)
+
+	id, err := peer.IDFromPrivateKey(priv)
+	require.NoError(t, err)
+	return id.String()
+}
+
+// TestAREALPEERIDFITSINALABEL, with the margin stated rather than assumed.
+func TestARealPeerIdBecomesALabelDnsCanCarry(t *testing.T) {
+	for _, name := range []string{"idle", "busy", "one", "two"} {
+		label := nodeLabel(peerNamed(t, name))
+		require.LessOrEqual(t, len(label), maxLabel, "label %q is %d characters", label, len(label))
+		require.Equal(t, 61, len(label), "an ed25519 id, which is what libp2p mints by default")
+	}
+}
+
+// TestTHELABELROUNDTRIPS, which is the whole contract: an SRV target is a name,
+// and this server has to resolve that name back to the node that minted it.
+func TestALabelDecodesBackToTheSamePeer(t *testing.T) {
+	s := newService(t, srvService("shop.example.com"), withZone)
+
+	id := peerNamed(t, "roundtrip")
+	back, ok := s.peerOf(nodeLabel(id) + ".nodes.example.com")
+	require.True(t, ok)
+	require.Equal(t, id, back)
+}
+
+// TestANIDTHISSERVERCANNOTSPELL produces no target rather than one derived from
+// a spelling it did not understand — which would resolve to a different peer.
+func TestAPeerThatIsNotBase58GetsNoLabel(t *testing.T) {
+	require.Empty(t, nodeLabel("peer00"), "0 is not in the base58 alphabet")
+	require.Empty(t, nodeLabel("not a peer id"))
 }
