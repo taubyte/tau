@@ -414,7 +414,14 @@ func (n *Node) openWorker() error {
 			wasm.WithAdmission(admit),
 			wasm.WithChannels(&channels{node: n}),
 			wasm.WithAuthorizers(&authorizers{node: n}),
-			wasm.WithSecrets(n.vault))
+			wasm.WithSecrets(n.vault),
+
+			// INFERENCE IS ALWAYS OFFERED, even on a node that resolves no
+			// secret: a model served by something needing no credential —
+			// ollama on this machine — is a legitimate resource, and refusing
+			// to start a workload that reaches one would make the credential
+			// the thing that decides whether inference exists.
+			wasm.WithInference(&inference{secrets: n.secretResolver()}))
 		if err != nil {
 			return err
 		}
@@ -614,6 +621,21 @@ func (n *Node) openGateway() error {
 		return err
 	}
 	n.gateway = svc
+	return nil
+}
+
+// secretResolver is whichever resolver this node settled on, or nil.
+//
+// THE RULE IS THE ONE THE WORKER APPLIES: an injected resolver wins, then this
+// node's own vault. It is a method rather than three copies of the switch
+// because three consumers now ask the same question.
+func (n *Node) secretResolver() modelSecrets {
+	switch {
+	case n.opts.secrets != nil:
+		return n.opts.secrets
+	case n.vault != nil:
+		return n.vault
+	}
 	return nil
 }
 

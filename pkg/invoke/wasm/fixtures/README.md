@@ -87,9 +87,13 @@ pass whether or not the host carried the state back at all, which is the one
 thing this world's design rests on. A line reading `stop` closes the connection,
 and outbound chunks are prefixed so a test can tell the directions apart.
 
-**cacher.wasm** calls every one of the thirteen capabilities, one branch of its
-`handle` per operation, selected by the request path. It is what every
-capability's tests drive.
+**cacher.wasm** calls every one of the capabilities, one branch of its `handle`
+per operation, selected by the request path. It is what every capability's tests
+drive.
+
+Its `infer` branch asks for a MILLION tokens on every call, deliberately: the
+ceiling belongs to the `model` resource and the host clamps to it, so what that
+branch proves is that a guest cannot raise a limit its author wrote.
 
 Regenerate after changing the world:
 

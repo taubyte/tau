@@ -509,6 +509,50 @@ type Shaped struct {
 	State []byte
 }
 
+// Message is one turn of a conversation with a model.
+type Message struct {
+	// Role is "system", "user" or "assistant". A format that spells them
+	// differently is the backing's problem, not the caller's.
+	Role    string
+	Content string
+}
+
+// Inference is one call to a model, in the terms the vocabulary uses.
+//
+// Temperature and MaxTokens are pointers because ABSENT AND ZERO ARE DIFFERENT
+// ANSWERS: temperature 0 is "as close to deterministic as a model gets" and is
+// a value an author writes on purpose, where absent means whatever the resource
+// declares and then whatever the provider defaults to.
+type Inference struct {
+	Messages    []Message
+	Temperature *float64
+	MaxTokens   *uint32
+
+	// Stop is ADDED to what the resource declares rather than replacing it: a
+	// stop sequence an author wrote is a rule about what this model may emit,
+	// and a caller does not lift it.
+	Stop []string
+}
+
+// Usage is what one call cost. The caller is the only party that can attribute
+// it to a feature — tau knows the workload and not what it was for.
+type Usage struct {
+	InputTokens  uint32
+	OutputTokens uint32
+}
+
+// Answer is what a model said.
+type Answer struct {
+	Content string
+
+	// StopReason is "stop" when it finished and "length" when it hit the
+	// ceiling, or whatever else the provider said. A caller that needs to know
+	// whether the answer is complete reads this rather than guessing.
+	StopReason string
+
+	Usage Usage
+}
+
 // Outcome is what a transformer decided: the request carries on, possibly
 // changed, or it stops here and this is the answer.
 //

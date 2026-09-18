@@ -81,6 +81,12 @@ world handler {
 
     import taubyte:secret/vault@0.1.0;
 
+    // Inference, on the account and at the endpoint the `model` resource names.
+    // It is a WRITE in the vocabulary — it costs money and answers differently
+    // every time — so it is here, with the things that send, and not in the
+    // state subset the deciding worlds import.
+    import taubyte:model/inference@0.1.0;
+
     // In-project addressing: what v1 called p2p.
     import taubyte:channel/dialer@0.1.0;
 

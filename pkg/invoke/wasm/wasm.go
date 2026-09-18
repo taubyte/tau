@@ -222,7 +222,8 @@ type Runtime struct {
 
 	// secrets backs `taubyte:secret/vault` — the rotation path, beside the
 	// environment variable that carries a secret at start.
-	secrets Secrets
+	secrets   Secrets
+	inference Inferences
 
 	// logs backs `taubyte:log/records` — the `sync` kind's other type.
 	logs Logs

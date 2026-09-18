@@ -220,6 +220,7 @@ const (
 	busKind      = "bus"
 	databaseKind = "database"
 	channelKind  = "channel"
+	modelKind    = "model"
 
 	// syncKind is one kind with two primitives under it; the type selects which,
 	// and settingSyncType is how that travels to a tier.
@@ -476,8 +477,70 @@ func settingsFor(kind string, reach project.Reach, target project.Resource) map[
 		return syncSettings(reach, target)
 	case storageKind:
 		return storageSettings(target)
+	case modelKind:
+		return modelSettings(target)
 	}
 	return nil
+}
+
+// modelSettings carries everything about WHERE inference happens and how it is
+// called, which is the whole of what a model resource is.
+//
+// THE CREDENTIAL IS A REFERENCE AND STAYS ONE, for the reason databaseSettings
+// gives: carrying the value here would put a provider key in a spec that is
+// logged, cached and compared. The vault resolves it on the node, at the call.
+//
+// THE PARAMETERS TRAVEL BECAUSE THE CALLER MAY NOT SET THEM. `max_tokens` in
+// particular is a ceiling the host clamps a guest's request to, so it has to be
+// where the host can read it rather than where only the backing can.
+func modelSettings(target project.Resource) map[string]string {
+	out := map[string]string{}
+
+	for _, field := range []string{"identifier", "format"} {
+		if value := target.String(field); value != "" {
+			out[field] = value
+		}
+	}
+
+	// WHICH BRANCH OF THE SWITCH, then that branch's own fields. A backing that
+	// had to guess from which keys are present would be reading the shape back
+	// out of its contents.
+	if kind := target.String("inference", "kind"); kind != "" {
+		out["inference/kind"] = kind
+	}
+	for _, path := range [][]string{
+		{"inference", "remote", "endpoint"},
+		{"inference", "remote", "credentials", "name"},
+		{"inference", "remote", "credentials", "namespace"},
+		{"inference", "local", "name"},
+		{"inference", "local", "namespace"},
+		{"inference", "local", "port"},
+	} {
+		if value := target.String(path...); value != "" {
+			out[strings.Join(path, "/")] = value
+		}
+	}
+
+	if t, ok := target.Float("parameters", "temperature"); ok {
+		out["parameters/temperature"] = strconv.FormatFloat(t, 'g', -1, 64)
+	}
+	if t, ok := target.Float("parameters", "top_p"); ok {
+		out["parameters/top_p"] = strconv.FormatFloat(t, 'g', -1, 64)
+	}
+	if n, ok := target.Int("parameters", "max_tokens"); ok {
+		out["parameters/max_tokens"] = strconv.FormatInt(n, 10)
+	}
+	if stop := target.Strings("parameters", "stop"); len(stop) > 0 {
+		// ONE KEY AND NOT N, because Settings is a flat map and a list has to
+		// arrive whole: a stop sequence is an exact string, so the separator is
+		// a newline — the one character a stop sequence cannot usefully be.
+		out["parameters/stop"] = strings.Join(stop, "\n")
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // syncSettings carries what a coordination resource declares about itself.

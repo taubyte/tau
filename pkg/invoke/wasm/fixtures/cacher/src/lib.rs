@@ -22,6 +22,7 @@ use bindings::taubyte::document::store as document;
 use bindings::taubyte::kv::store as kv;
 use bindings::taubyte::log::records as logrecords;
 use bindings::taubyte::queue::producer as queue;
+use bindings::taubyte::model::inference as model;
 use bindings::taubyte::secret::vault as secret;
 use bindings::taubyte::sql::store as database;
 use bindings::taubyte::storage::objects as storage;
@@ -188,6 +189,18 @@ fn why_workflow(e: &workflow::Error) -> String {
         workflow::Error::Denied(why) => format!("denied:{}", why),
         workflow::Error::NotWritable(why) => format!("not-writable:{}", why),
         workflow::Error::Unavailable(why) => format!("unavailable:{}", why),
+    }
+}
+
+// why_model names a model error arm. `refused` and `unavailable` are separate
+// arms because a caller acts on them differently: the first will fail again the
+// same way, and the second is worth a retry.
+fn why_model(e: &model::Error) -> String {
+    match e {
+        model::Error::NoSuchModel(name) => format!("no-such-model:{}", name),
+        model::Error::Denied(why) => format!("denied:{}", why),
+        model::Error::Refused(why) => format!("refused:{}", why),
+        model::Error::Unavailable(why) => format!("unavailable:{}", why),
     }
 }
 
@@ -421,6 +434,37 @@ impl Guest for Component {
                 Ok(value) => reply(200, value),
                 Err(e) => reply(403, why_secret(&e).into_bytes()),
             },
+            // One turn, and the answer's shape echoed back so a test can see
+            // that every field of the record crossed — not only the text.
+            //
+            // IT ASKS FOR MORE TOKENS THAN ANY RESOURCE DECLARES, on purpose:
+            // the ceiling is the author's and the host clamps to it, so what
+            // this proves is that a guest cannot raise it.
+            "infer" => {
+                let req = model::Request {
+                    messages: vec![model::Message {
+                        role: "user".to_string(),
+                        content: String::from_utf8_lossy(&req.body).to_string(),
+                    }],
+                    temperature: None,
+                    max_tokens: Some(1_000_000),
+                    stop: Vec::new(),
+                };
+                match model::infer(name, &req) {
+                    Ok(answer) => reply(
+                        200,
+                        format!(
+                            "{}|{}|{}|{}",
+                            answer.content,
+                            answer.stop_reason,
+                            answer.usage.input_tokens,
+                            answer.usage.output_tokens
+                        )
+                        .into_bytes(),
+                    ),
+                    Err(e) => reply(403, why_model(&e).into_bytes()),
+                }
+            }
             // The key is the run's id and the body is what the run carries.
             "start" => match workflow::start(name, key, &req.body) {
                 Ok(()) => reply(204, Vec::new()),

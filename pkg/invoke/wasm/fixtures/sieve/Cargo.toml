@@ -37,6 +37,7 @@ world = "taubyte:proxy-transformer/proxy-transformer"
 "taubyte:document" = { path = "../../wit/deps/taubyte-document" }
 "taubyte:kv" = { path = "../../wit/deps/taubyte-kv" }
 "taubyte:log" = { path = "../../wit/deps/taubyte-log" }
+"taubyte:model" = { path = "../../wit/deps/taubyte-model" }
 "taubyte:queue" = { path = "../../wit/deps/taubyte-queue" }
 "taubyte:secret" = { path = "../../wit/deps/taubyte-secret" }
 "taubyte:sql" = { path = "../../wit/deps/taubyte-sql" }

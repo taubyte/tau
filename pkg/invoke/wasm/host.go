@@ -202,6 +202,14 @@ func hostComponents() []hostComponent {
 			register: (*Runtime).secretImports,
 		},
 		{
+			name:     "model",
+			iface:    modelInterface,
+			reaches:  modelGrantsOf,
+			backed:   func(r *Runtime) bool { return r.inference != nil },
+			missing:  ErrNoInference,
+			register: (*Runtime).modelImports,
+		},
+		{
 			// WHAT THE WORKLOAD IS. It is authority over nothing, so there is
 			// no grant to find and nothing to back it — a row with no `reaches`
 			// is always registered and never refused. It is in the register
