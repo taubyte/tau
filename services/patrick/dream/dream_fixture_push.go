@@ -170,11 +170,18 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 		return err
 	}
 
+	// THE NAME IS PARSED ONCE AND THE KEY IS USED TWICE — to register below and
+	// to look the project up further down. Rebuilding a fixture Repository from
+	// the second half of the name registered it under GitUser instead of its own
+	// owner, so anything not under `taubyte-test` was registered at one key and
+	// then read at another.
+	key, err := repokey.Parse("https://github.com/" + fullname)
+	if err != nil {
+		return fmt.Errorf("repository `%s`: %v", fullname, err)
+	}
+
 	// Try to register
-	commonTest.RegisterTestRepositories(u.Context(), auth, commonTest.Repository{
-		ID:   intRepoId,
-		Name: strings.Split(fullname, "/")[1],
-	})
+	commonTest.RegisterTestRepositoryKeys(u.Context(), auth, key)
 	time.Sleep(1 * time.Second)
 
 	var newPayload []byte
@@ -199,11 +206,6 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 
 	// Try to get projectId from repo
 	if len(projectId) == 0 {
-		key, err := repokey.Parse("https://github.com/" + fullname)
-		if err != nil {
-			return fmt.Errorf("repository `%s`: %v", fullname, err)
-		}
-
 		_repo, err := auth.Repositories().Github().Get(key.String())
 		if err != nil {
 			return fmt.Errorf("failed to fetch Repo: %v", err)

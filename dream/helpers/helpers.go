@@ -22,6 +22,7 @@ import (
 	"github.com/taubyte/tau/core/services/tns"
 	dreamPkg "github.com/taubyte/tau/dream"
 	spec "github.com/taubyte/tau/legacy/specs/common"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	commonAuth "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/utils/maps"
 )
@@ -51,8 +52,30 @@ func RegisterTestDomain(ctx context.Context, authClient auth.Client) (err error)
 	return err
 }
 
-func RegisterTestRepositories(ctx context.Context, authClient auth.Client, repos ...Repository) (err error) {
+func RegisterTestRepositories(ctx context.Context, authClient auth.Client, repos ...Repository) error {
+	keys := make([]repokey.Key, 0, len(repos))
 	for _, repo := range repos {
+		keys = append(keys, repo.Key())
+	}
+	return RegisterTestRepositoryKeys(ctx, authClient, keys...)
+}
+
+// RegisterTestRepositoryKeys registers repositories named by KEY rather than by
+// a fixture Repository.
+//
+// IT EXISTS BECAUSE Repository.Key ASSUMES AN OWNER. A fixture repository is
+// always under GitUser, so deriving its key from a bare name is right for those
+// — but a fixture told to push `someone/thing` has an owner of its own, and
+// splitting the name to rebuild a Repository silently registered
+// `taubyte-test/thing` and then looked up `someone/thing`. The two keys agreed
+// only when the owner happened to be GitUser, which is why every fixture repo
+// worked and the one parameterised call did not.
+//
+// So whoever holds a full name parses it ONCE and hands the key here: the thing
+// registered and the thing looked up are then the same object rather than two
+// spellings that have to agree.
+func RegisterTestRepositoryKeys(ctx context.Context, authClient auth.Client, keys ...repokey.Key) (err error) {
+	for _, key := range keys {
 		for attempts := 0; attempts < 3; attempts++ {
 			_, err = authClient.Stats().Database()
 			if err != nil {
@@ -65,14 +88,14 @@ func RegisterTestRepositories(ctx context.Context, authClient auth.Client, repos
 				}
 			}
 
-			_, err = authClient.Repositories().Github().Get(repo.Key().String())
+			_, err = authClient.Repositories().Github().Get(key.String())
 			if err == nil {
 				// repository already registered
 				break
 			}
 
 			// try to register
-			_, err = authClient.Repositories().Github().Register(repo.Key().String())
+			_, err = authClient.Repositories().Github().Register(key.String())
 			if err == nil {
 				break
 			}

@@ -16,15 +16,18 @@ import (
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/services/hoarder/dream"
-	_ "github.com/taubyte/tau/services/monkey/dream"
 	_ "github.com/taubyte/tau/services/patrick/dream"
-	_ "github.com/taubyte/tau/services/seer/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
 
-	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
 	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
+
+// NO monkey AND NO seer. Both services were deleted with the v1 vocabulary and
+// this file kept importing their dream fixtures and naming them in the universe
+// below, so the package has not compiled under `-tags dreaming` since. What it
+// tests is the dream HTTP API's own routes, which do not depend on which
+// services the universe happens to run.
 
 func TestRoutes_Dreaming(t *testing.T) {
 	univerName := "dream-http"
@@ -39,19 +42,21 @@ func TestRoutes_Dreaming(t *testing.T) {
 	u, err := m.New(dream.UniverseConfig{Name: univerName})
 	assert.NilError(t, err)
 
+	// COUNTED RATHER THAN WRITTEN OUT, so that adding or dropping a service is
+	// one edit instead of two that can disagree — which is how this assertion
+	// came to say 7 about a universe of 5.
+	services := map[string]commonIface.ServiceConfig{
+		"auth":    {},
+		"patrick": {},
+		"hoarder": {},
+		"tns":     {},
+	}
+
 	err = u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			"monkey":  {},
-			"auth":    {},
-			"patrick": {},
-			"seer":    {},
-			"hoarder": {},
-			"tns":     {},
-		},
+		Services: services,
 		Simples: map[string]dream.SimpleConfig{
 			"client": {
 				Clients: dream.SimpleConfigClients{
-					Monkey:  &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
 					TNS:     &commonIface.ClientConfig{},
 				}.Compat(),
@@ -78,7 +83,7 @@ func TestRoutes_Dreaming(t *testing.T) {
 
 	assert.DeepEqual(t, univs[univerName].SwarmKey, u.SwarmKey())
 
-	assert.Equal(t, univs[univerName].NodeCount, 7)
+	assert.Equal(t, univs[univerName].NodeCount, len(services)+1, "every service, plus the one simple")
 
 	universe := client.Universe(univerName)
 
