@@ -93,7 +93,7 @@ func (r *Runtime) vectorImports(spec invoke.Spec) []component.Option {
 	grants := vectorGrantsOf(spec)
 
 	open := func(ctx context.Context, label, op string) (Vectors, *component.VariantValue) {
-		grant, why := r.addressed(ctx, grants, label, op)
+		grant, why := r.addressed(ctx, spec, grants, label, op)
 		if why != nil {
 			if why.missing {
 				return nil, vectorFailure(errNoSuchVector, why.detail)

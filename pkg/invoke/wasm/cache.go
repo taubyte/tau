@@ -142,7 +142,7 @@ func (r *Runtime) cacheImports(spec invoke.Spec) []component.Option {
 		// A REFUSED GRANT SAYS WHY, because "denied" alone would send an
 		// author looking at their own ops list for a reason that is not there
 		// — and the same is true of an instance a validator turned down.
-		grant, why := r.addressed(ctx, grants, label, op)
+		grant, why := r.addressed(ctx, spec, grants, label, op)
 		if why != nil {
 			if why.missing {
 				return nil, failure(errNoSuchCache, why.detail)

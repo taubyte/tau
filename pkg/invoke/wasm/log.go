@@ -114,7 +114,7 @@ func (r *Runtime) logImports(spec invoke.Spec) []component.Option {
 	grants := logGrantsOf(spec)
 
 	open := func(ctx context.Context, label, op string) (invoke.Grant, *component.VariantValue) {
-		grant, why := r.addressed(ctx, grants, label, op)
+		grant, why := r.addressed(ctx, spec, grants, label, op)
 		if why != nil {
 			if why.missing {
 				return grant, logFailure(errNoSuchLog, why.detail)

@@ -154,7 +154,7 @@ func (r *Runtime) channelImports(spec invoke.Spec) []component.Option {
 			return nil, fmt.Errorf("channel.dial: %w", err)
 		}
 
-		grant, why := r.addressed(ctx, grants, label, opDial)
+		grant, why := r.addressed(ctx, spec, grants, label, opDial)
 		if why != nil {
 			switch {
 			case why.missing:

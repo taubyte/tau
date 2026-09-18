@@ -215,7 +215,7 @@ func (r *Runtime) storageImports(spec invoke.Spec) []component.Option {
 	grants := storageGrantsOf(spec)
 
 	open := func(ctx context.Context, label, op string) (Bucket, *component.VariantValue) {
-		grant, why := r.addressed(ctx, grants, label, op)
+		grant, why := r.addressed(ctx, spec, grants, label, op)
 		if why != nil {
 			if why.missing {
 				return nil, storageFailure(errNoSuchStorage, why.detail)

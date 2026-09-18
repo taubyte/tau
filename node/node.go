@@ -73,6 +73,11 @@ type Node struct {
 
 	secrets *secretsService.Service
 
+	// wasm is this node's component tier, kept because a guard is instantiated
+	// through it as a different world than the workload that triggered it. Nil
+	// on a node with no asset store, which is a node that runs no components.
+	wasm *wasm.Runtime
+
 	// vault is this node's one reader of secret values, shared by the worker
 	// and the wasm tier. It holds a stream to a remote secrets service, so a
 	// second would be a second stream to the same peer.
@@ -390,11 +395,18 @@ func (n *Node) openWorker() error {
 			wasm.WithStorage(objects),
 			wasm.WithAdmission(admit),
 			wasm.WithChannels(&channels{node: n}),
+			wasm.WithAuthorizers(&authorizers{node: n}),
 			wasm.WithSecrets(n.vault))
 		if err != nil {
 			return err
 		}
 		n.closers = append(n.closers, closerFunc(func() { component.Close() }))
+
+		// KEPT, because a guard is run through it. An authorizer is a second
+		// world instantiated from the same tier, and the node is the only thing
+		// that holds both the tier and the worker that can resolve which
+		// function to instantiate. See authorizer.go.
+		n.wasm = component
 
 		tiers = appendUnnamed(tiers, site, component)
 	}

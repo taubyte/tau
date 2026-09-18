@@ -103,7 +103,7 @@ func publishableGrants(spec invoke.Spec, kind string) map[string]invoke.Grant {
 // is registered even when nothing is granted: an unprovided import is a trap
 // that takes the instance with it.
 func (r *Runtime) streamImports(spec invoke.Spec) []component.Option {
-	return r.publishImports(streamInterface, streamGrantsOf(spec), errNoSuchStream, r.streams)
+	return r.publishImports(spec, streamInterface, streamGrantsOf(spec), errNoSuchStream, r.streams)
 }
 
 // busImports is the same function on a different kind.
@@ -114,14 +114,14 @@ func (r *Runtime) streamImports(spec invoke.Spec) []component.Option {
 // the host code is right; sharing the interface would let an author reach an
 // ephemeral bus through a door labelled with a stream's promise.
 func (r *Runtime) busImports(spec invoke.Spec) []component.Option {
-	return r.publishImports(busInterface, busGrantsOf(spec), errNoSuchBus, r.bus)
+	return r.publishImports(spec, busInterface, busGrantsOf(spec), errNoSuchBus, r.bus)
 }
 
 // errNoSuchBus is the bus variant's first case, which happens to be the same
 // discriminant as a stream's — the two variants have the same shape.
 const errNoSuchBus = errNoSuchStream
 
-func (r *Runtime) publishImports(iface string, grants map[string]invoke.Grant, missing uint32, to Streams) []component.Option {
+func (r *Runtime) publishImports(spec invoke.Spec, iface string, grants map[string]invoke.Grant, missing uint32, to Streams) []component.Option {
 
 	table := component.NewTypeTable()
 	failureRef := table.Variant(
@@ -153,7 +153,7 @@ func (r *Runtime) publishImports(iface string, grants map[string]invoke.Grant, m
 		// the same resolver settles both: the block's presence is what decides,
 		// and neither this function nor the caller has to know which kind it is
 		// talking to.
-		grant, why := r.addressed(ctx, grants, label, opPublish)
+		grant, why := r.addressed(ctx, spec, grants, label, opPublish)
 		if why != nil {
 			if why.missing {
 				return errorResult(streamFailure(missing, why.detail)), nil

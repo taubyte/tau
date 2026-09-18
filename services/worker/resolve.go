@@ -193,6 +193,12 @@ func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Gr
 				servedBy(proj, t, target, id, &grant)
 			}
 
+			// A GUARD IS CROSS-KIND, which is why it is not in settingsFor:
+			// attachAccess gives an `authorizer:` block to every kind that
+			// declares Ops(), so this runs for all of them rather than being
+			// repeated per kind.
+			guardedBy(proj, t, target, id, &grant)
+
 			out = append(out, grant)
 		}
 	}
@@ -357,6 +363,73 @@ const (
 	settingServeKind  = "serve/kind"
 	settingServeName  = "serve/name"
 	settingServeScope = "serve/namespace"
+)
+
+// guardedBy fills in who decides what this caller may do to the target.
+//
+// A RESOURCE NAMES ITS OWN GUARD — `authorizer: {name: tier_check, namespace:
+// /shop}` — and that name is resolved HERE for the reason servedBy gives: the
+// tier holds a handle and not the compiled project, and a backing that had to
+// turn a name into a function would need the register on the request path.
+//
+// THE SCOPE IS THE TARGET'S, NOT THE CALLER'S. The guard belongs to the thing
+// being reached, so an omitted namespace means the TARGET's own scope and then
+// its parents — a cache in /shop guarded by `tier_check` means /shop's
+// tier_check, whoever is reaching it and from wherever.
+//
+// A GUARD THAT RESOLVES TO NOTHING IS REFUSED rather than ignored. The schema's
+// Ref() catches it at compile, so this is for a compiled object that did not
+// come from tcc — and a guard nobody can run must not read as a resource nobody
+// guarded.
+func guardedBy(proj *project.Project, t Target, target project.Resource, id string, grant *invoke.Grant) {
+	name := target.String("authorizer", "name")
+	if name == "" {
+		return
+	}
+	if grant.Refused != "" {
+		// Already unservable for a reason of its own; a second sentence about
+		// its guard would bury the first.
+		return
+	}
+
+	_, scope, _, ok := proj.Locate(id)
+	if !ok {
+		grant.Refused = fmt.Sprintf("%s %q is guarded by %q and could not be located in this project",
+			grant.Kind, grant.Label, name)
+		return
+	}
+
+	at := project.ScopeOf(scope, target.String("authorizer", "namespace"))
+	guard, _, err := proj.Resource(at, "function", name)
+	if err != nil {
+		grant.Refused = fmt.Sprintf("%s %q is guarded by the function %q, which is not in this project: %s",
+			grant.Kind, grant.Label, name, err)
+		return
+	}
+
+	// AND IT HAS TO BE AN AUTHORIZER. A function that implements the handler
+	// world would instantiate and then be called with a question it reads as a
+	// request — the failure `implements` exists to prevent, caught here where
+	// the sentence can name both resources instead of at a cold start.
+	if world := guard.String("implements"); world != authorizerWorld {
+		grant.Refused = fmt.Sprintf("%s %q is guarded by %q, which implements %q rather than an authorizer",
+			grant.Kind, grant.Label, name, world)
+		return
+	}
+
+	grant.Settings = merged(grant.Settings, map[string]string{
+		settingAuthorizer:      name,
+		settingAuthorizerScope: "/" + strings.Join(at, "/"),
+	})
+}
+
+// What a resource's own `authorizer:` block becomes, spelled as
+// pkg/invoke/wasm reads it.
+const (
+	authorizerWorld = "authorizer"
+
+	settingAuthorizer      = "authorizer/name"
+	settingAuthorizerScope = "authorizer/namespace"
 )
 
 // settingsFor is what the TARGET (and, for a mount, the entry) declared, in the
@@ -550,25 +623,6 @@ func volumeSettings(reach project.Reach, target project.Resource) map[string]str
 // was declared, or "" when it would not. Both reasons are one line for an
 // author to change.
 func unservable(reach project.Reach, target project.Resource) string {
-	// AN AUTHORIZER IS A DECISION SOMEBODY ELSE MAKES, and nothing calls one
-	// yet. Serving the target anyway would grant the access its own
-	// configuration says is not this platform's to grant, which is the one
-	// failure mode worse than refusing.
-	//
-	// IT IS CROSS-KIND AND IT USED TO BE CHECKED IN ONE PLACE. attachAccess
-	// gives an `authorizer:` block to EVERY kind that declares Ops() — a
-	// database, a storage, a sync, a channel, a volume — and this check sat
-	// after unservableKind's switch, which every one of those kinds returns
-	// from before reaching. So a cache guarded by an authorizer was refused and
-	// a DATABASE guarded by the same authorizer was served wide open, with
-	// nothing said either way. A control that is ignored silently on ten kinds
-	// and enforced on one is worse than one that is missing.
-	if name := target.String("authorizer", "name"); name != "" {
-		return fmt.Sprintf("%s %q is guarded by the authorizer %q, and nothing here calls one — "+
-			"serving it would grant access its own configuration says somebody else decides",
-			reach.Kind, reach.Label, name)
-	}
-
 	if why := unservableKind(reach, target); why != "" {
 		return why
 	}

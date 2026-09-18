@@ -18,6 +18,20 @@ taubyte capabilities, which is itself load-bearing: it is the proof that a
 component's import section names what it CALLS rather than what its world
 offered.
 
+**guard.wasm** is the only authorizer in the tree, and the only fixture built
+against a world that is not `handler`: `taubyte:authorizer`, whose export is
+`authorize(question) -> decision` rather than `handle(request) -> response`. It
+imports none of the capabilities its world offers, which is the same proof
+handler.wasm gives from the other end.
+
+It answers from what it was handed so a test can drive every arm — the target
+label `forbidden` gets an empty grant, `undecidable` gets `undecided`, and
+anything else gets a FIXED set plus one synthetic entry encoding the whole
+question. The fixed set is the contract rather than a shortcut: a guard echoing
+only the op it was asked about is broken in a way nothing can detect, and a host
+that keeps the answer would let the first operation a workload happened to try
+decide every later one.
+
 **cacher.wasm** calls every one of the thirteen capabilities, one branch of its
 `handle` per operation, selected by the request path. It is what every
 capability's tests drive.

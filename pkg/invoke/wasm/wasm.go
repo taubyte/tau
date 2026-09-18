@@ -211,6 +211,11 @@ type Runtime struct {
 	// v1 called p2p.
 	channels Channels
 
+	// authorizers answers what a caller may do to a guarded target. Nil on a
+	// tier that cannot ask, which is a spec with a guarded grant refused at
+	// Start rather than denied at the first call.
+	authorizers Authorizers
+
 	// node is the peer this tier runs on, for `taubyte:workload/identity`. "" is a
 	// tier composed without one, which answers "" rather than inventing a name.
 	node string
@@ -260,12 +265,49 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, fmt.Errorf("%w: %s", ErrNoArtifact, spec.Name)
 	}
 
-	// THE WORLD IS CHECKED BEFORE ANYTHING IS FETCHED. A component built as an
-	// authorizer would instantiate perfectly well and then be called with a
-	// handler's signature, which is the failure `implements` exists to prevent
-	// — so it is refused here rather than discovered at the first request.
-	if world := spec.Settings[SettingImplements]; world != "" && world != WorldHandler {
-		return nil, fmt.Errorf("%w: %s is %q", ErrUnsupportedWorld, spec.Name, world)
+	instance, runtime, err := r.instantiate(ctx, spec, WorldHandler)
+	if err != nil {
+		return nil, err
+	}
+
+	export := spec.Settings[SettingCall]
+	if export == "" {
+		export = DefaultExport
+	}
+
+	return &function{
+		runtime:  runtime,
+		instance: instance,
+		export:   export,
+		http:     exportsHTTPWorld(instance),
+	}, nil
+}
+
+// instantiate fetches a component, checks it is the world the caller is about
+// to drive it as, and brings it up.
+//
+// THE WORLD IS AN ARGUMENT BECAUSE THE ENTRY POINT IS THE THING THAT KNOWS IT.
+// Serve drives a `handle(request) -> response`; Authorize drives an
+// `authorize(question) -> decision`. A component built for one of those
+// instantiates perfectly well under the other and then reads the arguments it is
+// handed as something else, which is the failure `implements` exists to prevent
+// — so each entry point names the world it can actually call, and the check
+// happens before anything is fetched.
+//
+// AN EMPTY `implements` IS THE HANDLER, which is what the schema defaults it to,
+// so a world that is not the handler must be written down to be run as one.
+func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world string) (*component.Instance, wazy.Runtime, error) {
+	if spec.Artifact == "" {
+		return nil, nil, fmt.Errorf("%w: %s", ErrNoArtifact, spec.Name)
+	}
+
+	declared := spec.Settings[SettingImplements]
+	if declared == "" {
+		declared = WorldHandler
+	}
+	if declared != world {
+		return nil, nil, fmt.Errorf("%w: %s is %q and this is the %q interface",
+			ErrUnsupportedWorld, spec.Name, declared, world)
 	}
 
 	// A DECLARED FILESYSTEM IS REFUSED HERE TOO, and for a stronger reason than
@@ -274,26 +316,34 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	// would write into a WASI shim's memory and lose it at the end of the
 	// instance rather than at the end of the deploy.
 	if mounted := spec.Mounted(); len(mounted) > 0 {
-		return nil, fmt.Errorf("%w: %s wants %s, and a component is given no filesystem",
+		return nil, nil, fmt.Errorf("%w: %s wants %s, and a component is given no filesystem",
 			ErrNoMounts, spec.Name, mounted[0].Label)
+	}
+
+	// A GUARDED GRANT NEEDS SOMETHING TO ASK. It is checked here beside the
+	// capability backings rather than in the register, because an authorizer is
+	// not a capability: it hangs off every kind that declares Ops() rather than
+	// being one of them.
+	if guarded := guardedGrants(spec); len(guarded) > 0 && r.authorizers == nil {
+		return nil, nil, fmt.Errorf("%w: %s reaches %s", ErrNoAuthorizers, spec.Name, guarded[0].Label)
 	}
 
 	// EVERY CAPABILITY'S HOST HALF, and the refusal for one that is granted
 	// with nothing behind it. See host.go: the register is the list of them.
 	imports, err := r.imports(spec)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	content, err := r.assets.Get(ctx, spec.Artifact)
 	if err != nil {
-		return nil, fmt.Errorf("wasm: fetching %s: %w", spec.Artifact, err)
+		return nil, nil, fmt.Errorf("wasm: fetching %s: %w", spec.Artifact, err)
 	}
 	defer content.Close()
 
 	code, err := io.ReadAll(content)
 	if err != nil {
-		return nil, fmt.Errorf("wasm: reading %s: %w", spec.Artifact, err)
+		return nil, nil, fmt.Errorf("wasm: reading %s: %w", spec.Artifact, err)
 	}
 
 	config := wazy.NewRuntimeConfig().
@@ -311,20 +361,9 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	instance, err := component.Instantiate(ctx, runtime, code, append(r.sandbox(spec), imports...)...)
 	if err != nil {
 		runtime.Close(ctx)
-		return nil, fmt.Errorf("wasm: instantiating %s: %w", spec.Name, err)
+		return nil, nil, fmt.Errorf("wasm: instantiating %s: %w", spec.Name, err)
 	}
-
-	export := spec.Settings[SettingCall]
-	if export == "" {
-		export = DefaultExport
-	}
-
-	return &function{
-		runtime:  runtime,
-		instance: instance,
-		export:   export,
-		http:     exportsHTTPWorld(instance),
-	}, nil
+	return instance, runtime, nil
 }
 
 // exportsHTTPWorld reports whether this component is the standard world.

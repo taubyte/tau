@@ -93,35 +93,35 @@ func TestAHandleIsScopedToTheDeployment(t *testing.T) {
 // Serving it would grant access the target's own configuration says somebody
 // else decides; refusing the WORKLOAD would take a function down over one of
 // the things it reaches. So the resource runs and that one target does not.
-func TestACacheWithAnAuthorizerIsRefusedByName(t *testing.T) {
+// TestAGuardedCacheCarriesItsGuardRatherThanARefusal. This used to assert the
+// refusal, which was the honest answer for as long as nothing could run an
+// authorizer. What it asserts now is the thing that replaced it: the guard is
+// RESOLVED at compose time, because the tier holds a handle and not the project.
+func TestAGuardedCacheCarriesItsGuard(t *testing.T) {
 	h := newHarness(t)
 
-	// checkout reaches `orders`, which is guarded. IT RESOLVES — that is the
-	// point: the function runs, and one of the things it touches does not.
-	spec := resolveIn(t, h, nil, "function", "checkout")
-
-	grants := cacheGrants(t, spec)
+	// checkout reaches `orders`, which is guarded by /shop's tier_check.
+	grants := cacheGrants(t, resolveIn(t, h, nil, "function", "checkout"))
 	require.Contains(t, grants, "orders")
 
-	refused := grants["orders"]
-	require.NotEmpty(t, refused.Refused)
-	require.Contains(t, refused.Refused, "authorizer")
-	require.Contains(t, refused.Refused, "tier_check", "it names which one")
-	require.Equal(t, []string{"get", "put"}, refused.Ops, "what was asked for is still carried")
-	require.False(t, refused.Allows("get"), "a refused grant allows nothing, whatever its ops say")
+	guarded := grants["orders"]
+	require.Empty(t, guarded.Refused, "a guard is served now, not refused")
+	require.Equal(t, []string{"get", "put"}, guarded.Ops, "what was asked for is still the ceiling")
+	require.Equal(t, "tier_check", guarded.Settings["authorizer/name"])
+	require.Equal(t, "/shop", guarded.Settings["authorizer/namespace"],
+		"resolved where the project is open, not left for the tier to walk")
 }
 
-// TestTheFixtureItselfHitsBothRefusals, which is worth stating: the
-// vocabulary's richest function reaches two caches and this cloud can serve
-// neither, one for an authorizer and one for its consensus. Both are one line
-// for an author to change, and neither stops the function running.
-func TestTheCanonicalFixtureHitsBothRefusals(t *testing.T) {
+// TestOneRefusedCacheDoesNotTakeTheOtherDown, which is worth stating: the
+// vocabulary's richest function reaches two caches, one of them unservable, and
+// the function still runs with the other.
+func TestTheCanonicalFixtureServesOneCacheAndRefusesTheOther(t *testing.T) {
 	h := newHarness(t)
 	grants := cacheGrants(t, resolveIn(t, h, nil, "function", "checkout"))
 
 	require.Len(t, grants, 2)
-	require.Contains(t, grants["orders"].Refused, "authorizer")
-	require.Contains(t, grants["sessions"].Refused, "raft")
+	require.Empty(t, grants["orders"].Refused, "guarded by an authorizer, and that is served")
+	require.NotEmpty(t, grants["sessions"].Refused, "raft, which a CRDT store cannot keep")
 }
 
 // TestSingleWriterIsRefusedRatherThanSilentlyDowngraded. An author who wrote
@@ -143,16 +143,18 @@ func TestAGossipCacheIsServed(t *testing.T) {
 	require.Empty(t, unservable(reachFor("x"), project.Resource{"consensus": "crdt"}))
 }
 
-// TestTheAuthorizerCheckComesFirst, so a cache that is both guarded and
-// raft says the thing an author has to fix first.
-func TestAnAuthorizerIsNamedBeforeConsensus(t *testing.T) {
+// TestAGuardDoesNotRESCUEAnUnservableTarget. A guarded cache that is also raft
+// is still raft: the guard decides who may reach a thing, not whether this
+// cloud can serve it, and saying "ask tier_check" about a store that would lose
+// the write anyway answers the wrong question.
+func TestAnUnservableTargetIsStillRefusedWhenItIsGuarded(t *testing.T) {
 	both := project.Resource{
 		"consensus": raftConsensus,
 		"authorizer": map[string]any{
 			"name": "tier_check",
 		},
 	}
-	require.Contains(t, unservable(reachFor("x"), both), "authorizer")
+	require.Contains(t, unservable(reachFor("x"), both), "raft")
 }
 
 // TestAResourceThatReachesNothingCarriesNoGrants, which is most of them.

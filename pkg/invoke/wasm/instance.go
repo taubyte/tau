@@ -110,7 +110,7 @@ func unreachable(detail string) *reason { return &reason{unavailable: true, deta
 // It is the whole of the check every interface's `open` does, in one place,
 // because seven copies of "is this the resource or one of its instances" is
 // seven places for the answer to differ.
-func (r *Runtime) addressed(ctx context.Context, grants map[string]invoke.Grant, name, op string) (invoke.Grant, *reason) {
+func (r *Runtime) addressed(ctx context.Context, spec invoke.Spec, grants map[string]invoke.Grant, name, op string) (invoke.Grant, *reason) {
 	label, instance, addressed := strings.Cut(name, "/")
 
 	grant, ok := grants[label]
@@ -122,6 +122,35 @@ func (r *Runtime) addressed(ctx context.Context, grants map[string]invoke.Grant,
 	}
 	if !grant.Allows(op) {
 		return invoke.Grant{}, denied(label + " cannot " + op)
+	}
+
+	// AN AUTHORIZER NARROWS AND CANNOT WIDEN, which is what putting it AFTER
+	// Allows means rather than instead of it. The access block stays the
+	// ceiling: a guard that could hand back an op its own configuration never
+	// asked for would make the config stop describing what the workload can do,
+	// and the config is the thing a reader has.
+	//
+	// IT FAILS CLOSED, and that is where this parts from the instance validator
+	// in node/admission.go. That one treats "could not be run" as not a
+	// refusal, because telling a caller its instance was turned down when
+	// nothing asked sends them to argue with a policy that never fired. Here the
+	// target has said in its own configuration that somebody else decides, so
+	// serving it when that somebody cannot be reached grants exactly the access
+	// it said was not ours to grant.
+	if grant.Settings[settingAuthorizer] != "" {
+		if r.authorizers == nil {
+			return invoke.Grant{}, denied(label + " is guarded and this tier has nothing to ask")
+		}
+		ops, err := r.authorizers.Ops(ctx, spec, grant, op)
+		switch {
+		case errors.Is(err, ErrUndecided):
+			return invoke.Grant{}, denied(err.Error())
+		case err != nil:
+			return invoke.Grant{}, denied(label + " is guarded and the guard could not be run: " + err.Error())
+		}
+		if !contains(ops, op) {
+			return invoke.Grant{}, denied(label + "'s authorizer did not grant " + op)
+		}
 	}
 
 	// A SEPARATOR WITH NOTHING AFTER IT IS A NAMED INSTANCE THAT IS EMPTY, not

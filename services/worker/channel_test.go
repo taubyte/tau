@@ -78,17 +78,21 @@ func TestOneRefusedChannelDoesNotTakeTheOthersDown(t *testing.T) {
 	require.False(t, grants["sync"].Allows("dial"))
 }
 
-// TestAnAuthorizerIsRefusedOnEveryKindThatCanDeclareOne — attachAccess gives an
-// `authorizer:` block to every kind with Ops(), and the refusal used to sit
-// after unservableKind's switch, which every kind but `cache` returns from
+// TestAnAuthorizerIsHONOUREDOnEveryKindThatCanDeclareOne — attachAccess gives
+// an `authorizer:` block to every kind with Ops(), and the check for one used to
+// sit after unservableKind's switch, which every kind but `cache` returns from
 // first. So a guarded cache was refused and a guarded DATABASE was served wide
 // open, with nothing said either way.
-func TestAnAuthorizerIsRefusedOnEveryKindThatCanDeclareOne(t *testing.T) {
+//
+// It is resolved for all of them now, which is the same claim pointed the other
+// way: if the cross-kind wiring regresses, the database loses its guard silently
+// and this fails.
+func TestAnAuthorizerIsHonouredOnEveryKindThatCanDeclareOne(t *testing.T) {
 	h := newHarness(t)
 
 	// A cache, which was the one kind the check could ever reach.
 	cache := cacheGrants(t, resolveIn(t, h, nil, "function", "checkout"))
-	require.Contains(t, cache["orders"].Refused, "authorizer")
+	require.Equal(t, "tier_check", cache["orders"].Settings["authorizer/name"])
 
 	// And a database, which it could not.
 	var profiles invoke.Grant
@@ -98,7 +102,7 @@ func TestAnAuthorizerIsRefusedOnEveryKindThatCanDeclareOne(t *testing.T) {
 		}
 	}
 	require.Equal(t, "profiles", profiles.Label, "the fixture's guarded database")
-	require.Contains(t, profiles.Refused, "authorizer",
+	require.Equal(t, "tier_check", profiles.Settings["authorizer/name"],
 		"a control enforced on one kind and dropped on ten is worse than one that is missing")
-	require.False(t, profiles.Allows("get"))
+	require.Equal(t, "/shop", profiles.Settings["authorizer/namespace"])
 }

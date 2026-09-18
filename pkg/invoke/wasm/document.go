@@ -97,7 +97,7 @@ func (r *Runtime) documentImports(spec invoke.Spec) []component.Option {
 	grants := documentGrantsOf(spec)
 
 	open := func(ctx context.Context, label, op string) (Documents, *component.VariantValue) {
-		grant, why := r.addressed(ctx, grants, label, op)
+		grant, why := r.addressed(ctx, spec, grants, label, op)
 		if why != nil {
 			if why.missing {
 				return nil, docFailure(errNoSuchDoc, why.detail)

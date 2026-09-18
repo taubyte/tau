@@ -96,7 +96,7 @@ func (r *Runtime) kvImports(spec invoke.Spec) []component.Option {
 	grants := kvGrantsOf(spec)
 
 	open := func(ctx context.Context, label, op string) (KV, *component.VariantValue) {
-		grant, why := r.addressed(ctx, grants, label, op)
+		grant, why := r.addressed(ctx, spec, grants, label, op)
 		if why != nil {
 			if why.missing {
 				return nil, kvFailure(errNoSuchKV, why.detail)

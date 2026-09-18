@@ -128,7 +128,7 @@ func (r *Runtime) sqlImports(spec invoke.Spec) []component.Option {
 
 	// resolve is the shared half: which database, and may this verb touch it.
 	resolve := func(ctx context.Context, label, op string) (invoke.Grant, *component.VariantValue) {
-		grant, why := r.addressed(ctx, grants, label, op)
+		grant, why := r.addressed(ctx, spec, grants, label, op)
 		if why != nil {
 			if why.missing {
 				return grant, sqlFailure(errNoSuchSQL, why.detail)
