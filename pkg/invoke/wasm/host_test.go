@@ -28,8 +28,14 @@ var worldImport = regexp.MustCompile(`(?m)^\s*import\s+([a-z0-9:%/@.\-]+);`)
 // importsOfTheWorld is what wit/handler.wit says a guest may reach.
 func importsOfTheWorld(t *testing.T) []string {
 	t.Helper()
+	return importsOf(t, "wit/handler.wit")
+}
 
-	source, err := os.ReadFile("wit/handler.wit")
+// importsOf is the import list of one world file.
+func importsOf(t *testing.T, path string) []string {
+	t.Helper()
+
+	source, err := os.ReadFile(path)
 	require.NoError(t, err)
 
 	var out []string
@@ -60,6 +66,35 @@ func TestEveryImportedInterfaceHasAHostComponent(t *testing.T) {
 
 	require.Equal(t, importsOfTheWorld(t), registered,
 		"wit/handler.wit and host.go disagree about what this tier serves")
+}
+
+// TestASECONDWORLDCANONLYREACHWHATTHEFIRSTONESERVES.
+//
+// `implements:` names seven worlds and this tier now carries the WIT for two of
+// them. A second world is a SUBSET of the capabilities — that subsetting is half
+// the reason the packages were split up in the first place — so every interface
+// it names has to be one the host actually backs. A world importing a capability
+// with no host half is a world nothing can run, and the way that is discovered
+// today is a guest trapping on a missing import at its first call.
+//
+// It is a subset check and NOT equality, which is the difference from the test
+// above: the handler world is the union by definition, and an authorizer that
+// imported all of it would be claiming a decision may do anything.
+func TestASecondWorldReachesOnlyWhatThisTierServes(t *testing.T) {
+	served := map[string]bool{}
+	for _, c := range hostComponents() {
+		served[c.iface] = true
+	}
+
+	for _, world := range []string{"wit/deps/taubyte-authorizer/authorizer.wit"} {
+		imports := importsOf(t, world)
+		for _, name := range imports {
+			require.True(t, served[name],
+				"%s imports %s and host.go backs no such interface", world, name)
+		}
+		require.Less(t, len(imports), len(served),
+			"%s imports everything; a world that is not a subset is the handler world with another name", world)
+	}
 }
 
 // TestEVERYRowThatCanBeGrantedCanBeRefused. A capability with grants and no

@@ -1,0 +1,119 @@
+// The world a tau AUTHORIZER is compiled to.
+//
+// # What an authorizer is, in the vocabulary's own words
+//
+// "A function that decides what a caller may do to this resource, and returns
+// the ops it gets." It hangs off every kind that declares Ops() — a cache, a
+// database, a storage, a sync, a channel, a volume — so this one world serves
+// all of them, and the resource it is asked about travels in the call rather
+// than being baked into a world per kind.
+//
+// # The second world, and why there was only ever one
+//
+// `implements:` has named seven worlds since v2's vocabulary was written and
+// pkg/invoke/wasm built exactly one of them, refusing the rest at Start rather
+// than calling them with a handler's signature and handing a component bytes it
+// reads as something else. That refusal was right and it had a cost: the
+// vocabulary's own authorizer could not be instantiated at all, so the control
+// was declared on ten kinds and run on none.
+//
+// # It is asked about ONE operation and answers with a SET
+//
+// That asymmetry is the whole contract and it is deliberate. Asking per
+// operation is what makes the decision timely; answering with the full set is
+// what makes it cheap — a host that had to call back for every `get` would put
+// a wasm invocation on the hot path of a cache.
+//
+// WHAT THE HOST DOES WITH THE SET is the host's, and is not promised here: how
+// long it may be kept, and whether an op in it that the access block never
+// asked for is granted, are policy rather than ABI. This file is the shape.
+//
+// # A decision is not a failure
+//
+// `granted` with an empty list is a refusal, and it is an ANSWER: the authorizer
+// ran and said no. A guest that cannot decide returns `undecided` with a reason,
+// which is a different thing for the host to act on and a different thing for an
+// operator to read. Trapping is neither — it takes the instance with it and
+// says nothing.
+package taubyte:authorizer@0.1.0;
+
+world authorizer {
+    // WHAT AN AUTHORIZER MAY READ, and it is state and nothing else. A decision
+    // has to look the caller up somewhere — the vocabulary's own example is
+    // named `tier_check` — so a world with no state could only decide from the
+    // request, which is to say from nothing it did not already trust.
+    //
+    // NOTHING THAT SENDS. No queue, stream, bus, log, workflow or channel: those
+    // are side effects, and an authorization that emits one is a decision that
+    // cannot be re-asked without changing the system it is deciding about.
+    // Adding an import later is additive — a guest imports only what it calls —
+    // so this starts at what a decision needs and grows for a stated reason.
+    import taubyte:sql/store@0.1.0;
+    import taubyte:kv/store@0.1.0;
+    import taubyte:document/store@0.1.0;
+    import taubyte:vector/store@0.1.0;
+    import taubyte:cache/store@0.1.0;
+    import taubyte:secret/vault@0.1.0;
+
+    // What the authorizer itself is. Its own identity, not the caller's — the
+    // caller travels in the request below.
+    import taubyte:workload/identity@0.1.0;
+
+    // THE TYPES ARE IN THE WORLD AND NOT IN AN INTERFACE, for the reason
+    // handler.wit gives at more length: a `use` from an imported interface
+    // leaves the export's signature naming a type the host must resolve
+    // separately, and a host reading the component's own type section then
+    // cannot flatten the call at all.
+
+    // Who is asking. This is the SAME shape `taubyte:workload/identity` hands a
+    // guest about itself, because "who am I" and "who is calling me" are one
+    // question asked from two ends, and two spellings of it would drift.
+    record caller {
+        project: string,
+        environment: string,
+        kind: string,
+        name: string,
+        // The namespace chain from the project root, outermost first. Empty for
+        // a workload at the root.
+        scope: list<string>,
+    }
+
+    // What is being reached. The kind is the vocabulary's own — "cache",
+    // "database", "storage" — and the label is what the CALLER wrote in its
+    // access block, which is not the target's name and not its id: an
+    // authorizer that keyed off the id would be deciding about a resource the
+    // caller cannot name.
+    record target {
+        kind: string,
+        label: string,
+        // The instance, for a resource that holds many. Empty when the target
+        // holds one.
+        instance: string,
+    }
+
+    // One question.
+    record question {
+        who: caller,
+        what: target,
+        // The verb being attempted, as the vocabulary spells it — "get", "put",
+        // "delete", "list", "dial", "append".
+        op: string,
+    }
+
+    // The answer.
+    //
+    // `granted` carries every op this caller gets on this target, NOT just a
+    // yes or no about the one asked. An empty list is a refusal that was
+    // decided; `undecided` is a refusal to decide, and the reason is for an
+    // operator rather than for the caller.
+    variant decision {
+        granted(list<string>),
+        undecided(string),
+    }
+
+    // The name is fixed, unlike a handler's. An authorizer is named by the
+    // resource that points at it — `authorizer: {name: tier_check}` — and the
+    // resource names the FUNCTION, not an export within it, so there is no
+    // `execution/call` here to carry a second name.
+    export authorize: func(q: question) -> decision;
+}
