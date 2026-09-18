@@ -73,7 +73,50 @@ message InvokeResponse {
   bytes body = 3;
 }
 
+// TransformRequest runs one request through a TRANSFORMER — a function a
+// gateway or a proxy declares that traffic passes through on its way in.
+//
+// IT IS A SECOND RPC AND NOT A FLAG ON Invoke, because what comes back is a
+// different thing. An invocation answers with a response; a transformer answers
+// with EITHER a request that carries on or a response that stops the chain, and
+// a caller that could not tell those apart could not run a chain at all.
+message TransformRequest {
+  Target target = 1;
+
+  string method = 2;
+  string path = 3;
+  map<string, Headers> headers = 4;
+  bytes body = 5;
+}
+
+// ForwardedRequest is the traffic as the transformer left it: the same shape
+// InvokeRequest carries WITHOUT a target, because where it goes next is the
+// caller's to decide and never the transformer's.
+message ForwardedRequest {
+  string method = 1;
+  string path = 2;
+  map<string, Headers> headers = 3;
+  bytes body = 4;
+}
+
+// TransformResponse is what the transformer decided.
+//
+// A oneof RATHER THAN A STATUS CONVENTION. Encoding "carry on" as a response
+// with some reserved status would make every real status ambiguous — a
+// transformer that legitimately answers 200 could not — and an unset oneof is a
+// malformed answer a caller can refuse rather than a default it must guess.
+message TransformResponse {
+  oneof outcome {
+    ForwardedRequest forward = 1;
+    InvokeResponse answer = 2;
+  }
+}
+
 service WorkerService {
   // Invoke runs one request against one resource.
   rpc Invoke(InvokeRequest) returns (InvokeResponse);
+
+  // Transform runs one request through one transformer and answers with what
+  // it decided.
+  rpc Transform(TransformRequest) returns (TransformResponse);
 }

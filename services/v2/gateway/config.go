@@ -31,6 +31,16 @@ type Hosts interface {
 // implementation satisfies it for a fleet.
 type Workers interface {
 	Invoke(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Response, error)
+
+	// Transform runs one request through a transformer — a function this
+	// gateway declares that traffic passes through on its way in.
+	//
+	// IT GOES TO A WORKER RATHER THAN RUNNING HERE, which is the whole reason
+	// it is on this interface. A transformer is a workload of the same
+	// deployment, so the node that is warm for the project is warm for its
+	// transformers; a gateway that ran them itself would need a component tier
+	// on every edge node and would lose that warmth.
+	Transform(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error)
 }
 
 // Buses attaches a caller to an ephemeral bus.

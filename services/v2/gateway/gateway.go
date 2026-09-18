@@ -26,14 +26,16 @@
 // serves it — because where a certificate comes from is the auth service's
 // question and a gateway that owned an ACME client would own it twice.
 //
-// IT DOES NOT RUN TRANSFORMERS OR ROUTER FUNCTIONS. Both are functions built
-// against an interface (`implements: gateway-transformer`, `gateway-router`)
-// whose ABI is not defined anywhere yet. Rather than pretend, a gateway that
-// declares either says so — and for a transformer it says so the way the
-// author asked: `fail: closed` refuses the request, `fail: open` serves it
-// without. A `redact` transformer that strips card numbers is declared closed
-// for exactly this reason, and running its route without it would be the
-// gateway deciding a security control was optional.
+// IT RUNS TRANSFORMERS AND IT DOES NOT ROUTE. A transformer is a function built
+// against `implements: gateway-transformer`, and its world exists: the chain
+// runs in shaped() before anything else sees the request, in the order declared,
+// and any one of them may answer instead of forwarding. It runs on a WORKER
+// rather than here, because a transformer is a workload of the same deployment
+// and the node that is warm for the project is warm for its transformers.
+//
+// A ROUTER is still a function against an interface nothing builds
+// (`gateway-router`), so a gateway whose routing is a function says so rather
+// than pretending.
 // It lives under services/v2 because v1 has a `services/gateway` and both run
 // in one binary for the whole span between the first v2 service and the swap —
 // the same reason services/v2/auth is where it is.
@@ -252,12 +254,28 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := s.workers.Invoke(ctx, m.address(projectName, environment), &invoke.Request{
+	req := &invoke.Request{
 		Method:  r.Method,
 		Path:    m.stripped(r.URL.Path),
 		Headers: r.Header,
 		Body:    body,
-	})
+	}
+
+	// THE CHAIN RUNS BEFORE ANYTHING ELSE SEES THE REQUEST, in the order it was
+	// declared, and any one of them may stop it.
+	if answer, code, why := s.shaped(ctx, m, projectName, environment, req); why != "" {
+		refuse(w, code, why)
+		return
+	} else if answer != nil {
+		// A TRANSFORMER ANSWERED, which is a served request: somebody's code ran
+		// and produced this. A filter that rejects is doing its job, not
+		// failing.
+		billed.served = true
+		writeTo(w, answer)
+		return
+	}
+
+	res, err := s.workers.Invoke(ctx, m.address(projectName, environment), req)
 	if err != nil {
 		refuse(w, statusFor(err), "this route could not be served")
 		return
@@ -268,6 +286,11 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// invocation count can show.
 	billed.served = true
 
+	writeTo(w, res)
+}
+
+// writeTo sends one invocation's answer, whoever produced it.
+func writeTo(w http.ResponseWriter, res *invoke.Response) {
 	for key, values := range res.Headers {
 		for _, v := range values {
 			w.Header().Add(key, v)
@@ -281,6 +304,60 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write(res.Body)
 }
 
+// shaped runs this route's transformers, in order, over req.
+//
+// IT MUTATES req IN PLACE as each one forwards, because the chain is a pipeline:
+// what the second transformer sees is what the first produced, and what the
+// handler sees is what the last one did. A chain that handed each transformer
+// the ORIGINAL request would be a list of independent opinions, none of which
+// could build on another.
+//
+// WHAT HAPPENS WHEN ONE FAILS IS THE AUTHOR'S, per entry, and it is the one
+// decision here that is genuinely dangerous in both directions: a filter that
+// fails open stops filtering exactly when something is wrong, and an enrichment
+// that fails closed takes the site down to add a header. So `fail` is required
+// to be one of two words and neither is guessed.
+//
+// It answers (answer, 0, "") to stop the chain with that response, (nil, 0, "")
+// to carry on, and (nil, code, why) to refuse.
+func (s *Service) shaped(ctx context.Context, m match, projectName, environment string, req *invoke.Request) (*invoke.Response, int, string) {
+	for _, t := range m.resource.List("transformers") {
+		name := t.String("name")
+		if name == "" {
+			continue
+		}
+
+		scope := m.host.Scope
+		if declared := t.String("namespace"); declared != "" {
+			scope = splitScope(declared)
+		}
+
+		out, err := s.workers.Transform(ctx, project.Address{
+			Project:     projectName,
+			Environment: environment,
+			Scope:       scope,
+			Kind:        "function",
+			Name:        name,
+		}, req)
+		if err != nil {
+			if t.String("fail") == "open" {
+				// The author said the request is better served without it.
+				continue
+			}
+			return nil, http.StatusServiceUnavailable,
+				"a transformer this route requires could not be run, and it is declared fail-closed"
+		}
+
+		switch {
+		case out.Answer != nil:
+			return out.Answer, 0, ""
+		case out.Forward != nil:
+			*req = *out.Forward
+		}
+	}
+	return nil, 0, ""
+}
+
 // unbuilt reports the parts of the vocabulary this gateway cannot yet honour,
 // and says so rather than serving a request as if they were not there.
 func (s *Service) unbuilt(m match) (int, string) {
@@ -291,18 +368,11 @@ func (s *Service) unbuilt(m match) (int, string) {
 		return http.StatusNotImplemented, "this name is routed by a function, which is not implemented"
 	}
 
-	// TRANSFORMERS ARE A LIST AND NOT A MAP, because the order they run in is
-	// what they mean. Reading them with Keys returns nothing and drops every
-	// entry — which for a fail-closed one is a security control that quietly
-	// stops existing.
-	for _, t := range m.resource.List("transformers") {
-		if t.String("fail") == "open" {
-			// The author said the request is better served without it.
-			continue
-		}
-		return http.StatusServiceUnavailable,
-			"a transformer this route requires is not implemented, and it is declared fail-closed"
-	}
+	// TRANSFORMERS ARE NOT HERE ANY MORE. They ran nowhere, so a fail-closed one
+	// had to refuse the route and a fail-open one had to be skipped; now they
+	// run, in order, in shaped(). What a failing one means is still the author's
+	// per entry, and it is decided there — where the failure is — rather than
+	// here, where the only thing knowable was that nothing could run at all.
 	return 0, ""
 }
 

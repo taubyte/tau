@@ -59,6 +59,56 @@ func (h *handler) Invoke(ctx context.Context, req *connect.Request[workerv1.Invo
 	}), nil
 }
 
+func (h *handler) Transform(ctx context.Context, req *connect.Request[workerv1.TransformRequest]) (*connect.Response[workerv1.TransformResponse], error) {
+	t := req.Msg.GetTarget()
+	if t == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, ErrNoTarget)
+	}
+
+	out, err := h.s.Transform(ctx,
+		Target{
+			Project:     t.GetProject(),
+			Environment: t.GetEnvironment(),
+			Scope:       t.GetScope(),
+			Kind:        t.GetKind(),
+			Name:        t.GetName(),
+		},
+		&invoke.Request{
+			Method:  req.Msg.GetMethod(),
+			Path:    req.Msg.GetPath(),
+			Headers: fromWire(req.Msg.GetHeaders()),
+			Body:    req.Msg.GetBody(),
+		})
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	switch {
+	case out.Answer != nil:
+		return connect.NewResponse(&workerv1.TransformResponse{
+			Outcome: &workerv1.TransformResponse_Answer{Answer: &workerv1.InvokeResponse{
+				Status:  int32(out.Answer.Status),
+				Headers: toWire(out.Answer.Headers),
+				Body:    out.Answer.Body,
+			}},
+		}), nil
+
+	case out.Forward != nil:
+		return connect.NewResponse(&workerv1.TransformResponse{
+			Outcome: &workerv1.TransformResponse_Forward{Forward: &workerv1.ForwardedRequest{
+				Method:  out.Forward.Method,
+				Path:    out.Forward.Path,
+				Headers: toWire(out.Forward.Headers),
+				Body:    out.Forward.Body,
+			}},
+		}), nil
+	}
+
+	// AN UNSET oneof IS A MALFORMED ANSWER AND NOT A DEFAULT. Choosing one here
+	// would be this handler deciding whether traffic carries on.
+	return nil, connect.NewError(connect.CodeInternal, ErrNoOutcome)
+}
+
 func fromWire(in map[string]*workerv1.Headers) map[string][]string {
 	if len(in) == 0 {
 		return nil

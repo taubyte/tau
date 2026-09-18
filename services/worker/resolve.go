@@ -30,7 +30,12 @@ import (
 type Target = project.Address
 
 var (
-	ErrNoTarget   = errors.New("worker: a target with no project, environment, kind or name names nothing")
+	ErrNoTarget = errors.New("worker: a target with no project, environment, kind or name names nothing")
+
+	// ErrNoOutcome is a transformer that answered with neither arm. It is its
+	// own error because choosing one would be this service deciding whether
+	// traffic carries on, which is the transformer's decision and nobody else's.
+	ErrNoOutcome  = errors.New("worker: that transformer decided neither to forward nor to answer")
 	ErrNoRuntime  = errors.New("worker: nothing runs this kind")
 	ErrAmbiguous  = errors.New("worker: the kind runs on more than one tier and the resource does not say which")
 	ErrNoArtifact = errors.New("worker: the resource is built by the platform and nothing here resolves what it built")

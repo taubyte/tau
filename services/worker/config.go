@@ -35,13 +35,19 @@ type Register interface {
 	Object(ctx context.Context, id register.ObjectID) ([]byte, error)
 }
 
-// Pool is the slice of pkg/invoke this service needs: one call.
+// Pool is the slice of pkg/invoke this service needs: two calls, one per thing
+// a workload can be asked to do.
 //
 // Everything about warm instances, concurrency, cold starts and scale-to-zero
 // is behind it and none of it is this service's business — which is why the
-// interface is one method and not the pool's whole surface.
+// interface is what this service CALLS and not the pool's whole surface.
+//
+// TRANSFORM IS HERE AND NOT ON A SECOND INTERFACE because it is the same
+// pooling: a transformer is a workload that runs per request, so it wants warm
+// slots for the same reason a handler does. What differs is only the answer.
 type Pool interface {
 	Do(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Response, error)
+	Transform(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Outcome, error)
 }
 
 // Config is what an operator declared, and ONLY that: values somebody writes in

@@ -73,6 +73,47 @@ func (c *Client) Invoke(ctx context.Context, t project.Address, req *invoke.Requ
 	}, nil
 }
 
+// Transform runs one request through a transformer on whichever node holds the
+// deployment, and answers with what it decided.
+func (c *Client) Transform(ctx context.Context, t project.Address, req *invoke.Request) (*invoke.Outcome, error) {
+	if req == nil {
+		req = &invoke.Request{}
+	}
+
+	res, err := c.svc.Transform(ctx, connect.NewRequest(&workerv1.TransformRequest{
+		Target: &workerv1.Target{
+			Project: t.Project, Environment: t.Environment,
+			Scope: t.Scope, Kind: t.Kind, Name: t.Name,
+		},
+		Method:  req.Method,
+		Path:    req.Path,
+		Headers: toWire(req.Headers),
+		Body:    req.Body,
+	}))
+	if err != nil {
+		return nil, unwire(err)
+	}
+
+	switch out := res.Msg.GetOutcome().(type) {
+	case *workerv1.TransformResponse_Answer:
+		return &invoke.Outcome{Answer: &invoke.Response{
+			Status:  int(out.Answer.GetStatus()),
+			Headers: fromWire(out.Answer.GetHeaders()),
+			Body:    out.Answer.GetBody(),
+		}}, nil
+
+	case *workerv1.TransformResponse_Forward:
+		return &invoke.Outcome{Forward: &invoke.Request{
+			Method:  out.Forward.GetMethod(),
+			Path:    out.Forward.GetPath(),
+			Headers: fromWire(out.Forward.GetHeaders()),
+			Body:    out.Forward.GetBody(),
+		}}, nil
+	}
+
+	return nil, ErrNoOutcome
+}
+
 // unwire turns a status back into the sentinel a local worker would return.
 //
 // IT MATCHES ON THE MESSAGE AS WELL AS THE CODE, because several sentinels
@@ -87,6 +128,7 @@ func unwire(err error) error {
 
 	candidates := map[connect.Code][]error{
 		connect.CodeInvalidArgument:    {ErrNoTarget},
+		connect.CodeInternal:           {ErrNoOutcome},
 		connect.CodeNotFound:           {register.ErrNotPublished, register.ErrNoObject, project.ErrNotFound},
 		connect.CodeFailedPrecondition: {ErrNoRuntime, ErrAmbiguous, ErrNoArtifact, ErrNoSecrets, invoke.ErrNoRuntime},
 		connect.CodeResourceExhausted:  {invoke.ErrAtCapacity},

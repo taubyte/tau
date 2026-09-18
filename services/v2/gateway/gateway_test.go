@@ -123,8 +123,9 @@ func TestCorsEchoesTheOriginThatMatched(t *testing.T) {
 	// AND IT IS SET BEFORE THE ROUTE'S OWN GAPS. cors is policy at the NAME, so
 	// a browser is told what is allowed even when the answer is a failure —
 	// otherwise a fetch that got a 503 would be reported as a CORS error and
-	// send somebody looking in the wrong place entirely.
-	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	// send somebody looking in the wrong place entirely. This route's
+	// transformer runs now, so the answer here is the handler's.
+	require.Equal(t, http.StatusOK, w.Code)
 
 	w = h.do(t, http.MethodPost, "http://shop.example.com/checkout", "",
 		"Origin", "https://evil.example.com")
@@ -167,19 +168,79 @@ func TestTheRateLimitIsTheAuthorsNumber(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
-// TestAFailClosedTransformerRefuses. `redact` strips card numbers out of
-// request bodies on the way in and is declared fail-closed; serving its route
-// without it would be the gateway deciding a security control was optional.
+// TestAFailClosedTransformerThatCannotBeRunRefuses. `redact` strips card
+// numbers out of request bodies on the way in and is declared fail-closed;
+// serving its route without it would be the gateway deciding a security control
+// was optional.
 //
 // THE FIRST VERSION OF THIS PASSED WITH A 200, and the bug was one accessor:
 // transformers are a LIST in the compiled object, and reading them as a map
 // returned nothing — so a fail-closed transformer silently stopped existing.
-func TestAFailClosedTransformerRefuses(t *testing.T) {
+// It used to assert the refusal a gateway made because nothing could RUN a
+// transformer; what it holds now is the narrower and more useful claim, that one
+// which fails takes the route with it.
+func TestAFailClosedTransformerThatCannotRunRefuses(t *testing.T) {
 	h := newHarness(t, Config{})
+	h.Workers.shapeErr = map[string]error{"redact": errors.New("the component would not start")}
 
 	w := h.do(t, http.MethodPost, "http://shop.example.com/checkout", "a card number")
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Empty(t, h.Workers.seen(), "and the body never reached the workload")
+}
+
+// TestATransformerRunsBeforeTheHandlerAndShapesWhatItSees.
+func TestATransformerShapesTheRequest(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.Workers.shaped = map[string]*invoke.Outcome{
+		"redact": {Forward: &invoke.Request{
+			Method:  http.MethodPost,
+			Path:    "/checkout",
+			Headers: map[string][]string{"X-Redacted": {"yes"}},
+			Body:    []byte("****"),
+		}},
+	}
+
+	w := h.do(t, http.MethodPost, "http://shop.example.com/checkout", "a card number")
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// THE CHAIN IS A PIPELINE AND THE ORDER IS THE DECLARATION'S. This route
+	// names two, and what the second one sees is what the first produced —
+	// otherwise the list would be independent opinions, none able to build on
+	// another.
+	asked := h.Workers.asked()
+	require.Len(t, asked, 2, "both transformers ran")
+	require.Equal(t, "redact", asked[0].at.Name, "in the order declared")
+	require.Equal(t, "tier_header", asked[1].at.Name)
+	require.Empty(t, asked[0].at.Scope, "redact names no namespace, so it resolves in the gateway's")
+	require.Equal(t, []string{"shop"}, asked[1].at.Scope, "and tier_header names one")
+
+	require.Equal(t, "a card number", string(asked[0].req.Body), "the first saw the original")
+	require.Equal(t, "****", string(asked[1].req.Body), "and the second saw what the first produced")
+
+	served := h.Workers.seen()
+	require.Len(t, served, 1)
+	require.Equal(t, "****", string(served[0].req.Body), "and the handler saw the end of the chain")
+	require.Equal(t, []string{"yes"}, served[0].req.Headers["X-Redacted"])
+}
+
+// TestATransformerCanANSWERAndTheHandlerNeverRuns, which is how a filter
+// rejects: the request stops at the transformer and what it returned is what the
+// client gets.
+func TestATransformerCanAnswerInsteadOfForwarding(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.Workers.shaped = map[string]*invoke.Outcome{
+		"redact": {Answer: &invoke.Response{
+			Status:  http.StatusForbidden,
+			Headers: map[string][]string{"X-Refused-By": {"redact"}},
+			Body:    []byte("no card numbers here"),
+		}},
+	}
+
+	w := h.do(t, http.MethodPost, "http://shop.example.com/checkout", "a card number")
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Equal(t, "redact", w.Header().Get("X-Refused-By"))
+	require.Equal(t, "no card numbers here", w.Body.String())
+	require.Empty(t, h.Workers.seen(), "the handler never ran")
 }
 
 // TestARouterRoutedNameSaysSoRatherThanServingNothing.

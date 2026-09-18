@@ -59,6 +59,15 @@ type Invoker interface {
 	Invoke(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Response, error)
 }
 
+// Transformer is an Invoker that can also run a transformer.
+//
+// A SECOND INTERFACE FOR THE REASON invoke.Transforms IS ONE: this is what a
+// worker offers, and something standing in for a worker in a test need not offer
+// it to be a worker. A local worker and a remote client both do.
+type Transformer interface {
+	Transform(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error)
+}
+
 var (
 	ErrNoHost    = errors.New("placement: no host to dial from")
 	ErrNoRouter  = errors.New("placement: nothing to route from")
@@ -160,9 +169,42 @@ func New(h host.Host, router Router, opts ...Option) (*Workers, error) {
 
 // Invoke runs one request on whichever node should take it.
 func (w *Workers) Invoke(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Response, error) {
+	var out *invoke.Response
+	err := w.somewhere(ctx, at, func(inv Invoker) error {
+		var err error
+		out, err = inv.Invoke(ctx, at, req)
+		return err
+	})
+	return out, err
+}
+
+// Transform runs one request through a transformer on whichever node should
+// take it.
+//
+// IT IS THE SAME PLACEMENT, and that is the point rather than an economy: a
+// transformer is a workload of the same deployment, so the node that is warm for
+// the project is warm for its transformers too. A gateway that ran them itself
+// would need a component tier on every edge node and would lose the warmth.
+func (w *Workers) Transform(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error) {
+	var out *invoke.Outcome
+	err := w.somewhere(ctx, at, func(inv Invoker) error {
+		t, ok := inv.(Transformer)
+		if !ok {
+			return fmt.Errorf("%w: that worker runs no transformer", ErrNoWorkers)
+		}
+		var err error
+		out, err = t.Transform(ctx, at, req)
+		return err
+	})
+	return out, err
+}
+
+// somewhere runs call against the warmest node that will take this address,
+// trying the next one only when a node could not be REACHED.
+func (w *Workers) somewhere(ctx context.Context, at project.Address, call func(Invoker) error) error {
 	candidates := w.candidates(at)
 	if len(candidates) == 0 {
-		return nil, ErrNoWorkers
+		return ErrNoWorkers
 	}
 
 	var last error
@@ -177,24 +219,23 @@ func (w *Workers) Invoke(ctx context.Context, at project.Address, req *invoke.Re
 			continue
 		}
 
-		res, err := invoker.Invoke(ctx, at, req)
-		if err == nil {
-			return res, nil
+		if err := call(invoker); err == nil {
+			return nil
+		} else {
+			// A NODE THAT ANSWERED IS THE ANSWER. Only a failure to reach it is
+			// worth another node — anything else is the workload's own outcome,
+			// and running it again would run it twice.
+			if !unreachable(err) {
+				return err
+			}
+			last = err
 		}
-
-		// A NODE THAT ANSWERED IS THE ANSWER. Only a failure to reach it is
-		// worth another node — anything else is the workload's own outcome,
-		// and running it again would run it twice.
-		if !unreachable(err) {
-			return nil, err
-		}
-		last = err
 	}
 
 	if last == nil {
 		last = ErrNoWorkers
 	}
-	return nil, fmt.Errorf("placement: no worker took %s/%s: %w", at.Kind, at.Name, last)
+	return fmt.Errorf("placement: no worker took %s/%s: %w", at.Kind, at.Name, last)
 }
 
 // candidates is the nodes that could take this, warmest first.

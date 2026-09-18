@@ -44,6 +44,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/project"
 )
 
@@ -187,6 +188,43 @@ func (s *Service) Invoke(ctx context.Context, t Target, req *invoke.Request) (*i
 
 	s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpInvoke, s.now().Sub(started)))
 	return res, nil
+}
+
+// Transform runs one request through a transformer and answers with what it
+// decided.
+//
+// IT IS METERED AS AN INVOCATION, because it is one: a transformer is a
+// workload, it runs somebody's code, and it holds a pooled instance for the
+// duration. A chain of three that ran unbilled would be a way to run code on
+// this cloud for free, and the request that pays for the handler is not the same
+// request as the three that shaped it.
+//
+// IT REFUSES A FUNCTION THAT IS NOT A TRANSFORMER, at the resolve, rather than
+// letting the tier discover it: `implements` is on the spec, and a gateway that
+// named an ordinary handler in its `transformers:` list would otherwise reach a
+// component that reads a request as a request and answers with a response the
+// chain reads as an outcome.
+func (s *Service) Transform(ctx context.Context, t Target, req *invoke.Request) (*invoke.Outcome, error) {
+	started := s.now()
+
+	spec, err := s.Resolve(ctx, t)
+	if err != nil {
+		s.emit(ctx, accounted(t, "", 0, OpRefuse, s.now().Sub(started)))
+		return nil, err
+	}
+	if world := spec.Settings[wasm.SettingImplements]; world != wasm.WorldGatewayTransformer {
+		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))
+		return nil, fmt.Errorf("%w: %s implements %q rather than a transformer", ErrNoTarget, t.Name, world)
+	}
+
+	out, err := s.pool.Transform(ctx, spec, req)
+	if err != nil {
+		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))
+		return nil, err
+	}
+
+	s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpInvoke, s.now().Sub(started)))
+	return out, nil
 }
 
 // Start listens and serves. Calling it twice, or after Close, is an error.

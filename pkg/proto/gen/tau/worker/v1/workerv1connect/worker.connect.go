@@ -61,12 +61,17 @@ const (
 const (
 	// WorkerServiceInvokeProcedure is the fully-qualified name of the WorkerService's Invoke RPC.
 	WorkerServiceInvokeProcedure = "/tau.worker.v1.WorkerService/Invoke"
+	// WorkerServiceTransformProcedure is the fully-qualified name of the WorkerService's Transform RPC.
+	WorkerServiceTransformProcedure = "/tau.worker.v1.WorkerService/Transform"
 )
 
 // WorkerServiceClient is a client for the tau.worker.v1.WorkerService service.
 type WorkerServiceClient interface {
 	// Invoke runs one request against one resource.
 	Invoke(context.Context, *connect.Request[v1.InvokeRequest]) (*connect.Response[v1.InvokeResponse], error)
+	// Transform runs one request through one transformer and answers with what
+	// it decided.
+	Transform(context.Context, *connect.Request[v1.TransformRequest]) (*connect.Response[v1.TransformResponse], error)
 }
 
 // NewWorkerServiceClient constructs a client for the tau.worker.v1.WorkerService service. By
@@ -86,12 +91,19 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workerServiceMethods.ByName("Invoke")),
 			connect.WithClientOptions(opts...),
 		),
+		transform: connect.NewClient[v1.TransformRequest, v1.TransformResponse](
+			httpClient,
+			baseURL+WorkerServiceTransformProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("Transform")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
-	invoke *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
+	invoke    *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
+	transform *connect.Client[v1.TransformRequest, v1.TransformResponse]
 }
 
 // Invoke calls tau.worker.v1.WorkerService.Invoke.
@@ -99,10 +111,18 @@ func (c *workerServiceClient) Invoke(ctx context.Context, req *connect.Request[v
 	return c.invoke.CallUnary(ctx, req)
 }
 
+// Transform calls tau.worker.v1.WorkerService.Transform.
+func (c *workerServiceClient) Transform(ctx context.Context, req *connect.Request[v1.TransformRequest]) (*connect.Response[v1.TransformResponse], error) {
+	return c.transform.CallUnary(ctx, req)
+}
+
 // WorkerServiceHandler is an implementation of the tau.worker.v1.WorkerService service.
 type WorkerServiceHandler interface {
 	// Invoke runs one request against one resource.
 	Invoke(context.Context, *connect.Request[v1.InvokeRequest]) (*connect.Response[v1.InvokeResponse], error)
+	// Transform runs one request through one transformer and answers with what
+	// it decided.
+	Transform(context.Context, *connect.Request[v1.TransformRequest]) (*connect.Response[v1.TransformResponse], error)
 }
 
 // NewWorkerServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -118,10 +138,18 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workerServiceMethods.ByName("Invoke")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerServiceTransformHandler := connect.NewUnaryHandler(
+		WorkerServiceTransformProcedure,
+		svc.Transform,
+		connect.WithSchema(workerServiceMethods.ByName("Transform")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.worker.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WorkerServiceInvokeProcedure:
 			workerServiceInvokeHandler.ServeHTTP(w, r)
+		case WorkerServiceTransformProcedure:
+			workerServiceTransformHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -133,4 +161,8 @@ type UnimplementedWorkerServiceHandler struct{}
 
 func (UnimplementedWorkerServiceHandler) Invoke(context.Context, *connect.Request[v1.InvokeRequest]) (*connect.Response[v1.InvokeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.worker.v1.WorkerService.Invoke is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) Transform(context.Context, *connect.Request[v1.TransformRequest]) (*connect.Response[v1.TransformResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.worker.v1.WorkerService.Transform is not implemented"))
 }

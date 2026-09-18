@@ -114,6 +114,50 @@ type recordingWorkers struct {
 	calls []call
 	err   error
 	reply *invoke.Response
+
+	// shaped is what each transformer answers, by function name. A name with no
+	// entry forwards the request unchanged, which is what a transformer that
+	// decided to change nothing does.
+	shaped map[string]*invoke.Outcome
+	// shapeErr is a transformer that could not be run, by function name.
+	shapeErr map[string]error
+	// transformed records every transformer that was asked, in order.
+	transformed []call
+}
+
+// Transform stands in for the worker that runs the transformer.
+func (w *recordingWorkers) Transform(_ context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error) {
+	w.mu.Lock()
+	w.transformed = append(w.transformed, call{at: at, req: cloneRequest(req)})
+	out, err := w.shaped[at.Name], w.shapeErr[at.Name]
+	w.mu.Unlock()
+
+	if err != nil {
+		return nil, err
+	}
+	if out != nil {
+		return out, nil
+	}
+	return &invoke.Outcome{Forward: req}, nil
+}
+
+func (w *recordingWorkers) asked() []call {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]call(nil), w.transformed...)
+}
+
+// cloneRequest snapshots what a transformer was HANDED. The chain mutates the
+// request in place as each one forwards, so recording the pointer would record
+// what the LAST transformer produced for every entry.
+func cloneRequest(req *invoke.Request) *invoke.Request {
+	out := *req
+	out.Headers = make(map[string][]string, len(req.Headers))
+	for k, v := range req.Headers {
+		out.Headers[k] = append([]string(nil), v...)
+	}
+	out.Body = append([]byte(nil), req.Body...)
+	return &out
 }
 
 type call struct {
