@@ -136,8 +136,18 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 		return nil, err
 	}
 
+	// A UNIVERSE CANNOT HAVE :53, AND SHOULD NOT WANT IT. The default is the
+	// port a resolver dials by convention, which needs root or
+	// CAP_NET_BIND_SERVICE — and even where a test has them, a universe
+	// answering on the machine's own resolver port would be answering for the
+	// developer running it. So every node here takes an ephemeral loopback
+	// port, which is also what makes a FLEET of them possible: two nodes
+	// cannot share one port, and :0 is how dream allocates every other one.
+	nodeConfig := node.Config{Services: servicesIn(cfg), Cloud: u.Name()}
+	nodeConfig.DNSListen = "127.0.0.1:0"
+
 	n, err := node.New(
-		node.Config{Services: servicesIn(cfg), Cloud: u.Name()},
+		nodeConfig,
 		node.WithHost(h),
 		node.WithPubSub(p.Messaging()),
 		node.WithDatabases(kvdb.New(p)),

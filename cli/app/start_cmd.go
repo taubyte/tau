@@ -80,6 +80,13 @@ func configCommand() *cli.Command {
 					Services:  node.All,
 					Cloud:     "acme",
 					Container: node.ContainerConfig{Backend: node.BackendContainerd},
+
+					// WRITTEN OUT RATHER THAN LEFT TO THE DEFAULT, which is the
+					// same value. A node that serves dns takes a real socket and
+					// :53 needs root or CAP_NET_BIND_SERVICE — so an operator
+					// reading this file should see the number that will fail on a
+					// laptop, not discover it from a bind error.
+					DNSListen: node.DefaultDNSListen,
 				},
 				Root:      boot.DefaultRoot,
 				Listen:    []string{boot.DefaultListen},
