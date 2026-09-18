@@ -75,14 +75,20 @@ type Secrets interface {
 // captured either at construction would serve a number the author changed and
 // nothing would happen.
 func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *project.Project, r project.Resource, resourceID string) (invoke.Spec, error) {
-	runtime, err := runtimeOf(t.Kind, r)
-	if err != nil {
-		return invoke.Spec{}, err
-	}
-
-	artifact, err := s.artifactOf(ctx, t, r, resourceID)
-	if err != nil {
-		return invoke.Spec{}, err
+	// A KIND THIS SERVICE ANSWERS ITSELF HAS NEITHER OF THE NEXT TWO, and asking
+	// for them is what made `mcp` unreachable: runtimeOf refuses a kind the
+	// vocabulary gives no engine, and artifactOf then asks the build service for
+	// the output of a build that never happened. Invoke's own mcp branch sits
+	// after Resolve, so both refusals landed before anything could answer one.
+	var runtime, artifact string
+	if !servedHere(t.Kind) {
+		var err error
+		if runtime, err = runtimeOf(t.Kind, r); err != nil {
+			return invoke.Spec{}, err
+		}
+		if artifact, err = s.artifactOf(ctx, t, r, resourceID); err != nil {
+			return invoke.Spec{}, err
+		}
 	}
 
 	env, err := s.envOf(ctx, t, r)
@@ -212,6 +218,16 @@ func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Gr
 			// know what a channel is — the same trade startedBy makes.
 			if reach.Kind == channelKind {
 				servedBy(proj, t, target, id, &grant)
+			}
+
+			// A TOOL'S NAME IS THE AUTHOR'S LABEL AND NOT THE TARGET'S. An mcp
+			// publishes its `invoke` grants as tools, so what a model calls
+			// back with is the label — which may name a function of another
+			// name, in another namespace. A Grant carries a label and a handle
+			// and no address, so the address resolved here is what travels, for
+			// the reason servedBy states just above.
+			if reach.Kind == functionKind && contains(reach.Ops, opInvoke) {
+				invokedAt(proj, target, id, &grant)
 			}
 
 			// A GUARD IS CROSS-KIND, which is why it is not in settingsFor:
@@ -409,6 +425,35 @@ const (
 	settingServeKind  = "serve/kind"
 	settingServeName  = "serve/name"
 	settingServeScope = "serve/namespace"
+)
+
+// invokedAt records which function an `invoke` grant actually resolved to.
+//
+// THE CALLER HAS THE LABEL AND NEEDS THE ADDRESS. An mcp looks a tool up by the
+// name it published — the author's label — and then has to invoke something.
+// Building a target out of the label invoked a function of THAT name in the
+// CALLER's scope: the wrong function wherever a grant renamed one, and nothing
+// at all wherever it named one in another namespace.
+//
+// IT IS NOT REFUSED WHEN IT CANNOT BE LOCATED, unlike a channel's server. The
+// grant is already good — proj.Reached resolved it — so a missing location is
+// this record being absent, and the caller answers for that at the call.
+func invokedAt(proj *project.Project, target project.Resource, id string, grant *invoke.Grant) {
+	_, scope, _, ok := proj.Locate(id)
+	if !ok {
+		return
+	}
+
+	grant.Settings = merged(grant.Settings, map[string]string{
+		settingInvokeName:  target.String("name"),
+		settingInvokeScope: "/" + strings.Join(scope, "/"),
+	})
+}
+
+// Where an `invoke` grant's target actually lives.
+const (
+	settingInvokeName  = "invoke/name"
+	settingInvokeScope = "invoke/namespace"
 )
 
 // guardedBy fills in who decides what this caller may do to the target.
@@ -993,6 +1038,15 @@ func settingsOf(r project.Resource) map[string]string {
 	}
 	return out
 }
+
+// servedHere is a kind this service answers rather than hands to a tier.
+//
+// IT IS NOT A SECOND ENGINE TABLE. `Engines()` says which tier may run a kind
+// and the answer for this one is genuinely none — which runtimeOf reports as an
+// error because for every other kind it is one. This says the other half: no
+// tier runs it BECAUSE this service does, so the tier and the artifact are
+// questions that have no answer rather than questions that failed.
+func servedHere(kind string) bool { return kind == mcpKind }
 
 // runtimeOf says which tier runs this.
 //

@@ -155,3 +155,63 @@ func TestTheAnswerSaysItIsJson(t *testing.T) {
 	require.NoError(t, json.Unmarshal(res.Body, &out))
 	require.Equal(t, "2.0", out["jsonrpc"])
 }
+
+// TestAnInvokeGrantCarriesTheFunctionItRESOLVEDTO — the defect this pair of
+// tests exists for, and the reason the ones above did not catch it: they build
+// a spec by hand, so they agree with whatever the code believes a grant holds.
+// These go through Resolve against the vocabulary's own fixture.
+//
+// A TOOL IS PUBLISHED UNDER THE AUTHOR'S LABEL, and Call used to build its
+// target out of that label in the mcp's own scope. `notify` sits in /shop and
+// reaches `relay` in `eu`, so the label alone names nothing — resolving it is
+// the composer's job, where the compiled project is open.
+func TestAnInvokeGrantCarriesTheFunctionItResolvedTo(t *testing.T) {
+	h := newHarness(t)
+	spec := resolveIn(t, h, []string{"shop"}, "function", "notify")
+
+	var relay *invoke.Grant
+	for i, g := range spec.Reaches {
+		if g.Kind == mcpToolKind && g.Label == "relay" {
+			relay = &spec.Reaches[i]
+			break
+		}
+	}
+	require.NotNil(t, relay, "the fixture's /shop/notify reaches relay in eu")
+
+	require.Equal(t, "relay", relay.Settings[settingInvokeName])
+	require.Equal(t, "/shop/eu", relay.Settings[settingInvokeScope],
+		"where it was FOUND, not the scope of whoever asked - a caller building a target out of the label alone looked in /shop and found nothing")
+}
+
+// TestTheADDRESSISWHATCALLGOESTO. The registry reads what the composer
+// recorded, so a tool whose target lives elsewhere is invoked where it lives.
+func TestCallTargetsTheResolvedAddressAndNotTheLabel(t *testing.T) {
+	h := newHarness(t)
+	spec := resolveIn(t, h, []string{"shop"}, "function", "notify")
+
+	tools := &mcpTools{
+		service: h.Worker,
+		target:  Target{Project: "shop", Environment: "prod", Kind: mcpKind, Name: "tools"},
+		spec:    spec,
+	}
+
+	res, err := tools.Call(t.Context(), "relay", json.RawMessage(`{"order":1}`))
+	require.NoError(t, err)
+	require.False(t, res.Failed, "the function is in the fixture and the tier is fake: %s", res.Content)
+
+	var reached []string
+	for _, s := range h.Runtime.specs() {
+		reached = append(reached, s.Name)
+	}
+	require.Contains(t, reached, "shop/prod/function/"+relayID(t, h),
+		"the function in /shop/eu ran, which the label alone could never have reached")
+}
+
+// relayID is what `relay` compiled to, read off the fixture rather than
+// written down here — an id in a test is a copy of the compiler's output that
+// stops agreeing with it.
+func relayID(t *testing.T, h *harness) string {
+	t.Helper()
+	spec := resolveIn(t, h, []string{"shop", "eu"}, "function", "relay")
+	return spec.Name[len("shop/prod/function/"):]
+}

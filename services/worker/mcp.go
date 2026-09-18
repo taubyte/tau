@@ -12,6 +12,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/mcp"
+	"github.com/taubyte/tau/pkg/project"
 )
 
 // mcp.go serves the vocabulary's `mcp` kind.
@@ -168,12 +169,22 @@ func (m *mcpTools) Call(ctx context.Context, name string, arguments json.RawMess
 		body = []byte("{}")
 	}
 
+	// THE LABEL IS WHAT WAS PUBLISHED AND THE ADDRESS IS WHAT IS CALLED. A tool
+	// is named after the author's access-block label, which is not the target's
+	// name and need not be in this mcp's scope, so invoking `name` here in
+	// `m.target.Scope` called whatever happened to sit at that name beside the
+	// server — or nothing. reachesOf resolved the real one while the compiled
+	// project was open; this reads what it recorded.
+	//
+	// AN ABSOLUTE NAMESPACE IGNORES THE ASKER, which is why the asker passed to
+	// ScopeOf is nil: the recorded scope is where the function WAS FOUND, not a
+	// path to walk from here.
 	res, err := m.service.Invoke(ctx, Target{
 		Project:     m.target.Project,
 		Environment: m.target.Environment,
-		Scope:       m.target.Scope,
+		Scope:       project.ScopeOf(nil, granted.Settings[settingInvokeScope]),
 		Kind:        mcpToolKind,
-		Name:        name,
+		Name:        granted.Settings[settingInvokeName],
 	}, &invoke.Request{
 		Method:  http.MethodPost,
 		Path:    "/",
