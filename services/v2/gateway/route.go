@@ -203,3 +203,31 @@ func splitScope(namespace string) []string {
 	}
 	return strings.Split(namespace, "/")
 }
+
+// router is the function that decides where this request goes, and the scope to
+// resolve it in — empty name when the route declares its handler outright.
+//
+// TWO PLACES, ONE QUESTION. A gateway whose `routing` is `router` has no static
+// routes; a single route whose `target` is `router` picks that route's handler.
+// The route's own is the more specific of the two and wins where both are
+// written.
+func (m match) router() (name string, scope []string) {
+	if m.Handler != nil && m.resource.String("route", "target") == "router" {
+		if n := m.Handler.String("name"); n != "" {
+			return n, scopeOrNil(m.Handler.String("namespace"))
+		}
+	}
+	if m.resource.String("routing") == "router" {
+		return m.resource.String("router", "name"), scopeOrNil(m.resource.String("router", "namespace"))
+	}
+	return "", nil
+}
+
+// scopeOrNil is a declared namespace as a chain, or nil to mean "the asking
+// resource's own" — which is not the same as the project root.
+func scopeOrNil(namespace string) []string {
+	if namespace == "" {
+		return nil
+	}
+	return splitScope(namespace)
+}

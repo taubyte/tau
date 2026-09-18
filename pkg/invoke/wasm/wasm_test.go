@@ -335,11 +335,12 @@ func TestASinkThatAnswersNothing(t *testing.T) {
 func TestAWorldThisTierDoesNotServe(t *testing.T) {
 	r := tier(t, handler(t))
 
-	// gateway-transformer is NOT among these any more: it is pooled and started
-	// like a handler, because it runs per request. The worlds Start refuses are
-	// the ones with their own doors (authorizer, instance-validator) and the
-	// ones with no door at all (the routers, proxy-transformer).
-	for _, world := range []string{"authorizer", "instance-validator", "proxy-router", "gateway-router", "proxy-transformer"} {
+	// THE POOLED WORLDS ARE NOT AMONG THESE. gateway-transformer and
+	// gateway-router are started like a handler, because both run per request.
+	// What Start refuses is the worlds with their own doors — an authorizer and
+	// an instance validator are asked once and their answers kept — and the two
+	// that belong to a kind nothing serves yet.
+	for _, world := range []string{"authorizer", "instance-validator", "proxy-router", "proxy-transformer"} {
 		_, err := r.Start(t.Context(), invoke.Spec{
 			Name:     "shop/prod/function/gate",
 			Artifact: "bafycomponent",

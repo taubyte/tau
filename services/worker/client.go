@@ -114,6 +114,47 @@ func (c *Client) Transform(ctx context.Context, t project.Address, req *invoke.R
 	return nil, ErrNoOutcome
 }
 
+// Route asks a router, on whichever node holds the deployment, where one
+// request should go.
+func (c *Client) Route(ctx context.Context, t project.Address, req *invoke.Request) (*invoke.Routing, error) {
+	if req == nil {
+		req = &invoke.Request{}
+	}
+
+	res, err := c.svc.Route(ctx, connect.NewRequest(&workerv1.RouteRequest{
+		Target: &workerv1.Target{
+			Project: t.Project, Environment: t.Environment,
+			Scope: t.Scope, Kind: t.Kind, Name: t.Name,
+		},
+		Method:  req.Method,
+		Path:    req.Path,
+		Headers: toWire(req.Headers),
+		Body:    req.Body,
+	}))
+	if err != nil {
+		return nil, unwire(err)
+	}
+
+	switch d := res.Msg.GetDecision().(type) {
+	case *workerv1.RouteResponse_To:
+		return &invoke.Routing{To: &invoke.Destination{
+			Kind: d.To.GetKind(), Namespace: d.To.GetNamespace(), Name: d.To.GetName(),
+		}}, nil
+
+	case *workerv1.RouteResponse_Answer:
+		return &invoke.Routing{Answer: &invoke.Response{
+			Status:  int(d.Answer.GetStatus()),
+			Headers: fromWire(d.Answer.GetHeaders()),
+			Body:    d.Answer.GetBody(),
+		}}, nil
+
+	case *workerv1.RouteResponse_None:
+		return &invoke.Routing{None: d.None}, nil
+	}
+
+	return nil, ErrNoOutcome
+}
+
 // unwire turns a status back into the sentinel a local worker would return.
 //
 // IT MATCHES ON THE MESSAGE AS WELL AS THE CODE, because several sentinels

@@ -123,6 +123,18 @@ type recordingWorkers struct {
 	shapeErr map[string]error
 	// transformed records every transformer that was asked, in order.
 	transformed []call
+
+	// routing is what each router answers, by function name; routeErr is a
+	// router that could not be run. routed records every router asked.
+	routing  map[string]*invoke.Routing
+	routeErr map[string]error
+	routed   []call
+}
+
+func (w *recordingWorkers) asksRouted() []call {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]call(nil), w.routed...)
 }
 
 // Transform stands in for the worker that runs the transformer.
@@ -139,6 +151,24 @@ func (w *recordingWorkers) Transform(_ context.Context, at project.Address, req 
 		return out, nil
 	}
 	return &invoke.Outcome{Forward: req}, nil
+}
+
+// Route stands in for the worker that runs the router. With no entry it sends
+// the request to `function/handled`, which is enough for a test that is about
+// something else to get past a router-routed name.
+func (w *recordingWorkers) Route(_ context.Context, at project.Address, req *invoke.Request) (*invoke.Routing, error) {
+	w.mu.Lock()
+	w.routed = append(w.routed, call{at: at, req: cloneRequest(req)})
+	out, err := w.routing[at.Name], w.routeErr[at.Name]
+	w.mu.Unlock()
+
+	if err != nil {
+		return nil, err
+	}
+	if out != nil {
+		return out, nil
+	}
+	return &invoke.Routing{To: &invoke.Destination{Kind: "function", Name: "handled"}}, nil
 }
 
 func (w *recordingWorkers) asked() []call {

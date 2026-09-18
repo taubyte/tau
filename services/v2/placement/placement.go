@@ -68,6 +68,15 @@ type Transformer interface {
 	Transform(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error)
 }
 
+// Routes is an Invoker that can also ask a router where a request goes.
+//
+// NOT `Router`, which in this package already means the stats read placement
+// decides FROM. Two things called Router, one choosing a node and one choosing a
+// destination, is a collision a reader has to hold in their head on every line.
+type Routes interface {
+	Route(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Routing, error)
+}
+
 var (
 	ErrNoHost    = errors.New("placement: no host to dial from")
 	ErrNoRouter  = errors.New("placement: nothing to route from")
@@ -194,6 +203,22 @@ func (w *Workers) Transform(ctx context.Context, at project.Address, req *invoke
 		}
 		var err error
 		out, err = t.Transform(ctx, at, req)
+		return err
+	})
+	return out, err
+}
+
+// Route asks a router, on whichever node should take it, where one request
+// should go.
+func (w *Workers) Route(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Routing, error) {
+	var out *invoke.Routing
+	err := w.somewhere(ctx, at, func(inv Invoker) error {
+		r, ok := inv.(Routes)
+		if !ok {
+			return fmt.Errorf("%w: that worker runs no router", ErrNoWorkers)
+		}
+		var err error
+		out, err = r.Route(ctx, at, req)
 		return err
 	})
 	return out, err

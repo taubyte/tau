@@ -318,6 +318,40 @@ type Transforms interface {
 	Transform(ctx context.Context, req *Request) (*Outcome, error)
 }
 
+// Routes is an Instance that can also be driven as a gateway router.
+//
+// A SECOND INTERFACE FOR THE REASON Transforms IS ONE: only the component tier
+// serves this world, and widening Instance would make every tier carry a method
+// saying it cannot.
+type Routes interface {
+	Route(ctx context.Context, req *Request) (*Routing, error)
+}
+
+// Destination is where a router said a request should go: the vocabulary's own
+// kind, the namespace holding it, and its name. An empty Namespace means the
+// asking resource's own scope, then its parents.
+//
+// IT IS AN ADDRESS AND NOT A WORKLOAD. What runs it is the gateway's business,
+// which is what keeps placement, metering, timeouts and the transformer chain in
+// one place rather than in every router anybody writes.
+type Destination struct {
+	Kind      string
+	Namespace string
+	Name      string
+}
+
+// Routing is what a router decided. Exactly one field is set.
+//
+// None is a DECISION and not a failure: the router ran, understood the request,
+// and says nothing here handles it. A router that could not be run is a
+// different thing, because a routing table that cannot be read is not the same
+// as a path that is not in it.
+type Routing struct {
+	To     *Destination
+	Answer *Response
+	None   string
+}
+
 // Outcome is what a transformer decided: the request carries on, possibly
 // changed, or it stops here and this is the answer.
 //

@@ -243,13 +243,62 @@ func TestATransformerCanAnswerInsteadOfForwarding(t *testing.T) {
 	require.Empty(t, h.Workers.seen(), "the handler never ran")
 }
 
-// TestARouterRoutedNameSaysSoRatherThanServingNothing.
-func TestARouterRoutedNameIsNotImplemented(t *testing.T) {
+// TestAROUTERROUTEDNameAsksItsRouter, which used to be a 501: a gateway whose
+// `routing` is a function had no static route and nothing could run the
+// function, so the only honest answer was "not implemented".
+func TestARouterRoutedNameAsksItsRouter(t *testing.T) {
 	h := newHarness(t, Config{})
+	h.Workers.routing = map[string]*invoke.Routing{
+		"edge_router": {To: &invoke.Destination{Kind: "function", Name: "picked"}},
+	}
 
 	w := h.do(t, http.MethodGet, "http://api.example.com/anything", "")
-	require.Equal(t, http.StatusNotImplemented, w.Code)
-	require.Empty(t, h.Workers.seen())
+	require.Equal(t, http.StatusOK, w.Code)
+
+	asked := h.Workers.asksRouted()
+	require.Len(t, asked, 1, "the router was asked")
+	require.Equal(t, "edge_router", asked[0].at.Name)
+	require.Equal(t, "/anything", asked[0].req.Path, "and it saw the request")
+
+	served := h.Workers.seen()
+	require.Len(t, served, 1)
+	require.Equal(t, "picked", served[0].at.Name, "the handler is the one it named")
+}
+
+// TestAROUTERMayANSWERItself — a redirect needs no workload, and invoking one to
+// produce a 302 would be a cold start for a header.
+func TestARouterCanAnswerWithoutAHandler(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.Workers.routing = map[string]*invoke.Routing{
+		"edge_router": {Answer: &invoke.Response{
+			Status:  http.StatusFound,
+			Headers: map[string][]string{"Location": {"/elsewhere"}},
+		}},
+	}
+
+	w := h.do(t, http.MethodGet, "http://api.example.com/anything", "")
+	require.Equal(t, http.StatusFound, w.Code)
+	require.Equal(t, "/elsewhere", w.Header().Get("Location"))
+	require.Empty(t, h.Workers.seen(), "no handler ran")
+}
+
+// TestNONEIsA404AndAFAILUREIsNot. A routing table that cannot be read is not
+// the same as a path that is not in it: one is this cloud's problem and the
+// other is the client's, and telling a client — and every cache between here and
+// it — that a path does not exist is not a thing to guess at.
+func TestARouterThatMatchesNothingIs404AndOneThatFailsIsNot(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.Workers.routing = map[string]*invoke.Routing{
+		"edge_router": {None: "no rule matched"},
+	}
+	require.Equal(t, http.StatusNotFound,
+		h.do(t, http.MethodGet, "http://api.example.com/anything", "").Code)
+
+	h.Workers.routing = nil
+	h.Workers.routeErr = map[string]error{"edge_router": errors.New("the component would not start")}
+	require.Equal(t, http.StatusServiceUnavailable,
+		h.do(t, http.MethodGet, "http://api.example.com/anything", "").Code,
+		"a router that could not be run must not read as a missing path")
 }
 
 // TestABodyLargerThanTheBudgetIsRefusedBeforeItIsBuffered.

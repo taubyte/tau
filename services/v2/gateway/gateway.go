@@ -33,9 +33,12 @@
 // rather than here, because a transformer is a workload of the same deployment
 // and the node that is warm for the project is warm for its transformers.
 //
-// A ROUTER is still a function against an interface nothing builds
-// (`gateway-router`), so a gateway whose routing is a function says so rather
-// than pretending.
+// IT RUNS ROUTERS TOO, and on a worker for the same reason. A gateway whose
+// `routing` is a function has no static route at all; a single route whose
+// `target` is `router` picks that route's handler. Both are the same question
+// and one world answers it — see destination(), which runs AFTER the chain
+// because a router that saw the request first would be deciding from a body
+// somebody was about to redact.
 // It lives under services/v2 because v1 has a `services/gateway` and both run
 // in one binary for the whole span between the first v2 service and the swap —
 // the same reason services/v2/auth is where it is.
@@ -275,7 +278,21 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := s.workers.Invoke(ctx, m.address(projectName, environment), req)
+	// WHERE IT GOES, which is the route's own answer unless a function decides.
+	// The router runs AFTER the chain: one that saw the request first would be
+	// deciding from a body somebody was about to redact.
+	at, answer, code, why := s.destination(ctx, m, projectName, environment, req)
+	if why != "" {
+		refuse(w, code, why)
+		return
+	}
+	if answer != nil {
+		billed.served = true
+		writeTo(w, answer)
+		return
+	}
+
+	res, err := s.workers.Invoke(ctx, at, req)
 	if err != nil {
 		refuse(w, statusFor(err), "this route could not be served")
 		return
@@ -302,6 +319,68 @@ func writeTo(w http.ResponseWriter, res *invoke.Response) {
 	}
 	w.WriteHeader(status)
 	w.Write(res.Body)
+}
+
+// destination is where this request goes: the route's declared handler, or
+// whatever its router decided.
+//
+// A ROUTER IS NAMED IN TWO PLACES and they are the same question. A gateway
+// whose `routing` is `router` has no static routes at all; a single route whose
+// `target` is `router` picks that route's handler. routerAttributes in the DSL
+// is one function for exactly that reason, and this is its other half.
+//
+// A ROUTER THAT COULD NOT BE RUN IS NOT A 404. A routing table that cannot be
+// read is not the same as a path that is not in it — one is this cloud's
+// problem and the other is the client's, and telling a client (and every cache
+// between here and it) that a path does not exist is not a thing to guess at.
+//
+// It answers (address, nil, 0, "") to invoke, (_, answer, 0, "") to serve that
+// response, and (_, nil, code, why) to refuse.
+func (s *Service) destination(ctx context.Context, m match, projectName, environment string, req *invoke.Request) (project.Address, *invoke.Response, int, string) {
+	router, scope := m.router()
+	if router == "" {
+		return m.address(projectName, environment), nil, 0, ""
+	}
+
+	if scope == nil {
+		scope = m.host.Scope
+	}
+	out, err := s.workers.Route(ctx, project.Address{
+		Project:     projectName,
+		Environment: environment,
+		Scope:       scope,
+		Kind:        "function",
+		Name:        router,
+	}, req)
+	if err != nil {
+		return project.Address{}, nil, http.StatusServiceUnavailable,
+			"the function that routes this name could not be run"
+	}
+
+	switch {
+	case out.Answer != nil:
+		return project.Address{}, out.Answer, 0, ""
+
+	case out.None != "":
+		// THE ROUTER RAN AND SAID NOTHING HANDLES THIS, which is the one case
+		// where a 404 is the truth rather than a guess.
+		return project.Address{}, nil, http.StatusNotFound, "nothing here handles that"
+
+	case out.To != nil:
+		to := m.host.Scope
+		if out.To.Namespace != "" {
+			to = splitScope(out.To.Namespace)
+		}
+		return project.Address{
+			Project:     projectName,
+			Environment: environment,
+			Scope:       to,
+			Kind:        out.To.Kind,
+			Name:        out.To.Name,
+		}, nil, 0, ""
+	}
+
+	return project.Address{}, nil, http.StatusBadGateway, "that router decided nothing"
 }
 
 // shaped runs this route's transformers, in order, over req.
@@ -361,12 +440,6 @@ func (s *Service) shaped(ctx context.Context, m match, projectName, environment 
 // unbuilt reports the parts of the vocabulary this gateway cannot yet honour,
 // and says so rather than serving a request as if they were not there.
 func (s *Service) unbuilt(m match) (int, string) {
-	// A gateway whose routing is a function has no static route at all, so a
-	// request reaching it has nowhere to go until that function's interface
-	// exists.
-	if m.resource.String("routing") == "router" {
-		return http.StatusNotImplemented, "this name is routed by a function, which is not implemented"
-	}
 
 	// TRANSFORMERS ARE NOT HERE ANY MORE. They ran nowhere, so a fail-closed one
 	// had to refuse the route and a fail-open one had to be skipped; now they

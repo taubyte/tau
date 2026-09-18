@@ -41,6 +41,11 @@ type Workers interface {
 	// transformers; a gateway that ran them itself would need a component tier
 	// on every edge node and would lose that warmth.
 	Transform(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error)
+
+	// Route asks a router where one request should go. Same reasons as
+	// Transform: a router is a workload of this deployment and decides per
+	// request, so it runs where the project is warm.
+	Route(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Routing, error)
 }
 
 // Buses attaches a caller to an ephemeral bus.

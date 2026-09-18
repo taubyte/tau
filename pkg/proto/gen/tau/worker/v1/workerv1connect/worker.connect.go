@@ -63,6 +63,8 @@ const (
 	WorkerServiceInvokeProcedure = "/tau.worker.v1.WorkerService/Invoke"
 	// WorkerServiceTransformProcedure is the fully-qualified name of the WorkerService's Transform RPC.
 	WorkerServiceTransformProcedure = "/tau.worker.v1.WorkerService/Transform"
+	// WorkerServiceRouteProcedure is the fully-qualified name of the WorkerService's Route RPC.
+	WorkerServiceRouteProcedure = "/tau.worker.v1.WorkerService/Route"
 )
 
 // WorkerServiceClient is a client for the tau.worker.v1.WorkerService service.
@@ -72,6 +74,8 @@ type WorkerServiceClient interface {
 	// Transform runs one request through one transformer and answers with what
 	// it decided.
 	Transform(context.Context, *connect.Request[v1.TransformRequest]) (*connect.Response[v1.TransformResponse], error)
+	// Route asks one router where a request should go.
+	Route(context.Context, *connect.Request[v1.RouteRequest]) (*connect.Response[v1.RouteResponse], error)
 }
 
 // NewWorkerServiceClient constructs a client for the tau.worker.v1.WorkerService service. By
@@ -97,6 +101,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workerServiceMethods.ByName("Transform")),
 			connect.WithClientOptions(opts...),
 		),
+		route: connect.NewClient[v1.RouteRequest, v1.RouteResponse](
+			httpClient,
+			baseURL+WorkerServiceRouteProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("Route")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -104,6 +114,7 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 type workerServiceClient struct {
 	invoke    *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
 	transform *connect.Client[v1.TransformRequest, v1.TransformResponse]
+	route     *connect.Client[v1.RouteRequest, v1.RouteResponse]
 }
 
 // Invoke calls tau.worker.v1.WorkerService.Invoke.
@@ -116,6 +127,11 @@ func (c *workerServiceClient) Transform(ctx context.Context, req *connect.Reques
 	return c.transform.CallUnary(ctx, req)
 }
 
+// Route calls tau.worker.v1.WorkerService.Route.
+func (c *workerServiceClient) Route(ctx context.Context, req *connect.Request[v1.RouteRequest]) (*connect.Response[v1.RouteResponse], error) {
+	return c.route.CallUnary(ctx, req)
+}
+
 // WorkerServiceHandler is an implementation of the tau.worker.v1.WorkerService service.
 type WorkerServiceHandler interface {
 	// Invoke runs one request against one resource.
@@ -123,6 +139,8 @@ type WorkerServiceHandler interface {
 	// Transform runs one request through one transformer and answers with what
 	// it decided.
 	Transform(context.Context, *connect.Request[v1.TransformRequest]) (*connect.Response[v1.TransformResponse], error)
+	// Route asks one router where a request should go.
+	Route(context.Context, *connect.Request[v1.RouteRequest]) (*connect.Response[v1.RouteResponse], error)
 }
 
 // NewWorkerServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -144,12 +162,20 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workerServiceMethods.ByName("Transform")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerServiceRouteHandler := connect.NewUnaryHandler(
+		WorkerServiceRouteProcedure,
+		svc.Route,
+		connect.WithSchema(workerServiceMethods.ByName("Route")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.worker.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WorkerServiceInvokeProcedure:
 			workerServiceInvokeHandler.ServeHTTP(w, r)
 		case WorkerServiceTransformProcedure:
 			workerServiceTransformHandler.ServeHTTP(w, r)
+		case WorkerServiceRouteProcedure:
+			workerServiceRouteHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -165,4 +191,8 @@ func (UnimplementedWorkerServiceHandler) Invoke(context.Context, *connect.Reques
 
 func (UnimplementedWorkerServiceHandler) Transform(context.Context, *connect.Request[v1.TransformRequest]) (*connect.Response[v1.TransformResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.worker.v1.WorkerService.Transform is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) Route(context.Context, *connect.Request[v1.RouteRequest]) (*connect.Response[v1.RouteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.worker.v1.WorkerService.Route is not implemented"))
 }

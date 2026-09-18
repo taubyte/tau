@@ -109,6 +109,56 @@ func (h *handler) Transform(ctx context.Context, req *connect.Request[workerv1.T
 	return nil, connect.NewError(connect.CodeInternal, ErrNoOutcome)
 }
 
+func (h *handler) Route(ctx context.Context, req *connect.Request[workerv1.RouteRequest]) (*connect.Response[workerv1.RouteResponse], error) {
+	t := req.Msg.GetTarget()
+	if t == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, ErrNoTarget)
+	}
+
+	out, err := h.s.Route(ctx,
+		Target{
+			Project:     t.GetProject(),
+			Environment: t.GetEnvironment(),
+			Scope:       t.GetScope(),
+			Kind:        t.GetKind(),
+			Name:        t.GetName(),
+		},
+		&invoke.Request{
+			Method:  req.Msg.GetMethod(),
+			Path:    req.Msg.GetPath(),
+			Headers: fromWire(req.Msg.GetHeaders()),
+			Body:    req.Msg.GetBody(),
+		})
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	switch {
+	case out.To != nil:
+		return connect.NewResponse(&workerv1.RouteResponse{
+			Decision: &workerv1.RouteResponse_To{To: &workerv1.Destination{
+				Kind: out.To.Kind, Namespace: out.To.Namespace, Name: out.To.Name,
+			}},
+		}), nil
+
+	case out.Answer != nil:
+		return connect.NewResponse(&workerv1.RouteResponse{
+			Decision: &workerv1.RouteResponse_Answer{Answer: &workerv1.InvokeResponse{
+				Status:  int32(out.Answer.Status),
+				Headers: toWire(out.Answer.Headers),
+				Body:    out.Answer.Body,
+			}},
+		}), nil
+
+	case out.None != "":
+		return connect.NewResponse(&workerv1.RouteResponse{
+			Decision: &workerv1.RouteResponse_None{None: out.None},
+		}), nil
+	}
+
+	return nil, connect.NewError(connect.CodeInternal, ErrNoOutcome)
+}
+
 func fromWire(in map[string]*workerv1.Headers) map[string][]string {
 	if len(in) == 0 {
 		return nil

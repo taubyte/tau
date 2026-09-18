@@ -1,0 +1,93 @@
+// The world a tau GATEWAY ROUTER is compiled to.
+//
+// # A function instead of a table
+//
+// A gateway declares `routing: route` and serves one path, or `routing: router`
+// and a function decides where everything goes — and then it has no static
+// routes at all. A single route may also name one, `route: {target: router}`,
+// which picks that route's handler instead of declaring it.
+//
+// Both spellings are the same question: given this request, what should handle
+// it. So they are one world, used in two places, and `routerAttributes` in the
+// DSL is deliberately one function for that reason.
+//
+// # What it answers with is an ADDRESS, never a workload
+//
+// A router says "function/checkout in /shop". It does not get handed the thing
+// and it does not invoke it: what runs the destination is the gateway's
+// business, which is what keeps placement, metering, timeouts and the
+// transformer chain in one place rather than in every router anybody writes.
+//
+// A router that could return a workload could also return one in another
+// project.
+//
+// # It decides per request, so it is POOLED
+//
+// Like a transformer and unlike an authorizer: nothing about the answer can be
+// kept, because it is a function of the request. Instantiating a small component
+// measures ~13ms on this tree, so a router is an ordinary pooled instance and
+// runs on a worker — the node warm for the project is warm for its router.
+//
+// # It runs AFTER the transformers
+//
+// Transformers are what traffic passes through on the way in; the router decides
+// where the traffic that came through them goes. A router that saw the request
+// before the chain would be deciding from a body somebody was about to redact.
+package taubyte:gateway-router@0.1.0;
+
+world gateway-router {
+    // The same state subset every deciding world gets, and nothing that sends.
+    import taubyte:sql/store@0.1.0;
+    import taubyte:kv/store@0.1.0;
+    import taubyte:document/store@0.1.0;
+    import taubyte:vector/store@0.1.0;
+    import taubyte:cache/store@0.1.0;
+    import taubyte:secret/vault@0.1.0;
+    import taubyte:workload/identity@0.1.0;
+
+    record header {
+        name: string,
+        value: string,
+    }
+
+    record request {
+        method: string,
+        path: string,
+        headers: list<header>,
+        body: list<u8>,
+    }
+
+    record response {
+        status: u16,
+        headers: list<header>,
+        body: list<u8>,
+    }
+
+    // Where a request should go: the vocabulary's own kind — "function",
+    // "website" — the namespace holding it, and its name.
+    //
+    // AN EMPTY NAMESPACE MEANS THE GATEWAY'S OWN SCOPE, then its parents, which
+    // is what an omitted `namespace:` means everywhere else in this vocabulary.
+    // A router is not given a way to name another PROJECT, and that is the point
+    // rather than an omission.
+    record destination {
+        kind: string,
+        namespace: string,
+        name: string,
+    }
+
+    // What the router decided.
+    //
+    // `none` is a decision and not an error: the router ran, understood the
+    // request, and says nothing here handles it — which the gateway turns into a
+    // 404. A router that FAILED is a different thing and the gateway treats it
+    // as one, because a routing table that cannot be read is not the same as a
+    // path that is not in it.
+    variant decision {
+        to(destination),
+        answer(response),
+        none(string),
+    }
+
+    export route: func(req: request) -> decision;
+}

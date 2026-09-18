@@ -70,7 +70,7 @@ func TestEveryImportedInterfaceHasAHostComponent(t *testing.T) {
 
 // TestASECONDWORLDCANONLYREACHWHATTHEFIRSTONESERVES.
 //
-// `implements:` names seven worlds and this tier now carries the WIT for four of
+// `implements:` names seven worlds and this tier now carries the WIT for five of
 // them. A second world is a SUBSET of the capabilities — that subsetting is half
 // the reason the packages were split up in the first place — so every interface
 // it names has to be one the host actually backs. A world importing a capability
@@ -90,6 +90,7 @@ func TestASecondWorldReachesOnlyWhatThisTierServes(t *testing.T) {
 		"wit/deps/taubyte-authorizer/authorizer.wit",
 		"wit/deps/taubyte-instance-validator/instance-validator.wit",
 		"wit/deps/taubyte-gateway-transformer/gateway-transformer.wit",
+		"wit/deps/taubyte-gateway-router/gateway-router.wit",
 	} {
 		imports := importsOf(t, world)
 		for _, name := range imports {

@@ -54,6 +54,15 @@ Reading a `request` back out of a guest is something nothing else in this tree
 does, and a pass-through fixture would pass whether or not the host read the
 forwarded request at all.
 
+**picker.wasm** is the gateway router: `taubyte:gateway-router`, exporting
+`route(request) -> decision`. Pooled like the shaper, for the same reason — it
+decides per request.
+
+It drives all three arms (a destination, an answer it served itself, and
+"nothing handles this"), and the destination it returns ECHOES the path it was
+given: a router that ignored its argument and returned a constant would satisfy
+every assertion about which arm was taken.
+
 **cacher.wasm** calls every one of the thirteen capabilities, one branch of its
 `handle` per operation, selected by the request path. It is what every
 capability's tests drive.

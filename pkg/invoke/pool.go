@@ -229,6 +229,24 @@ func (p *Pool) Transform(ctx context.Context, spec Spec, req *Request) (*Outcome
 	return out, err
 }
 
+// Route asks spec, as a ROUTER, where one request should go.
+//
+// POOLED FOR THE SAME REASON Transform IS: a router decides per request and
+// nothing about its answer can be kept.
+func (p *Pool) Route(ctx context.Context, spec Spec, req *Request) (*Routing, error) {
+	var out *Routing
+	err := p.on(ctx, spec, func(ctx context.Context, inst Instance) error {
+		r, ok := inst.(Routes)
+		if !ok {
+			return fmt.Errorf("%w: the %s tier runs no router", ErrNoRuntime, spec.Runtime)
+		}
+		var err error
+		out, err = r.Route(ctx, req)
+		return err
+	})
+	return out, err
+}
+
 // on runs fn on a pooled instance of spec — the whole of what this package
 // decides, with what to CALL left to the caller.
 func (p *Pool) on(ctx context.Context, spec Spec, fn func(context.Context, Instance) error) error {

@@ -561,6 +561,255 @@ func (*TransformResponse_Forward) isTransformResponse_Outcome() {}
 
 func (*TransformResponse_Answer) isTransformResponse_Outcome() {}
 
+// RouteRequest asks a ROUTER where one request should go.
+type RouteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Target        *Target                `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
+	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Headers       map[string]*Headers    `protobuf:"bytes,4,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Body          []byte                 `protobuf:"bytes,5,opt,name=body,proto3" json:"body,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RouteRequest) Reset() {
+	*x = RouteRequest{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RouteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RouteRequest) ProtoMessage() {}
+
+func (x *RouteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RouteRequest.ProtoReflect.Descriptor instead.
+func (*RouteRequest) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RouteRequest) GetTarget() *Target {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *RouteRequest) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+func (x *RouteRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *RouteRequest) GetHeaders() map[string]*Headers {
+	if x != nil {
+		return x.Headers
+	}
+	return nil
+}
+
+func (x *RouteRequest) GetBody() []byte {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+// Destination is where a router said a request should go: the vocabulary's own
+// kind, the namespace holding it, and its name.
+//
+// AN ADDRESS AND NEVER A WORKLOAD. What runs it is the gateway's business, which
+// is what keeps placement, metering, timeouts and the transformer chain in one
+// place rather than in every router anybody writes.
+type Destination struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Kind  string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Empty means the asking resource's own scope, then its parents — what an
+	// omitted `namespace:` means everywhere in this vocabulary.
+	Namespace     string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Name          string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Destination) Reset() {
+	*x = Destination{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Destination) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Destination) ProtoMessage() {}
+
+func (x *Destination) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Destination.ProtoReflect.Descriptor instead.
+func (*Destination) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Destination) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *Destination) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *Destination) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// RouteResponse is what the router decided.
+//
+// `none` is a DECISION and not a failure: the router ran, understood the request
+// and says nothing handles it. A router that could not be RUN is a different
+// thing, because a routing table that cannot be read is not the same as a path
+// that is not in it — so that one is an RPC error and this is not.
+type RouteResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Decision:
+	//
+	//	*RouteResponse_To
+	//	*RouteResponse_Answer
+	//	*RouteResponse_None
+	Decision      isRouteResponse_Decision `protobuf_oneof:"decision"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RouteResponse) Reset() {
+	*x = RouteResponse{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RouteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RouteResponse) ProtoMessage() {}
+
+func (x *RouteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RouteResponse.ProtoReflect.Descriptor instead.
+func (*RouteResponse) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RouteResponse) GetDecision() isRouteResponse_Decision {
+	if x != nil {
+		return x.Decision
+	}
+	return nil
+}
+
+func (x *RouteResponse) GetTo() *Destination {
+	if x != nil {
+		if x, ok := x.Decision.(*RouteResponse_To); ok {
+			return x.To
+		}
+	}
+	return nil
+}
+
+func (x *RouteResponse) GetAnswer() *InvokeResponse {
+	if x != nil {
+		if x, ok := x.Decision.(*RouteResponse_Answer); ok {
+			return x.Answer
+		}
+	}
+	return nil
+}
+
+func (x *RouteResponse) GetNone() string {
+	if x != nil {
+		if x, ok := x.Decision.(*RouteResponse_None); ok {
+			return x.None
+		}
+	}
+	return ""
+}
+
+type isRouteResponse_Decision interface {
+	isRouteResponse_Decision()
+}
+
+type RouteResponse_To struct {
+	To *Destination `protobuf:"bytes,1,opt,name=to,proto3,oneof"`
+}
+
+type RouteResponse_Answer struct {
+	Answer *InvokeResponse `protobuf:"bytes,2,opt,name=answer,proto3,oneof"`
+}
+
+type RouteResponse_None struct {
+	None string `protobuf:"bytes,3,opt,name=none,proto3,oneof"`
+}
+
+func (*RouteResponse_To) isRouteResponse_Decision() {}
+
+func (*RouteResponse_Answer) isRouteResponse_Decision() {}
+
+func (*RouteResponse_None) isRouteResponse_Decision() {}
+
 var File_tau_worker_v1_worker_proto protoreflect.FileDescriptor
 
 const file_tau_worker_v1_worker_proto_rawDesc = "" +
@@ -610,10 +859,30 @@ const file_tau_worker_v1_worker_proto_rawDesc = "" +
 	"\x11TransformResponse\x12;\n" +
 	"\aforward\x18\x01 \x01(\v2\x1f.tau.worker.v1.ForwardedRequestH\x00R\aforward\x127\n" +
 	"\x06answer\x18\x02 \x01(\v2\x1d.tau.worker.v1.InvokeResponseH\x00R\x06answerB\t\n" +
-	"\aoutcome2\xa6\x01\n" +
+	"\aoutcome\"\x95\x02\n" +
+	"\fRouteRequest\x12-\n" +
+	"\x06target\x18\x01 \x01(\v2\x15.tau.worker.v1.TargetR\x06target\x12\x16\n" +
+	"\x06method\x18\x02 \x01(\tR\x06method\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x12B\n" +
+	"\aheaders\x18\x04 \x03(\v2(.tau.worker.v1.RouteRequest.HeadersEntryR\aheaders\x12\x12\n" +
+	"\x04body\x18\x05 \x01(\fR\x04body\x1aR\n" +
+	"\fHeadersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
+	"\x05value\x18\x02 \x01(\v2\x16.tau.worker.v1.HeadersR\x05value:\x028\x01\"S\n" +
+	"\vDestination\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\x98\x01\n" +
+	"\rRouteResponse\x12,\n" +
+	"\x02to\x18\x01 \x01(\v2\x1a.tau.worker.v1.DestinationH\x00R\x02to\x127\n" +
+	"\x06answer\x18\x02 \x01(\v2\x1d.tau.worker.v1.InvokeResponseH\x00R\x06answer\x12\x14\n" +
+	"\x04none\x18\x03 \x01(\tH\x00R\x04noneB\n" +
+	"\n" +
+	"\bdecision2\xea\x01\n" +
 	"\rWorkerService\x12E\n" +
 	"\x06Invoke\x12\x1c.tau.worker.v1.InvokeRequest\x1a\x1d.tau.worker.v1.InvokeResponse\x12N\n" +
-	"\tTransform\x12\x1f.tau.worker.v1.TransformRequest\x1a .tau.worker.v1.TransformResponseB\xb3\x01\n" +
+	"\tTransform\x12\x1f.tau.worker.v1.TransformRequest\x1a .tau.worker.v1.TransformResponse\x12B\n" +
+	"\x05Route\x12\x1b.tau.worker.v1.RouteRequest\x1a\x1c.tau.worker.v1.RouteResponseB\xb3\x01\n" +
 	"\x11com.tau.worker.v1B\vWorkerProtoP\x01Z;github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1;workerv1\xa2\x02\x03TWX\xaa\x02\rTau.Worker.V1\xca\x02\rTau\\Worker\\V1\xe2\x02\x19Tau\\Worker\\V1\\GPBMetadata\xea\x02\x0fTau::Worker::V1b\x06proto3"
 
 var (
@@ -628,7 +897,7 @@ func file_tau_worker_v1_worker_proto_rawDescGZIP() []byte {
 	return file_tau_worker_v1_worker_proto_rawDescData
 }
 
-var file_tau_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_tau_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_tau_worker_v1_worker_proto_goTypes = []any{
 	(*Target)(nil),            // 0: tau.worker.v1.Target
 	(*Headers)(nil),           // 1: tau.worker.v1.Headers
@@ -637,33 +906,44 @@ var file_tau_worker_v1_worker_proto_goTypes = []any{
 	(*TransformRequest)(nil),  // 4: tau.worker.v1.TransformRequest
 	(*ForwardedRequest)(nil),  // 5: tau.worker.v1.ForwardedRequest
 	(*TransformResponse)(nil), // 6: tau.worker.v1.TransformResponse
-	nil,                       // 7: tau.worker.v1.InvokeRequest.HeadersEntry
-	nil,                       // 8: tau.worker.v1.InvokeResponse.HeadersEntry
-	nil,                       // 9: tau.worker.v1.TransformRequest.HeadersEntry
-	nil,                       // 10: tau.worker.v1.ForwardedRequest.HeadersEntry
+	(*RouteRequest)(nil),      // 7: tau.worker.v1.RouteRequest
+	(*Destination)(nil),       // 8: tau.worker.v1.Destination
+	(*RouteResponse)(nil),     // 9: tau.worker.v1.RouteResponse
+	nil,                       // 10: tau.worker.v1.InvokeRequest.HeadersEntry
+	nil,                       // 11: tau.worker.v1.InvokeResponse.HeadersEntry
+	nil,                       // 12: tau.worker.v1.TransformRequest.HeadersEntry
+	nil,                       // 13: tau.worker.v1.ForwardedRequest.HeadersEntry
+	nil,                       // 14: tau.worker.v1.RouteRequest.HeadersEntry
 }
 var file_tau_worker_v1_worker_proto_depIdxs = []int32{
 	0,  // 0: tau.worker.v1.InvokeRequest.target:type_name -> tau.worker.v1.Target
-	7,  // 1: tau.worker.v1.InvokeRequest.headers:type_name -> tau.worker.v1.InvokeRequest.HeadersEntry
-	8,  // 2: tau.worker.v1.InvokeResponse.headers:type_name -> tau.worker.v1.InvokeResponse.HeadersEntry
+	10, // 1: tau.worker.v1.InvokeRequest.headers:type_name -> tau.worker.v1.InvokeRequest.HeadersEntry
+	11, // 2: tau.worker.v1.InvokeResponse.headers:type_name -> tau.worker.v1.InvokeResponse.HeadersEntry
 	0,  // 3: tau.worker.v1.TransformRequest.target:type_name -> tau.worker.v1.Target
-	9,  // 4: tau.worker.v1.TransformRequest.headers:type_name -> tau.worker.v1.TransformRequest.HeadersEntry
-	10, // 5: tau.worker.v1.ForwardedRequest.headers:type_name -> tau.worker.v1.ForwardedRequest.HeadersEntry
+	12, // 4: tau.worker.v1.TransformRequest.headers:type_name -> tau.worker.v1.TransformRequest.HeadersEntry
+	13, // 5: tau.worker.v1.ForwardedRequest.headers:type_name -> tau.worker.v1.ForwardedRequest.HeadersEntry
 	5,  // 6: tau.worker.v1.TransformResponse.forward:type_name -> tau.worker.v1.ForwardedRequest
 	3,  // 7: tau.worker.v1.TransformResponse.answer:type_name -> tau.worker.v1.InvokeResponse
-	1,  // 8: tau.worker.v1.InvokeRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 9: tau.worker.v1.InvokeResponse.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 10: tau.worker.v1.TransformRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 11: tau.worker.v1.ForwardedRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	2,  // 12: tau.worker.v1.WorkerService.Invoke:input_type -> tau.worker.v1.InvokeRequest
-	4,  // 13: tau.worker.v1.WorkerService.Transform:input_type -> tau.worker.v1.TransformRequest
-	3,  // 14: tau.worker.v1.WorkerService.Invoke:output_type -> tau.worker.v1.InvokeResponse
-	6,  // 15: tau.worker.v1.WorkerService.Transform:output_type -> tau.worker.v1.TransformResponse
-	14, // [14:16] is the sub-list for method output_type
-	12, // [12:14] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	0,  // 8: tau.worker.v1.RouteRequest.target:type_name -> tau.worker.v1.Target
+	14, // 9: tau.worker.v1.RouteRequest.headers:type_name -> tau.worker.v1.RouteRequest.HeadersEntry
+	8,  // 10: tau.worker.v1.RouteResponse.to:type_name -> tau.worker.v1.Destination
+	3,  // 11: tau.worker.v1.RouteResponse.answer:type_name -> tau.worker.v1.InvokeResponse
+	1,  // 12: tau.worker.v1.InvokeRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	1,  // 13: tau.worker.v1.InvokeResponse.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	1,  // 14: tau.worker.v1.TransformRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	1,  // 15: tau.worker.v1.ForwardedRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	1,  // 16: tau.worker.v1.RouteRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	2,  // 17: tau.worker.v1.WorkerService.Invoke:input_type -> tau.worker.v1.InvokeRequest
+	4,  // 18: tau.worker.v1.WorkerService.Transform:input_type -> tau.worker.v1.TransformRequest
+	7,  // 19: tau.worker.v1.WorkerService.Route:input_type -> tau.worker.v1.RouteRequest
+	3,  // 20: tau.worker.v1.WorkerService.Invoke:output_type -> tau.worker.v1.InvokeResponse
+	6,  // 21: tau.worker.v1.WorkerService.Transform:output_type -> tau.worker.v1.TransformResponse
+	9,  // 22: tau.worker.v1.WorkerService.Route:output_type -> tau.worker.v1.RouteResponse
+	20, // [20:23] is the sub-list for method output_type
+	17, // [17:20] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_tau_worker_v1_worker_proto_init() }
@@ -675,13 +955,18 @@ func file_tau_worker_v1_worker_proto_init() {
 		(*TransformResponse_Forward)(nil),
 		(*TransformResponse_Answer)(nil),
 	}
+	file_tau_worker_v1_worker_proto_msgTypes[9].OneofWrappers = []any{
+		(*RouteResponse_To)(nil),
+		(*RouteResponse_Answer)(nil),
+		(*RouteResponse_None)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_worker_v1_worker_proto_rawDesc), len(file_tau_worker_v1_worker_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

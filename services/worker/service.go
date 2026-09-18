@@ -227,6 +227,35 @@ func (s *Service) Transform(ctx context.Context, t Target, req *invoke.Request) 
 	return out, nil
 }
 
+// Route asks a router where one request should go.
+//
+// METERED AND WORLD-CHECKED FOR THE REASONS Transform IS. A router runs
+// somebody's code on a pooled instance, and a gateway that named an ordinary
+// handler as its router would otherwise reach a component that answers with a
+// response the gateway reads as a decision.
+func (s *Service) Route(ctx context.Context, t Target, req *invoke.Request) (*invoke.Routing, error) {
+	started := s.now()
+
+	spec, err := s.Resolve(ctx, t)
+	if err != nil {
+		s.emit(ctx, accounted(t, "", 0, OpRefuse, s.now().Sub(started)))
+		return nil, err
+	}
+	if world := spec.Settings[wasm.SettingImplements]; world != wasm.WorldGatewayRouter {
+		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))
+		return nil, fmt.Errorf("%w: %s implements %q rather than a router", ErrNoTarget, t.Name, world)
+	}
+
+	out, err := s.pool.Route(ctx, spec, req)
+	if err != nil {
+		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))
+		return nil, err
+	}
+
+	s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpInvoke, s.now().Sub(started)))
+	return out, nil
+}
+
 // Start listens and serves. Calling it twice, or after Close, is an error.
 func (s *Service) Start(ctx context.Context) error {
 	s.startMu.Lock()

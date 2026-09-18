@@ -48,6 +48,7 @@ type Register interface {
 type Pool interface {
 	Do(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Response, error)
 	Transform(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Outcome, error)
+	Route(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Routing, error)
 }
 
 // Config is what an operator declared, and ONLY that: values somebody writes in

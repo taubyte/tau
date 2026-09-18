@@ -112,6 +112,44 @@ message TransformResponse {
   }
 }
 
+// RouteRequest asks a ROUTER where one request should go.
+message RouteRequest {
+  Target target = 1;
+
+  string method = 2;
+  string path = 3;
+  map<string, Headers> headers = 4;
+  bytes body = 5;
+}
+
+// Destination is where a router said a request should go: the vocabulary's own
+// kind, the namespace holding it, and its name.
+//
+// AN ADDRESS AND NEVER A WORKLOAD. What runs it is the gateway's business, which
+// is what keeps placement, metering, timeouts and the transformer chain in one
+// place rather than in every router anybody writes.
+message Destination {
+  string kind = 1;
+  // Empty means the asking resource's own scope, then its parents — what an
+  // omitted `namespace:` means everywhere in this vocabulary.
+  string namespace = 2;
+  string name = 3;
+}
+
+// RouteResponse is what the router decided.
+//
+// `none` is a DECISION and not a failure: the router ran, understood the request
+// and says nothing handles it. A router that could not be RUN is a different
+// thing, because a routing table that cannot be read is not the same as a path
+// that is not in it — so that one is an RPC error and this is not.
+message RouteResponse {
+  oneof decision {
+    Destination to = 1;
+    InvokeResponse answer = 2;
+    string none = 3;
+  }
+}
+
 service WorkerService {
   // Invoke runs one request against one resource.
   rpc Invoke(InvokeRequest) returns (InvokeResponse);
@@ -119,4 +157,7 @@ service WorkerService {
   // Transform runs one request through one transformer and answers with what
   // it decided.
   rpc Transform(TransformRequest) returns (TransformResponse);
+
+  // Route asks one router where a request should go.
+  rpc Route(RouteRequest) returns (RouteResponse);
 }

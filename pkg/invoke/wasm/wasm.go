@@ -277,7 +277,7 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	if world == "" {
 		world = WorldHandler
 	}
-	if world != WorldHandler && world != WorldGatewayTransformer {
+	if world != WorldHandler && world != WorldGatewayTransformer && world != WorldGatewayRouter {
 		return nil, fmt.Errorf("%w: %s is %q, which is not started", ErrUnsupportedWorld, spec.Name, world)
 	}
 
@@ -291,11 +291,14 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		export = DefaultExport
 	}
 
-	if world == WorldGatewayTransformer {
+	if world == WorldGatewayTransformer || world == WorldGatewayRouter {
 		// FIXED, unlike a handler's. A gateway names the FUNCTION it passes
 		// traffic through, not an export inside it, so there is no
 		// `execution/call` here to carry a second name.
-		export = transformExport
+		export = map[string]string{
+			WorldGatewayTransformer: transformExport,
+			WorldGatewayRouter:      routeExport,
+		}[world]
 	}
 
 	return &function{
