@@ -92,20 +92,11 @@ const receiveOp = "receive"
 // from this list is a queue that fills up with nothing anywhere explaining it.
 func (s *Service) Consumers(ctx context.Context) []Consumer {
 	var out []Consumer
-	for _, held := range s.projects.Environments() {
-		name, environment, ok := splitDeployment(held)
-		if !ok {
-			continue
-		}
-
-		proj, _, err := s.projects.At(ctx, name, environment)
-		if err != nil {
-			// The pointer is held and the object is not, or the deployment
-			// moved under us. The next pass is the retry.
-			continue
-		}
-		out = append(out, s.consumersIn(ctx, proj, name, environment, nil)...)
-	}
+	s.eachDeployment(ctx, func(proj *project.Project, name, environment string) {
+		eachScope(proj, nil, func(scope []string) {
+			out = append(out, s.consumersIn(ctx, proj, name, environment, scope)...)
+		})
+	})
 
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Target.Name != out[j].Target.Name {
@@ -116,7 +107,7 @@ func (s *Service) Consumers(ctx context.Context) []Consumer {
 	return out
 }
 
-// consumersIn walks one scope and then its namespaces.
+// consumersIn is every consumer declared in one scope.
 func (s *Service) consumersIn(ctx context.Context, proj *project.Project, name, environment string, scope []string) []Consumer {
 	var out []Consumer
 
@@ -139,18 +130,6 @@ func (s *Service) consumersIn(ctx context.Context, proj *project.Project, name, 
 		for _, resourceName := range names {
 			out = append(out, s.consumersOf(ctx, proj, name, environment, scope, kind, resourceName)...)
 		}
-	}
-
-	// EVERY SCOPE AND NOT ONLY EVERY NAMESPACE. A kind that lowers becomes a
-	// container of what it produced — a workflow holds its steps' queues and
-	// drivers — and a walk that asked for namespaces walked straight past all
-	// of them.
-	scopes, err := proj.Scopes(scope)
-	if err != nil {
-		return out
-	}
-	for _, namespace := range scopes {
-		out = append(out, s.consumersIn(ctx, proj, name, environment, append(append([]string{}, scope...), namespace))...)
 	}
 	return out
 }

@@ -58,6 +58,7 @@ import (
 	authService "github.com/taubyte/tau/services/v2/auth"
 	gateway "github.com/taubyte/tau/services/v2/gateway"
 	"github.com/taubyte/tau/services/v2/placement"
+	v2proxy "github.com/taubyte/tau/services/v2/proxy"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -70,6 +71,7 @@ type Node struct {
 	register *registerService.Service
 	worker   *worker.Service
 	gateway  *gateway.Service
+	proxy    *v2proxy.Service
 
 	secrets *secretsService.Service
 
@@ -134,6 +136,7 @@ type Node struct {
 	loopsStop      context.CancelFunc
 	dispatchDone   chan struct{}
 	cronDone       chan struct{}
+	proxyDone      chan struct{}
 	checkpointDone chan struct{}
 
 	startMu   sync.Mutex
@@ -196,6 +199,11 @@ func (n *Node) open() error {
 		return err
 	}
 	if err := n.openGateway(); err != nil {
+		return err
+	}
+	// AFTER PLACEMENT AND THE WORKER, which it takes as collaborators: the
+	// first is where a connection goes, the second is what this node holds.
+	if err := n.openProxy(); err != nil {
 		return err
 	}
 	// THE TWO BUILD ROLES COME LAST because both dial auth, and a node running
@@ -662,14 +670,33 @@ func (n *Node) Start(ctx context.Context) error {
 		n.work.form()
 	}
 
-	// THE DISPATCHER LAST, and only on a node that has both halves. It reads
-	// what the worker holds and claims from the queues this node opened, so a
-	// node running neither has nothing to drain — and one running a worker
-	// without raft opens no queue and simply finds none.
-	if n.worker != nil && n.opts.raft != nil {
-		loopCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
-		n.loopsStop = stop
+	// THE BACKGROUND LOOPS LAST. They outlive the call that started them, so
+	// they take a context of their own that Close cancels.
+	needsLoops := n.proxy != nil || (n.worker != nil && n.opts.raft != nil)
+	if !needsLoops {
+		n.started = true
+		return nil
+	}
 
+	loopCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	n.loopsStop = stop
+
+	// THE PROXY SWEEPS WITHOUT RAFT, unlike everything below it: every node
+	// holding a deployment serves its proxies, so there is no slot to claim and
+	// no leader to be.
+	if n.proxy != nil {
+		n.proxyDone = make(chan struct{})
+		go func() {
+			defer close(n.proxyDone)
+			n.proxy.Run(loopCtx)
+		}()
+	}
+
+	// THE DISPATCHER, and only on a node that has both halves. It reads what
+	// the worker holds and claims from the queues this node opened, so a node
+	// running neither has nothing to drain — and one running a worker without
+	// raft opens no queue and simply finds none.
+	if n.worker != nil && n.opts.raft != nil {
 		n.dispatchDone = make(chan struct{})
 		go (&dispatcher{node: n}).loop(loopCtx, n.dispatchDone)
 
@@ -720,8 +747,15 @@ func (n *Node) Close() error {
 		// away.
 		if n.loopsStop != nil {
 			n.loopsStop()
-			<-n.dispatchDone
-			<-n.cronDone
+			if n.proxyDone != nil {
+				<-n.proxyDone
+			}
+			if n.dispatchDone != nil {
+				<-n.dispatchDone
+			}
+			if n.cronDone != nil {
+				<-n.cronDone
+			}
 			if n.checkpointDone != nil {
 				<-n.checkpointDone
 			}
@@ -757,6 +791,7 @@ func (n *Node) Snapshot(context.Context) (stats.Snapshot, error) {
 		Ready:     true,
 		Serving:   n.serving(),
 		Addresses: addrs,
+		Sockets:   n.proxySockets(),
 	}, nil
 }
 
@@ -766,6 +801,12 @@ func (n *Node) serving() []string {
 	out := append([]string(nil), n.cfg.Services...)
 	if n.worker != nil {
 		out = append(out, n.worker.Serving()...)
+	}
+	// AND EVERY NAME A LISTENER ANSWERS ON. A client resolves the name to an
+	// address before it asks SRV for the port, so a socket reported without
+	// its name in this list is a port nobody can find the machine for.
+	for _, sock := range n.proxySockets() {
+		out = append(out, sock.Host)
 	}
 	return dedupe(out)
 }

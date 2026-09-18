@@ -35,6 +35,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,12 +74,27 @@ type Bind struct {
 	Scope []string
 }
 
+// Key is what tells two proxies apart across deployments and namespaces: the
+// four fields joined, none of which may hold a "/". It exists so that what is
+// already being served can be held in a map without a second spelling of one
+// resource's identity.
+func (b Bind) Key() string {
+	parts := make([]string, 0, len(b.Scope)+3)
+	parts = append(parts, b.Project, b.Environment)
+	parts = append(parts, b.Scope...)
+	return strings.Join(append(parts, b.Name), "/")
+}
+
 // Config is what an operator declared.
 type Config struct {
 	// ConnectTimeout bounds reaching the workload — NOT the connection, which
 	// has no duration this service could know. A psql session is measured in
 	// hours.
 	ConnectTimeout time.Duration `yaml:"connectTimeout"`
+
+	// Sweep is how often this node compares what it is listening for to what
+	// it holds. Default DefaultSweep.
+	Sweep time.Duration `yaml:"sweep"`
 
 	// CloudFqdn is the zone this cloud serves, e.g. "tau.example.io".
 	//
@@ -96,6 +113,10 @@ var (
 	ErrNoWorkers  = errors.New("proxy: a proxy with no workers can reach nothing")
 	ErrNoProjects = errors.New("proxy: a proxy with no register cannot read a project")
 
+	// ErrNoDeployments is a nil source of what to serve, which is not the same
+	// as no source at all — see WithDeployments.
+	ErrNoDeployments = errors.New("proxy: a nil source holds no proxies")
+
 	// ErrUnservable is what this cloud cannot do with a resource as written.
 	ErrUnservable = errors.New("proxy: this cloud cannot serve that proxy as declared")
 )
@@ -103,9 +124,10 @@ var (
 type Option func(*options) error
 
 type options struct {
-	workers  Workers
-	projects Projects
-	warn     func(string, ...any)
+	workers     Workers
+	projects    Projects
+	deployments Deployments
+	warn        func(string, ...any)
 }
 
 func WithWorkers(w Workers) Option {
@@ -145,10 +167,20 @@ type Service struct {
 	cfg  Config
 	opts options
 
-	mu        sync.Mutex
-	listeners []net.Listener
-	sockets   []Socket
-	closed    bool
+	mu     sync.Mutex
+	served map[string]*bound
+	closed bool
+
+	// refusals is the last reason each proxy could not be served, so a sweep
+	// every ten seconds does not repeat one sentence until it buries the
+	// deploy that fixes it.
+	refusals map[string]string
+}
+
+// bound is one proxy this node is currently accepting connections for.
+type bound struct {
+	listener net.Listener
+	socket   Socket
 }
 
 // Serving is every proxy this node accepts connections for, for whatever
@@ -157,7 +189,20 @@ type Service struct {
 func (s *Service) Serving() []Socket {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]Socket(nil), s.sockets...)
+
+	out := make([]Socket, 0, len(s.served))
+	for _, b := range s.served {
+		if b.socket.Host != "" {
+			out = append(out, b.socket)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Host != out[j].Host {
+			return out[i].Host < out[j].Host
+		}
+		return out[i].Protocol < out[j].Protocol
+	})
+	return out
 }
 
 func New(cfg Config, opts ...Option) (*Service, error) {
@@ -179,7 +224,12 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	if cfg.ConnectTimeout <= 0 {
 		cfg.ConnectTimeout = DefaultConnectTimeout
 	}
-	return &Service{cfg: cfg, opts: o}, nil
+	return &Service{
+		cfg:      cfg,
+		opts:     o,
+		served:   map[string]*bound{},
+		refusals: map[string]string{},
+	}, nil
 }
 
 // Serve binds this proxy and carries every connection on it.
@@ -201,7 +251,10 @@ func (s *Service) Serve(ctx context.Context, b Bind) (Socket, error) {
 	if err != nil {
 		return Socket{}, err
 	}
-	return sock, s.accept(ctx, l, sock, b)
+	if err := s.accept(ctx, l, sock, b); err != nil {
+		return Socket{}, err
+	}
+	return sock, nil
 }
 
 // resource reads this proxy out of its deployment.
@@ -221,16 +274,22 @@ func (s *Service) Accept(ctx context.Context, l net.Listener, b Bind) error {
 }
 
 func (s *Service) accept(ctx context.Context, l net.Listener, sock Socket, b Bind) error {
+	key := b.Key()
+
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
 		l.Close()
 		return errors.New("proxy: closed")
 	}
-	s.listeners = append(s.listeners, l)
-	if sock.Host != "" {
-		s.sockets = append(s.sockets, sock)
+	if held, ok := s.served[key]; ok {
+		// ONE LISTENER PER RESOURCE. Two would each get half the connections
+		// and only one of them would be in DNS.
+		s.mu.Unlock()
+		l.Close()
+		return fmt.Errorf("proxy: %s is already served on %s", key, held.socket.Host)
 	}
+	s.served[key] = &bound{listener: l, socket: sock}
 	s.mu.Unlock()
 
 	go func() {
@@ -335,10 +394,10 @@ func (s *Service) Close() error {
 	defer s.mu.Unlock()
 
 	s.closed = true
-	for _, l := range s.listeners {
-		l.Close()
+	for _, b := range s.served {
+		b.listener.Close()
 	}
-	s.listeners = nil
-	s.sockets = nil
+	clear(s.served)
+	clear(s.refusals)
 	return nil
 }

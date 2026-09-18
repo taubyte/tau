@@ -122,7 +122,7 @@ func TestARequestReachesTheNodeStatsChose(t *testing.T) {
 		io.WriteString(w, "answered")
 	})
 
-	r := serving("shop.example.com", stats.Node{Peer: "n1", Ready: true, Port: 8443})
+	r := serving("shop.example.com", stats.Node{Peer: "n1", Ready: true})
 	s := newProxy(t, r, byPeer(map[string]*backend{"n1": b}))
 
 	req := request("shop.example.com", "/checkout")

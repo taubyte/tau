@@ -20,6 +20,7 @@ import (
 	"github.com/taubyte/tau/services/stats"
 	auth "github.com/taubyte/tau/services/v2/auth"
 	gateway "github.com/taubyte/tau/services/v2/gateway"
+	proxy "github.com/taubyte/tau/services/v2/proxy"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -36,6 +37,7 @@ const (
 	Gateway  = "gateway"
 	Auth     = "auth"
 	Secrets  = "secrets"
+	Proxy    = "proxy"
 )
 
 // The two halves of the build service, named by the build service itself
@@ -59,13 +61,11 @@ var (
 
 // All is every service this composition knows how to start.
 //
-// dns AND proxy ARE NOT HERE YET. dns answers a query and has no listener of
-// its own — it is a function from a question to an answer, and something has to
-// bind :53 and call it. proxy is an http.Handler that needs an L4 listener and
-// an allocated address per resource. Both are real services; neither is a line
-// in this file, and listing them before they can be started would make an
-// operator's config lie.
-var All = []string{Register, Worker, Stats, Gateway, Auth, Secrets, BuildBackend}
+// dns IS NOT HERE YET. It answers a query and has no listener of its own — it
+// is a function from a question to an answer, and something has to bind :53 and
+// call it. It is a real service; listing it before it can be started would make
+// an operator's config lie.
+var All = []string{Register, Worker, Stats, Gateway, Auth, Secrets, Proxy, BuildBackend}
 
 // BuildFrontend is NOT in All. All is what a single-node development cloud
 // starts, and that node runs the backend; putting the public half in the
@@ -92,6 +92,7 @@ type Config struct {
 	Worker  worker.Config
 	Gateway gateway.Config
 	Auth    auth.Config
+	Proxy   proxy.Config
 
 	// BuildFrontend and BuildBackend are the two halves' own configuration.
 	// A node uses at most one of them.

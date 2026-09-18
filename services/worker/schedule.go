@@ -78,46 +78,28 @@ const cronKind = "cron"
 // deployment up. See node/cron.go, which is where that is dealt with.
 func (s *Service) Schedules(ctx context.Context) []Schedule {
 	var out []Schedule
-	for _, held := range s.projects.Environments() {
-		name, environment, ok := splitDeployment(held)
-		if !ok {
-			continue
-		}
-
-		proj, _, err := s.projects.At(ctx, name, environment)
-		if err != nil {
-			continue
-		}
-		out = append(out, schedulesIn(proj, name, environment, nil)...)
-	}
+	s.eachDeployment(ctx, func(proj *project.Project, name, environment string) {
+		eachScope(proj, nil, func(scope []string) {
+			out = append(out, schedulesIn(proj, name, environment, scope)...)
+		})
+	})
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Handle < out[j].Handle })
 	return out
 }
 
-// schedulesIn walks one scope and then its namespaces.
+// schedulesIn is every cron in one scope.
 func schedulesIn(proj *project.Project, name, environment string, scope []string) []Schedule {
-	var out []Schedule
-
 	names, err := proj.Names(scope, cronKind)
-	if err == nil {
-		for _, cron := range names {
-			if s, ok := scheduleOf(proj, name, environment, scope, cron); ok {
-				out = append(out, s)
-			}
-		}
+	if err != nil {
+		return nil
 	}
 
-	// EVERY SCOPE AND NOT ONLY EVERY NAMESPACE. A kind that lowers becomes a
-	// container of what it produced — a workflow holds its steps' queues and
-	// drivers — and a walk that asked for namespaces walked straight past all
-	// of them.
-	scopes, err := proj.Scopes(scope)
-	if err != nil {
-		return out
-	}
-	for _, namespace := range scopes {
-		out = append(out, schedulesIn(proj, name, environment, append(append([]string{}, scope...), namespace))...)
+	var out []Schedule
+	for _, cron := range names {
+		if s, ok := scheduleOf(proj, name, environment, scope, cron); ok {
+			out = append(out, s)
+		}
 	}
 	return out
 }
