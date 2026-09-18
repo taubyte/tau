@@ -65,12 +65,29 @@ func (n *Node) openProxy() error {
 		return errors.New("node: a proxy reaches a workload through placement, and this node has none")
 	}
 
-	svc, err := v2proxy.New(n.cfg.Proxy,
+	options := []v2proxy.Option{
 		v2proxy.WithProjects(n.worker),
 		v2proxy.WithWorkers(n.workers),
 		v2proxy.WithDeployments(&proxies{node: n}),
 		v2proxy.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }),
-	)
+	}
+
+	// THE SAME RESOLVER THE WORKER READS, and by the same rule: an injected
+	// one wins, then this node's own vault or one in the fleet. A certificate
+	// a proxy terminates with is a secret of the deployment, held where every
+	// other one is — and a node with none serves `tls: terminate` only where
+	// the cloud's own wildcard covers the name.
+	//
+	// openProxy runs after openWorker, so whichever of the two the worker
+	// settled on is already there.
+	switch {
+	case n.opts.secrets != nil:
+		options = append(options, v2proxy.WithSecrets(n.opts.secrets))
+	case n.vault != nil:
+		options = append(options, v2proxy.WithSecrets(n.vault))
+	}
+
+	svc, err := v2proxy.New(n.cfg.Proxy, options...)
 	if err != nil {
 		return err
 	}

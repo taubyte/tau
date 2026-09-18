@@ -247,13 +247,11 @@ func TestUdpIsRefusedRatherThanCarriedOverTcp(t *testing.T) {
 	refusedBy(t, func(r map[string]any) { r["protocol"] = "udp" })
 }
 
-// A proxy that asked for TLS and got a plaintext pipe would be a security
+// TLS TERMINATION IS NOT REFUSED ANY MORE — it is served, and tls_test.go is
+// where that lives. What is refused is terminating with no certificate to do
+// it with, which is a refusal at the BIND rather than at the connection: a
+// proxy that asked for TLS and held a plaintext port would be a security
 // control silently not applied.
-func TestTerminatingTlsIsRefused(t *testing.T) {
-	refusedBy(t, func(r map[string]any) {
-		r["tls"] = map[string]any{"mode": "terminate"}
-	})
-}
 
 func TestARouterRoutedProxyIsRefused(t *testing.T) {
 	refusedBy(t, func(r map[string]any) {

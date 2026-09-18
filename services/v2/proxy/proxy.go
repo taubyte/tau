@@ -22,6 +22,13 @@
 // see socket.go. The only port in the vocabulary is the one a container binds
 // inside itself, which never leaves the machine it runs on.
 //
+// # It terminates TLS, because nothing else can
+//
+// services/v2/gateway deliberately terminates nothing — it hands back an
+// http.Handler and whatever binds the socket owns the certificate. A proxy IS
+// the socket, so `tls: terminate` has to mean something here or mean nothing
+// anywhere. See tls.go for where the two kinds of certificate come from.
+//
 // # What it refuses, by name
 //
 // A connection is closed with nothing written when this cloud cannot serve what
@@ -32,6 +39,7 @@ package proxy
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -97,6 +105,15 @@ type Config struct {
 	// it holds. Default DefaultSweep.
 	Sweep time.Duration `yaml:"sweep"`
 
+	// Wildcard is the certificate for this cloud's own zone, which is what a
+	// generated host terminates TLS with.
+	//
+	// IT IS THE OPERATOR'S FOR THE REASON CloudFqdn IS: a generated name ends
+	// in a zone no project declares, so no project can hold a key for it. A
+	// node with none serves `tls: terminate` only where the resource names a
+	// certificate of its own.
+	Wildcard Certificate `yaml:"wildcard"`
+
 	// MaxSources bounds the rate-limit table. Default DefaultMaxSources.
 	//
 	// A PROXY UNDER A SPRAY OF ONE-CONNECTION-PER-ADDRESS TRAFFIC would
@@ -112,6 +129,12 @@ type Config struct {
 	// is not the project's to assert. With none, only the names whose zones the
 	// projects themselves declare can be published.
 	CloudFqdn string `yaml:"cloudFqdn"`
+}
+
+// Certificate is a chain and its key, in PEM.
+type Certificate struct {
+	Certificate string `yaml:"certificate"`
+	Key         string `yaml:"key"`
 }
 
 // DefaultConnectTimeout is how long reaching a workload may take.
@@ -145,6 +168,7 @@ type options struct {
 	workers     Workers
 	projects    Projects
 	deployments Deployments
+	secrets     Secrets
 	warn        func(string, ...any)
 }
 
@@ -164,6 +188,19 @@ func WithProjects(p Projects) Option {
 			return ErrNoProjects
 		}
 		o.projects = p
+		return nil
+	}
+}
+
+// WithSecrets is how a proxy reads the certificate a resource names. A service
+// without one cannot serve `certificate: {source: provided}`, and says so
+// rather than serving plaintext.
+func WithSecrets(sec Secrets) Option {
+	return func(o *options) error {
+		if sec == nil {
+			return errors.New("proxy: a nil secret resolver reads nothing")
+		}
+		o.secrets = sec
 		return nil
 	}
 }
@@ -284,6 +321,20 @@ func (s *Service) Serve(ctx context.Context, b Bind) (Socket, error) {
 	if err != nil {
 		return Socket{}, err
 	}
+
+	// THE CERTIFICATE IS RESOLVED AFTER THE BIND AND BEFORE ANYTHING IS
+	// ACCEPTED, so a proxy that asked for TLS and cannot have it holds no port
+	// — rather than answering the handshake with nothing, or worse, in the
+	// clear.
+	cfg, err := s.certificateFor(ctx, r, b, sock.Host)
+	if err != nil {
+		l.Close()
+		return Socket{}, err
+	}
+	if cfg != nil {
+		l = tls.NewListener(l, cfg)
+	}
+
 	if err := s.accept(ctx, l, sock, limitsOf(r), b); err != nil {
 		return Socket{}, err
 	}
@@ -431,9 +482,6 @@ func unservable(r project.Resource) string {
 	if p := r.String("protocol"); p != "" && p != "tcp" {
 		return fmt.Sprintf("it carries %q, and this cloud carries tcp — a stream is reliable and ordered, "+
 			"which is the property a udp application chose to do without", p)
-	}
-	if mode := r.String("tls", "mode"); mode == "terminate" {
-		return "it terminates TLS, and nothing here holds a certificate for a proxy yet"
 	}
 	if r.String("routing") == "router" {
 		return "a function decides where its connections go, and this cloud runs no proxy router yet"
