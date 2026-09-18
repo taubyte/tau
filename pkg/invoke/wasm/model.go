@@ -92,15 +92,28 @@ func (r *Runtime) modelImports(spec invoke.Spec) []component.Option {
 
 	table := component.NewTypeTable()
 
+	toolRef := table.Record(
+		"name", component.Prim("string"),
+		"description", component.Prim("string"),
+		"schema", component.Prim("string"),
+	)
+	toolCallRef := table.Record(
+		"id", component.Prim("string"),
+		"name", component.Prim("string"),
+		"arguments", component.Prim("string"),
+	)
 	messageRef := table.Record(
 		"role", component.Prim("string"),
 		"content", component.Prim("string"),
+		"tool-call-id", component.Prim("string"),
+		"tool-calls", table.List(toolCallRef),
 	)
 	requestRef := table.Record(
 		"messages", table.List(messageRef),
 		"temperature", table.Option(component.Prim("f64")),
 		"max-tokens", table.Option(component.Prim("u32")),
 		"stop", table.List(component.Prim("string")),
+		"tools", table.List(toolRef),
 	)
 	usageRef := table.Record(
 		"input-tokens", component.Prim("u32"),
@@ -109,6 +122,7 @@ func (r *Runtime) modelImports(spec invoke.Spec) []component.Option {
 	answerRef := table.Record(
 		"content", component.Prim("string"),
 		"stop-reason", component.Prim("string"),
+		"tool-calls", table.List(toolCallRef),
 		"usage", usageRef,
 	)
 	failureRef := table.Variant(
@@ -192,7 +206,7 @@ func clamp(req *invoke.Inference, grant invoke.Grant) {
 // inferenceFrom lifts the world's `request` record.
 func inferenceFrom(value component.Value) (*invoke.Inference, error) {
 	fields, ok := value.([]component.Value)
-	if !ok || len(fields) != 4 {
+	if !ok || len(fields) != 5 {
 		return nil, errors.New("that request is not this world's shape")
 	}
 
@@ -203,16 +217,24 @@ func inferenceFrom(value component.Value) (*invoke.Inference, error) {
 		return nil, errors.New("messages is not a list")
 	}
 	for _, turn := range turns {
-		pair, ok := turn.([]component.Value)
-		if !ok || len(pair) != 2 {
-			return nil, errors.New("a message is not a role and a content")
+		fields, ok := turn.([]component.Value)
+		if !ok || len(fields) != 4 {
+			return nil, errors.New("a message is not this world's shape")
 		}
-		role, roleOK := pair[0].(string)
-		content, contentOK := pair[1].(string)
-		if !roleOK || !contentOK {
-			return nil, errors.New("a message is not two strings")
+		role, roleOK := fields[0].(string)
+		content, contentOK := fields[1].(string)
+		callID, idOK := fields[2].(string)
+		if !roleOK || !contentOK || !idOK {
+			return nil, errors.New("a message's strings are not strings")
 		}
-		out.Messages = append(out.Messages, invoke.Message{Role: role, Content: content})
+
+		calls, err := toolCallsFrom(fields[3])
+		if err != nil {
+			return nil, err
+		}
+		out.Messages = append(out.Messages, invoke.Message{
+			Role: role, Content: content, ToolCallID: callID, ToolCalls: calls,
+		})
 	}
 
 	// AN OPTION IS nil FOR none AND THE INNER VALUE OTHERWISE, so absent and
@@ -234,6 +256,56 @@ func inferenceFrom(value component.Value) (*invoke.Inference, error) {
 			out.Stop = append(out.Stop, str)
 		}
 	}
+
+	tools, ok := fields[4].([]component.Value)
+	if !ok && fields[4] != nil {
+		return nil, errors.New("tools is not a list")
+	}
+	for _, t := range tools {
+		spec, ok := t.([]component.Value)
+		if !ok || len(spec) != 3 {
+			return nil, errors.New("a tool is not a name, a description and a schema")
+		}
+		name, nameOK := spec[0].(string)
+		description, descOK := spec[1].(string)
+		schema, schemaOK := spec[2].(string)
+		if !nameOK || !descOK || !schemaOK {
+			return nil, errors.New("a tool is not three strings")
+		}
+		if name == "" {
+			// A TOOL WITH NO NAME CANNOT BE CALLED BACK. The model would answer
+			// with an empty name and the caller would have nothing to look up.
+			return nil, errors.New("a tool must have a name")
+		}
+		out.Tools = append(out.Tools, invoke.Tool{Name: name, Description: description, Schema: schema})
+	}
+	return out, nil
+}
+
+// toolCallsFrom lifts a `list<tool-call>`.
+func toolCallsFrom(value component.Value) ([]invoke.ToolCall, error) {
+	list, ok := value.([]component.Value)
+	if !ok && value != nil {
+		return nil, errors.New("tool-calls is not a list")
+	}
+
+	out := make([]invoke.ToolCall, 0, len(list))
+	for _, entry := range list {
+		fields, ok := entry.([]component.Value)
+		if !ok || len(fields) != 3 {
+			return nil, errors.New("a tool call is not an id, a name and arguments")
+		}
+		id, idOK := fields[0].(string)
+		name, nameOK := fields[1].(string)
+		arguments, argsOK := fields[2].(string)
+		if !idOK || !nameOK || !argsOK {
+			return nil, errors.New("a tool call is not three strings")
+		}
+		out = append(out, invoke.ToolCall{ID: id, Name: name, Arguments: arguments})
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
 	return out, nil
 }
 
@@ -242,9 +314,15 @@ func answerValue(a *invoke.Answer) component.Value {
 	if a == nil {
 		a = &invoke.Answer{}
 	}
+	calls := make([]component.Value, 0, len(a.ToolCalls))
+	for _, c := range a.ToolCalls {
+		calls = append(calls, []component.Value{c.ID, c.Name, c.Arguments})
+	}
+
 	return []component.Value{
 		a.Content,
 		a.StopReason,
+		calls,
 		[]component.Value{a.Usage.InputTokens, a.Usage.OutputTokens},
 	}
 }

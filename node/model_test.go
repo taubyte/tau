@@ -405,3 +405,198 @@ func TestALocalModelWithNoWorkloadIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoModelEndpoint)
 	require.ErrorContains(t, err, "names no workload")
 }
+
+const openaiToolReply = `{"choices":[{"message":{"role":"assistant","content":"looking",
+	"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"id\":\"42\"}"}}]},
+	"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":11,"completion_tokens":3}}`
+
+const anthropicToolReply = `{"content":[{"type":"text","text":"looking"},
+	{"type":"tool_use","id":"toolu_1","name":"lookup","input":{"id":"42"}}],
+	"stop_reason":"tool_use","usage":{"input_tokens":11,"output_tokens":3}}`
+
+func oneTool() []invoke.Tool {
+	return []invoke.Tool{{
+		Name: "lookup", Description: "finds one",
+		Schema: `{"type":"object","properties":{"id":{"type":"string"}}}`,
+	}}
+}
+
+// TestTOOLSREACHOPENAIINITSOWNENVELOPE, and the calls come back out of it.
+func TestAnOpenAiModelIsSentToolsAndAnswersWithCalls(t *testing.T) {
+	p := newProvider(t, openaiToolReply)
+
+	out, err := ask(t, modelGrant(p.URL, "openai", nil), &invoke.Inference{
+		Messages: []invoke.Message{{Role: "user", Content: "find 42"}},
+		Tools:    oneTool(),
+	})
+	require.NoError(t, err)
+
+	tools := p.sent(t)["tools"].([]any)
+	require.Len(t, tools, 1)
+	first := tools[0].(map[string]any)
+	require.Equal(t, "function", first["type"], "that format wraps every tool in a type")
+	fn := first["function"].(map[string]any)
+	require.Equal(t, "lookup", fn["name"])
+	require.Contains(t, fn["parameters"].(map[string]any), "properties")
+
+	require.Equal(t, "looking", out.Content)
+	require.Equal(t, "tool_calls", out.StopReason)
+	require.Len(t, out.ToolCalls, 1)
+	require.Equal(t, "call_1", out.ToolCalls[0].ID)
+	require.Equal(t, "lookup", out.ToolCalls[0].Name)
+	require.JSONEq(t, `{"id":"42"}`, out.ToolCalls[0].Arguments)
+}
+
+// TestANTHROPICTAKESTOOLSUNWRAPPED, and answers with blocks rather than a list
+// beside the text.
+func TestAnAnthropicModelIsSentToolsInItsOwnShape(t *testing.T) {
+	p := newProvider(t, anthropicToolReply)
+
+	out, err := ask(t, modelGrant(p.URL, "anthropic", nil), &invoke.Inference{
+		Messages: []invoke.Message{{Role: "user", Content: "find 42"}},
+		Tools:    oneTool(),
+	})
+	require.NoError(t, err)
+
+	tools := p.sent(t)["tools"].([]any)
+	require.Len(t, tools, 1)
+	first := tools[0].(map[string]any)
+	require.Equal(t, "lookup", first["name"], "no wrapper: the tool is the object")
+	require.Contains(t, first, "input_schema", "and the schema is called something else")
+	require.NotContains(t, first, "parameters")
+
+	require.Equal(t, "looking", out.Content, "the text blocks, with the tool use left out of the prose")
+	require.Len(t, out.ToolCalls, 1)
+	require.Equal(t, "toolu_1", out.ToolCalls[0].ID)
+	require.JSONEq(t, `{"id":"42"}`, out.ToolCalls[0].Arguments)
+}
+
+// TestATOOLRESULTISAUSERTURNFORANTHROPIC. It is the one mapping here that is a
+// 400 rather than a degraded answer: that API has no `tool` role.
+func TestAToolResultIsSentAsAUserTurnWithBlocks(t *testing.T) {
+	p := newProvider(t, anthropicReply)
+
+	_, err := ask(t, modelGrant(p.URL, "anthropic", nil), &invoke.Inference{
+		Messages: []invoke.Message{
+			{Role: "user", Content: "find 42"},
+			{Role: "assistant", Content: "looking", ToolCalls: []invoke.ToolCall{
+				{ID: "toolu_1", Name: "lookup", Arguments: `{"id":"42"}`},
+			}},
+			{Role: "tool", ToolCallID: "toolu_1", Content: "found it"},
+		},
+	})
+	require.NoError(t, err)
+
+	messages := p.sent(t)["messages"].([]any)
+	require.Len(t, messages, 3)
+
+	// The assistant turn became blocks, text first then the tool use.
+	assistant := messages[1].(map[string]any)
+	blocks := assistant["content"].([]any)
+	require.Len(t, blocks, 2)
+	require.Equal(t, "text", blocks[0].(map[string]any)["type"])
+	use := blocks[1].(map[string]any)
+	require.Equal(t, "tool_use", use["type"])
+	require.Equal(t, "toolu_1", use["id"])
+	require.Equal(t, map[string]any{"id": "42"}, use["input"], "the arguments, as JSON and not as a string")
+
+	// And the result is a USER turn carrying a tool_result block.
+	result := messages[2].(map[string]any)
+	require.Equal(t, "user", result["role"], "there is no tool role in that API")
+	block := result["content"].([]any)[0].(map[string]any)
+	require.Equal(t, "tool_result", block["type"])
+	require.Equal(t, "toolu_1", block["tool_use_id"])
+	require.Equal(t, "found it", block["content"])
+}
+
+// TestATOOLRESULTISATOOLTURNFOROPENAI, which is the same fact spelled the
+// other way — and getting the two confused is a 400 on whichever is wrong.
+func TestAToolResultIsSentAsAToolTurnForOpenAi(t *testing.T) {
+	p := newProvider(t, openaiReply)
+
+	_, err := ask(t, modelGrant(p.URL, "openai", nil), &invoke.Inference{
+		Messages: []invoke.Message{
+			{Role: "assistant", ToolCalls: []invoke.ToolCall{
+				{ID: "call_1", Name: "lookup", Arguments: `{"id":"42"}`},
+			}},
+			{Role: "tool", ToolCallID: "call_1", Content: "found it"},
+		},
+	})
+	require.NoError(t, err)
+
+	messages := p.sent(t)["messages"].([]any)
+	assistant := messages[0].(map[string]any)
+	calls := assistant["tool_calls"].([]any)
+	require.Len(t, calls, 1)
+	require.Equal(t, `{"id":"42"}`, calls[0].(map[string]any)["function"].(map[string]any)["arguments"],
+		"that format carries the arguments as a STRING, not as an object")
+
+	result := messages[1].(map[string]any)
+	require.Equal(t, "tool", result["role"])
+	require.Equal(t, "call_1", result["tool_call_id"])
+}
+
+// TestAMODELPRODUCEDNOTHINGISNOTSENTASJSON. The arguments come from an LLM,
+// which is not a source that can be relied on to produce well-formed JSON — and
+// a provider handed a malformed field refuses the whole request.
+func TestMalformedArgumentsBecomeAnEmptyObject(t *testing.T) {
+	p := newProvider(t, anthropicReply)
+
+	_, err := ask(t, modelGrant(p.URL, "anthropic", nil), &invoke.Inference{
+		Messages: []invoke.Message{
+			{Role: "assistant", ToolCalls: []invoke.ToolCall{
+				{ID: "toolu_1", Name: "lookup", Arguments: `{"id": tru`},
+			}},
+		},
+	})
+	require.NoError(t, err)
+
+	blocks := p.sent(t)["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	require.Equal(t, map[string]any{}, blocks[0].(map[string]any)["input"])
+}
+
+// TestASCHEMATHATISNOTJSONISREPLACED rather than sent. It would be a 400 from
+// every provider, and a tool the model can still call is a better answer to the
+// caller's mistake than a request that fails outright.
+func TestAnUnparseableSchemaBecomesAnObject(t *testing.T) {
+	for _, format := range []string{"openai", "anthropic"} {
+		reply := openaiReply
+		if format == "anthropic" {
+			reply = anthropicReply
+		}
+		p := newProvider(t, reply)
+
+		_, err := ask(t, modelGrant(p.URL, format, nil), &invoke.Inference{
+			Messages: []invoke.Message{{Role: "user", Content: "hi"}},
+			Tools:    []invoke.Tool{{Name: "lookup", Schema: "not a schema"}},
+		})
+		require.NoError(t, err)
+
+		tools := p.sent(t)["tools"].([]any)
+		first := tools[0].(map[string]any)
+
+		schema := first["input_schema"]
+		if format == "openai" {
+			schema = first["function"].(map[string]any)["parameters"]
+		}
+		require.Equal(t, map[string]any{"type": "object"}, schema, format)
+	}
+}
+
+// TestNOTOOLSISNOFIELD, so a plain completion looks exactly as it did before
+// this existed.
+func TestACompletionWithNoToolsSendsNoToolsField(t *testing.T) {
+	for _, format := range []string{"openai", "anthropic"} {
+		reply := openaiReply
+		if format == "anthropic" {
+			reply = anthropicReply
+		}
+		p := newProvider(t, reply)
+
+		_, err := ask(t, modelGrant(p.URL, format, nil), &invoke.Inference{
+			Messages: []invoke.Message{{Role: "user", Content: "hi"}},
+		})
+		require.NoError(t, err)
+		require.NotContains(t, p.sent(t), "tools", format)
+	}
+}

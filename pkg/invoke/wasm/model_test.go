@@ -189,3 +189,48 @@ func TestAModelGrantWithNoBackingIsRefusedAtStart(t *testing.T) {
 	})
 	require.ErrorIs(t, err, wasm.ErrNoInference)
 }
+
+// TestTHEMODELASKSANDTHECALLERRUNSIT. Nothing in the host runs a tool, which
+// is what keeps a loop the caller's program rather than a behaviour hidden
+// inside a host function — so what this proves is that the ASKING crosses, in
+// both directions, through generated bindings.
+func TestAComponentSendsToolsAndReadsBackWhatTheModelWants(t *testing.T) {
+	brain := newThinking()
+	brain.answer = invoke.Answer{
+		Content:    "let me look",
+		StopReason: "tool-calls",
+		ToolCalls: []invoke.ToolCall{
+			{ID: "call_1", Name: "lookup", Arguments: `{"id":"42"}`},
+			{ID: "call_2", Name: "lookup", Arguments: `{"id":"43"}`},
+		},
+	}
+
+	instance := start(t, tier(t, cacher(t), wasm.WithInference(brain)), invoke.Spec{
+		Name: "fn", Reaches: modelGrant("brain", []string{"infer"}, nil),
+	})
+
+	res := call(t, instance, "/infer-tools/brain/", []byte("find 42"))
+	require.Equal(t, 200, res.Status, string(res.Body))
+	require.Equal(t, "let me look|tool-calls|call_1:lookup:{\"id\":\"42\"},call_2:lookup:{\"id\":\"43\"}",
+		string(res.Body), "both calls, with their ids — which is how a caller tells two answers apart")
+
+	// And the tool the guest declared reached the backing.
+	asked := brain.asked()
+	require.Len(t, asked.Tools, 1)
+	require.Equal(t, "lookup", asked.Tools[0].Name)
+	require.Equal(t, "finds one", asked.Tools[0].Description)
+	require.JSONEq(t, `{"type":"object","properties":{"id":{"type":"string"}}}`, asked.Tools[0].Schema)
+}
+
+// TestAPLAINCOMPLETIONSENDSNOTOOLS, so a caller that wants prose pays nothing
+// for a feature it is not using.
+func TestACompletionWithNoToolsCarriesNone(t *testing.T) {
+	brain := newThinking()
+
+	instance := start(t, tier(t, cacher(t), wasm.WithInference(brain)), invoke.Spec{
+		Name: "fn", Reaches: modelGrant("brain", []string{"infer"}, nil),
+	})
+
+	require.Equal(t, 200, call(t, instance, "/infer/brain/", []byte("hi")).Status)
+	require.Empty(t, brain.asked().Tools)
+}

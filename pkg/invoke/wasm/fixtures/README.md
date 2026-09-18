@@ -95,6 +95,12 @@ Its `infer` branch asks for a MILLION tokens on every call, deliberately: the
 ceiling belongs to the `model` resource and the host clamps to it, so what that
 branch proves is that a guest cannot raise a limit its author wrote.
 
+Its `infer-tools` branch is one turn of an agent loop written by hand, which is
+the whole point of putting tools in that interface: the model says what it wants
+run and the CALLER runs it — nothing in the host does. It sends a tool, echoes
+back every call the model asked for with its id, and so shows a call crossing in
+both directions rather than only which arm was taken.
+
 Regenerate after changing the world:
 
     cd handler        # or cacher

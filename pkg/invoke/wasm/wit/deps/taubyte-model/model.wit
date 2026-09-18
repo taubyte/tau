@@ -36,12 +36,47 @@
 package taubyte:model@0.1.0;
 
 interface inference {
-    // One turn. The roles are the three every format has; a format that spells
+    // A tool the model may ask to have run.
+    //
+    // THE SCHEMA IS JSON AS TEXT, not a structured type. JSON Schema is
+    // recursive and WIT has no recursive records, so a typed version could only
+    // express a subset — and every provider takes it as JSON on the wire
+    // anyway. A caller that has a schema hands it over whole.
+    record tool {
+        name: string,
+        description: string,
+        schema: string,
+    }
+
+    // The model asking for one to be run.
+    record tool-call {
+        // The provider's own id for this call, echoed rather than invented: a
+        // model that asked for two tools at once is told which answer is which
+        // by this and by nothing else.
+        id: string,
+        name: string,
+
+        // The arguments, as JSON. The MODEL produced them, so nothing here
+        // checks them against the schema — the tool is the only party that
+        // knows what it needs, and a host that pre-validated would be
+        // enforcing a contract it does not own.
+        arguments: string,
+    }
+
+    // One turn. The roles are the ones every format has; a format that spells
     // them differently is the host's problem, not the caller's.
     record message {
-        // "system", "user" or "assistant".
+        // "system", "user", "assistant" or "tool".
         role: string,
         content: string,
+
+        // On a `tool` turn: which call this answers.
+        tool-call-id: string,
+
+        // On an `assistant` turn the model produced: what it asked for.
+        // HANDING IT BACK IS WHAT MAKES THE CONVERSATION RESUMABLE — a provider
+        // that cannot see its own request cannot be given the answer to it.
+        tool-calls: list<tool-call>,
     }
 
     record request {
@@ -60,6 +95,14 @@ interface inference {
         // is a rule about what this model may emit, and a caller does not get
         // to lift it.
         stop: list<string>,
+
+        // What the model may ask to have run. An empty list is a plain
+        // completion, which is what every caller that wants prose sends.
+        //
+        // NOTHING HERE RUNS THEM. The model answers with what it wants called
+        // and the caller does the calling — which is what keeps a loop the
+        // caller's program rather than a behaviour hidden in a host function.
+        tools: list<tool>,
     }
 
     // What it cost. It is here because the caller is the only party that can
@@ -73,10 +116,14 @@ interface inference {
         content: string,
 
         // Why it stopped: "stop" when it finished, "length" when it hit the
-        // ceiling, or whatever else the provider said. A caller that cares
-        // whether the answer is complete reads this rather than guessing from
-        // the text.
+        // ceiling, "tool-calls" when it wants one run, or whatever else the
+        // provider said. A caller that cares whether the answer is complete
+        // reads this rather than guessing from the text.
         stop-reason: string,
+
+        // What it wants run before it can answer. Empty on an ordinary
+        // completion. A caller that sent no tools never sees one.
+        tool-calls: list<tool-call>,
 
         usage: usage,
     }

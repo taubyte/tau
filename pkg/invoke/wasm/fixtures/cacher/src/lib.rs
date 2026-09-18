@@ -445,10 +445,13 @@ impl Guest for Component {
                     messages: vec![model::Message {
                         role: "user".to_string(),
                         content: String::from_utf8_lossy(&req.body).to_string(),
+                        tool_call_id: String::new(),
+                        tool_calls: Vec::new(),
                     }],
                     temperature: None,
                     max_tokens: Some(1_000_000),
                     stop: Vec::new(),
+                    tools: Vec::new(),
                 };
                 match model::infer(name, &req) {
                     Ok(answer) => reply(
@@ -462,6 +465,47 @@ impl Guest for Component {
                         )
                         .into_bytes(),
                     ),
+                    Err(e) => reply(403, why_model(&e).into_bytes()),
+                }
+            }
+            // ONE TURN OF A LOOP, WRITTEN BY HAND, which is the whole point of
+            // putting tools in this interface: the model says what it wants
+            // run and the CALLER runs it. Nothing in the host does.
+            //
+            // It sends a tool, hands back the answer's tool calls, and echoes
+            // what it was asked for — so a test can see that a call crossed in
+            // both directions rather than only that one arm was taken.
+            "infer-tools" => {
+                let req = model::Request {
+                    messages: vec![model::Message {
+                        role: "user".to_string(),
+                        content: String::from_utf8_lossy(&req.body).to_string(),
+                        tool_call_id: String::new(),
+                        tool_calls: Vec::new(),
+                    }],
+                    temperature: None,
+                    max_tokens: None,
+                    stop: Vec::new(),
+                    tools: vec![model::Tool {
+                        name: "lookup".to_string(),
+                        description: "finds one".to_string(),
+                        schema: r#"{"type":"object","properties":{"id":{"type":"string"}}}"#
+                            .to_string(),
+                    }],
+                };
+                match model::infer(name, &req) {
+                    Ok(answer) => {
+                        let calls: Vec<String> = answer
+                            .tool_calls
+                            .iter()
+                            .map(|c| format!("{}:{}:{}", c.id, c.name, c.arguments))
+                            .collect();
+                        reply(
+                            200,
+                            format!("{}|{}|{}", answer.content, answer.stop_reason, calls.join(","))
+                                .into_bytes(),
+                        )
+                    }
                     Err(e) => reply(403, why_model(&e).into_bytes()),
                 }
             }

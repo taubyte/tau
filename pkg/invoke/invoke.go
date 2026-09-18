@@ -509,12 +509,43 @@ type Shaped struct {
 	State []byte
 }
 
+// Tool is something a model may ask to have run.
+type Tool struct {
+	Name        string
+	Description string
+
+	// Schema is JSON Schema for the arguments, as JSON text. It is text
+	// because JSON Schema is recursive and the world that carries it has no
+	// recursive records — and every provider takes it as JSON anyway.
+	Schema string
+}
+
+// ToolCall is the model asking for one.
+type ToolCall struct {
+	// ID is the provider's own, echoed rather than invented: a model that
+	// asked for two at once is told which answer is which by this alone.
+	ID   string
+	Name string
+
+	// Arguments is JSON the MODEL produced, which is not a source that can be
+	// trusted to be well-formed. Nothing checks it against the schema — the
+	// tool is the only party that knows what it needs.
+	Arguments string
+}
+
 // Message is one turn of a conversation with a model.
 type Message struct {
-	// Role is "system", "user" or "assistant". A format that spells them
-	// differently is the backing's problem, not the caller's.
+	// Role is "system", "user", "assistant" or "tool". A format that spells
+	// them differently is the backing's problem, not the caller's.
 	Role    string
 	Content string
+
+	// ToolCallID is set on a `tool` turn: which call this answers.
+	ToolCallID string
+
+	// ToolCalls is set on an assistant turn the model produced. Handing it
+	// back is what makes a conversation with tools in it resumable.
+	ToolCalls []ToolCall
 }
 
 // Inference is one call to a model, in the terms the vocabulary uses.
@@ -532,6 +563,12 @@ type Inference struct {
 	// stop sequence an author wrote is a rule about what this model may emit,
 	// and a caller does not lift it.
 	Stop []string
+
+	// Tools is what the model may ask to have run. NOTHING HERE RUNS THEM: the
+	// model answers with what it wants called and the caller does the calling,
+	// which is what keeps a loop the caller's program rather than a behaviour
+	// hidden inside a host function.
+	Tools []Tool
 }
 
 // Usage is what one call cost. The caller is the only party that can attribute
@@ -545,10 +582,15 @@ type Usage struct {
 type Answer struct {
 	Content string
 
-	// StopReason is "stop" when it finished and "length" when it hit the
-	// ceiling, or whatever else the provider said. A caller that needs to know
-	// whether the answer is complete reads this rather than guessing.
+	// StopReason is "stop" when it finished, "length" when it hit the ceiling,
+	// "tool-calls" when it wants one run, or whatever else the provider said. A
+	// caller that needs to know whether the answer is complete reads this
+	// rather than guessing.
 	StopReason string
+
+	// ToolCalls is what it wants run before it can answer. A caller that sent
+	// no tools never sees one.
+	ToolCalls []ToolCall
 
 	Usage Usage
 }
