@@ -308,6 +308,27 @@ type Instance interface {
 	io.Closer
 }
 
+// Transforms is an Instance that can also be driven as a gateway transformer.
+//
+// IT IS A SECOND INTERFACE RATHER THAN A SECOND METHOD ON Instance, because a
+// container tier genuinely cannot do this: it runs a process that answers
+// requests, and there is no second export to call. Widening Instance would make
+// every tier carry a method saying so.
+type Transforms interface {
+	Transform(ctx context.Context, req *Request) (*Outcome, error)
+}
+
+// Outcome is what a transformer decided: the request carries on, possibly
+// changed, or it stops here and this is the answer.
+//
+// EXACTLY ONE IS SET. They are separate fields rather than a status convention
+// because encoding "carry on" as a response would make every real status
+// ambiguous — a transformer that legitimately wants to answer 200 could not.
+type Outcome struct {
+	Forward *Request
+	Answer  *Response
+}
+
 // Runtime starts instances. That is the entire contract, and it is small on
 // purpose: everything else an engine might be asked to do is the same for all
 // of them and lives in Pool.

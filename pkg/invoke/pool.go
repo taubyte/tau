@@ -192,8 +192,48 @@ func NewPool(opts ...Option) (*Pool, error) {
 // Do runs one request against spec, starting an instance if nothing warm can
 // take it, and waiting if the spec is at capacity.
 func (p *Pool) Do(ctx context.Context, spec Spec, req *Request) (*Response, error) {
+	var out *Response
+	err := p.on(ctx, spec, func(ctx context.Context, inst Instance) error {
+		var err error
+		out, err = inst.Serve(ctx, req)
+		return err
+	})
+	return out, err
+}
+
+// Transform runs one request through spec as a TRANSFORMER, on a pooled
+// instance, and answers with what it decided.
+//
+// IT IS POOLED FOR THE SAME REASON A HANDLER IS, and that is the whole argument
+// for it being here rather than in the tier. An authorizer or an instance
+// validator is asked once per caller and its answer is kept, so each can afford
+// to instantiate per question; a transformer runs on EVERY request and nothing
+// about its answer can be kept. Everything this pool does — warm slots,
+// cold-start deduplication, per-spec concurrency, idle timeout, scale to zero —
+// is about when to start and reuse a thing, not about what the thing answers.
+//
+// A TIER THAT CANNOT TRANSFORM SAYS SO. Only the component tier serves this
+// world; a container is a process that answers requests and has no second
+// export to call.
+func (p *Pool) Transform(ctx context.Context, spec Spec, req *Request) (*Outcome, error) {
+	var out *Outcome
+	err := p.on(ctx, spec, func(ctx context.Context, inst Instance) error {
+		t, ok := inst.(Transforms)
+		if !ok {
+			return fmt.Errorf("%w: the %s tier runs no transformer", ErrNoRuntime, spec.Runtime)
+		}
+		var err error
+		out, err = t.Transform(ctx, req)
+		return err
+	})
+	return out, err
+}
+
+// on runs fn on a pooled instance of spec — the whole of what this package
+// decides, with what to CALL left to the caller.
+func (p *Pool) on(ctx context.Context, spec Spec, fn func(context.Context, Instance) error) error {
 	if err := spec.validate(); err != nil {
-		return nil, err
+		return err
 	}
 	if spec.Concurrency == 0 {
 		spec.Concurrency = 1
@@ -202,12 +242,12 @@ func (p *Pool) Do(ctx context.Context, spec Spec, req *Request) (*Response, erro
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
-		return nil, ErrPoolClosed
+		return ErrPoolClosed
 	}
 	rt, ok := p.runtimes[spec.Runtime]
 	if !ok {
 		p.mu.Unlock()
-		return nil, fmt.Errorf("%w: %q", ErrNoRuntime, spec.Runtime)
+		return fmt.Errorf("%w: %q", ErrNoRuntime, spec.Runtime)
 	}
 	g := p.groupFor(spec)
 	sem := g.sem
@@ -221,13 +261,13 @@ func (p *Pool) Do(ctx context.Context, spec Spec, req *Request) (*Response, erro
 	select {
 	case sem <- struct{}{}:
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return ctx.Err()
 	}
 	defer func() { <-sem }()
 
 	s, err := p.acquire(ctx, rt, spec)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	timeout := spec.Timeout
@@ -237,9 +277,9 @@ func (p *Pool) Do(ctx context.Context, spec Spec, req *Request) (*Response, erro
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	resp, err := s.inst.Serve(callCtx, req)
+	err = fn(callCtx, s.inst)
 	p.release(spec, s, err != nil)
-	return resp, err
+	return err
 }
 
 // acquire finds a slot with room, or starts one.

@@ -265,7 +265,23 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, fmt.Errorf("%w: %s", ErrNoArtifact, spec.Name)
 	}
 
-	instance, runtime, err := r.instantiate(ctx, spec, WorldHandler)
+	// WHICH WORLD THIS SPEC IS, and Start drives two of them.
+	//
+	// A handler and a gateway transformer are both POOLED — they run per
+	// request and their answers cannot be kept — so both arrive here, and the
+	// instance remembers which it is so the wrong export is never called on it.
+	// An authorizer and an instance validator have their own entry points
+	// because they are asked once and their answers ARE kept; the routers have
+	// none yet.
+	world := spec.Settings[SettingImplements]
+	if world == "" {
+		world = WorldHandler
+	}
+	if world != WorldHandler && world != WorldGatewayTransformer {
+		return nil, fmt.Errorf("%w: %s is %q, which is not started", ErrUnsupportedWorld, spec.Name, world)
+	}
+
+	instance, runtime, err := r.instantiate(ctx, spec, world)
 	if err != nil {
 		return nil, err
 	}
@@ -275,11 +291,19 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		export = DefaultExport
 	}
 
+	if world == WorldGatewayTransformer {
+		// FIXED, unlike a handler's. A gateway names the FUNCTION it passes
+		// traffic through, not an export inside it, so there is no
+		// `execution/call` here to carry a second name.
+		export = transformExport
+	}
+
 	return &function{
 		runtime:  runtime,
 		instance: instance,
 		export:   export,
-		http:     exportsHTTPWorld(instance),
+		world:    world,
+		http:     world == WorldHandler && exportsHTTPWorld(instance),
 	}, nil
 }
 
@@ -291,8 +315,15 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 // `authorize(question) -> decision`. A component built for one of those
 // instantiates perfectly well under the other and then reads the arguments it is
 // handed as something else, which is the failure `implements` exists to prevent
-// — so each entry point names the world it can actually call, and the check
-// happens before anything is fetched.
+// — so each entry point names the world it can actually call.
+//
+// IT CHECKS THE DECLARATION AND NOT THE ARTIFACT, which is worth being exact
+// about. This catches "asked to authorize with a component the config calls a
+// handler", before anything is fetched. It does not catch a component MIS-BUILT
+// against its own declaration: the runtime offers no way to ask whether a bare
+// world export exists without calling it, so that one surfaces on the first call
+// as an unknown export. Probing it here would mean invoking somebody's
+// transformer with a fabricated request at start-up, which is worse.
 //
 // AN EMPTY `implements` IS THE HANDLER, which is what the schema defaults it to,
 // so a world that is not the handler must be written down to be run as one.
@@ -446,6 +477,12 @@ type function struct {
 	instance *component.Instance
 	export   string
 
+	// world is which of the two started worlds this is, so the wrong export is
+	// never called on it — a transformer driven as a handler would be handed a
+	// request it reads as a request and answer with an outcome the caller reads
+	// as a response.
+	world string
+
 	// http says this component is the standard world, so it is driven as an
 	// HTTP handler rather than called by name.
 	http bool
@@ -463,6 +500,9 @@ func (f *function) Close() error {
 
 // Serve hands one request to the guest.
 func (f *function) Serve(ctx context.Context, req *invoke.Request) (*invoke.Response, error) {
+	if f.world != WorldHandler {
+		return nil, fmt.Errorf("%w: this is a %s and answers no request", ErrUnsupportedWorld, f.world)
+	}
 	if f.http {
 		return f.serveHTTP(ctx, req)
 	}

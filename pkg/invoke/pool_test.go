@@ -706,3 +706,101 @@ func TestPoolOptionsThatAreAcceptedTakeEffect(t *testing.T) {
 	require.Equal(t, 11*time.Second, p.opts.timeout)
 	require.Equal(t, c.now(), p.opts.now())
 }
+
+// ── transformers ─────────────────────────────────────────────────────────
+
+// A TRANSFORMER IS POOLED FOR THE SAME REASONS A HANDLER IS, and that claim is
+// the whole argument for Transform living here rather than in the tier. It runs
+// on every request and nothing about its answer can be kept, so the cold start
+// it would otherwise pay each time — measured at ~13ms for a small component —
+// is exactly what these warm slots exist to remove.
+
+func (i *fakeInstance) Transform(_ context.Context, req *Request) (*Outcome, error) {
+	if req.Path == "/reject" {
+		return &Outcome{Answer: &Response{Status: 403}}, nil
+	}
+	forwarded := *req
+	forwarded.Path = req.Path + "/shaped"
+	return &Outcome{Forward: &forwarded}, nil
+}
+
+// TestFIVETRANSFORMSAreONEColdStart.
+func TestTransformReusesAWarmInstance(t *testing.T) {
+	e := newFakeRuntime("wasm")
+	p, err := NewPool(WithRuntime(e))
+	require.NoError(t, err)
+	defer p.Close()
+
+	spec := Spec{Runtime: "wasm", Name: "redact", Artifact: "bafy", Revision: "1"}
+	for range 5 {
+		out, err := p.Transform(t.Context(), spec, &Request{Path: "/checkout"})
+		require.NoError(t, err)
+		require.Equal(t, "/checkout/shaped", out.Forward.Path)
+	}
+
+	started, _ := e.counts()
+	require.Equal(t, 1, started, "five transforms, one cold start")
+}
+
+// TestATransformerAndAHandlerOfONESpecShareNothing, which is not a subtlety:
+// they are different specs — a gateway names a different function for each — so
+// they are different groups, and a transformer's instances never serve a
+// request.
+func TestATransformerIsItsOwnGroup(t *testing.T) {
+	e := newFakeRuntime("wasm")
+	p, err := NewPool(WithRuntime(e))
+	require.NoError(t, err)
+	defer p.Close()
+
+	_, err = p.Transform(t.Context(), Spec{Runtime: "wasm", Name: "redact", Artifact: "bafy", Revision: "1"}, &Request{Path: "/"})
+	require.NoError(t, err)
+	_, err = p.Do(t.Context(), Spec{Runtime: "wasm", Name: "checkout", Artifact: "bafy", Revision: "1"}, &Request{Path: "/"})
+	require.NoError(t, err)
+
+	started, _ := e.counts()
+	require.Equal(t, 2, started, "two functions, two groups")
+}
+
+// TestTHEANSWERArmStopsTheChain, through the pool, so the outcome is what the
+// caller receives rather than something the pool flattens.
+func TestTransformCarriesAnAnswerBack(t *testing.T) {
+	e := newFakeRuntime("wasm")
+	p, err := NewPool(WithRuntime(e))
+	require.NoError(t, err)
+	defer p.Close()
+
+	out, err := p.Transform(t.Context(), Spec{Runtime: "wasm", Name: "redact", Artifact: "bafy", Revision: "1"}, &Request{Path: "/reject"})
+	require.NoError(t, err)
+	require.Nil(t, out.Forward)
+	require.Equal(t, 403, out.Answer.Status)
+}
+
+// TestATIERTHATCANNOTTRANSFORMSaysSo rather than serving the request as if the
+// transformer were not there. A container is a process that answers requests and
+// has no second export to call.
+func TestATierThatCannotTransformIsRefused(t *testing.T) {
+	e := &handlerOnlyRuntime{name: "container"}
+	p, err := NewPool(WithRuntime(e))
+	require.NoError(t, err)
+	defer p.Close()
+
+	_, err = p.Transform(t.Context(), Spec{Runtime: "container", Name: "sidecar", Artifact: "img", Revision: "1"}, &Request{Path: "/"})
+	require.ErrorIs(t, err, ErrNoRuntime)
+	require.ErrorContains(t, err, "container")
+}
+
+// handlerOnlyRuntime starts instances that serve and nothing else — a container.
+type handlerOnlyRuntime struct{ name string }
+
+func (e *handlerOnlyRuntime) Name() string { return e.name }
+
+func (e *handlerOnlyRuntime) Start(context.Context, Spec) (Instance, error) {
+	return &handlerOnlyInstance{}, nil
+}
+
+type handlerOnlyInstance struct{}
+
+func (handlerOnlyInstance) Serve(context.Context, *Request) (*Response, error) {
+	return &Response{Status: 200}, nil
+}
+func (handlerOnlyInstance) Close() error { return nil }

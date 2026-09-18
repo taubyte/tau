@@ -43,6 +43,17 @@ The echo arm exists because `admitted` carries nothing: a yes has no room to sho
 that the record arrived intact, so the refusal's string is borrowed to hand the
 opening back.
 
+**shaper.wasm** is the gateway transformer: `taubyte:gateway-transformer`,
+exporting `transform(request) -> outcome`. Unlike the guard and the admitter it
+is POOLED — it runs on every request and nothing about its answer can be kept —
+so it is started by the ordinary Start path and the pool's warm slots are what
+keep a ~13ms cold start off the edge.
+
+It deliberately CHANGES what it forwards, adding a header and prefixing the body.
+Reading a `request` back out of a guest is something nothing else in this tree
+does, and a pass-through fixture would pass whether or not the host read the
+forwarded request at all.
+
 **cacher.wasm** calls every one of the thirteen capabilities, one branch of its
 `handle` per operation, selected by the request path. It is what every
 capability's tests drive.
