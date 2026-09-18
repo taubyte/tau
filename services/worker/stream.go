@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 
 	gostream "github.com/libp2p/go-libp2p-gostream"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/project"
 	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
+	"github.com/taubyte/tau/pkg/splice"
 )
 
 // stream.go is how a CONNECTION reaches a workload, as against a request.
@@ -135,43 +135,7 @@ func (s *Service) carry(ctx context.Context, from net.Conn) {
 	if err := answer(from, &workerv1.Opened{Ok: true}); err != nil {
 		return
 	}
-	splice(from, to)
-}
-
-// splice copies until either end stops, and stops the other when it does.
-//
-// A HALF-CLOSE IS NOT A CLOSE for a protocol that uses one — a client that has
-// finished sending and is waiting to be answered is the ordinary shape of a
-// query. So each direction ends on its own and the connection ends when BOTH
-// have, rather than the first EOF taking the other half with it.
-func splice(a, b net.Conn) {
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	half := func(dst, src net.Conn) {
-		defer wg.Done()
-		io.Copy(dst, src)
-		doneWriting(dst)
-	}
-
-	go half(a, b)
-	go half(b, a)
-	wg.Wait()
-}
-
-// doneWriting tells the far end that this direction is finished.
-//
-// THE FALLBACK IS A FULL CLOSE AND IT IS A REAL LOSS, so it is only taken when
-// the connection genuinely cannot half-close: a protocol whose client sends a
-// query and waits gets its request delivered and its answer never, because the
-// half it was waiting on went with the half it had finished.
-func doneWriting(c net.Conn) {
-	if cw, ok := c.(interface{ CloseWrite() error }); ok {
-		if cw.CloseWrite() == nil {
-			return
-		}
-	}
-	c.Close()
+	splice.Both(from, to)
 }
 
 // refuse answers with why, and says whether another node is worth trying.

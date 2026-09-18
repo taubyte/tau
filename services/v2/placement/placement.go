@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -66,6 +67,12 @@ type Invoker interface {
 // it to be a worker. A local worker and a remote client both do.
 type Transformer interface {
 	Transform(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error)
+}
+
+// Conns is a local worker that can hand out a connection, which is what lets a
+// node reach its own workload without a stream to itself.
+type Conns interface {
+	Conn(ctx context.Context, t worker.Target, port string) (net.Conn, error)
 }
 
 // Routes is an Invoker that can also ask a router where a request goes.
@@ -222,6 +229,63 @@ func (w *Workers) Route(ctx context.Context, at project.Address, req *invoke.Req
 		return err
 	})
 	return out, err
+}
+
+// Conn opens a connection to one of a workload's ports, on whichever node
+// should take it.
+//
+// IT DOES NOT GO THROUGH Invoker, and that is the one place this package parts
+// from its own shape. The raw protocol is not connect, so there is no client to
+// hang a method on — what it needs is the PEER, which invokerFor exists to hide.
+// Building an http.Client to reach something that is not HTTP would make the two
+// look alike and help nobody.
+//
+// THE LOCAL SHORTCUT IS THE SAME ONE: if this node is the answer and a local
+// worker was injected, the connection is made here rather than over a stream to
+// ourselves.
+func (w *Workers) Conn(ctx context.Context, at project.Address, port string) (net.Conn, error) {
+	candidates := w.candidates(at)
+	if len(candidates) == 0 {
+		return nil, ErrNoWorkers
+	}
+
+	var last error
+	for i, node := range candidates {
+		if i >= w.opts.attempts {
+			break
+		}
+
+		conn, err := w.connectTo(ctx, node.Peer, at, port)
+		if err == nil {
+			return conn, nil
+		}
+
+		// A NODE THAT ANSWERED IS THE ANSWER, and `Opened` is what makes that
+		// knowable: a target that resolves nowhere resolves nowhere on every
+		// node, so only a node that could not REACH it is worth another try.
+		if !unreachable(err) && !errors.Is(err, worker.ErrUnreachableNode) {
+			return nil, err
+		}
+		last = err
+	}
+
+	if last == nil {
+		last = ErrNoWorkers
+	}
+	return nil, fmt.Errorf("placement: no worker took a connection for %s/%s: %w", at.Kind, at.Name, last)
+}
+
+func (w *Workers) connectTo(ctx context.Context, id string, at project.Address, port string) (net.Conn, error) {
+	peerID, err := libp2ppeer.Decode(id)
+	if err != nil {
+		return nil, fmt.Errorf("placement: %q is not a peer: %w", id, err)
+	}
+	if w.opts.local != nil && peerID == w.host.ID() {
+		if c, ok := w.opts.local.(Conns); ok {
+			return c.Conn(ctx, worker.Target(at), port)
+		}
+	}
+	return worker.DialWorkload(ctx, w.host, peerID, at, port)
 }
 
 // somewhere runs call against the warmest node that will take this address,
