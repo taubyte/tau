@@ -29,12 +29,27 @@
 // the socket, so `tls: terminate` has to mean something here or mean nothing
 // anywhere. See tls.go for where the two kinds of certificate come from.
 //
-// # What it refuses, by name
+// # A function may decide where a connection goes, and shape what crosses it
 //
-// A connection is closed with nothing written when this cloud cannot serve what
-// the resource declares. There is nowhere to put a reason — a raw socket has no
-// status line — so the reason goes to the operator's log and the client gets
-// what any unreachable service gives it.
+// `routing: router` names a function that is handed the source address and the
+// leading bytes and answers with a destination — see route.go. `transformers:`
+// names functions the bytes pass through, in order, in both directions — see
+// shape.go. Both run on a worker, placed exactly as the workload is, because
+// both are workloads of the same deployment.
+//
+// # The one thing it still refuses
+//
+// `protocol: udp` and `protocol: sctp`. A stream is reliable and ordered, and
+// carrying a datagram protocol over one turns packet loss into a latency spike
+// and hands it head-of-line blocking for free — which is the property the
+// application chose to do without. There is no unreliable transport under this
+// to carry them honestly, so the resource is refused rather than served as
+// something it did not ask for.
+//
+// A refused connection is closed with nothing written. There is nowhere to put
+// a reason — a raw socket has no status line — so the reason goes to the
+// operator's log and the client gets what any unreachable service gives it. A
+// connection refused by a RATE LIMIT is not logged at all: see limits.go.
 package proxy
 
 import (
