@@ -3,8 +3,10 @@ package node
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"errors"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/project"
 )
 
 // model_test drives a real HTTP provider, because what this backing does is
@@ -26,6 +29,7 @@ type provider struct {
 	body   []byte
 	header http.Header
 	path   string
+	host   string
 
 	status int
 	answer string
@@ -39,6 +43,7 @@ func newProvider(t *testing.T, answer string) *provider {
 		p.body, _ = readAll(r)
 		p.header = r.Header.Clone()
 		p.path = r.URL.Path
+		p.host = r.Host
 
 		w.Header().Set("content-type", "application/json")
 		w.WriteHeader(p.status)
@@ -181,7 +186,8 @@ func TestTheCredentialIsSentTheWayEachFormatWants(t *testing.T) {
 			}
 			p := newProvider(t, reply)
 
-			_, err := (&inference{secrets: &fixedVault{value: "s3cret"}}).Infer(context.Background(),
+			held := &fixedVault{value: "s3cret"}
+			_, err := (&inference{secrets: func() modelSecrets { return held }}).Infer(context.Background(),
 				modelGrant(p.URL, c.format, map[string]string{"inference/remote/credentials/name": "QmKey"}),
 				&invoke.Inference{Messages: []invoke.Message{{Role: "user", Content: "hi"}}})
 			require.NoError(t, err)
@@ -300,4 +306,102 @@ type fixedVault struct{ value string }
 
 func (v *fixedVault) Secret(context.Context, string, string, string) (string, error) {
 	return v.value, nil
+}
+
+// dialled is a placement whose Conn goes to one address, recording what it was
+// asked for.
+type dialled struct {
+	at   project.Address
+	port string
+	to   string
+}
+
+func (d *dialled) Conn(ctx context.Context, at project.Address, port string) (net.Conn, error) {
+	d.at, d.port = at, port
+	return (&net.Dialer{}).DialContext(ctx, "tcp", d.to)
+}
+
+// TestALOCALLYSERVEDMODELISAWORKLOAD, reached through placement rather than a
+// URL — which is the same dial a proxy makes, and the reason nothing here had
+// to invent one.
+func TestALocalModelIsDialledThroughPlacement(t *testing.T) {
+	p := newProvider(t, openaiReply)
+	where := &dialled{to: strings.TrimPrefix(p.URL, "http://")}
+
+	grant := invoke.Grant{
+		Kind: "model", Label: "brain", Handle: "shop/prod/QmModel", Ops: []string{"infer"},
+		Settings: map[string]string{
+			"identifier":           "llama-3.1-70b",
+			"format":               "openai",
+			"inference/kind":       "local",
+			"inference/local/name": "llama",
+			"inference/local/port": "http",
+			settingLocalScope:      "eu/ml",
+		},
+	}
+
+	out, err := (&inference{workers: func() modelWorkers { return where }}).
+		Infer(context.Background(), grant,
+			&invoke.Inference{Messages: []invoke.Message{{Role: "user", Content: "hi"}}})
+	require.NoError(t, err)
+	require.Equal(t, "hello there", out.Content)
+
+	// It asked placement for the right workload, on the right port, in the
+	// namespace the composer resolved.
+	require.Equal(t, "application", where.at.Kind)
+	require.Equal(t, "llama", where.at.Name)
+	require.Equal(t, "shop", where.at.Project)
+	require.Equal(t, "prod", where.at.Environment)
+	require.Equal(t, []string{"eu", "ml"}, where.at.Scope)
+	require.Equal(t, "http", where.port)
+
+	// And it spoke the format, at the path, exactly as a remote one would.
+	require.Equal(t, "/v1/chat/completions", p.path)
+	require.Equal(t, "llama-3.1-70b", p.sent(t)["model"])
+}
+
+// TestTHEPLACEHOLDERHOSTREACHESNORESOLVER. The dialler ignores it, and it is
+// under .invalid so that a bug letting it through asks for a name that cannot
+// exist rather than one somebody owns.
+func TestALocalModelsUrlIsNotAResolvableName(t *testing.T) {
+	p := newProvider(t, openaiReply)
+	where := &dialled{to: strings.TrimPrefix(p.URL, "http://")}
+
+	_, err := (&inference{workers: func() modelWorkers { return where }}).
+		Infer(context.Background(), invoke.Grant{
+			Kind: "model", Handle: "shop/prod/QmModel", Ops: []string{"infer"},
+			Settings: map[string]string{
+				"identifier": "m", "format": "openai",
+				"inference/kind": "local", "inference/local/name": "llama",
+			},
+		}, &invoke.Inference{Messages: []invoke.Message{{Role: "user", Content: "hi"}}})
+	require.NoError(t, err)
+
+	// The Host header is what the URL said, and nothing resolved it: the
+	// connection came from the dialler above.
+	require.Equal(t, "model.invalid", p.host)
+}
+
+// TestALOCALMODELONANODETHATREACHESNOWORKLOAD is named rather than dialled.
+func TestALocalModelWithNoPlacementIsRefusedByName(t *testing.T) {
+	_, err := ask(t, invoke.Grant{
+		Kind: "model", Handle: "shop/prod/QmModel", Ops: []string{"infer"},
+		Settings: map[string]string{"identifier": "m", "format": "openai",
+			"inference/kind": "local", "inference/local/name": "llama"},
+	}, &invoke.Inference{Messages: []invoke.Message{{Role: "user", Content: "hi"}}})
+
+	require.ErrorIs(t, err, ErrNoModelEndpoint)
+	require.ErrorContains(t, err, "reaches none")
+}
+
+// TestALOCALMODELTHATNAMESNOWORKLOAD.
+func TestALocalModelWithNoWorkloadIsRefused(t *testing.T) {
+	_, err := (&inference{workers: func() modelWorkers { return &dialled{} }}).
+		Infer(context.Background(), invoke.Grant{
+			Kind: "model", Handle: "shop/prod/QmModel", Ops: []string{"infer"},
+			Settings: map[string]string{"identifier": "m", "format": "openai", "inference/kind": "local"},
+		}, &invoke.Inference{Messages: []invoke.Message{{Role: "user", Content: "hi"}}})
+
+	require.ErrorIs(t, err, ErrNoModelEndpoint)
+	require.ErrorContains(t, err, "names no workload")
 }

@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/project"
 )
 
 // model.go backs `taubyte:model/inference` on this node.
@@ -70,7 +72,42 @@ var (
 // worker and the proxy take: a credential is read through whichever resolver
 // this node settled on — an injected one, its own vault, or one in the fleet —
 // and nothing here needs to know which.
-type inference struct{ secrets modelSecrets }
+// ITS COLLABORATORS ARE READ AT THE CALL AND NOT CAPTURED, which is not a style
+// choice: the wasm tier is composed inside openWorker and placement is opened
+// AFTER it, so a struct that took n.workers at construction would take nil on
+// every node there is.
+//
+// They are functions rather than a held *Node because of the other half of the
+// same trap: a nil *placement.Workers assigned to an interface field is not
+// nil, so every `== nil` guard below would pass and the first call would panic.
+// A function returning the interface is where that check can be made once.
+type inference struct {
+	secrets func() modelSecrets
+	workers func() modelWorkers
+}
+
+// nodeInference is how this node builds one.
+func nodeInference(n *Node) *inference {
+	return &inference{
+		secrets: func() modelSecrets {
+			if r := n.secretResolver(); r != nil {
+				return r
+			}
+			return nil
+		},
+		workers: func() modelWorkers {
+			if n.workers == nil {
+				return nil
+			}
+			return n.workers
+		},
+	}
+}
+
+// modelWorkers opens a connection to one of a workload's named ports.
+type modelWorkers interface {
+	Conn(ctx context.Context, at project.Address, port string) (net.Conn, error)
+}
 
 // modelSecrets resolves the credential a model resource names. It is the same
 // shape worker.Secrets has, declared here because this is the consumer.
@@ -78,11 +115,27 @@ type modelSecrets interface {
 	Secret(ctx context.Context, project, environment, name string) (string, error)
 }
 
+// resolver and dialler are the two, with a nil function meaning a node that has
+// neither — which is what a bare &inference{} in a test is.
+func (i *inference) resolver() modelSecrets {
+	if i.secrets == nil {
+		return nil
+	}
+	return i.secrets()
+}
+
+func (i *inference) dialler() modelWorkers {
+	if i.workers == nil {
+		return nil
+	}
+	return i.workers()
+}
+
 var _ wasmtier.Inferences = (*inference)(nil)
 
 // Infer calls the provider the grant names.
 func (i *inference) Infer(ctx context.Context, grant invoke.Grant, req *invoke.Inference) (*invoke.Answer, error) {
-	endpoint, err := endpointOf(grant)
+	endpoint, client, err := i.reach(grant)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +159,7 @@ func (i *inference) Infer(ctx context.Context, grant invoke.Grant, req *invoke.I
 		return nil, err
 	}
 
-	res, err := http.DefaultClient.Do(post)
+	res, err := client.Do(post)
 	if err != nil {
 		return nil, fmt.Errorf("node: reaching %s: %w", endpoint, err)
 	}
@@ -145,11 +198,12 @@ func (i *inference) authorize(ctx context.Context, post *http.Request, format st
 	if !ok {
 		return fmt.Errorf("node: %q does not name a deployment", grant.Handle)
 	}
-	if i.secrets == nil {
+	vault := i.resolver()
+	if vault == nil {
 		return errors.New("node: that model names a credential and this node reads no secret")
 	}
 
-	value, err := i.secrets.Secret(ctx, project, environment, name)
+	value, err := vault.Secret(ctx, project, environment, name)
 	if err != nil {
 		return fmt.Errorf("node: reading that model's credential: %w", err)
 	}
@@ -169,25 +223,85 @@ func (i *inference) authorize(ctx context.Context, post *http.Request, format st
 // provider that defaulted it would be free to change what this node sends.
 const anthropicVersion = "2023-06-01"
 
-// endpointOf is where this model's inference goes.
-func endpointOf(grant invoke.Grant) (string, error) {
+// reach is where this model's inference goes, and what to send it with.
+//
+// # A remote model is a URL and a local one is a connection
+//
+// The difference is only in the dial. A workload serving inference speaks the
+// same HTTP as a provider does — it is running ollama or vllm — so what changes
+// is how the socket is opened, not what is written on it. So a local model gets
+// a client whose dialler goes through placement and a URL whose host is a
+// placeholder nothing resolves.
+//
+// THE PLACEHOLDER IS NOT A HOSTNAME ANYWHERE. The dialler ignores it entirely,
+// and it is `.invalid` — the TLD reserved for exactly this — so that a bug that
+// let it reach a real resolver asks for a name that cannot exist rather than
+// one somebody owns.
+func (i *inference) reach(grant invoke.Grant) (string, *http.Client, error) {
+	path := pathFor(grant.Settings["format"])
+
 	switch grant.Settings["inference/kind"] {
 	case "remote":
 		base := strings.TrimSuffix(grant.Settings["inference/remote/endpoint"], "/")
 		if base == "" {
-			return "", ErrNoModelEndpoint
+			return "", nil, ErrNoModelEndpoint
 		}
-		return base + pathFor(grant.Settings["format"]), nil
+		return base + path, http.DefaultClient, nil
 
 	case "local":
-		// A LOCAL MODEL IS A WORKLOAD IN THIS PROJECT, reached the way a proxy
-		// reaches one — through placement, on whichever node runs it. That is
-		// a connection rather than a URL, and this backing speaks http to a
-		// URL, so it is named as missing rather than half-built.
-		return "", fmt.Errorf("%w: it is served by a workload, which this node does not reach yet", ErrNoModelEndpoint)
+		at, port, err := localWorkload(grant)
+		if err != nil {
+			return "", nil, err
+		}
+		workers := i.dialler()
+		if workers == nil {
+			return "", nil, fmt.Errorf("%w: it is served by a workload and this node reaches none", ErrNoModelEndpoint)
+		}
+
+		client := &http.Client{Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return workers.Conn(ctx, at, port)
+			},
+			// ONE CONNECTION PER CALL. Placement decides which node answers,
+			// and a pooled connection would pin every later call of this
+			// instance to whichever node took the first.
+			DisableKeepAlives: true,
+		}}
+		return "http://model.invalid" + path, client, nil
 	}
-	return "", ErrNoModelEndpoint
+	return "", nil, ErrNoModelEndpoint
 }
+
+// localWorkload is which workload serves this model, and on which of its ports.
+func localWorkload(grant invoke.Grant) (project.Address, string, error) {
+	name := grant.Settings["inference/local/name"]
+	if name == "" {
+		return project.Address{}, "", fmt.Errorf("%w: it is served locally and names no workload", ErrNoModelEndpoint)
+	}
+
+	projectName, environment, ok := deploymentOf(grant.Handle)
+	if !ok {
+		return project.Address{}, "", fmt.Errorf("node: %q does not name a deployment", grant.Handle)
+	}
+
+	var scope []string
+	if joined := grant.Settings[settingLocalScope]; joined != "" {
+		scope = strings.Split(joined, "/")
+	}
+
+	return project.Address{
+		Project:     projectName,
+		Environment: environment,
+		Scope:       scope,
+		Kind:        "application",
+		Name:        name,
+	}, grant.Settings["inference/local/port"], nil
+}
+
+// settingLocalScope is where the resolved namespace chain travels. The composer
+// writes it — see services/worker's localModelScope — because only the compiled
+// project can answer where a workload lives.
+const settingLocalScope = "inference/local/scope"
 
 // pathFor is where each format's completions live under the base URL.
 func pathFor(format string) string {

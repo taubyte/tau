@@ -421,7 +421,7 @@ func (n *Node) openWorker() error {
 			// ollama on this machine — is a legitimate resource, and refusing
 			// to start a workload that reaches one would make the credential
 			// the thing that decides whether inference exists.
-			wasm.WithInference(&inference{secrets: n.secretResolver()}))
+			wasm.WithInference(nodeInference(n)))
 		if err != nil {
 			return err
 		}

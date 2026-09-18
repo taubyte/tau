@@ -179,6 +179,15 @@ func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Gr
 				Refused:  unservable(reach, target),
 			}
 
+			// A LOCALLY SERVED MODEL IS A WORKLOAD, and where it lives is a
+			// question only the compiled project can answer. It is resolved
+			// here, where the project is open, rather than by the backing —
+			// which holds a handle and would need the register on the call
+			// path to work out the same thing.
+			if reach.Kind == modelKind {
+				grant.Settings = merged(grant.Settings, localModelScope(proj, target, id))
+			}
+
 			// STARTING A WORKFLOW IS SENDING TO ITS FIRST STEP'S QUEUE, and the
 			// workflow itself says so — the lowering writes `entry/start` onto
 			// the shell precisely so that no consumer has to work it out from a
@@ -482,6 +491,36 @@ func settingsFor(kind string, reach project.Reach, target project.Resource) map[
 	}
 	return nil
 }
+
+// localModelScope is the namespace chain holding the workload that serves a
+// locally-served model, in the form project.Address takes.
+//
+// IT IS THE MODEL'S OWN SCOPE AND THEN THE DECLARED NAMESPACE, which is what an
+// omitted `namespace:` means everywhere in this vocabulary — the same rule a
+// proxy's forward and a gateway's transformer follow.
+func localModelScope(proj *project.Project, target project.Resource, id string) map[string]string {
+	if target.String("inference", "kind") != "local" {
+		return nil
+	}
+
+	_, scope, _, ok := proj.Locate(id)
+	if !ok {
+		return nil
+	}
+
+	resolved := project.ScopeOf(scope, target.String("inference", "local", "namespace"))
+	if len(resolved) == 0 {
+		// The project root. An empty value is still a value — the backing has
+		// to tell "the root" from "nobody worked it out".
+		return map[string]string{settingLocalScope: ""}
+	}
+	return map[string]string{settingLocalScope: strings.Join(resolved, "/")}
+}
+
+// settingLocalScope is where that chain travels. It is not one of the
+// vocabulary's own attribute paths because it is not an attribute: it is what
+// `inference/local/namespace` RESOLVED to.
+const settingLocalScope = "inference/local/scope"
 
 // modelSettings carries everything about WHERE inference happens and how it is
 // called, which is the whole of what a model resource is.
