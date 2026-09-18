@@ -108,17 +108,10 @@ func labelOf(handle string) string {
 
 // ErrNoValidator is a store that declares an admission this node cannot run —
 // an `instances:` block naming no function, or a node with no worker.
-var ErrNoValidator = errors.New("node: this store admits instances through a function and this node runs no worker")
+var ErrNoValidator = errors.New("node: this store admits instances through a function and this node cannot run one")
 
 // admissionDatabase is the one database's name, for cacheDatabase's reason.
 const admissionDatabase = "instances"
-
-// The headers a validator is told about the instance it is deciding on. A
-// workload deciding for two stores has nothing else to tell them apart by.
-const (
-	headerInstance = "X-Taubyte-Instance"
-	headerFor      = "X-Taubyte-Instance-Of"
-)
 
 // Admit runs the target's validator, once per instance, and holds the ceiling.
 // It is what the wasm tier asks.
