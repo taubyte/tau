@@ -108,7 +108,7 @@ func TestAScalarWhereABlockBelongsIsStillAnError(t *testing.T) {
 		{"a route's handler", "/gateway/ask.yaml",
 			gwID + "host:\n    generated:\n        name: ask\nroute:\n    path: /\n    match: prefix\n    handler: support\n", "route/handler/kind has an empty key"},
 		{"a proxy's forward", "/proxy/postgres.yaml",
-			"id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nprotocol: tcp\nservice: postgres\nhost:\n    generated:\n        name: db\nforward: db\n", "forward/kind has an empty key"},
+			"id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nservice: postgres\nhost:\n    generated:\n        name: db\nforward: db\n", "forward/kind has an empty key"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()

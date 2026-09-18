@@ -16344,35 +16344,11 @@
           "x-tau-required": true,
           "x-tau-section": "forward"
         },
-        "protocol": {
-          "default": "tcp",
-          "description": "The transport carried. tcp is the transparent one; see this kind's docs for what a tunnel does to udp and sctp.",
-          "enum": [
-            "tcp",
-            "udp",
-            "sctp"
-          ],
-          "title": "Protocol",
-          "type": "string",
-          "x-tau-section": "listener"
-        },
         "service": {
-          "description": "The IANA service this speaks, e.g. \"postgres\". Publishes _<service>._<protocol> beside this name in DNS, and is how a client that cannot look up SRV knows which conventional port to dial. Defaults to the resource's name.",
+          "description": "The IANA service this speaks, e.g. \"postgres\". Publishes _<service>._tcp beside this name in DNS, and is how a client that cannot look up SRV knows which conventional port to dial. Defaults to the resource's name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
           "title": "Service",
           "type": "string",
-          "x-tau-section": "listener"
-        },
-        "srv": {
-          "description": "The DNS name a client looks up to find the port, e.g. \"_postgres._tcp\". Derived from the service and the protocol; never authored.",
-          "readOnly": true,
-          "title": "SRV Name",
-          "type": "string",
-          "x-tau-derived": "srv-name",
-          "x-tau-derived-from": [
-            "service",
-            "protocol"
-          ],
           "x-tau-section": "listener"
         },
         "tls": {

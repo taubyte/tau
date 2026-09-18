@@ -28,8 +28,6 @@ const GenCID = engine.GenCID
 
 const DeriveDNSLabel = engine.DeriveDNSLabel
 
-const DeriveSRVName = engine.DeriveSRVName
-
 var (
 	Accessor        = engine.Accessor
 	DefineGroup     = engine.DefineGroup

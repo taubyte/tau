@@ -37,19 +37,19 @@
 // shape.go. Both run on a worker, placed exactly as the workload is, because
 // both are workloads of the same deployment.
 //
-// # The one thing it still refuses
+// # There is no longer a kind of proxy this refuses
 //
-// `protocol: udp` and `protocol: sctp`. A stream is reliable and ordered, and
-// carrying a datagram protocol over one turns packet loss into a latency spike
-// and hands it head-of-line blocking for free — which is the property the
-// application chose to do without. There is no unreliable transport under this
-// to carry them honestly, so the resource is refused rather than served as
-// something it did not ask for.
+// `protocol` was a set of three and two of them were never servable: a tunnel
+// here is a reliable ordered stream, and carrying a datagram protocol over one
+// turns packet loss into a latency spike and hands it head-of-line blocking.
+// The set is `tcp` alone now, so what this refuses is not a shape the config
+// can state — it is a certificate that is missing, a forward that names
+// nothing, a router that will not decide.
 //
-// A refused connection is closed with nothing written. There is nowhere to put
-// a reason — a raw socket has no status line — so the reason goes to the
-// operator's log and the client gets what any unreachable service gives it. A
-// connection refused by a RATE LIMIT is not logged at all: see limits.go.
+// Each of those closes the connection with nothing written. There is nowhere to
+// put a reason — a raw socket has no status line — so it goes to the operator's
+// log and the client gets what any unreachable service gives it. A connection
+// refused by a RATE LIMIT is not logged at all: see limits.go.
 package proxy
 
 import (
@@ -204,7 +204,10 @@ var (
 	// as no source at all — see WithDeployments.
 	ErrNoDeployments = errors.New("proxy: a nil source holds no proxies")
 
-	// ErrUnservable is what this cloud cannot do with a resource as written.
+	// ErrUnservable is a resource this cloud cannot serve as written: a
+	// certificate it has no way to obtain, a forward that names nothing, a
+	// router it cannot find. NOT a shape the vocabulary offers and nothing
+	// implements — there is no longer one of those.
 	ErrUnservable = errors.New("proxy: this cloud cannot serve that proxy as declared")
 )
 
@@ -359,10 +362,6 @@ func (s *Service) Serve(ctx context.Context, b Bind) (Socket, error) {
 	if err != nil {
 		return Socket{}, err
 	}
-	if why := unservable(r); why != "" {
-		return Socket{}, fmt.Errorf("%w: %s", ErrUnservable, why)
-	}
-
 	l, sock, err := s.listen(proj, r, id, b.Name)
 	if err != nil {
 		return Socket{}, err
@@ -474,10 +473,6 @@ func (s *Service) carry(ctx context.Context, from net.Conn, b Bind) {
 		s.opts.warn("proxy: %s/%s: %s", b.Environment, b.Name, err)
 		return
 	}
-	if why := unservable(r); why != "" {
-		s.opts.warn("proxy: %s/%s: %s: %s", b.Environment, b.Name, ErrUnservable, why)
-		return
-	}
 
 	// WHERE THE PROXY ITSELF IS, which is not where the bind says: an omitted
 	// namespace means the proxy's own scope and then its parents, which is the
@@ -550,15 +545,12 @@ func (s *Service) connectionOf(r project.Resource, b Bind, from net.Conn) *invok
 	// only the listener knows what the cloud's zone made of a generated host.
 	// A proxy served by hand through Accept has no listener entry, and then
 	// the name is simply empty rather than invented.
-	conn := &invoke.Connection{Protocol: r.String("service"), Transport: r.String("protocol")}
+	conn := &invoke.Connection{Protocol: r.String("service"), Transport: Transport}
 	if conn.Protocol == "" {
 		conn.Protocol = r.String("name")
 	}
 	if conn.Protocol == "" {
 		conn.Protocol = b.Name
-	}
-	if conn.Transport == "" {
-		conn.Transport = "tcp"
 	}
 	if held, ok := s.heldSocket(b.Key()); ok {
 		conn.Host = held.Host
@@ -603,20 +595,6 @@ func (s *Service) forwardedTo(r project.Resource, b Bind, scope []string) (proje
 		Kind:        kind,
 		Name:        name,
 	}, r.String("forward", "port"), nil
-}
-
-// unservable is what this resource declares that this cloud cannot do.
-//
-// EVERY ONE OF THESE IS A REFUSAL RATHER THAN A DOWNGRADE. A proxy that asked
-// for TLS and got a plaintext pipe would be a security control silently not
-// applied, and one that asked for udp and got tcp would carry a protocol that
-// chose to do without ordering over something that imposes it.
-func unservable(r project.Resource) string {
-	if p := r.String("protocol"); p != "" && p != "tcp" {
-		return fmt.Sprintf("it carries %q, and this cloud carries tcp — a stream is reliable and ordered, "+
-			"which is the property a udp application chose to do without", p)
-	}
-	return ""
 }
 
 // Close stops accepting. Connections already open are left alone: a proxy that

@@ -40,6 +40,17 @@ import (
 // runs on. Ports are not scarce the way addresses are — there are 65535 on each
 // — so neither family needs an allocator, and neither needs saying twice.
 
+// Transport is what every proxy carries, and it is a constant because the kind
+// is.
+//
+// THE VOCABULARY HAS NO `protocol` FIELD. It had one, as a set of three, and
+// two of them were never servable — a tunnel here is a reliable ordered stream,
+// and carrying a datagram protocol over one turns packet loss into a latency
+// spike. With one value left it was a field nobody could get wrong, so the
+// transport moved to where the kind is implemented: here, once, rather than in
+// every resource that declares a proxy.
+const Transport = "tcp"
+
 // Socket is where a proxy ended up listening, and how a client finds it: an
 // SRV lookup of `_<Protocol>._<Transport>.<Host>` answers with Port.
 type Socket struct {
@@ -87,16 +98,13 @@ func (s *Service) socketOf(proj *project.Project, r project.Resource, id, name s
 	sock := Socket{
 		Host:      s.hostOf(proj, id),
 		Protocol:  r.String("service"),
-		Transport: r.String("protocol"),
+		Transport: Transport,
 	}
 	if sock.Protocol == "" {
 		sock.Protocol = r.String("name")
 	}
 	if sock.Protocol == "" {
 		sock.Protocol = name
-	}
-	if sock.Transport == "" {
-		sock.Transport = "tcp"
 	}
 	return sock
 }

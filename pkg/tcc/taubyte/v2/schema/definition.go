@@ -2387,24 +2387,23 @@ var V2Resources = []*Node{
 				routerAttributes("forward", "proxy-router", "router")...),
 				String(Key("routing"), Path(Either("forward", "router")), Captures(), Required(), InSection("forward"),
 					Doc("Routing", "forward: every connection goes to the workload named below. router: a function picks one per connection.")),
-				String("protocol", InSet("tcp", "udp", "sctp"), Default("tcp"), InSection("listener"),
-					Doc("Protocol", "The transport carried. tcp is the transparent one; see this kind's docs for what a tunnel does to udp and sctp.")),
-
-				// The SRV label, and with it the port a client that cannot do SRV should
-				// dial. `postgres` publishes `_postgres._tcp.<name>` and tells anything
-				// that only knows conventions to use 5432. Defaults to this resource's
-				// name, so it is only written when the resource is called something the
-				// protocol is not.
+				// THERE IS NO `protocol` FIELD, AND THERE WAS. It was a set of three —
+				// tcp, udp, sctp — and two of them were never servable: a tunnel here is
+				// a reliable ordered stream, so carrying a datagram protocol over one
+				// turns packet loss into a latency spike and hands it head-of-line
+				// blocking, which is the property that application chose to do without.
+				// Offering a word the platform can only refuse is a config that lies.
+				//
+				// With one value left it was a field nobody could get wrong, so it is
+				// not a field. The transport is a property of this KIND rather than of
+				// one resource, and it is stated in `service`'s own documentation below
+				// and spelled once by the service that implements the kind.
+				//
+				// `srv` went with it: a derived field exists so that several consumers
+				// cannot glue two authored values together differently, and there is
+				// only one authored value now.
 				String("service", IsVariableName(), InSection("listener"),
-					Doc("Service", "The IANA service this speaks, e.g. \"postgres\". Publishes _<service>._<protocol> beside this name in DNS, and is how a client that cannot look up SRV knows which conventional port to dial. Defaults to the resource's name.")),
-
-				// WHAT A CLIENT LOOKS UP, stated rather than left for a reader to
-				// assemble out of `service` and `protocol`. It is the same reason
-				// `zone-label` is derived on the project: a name that several consumers
-				// need must have one definition, and a renderer composing its own is a
-				// second one that agrees only by coincidence.
-				String("srv", Derived(DeriveSRVName, "service", "protocol"), NoAccessors(), InSection("listener"),
-					Doc("SRV Name", "The DNS name a client looks up to find the port, e.g. \"_postgres._tcp\". Derived from the service and the protocol; never authored.")),
+					Doc("Service", "The IANA service this speaks, e.g. \"postgres\". Publishes _<service>._tcp beside this name in DNS, and is how a client that cannot look up SRV knows which conventional port to dial. Defaults to the resource's name.")),
 
 				// Only `terminate` earns its keep: the proxy holds the certificate so a
 				// plaintext workload can answer on a public name, reusing exactly the

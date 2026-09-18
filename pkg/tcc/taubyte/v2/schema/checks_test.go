@@ -197,7 +197,7 @@ func TestAuditHostWorlds(t *testing.T) {
 	found = auditDocs(t, nil, map[string]string{
 		"/function/t.yaml":    fn("gateway-transformer"),
 		"/application/a.yaml": app,
-		"/proxy/p.yaml":       "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nprotocol: tcp\nhost:\n    generated:\n        name: db\ntransformers:\n    - name: t\nforward:\n    application:\n        name: a\n        port: p\n",
+		"/proxy/p.yaml":       "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nhost:\n    generated:\n        name: db\ntransformers:\n    - name: t\nforward:\n    application:\n        name: a\n        port: p\n",
 	})
 	has(t, found, schema.Broken, "is used as a proxy-transformer")
 }
@@ -462,7 +462,7 @@ func TestATargetWithNoNameIsRefused(t *testing.T) {
 			"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\nhost:\n    generated:\n        name: ask\nroute:\n    path: /\n    handler:\n        agent: {}\n",
 			"route/handler/agent/name"},
 		{"a proxy's forward", "/proxy/postgres.yaml",
-			"id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nprotocol: tcp\nservice: postgres\nhost:\n    generated:\n        name: db\nforward:\n    application: {}\n",
+			"id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nservice: postgres\nhost:\n    generated:\n        name: db\nforward:\n    application: {}\n",
 			"forward/application/name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

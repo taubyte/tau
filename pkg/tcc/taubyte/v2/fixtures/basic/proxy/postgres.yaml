@@ -1,6 +1,5 @@
 id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR
 description: an allocated address on the cloud's own zone - no port, no ip, and no zone name either; all three are the cloud's to decide
-protocol: tcp
 host:
     generated:
         name: db

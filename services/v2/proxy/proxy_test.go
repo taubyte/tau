@@ -75,10 +75,9 @@ func compiled(t *testing.T, proxy map[string]any) *project.Project {
 
 func servable() map[string]any {
 	return map[string]any{
-		"name":     "pgwire",
-		"protocol": "tcp",
-		"service":  "postgres",
-		"host":     map[string]any{"kind": "generated", "name": "db"},
+		"name":    "pgwire",
+		"service": "postgres",
+		"host":    map[string]any{"kind": "generated", "name": "db"},
 		"forward": map[string]any{
 			"kind": "application", "name": "db", "port": "pg",
 		},
@@ -261,7 +260,7 @@ func TestAnOmittedForwardNamespaceResolvesFromTheProxy(t *testing.T) {
 	require.Empty(t, at.Scope, "the proxy is at the root, so its forward resolves there")
 }
 
-// ── what it refuses, and why each is a refusal rather than a downgrade ──
+// ── what it refuses at the connection, and why each is a refusal ──
 
 func refusedBy(t *testing.T, change func(map[string]any)) {
 	t.Helper()
@@ -283,12 +282,6 @@ func refusedBy(t *testing.T, change func(map[string]any)) {
 		"the operator is told why, because the client cannot be")
 	at, _ := w.asked()
 	require.Empty(t, at.Name, "and no workload was reached")
-}
-
-// A udp application chose to do without ordering; a stream imposes it, so
-// packet loss becomes a latency spike and head-of-line blocking arrives free.
-func TestUdpIsRefusedRatherThanCarriedOverTcp(t *testing.T) {
-	refusedBy(t, func(r map[string]any) { r["protocol"] = "udp" })
 }
 
 // TLS TERMINATION IS NOT REFUSED ANY MORE — it is served, and tls_test.go is
@@ -442,12 +435,12 @@ func TestADeclaredZoneIsCompleteOnItsOwn(t *testing.T) {
 	require.Equal(t, "db.shop.example.com", sock.Host)
 }
 
-// TestAREFUSALBINDSNOTHING: unservable is checked before the listener exists,
-// so a proxy this cloud cannot serve does not hold a port while refusing every
-// connection that arrives on it.
+// TestAREFUSALBINDSNOTHING: what this cloud cannot serve is decided before the
+// listener exists, so a proxy it cannot serve does not hold a port while
+// refusing every connection that arrives on it.
 func TestServeRefusesBeforeItBinds(t *testing.T) {
 	res := servable()
-	res["protocol"] = "udp"
+	res["tls"] = map[string]any{"mode": "terminate"}
 	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, res, &workers{})
 
 	_, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
@@ -461,13 +454,12 @@ func TestServeRefusesBeforeItBinds(t *testing.T) {
 func TestTheSrvLabelsFallBackToTheVocabularysDefaults(t *testing.T) {
 	res := servable()
 	delete(res, "service")
-	delete(res, "protocol")
 	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, res, &workers{})
 
 	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
 	require.NoError(t, err)
 	require.Equal(t, "pgwire", sock.Protocol, "the resource's own name, not the name it was looked up by")
-	require.Equal(t, "tcp", sock.Transport)
+	require.Equal(t, proxy.Transport, sock.Transport, "which the kind states, because no resource does")
 }
 
 // TestAPROXYONNONAME is allowed by the vocabulary — `host` is optional — and it

@@ -1344,7 +1344,6 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 	assert.Assert(t, !strayed, "a queue default landed on a log: %v", l)
 
 	p := only(t, resources(t, obj.Flat(), "proxy"))
-	assert.Equal(t, p["protocol"], "tcp")
 	assert.Equal(t, nested(p, "certificate", "source"), "generated")
 }
 

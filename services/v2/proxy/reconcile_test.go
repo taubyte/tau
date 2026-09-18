@@ -110,7 +110,7 @@ func TestAProxyDeployedBetweenSweepsIsPickedUp(t *testing.T) {
 // would bury the deploy that fixes it.
 func TestAnUnservableProxyIsReportedOnceAndRetriedForever(t *testing.T) {
 	res := servable()
-	res["protocol"] = "udp"
+	res["tls"] = map[string]any{"mode": "terminate"}
 	s, _, said := sweeping(t, res, pgwire())
 
 	for range 5 {

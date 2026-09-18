@@ -27,11 +27,10 @@ const (
 // withProxy is a project whose one proxy forwards to one application.
 func withProxy(change func(map[string]any)) []byte {
 	res := map[string]any{
-		"name":     "pgwire",
-		"protocol": "tcp",
-		"service":  "postgres",
-		"host":     map[string]any{"kind": "generated", "name": "db"},
-		"forward":  map[string]any{"kind": "application", "name": "db", "port": "pg"},
+		"name":    "pgwire",
+		"service": "postgres",
+		"host":    map[string]any{"kind": "generated", "name": "db"},
+		"forward": map[string]any{"kind": "application", "name": "db", "port": "pg"},
 	}
 	if change != nil {
 		change(res)
@@ -116,7 +115,9 @@ func TestANodeListensForItsHeldProxiesAndReportsThem(t *testing.T) {
 // TestAPROXYTHISCLOUDCANNOTSERVE holds no port and appears in no report. The
 // reason went to the operator; there is nowhere on a raw socket to put it.
 func TestANodeDoesNotListenForAProxyItCannotServe(t *testing.T) {
-	n := proxying(t, withProxy(func(r map[string]any) { r["protocol"] = "udp" }))
+	n := proxying(t, withProxy(func(r map[string]any) {
+		r["tls"] = map[string]any{"mode": "terminate"}
+	}))
 
 	require.Never(t, func() bool { return len(n.proxy.Serving()) > 0 }, time.Second, 50*time.Millisecond)
 
