@@ -810,6 +810,138 @@ func (*RouteResponse_Answer) isRouteResponse_Decision() {}
 
 func (*RouteResponse_None) isRouteResponse_Decision() {}
 
+// Open is the first thing written on a raw connection stream, and the only
+// framed thing on it: everything after it is the workload's own bytes.
+//
+// IT IS NOT AN RPC. A proxy carries bytes it cannot parse, in both directions,
+// for as long as the client holds the socket open — which is the one shape the
+// WorkerService above says in its own doc that it cannot take. So this travels
+// on its own libp2p protocol as a length-prefixed header followed by a splice,
+// and it is declared here because the header still deserves a schema: a
+// hand-rolled struct on a wire between two versions of this binary is how a
+// field gets read as another one.
+type Open struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Target *Target                `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	// The workload's own port, by the name its author declared. Empty is the one
+	// port a workload that declared none was given.
+	Port          string `protobuf:"bytes,2,opt,name=port,proto3" json:"port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Open) Reset() {
+	*x = Open{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Open) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Open) ProtoMessage() {}
+
+func (x *Open) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Open.ProtoReflect.Descriptor instead.
+func (*Open) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *Open) GetTarget() *Target {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *Open) GetPort() string {
+	if x != nil {
+		return x.Port
+	}
+	return ""
+}
+
+// Opened is the answer to Open, written before the splice begins.
+//
+// A STATUS RATHER THAN A CLOSED STREAM, because the two failures a caller acts
+// on differently are indistinguishable otherwise: a workload that could not be
+// reached is worth another node, and a target that does not exist is worth none.
+type Opened struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ok    bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	// Empty when ok. Otherwise why, for a log at the edge.
+	Error string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// Set when the failure is this node's rather than the target's, which is what
+	// tells the caller to try another.
+	Unreachable   bool `protobuf:"varint,3,opt,name=unreachable,proto3" json:"unreachable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Opened) Reset() {
+	*x = Opened{}
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Opened) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Opened) ProtoMessage() {}
+
+func (x *Opened) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_worker_v1_worker_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Opened.ProtoReflect.Descriptor instead.
+func (*Opened) Descriptor() ([]byte, []int) {
+	return file_tau_worker_v1_worker_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *Opened) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *Opened) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *Opened) GetUnreachable() bool {
+	if x != nil {
+		return x.Unreachable
+	}
+	return false
+}
+
 var File_tau_worker_v1_worker_proto protoreflect.FileDescriptor
 
 const file_tau_worker_v1_worker_proto_rawDesc = "" +
@@ -878,7 +1010,14 @@ const file_tau_worker_v1_worker_proto_rawDesc = "" +
 	"\x06answer\x18\x02 \x01(\v2\x1d.tau.worker.v1.InvokeResponseH\x00R\x06answer\x12\x14\n" +
 	"\x04none\x18\x03 \x01(\tH\x00R\x04noneB\n" +
 	"\n" +
-	"\bdecision2\xea\x01\n" +
+	"\bdecision\"I\n" +
+	"\x04Open\x12-\n" +
+	"\x06target\x18\x01 \x01(\v2\x15.tau.worker.v1.TargetR\x06target\x12\x12\n" +
+	"\x04port\x18\x02 \x01(\tR\x04port\"P\n" +
+	"\x06Opened\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12 \n" +
+	"\vunreachable\x18\x03 \x01(\bR\vunreachable2\xea\x01\n" +
 	"\rWorkerService\x12E\n" +
 	"\x06Invoke\x12\x1c.tau.worker.v1.InvokeRequest\x1a\x1d.tau.worker.v1.InvokeResponse\x12N\n" +
 	"\tTransform\x12\x1f.tau.worker.v1.TransformRequest\x1a .tau.worker.v1.TransformResponse\x12B\n" +
@@ -897,7 +1036,7 @@ func file_tau_worker_v1_worker_proto_rawDescGZIP() []byte {
 	return file_tau_worker_v1_worker_proto_rawDescData
 }
 
-var file_tau_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_tau_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_tau_worker_v1_worker_proto_goTypes = []any{
 	(*Target)(nil),            // 0: tau.worker.v1.Target
 	(*Headers)(nil),           // 1: tau.worker.v1.Headers
@@ -909,41 +1048,44 @@ var file_tau_worker_v1_worker_proto_goTypes = []any{
 	(*RouteRequest)(nil),      // 7: tau.worker.v1.RouteRequest
 	(*Destination)(nil),       // 8: tau.worker.v1.Destination
 	(*RouteResponse)(nil),     // 9: tau.worker.v1.RouteResponse
-	nil,                       // 10: tau.worker.v1.InvokeRequest.HeadersEntry
-	nil,                       // 11: tau.worker.v1.InvokeResponse.HeadersEntry
-	nil,                       // 12: tau.worker.v1.TransformRequest.HeadersEntry
-	nil,                       // 13: tau.worker.v1.ForwardedRequest.HeadersEntry
-	nil,                       // 14: tau.worker.v1.RouteRequest.HeadersEntry
+	(*Open)(nil),              // 10: tau.worker.v1.Open
+	(*Opened)(nil),            // 11: tau.worker.v1.Opened
+	nil,                       // 12: tau.worker.v1.InvokeRequest.HeadersEntry
+	nil,                       // 13: tau.worker.v1.InvokeResponse.HeadersEntry
+	nil,                       // 14: tau.worker.v1.TransformRequest.HeadersEntry
+	nil,                       // 15: tau.worker.v1.ForwardedRequest.HeadersEntry
+	nil,                       // 16: tau.worker.v1.RouteRequest.HeadersEntry
 }
 var file_tau_worker_v1_worker_proto_depIdxs = []int32{
 	0,  // 0: tau.worker.v1.InvokeRequest.target:type_name -> tau.worker.v1.Target
-	10, // 1: tau.worker.v1.InvokeRequest.headers:type_name -> tau.worker.v1.InvokeRequest.HeadersEntry
-	11, // 2: tau.worker.v1.InvokeResponse.headers:type_name -> tau.worker.v1.InvokeResponse.HeadersEntry
+	12, // 1: tau.worker.v1.InvokeRequest.headers:type_name -> tau.worker.v1.InvokeRequest.HeadersEntry
+	13, // 2: tau.worker.v1.InvokeResponse.headers:type_name -> tau.worker.v1.InvokeResponse.HeadersEntry
 	0,  // 3: tau.worker.v1.TransformRequest.target:type_name -> tau.worker.v1.Target
-	12, // 4: tau.worker.v1.TransformRequest.headers:type_name -> tau.worker.v1.TransformRequest.HeadersEntry
-	13, // 5: tau.worker.v1.ForwardedRequest.headers:type_name -> tau.worker.v1.ForwardedRequest.HeadersEntry
+	14, // 4: tau.worker.v1.TransformRequest.headers:type_name -> tau.worker.v1.TransformRequest.HeadersEntry
+	15, // 5: tau.worker.v1.ForwardedRequest.headers:type_name -> tau.worker.v1.ForwardedRequest.HeadersEntry
 	5,  // 6: tau.worker.v1.TransformResponse.forward:type_name -> tau.worker.v1.ForwardedRequest
 	3,  // 7: tau.worker.v1.TransformResponse.answer:type_name -> tau.worker.v1.InvokeResponse
 	0,  // 8: tau.worker.v1.RouteRequest.target:type_name -> tau.worker.v1.Target
-	14, // 9: tau.worker.v1.RouteRequest.headers:type_name -> tau.worker.v1.RouteRequest.HeadersEntry
+	16, // 9: tau.worker.v1.RouteRequest.headers:type_name -> tau.worker.v1.RouteRequest.HeadersEntry
 	8,  // 10: tau.worker.v1.RouteResponse.to:type_name -> tau.worker.v1.Destination
 	3,  // 11: tau.worker.v1.RouteResponse.answer:type_name -> tau.worker.v1.InvokeResponse
-	1,  // 12: tau.worker.v1.InvokeRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 13: tau.worker.v1.InvokeResponse.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 14: tau.worker.v1.TransformRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 15: tau.worker.v1.ForwardedRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	1,  // 16: tau.worker.v1.RouteRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
-	2,  // 17: tau.worker.v1.WorkerService.Invoke:input_type -> tau.worker.v1.InvokeRequest
-	4,  // 18: tau.worker.v1.WorkerService.Transform:input_type -> tau.worker.v1.TransformRequest
-	7,  // 19: tau.worker.v1.WorkerService.Route:input_type -> tau.worker.v1.RouteRequest
-	3,  // 20: tau.worker.v1.WorkerService.Invoke:output_type -> tau.worker.v1.InvokeResponse
-	6,  // 21: tau.worker.v1.WorkerService.Transform:output_type -> tau.worker.v1.TransformResponse
-	9,  // 22: tau.worker.v1.WorkerService.Route:output_type -> tau.worker.v1.RouteResponse
-	20, // [20:23] is the sub-list for method output_type
-	17, // [17:20] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	0,  // 12: tau.worker.v1.Open.target:type_name -> tau.worker.v1.Target
+	1,  // 13: tau.worker.v1.InvokeRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	1,  // 14: tau.worker.v1.InvokeResponse.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	1,  // 15: tau.worker.v1.TransformRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	1,  // 16: tau.worker.v1.ForwardedRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	1,  // 17: tau.worker.v1.RouteRequest.HeadersEntry.value:type_name -> tau.worker.v1.Headers
+	2,  // 18: tau.worker.v1.WorkerService.Invoke:input_type -> tau.worker.v1.InvokeRequest
+	4,  // 19: tau.worker.v1.WorkerService.Transform:input_type -> tau.worker.v1.TransformRequest
+	7,  // 20: tau.worker.v1.WorkerService.Route:input_type -> tau.worker.v1.RouteRequest
+	3,  // 21: tau.worker.v1.WorkerService.Invoke:output_type -> tau.worker.v1.InvokeResponse
+	6,  // 22: tau.worker.v1.WorkerService.Transform:output_type -> tau.worker.v1.TransformResponse
+	9,  // 23: tau.worker.v1.WorkerService.Route:output_type -> tau.worker.v1.RouteResponse
+	21, // [21:24] is the sub-list for method output_type
+	18, // [18:21] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_tau_worker_v1_worker_proto_init() }
@@ -966,7 +1108,7 @@ func file_tau_worker_v1_worker_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_worker_v1_worker_proto_rawDesc), len(file_tau_worker_v1_worker_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

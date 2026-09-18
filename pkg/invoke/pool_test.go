@@ -3,6 +3,8 @@ package invoke
 import (
 	"context"
 	"errors"
+	"io"
+	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,6 +26,10 @@ type fakeRuntime struct {
 	startErr error
 
 	serve func(ctx context.Context, req *Request) (*Response, error)
+
+	// pipe makes Dial hand back a net.Pipe, which cannot half-close — the case
+	// that separates "forwarded the answer" from "always said yes".
+	pipe bool
 }
 
 func newFakeRuntime(name string) *fakeRuntime {
@@ -804,3 +810,187 @@ func (handlerOnlyInstance) Serve(context.Context, *Request) (*Response, error) {
 	return &Response{Status: 200}, nil
 }
 func (handlerOnlyInstance) Close() error { return nil }
+
+// ── connections ──────────────────────────────────────────────────────────
+
+// A CONNECTION OUTLIVES THE CALL THAT OPENED IT, which is the one thing here
+// that Do and Transform do not do. The slot goes back when the connection
+// closes, so an instance somebody is talking to is not idle and a spec whose
+// connections are all long-lived reaches its ceiling and queues.
+
+func (i *fakeInstance) Dial(_ context.Context, port string) (net.Conn, error) {
+	if port == "refused" {
+		return nil, errors.New("no such port")
+	}
+	if i.rt.pipe {
+		client, server := net.Pipe()
+		go func() { io.Copy(io.Discard, server); server.Close() }()
+		return client, nil
+	}
+
+	// A REAL SOCKET, because what is being pooled here is a connection and a
+	// pipe is not one: it cannot half-close, which is the property the thing
+	// above this cares about most.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		defer l.Close()
+		if c, err := l.Accept(); err == nil {
+			io.Copy(io.Discard, c)
+			c.Close()
+		}
+	}()
+	return net.Dial("tcp", l.Addr().String())
+}
+
+func connSpec() Spec {
+	return Spec{Runtime: "wasm", Name: "db", Artifact: "img", Revision: "1", Concurrency: 1}
+}
+
+// TestTheINSTANCEIsHeldWhileTheConnectionIsOpen.
+func TestAConnectionHoldsItsInstance(t *testing.T) {
+	e := newFakeRuntime("wasm")
+	// ONE INSTANCE, ONE AT A TIME. The pool's ceiling is MaxInstances ×
+	// Concurrency, so a second connection would otherwise start a second
+	// instance — which is right, and not what this is about.
+	p, err := NewPool(WithRuntime(e), WithMaxInstances(1))
+	require.NoError(t, err)
+	defer p.Close()
+
+	first, err := p.Conn(t.Context(), connSpec(), "pg")
+	require.NoError(t, err)
+
+	// A SECOND CONNECTION CANNOT PROCEED while the first is open — the ceiling
+	// means the same thing for a socket as it does for a request.
+	second := make(chan error, 1)
+	go func() {
+		c, err := p.Conn(t.Context(), connSpec(), "pg")
+		if c != nil {
+			c.Close()
+		}
+		second <- err
+	}()
+
+	select {
+	case <-second:
+		t.Fatal("a second connection was served while the first held the only slot")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	require.NoError(t, first.Close())
+	require.NoError(t, <-second, "closing the first handed the slot back")
+
+	started, _ := e.counts()
+	require.Equal(t, 1, started, "one instance served both, one after the other")
+}
+
+// TestCLOSINGTwiceReleasesOnce. Close on a net.Conn is routinely called twice —
+// a defer and an explicit one — and releasing twice would hand one slot to two
+// callers at the same ceiling.
+func TestClosingAConnectionTwiceReleasesOnce(t *testing.T) {
+	e := newFakeRuntime("wasm")
+	p, err := NewPool(WithRuntime(e), WithMaxInstances(1))
+	require.NoError(t, err)
+	defer p.Close()
+
+	c, err := p.Conn(t.Context(), connSpec(), "pg")
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+
+	// THE SECOND CLOSE MAY WELL ERROR — a real socket says "use of closed
+	// network connection" where a pipe says nothing — and that is not what this
+	// is about. What must not happen is a second RELEASE.
+	_ = c.Close()
+
+	// If the second Close released again, this one would find a free slot that
+	// does not exist and the ceiling would be two.
+	held, err := p.Conn(t.Context(), connSpec(), "pg")
+	require.NoError(t, err)
+	defer held.Close()
+
+	blocked := make(chan struct{})
+	go func() {
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+		if _, err := p.Conn(ctx, connSpec(), "pg"); err != nil {
+			close(blocked)
+		}
+	}()
+	select {
+	case <-blocked:
+	case <-time.After(time.Second):
+		t.Fatal("the ceiling was two, so a release happened twice")
+	}
+}
+
+// TestADIALThatFailsGivesTheSlotBack rather than leaking it.
+func TestAFailedDialReleasesTheSlot(t *testing.T) {
+	e := newFakeRuntime("wasm")
+	p, err := NewPool(WithRuntime(e))
+	require.NoError(t, err)
+	defer p.Close()
+
+	_, err = p.Conn(t.Context(), connSpec(), "refused")
+	require.Error(t, err)
+
+	// The slot came back, so this proceeds rather than queueing forever.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	c, err := p.Conn(ctx, connSpec(), "pg")
+	require.NoError(t, err)
+	c.Close()
+}
+
+// TestATIERTHATHANDSOUTNoConnectionSaysSo — a component has no listening
+// socket, so asking one for a connection is a question it cannot answer.
+func TestATierThatCannotDialIsRefused(t *testing.T) {
+	p, err := NewPool(WithRuntime(&handlerOnlyRuntime{name: "container"}))
+	require.NoError(t, err)
+	defer p.Close()
+
+	_, err = p.Conn(t.Context(), Spec{Runtime: "container", Name: "x", Artifact: "img", Revision: "1"}, "")
+	require.ErrorIs(t, err, ErrNoRuntime)
+}
+
+// TestAPooledConnectionCanStillBeHALFClosed.
+//
+// This wrapper embeds the net.Conn INTERFACE, and promotion through an
+// interface gives only that interface's methods — so CloseWrite was invisible
+// through it and a caller type-asserting for one found nothing. What that cost
+// was not obvious: the caller fell back to closing the whole connection, which
+// ends the half a query protocol is waiting on. The request was delivered and
+// the answer never came.
+func TestAPooledConnectionForwardsCloseWrite(t *testing.T) {
+	e := newFakeRuntime("wasm")
+	p, err := NewPool(WithRuntime(e))
+	require.NoError(t, err)
+	defer p.Close()
+
+	c, err := p.Conn(t.Context(), connSpec(), "pg")
+	require.NoError(t, err)
+	defer c.Close()
+
+	cw, ok := c.(interface{ CloseWrite() error })
+	require.True(t, ok, "a pooled connection must still look half-closable")
+	require.NoError(t, cw.CloseWrite())
+}
+
+// TestAndItSaysSoWhenItCannot, rather than reporting a half-close that never
+// happened — a caller whose only alternative is a full close needs to know,
+// because the far end is otherwise waiting for an EOF nobody sent.
+func TestAPooledConnectionReportsAnImpossibleHalfClose(t *testing.T) {
+	e := newFakeRuntime("wasm")
+	e.pipe = true
+	p, err := NewPool(WithRuntime(e))
+	require.NoError(t, err)
+	defer p.Close()
+
+	c, err := p.Conn(t.Context(), connSpec(), "pg")
+	require.NoError(t, err)
+	defer c.Close()
+
+	err = c.(interface{ CloseWrite() error }).CloseWrite()
+	require.Error(t, err, "net.Pipe cannot half-close and must not pretend to")
+}

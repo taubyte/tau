@@ -35,6 +35,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -72,8 +73,13 @@ type Service struct {
 
 	serverOptions []rpc.ServerOption
 
-	startMu   sync.Mutex
-	server    *rpc.Server
+	startMu sync.Mutex
+	server  *rpc.Server
+
+	// streams is the raw half — see stream.go. It is a second listener on the
+	// same host rather than a second service, because what it reaches is this
+	// service's own pool and resolver.
+	streams   net.Listener
 	closeOnce sync.Once
 	closeErr  error
 	closed    atomic.Bool
@@ -273,7 +279,8 @@ func (s *Service) Start(ctx context.Context) error {
 		return fmt.Errorf("worker: listen on %s: %w", Protocol, err)
 	}
 	s.server = server
-	return nil
+
+	return s.serveStreams(ctx)
 }
 
 // Close is idempotent and stops serving.
@@ -287,6 +294,9 @@ func (s *Service) Close() error {
 		s.startMu.Lock()
 		if s.server != nil {
 			s.closeErr = s.server.Close()
+		}
+		if s.streams != nil {
+			s.streams.Close()
 		}
 		s.startMu.Unlock()
 	})

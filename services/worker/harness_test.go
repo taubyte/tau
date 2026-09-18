@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -261,6 +264,42 @@ func (i *fakeInstance) Serve(_ context.Context, req *invoke.Request) (*invoke.Re
 }
 
 func (i *fakeInstance) Close() error { return nil }
+
+// Dial stands in for a workload's listening socket: it echoes what it is sent,
+// uppercased, so a test can tell bytes that crossed from bytes that did not.
+//
+// IT ANSWERS ON A REAL SOCKET rather than a net.Pipe, because the thing under
+// test is a splice between two connections and a pipe has no half-close — the
+// case a query protocol depends on.
+func (i *fakeInstance) Dial(_ context.Context, port string) (net.Conn, error) {
+	if port == "nope" {
+		return nil, errors.New("no port by that name")
+	}
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		defer l.Close()
+		c, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		if port == "greet" {
+			// Answers without waiting to be spoken to, which separates "the
+			// splice carries nothing" from "the splice never saw the EOF that
+			// makes this workload answer".
+			c.Write([]byte("HELLO"))
+			return
+		}
+		body, _ := io.ReadAll(c)
+		c.Write([]byte(strings.ToUpper(port + ":" + string(body))))
+	}()
+
+	return net.Dial("tcp", l.Addr().String())
+}
 
 type fakeClock struct {
 	mu sync.Mutex

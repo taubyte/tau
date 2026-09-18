@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 )
@@ -245,6 +246,118 @@ func (p *Pool) Route(ctx context.Context, spec Spec, req *Request) (*Routing, er
 		return err
 	})
 	return out, err
+}
+
+// Conn opens a connection to one of spec's ports and holds the instance for as
+// long as the connection lives.
+//
+// IT IS THE ONE CALL HERE THAT OUTLIVES ITSELF. Do and Transform borrow a slot
+// for the duration of a call and give it back; a connection is held by whoever
+// dialled it, for as long as they like, so the slot goes back when the
+// connection closes and not before. That is what makes the instance's
+// concurrency ceiling mean the same thing for a socket as it does for a
+// request, and what stops the idle reaper closing a container somebody is
+// talking to.
+//
+// THE SEMAPHORE IS HELD TOO, which is the part worth saying out loud: a spec
+// whose connections are all long-lived reaches its ceiling and then queues,
+// exactly as a spec under sustained request load does. A proxy that wanted more
+// than that would be asking for a bigger ceiling, which is a number its author
+// writes.
+func (p *Pool) Conn(ctx context.Context, spec Spec, port string) (net.Conn, error) {
+	if err := spec.validate(); err != nil {
+		return nil, err
+	}
+	if spec.Concurrency == 0 {
+		spec.Concurrency = 1
+	}
+
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return nil, ErrPoolClosed
+	}
+	rt, ok := p.runtimes[spec.Runtime]
+	if !ok {
+		p.mu.Unlock()
+		return nil, fmt.Errorf("%w: %q", ErrNoRuntime, spec.Runtime)
+	}
+	g := p.groupFor(spec)
+	sem := g.sem
+	p.mu.Unlock()
+
+	select {
+	case sem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	s, err := p.acquire(ctx, rt, spec)
+	if err != nil {
+		<-sem
+		return nil, err
+	}
+	release := func(failed bool) { p.release(spec, s, failed) }
+
+	dials, ok := s.inst.(Dials)
+	if !ok {
+		release(false)
+		<-sem
+		return nil, fmt.Errorf("%w: the %s tier hands out no connection", ErrNoRuntime, spec.Runtime)
+	}
+
+	// NO CALL TIMEOUT HERE, unlike Do. A connection has no duration this
+	// package could know: a database session is measured in hours and a health
+	// probe in milliseconds, and cutting either at a default would be this
+	// package inventing a policy. What bounds the DIAL is the caller's context.
+	conn, err := dials.Dial(ctx, port)
+	if err != nil {
+		release(true)
+		<-sem
+		return nil, err
+	}
+
+	return &pooled{Conn: conn, release: release, sem: sem}, nil
+}
+
+// pooled is a connection that gives its instance back when it is closed.
+type pooled struct {
+	net.Conn
+	release func(failed bool)
+	once    sync.Once
+	sem     chan struct{}
+}
+
+// CloseWrite forwards a half-close to the connection underneath.
+//
+// IT HAS TO BE WRITTEN OUT because this type embeds the net.Conn INTERFACE, and
+// promotion through an interface gives only that interface's methods. A caller
+// type-asserting for CloseWrite on a pooled connection would find nothing and
+// fall back to closing the whole thing — which ends the half a query protocol is
+// waiting on, so the client's request is delivered and the answer never comes.
+//
+// It reports whether the connection underneath could do it, rather than
+// swallowing the answer: a caller that cannot half-close needs to know, because
+// its alternative is a full close and pretending otherwise leaves the far end
+// waiting for an EOF nobody sent.
+func (c *pooled) CloseWrite() error {
+	cw, ok := c.Conn.(interface{ CloseWrite() error })
+	if !ok {
+		return fmt.Errorf("%w: this connection cannot be half-closed", ErrNoRuntime)
+	}
+	return cw.CloseWrite()
+}
+
+func (c *pooled) Close() error {
+	err := c.Conn.Close()
+	// ONCE, because Close on a net.Conn is routinely called twice — a defer and
+	// an explicit one — and releasing twice would hand the slot out to two
+	// callers at the same ceiling.
+	c.once.Do(func() {
+		c.release(false)
+		<-c.sem
+	})
+	return err
 }
 
 // on runs fn on a pooled instance of spec — the whole of what this package

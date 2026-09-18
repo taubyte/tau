@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/taubyte/tau/p2p/rpc"
@@ -49,6 +50,10 @@ type Pool interface {
 	Do(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Response, error)
 	Transform(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Outcome, error)
 	Route(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Routing, error)
+
+	// Conn hands out a connection that outlives the call — the instance is held
+	// until the connection closes, not until this returns.
+	Conn(ctx context.Context, spec invoke.Spec, port string) (net.Conn, error)
 }
 
 // Config is what an operator declared, and ONLY that: values somebody writes in

@@ -150,6 +150,38 @@ message RouteResponse {
   }
 }
 
+// Open is the first thing written on a raw connection stream, and the only
+// framed thing on it: everything after it is the workload's own bytes.
+//
+// IT IS NOT AN RPC. A proxy carries bytes it cannot parse, in both directions,
+// for as long as the client holds the socket open — which is the one shape the
+// WorkerService above says in its own doc that it cannot take. So this travels
+// on its own libp2p protocol as a length-prefixed header followed by a splice,
+// and it is declared here because the header still deserves a schema: a
+// hand-rolled struct on a wire between two versions of this binary is how a
+// field gets read as another one.
+message Open {
+  Target target = 1;
+
+  // The workload's own port, by the name its author declared. Empty is the one
+  // port a workload that declared none was given.
+  string port = 2;
+}
+
+// Opened is the answer to Open, written before the splice begins.
+//
+// A STATUS RATHER THAN A CLOSED STREAM, because the two failures a caller acts
+// on differently are indistinguishable otherwise: a workload that could not be
+// reached is worth another node, and a target that does not exist is worth none.
+message Opened {
+  bool ok = 1;
+  // Empty when ok. Otherwise why, for a log at the edge.
+  string error = 2;
+  // Set when the failure is this node's rather than the target's, which is what
+  // tells the caller to try another.
+  bool unreachable = 3;
+}
+
 service WorkerService {
   // Invoke runs one request against one resource.
   rpc Invoke(InvokeRequest) returns (InvokeResponse);
