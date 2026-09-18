@@ -61,7 +61,13 @@ var (
 		ID:     485473636,
 		HookId: 357884401,
 		Name:   "tb_testproject",
-		URL:    "https://github.com/taubyte/tb_test_project/", //https://github.com/taubyte-test/tb_testproject",
+		// ONE SPELLING, AND IT AGREES WITH Key(). It used to read
+		// `taubyte/tb_test_project` with the right value beside it in a
+		// comment, and the payload fixture carried the same wrong name — which
+		// stopped being harmless when auth re-keyed on the clone URL: the
+		// helper registered `taubyte-test/tb_testproject` and every lookup
+		// asked for a repository nobody had registered.
+		URL: "https://github.com/taubyte-test/tb_testproject",
 	}
 
 	CodeRepo Repository = Repository{

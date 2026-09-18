@@ -18,7 +18,12 @@ import (
 	_ "github.com/taubyte/tau/utils/dream"
 )
 
-var services = []string{"seer", "auth", "patrick", "tns", "monkey", "hoarder", "substrate"}
+// NO seer AND NO monkey. Both services were deleted with the v1 vocabulary —
+// seer's halves are services/stats and services/dns, and monkey's is
+// services/build/backend — so a universe naming either fails to start, and this
+// test failed to start one for as long as the package would not compile at all
+// and nobody could see it.
+var services = []string{"auth", "patrick", "tns", "hoarder", "substrate"}
 
 func TestKillService_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
@@ -180,25 +185,23 @@ func TestMultipleServices_Dreaming(t *testing.T) {
 	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
 	assert.NilError(t, err)
 
-	err = u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			"seer":      {Others: map[string]int{"copies": 1}},
-			"auth":      {Others: map[string]int{"copies": 3}},
-			"patrick":   {Others: map[string]int{"copies": 3}},
-			"tns":       {Others: map[string]int{"copies": 3}},
-			"monkey":    {Others: map[string]int{"copies": 3}},
-			"hoarder":   {Others: map[string]int{"copies": 3}},
-			"substrate": {Others: map[string]int{"copies": 3}},
-		},
-	})
+	started := map[string]commonIface.ServiceConfig{}
+	for _, name := range services {
+		started[name] = commonIface.ServiceConfig{Others: map[string]int{"copies": 3}}
+	}
+
+	// BUILT FROM THE LIST IT ASSERTS ON, so the two cannot disagree — which is
+	// how this came to start seven services and check seven that were not
+	// quite the same seven.
+	err = u.StartWithConfig(&dream.Config{Services: started})
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	for _, v := range services {
-		if u.ListNumber(v) != 3 && v != "seer" {
-			t.Errorf("Service %s does not have 2 copies got %d", v, u.ListNumber(v))
+		if u.ListNumber(v) != 3 {
+			t.Errorf("Service %s does not have 3 copies, got %d", v, u.ListNumber(v))
 			return
 		}
 	}
