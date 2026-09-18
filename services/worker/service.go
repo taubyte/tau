@@ -186,6 +186,19 @@ func (s *Service) Invoke(ctx context.Context, t Target, req *invoke.Request) (*i
 		return nil, err
 	}
 
+	// AN MCP RUNS NO ENGINE. It is a protocol in front of the functions it
+	// declares access to, so it is answered here rather than handed to a tier
+	// that would ask for the output of a build that never happened.
+	if t.Kind == mcpKind {
+		res, err := s.serveMCP(ctx, t, spec, req)
+		if err != nil {
+			s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))
+			return nil, err
+		}
+		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpInvoke, s.now().Sub(started)))
+		return res, nil
+	}
+
 	res, err := s.pool.Do(ctx, spec, req)
 	if err != nil {
 		s.emit(ctx, accounted(t, spec.Revision, spec.Memory, OpRefuse, s.now().Sub(started)))

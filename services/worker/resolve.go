@@ -133,6 +133,12 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 
 	spec.Settings = settingsOf(r)
 
+	// AN MCP'S OWN FIELDS. It runs no engine, so nothing else would carry them
+	// — and what they say is how widely its listing may be cached.
+	if t.Kind == mcpKind {
+		spec.Settings = merged(spec.Settings, mcpSettings(r))
+	}
+
 	// WHERE A WORKLOAD MAY REACH ON THE NETWORK IS THE RESOURCE'S, and an
 	// absent list is the node-wide floor alone rather than nowhere — the
 	// vocabulary's own sentence. The tier enforces it; this only carries it,
@@ -488,6 +494,14 @@ func settingsFor(kind string, reach project.Reach, target project.Resource) map[
 		return storageSettings(target)
 	case modelKind:
 		return modelSettings(target)
+	case mcpToolKind:
+		// A TOOL NEEDS A DESCRIPTION, and it is the single most load-bearing
+		// string in an MCP listing: it is how a model decides whether to call
+		// one. It travels for every function because an mcp's tools ARE the
+		// functions it declares access to — see services/worker/mcp.go.
+		if d := target.String("description"); d != "" {
+			return map[string]string{settingDescription: d}
+		}
 	}
 	return nil
 }
@@ -1083,4 +1097,19 @@ func (s *Service) Resolve(ctx context.Context, t Target) (invoke.Spec, error) {
 	}
 
 	return s.spec(ctx, t, pointer, proj, resource, resourceID)
+}
+
+// mcpSettings is what an mcp declares about its listing.
+func mcpSettings(r project.Resource) map[string]string {
+	out := map[string]string{}
+	if scope := r.String("tools", "cache_scope"); scope != "" {
+		out[settingMCPCacheScope] = scope
+	}
+	if ttl, ok := r.Duration("tools", "cache_ttl"); ok {
+		out[settingMCPCacheTTL] = ttl.String()
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
