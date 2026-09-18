@@ -29,13 +29,7 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 	// the map is pre-seeded from commonSpecs.Services, and a build-tag-gated
 	// service registered from an init() is not in that list. Without this the
 	// lookup is a nil map entry and the deref below panics.
-	si, ok := u.service[name]
-	if !ok {
-		si = &serviceInfo{nodes: make(map[string]commonIface.Service)}
-		u.service[name] = si
-	}
-
-	serviceCount := len(si.nodes)
+	serviceCount := u.reserveSlot(name)
 	config.Root = path.Join(config.Root, fmt.Sprintf("%s-%d", name, serviceCount))
 	// Ignoring error in case of opening
 	os.MkdirAll(config.Root, 0750)
@@ -127,6 +121,33 @@ func (u *Universe) Service(name string, config *commonIface.ServiceConfig) error
 	return nil
 }
 
+// reserveSlot makes this service's entry if it has none and answers how many
+// nodes it already has.
+//
+// IT TAKES THE LOCK, which createService did not and registerService always
+// has — the same map, guarded in one place and not the other. That was
+// survivable while every service in a universe came pre-seeded from
+// commonSpecs.Services, because then nothing ever WROTE here. A v2 service
+// registers from an init() and is not in that list, so it takes the create
+// branch — and StartWithConfig starts every service in its own goroutine, so
+// two of them writing this map at once is a concurrent map write and the
+// process dies.
+//
+// THE LOCK IS RELEASED BEFORE THE SERVICE IS STARTED, which is not tidiness: a
+// service calls registerService as it comes up, and that takes this same lock.
+// Holding it across the start would deadlock on the first node.
+func (u *Universe) reserveSlot(name string) int {
+	u.lock.Lock()
+	defer u.lock.Unlock()
+
+	si, ok := u.service[name]
+	if !ok {
+		si = &serviceInfo{nodes: make(map[string]commonIface.Service)}
+		u.service[name] = si
+	}
+	return len(si.nodes)
+}
+
 func (u *Universe) registerService(name string, srv commonIface.Service) peer.Node {
 	u.lock.Lock()
 	defer u.lock.Unlock()
@@ -142,6 +163,9 @@ func (u *Universe) registerService(name string, srv commonIface.Service) peer.No
 }
 
 func (u *Universe) GetServicePids(name string) ([]string, error) {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
 	nodes, ok := u.service[name]
 	if !ok {
 		return nil, fmt.Errorf("%s was not found", name)
