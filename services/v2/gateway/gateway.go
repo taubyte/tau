@@ -58,6 +58,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/ratelimit"
 	"github.com/taubyte/tau/pkg/register"
 )
 
@@ -70,7 +71,7 @@ type Service struct {
 	admits  Admits
 
 	projects *project.Cache
-	limits   *limiter
+	limits   *ratelimit.Buckets
 	now      func() time.Time
 
 	// meter is where this service says what it accounted for. Nil is the
@@ -137,7 +138,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		buses:    o.buses,
 		admits:   o.admits,
 		projects: projects,
-		limits:   newLimiter(o.now, cfg.MaxHosts),
+		limits:   ratelimit.NewBuckets(o.now, cfg.MaxHosts),
 		now:      o.now,
 		meter:    o.meter,
 		owner:    map[string]ownerEntry{},
@@ -233,7 +234,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rpm, ok := m.resource.Int("rate_limit", "rpm"); ok && rpm > 0 {
 		burst, _ := m.resource.Int("rate_limit", "burst")
 		key := limitKey(m.resource.String("rate_limit", "key"), r)
-		if !s.limits.allow(name+"\x00"+key, int(rpm), int(burst)) {
+		if !s.limits.Allow(name+"\x00"+key, int(rpm), int(burst)) {
 			w.Header().Set("Retry-After", retryAfter(int(rpm)))
 			refuse(w, http.StatusTooManyRequests, "too many requests")
 			return

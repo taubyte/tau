@@ -41,6 +41,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/ratelimit"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/splice"
 )
@@ -96,6 +97,13 @@ type Config struct {
 	// it holds. Default DefaultSweep.
 	Sweep time.Duration `yaml:"sweep"`
 
+	// MaxSources bounds the rate-limit table. Default DefaultMaxSources.
+	//
+	// A PROXY UNDER A SPRAY OF ONE-CONNECTION-PER-ADDRESS TRAFFIC would
+	// otherwise grow a bucket per source forever, which turns a limit meant to
+	// shed load into a way to spend this node's memory.
+	MaxSources int `yaml:"maxSources"`
+
 	// CloudFqdn is the zone this cloud serves, e.g. "tau.example.io".
 	//
 	// IT IS THE ONE PIECE OF DNS THIS SERVICE IS TOLD, and it is operator
@@ -108,6 +116,16 @@ type Config struct {
 
 // DefaultConnectTimeout is how long reaching a workload may take.
 const DefaultConnectTimeout = 10 * time.Second
+
+// DefaultMaxSources is how many sources a proxy remembers a rate for.
+const DefaultMaxSources = 4096
+
+func (c Config) maxSources() int {
+	if c.MaxSources < 1 {
+		return DefaultMaxSources
+	}
+	return c.MaxSources
+}
 
 var (
 	ErrNoWorkers  = errors.New("proxy: a proxy with no workers can reach nothing")
@@ -175,12 +193,25 @@ type Service struct {
 	// every ten seconds does not repeat one sentence until it buries the
 	// deploy that fixes it.
 	refusals map[string]string
+
+	// buckets is how fast connections may arrive, per proxy per source; open
+	// is how many may be held at once. Two limits because a connection that is
+	// HELD is not counted by a rate — see limits.go.
+	buckets *ratelimit.Buckets
+	open    *ratelimit.Gauge
 }
 
 // bound is one proxy this node is currently accepting connections for.
 type bound struct {
 	listener net.Listener
 	socket   Socket
+
+	// limits is what one source may open on it. It is held here rather than
+	// read per connection because it has to be consulted BEFORE the project
+	// is — a limit that cost a project read to enforce would be load rather
+	// than a way to shed it. The sweep refreshes it, so an edited limit takes
+	// effect within one.
+	limits limits
 }
 
 // Serving is every proxy this node accepts connections for, for whatever
@@ -229,6 +260,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		opts:     o,
 		served:   map[string]*bound{},
 		refusals: map[string]string{},
+		buckets:  ratelimit.NewBuckets(nil, cfg.maxSources()),
+		open:     ratelimit.NewGauge(),
 	}, nil
 }
 
@@ -251,7 +284,7 @@ func (s *Service) Serve(ctx context.Context, b Bind) (Socket, error) {
 	if err != nil {
 		return Socket{}, err
 	}
-	if err := s.accept(ctx, l, sock, b); err != nil {
+	if err := s.accept(ctx, l, sock, limitsOf(r), b); err != nil {
 		return Socket{}, err
 	}
 	return sock, nil
@@ -270,10 +303,10 @@ func (s *Service) resource(ctx context.Context, b Bind) (*project.Project, proje
 // Accept carries every connection on an already-bound listener. It is what a
 // test uses, and what a composer with its own socket would.
 func (s *Service) Accept(ctx context.Context, l net.Listener, b Bind) error {
-	return s.accept(ctx, l, Socket{}, b)
+	return s.accept(ctx, l, Socket{}, limits{}, b)
 }
 
-func (s *Service) accept(ctx context.Context, l net.Listener, sock Socket, b Bind) error {
+func (s *Service) accept(ctx context.Context, l net.Listener, sock Socket, lim limits, b Bind) error {
 	key := b.Key()
 
 	s.mu.Lock()
@@ -289,7 +322,7 @@ func (s *Service) accept(ctx context.Context, l net.Listener, sock Socket, b Bin
 		l.Close()
 		return fmt.Errorf("proxy: %s is already served on %s", key, held.socket.Host)
 	}
-	s.served[key] = &bound{listener: l, socket: sock}
+	s.served[key] = &bound{listener: l, socket: sock, limits: lim}
 	s.mu.Unlock()
 
 	go func() {
@@ -298,10 +331,35 @@ func (s *Service) accept(ctx context.Context, l net.Listener, sock Socket, b Bin
 			if err != nil {
 				return
 			}
-			go s.carry(ctx, conn, b)
+
+			// THE BUDGET IS SPENT BEFORE THE PROJECT IS READ. A refused
+			// connection costs a map lookup and a close — a raw socket has no
+			// status line, so there is nothing to write and nothing is
+			// written, and nothing is logged either: a line per refusal is a
+			// log amplifier pointed at this node by whoever is being refused.
+			done, ok := s.admit(key, s.limitsFor(key), conn.RemoteAddr())
+			if !ok {
+				conn.Close()
+				continue
+			}
+
+			go func() {
+				defer done()
+				s.carry(ctx, conn, b)
+			}()
 		}
 	}()
 	return nil
+}
+
+// limitsFor is what the last sweep read off this proxy.
+func (s *Service) limitsFor(key string) limits {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if b, ok := s.served[key]; ok {
+		return b.limits
+	}
+	return limits{}
 }
 
 // carry takes one connection to the workload the proxy forwards to.

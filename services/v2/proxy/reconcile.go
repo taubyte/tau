@@ -78,6 +78,10 @@ func (s *Service) Sweep(ctx context.Context) int {
 	var started int
 	for key, b := range wanted {
 		if s.holds(key) {
+			// AN EDITED LIMIT TAKES EFFECT WITHIN ONE SWEEP. It is read here
+			// rather than per connection because the accept path consults it
+			// before it reads anything else — see limits.go.
+			s.refreshLimits(ctx, key, b)
 			continue
 		}
 		if _, err := s.Serve(ctx, b); err != nil {
@@ -158,4 +162,23 @@ func (s *Service) forget(key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.refusals, key)
+}
+
+// refreshLimits re-reads what one source may open on a proxy already being
+// served. A deployment that cannot be read leaves the last limits in place,
+// which is the safe direction: the alternative is dropping a ceiling because a
+// register read failed.
+func (s *Service) refreshLimits(ctx context.Context, key string, b Bind) {
+	_, r, _, err := s.resource(ctx, b)
+	if err != nil {
+		return
+	}
+
+	lim := limitsOf(r)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if held, ok := s.served[key]; ok {
+		held.limits = lim
+	}
 }

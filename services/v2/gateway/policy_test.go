@@ -9,64 +9,62 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/ratelimit"
 )
 
 // TestTheRateLimitRefillsAtTheRateTheAuthorWrote, and is capped at the burst.
 func TestTheRateLimitRefills(t *testing.T) {
 	now := &fakeClock{at: time.Unix(1_700_000_000, 0)}
-	l := newLimiter(now.Now, 16)
+	l := ratelimit.NewBuckets(now.Now, 16)
 
 	// 60 rpm, burst 3: three straight away, then one a second.
-	require.True(t, l.allow("k", 60, 3))
-	require.True(t, l.allow("k", 60, 3))
-	require.True(t, l.allow("k", 60, 3))
-	require.False(t, l.allow("k", 60, 3))
+	require.True(t, l.Allow("k", 60, 3))
+	require.True(t, l.Allow("k", 60, 3))
+	require.True(t, l.Allow("k", 60, 3))
+	require.False(t, l.Allow("k", 60, 3))
 
 	now.advance(time.Second)
-	require.True(t, l.allow("k", 60, 3))
-	require.False(t, l.allow("k", 60, 3))
+	require.True(t, l.Allow("k", 60, 3))
+	require.False(t, l.Allow("k", 60, 3))
 
 	// A long quiet spell refills to the burst and no further, so a bucket
 	// cannot bank an hour of unused budget and spend it in one second.
 	now.advance(time.Hour)
-	require.True(t, l.allow("k", 60, 3))
-	require.True(t, l.allow("k", 60, 3))
-	require.True(t, l.allow("k", 60, 3))
-	require.False(t, l.allow("k", 60, 3))
+	require.True(t, l.Allow("k", 60, 3))
+	require.True(t, l.Allow("k", 60, 3))
+	require.True(t, l.Allow("k", 60, 3))
+	require.False(t, l.Allow("k", 60, 3))
 }
 
 // TestNoRateLimitIsNoRateLimit. A gateway that wrote no rate_limit block means
 // exactly that.
 func TestNoRateLimitIsNoRateLimit(t *testing.T) {
 	now := &fakeClock{at: time.Unix(1_700_000_000, 0)}
-	l := newLimiter(now.Now, 16)
+	l := ratelimit.NewBuckets(now.Now, 16)
 
 	for range 1000 {
-		require.True(t, l.allow("k", 0, 0))
+		require.True(t, l.Allow("k", 0, 0))
 	}
 
 	// A burst nobody wrote is the sustained rate, which is the reading that
 	// makes `rpm: 60` on its own mean something.
-	require.True(t, l.allow("j", 2, 0))
-	require.True(t, l.allow("j", 2, 0))
-	require.False(t, l.allow("j", 2, 0))
+	require.True(t, l.Allow("j", 2, 0))
+	require.True(t, l.Allow("j", 2, 0))
+	require.False(t, l.Allow("j", 2, 0))
 }
 
 // TestKeysAreSeparate, and the table is bounded — a gateway under a spray of
 // one-request-per-key traffic must not grow a bucket per source forever.
 func TestKeysAreSeparateAndBounded(t *testing.T) {
 	now := &fakeClock{at: time.Unix(1_700_000_000, 0)}
-	l := newLimiter(now.Now, 2)
+	l := ratelimit.NewBuckets(now.Now, 2)
 
-	require.True(t, l.allow("a", 60, 1))
-	require.False(t, l.allow("a", 60, 1))
-	require.True(t, l.allow("b", 60, 1), "another key has its own budget")
-	require.True(t, l.allow("c", 60, 1))
+	require.True(t, l.Allow("a", 60, 1))
+	require.False(t, l.Allow("a", 60, 1))
+	require.True(t, l.Allow("b", 60, 1), "another key has its own budget")
+	require.True(t, l.Allow("c", 60, 1))
 
-	l.mu.Lock()
-	held := len(l.buckets)
-	l.mu.Unlock()
-	require.LessOrEqual(t, held, 2)
+	require.LessOrEqual(t, l.Len(), 2)
 }
 
 // TestTheLimitKeyIsNeverAForwardedHeader. X-Forwarded-For is client-controlled

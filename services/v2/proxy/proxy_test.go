@@ -89,17 +89,34 @@ func (s projects) At(context.Context, string, string) (*project.Project, registe
 }
 
 // workers records what it was asked for and answers on a real socket.
+//
+// WHAT IT RECORDS IS GUARDED, because a proxy carries every connection on its
+// own goroutine and a test that opens two at once has two writers — the same
+// reason `warnings` below is a type rather than a slice.
 type workers struct {
+	mu   sync.Mutex
 	at   project.Address
 	port string
 	err  error
 	said string
 }
 
+// asked is the last address and port this was asked to reach.
+func (w *workers) asked() (project.Address, string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.at, w.port
+}
+
 func (w *workers) Conn(_ context.Context, at project.Address, port string) (net.Conn, error) {
+	w.mu.Lock()
 	w.at, w.port = at, port
-	if w.err != nil {
-		return nil, w.err
+	err := w.err
+	said := w.said
+	w.mu.Unlock()
+
+	if err != nil {
+		return nil, err
 	}
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -114,7 +131,7 @@ func (w *workers) Conn(_ context.Context, at project.Address, port string) (net.
 		}
 		defer c.Close()
 		body, _ := io.ReadAll(c)
-		c.Write([]byte(w.said + string(body)))
+		c.Write([]byte(said + string(body)))
 	}()
 	return net.Dial("tcp", l.Addr().String())
 }
@@ -196,7 +213,8 @@ func TestAnOmittedForwardNamespaceResolvesFromTheProxy(t *testing.T) {
 	io.ReadAll(c)
 	c.Close()
 
-	require.Empty(t, w.at.Scope, "the proxy is at the root, so its forward resolves there")
+	at, _ := w.asked()
+	require.Empty(t, at.Scope, "the proxy is at the root, so its forward resolves there")
 }
 
 // ── what it refuses, and why each is a refusal rather than a downgrade ──
@@ -219,7 +237,8 @@ func refusedBy(t *testing.T, change func(map[string]any)) {
 
 	require.Eventually(t, func() bool { return said.len() > 0 }, 2*time.Second, 10*time.Millisecond,
 		"the operator is told why, because the client cannot be")
-	require.Empty(t, w.at.Name, "and no workload was reached")
+	at, _ := w.asked()
+	require.Empty(t, at.Name, "and no workload was reached")
 }
 
 // A udp application chose to do without ordering; a stream imposes it, so
@@ -466,4 +485,23 @@ func TestServeAfterCloseBindsNothing(t *testing.T) {
 	_, dialErr := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(sock.Port))), time.Second)
 	require.Error(t, dialErr, "the socket it opened was closed with it")
 	require.Empty(t, s.Serving())
+}
+
+// redeployable is a deployment whose compiled project changes under a running
+// service, which is what a deploy is.
+type redeployable struct {
+	mu sync.Mutex
+	p  *project.Project
+}
+
+func (r *redeployable) set(p *project.Project) {
+	r.mu.Lock()
+	r.p = p
+	r.mu.Unlock()
+}
+
+func (r *redeployable) At(context.Context, string, string) (*project.Project, register.Pointer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.p, register.Pointer{}, nil
 }

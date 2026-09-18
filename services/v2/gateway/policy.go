@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/taubyte/tau/pkg/project"
 )
@@ -59,75 +57,6 @@ func originAllowed(allowed []string, origin string) bool {
 		}
 	}
 	return false
-}
-
-// limiter is a token bucket per key.
-//
-// IT IS PER NODE, AND THAT IS A REAL LIMIT rather than a detail. A fleet of N
-// gateways enforcing `rpm: 600` each admits up to 600N, so the number an author
-// writes is a per-node ceiling and not a fleet-wide one. A shared counter would
-// put a round trip on the request path of every request in the system to
-// enforce a limit whose purpose is to shed load — which is the wrong trade at
-// the edge. Say so rather than let it be discovered.
-type limiter struct {
-	now func() time.Time
-
-	mu      sync.Mutex
-	buckets map[string]*bucket
-	// order is insertion order for eviction, so a gateway under a spray of
-	// one-request-per-key traffic cannot grow a bucket per source forever.
-	order []string
-	max   int
-}
-
-type bucket struct {
-	tokens float64
-	at     time.Time
-}
-
-func newLimiter(now func() time.Time, max int) *limiter {
-	return &limiter{now: now, buckets: map[string]*bucket{}, max: max}
-}
-
-// allow spends a token for key, refilling at rpm per minute up to burst.
-//
-// A ZERO rpm IS NO LIMIT, which is what a gateway that wrote no rate_limit
-// block means.
-func (l *limiter) allow(key string, rpm, burst int) bool {
-	if rpm <= 0 {
-		return true
-	}
-	if burst <= 0 {
-		burst = rpm
-	}
-
-	now := l.now()
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	b, ok := l.buckets[key]
-	if !ok {
-		b = &bucket{tokens: float64(burst), at: now}
-		l.buckets[key] = b
-		l.order = append(l.order, key)
-		for len(l.order) > l.max {
-			delete(l.buckets, l.order[0])
-			l.order = l.order[1:]
-		}
-	}
-
-	b.tokens += now.Sub(b.at).Minutes() * float64(rpm)
-	if b.tokens > float64(burst) {
-		b.tokens = float64(burst)
-	}
-	b.at = now
-
-	if b.tokens < 1 {
-		return false
-	}
-	b.tokens--
-	return true
 }
 
 // limitKey is what the limit is counted per: "ip", or "header:<name>".
