@@ -172,6 +172,11 @@ type Runtime struct {
 	// is the process default; a test points it at a scratch backend.
 	transport http.RoundTripper
 
+	// warn is how this tier tells an operator about a capability it was handed
+	// and cannot serve. Nil says nothing, which is what a tier composed without
+	// somewhere to put it does.
+	warn func(format string, args ...any)
+
 	// output is where a guest's own writes go, per workload.
 	//
 	// IT IS A FUNCTION OF THE SPEC because a tier is built once and runs many
@@ -260,6 +265,12 @@ func WithOutput(sink func(spec invoke.Spec) (stdout, stderr io.Writer)) Option {
 // a knob — only where an allowed one goes.
 func WithTransport(t http.RoundTripper) Option {
 	return func(r *Runtime) { r.transport = t }
+}
+
+// WithWarn is where this tier says something an operator has to know but that
+// is not a reason to refuse a workload. See unserved.
+func WithWarn(warn func(format string, args ...any)) Option {
+	return func(r *Runtime) { r.warn = warn }
 }
 
 // New builds the tier.
@@ -382,6 +393,8 @@ func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world strin
 
 	// EVERY CAPABILITY'S HOST HALF, and the refusal for one that is granted
 	// with nothing behind it. See host.go: the register is the list of them.
+	r.unserved(spec)
+
 	imports, err := r.imports(spec)
 	if err != nil {
 		return nil, nil, err

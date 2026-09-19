@@ -2,6 +2,8 @@ package wasm
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/samyfodil/wazy/component"
 
@@ -238,4 +240,66 @@ func (r *Runtime) imports(spec invoke.Spec) ([]component.Option, error) {
 		out = append(out, c.register(r, spec)...)
 	}
 	return out, nil
+}
+
+// unserved warns about every capability a workload declared that no host
+// component here answers.
+//
+// # The composer hands this tier everything on purpose
+//
+// services/worker builds a grant for EVERY kind, and says why: "A tier has to
+// be able to see what it CANNOT do for a workload — a container declaring a
+// volume it will not get is data written to a layer that vanishes — and it
+// cannot see that from a list filtered down to what already works."
+//
+// That was half a mechanism. The producer was derived and correct, and this
+// tier then dropped whatever it had no row for without a word: `imports` only
+// looks at rows that exist, so a grant matching none of them is never seen at
+// all. A guest calling into it gets no host function, no error at start, and no
+// log line — the failure arrives as a missing import or a no-such-target at the
+// call site, which reads as a broken component rather than a capability this
+// cloud does not ship.
+//
+// A WARNING AND NOT A REFUSAL, exactly as the container tier's: each of these
+// fails where it is used, and what the warning buys is that an operator sees it
+// at start rather than in somebody's stack trace.
+//
+// A MOUNT IS NOT REPORTED HERE because it is REFUSED — see ErrNoMounts. It is
+// the one unserved capability that loses data instead of failing, so it never
+// reaches this.
+func (r *Runtime) unserved(spec invoke.Spec) {
+	if r.warn == nil {
+		return
+	}
+
+	served := map[string]bool{}
+	for _, c := range hostComponents() {
+		if c.reaches == nil {
+			continue
+		}
+		for _, g := range c.reaches(spec) {
+			served[g.Kind+"/"+g.Label] = true
+		}
+	}
+
+	missing := map[string]bool{}
+	for _, g := range spec.Reaches {
+		if g.Kind == invoke.MountKind || served[g.Kind+"/"+g.Label] {
+			continue
+		}
+		missing[g.Kind] = true
+	}
+	if len(missing) == 0 {
+		return
+	}
+
+	kinds := make([]string, 0, len(missing))
+	for kind := range missing {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+
+	r.warn("wasm: %s declares access this tier has no host interface for (%s); "+
+		"nothing is imported for them and the guest will fail where it calls one",
+		spec.Name, strings.Join(kinds, ", "))
 }

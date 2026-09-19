@@ -400,6 +400,10 @@ func (n *Node) openWorker() error {
 
 		component, err := wasm.New(n.opts.assets,
 			wasm.WithOutput(workloadLog),
+			// THE SAME REPORT THE CONTAINER TIER MAKES. The composer hands every
+			// tier a grant for every kind so it can say what it cannot do; this
+			// is where the wasm tier says it, instead of dropping the grant.
+			wasm.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }),
 			wasm.WithNode(self),
 			wasm.WithCaches(&caches{node: n}),
 			wasm.WithStreams(publisher),
