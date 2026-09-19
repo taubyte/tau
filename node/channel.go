@@ -8,7 +8,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/v2/placement"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -136,7 +136,7 @@ func (c *channels) Dial(ctx context.Context, grant invoke.Grant, body []byte) ([
 // runs no stats, and there the local worker is the only workload reachable at
 // all: a dial that lands is better than one that cannot be attempted, and one
 // that does not land says so.
-func (c *channels) invoke(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Response, error) {
+func (c *channels) invoke(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Response, error) {
 	if c.node.workers != nil {
 		return c.node.workers.Invoke(ctx, at, req)
 	}

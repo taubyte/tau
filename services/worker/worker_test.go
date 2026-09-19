@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 
 	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
 )
@@ -287,7 +287,7 @@ func TestTheCodeTable(t *testing.T) {
 		{ErrNoTarget, connect.CodeInvalidArgument},
 		{register.ErrNotPublished, connect.CodeNotFound},
 		{register.ErrNoObject, connect.CodeNotFound},
-		{project.ErrNotFound, connect.CodeNotFound},
+		{specs.ErrNotFound, connect.CodeNotFound},
 		{ErrNoRuntime, connect.CodeFailedPrecondition},
 		{ErrAmbiguous, connect.CodeFailedPrecondition},
 		{ErrNoArtifact, connect.CodeFailedPrecondition},
@@ -296,9 +296,9 @@ func TestTheCodeTable(t *testing.T) {
 		{invoke.ErrAtCapacity, connect.CodeResourceExhausted},
 		{context.DeadlineExceeded, connect.CodeDeadlineExceeded},
 		{register.ErrMalformedPointer, connect.CodeDataLoss},
-		{project.ErrBadIndex, connect.CodeDataLoss},
-		{project.ErrNoObject, connect.CodeDataLoss},
-		{project.ErrNoID, connect.CodeDataLoss},
+		{specs.ErrBadIndex, connect.CodeDataLoss},
+		{specs.ErrNoObject, connect.CodeDataLoss},
+		{specs.ErrNoID, connect.CodeDataLoss},
 		{context.Canceled, connect.CodeUnavailable},
 	} {
 		require.Equal(t, c.want, connect.CodeOf(wire(c.err)), "%v", c.err)
@@ -348,7 +348,7 @@ func TestTheClientIsTheSameWorker(t *testing.T) {
 	h := newHarness(t)
 	c := newWorkerClient(t, h)
 
-	res, err := c.Invoke(t.Context(), project.Address{
+	res, err := c.Invoke(t.Context(), specs.Address{
 		Project: "shop", Environment: "prod", Kind: "application", Name: "api",
 	}, &invoke.Request{Method: "GET", Path: "/orders"})
 	require.NoError(t, err)
@@ -357,7 +357,7 @@ func TestTheClientIsTheSameWorker(t *testing.T) {
 
 	// A nil request is one with nothing in it rather than a panic: a queue
 	// delivery and a channel dial both carry no method and no path.
-	_, err = c.Invoke(t.Context(), project.Address{
+	_, err = c.Invoke(t.Context(), specs.Address{
 		Project: "shop", Environment: "prod", Kind: "application", Name: "api",
 	}, nil)
 	require.NoError(t, err)
@@ -367,17 +367,17 @@ func TestEverySentinelSurvivesTheWireToTheClient(t *testing.T) {
 	h := newBareHarness(t)
 	c := newWorkerClient(t, h)
 
-	at := func(kind, name string) project.Address {
-		return project.Address{Project: "shop", Environment: "prod", Kind: kind, Name: name}
+	at := func(kind, name string) specs.Address {
+		return specs.Address{Project: "shop", Environment: "prod", Kind: kind, Name: name}
 	}
 
-	_, err := c.Invoke(t.Context(), project.Address{}, nil)
+	_, err := c.Invoke(t.Context(), specs.Address{}, nil)
 	require.ErrorIs(t, err, ErrNoTarget)
 
 	_, err = c.Invoke(t.Context(), at("application", "nope"), nil)
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 
-	_, err = c.Invoke(t.Context(), project.Address{
+	_, err = c.Invoke(t.Context(), specs.Address{
 		Project: "shop", Environment: "staging", Kind: "application", Name: "api",
 	}, nil)
 	require.ErrorIs(t, err, register.ErrNotPublished)

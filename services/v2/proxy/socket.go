@@ -5,7 +5,7 @@ import (
 	"net"
 	"slices"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // socket.go decides where a proxy answers, which is: on every address this node
@@ -68,7 +68,7 @@ type Socket struct {
 }
 
 // listen binds this proxy on every address this node has.
-func (s *Service) listen(proj *project.Project, r project.Resource, id, name string) (net.Listener, Socket, error) {
+func (s *Service) listen(proj *specs.Project, r specs.Resource, id, name string) (net.Listener, Socket, error) {
 	// THE KERNEL IS THE ALLOCATOR: an empty host is every address, and port
 	// zero is "whichever is free".
 	l, err := net.Listen("tcp", ":0")
@@ -94,7 +94,7 @@ func (s *Service) listen(proj *project.Project, r project.Resource, id, name str
 // says — not the name the caller looked it up by, which may have resolved
 // through a parent scope and be neither the resource's nor a service anybody
 // has heard of.
-func (s *Service) socketOf(proj *project.Project, r project.Resource, id, name string) Socket {
+func (s *Service) socketOf(proj *specs.Project, r specs.Resource, id, name string) Socket {
 	sock := Socket{
 		Host:      s.hostOf(proj, id),
 		Protocol:  r.String("service"),
@@ -119,7 +119,7 @@ func (s *Service) socketOf(proj *project.Project, r project.Resource, id, name s
 // An empty answer means nothing here can spell the name: a generated host on a
 // node that was told no zone. Publishing a partial one would put a name in DNS
 // that no client will ever ask for.
-func (s *Service) hostOf(proj *project.Project, id string) string {
+func (s *Service) hostOf(proj *specs.Project, id string) string {
 	kind, scope, name, ok := proj.Locate(id)
 	if !ok {
 		return ""

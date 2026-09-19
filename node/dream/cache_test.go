@@ -17,8 +17,8 @@ import (
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // A REAL COMPONENT, REACHING REAL STATE, ACROSS REAL NODES.
@@ -99,8 +99,8 @@ func withCache(componentCID string) []byte {
 	return raw
 }
 
-func target() project.Address {
-	return project.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "cacher"}
+func target() specs.Address {
+	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "cacher"}
 }
 
 // TestAGuestWritesAndReadsAReplicatedCache — the whole chain, in one universe.

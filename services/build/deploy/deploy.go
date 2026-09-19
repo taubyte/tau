@@ -50,8 +50,8 @@ import (
 
 	"github.com/spf13/afero"
 
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/build/backend"
 )
@@ -215,7 +215,7 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 	type compiled struct {
 		name    string
 		bytes   []byte
-		project *project.Project
+		project *specs.Project
 	}
 	plan := make([]compiled, 0, len(names))
 	for _, name := range names {
@@ -328,7 +328,7 @@ const DefaultEnvironment = "prod"
 // THE BYTES ARE JSON OF THE COMPILED OBJECT, which is what pkg/project reads
 // back. Saying so in one place is what keeps the writer and the reader from
 // disagreeing about a format nobody else names.
-func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *project.Project, error) {
+func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *specs.Project, error) {
 	c, err := schema.New(
 		schema.WithVirtual(fs, dir),
 		schema.WithProjectEnvironments(fs, dir),
@@ -349,7 +349,7 @@ func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *project.
 		return nil, nil, fmt.Errorf("deploy: %w", err)
 	}
 
-	p, err := project.Load(compiled)
+	p, err := specs.Load(compiled)
 	if err != nil {
 		return nil, nil, fmt.Errorf("deploy: reading back what was compiled: %w", err)
 	}
@@ -365,7 +365,7 @@ func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *project.
 // without it nothing could find the records an author wrote: a zone that
 // declares an MX would resolve to nobody, which is the whole of what
 // "a zone served authoritatively by this cloud" promises.
-func hostsOf(p *project.Project, cloudFqdn string) (hosts, incomplete []string) {
+func hostsOf(p *specs.Project, cloudFqdn string) (hosts, incomplete []string) {
 	for _, h := range p.Hosts() {
 		if !h.Generated {
 			hosts = append(hosts, h.Fqdn)

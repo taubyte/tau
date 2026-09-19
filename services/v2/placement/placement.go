@@ -40,7 +40,7 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -57,7 +57,7 @@ type Router interface {
 // satisfies it; a local *worker.Service does too, which is what lets a node
 // answer its own request without a stream.
 type Invoker interface {
-	Invoke(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Response, error)
+	Invoke(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Response, error)
 }
 
 // Transformer is an Invoker that can also run a transformer.
@@ -66,7 +66,7 @@ type Invoker interface {
 // worker offers, and something standing in for a worker in a test need not offer
 // it to be a worker. A local worker and a remote client both do.
 type Transformer interface {
-	Transform(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error)
+	Transform(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Outcome, error)
 }
 
 // Conns is a local worker that can hand out a connection, which is what lets a
@@ -81,18 +81,18 @@ type Conns interface {
 // decides FROM. Two things called Router, one choosing a node and one choosing a
 // destination, is a collision a reader has to hold in their head on every line.
 type Routes interface {
-	Route(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Routing, error)
+	Route(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Routing, error)
 }
 
 // Directs is an Invoker that can also ask a PROXY router where a connection
 // goes, and Shapes one that can run a chunk through a proxy transformer. Two
 // more for the reason Routes is one: only some workers serve those worlds.
 type Directs interface {
-	Direct(ctx context.Context, at project.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error)
+	Direct(ctx context.Context, at specs.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error)
 }
 
 type Shapes interface {
-	Shape(ctx context.Context, at project.Address, s *invoke.Stream) (*invoke.Shaping, error)
+	Shape(ctx context.Context, at specs.Address, s *invoke.Stream) (*invoke.Shaping, error)
 }
 
 var (
@@ -195,7 +195,7 @@ func New(h host.Host, router Router, opts ...Option) (*Workers, error) {
 }
 
 // Invoke runs one request on whichever node should take it.
-func (w *Workers) Invoke(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Response, error) {
+func (w *Workers) Invoke(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Response, error) {
 	var out *invoke.Response
 	err := w.somewhere(ctx, at, func(inv Invoker) error {
 		var err error
@@ -212,7 +212,7 @@ func (w *Workers) Invoke(ctx context.Context, at project.Address, req *invoke.Re
 // transformer is a workload of the same deployment, so the node that is warm for
 // the project is warm for its transformers too. A gateway that ran them itself
 // would need a component tier on every edge node and would lose the warmth.
-func (w *Workers) Transform(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error) {
+func (w *Workers) Transform(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Outcome, error) {
 	var out *invoke.Outcome
 	err := w.somewhere(ctx, at, func(inv Invoker) error {
 		t, ok := inv.(Transformer)
@@ -228,7 +228,7 @@ func (w *Workers) Transform(ctx context.Context, at project.Address, req *invoke
 
 // Route asks a router, on whichever node should take it, where one request
 // should go.
-func (w *Workers) Route(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Routing, error) {
+func (w *Workers) Route(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Routing, error) {
 	var out *invoke.Routing
 	err := w.somewhere(ctx, at, func(inv Invoker) error {
 		r, ok := inv.(Routes)
@@ -248,7 +248,7 @@ func (w *Workers) Route(ctx context.Context, at project.Address, req *invoke.Req
 // IT IS THE SAME PLACEMENT AS THE WORKLOAD'S, which is the point rather than an
 // economy: a router is a workload of the same deployment, so the node warm for
 // the project is warm for its router too.
-func (w *Workers) Direct(ctx context.Context, at project.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
+func (w *Workers) Direct(ctx context.Context, at specs.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
 	var out *invoke.Direction
 	err := w.somewhere(ctx, at, func(inv Invoker) error {
 		d, ok := inv.(Directs)
@@ -271,7 +271,7 @@ func (w *Workers) Direct(ctx context.Context, at project.Address, conn *invoke.C
 // nodes. That is what makes a transformer on a proxy survive a node going away
 // mid-conversation, and it is the whole reason the state is not kept in the
 // instance.
-func (w *Workers) Shape(ctx context.Context, at project.Address, s *invoke.Stream) (*invoke.Shaping, error) {
+func (w *Workers) Shape(ctx context.Context, at specs.Address, s *invoke.Stream) (*invoke.Shaping, error) {
 	var out *invoke.Shaping
 	err := w.somewhere(ctx, at, func(inv Invoker) error {
 		sh, ok := inv.(Shapes)
@@ -297,7 +297,7 @@ func (w *Workers) Shape(ctx context.Context, at project.Address, s *invoke.Strea
 // THE LOCAL SHORTCUT IS THE SAME ONE: if this node is the answer and a local
 // worker was injected, the connection is made here rather than over a stream to
 // ourselves.
-func (w *Workers) Conn(ctx context.Context, at project.Address, port string) (net.Conn, error) {
+func (w *Workers) Conn(ctx context.Context, at specs.Address, port string) (net.Conn, error) {
 	candidates := w.candidates(at)
 	if len(candidates) == 0 {
 		return nil, ErrNoWorkers
@@ -329,7 +329,7 @@ func (w *Workers) Conn(ctx context.Context, at project.Address, port string) (ne
 	return nil, fmt.Errorf("placement: no worker took a connection for %s/%s: %w", at.Kind, at.Name, last)
 }
 
-func (w *Workers) connectTo(ctx context.Context, id string, at project.Address, port string) (net.Conn, error) {
+func (w *Workers) connectTo(ctx context.Context, id string, at specs.Address, port string) (net.Conn, error) {
 	peerID, err := libp2ppeer.Decode(id)
 	if err != nil {
 		return nil, fmt.Errorf("placement: %q is not a peer: %w", id, err)
@@ -344,7 +344,7 @@ func (w *Workers) connectTo(ctx context.Context, id string, at project.Address, 
 
 // somewhere runs call against the warmest node that will take this address,
 // trying the next one only when a node could not be REACHED.
-func (w *Workers) somewhere(ctx context.Context, at project.Address, call func(Invoker) error) error {
+func (w *Workers) somewhere(ctx context.Context, at specs.Address, call func(Invoker) error) error {
 	candidates := w.candidates(at)
 	if len(candidates) == 0 {
 		return ErrNoWorkers
@@ -387,7 +387,7 @@ func (w *Workers) somewhere(ctx context.Context, at project.Address, call func(I
 // already ordered by load, and a warm node at higher load is still the better
 // choice than a cold one at lower — the fetch it saves is a whole compiled
 // project over the wire.
-func (w *Workers) candidates(at project.Address) []stats.Node {
+func (w *Workers) candidates(at specs.Address) []stats.Node {
 	warm := w.router.Route(worker.Descriptor.Name+"/"+at.Project+"/"+at.Environment, w.opts.maxAge)
 	any := w.router.Route(worker.Descriptor.Name, w.opts.maxAge)
 

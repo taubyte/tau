@@ -1,7 +1,7 @@
 package node
 
 import (
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	gateway "github.com/taubyte/tau/services/v2/gateway"
 )
 
@@ -59,8 +59,8 @@ func compiled() []byte {
 	}`)
 }
 
-func workerTarget() project.Address {
-	return project.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
+func workerTarget() specs.Address {
+	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
 }
 
 func gatewayConfig() gateway.Config { return gateway.Config{} }

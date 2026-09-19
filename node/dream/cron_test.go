@@ -17,8 +17,8 @@ import (
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // cron_test is a schedule firing with nobody watching the clock but the cloud
@@ -129,8 +129,8 @@ func TestAScheduleFiresOnceAcrossAFleet(t *testing.T) {
 		20*time.Second, time.Second, "one slot was fired more than once")
 }
 
-func scheduleTarget() project.Address {
-	return project.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "cacher"}
+func scheduleTarget() specs.Address {
+	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "cacher"}
 }
 
 // firing is a tier that records every request its instances are handed.

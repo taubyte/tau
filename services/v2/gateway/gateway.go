@@ -4,7 +4,7 @@
 // # What it does, per request
 //
 //	a Host header      -> whose environment this is        [the register]
-//	that environment   -> what it currently runs           [project.Cache]
+//	that environment   -> what it currently runs           [projects.Cache]
 //	the name and path  -> which gateway resource serves it [the compiled config]
 //	the route's handler-> a worker, over p2p
 //
@@ -57,9 +57,10 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/ratelimit"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/register/projects"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // Service is a gateway.
@@ -70,7 +71,7 @@ type Service struct {
 	buses   Buses
 	admits  Admits
 
-	projects *project.Cache
+	projects *projects.Cache
 	limits   *ratelimit.Buckets
 	now      func() time.Time
 
@@ -118,15 +119,15 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		o.now = time.Now
 	}
 
-	cacheOptions := []project.CacheOption{project.WithClock(o.now)}
+	cacheOptions := []projects.CacheOption{projects.WithClock(o.now)}
 	if cfg.PointerTTL != 0 {
-		cacheOptions = append(cacheOptions, project.WithTTL(cfg.PointerTTL))
+		cacheOptions = append(cacheOptions, projects.WithTTL(cfg.PointerTTL))
 	}
 	if cfg.MaxProjects != 0 {
-		cacheOptions = append(cacheOptions, project.WithMax(cfg.MaxProjects))
+		cacheOptions = append(cacheOptions, projects.WithMax(cfg.MaxProjects))
 	}
 
-	projects, err := project.NewCache(o.source, cacheOptions...)
+	projects, err := projects.NewCache(o.source, cacheOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +338,7 @@ func writeTo(w http.ResponseWriter, res *invoke.Response) {
 //
 // It answers (address, nil, 0, "") to invoke, (_, answer, 0, "") to serve that
 // response, and (_, nil, code, why) to refuse.
-func (s *Service) destination(ctx context.Context, m match, projectName, environment string, req *invoke.Request) (project.Address, *invoke.Response, int, string) {
+func (s *Service) destination(ctx context.Context, m match, projectName, environment string, req *invoke.Request) (specs.Address, *invoke.Response, int, string) {
 	router, scope := m.router()
 	if router == "" {
 		return m.address(projectName, environment), nil, 0, ""
@@ -346,7 +347,7 @@ func (s *Service) destination(ctx context.Context, m match, projectName, environ
 	if scope == nil {
 		scope = m.host.Scope
 	}
-	out, err := s.workers.Route(ctx, project.Address{
+	out, err := s.workers.Route(ctx, specs.Address{
 		Project:     projectName,
 		Environment: environment,
 		Scope:       scope,
@@ -354,25 +355,25 @@ func (s *Service) destination(ctx context.Context, m match, projectName, environ
 		Name:        router,
 	}, req)
 	if err != nil {
-		return project.Address{}, nil, http.StatusServiceUnavailable,
+		return specs.Address{}, nil, http.StatusServiceUnavailable,
 			"the function that routes this name could not be run"
 	}
 
 	switch {
 	case out.Answer != nil:
-		return project.Address{}, out.Answer, 0, ""
+		return specs.Address{}, out.Answer, 0, ""
 
 	case out.None != "":
 		// THE ROUTER RAN AND SAID NOTHING HANDLES THIS, which is the one case
 		// where a 404 is the truth rather than a guess.
-		return project.Address{}, nil, http.StatusNotFound, "nothing here handles that"
+		return specs.Address{}, nil, http.StatusNotFound, "nothing here handles that"
 
 	case out.To != nil:
 		to := m.host.Scope
 		if out.To.Namespace != "" {
 			to = splitScope(out.To.Namespace)
 		}
-		return project.Address{
+		return specs.Address{
 			Project:     projectName,
 			Environment: environment,
 			Scope:       to,
@@ -381,7 +382,7 @@ func (s *Service) destination(ctx context.Context, m match, projectName, environ
 		}, nil, 0, ""
 	}
 
-	return project.Address{}, nil, http.StatusBadGateway, "that router decided nothing"
+	return specs.Address{}, nil, http.StatusBadGateway, "that router decided nothing"
 }
 
 // shaped runs this route's transformers, in order, over req.
@@ -412,7 +413,7 @@ func (s *Service) shaped(ctx context.Context, m match, projectName, environment 
 			scope = splitScope(declared)
 		}
 
-		out, err := s.workers.Transform(ctx, project.Address{
+		out, err := s.workers.Transform(ctx, specs.Address{
 			Project:     projectName,
 			Environment: environment,
 			Scope:       scope,
@@ -451,7 +452,7 @@ func (s *Service) unbuilt(m match) (int, string) {
 }
 
 // candidatesAt is every gateway resource in this project answering on a name.
-func (s *Service) candidatesAt(p *project.Project, name, projectName string) []candidate {
+func (s *Service) candidatesAt(p *specs.Project, name, projectName string) []candidate {
 	var out []candidate
 	for _, h := range p.At(s.lookupName(name)) {
 		if h.Kind != gatewayKind {
@@ -524,7 +525,7 @@ func hostOf(r *http.Request) string {
 // retrying. Saying 404 for either would send somebody looking for a typo.
 func statusFor(err error) int {
 	switch {
-	case errors.Is(err, register.ErrNotPublished), errors.Is(err, project.ErrNotFound):
+	case errors.Is(err, register.ErrNotPublished), errors.Is(err, specs.ErrNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, context.DeadlineExceeded):
 		return http.StatusGatewayTimeout

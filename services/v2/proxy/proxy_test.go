@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/v2/proxy"
 )
 
@@ -37,7 +37,7 @@ const (
 )
 
 // compiled is a project with one proxy forwarding to one application.
-func compiled(t *testing.T, proxy map[string]any) *project.Project {
+func compiled(t *testing.T, proxy map[string]any) *specs.Project {
 	t.Helper()
 
 	doc := map[string]any{
@@ -68,7 +68,7 @@ func compiled(t *testing.T, proxy map[string]any) *project.Project {
 
 	raw, err := json.Marshal(doc)
 	require.NoError(t, err)
-	p, err := project.Load(raw)
+	p, err := specs.Load(raw)
 	require.NoError(t, err)
 	return p
 }
@@ -84,9 +84,9 @@ func servable() map[string]any {
 	}
 }
 
-type projects struct{ p *project.Project }
+type projects struct{ p *specs.Project }
 
-func (s projects) At(context.Context, string, string) (*project.Project, register.Pointer, error) {
+func (s projects) At(context.Context, string, string) (*specs.Project, register.Pointer, error) {
 	return s.p, register.Pointer{}, nil
 }
 
@@ -97,7 +97,7 @@ func (s projects) At(context.Context, string, string) (*project.Project, registe
 // reason `warnings` below is a type rather than a slice.
 type workers struct {
 	mu   sync.Mutex
-	at   project.Address
+	at   specs.Address
 	port string
 	err  error
 	said string
@@ -105,10 +105,10 @@ type workers struct {
 	// direct and shape are the two proxy worlds. A nil one means this fake
 	// runs none, which is what a worker with no such function answers.
 	direct func(*invoke.Connection, []byte) (*invoke.Direction, error)
-	shape  func(project.Address, *invoke.Stream) (*invoke.Shaping, error)
+	shape  func(specs.Address, *invoke.Stream) (*invoke.Shaping, error)
 }
 
-func (w *workers) Direct(_ context.Context, _ project.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
+func (w *workers) Direct(_ context.Context, _ specs.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
 	w.mu.Lock()
 	f := w.direct
 	w.mu.Unlock()
@@ -119,7 +119,7 @@ func (w *workers) Direct(_ context.Context, _ project.Address, conn *invoke.Conn
 	return f(conn, peeked)
 }
 
-func (w *workers) Shape(_ context.Context, at project.Address, st *invoke.Stream) (*invoke.Shaping, error) {
+func (w *workers) Shape(_ context.Context, at specs.Address, st *invoke.Stream) (*invoke.Shaping, error) {
 	w.mu.Lock()
 	f := w.shape
 	w.mu.Unlock()
@@ -131,13 +131,13 @@ func (w *workers) Shape(_ context.Context, at project.Address, st *invoke.Stream
 }
 
 // asked is the last address and port this was asked to reach.
-func (w *workers) asked() (project.Address, string) {
+func (w *workers) asked() (specs.Address, string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.at, w.port
 }
 
-func (w *workers) Conn(_ context.Context, at project.Address, port string) (net.Conn, error) {
+func (w *workers) Conn(_ context.Context, at specs.Address, port string) (net.Conn, error) {
 	w.mu.Lock()
 	w.at, w.port = at, port
 	err := w.err
@@ -200,7 +200,7 @@ func (w *warnings) len() int {
 	return len(w.said)
 }
 
-func serve(t *testing.T, p *project.Project, w *workers) (net.Listener, *warnings) {
+func serve(t *testing.T, p *specs.Project, w *workers) (net.Listener, *warnings) {
 	t.Helper()
 
 	said := &warnings{}
@@ -517,16 +517,16 @@ func TestServeAfterCloseBindsNothing(t *testing.T) {
 // service, which is what a deploy is.
 type redeployable struct {
 	mu sync.Mutex
-	p  *project.Project
+	p  *specs.Project
 }
 
-func (r *redeployable) set(p *project.Project) {
+func (r *redeployable) set(p *specs.Project) {
 	r.mu.Lock()
 	r.p = p
 	r.mu.Unlock()
 }
 
-func (r *redeployable) At(context.Context, string, string) (*project.Project, register.Pointer, error) {
+func (r *redeployable) At(context.Context, string, string) (*specs.Project, register.Pointer, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.p, register.Pointer{}, nil

@@ -1,11 +1,11 @@
-package project_test
+package specs_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // A SOURCE IS AN EITHER AND SO IS A BUILD, and reading one is a switch on the
@@ -22,14 +22,14 @@ func TestABarePathIsAPathInTheProjectsOwnRepository(t *testing.T) {
 	require.NoError(t, err)
 
 	source := r.Source()
-	require.Equal(t, project.SourcePath, source.Kind)
+	require.Equal(t, specs.SourcePath, source.Kind)
 	require.Equal(t, "services/reserve", source.Path)
 	require.Empty(t, source.Git)
 	require.True(t, source.Built(), "a path in a repository is something this platform makes")
 
 	build := r.Build()
 	require.True(t, build.Declared())
-	require.Equal(t, project.BuildCommands, build.Kind)
+	require.Equal(t, specs.BuildCommands, build.Kind)
 	require.Equal(t, "rust:1.83", build.Image)
 	require.Equal(t, "cargo fetch --locked", build.Install)
 	require.Equal(t, "cargo build --release --target wasm32-wasip2", build.Run)
@@ -46,14 +46,14 @@ func TestAResourceCanNameItsOwnRepository(t *testing.T) {
 	require.NoError(t, err)
 
 	source := r.Source()
-	require.Equal(t, project.SourceGit, source.Kind)
+	require.Equal(t, specs.SourceGit, source.Kind)
 	require.Equal(t, "https://github.com/acme/paylib", source.Git)
 	require.Equal(t, "main", source.Branch)
 	require.True(t, source.Built())
 
 	// A script is the escape hatch for a build that does not fit two commands.
 	build := r.Build()
-	require.Equal(t, project.BuildScript, build.Kind)
+	require.Equal(t, specs.BuildScript, build.Kind)
 	require.Equal(t, "taubyte/go-wasi:v2", build.Image)
 	require.Equal(t, ".taubyte/build.sh", build.Script)
 	require.Equal(t, "paylib.wasm", build.Output)
@@ -68,7 +68,7 @@ func TestWhatIsNotBuiltFromSource(t *testing.T) {
 	r, _, err := p.Resource(nil, "function", "checkout")
 	require.NoError(t, err)
 	source := r.Source()
-	require.Equal(t, project.SourceComponent, source.Kind)
+	require.Equal(t, specs.SourceComponent, source.Kind)
 	// A REFERENCE COMPILES TO AN ID, not to the name it was written as — which
 	// is what makes a rename of the component not a rewrite of everything that
 	// names it.
@@ -79,7 +79,7 @@ func TestWhatIsNotBuiltFromSource(t *testing.T) {
 	r, _, err = p.Resource(nil, "application", "db")
 	require.NoError(t, err)
 	source = r.Source()
-	require.Equal(t, project.SourceImage, source.Kind)
+	require.Equal(t, specs.SourceImage, source.Kind)
 	require.False(t, source.Built())
 
 	// A resource with no source at all reads as one, rather than as a path of
@@ -98,7 +98,7 @@ func TestBuildablesAreEveryResourceMadeFromSource(t *testing.T) {
 	built := p.Buildables()
 	require.NotEmpty(t, built)
 
-	byName := map[string]project.Buildable{}
+	byName := map[string]specs.Buildable{}
 	for _, b := range built {
 		byName[b.Kind+"/"+b.Name] = b
 
@@ -129,7 +129,7 @@ func TestBuildablesAreEveryResourceMadeFromSource(t *testing.T) {
 // which is the whole of what a caller needs to decide whether a given push
 // touches it.
 func TestABuildableSaysWhichRepositoryItNeeds(t *testing.T) {
-	byName := map[string]project.Buildable{}
+	byName := map[string]specs.Buildable{}
 	for _, b := range load(t).Buildables() {
 		byName[b.Kind+"/"+b.Name] = b
 	}
@@ -174,7 +174,7 @@ func TestVariablesSayWhenTheyApply(t *testing.T) {
 	r, _, err := p.Resource(nil, "component", "paylib")
 	require.NoError(t, err)
 
-	byName := map[string]project.Variable{}
+	byName := map[string]specs.Variable{}
 	for _, v := range r.Variables() {
 		byName[v.Name] = v
 	}

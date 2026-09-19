@@ -8,8 +8,8 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 
 	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1/workerv1connect"
@@ -289,7 +289,7 @@ func wire(err error) error {
 
 	case errors.Is(err, register.ErrNotPublished),
 		errors.Is(err, register.ErrNoObject),
-		errors.Is(err, project.ErrNotFound):
+		errors.Is(err, specs.ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, err)
 
 	// The config selected a tier nothing runs, wants an artifact nobody
@@ -313,9 +313,9 @@ func wire(err error) error {
 	// for the same reason it is in the register: it says the store is the
 	// broken part rather than the deployment.
 	case errors.Is(err, register.ErrMalformedPointer),
-		errors.Is(err, project.ErrBadIndex),
-		errors.Is(err, project.ErrNoObject),
-		errors.Is(err, project.ErrNoID):
+		errors.Is(err, specs.ErrBadIndex),
+		errors.Is(err, specs.ErrNoObject),
+		errors.Is(err, specs.ErrNoID):
 		return connect.NewError(connect.CodeDataLoss, err)
 
 	default:

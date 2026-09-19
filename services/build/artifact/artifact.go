@@ -40,8 +40,8 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/build/backend"
 )
 
@@ -312,9 +312,9 @@ type item struct {
 	Kind        string
 	Name        string
 	ID          string
-	Build       project.Build
+	Build       specs.Build
 	Path        string
-	Variables   []project.Variable
+	Variables   []specs.Variable
 }
 
 // plan is every build this push touches, across every deployment it feeds.
@@ -357,7 +357,7 @@ func (b *Builder) plan(ctx context.Context, projectID string, deployments []stri
 // A BARE PATH IS THE PROJECT'S OWN CODE REPOSITORY, which the config cannot
 // say — so `own` comes from auth, and a project with no code repository
 // registered has no bare-path resources to build.
-func backedBy(b project.Buildable, pushed, own string) (bool, error) {
+func backedBy(b specs.Buildable, pushed, own string) (bool, error) {
 	if b.Source.Git == "" {
 		return own != "" && own == pushed, nil
 	}
@@ -385,13 +385,13 @@ func (b *Builder) specOf(ctx context.Context, projectID string, i item, checkout
 	// `image` — it IS one — so checking the image first would refuse it with a
 	// message about the wrong thing.
 	switch i.Build.Kind {
-	case project.BuildCommands:
+	case specs.BuildCommands:
 		for _, command := range []string{i.Build.Install, i.Build.Run} {
 			if command != "" {
 				spec.Commands = append(spec.Commands, command)
 			}
 		}
-	case project.BuildScript:
+	case specs.BuildScript:
 		if i.Build.Script == "" {
 			return Spec{}, fmt.Errorf("artifact: %s/%s is a script build that names no script", i.Kind, i.Name)
 		}
@@ -402,7 +402,7 @@ func (b *Builder) specOf(ctx context.Context, projectID string, i item, checkout
 		// this cloud does not have, so it is refused by name rather than run
 		// into a failure nobody can read.
 		return Spec{}, fmt.Errorf("artifact: %s/%s is a %q build, and only %q and %q produce something this cloud can store",
-			i.Kind, i.Name, i.Build.Kind, project.BuildCommands, project.BuildScript)
+			i.Kind, i.Name, i.Build.Kind, specs.BuildCommands, specs.BuildScript)
 	}
 
 	// A BUILD-TIME VARIABLE IS NOT A RUN-TIME ONE, and the config says which
@@ -460,7 +460,7 @@ func (b *Builder) specOf(ctx context.Context, projectID string, i item, checkout
 }
 
 // projectAt reads one deployment's compiled project.
-func (b *Builder) projectAt(ctx context.Context, projectID, environment string) (*project.Project, error) {
+func (b *Builder) projectAt(ctx context.Context, projectID, environment string) (*specs.Project, error) {
 	pointer, err := b.register.Resolve(ctx, projectID, environment)
 	if err != nil {
 		return nil, fmt.Errorf("artifact: reading what %s/%s runs: %w", projectID, environment, err)
@@ -471,7 +471,7 @@ func (b *Builder) projectAt(ctx context.Context, projectID, environment string) 
 		return nil, fmt.Errorf("artifact: reading %s: %w", pointer.Object, err)
 	}
 
-	p, err := project.Load(compiled)
+	p, err := specs.Load(compiled)
 	if err != nil {
 		return nil, fmt.Errorf("artifact: reading %s/%s's configuration: %w", projectID, environment, err)
 	}

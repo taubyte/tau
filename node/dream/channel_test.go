@@ -14,8 +14,8 @@ import (
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // A CHANNEL IS THE ONE PATH IN THIS VOCABULARY WHERE A WORKLOAD REACHES ANOTHER
@@ -35,8 +35,8 @@ const (
 	channelHandle = "shop/prod/" + channelResID
 )
 
-func dialerTarget() project.Address {
-	return project.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "dialer"}
+func dialerTarget() specs.Address {
+	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "dialer"}
 }
 
 // withChannel is one component under two names and the channel between them.

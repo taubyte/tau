@@ -17,8 +17,8 @@ import (
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -134,7 +134,7 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 
 	// THE DEPLOYMENT HAS TO BE HELD BEFORE ANYTHING IS DRAINED, which is the
 	// enumeration rule: a node drains the queues of what it is already serving.
-	producer := project.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
+	producer := specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
 	spec, err := n.Worker().Resolve(t.Context(), producer)
 	require.NoError(t, err)
 
@@ -245,7 +245,7 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 func handleOf(t *testing.T, n *node.Node, step string) string {
 	t.Helper()
 
-	spec, err := n.Worker().Resolve(t.Context(), project.Address{
+	spec, err := n.Worker().Resolve(t.Context(), specs.Address{
 		Project: "shop", Environment: "prod", Scope: []string{"checkout"},
 		Kind: "function", Name: step,
 	})
@@ -266,7 +266,7 @@ func handleOf(t *testing.T, n *node.Node, step string) string {
 func deadLetterOf(t *testing.T, n *node.Node) string {
 	t.Helper()
 
-	spec, err := n.Worker().Resolve(t.Context(), project.Address{
+	spec, err := n.Worker().Resolve(t.Context(), specs.Address{
 		Project: "shop", Environment: "prod", Scope: []string{"checkout"},
 		Kind: "function", Name: "checkout_charge",
 	})
@@ -274,7 +274,7 @@ func deadLetterOf(t *testing.T, n *node.Node) string {
 
 	for _, g := range spec.Reaches {
 		if dead := g.Settings["queue/dead_letter/name"]; g.Kind == "sync" && dead != "" {
-			return project.Handle("shop", "prod", dead)
+			return specs.Handle("shop", "prod", dead)
 		}
 	}
 	t.Fatal("no step routes into a dead letter")

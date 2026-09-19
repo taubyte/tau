@@ -46,7 +46,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/register/projects"
 )
 
 // Service is a worker.
@@ -69,7 +69,7 @@ type Service struct {
 	// invocation is billed for.
 	now func() time.Time
 
-	projects *project.Cache
+	projects *projects.Cache
 
 	serverOptions []rpc.ServerOption
 
@@ -140,15 +140,15 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 	if o.pool == nil {
 		return nil, ErrNoPool
 	}
-	cacheOptions := []project.CacheOption{
-		project.WithTTL(cfg.PointerTTL),
-		project.WithMax(cfg.MaxProjects),
+	cacheOptions := []projects.CacheOption{
+		projects.WithTTL(cfg.PointerTTL),
+		projects.WithMax(cfg.MaxProjects),
 	}
 	if o.now != nil {
-		cacheOptions = append(cacheOptions, project.WithClock(o.now))
+		cacheOptions = append(cacheOptions, projects.WithClock(o.now))
 	}
 
-	projects, err := project.NewCache(o.register, cacheOptions...)
+	projects, err := projects.NewCache(o.register, cacheOptions...)
 	if err != nil {
 		return nil, err
 	}

@@ -13,9 +13,9 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -245,7 +245,7 @@ func TestTheSeamsReachTheWorker(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	spec, err := n.Worker().Resolve(t.Context(), project.Address{
+	spec, err := n.Worker().Resolve(t.Context(), specs.Address{
 		Project: "shop", Environment: "prod", Kind: "function", Name: "built",
 	})
 	require.NoError(t, err)
@@ -344,7 +344,7 @@ func TestABuiltResourceWithNoBuildServiceIsRefused(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := n.Worker().Resolve(t.Context(), project.Address{
+		_, err := n.Worker().Resolve(t.Context(), specs.Address{
 			Project: "shop", Environment: "prod", Kind: "function", Name: "built",
 		})
 		done <- err

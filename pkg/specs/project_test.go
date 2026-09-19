@@ -1,4 +1,4 @@
-package project_test
+package specs_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // compiled is the real thing: tcc compiling the vocabulary's own fixture, then
@@ -34,9 +34,9 @@ func compiled(t testing.TB) []byte {
 	return b
 }
 
-func load(t testing.TB) *project.Project {
+func load(t testing.TB) *specs.Project {
 	t.Helper()
-	p, err := project.Load(compiled(t))
+	p, err := specs.Load(compiled(t))
 	require.NoError(t, err)
 	return p
 }
@@ -119,7 +119,7 @@ func TestTheNearestDeclarationWins(t *testing.T) {
 	// And the root does not have one at all, so a lookup there is a miss
 	// rather than somebody else's.
 	_, _, err = p.Resource(nil, "cache", "sessions")
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 }
 
 // TestAChildsResourceIsNotVisibleFromItsParent. Scoping runs outward and only
@@ -131,10 +131,10 @@ func TestAChildsResourceIsNotVisibleFromItsParent(t *testing.T) {
 	require.NoError(t, err)
 
 	_, _, err = p.Resource(nil, "database", "ledger")
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, _, err = p.Resource([]string{"shop"}, "database", "ledger")
-	require.ErrorIs(t, err, project.ErrNotFound, "a sibling namespace is not a parent")
+	require.ErrorIs(t, err, specs.ErrNotFound, "a sibling namespace is not a parent")
 }
 
 func TestWalkingTheProject(t *testing.T) {
@@ -191,31 +191,31 @@ func TestMissingThingsSayWhatIsMissing(t *testing.T) {
 	p := load(t)
 
 	_, _, err := p.Resource(nil, "application", "nope")
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, _, err = p.Resource(nil, "nosuchkind", "api")
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, _, err = p.Resource(nil, "", "api")
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, _, err = p.Resource(nil, "application", "")
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, _, err = p.Resource([]string{"nosuchnamespace"}, "application", "api")
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, err = p.Namespaces([]string{"nosuchnamespace"})
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, err = p.Kinds([]string{"nosuchnamespace"})
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, err = p.Names([]string{"nosuchnamespace"}, "application")
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 }
 
-func mustNamespaces(t *testing.T, p *project.Project, scope []string) []string {
+func mustNamespaces(t *testing.T, p *specs.Project, scope []string) []string {
 	t.Helper()
 	out, err := p.Namespaces(scope)
 	require.NoError(t, err)

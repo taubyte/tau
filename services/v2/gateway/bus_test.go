@@ -13,7 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // bus_test is the browser half of this platform's messaging: a page attaches to
@@ -27,7 +27,7 @@ import (
 func busNamed(t testing.TB, name, cloud string) (fqdn, id string) {
 	t.Helper()
 
-	p, err := project.Load(compiled(t))
+	p, err := specs.Load(compiled(t))
 	require.NoError(t, err)
 
 	for _, h := range p.Hosts() {
@@ -130,7 +130,7 @@ func TestTheHandleIsTheOneAWorkloadWouldGet(t *testing.T) {
 	defer conn.Close()
 
 	buses.waitForOne(t)
-	require.Equal(t, []string{project.Handle("shop", "prod", id)}, buses.asked())
+	require.Equal(t, []string{specs.Handle("shop", "prod", id)}, buses.asked())
 }
 
 // A GENERATED BUS NAME LOSES THE CLOUD'S SEGMENT, the same as every other
@@ -187,7 +187,7 @@ func TestAnInstanceOfABusIsAttachedToByPath(t *testing.T) {
 	defer conn.Close()
 
 	buses.waitForOne(t)
-	require.Equal(t, []string{project.Handle("shop", "prod", id) + "/room-42"}, buses.asked(),
+	require.Equal(t, []string{specs.Handle("shop", "prod", id) + "/room-42"}, buses.asked(),
 		"the instance is part of the handle, so a workload publishing to chat/room-42 meets this browser")
 
 	// AND THE VALIDATOR WAS ASKED FIRST, which is this kind's only inbound

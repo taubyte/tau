@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/splice"
 )
 
@@ -47,14 +47,14 @@ import (
 var ErrClosedByTransformer = errors.New("proxy: a transformer closed the connection")
 
 // chain builds the shaper for one direction, or nil when nothing shapes it.
-func (s *Service) chain(ctx context.Context, r project.Resource, b Bind, scope []string, conn *invoke.Connection, way invoke.Way) splice.Shaper {
+func (s *Service) chain(ctx context.Context, r specs.Resource, b Bind, scope []string, conn *invoke.Connection, way invoke.Way) splice.Shaper {
 	entries := r.List("transformers")
 	if len(entries) == 0 {
 		return nil
 	}
 
 	type link struct {
-		at   project.Address
+		at   specs.Address
 		open bool
 	}
 
@@ -65,10 +65,10 @@ func (s *Service) chain(ctx context.Context, r project.Resource, b Bind, scope [
 			continue
 		}
 		links = append(links, link{
-			at: project.Address{
+			at: specs.Address{
 				Project:     b.Project,
 				Environment: b.Environment,
-				Scope:       project.ScopeOf(scope, t.String("namespace")),
+				Scope:       specs.ScopeOf(scope, t.String("namespace")),
 				Kind:        "function",
 				Name:        name,
 			},

@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -36,7 +36,7 @@ type harness struct {
 // hosts is the fixture's own names, which is what a publisher would hand the
 // register. The generated ones carry the project's portion only: the cloud's
 // fqdn is not in the config, and appending it is the node's job.
-func hostsOf(t testing.TB, p *project.Project, cloud string) []string {
+func hostsOf(t testing.TB, p *specs.Project, cloud string) []string {
 	t.Helper()
 	var out []string
 	for _, h := range p.Hosts() {
@@ -56,7 +56,7 @@ func newHarness(t testing.TB, cfg Config, opts ...Option) *harness {
 	require.NoError(t, err)
 
 	bytes := compiled(t)
-	p, err := project.Load(bytes)
+	p, err := specs.Load(bytes)
 	require.NoError(t, err)
 
 	_, err = reg.Publish(t.Context(), register.Publication{
@@ -138,7 +138,7 @@ func (w *recordingWorkers) asksRouted() []call {
 }
 
 // Transform stands in for the worker that runs the transformer.
-func (w *recordingWorkers) Transform(_ context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error) {
+func (w *recordingWorkers) Transform(_ context.Context, at specs.Address, req *invoke.Request) (*invoke.Outcome, error) {
 	w.mu.Lock()
 	w.transformed = append(w.transformed, call{at: at, req: cloneRequest(req)})
 	out, err := w.shaped[at.Name], w.shapeErr[at.Name]
@@ -156,7 +156,7 @@ func (w *recordingWorkers) Transform(_ context.Context, at project.Address, req 
 // Route stands in for the worker that runs the router. With no entry it sends
 // the request to `function/handled`, which is enough for a test that is about
 // something else to get past a router-routed name.
-func (w *recordingWorkers) Route(_ context.Context, at project.Address, req *invoke.Request) (*invoke.Routing, error) {
+func (w *recordingWorkers) Route(_ context.Context, at specs.Address, req *invoke.Request) (*invoke.Routing, error) {
 	w.mu.Lock()
 	w.routed = append(w.routed, call{at: at, req: cloneRequest(req)})
 	out, err := w.routing[at.Name], w.routeErr[at.Name]
@@ -191,11 +191,11 @@ func cloneRequest(req *invoke.Request) *invoke.Request {
 }
 
 type call struct {
-	at  project.Address
+	at  specs.Address
 	req *invoke.Request
 }
 
-func (w *recordingWorkers) Invoke(_ context.Context, at project.Address, req *invoke.Request) (*invoke.Response, error) {
+func (w *recordingWorkers) Invoke(_ context.Context, at specs.Address, req *invoke.Request) (*invoke.Response, error) {
 	w.mu.Lock()
 	w.calls = append(w.calls, call{at: at, req: req})
 	err, reply := w.err, w.reply

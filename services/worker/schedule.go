@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -30,7 +30,7 @@ import (
 // Schedule is one cron, resolved: when it fires and what it fires.
 type Schedule struct {
 	// Handle is the deployment and the cron's own id, in the form
-	// project.Handle builds — so the record of what has already fired is
+	// specs.Handle builds — so the record of what has already fired is
 	// scoped the way everything else replicated is.
 	Handle string
 
@@ -78,7 +78,7 @@ const cronKind = "cron"
 // deployment up. See node/cron.go, which is where that is dealt with.
 func (s *Service) Schedules(ctx context.Context) []Schedule {
 	var out []Schedule
-	s.eachDeployment(ctx, func(proj *project.Project, name, environment string) {
+	s.eachDeployment(ctx, func(proj *specs.Project, name, environment string) {
 		eachScope(proj, nil, func(scope []string) {
 			out = append(out, schedulesIn(proj, name, environment, scope)...)
 		})
@@ -89,7 +89,7 @@ func (s *Service) Schedules(ctx context.Context) []Schedule {
 }
 
 // schedulesIn is every cron in one scope.
-func schedulesIn(proj *project.Project, name, environment string, scope []string) []Schedule {
+func schedulesIn(proj *specs.Project, name, environment string, scope []string) []Schedule {
 	names, err := proj.Names(scope, cronKind)
 	if err != nil {
 		return nil
@@ -105,7 +105,7 @@ func schedulesIn(proj *project.Project, name, environment string, scope []string
 }
 
 // scheduleOf reads one cron.
-func scheduleOf(proj *project.Project, name, environment string, scope []string, cron string) (Schedule, bool) {
+func scheduleOf(proj *specs.Project, name, environment string, scope []string, cron string) (Schedule, bool) {
 	resource, id, err := proj.Resource(scope, cronKind, cron)
 	if err != nil {
 		return Schedule{}, false
@@ -119,7 +119,7 @@ func scheduleOf(proj *project.Project, name, environment string, scope []string,
 	}
 
 	out := Schedule{
-		Handle:    project.Handle(name, environment, id),
+		Handle:    specs.Handle(name, environment, id),
 		Name:      cron,
 		Scope:     scope,
 		Spec:      spec,
@@ -158,7 +158,7 @@ func scheduleOf(proj *project.Project, name, environment string, scope []string,
 			out.Fires = append(out.Fires, Target{
 				Project:     name,
 				Environment: environment,
-				Scope:       project.ScopeOf(scope, reach.Namespace),
+				Scope:       specs.ScopeOf(scope, reach.Namespace),
 				Kind:        kind,
 				Name:        reach.Target(),
 			})
@@ -176,7 +176,7 @@ func scheduleOf(proj *project.Project, name, environment string, scope []string,
 // startGrant is the grant a cron spends to begin a run, built the same way a
 // workload's is — through the workflow's own `entry/start` record, so the two
 // callers cannot disagree about where a start lands.
-func startGrant(proj *project.Project, name, environment string, scope []string, reach project.Reach) (invoke.Grant, error) {
+func startGrant(proj *specs.Project, name, environment string, scope []string, reach specs.Reach) (invoke.Grant, error) {
 	target, id, err := proj.Reached(scope, reach)
 	if err != nil {
 		return invoke.Grant{}, err
@@ -185,7 +185,7 @@ func startGrant(proj *project.Project, name, environment string, scope []string,
 	grant := invoke.Grant{
 		Kind:   reach.Kind,
 		Label:  reach.Label,
-		Handle: project.Handle(name, environment, id),
+		Handle: specs.Handle(name, environment, id),
 		Ops:    reach.Ops,
 	}
 	if err := startedBy(proj, Target{Project: name, Environment: environment}, target, id, &grant); err != nil {
@@ -204,7 +204,7 @@ func startGrant(proj *project.Project, name, environment string, scope []string,
 // workflow, so this is the ordinary case rather than a corner. Saying so is the
 // difference between "this cloud does not run workflows yet" and a schedule
 // that silently never happens.
-func unfireable(kind string, reach project.Reach) string {
+func unfireable(kind string, reach specs.Reach) string {
 	if len(schema.EnginesOf(kind)) == 0 {
 		return fmt.Sprintf("this cron fires %s %q, and nothing in this cloud runs a %s",
 			kind, reach.Label, kind)

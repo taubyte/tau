@@ -15,7 +15,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // model_test drives a real HTTP provider, because what this backing does is
@@ -311,12 +311,12 @@ func (v *fixedVault) Secret(context.Context, string, string, string) (string, er
 // dialled is a placement whose Conn goes to one address, recording what it was
 // asked for.
 type dialled struct {
-	at   project.Address
+	at   specs.Address
 	port string
 	to   string
 }
 
-func (d *dialled) Conn(ctx context.Context, at project.Address, port string) (net.Conn, error) {
+func (d *dialled) Conn(ctx context.Context, at specs.Address, port string) (net.Conn, error) {
 	d.at, d.port = at, port
 	return (&net.Dialer{}).DialContext(ctx, "tcp", d.to)
 }

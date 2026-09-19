@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // tls.go answers the handshake when a proxy says it terminates one.
@@ -46,11 +46,11 @@ type Secrets interface {
 }
 
 // terminates says this proxy answers the TLS handshake itself.
-func terminates(r project.Resource) bool { return r.String("tls", "mode") == "terminate" }
+func terminates(r specs.Resource) bool { return r.String("tls", "mode") == "terminate" }
 
 // certificateFor is the certificate this proxy answers with, or an error
 // naming what is missing.
-func (s *Service) certificateFor(ctx context.Context, r project.Resource, b Bind, host string) (*tls.Config, error) {
+func (s *Service) certificateFor(ctx context.Context, r specs.Resource, b Bind, host string) (*tls.Config, error) {
 	if !terminates(r) {
 		return nil, nil
 	}
@@ -80,7 +80,7 @@ func (s *Service) certificateFor(ctx context.Context, r project.Resource, b Bind
 }
 
 // providedCertificate reads the secret the resource names.
-func (s *Service) providedCertificate(ctx context.Context, r project.Resource, b Bind) (tls.Certificate, error) {
+func (s *Service) providedCertificate(ctx context.Context, r specs.Resource, b Bind) (tls.Certificate, error) {
 	id := r.String("certificate", "secret", "name")
 	if id == "" {
 		return tls.Certificate{}, fmt.Errorf("%w: it provides a certificate and names no secret", ErrUnservable)

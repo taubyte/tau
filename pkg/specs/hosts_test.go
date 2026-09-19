@@ -1,11 +1,11 @@
-package project_test
+package specs_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // TestEveryNameTheProjectAnswersOn. This is the table a gateway needs before it
@@ -16,7 +16,7 @@ func TestEveryNameTheProjectAnswersOn(t *testing.T) {
 	hosts := load(t).Hosts()
 	require.NotEmpty(t, hosts)
 
-	by := map[string]project.Host{}
+	by := map[string]specs.Host{}
 	for _, h := range hosts {
 		by[h.Fqdn] = h
 	}
@@ -35,7 +35,7 @@ func TestEveryNameTheProjectAnswersOn(t *testing.T) {
 	// A generated name: what is here is the project's own portion, and it says
 	// the cloud's fqdn is still missing rather than presenting a partial name
 	// as a whole one.
-	var generated []project.Host
+	var generated []specs.Host
 	for _, h := range hosts {
 		if h.Generated {
 			generated = append(generated, h)
@@ -79,7 +79,7 @@ func TestAHostAddressesSomethingThatCanBeLookedUp(t *testing.T) {
 // is a name no request will ever carry, and one that half-matches is worse than
 // one that is absent.
 func TestANameWhoseZoneIsUnknownIsNotReported(t *testing.T) {
-	p, err := project.Load([]byte(`{
+	p, err := specs.Load([]byte(`{
 		"object":{"id":"QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR","gateway":{"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY":{
 			"name":"g",
 			"host":{"kind":"zone","name":"shop","zone":{"in":{"name":"a-zone-not-in-this-project"}}}
@@ -93,7 +93,7 @@ func TestANameWhoseZoneIsUnknownIsNotReported(t *testing.T) {
 // TestAHostInsideANamespaceReportsTheScopeByName, because that is what Resource
 // takes and an id would make the caller do the reverse lookup this already did.
 func TestAHostInsideANamespaceReportsTheScopeByName(t *testing.T) {
-	p, err := project.Load([]byte(`{
+	p, err := specs.Load([]byte(`{
 		"object":{"id":"QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR",
 			"namespace":{"QmWATWQ7fVPP2EFGu71UkfnqhYXDYH6EFTM8XCXWzTHDeS":{"name":"shop","gateway":{"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY":{
 				"name":"inner","host":{"kind":"generated","name":"inner"}}}}}},

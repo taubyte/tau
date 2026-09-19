@@ -64,9 +64,9 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/ratelimit"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/splice"
 )
 
@@ -76,18 +76,18 @@ import (
 // states: which node answers is a routing decision made from live measurements,
 // and half of it here would be half of it in two places.
 type Workers interface {
-	Conn(ctx context.Context, at project.Address, port string) (net.Conn, error)
+	Conn(ctx context.Context, at specs.Address, port string) (net.Conn, error)
 
 	// Direct asks a proxy router where one connection goes, and Shape runs one
 	// chunk of it through a transformer. Both are placed exactly as the
 	// workload is, because both are workloads of the same deployment.
-	Direct(ctx context.Context, at project.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error)
-	Shape(ctx context.Context, at project.Address, s *invoke.Stream) (*invoke.Shaping, error)
+	Direct(ctx context.Context, at specs.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error)
+	Shape(ctx context.Context, at specs.Address, s *invoke.Stream) (*invoke.Shaping, error)
 }
 
 // Projects reads a deployment's compiled project.
 type Projects interface {
-	At(ctx context.Context, project, environment string) (*project.Project, register.Pointer, error)
+	At(ctx context.Context, project, environment string) (*specs.Project, register.Pointer, error)
 }
 
 // Bind is one socket and the proxy resource it serves.
@@ -387,7 +387,7 @@ func (s *Service) Serve(ctx context.Context, b Bind) (Socket, error) {
 }
 
 // resource reads this proxy out of its deployment.
-func (s *Service) resource(ctx context.Context, b Bind) (*project.Project, project.Resource, string, error) {
+func (s *Service) resource(ctx context.Context, b Bind) (*specs.Project, specs.Resource, string, error) {
 	proj, _, err := s.opts.projects.At(ctx, b.Project, b.Environment)
 	if err != nil {
 		return nil, nil, "", err
@@ -486,7 +486,7 @@ func (s *Service) carry(ctx context.Context, from net.Conn, b Bind) {
 	conn := s.connectionOf(r, b, from)
 
 	var (
-		at     project.Address
+		at     specs.Address
 		port   string
 		peeked []byte
 	)
@@ -540,7 +540,7 @@ func (s *Service) carry(ctx context.Context, from net.Conn, b Bind) {
 // connectionOf is what a router or a transformer is told about this
 // connection: a peer address, the name it arrived on, and the handshake if
 // there was one.
-func (s *Service) connectionOf(r project.Resource, b Bind, from net.Conn) *invoke.Connection {
+func (s *Service) connectionOf(r specs.Resource, b Bind, from net.Conn) *invoke.Connection {
 	// THE LABELS COME OFF THE RESOURCE and the NAME off the listener, because
 	// only the listener knows what the cloud's zone made of a generated host.
 	// A proxy served by hand through Accept has no listener entry, and then
@@ -581,17 +581,17 @@ func (s *Service) heldSocket(key string) (Socket, bool) {
 }
 
 // forwardedTo is the workload a `routing: forward` proxy streams to.
-func (s *Service) forwardedTo(r project.Resource, b Bind, scope []string) (project.Address, string, error) {
+func (s *Service) forwardedTo(r specs.Resource, b Bind, scope []string) (specs.Address, string, error) {
 	kind := r.String("forward", "kind")
 	name := r.String("forward", "name")
 	if kind == "" || name == "" {
-		return project.Address{}, "", fmt.Errorf("%w: it forwards to nothing", ErrUnservable)
+		return specs.Address{}, "", fmt.Errorf("%w: it forwards to nothing", ErrUnservable)
 	}
 
-	return project.Address{
+	return specs.Address{
 		Project:     b.Project,
 		Environment: b.Environment,
-		Scope:       project.ScopeOf(scope, r.String("forward", "namespace")),
+		Scope:       specs.ScopeOf(scope, r.String("forward", "namespace")),
 		Kind:        kind,
 		Name:        name,
 	}, r.String("forward", "port"), nil

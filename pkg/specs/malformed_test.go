@@ -1,4 +1,4 @@
-package project_test
+package specs_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // malformed_test.go is the half that cannot come out of a real compile.
@@ -18,24 +18,24 @@ import (
 // request path.
 
 func TestBytesThatAreNotACompiledProject(t *testing.T) {
-	_, err := project.Load([]byte("{not json"))
+	_, err := specs.Load([]byte("{not json"))
 	require.Error(t, err)
 
-	_, err = project.Load([]byte(`{"indexes":{}}`))
-	require.ErrorIs(t, err, project.ErrNoObject)
+	_, err = specs.Load([]byte(`{"indexes":{}}`))
+	require.ErrorIs(t, err, specs.ErrNoObject)
 
-	_, err = project.Load([]byte(`{"object":{"name":"shop"}}`))
-	require.ErrorIs(t, err, project.ErrNoID, "an object with no id cannot be indexed under one")
+	_, err = specs.Load([]byte(`{"object":{"name":"shop"}}`))
+	require.ErrorIs(t, err, specs.ErrNoID, "an object with no id cannot be indexed under one")
 
 	// An object with no index at all loads: it is a project with nothing in it,
 	// which is different from a broken one.
-	p, err := project.Load([]byte(`{"object":{"id":"p1","name":"shop"}}`))
+	p, err := specs.Load([]byte(`{"object":{"id":"p1","name":"shop"}}`))
 	require.NoError(t, err)
 	require.Equal(t, "p1", p.ID())
 	require.Equal(t, "shop", p.Name())
 
 	_, _, err = p.Resource(nil, "function", "anything")
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 }
 
 // TestAnIndexEntryThatNamesNothing. Both halves have to be checked: a link that
@@ -51,11 +51,11 @@ func TestAnIndexEntryThatNamesNothing(t *testing.T) {
 		{"a path into an empty object", `{"object":{"id":"p1"},"indexes":{"projects/p1/function/f/links":["branches/main/projects/p1/function/rid"]}}`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			p, err := project.Load([]byte(c.doc))
+			p, err := specs.Load([]byte(c.doc))
 			require.NoError(t, err)
 
 			_, _, err = p.Resource(nil, "function", "f")
-			require.ErrorIs(t, err, project.ErrBadIndex)
+			require.ErrorIs(t, err, specs.ErrBadIndex)
 		})
 	}
 }
@@ -64,17 +64,17 @@ func TestAnIndexEntryThatNamesNothing(t *testing.T) {
 // and it must not silently become the project root — a lookup there would
 // answer with somebody else's resource.
 func TestAMalformedNamespaceLink(t *testing.T) {
-	p, err := project.Load([]byte(`{"object":{"id":"p1"},"indexes":{"projects/p1/namespace/shop/links":[""]}}`))
+	p, err := specs.Load([]byte(`{"object":{"id":"p1"},"indexes":{"projects/p1/namespace/shop/links":[""]}}`))
 	require.NoError(t, err)
 
 	_, _, err = p.Resource([]string{"shop"}, "function", "f")
-	require.ErrorIs(t, err, project.ErrBadIndex)
+	require.ErrorIs(t, err, specs.ErrBadIndex)
 }
 
 // TestAnIndexEntryWithNoLinks is dropped rather than kept as an empty bucket, so
 // a lookup is a miss instead of an entry that resolves to nothing.
 func TestAnIndexEntryWithNoLinks(t *testing.T) {
-	p, err := project.Load([]byte(`{"object":{"id":"p1"},"indexes":{
+	p, err := specs.Load([]byte(`{"object":{"id":"p1"},"indexes":{
 		"projects/p1/function/f/links": [],
 		"projects/p1/function/g/links": [17],
 		"projects/p1/function/i/links": "not a list",
@@ -90,7 +90,7 @@ func TestAnIndexEntryWithNoLinks(t *testing.T) {
 // TestTheLastLinkIsTheCurrentOne. The bucket accumulates one entry per publish;
 // serving the first would serve whatever was published first, forever.
 func TestTheLastLinkIsTheCurrentOne(t *testing.T) {
-	p, err := project.Load([]byte(`{
+	p, err := specs.Load([]byte(`{
 		"object":{"id":"p1","function":{"old":{"name":"f","source":{"image":"v1"}},"new":{"name":"f","source":{"image":"v2"}}}},
 		"indexes":{"projects/p1/function/f/links":[
 			"branches/main/projects/p1/function/old",
@@ -108,7 +108,7 @@ func TestTheLastLinkIsTheCurrentOne(t *testing.T) {
 // walked without that assumption would be off by one and land on the wrong
 // resource silently.
 func TestABranchWithASlashInItStaysOneSegment(t *testing.T) {
-	p, err := project.Load([]byte(`{
+	p, err := specs.Load([]byte(`{
 		"object":{"id":"p1","function":{"rid":{"name":"f"}}},
 		"indexes":{"projects/p1/function/f/links":["branches/release%2F1.2/projects/p1/function/rid"]}}`))
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestABranchWithASlashInItStaysOneSegment(t *testing.T) {
 }
 
 func TestTheAccessorsRefuseTheWrongType(t *testing.T) {
-	p, err := project.Load([]byte(`{
+	p, err := specs.Load([]byte(`{
 		"object":{"id":"p1","function":{"rid":{
 			"name":"f",
 			"execution":{"memory":128,"timeout":3000000000,"call":"handle"},
@@ -180,7 +180,7 @@ func TestTheAccessorsRefuseTheWrongType(t *testing.T) {
 // returns nothing and silently drops every entry — which cost a gateway its
 // fail-closed transformer before this existed.
 func TestAListIsNotAMap(t *testing.T) {
-	p, err := project.Load([]byte(`{
+	p, err := specs.Load([]byte(`{
 		"object":{"id":"p1","gateway":{"rid":{
 			"name":"g",
 			"transformers":[

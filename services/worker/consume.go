@@ -5,7 +5,7 @@ import (
 	"sort"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -92,7 +92,7 @@ const receiveOp = "receive"
 // from this list is a queue that fills up with nothing anywhere explaining it.
 func (s *Service) Consumers(ctx context.Context) []Consumer {
 	var out []Consumer
-	s.eachDeployment(ctx, func(proj *project.Project, name, environment string) {
+	s.eachDeployment(ctx, func(proj *specs.Project, name, environment string) {
 		eachScope(proj, nil, func(scope []string) {
 			out = append(out, s.consumersIn(ctx, proj, name, environment, scope)...)
 		})
@@ -108,7 +108,7 @@ func (s *Service) Consumers(ctx context.Context) []Consumer {
 }
 
 // consumersIn is every consumer declared in one scope.
-func (s *Service) consumersIn(ctx context.Context, proj *project.Project, name, environment string, scope []string) []Consumer {
+func (s *Service) consumersIn(ctx context.Context, proj *specs.Project, name, environment string, scope []string) []Consumer {
 	var out []Consumer
 
 	kinds, err := proj.Kinds(scope)
@@ -135,13 +135,13 @@ func (s *Service) consumersIn(ctx context.Context, proj *project.Project, name, 
 }
 
 // consumersOf is one resource's receive entries, resolved.
-func (s *Service) consumersOf(ctx context.Context, proj *project.Project, name, environment string, scope []string, kind, resourceName string) []Consumer {
+func (s *Service) consumersOf(ctx context.Context, proj *specs.Project, name, environment string, scope []string, kind, resourceName string) []Consumer {
 	resource, _, err := proj.Resource(scope, kind, resourceName)
 	if err != nil {
 		return nil
 	}
 
-	wanted := map[string]project.Reach{}
+	wanted := map[string]specs.Reach{}
 	for _, reach := range resource.Reaches(syncKind) {
 		if contains(reach.Ops, receiveOp) {
 			wanted[reach.Label] = reach
@@ -194,7 +194,7 @@ func (s *Service) consumersOf(ctx context.Context, proj *project.Project, name, 
 // grants a step's driver is `invoke` on exactly the function the step named, so
 // this is one entry for a step and is a list because nothing about the shape
 // says it has to be.
-func invokedBy(resource project.Resource, name, environment string, scope []string) []Target {
+func invokedBy(resource specs.Resource, name, environment string, scope []string) []Target {
 	var out []Target
 	for _, reach := range resource.Reaches(functionKind) {
 		if !contains(reach.Ops, opInvoke) {
@@ -202,7 +202,7 @@ func invokedBy(resource project.Resource, name, environment string, scope []stri
 		}
 		out = append(out, Target{
 			Project: name, Environment: environment,
-			Scope: project.ScopeOf(scope, reach.Namespace),
+			Scope: specs.ScopeOf(scope, reach.Namespace),
 			Kind:  functionKind, Name: reach.Target(),
 		})
 	}

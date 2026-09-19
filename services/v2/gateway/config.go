@@ -7,7 +7,8 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/register/projects"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // config.go declares what this service is built from. Every interface here is
@@ -30,7 +31,7 @@ type Hosts interface {
 // *services/worker.Client satisfies it for a fixed peer; a placement-aware
 // implementation satisfies it for a fleet.
 type Workers interface {
-	Invoke(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Response, error)
+	Invoke(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Response, error)
 
 	// Transform runs one request through a transformer — a function this
 	// gateway declares that traffic passes through on its way in.
@@ -40,12 +41,12 @@ type Workers interface {
 	// deployment, so the node that is warm for the project is warm for its
 	// transformers; a gateway that ran them itself would need a component tier
 	// on every edge node and would lose that warmth.
-	Transform(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Outcome, error)
+	Transform(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Outcome, error)
 
 	// Route asks a router where one request should go. Same reasons as
 	// Transform: a router is a workload of this deployment and decides per
 	// request, so it runs where the project is warm.
-	Route(ctx context.Context, at project.Address, req *invoke.Request) (*invoke.Routing, error)
+	Route(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Routing, error)
 }
 
 // Buses attaches a caller to an ephemeral bus.
@@ -56,7 +57,7 @@ type Workers interface {
 // node that accepted the connection is the node that serves it.
 type Buses interface {
 	// Attach opens one caller's view of the bus a handle names. The handle is
-	// project.Handle of the resolved resource, which is what a workload's
+	// specs.Handle of the resolved resource, which is what a workload's
 	// grant carries — the two have to agree or a browser and a workload never
 	// meet.
 	Attach(ctx context.Context, handle string) (Attachment, error)
@@ -157,7 +158,7 @@ type Option func(*options) error
 type options struct {
 	hosts   Hosts
 	workers Workers
-	source  project.Registry
+	source  projects.Registry
 	buses   Buses
 	admits  Admits
 	now     func() time.Time
@@ -187,7 +188,7 @@ func WithWorkers(w Workers) Option {
 }
 
 // WithSource is where compiled projects are read from. Required.
-func WithSource(s project.Registry) Option {
+func WithSource(s projects.Registry) Option {
 	return func(o *options) error {
 		if s == nil {
 			return ErrNoSource

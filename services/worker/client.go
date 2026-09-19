@@ -12,8 +12,8 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 
 	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1/workerv1connect"
@@ -47,7 +47,7 @@ func NewClient(h host.Host, p libp2ppeer.ID) (*Client, error) {
 func (c *Client) Close() { c.conn.Close() }
 
 // Invoke runs one request against one resource.
-func (c *Client) Invoke(ctx context.Context, t project.Address, req *invoke.Request) (*invoke.Response, error) {
+func (c *Client) Invoke(ctx context.Context, t specs.Address, req *invoke.Request) (*invoke.Response, error) {
 	if req == nil {
 		req = &invoke.Request{}
 	}
@@ -75,7 +75,7 @@ func (c *Client) Invoke(ctx context.Context, t project.Address, req *invoke.Requ
 
 // Transform runs one request through a transformer on whichever node holds the
 // deployment, and answers with what it decided.
-func (c *Client) Transform(ctx context.Context, t project.Address, req *invoke.Request) (*invoke.Outcome, error) {
+func (c *Client) Transform(ctx context.Context, t specs.Address, req *invoke.Request) (*invoke.Outcome, error) {
 	if req == nil {
 		req = &invoke.Request{}
 	}
@@ -116,7 +116,7 @@ func (c *Client) Transform(ctx context.Context, t project.Address, req *invoke.R
 
 // Route asks a router, on whichever node holds the deployment, where one
 // request should go.
-func (c *Client) Route(ctx context.Context, t project.Address, req *invoke.Request) (*invoke.Routing, error) {
+func (c *Client) Route(ctx context.Context, t specs.Address, req *invoke.Request) (*invoke.Routing, error) {
 	if req == nil {
 		req = &invoke.Request{}
 	}
@@ -157,7 +157,7 @@ func (c *Client) Route(ctx context.Context, t project.Address, req *invoke.Reque
 
 // Direct asks a proxy router, on whichever node holds the deployment, where one
 // connection should go.
-func (c *Client) Direct(ctx context.Context, t project.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
+func (c *Client) Direct(ctx context.Context, t specs.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
 	res, err := c.svc.Direct(ctx, connect.NewRequest(&workerv1.DirectRequest{
 		Target:     targetWire(t),
 		Connection: connectionWire(conn),
@@ -185,7 +185,7 @@ func (c *Client) Direct(ctx context.Context, t project.Address, conn *invoke.Con
 
 // Shape runs one chunk of a connection through a proxy transformer, on
 // whichever node holds the deployment.
-func (c *Client) Shape(ctx context.Context, t project.Address, stream *invoke.Stream) (*invoke.Shaping, error) {
+func (c *Client) Shape(ctx context.Context, t specs.Address, stream *invoke.Stream) (*invoke.Shaping, error) {
 	if stream == nil {
 		stream = &invoke.Stream{}
 	}
@@ -220,7 +220,7 @@ func (c *Client) Shape(ctx context.Context, t project.Address, stream *invoke.St
 	return nil, ErrNoOutcome
 }
 
-func targetWire(t project.Address) *workerv1.Target {
+func targetWire(t specs.Address) *workerv1.Target {
 	return &workerv1.Target{
 		Project: t.Project, Environment: t.Environment,
 		Scope: t.Scope, Kind: t.Kind, Name: t.Name,
@@ -255,10 +255,10 @@ func unwire(err error) error {
 	candidates := map[connect.Code][]error{
 		connect.CodeInvalidArgument:    {ErrNoTarget},
 		connect.CodeInternal:           {ErrNoOutcome},
-		connect.CodeNotFound:           {register.ErrNotPublished, register.ErrNoObject, project.ErrNotFound},
+		connect.CodeNotFound:           {register.ErrNotPublished, register.ErrNoObject, specs.ErrNotFound},
 		connect.CodeFailedPrecondition: {ErrNoRuntime, ErrAmbiguous, ErrNoArtifact, ErrNoSecrets, invoke.ErrNoRuntime},
 		connect.CodeResourceExhausted:  {invoke.ErrAtCapacity},
-		connect.CodeDataLoss:           {register.ErrMalformedPointer, project.ErrBadIndex, project.ErrNoObject, project.ErrNoID},
+		connect.CodeDataLoss:           {register.ErrMalformedPointer, specs.ErrBadIndex, specs.ErrNoObject, specs.ErrNoID},
 	}
 
 	for _, c := range candidates[cerr.Code()] {

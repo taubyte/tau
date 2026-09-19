@@ -12,7 +12,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/mcp"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // mcp.go serves the vocabulary's `mcp` kind.
@@ -182,7 +182,7 @@ func (m *mcpTools) Call(ctx context.Context, name string, arguments json.RawMess
 	res, err := m.service.Invoke(ctx, Target{
 		Project:     m.target.Project,
 		Environment: m.target.Environment,
-		Scope:       project.ScopeOf(nil, granted.Settings[settingInvokeScope]),
+		Scope:       specs.ScopeOf(nil, granted.Settings[settingInvokeScope]),
 		Kind:        mcpToolKind,
 		Name:        granted.Settings[settingInvokeName],
 	}, &invoke.Request{

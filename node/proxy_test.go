@@ -9,8 +9,8 @@ import (
 
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 
-	"github.com/taubyte/tau/pkg/project"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // proxy_test is about the WIRING, not about moving bytes — services/v2/proxy
@@ -95,7 +95,7 @@ func proxying(t *testing.T, compiled []byte) *Node {
 	// register does not enumerate, so what a node can serve is what it is
 	// already serving — this is the touch that makes it so.
 	_, err = n.Worker().Resolve(t.Context(),
-		project.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"})
+		specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"})
 	require.NoError(t, err)
 
 	return n

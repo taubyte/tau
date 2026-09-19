@@ -1,4 +1,4 @@
-package project_test
+package specs_test
 
 import (
 	"context"
@@ -8,13 +8,13 @@ import (
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // loadFixture compiles a fixture AS ONE DEPLOYMENT sees it, which is what the
 // register holds — so what these tests read back is what a consumer reads back.
-func loadFixture(t testing.TB, dir, environment, branch string) *project.Project {
+func loadFixture(t testing.TB, dir, environment, branch string) *specs.Project {
 	t.Helper()
 
 	options := []schema.Option{schema.WithLocal(dir), schema.WithBranch(branch)}
@@ -33,7 +33,7 @@ func loadFixture(t testing.TB, dir, environment, branch string) *project.Project
 	raw, err := json.Marshal(obj.Flat())
 	require.NoError(t, err)
 
-	p, err := project.Load(raw)
+	p, err := specs.Load(raw)
 	require.NoError(t, err)
 	return p
 }

@@ -13,7 +13,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // model.go backs `taubyte:model/inference` on this node.
@@ -106,7 +106,7 @@ func nodeInference(n *Node) *inference {
 
 // modelWorkers opens a connection to one of a workload's named ports.
 type modelWorkers interface {
-	Conn(ctx context.Context, at project.Address, port string) (net.Conn, error)
+	Conn(ctx context.Context, at specs.Address, port string) (net.Conn, error)
 }
 
 // modelSecrets resolves the credential a model resource names. It is the same
@@ -273,15 +273,15 @@ func (i *inference) reach(grant invoke.Grant) (string, *http.Client, error) {
 }
 
 // localWorkload is which workload serves this model, and on which of its ports.
-func localWorkload(grant invoke.Grant) (project.Address, string, error) {
+func localWorkload(grant invoke.Grant) (specs.Address, string, error) {
 	name := grant.Settings["inference/local/name"]
 	if name == "" {
-		return project.Address{}, "", fmt.Errorf("%w: it is served locally and names no workload", ErrNoModelEndpoint)
+		return specs.Address{}, "", fmt.Errorf("%w: it is served locally and names no workload", ErrNoModelEndpoint)
 	}
 
 	projectName, environment, ok := deploymentOf(grant.Handle)
 	if !ok {
-		return project.Address{}, "", fmt.Errorf("node: %q does not name a deployment", grant.Handle)
+		return specs.Address{}, "", fmt.Errorf("node: %q does not name a deployment", grant.Handle)
 	}
 
 	var scope []string
@@ -289,7 +289,7 @@ func localWorkload(grant invoke.Grant) (project.Address, string, error) {
 		scope = strings.Split(joined, "/")
 	}
 
-	return project.Address{
+	return specs.Address{
 		Project:     projectName,
 		Environment: environment,
 		Scope:       scope,
@@ -317,7 +317,7 @@ func pathFor(format string) string {
 
 // deploymentOf splits a handle back into the deployment it belongs to.
 //
-// project.Handle joins a project, an environment and an id with "/", and none
+// specs.Handle joins a project, an environment and an id with "/", and none
 // of the three may contain one — which is what makes this exact rather than a
 // guess.
 func deploymentOf(handle string) (project, environment string, ok bool) {

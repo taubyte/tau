@@ -12,7 +12,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 
 	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
 )
@@ -124,18 +124,18 @@ func TestTheProtocolIsNotV1s(t *testing.T) {
 // Engines(); a kind with two authors the choice, and one that names neither is
 // refused rather than defaulted.
 func TestARuntimeIsNeverGuessed(t *testing.T) {
-	got, err := runtimeOf("function", project.Resource{})
+	got, err := runtimeOf("function", specs.Resource{})
 	require.NoError(t, err)
 	require.Equal(t, "wasm", got)
 
-	got, err = runtimeOf("worker", project.Resource{"runtime": "container"})
+	got, err = runtimeOf("worker", specs.Resource{"runtime": "container"})
 	require.NoError(t, err)
 	require.Equal(t, "container", got, "the resource's own choice wins over the kind's set")
 
-	_, err = runtimeOf("worker", project.Resource{})
+	_, err = runtimeOf("worker", specs.Resource{})
 	require.ErrorIs(t, err, ErrAmbiguous, "worker runs on two tiers and this one says neither")
 
-	_, err = runtimeOf("cache", project.Resource{})
+	_, err = runtimeOf("cache", specs.Resource{})
 	require.ErrorIs(t, err, ErrNoRuntime, "nothing runs a cache")
 }
 
@@ -170,7 +170,7 @@ func TestHeadersSurviveTheRoundTrip(t *testing.T) {
 func TestOnlyRunTimeEnvironmentVariablesAreHandedOver(t *testing.T) {
 	s := &Service{}
 
-	env, err := s.envOf(t.Context(), Target{Name: "api"}, project.Resource{
+	env, err := s.envOf(t.Context(), Target{Name: "api"}, specs.Resource{
 		"variables": map[string]any{
 			"LOG_LEVEL": map[string]any{"as": "env", "at": "run", "value": "info"},
 			"BUILT_AT":  map[string]any{"as": "env", "at": "build", "value": "2026"},
@@ -182,7 +182,7 @@ func TestOnlyRunTimeEnvironmentVariablesAreHandedOver(t *testing.T) {
 
 	// No variables at all is nil rather than an empty map, so a spec with no
 	// environment says so.
-	env, err = s.envOf(t.Context(), Target{Name: "api"}, project.Resource{})
+	env, err = s.envOf(t.Context(), Target{Name: "api"}, specs.Resource{})
 	require.NoError(t, err)
 	require.Nil(t, env)
 }

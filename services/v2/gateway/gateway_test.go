@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // TestTheWholeChain: a Host header arrives, the register says whose it is, the
@@ -33,7 +33,7 @@ func TestTheWholeChain(t *testing.T) {
 
 	seen := h.Workers.seen()
 	require.Len(t, seen, 1)
-	require.Equal(t, project.Address{
+	require.Equal(t, specs.Address{
 		Project: "shop", Environment: "prod", Kind: "agent", Name: "support",
 	}, seen[0].at)
 	require.Equal(t, "POST", seen[0].req.Method)
@@ -84,7 +84,7 @@ func TestTheMethodIsPartOfTheRoute(t *testing.T) {
 func TestAGeneratedNameLosesTheCloudsSegment(t *testing.T) {
 	h := newHarness(t, Config{CloudFqdn: "tau.example.io"})
 
-	p, err := project.Load(compiled(t))
+	p, err := specs.Load(compiled(t))
 	require.NoError(t, err)
 
 	var generated string
@@ -318,7 +318,7 @@ func TestWhatTheWorkerSaysBecomesWhatTheClientIsTold(t *testing.T) {
 		err  error
 		want int
 	}{
-		{project.ErrNotFound, http.StatusNotFound},
+		{specs.ErrNotFound, http.StatusNotFound},
 		{register.ErrNotPublished, http.StatusNotFound},
 		{invoke.ErrAtCapacity, http.StatusServiceUnavailable},
 		{errors.New("a tier that is not registered"), http.StatusBadGateway},
@@ -429,7 +429,7 @@ func TestStatusFor(t *testing.T) {
 		err  error
 		want int
 	}{
-		{project.ErrNotFound, http.StatusNotFound},
+		{specs.ErrNotFound, http.StatusNotFound},
 		{register.ErrNotPublished, http.StatusNotFound},
 		{invoke.ErrAtCapacity, http.StatusServiceUnavailable},
 		{context.DeadlineExceeded, http.StatusGatewayTimeout},
@@ -487,7 +487,7 @@ func TestANameOwnedWithNothingAtIt(t *testing.T) {
 func TestAProxysNameIsNotServedHere(t *testing.T) {
 	h := newHarness(t, Config{CloudFqdn: "tau.example.io"})
 
-	p, err := project.Load(compiled(t))
+	p, err := specs.Load(compiled(t))
 	require.NoError(t, err)
 
 	var proxy string

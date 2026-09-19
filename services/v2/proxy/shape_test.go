@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/v2/proxy"
 )
 
@@ -34,7 +34,7 @@ func newSieving() *sieving {
 	return &sieving{by: map[string]func(*invoke.Stream) (*invoke.Shaping, error){}, last: map[string][]byte{}}
 }
 
-func (s *sieving) shape(at project.Address, st *invoke.Stream) (*invoke.Shaping, error) {
+func (s *sieving) shape(at specs.Address, st *invoke.Stream) (*invoke.Shaping, error) {
 	s.mu.Lock()
 	f, ok := s.by[at.Name]
 	s.saw = append(s.saw, at.Name)

@@ -9,18 +9,18 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // resolve.go turns a name into something the pool can run.
 //
-//	(project, environment)            -> what it runs   [project.Cache]
+//	(project, environment)            -> what it runs   [projects.Cache]
 //	(scope, kind, name)               -> a resource     [an index hit]
 //	resource                          -> an invoke.Spec [read off the vocabulary]
 //
-// THE FIRST STEP IS project.Cache AND NOT A CACHE OF ITS OWN. A gateway does
+// THE FIRST STEP IS projects.Cache AND NOT A CACHE OF ITS OWN. A gateway does
 // exactly the same read on exactly the same request, and two copies of it would
 // be two answers to "how long after a deploy does the old code stop being
 // served" — which is a promise a platform makes once.
@@ -28,7 +28,7 @@ import (
 // Target is what a caller names. It is pkg/project's Address under the name a
 // worker's callers use for it: a gateway names one too, and two spellings of
 // the same five fields is where a caller starts converting between them.
-type Target = project.Address
+type Target = specs.Address
 
 var (
 	ErrNoTarget = errors.New("worker: a target with no project, environment, kind or name names nothing")
@@ -75,7 +75,7 @@ type Secrets interface {
 // expected to differ between an environment and the next — a worker that had
 // captured either at construction would serve a number the author changed and
 // nothing would happen.
-func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *project.Project, r project.Resource, resourceID string) (invoke.Spec, error) {
+func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *specs.Project, r specs.Resource, resourceID string) (invoke.Spec, error) {
 	// A KIND THIS SERVICE ANSWERS ITSELF HAS NEITHER OF THE NEXT TWO, and asking
 	// for them is what made `mcp` unreachable: runtimeOf refuses a kind the
 	// vocabulary gives no engine, and artifactOf then asks the build service for
@@ -169,7 +169,7 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 // the unservable thing is told which and why. Refusing the whole resource would
 // take a function down over one of the things it touches — and the
 // vocabulary's own fixture has exactly that shape.
-func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Grant, error) {
+func reachesOf(t Target, proj *specs.Project, r specs.Resource) ([]invoke.Grant, error) {
 	var out []invoke.Grant
 
 	// EVERY KIND, NOT JUST THE ONES A TIER SERVES. A tier has to be able to see
@@ -186,7 +186,7 @@ func reachesOf(t Target, proj *project.Project, r project.Resource) ([]invoke.Gr
 			grant := invoke.Grant{
 				Kind:     reach.Kind,
 				Label:    reach.Label,
-				Handle:   project.Handle(t.Project, t.Environment, id),
+				Handle:   specs.Handle(t.Project, t.Environment, id),
 				Ops:      reach.Ops,
 				Settings: merged(settingsFor(reach.Kind, reach, target), instanceSettings(target)),
 				Refused:  unservable(reach, target),
@@ -271,7 +271,7 @@ const (
 // container that binds a fixed port — which is every off-the-shelf image — was
 // given an ephemeral port in $PORT and mapped to that same ephemeral number, so
 // the thing it was actually listening on was reachable from nowhere.
-func portsOf(r project.Resource) map[string]int {
+func portsOf(r specs.Resource) map[string]int {
 	declared := r.Sub("ports")
 	if len(declared) == 0 {
 		return nil
@@ -315,7 +315,7 @@ func merged(first, second map[string]string) map[string]string {
 // queue lives INSIDE the workflow, which is a scope of its own, so this is also
 // where a consumer needs the read path to understand a scope that is not a
 // namespace.
-func startedBy(proj *project.Project, t Target, workflow project.Resource, id string, grant *invoke.Grant) error {
+func startedBy(proj *specs.Project, t Target, workflow specs.Resource, id string, grant *invoke.Grant) error {
 	kind := workflow.String("entry", "start", "kind")
 	name := workflow.String("entry", "start", "name")
 	if kind == "" || name == "" {
@@ -344,10 +344,10 @@ func startedBy(proj *project.Project, t Target, workflow project.Resource, id st
 	// queue with pkg/queue's defaults while the DISPATCHER opened the same queue
 	// with what its author wrote — two configurations for one queue, and which
 	// one was in force depended on who got there first.
-	grant.Settings = merged(grant.Settings, syncSettings(project.Reach{}, start))
+	grant.Settings = merged(grant.Settings, syncSettings(specs.Reach{}, start))
 	grant.Settings = merged(grant.Settings, map[string]string{
 		settingStartKind:   kind,
-		settingStartHandle: project.Handle(t.Project, t.Environment, startID),
+		settingStartHandle: specs.Handle(t.Project, t.Environment, startID),
 		settingStartAs:     workflow.String("entry", "start", "as"),
 	})
 	return nil
@@ -372,7 +372,7 @@ const (
 //
 // THE SCOPE IS RESOLVED, NOT COPIED. An omitted namespace means the channel's
 // own scope and then its parents, and a leading "/" ignores the channel
-// entirely — one rule, stated once in project.ScopeOf, and what travels is the
+// entirely — one rule, stated once in specs.ScopeOf, and what travels is the
 // chain it produced rather than the sentence that produced it.
 //
 // A NAME THAT RESOLVES TO NOTHING IS REFUSED HERE rather than at the first
@@ -380,7 +380,7 @@ const (
 // catches a compiled object that did not come from tcc — and refusing the one
 // grant leaves the rest of the workload running, which is the whole reason
 // Grant.Refused exists.
-func servedBy(proj *project.Project, t Target, channel project.Resource, id string, grant *invoke.Grant) {
+func servedBy(proj *specs.Project, t Target, channel specs.Resource, id string, grant *invoke.Grant) {
 	kind := channel.String("serve", "kind")
 	name := channel.String("serve", "name")
 	if kind == "" || name == "" {
@@ -402,7 +402,7 @@ func servedBy(proj *project.Project, t Target, channel project.Resource, id stri
 		return
 	}
 
-	at := project.ScopeOf(scope, channel.String("serve", "namespace"))
+	at := specs.ScopeOf(scope, channel.String("serve", "namespace"))
 	if _, _, err := proj.Resource(at, kind, name); err != nil {
 		grant.Refused = fmt.Sprintf("channel %q is served by %s/%s, which is not in this project: %s", grant.Label, kind, name, err)
 		return
@@ -435,7 +435,7 @@ const (
 // IT IS NOT REFUSED WHEN IT CANNOT BE LOCATED, unlike a channel's server. The
 // grant is already good — proj.Reached resolved it — so a missing location is
 // this record being absent, and the caller answers for that at the call.
-func invokedAt(proj *project.Project, target project.Resource, id string, grant *invoke.Grant) {
+func invokedAt(proj *specs.Project, target specs.Resource, id string, grant *invoke.Grant) {
 	_, scope, _, ok := proj.Locate(id)
 	if !ok {
 		return
@@ -469,7 +469,7 @@ const (
 // Ref() catches it at compile, so this is for a compiled object that did not
 // come from tcc — and a guard nobody can run must not read as a resource nobody
 // guarded.
-func guardedBy(proj *project.Project, t Target, target project.Resource, id string, grant *invoke.Grant) {
+func guardedBy(proj *specs.Project, t Target, target specs.Resource, id string, grant *invoke.Grant) {
 	name := target.String("authorizer", "name")
 	if name == "" {
 		return
@@ -487,7 +487,7 @@ func guardedBy(proj *project.Project, t Target, target project.Resource, id stri
 		return
 	}
 
-	at := project.ScopeOf(scope, target.String("authorizer", "namespace"))
+	at := specs.ScopeOf(scope, target.String("authorizer", "namespace"))
 	guard, _, err := proj.Resource(at, "function", name)
 	if err != nil {
 		grant.Refused = fmt.Sprintf("%s %q is guarded by the function %q, which is not in this project: %s",
@@ -520,7 +520,7 @@ const (
 
 // settingsFor is what the TARGET (and, for a mount, the entry) declared, in the
 // vocabulary's own attribute paths.
-func settingsFor(kind string, reach project.Reach, target project.Resource) map[string]string {
+func settingsFor(kind string, reach specs.Reach, target specs.Resource) map[string]string {
 	switch kind {
 	case cacheKind:
 		return cacheSettings(target)
@@ -547,12 +547,12 @@ func settingsFor(kind string, reach project.Reach, target project.Resource) map[
 }
 
 // localModelScope is the namespace chain holding the workload that serves a
-// locally-served model, in the form project.Address takes.
+// locally-served model, in the form specs.Address takes.
 //
 // IT IS THE MODEL'S OWN SCOPE AND THEN THE DECLARED NAMESPACE, which is what an
 // omitted `namespace:` means everywhere in this vocabulary — the same rule a
 // proxy's forward and a gateway's transformer follow.
-func localModelScope(proj *project.Project, target project.Resource, id string) map[string]string {
+func localModelScope(proj *specs.Project, target specs.Resource, id string) map[string]string {
 	if target.String("inference", "kind") != "local" {
 		return nil
 	}
@@ -562,7 +562,7 @@ func localModelScope(proj *project.Project, target project.Resource, id string) 
 		return nil
 	}
 
-	resolved := project.ScopeOf(scope, target.String("inference", "local", "namespace"))
+	resolved := specs.ScopeOf(scope, target.String("inference", "local", "namespace"))
 	if len(resolved) == 0 {
 		// The project root. An empty value is still a value — the backing has
 		// to tell "the root" from "nobody worked it out".
@@ -586,7 +586,7 @@ const settingLocalScope = "inference/local/scope"
 // THE PARAMETERS TRAVEL BECAUSE THE CALLER MAY NOT SET THEM. `max_tokens` in
 // particular is a ceiling the host clamps a guest's request to, so it has to be
 // where the host can read it rather than where only the backing can.
-func modelSettings(target project.Resource) map[string]string {
+func modelSettings(target specs.Resource) map[string]string {
 	out := map[string]string{}
 
 	for _, field := range []string{"identifier", "format"} {
@@ -650,7 +650,7 @@ func modelSettings(target project.Resource) map[string]string {
 //
 // THE DEAD LETTER IS A REFERENCE and its compiled value is another queue's id,
 // which is what a consumer opens to drain it.
-func syncSettings(reach project.Reach, target project.Resource) map[string]string {
+func syncSettings(reach specs.Reach, target specs.Resource) map[string]string {
 	model := target.String("type")
 	if model == "" {
 		return nil
@@ -719,7 +719,7 @@ func syncSettings(reach project.Reach, target project.Resource) map[string]strin
 // THE TYPE IS THE KEY TO THE REST, exactly as a database's is: `object` and
 // `streaming` each own their block, so the size lives under whichever one the
 // author wrote.
-func storageSettings(target project.Resource) map[string]string {
+func storageSettings(target specs.Resource) map[string]string {
 	model := target.String("type")
 	if model == "" {
 		return nil
@@ -748,7 +748,7 @@ func storageSettings(target project.Resource) map[string]string {
 // name, tls and credential all live under the type's own block — `sql: {engine:
 // postgres, host: …}` — because the engines a type may have are not the same,
 // which is the schema's own reason for putting them there.
-func databaseSettings(target project.Resource) map[string]string {
+func databaseSettings(target specs.Resource) map[string]string {
 	model := target.String("type")
 	if model == "" {
 		return nil
@@ -790,7 +790,7 @@ func databaseSettings(target project.Resource) map[string]string {
 // volumeSettings carries the quota and, from the ENTRY rather than the target,
 // where it appears inside the workload — a mount path is per use, which is why
 // the vocabulary puts it on the access entry.
-func volumeSettings(reach project.Reach, target project.Resource) map[string]string {
+func volumeSettings(reach specs.Reach, target specs.Resource) map[string]string {
 	out := map[string]string{}
 	if quota, ok := target.Int("quota"); ok {
 		out[settingQuota] = strconv.FormatInt(quota, 10)
@@ -814,7 +814,7 @@ func volumeSettings(reach project.Reach, target project.Resource) map[string]str
 // unservable says why this cloud would have to serve a target WEAKER than it
 // was declared, or "" when it would not. Both reasons are one line for an
 // author to change.
-func unservable(reach project.Reach, target project.Resource) string {
+func unservable(reach specs.Reach, target specs.Resource) string {
 	if why := unservableKind(reach, target); why != "" {
 		return why
 	}
@@ -838,7 +838,7 @@ func unservable(reach project.Reach, target project.Resource) string {
 // THE ADMISSION SWITCH IS WHAT SAYS THE BLOCK IS THERE. It is a Captures()
 // attribute, so its presence is the declaration and a target without one holds
 // exactly one instance.
-func instanceSettings(target project.Resource) map[string]string {
+func instanceSettings(target specs.Resource) map[string]string {
 	admission := target.String("instances", "admission")
 	if admission == "" {
 		return nil
@@ -861,7 +861,7 @@ func instanceSettings(target project.Resource) map[string]string {
 
 // unservableKind is what one kind declares that this cloud would have to serve
 // weaker than written.
-func unservableKind(reach project.Reach, target project.Resource) string {
+func unservableKind(reach specs.Reach, target specs.Resource) string {
 	switch reach.Kind {
 	case streamKind:
 		// AN EXTERNAL ENGINE IS A DRIVER AND A RELEASE, not a config value —
@@ -1007,7 +1007,7 @@ const (
 
 // cacheSettings is what the TARGET declared, carried to whatever backs the
 // kind — which has the handle and not the compiled project.
-func cacheSettings(target project.Resource) map[string]string {
+func cacheSettings(target specs.Resource) map[string]string {
 	out := map[string]string{}
 	if ttl, ok := target.Duration("ttl"); ok {
 		out[settingTTL] = ttl.String()
@@ -1038,7 +1038,7 @@ func cacheSettings(target project.Resource) map[string]string {
 //
 // Nothing here is per-environment beyond what the compile already did: this
 // reads the compiled object, so a `mode_preview` is already `mode`.
-func settingsOf(r project.Resource) map[string]string {
+func settingsOf(r specs.Resource) map[string]string {
 	out := map[string]string{}
 
 	if block, ok := r.Map("serve"); ok {
@@ -1078,7 +1078,7 @@ func servedHere(kind string) bool { return kind == mcpKind }
 // of that here would be a second place to add a tier — one of which would be
 // forgotten, and the failure would be a workload that will not start on the
 // tier its config selected.
-func runtimeOf(kind string, r project.Resource) (string, error) {
+func runtimeOf(kind string, r specs.Resource) (string, error) {
 	// A kind with more than one tier authors the choice; `worker` is the one
 	// that does today.
 	if declared := r.String("runtime"); declared != "" {
@@ -1098,7 +1098,7 @@ func runtimeOf(kind string, r project.Resource) (string, error) {
 
 // artifactOf reads what to run out of the resource, or asks the build service
 // when the resource names a source rather than an artifact.
-func (s *Service) artifactOf(ctx context.Context, t Target, r project.Resource, resourceID string) (string, error) {
+func (s *Service) artifactOf(ctx context.Context, t Target, r specs.Resource, resourceID string) (string, error) {
 	// `source/kind` is the vocabulary's own discriminator, so which branch was
 	// taken is read rather than guessed from which field happens to be set.
 	switch r.String("source", "kind") {
@@ -1126,7 +1126,7 @@ func (s *Service) artifactOf(ctx context.Context, t Target, r project.Resource, 
 // BUILD-TIME VARIABLES ARE NOT HERE. `at: build` says the value is baked into
 // the artifact, and handing one to a running workload would be handing it a
 // value that may not be the one it was built with.
-func (s *Service) envOf(ctx context.Context, t Target, r project.Resource) (map[string]string, error) {
+func (s *Service) envOf(ctx context.Context, t Target, r specs.Resource) (map[string]string, error) {
 	variables := r.Sub("variables")
 	if len(variables) == 0 {
 		return nil, nil
@@ -1177,7 +1177,7 @@ func (s *Service) Resolve(ctx context.Context, t Target) (invoke.Spec, error) {
 }
 
 // mcpSettings is what an mcp declares about its listing.
-func mcpSettings(r project.Resource) map[string]string {
+func mcpSettings(r specs.Resource) map[string]string {
 	out := map[string]string{}
 	if scope := r.String("tools", "cache_scope"); scope != "" {
 		out[settingMCPCacheScope] = scope

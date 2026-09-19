@@ -11,8 +11,8 @@ import (
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // dns_test closes the loop the proxy opened: a proxy binds a port the kernel
@@ -52,7 +52,7 @@ func serving(t *testing.T, compiled []byte, hosts ...string) *Node {
 	// A deployment is only visible to what this node SERVES once the worker
 	// holds it, so it is touched here the way a first request would.
 	_, err = n.Worker().Resolve(t.Context(),
-		project.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"})
+		specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"})
 	require.NoError(t, err)
 
 	return n

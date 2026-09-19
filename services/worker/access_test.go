@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/container"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -33,7 +33,7 @@ func cacheGrants(t *testing.T, spec invoke.Spec) map[string]invoke.Grant {
 
 // reachFor is one entry, for the rules checked directly against a target
 // document rather than through the fixture.
-func reachFor(label string) project.Reach { return project.Reach{Kind: cacheKind, Label: label} }
+func reachFor(label string) specs.Reach { return specs.Reach{Kind: cacheKind, Label: label} }
 
 func resolveIn(t *testing.T, h *harness, scope []string, kind, name string) invoke.Spec {
 	t.Helper()
@@ -129,7 +129,7 @@ func TestTheCanonicalFixtureServesOneCacheAndRefusesTheOther(t *testing.T) {
 // raft asked for "nothing is silently discarded"; a CRDT merges
 // concurrent writes last-writer-wins and the loser is gone with no error.
 func TestASingleWriterCacheIsRefusedByName(t *testing.T) {
-	reason := unservable(reachFor("ledger"), project.Resource{"consensus": raftConsensus})
+	reason := unservable(reachFor("ledger"), specs.Resource{"consensus": raftConsensus})
 
 	require.Contains(t, reason, "raft", "it names what was declared")
 	require.Contains(t, reason, "last-writer-wins", "and what it would have got instead")
@@ -140,8 +140,8 @@ func TestASingleWriterCacheIsRefusedByName(t *testing.T) {
 // gossip is eventually consistent and lossy, a CRDT is eventually consistent
 // and not. An author who accepted a dropped entry gets one that arrives.
 func TestAGossipCacheIsServed(t *testing.T) {
-	require.Empty(t, unservable(reachFor("x"), project.Resource{"consensus": "gossip"}))
-	require.Empty(t, unservable(reachFor("x"), project.Resource{"consensus": "crdt"}))
+	require.Empty(t, unservable(reachFor("x"), specs.Resource{"consensus": "gossip"}))
+	require.Empty(t, unservable(reachFor("x"), specs.Resource{"consensus": "crdt"}))
 }
 
 // TestAGuardDoesNotRESCUEAnUnservableTarget. A guarded cache that is also raft
@@ -149,7 +149,7 @@ func TestAGossipCacheIsServed(t *testing.T) {
 // cloud can serve it, and saying "ask tier_check" about a store that would lose
 // the write anyway answers the wrong question.
 func TestAnUnservableTargetIsStillRefusedWhenItIsGuarded(t *testing.T) {
-	both := project.Resource{
+	both := specs.Resource{
 		"consensus": raftConsensus,
 		"authorizer": map[string]any{
 			"name": "tier_check",
@@ -369,8 +369,8 @@ func TestAStreamAccessEntryBecomesAGrant(t *testing.T) {
 func TestAStreamOnAnEngineThisCloudLacksIsRefused(t *testing.T) {
 	for _, engine := range []string{"kafka", "nats"} {
 		reason := unservable(
-			project.Reach{Kind: streamKind, Label: "orders"},
-			project.Resource{"engine": engine},
+			specs.Reach{Kind: streamKind, Label: "orders"},
+			specs.Resource{"engine": engine},
 		)
 		require.Contains(t, reason, engine, "it names which engine")
 		require.Contains(t, reason, "no driver")
@@ -380,12 +380,12 @@ func TestAStreamOnAnEngineThisCloudLacksIsRefused(t *testing.T) {
 
 func TestAStreamOnTheSwarmsOwnEngineIsServed(t *testing.T) {
 	require.Empty(t, unservable(
-		project.Reach{Kind: streamKind, Label: "orders"},
-		project.Resource{"engine": schema.TauEngine()}))
+		specs.Reach{Kind: streamKind, Label: "orders"},
+		specs.Resource{"engine": schema.TauEngine()}))
 
 	// An engine nobody wrote is the swarm's own — the vocabulary's default.
 	require.Empty(t, unservable(
-		project.Reach{Kind: streamKind, Label: "orders"}, project.Resource{}))
+		specs.Reach{Kind: streamKind, Label: "orders"}, specs.Resource{}))
 }
 
 // ── storage ──────────────────────────────────────────────────────────────────
@@ -409,12 +409,12 @@ func TestAStorageAccessEntryCarriesItsTypeAndSize(t *testing.T) {
 // guest holding a whole stream in memory to write it.
 func TestAStreamingStorageIsRefused(t *testing.T) {
 	require.Equal(t, "", unservable(
-		project.Reach{Kind: storageKind, Label: "receipts"},
-		project.Resource{"type": "object"}))
+		specs.Reach{Kind: storageKind, Label: "receipts"},
+		specs.Resource{"type": "object"}))
 
 	why := unservable(
-		project.Reach{Kind: storageKind, Label: "events"},
-		project.Resource{"type": "streaming"})
+		specs.Reach{Kind: storageKind, Label: "events"},
+		specs.Resource{"type": "streaming"})
 	require.Contains(t, why, "streaming")
 	require.Contains(t, why, "object storage")
 }

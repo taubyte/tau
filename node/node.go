@@ -47,7 +47,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/container"
 	"github.com/taubyte/tau/pkg/invoke/static"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/register/projects"
 
 	manet "github.com/multiformats/go-multiaddr/net"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -1011,8 +1011,8 @@ func (n *Node) StreamTopic(handle string) string { return streamTopic(n.cfg.Clou
 type source struct{ node *Node }
 
 var (
-	_ project.Registry = (*source)(nil)
-	_ gateway.Hosts    = (*source)(nil)
+	_ projects.Registry = (*source)(nil)
+	_ gateway.Hosts     = (*source)(nil)
 )
 
 func (s *source) Resolve(ctx context.Context, name, environment string) (pkgregister.Pointer, error) {

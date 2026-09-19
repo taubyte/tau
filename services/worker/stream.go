@@ -13,8 +13,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	"github.com/taubyte/tau/pkg/project"
 	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/splice"
 )
 
@@ -155,7 +155,7 @@ func answer(to net.Conn, msg *workerv1.Opened) error {
 // every node, and walking the fleet to be told so N times is a slower way to
 // reach the same answer.
 func unreachable(err error) bool {
-	return !errors.Is(err, ErrNoTarget) && !errors.Is(err, project.ErrNotFound)
+	return !errors.Is(err, ErrNoTarget) && !errors.Is(err, specs.ErrNotFound)
 }
 
 // Conn resolves a target and opens a connection to one of its ports.
@@ -189,7 +189,7 @@ func (s *Service) Conn(ctx context.Context, t Target, port string) (net.Conn, er
 // client here to hang it on: this protocol is not connect, and building an
 // http.Client to reach something that is not HTTP would be a way to make the
 // two look alike that helps nobody.
-func DialWorkload(ctx context.Context, h host.Host, at libp2ppeer.ID, t project.Address, port string) (net.Conn, error) {
+func DialWorkload(ctx context.Context, h host.Host, at libp2ppeer.ID, t specs.Address, port string) (net.Conn, error) {
 	conn, err := gostream.Dial(ctx, h, at, StreamProtocol)
 	if err != nil {
 		return nil, fmt.Errorf("worker: dialling %s: %w", at, err)

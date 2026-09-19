@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // A CONNECTION CROSSING A REAL libp2p STREAM, between two real hosts. The
@@ -14,8 +14,8 @@ import (
 // what comes back is what the workload wrote — so a header read wrong, a length
 // prefix off by one, or a splice that swallowed the first bytes all fail here.
 
-func dbTarget() project.Address {
-	return project.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"}
+func dbTarget() specs.Address {
+	return specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"}
 }
 
 // TestBytesCrossAStreamToAWorkloadAndBack.
@@ -63,7 +63,7 @@ func TestAMissingTargetIsNotWorthAnotherNode(t *testing.T) {
 	h := newHarness(t)
 
 	_, err := DialWorkload(t.Context(), h.CallerHost, h.ServerHost.ID(),
-		project.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "ghost"}, "pg")
+		specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "ghost"}, "pg")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoConnection)
 	require.NotErrorIs(t, err, ErrUnreachableNode, "another node would say the same thing")

@@ -1,4 +1,4 @@
-package project_test
+package specs_test
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -49,7 +49,7 @@ func tree(t *testing.T, flat map[string]any) []string {
 }
 
 // index is what the runtime-side reader reports, walking the same project.
-func index(t *testing.T, p *project.Project) []string {
+func index(t *testing.T, p *specs.Project) []string {
 	t.Helper()
 
 	var out []string
@@ -85,7 +85,7 @@ func TestTheTreeWalkAndTheIndexWalkAgree(t *testing.T) {
 	var flat map[string]any
 	require.NoError(t, json.Unmarshal(raw, &flat))
 
-	p, err := project.Load(raw)
+	p, err := specs.Load(raw)
 	require.NoError(t, err)
 
 	require.Equal(t, tree(t, flat), index(t, p),

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -53,7 +53,7 @@ type recording struct {
 	err   error
 }
 
-func (r *recording) Invoke(context.Context, project.Address, *invoke.Request) (*invoke.Response, error) {
+func (r *recording) Invoke(context.Context, specs.Address, *invoke.Request) (*invoke.Response, error) {
 	r.mu.Lock()
 	r.calls++
 	err := r.err
@@ -71,8 +71,8 @@ func (r *recording) count() int {
 	return r.calls
 }
 
-func at() project.Address {
-	return project.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
+func at() specs.Address {
+	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
 }
 
 func newWorkers(t *testing.T, router Router, opts ...Option) (*Workers, host.Host) {

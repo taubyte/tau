@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // schedule_test is the cron half of the enumeration, against the vocabulary's
@@ -89,7 +89,7 @@ func TestACronStartsAWorkflow(t *testing.T) {
 // a kind that runs on nothing and is not started either.
 func TestAnUnrunnableTargetIsReported(t *testing.T) {
 	require.Contains(t,
-		unfireable("zone", project.Reach{Kind: "zone", Label: "example_com"}),
+		unfireable("zone", specs.Reach{Kind: "zone", Label: "example_com"}),
 		"nothing in this cloud runs a zone")
 }
 

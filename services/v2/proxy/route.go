@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // route.go decides where one connection goes when a function decides it.
@@ -52,10 +52,10 @@ var ErrUndecided = errors.New("proxy: the router did not decide")
 // directed asks this proxy's router where the connection goes, reading as much
 // of it as the router asks for. It answers with the destination and everything
 // it had to read, which the caller replays to the workload.
-func (s *Service) directed(ctx context.Context, r project.Resource, b Bind, scope []string, conn *invoke.Connection, from net.Conn) (project.Address, string, []byte, error) {
+func (s *Service) directed(ctx context.Context, r specs.Resource, b Bind, scope []string, conn *invoke.Connection, from net.Conn) (specs.Address, string, []byte, error) {
 	at, err := s.routerAt(r, b, scope)
 	if err != nil {
-		return project.Address{}, "", nil, err
+		return specs.Address{}, "", nil, err
 	}
 
 	decide, cancel := context.WithTimeout(ctx, s.cfg.decideTimeout())
@@ -74,18 +74,18 @@ func (s *Service) directed(ctx context.Context, r project.Resource, b Bind, scop
 	for {
 		d, err := s.opts.workers.Direct(decide, at, conn, peeked)
 		if err != nil {
-			return project.Address{}, "", peeked, fmt.Errorf("proxy: asking %s: %w", at.Name, err)
+			return specs.Address{}, "", peeked, fmt.Errorf("proxy: asking %s: %w", at.Name, err)
 		}
 
 		switch {
 		case d.Refused != "":
-			return project.Address{}, "", peeked, fmt.Errorf("%w: %s", ErrUndecided, d.Refused)
+			return specs.Address{}, "", peeked, fmt.Errorf("%w: %s", ErrUndecided, d.Refused)
 
 		case d.To != nil:
-			return project.Address{
+			return specs.Address{
 				Project:     b.Project,
 				Environment: b.Environment,
-				Scope:       project.ScopeOf(scope, d.To.Namespace),
+				Scope:       specs.ScopeOf(scope, d.To.Namespace),
 				Kind:        d.To.Kind,
 				Name:        d.To.Name,
 			}, d.To.Port, peeked, nil
@@ -96,10 +96,10 @@ func (s *Service) directed(ctx context.Context, r project.Resource, b Bind, scop
 		// than a full buffer.
 		want := int(d.More)
 		if want > limit {
-			return project.Address{}, "", peeked, fmt.Errorf("%w: it asked to see %d bytes and may see %d", ErrUndecided, want, limit)
+			return specs.Address{}, "", peeked, fmt.Errorf("%w: it asked to see %d bytes and may see %d", ErrUndecided, want, limit)
 		}
 		if d.Enough(len(peeked)) {
-			return project.Address{}, "", peeked, fmt.Errorf("%w: it asked for %d bytes having already seen %d", ErrUndecided, want, len(peeked))
+			return specs.Address{}, "", peeked, fmt.Errorf("%w: it asked for %d bytes having already seen %d", ErrUndecided, want, len(peeked))
 		}
 
 		n, err := from.Read(buf[:want-len(peeked)])
@@ -111,40 +111,40 @@ func (s *Service) directed(ctx context.Context, r project.Resource, b Bind, scop
 				// greeting is shorter than it guessed still gets an answer.
 				return s.lastWord(decide, at, conn, peeked, b, scope)
 			}
-			return project.Address{}, "", peeked, fmt.Errorf("%w: reading from %s: %w", ErrUndecided, conn.Source, err)
+			return specs.Address{}, "", peeked, fmt.Errorf("%w: reading from %s: %w", ErrUndecided, conn.Source, err)
 		}
 	}
 }
 
 // lastWord asks once more with everything that arrived, and takes no for an
 // answer.
-func (s *Service) lastWord(ctx context.Context, at project.Address, conn *invoke.Connection, peeked []byte, b Bind, scope []string) (project.Address, string, []byte, error) {
+func (s *Service) lastWord(ctx context.Context, at specs.Address, conn *invoke.Connection, peeked []byte, b Bind, scope []string) (specs.Address, string, []byte, error) {
 	d, err := s.opts.workers.Direct(ctx, at, conn, peeked)
 	if err != nil {
-		return project.Address{}, "", peeked, fmt.Errorf("proxy: asking %s: %w", at.Name, err)
+		return specs.Address{}, "", peeked, fmt.Errorf("proxy: asking %s: %w", at.Name, err)
 	}
 	if d.To == nil {
-		return project.Address{}, "", peeked, fmt.Errorf("%w: the connection ended after %d bytes", ErrUndecided, len(peeked))
+		return specs.Address{}, "", peeked, fmt.Errorf("%w: the connection ended after %d bytes", ErrUndecided, len(peeked))
 	}
-	return project.Address{
+	return specs.Address{
 		Project:     b.Project,
 		Environment: b.Environment,
-		Scope:       project.ScopeOf(scope, d.To.Namespace),
+		Scope:       specs.ScopeOf(scope, d.To.Namespace),
 		Kind:        d.To.Kind,
 		Name:        d.To.Name,
 	}, d.To.Port, peeked, nil
 }
 
 // routerAt is where this proxy's router function lives.
-func (s *Service) routerAt(r project.Resource, b Bind, scope []string) (project.Address, error) {
+func (s *Service) routerAt(r specs.Resource, b Bind, scope []string) (specs.Address, error) {
 	name := r.String("router", "name")
 	if name == "" {
-		return project.Address{}, fmt.Errorf("%w: it is router-routed and names no router", ErrUnservable)
+		return specs.Address{}, fmt.Errorf("%w: it is router-routed and names no router", ErrUnservable)
 	}
-	return project.Address{
+	return specs.Address{
 		Project:     b.Project,
 		Environment: b.Environment,
-		Scope:       project.ScopeOf(scope, r.String("router", "namespace")),
+		Scope:       specs.ScopeOf(scope, r.String("router", "namespace")),
 		Kind:        "function",
 		Name:        name,
 	}, nil

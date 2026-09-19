@@ -11,7 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // bus.go attaches a browser to a bus.
@@ -90,8 +90,8 @@ var upgrader = websocket.Upgrader{
 
 // attachable is one bus that answers on a name.
 type attachable struct {
-	host     project.Host
-	resource project.Resource
+	host     specs.Host
+	resource specs.Resource
 
 	// id is the resolved resource id, which is half of the handle. The label
 	// is not enough: three namespaces can each hold a `chat`.
@@ -99,7 +99,7 @@ type attachable struct {
 }
 
 // busesAt is every bus in this project answering on a name.
-func (s *Service) busesAt(p *project.Project, name string) []attachable {
+func (s *Service) busesAt(p *specs.Project, name string) []attachable {
 	var out []attachable
 	for _, h := range p.At(s.lookupName(name)) {
 		if h.Kind != busKind {
@@ -134,7 +134,7 @@ func instanceOf(path string) (string, bool) {
 // THE ADMISSION SWITCH IS WHAT SAYS THE BLOCK IS THERE, which is the
 // vocabulary's own shape: it is a Captures() attribute, so its presence is the
 // declaration.
-func instanceSettings(resource project.Resource) map[string]string {
+func instanceSettings(resource specs.Resource) map[string]string {
 	admission := resource.String("instances", "admission")
 	if admission == "" {
 		return nil
@@ -179,7 +179,7 @@ func (s *Service) attach(w http.ResponseWriter, r *http.Request, billed *crossin
 		return
 	}
 
-	handle := project.Handle(projectName, environment, bus.id)
+	handle := specs.Handle(projectName, environment, bus.id)
 	settings := instanceSettings(bus.resource)
 
 	switch {

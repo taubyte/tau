@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // route_test.go tests the matching directly, because the interesting cases are
@@ -14,8 +14,8 @@ import (
 
 func gw(name string, route map[string]any) candidate {
 	return candidate{
-		host:     project.Host{Kind: "gateway", Name: name},
-		resource: project.Resource{"name": name, "route": route},
+		host:     specs.Host{Kind: "gateway", Name: name},
+		resource: specs.Resource{"name": name, "route": route},
 	}
 }
 
@@ -151,8 +151,8 @@ func TestTwoEquallySpecificRoutesAreStable(t *testing.T) {
 // and it must not be picked as if it had an empty path.
 func TestAGatewayWithNoRouteBlockIsNotACandidate(t *testing.T) {
 	_, found, _ := pick([]candidate{{
-		host:     project.Host{Kind: "gateway", Name: "routed"},
-		resource: project.Resource{"name": "routed", "routing": "router"},
+		host:     specs.Host{Kind: "gateway", Name: "routed"},
+		resource: specs.Resource{"name": "routed", "routing": "router"},
 	}}, "/anything", "GET")
 	require.False(t, found)
 }
@@ -185,8 +185,8 @@ func TestStripPrefix(t *testing.T) {
 // TestTheHandlersScopeIsItsOwnWhenItNamesOne, and the gateway's otherwise.
 func TestTheHandlersScope(t *testing.T) {
 	inNamespace := candidate{
-		host: project.Host{Kind: "gateway", Name: "g", Scope: []string{"shop"}},
-		resource: project.Resource{"name": "g", "route": map[string]any{
+		host: specs.Host{Kind: "gateway", Name: "g", Scope: []string{"shop"}},
+		resource: specs.Resource{"name": "g", "route": map[string]any{
 			"path": "/", "handler": handler("function", "notify"),
 		}},
 	}
@@ -196,8 +196,8 @@ func TestTheHandlersScope(t *testing.T) {
 		"the gateway's own scope, because the handler named none")
 
 	elsewhere := candidate{
-		host: project.Host{Kind: "gateway", Name: "g", Scope: []string{"shop"}},
-		resource: project.Resource{"name": "g", "route": map[string]any{
+		host: specs.Host{Kind: "gateway", Name: "g", Scope: []string{"shop"}},
+		resource: specs.Resource{"name": "g", "route": map[string]any{
 			"path": "/", "handler": map[string]any{"kind": "function", "name": "invoice", "namespace": "/billing"},
 		}},
 	}

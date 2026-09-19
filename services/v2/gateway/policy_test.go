@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/ratelimit"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // TestTheRateLimitRefillsAtTheRateTheAuthorWrote, and is capped at the burst.
@@ -110,7 +110,7 @@ func TestRetryAfterIsAWholeSecondAtLeast(t *testing.T) {
 // name is not knowable when the config is written, so an author cannot put it
 // in the origins list.
 func TestAllowSelf(t *testing.T) {
-	gateway := project.Resource{"cors": map[string]any{"allow_self": true}}
+	gateway := specs.Resource{"cors": map[string]any{"allow_self": true}}
 
 	for _, origin := range []string{"https://gen.tau.example.io", "http://gen.tau.example.io"} {
 		w := httptest.NewRecorder()
@@ -135,7 +135,7 @@ func TestAllowSelf(t *testing.T) {
 }
 
 func TestCorsMethodsAreEchoedWhenDeclared(t *testing.T) {
-	gateway := project.Resource{"cors": map[string]any{
+	gateway := specs.Resource{"cors": map[string]any{
 		"origins": []any{"https://shop.example.com"},
 		"methods": []any{"GET", "POST"},
 	}}

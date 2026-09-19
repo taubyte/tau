@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // walk.go is the one traversal three questions are asked through: what this
@@ -28,7 +28,7 @@ import (
 // A DEPLOYMENT WHOSE POINTER IS HELD AND WHOSE OBJECT IS NOT IS SKIPPED. It
 // moved under us, and the next pass is the retry — there is nothing to report
 // about a project this node cannot read.
-func (s *Service) eachDeployment(ctx context.Context, visit func(proj *project.Project, name, environment string)) {
+func (s *Service) eachDeployment(ctx context.Context, visit func(proj *specs.Project, name, environment string)) {
 	for _, held := range s.projects.Environments() {
 		name, environment, ok := splitDeployment(held)
 		if !ok {
@@ -47,7 +47,7 @@ func (s *Service) eachDeployment(ctx context.Context, visit func(proj *project.P
 // EVERY SCOPE AND NOT ONLY EVERY NAMESPACE. A kind that lowers becomes a
 // container of what it produced — a workflow holds its steps' queues and
 // drivers — so a walk that asked for namespaces missed all of them.
-func eachScope(proj *project.Project, scope []string, visit func(scope []string)) {
+func eachScope(proj *specs.Project, scope []string, visit func(scope []string)) {
 	visit(scope)
 
 	scopes, err := proj.Scopes(scope)
@@ -81,7 +81,7 @@ type Proxy struct {
 // rather than the service.
 func (s *Service) Proxies(ctx context.Context) []Proxy {
 	var out []Proxy
-	s.eachDeployment(ctx, func(proj *project.Project, name, environment string) {
+	s.eachDeployment(ctx, func(proj *specs.Project, name, environment string) {
 		eachScope(proj, nil, func(scope []string) {
 			names, err := proj.Names(scope, proxyKind)
 			if err != nil {
@@ -115,6 +115,6 @@ func (p Proxy) where() string {
 // two caches that can disagree about which revision of one project is current,
 // which for a listener means forwarding to a workload the config no longer
 // names.
-func (s *Service) At(ctx context.Context, name, environment string) (*project.Project, register.Pointer, error) {
+func (s *Service) At(ctx context.Context, name, environment string) (*specs.Project, register.Pointer, error) {
 	return s.projects.At(ctx, name, environment)
 }

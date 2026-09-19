@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // route.go decides which gateway resource serves a request, and where it goes.
@@ -18,8 +18,8 @@ import (
 
 // candidate is one gateway resource that answers on the requested name.
 type candidate struct {
-	host     project.Host
-	resource project.Resource
+	host     specs.Host
+	resource specs.Resource
 }
 
 // match is the winning route, decomposed.
@@ -32,7 +32,7 @@ type match struct {
 	Strip bool
 
 	// Handler is what serves it.
-	Handler project.Resource
+	Handler specs.Resource
 }
 
 // pick chooses the route that serves this request.
@@ -185,12 +185,12 @@ func (m match) stripped(path string) string {
 // address is where the request goes: the handler's kind and name, in the scope
 // the route named — the handler's own `namespace`, or the gateway's if it said
 // nothing.
-func (m match) address(projectName, environment string) project.Address {
+func (m match) address(projectName, environment string) specs.Address {
 	scope := m.host.Scope
 	if declared := m.Handler.String("namespace"); declared != "" {
 		scope = splitScope(declared)
 	}
-	return project.Address{
+	return specs.Address{
 		Project:     projectName,
 		Environment: environment,
 		Scope:       scope,

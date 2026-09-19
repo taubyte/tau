@@ -1,4 +1,4 @@
-package project_test
+package specs_test
 
 import (
 	"testing"
@@ -6,21 +6,21 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // EVERY TEST HERE READS THE VOCABULARY'S OWN FIXTURE, compiled. What the access
 // block means is decided by the compiler, and a hand-written map would be this
 // package's idea of the shape rather than the shape.
 
-func basic(t *testing.T) *project.Project {
+func basic(t *testing.T) *specs.Project {
 	t.Helper()
 	return loadFixture(t, basicFixture, "prod", "main")
 }
 
 // invoice is the fixture's own worked example: it reads a cache and writes the
 // books, from inside a namespace.
-func invoice(t *testing.T) (project.Resource, []string) {
+func invoice(t *testing.T) (specs.Resource, []string) {
 	t.Helper()
 
 	r, _, err := basic(t).Resource([]string{"billing"}, "function", "invoice")
@@ -153,10 +153,10 @@ func TestAnOmittedNamespaceResolvesOutward(t *testing.T) {
 func TestAReachThatResolvesToNothingSaysWhichLabel(t *testing.T) {
 	p := basic(t)
 
-	_, _, err := p.Reached(nil, project.Reach{
+	_, _, err := p.Reached(nil, specs.Reach{
 		Kind: "cache", Label: "nope", Ops: []string{"get"},
 	})
-	require.ErrorIs(t, err, project.ErrNotFound)
+	require.ErrorIs(t, err, specs.ErrNotFound)
 	require.ErrorContains(t, err, `cache "nope"`)
 }
 
@@ -165,7 +165,7 @@ func TestAReachThatResolvesToNothingSaysWhichLabel(t *testing.T) {
 func TestAnExplicitNameIsWhatIsLookedUp(t *testing.T) {
 	p := basic(t)
 
-	_, id, err := p.Reached(nil, project.Reach{
+	_, id, err := p.Reached(nil, specs.Reach{
 		Kind: "cache", Label: "whatever-i-call-it", Name: "orders", Ops: []string{"get"},
 	})
 	require.NoError(t, err)
@@ -176,7 +176,7 @@ func TestAnExplicitNameIsWhatIsLookedUp(t *testing.T) {
 // fixture does not exercise the optional three — and a field that is dropped
 // silently is a per-use modifier nobody can set.
 func TestAnEntryCarriesItsNameNamespaceAndTimeout(t *testing.T) {
-	r := project.Resource{
+	r := specs.Resource{
 		"cache": map[string]any{
 			"books": map[string]any{
 				"name":      "ledger",

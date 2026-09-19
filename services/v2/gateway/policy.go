@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // policy.go is what a gateway does at the name, before and after the route:
@@ -21,7 +21,7 @@ import (
 // THE ORIGIN IS ECHOED, NEVER WILDCARDED. `Access-Control-Allow-Origin: *`
 // cannot carry credentials and is a different policy from the list an author
 // wrote; echoing the one that matched says exactly what the config says.
-func cors(w http.ResponseWriter, r *http.Request, gateway project.Resource, self string) {
+func cors(w http.ResponseWriter, r *http.Request, gateway specs.Resource, self string) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return

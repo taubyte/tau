@@ -4,7 +4,7 @@ import (
 	"net"
 	"net/netip"
 
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // limits.go is what one source may open, and how fast.
@@ -42,7 +42,7 @@ type limits struct {
 	per        string
 }
 
-func limitsOf(r project.Resource) limits {
+func limitsOf(r specs.Resource) limits {
 	value := func(path ...string) int {
 		n, ok := r.Int(path...)
 		if !ok || n < 0 {

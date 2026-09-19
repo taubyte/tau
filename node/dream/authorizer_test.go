@@ -17,8 +17,8 @@ import (
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // THE ONLY PLACE BOTH HALVES ARE REAL. Everything else about an authorizer is
@@ -48,8 +48,8 @@ const (
 	guardedProject = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
 )
 
-func guardedTarget() project.Address {
-	return project.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "reacher"}
+func guardedTarget() specs.Address {
+	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "reacher"}
 }
 
 // withGuardedCaches is one guest, one authorizer and three caches it guards.

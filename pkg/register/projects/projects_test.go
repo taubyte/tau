@@ -1,4 +1,4 @@
-package project_test
+package projects_test
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/register/projects"
 )
 
 // source is a register with a tally and a switch, so a test can say how many
@@ -117,7 +117,7 @@ func TestACompiledProjectIsFetchedOnce(t *testing.T) {
 	src := newSource(t)
 	src.publish(t, 1, object(32))
 
-	c, err := project.NewCache(src)
+	c, err := projects.NewCache(src)
 	require.NoError(t, err)
 
 	for range 5 {
@@ -139,7 +139,7 @@ func TestADeployTakesEffectWhenTheBudgetIsSpent(t *testing.T) {
 	src.publish(t, 1, object(32))
 
 	now := &clock{at: time.Unix(1_700_000_000, 0)}
-	c, err := project.NewCache(src, project.WithTTL(5*time.Second), project.WithClock(now.Now))
+	c, err := projects.NewCache(src, projects.WithTTL(5*time.Second), projects.WithClock(now.Now))
 	require.NoError(t, err)
 
 	_, first, err := c.At(t.Context(), "shop", "prod")
@@ -170,7 +170,7 @@ func TestOneFetchPerObjectUnderLoad(t *testing.T) {
 	src.publish(t, 1, object(32))
 	src.slow = make(chan struct{})
 
-	c, err := project.NewCache(src)
+	c, err := projects.NewCache(src)
 	require.NoError(t, err)
 
 	done := make(chan error, 16)
@@ -199,7 +199,7 @@ func TestTheCacheIsBounded(t *testing.T) {
 	src := newSource(t)
 	now := &clock{at: time.Unix(1_700_000_000, 0)}
 
-	c, err := project.NewCache(src, project.WithMax(2), project.WithTTL(time.Nanosecond), project.WithClock(now.Now))
+	c, err := projects.NewCache(src, projects.WithMax(2), projects.WithTTL(time.Nanosecond), projects.WithClock(now.Now))
 	require.NoError(t, err)
 
 	for revision := range 5 {
@@ -221,7 +221,7 @@ func TestAFailedLoadIsNotRemembered(t *testing.T) {
 	src.publish(t, 1, object(32))
 	src.breakIt(true)
 
-	c, err := project.NewCache(src)
+	c, err := projects.NewCache(src)
 	require.NoError(t, err)
 
 	_, _, err = c.At(t.Context(), "shop", "prod")
@@ -237,7 +237,7 @@ func TestAFailedLoadIsNotRemembered(t *testing.T) {
 
 func TestAnUnpublishedEnvironmentIsNotCached(t *testing.T) {
 	src := newSource(t)
-	c, err := project.NewCache(src)
+	c, err := projects.NewCache(src)
 	require.NoError(t, err)
 
 	_, _, err = c.At(t.Context(), "shop", "prod")
@@ -254,7 +254,7 @@ func TestBytesThatDoNotLoadAreReported(t *testing.T) {
 	src := newSource(t)
 	src.publish(t, 1, []byte("{not a compiled project"))
 
-	c, err := project.NewCache(src)
+	c, err := projects.NewCache(src)
 	require.NoError(t, err)
 
 	_, _, err = c.At(t.Context(), "shop", "prod")
@@ -263,22 +263,22 @@ func TestBytesThatDoNotLoadAreReported(t *testing.T) {
 }
 
 func TestTheCacheRefusesNonsense(t *testing.T) {
-	_, err := project.NewCache(nil)
-	require.ErrorIs(t, err, project.ErrNoRegistry)
+	_, err := projects.NewCache(nil)
+	require.ErrorIs(t, err, projects.ErrNoRegistry)
 
 	src := newSource(t)
-	for _, opt := range []project.CacheOption{
-		project.WithTTL(-time.Second),
-		project.WithMax(0),
-		project.WithClock(nil),
+	for _, opt := range []projects.CacheOption{
+		projects.WithTTL(-time.Second),
+		projects.WithMax(0),
+		projects.WithClock(nil),
 	} {
-		_, err := project.NewCache(src, opt)
+		_, err := projects.NewCache(src, opt)
 		require.Error(t, err)
 	}
 
 	// A zero TTL is legal and means "ask every time", which is a real choice
 	// for a node that must never serve replaced code.
-	c, err := project.NewCache(src, project.WithTTL(0))
+	c, err := projects.NewCache(src, projects.WithTTL(0))
 	require.NoError(t, err)
 
 	src.publish(t, 1, object(32))

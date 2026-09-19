@@ -1,4 +1,4 @@
-package project
+package projects
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // cache.go keeps compiled projects, and it is here rather than in each consumer
@@ -122,7 +123,7 @@ type pointerEntry struct {
 // want it at the same instant.
 type projectEntry struct {
 	ready chan struct{}
-	proj  *Project
+	proj  *specs.Project
 	err   error
 }
 
@@ -148,7 +149,7 @@ func NewCache(registry Registry, opts ...CacheOption) (*Cache, error) {
 }
 
 // At is what an environment currently runs.
-func (c *Cache) At(ctx context.Context, project, environment string) (*Project, register.Pointer, error) {
+func (c *Cache) At(ctx context.Context, project, environment string) (*specs.Project, register.Pointer, error) {
 	pointer, err := c.pointer(ctx, project, environment)
 	if err != nil {
 		return nil, register.Pointer{}, err
@@ -191,7 +192,7 @@ func (c *Cache) pointer(ctx context.Context, project, environment string) (regis
 	return p, nil
 }
 
-func (c *Cache) object(ctx context.Context, id register.ObjectID) (*Project, error) {
+func (c *Cache) object(ctx context.Context, id register.ObjectID) (*specs.Project, error) {
 	c.mu.Lock()
 	if entry, ok := c.projects[id]; ok {
 		c.touch(id)
@@ -207,7 +208,7 @@ func (c *Cache) object(ctx context.Context, id register.ObjectID) (*Project, err
 
 	compiled, err := c.registry.Object(ctx, id)
 	if err == nil {
-		entry.proj, err = Load(compiled)
+		entry.proj, err = specs.Load(compiled)
 	}
 	entry.err = err
 	close(entry.ready)

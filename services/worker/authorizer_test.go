@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/project"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // The guard resolution, against hand-built projects.
@@ -31,7 +31,7 @@ const (
 // guardedProject is one cache guarded by `authorizer`, plus a second cache one
 // namespace down guarded by the SAME name with no namespace written — which is
 // what proves the walk goes outward from the target.
-func guardedProject(t *testing.T, guard map[string]any) *project.Project {
+func guardedProject(t *testing.T, guard map[string]any) *specs.Project {
 	t.Helper()
 
 	doc := map[string]any{
@@ -83,12 +83,12 @@ func guardedProject(t *testing.T, guard map[string]any) *project.Project {
 
 	raw, err := json.Marshal(doc)
 	require.NoError(t, err)
-	proj, err := project.Load(raw)
+	proj, err := specs.Load(raw)
 	require.NoError(t, err)
 	return proj
 }
 
-func guardOf(t *testing.T, proj *project.Project, scope []string, name, id string) invoke.Grant {
+func guardOf(t *testing.T, proj *specs.Project, scope []string, name, id string) invoke.Grant {
 	t.Helper()
 
 	target, _, err := proj.Resource(scope, "cache", name)
