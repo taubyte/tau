@@ -3,6 +3,8 @@ package schema
 import (
 	"sort"
 	"strings"
+
+	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // WHAT RESOURCES A COMPILED PROJECT HOLDS, and where each one lives.
@@ -90,6 +92,25 @@ func Scopes(obj map[string]any) []Instance {
 				if !ok {
 					continue
 				}
+
+				// ONE KEY, TWO THINGS — and this is the half that was guessing.
+				// An entry filed under a kind inside a resource is either a
+				// resource the container HOLDS or something that resource
+				// declares for ITSELF, keyed by the label of what it reaches.
+				// collect() has asked HeldResource since it was written; this
+				// walk asked only whether the entry had a `name`, so a
+				// container-kind access entry carrying the optional `name`
+				// override was reported as a nested scope — with the access
+				// LABEL as its id.
+				//
+				// It mattered beyond tidiness: ScopeKinds() then mapped a path
+				// that does not exist to a kind, and pkg/project reads the index
+				// and never saw it. Two readers of one compiled object,
+				// answering differently about what the project contains.
+				if !interp.HeldResource(kindRootNode(), group, id) {
+					continue
+				}
+
 				name, _ := res["name"].(string)
 				if name == "" {
 					continue

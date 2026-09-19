@@ -16,25 +16,35 @@ import (
 // schema declares them. If somebody adds a fifth to the vocabulary, this fails
 // rather than the new type silently having no seam.
 func TestTheTypesAreTheVocabularysTypes(t *testing.T) {
-	// The vocabulary spells them inside the database kind's `type` matcher. This
-	// reads the compiled schema rather than a list written twice.
-	var declared []string
-	for _, name := range v2.Kinds() {
-		if name != "database" {
-			continue
-		}
-		declared = append(declared, "database")
+	// IT USED TO COMPARE THIS PACKAGE'S LIST TO A COPY OF THIS PACKAGE'S LIST.
+	// The old body checked that `Kinds()` still contains "database", that each
+	// type is lowercase, and that `Types()` equals a hand-written
+	// `[]Type{Document, KV, SQL, Vector}` — three assertions, none of which
+	// reads the set the vocabulary declares. A fifth data model would have left
+	// it green, which is the opposite of what the doc above it promises.
+	//
+	// DatabaseEngines IS THAT SET, keyed by model, and it is exported for
+	// exactly this: "whatever has to answer 'can this cloud open one of those'
+	// must be asking the same question the compiler answers".
+	declared := map[string]bool{}
+	for model := range v2.DatabaseEngines() {
+		declared[model] = true
 	}
-	require.NotEmpty(t, declared, "the vocabulary still has a database kind")
+	require.NotEmpty(t, declared, "the vocabulary declares no data models at all")
 
-	// Every type this package knows must be one the vocabulary would accept as
-	// a block name on that kind.
+	known := map[string]bool{}
 	for _, ty := range Types() {
-		require.NotEmpty(t, string(ty))
+		require.True(t, declared[string(ty)],
+			"this package names a %q data model and the vocabulary does not — a seam for something nobody can write", ty)
 		require.Equal(t, strings.ToLower(string(ty)), string(ty),
 			"a type is spelled as the vocabulary spells it")
+		known[string(ty)] = true
 	}
-	require.Equal(t, []Type{Document, KV, SQL, Vector}, Types())
+
+	for model := range declared {
+		require.True(t, known[model],
+			"the vocabulary declares a %q data model and this package has no type for it, so nothing here can open one", model)
+	}
 }
 
 // ─────────────────────────────── fake engines ───────────────────────────────

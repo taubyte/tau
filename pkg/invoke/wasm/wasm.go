@@ -121,6 +121,17 @@ var (
 	}
 )
 
+// startableWorlds is what Start can bring up, sorted — for a message that has to
+// name them without keeping a second copy of the set.
+func startableWorlds() []string {
+	out := make([]string, 0, len(pooledWorlds))
+	for world := range pooledWorlds {
+		out = append(out, world)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // httpWorld is the standard world's export. A component exporting it is driven
 // as an HTTP handler; anything else is called by name.
 //
@@ -148,8 +159,15 @@ var (
 	ErrNoMounts = errors.New("wasm: a component is given no filesystem, and the workload declared a mount")
 
 	// ErrUnsupportedWorld is a component built against a host interface this
-	// tier does not serve.
-	ErrUnsupportedWorld = errors.New("wasm: this tier runs the handler interface and nothing else yet")
+	// tier does not start.
+	//
+	// ITS TEXT SAID "runs the handler interface and nothing else yet" while
+	// pooledWorlds held five. A message that names a capability set goes stale
+	// the moment the set grows, and this one had — so an author who declared a
+	// world Start does not pool was told this tier runs only handlers, which is
+	// false and sends them to change the wrong thing. The set is named at the
+	// call site now, from the set itself.
+	ErrUnsupportedWorld = errors.New("wasm: this tier does not start that host interface")
 
 	// ErrNotAHandler is a component whose export does not have the shape
 	// wit/handler.wit declares. It is reported against the EXPORT rather than
@@ -310,7 +328,8 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		world = WorldHandler
 	}
 	if !pooledWorlds[world] {
-		return nil, fmt.Errorf("%w: %s is %q, which is not started", ErrUnsupportedWorld, spec.Name, world)
+		return nil, fmt.Errorf("%w: %s is %q, and this tier starts %s",
+			ErrUnsupportedWorld, spec.Name, world, strings.Join(startableWorlds(), ", "))
 	}
 
 	instance, runtime, err := r.instantiate(ctx, spec, world)
