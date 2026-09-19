@@ -5,8 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/taubyte/tau/pkg/register/projects"
+	"github.com/taubyte/tau/pkg/register"
 )
 
 func TestNewRefusesWhatItCannotWorkWithout(t *testing.T) {
@@ -85,8 +84,8 @@ func TestThisIsThePublicService(t *testing.T) {
 // three interfaces and nothing else stands up.
 func TestAWorkersInterfaceIsAllItNeeds(t *testing.T) {
 	var _ Workers = (*recordingWorkers)(nil)
-	var _ projects.Registry = (*fakeSource)(nil)
+	var _ register.Registry = (*fakeSource)(nil)
 	var _ Hosts = brokenHosts{}
 }
 
-type fakeSource struct{ projects.Registry }
+type fakeSource struct{ register.Registry }

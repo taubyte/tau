@@ -1,16 +1,12 @@
-package projects
+package register
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/pkg/specs"
 )
 
 // cache.go keeps compiled projects, and it is here rather than in each consumer
@@ -31,15 +27,31 @@ import (
 // and no publish.
 //
 // A CONSUMER OF THIS CACHE CANNOT PUBLISH, and the interface is where that is
-// enforced rather than in a comment. Both *register.Register and a register
+// enforced rather than in a comment. Both *Register and a register
 // client satisfy it, so a node that runs both services wires them together with
 // no network and nothing can tell.
 type Registry interface {
-	Resolve(ctx context.Context, project, environment string) (register.Pointer, error)
-	Object(ctx context.Context, id register.ObjectID) ([]byte, error)
+	Resolve(ctx context.Context, project, environment string) (Pointer, error)
+	Object(ctx context.Context, id ObjectID) ([]byte, error)
 }
 
+// Deployment is a project and one of its environments — the pair a pointer is
+// resolved by, and the key this cache holds one under.
+//
+// IT IS A TYPE BECAUSE IT IS A PAIR. Joined into a string it has to be taken
+// apart again by whoever reads it, and where that seam existed the two ends
+// disagreed about the separator.
+type Deployment struct {
+	Project     string
+	Environment string
+}
+
+// String is "project/environment", for a log line and for a name a human types.
+// Nothing parses it back.
+func (d Deployment) String() string { return d.Project + "/" + d.Environment }
+
 var (
+	ErrNoParse    = errors.New("register: a cache with no way to read an object cannot hold one")
 	ErrNoRegistry = errors.New("project: a cache with nothing to read from has nothing to answer")
 
 	// DefaultTTL is how long a resolved pointer is trusted. It IS the deploy
@@ -97,22 +109,27 @@ func WithClock(now func() time.Time) CacheOption {
 }
 
 // Cache reads compiled projects and keeps them.
-type Cache struct {
+type Cache[T any] struct {
 	registry Registry
-	opts     cacheOptions
+
+	// parse turns an object's bytes into whatever the caller keeps. It is the
+	// only thing about this cache that is not generic: everything else is a
+	// pointer with a deadline and a content address with a budget.
+	parse func([]byte) (T, error)
+	opts  cacheOptions
 
 	// mu guards both maps. It is a plain mutex rather than an RWMutex: every
 	// path that reads also writes — the pointer path refreshes, the project
 	// path touches the LRU — so a read lock would be taken and immediately
 	// upgraded.
 	mu       sync.Mutex
-	pointers map[string]pointerEntry
-	projects map[register.ObjectID]*projectEntry
-	lru      []register.ObjectID
+	pointers map[Deployment]pointerEntry
+	objects  map[ObjectID]*objectEntry[T]
+	lru      []ObjectID
 }
 
 type pointerEntry struct {
-	pointer register.Pointer
+	pointer Pointer
 	at      time.Time
 }
 
@@ -121,16 +138,19 @@ type pointerEntry struct {
 // for one fetch rather than each starting their own — the fetch is a whole
 // compiled project over the wire, and a deploy makes every in-flight request
 // want it at the same instant.
-type projectEntry struct {
+type objectEntry[T any] struct {
 	ready chan struct{}
-	proj  *specs.Project
+	proj  T
 	err   error
 }
 
 // NewCache builds a cache over a registry.
-func NewCache(registry Registry, opts ...CacheOption) (*Cache, error) {
+func NewCache[T any](registry Registry, parse func([]byte) (T, error), opts ...CacheOption) (*Cache[T], error) {
 	if registry == nil {
 		return nil, ErrNoRegistry
+	}
+	if parse == nil {
+		return nil, ErrNoParse
 	}
 
 	o := cacheOptions{ttl: DefaultTTL, max: DefaultMax, now: time.Now}
@@ -140,75 +160,77 @@ func NewCache(registry Registry, opts ...CacheOption) (*Cache, error) {
 		}
 	}
 
-	return &Cache{
+	return &Cache[T]{
 		registry: registry,
+		parse:    parse,
 		opts:     o,
-		pointers: map[string]pointerEntry{},
-		projects: map[register.ObjectID]*projectEntry{},
+		pointers: map[Deployment]pointerEntry{},
+		objects:  map[ObjectID]*objectEntry[T]{},
 	}, nil
 }
 
 // At is what an environment currently runs.
-func (c *Cache) At(ctx context.Context, project, environment string) (*specs.Project, register.Pointer, error) {
-	pointer, err := c.pointer(ctx, project, environment)
+func (c *Cache[T]) At(ctx context.Context, at Deployment) (T, Pointer, error) {
+	pointer, err := c.pointer(ctx, at)
 	if err != nil {
-		return nil, register.Pointer{}, err
+		var zero T
+		return zero, Pointer{}, err
 	}
 	p, err := c.object(ctx, pointer.Object)
 	if err != nil {
-		return nil, register.Pointer{}, err
+		var zero T
+		return zero, Pointer{}, err
 	}
 	return p, pointer, nil
 }
 
 // Held is how many compiled projects are cached. It exists for a test and for
 // an operator asking what a node is holding.
-func (c *Cache) Held() int {
+func (c *Cache[T]) Held() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return len(c.projects)
+	return len(c.objects)
 }
 
-func (c *Cache) pointer(ctx context.Context, project, environment string) (register.Pointer, error) {
-	key := project + "\x00" + environment
+func (c *Cache[T]) pointer(ctx context.Context, at Deployment) (Pointer, error) {
 
 	c.mu.Lock()
-	entry, ok := c.pointers[key]
+	entry, ok := c.pointers[at]
 	c.mu.Unlock()
 
 	if ok && c.opts.now().Sub(entry.at) < c.opts.ttl {
 		return entry.pointer, nil
 	}
 
-	p, err := c.registry.Resolve(ctx, project, environment)
+	p, err := c.registry.Resolve(ctx, at.Project, at.Environment)
 	if err != nil {
-		return register.Pointer{}, err
+		return Pointer{}, err
 	}
 
 	c.mu.Lock()
-	c.pointers[key] = pointerEntry{pointer: p, at: c.opts.now()}
+	c.pointers[at] = pointerEntry{pointer: p, at: c.opts.now()}
 	c.mu.Unlock()
 
 	return p, nil
 }
 
-func (c *Cache) object(ctx context.Context, id register.ObjectID) (*specs.Project, error) {
+func (c *Cache[T]) object(ctx context.Context, id ObjectID) (T, error) {
 	c.mu.Lock()
-	if entry, ok := c.projects[id]; ok {
+	if entry, ok := c.objects[id]; ok {
 		c.touch(id)
 		c.mu.Unlock()
 		<-entry.ready
 		return entry.proj, entry.err
 	}
-	entry := &projectEntry{ready: make(chan struct{})}
-	c.projects[id] = entry
+	entry := &objectEntry[T]{ready: make(chan struct{})}
+	c.objects[id] = entry
 	c.touch(id)
 	c.evict()
 	c.mu.Unlock()
 
 	compiled, err := c.registry.Object(ctx, id)
 	if err == nil {
-		entry.proj, err = specs.Load(compiled)
+		entry.proj, err = c.parse(compiled)
 	}
 	entry.err = err
 	close(entry.ready)
@@ -219,23 +241,24 @@ func (c *Cache) object(ctx context.Context, id register.ObjectID) (*specs.Projec
 	// that never loads again.
 	if err != nil {
 		c.mu.Lock()
-		if c.projects[id] == entry {
-			delete(c.projects, id)
+		if c.objects[id] == entry {
+			delete(c.objects, id)
 			c.forget(id)
 		}
 		c.mu.Unlock()
-		return nil, err
+		var zero T
+		return zero, err
 	}
 	return entry.proj, nil
 }
 
 // touch, forget and evict are the LRU. They are called with c.mu held.
-func (c *Cache) touch(id register.ObjectID) {
+func (c *Cache[T]) touch(id ObjectID) {
 	c.forget(id)
 	c.lru = append(c.lru, id)
 }
 
-func (c *Cache) forget(id register.ObjectID) {
+func (c *Cache[T]) forget(id ObjectID) {
 	for i, held := range c.lru {
 		if held == id {
 			c.lru = append(c.lru[:i], c.lru[i+1:]...)
@@ -244,31 +267,41 @@ func (c *Cache) forget(id register.ObjectID) {
 	}
 }
 
-func (c *Cache) evict() {
+func (c *Cache[T]) evict() {
 	for len(c.lru) > c.opts.max {
-		delete(c.projects, c.lru[0])
+		delete(c.objects, c.lru[0])
 		c.lru = c.lru[1:]
 	}
 }
 
-// Environments is every (project, environment) this cache currently holds a
-// pointer for, as "project/environment".
+// Deployments is every (project, environment) this cache currently holds a
+// pointer for.
 //
 // IT IS WHAT A NODE CAN ANSWER FOR CHEAPLY. A worker that already holds an
-// environment's compiled project serves a request for it without a fetch, so a
+// environment's compiled object serves a request for it without a fetch, so a
 // router that knows which nodes hold what can send traffic where it is already
 // warm — and that is the whole reason this is exposed rather than kept private.
 //
 // It is a HINT and never a rule: a node that holds nothing must still be
 // reachable, or a project nobody has loaded yet would have nowhere to go.
-func (c *Cache) Environments() []string {
+//
+// IT ANSWERS PAIRS AND NOT STRINGS. It used to join them with a "/" — after the
+// map had already joined them with a "\x00" — and the one consumer scanned
+// backwards for the separator to take them apart again. Three spellings of one
+// address, none of which a compiler was checking.
+func (c *Cache[T]) Deployments() []Deployment {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	out := make([]string, 0, len(c.pointers))
-	for key := range c.pointers {
-		out = append(out, strings.ReplaceAll(key, "\x00", "/"))
+	out := make([]Deployment, 0, len(c.pointers))
+	for at := range c.pointers {
+		out = append(out, at)
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Project != out[j].Project {
+			return out[i].Project < out[j].Project
+		}
+		return out[i].Environment < out[j].Environment
+	})
 	return out
 }

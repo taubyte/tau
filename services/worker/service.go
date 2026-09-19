@@ -46,7 +46,8 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/register/projects"
+	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // Service is a worker.
@@ -69,7 +70,7 @@ type Service struct {
 	// invocation is billed for.
 	now func() time.Time
 
-	projects *projects.Cache
+	projects *register.Cache[*specs.Project]
 
 	serverOptions []rpc.ServerOption
 
@@ -140,15 +141,15 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 	if o.pool == nil {
 		return nil, ErrNoPool
 	}
-	cacheOptions := []projects.CacheOption{
-		projects.WithTTL(cfg.PointerTTL),
-		projects.WithMax(cfg.MaxProjects),
+	cacheOptions := []register.CacheOption{
+		register.WithTTL(cfg.PointerTTL),
+		register.WithMax(cfg.MaxProjects),
 	}
 	if o.now != nil {
-		cacheOptions = append(cacheOptions, projects.WithClock(o.now))
+		cacheOptions = append(cacheOptions, register.WithClock(o.now))
 	}
 
-	projects, err := projects.NewCache(o.register, cacheOptions...)
+	projects, err := register.NewCache(o.register, specs.Load, cacheOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -390,8 +391,8 @@ func (s *Service) Loaded() int { return s.projects.Held() }
 // The list is SORTED because pkg/stats matches a name with a binary search.
 func (s *Service) Serving() []string {
 	out := []string{Descriptor.Name}
-	for _, env := range s.projects.Environments() {
-		out = append(out, Descriptor.Name+"/"+env)
+	for _, at := range s.projects.Deployments() {
+		out = append(out, Descriptor.Name+"/"+at.String())
 	}
 	sort.Strings(out)
 	return out

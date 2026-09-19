@@ -87,7 +87,7 @@ type Workers interface {
 
 // Projects reads a deployment's compiled project.
 type Projects interface {
-	At(ctx context.Context, project, environment string) (*specs.Project, register.Pointer, error)
+	At(ctx context.Context, at register.Deployment) (*specs.Project, register.Pointer, error)
 }
 
 // Bind is one socket and the proxy resource it serves.
@@ -388,7 +388,7 @@ func (s *Service) Serve(ctx context.Context, b Bind) (Socket, error) {
 
 // resource reads this proxy out of its deployment.
 func (s *Service) resource(ctx context.Context, b Bind) (*specs.Project, specs.Resource, string, error) {
-	proj, _, err := s.opts.projects.At(ctx, b.Project, b.Environment)
+	proj, _, err := s.opts.projects.At(ctx, register.Deployment{Project: b.Project, Environment: b.Environment})
 	if err != nil {
 		return nil, nil, "", err
 	}

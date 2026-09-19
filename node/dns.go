@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/dns"
 )
 
@@ -132,7 +133,7 @@ func (z *zones) Records(ctx context.Context, name string) (string, []string, err
 			continue
 		}
 
-		proj, _, err := z.node.worker.At(ctx, projectName, environment)
+		proj, _, err := z.node.worker.At(ctx, register.Deployment{Project: projectName, Environment: environment})
 		if err != nil {
 			// The index says this project owns the apex and its compiled form
 			// is not readable here. The next label up is not the answer — this

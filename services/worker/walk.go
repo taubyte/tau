@@ -29,16 +29,12 @@ import (
 // moved under us, and the next pass is the retry — there is nothing to report
 // about a project this node cannot read.
 func (s *Service) eachDeployment(ctx context.Context, visit func(proj *specs.Project, name, environment string)) {
-	for _, held := range s.projects.Environments() {
-		name, environment, ok := splitDeployment(held)
-		if !ok {
-			continue
-		}
-		proj, _, err := s.projects.At(ctx, name, environment)
+	for _, at := range s.projects.Deployments() {
+		proj, _, err := s.projects.At(ctx, at)
 		if err != nil {
 			continue
 		}
-		visit(proj, name, environment)
+		visit(proj, at.Project, at.Environment)
 	}
 }
 
@@ -115,6 +111,6 @@ func (p Proxy) where() string {
 // two caches that can disagree about which revision of one project is current,
 // which for a listener means forwarding to a workload the config no longer
 // names.
-func (s *Service) At(ctx context.Context, name, environment string) (*specs.Project, register.Pointer, error) {
-	return s.projects.At(ctx, name, environment)
+func (s *Service) At(ctx context.Context, at register.Deployment) (*specs.Project, register.Pointer, error) {
+	return s.projects.At(ctx, at)
 }

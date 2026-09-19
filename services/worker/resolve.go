@@ -1163,7 +1163,7 @@ func (s *Service) Resolve(ctx context.Context, t Target) (invoke.Spec, error) {
 		return invoke.Spec{}, ErrNoTarget
 	}
 
-	proj, pointer, err := s.projects.At(ctx, t.Project, t.Environment)
+	proj, pointer, err := s.projects.At(ctx, register.Deployment{Project: t.Project, Environment: t.Environment})
 	if err != nil {
 		return invoke.Spec{}, err
 	}

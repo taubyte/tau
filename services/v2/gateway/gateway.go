@@ -4,7 +4,7 @@
 // # What it does, per request
 //
 //	a Host header      -> whose environment this is        [the register]
-//	that environment   -> what it currently runs           [projects.Cache]
+//	that environment   -> what it currently runs           [register.Cache]
 //	the name and path  -> which gateway resource serves it [the compiled config]
 //	the route's handler-> a worker, over p2p
 //
@@ -59,7 +59,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/ratelimit"
 	"github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/pkg/register/projects"
 	"github.com/taubyte/tau/pkg/specs"
 )
 
@@ -71,7 +70,7 @@ type Service struct {
 	buses   Buses
 	admits  Admits
 
-	projects *projects.Cache
+	projects *register.Cache[*specs.Project]
 	limits   *ratelimit.Buckets
 	now      func() time.Time
 
@@ -119,15 +118,15 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		o.now = time.Now
 	}
 
-	cacheOptions := []projects.CacheOption{projects.WithClock(o.now)}
+	cacheOptions := []register.CacheOption{register.WithClock(o.now)}
 	if cfg.PointerTTL != 0 {
-		cacheOptions = append(cacheOptions, projects.WithTTL(cfg.PointerTTL))
+		cacheOptions = append(cacheOptions, register.WithTTL(cfg.PointerTTL))
 	}
 	if cfg.MaxProjects != 0 {
-		cacheOptions = append(cacheOptions, projects.WithMax(cfg.MaxProjects))
+		cacheOptions = append(cacheOptions, register.WithMax(cfg.MaxProjects))
 	}
 
-	projects, err := projects.NewCache(o.source, cacheOptions...)
+	projects, err := register.NewCache(o.source, specs.Load, cacheOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +180,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proj, _, err := s.projects.At(ctx, projectName, environment)
+	proj, _, err := s.projects.At(ctx, register.Deployment{Project: projectName, Environment: environment})
 	if err != nil {
 		refuse(w, statusFor(err), "this environment cannot be read")
 		return

@@ -252,13 +252,3 @@ func contains(list []string, want string) bool {
 	}
 	return false
 }
-
-// splitDeployment reads "project/environment" back apart.
-func splitDeployment(held string) (name, environment string, ok bool) {
-	for i := len(held) - 1; i >= 0; i-- {
-		if held[i] == '/' {
-			return held[:i], held[i+1:], i > 0 && i < len(held)-1
-		}
-	}
-	return "", "", false
-}

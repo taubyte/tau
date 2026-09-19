@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/register/projects"
+	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 )
 
@@ -158,7 +158,7 @@ type Option func(*options) error
 type options struct {
 	hosts   Hosts
 	workers Workers
-	source  projects.Registry
+	source  register.Registry
 	buses   Buses
 	admits  Admits
 	now     func() time.Time
@@ -188,7 +188,7 @@ func WithWorkers(w Workers) Option {
 }
 
 // WithSource is where compiled projects are read from. Required.
-func WithSource(s projects.Registry) Option {
+func WithSource(s register.Registry) Option {
 	return func(o *options) error {
 		if s == nil {
 			return ErrNoSource

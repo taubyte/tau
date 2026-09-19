@@ -86,7 +86,7 @@ func servable() map[string]any {
 
 type projects struct{ p *specs.Project }
 
-func (s projects) At(context.Context, string, string) (*specs.Project, register.Pointer, error) {
+func (s projects) At(context.Context, register.Deployment) (*specs.Project, register.Pointer, error) {
 	return s.p, register.Pointer{}, nil
 }
 
@@ -526,7 +526,7 @@ func (r *redeployable) set(p *specs.Project) {
 	r.mu.Unlock()
 }
 
-func (r *redeployable) At(context.Context, string, string) (*specs.Project, register.Pointer, error) {
+func (r *redeployable) At(context.Context, register.Deployment) (*specs.Project, register.Pointer, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.p, register.Pointer{}, nil

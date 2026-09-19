@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -63,7 +64,7 @@ func TestEveryEmittedSettingIsAnAttribute(t *testing.T) {
 	h := newHarness(t)
 	holding(t, h, "function", "checkout")
 
-	proj, _, err := h.Worker.At(t.Context(), "shop", "prod")
+	proj, _, err := h.Worker.At(t.Context(), register.Deployment{Project: "shop", Environment: "prod"})
 	require.NoError(t, err)
 
 	bad := map[string][]string{}

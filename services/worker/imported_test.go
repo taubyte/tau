@@ -170,7 +170,7 @@ func runnable(t *testing.T, reg *register.Register) map[string]invoke.Spec {
 	h := build(t, Config{}, resolvers()...)
 	h.Register.Register = reg
 
-	proj, _, err := h.Worker.projects.At(t.Context(), "shop", "prod")
+	proj, _, err := h.Worker.projects.At(t.Context(), register.Deployment{Project: "shop", Environment: "prod"})
 	require.NoError(t, err)
 
 	out := map[string]invoke.Spec{}
