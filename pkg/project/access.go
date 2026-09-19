@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // access.go reads a resource's access block: what it declared it may reach, and
@@ -90,13 +92,25 @@ func (r Resource) Reaches(kind string) []Reach {
 		return nil
 	}
 
+	// THE THREE FIELDS COME OFF THE VOCABULARY, not off this file's memory of
+	// them. schema.AccessEntryShape exists for this consumer and says so — "so a
+	// consumer recognises an access block without knowing that the word is
+	// ops" — and until now the only callers were inside the schema package.
+	//
+	// IT IS THE HIGHEST-CONSEQUENCE STRING IN THIS PACKAGE. Rename the ops field
+	// in the vocabulary and every entry below reads as empty, Reaches answers nil
+	// for every kind, and every workload in the cloud resolves with no grants at
+	// all — and starts, because a resource that reaches nothing is a legal
+	// resource. There is no error anywhere in that.
+	shape := schema.AccessEntryShape()
+
 	out := make([]Reach, 0, len(entries))
 	for _, label := range r.Keys(kind) {
 		entry := entries.Sub(label)
 
 		// AN ENTRY WITHOUT `ops` IS NOT A GRANT. It is a resource lowered into
 		// this one, which the compiler files in the same map under its id.
-		ops := entry.Strings("ops")
+		ops := entry.Strings(shape.Ops)
 		if len(ops) == 0 {
 			continue
 		}
@@ -105,8 +119,8 @@ func (r Resource) Reaches(kind string) []Reach {
 		reach := Reach{
 			Kind:      kind,
 			Label:     label,
-			Name:      entry.String("name"),
-			Namespace: entry.String("namespace"),
+			Name:      entry.String(shape.Name),
+			Namespace: entry.String(shape.Namespace),
 			Ops:       ops,
 		}
 		reach.Timeout, _ = entry.Duration("timeout")
