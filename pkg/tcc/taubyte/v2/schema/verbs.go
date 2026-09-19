@@ -242,7 +242,7 @@ func accessGroups() []*Node {
 				// Per-use modifiers. These were unexpressible while access was a
 				// verb-keyed list of names: there was no per-target place to put
 				// them. An entry is that place.
-				Duration("timeout", InSection("access"),
+				Duration(accessTimeout, InSection("access"),
 					Doc("Timeout", "How long one operation on it may take before it is given up on.")),
 			}, append(deliverAttributes(kind), append(mountAttributes(kind), toolsAttributes(kind)...)...)...),
 				// No Resource(...): an access entry is data under its parent, not a
@@ -569,9 +569,9 @@ func deliverAttributes(kind string) []*Attribute {
 		return nil
 	}
 	return []*Attribute{
-		String(Key("deliver", "port"), IsVariableName(), InSection("access"),
+		String(Key(accessDeliver, accessPort), IsVariableName(), InSection("access"),
 			Doc("Deliver To Port", "Which of this workload's own named ports each item is posted to. Containers only: a WASM consumer is dispatched and has no port.")),
-		String(Key("deliver", "path"), InSection("access"),
+		String(Key(accessDeliver, accessPath), InSection("access"),
 			Doc("Deliver To Path", "The path each item is posted to, e.g. \"/work\".")),
 	}
 }
@@ -595,7 +595,7 @@ func mountAttributes(kind string) []*Attribute {
 		return nil
 	}
 	return []*Attribute{
-		String("path", Required(), InSection("access"),
+		String(accessMountPath, Required(), InSection("access"),
 			Doc("Mount Path", "Absolute path inside the workload where this filesystem appears, e.g. \"/var/lib/postgresql/data\".")),
 	}
 }
@@ -778,12 +778,35 @@ type AccessShape struct {
 	Ops       string
 	Namespace string
 	Name      string
+
+	// Timeout bounds one operation on the target, and is on the ENTRY because
+	// it is per use.
+	Timeout string
+
+	// MountPath is where a filesystem appears inside the workload, and
+	// DeliverPort/DeliverPath are where the platform posts an item to a
+	// consumer that has no host ABI. All three are per use for the same reason
+	// Timeout is: two workloads reaching one target may answer differently.
+	MountPath   string
+	DeliverPort string
+	DeliverPath string
 }
 
 // AccessEntryShape reports it, by looking at the access group the vocabulary attaches to
 // every reachable kind: the attribute carrying that kind's verb enum is the ops field.
 func AccessEntryShape() AccessShape {
-	return AccessShape{Ops: accessOps, Namespace: accessScope, Name: accessName}
+	return AccessShape{
+		Ops:       accessOps,
+		Namespace: accessScope,
+		Name:      accessName,
+		Timeout:   accessTimeout,
+
+		// THE NESTED ONES JOINED, because a compiled key is its Key(...) joined
+		// by "/" and a consumer reading a grant addresses it that way.
+		MountPath:   accessMountPath,
+		DeliverPort: engine.FieldName(Key(accessDeliver, accessPort)),
+		DeliverPath: engine.FieldName(Key(accessDeliver, accessPath)),
+	}
 }
 
 // The three fields an access entry is written with, in this vocabulary's words. Said once
@@ -794,6 +817,15 @@ func AccessEntryShape() AccessShape {
 const (
 	accessOps   = "ops"
 	accessScope = "namespace"
+
+	// The per-USE fields, said here for the same reason the three above are:
+	// deliverAttributes and mountAttributes declare them, and pkg/project reads
+	// a grant back through them.
+	accessTimeout   = "timeout"
+	accessMountPath = "path"
+	accessDeliver   = "deliver"
+	accessPort      = "port"
+	accessPath      = "path"
 
 	// accessName OVERRIDES an entry's own label as the target's identity. An access
 	// group is keyed by the target's name because that made per-target fields

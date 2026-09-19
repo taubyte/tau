@@ -49,6 +49,21 @@ const (
 	linksSegment    = "links"
 )
 
+// IndexAddress is the three fixed words an index key is written between.
+type IndexAddress struct{ Projects, Branches, Links string }
+
+// IndexShape is that address, for a consumer that has to decompose a key.
+//
+// EXPORTED FOR THE REASON EncodeBranch IS, and this is the half that was
+// missing. The encoder was exported so "the two cannot drift apart" — and the
+// words it writes between were not, so the one consumer that takes an index key
+// apart kept verbatim copies of all three under a comment saying they were read
+// here rather than guessed. They were guessed, correctly, for as long as nobody
+// changed one.
+func IndexShape() IndexAddress {
+	return IndexAddress{Projects: projectsSegment, Branches: branchesSegment, Links: linksSegment}
+}
+
 // scopeSegments turns the interpreter's scope — the chain from the project root down —
 // into path segments, each announced by the container's own key.
 //

@@ -57,6 +57,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/pkg/tcc/interp"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -70,14 +71,27 @@ var (
 
 // segments of the compiled object and of an index value. They are tcc's, read
 // here rather than guessed: see the package doc.
-const (
-	objectKey    = "object"
-	indexesKey   = "indexes"
-	projectsSeg  = "projects"
-	branchesSeg  = "branches"
-	linksSeg     = "links"
-	namespaceSeg = "namespace"
+// THEY ARE READ AND NO LONGER RE-SPELLED. Every one of these was a verbatim
+// copy — `object` and `indexes` of constants tcc already exports and calls "a
+// contract and not a convention", and the three index words of constants the
+// schema keeps private while exporting the encoder that writes between them.
+// The comment above them said they were read here rather than guessed; they
+// were guessed, correctly, for as long as nobody changed one, and the failure
+// would have been an empty index and a node that serves nothing.
+var (
+	objectKey   = interp.ProjectKey
+	indexesKey  = interp.IndexesKey
+	indexShape  = schema.IndexShape()
+	projectsSeg = indexShape.Projects
+	branchesSeg = indexShape.Branches
+	linksSeg    = indexShape.Links
 )
+
+// namespaceSeg is the one container that produces nothing, which is how a
+// lowered scope is told from an authored one. It is a vocabulary word and the
+// vocabulary exposes no predicate for it yet — ScopeKindNames() lists the
+// scopes and does not say which of them lower.
+const namespaceSeg = "namespace"
 
 // Project is a compiled project, ready to be read.
 //

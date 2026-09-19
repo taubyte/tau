@@ -95,7 +95,7 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 		r = StubResolver()
 	}
 	root := obj
-	if inner, ok := obj["object"].(map[string]any); ok {
+	if inner, ok := obj[interp.ProjectKey].(map[string]any); ok {
 		root = inner
 	}
 

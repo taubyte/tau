@@ -123,10 +123,15 @@ func (r Resource) Reaches(kind string) []Reach {
 			Namespace: entry.String(shape.Namespace),
 			Ops:       ops,
 		}
-		reach.Timeout, _ = entry.Duration("timeout")
-		reach.Path = entry.String("path")
-		reach.DeliverPort = entry.String("deliver", "port")
-		reach.DeliverPath = entry.String("deliver", "path")
+		// THE PER-USE FIELDS COME OFF THE VOCABULARY TOO. They were the three
+		// this file still spelled after the entry's own three stopped being
+		// spelled, which is the same rot one layer in: a renamed `deliver/path`
+		// reads as empty, a container consumer is posted at "/" instead of where
+		// its author said, and nothing anywhere reports it.
+		reach.Timeout, _ = entry.Duration(shape.Timeout)
+		reach.Path = entry.String(shape.MountPath)
+		reach.DeliverPort = entry.String(strings.Split(shape.DeliverPort, "/")...)
+		reach.DeliverPath = entry.String(strings.Split(shape.DeliverPath, "/")...)
 		out = append(out, reach)
 	}
 

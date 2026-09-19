@@ -33,7 +33,7 @@ type Instance struct {
 // Resources is every resource in a compiled project, in a stable order.
 func Resources(obj map[string]any) []Instance {
 	root := obj
-	if inner, ok := obj["object"].(map[string]any); ok {
+	if inner, ok := obj[interp.ProjectKey].(map[string]any); ok {
 		root = inner
 	}
 	all := collect(root, "")
@@ -71,7 +71,7 @@ func Resources(obj map[string]any) []Instance {
 // about.
 func Scopes(obj map[string]any) []Instance {
 	root := obj
-	if inner, ok := obj["object"].(map[string]any); ok {
+	if inner, ok := obj[interp.ProjectKey].(map[string]any); ok {
 		root = inner
 	}
 	containers := scopeGroups()

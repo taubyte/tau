@@ -107,7 +107,7 @@ func EnvironmentNames(envs []Environment) []string {
 // ReachableNames does, because a caller holding one rarely knows which it has.
 func EnvironmentsIn(object map[string]any) []Environment {
 	root := object
-	if inner, ok := object["object"].(map[string]any); ok {
+	if inner, ok := object[interp.ProjectKey].(map[string]any); ok {
 		root = inner
 	}
 

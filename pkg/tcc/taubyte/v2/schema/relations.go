@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // EVERY RELATIONSHIP BETWEEN TWO RESOURCES, resolved.
@@ -55,7 +57,7 @@ const (
 // Relations resolves every relationship in a compiled project.
 func Relations(obj map[string]any) []Relation {
 	root := obj
-	if inner, ok := obj["object"].(map[string]any); ok {
+	if inner, ok := obj[interp.ProjectKey].(map[string]any); ok {
 		root = inner
 	}
 	all := collect(root, "")
