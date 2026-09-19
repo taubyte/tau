@@ -1,6 +1,7 @@
 package boot
 
 import (
+	"context"
 	"encoding/base64"
 	"testing"
 	"time"
@@ -93,4 +94,21 @@ func addresses(t *testing.T, r *Running) []string {
 	}
 	require.NotEmpty(t, out)
 	return out
+}
+
+// TestReachStopsWhenTheCallerDoes. The wait is the CLI's, and a Ctrl-C during
+// it has to take the temporary node with it — a client that kept joining the
+// swarm after its process was told to stop is a peer nobody can account for.
+func TestReachStopsWhenTheCallerDoes(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := Reach(ctx, File{
+		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
+		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
+	}, node.Worker, time.Minute)
+	require.ErrorIs(t, err, context.Canceled)
 }

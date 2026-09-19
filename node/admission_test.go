@@ -246,3 +246,48 @@ func TestAMalformedHandleIsNotInvoked(t *testing.T) {
 	require.ErrorContains(t, err, "does not name a deployment")
 	require.Empty(t, answers.seen())
 }
+
+// TestABrowserAndAWorkloadAskTheSameValidator. A workload opening
+// `chat/room-42` and a browser attaching to `/room-42` are the same question
+// about the same instance, and two answers to it would be two security policies
+// for one config block.
+func TestABrowserAndAWorkloadAskTheSameValidator(t *testing.T) {
+	answers := &deciding{verdict: wasmtier.Verdict{Admitted: true}}
+	_, a := admittingNode(t, answers)
+
+	require.NoError(t, a.AdmitInstance(t.Context(), "shop/prod/QmSessions",
+		manyGrant("0").Settings, "room-42"))
+
+	seen := answers.seen()
+	require.Len(t, seen, 1)
+	require.Equal(t, "room-42", seen[0].Instance)
+
+	// A BROWSER IS NOT A WORKLOAD AND SAYS SO BY ITS KIND BEING EMPTY. The
+	// deployment it is attaching to is known — it is in the handle — and
+	// nothing else about the caller is, because it came from the internet.
+	require.Equal(t, "shop", seen[0].Who.Project)
+	require.Equal(t, "prod", seen[0].Who.Environment)
+	require.Empty(t, seen[0].Who.Kind)
+	require.Empty(t, seen[0].Who.Name)
+
+	// The store is named by the id, because a browser never saw the author's
+	// label and the id is better than nothing in a log.
+	require.Equal(t, "QmSessions", seen[0].What.Label)
+
+	// AND THE CEILING IS THE SAME ONE. A browser admitted here is an instance
+	// held, so a workload asking next is asking about an instance that exists.
+	require.NoError(t, a.Admit(t.Context(),
+		invoke.Spec{Project: "shop", Environment: "prod"}, manyGrant("0"), "room-42"))
+	require.Len(t, answers.seen(), 1, "the same instance was not validated twice")
+}
+
+// TestABrowserTurnedAwayIsARefusal, reaching the browser as the validator's own
+// words — the same string a workload would get.
+func TestABrowserTurnedAwayIsARefusal(t *testing.T) {
+	answers := &deciding{verdict: wasmtier.Verdict{Refused: "that room is full"}}
+	_, a := admittingNode(t, answers)
+
+	err := a.AdmitInstance(t.Context(), "shop/prod/QmSessions", manyGrant("0").Settings, "room-42")
+	require.ErrorIs(t, err, wasmtier.ErrNotAdmitted)
+	require.ErrorContains(t, err, "that room is full")
+}

@@ -378,3 +378,201 @@ func (m *memAssets) Get(_ context.Context, id string) (io.ReadSeekCloser, error)
 type nopSeekCloser struct{ *bytes.Reader }
 
 func (nopSeekCloser) Close() error { return nil }
+
+// TestTheCheckpointLoopWritesOnTheWayOut. A planned shutdown is the one moment
+// the interval is wrong: whatever was written since the last tick is inside the
+// budget the author declared, and throwing it away turns a clean restart into
+// the loss a crash was supposed to bound.
+func TestTheCheckpointLoopWritesOnTheWayOut(t *testing.T) {
+	_, v := mounting(t)
+	grant := mountGrant("shop/prod/QmData", map[string]string{settingCheckpointFreq: "1h0m0s"})
+
+	dir, err := v.Mount(t.Context(), grant)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "PG_VERSION"), []byte("16"), 0o640))
+
+	// An hour's interval and no tick will fire, so anything recorded below was
+	// written by the way out and not by the loop's normal pass.
+	ctx, stop := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go v.loop(ctx, done)
+	stop()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the loop did not finish")
+	}
+
+	db, err := v.store()
+	require.NoError(t, err)
+	recorded, err := db.Get(t.Context(), checkpointPrefix+grant.Handle)
+	require.NoError(t, err)
+	require.NotEmpty(t, recorded, "the final checkpoint was not written")
+}
+
+// TestAFailingCheckpointDoesNotStopTheOthers. A pass over every due volume is
+// one pass: a volume whose store rejected it is logged and skipped, and the
+// rest are still written.
+func TestAFailingCheckpointDoesNotStopTheOthers(t *testing.T) {
+	n, v := mounting(t)
+
+	_, err := v.Mount(t.Context(), mountGrant("shop/prod/QmData", nil))
+	require.NoError(t, err)
+
+	// THE STORE GOES. checkpoint refuses without one, which is the failure a
+	// pass has to survive rather than the failure it reports.
+	n.opts.assets = nil
+	require.Equal(t, 0, v.step(t.Context(), time.Now(), map[string]time.Time{}))
+}
+
+// TestClosingStopsHoldingVolumesAndKeepsTheDirectories. The bytes are what a
+// restart finds; re-reading them from the store would be slower and older.
+func TestClosingStopsHoldingVolumesAndKeepsTheDirectories(t *testing.T) {
+	_, v := mounting(t)
+	grant := mountGrant("shop/prod/QmData", nil)
+
+	dir, err := v.Mount(t.Context(), grant)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "PG_VERSION"), []byte("16"), 0o640))
+
+	require.NoError(t, v.Close())
+	require.Empty(t, v.open)
+
+	info, err := os.Stat(filepath.Join(dir, "PG_VERSION"))
+	require.NoError(t, err)
+	require.Equal(t, int64(2), info.Size())
+
+	// AND MOUNTING AGAIN FINDS THEM, without a restore: the directory is
+	// already there, and an existing one is never unpacked over.
+	again, err := v.Mount(t.Context(), grant)
+	require.NoError(t, err)
+	require.Equal(t, dir, again)
+}
+
+// TestACheckpointThatIsNotAnArchiveIsRefused. The store answers bytes; that
+// they are a tar is this node's own claim about what it wrote, and a restore
+// that half-unpacked something else would mount a directory nobody can explain.
+func TestACheckpointThatIsNotAnArchiveIsRefused(t *testing.T) {
+	n, v := mounting(t)
+	handle := "shop/prod/QmData"
+
+	id, err := n.opts.assets.Put(t.Context(), bytes.NewReader([]byte("this is not a tar")))
+	require.NoError(t, err)
+
+	db, err := v.store()
+	require.NoError(t, err)
+	require.NoError(t, db.Put(t.Context(), checkpointPrefix+handle, []byte(id)))
+
+	err = v.restore(t.Context(), handle, t.TempDir())
+	require.ErrorContains(t, err, "restoring "+handle)
+}
+
+// TestACheckpointNamingAnObjectTheStoreLostIsRefused. A recorded id whose bytes
+// are gone is not an empty volume: the directory would come back without the
+// data the workload is about to be told it has.
+func TestACheckpointNamingAnObjectTheStoreLostIsRefused(t *testing.T) {
+	_, v := mounting(t)
+	handle := "shop/prod/QmData"
+
+	db, err := v.store()
+	require.NoError(t, err)
+	require.NoError(t, db.Put(t.Context(), checkpointPrefix+handle, []byte("QmSomethingNobodyHas")))
+
+	err = v.restore(t.Context(), handle, t.TempDir())
+	require.ErrorContains(t, err, "reading the checkpoint for "+handle)
+}
+
+// TestARecordedCheckpointWithNoStoreIsRefused. Having recorded one and having
+// nowhere to read it from is not the same as never having had one — the first
+// is a node missing its store, and answering an empty directory would hand a
+// workload an empty database.
+func TestARecordedCheckpointWithNoStoreIsRefused(t *testing.T) {
+	n, v := mounting(t)
+	handle := "shop/prod/QmData"
+
+	db, err := v.store()
+	require.NoError(t, err)
+	require.NoError(t, db.Put(t.Context(), checkpointPrefix+handle, []byte("QmWhatever")))
+
+	n.opts.assets = nil
+	require.ErrorIs(t, v.restore(t.Context(), handle, t.TempDir()), ErrNoStore)
+}
+
+// TestARestoreRebuildsDirectoriesAndLinks. A checkpoint is a tar of a live
+// directory, so what comes back has to be what went in — an empty directory a
+// workload expects to find, and a link that is still a link rather than a copy
+// of whatever it pointed at.
+func TestARestoreRebuildsDirectoriesAndLinks(t *testing.T) {
+	into := t.TempDir()
+
+	var buf bytes.Buffer
+	archive := tar.NewWriter(&buf)
+	require.NoError(t, archive.WriteHeader(&tar.Header{
+		Name: "pg_wal", Typeflag: tar.TypeDir, Mode: 0o750,
+	}))
+	require.NoError(t, archive.WriteHeader(&tar.Header{
+		Name: "PG_VERSION", Typeflag: tar.TypeReg, Mode: 0o640, Size: 2,
+	}))
+	_, err := archive.Write([]byte("16"))
+	require.NoError(t, err)
+	require.NoError(t, archive.WriteHeader(&tar.Header{
+		Name: "conf/current", Typeflag: tar.TypeSymlink, Linkname: "../PG_VERSION", Mode: 0o777,
+	}))
+	require.NoError(t, archive.Close())
+
+	require.NoError(t, untar(&buf, into))
+
+	info, err := os.Stat(filepath.Join(into, "pg_wal"))
+	require.NoError(t, err)
+	require.True(t, info.IsDir(), "an empty directory came back as one")
+
+	link, err := os.Lstat(filepath.Join(into, "conf", "current"))
+	require.NoError(t, err)
+	require.NotZero(t, link.Mode()&os.ModeSymlink, "the link came back as a link")
+
+	target, err := os.Readlink(filepath.Join(into, "conf", "current"))
+	require.NoError(t, err)
+	require.Equal(t, "../PG_VERSION", target)
+}
+
+// TestASymlinkToAnAbsolutePathIsRefused, and it is checked BEFORE the join:
+// joining an absolute target onto the entry's directory discards the leading
+// separator and turns `/etc/passwd` into a path inside the volume that passes —
+// while the link written on disk still points at /etc/passwd.
+func TestARestoredSymlinkToAnAbsolutePathIsRefused(t *testing.T) {
+	into := t.TempDir()
+
+	var buf bytes.Buffer
+	archive := tar.NewWriter(&buf)
+	require.NoError(t, archive.WriteHeader(&tar.Header{
+		Name: "conf/shadow", Typeflag: tar.TypeSymlink, Linkname: "/etc/passwd", Mode: 0o777,
+	}))
+	require.NoError(t, archive.Close())
+
+	err := untar(&buf, into)
+	require.ErrorContains(t, err, "outside the volume")
+
+	_, err = os.Lstat(filepath.Join(into, "conf", "shadow"))
+	require.Error(t, err, "the link was created anyway")
+}
+
+// TestATruncatedArchiveIsAnError rather than a directory that is silently
+// missing its tail — a restore that stopped halfway is a database with some of
+// its files.
+func TestATruncatedArchiveIsAnError(t *testing.T) {
+	var buf bytes.Buffer
+	archive := tar.NewWriter(&buf)
+	require.NoError(t, archive.WriteHeader(&tar.Header{
+		Name: "PG_VERSION", Typeflag: tar.TypeReg, Mode: 0o640, Size: 64,
+	}))
+	_, err := archive.Write(make([]byte, 64))
+	require.NoError(t, err)
+	require.NoError(t, archive.Close())
+
+	// Cut inside the entry's body: the header says 64 bytes and the stream
+	// stops after 32, which is what a half-written object in the store looks
+	// like from here.
+	cut := buf.Bytes()[:512+32]
+	require.Error(t, untar(bytes.NewReader(cut), t.TempDir()))
+}

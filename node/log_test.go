@@ -1,6 +1,7 @@
 package node
 
 import (
+	"errors"
 	"strconv"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/raft"
 )
 
 // log_test is the node's half: raft decides the order, the replicated store
@@ -221,4 +223,92 @@ func TestACursorBelowTheFloorIsRefused(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, held)
 	require.Equal(t, "3123456789", string(held[len(held)-1].Data))
+}
+
+// loggingOn is a logs over a cluster the test controls, so what raft answered
+// and what the log did about it are two separate questions.
+func loggingOn(t *testing.T, cluster raft.Cluster) *logs {
+	t.Helper()
+
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+		WithRaft(func(string) (raft.Cluster, error) { return cluster, nil }))
+	q := &queues{node: n}
+	q.form()
+	<-q.forming
+	n.work = q
+	return &logs{node: n}
+}
+
+// TestAnAppendOffTheLeaderIsRefusedRatherThanOrdered. Raft refuses a write off
+// the leader anyway; what this stops is a follower reading a head and handing
+// back a cursor for a record it never wrote.
+func TestAnAppendOffTheLeaderIsRefused(t *testing.T) {
+	l := loggingOn(t, notLeading())
+
+	_, err := l.Append(t.Context(), logGrant("shop/prod/QmAudit", nil), []byte("paid"))
+	require.ErrorIs(t, err, wasmtier.ErrNotWritable)
+	require.ErrorContains(t, err, "ordered by the node holding the log's leadership")
+}
+
+// TestAHeadReadWithoutABarrierIsNotRead. A leader that has just won an election
+// has committed entries it has not applied, so a head read before the barrier
+// could assign a position the previous leader already used.
+func TestAnAppendThatCannotBarrierIsRefused(t *testing.T) {
+	cluster := notLeading()
+	cluster.leader = true
+	cluster.barrier = errors.New("no quorum")
+
+	l := loggingOn(t, cluster)
+
+	_, err := l.Append(t.Context(), logGrant("shop/prod/QmAudit", nil), []byte("paid"))
+	require.ErrorContains(t, err, "reading the log's head")
+	require.ErrorContains(t, err, "no quorum")
+}
+
+// TestLeadershipLostBetweenTheRecordAndTheHeadIsStillNotWritable. The record
+// landed and the head did not move, which is the order this writes in on
+// purpose — a position published before its record exists is one a reader
+// cannot tell from one it will never get.
+func TestLeadershipLostWhileAppendingIsNotWritable(t *testing.T) {
+	cluster := notLeading()
+	cluster.leader = true
+	cluster.set = raft.ErrNotLeader
+
+	l := loggingOn(t, cluster)
+
+	_, err := l.Append(t.Context(), logGrant("shop/prod/QmAudit", nil), []byte("paid"))
+	require.ErrorIs(t, err, wasmtier.ErrNotWritable)
+}
+
+// TestAHeadThatIsNotAPositionIsReported. Raft holds the head as text; something
+// that is not a number there is a store this node cannot reason about, and
+// appending from zero would overwrite every record already written.
+func TestAHeadThatIsNotAPositionIsReported(t *testing.T) {
+	cluster := notLeading()
+	cluster.leader = true
+
+	l := loggingOn(t, cluster)
+	handle := "shop/prod/QmAudit"
+	require.NoError(t, cluster.Set(headKey(handle), []byte("somewhere"), time.Second))
+
+	_, err := l.Append(t.Context(), logGrant(handle, nil), []byte("paid"))
+	require.ErrorContains(t, err, "is not a position")
+}
+
+// TestALogOnANodeThatRunsNoWorkerIsRefused. A log is an order and ordering is
+// what raft is for; the cluster a log uses is the QUEUES' one, so a node that
+// opened no worker has nowhere to put the head.
+func TestALogOnANodeThatRunsNoWorkerIsRefused(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+	require.Nil(t, n.work, "no worker, so nothing built the queue backing")
+
+	l := &logs{node: n}
+
+	_, err := l.Append(t.Context(), logGrant("shop/prod/QmAudit", nil), []byte("paid"))
+	require.ErrorIs(t, err, ErrNoRaft)
+
+	_, err = l.Read(t.Context(), logGrant("shop/prod/QmAudit", nil), "", 10)
+	require.ErrorIs(t, err, ErrNoRaft)
+
+	require.NoError(t, l.Close())
 }

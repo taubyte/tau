@@ -249,3 +249,60 @@ func TestAFollowerAnswersNotWritable(t *testing.T) {
 	require.Equal(t, other, wrapNotLeader(other))
 	require.NoError(t, wrapNotLeader(nil))
 }
+
+// TestAClusterThatWillNotOpenIsReportedRatherThanWaitedFor. form runs in the
+// background because opening a raft cluster is not something a request path can
+// wait on — so its failure has to be kept and answered, or every send after it
+// reads as "still forming" forever.
+func TestAClusterThatWillNotOpenIsReported(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register}},
+		WithRaft(func(string) (raft.Cluster, error) { return nil, errors.New("no disk") }))
+
+	q := &queues{node: n}
+	q.form()
+	<-q.forming
+
+	_, err := q.ready()
+	require.ErrorContains(t, err, "opening "+queueDomain)
+	require.ErrorContains(t, err, "no disk")
+}
+
+// TestOneClusterPerNodeEvenIfFormIsCalledTwice. The node starts it; a second
+// caller must not open a second raft cluster on the same domain.
+func TestFormingTwiceOpensOneCluster(t *testing.T) {
+	var opened int
+	n, _, _ := makeNode(t, Config{Services: []string{Register}},
+		WithRaft(func(string) (raft.Cluster, error) {
+			opened++
+			return raft.NewMockCluster(), nil
+		}))
+
+	q := &queues{node: n}
+	q.form()
+	<-q.forming
+	first := q.forming
+
+	q.form()
+	require.Equal(t, 1, opened)
+	require.Equal(t, first, q.forming, "the second call did nothing")
+}
+
+// TestANodeWithNoRaftFormsNothing, and says so rather than leaving a channel
+// nobody will ever close.
+func TestANodeWithNoRaftFormsNothing(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+
+	n, err := New(Config{Services: []string{Register}},
+		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}))
+	require.NoError(t, err)
+	t.Cleanup(func() { n.Close() })
+
+	q := &queues{node: n}
+	q.form()
+	require.Nil(t, q.forming)
+
+	_, err = q.ready()
+	require.ErrorIs(t, err, ErrNoRaft)
+}

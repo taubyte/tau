@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/host"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -276,4 +278,64 @@ func TestADatabaseThatWillNotOpen(t *testing.T) {
 		WithHost(h), WithDatabases(&memFactory{err: errors.New("the disk is full")}))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "disk is full")
+}
+
+// addrsOnly is a host that only answers what it is listening on. addresses()
+// asks nothing else of it, and a full fake would be nine methods nothing calls.
+type addrsOnly struct {
+	host.Host
+	addrs []ma.Multiaddr
+}
+
+func (a addrsOnly) Addrs() []ma.Multiaddr { return a.addrs }
+
+func listeningOn(t *testing.T, on ...string) []ma.Multiaddr {
+	t.Helper()
+
+	out := make([]ma.Multiaddr, 0, len(on))
+	for _, s := range on {
+		a, err := ma.NewMultiaddr(s)
+		require.NoError(t, err)
+		out = append(out, a)
+	}
+	return out
+}
+
+// TestWhatThisNodePublishesAsItsAddress. What goes into an A record is a CLAIM,
+// in the same sense the load figure is — the IP half of what this host believes
+// it is listening on — and three kinds of address are not one.
+func TestWhatThisNodePublishesAsItsAddress(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+
+	n.opts.host = addrsOnly{addrs: listeningOn(t,
+		// Not an address with an IP in it: nothing a client can be handed.
+		"/unix/tmp/tau.sock",
+		// "Every address" is not an address. A client handed 0.0.0.0 has been
+		// told nothing.
+		"/ip4/0.0.0.0/tcp/4001",
+		"/ip6/::/tcp/4001",
+		// The same IP on two transports is one address.
+		"/ip4/203.0.113.9/tcp/4001",
+		"/ip4/203.0.113.9/udp/4001/quic-v1",
+		// Present, and outranked.
+		"/ip4/127.0.0.1/tcp/4001",
+	)}
+
+	require.Equal(t, []string{"203.0.113.9"}, n.addresses())
+}
+
+// TestLoopbackIsAnAnswerOnlyWhenThereIsNoOther. A node with a real address that
+// also listens on 127.0.0.1 would otherwise publish it, and some clients take
+// the first record they are given — so a share of the fleet's traffic goes to
+// whichever machine asked. A development cloud bound only to loopback has no
+// other answer, and refusing to give it would mean its own names resolve to
+// nothing on the one machine where they should.
+func TestLoopbackIsAnAnswerOnlyWhenThereIsNoOther(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+
+	n.opts.host = addrsOnly{addrs: listeningOn(t, "/ip4/127.0.0.1/tcp/4001", "/ip6/::1/tcp/4001")}
+	require.Equal(t, []string{"127.0.0.1", "::1"}, n.addresses())
+
+	n.opts.host = addrsOnly{addrs: listeningOn(t, "/ip4/0.0.0.0/tcp/4001")}
+	require.Empty(t, n.addresses(), "every address is no address")
 }

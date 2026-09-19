@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"path"
 
@@ -220,4 +221,42 @@ func makeNode(t *testing.T, cfg Config, extra ...Option) (*Node, host.Host, *mem
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	return n, h, factory
+}
+
+// follower is a cluster that is not the leader, or that fails where raft fails.
+// It exists because the mock is a no-op leader — every write succeeds — and
+// leadership is exactly what the writes in this package argue about: pkg/raft
+// has no conditional write, so "am I the leader" plus a barrier is the whole of
+// why a head or a claim is safe to read.
+type follower struct {
+	*raft.MockCluster
+
+	// leader, when false, is a node that lost the election between being asked
+	// and answering.
+	leader bool
+
+	// barrier and set are what raft answered, so a caller's handling of each is
+	// a separate question from its handling of the other.
+	barrier error
+	set     error
+}
+
+func notLeading() *follower {
+	return &follower{MockCluster: raft.NewMockCluster()}
+}
+
+func (f *follower) IsLeader() bool { return f.leader }
+
+func (f *follower) Barrier(d time.Duration) error {
+	if f.barrier != nil {
+		return f.barrier
+	}
+	return f.MockCluster.Barrier(d)
+}
+
+func (f *follower) Set(key string, value []byte, d time.Duration) error {
+	if f.set != nil {
+		return f.set
+	}
+	return f.MockCluster.Set(key, value, d)
 }

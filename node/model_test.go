@@ -600,3 +600,24 @@ func TestACompletionWithNoToolsSendsNoToolsField(t *testing.T) {
 		require.NotContains(t, p.sent(t), "tools", format)
 	}
 }
+
+// TestTheNodesInferenceReadsTheNodeLateRatherThanAtConstruction. Both halves
+// are closures over the node and not values copied out of it: a vault and a
+// placement router are wired while services start, so an inference built during
+// composition would capture nil and keep it.
+func TestTheNodesInferenceReadsTheNodeLate(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+
+	// Built BEFORE anything wired a resolver or a router.
+	i := nodeInference(n)
+	require.Nil(t, i.resolver(), "nothing resolves a secret on this node")
+	require.Nil(t, i.dialler(), "and nothing places a connection")
+
+	// A node that acquires them answers with them, through the same inference.
+	n.vault = &vault{node: n}
+	require.Equal(t, n.vault, i.resolver())
+
+	with, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	require.NoError(t, with.Start(t.Context()))
+	require.NotNil(t, nodeInference(with).dialler(), "a node with placement can reach a port")
+}

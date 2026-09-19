@@ -563,3 +563,30 @@ func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 16, n)
 }
+
+// TestAWorkerAsksTheBuildBackendOnAnotherNode. The lookup is the same rule the
+// register and the vault keep — run it here, use it directly; otherwise ask the
+// view who does and dial that one — and here it crosses the wire: the worker
+// node runs no build service at all.
+func TestAWorkerAsksTheBuildBackendOnAnotherNode(t *testing.T) {
+	nodes := fleet(t,
+		Config{Services: []string{Register, Stats, BuildBackend}},
+		Config{Services: []string{Worker, Stats}},
+	)
+	compute := nodes[1]
+
+	sees(t, compute, BuildBackend)
+
+	a := &artifacts{node: compute, seen: map[string]builtAt{}}
+
+	// NOTHING HAS BUILT THIS, and the answer comes from the backend rather than
+	// from the view — which is the difference between "no build service is
+	// reachable" and "the build service says there is no artifact".
+	_, err := a.Artifact(t.Context(), "shop", "prod", "function", "checkout")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrNoBuildBackend, "a backend answered; it just had nothing")
+
+	// AND THE FAILURE IS NOT CACHED. "Nothing has built this yet" ends the
+	// moment a build finishes.
+	require.Empty(t, a.seen)
+}
