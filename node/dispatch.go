@@ -161,6 +161,31 @@ func (d *dispatcher) drain(ctx context.Context, consumer worker.Consumer, held *
 	return int(delivered.Load())
 }
 
+// invoke runs a workload wherever it should run.
+//
+// THROUGH PLACEMENT, AND THAT IS THE DIFFERENCE between a queue that is
+// replicated and work that is distributed. A claim is leader-only — pkg/queue
+// refuses a write off the leader, which is what makes a claim exclusive without
+// a second election — so a dispatcher that also RAN what it claimed put every
+// step of every workflow in the cloud on one node, with the rest of the fleet
+// idle. The queue was distributed; the work was not.
+//
+// It was the only path that did this. A request arriving at a gateway, a
+// connection at a proxy, a dial on a channel and a local model's socket are all
+// placed already; a delivery was the one kind of work that stayed where it was
+// claimed.
+//
+// A NODE WITH NO STATS CAN ONLY REACH ITSELF, which openPlacement says in as
+// many words, so that one still runs what it holds rather than refusing it.
+// Placement keeps the local worker as a candidate, so a single node is not a
+// round trip to itself.
+func (d *dispatcher) invoke(ctx context.Context, at worker.Target, req *invoke.Request) (*invoke.Response, error) {
+	if d.node.workers == nil {
+		return d.node.worker.Invoke(ctx, at, req)
+	}
+	return d.node.workers.Invoke(ctx, at, req)
+}
+
 // deliver hands one item to the workload and settles the claim on what came
 // back.
 //
@@ -203,7 +228,7 @@ func (d *dispatcher) deliver(ctx context.Context, consumer worker.Consumer, held
 		return
 	}
 
-	res, err := d.node.worker.Invoke(runCtx, consumer.Target, &invoke.Request{
+	res, err := d.invoke(runCtx, consumer.Target, &invoke.Request{
 		Method: http.MethodPost,
 		Path:   consumer.Path,
 		Headers: map[string][]string{

@@ -13,6 +13,8 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/stats"
+	"github.com/taubyte/tau/services/v2/placement"
 )
 
 // dispatch_test drives the claim loop synchronously, which is the whole reason
@@ -413,3 +415,55 @@ func (i *answeringInstance) Serve(ctx context.Context, req *invoke.Request) (*in
 }
 
 func (i *answeringInstance) Close() error { return nil }
+
+// nowhere is a router that reports no node holding anything, so placement has
+// no candidate to choose.
+type nowhere struct{}
+
+func (nowhere) Route(string, time.Duration) []stats.Node { return nil }
+
+// TestADELIVERYISPLACEDANDNOTRUNWHEREITWASCLAIMED.
+//
+// A claim is leader-only — pkg/queue refuses a write off the leader, which is
+// what makes it exclusive without a second election. So a dispatcher that also
+// RAN what it claimed put every step of every workflow in the cloud on one
+// node, with the rest of the fleet idle: the queue was distributed and the work
+// was not. Every other path — a gateway request, a proxy connection, a channel
+// dial — already placed the same workloads.
+//
+// IT IS TESTED BY TAKING THE CANDIDATES AWAY. With one node, placement keeps
+// the local worker as a candidate and chooses it, so a passing delivery cannot
+// tell the two apart. A placement that can reach nobody can: the delivery has
+// to fail, and on the old code it would have quietly succeeded locally.
+func TestADeliveryIsPlacedRatherThanRunWhereItWasClaimed(t *testing.T) {
+	answers := &answering{name: "wasm", status: 200}
+	n, d := consuming(t, answers, withConsumer(consumer{}))
+
+	placed, err := placement.New(n.opts.host, nowhere{})
+	require.NoError(t, err)
+	n.workers = placed
+
+	push(t, n, "1", []byte("hello"))
+	require.Equal(t, 1, d.step(t.Context()), "the item was claimed")
+
+	require.Empty(t, answers.seen(), "the workload ran where the claim was made")
+
+	// AND THE ITEM IS NOT LOST. A placement that reached nobody is a failed
+	// delivery, so the queue keeps it for the budget its author wrote.
+	ready, claimed := depth(t, n)
+	require.Equal(t, 1, ready+claimed, "the item is still the queue's")
+}
+
+// TestANODEWITHNOPLACEMENTSTILLRUNSWHATITHOLDS. openPlacement skips a node
+// that runs no stats, and says why: such a node "can only reach itself". It
+// must still drain the queues it holds rather than refuse work for want of a
+// fleet to spread it over.
+func TestANodeThatCanOnlyReachItselfStillRunsWhatItHolds(t *testing.T) {
+	answers := &answering{name: "wasm", status: 200}
+	n, d := consuming(t, answers, withConsumer(consumer{}))
+	n.workers = nil
+
+	push(t, n, "1", []byte("hello"))
+	require.Equal(t, 1, d.step(t.Context()))
+	require.NotEmpty(t, answers.seen(), "a node with no placement ran it locally")
+}

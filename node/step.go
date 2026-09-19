@@ -87,7 +87,10 @@ func (d *dispatcher) runStep(ctx context.Context, consumer worker.Consumer, item
 		return wrapNotLeader(d.sendOn(ctx, consumer.Sends[0], item.ID, item.Data))
 	}
 
-	res, err := d.node.worker.Invoke(ctx, consumer.Invokes[0], &invoke.Request{
+	// PLACED, like every other invocation in this node. The driver is platform
+	// code and runs where the claim was made; the author's function is a
+	// workload and runs wherever it should — see dispatcher.invoke.
+	res, err := d.invoke(ctx, consumer.Invokes[0], &invoke.Request{
 		Method: http.MethodPost,
 		Path:   "/",
 		Headers: map[string][]string{
