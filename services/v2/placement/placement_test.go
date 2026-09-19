@@ -3,6 +3,7 @@ package placement
 import (
 	"context"
 	"errors"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -258,4 +259,186 @@ func TestCloseIsIdempotentAndFinal(t *testing.T) {
 
 	_, err := w.Invoke(t.Context(), at(), &invoke.Request{})
 	require.Error(t, err)
+}
+
+// full is a local worker that offers every world a worker can serve, so what is
+// tested below is the PLACEMENT of each verb rather than any one worker.
+type full struct {
+	recording
+	conn net.Conn
+}
+
+func (f *full) Transform(context.Context, specs.Address, *invoke.Request) (*invoke.Outcome, error) {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	return &invoke.Outcome{Answer: &invoke.Response{Status: 204}}, nil
+}
+
+func (f *full) Route(context.Context, specs.Address, *invoke.Request) (*invoke.Routing, error) {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	return &invoke.Routing{None: "nowhere"}, nil
+}
+
+func (f *full) Direct(context.Context, specs.Address, *invoke.Connection, []byte) (*invoke.Direction, error) {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	return &invoke.Direction{Refused: "not this one"}, nil
+}
+
+func (f *full) Shape(context.Context, specs.Address, *invoke.Stream) (*invoke.Shaping, error) {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	return &invoke.Shaping{Pass: &invoke.Shaped{Out: []byte("shaped")}}, nil
+}
+
+func (f *full) Conn(context.Context, worker.Target, string) (net.Conn, error) {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	return f.conn, nil
+}
+
+// TestEveryVerbIsPlacedTheSameWay. A transformer, a gateway router, a proxy
+// router and a proxy transformer are all workloads of the same deployment, so
+// the node that is warm for the project is warm for them too — and each one
+// goes through the same choice rather than a second one beside it.
+func TestEveryVerbIsPlacedTheSameWay(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func(*Workers) error
+	}{
+		{"transform", func(w *Workers) error {
+			out, err := w.Transform(t.Context(), at(), &invoke.Request{})
+			if err == nil && out.Answer.Status != 204 {
+				return errors.New("not the transformer's answer")
+			}
+			return err
+		}},
+		{"route", func(w *Workers) error {
+			out, err := w.Route(t.Context(), at(), &invoke.Request{})
+			if err == nil && out.None != "nowhere" {
+				return errors.New("not the router's answer")
+			}
+			return err
+		}},
+		{"direct", func(w *Workers) error {
+			out, err := w.Direct(t.Context(), at(), &invoke.Connection{Source: "10.0.0.1:1"}, []byte("PG"))
+			if err == nil && out.Refused != "not this one" {
+				return errors.New("not the proxy router's answer")
+			}
+			return err
+		}},
+		{"shape", func(w *Workers) error {
+			out, err := w.Shape(t.Context(), at(), &invoke.Stream{Way: invoke.Inbound})
+			if err == nil && string(out.Pass.Out) != "shaped" {
+				return errors.New("not the proxy transformer's answer")
+			}
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			local := &full{}
+			router := &table{byName: map[string][]stats.Node{}}
+			w, h := newWorkers(t, router, WithLocal(local))
+			router.byName["worker/shop/prod"] = []stats.Node{{Peer: h.ID().String()}}
+
+			require.NoError(t, tc.call(w))
+			require.Equal(t, 1, local.count())
+
+			// THE WARM QUESTION FIRST, for every verb and not just Invoke.
+			require.Equal(t, "worker/shop/prod", router.questions()[0])
+		})
+	}
+}
+
+// TestAWorkerThatServesNoSuchWorldSaysSo. A worker is not required to offer
+// every world, so the refusal names which one it does not run rather than
+// looking like a node that could not be reached.
+func TestAWorkerThatServesNoSuchWorldSaysSo(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func(*Workers) error
+		says string
+	}{
+		{"transformer", func(w *Workers) error {
+			_, err := w.Transform(t.Context(), at(), &invoke.Request{})
+			return err
+		}, "runs no transformer"},
+		{"router", func(w *Workers) error {
+			_, err := w.Route(t.Context(), at(), &invoke.Request{})
+			return err
+		}, "runs no router"},
+		{"proxy router", func(w *Workers) error {
+			_, err := w.Direct(t.Context(), at(), &invoke.Connection{}, nil)
+			return err
+		}, "runs no proxy router"},
+		{"proxy transformer", func(w *Workers) error {
+			_, err := w.Shape(t.Context(), at(), &invoke.Stream{})
+			return err
+		}, "runs no proxy transformer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A bare Invoker: it answers requests and nothing else.
+			local := &recording{}
+			router := &table{byName: map[string][]stats.Node{}}
+			w, h := newWorkers(t, router, WithLocal(local))
+			router.byName["worker"] = []stats.Node{{Peer: h.ID().String()}}
+
+			err := tc.call(w)
+			require.ErrorContains(t, err, tc.says)
+			require.Equal(t, 0, local.count())
+		})
+	}
+}
+
+// TestAConnectionToOurOwnWorkloadIsNotAStreamToOurselves.
+func TestAConnectionToOurOwnWorkloadIsNotAStreamToOurselves(t *testing.T) {
+	here, there := net.Pipe()
+	t.Cleanup(func() { here.Close(); there.Close() })
+
+	local := &full{conn: here}
+	router := &table{byName: map[string][]stats.Node{}}
+	w, h := newWorkers(t, router, WithLocal(local))
+	router.byName["worker/shop/prod"] = []stats.Node{{Peer: h.ID().String()}}
+
+	conn, err := w.Conn(t.Context(), at(), "http")
+	require.NoError(t, err)
+	require.Equal(t, here, conn)
+	require.Equal(t, 1, local.count())
+}
+
+// TestAConnectionHasNowhereToGoWhenNoNodeIsReady. The refusal is the same one
+// an invocation gets, because the choice that produced it is the same choice.
+func TestAConnectionHasNowhereToGoWhenNoNodeIsReady(t *testing.T) {
+	w, _ := newWorkers(t, &table{byName: map[string][]stats.Node{}}, WithLocal(&full{}))
+
+	_, err := w.Conn(t.Context(), at(), "http")
+	require.ErrorIs(t, err, ErrNoWorkers)
+}
+
+// TestAPeerThatIsNotOneIsNotTried. A stats row carrying a string that does not
+// decode is not a node that could not be reached — nothing was dialed — so it
+// is reported rather than retried.
+func TestAPeerThatIsNotOneIsNotTried(t *testing.T) {
+	router := &table{byName: map[string][]stats.Node{
+		"worker": {{Peer: "not-a-peer-id"}},
+	}}
+	w, _ := newWorkers(t, router, WithLocal(&full{}))
+
+	_, err := w.Conn(t.Context(), at(), "http")
+	require.ErrorContains(t, err, "is not a peer")
+}
+
+// TestAReportIsAlwaysOlderThanNothing.
+func TestAReportIsAlwaysOlderThanNothing(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+
+	_, err := New(newHost(t, mn), &table{}, WithMaxAge(0))
+	require.ErrorContains(t, err, "a report is always older than nothing")
 }
