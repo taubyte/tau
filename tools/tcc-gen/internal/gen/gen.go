@@ -27,6 +27,12 @@ const (
 	structPrefix   = "legacy/specs/structure/"
 	tsGenPath      = "pkg/tcc/taubyte/v2/explorer/src/gen/schema.ts"
 	jsonSchemaPath = "pkg/tcc/taubyte/v2/config.schema.json"
+
+	// readersPath is the typed view of every kind, as it sits in a compiled
+	// object. It is generated for the reason the TS and the JSON Schema are:
+	// the paths are the vocabulary's, and a hand-written copy of them is a copy.
+	readersPath = "pkg/project/kinds/kinds.go"
+	readersPkg  = "kinds"
 )
 
 // byteExact reports whether a generated file is checked byte-for-byte (struct
@@ -34,7 +40,8 @@ const (
 func byteExact(rel string) bool {
 	return strings.HasPrefix(rel, structPrefix) ||
 		rel == filepath.FromSlash(tsGenPath) ||
-		rel == filepath.FromSlash(jsonSchemaPath)
+		rel == filepath.FromSlash(jsonSchemaPath) ||
+		rel == filepath.FromSlash(readersPath)
 }
 
 // Generate returns a map of repo-relative path -> generated file content: the
@@ -59,6 +66,14 @@ func Generate(root []*engine.Node) (map[string][]byte, error) {
 		return nil, err
 	}
 	out[filepath.FromSlash(jsonSchemaPath)] = js
+
+	var kinds []string
+	for _, g := range root {
+		if name, _ := g.Match.(string); name != "" && len(g.Children) > 0 {
+			kinds = append(kinds, name)
+		}
+	}
+	out[filepath.FromSlash(readersPath)] = RenderReaders(readersPkg, root, kinds)
 	return out, nil
 }
 
