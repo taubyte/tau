@@ -2,7 +2,9 @@ package node
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -136,16 +138,45 @@ func (l *logs) Append(ctx context.Context, grant invoke.Grant, data []byte) (str
 	// THE RECORD LANDS BEFORE THE HEAD MOVES. The other order publishes a
 	// position whose record has not been written yet, which a reader cannot
 	// tell from one it will never get.
+	//
+	// AND IT LANDS UNDER ITS OWN DIGEST, not under the position, because the
+	// store it lands in is a CRDT and the position is a name two leaders can
+	// both hold. A leader that read this head, stalled, and lost the election
+	// still completes its write: it used to land on the position a NEW leader
+	// had already published, replacing bytes a caller was told were committed,
+	// and no process-local lock can stop that — the two writers are two
+	// processes. Under a digest the deposed leader writes a key only its own
+	// bytes produce, its raft commit below is refused, and what it left is an
+	// orphan nothing points at.
 	record := logRecord{At: l.clock().Unix(), Data: data}
 	raw, err := json.Marshal(record)
 	if err != nil {
 		return "", err
 	}
-	if err := db.Put(ctx, recordKey(grant.Handle, head), raw); err != nil {
+	digest := digestOf(raw)
+	if err := db.Put(ctx, recordKey(grant.Handle, head, digest), raw); err != nil {
 		return "", fmt.Errorf("node: writing the record: %w", err)
 	}
 
-	if err := cluster.Set(headKey(grant.Handle), []byte(strconv.FormatUint(head+1, 10)), applyTimeout); err != nil {
+	// THE HEAD IS READ AGAIN, and a head that moved means somebody else was
+	// the leader for this position. Raft only elects a node whose log already
+	// holds what was committed, so a leader that lost and regained the term
+	// reads the newer head here and stands down rather than publishing over
+	// the record that won. What this does not cover is the sliver where such a
+	// node holds that entry and has not applied it yet; closing that needs a
+	// conditional write, which pkg/raft does not have (Set/Delete/Batch only).
+	if now, err := headOf(cluster, grant.Handle); err != nil || now != head {
+		return "", fmt.Errorf("%w: position %d was taken while this record was being written",
+			wasmtier.ErrNotWritable, head)
+	}
+
+	// WHICH RECORD OCCUPIES THE POSITION IS RAFT'S TO SAY, and it says it in
+	// the same entry that moves the head — so a position is never published
+	// without its record, and never left holding one the head has passed.
+	if err := cluster.Batch([]raft.BatchOp{
+		{Set: &raft.SetCommand{Key: atKey(grant.Handle, head), Value: []byte(digest)}},
+		{Set: &raft.SetCommand{Key: headKey(grant.Handle), Value: []byte(strconv.FormatUint(head+1, 10))}},
+	}, applyTimeout); err != nil {
 		if errors.Is(err, raft.ErrNotLeader) {
 			return "", fmt.Errorf("%w: %s", wasmtier.ErrNotWritable, err.Error())
 		}
@@ -196,7 +227,13 @@ func (l *logs) Read(ctx context.Context, grant invoke.Grant, after string, limit
 
 	out := make([]wasmtier.Record, 0, page)
 	for at := from; len(out) < page; at++ {
-		raw, err := db.Get(ctx, recordKey(grant.Handle, at))
+		// THE POSITION IS RESOLVED THROUGH RAFT, which is what makes a record
+		// the one that was committed rather than the one that arrived last.
+		digest, held := cluster.Get(atKey(grant.Handle, at))
+		if !held {
+			break
+		}
+		raw, err := db.Get(ctx, recordKey(grant.Handle, at, string(digest)))
 		if err != nil {
 			// A POSITION WITH NOTHING AT IT ENDS THE PAGE, and does not skip
 			// ahead. Below the head it is a record still replicating; at the
@@ -254,10 +291,22 @@ func (l *logs) sweep(ctx context.Context, cluster raft.Cluster, grant invoke.Gra
 	// THE WALK IS NEWEST FIRST, so what is kept is what a reader is most likely
 	// to want and the scan stops at the first record beyond the budget instead
 	// of reading the whole log.
+	// WHERE IT STOPS DIGGING. Below the floor there is nothing left to drop,
+	// and walking to zero on every append would re-delete the whole prefix each
+	// time — once the mapping is raft's, that is a raft write per position.
+	floor, err := floorOf(cluster, grant.Handle)
+	if err != nil {
+		return
+	}
+
 	var held int64
 	cutoff := l.clock().Add(-age)
 	for at := head; ; at-- {
-		raw, err := db.Get(ctx, recordKey(grant.Handle, at))
+		digest, ok := cluster.Get(atKey(grant.Handle, at))
+		if !ok {
+			break
+		}
+		raw, err := db.Get(ctx, recordKey(grant.Handle, at, string(digest)))
 		if err != nil {
 			break
 		}
@@ -275,12 +324,17 @@ func (l *logs) sweep(ctx context.Context, cluster raft.Cluster, grant invoke.Gra
 		// answering it by forgetting everything — including what was just
 		// appended — loses the write a caller was told succeeded.
 		if beyond && at < head {
+			drop := make([]raft.BatchOp, 0, at-floor+1)
 			for older := at; ; older-- {
-				db.Delete(ctx, recordKey(grant.Handle, older))
-				if older == 0 {
+				if digest, ok := cluster.Get(atKey(grant.Handle, older)); ok {
+					db.Delete(ctx, recordKey(grant.Handle, older, string(digest)))
+					drop = append(drop, raft.BatchOp{Delete: &raft.DeleteCommand{Key: atKey(grant.Handle, older)}})
+				}
+				if older == floor || older == 0 {
 					break
 				}
 			}
+			cluster.Batch(drop, applyTimeout)
 			// WHERE THE LOG NOW STARTS, written where the head is written: a
 			// reader on any node has to know which hole is retention and which
 			// is a record still on its way.
@@ -376,8 +430,25 @@ func floorOf(cluster raft.Cluster, handle string) (uint64, error) {
 // recordKey is where one position's record sits. THE POSITION IS ZERO-PADDED so
 // the store's own ordering is the log's ordering, which is what lets a range
 // read walk forward without sorting.
-func recordKey(handle string, at uint64) string {
-	return "logs/" + handle + "/records/" + fmt.Sprintf("%020d", at)
+//
+// THE DIGEST IS THE LAST SEGMENT because the store is a CRDT: a key that named
+// only the position could be written by two leaders with different bytes, and
+// the later write would win over a record already acknowledged. With the digest
+// there, two writers of different bytes write two keys, and only the one raft
+// named at this position is ever read back.
+func recordKey(handle string, at uint64, digest string) string {
+	return "logs/" + handle + "/records/" + fmt.Sprintf("%020d", at) + "/" + digest
+}
+
+// atKey is which record occupies a position — raft's answer, not the store's.
+func atKey(handle string, at uint64) string {
+	return "logs/" + handle + "/at/" + fmt.Sprintf("%020d", at)
+}
+
+// digestOf names a record by its bytes.
+func digestOf(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
 
 // A cursor is opaque on purpose — see wit/deps/taubyte-log. Base64 so nobody

@@ -235,10 +235,12 @@ type follower struct {
 	// and answering.
 	leader bool
 
-	// barrier and set are what raft answered, so a caller's handling of each is
-	// a separate question from its handling of the other.
+	// barrier and commit are what raft answered, so a caller's handling of each
+	// is a separate question from its handling of the other. A log's commit is a
+	// Batch — the position and the head move in one entry — so that is where a
+	// lost election shows up.
 	barrier error
-	set     error
+	commit  error
 }
 
 func notLeading() *follower {
@@ -254,9 +256,9 @@ func (f *follower) Barrier(d time.Duration) error {
 	return f.MockCluster.Barrier(d)
 }
 
-func (f *follower) Set(key string, value []byte, d time.Duration) error {
-	if f.set != nil {
-		return f.set
+func (f *follower) Batch(ops []raft.BatchOp, d time.Duration) error {
+	if f.commit != nil {
+		return f.commit
 	}
-	return f.MockCluster.Set(key, value, d)
+	return f.MockCluster.Batch(ops, d)
 }

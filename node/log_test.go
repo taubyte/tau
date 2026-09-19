@@ -1,6 +1,7 @@
 package node
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"testing"
@@ -272,7 +273,7 @@ func TestAnAppendThatCannotBarrierIsRefused(t *testing.T) {
 func TestLeadershipLostWhileAppendingIsNotWritable(t *testing.T) {
 	cluster := notLeading()
 	cluster.leader = true
-	cluster.set = raft.ErrNotLeader
+	cluster.commit = raft.ErrNotLeader
 
 	l := loggingOn(t, cluster)
 
@@ -311,4 +312,93 @@ func TestALogOnANodeThatRunsNoWorkerIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRaft)
 
 	require.NoError(t, l.Close())
+}
+
+// TestADeposedLeadersLateWriteCannotReplaceAnAcknowledgedRecord.
+//
+// This is the bug the record key was reshaped for. A leader reads the head,
+// stalls, and loses the election; the new leader appends at that position and
+// tells its caller the record is committed. The old leader then completes the
+// write it was already inside. Both used to land on one key in a CRDT, so the
+// later one won and a caller was told bytes were committed that a reader would
+// never see. The lock in this package guards one process, and the two writers
+// are two processes.
+func TestADeposedLeadersLateWriteCannotReplaceAnAcknowledgedRecord(t *testing.T) {
+	l := logging(t)
+	grant := logGrant("shop/prod/QmAudit", nil)
+
+	cursor, err := l.Append(t.Context(), grant, []byte("the one that won"))
+	require.NoError(t, err)
+
+	_, db, err := l.ready()
+	require.NoError(t, err)
+
+	// THE DEPOSED LEADER FINISHES ITS WRITE. It computed the same position and
+	// different bytes, so this is exactly what it would have put.
+	stale, err := json.Marshal(logRecord{At: l.clock().Unix(), Data: []byte("the one that lost")})
+	require.NoError(t, err)
+	require.NoError(t, db.Put(t.Context(), recordKey(grant.Handle, 0, digestOf(stale)), stale))
+
+	records, err := l.Read(t.Context(), grant, "", 10)
+	require.NoError(t, err)
+	require.Len(t, records, 1, "the orphan is not a second record")
+	require.Equal(t, "the one that won", string(records[0].Data))
+	require.Equal(t, cursor, records[0].Cursor)
+}
+
+// TestAPositionRaftHasNotNamedIsNotServed. The mapping and the head move in one
+// raft entry, so a position without one is a record still replicating or the
+// end of the log — never bytes that happen to be in the store.
+func TestAPositionRaftHasNotNamedIsNotServed(t *testing.T) {
+	l := logging(t)
+	grant := logGrant("shop/prod/QmAudit", nil)
+
+	_, err := l.Append(t.Context(), grant, []byte("committed"))
+	require.NoError(t, err)
+
+	_, db, err := l.ready()
+	require.NoError(t, err)
+
+	orphan, err := json.Marshal(logRecord{At: l.clock().Unix(), Data: []byte("nobody named this")})
+	require.NoError(t, err)
+	require.NoError(t, db.Put(t.Context(), recordKey(grant.Handle, 1, digestOf(orphan)), orphan))
+
+	records, err := l.Read(t.Context(), grant, "", 10)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	require.Equal(t, "committed", string(records[0].Data))
+}
+
+// moving is a cluster whose head advances underneath the appender, which is what
+// a node that lost and regained the term reads when it comes back.
+type moving struct {
+	*raft.MockCluster
+	handle string
+	reads  int
+}
+
+func (m *moving) Get(key string) ([]byte, bool) {
+	value, held := m.MockCluster.Get(key)
+	if key == headKey(m.handle) {
+		m.reads++
+		if m.reads == 1 {
+			// Somebody else was the leader for this position.
+			m.MockCluster.Set(key, []byte("7"), time.Second)
+		}
+	}
+	return value, held
+}
+
+// TestAHeadThatMovedUnderTheAppenderStandsDown. Raft only elects a node whose
+// log already holds what was committed, so a leader that lost and regained the
+// term reads the newer head and refuses rather than publishing over the record
+// that won.
+func TestAHeadThatMovedUnderTheAppenderStandsDown(t *testing.T) {
+	handle := "shop/prod/QmAudit"
+	cluster := &moving{MockCluster: raft.NewMockCluster(), handle: handle}
+	l := loggingOn(t, cluster)
+
+	_, err := l.Append(t.Context(), logGrant(handle, nil), []byte("too late"))
+	require.ErrorIs(t, err, wasmtier.ErrNotWritable)
+	require.ErrorContains(t, err, "was taken while this record was being written")
 }
