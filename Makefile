@@ -18,7 +18,7 @@ DREAM_P ?= 4
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-dreaming test-raft test-docker test-containerd test-containers test-all bench-dreaming vm-fixtures test-cli test-cli-cover proto-v2 proto-v2-check
+.PHONY: test test-dreaming test-raft test-docker test-containerd test-containers test-all vm-fixtures test-cli test-cli-cover proto-v2 proto-v2-check
 
 test:
 	go test $(FLAGS) ./...
@@ -82,13 +82,6 @@ test-all: test test-dreaming test-raft
 vm-fixtures:
 	bash pkg/vm-low-orbit/tests/fixtures/build.sh
 
-# Profiling benchmarks over a live dream universe (dream/benchmarks).
-# Examples:
-#   make bench-dreaming BENCH=HTTPFunction FLAGS="-cpuprofile=/tmp/cpu.prof -memprofile=/tmp/mem.prof"
-#   make bench-dreaming BENCH=UniverseBoot FLAGS="-benchtime=5x -cpuprofile=/tmp/boot.prof"
-BENCH ?= .
-bench-dreaming:
-	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -run '^$$' -bench '$(BENCH)' -benchmem -timeout 30m $(FLAGS) ./dream/benchmarks
 
 # Regenerate v2's inter-service RPC stubs (protoc-gen-go + protoc-gen-connect-go,
 # both pinned in pkg/proto/buf.gen.yaml) from pkg/proto. Requires buf,
