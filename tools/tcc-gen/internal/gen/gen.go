@@ -31,8 +31,14 @@ const (
 	// readersPath is the typed view of every kind, as it sits in a compiled
 	// object. It is generated for the reason the TS and the JSON Schema are:
 	// the paths are the vocabulary's, and a hand-written copy of them is a copy.
-	readersPath = "pkg/project/kinds/kinds.go"
-	readersPkg  = "kinds"
+	//
+	// IT SITS WITH WHAT DEFINES IT, a peer of schema/ and wasm/ and explorer/,
+	// because a project is not a runtime concept that happens to be compiled —
+	// the root, the scopes, the identity and the layout are all declared in the
+	// DSL, so what reads one belongs beside the DSL rather than in whatever
+	// service happens to read it today.
+	readersPath = "pkg/tcc/taubyte/v2/project/kinds.go"
+	readersPkg  = "project"
 )
 
 // byteExact reports whether a generated file is checked byte-for-byte (struct

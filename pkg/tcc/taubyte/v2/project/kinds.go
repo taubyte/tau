@@ -7,7 +7,7 @@
 // comment on it says where it came from. That distinction is the reason these
 // are generated rather than written by hand - it is invisible in the yaml and
 // a reader that guesses reads the wrong place and reports nothing.
-package kinds
+package project
 
 import "time"
 
