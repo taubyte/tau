@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/pkg/database"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -54,20 +55,40 @@ func TestEveryExternalDatabaseEngineIsAdapted(t *testing.T) {
 	// TAU'S OWN ARE THE NODE'S TO REGISTER and are not in this registry — it
 	// opens them on first use against the swarm's store, so they are absent
 	// here by design rather than missing.
-	tauEngine := "distributed"
+	//
+	// FOR THE MODELS IT ACTUALLY BACKS, and that qualifier is the whole fix.
+	// This used to skip tau's engine for EVERY model, which assumed the node
+	// opens a distributed one for all four. It does not: node.TauBacked() is
+	// kv, document and vector, and `sql: {engine: distributed}` compiled,
+	// deployed and answered every query with "no database engine is registered
+	// in this build" — with this test green over it, because this was the line
+	// that looked away.
+	tauEngine := schema.TauEngine()
+	tauBacks := map[string]bool{}
+	for _, model := range node.TauBacked() {
+		tauBacks[string(model)] = true
+	}
 
-	// absent is every external engine nothing here adapts, with the reason.
+	// absent is every engine nothing here opens, keyed by model, with the
+	// reason. KEYED BY MODEL because an engine is not absent everywhere: tau's
+	// own is real for three data models and a promise for the fourth.
 	absent := map[string]string{
-		"mongo": "no document adapter yet; the vocabulary declares the engine and nothing opens one",
+		"document/mongo": "no document adapter yet; the vocabulary declares the engine and nothing opens one",
+		"sql/distributed": "tau ships no distributed sql engine - the vocabulary declares it ahead of mushql, " +
+			"and DatabaseEngines() offers tau's own for every model. A project writing it compiles and deploys, " +
+			"and every query answers \"no database engine is registered in this build\".",
 	}
 
 	var missing []string
 	for model, engines := range schema.DatabaseEngines() {
 		for _, engine := range engines {
-			if engine == tauEngine || registered[model][engine] {
+			if engine == tauEngine && tauBacks[model] {
 				continue
 			}
-			if _, known := absent[engine]; known {
+			if registered[model][engine] {
+				continue
+			}
+			if _, known := absent[model+"/"+engine]; known {
 				continue
 			}
 			missing = append(missing, model+"/"+engine)

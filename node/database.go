@@ -40,6 +40,28 @@ import (
 // run-time variable from — so a password is never in a spec, which is logged,
 // cached, compared and handed to a tier.
 
+// TauBacked is every data model this node opens against the swarm's own store,
+// rather than against a server somebody else runs.
+//
+// EXPORTED SO THE VOCABULARY CAN BE HELD TO IT. schema.DatabaseEngines() offers
+// tau's own engine for EVERY model, `sql` included — and nothing here opens a
+// distributed sql, so `sql: {engine: distributed}` compiled, deployed, and
+// answered every query with "no database engine is registered in this build".
+// The one test that checks engine coverage skipped tau's own engine for every
+// model, which is exactly where that hid.
+func TauBacked() []database.Type {
+	return []database.Type{database.KV, database.Document, database.Vector}
+}
+
+func tauBacks(want database.Type) bool {
+	for _, model := range TauBacked() {
+		if model == want {
+			return true
+		}
+	}
+	return false
+}
+
 // databases is the node's Databases and KVs: one registry, one connection per
 // handle, whichever data model the grant names.
 type databases struct {
@@ -453,9 +475,10 @@ func (d *databases) engines(ctx context.Context, want database.Type) (*database.
 		d.registry = d.node.opts.engines
 	}
 	// TAU'S OWN ENGINES ARE THIS NODE'S TO REGISTER, and the rest are a
-	// composer's — see the doc above. kv and document are both backed by the
-	// swarm's own store.
-	if want != database.KV && want != database.Document && want != database.Vector {
+	// composer's — see the doc above. kv, document and vector are backed by the
+	// swarm's own store; sql is not, and TauBacked is where that is said once
+	// so a test can hold the vocabulary to it.
+	if !tauBacks(want) {
 		if d.registry == nil {
 			return nil, ErrNoEngines
 		}
