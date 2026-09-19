@@ -47,13 +47,25 @@ import (
 // That is the exact silent loss the mount refusal existed to prevent, one level
 // up.
 //
-// It is a replicated kvdb row now, which any node may write. The key is written
-// by the node HOLDING the volume, so it is not a key two nodes race — with one
-// exception worth naming: the vocabulary lets more than one workload mount a
-// volume read-write, and two nodes each holding their own copy of that
-// directory is already divergent data before any pointer is written. A volume
-// that is genuinely shared needs a shared filesystem, which is a different
-// piece of work; nothing here pretends otherwise.
+// It is a replicated kvdb row now, which any node may write. That makes the key
+// one SEVERAL nodes can write, so what stops the wrong one winning is that a
+// node only writes a checkpoint whose content it has not already written.
+//
+// A NODE NEVER STOPS HOLDING A VOLUME — Mount has no opposite, and the tier's
+// seam is one method. So when placement moves a workload, the node it left
+// keeps the handle and keeps checkpointing a directory nothing writes to any
+// more. Both nodes write one key in a CRDT, the old one writes last as often as
+// its interval comes round, and the pointer ends up naming bytes from before
+// the move. Everything written since is gone on the next restore, silently,
+// which is the loss this file exists to prevent.
+//
+// Unchanged bytes are the same object, because the store is content-addressed
+// and the walk is deterministic: same files, same tar, same cid. So a node whose
+// workload has gone produces the id it produced last time and writes nothing,
+// while the node actually running the workload produces a new one and does. The
+// genuinely shared case — the vocabulary lets more than one workload mount a
+// volume read-write — is still divergent data before any pointer is written,
+// and needs a shared filesystem rather than a rule here.
 //
 // # A moved workload restores, and what it loses is stated
 //
@@ -112,6 +124,10 @@ type volume struct {
 
 	// every is how often it is checkpointed.
 	every time.Duration
+
+	// wrote is the checkpoint this node last put in the store for this handle.
+	// Guarded by volumes.mu.
+	wrote string
 }
 
 var (
@@ -285,6 +301,18 @@ func (v *volumes) checkpoint(ctx context.Context, held *volume) (int64, error) {
 	// measurement rather than a wall.
 	if held.quota > 0 && size > held.quota {
 		logger.Warnf("volume: %s holds %d bytes and declared a quota of %d", held.handle, size, held.quota)
+	}
+
+	// NOTHING CHANGED, SO NOTHING IS WRITTEN. See the file doc: this is what
+	// keeps a node that no longer runs the workload from putting its own older
+	// bytes back over the pointer, every interval, until somebody notices a
+	// database that lost a day.
+	v.mu.Lock()
+	unchanged := held.wrote == id
+	held.wrote = id
+	v.mu.Unlock()
+	if unchanged {
+		return size, nil
 	}
 
 	return size, db.Put(ctx, checkpointPrefix+held.handle, []byte(id))

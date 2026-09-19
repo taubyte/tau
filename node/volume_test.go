@@ -576,3 +576,63 @@ func TestATruncatedArchiveIsAnError(t *testing.T) {
 	cut := buf.Bytes()[:512+32]
 	require.Error(t, untar(bytes.NewReader(cut), t.TempDir()))
 }
+
+// TestTheNodeAWorkloadLeftDoesNotPutItsOldBytesBack.
+//
+// A node never stops holding a volume: Mount has no opposite, and the tier's
+// seam is one method. So when placement moves a workload, the node it left
+// keeps checkpointing a directory nothing writes to any more — into the same
+// replicated key the node now running it writes. The old one writes last as
+// often as its interval comes round, and the pointer ends up naming bytes from
+// before the move.
+func TestTheNodeAWorkloadLeftDoesNotPutItsOldBytesBack(t *testing.T) {
+	store := &memAssets{blobs: map[string][]byte{}}
+	replicated := &memFactory{}
+	grant := mountGrant("shop/prod/QmData", nil)
+
+	node := func() *volumes {
+		n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+			WithRoot(t.TempDir()), WithAssets(store), WithDatabases(replicated))
+		require.NoError(t, n.Start(t.Context()))
+		<-n.work.forming
+		return &volumes{node: n}
+	}
+
+	// THE NODE IT STARTED ON writes a row and checkpoints it.
+	left := node()
+	dir, err := left.Mount(t.Context(), grant)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows"), []byte("alice"), 0o640))
+	_, err = left.checkpoint(t.Context(), left.open[grant.Handle])
+	require.NoError(t, err)
+
+	// THE WORKLOAD MOVES. The new node restores what the old one wrote, the
+	// workload writes more, and that is what the pointer should name.
+	arrived := node()
+	moved, err := arrived.Mount(t.Context(), grant)
+	require.NoError(t, err)
+	require.NotEqual(t, dir, moved)
+
+	alice, err := os.ReadFile(filepath.Join(moved, "rows"))
+	require.NoError(t, err)
+	require.Equal(t, "alice", string(alice), "the move restored what was there")
+
+	require.NoError(t, os.WriteFile(filepath.Join(moved, "rows"), []byte("alice\nbob"), 0o640))
+	_, err = arrived.checkpoint(t.Context(), arrived.open[grant.Handle])
+	require.NoError(t, err)
+
+	// AND THE NODE IT LEFT KEEPS TICKING. Its directory still holds the row
+	// from before the move, and its interval comes round like any other.
+	require.Equal(t, 1, left.step(t.Context(), time.Now().Add(time.Hour), map[string]time.Time{}),
+		"the node it left still walks the volume")
+
+	// The pointer must still name what the workload actually wrote.
+	restored := node()
+	back, err := restored.Mount(t.Context(), grant)
+	require.NoError(t, err)
+
+	rows, err := os.ReadFile(filepath.Join(back, "rows"))
+	require.NoError(t, err)
+	require.Equal(t, "alice\nbob", string(rows),
+		"the node the workload left put its own older bytes back over the pointer")
+}
