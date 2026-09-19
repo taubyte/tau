@@ -17,6 +17,10 @@ func (t *templates) Function(language string) (map[string]TemplateInfo, error) {
 }
 
 func (t *templates) codeMap(templatePath string) (map[string]TemplateInfo, error) {
+	if t.loadErr != nil {
+		return nil, t.loadErr
+	}
+
 	dirs, err := os.ReadDir(templatePath)
 	if err != nil {
 		return nil, err

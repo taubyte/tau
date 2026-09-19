@@ -16,6 +16,10 @@ func (t *templates) Libraries() (map[string]TemplateInfo, error) {
 }
 
 func (t *templates) genericRepositoryTemplates(folder string) (map[string]TemplateInfo, error) {
+	if t.loadErr != nil {
+		return nil, t.loadErr
+	}
+
 	templates, err := os.ReadDir(folder)
 	if err != nil {
 		return nil, err

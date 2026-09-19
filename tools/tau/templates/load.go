@@ -25,6 +25,11 @@ func loadTemplates() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTemplateGitTimeout)
 	defer cancel()
+	// SAME CACHE, SAME RULE: a checkout in /tmp that cannot be opened is
+	// replaced rather than reported forever. See openOrReclone.
+	if err := openOrReclone(ctx, templateRepositoryFolder, TemplateRepoURL); err != nil {
+		return err
+	}
 	_templates.repository, err = git.New(ctx,
 		git.Root(templateRepositoryFolder),
 		git.URL(TemplateRepoURL),

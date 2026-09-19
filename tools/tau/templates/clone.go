@@ -24,20 +24,46 @@ func (info *TemplateInfo) templateRoot() (string, error) {
 	// open or clone the repository
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTemplateGitTimeout)
 	defer cancel()
-	_, err := git.New(ctx,
-		git.Root(cloneFrom),
-		git.URL(info.URL),
-	)
-	if err != nil {
+	if err := openOrReclone(ctx, cloneFrom, info.URL); err != nil {
 		return "", err
 	}
 
 	return cloneFrom, nil
 }
 
+// openOrReclone opens the cached clone, and replaces it when it cannot.
+//
+// THE CACHE IS IN /tmp AND SURVIVES THE RUN THAT BROKE IT. A pull that died
+// halfway leaves a directory that is not a repository, and every run after it
+// fails on whatever file the interruption happened to miss — a different error
+// each time, none of them about the code. What cannot be opened is thrown away
+// and fetched again, which is the only thing a cache of something immutable
+// owes anybody.
+func openOrReclone(ctx context.Context, root, url string) error {
+	_, err := git.New(ctx, git.Root(root), git.URL(url))
+	if err == nil {
+		return nil
+	}
+
+	if rmErr := os.RemoveAll(root); rmErr != nil {
+		return err
+	}
+
+	_, err = git.New(ctx, git.Root(root), git.URL(url))
+	return err
+}
+
 // CloneTo will create the directory for the template and move
 // all files from the template repository except .git
 func (info *TemplateInfo) CloneTo(dir string) error {
+	// THE COMMENT ABOVE SAYS THIS CREATES THE DIRECTORY, and it did not: every
+	// caller had to make it first, and one that did not got `no such file or
+	// directory` from the first file copied — which reads as a missing template
+	// rather than a missing destination.
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
 	root, err := info.templateRoot()
 	if err != nil {
 		return err

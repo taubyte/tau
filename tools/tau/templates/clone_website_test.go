@@ -9,10 +9,9 @@ import (
 )
 
 func TestCloneWebsite(t *testing.T) {
+	// CloneTo makes its own destination, which is what its comment always
+	// said and what this test used to do on its behalf.
 	testFolder := "./assets/tb_website_someWebsite"
-	err := os.MkdirAll(testFolder, 0755)
-	assert.NilError(t, err)
-
 	defer os.RemoveAll("./assets")
 
 	websites, err := templates.Get().Websites()

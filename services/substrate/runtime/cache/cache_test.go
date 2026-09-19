@@ -613,8 +613,14 @@ func TestConcurrentAddAndGet(t *testing.T) {
 			matcher := &mockMatchDefinition{cachePrefix: "test-prefix", stringVal: "test-matcher"}
 			options := components.GetOptions{}
 			_, err := cache.Get(matcher, options)
-			// Get might fail if no serviceables are available yet, which is expected
-			if err != nil && err.Error() != "getting cached serviceable from matcher &{test-prefix test-matcher}, failed with: does not exist" {
+			// A COLD CACHE IS THE EXPECTED ANSWER HERE, and it is recognised by
+			// the sentinel rather than by the sentence. This used to compare the
+			// whole formatted error against a literal carrying `&{test-prefix
+			// test-matcher}` — the default struct formatting from before the
+			// matcher had a String() — so it matched nothing, and the moment a
+			// Get actually landed on an empty cache the test failed. It passed
+			// only on a machine fast enough that the adds always won.
+			if err != nil && !errors.Is(err, ErrNotCached) {
 				errChan <- err
 			}
 		}()
@@ -1594,9 +1600,12 @@ func TestGetErrorMessages(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error for non-existent serviceable")
 	}
-	expectedMsg := "getting cached serviceable from matcher test-matcher, failed with: does not exist"
-	if err.Error() != expectedMsg {
-		t.Fatalf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+	// THE SENTINEL, NOT THE SENTENCE. What a caller needs to know is that
+	// nothing is cached; the wording around it is a log line, and pinning the
+	// whole sentence is what left the concurrent test whitelisting a string
+	// that had not been produced since the matcher grew a String().
+	if !errors.Is(err, ErrNotCached) {
+		t.Fatalf("Expected a not-cached error, got '%s'", err.Error())
 	}
 }
 
@@ -1627,9 +1636,9 @@ func TestValidateErrorMessages(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error for TNS commit error")
 	}
-	// The serviceable gets removed, so we get "does not exist" error
-	if !strings.Contains(err.Error(), "does not exist") {
-		t.Fatalf("Expected 'does not exist' error message, got: %v", err.Error())
+	// The serviceable gets removed, so nothing is cached for the matcher.
+	if !errors.Is(err, ErrNotCached) {
+		t.Fatalf("Expected a not-cached error, got: %v", err.Error())
 	}
 }
 

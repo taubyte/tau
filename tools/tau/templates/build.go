@@ -4,10 +4,13 @@ import (
 	"github.com/taubyte/tau/pkg/git"
 )
 
+// Get is the template repository, loaded on first use.
+//
+// IT ANSWERS WHAT getOrCreateTemplates ANSWERED, and not the package variable:
+// a load that failed deliberately leaves that variable nil so the next call
+// retries, so reading it back handed every caller nothing at all.
 func Get() *templates {
-	getOrCreateTemplates()
-
-	return _templates
+	return getOrCreateTemplates()
 }
 
 func Repository() *git.Repository {

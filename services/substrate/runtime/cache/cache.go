@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"errors"
 	"fmt"
 
 	iface "github.com/taubyte/tau/core/services/substrate/components"
@@ -102,11 +103,19 @@ func (c *Cache) Get(matcher iface.MatchDefinition, ops iface.GetOptions) ([]ifac
 	}
 
 	if len(serviceables) < 1 {
-		return nil, fmt.Errorf("getting cached serviceable from matcher %v, failed with: does not exist", matcher)
+		return nil, fmt.Errorf("getting cached serviceable from matcher %v, failed with: %w", matcher, ErrNotCached)
 	}
 
 	return serviceables, nil
 }
+
+// ErrNotCached is a matcher nothing is cached for.
+//
+// IT IS A SENTINEL BECAUSE THE ANSWER IS ORDINARY. Nothing cached yet is what a
+// cold cache says, and a caller that has to tell it apart from a real failure
+// was left comparing the formatted sentence — which changed the day the matcher
+// grew a String() method, and quietly stopped matching anything.
+var ErrNotCached = errors.New("does not exist")
 
 // Remove removes a single serviceable from the cache.
 func (c *Cache) Remove(serviceable iface.Serviceable) {
