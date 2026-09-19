@@ -1,0 +1,14 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Hb
+description: the one way in
+host:
+    zone:
+        in:
+            name: example_com
+        name: hello
+route:
+    path: /
+    match: prefix
+    methods: [GET, POST]
+    handler:
+        function:
+            name: hello
