@@ -11,16 +11,6 @@ package specs
 
 import "time"
 
-// Resource is a compiled resource, read at a path.
-type Resource interface {
-	String(path ...string) string
-	Strings(path ...string) []string
-	Int(path ...string) (int64, bool)
-	Float(path ...string) (float64, bool)
-	Bool(path ...string) (bool, bool)
-	Duration(path ...string) (time.Duration, bool)
-}
-
 // Application is that kind, read from a compiled object.
 type Application struct {
 	As                             string
@@ -2030,5 +2020,65 @@ func ReadEnvironments(r Resource) Environments {
 	var out Environments
 	out.Branches = r.Strings("branches")
 	out.Regions = r.Strings("regions")
+	return out
+}
+
+// SourceBlock is every field any kind declares under "source", read from a compiled
+// object. A kind that declares none of them reads as the zero value.
+type SourceBlock struct {
+	Source                         string
+	SourceBranch                   string
+	SourceBuiltin                  string
+	SourceComponent                string
+	SourceGit                      string
+	SourceImage                    string
+	SourceImagePullSecretName      string
+	SourceImagePullSecretNamespace string
+	SourceKind                     string // which of image, git was written
+	SourceNamespace                string
+	SourcePath                     string
+}
+
+// ReadSourceBlock decodes one from a resource.
+func ReadSourceBlock(r Resource) SourceBlock {
+	var out SourceBlock
+	out.Source = r.String("source")
+	out.SourceBranch = r.String("source", "branch")
+	out.SourceBuiltin = r.String("source", "builtin")
+	out.SourceComponent = r.String("source", "component")
+	out.SourceGit = r.String("source", "git")
+	out.SourceImage = r.String("source", "image")
+	out.SourceImagePullSecretName = r.String("source", "image_pull_secret", "name")
+	out.SourceImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
+	out.SourceKind = r.String("source", "kind")
+	out.SourceNamespace = r.String("source", "namespace")
+	out.SourcePath = r.String("source", "path")
+	return out
+}
+
+// BuildBlock is every field any kind declares under "build", read from a compiled
+// object. A kind that declares none of them reads as the zero value.
+type BuildBlock struct {
+	BuildDockerfile string // authored at build/dockerfile/path
+	BuildImage      string // authored at build/{commands|script}/image
+	BuildInstall    string // authored at build/{commands}/install
+	BuildKind       string // which of dockerfile was written
+	BuildOutput     string // authored at build/{commands|script}/output
+	BuildRun        string // authored at build/{commands}/run
+	BuildScript     string // authored at build/script/path
+	BuildTarget     string // authored at build/dockerfile/target
+}
+
+// ReadBuildBlock decodes one from a resource.
+func ReadBuildBlock(r Resource) BuildBlock {
+	var out BuildBlock
+	out.BuildDockerfile = r.String("build", "dockerfile")
+	out.BuildImage = r.String("build", "image")
+	out.BuildInstall = r.String("build", "install")
+	out.BuildKind = r.String("build", "kind")
+	out.BuildOutput = r.String("build", "output")
+	out.BuildRun = r.String("build", "run")
+	out.BuildScript = r.String("build", "script")
+	out.BuildTarget = r.String("build", "target")
 	return out
 }

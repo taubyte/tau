@@ -1,0 +1,1289 @@
+package {{.Package}}
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+)
+// Package project reads a compiled project — the bytes the register holds — and
+// answers the one question the runtime asks of it: what is the resource called
+// this, and what does it say about itself.
+//
+// # It reads, and it is the only thing that does
+//
+//	a user writes the v2 schema
+//	  -> tcc COMPILES it
+//	    -> the compiled object is published to the register
+//	      -> THIS reads it, per resource, on the request path
+//
+// A worker, a gateway, a proxy and `tau graph` all need that read, and a second
+// implementation of it would be a second opinion about what a compiled project
+// means. So it is here once and the consumers are thin.
+//
+// # Nothing here knows a kind
+//
+// There is no `Function`, no `Application`, no field called `memory`. A
+// resource is the map tcc produced and this package hands it over with typed
+// accessors, because the vocabulary is pkg/tcc/taubyte/v2/schema's and it
+// changes there. A reader that mirrored the kinds would be a copy of the
+// vocabulary that drifts silently — the failure would be a field that stopped
+// arriving, not a compile error.
+//
+// # The shape it reads, which is tcc's and not this package's
+//
+// A compiled object is three trees:
+//
+//	object   the project itself: kinds at the root, namespaces nesting under
+//	         `namespace/<id>`, resources keyed by id
+//	indexes  a FLAT map, keyed by the whole path
+//	         `projects/<pid>/<scope…>/<kind>/<name>/links`, whose value is the
+//	         path into `object`
+//	lowered  what the compiler produced rather than what was written; already
+//	         folded into `object`, and not read here
+//
+// THE INDEX IS WHY THIS IS CHEAP. Every reference in v2 is by NAME — an edge
+// says `cache/orders`, a route says which kind and which name — and a name has
+// to become a resource without walking every scope's every group. tcc already
+// built that table at compile time, so a lookup here is a map descent and not a
+// search.
+//
+// # Scope resolves outward, and that is the vocabulary's rule
+//
+// A bare name is looked for in the scope that asked, then in each parent up to
+// the project. That is how a namespace inherits its parent's resources without
+// restating them, and it is the reason a lookup takes the ASKER's scope rather
+// than a fully qualified path.
+
+
+var (
+	ErrNoObject  = errors.New("project: the compiled bytes carry no object")
+	ErrNoID      = errors.New("project: the compiled object names no project")
+	ErrNotFound  = errors.New("project: no such resource")
+	ErrBadIndex  = errors.New("project: an index entry that does not name a resource")
+	ErrWrongType = errors.New("project: the value is not of that type")
+)
+
+// segments of the compiled object and of an index value. They are tcc's, read
+// here rather than guessed: see the package doc.
+// THEY ARE READ AND NO LONGER RE-SPELLED. Every one of these was a verbatim
+// copy — `object` and `indexes` of constants tcc already exports and calls "a
+// contract and not a convention", and the three index words of constants the
+// schema keeps private while exporting the encoder that writes between them.
+// The comment above them said they were read here rather than guessed; they
+// were guessed, correctly, for as long as nobody changed one, and the failure
+// would have been an empty index and a node that serves nothing.
+const (
+	objectKey   = "{{.ObjectKey}}"
+	indexesKey  = "{{.IndexesKey}}"
+	projectsSeg = "{{.ProjectsSeg}}"
+	branchesSeg = "{{.BranchesSeg}}"
+	linksSeg    = "{{.LinksSeg}}"
+)
+
+// namespaceSeg is the one container that produces nothing, which is how a
+// lowered scope is told from an authored one. It is a vocabulary word and the
+// vocabulary exposes no predicate for it yet — ScopeKindNames() lists the
+// scopes and does not say which of them lower.
+const namespaceSeg = "{{.NamespaceSeg}}"
+
+// Project is a compiled project, ready to be read.
+//
+// IT IS IMMUTABLE AND SAFE TO SHARE. The register names objects by their
+// content, so one loaded here is good forever and a caller is meant to hold it
+// across requests rather than re-load it per call — which is the whole reason
+// the register hands out a small pointer and a big object separately.
+type Project struct {
+	id   string
+	name string
+
+	root map[string]any
+
+	// environments is the deployment table, read once. A compiled project is
+	// immutable, so a consumer may ask per push without paying for the walk
+	// per push.
+	environmentsOnce sync.Once
+	environments     []schema.Environment
+
+	// located is the index read backwards: a resource id to the address a
+	// caller would look it up by. A resolved reference and a reachable name
+	// both arrive as ids, and both need the other direction.
+	located map[string]where
+
+	zonesOnce sync.Once
+	zones     []Zone
+
+	// hosts is memoized: a compiled project is immutable, so the walk that
+	// produces it runs once however many requests ask.
+	hostsOnce sync.Once
+	hosts     []Host
+	byHost    map[string][]Host
+
+	// index is tcc's flat index with the trailing `links` segment taken off,
+	// so a key is exactly `projects/<pid>/<scope…>/<kind>/<name>` and a lookup
+	// is one map hit. Listings scan it, which is fine because a listing is a
+	// walk of the project and never on the request path.
+	index map[string][]string
+}
+
+// Load parses the bytes the register holds.
+func Load(compiled []byte) (*Project, error) {
+	var doc map[string]any
+	if err := json.Unmarshal(compiled, &doc); err != nil {
+		return nil, fmt.Errorf("project: reading the compiled object: %w", err)
+	}
+
+	root, _ := doc[objectKey].(map[string]any)
+	if root == nil {
+		return nil, ErrNoObject
+	}
+	id, _ := root["id"].(string)
+	if id == "" {
+		return nil, ErrNoID
+	}
+	name, _ := root["name"].(string)
+
+	flat, _ := doc[indexesKey].(map[string]any)
+
+	index := readIndex(flat)
+	return &Project{id: id, name: name, root: root, index: index, located: locate(index, id)}, nil
+}
+
+// readIndex takes the trailing `links` off every key and keeps the values as
+// strings. It runs once per object, and an object is content-addressed, so it
+// runs once per deploy and never on a request.
+func readIndex(flat map[string]any) map[string][]string {
+	out := make(map[string][]string, len(flat))
+	for key, v := range flat {
+		path, ok := strings.CutSuffix(key, "/"+linksSeg)
+		if !ok {
+			continue
+		}
+		list, ok := v.([]any)
+		if !ok {
+			continue
+		}
+		links := make([]string, 0, len(list))
+		for _, item := range list {
+			if s, ok := item.(string); ok {
+				links = append(links, s)
+			}
+		}
+		if len(links) > 0 {
+			out[path] = links
+		}
+	}
+	return out
+}
+
+// ID is the project's id, which is what the index is keyed under.
+func (p *Project) ID() string { return p.id }
+
+// Name is what the author called it.
+func (p *Project) Name() string { return p.name }
+
+// Resource resolves a name the way the vocabulary does: in the scope that
+// asked, then in each parent.
+//
+// scope is a chain of namespace NAMES from the project root — the `/shop/eu` an
+// author writes, split — and nil is the project itself. The returned id is the
+// resource's own, which is what an edge that already resolved carries.
+func (p *Project) Resource(scope []string, kind, name string) (Resource, string, error) {
+	if kind == "" || name == "" {
+		return nil, "", fmt.Errorf("%w: %s/%s", ErrNotFound, kind, name)
+	}
+
+	cursor, err := p.scopeCursor(scope)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Outward: this scope, then each parent, by dropping the `namespace/<id>`
+	// pair the level added.
+	for {
+		if r, id, err := p.at(cursor, kind, name); err == nil {
+			return r, id, nil
+		} else if !errors.Is(err, ErrNotFound) {
+			return nil, "", err
+		}
+		if len(cursor) < 2 {
+			return nil, "", fmt.Errorf("%w: %s/%s", ErrNotFound, kind, name)
+		}
+		cursor = cursor[:len(cursor)-2]
+	}
+}
+
+// Namespaces lists the namespace names directly under a scope.
+func (p *Project) Namespaces(scope []string) ([]string, error) {
+	return p.Names(scope, namespaceSeg)
+}
+
+// Kinds lists the kinds that have at least one resource in a scope, and Names
+// lists the resources of one kind there. Neither resolves outward: they answer
+// "what is declared HERE", which is what a walk of the project wants.
+func (p *Project) Kinds(scope []string) ([]string, error) {
+	cursor, err := p.scopeCursor(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := map[string]bool{}
+	for _, tail := range p.under(cursor, 2) {
+		if kind := tail[0]; kind != namespaceSeg {
+			seen[kind] = true
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for kind := range seen {
+		out = append(out, kind)
+	}
+	return out, nil
+}
+
+// Names lists the resources of one kind declared in a scope.
+func (p *Project) Names(scope []string, kind string) ([]string, error) {
+	cursor, err := p.scopeCursor(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []string
+	for _, tail := range p.under(append(cursor, kind), 1) {
+		out = append(out, tail[0])
+	}
+	return out, nil
+}
+
+// under returns the tails of every index key that continues cursor by exactly
+// depth more segments.
+//
+// THE EXACT DEPTH IS WHAT KEEPS A SCOPE ITS OWN. Every namespace under this one
+// contributes keys that share this prefix, and a prefix match alone would list
+// a child's resources as if they were declared here.
+func (p *Project) under(cursor []string, depth int) [][]string {
+	prefix := strings.Join(cursor, "/") + "/"
+
+	var out [][]string
+	for key := range p.index {
+		rest, ok := strings.CutPrefix(key, prefix)
+		if !ok {
+			continue
+		}
+		if tail := strings.Split(rest, "/"); len(tail) == depth {
+			out = append(out, tail)
+		}
+	}
+	return out
+}
+
+// scopeCursor turns a chain of namespace names into the index path that scope
+// sits at: `projects/<pid>/namespace/<id>/namespace/<id>…`.
+//
+// IT GOES THROUGH THE INDEX RATHER THAN THE OBJECT, because the object is keyed
+// by id and the caller has names. That is exactly what the index is for, and
+// doing it any other way would mean scanning every namespace for its `name`.
+// scopeCursor turns a chain of scope NAMES into the index segments they are
+// keyed by.
+//
+// A SCOPE IS NOT ALWAYS A NAMESPACE. Every level of the index is
+// `<scope-kind>/<id>`, and the scope-kind is `namespace` only for a namespace:
+// a kind that LOWERS becomes a container of its own, so a workflow's produced
+// queues live under `workflow/<id>/queue/<name>`. Assuming the literal
+// `namespace` here is what made every resource a lowering produced — every
+// workflow step's queue and driver, every agent's loop and memory —
+// unreachable from the read path while the compiler emitted them correctly.
+func (p *Project) scopeCursor(scope []string) ([]string, error) {
+	cursor := []string{projectsSeg, p.id}
+	for _, name := range scope {
+		kind, id, ok := p.scopeAt(cursor, name)
+		if !ok {
+			return nil, fmt.Errorf("%w: scope %q", ErrNotFound, strings.Join(scope, "/"))
+		}
+		if id == "" {
+			return nil, fmt.Errorf("%w: scope %q", ErrBadIndex, name)
+		}
+		cursor = append(cursor, kind, id)
+	}
+	return cursor, nil
+}
+
+// scopeAt is the scope one name refers to at this cursor: which kind of
+// container it is, and its id.
+//
+// THE NAMESPACE IS TRIED FIRST and the rest in a fixed order, so a project with
+// a namespace and a workflow of one name resolves the same way on every node.
+// The compiler refuses that collision; the order is here so that a compiled
+// object which somehow carries one is not resolved by a map walk.
+func (p *Project) scopeAt(cursor []string, name string) (kind, id string, ok bool) {
+	for _, candidate := range scopeKinds() {
+		links := p.index[strings.Join(append(append([]string{}, cursor...), candidate, name), "/")]
+		if len(links) == 0 {
+			continue
+		}
+		return candidate, lastSegment(links[len(links)-1]), true
+	}
+	return "", "", false
+}
+
+// scopeKinds is every kind that may be a scope, the namespace first.
+//
+// It is read off the vocabulary rather than listed here, so a kind that gains a
+// lowering becomes addressable without a second edit — which is the failure
+// this function exists because of.
+// scopeKinds is every kind that may be a scope, the namespace first — baked
+// from the vocabulary at generation rather than asked for at runtime.
+func scopeKinds() []string {
+	return []string{ {{range $i, $k := .ScopeKinds}}{{if $i}}, {{end}}"{{$k}}"{{end}} }
+}
+
+// Scopes are the names of every scope container directly under one scope,
+// whatever KIND of container each is.
+//
+// IT IS NOT Namespaces. A walk of the whole project — what should this node be
+// draining, what should it be firing — has to descend into a workflow's own
+// scope as readily as into a namespace, and one that asked only for namespaces
+// walked past every resource a lowering produced.
+func (p *Project) Scopes(scope []string) ([]string, error) {
+	cursor, err := p.scopeCursor(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []string
+	for _, kind := range scopeKinds() {
+		for _, tail := range p.under(append(append([]string{}, cursor...), kind), 1) {
+			out = append(out, tail[0])
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// at reads one resource at exactly this scope, with no outward walk.
+func (p *Project) at(cursor []string, kind, name string) (Resource, string, error) {
+	links := p.index[strings.Join(append(append([]string{}, cursor...), kind, name), "/")]
+	if len(links) == 0 {
+		return nil, "", fmt.Errorf("%w: %s/%s", ErrNotFound, kind, name)
+	}
+
+	// The bucket accumulates one entry per publish and the current one is the
+	// last written. Taking the first would serve whatever was published first
+	// and never move again.
+	target := links[len(links)-1]
+	path, err := objectPath(target)
+	if err != nil {
+		return nil, "", err
+	}
+
+	r, ok := descend(p.root, path...).(map[string]any)
+	if !ok {
+		return nil, "", fmt.Errorf("%w: %s names nothing in the object", ErrBadIndex, target)
+	}
+	return Resource(r), path[len(path)-1], nil
+}
+
+// objectPath strips `branches/<branch>/projects/<pid>/` off an index value and
+// returns what is left, which is a path into the object.
+//
+// THE BRANCH IS ONE SEGMENT WHATEVER IT IS. tcc percent-encodes it for exactly
+// this reason (schema/index.go): `release/1.2` joined raw would turn one
+// segment into two and every path after it would be off by one — silently, in
+// the direction of the wrong resource.
+func objectPath(target string) ([]string, error) {
+	seg := strings.Split(target, "/")
+	if len(seg) < 5 || seg[0] != branchesSeg || seg[2] != projectsSeg {
+		return nil, fmt.Errorf("%w: %q", ErrBadIndex, target)
+	}
+	return seg[4:], nil
+}
+
+func lastSegment(path string) string {
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		return path[i+1:]
+	}
+	return path
+}
+
+func descend(m map[string]any, path ...string) any {
+	var cur any = m
+	for _, step := range path {
+		next, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur, ok = next[step]
+		if !ok {
+			return nil
+		}
+	}
+	return cur
+}
+
+// Resource is one compiled resource: whatever the vocabulary put in it.
+//
+// It is handed over as the map tcc produced rather than a struct per kind, for
+// the reason in the package doc — and the accessors below exist so a consumer
+// does not write the same type assertion twenty times, not so it can pretend
+// the shape is known here.
+type Resource map[string]any
+
+// Has reports whether anything is at the path.
+func (r Resource) Has(path ...string) bool { return descend(r, path...) != nil }
+
+// String reads a string. A missing value and an empty one are the same answer,
+// because a compiled resource omits what was not written.
+func (r Resource) String(path ...string) string {
+	s, _ := descend(r, path...).(string)
+	return s
+}
+
+// Int reads a number.
+//
+// JSON HAS ONE NUMERIC TYPE, so every integer in a compiled object arrives as a
+// float64 — a memory limit, a port, a concurrency. Converting it here is the
+// alternative to twenty call sites each remembering that, and one of them
+// forgetting.
+func (r Resource) Int(path ...string) (int64, bool) {
+	v, ok := descend(r, path...).(float64)
+	if !ok {
+		return 0, false
+	}
+	return int64(v), true
+}
+
+// Float reads a number that is not a whole one.
+//
+// IT IS NOT Int. A vocabulary Float — a retry factor, a similarity threshold —
+// compiles to a JSON number, and reading one with Int truncates 1.5 to 1 while
+// reading it with String answers nothing at all. Both are silent.
+func (r Resource) Float(path ...string) (float64, bool) {
+	v, ok := descend(r, path...).(float64)
+	return v, ok
+}
+
+// Duration reads a duration. tcc compiles one to NANOSECONDS, so this is Int
+// with the unit put back on — and the unit is stated here rather than assumed
+// at four call sites that could each assume a different one.
+func (r Resource) Duration(path ...string) (time.Duration, bool) {
+	n, ok := r.Int(path...)
+	if !ok {
+		return 0, false
+	}
+	return time.Duration(n), true
+}
+
+// Bool reads a flag.
+func (r Resource) Bool(path ...string) (bool, bool) {
+	b, ok := descend(r, path...).(bool)
+	return b, ok
+}
+
+// Strings reads a list of strings, e.g. an `ops` or an `egress` allowlist.
+func (r Resource) Strings(path ...string) []string {
+	list, ok := descend(r, path...).([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	for _, v := range list {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// Sub is a nested block — `ports`, `variables`, an access block keyed by name.
+func (r Resource) Sub(path ...string) Resource {
+	m, _ := descend(r, path...).(map[string]any)
+	return Resource(m)
+}
+
+// List is an ordered list of blocks, e.g. a gateway's transformers.
+//
+// IT IS NOT Sub. The vocabulary has both shapes and they are not
+// interchangeable: `ports` is keyed by name and `transformers` is a sequence,
+// because the order transformers run in is what they mean. Reading a list with
+// Keys returns nothing and silently drops every entry — which for a
+// fail-closed transformer is a security control that quietly stops existing.
+// Map reads a block as it stands, for a consumer that wants the whole of one
+// rather than a named field inside it.
+//
+// IT IS RAW ON PURPOSE. What is in a block is the vocabulary's, and a caller
+// that hands one onwards — a worker giving a tier its serving settings — should
+// not be re-typing every field a kind might grow.
+func (r Resource) Map(path ...string) (map[string]any, bool) {
+	m, ok := descend(r, path...).(map[string]any)
+	return m, ok
+}
+
+func (r Resource) List(path ...string) []Resource {
+	items, ok := descend(r, path...).([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]Resource, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			out = append(out, Resource(m))
+		}
+	}
+	return out
+}
+
+// Keys lists the names in a nested block, e.g. every port a workload declares.
+func (r Resource) Keys(path ...string) []string {
+	m := r.Sub(path...)
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+
+
+// access.go reads a resource's access block: what it declared it may reach, and
+// what it asked to do to it.
+//
+// # It is the grant, and there is no second one
+//
+// A workload reaches a cache, a database or a storage because its own document
+// says so. Nothing at run time widens that — no node setting, no policy file —
+// so "what can this function touch" is answerable by reading the repository,
+// which is the property the whole access block exists to have.
+//
+// # Telling a grant from a lowered child
+//
+// The compiled resource keys these blocks by KIND, and the same map also holds
+// resources LOWERED into this one — an agent's own memory database, a worker
+// pool's function — keyed by their id rather than by a label. The two are told
+// apart by `ops`, which the vocabulary makes Required on an access entry and
+// which no resource kind declares. See the schema's accessGroups.
+
+// Reach is one entry: a target this resource may touch, and the verbs it asked
+// for.
+type Reach struct {
+	// Kind is the vocabulary's kind name — "cache", "database", "storage".
+	Kind string
+
+	// Label is the key the author wrote. It is the target's name unless Name
+	// says otherwise, and it is what a guest passes at run time.
+	Label string
+
+	// Name is the target's real name when it differs from the label — needed
+	// only to reach two resources that share a name in different namespaces.
+	Name string
+
+	// Namespace is where it lives: "/billing" from the project root, "eu"
+	// relative to the asker, or empty for the asker's own scope and then its
+	// parents.
+	Namespace string
+
+	// Ops are the verbs asked for, sorted.
+	Ops []string
+
+	// Timeout bounds one operation on it. Zero means the caller's own.
+	Timeout time.Duration
+
+	// Path is where a mounted filesystem appears inside the workload. It is on
+	// the ENTRY and not on the target because it is per use: two workloads
+	// mounting one volume can put it in different places, which is what
+	// mountAttributes exists for.
+	Path string
+
+	// DeliverPort and DeliverPath are where the platform POSTS an item for a
+	// verb the platform delivers — a queue's `receive`, a stream's `subscribe`.
+	//
+	// ON THE ENTRY FOR THE SAME REASON Path IS: one container can consume two
+	// queues on two paths, and the entry is where that is already written. A
+	// WASM consumer needs neither — it is dispatched and has no port — so both
+	// are ordinarily empty and the platform calls the workload's entrypoint.
+	DeliverPort string
+	DeliverPath string
+}
+
+// Target is the target's own name, which is the label unless the entry said
+// otherwise — the only way to reach two resources that share a name in
+// different namespaces.
+func (r Reach) Target() string { return r.target() }
+
+// target is the name to look the reach up under.
+func (r Reach) target() string {
+	if r.Name != "" {
+		return r.Name
+	}
+	return r.Label
+}
+
+// Reaches are the access entries of one kind, sorted by label.
+//
+// A kind with no block is an empty slice and not an error: most resources
+// reach nothing.
+func (r Resource) Reaches(kind string) []Reach {
+	entries := r.Sub(kind)
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// THE THREE FIELDS COME OFF THE VOCABULARY, not off this file's memory of
+	// them. schema.AccessEntryShape exists for this consumer and says so — "so a
+	// consumer recognises an access block without knowing that the word is
+	// ops" — and until now the only callers were inside the schema package.
+	//
+	// IT IS THE HIGHEST-CONSEQUENCE STRING IN THIS PACKAGE. Rename the ops field
+	// in the vocabulary and every entry below reads as empty, Reaches answers nil
+	// for every kind, and every workload in the cloud resolves with no grants at
+	// all — and starts, because a resource that reaches nothing is a legal
+	// resource. There is no error anywhere in that.
+	shape := schema.AccessEntryShape()
+
+	out := make([]Reach, 0, len(entries))
+	for _, label := range r.Keys(kind) {
+		entry := entries.Sub(label)
+
+		// AN ENTRY WITHOUT `ops` IS NOT A GRANT. It is a resource lowered into
+		// this one, which the compiler files in the same map under its id.
+		ops := entry.Strings(shape.Ops)
+		if len(ops) == 0 {
+			continue
+		}
+		sort.Strings(ops)
+
+		reach := Reach{
+			Kind:      kind,
+			Label:     label,
+			Name:      entry.String(shape.Name),
+			Namespace: entry.String(shape.Namespace),
+			Ops:       ops,
+		}
+		// THE PER-USE FIELDS COME OFF THE VOCABULARY TOO. They were the three
+		// this file still spelled after the entry's own three stopped being
+		// spelled, which is the same rot one layer in: a renamed `deliver/path`
+		// reads as empty, a container consumer is posted at "/" instead of where
+		// its author said, and nothing anywhere reports it.
+		reach.Timeout, _ = entry.Duration(shape.Timeout)
+		reach.Path = entry.String(shape.MountPath)
+		reach.DeliverPort = entry.String(strings.Split(shape.DeliverPort, "/")...)
+		reach.DeliverPath = entry.String(strings.Split(shape.DeliverPath, "/")...)
+		out = append(out, reach)
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+
+	// SORTED, because Resource.Keys walks a map and does not sort — so two
+	// reads of one resource returned its grants in different orders, which is
+	// a spec that differs between two resolves of the same revision.
+	sort.Slice(out, func(i, j int) bool { return out[i].Label < out[j].Label })
+	return out
+}
+
+// Reached resolves one entry to the resource it names.
+//
+// asker is the scope of the resource that declared it, which is what makes an
+// omitted namespace mean "mine, then my parents" — Resource already walks
+// outward, so an empty namespace is simply the asker's own scope handed
+// through.
+func (p *Project) Reached(asker []string, reach Reach) (Resource, string, error) {
+	resource, id, err := p.Resource(scopeOf(asker, reach.Namespace), reach.Kind, reach.target())
+	if err != nil {
+		return nil, "", fmt.Errorf("%s %q: %w", reach.Kind, reach.Label, err)
+	}
+	return resource, id, nil
+}
+
+// ScopeOf turns a declared namespace into the chain Resource wants, from the
+// scope of whoever declared it.
+//
+// EXPORTED BECAUSE THE ACCESS BLOCK IS NOT THE ONLY PLACE A NAMESPACE IS
+// WRITTEN. A gateway route's handler names one, and a cron's target names one,
+// and each of them was resolving it with a copy of half this rule — an absolute
+// path handled and a relative one silently read as absolute. Direction is the
+// whole claim, so it is stated once.
+func ScopeOf(asker []string, namespace string) []string { return scopeOf(asker, namespace) }
+
+// scopeOf turns a declared namespace into the chain Resource wants.
+//
+// AN ABSOLUTE NAMESPACE IGNORES THE ASKER ENTIRELY, which is the whole reason
+// the leading "/" is in the grammar: a resource in /shop naming
+// "/billing/ledger" means that one and not "/shop/billing/ledger".
+func scopeOf(asker []string, namespace string) []string {
+	if namespace == "" {
+		return asker
+	}
+
+	if strings.HasPrefix(namespace, "/") {
+		return segments(strings.TrimPrefix(namespace, "/"))
+	}
+	return append(append([]string{}, asker...), segments(namespace)...)
+}
+
+func segments(path string) []string {
+	var out []string
+	for _, segment := range strings.Split(path, "/") {
+		if segment != "" {
+			out = append(out, segment)
+		}
+	}
+	return out
+}
+
+
+
+// environments.go answers "which deployments does this branch feed" from what
+// the register published, with no trip back to git.
+//
+// THAT IS WHAT MAKES A CODE PUSH BUILDABLE. A push to a code repository knows a
+// project and a branch and nothing else; everything it needs to decide what to
+// build for is already in the object the config repository's deploy left
+// behind, because the environment table survives the compile.
+
+// Environments is the deployment table this project declares, sorted by name,
+// each parent's shadows nested inside it.
+//
+// A project that declares none has exactly one deployment and no name for it
+// here, so this is empty — inventing one would be this package naming a
+// deployment the author did not.
+func (p *Project) Environments() []schema.Environment {
+	p.environmentsOnce.Do(func() { p.environments = schema.EnvironmentsIn(p.root) })
+	return p.environments
+}
+
+// Deployments is every environment a pushed branch feeds, shadows included.
+//
+// ONE BRANCH FEEDS SEVERAL: `main` feeds production AND the shadow written
+// inside it, because a shadow is its own release over its parent's state. A
+// caller that took the first match would silently stop building one of them.
+func (p *Project) Deployments(branch string) []string {
+	return schema.DeploymentNames(p.Environments(), branch)
+}
+
+
+
+// hosts.go answers "what names does this project answer on", which is the
+// question a gateway asks before it can route anything.
+//
+// THE NAME ITSELF IS COMPUTED BY THE VOCABULARY, not here. A name is the label
+// the resource chose, the zone that answers for it, and — for a generated one —
+// the project's own label derived from its id. Three places, and
+// schema.ReachableNames is where they are put together. A second assembly here
+// would agree with that one by coincidence, which is precisely the bug its own
+// doc records: a drawing that read the naming block, glued the label to the
+// zone's apex and printed a name the config never states.
+//
+// THE CLOUD'S OWN FQDN IS STILL NOT HERE. It is not in the config and is not
+// the project's to assert, so a generated host carries the part that IS
+// knowable and says the rest is missing. Whoever knows the cloud's name appends
+// it — see Host.Generated.
+
+// Host is one name a project answers on, and what answers it.
+type Host struct {
+	// Fqdn is the complete name when the zone is one the project declares, and
+	// the project's own portion — "<label>.<project label>" — when the cloud's
+	// zone supplies the rest.
+	Fqdn string
+
+	// Generated says the cloud's fqdn still has to be appended.
+	Generated bool
+
+	// Kind, Scope and Name address the resource that answers, in the form
+	// Resource takes — so a gateway that matched a name can look up what it
+	// matched without holding an id.
+	Kind  string
+	Scope []string
+	Name  string
+}
+
+// Address is where a resource is, in the terms Resource takes. It is here
+// rather than in a consumer because a worker and a gateway both name one, and
+// two spellings of the same five fields is where a caller starts converting
+// between them.
+type Address struct {
+	Project     string
+	Environment string
+
+	// Scope is the chain of namespace names from the project root. It is the
+	// ASKER's scope: a name resolves there first and then in each parent.
+	Scope []string
+
+	Kind string
+	Name string
+}
+
+// Handle is how a resolved resource is named to whatever backs its kind: the
+// deployment it belongs to, then the resource's own id.
+//
+// IT IS HERE FOR THE REASON Address IS, and the case that forced it is a bus. A
+// worker builds one when it composes a workload's grants, and a gateway builds
+// one when it attaches a browser — and the two have to be the SAME STRING or a
+// browser and a workload publishing to what the author wrote as one bus never
+// meet. Two spellings agree by coincidence and diverge on the first edit to
+// either.
+//
+// The id and not the label, because a label is scoped: three namespaces can
+// each hold a `chat`.
+func Handle(project, environment, id string) string {
+	return strings.Join([]string{project, environment, id}, "/")
+}
+
+// Locate is where a resource id lives: its kind, the scope chain it is in, and
+// its name.
+//
+// IT IS THE INDEX READ BACKWARDS, which the package already builds for its own
+// hosts walk. A consumer holding an ID — a resolved reference, a lowering's
+// produced scope — needs the other direction, and working it out by walking
+// every scope is the search the index exists to avoid.
+func (p *Project) Locate(id string) (kind string, scope []string, name string, ok bool) {
+	where, held := p.located[id]
+	if !held {
+		return "", nil, "", false
+	}
+	return where.kind, where.scope, where.name, true
+}
+
+// Hosts is every name this project answers on, sorted.
+//
+// It is a WALK and not a lookup, and it runs once: the result is memoized
+// because a compiled project is immutable, so a consumer may call it per
+// request without paying for the walk per request.
+func (p *Project) Hosts() []Host {
+	p.hostsOnce.Do(func() { p.hosts, p.byHost = p.walkHosts() })
+	return p.hosts
+}
+
+// At is every host entry answering on one name.
+//
+// IT RETURNS A LIST because a name can serve several paths: an author writes
+// `/checkout` and `/api` as two gateways on one host, which is the only way
+// this vocabulary spells more than one route at a name. Which of them serves a
+// given request is the caller's match, not this lookup's.
+func (p *Project) At(name string) []Host {
+	p.Hosts()
+	return p.byHost[strings.ToLower(name)]
+}
+
+func (p *Project) walkHosts() ([]Host, map[string][]Host) {
+	reachable := schema.ReachableNames(p.root)
+
+	out := make([]Host, 0, len(reachable))
+	for id, r := range reachable {
+		if r.Fqdn == "" {
+			// A name whose zone the project does not declare. Nothing here can
+			// say what it resolves to, and emitting a partial one would put a
+			// name in a routing table that no request will ever carry.
+			continue
+		}
+		where, ok := p.located[id]
+		if !ok {
+			continue
+		}
+		out = append(out, Host{
+			Fqdn:      r.Fqdn,
+			Generated: r.Generated,
+			Kind:      where.kind,
+			Scope:     where.scope,
+			Name:      where.name,
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Fqdn != out[j].Fqdn {
+			return out[i].Fqdn < out[j].Fqdn
+		}
+		return out[i].Name < out[j].Name
+	})
+
+	by := map[string][]Host{}
+	for _, h := range out {
+		key := strings.ToLower(h.Fqdn)
+		by[key] = append(by[key], h)
+	}
+	return out, by
+}
+
+// where is a resource's address in the terms Resource takes.
+type where struct {
+	kind  string
+	scope []string
+	name  string
+}
+
+// locate builds the id -> address map from the index.
+//
+// IT IS THE INDEX READ BACKWARDS. The index answers "what id is this name", and
+// a consumer holding an id — a resolved reference, a reachable name — needs the
+// other direction. Both come out of the same table, so they cannot disagree.
+func locate(index map[string][]string, projectID string) map[string]where {
+	scopes := map[string]bool{}
+	for _, kind := range scopeKinds() {
+		scopes[kind] = true
+	}
+
+	// scope ids to their names first, so a scope can be reported the way an
+	// author writes it rather than as a chain of ids.
+	//
+	// EVERY KIND THAT IS A SCOPE, not only `namespace`: a workflow is a
+	// container of the queues and drivers it lowered to, and reading only
+	// namespaces here reported every one of them as sitting at the project
+	// root — under the keys the root's own resources use.
+	names := map[string]string{}
+	for key, links := range index {
+		seg := strings.Split(key, "/")
+		if len(seg) < 2 || !scopes[seg[len(seg)-2]] {
+			continue
+		}
+		names[lastSegment(links[len(links)-1])] = seg[len(seg)-1]
+	}
+
+	prefix := projectsSeg + "/" + projectID + "/"
+
+	out := map[string]where{}
+	for key, links := range index {
+		rest, ok := strings.CutPrefix(key, prefix)
+		if !ok {
+			continue
+		}
+		seg := strings.Split(rest, "/")
+		if len(seg) < 2 || len(seg)%2 != 0 {
+			continue
+		}
+
+		w := where{kind: seg[len(seg)-2], name: seg[len(seg)-1]}
+		for i := 0; i+1 < len(seg)-2; i += 2 {
+			if !scopes[seg[i]] {
+				break
+			}
+			w.scope = append(w.scope, names[seg[i+1]])
+		}
+		out[lastSegment(links[len(links)-1])] = w
+	}
+	return out
+}
+
+// Zone is one DNS zone a project claims authority over.
+//
+// IT IS NOT A Host, and the difference is which way the name points. A Host is
+// a name a RESOURCE answers at — a gateway's, a proxy's — assembled from the
+// label it chose and the zone that answers for it. A zone's own fqdn is the
+// other end of that: the apex this project is authoritative for, under which
+// those labels live and under which an author may write records of their own.
+//
+// So it is a separate walk rather than another arm of the hosts one. Hosts is
+// driven by `AnswersAt`, which names the BLOCK a kind declares its name in, and
+// a zone has no such block: its name is the resource.
+
+// Zones is every zone this project is authoritative for, sorted by apex.
+//
+// It is memoized for the reason Hosts is: a compiled project is immutable, so a
+// consumer answering a query per request should not pay for the walk per
+// request.
+func (p *Project) Zones() []Zone {
+	p.zonesOnce.Do(func() { p.zones = p.walkZones() })
+	return p.zones
+}
+
+func (p *Project) walkZones() []Zone {
+	var out []Zone
+
+	for id, where := range p.located {
+		if where.kind != zoneKind {
+			continue
+		}
+		r, _, err := p.Resource(where.scope, zoneKind, where.name)
+		if err != nil {
+			continue
+		}
+
+		// THE FIELDS COME OFF THE GENERATED READER. There was a hand-written
+		// Zone here with an Fqdn and a Records on it, which is the zone kind
+		// written out a second time — and the kind is declared, so ReadZone
+		// knows both. What is left for this walk is the half the vocabulary
+		// does not answer: WHICH zones this project has, which is the index's.
+		zone := ReadZone(r)
+
+		// A TRAILING DOT AND A CASE ARE THE SAME APEX, normalised here rather
+		// than at every caller.
+		zone.Fqdn = strings.ToLower(strings.TrimSuffix(zone.Fqdn, "."))
+		if zone.Fqdn == "" {
+			// A ZONE WITH NO APEX IS AUTHORITATIVE FOR NOTHING. The vocabulary
+			// requires the field; a compiled object that lost it would
+			// otherwise claim every name at once.
+			continue
+		}
+		_ = id
+
+		out = append(out, zone)
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Fqdn < out[j].Fqdn })
+	return out
+}
+
+const zoneKind = "{{.ZoneKind}}"
+
+
+
+// source.go answers the two questions a build asks of a compiled project:
+// where does this resource's content come from, and how is it made.
+//
+// THEY ARE READ RATHER THAN GUESSED. A resource's `source` is an Either — a
+// bare path, a git repository, a component, an image, a builtin — and its
+// `build` is another one. The compiler flattens both to a `kind` beside the
+// branch's own fields, so reading them is a switch on that key and never a
+// test for which fields happen to be present.
+
+// Source kinds, as the compiler spells them. A bare path has no kind: it is a
+// string where the others are objects.
+const (
+	SourcePath      = ""
+	SourceGit       = "git"
+	SourceComponent = "component"
+	SourceImage     = "image"
+	SourceBuiltin   = "builtin"
+)
+
+// Build kinds.
+const (
+	BuildCommands   = "commands"
+	BuildScript     = "script"
+	BuildDockerfile = "dockerfile"
+)
+
+// Source is where a resource's content comes from.
+type Source struct {
+	// Declared says the author wrote a source at all.
+	//
+	// IT IS NOT DERIVABLE FROM THE OTHER FIELDS. A bare path is the common
+	// case and is written as a plain string, so a resource that declares NO
+	// source reads as a path of "" — which is indistinguishable from a
+	// resource whose source is the repository root, and that is a real thing
+	// to write. Without this, every resource in a project that happened to
+	// carry a build stanza and no source would be built from the checkout
+	// root.
+	Declared bool
+
+	// Kind is one of the Source* constants. Empty means a path in the
+	// project's own code repository, which is the common case and the reason
+	// the vocabulary lets it be written as a bare string.
+	Kind string
+
+	// Path is the location within whichever repository applies. Empty is that
+	// repository's root.
+	Path string
+
+	// Git is a clone URL, and it is the whole of what names the forge. There
+	// is no provider field: the URL carries the host, so GitLab, Gitea,
+	// Codeberg and an internal mirror are values rather than schema edits.
+	Git    string
+	Branch string
+
+	// Component names another resource of this project whose artifact this one
+	// runs; Image is a reference pulled rather than built.
+	Component string
+	Image     string
+}
+
+// Built reports whether this source is something this platform makes. An image
+// is pulled and a builtin is already here; a component is built as its own
+// resource rather than again as this one.
+func (s Source) Built() bool {
+	return s.Declared && (s.Kind == SourcePath || s.Kind == SourceGit)
+}
+
+// Build is how a resource is made.
+type Build struct {
+	// Kind is one of the Build* constants, and "" is a resource that declares
+	// no build at all.
+	Kind string
+
+	// Image is the toolchain the build runs in.
+	Image string
+
+	// Install and Run are the two commands, for Kind commands.
+	Install string
+	Run     string
+
+	// Script is a path in the repository to execute, for Kind script. It is
+	// the escape hatch for a build that does not fit two commands.
+	Script string
+
+	// Dockerfile is a path to one, for Kind dockerfile.
+	Dockerfile string
+
+	// Output is what the build leaves behind: a file for a wasm component, a
+	// directory for a website.
+	Output string
+
+	// Target names which of a multi-target build to take.
+	Target string
+}
+
+// Declared reports whether the author said how this is made.
+func (b Build) Declared() bool { return b.Kind != "" }
+
+// Source reads a resource's source block.
+func (r Resource) Source() Source {
+	// A BARE PATH IS A STRING WHERE THE OTHERS ARE OBJECTS, which is the
+	// vocabulary letting the common case be written the short way. Reading it
+	// as an object would find nothing and report a resource with no source.
+	switch v := descend(r, "source").(type) {
+	case string:
+		return Source{Declared: true, Path: v}
+	case map[string]any:
+	default:
+		// No source block at all.
+		return Source{}
+	}
+
+	return Source{
+		Declared:  true,
+		Kind:      r.String("source", "kind"),
+		Path:      r.String("source", "path"),
+		Git:       r.String("source", "git"),
+		Branch:    r.String("source", "branch"),
+		Component: r.String("source", "component"),
+		Image:     r.String("source", "image"),
+	}
+}
+
+// Build reads a resource's build block.
+func (r Resource) Build() Build {
+	return Build{
+		Kind:       r.String("build", "kind"),
+		Image:      r.String("build", "image"),
+		Install:    r.String("build", "install"),
+		Run:        r.String("build", "run"),
+		Script:     r.String("build", "script"),
+		Dockerfile: r.String("build", "dockerfile"),
+		Output:     r.String("build", "output"),
+		Target:     r.String("build", "target"),
+	}
+}
+
+// Variable is one of a resource's declared environment variables.
+type Variable struct {
+	Name string
+
+	// At is when it applies: "build" or "run". The compiler writes it, and a
+	// variable that does not say is a run-time one.
+	At string
+
+	// Value is a literal. Secret names one instead, and exactly one of the two
+	// is set.
+	Value  string
+	Secret string
+}
+
+// FromSecret reports whether this variable's value has to be resolved.
+func (v Variable) FromSecret() bool { return v.Secret != "" }
+
+// Variables are a resource's declared environment, sorted by name.
+func (r Resource) Variables() []Variable {
+	declared, ok := descend(r, "variables").(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	out := make([]Variable, 0, len(declared))
+	for name, raw := range declared {
+		at, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		v := Variable{Name: name}
+		v.At, _ = at["at"].(string)
+		v.Value, _ = at["value"].(string)
+		if secret, ok := at["secret"].(map[string]any); ok {
+			// A REFERENCE COMPILES TO AN ID, so what is carried is the secret's
+			// id and not the name it was written as.
+			v.Secret, _ = secret["name"].(string)
+		}
+		out = append(out, v)
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// Buildable is one resource this project makes from source.
+type Buildable struct {
+	// Scope, Kind and Name address it, in the form Resource takes.
+	Scope []string
+	Kind  string
+	Name  string
+
+	// ID is the resource's own id, which is what an artifact is filed under.
+	ID string
+
+	Source Source
+	Build  Build
+
+	// Variables is the resource's declared environment, both build- and
+	// run-time. Which of them a build passes is the build's decision.
+	Variables []Variable
+}
+
+// Buildables is every resource this project makes from source, in a stable
+// order.
+//
+// IT IS THE WHOLE PROJECT AND NOT ONE REPOSITORY'S WORTH, because which
+// repository a resource belongs to is only half in the config: a resource whose
+// source is a bare path belongs to the project's own code repository, and what
+// that repository IS lives in auth. The caller has that and filters; this reads
+// what the config says.
+//
+// A resource that declares a source it does not build — an image, a builtin, a
+// component — is not here. Neither is one with a source and no build: nothing
+// says how to make it, and guessing would be this package inventing a toolchain.
+func (p *Project) Buildables() []Buildable {
+	out := make([]Buildable, 0, len(p.located))
+
+	for id, at := range p.located {
+		// THE ADDRESS IS A SCOPE AND `at` TAKES A CURSOR. Handing it the scope
+		// directly reads the project root for every resource, whatever
+		// namespace it is actually in — which finds a resource of that name if
+		// one happens to sit at the root and an empty one otherwise.
+		cursor, err := p.scopeCursor(at.scope)
+		if err != nil {
+			continue
+		}
+		r, _, err := p.at(cursor, at.kind, at.name)
+		if err != nil {
+			continue
+		}
+
+		source, build := r.Source(), r.Build()
+		if !source.Built() || !build.Declared() {
+			continue
+		}
+
+		out = append(out, Buildable{
+			Scope:     at.scope,
+			Kind:      at.kind,
+			Name:      at.name,
+			ID:        id,
+			Source:    source,
+			Build:     build,
+			Variables: r.Variables(),
+		})
+	}
+
+	// SORTED, because the source is a map and a build order that changed
+	// between two pushes of the same commit is one nobody can read a log of.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}

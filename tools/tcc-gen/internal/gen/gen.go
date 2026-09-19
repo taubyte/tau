@@ -38,6 +38,7 @@ const (
 	// exists to end. Generated specs have their own home: v1's was
 	// legacy/specs, and this is v2's.
 	readersPath = "pkg/specs/kinds.go"
+	corePath    = "pkg/specs/project.go"
 	readersPkg  = "specs"
 )
 
@@ -47,7 +48,8 @@ func byteExact(rel string) bool {
 	return strings.HasPrefix(rel, structPrefix) ||
 		rel == filepath.FromSlash(tsGenPath) ||
 		rel == filepath.FromSlash(jsonSchemaPath) ||
-		rel == filepath.FromSlash(readersPath)
+		rel == filepath.FromSlash(readersPath) ||
+		rel == filepath.FromSlash(corePath)
 }
 
 // Generate returns a map of repo-relative path -> generated file content: the
@@ -80,6 +82,12 @@ func Generate(root []*engine.Node) (map[string][]byte, error) {
 		}
 	}
 	out[filepath.FromSlash(readersPath)] = RenderReaders(readersPkg, root, kinds)
+
+	core, err := RenderCore(readersPkg)
+	if err != nil {
+		return nil, err
+	}
+	out[filepath.FromSlash(corePath)] = core
 	return out, nil
 }
 
