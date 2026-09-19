@@ -1,0 +1,12 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zp
+description: the functions this project offers a model as tools - its access block IS the catalogue, there is no second list
+tools:
+    cache_scope: principal
+    cache_ttl: 30s
+function:
+    checkout:
+        ops: [invoke]
+    books:
+        name: ledger
+        namespace: /billing
+        ops: [invoke]

@@ -1,0 +1,6 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zn
+description: somewhere to run untrusted code that is not a workload - it holds nothing and is reached by nobody
+source:
+    image: ghcr.io/acme/sandbox:1
+execution:
+    memory: 64MB

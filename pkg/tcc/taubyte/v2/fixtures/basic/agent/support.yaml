@@ -22,6 +22,9 @@ cache:
 function:
     checkout:
         ops: [invoke]
+mcp:
+    tools:
+        ops: [list, call]
 storage:
     receipts:
         ops: [get, list]

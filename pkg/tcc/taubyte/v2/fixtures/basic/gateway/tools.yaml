@@ -1,0 +1,14 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zq
+description: the way in for a model - an mcp server is asked what it offers and then to run one of them, which is a request and a response
+host:
+    zone:
+        in:
+            name: example_com
+        name: mcp
+route:
+    path: /
+    match: prefix
+    methods: [POST]
+    handler:
+        mcp:
+            name: tools
