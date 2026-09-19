@@ -201,6 +201,14 @@ var secNetwork = Section("network", "Network", "How this workload is reached, an
 // this becomes the thing checked against it rather than the thing believed.
 var hostWorlds = []string{"handler", "authorizer", "instance-validator", "gateway-transformer", "proxy-transformer", "gateway-router", "proxy-router"}
 
+// HostWorlds is every host interface a workload may be built against.
+//
+// EXPORTED FOR THE REASON DatabaseEngines IS: whatever has to answer "can this
+// tier run that" must be asking the same question the compiler answers, or a
+// world lands in the vocabulary and the tiers keep their own copies. It is
+// mirrored in seven places under pkg/invoke/wasm today, and they could not ask.
+func HostWorlds() []string { return append([]string(nil), hostWorlds...) }
+
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	return wasmAttributesEntrypoint(Required(), []string{"component", "builtin", "git"}, attrs...)
 }
@@ -994,7 +1002,24 @@ var handlerKinds = []string{"function", "application", "website", "gateway", "mc
 // rather than merely wrong.
 var externalStreamEngines = []string{"kafka", "nats"}
 
+// storageTypes is what a storage may be. It was written inline in the two
+// places that needed it, which is how a closed set becomes two closed sets.
+var storageTypes = []string{"object", "streaming"}
+
+// StorageTypes is every data model a storage may be.
+func StorageTypes() []string { return append([]string(nil), storageTypes...) }
+
 var streamEngines = append([]string{tauEngine}, externalStreamEngines...)
+
+// StreamEngines is every engine a stream may name, tau's own first.
+//
+// THE STREAM TWIN OF DatabaseEngines, and its absence is why the one consumer
+// that asks "can this cloud open that" answers with a bare literal instead.
+func StreamEngines() []string { return append([]string(nil), streamEngines...) }
+
+// TauEngine is what this cloud's own engine is called, wherever a consumer has
+// to tell it apart from a server somebody else runs.
+func TauEngine() string { return tauEngine }
 
 // channelServerKinds are what may answer a channel. A container gets the bytes on one of
 // its own ports; a function is dispatched with the connection in hand. Both are real, and
@@ -1208,6 +1233,13 @@ var syncTypes = []syncType{
 		doc:   "Records appended to the end and read forward. Nothing rewrites what is already there.",
 	},
 }
+
+// SyncTypes is every coordination primitive `sync` may be, in declaration order.
+//
+// SyncTypeOf ANSWERS ABOUT ONE AND THIS ENUMERATES THEM, which is the half a
+// consumer switching per type needs: without it a fourth primitive falls to a
+// default arm and travels with none of its own fields.
+func SyncTypes() []string { return syncTypeNames() }
 
 func syncTypeNames() []string {
 	out := make([]string, 0, len(syncTypes))
@@ -2012,11 +2044,11 @@ var V2Resources = []*Node{
 	DefineGroup("storage",
 		resource(
 			commonAttributes(append(append([]*Attribute{
-				String("type", Path(Either("object", "streaming")), Captures(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
+				String("type", Path(Either(storageTypes...)), Captures(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
 			}, instanceAttributes()...),
 				Bool(Key("object", "versioning"), NoSetter(), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
 				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), PerEnv(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
-				Bytes(Key("size"), Path(Either("object", "streaming"), "size"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
+				Bytes(Key("size"), Path(Either(storageTypes...), "size"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
 			)...),
 			GroupDoc("Object or streaming storage, content-addressed, served to the project's peers."), Icon("bucket"), Category("data"), Placed(),
 			secIdentity, secAccess,

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/invoke/wasm"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -179,5 +180,32 @@ func TestEveryDeclaredSettingNamesAnAttribute(t *testing.T) {
 			require.True(t, schema.IsAttribute(kind, key),
 				"%s declares no attribute %q — the vocabulary renamed it and this package still spells the old one, so the value silently stops travelling", kind, key)
 		}
+	}
+}
+
+// TestEVERYCLOSEDSETVALUETHISPACKAGESPELLSISSTILLINTHESET.
+//
+// A key that stops matching empties a map; a VALUE that stops matching does
+// something worse, because these are compared for equality to decide whether to
+// serve something. Rename `object` in the vocabulary and every storage in the
+// cloud is refused as "not the type we serve"; rename `authorizer` and every
+// guard is refused as not being one. Both are loud, and both blame the wrong
+// thing — which is why the literal is pinned rather than trusted.
+func TestEveryClosedSetValueIsStillInItsSet(t *testing.T) {
+	require.Contains(t, schema.StorageTypes(), objectStorage,
+		"the one storage model this cloud serves is no longer a model the vocabulary has")
+	require.Contains(t, schema.SyncTypes(), queueType)
+	require.Contains(t, schema.SyncTypes(), logType,
+		"a sync type this package switches on is no longer one the vocabulary declares")
+	require.Contains(t, schema.HostWorlds(), wasm.WorldAuthorizer,
+		"the world a guard must be built against is no longer a world")
+
+	// AND THE SWITCH COVERS THE SET. syncSettings carries a type's own fields,
+	// and a type it has no arm for travels with none of them — silently, since
+	// the default arm returns what it has. This is the one place that notices.
+	covered := map[string]bool{queueType: true, logType: true}
+	for _, model := range schema.SyncTypes() {
+		require.True(t, covered[model],
+			"the vocabulary declares a %q sync and syncSettings has no arm for it, so none of its fields reach a tier", model)
 	}
 }

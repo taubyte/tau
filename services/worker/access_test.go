@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/container"
 	"github.com/taubyte/tau/pkg/project"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // EVERY TEST HERE READS THE VOCABULARY'S OWN FIXTURE, compiled. What an access
@@ -380,7 +381,7 @@ func TestAStreamOnAnEngineThisCloudLacksIsRefused(t *testing.T) {
 func TestAStreamOnTheSwarmsOwnEngineIsServed(t *testing.T) {
 	require.Empty(t, unservable(
 		project.Reach{Kind: streamKind, Label: "orders"},
-		project.Resource{"engine": distributedEngine}))
+		project.Resource{"engine": schema.TauEngine()}))
 
 	// An engine nobody wrote is the swarm's own — the vocabulary's default.
 	require.Empty(t, unservable(

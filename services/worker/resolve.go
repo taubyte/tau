@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/project"
 	"github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -260,10 +261,6 @@ const (
 	logType         = "log"
 	settingSyncType = "type"
 
-	// distributedEngine is the vocabulary's name for the swarm's own — the one
-	// engine this cloud actually holds, for both a cache and a stream.
-	distributedEngine = "distributed"
-
 	// sourceBuiltin is the vocabulary's word for a program the runtime ships.
 	sourceBuiltin = "builtin"
 )
@@ -502,7 +499,7 @@ func guardedBy(proj *project.Project, t Target, target project.Resource, id stri
 	// world would instantiate and then be called with a question it reads as a
 	// request — the failure `implements` exists to prevent, caught here where
 	// the sentence can name both resources instead of at a cold start.
-	if world := guard.String("implements"); world != authorizerWorld {
+	if world := guard.String("implements"); world != wasm.WorldAuthorizer {
 		grant.Refused = fmt.Sprintf("%s %q is guarded by %q, which implements %q rather than an authorizer",
 			grant.Kind, grant.Label, name, world)
 		return
@@ -517,8 +514,6 @@ func guardedBy(proj *project.Project, t Target, target project.Resource, id stri
 // What a resource's own `authorizer:` block becomes, spelled as
 // pkg/invoke/wasm reads it.
 const (
-	authorizerWorld = "authorizer"
-
 	settingAuthorizer      = "authorizer/name"
 	settingAuthorizerScope = "authorizer/namespace"
 )
@@ -868,12 +863,21 @@ func instanceSettings(target project.Resource) map[string]string {
 // weaker than written.
 func unservableKind(reach project.Reach, target project.Resource) string {
 	switch reach.Kind {
-	case streamKind, busKind:
+	case streamKind:
 		// AN EXTERNAL ENGINE IS A DRIVER AND A RELEASE, not a config value —
 		// the schema says so where it closes the set. This cloud publishes to
 		// the swarm's own gossipsub and has no Kafka or NATS client, so a
 		// stream on one is refused by name rather than published into nothing.
-		if engine := target.String("engine"); engine != "" && engine != distributedEngine {
+		//
+		// WHICH ENGINE IS OURS IS THE VOCABULARY'S TO SAY. It was the literal
+		// "distributed", which is the schema's `tauEngine` spelled again — so a
+		// rename refused every stream in the cloud and blamed the wrong thing.
+		//
+		// NO `busKind` ARM. A bus has no engine axis at all — the schema says
+		// "IT HAS NO ENGINE AXIS, and the absence is the statement" — so this
+		// could never fire for one, and a reader had to check the vocabulary to
+		// learn that the branch was dead.
+		if engine := target.String("engine"); engine != "" && engine != schema.TauEngine() {
 			return fmt.Sprintf("%s %q is on the %q engine, and this cloud has no driver for it — "+
 				"it publishes to the swarm's own gossipsub and nothing else",
 				reach.Kind, reach.Label, engine)
