@@ -32,13 +32,13 @@ const (
 	// object. It is generated for the reason the TS and the JSON Schema are:
 	// the paths are the vocabulary's, and a hand-written copy of them is a copy.
 	//
-	// IT SITS WITH WHAT DEFINES IT, a peer of schema/ and wasm/ and explorer/,
-	// because a project is not a runtime concept that happens to be compiled —
-	// the root, the scopes, the identity and the layout are all declared in the
-	// DSL, so what reads one belongs beside the DSL rather than in whatever
-	// service happens to read it today.
-	readersPath = "pkg/tcc/taubyte/v2/project/kinds.go"
-	readersPkg  = "project"
+	// NOT UNDER pkg/tcc/taubyte/v2. That tree is where the vocabulary is
+	// DEFINED, and generated output living inside its own definition makes the
+	// two impossible to tell apart — which is the failure this generation
+	// exists to end. Generated specs have their own home: v1's was
+	// legacy/specs, and this is v2's.
+	readersPath = "pkg/specs/kinds.go"
+	readersPkg  = "specs"
 )
 
 // byteExact reports whether a generated file is checked byte-for-byte (struct
