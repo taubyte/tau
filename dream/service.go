@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -177,6 +178,31 @@ func (u *Universe) GetServicePids(name string) ([]string, error) {
 	}
 
 	return pids, nil
+}
+
+// Services is every protocol that actually has a service to start, sorted.
+//
+// IT IS NOT commonSpecs.Services, and that is the point. The registry is
+// pre-seeded from that list so a slot exists to Set into, so a name being IN it
+// says only that somebody once expected a service by that name — not that one
+// registers today. `seer` and `monkey` are in it and were deleted, so anything
+// walking the list asked for a service with a nil creator and got an error
+// naming a universe rather than a missing service.
+//
+// A LIST OF WHAT EXISTS, MAINTAINED BY HAND, drifts the moment something is
+// removed. This asks what registered.
+func (h *handlerRegistry) Services() []string {
+	h.lock.RLock()
+	defer h.lock.RUnlock()
+
+	out := make([]string, 0, len(h.registry))
+	for protocol, hs := range h.registry {
+		if hs != nil && hs.service != nil {
+			out = append(out, protocol)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (h *handlerRegistry) Set(protocol string, service ServiceCreate, client ClientCreate) error {

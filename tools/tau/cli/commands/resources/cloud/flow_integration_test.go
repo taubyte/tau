@@ -20,7 +20,6 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 
 	_ "github.com/taubyte/tau/services/auth/dream"
-	_ "github.com/taubyte/tau/services/seer/dream"
 )
 
 // TestCloudFlow_SelectNetworkWithDream runs an integration test: start dream on default port, then tau select cloud --universe <name>.
@@ -45,7 +44,6 @@ func TestCloudFlow_SelectNetworkWithDream_Dreaming(t *testing.T) {
 
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer": {},
 			"auth": {},
 		},
 	})

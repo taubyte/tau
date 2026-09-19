@@ -15,7 +15,6 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
-	_ "github.com/taubyte/tau/services/seer/dream"
 )
 
 // TestReplication_Dreaming drives placement end-to-end without substrate: a
@@ -34,13 +33,11 @@ func TestReplication_Dreaming(t *testing.T) {
 
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":    {},
 			"hoarder": {Others: map[string]int{"copies": 3}},
 		},
 		Simples: map[string]dream.SimpleConfig{
 			"client": {
 				Clients: dream.SimpleConfigClients{
-					Seer:    &commonIface.ClientConfig{},
 					Hoarder: &commonIface.ClientConfig{},
 				}.Compat(),
 			},

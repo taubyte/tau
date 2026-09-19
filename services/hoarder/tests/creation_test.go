@@ -10,7 +10,6 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
-	_ "github.com/taubyte/tau/services/seer/dream"
 	slices "github.com/taubyte/tau/utils/slices/string"
 	"gotest.tools/v3/assert"
 
@@ -29,13 +28,11 @@ func TestService_Dreaming(t *testing.T) {
 
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":    {},
 			"hoarder": {},
 		},
 		Simples: map[string]dream.SimpleConfig{
 			"client": {
 				Clients: dream.SimpleConfigClients{
-					Seer:    &commonIface.ClientConfig{},
 					Hoarder: &commonIface.ClientConfig{},
 				}.Compat(),
 			},

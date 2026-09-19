@@ -127,8 +127,13 @@ func (u *Universe) StartAll(simples ...string) error {
 		return fmt.Errorf("universe is not in stopped state, current state: %v", u.State())
 	}
 
-	serviceMap := make(map[string]commonIface.ServiceConfig, len(commonSpecs.Services))
-	for _, s := range commonSpecs.Services {
+	// WHAT REGISTERS, NOT WHAT A LIST NAMES. commonSpecs.Services still names
+	// `seer` and `monkey`, which were deleted with the v1 vocabulary, so
+	// starting from that list asked for services with no creator and failed the
+	// whole universe.
+	registered := Registry.Services()
+	serviceMap := make(map[string]commonIface.ServiceConfig, len(registered))
+	for _, s := range registered {
 		serviceMap[s] = commonIface.ServiceConfig{}
 	}
 

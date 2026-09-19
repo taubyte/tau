@@ -19,7 +19,6 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 
 	_ "github.com/taubyte/tau/services/auth/dream"
-	_ "github.com/taubyte/tau/services/seer/dream"
 )
 
 // repoRoot returns the module root (directory containing go.mod).
@@ -201,7 +200,6 @@ func startDream(t *testing.T) (cleanup func()) {
 	assert.NilError(t, err)
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer": {},
 			"auth": {},
 		},
 	})

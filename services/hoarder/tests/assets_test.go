@@ -41,7 +41,6 @@ func TestAssetSweep_Dreaming(t *testing.T) {
 
 	assert.NilError(t, u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":    {},
 			"tns":     {},
 			"hoarder": {},
 		},
