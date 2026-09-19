@@ -209,3 +209,36 @@ func TestTheHandlersScope(t *testing.T) {
 	require.Equal(t, []string{"shop", "eu"}, splitScope("/shop/eu"))
 	require.Equal(t, []string{"shop", "eu"}, splitScope("shop/eu/"))
 }
+
+// TestARouteNamesItsOwnRouter.
+//
+// A gateway whose `routing` is `router` has no static routes; a single route
+// whose `target` is `router` picks that route's own. The second used to read
+// `route/handler/name` — which the vocabulary requires only when the target IS
+// a handler — so the guard was true in exactly the case the value was empty.
+// The branch never fired, and the request fell through to an address with no
+// kind and no name.
+func TestARouteNamesItsOwnRouter(t *testing.T) {
+	routed := []candidate{
+		gw("edge", map[string]any{
+			"path": "/", "match": "prefix", "target": "router",
+			"router": map[string]any{"name": "pick", "namespace": "/shop"},
+		}),
+	}
+
+	m, found, _ := pick(routed, "/anything", "GET")
+	require.True(t, found)
+
+	name, scope := m.router()
+	require.Equal(t, "pick", name, "the route's own router was never read")
+	require.Equal(t, []string{"shop"}, scope)
+}
+
+// TestAGatewayLevelRouterStillWins where no route declares one of its own.
+func TestAGatewayLevelRouterIsUnchanged(t *testing.T) {
+	m := match{resource: specs.Resource{"routing": "router",
+		"router": map[string]any{"name": "everything"}}}
+
+	name, _ := m.router()
+	require.Equal(t, "everything", name)
+}

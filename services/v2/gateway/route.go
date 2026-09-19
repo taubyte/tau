@@ -218,9 +218,14 @@ func splitScope(namespace string) []string {
 // The route's own is the more specific of the two and wins where both are
 // written.
 func (m match) router() (name string, scope []string) {
-	if m.Handler != nil && m.resource.String("route", "target") == "router" {
-		if n := m.Handler.String("name"); n != "" {
-			return n, scopeOrNil(m.Handler.String("namespace"))
+	// THE ROUTE'S OWN ROUTER LIVES UNDER `route/router`, not under the handler.
+	// This used to read `route/handler/name`, which is Required only when the
+	// target IS a handler — so the guard above was true in exactly the case the
+	// value below is empty, the branch never fired, and a route-routed gateway
+	// fell through to an address with no kind and no name.
+	if m.resource.String("route", "target") == "router" {
+		if n := m.resource.String("route", "router", "name"); n != "" {
+			return n, scopeOrNil(m.resource.String("route", "router", "namespace"))
 		}
 	}
 	if m.resource.String("routing") == "router" {
