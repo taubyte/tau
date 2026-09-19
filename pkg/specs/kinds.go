@@ -18,8 +18,6 @@ type Application struct {
 	BuildDockerfile                string // authored at build/dockerfile/path
 	BuildKind                      string // which of dockerfile was written
 	BuildTarget                    string // authored at build/dockerfile/target
-	DeliverPath                    string
-	DeliverPort                    string
 	Description                    string
 	Egress                         []string
 	ExecutionCpu                   int64
@@ -34,9 +32,7 @@ type Application struct {
 	LivenessHttpPort               string
 	LivenessKind                   string // which of http, function was written
 	Name                           string
-	Namespace                      string
 	Number                         int64
-	Ops                            []string
 	Path                           string
 	ReadinessFunctionName          string
 	ReadinessFunctionNamespace     string
@@ -58,8 +54,6 @@ type Application struct {
 	SourceKind                     string // which of image, git was written
 	SourcePath                     string
 	Tags                           []string
-	Timeout                        time.Duration
-	Tools                          []string
 	Value                          string
 }
 
@@ -71,8 +65,6 @@ func ReadApplication(r Resource) Application {
 	out.BuildDockerfile = r.String("build", "dockerfile")
 	out.BuildKind = r.String("build", "kind")
 	out.BuildTarget = r.String("build", "target")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
 	out.ExecutionCpu, _ = r.Int("execution", "cpu")
@@ -87,9 +79,7 @@ func ReadApplication(r Resource) Application {
 	out.LivenessHttpPort = r.String("liveness", "http", "port")
 	out.LivenessKind = r.String("liveness", "kind")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
 	out.Number, _ = r.Int("number")
-	out.Ops = r.Strings("ops")
 	out.Path = r.String("path")
 	out.ReadinessFunctionName = r.String("readiness", "function", "name")
 	out.ReadinessFunctionNamespace = r.String("readiness", "function", "namespace")
@@ -111,8 +101,6 @@ func ReadApplication(r Resource) Application {
 	out.SourceKind = r.String("source", "kind")
 	out.SourcePath = r.String("source", "path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Value = r.String("value")
 	return out
 }
@@ -129,8 +117,6 @@ type Function struct {
 	BuildOutput         string // authored at build/{commands|script}/output
 	BuildRun            string // authored at build/{commands}/run
 	BuildScript         string // authored at build/script/path
-	DeliverPath         string
-	DeliverPort         string
 	Description         string
 	Egress              []string
 	ExecutionCall       string
@@ -140,8 +126,6 @@ type Function struct {
 	Id                  string
 	Implements          string
 	Name                string
-	Namespace           string
-	Ops                 []string
 	Path                string
 	RegionMain          string // authored at region/failover/main
 	RegionName          string // authored at region/{auto|cdn}/name
@@ -158,8 +142,6 @@ type Function struct {
 	SourceNamespace     string
 	SourcePath          string
 	Tags                []string
-	Timeout             time.Duration
-	Tools               []string
 	Value               string
 }
 
@@ -176,8 +158,6 @@ func ReadFunction(r Resource) Function {
 	out.BuildOutput = r.String("build", "output")
 	out.BuildRun = r.String("build", "run")
 	out.BuildScript = r.String("build", "script")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
 	out.ExecutionCall = r.String("execution", "call")
@@ -187,8 +167,6 @@ func ReadFunction(r Resource) Function {
 	out.Id = r.String("id")
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
 	out.Path = r.String("path")
 	out.RegionMain = r.String("region", "main")
 	out.RegionName = r.String("region", "name")
@@ -205,8 +183,6 @@ func ReadFunction(r Resource) Function {
 	out.SourceNamespace = r.String("source", "namespace")
 	out.SourcePath = r.String("source", "path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Value = r.String("value")
 	return out
 }
@@ -225,8 +201,6 @@ type Worker struct {
 	BuildRun                       string // authored at build/{commands}/run
 	BuildScript                    string // authored at build/script/path
 	BuildTarget                    string // authored at build/dockerfile/target
-	DeliverPath                    string
-	DeliverPort                    string
 	Description                    string
 	Egress                         []string
 	ExecutionCall                  string
@@ -236,8 +210,6 @@ type Worker struct {
 	Id                             string
 	Implements                     string
 	Name                           string
-	Namespace                      string
-	Ops                            []string
 	Path                           string
 	RegionMain                     string // authored at region/failover/main
 	RegionName                     string // authored at region/{auto|cdn}/name
@@ -258,8 +230,6 @@ type Worker struct {
 	SourceNamespace                string
 	SourcePath                     string
 	Tags                           []string
-	Timeout                        time.Duration
-	Tools                          []string
 	Value                          string
 }
 
@@ -278,8 +248,6 @@ func ReadWorker(r Resource) Worker {
 	out.BuildRun = r.String("build", "run")
 	out.BuildScript = r.String("build", "script")
 	out.BuildTarget = r.String("build", "target")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
 	out.ExecutionCall = r.String("execution", "call")
@@ -289,8 +257,6 @@ func ReadWorker(r Resource) Worker {
 	out.Id = r.String("id")
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
 	out.Path = r.String("path")
 	out.RegionMain = r.String("region", "main")
 	out.RegionName = r.String("region", "name")
@@ -311,8 +277,6 @@ func ReadWorker(r Resource) Worker {
 	out.SourceNamespace = r.String("source", "namespace")
 	out.SourcePath = r.String("source", "path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Value = r.String("value")
 	return out
 }
@@ -326,8 +290,6 @@ type Sandbox struct {
 	BuildDockerfile                string // authored at build/dockerfile/path
 	BuildKind                      string // which of dockerfile was written
 	BuildTarget                    string // authored at build/dockerfile/target
-	DeliverPath                    string
-	DeliverPort                    string
 	Description                    string
 	Egress                         []string
 	ExecutionCpu                   int64
@@ -336,8 +298,6 @@ type Sandbox struct {
 	LifetimeIdle                   time.Duration
 	LifetimeMax                    time.Duration
 	Name                           string
-	Namespace                      string
-	Ops                            []string
 	Path                           string
 	RegionMain                     string // authored at region/failover/main
 	RegionName                     string // authored at region/{auto|cdn}/name
@@ -354,8 +314,6 @@ type Sandbox struct {
 	SourceKind                     string // which of image, git was written
 	SourcePath                     string
 	Tags                           []string
-	Timeout                        time.Duration
-	Tools                          []string
 	Value                          string
 }
 
@@ -369,8 +327,6 @@ func ReadSandbox(r Resource) Sandbox {
 	out.BuildDockerfile = r.String("build", "dockerfile")
 	out.BuildKind = r.String("build", "kind")
 	out.BuildTarget = r.String("build", "target")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
 	out.ExecutionCpu, _ = r.Int("execution", "cpu")
@@ -379,8 +335,6 @@ func ReadSandbox(r Resource) Sandbox {
 	out.LifetimeIdle, _ = r.Duration("lifetime", "idle")
 	out.LifetimeMax, _ = r.Duration("lifetime", "max")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
 	out.Path = r.String("path")
 	out.RegionMain = r.String("region", "main")
 	out.RegionName = r.String("region", "name")
@@ -397,49 +351,33 @@ func ReadSandbox(r Resource) Sandbox {
 	out.SourceKind = r.String("source", "kind")
 	out.SourcePath = r.String("source", "path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Value = r.String("value")
 	return out
 }
 
 // Cron is that kind, read from a compiled object.
 type Cron struct {
-	DeliverPath string
-	DeliverPort string
 	Description string
 	Id          string
 	Jitter      time.Duration
 	Name        string
-	Namespace   string
 	OnOverlap   string
-	Ops         []string
-	Path        string
 	Schedule    string
 	Tags        []string
-	Timeout     time.Duration
 	Timezone    string
-	Tools       []string
 }
 
 // ReadCron decodes one from a resource.
 func ReadCron(r Resource) Cron {
 	var out Cron
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Jitter, _ = r.Duration("jitter")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
 	out.OnOverlap = r.String("on_overlap")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.Schedule = r.String("schedule")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
 	out.Timezone = r.String("timezone")
-	out.Tools = r.Strings("tools")
 	return out
 }
 
@@ -453,13 +391,9 @@ type Component struct {
 	BuildOutput     string // authored at build/{commands|script}/output
 	BuildRun        string // authored at build/{commands}/run
 	BuildScript     string // authored at build/script/path
-	DeliverPath     string
-	DeliverPort     string
 	Description     string
 	Id              string
 	Name            string
-	Namespace       string
-	Ops             []string
 	Path            string
 	SecretName      string
 	SecretNamespace string
@@ -469,8 +403,6 @@ type Component struct {
 	SourceKind      string // which of git was written
 	SourcePath      string
 	Tags            []string
-	Timeout         time.Duration
-	Tools           []string
 	Value           string
 }
 
@@ -485,13 +417,9 @@ func ReadComponent(r Resource) Component {
 	out.BuildOutput = r.String("build", "output")
 	out.BuildRun = r.String("build", "run")
 	out.BuildScript = r.String("build", "script")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
 	out.Path = r.String("path")
 	out.SecretName = r.String("secret", "name")
 	out.SecretNamespace = r.String("secret", "namespace")
@@ -501,8 +429,6 @@ func ReadComponent(r Resource) Component {
 	out.SourceKind = r.String("source", "kind")
 	out.SourcePath = r.String("source", "path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Value = r.String("value")
 	return out
 }
@@ -517,13 +443,9 @@ type Website struct {
 	BuildOutput     string // authored at build/{commands|script}/output
 	BuildRun        string // authored at build/{commands}/run
 	BuildScript     string // authored at build/script/path
-	DeliverPath     string
-	DeliverPort     string
 	Description     string
 	Id              string
 	Name            string
-	Namespace       string
-	Ops             []string
 	Path            string
 	SecretName      string
 	SecretNamespace string
@@ -536,8 +458,6 @@ type Website struct {
 	SourceKind      string // which of git was written
 	SourcePath      string
 	Tags            []string
-	Timeout         time.Duration
-	Tools           []string
 	Value           string
 }
 
@@ -552,13 +472,9 @@ func ReadWebsite(r Resource) Website {
 	out.BuildOutput = r.String("build", "output")
 	out.BuildRun = r.String("build", "run")
 	out.BuildScript = r.String("build", "script")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
 	out.Path = r.String("path")
 	out.SecretName = r.String("secret", "name")
 	out.SecretNamespace = r.String("secret", "namespace")
@@ -571,8 +487,6 @@ func ReadWebsite(r Resource) Website {
 	out.SourceKind = r.String("source", "kind")
 	out.SourcePath = r.String("source", "path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Value = r.String("value")
 	return out
 }
@@ -582,8 +496,6 @@ type Cache struct {
 	AuthorizerName              string
 	AuthorizerNamespace         string
 	Consensus                   string
-	DeliverPath                 string
-	DeliverPort                 string
 	Description                 string
 	EncryptionKeyName           string
 	EncryptionKeyNamespace      string
@@ -593,9 +505,6 @@ type Cache struct {
 	InstancesValidatorName      string // authored at instances/{validator}/name
 	InstancesValidatorNamespace string // authored at instances/{validator}/namespace
 	Name                        string
-	Namespace                   string
-	Ops                         []string
-	Path                        string
 	RegionMain                  string // authored at region/failover/main
 	RegionName                  string // authored at region/{auto|cdn}/name
 	RegionPolicy                string // which of auto, cdn, failover was written
@@ -603,8 +512,6 @@ type Cache struct {
 	Replicated                  bool
 	Size                        int64
 	Tags                        []string
-	Timeout                     time.Duration
-	Tools                       []string
 	Ttl                         time.Duration
 }
 
@@ -614,8 +521,6 @@ func ReadCache(r Resource) Cache {
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
 	out.Consensus = r.String("consensus")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.EncryptionKeyName = r.String("encryption", "key", "name")
 	out.EncryptionKeyNamespace = r.String("encryption", "key", "namespace")
@@ -625,9 +530,6 @@ func ReadCache(r Resource) Cache {
 	out.InstancesValidatorName = r.String("instances", "validator", "name")
 	out.InstancesValidatorNamespace = r.String("instances", "validator", "namespace")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.RegionMain = r.String("region", "main")
 	out.RegionName = r.String("region", "name")
 	out.RegionPolicy = r.String("region", "policy")
@@ -635,8 +537,6 @@ func ReadCache(r Resource) Cache {
 	out.Replicated, _ = r.Bool("replicated")
 	out.Size, _ = r.Int("size")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Ttl, _ = r.Duration("ttl")
 	return out
 }
@@ -645,8 +545,6 @@ func ReadCache(r Resource) Cache {
 type Database struct {
 	AuthorizerName               string
 	AuthorizerNamespace          string
-	DeliverPath                  string
-	DeliverPort                  string
 	Description                  string
 	DocumentConsensus            string // authored at document/distributed/consensus
 	DocumentCredentialsName      string // authored at document/{mongo}/credentials/name
@@ -665,9 +563,6 @@ type Database struct {
 	KvEngine                     string // which of distributed was written
 	KvSize                       int64  // authored at kv/distributed/size
 	Name                         string
-	Namespace                    string
-	Ops                          []string
-	Path                         string
 	RegionMain                   string // authored at region/failover/main
 	RegionName                   string // authored at region/{auto|cdn}/name
 	RegionPolicy                 string // which of auto, cdn, failover was written
@@ -681,8 +576,6 @@ type Database struct {
 	SqlSize                      int64  // authored at sql/distributed/size
 	SqlTls                       string // authored at sql/{postgres|mysql}/tls
 	Tags                         []string
-	Timeout                      time.Duration
-	Tools                        []string
 	Type                         string // which of kv, document, sql, vector was written
 	VectorConsensus              string // authored at vector/distributed/consensus
 	VectorDimensions             int64
@@ -696,8 +589,6 @@ func ReadDatabase(r Resource) Database {
 	var out Database
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.DocumentConsensus = r.String("document", "consensus")
 	out.DocumentCredentialsName = r.String("document", "credentials", "name")
@@ -716,9 +607,6 @@ func ReadDatabase(r Resource) Database {
 	out.KvEngine = r.String("kv", "engine")
 	out.KvSize, _ = r.Int("kv", "size")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.RegionMain = r.String("region", "main")
 	out.RegionName = r.String("region", "name")
 	out.RegionPolicy = r.String("region", "policy")
@@ -732,8 +620,6 @@ func ReadDatabase(r Resource) Database {
 	out.SqlSize, _ = r.Int("sql", "size")
 	out.SqlTls = r.String("sql", "tls")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Type = r.String("type")
 	out.VectorConsensus = r.String("vector", "consensus")
 	out.VectorDimensions, _ = r.Int("vector", "dimensions")
@@ -747,8 +633,6 @@ func ReadDatabase(r Resource) Database {
 type Storage struct {
 	AuthorizerName              string
 	AuthorizerNamespace         string
-	DeliverPath                 string
-	DeliverPort                 string
 	Description                 string
 	Id                          string
 	InstancesAdmission          string // which of validator was written
@@ -756,10 +640,7 @@ type Storage struct {
 	InstancesValidatorName      string // authored at instances/{validator}/name
 	InstancesValidatorNamespace string // authored at instances/{validator}/namespace
 	Name                        string
-	Namespace                   string
 	ObjectVersioning            bool
-	Ops                         []string
-	Path                        string
 	RegionMain                  string // authored at region/failover/main
 	RegionName                  string // authored at region/{auto|cdn}/name
 	RegionPolicy                string // which of auto, cdn, failover was written
@@ -767,8 +648,6 @@ type Storage struct {
 	Size                        int64  // authored at {object|streaming}/size
 	StreamingTtl                time.Duration
 	Tags                        []string
-	Timeout                     time.Duration
-	Tools                       []string
 	Type                        string // which of object, streaming was written
 }
 
@@ -777,8 +656,6 @@ func ReadStorage(r Resource) Storage {
 	var out Storage
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.InstancesAdmission = r.String("instances", "admission")
@@ -786,10 +663,7 @@ func ReadStorage(r Resource) Storage {
 	out.InstancesValidatorName = r.String("instances", "validator", "name")
 	out.InstancesValidatorNamespace = r.String("instances", "validator", "namespace")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
 	out.ObjectVersioning, _ = r.Bool("object", "versioning")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.RegionMain = r.String("region", "main")
 	out.RegionName = r.String("region", "name")
 	out.RegionPolicy = r.String("region", "policy")
@@ -797,8 +671,6 @@ func ReadStorage(r Resource) Storage {
 	out.Size, _ = r.Int("size")
 	out.StreamingTtl, _ = r.Duration("streaming", "ttl")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Type = r.String("type")
 	return out
 }
@@ -810,22 +682,15 @@ type Volume struct {
 	CheckpointInterval         time.Duration
 	CheckpointOnBudgetExceeded string
 	CheckpointRpoBudget        time.Duration
-	DeliverPath                string
-	DeliverPort                string
 	Description                string
 	Id                         string
 	Name                       string
-	Namespace                  string
-	Ops                        []string
-	Path                       string
 	Quota                      int64
 	RegionMain                 string // authored at region/failover/main
 	RegionName                 string // authored at region/{auto|cdn}/name
 	RegionPolicy               string // which of auto, cdn, failover was written
 	RegionStandby              string // authored at region/failover/standby
 	Tags                       []string
-	Timeout                    time.Duration
-	Tools                      []string
 }
 
 // ReadVolume decodes one from a resource.
@@ -836,22 +701,15 @@ func ReadVolume(r Resource) Volume {
 	out.CheckpointInterval, _ = r.Duration("checkpoint", "interval")
 	out.CheckpointOnBudgetExceeded = r.String("checkpoint", "on_budget_exceeded")
 	out.CheckpointRpoBudget, _ = r.Duration("checkpoint", "rpo_budget")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.Quota, _ = r.Int("quota")
 	out.RegionMain = r.String("region", "main")
 	out.RegionName = r.String("region", "name")
 	out.RegionPolicy = r.String("region", "policy")
 	out.RegionStandby = r.String("region", "standby")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	return out
 }
 
@@ -859,19 +717,12 @@ func ReadVolume(r Resource) Volume {
 type Secret struct {
 	AuthorizerName      string
 	AuthorizerNamespace string
-	DeliverPath         string
-	DeliverPort         string
 	Description         string
 	Id                  string
 	Name                string
-	Namespace           string
-	Ops                 []string
-	Path                string
 	Rotation            time.Duration
 	Source              string
 	Tags                []string
-	Timeout             time.Duration
-	Tools               []string
 }
 
 // ReadSecret decodes one from a resource.
@@ -879,19 +730,12 @@ func ReadSecret(r Resource) Secret {
 	var out Secret
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.Rotation, _ = r.Duration("rotation")
 	out.Source = r.String("source")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	return out
 }
 
@@ -899,17 +743,12 @@ func ReadSecret(r Resource) Secret {
 type Sync struct {
 	AuthorizerName           string
 	AuthorizerNamespace      string
-	DeliverPath              string
-	DeliverPort              string
 	Description              string
 	Id                       string
 	LogConsensus             string
 	LogRetentionAge          time.Duration
 	LogRetentionSize         int64
 	Name                     string
-	Namespace                string
-	Ops                      []string
-	Path                     string
 	QueueConsensus           string
 	QueueDeadLetterName      string
 	QueueDeadLetterNamespace string
@@ -924,8 +763,6 @@ type Sync struct {
 	RegionPolicy             string // which of auto, cdn, failover was written
 	RegionStandby            string // authored at region/failover/standby
 	Tags                     []string
-	Timeout                  time.Duration
-	Tools                    []string
 	Type                     string // which of queue, log was written
 }
 
@@ -934,17 +771,12 @@ func ReadSync(r Resource) Sync {
 	var out Sync
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.LogConsensus = r.String("log", "consensus")
 	out.LogRetentionAge, _ = r.Duration("log", "retention", "age")
 	out.LogRetentionSize, _ = r.Int("log", "retention", "size")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.QueueConsensus = r.String("queue", "consensus")
 	out.QueueDeadLetterName = r.String("queue", "dead_letter", "name")
 	out.QueueDeadLetterNamespace = r.String("queue", "dead_letter", "namespace")
@@ -959,45 +791,29 @@ func ReadSync(r Resource) Sync {
 	out.RegionPolicy = r.String("region", "policy")
 	out.RegionStandby = r.String("region", "standby")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Type = r.String("type")
 	return out
 }
 
 // Zone is that kind, read from a compiled object.
 type Zone struct {
-	DeliverPath string
-	DeliverPort string
 	Description string
 	Fqdn        string
 	Id          string
 	Name        string
-	Namespace   string
-	Ops         []string
-	Path        string
 	Records     []string
 	Tags        []string
-	Timeout     time.Duration
-	Tools       []string
 }
 
 // ReadZone decodes one from a resource.
 func ReadZone(r Resource) Zone {
 	var out Zone
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Fqdn = r.String("fqdn")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.Records = r.Strings("records")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	return out
 }
 
@@ -1009,8 +825,6 @@ type Gateway struct {
 	CorsAllowSelf              bool
 	CorsMethods                []string
 	CorsOrigins                []string
-	DeliverPath                string
-	DeliverPort                string
 	Description                string
 	Fail                       string
 	HostKind                   string // which of generated, zone was written
@@ -1020,8 +834,6 @@ type Gateway struct {
 	Id                         string
 	Name                       string
 	Namespace                  string
-	Ops                        []string
-	Path                       string
 	RateLimitBurst             int64
 	RateLimitKey               string
 	RateLimitRpm               int64
@@ -1040,8 +852,6 @@ type Gateway struct {
 	RouterNamespace            string
 	Routing                    string // which of route, router was written
 	Tags                       []string
-	Timeout                    time.Duration
-	Tools                      []string
 }
 
 // ReadGateway decodes one from a resource.
@@ -1053,8 +863,6 @@ func ReadGateway(r Resource) Gateway {
 	out.CorsAllowSelf, _ = r.Bool("cors", "allow_self")
 	out.CorsMethods = r.Strings("cors", "methods")
 	out.CorsOrigins = r.Strings("cors", "origins")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Fail = r.String("fail")
 	out.HostKind = r.String("host", "kind")
@@ -1064,8 +872,6 @@ func ReadGateway(r Resource) Gateway {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.RateLimitBurst, _ = r.Int("rate_limit", "burst")
 	out.RateLimitKey = r.String("rate_limit", "key")
 	out.RateLimitRpm, _ = r.Int("rate_limit", "rpm")
@@ -1084,8 +890,6 @@ func ReadGateway(r Resource) Gateway {
 	out.RouterNamespace = r.String("router", "namespace")
 	out.Routing = r.String("routing")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	return out
 }
 
@@ -1094,8 +898,6 @@ type Proxy struct {
 	CertificateSecretName         string
 	CertificateSecretNamespace    string
 	CertificateSource             string
-	DeliverPath                   string
-	DeliverPort                   string
 	Description                   string
 	Fail                          string
 	ForwardKind                   string // which of application was written
@@ -1109,8 +911,6 @@ type Proxy struct {
 	Id                            string
 	Name                          string
 	Namespace                     string
-	Ops                           []string
-	Path                          string
 	RateLimitBurst                int64
 	RateLimitConcurrent           int64
 	RateLimitConnectionsPerMinute int64
@@ -1120,9 +920,7 @@ type Proxy struct {
 	Routing                       string // which of forward, router was written
 	Service                       string
 	Tags                          []string
-	Timeout                       time.Duration
 	TlsMode                       string
-	Tools                         []string
 }
 
 // ReadProxy decodes one from a resource.
@@ -1131,8 +929,6 @@ func ReadProxy(r Resource) Proxy {
 	out.CertificateSecretName = r.String("certificate", "secret", "name")
 	out.CertificateSecretNamespace = r.String("certificate", "secret", "namespace")
 	out.CertificateSource = r.String("certificate", "source")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Fail = r.String("fail")
 	out.ForwardKind = r.String("forward", "kind")
@@ -1146,8 +942,6 @@ func ReadProxy(r Resource) Proxy {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.RateLimitBurst, _ = r.Int("rate_limit", "burst")
 	out.RateLimitConcurrent, _ = r.Int("rate_limit", "concurrent")
 	out.RateLimitConnectionsPerMinute, _ = r.Int("rate_limit", "connections_per_minute")
@@ -1157,9 +951,7 @@ func ReadProxy(r Resource) Proxy {
 	out.Routing = r.String("routing")
 	out.Service = r.String("service")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
 	out.TlsMode = r.String("tls", "mode")
-	out.Tools = r.Strings("tools")
 	return out
 }
 
@@ -1169,21 +961,14 @@ type Stream struct {
 	AuthorizerNamespace  string
 	CredentialsName      string // authored at {kafka|nats}/credentials/name
 	CredentialsNamespace string // authored at {kafka|nats}/credentials/namespace
-	DeliverPath          string
-	DeliverPort          string
 	Description          string
 	Engine               string // which of distributed, kafka, nats was written
 	Host                 string // authored at {kafka|nats}/host
 	Id                   string
 	Local                bool // authored at distributed/local
 	Name                 string
-	Namespace            string
-	Ops                  []string
-	Path                 string
 	Tags                 []string
-	Timeout              time.Duration
 	Tls                  string // authored at {kafka|nats}/tls
-	Tools                []string
 }
 
 // ReadStream decodes one from a resource.
@@ -1193,21 +978,14 @@ func ReadStream(r Resource) Stream {
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
 	out.CredentialsName = r.String("credentials", "name")
 	out.CredentialsNamespace = r.String("credentials", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Engine = r.String("engine")
 	out.Host = r.String("host")
 	out.Id = r.String("id")
 	out.Local, _ = r.Bool("local")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
 	out.Tls = r.String("tls")
-	out.Tools = r.Strings("tools")
 	return out
 }
 
@@ -1215,8 +993,6 @@ func ReadStream(r Resource) Stream {
 type Bus struct {
 	AuthorizerName              string
 	AuthorizerNamespace         string
-	DeliverPath                 string
-	DeliverPort                 string
 	Description                 string
 	HostKind                    string // which of generated, zone was written
 	HostName                    string // authored at host/{generated|zone}/name
@@ -1228,12 +1004,7 @@ type Bus struct {
 	InstancesValidatorName      string // authored at instances/{validator}/name
 	InstancesValidatorNamespace string // authored at instances/{validator}/namespace
 	Name                        string
-	Namespace                   string
-	Ops                         []string
-	Path                        string
 	Tags                        []string
-	Timeout                     time.Duration
-	Tools                       []string
 }
 
 // ReadBus decodes one from a resource.
@@ -1241,8 +1012,6 @@ func ReadBus(r Resource) Bus {
 	var out Bus
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.HostKind = r.String("host", "kind")
 	out.HostName = r.String("host", "name")
@@ -1254,12 +1023,7 @@ func ReadBus(r Resource) Bus {
 	out.InstancesValidatorName = r.String("instances", "validator", "name")
 	out.InstancesValidatorNamespace = r.String("instances", "validator", "namespace")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	return out
 }
 
@@ -1267,17 +1031,10 @@ func ReadBus(r Resource) Bus {
 type Mcp struct {
 	AuthorizerName      string
 	AuthorizerNamespace string
-	DeliverPath         string
-	DeliverPort         string
 	Description         string
 	Id                  string
 	Name                string
-	Namespace           string
-	Ops                 []string
-	Path                string
 	Tags                []string
-	Timeout             time.Duration
-	Tools               []string
 	ToolsCacheScope     string
 	ToolsCacheTtl       time.Duration
 }
@@ -1287,17 +1044,10 @@ func ReadMcp(r Resource) Mcp {
 	var out Mcp
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.ToolsCacheScope = r.String("tools", "cache_scope")
 	out.ToolsCacheTtl, _ = r.Duration("tools", "cache_ttl")
 	return out
@@ -1307,22 +1057,15 @@ func ReadMcp(r Resource) Mcp {
 type Channel struct {
 	AuthorizerName      string
 	AuthorizerNamespace string
-	DeliverPath         string
-	DeliverPort         string
 	Description         string
 	Id                  string
 	Name                string
-	Namespace           string
-	Ops                 []string
-	Path                string
 	Protocol            string
 	ServeKind           string // which of application, function was written
 	ServeName           string // authored at serve/{application|function}/name
 	ServeNamespace      string // authored at serve/{application|function}/namespace
 	ServePort           string // authored at serve/{application|function}/port
 	Tags                []string
-	Timeout             time.Duration
-	Tools               []string
 }
 
 // ReadChannel decodes one from a resource.
@@ -1330,22 +1073,15 @@ func ReadChannel(r Resource) Channel {
 	var out Channel
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.Protocol = r.String("protocol")
 	out.ServeKind = r.String("serve", "kind")
 	out.ServeName = r.String("serve", "name")
 	out.ServeNamespace = r.String("serve", "namespace")
 	out.ServePort = r.String("serve", "port")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	return out
 }
 
@@ -1353,8 +1089,6 @@ func ReadChannel(r Resource) Channel {
 type Model struct {
 	AuthorizerName                      string
 	AuthorizerNamespace                 string
-	DeliverPath                         string
-	DeliverPort                         string
 	Description                         string
 	Format                              string
 	Id                                  string
@@ -1367,16 +1101,11 @@ type Model struct {
 	InferenceRemoteCredentialsNamespace string
 	InferenceRemoteEndpoint             string
 	Name                                string
-	Namespace                           string
-	Ops                                 []string
 	ParametersMaxTokens                 int64
 	ParametersStop                      []string
 	ParametersTemperature               float64
 	ParametersTopP                      float64
-	Path                                string
 	Tags                                []string
-	Timeout                             time.Duration
-	Tools                               []string
 }
 
 // ReadModel decodes one from a resource.
@@ -1384,8 +1113,6 @@ func ReadModel(r Resource) Model {
 	var out Model
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Format = r.String("format")
 	out.Id = r.String("id")
@@ -1398,16 +1125,11 @@ func ReadModel(r Resource) Model {
 	out.InferenceRemoteCredentialsNamespace = r.String("inference", "remote", "credentials", "namespace")
 	out.InferenceRemoteEndpoint = r.String("inference", "remote", "endpoint")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
 	out.ParametersMaxTokens, _ = r.Int("parameters", "max_tokens")
 	out.ParametersStop = r.Strings("parameters", "stop")
 	out.ParametersTemperature, _ = r.Float("parameters", "temperature")
 	out.ParametersTopP, _ = r.Float("parameters", "top_p")
-	out.Path = r.String("path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	return out
 }
 
@@ -1417,8 +1139,6 @@ type Agent struct {
 	At                      string
 	AuthorizerName          string
 	AuthorizerNamespace     string
-	DeliverPath             string
-	DeliverPort             string
 	Description             string
 	Egress                  []string
 	Id                      string
@@ -1434,8 +1154,6 @@ type Agent struct {
 	ModelName               string
 	ModelNamespace          string
 	Name                    string
-	Namespace               string
-	Ops                     []string
 	Path                    string
 	RegionMain              string // authored at region/failover/main
 	RegionName              string // authored at region/{auto|cdn}/name
@@ -1449,8 +1167,6 @@ type Agent struct {
 	SourceKind              string // which of git was written
 	SourcePath              string
 	Tags                    []string
-	Timeout                 time.Duration
-	Tools                   []string
 	Value                   string
 }
 
@@ -1461,8 +1177,6 @@ func ReadAgent(r Resource) Agent {
 	out.At = r.String("at")
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
 	out.Id = r.String("id")
@@ -1478,8 +1192,6 @@ func ReadAgent(r Resource) Agent {
 	out.ModelName = r.String("model", "name")
 	out.ModelNamespace = r.String("model", "namespace")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Ops = r.Strings("ops")
 	out.Path = r.String("path")
 	out.RegionMain = r.String("region", "main")
 	out.RegionName = r.String("region", "name")
@@ -1493,8 +1205,6 @@ func ReadAgent(r Resource) Agent {
 	out.SourceKind = r.String("source", "kind")
 	out.SourcePath = r.String("source", "path")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Value = r.String("value")
 	return out
 }
@@ -1513,16 +1223,11 @@ type Workflow struct {
 	CallNamespace       string
 	CallResult          string
 	Concurrency         int64
-	DeliverPath         string
-	DeliverPort         string
 	Description         string
 	Id                  string
 	Kind                string
 	Name                string
-	Namespace           string
 	OnError             string
-	Ops                 []string
-	Path                string
 	RegionMain          string // authored at region/failover/main
 	RegionName          string // authored at region/{auto|cdn}/name
 	RegionPolicy        string // which of auto, cdn, failover was written
@@ -1530,7 +1235,6 @@ type Workflow struct {
 	Start               string
 	Tags                []string
 	Timeout             time.Duration
-	Tools               []string
 	Wait                string
 }
 
@@ -1549,16 +1253,11 @@ func ReadWorkflow(r Resource) Workflow {
 	out.CallNamespace = r.String("call", "namespace")
 	out.CallResult = r.String("call", "result")
 	out.Concurrency, _ = r.Int("concurrency")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Kind = r.String("kind")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
 	out.OnError = r.String("on_error")
-	out.Ops = r.Strings("ops")
-	out.Path = r.String("path")
 	out.RegionMain = r.String("region", "main")
 	out.RegionName = r.String("region", "name")
 	out.RegionPolicy = r.String("region", "policy")
@@ -1566,446 +1265,27 @@ func ReadWorkflow(r Resource) Workflow {
 	out.Start = r.String("start")
 	out.Tags = r.Strings("tags")
 	out.Timeout, _ = r.Duration("timeout")
-	out.Tools = r.Strings("tools")
 	out.Wait = r.String("wait")
 	return out
 }
 
 // Namespace is that kind, read from a compiled object.
 type Namespace struct {
-	As                                  string
-	At                                  string
-	Attempts                            int64
-	AuthorizerName                      string
-	AuthorizerNamespace                 string
-	BackoffCeiling                      string
-	BackoffFactor                       float64
-	BackoffInterval                     string
-	BuildDockerfile                     string // authored at build/dockerfile/path
-	BuildImage                          string // authored at build/{commands|script}/image
-	BuildInstall                        string // authored at build/{commands}/install
-	BuildKind                           string // which of dockerfile was written
-	BuildOutput                         string // authored at build/{commands|script}/output
-	BuildRun                            string // authored at build/{commands}/run
-	BuildScript                         string // authored at build/script/path
-	BuildTarget                         string // authored at build/dockerfile/target
-	CallFunction                        string
-	CallInput                           string
-	CallNamespace                       string
-	CallResult                          string
-	CertificateSecretName               string
-	CertificateSecretNamespace          string
-	CertificateSource                   string
-	CheckpointInterval                  time.Duration
-	CheckpointOnBudgetExceeded          string
-	CheckpointRpoBudget                 time.Duration
-	Concurrency                         int64
-	Consensus                           string
-	CorsAllowSelf                       bool
-	CorsMethods                         []string
-	CorsOrigins                         []string
-	CredentialsName                     string // authored at {kafka|nats}/credentials/name
-	CredentialsNamespace                string // authored at {kafka|nats}/credentials/namespace
-	DeliverPath                         string
-	DeliverPort                         string
-	Description                         string
-	DocumentConsensus                   string // authored at document/distributed/consensus
-	DocumentCredentialsName             string // authored at document/{mongo}/credentials/name
-	DocumentCredentialsNamespace        string // authored at document/{mongo}/credentials/namespace
-	DocumentDatabase                    string // authored at document/{mongo}/database
-	DocumentEngine                      string // which of distributed, mongo was written
-	DocumentHost                        string // authored at document/{mongo}/host
-	DocumentSize                        int64  // authored at document/distributed/size
-	DocumentTls                         string // authored at document/{mongo}/tls
-	Egress                              []string
-	EncryptionKeyName                   string
-	EncryptionKeyNamespace              string
-	Engine                              string // which of distributed, kafka, nats was written
-	ExecutionCall                       string
-	ExecutionCpu                        int64
-	ExecutionMemory                     int64
-	ExecutionTimeout                    time.Duration
-	Fail                                string
-	Format                              string
-	ForwardKind                         string // which of application was written
-	ForwardName                         string // authored at forward/{application}/name
-	ForwardNamespace                    string // authored at forward/{application}/namespace
-	ForwardPort                         string // authored at forward/{application}/port
-	Fqdn                                string
-	Host                                string // authored at {kafka|nats}/host
-	HostKind                            string // which of generated, zone was written
-	HostName                            string // authored at host/{generated|zone}/name
-	HostZoneInName                      string // authored at host/{generated|zone}/in/name
-	HostZoneInNamespace                 string
-	Id                                  string
-	Identifier                          string
-	Implements                          string
-	InferenceKind                       string // which of remote, local was written
-	InferenceLocalName                  string
-	InferenceLocalNamespace             string
-	InferenceLocalPort                  string
-	InferenceRemoteCredentialsName      string
-	InferenceRemoteCredentialsNamespace string
-	InferenceRemoteEndpoint             string
-	InstancesAdmission                  string // which of validator was written
-	InstancesLimit                      int64
-	InstancesValidatorName              string // authored at instances/{validator}/name
-	InstancesValidatorNamespace         string // authored at instances/{validator}/namespace
-	Instructions                        string
-	Jitter                              time.Duration
-	Kind                                string
-	KvConsensus                         string // authored at kv/distributed/consensus
-	KvEngine                            string // which of distributed was written
-	KvSize                              int64  // authored at kv/distributed/size
-	LifetimeIdle                        time.Duration
-	LifetimeMax                         time.Duration
-	LimitsConcurrency                   int64
-	LimitsConcurrent                    int64
-	LimitsMaxInstances                  int64
-	LimitsMemory                        int64
-	LimitsSteps                         int64
-	LimitsTimeout                       time.Duration
-	LivenessFailures                    int64
-	LivenessFunctionName                string
-	LivenessFunctionNamespace           string
-	LivenessHttpPath                    string
-	LivenessHttpPort                    string
-	LivenessKind                        string // which of http, function was written
-	Local                               bool   // authored at distributed/local
-	LogConsensus                        string
-	LogRetentionAge                     time.Duration
-	LogRetentionSize                    int64
-	MemoryDimensions                    int64
-	MemoryEmbedderName                  string
-	MemoryEmbedderNamespace             string
-	MemorySize                          int64
-	ModelName                           string
-	ModelNamespace                      string
-	Name                                string
-	Namespace                           string
-	Number                              int64
-	ObjectVersioning                    bool
-	OnError                             string
-	OnOverlap                           string
-	Ops                                 []string
-	ParametersMaxTokens                 int64
-	ParametersStop                      []string
-	ParametersTemperature               float64
-	ParametersTopP                      float64
-	Path                                string
-	Protocol                            string
-	QueueConsensus                      string
-	QueueDeadLetterName                 string
-	QueueDeadLetterNamespace            string
-	QueueDelay                          time.Duration
-	QueueMaxAttempts                    int64
-	QueueRetryCeiling                   time.Duration
-	QueueRetryFactor                    float64
-	QueueRetryInterval                  time.Duration
-	QueueVisibilityTimeout              time.Duration
-	Quota                               int64
-	RateLimitBurst                      int64
-	RateLimitConcurrent                 int64
-	RateLimitConnectionsPerMinute       int64
-	RateLimitKey                        string
-	RateLimitRpm                        int64
-	ReadinessFunctionName               string
-	ReadinessFunctionNamespace          string
-	ReadinessHttpPath                   string
-	ReadinessHttpPort                   string
-	ReadinessKind                       string // which of http, function was written
-	Records                             []string
-	RegionMain                          string // authored at region/failover/main
-	RegionName                          string // authored at region/{auto|cdn}/name
-	RegionPolicy                        string // which of auto, cdn, failover was written
-	RegionStandby                       string // authored at region/failover/standby
-	Regions                             []string
-	Replicated                          bool
-	Rotation                            time.Duration
-	RouteHandlerKind                    string // which of function, application, website, gateway, mcp, agent was written
-	RouteHandlerName                    string // authored at route/handler/{function|application|website|gateway|mcp|agent}/name
-	RouteHandlerNamespace               string // authored at route/handler/{function|application|website|gateway|mcp|agent}/namespace
-	RouteHandlerPort                    string // authored at route/handler/{function|application|website|gateway|mcp|agent}/port
-	RouteMatch                          string
-	RouteMethods                        []string
-	RoutePath                           string
-	RouteRouterName                     string
-	RouteRouterNamespace                string
-	RouteStripPrefix                    bool
-	RouteTarget                         string // which of handler, router was written
-	RouterName                          string
-	RouterNamespace                     string
-	Routing                             string // which of route, router was written
-	Runtime                             string
-	Schedule                            string
-	SecretName                          string
-	SecretNamespace                     string
-	ServeIndex                          string
-	ServeKind                           string // which of application, function was written
-	ServeMode                           string
-	ServeName                           string // authored at serve/{application|function}/name
-	ServeNamespace                      string // authored at serve/{application|function}/namespace
-	ServeNotFound                       string
-	ServePort                           string // authored at serve/{application|function}/port
-	Service                             string
-	Size                                int64
-	Source                              string
-	SourceBranch                        string
-	SourceBuiltin                       string
-	SourceComponent                     string
-	SourceGit                           string
-	SourceImage                         string
-	SourceImagePullSecretName           string
-	SourceImagePullSecretNamespace      string
-	SourceKind                          string // which of image, git was written
-	SourceNamespace                     string
-	SourcePath                          string
-	SqlConsensus                        string // authored at sql/distributed/consensus
-	SqlCredentialsName                  string // authored at sql/{postgres|mysql}/credentials/name
-	SqlCredentialsNamespace             string // authored at sql/{postgres|mysql}/credentials/namespace
-	SqlDatabase                         string // authored at sql/{postgres|mysql}/database
-	SqlEngine                           string // which of distributed, postgres, mysql was written
-	SqlHost                             string // authored at sql/{postgres|mysql}/host
-	SqlSize                             int64  // authored at sql/distributed/size
-	SqlTls                              string // authored at sql/{postgres|mysql}/tls
-	Start                               string
-	StreamingTtl                        time.Duration
-	Tags                                []string
-	Timeout                             time.Duration
-	Timezone                            string
-	Tls                                 string // authored at {kafka|nats}/tls
-	TlsMode                             string
-	Tools                               []string
-	ToolsCacheScope                     string
-	ToolsCacheTtl                       time.Duration
-	Ttl                                 time.Duration
-	Type                                string // which of kv, document, sql, vector was written
-	Value                               string
-	VectorConsensus                     string // authored at vector/distributed/consensus
-	VectorDimensions                    int64
-	VectorEngine                        string // which of distributed was written
-	VectorMetric                        string
-	VectorSize                          int64 // authored at vector/distributed/size
-	Wait                                string
+	Description string
+	Id          string
+	Name        string
+	Regions     []string
+	Tags        []string
 }
 
 // ReadNamespace decodes one from a resource.
 func ReadNamespace(r Resource) Namespace {
 	var out Namespace
-	out.As = r.String("as")
-	out.At = r.String("at")
-	out.Attempts, _ = r.Int("attempts")
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.BackoffCeiling = r.String("backoff", "ceiling")
-	out.BackoffFactor, _ = r.Float("backoff", "factor")
-	out.BackoffInterval = r.String("backoff", "interval")
-	out.BuildDockerfile = r.String("build", "dockerfile")
-	out.BuildImage = r.String("build", "image")
-	out.BuildInstall = r.String("build", "install")
-	out.BuildKind = r.String("build", "kind")
-	out.BuildOutput = r.String("build", "output")
-	out.BuildRun = r.String("build", "run")
-	out.BuildScript = r.String("build", "script")
-	out.BuildTarget = r.String("build", "target")
-	out.CallFunction = r.String("call", "function")
-	out.CallInput = r.String("call", "input")
-	out.CallNamespace = r.String("call", "namespace")
-	out.CallResult = r.String("call", "result")
-	out.CertificateSecretName = r.String("certificate", "secret", "name")
-	out.CertificateSecretNamespace = r.String("certificate", "secret", "namespace")
-	out.CertificateSource = r.String("certificate", "source")
-	out.CheckpointInterval, _ = r.Duration("checkpoint", "interval")
-	out.CheckpointOnBudgetExceeded = r.String("checkpoint", "on_budget_exceeded")
-	out.CheckpointRpoBudget, _ = r.Duration("checkpoint", "rpo_budget")
-	out.Concurrency, _ = r.Int("concurrency")
-	out.Consensus = r.String("consensus")
-	out.CorsAllowSelf, _ = r.Bool("cors", "allow_self")
-	out.CorsMethods = r.Strings("cors", "methods")
-	out.CorsOrigins = r.Strings("cors", "origins")
-	out.CredentialsName = r.String("credentials", "name")
-	out.CredentialsNamespace = r.String("credentials", "namespace")
-	out.DeliverPath = r.String("deliver", "path")
-	out.DeliverPort = r.String("deliver", "port")
 	out.Description = r.String("description")
-	out.DocumentConsensus = r.String("document", "consensus")
-	out.DocumentCredentialsName = r.String("document", "credentials", "name")
-	out.DocumentCredentialsNamespace = r.String("document", "credentials", "namespace")
-	out.DocumentDatabase = r.String("document", "database")
-	out.DocumentEngine = r.String("document", "engine")
-	out.DocumentHost = r.String("document", "host")
-	out.DocumentSize, _ = r.Int("document", "size")
-	out.DocumentTls = r.String("document", "tls")
-	out.Egress = r.Strings("egress")
-	out.EncryptionKeyName = r.String("encryption", "key", "name")
-	out.EncryptionKeyNamespace = r.String("encryption", "key", "namespace")
-	out.Engine = r.String("engine")
-	out.ExecutionCall = r.String("execution", "call")
-	out.ExecutionCpu, _ = r.Int("execution", "cpu")
-	out.ExecutionMemory, _ = r.Int("execution", "memory")
-	out.ExecutionTimeout, _ = r.Duration("execution", "timeout")
-	out.Fail = r.String("fail")
-	out.Format = r.String("format")
-	out.ForwardKind = r.String("forward", "kind")
-	out.ForwardName = r.String("forward", "name")
-	out.ForwardNamespace = r.String("forward", "namespace")
-	out.ForwardPort = r.String("forward", "port")
-	out.Fqdn = r.String("fqdn")
-	out.Host = r.String("host")
-	out.HostKind = r.String("host", "kind")
-	out.HostName = r.String("host", "name")
-	out.HostZoneInName = r.String("host", "zone", "in", "name")
-	out.HostZoneInNamespace = r.String("host", "zone", "in", "namespace")
 	out.Id = r.String("id")
-	out.Identifier = r.String("identifier")
-	out.Implements = r.String("implements")
-	out.InferenceKind = r.String("inference", "kind")
-	out.InferenceLocalName = r.String("inference", "local", "name")
-	out.InferenceLocalNamespace = r.String("inference", "local", "namespace")
-	out.InferenceLocalPort = r.String("inference", "local", "port")
-	out.InferenceRemoteCredentialsName = r.String("inference", "remote", "credentials", "name")
-	out.InferenceRemoteCredentialsNamespace = r.String("inference", "remote", "credentials", "namespace")
-	out.InferenceRemoteEndpoint = r.String("inference", "remote", "endpoint")
-	out.InstancesAdmission = r.String("instances", "admission")
-	out.InstancesLimit, _ = r.Int("instances", "limit")
-	out.InstancesValidatorName = r.String("instances", "validator", "name")
-	out.InstancesValidatorNamespace = r.String("instances", "validator", "namespace")
-	out.Instructions = r.String("instructions")
-	out.Jitter, _ = r.Duration("jitter")
-	out.Kind = r.String("kind")
-	out.KvConsensus = r.String("kv", "consensus")
-	out.KvEngine = r.String("kv", "engine")
-	out.KvSize, _ = r.Int("kv", "size")
-	out.LifetimeIdle, _ = r.Duration("lifetime", "idle")
-	out.LifetimeMax, _ = r.Duration("lifetime", "max")
-	out.LimitsConcurrency, _ = r.Int("limits", "concurrency")
-	out.LimitsConcurrent, _ = r.Int("limits", "concurrent")
-	out.LimitsMaxInstances, _ = r.Int("limits", "max_instances")
-	out.LimitsMemory, _ = r.Int("limits", "memory")
-	out.LimitsSteps, _ = r.Int("limits", "steps")
-	out.LimitsTimeout, _ = r.Duration("limits", "timeout")
-	out.LivenessFailures, _ = r.Int("liveness", "failures")
-	out.LivenessFunctionName = r.String("liveness", "function", "name")
-	out.LivenessFunctionNamespace = r.String("liveness", "function", "namespace")
-	out.LivenessHttpPath = r.String("liveness", "http", "path")
-	out.LivenessHttpPort = r.String("liveness", "http", "port")
-	out.LivenessKind = r.String("liveness", "kind")
-	out.Local, _ = r.Bool("local")
-	out.LogConsensus = r.String("log", "consensus")
-	out.LogRetentionAge, _ = r.Duration("log", "retention", "age")
-	out.LogRetentionSize, _ = r.Int("log", "retention", "size")
-	out.MemoryDimensions, _ = r.Int("memory", "dimensions")
-	out.MemoryEmbedderName = r.String("memory", "embedder", "name")
-	out.MemoryEmbedderNamespace = r.String("memory", "embedder", "namespace")
-	out.MemorySize, _ = r.Int("memory", "size")
-	out.ModelName = r.String("model", "name")
-	out.ModelNamespace = r.String("model", "namespace")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.Number, _ = r.Int("number")
-	out.ObjectVersioning, _ = r.Bool("object", "versioning")
-	out.OnError = r.String("on_error")
-	out.OnOverlap = r.String("on_overlap")
-	out.Ops = r.Strings("ops")
-	out.ParametersMaxTokens, _ = r.Int("parameters", "max_tokens")
-	out.ParametersStop = r.Strings("parameters", "stop")
-	out.ParametersTemperature, _ = r.Float("parameters", "temperature")
-	out.ParametersTopP, _ = r.Float("parameters", "top_p")
-	out.Path = r.String("path")
-	out.Protocol = r.String("protocol")
-	out.QueueConsensus = r.String("queue", "consensus")
-	out.QueueDeadLetterName = r.String("queue", "dead_letter", "name")
-	out.QueueDeadLetterNamespace = r.String("queue", "dead_letter", "namespace")
-	out.QueueDelay, _ = r.Duration("queue", "delay")
-	out.QueueMaxAttempts, _ = r.Int("queue", "max_attempts")
-	out.QueueRetryCeiling, _ = r.Duration("queue", "retry", "ceiling")
-	out.QueueRetryFactor, _ = r.Float("queue", "retry", "factor")
-	out.QueueRetryInterval, _ = r.Duration("queue", "retry", "interval")
-	out.QueueVisibilityTimeout, _ = r.Duration("queue", "visibility_timeout")
-	out.Quota, _ = r.Int("quota")
-	out.RateLimitBurst, _ = r.Int("rate_limit", "burst")
-	out.RateLimitConcurrent, _ = r.Int("rate_limit", "concurrent")
-	out.RateLimitConnectionsPerMinute, _ = r.Int("rate_limit", "connections_per_minute")
-	out.RateLimitKey = r.String("rate_limit", "key")
-	out.RateLimitRpm, _ = r.Int("rate_limit", "rpm")
-	out.ReadinessFunctionName = r.String("readiness", "function", "name")
-	out.ReadinessFunctionNamespace = r.String("readiness", "function", "namespace")
-	out.ReadinessHttpPath = r.String("readiness", "http", "path")
-	out.ReadinessHttpPort = r.String("readiness", "http", "port")
-	out.ReadinessKind = r.String("readiness", "kind")
-	out.Records = r.Strings("records")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
 	out.Regions = r.Strings("regions")
-	out.Replicated, _ = r.Bool("replicated")
-	out.Rotation, _ = r.Duration("rotation")
-	out.RouteHandlerKind = r.String("route", "handler", "kind")
-	out.RouteHandlerName = r.String("route", "handler", "name")
-	out.RouteHandlerNamespace = r.String("route", "handler", "namespace")
-	out.RouteHandlerPort = r.String("route", "handler", "port")
-	out.RouteMatch = r.String("route", "match")
-	out.RouteMethods = r.Strings("route", "methods")
-	out.RoutePath = r.String("route", "path")
-	out.RouteRouterName = r.String("route", "router", "name")
-	out.RouteRouterNamespace = r.String("route", "router", "namespace")
-	out.RouteStripPrefix, _ = r.Bool("route", "strip_prefix")
-	out.RouteTarget = r.String("route", "target")
-	out.RouterName = r.String("router", "name")
-	out.RouterNamespace = r.String("router", "namespace")
-	out.Routing = r.String("routing")
-	out.Runtime = r.String("runtime")
-	out.Schedule = r.String("schedule")
-	out.SecretName = r.String("secret", "name")
-	out.SecretNamespace = r.String("secret", "namespace")
-	out.ServeIndex = r.String("serve", "index")
-	out.ServeKind = r.String("serve", "kind")
-	out.ServeMode = r.String("serve", "mode")
-	out.ServeName = r.String("serve", "name")
-	out.ServeNamespace = r.String("serve", "namespace")
-	out.ServeNotFound = r.String("serve", "not_found")
-	out.ServePort = r.String("serve", "port")
-	out.Service = r.String("service")
-	out.Size, _ = r.Int("size")
-	out.Source = r.String("source")
-	out.SourceBranch = r.String("source", "branch")
-	out.SourceBuiltin = r.String("source", "builtin")
-	out.SourceComponent = r.String("source", "component")
-	out.SourceGit = r.String("source", "git")
-	out.SourceImage = r.String("source", "image")
-	out.SourceImagePullSecretName = r.String("source", "image_pull_secret", "name")
-	out.SourceImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
-	out.SourceKind = r.String("source", "kind")
-	out.SourceNamespace = r.String("source", "namespace")
-	out.SourcePath = r.String("source", "path")
-	out.SqlConsensus = r.String("sql", "consensus")
-	out.SqlCredentialsName = r.String("sql", "credentials", "name")
-	out.SqlCredentialsNamespace = r.String("sql", "credentials", "namespace")
-	out.SqlDatabase = r.String("sql", "database")
-	out.SqlEngine = r.String("sql", "engine")
-	out.SqlHost = r.String("sql", "host")
-	out.SqlSize, _ = r.Int("sql", "size")
-	out.SqlTls = r.String("sql", "tls")
-	out.Start = r.String("start")
-	out.StreamingTtl, _ = r.Duration("streaming", "ttl")
 	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
-	out.Timezone = r.String("timezone")
-	out.Tls = r.String("tls")
-	out.TlsMode = r.String("tls", "mode")
-	out.Tools = r.Strings("tools")
-	out.ToolsCacheScope = r.String("tools", "cache_scope")
-	out.ToolsCacheTtl, _ = r.Duration("tools", "cache_ttl")
-	out.Ttl, _ = r.Duration("ttl")
-	out.Type = r.String("type")
-	out.Value = r.String("value")
-	out.VectorConsensus = r.String("vector", "consensus")
-	out.VectorDimensions, _ = r.Int("vector", "dimensions")
-	out.VectorEngine = r.String("vector", "engine")
-	out.VectorMetric = r.String("vector", "metric")
-	out.VectorSize, _ = r.Int("vector", "size")
-	out.Wait = r.String("wait")
 	return out
 }
 

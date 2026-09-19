@@ -61,7 +61,25 @@ type Located struct {
 func (l Located) Path() string { return strings.Join(l.Key, "/") }
 
 // Locations is every field of a kind, sorted by compiled key.
+//
+// IT STOPS AT WHAT THE KIND CONTAINS. A scope holds resources of every kind, and
+// a lowerable kind's after-shape holds the resources it produces — both by
+// making those kinds' own groups children of its node. Walking through them
+// reads another resource's fields as this one's: the namespace reader came out
+// with 215 fields, one per attribute in the vocabulary, addressing keys that in
+// a namespace object are DIRECTORIES of resources rather than values.
+//
+// What separates the two is already on the root: a child that is a top-level
+// group is a kind, and a kind is something this resource holds rather than
+// something it has.
 func Locations(root []*engine.Node, kind string) []Located {
+	held := map[string]bool{}
+	for _, g := range root {
+		if name, ok := g.Match.(string); ok {
+			held[name] = true
+		}
+	}
+
 	for _, g := range root {
 		name, _ := g.Match.(string)
 		if name != kind || len(g.Children) == 0 {
@@ -83,6 +101,9 @@ func Locations(root []*engine.Node, kind string) []Located {
 				out = append(out, locate(a))
 			}
 			for _, c := range n.Children {
+				if held[childName(c)] {
+					continue
+				}
 				walk(c)
 			}
 		}
@@ -155,4 +176,13 @@ func readerFor(a *engine.Attribute) string {
 	default:
 		return "String"
 	}
+}
+
+// childName is a node's group name, or "" for one that is not a group.
+func childName(n *engine.Node) string {
+	if n == nil {
+		return ""
+	}
+	name, _ := n.Match.(string)
+	return name
 }

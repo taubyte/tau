@@ -85,3 +85,32 @@ func TestTheRenderedReaderAddressesCompiledKeys(t *testing.T) {
 		"and the generated source says where the value came from")
 	require.Contains(t, out, `// which of object, streaming was written`)
 }
+
+// TestAKINDSFIELDSARENOTWHATITHOLDS. A scope holds resources of every kind, a
+// lowering kind's after-shape holds what it produces, and an access block is a
+// group named after the kind it reaches — all three by making that kind's own
+// group a child of this one's node. Walking through them reads another
+// resource's attributes as this one's.
+func TestAKindsFieldsAreNotWhatItHolds(t *testing.T) {
+	root := v2.GenerationRoot()
+
+	// THE SCOPE IS THE CASE THAT PROVED IT: the namespace reader came out with
+	// one field per attribute in the whole vocabulary, addressing keys that in a
+	// namespace object are directories of resources.
+	var ns []string
+	for _, l := range Locations(root, "namespace") {
+		ns = append(ns, l.Path())
+	}
+	require.ElementsMatch(t, []string{"description", "id", "name", "regions", "tags"}, ns,
+		"a namespace has its identity and its allowance; everything else in it is a resource")
+
+	// AND NO KIND READS AN ACCESS ENTRY AS A FIELD OF ITS OWN. The ops live at
+	// `<kind>/<label>/ops` — a map of labels — so a flat read of the bare key is
+	// one that can never find anything.
+	ops := v2.AccessEntryShape().Ops
+	for _, kind := range v2.Kinds() {
+		for _, l := range Locations(root, kind) {
+			require.NotEqual(t, ops, l.Path(), "%s reads an access entry's %q as its own", kind, ops)
+		}
+	}
+}
