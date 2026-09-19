@@ -71,6 +71,18 @@ func proxying(t *testing.T, compiled []byte) *Node {
 	cfg := Config{Services: []string{Register, Worker, Stats, Proxy}}
 	cfg.Proxy.CloudFqdn = "tau.example.io"
 
+	// SWEEP FAST, BECAUSE THE SWEEP IS WHAT IS BEING TESTED. DefaultSweep is ten
+	// seconds and the deployment below is held AFTER Start, so the loop's first
+	// pass finds nothing and the second is past any sane deadline.
+	//
+	// Without this the assertion passed on a race: `go n.proxy.Run(loopCtx)` and
+	// the rest of this function are unordered, so the first sweep usually landed
+	// after the hold and the test observed a first pass it had no right to. It
+	// held until the vocabulary grew by one sync type, which was enough to make
+	// the goroutine win — a test that fails when an unrelated package gets
+	// slower was never testing what its name says.
+	cfg.Proxy.Sweep = 20 * time.Millisecond
+
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
 
