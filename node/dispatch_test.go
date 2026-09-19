@@ -132,6 +132,12 @@ func consuming(t *testing.T, answers *answering, compiled []byte) (*Node, *dispa
 	// instant, so waiting for it is what makes a step deterministic.
 	<-n.work.forming
 
+	// AND A DELIVERY IS PLACED, so this node has to be in its own view before it
+	// can take its own work. Asking placement while the first stats report is
+	// still in flight answers "no worker is ready to take this" — which is a
+	// property of how fast the machine is, and nothing this file is about.
+	sees(t, n, Worker)
+
 	return n, &dispatcher{node: n}
 }
 

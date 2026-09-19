@@ -70,6 +70,13 @@ func stepping(t *testing.T, answers *answering) (*Node, *dispatcher) {
 	require.NoError(t, err)
 	<-n.work.forming
 
+	// THE STEP IS PLACED, so this node has to be in its own view before it can
+	// take its own work. Without the wait the test asks placement for a worker
+	// while the first stats report is still in flight, and gets "no worker is
+	// ready to take this" — on a machine slow enough to notice, which is a
+	// property of the machine and not of the step.
+	sees(t, n, Worker)
+
 	return n, &dispatcher{node: n}
 }
 

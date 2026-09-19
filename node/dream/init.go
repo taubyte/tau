@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 
@@ -65,6 +66,33 @@ func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
 	defer runtimes.Unlock()
 	was := runtimes.list
 	runtimes.list = rts
+	return was
+}
+
+// clock is what nodes in this process believe the time is.
+//
+// IT IS SET THE WAY runtimes IS, and for the same reason: a clock is a live
+// object and dream's registry hands a service a universe and a yaml-shaped
+// config, which is neither. Unset means the wall clock, which is what a machine
+// has.
+//
+// WHY A UNIVERSE WANTS ONE: anything a node does on a schedule — a cron slot, a
+// deploy budget expiring, a volume checkpoint coming due — otherwise has to be
+// WAITED FOR at whatever pace the wall clock runs, and a test that waits for a
+// cadence fails on a busy machine while passing on an idle one. With a clock it
+// is advanced instead, and what is left to wait for is the node's own answer.
+var clock struct {
+	sync.Mutex
+	now func() time.Time
+}
+
+// Clock sets what nodes in this process believe the time is, and returns what it
+// replaced so a test can put it back. A nil clock is the wall clock.
+func Clock(now func() time.Time) func() time.Time {
+	clock.Lock()
+	defer clock.Unlock()
+	was := clock.now
+	clock.now = now
 	return was
 }
 
@@ -115,6 +143,10 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 	tiers := append([]invoke.Runtime(nil), runtimes.list...)
 	runtimes.Unlock()
 
+	clock.Lock()
+	now := clock.now
+	clock.Unlock()
+
 	if len(tiers) == 0 {
 		// A universe with no compute backend still composes: the lookup is
 		// what a node proves, and the tier is where a process without a
@@ -146,8 +178,7 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 	nodeConfig := node.Config{Services: servicesIn(cfg), Cloud: u.Name()}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 
-	n, err := node.New(
-		nodeConfig,
+	options := []node.Option{
 		node.WithHost(h),
 		node.WithPubSub(p.Messaging()),
 		node.WithDatabases(kvdb.New(p)),
@@ -164,7 +195,12 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 		// real directory, checkpointed and restored the way it is on a machine.
 		node.WithRoot(root),
 		node.WithRuntimes(tiers...),
-	)
+	}
+	if now != nil {
+		options = append(options, node.WithClock(now))
+	}
+
+	n, err := node.New(nodeConfig, options...)
 	if err != nil {
 		return nil, err
 	}

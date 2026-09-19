@@ -368,6 +368,13 @@ func slotAt(schedule worker.Schedule, past, now time.Time) (time.Time, bool) {
 }
 
 // loop cycles step until the node closes.
+//
+// THE TICKER SAYS HOW OFTEN TO LOOK; THE NODE SAYS WHAT TIME IT IS. Taking the
+// ticker's own timestamp tied every caller to the wall clock, which is how a
+// test of "the schedule fires once" became a test of whether a minute went by
+// while the fleet was still booting — 180 seconds of budget, and a busy machine
+// eats it. step already takes `now` as an argument, and node/cron_test.go
+// drives it that way; this is what lets a universe do the same.
 func (c *crons) loop(ctx context.Context, done chan<- struct{}) {
 	defer close(done)
 
@@ -378,8 +385,8 @@ func (c *crons) loop(ctx context.Context, done chan<- struct{}) {
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-tick.C:
-			c.step(ctx, now)
+		case <-tick.C:
+			c.step(ctx, c.node.clock())
 		}
 	}
 }

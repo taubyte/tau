@@ -73,9 +73,20 @@ func withSchedule() []byte {
 }
 
 // TestTwoNodesReadOneScheduleAndFireItOnce.
+//
+// THE UNIVERSE'S CLOCK IS THE TEST'S, which is what makes this a test of the
+// claim rather than of how busy the machine is. It used to wait up to 180
+// seconds for a real minute boundary to come round: nothing about that is a
+// property of the code, and on a loaded box the fleet was still booting when the
+// budget ran out — "the schedule never fired", from a schedule that was fine.
 func TestAScheduleFiresOnceAcrossAFleet(t *testing.T) {
 	fired := &firing{name: "wasm"}
 	defer nodeDream.Runtimes(nodeDream.Runtimes(fired)...)
+
+	// Somewhere with no daylight-saving edge in it, and on a minute boundary so
+	// the first slot the nodes see is a whole one.
+	at := &steppable{now: time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)}
+	defer nodeDream.Clock(nodeDream.Clock(at.Now))
 
 	m, err := dream.New(t.Context())
 	require.NoError(t, err)
@@ -110,10 +121,17 @@ func TestAScheduleFiresOnceAcrossAFleet(t *testing.T) {
 	require.Eventually(t, func() bool { return target(first) && target(second) },
 		60*time.Second, time.Second, "the project never reached both nodes")
 
-	// ONE FIRE, and it may take up to a minute for the clock to come round plus
-	// the tick that records where the schedule starts.
-	require.Eventually(t, func() bool { return fired.count() > 0 },
-		180*time.Second, time.Second, "the schedule never fired")
+	// ONE FIRE. The first tick a node takes records where the schedule starts
+	// and fires nothing, so the clock is walked forward a slot at a time until
+	// one lands rather than advanced once and hoped over — which tick sees which
+	// minute is the node's business, not this test's.
+	//
+	// WHAT IS LEFT TO WAIT FOR IS A TICK, not a minute: the budget below is a
+	// handful of them, and a slower machine spends the same number.
+	require.Eventually(t, func() bool {
+		at.add(time.Minute)
+		return fired.count() > 0
+	}, 90*time.Second, time.Second, "the schedule never fired")
 
 	req := fired.seen()[0]
 	require.Equal(t, "POST", req.Method)
@@ -127,6 +145,26 @@ func TestAScheduleFiresOnceAcrossAFleet(t *testing.T) {
 	slot := req.Headers["X-Taubyte-Fired-At"][0]
 	require.Never(t, func() bool { return fired.countOf(slot) > 1 },
 		20*time.Second, time.Second, "one slot was fired more than once")
+}
+
+// steppable is a clock a test moves. Both nodes read it from their own
+// goroutines while this one writes it, so it is guarded rather than a field
+// somebody remembers not to touch.
+type steppable struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (s *steppable) Now() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.now
+}
+
+func (s *steppable) add(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.now = s.now.Add(d)
 }
 
 func scheduleTarget() specs.Address {
