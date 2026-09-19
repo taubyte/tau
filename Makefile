@@ -20,8 +20,16 @@ DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xa
 
 .PHONY: test test-dreaming test-raft test-docker test-containerd test-containers test-all vm-fixtures test-cli test-cli-cover proto-v2 proto-v2-check
 
+# THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
+# go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
+# six of them on go-datastore's own conformance suite — SubtestCombinations
+# enumerates query permutations, and it is third-party coverage worth having.
+# Six minutes of a ten-minute budget is not headroom: on a slower box that suite
+# runs past the default and the gate reports a timeout for a package that was
+# only going to finish later. The tagged suites below already say a number; the
+# untagged ones inherited the guess, so they say one now too.
 test:
-	go test $(FLAGS) ./...
+	go test -timeout 20m $(FLAGS) ./...
 
 # tau-cli coverage. The command tree is driven in-process through cli.Run, so
 # coverage only shows up when credited across the whole module — -coverpkg does
@@ -41,12 +49,12 @@ test:
 CLI_CORE ?= ./tools/tau/tcc/...
 CLI_CORE_MIN ?= 80.0
 test-cli:
-	go test $(FLAGS) ./tools/tau/...
+	go test -timeout 20m $(FLAGS) ./tools/tau/...
 
 test-cli-cover:
-	go test -coverpkg=./tools/tau/... -coverprofile=/tmp/tau-cli.cov $(FLAGS) ./tools/tau/...
+	go test -timeout 20m -coverpkg=./tools/tau/... -coverprofile=/tmp/tau-cli.cov $(FLAGS) ./tools/tau/...
 	@echo "tau-cli module coverage (reported): $$(go tool cover -func=/tmp/tau-cli.cov | awk '/^total:/{print $$3}')"
-	go test -coverpkg=$$(echo $(CLI_CORE) | tr ' ' ,) -coverprofile=/tmp/tau-core.cov $(FLAGS) $(CLI_CORE)
+	go test -timeout 20m -coverpkg=$$(echo $(CLI_CORE) | tr ' ' ,) -coverprofile=/tmp/tau-core.cov $(FLAGS) $(CLI_CORE)
 	@core=$$(go tool cover -func=/tmp/tau-core.cov | awk '/^total:/{sub(/%/,"",$$3); print $$3}'); \
 	echo "tools/tau/tcc coverage: $$core% (min $(CLI_CORE_MIN)%)"; \
 	awk "BEGIN{exit !($$core >= $(CLI_CORE_MIN))}" || { echo "tcc coverage below $(CLI_CORE_MIN)%"; exit 1; }
