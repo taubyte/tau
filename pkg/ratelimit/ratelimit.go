@@ -26,6 +26,7 @@
 package ratelimit
 
 import (
+	"container/list"
 	"sync"
 	"time"
 )
@@ -35,11 +36,30 @@ type Buckets struct {
 	now func() time.Time
 
 	mu      sync.Mutex
-	buckets map[string]*bucket
-	// order is insertion order for eviction, so a limiter under a spray of
-	// one-request-per-key traffic cannot grow a bucket per source forever.
-	order []string
+	buckets map[string]*list.Element
+	// order is least-recently-used first, so the table cannot grow a bucket per
+	// source forever AND the bound never drops the bucket doing the work.
+	//
+	// IT USED TO BE INSERTION ORDER, which is blind to use — and a caller over
+	// its budget is the one bucket worth keeping. Under a spray of
+	// one-request-per-key traffic, which is the exact traffic this bound exists
+	// for, the first-inserted entries are the established callers: `max` new
+	// sources evicted every one of them, and each came back with a full burst.
+	// The limit stopped holding under load, which is when it is the only thing
+	// holding.
+	//
+	// A caller being refused still calls, so it is the most recently used and is
+	// never the victim. What eviction reaches instead is idle, and an idle
+	// bucket has refilled to full anyway — so dropping it costs nothing, which
+	// is the whole argument for spending a list here.
+	order *list.List
 	max   int
+}
+
+// entry is one key's bucket, held by the list so eviction knows its name.
+type entry struct {
+	key string
+	b   bucket
 }
 
 type bucket struct {
@@ -47,7 +67,7 @@ type bucket struct {
 	at     time.Time
 }
 
-// NewBuckets holds at most max keys, evicting the oldest.
+// NewBuckets holds at most max keys, evicting the least recently used.
 func NewBuckets(now func() time.Time, max int) *Buckets {
 	if now == nil {
 		now = time.Now
@@ -55,7 +75,7 @@ func NewBuckets(now func() time.Time, max int) *Buckets {
 	if max < 1 {
 		max = 1
 	}
-	return &Buckets{now: now, buckets: map[string]*bucket{}, max: max}
+	return &Buckets{now: now, buckets: map[string]*list.Element{}, order: list.New(), max: max}
 }
 
 // Allow spends a token for key, refilling at rate per minute up to burst.
@@ -75,16 +95,19 @@ func (l *Buckets) Allow(key string, rate, burst int) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	b, ok := l.buckets[key]
-	if !ok {
-		b = &bucket{tokens: float64(burst), at: now}
-		l.buckets[key] = b
-		l.order = append(l.order, key)
-		for len(l.order) > l.max {
-			delete(l.buckets, l.order[0])
-			l.order = l.order[1:]
+	el, ok := l.buckets[key]
+	if ok {
+		l.order.MoveToBack(el)
+	} else {
+		el = l.order.PushBack(&entry{key: key, b: bucket{tokens: float64(burst), at: now}})
+		l.buckets[key] = el
+		for l.order.Len() > l.max {
+			oldest := l.order.Front()
+			delete(l.buckets, oldest.Value.(*entry).key)
+			l.order.Remove(oldest)
 		}
 	}
+	b := &el.Value.(*entry).b
 
 	b.tokens += now.Sub(b.at).Minutes() * float64(rate)
 	if b.tokens > float64(burst) {

@@ -167,3 +167,48 @@ func TestBothAreSafeUnderConcurrency(t *testing.T) {
 		require.Zero(t, g.Held(key))
 	}
 }
+
+// TestALimitedCallerIsNotTheOneEvicted.
+//
+// A caller over its budget is the one bucket worth keeping, and the table is
+// bounded — so which entry the bound drops decides whether the limit holds. It
+// used to drop whichever was inserted first, however hard it was being spent,
+// which meant a spray of one-request-per-key traffic evicted every established
+// caller and handed each of them a full burst back. That is the exact traffic
+// the bound exists for.
+func TestALimitedCallerIsNotTheOneEvicted(t *testing.T) {
+	now := time.Unix(0, 0)
+	l := ratelimit.NewBuckets(func() time.Time { return now }, 3)
+
+	for i := range 2 {
+		require.True(t, l.Allow("heavy", 2, 2), "attempt %d was within the budget", i)
+	}
+	require.False(t, l.Allow("heavy", 2, 2), "the third attempt is over it")
+
+	// A SPRAY OF ONE-REQUEST SOURCES, more of them than the table holds. The
+	// heavy caller keeps trying throughout — a refused caller still calls —
+	// so it is never the least recently used.
+	for _, key := range []string{"spray-1", "spray-2", "spray-3", "spray-4", "spray-5"} {
+		l.Allow(key, 2, 2)
+		require.False(t, l.Allow("heavy", 2, 2), "the heavy caller got its budget back after %s", key)
+	}
+
+	require.Equal(t, 3, l.Len(), "and the table is still bounded")
+
+	// WHAT EVICTION REACHED WAS IDLE, and an idle bucket has refilled to full
+	// anyway — so dropping it cost nothing.
+	require.True(t, l.Allow("spray-1", 2, 2))
+}
+
+// TestTimePassingStillRefills, so the eviction order is the only thing that
+// changed.
+func TestTimePassingStillRefills(t *testing.T) {
+	now := time.Unix(0, 0)
+	l := ratelimit.NewBuckets(func() time.Time { return now }, 8)
+
+	require.True(t, l.Allow("caller", 60, 1))
+	require.False(t, l.Allow("caller", 60, 1), "the burst is one")
+
+	now = now.Add(time.Second)
+	require.True(t, l.Allow("caller", 60, 1), "a second is one token at 60/minute")
+}
