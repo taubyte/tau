@@ -206,3 +206,129 @@ func swarmKey() []byte {
 	return []byte("/key/swarm/psk/1.0.0/\n/base16/\n" +
 		"0000000000000000000000000000000000000000000000000000000000000001")
 }
+
+// TestAnUnstartedRunningAnswersNothing. Reach hands one of these back to a CLI
+// that may have failed to find anything, and a nil peer is what "nothing was
+// started" looks like from there — a panic would be the CLI's, not the fleet's.
+func TestAnUnstartedRunningAnswersNothing(t *testing.T) {
+	var r Running
+	require.Nil(t, r.Host())
+	require.Empty(t, r.Address(), "nothing is being served")
+}
+
+// TestANodeThatCannotBeBuiltFromTheFileStopsThePeerToo. Everything Start opens
+// before the node — the libp2p host, the datastore on disk — is this function's
+// to close when the node refuses; leaving them would hold the root directory
+// and the port after a start that failed.
+func TestANodeThatCannotBeBuiltClosesWhatWasOpened(t *testing.T) {
+	root := t.TempDir()
+	f := File{
+		// A service nobody runs: the node's own closed set refuses it, which
+		// happens after the peer and the asset store are already open.
+		Node:     node.Config{Services: []string{"not-a-service"}},
+		Root:     root,
+		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
+		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
+	}
+
+	_, err := Start(t.Context(), f)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not-a-service")
+
+	// AND THE PORT IS FREE AGAIN, which is the observable half of the peer
+	// having been closed: a second attempt on the same root would fail on a
+	// locked datastore if the first had held it.
+	f.Node = node.Config{Services: []string{node.Register}}
+	running, err := Start(t.Context(), f)
+	require.NoError(t, err)
+	require.NoError(t, running.Close())
+}
+
+// TestANodeWithBootstrapPeersUsesTheOtherConstructor. A node with peers dials
+// them; a node with none is the first one. Handing the second an empty list
+// bootstraps it against nobody and then waits for a swarm it will never be
+// introduced to.
+func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString(swarmKey())
+
+	first, err := Start(t.Context(), File{
+		Node:     node.Config{Services: []string{node.Register, node.Stats}},
+		Root:     t.TempDir(),
+		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
+		SwarmKey: key,
+	})
+	require.NoError(t, err)
+	defer first.Close()
+
+	addrs := first.Host().Addrs()
+	require.NotEmpty(t, addrs)
+	bootstrap := addrs[0].String() + "/p2p/" + first.Host().ID().String()
+
+	second, err := Start(t.Context(), File{
+		Node:      node.Config{Services: []string{node.Register, node.Stats}},
+		Root:      t.TempDir(),
+		Listen:    []string{"/ip4/127.0.0.1/tcp/0"},
+		SwarmKey:  key,
+		Bootstrap: []string{bootstrap},
+	})
+	require.NoError(t, err)
+	defer second.Close()
+
+	require.NotEqual(t, first.Host().ID(), second.Host().ID())
+}
+
+// TestAServingNodeSaysWhereItIsBound. The port may have been :0, so what a
+// caller was given and what was taken are two different facts — and the second
+// is the one a client can connect to.
+func TestAServingNodeSaysWhereItIsBound(t *testing.T) {
+	running, err := Start(t.Context(), File{
+		Node:     node.Config{Services: []string{node.Register, node.Stats, node.Gateway}},
+		Root:     t.TempDir(),
+		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
+		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
+		HTTP:     "127.0.0.1:0",
+	})
+	require.NoError(t, err)
+	defer running.Close()
+
+	addr := running.Address()
+	require.NotEmpty(t, addr)
+	require.NotEqual(t, "127.0.0.1:0", addr, "the bound port, not the one asked for")
+
+	_, port, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	require.NotEqual(t, "0", port)
+}
+
+// TestAConfiguredIdentityIsTheOneUsed. A new identity every restart is almost
+// never what somebody meant: anything that remembered this peer — a bootstrap
+// list, another node's view, a pinned address — forgets it.
+func TestAConfiguredIdentityIsTheOneUsed(t *testing.T) {
+	minted, err := identity("")
+	require.NoError(t, err)
+
+	encoded := base64.StdEncoding.EncodeToString(minted)
+	again, err := identity(encoded)
+	require.NoError(t, err)
+	require.Equal(t, minted, again, "a configured key is read back, not replaced")
+
+	f := File{
+		Node:       node.Config{Services: []string{node.Register}},
+		Root:       t.TempDir(),
+		Listen:     []string{"/ip4/127.0.0.1/tcp/0"},
+		SwarmKey:   base64.StdEncoding.EncodeToString(swarmKey()),
+		PrivateKey: encoded,
+	}
+
+	first, err := Start(t.Context(), f)
+	require.NoError(t, err)
+	id := first.Host().ID()
+	require.NoError(t, first.Close())
+
+	// THE SAME KEY IS THE SAME PEER, which is the whole reason to write one down.
+	f.Root = t.TempDir()
+	second, err := Start(t.Context(), f)
+	require.NoError(t, err)
+	defer second.Close()
+	require.Equal(t, id, second.Host().ID())
+}

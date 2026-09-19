@@ -300,7 +300,13 @@ func (r *Running) serve(address string) error {
 	// READ AND HEADER TIMEOUTS ARE NOT OPTIONAL ON A PUBLIC LISTENER. A
 	// connection that never finishes its request line parks a goroutine until
 	// the peer goes away, and the peer is the internet.
+	//
+	// Addr IS WHAT WAS TAKEN, not what was asked for. Serve never reads it —
+	// only ListenAndServe does — so it is carried for Address(), and an
+	// operator who wrote `:0` has no other way to learn the port. It was left
+	// unset, which made Address() answer "" for every node that was serving.
 	r.server = &http.Server{
+		Addr:              listener.Addr().String(),
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
