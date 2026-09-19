@@ -1,7 +1,6 @@
 package gen
 
 import (
-	"fmt"
 	"strings"
 
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
@@ -60,12 +59,6 @@ func attrSet(attrs []*engine.Attribute) map[string]bool {
 	return m
 }
 
-// noSetter / noGetter report the attribute's accessor-suppression annotations
-// (NoSetter/NoGetter/NoAccessors). An attribute with both suppressed has no
-// mechanical accessor at all (the old skipBoth case).
-func noSetter(a *engine.Attribute) bool { b, _ := a.Meta["noSetter"].(bool); return b }
-func noGetter(a *engine.Attribute) bool { b, _ := a.Meta["noGetter"].(bool); return b }
-
 // noStructField reports the NoStructField() annotation — the attribute projects
 // to no structureSpec struct field (and no TS wire/session field).
 func noStructField(a *engine.Attribute) bool { b, _ := a.Meta["noStructField"].(bool); return b }
@@ -110,16 +103,6 @@ func pathSegs(a *engine.Attribute) (segs []string, ok bool) {
 	return []string{a.Name}, true
 }
 
-// compatSegs is the legacy ALIAS location, if the attribute declares one. The
-// engine falls back to it when the canonical Path is absent, so generated
-// getters do the same (canonical read, compat read-fallback).
-func compatSegs(a *engine.Attribute) (segs []string, ok bool) {
-	if len(a.Compat) == 0 {
-		return nil, false
-	}
-	return plainSegs(a.Compat)
-}
-
 // accessorName is the exported Go name: an Accessor() override, else the last
 // plain Path segment title-cased, else the attribute name.
 //
@@ -130,6 +113,16 @@ func compatSegs(a *engine.Attribute) (segs []string, ok bool) {
 // engine keeps the decomposition on the attribute (Segments), and holds every
 // segment to a bare identifier — so the accessor is the segments title-cased and
 // joined, ServeKind, which is a legal identifier by construction.
+// compatSegs is the legacy ALIAS location, if the attribute declares one. The
+// engine falls back to it when the canonical Path is absent, so generated
+// getters do the same (canonical read, compat read-fallback).
+func compatSegs(a *engine.Attribute) (segs []string, ok bool) {
+	if len(a.Compat) == 0 {
+		return nil, false
+	}
+	return plainSegs(a.Compat)
+}
+
 func accessorName(group string, a *engine.Attribute) string {
 	if ov, ok := a.Meta["accessor"].(string); ok && ov != "" {
 		return ov
@@ -153,48 +146,9 @@ func joinTitled(segs []string) string {
 	return strings.Join(parts, "")
 }
 
-func setBody(segs []string) string {
-	q := quoteAll(segs)
-	if len(segs) == 1 {
-		return fmt.Sprintf("return basic.Set(%s, value)", q[0])
-	}
-	return fmt.Sprintf("return basic.SetChild(%s, %s, value)", q[0], q[1])
-}
-
-func getBody(goT string, segs []string) string {
-	return fmt.Sprintf("return basic.Get[%s](g, %s)", goT, strings.Join(quoteAll(segs), ", "))
-}
-
-// getBodyCompat reads the canonical path, falling back to the compat alias when
-// the canonical key is absent (mirrors the tcc engine's Path-then-Compat read in
-// engine/node.go). Used for every canonical getter that declares a compat, so
-// old on-disk data under the legacy key still reads.
-func getBodyCompat(goT string, path, compat []string) string {
-	return fmt.Sprintf("var v %s\nif %s.Value(&v) == nil {\nreturn v\n}\n%s",
-		goT, chain(path), getBody(goT, compat))
-}
-
-// chain builds a g.Config().Get(...).Get(...) query for a config path.
-func chain(segs []string) string {
-	var b strings.Builder
-	b.WriteString("g.Config()")
-	for _, seg := range segs {
-		fmt.Fprintf(&b, ".Get(%q)", seg)
-	}
-	return b.String()
-}
-
 func title(s string) string {
 	if s == "" {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
-}
-
-func quoteAll(segs []string) []string {
-	out := make([]string, len(segs))
-	for i, s := range segs {
-		out[i] = fmt.Sprintf("%q", s)
-	}
-	return out
 }

@@ -18,16 +18,10 @@ func TestContainerWithoutSingularErrors(t *testing.T) {
 	if _, err := Structs(root); err == nil {
 		t.Error("Structs: want error for container without Singular(), got nil")
 	}
-	if _, err := Resources(root); err == nil {
-		t.Error("Resources: want error for container without Singular(), got nil")
-	}
 
 	// With Singular(), the same container generates cleanly.
 	engine.Singular("Box")(container.Children[0])
 	if _, err := Structs(root); err != nil {
 		t.Errorf("Structs: unexpected error with Singular() set: %v", err)
-	}
-	if _, err := Resources(root); err != nil {
-		t.Errorf("Resources: unexpected error with Singular() set: %v", err)
 	}
 }

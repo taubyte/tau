@@ -15,51 +15,21 @@ import (
 // at adoption. Two things ARE derived: uint64 duration/size types and the
 // mapstructure tag for compat-aliased fields.
 
-// StructModel is the template model for one legacy/specs/structure/<res>.go file.
+// StructModel is one kind, projected into one field per logical attribute.
+//
+// IT IS A MODEL AND NO LONGER A TEMPLATE MODEL. It used to also carry the
+// method source, the embedded interface types and the import alias needed to
+// render a Go struct file into legacy/specs/structure — a v1 target that no
+// longer exists. What reads it now is the TypeScript generator, which wants the
+// name and the fields.
 type StructModel struct {
-	Spec       string   // structureSpec type name, e.g. "Function"
-	Fields     []Field  // DSL-derived fields (common + resource + derived + SmartOps)
-	Embeds     []string // embedded interface types, e.g. "Basic", "Indexer", "Wasm"
-	SpecImport string   // legacy/specs import path for the method delegates
-	SpecAlias  string   // its import alias, e.g. "functionSpec"
-	Methods    []string // full method source (GetName/SetId/<addressing>/GetId)
-	Skipped    []string
-}
+	Spec   string  // the type name, e.g. "Function"
+	Fields []Field // one per logical attribute, common first
 
-// addressingMethods emits the object-addressing methods for a resource from its
-// Addressing capabilities. Each capability carries its own method specs (an
-// engine.MethodCarrier), so there is no per-capability switch here: the loop
-// renders whatever each term declares, in declaration order. GetName/SetId/GetId
-// bracket the set and are the same for every resource.
-func addressingMethods(recv, spec, alias string, caps []engine.Capability) []string {
-	r := recv
-	out := []string{
-		fmt.Sprintf("func (%s %s) GetName() string {\n\treturn %s.Name\n}", r, spec, r),
-		fmt.Sprintf("func (%s *%s) SetId(id string) {\n\t%s.Id = id\n}", r, spec, r),
-	}
-	for _, c := range caps {
-		mc, ok := c.(engine.MethodCarrier)
-		if !ok {
-			continue
-		}
-		for _, m := range mc.AddressingMethods() {
-			out = append(out, renderMethod(r, spec, alias, m))
-		}
-	}
-	out = append(out, fmt.Sprintf("func (%s *%s) GetId() string {\n\treturn %s.Id\n}", r, spec, r))
-	return out
-}
-
-// renderMethod renders one capability method spec to Go source. "@" in the args
-// expands to the receiver; ViaTns picks the delegate form (<alias>.Tns().<Name>
-// vs <alias>.<Name>). Produces the exact bytes the old per-capability switch did.
-func renderMethod(recv, spec, alias string, m engine.MethodSpec) string {
-	args := strings.ReplaceAll(m.Args, "@", recv)
-	header := fmt.Sprintf("func (%s *%s) %s(%s) %s {\n", recv, spec, m.Name, m.Params, m.Ret)
-	if m.ViaTns {
-		return header + fmt.Sprintf("\treturn %s.Tns().%s(%s)\n}", alias, m.Name, args)
-	}
-	return header + fmt.Sprintf("\treturn %s.%s(%s)\n}", alias, m.Name, args)
+	// Bare marks the scope container, which carries the common fields and
+	// nothing else. It is a DIRECTORY rather than a thing that decodes, so a
+	// consumer emitting decode surfaces skips it.
+	Bare bool
 }
 
 // Field is one struct field. Name/Type/Tag drive the Go struct emit; Required
@@ -95,24 +65,13 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 		var m *StructModel
 		bare := false
 		if d, ok := descriptorFor(iter); ok {
-			alias := strings.ToLower(d.Spec) + "Spec"
-			m = &StructModel{
-				Spec:       d.Spec,
-				Fields:     commonFields(root),
-				SpecImport: "github.com/taubyte/tau/legacy/specs/" + d.SpecPkg,
-				SpecAlias:  alias,
-			}
-			if e, ok := iter.Meta["embeds"].([]string); ok {
-				m.Embeds = e
-			}
-			caps, _ := iter.Meta["addressing"].([]engine.Capability)
-			m.Methods = addressingMethods(d.Recv, d.Spec, alias, caps)
+			m = &StructModel{Spec: d.Spec, Fields: commonFields(root)}
 		} else if iter.Group && len(iter.Children) > 0 {
 			so, ok := iter.Meta["singular"].(string)
 			if !ok || so == "" {
 				return nil, fmt.Errorf("container group %q has no Singular() declaration", name)
 			}
-			m = &StructModel{Spec: so, Fields: commonFields(root)}
+			m = &StructModel{Spec: so, Fields: commonFields(root), Bare: true}
 			bare = true
 		} else {
 			continue
@@ -140,7 +99,6 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			if eb, ok := a.Meta["enumBool"].(engine.EnumBoolSpec); ok && eb.GoName != "" {
 				b := eb.GoName
 				if reserved[b] {
-					m.Skipped = append(m.Skipped, name+"."+a.Name)
 					continue
 				}
 				reserved[b] = true
@@ -153,9 +111,9 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			}
 			nm := structFieldName(name, a)
 			if reserved[nm] {
-				// name collides with a common field or a non-derivable custom
-				// field (e.g. github-id -> Id / RepoID). Flag for hand-merge.
-				m.Skipped = append(m.Skipped, name+"."+a.Name)
+				// The name collides with a common field. The attribute keeps its
+				// own key in the compiled object; what it loses is a second
+				// spelling of a field that is already there.
 				continue
 			}
 			reserved[nm] = true

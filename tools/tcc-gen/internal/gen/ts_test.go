@@ -27,7 +27,7 @@ func TestGenerateTSCoversResources(t *testing.T) {
 	// GROUP: the container (Application) and the project root.
 	resources := 0
 	for _, m := range models {
-		if m.SpecImport != "" {
+		if !m.Bare {
 			resources++
 		}
 	}
@@ -45,8 +45,8 @@ func TestGenerateTSCoversResources(t *testing.T) {
 		}
 	}
 	for _, m := range models {
-		if m.SpecImport == "" {
-			continue // bare container struct — no accessor class
+		if m.Bare {
+			continue // the scope container has no accessor class
 		}
 		if !strings.Contains(ts, "export class "+m.Spec+"Config extends ResourceConfig {") {
 			t.Errorf("missing accessor class for %s", m.Spec)

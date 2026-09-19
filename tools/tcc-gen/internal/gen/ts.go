@@ -632,8 +632,8 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 	}
 	b.WriteString("// --- Compiled resource shapes (decoded from the TNS object) ---\n\n")
 	for _, m := range structs {
-		if m.SpecImport == "" {
-			continue // bare container struct (Application) — not a decode surface
+		if m.Bare {
+			continue // the scope container is a directory, not a decode surface
 		}
 		fmt.Fprintf(&b, "/** %s as decoded from the compiled config object. */\n", m.Spec)
 		fmt.Fprintf(&b, "export interface %s {\n", m.Spec)

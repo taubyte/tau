@@ -30,21 +30,26 @@ import (
 )
 
 func main() {
-	app := &cli.App{
+	if err := newApp().Run(os.Args); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// newApp is the command, built apart from main so a test can run it with
+// arguments instead of shelling out to a binary it would have to build first.
+func newApp() *cli.App {
+	return &cli.App{
 		Name:  "tcc-gen",
-		Usage: "generate legacy/schema accessors from the tcc schema DSL",
+		Usage: "generate the JSON Schema, the explorer TypeScript and pkg/specs from the tcc schema DSL",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "out", Usage: "output directory (default: a temp dir)"},
 			&cli.StringFlag{Name: "root", Usage: "repo root (default: autodetected from cwd)"},
-			&cli.BoolFlag{Name: "check", Usage: "diff generated accessors against legacy/schema and report drift"},
+			&cli.BoolFlag{Name: "check", Usage: "report which generated files on disk have drifted from the vocabulary"},
 			&cli.BoolFlag{Name: "wasm", Usage: "build the browser wasm module (GOOS=js) + wasm_exec.js into --out"},
 			&cli.BoolFlag{Name: "ts", Usage: "generate the TypeScript schema (interfaces) into --out"},
 			&cli.StringFlag{Name: "dsl", Value: "v2", Usage: "which vocabulary to generate from"},
 		},
 		Action: run,
-	}
-	if err := app.Run(os.Args); err != nil {
-		log.Fatal(err)
 	}
 }
 
@@ -79,11 +84,11 @@ func run(c *cli.Context) error {
 	}
 
 	if c.Bool("check") {
-		diffs, err := gen.Check(root, generated)
+		drifted, err := gen.Check(root, generated)
 		if err != nil {
 			return err
 		}
-		gen.PrintReport(os.Stdout, generated, diffs)
+		gen.PrintReport(os.Stdout, generated, drifted)
 		return nil
 	}
 
