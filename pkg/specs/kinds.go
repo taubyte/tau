@@ -2023,6 +2023,35 @@ func ReadEnvironments(r Resource) Environments {
 	return out
 }
 
+// Readers is every kind's reader, by the kind's own name.
+var Readers = map[string]func(Resource) any{
+	"application":  func(r Resource) any { return ReadApplication(r) },
+	"function":     func(r Resource) any { return ReadFunction(r) },
+	"worker":       func(r Resource) any { return ReadWorker(r) },
+	"sandbox":      func(r Resource) any { return ReadSandbox(r) },
+	"cron":         func(r Resource) any { return ReadCron(r) },
+	"component":    func(r Resource) any { return ReadComponent(r) },
+	"website":      func(r Resource) any { return ReadWebsite(r) },
+	"cache":        func(r Resource) any { return ReadCache(r) },
+	"database":     func(r Resource) any { return ReadDatabase(r) },
+	"storage":      func(r Resource) any { return ReadStorage(r) },
+	"volume":       func(r Resource) any { return ReadVolume(r) },
+	"secret":       func(r Resource) any { return ReadSecret(r) },
+	"sync":         func(r Resource) any { return ReadSync(r) },
+	"zone":         func(r Resource) any { return ReadZone(r) },
+	"gateway":      func(r Resource) any { return ReadGateway(r) },
+	"proxy":        func(r Resource) any { return ReadProxy(r) },
+	"stream":       func(r Resource) any { return ReadStream(r) },
+	"bus":          func(r Resource) any { return ReadBus(r) },
+	"mcp":          func(r Resource) any { return ReadMcp(r) },
+	"channel":      func(r Resource) any { return ReadChannel(r) },
+	"model":        func(r Resource) any { return ReadModel(r) },
+	"agent":        func(r Resource) any { return ReadAgent(r) },
+	"workflow":     func(r Resource) any { return ReadWorkflow(r) },
+	"namespace":    func(r Resource) any { return ReadNamespace(r) },
+	"environments": func(r Resource) any { return ReadEnvironments(r) },
+}
+
 // SourceBlock is every field any kind declares under "source", read from a compiled
 // object. A kind that declares none of them reads as the zero value.
 type SourceBlock struct {

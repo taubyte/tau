@@ -76,8 +76,8 @@ func TestAuthRepos_Dreaming(t *testing.T) {
 	defer server.Shutdown(ctx)
 
 	createFakeProject(t, u, "fake-project", 1, "fake-user", "github.com/acme/config", "github.com/acme/code")
-	registerFakeRepo(t, u, "2")
-	registerFakeRepo(t, u, "3")
+	registerFakeRepo(t, u, "github.com/acme/two")
+	registerFakeRepo(t, u, "github.com/acme/three")
 
 	t.Parallel()
 
@@ -93,10 +93,15 @@ func TestAuthRepos_Dreaming(t *testing.T) {
 					},
 				},
 			}))
-			assert.NilError(t, err)
 
-			assert.Equal(t, repo.Msg.GetId().GetGithub(), repoId)
-			assert.Equal(t, repo.Msg.GetDeployKeyPrivate(), "fake-deploy-priv-key")
+			// A NUMERIC ID CANNOT ADDRESS A REPOSITORY ANY MORE, and the service
+			// says so rather than inventing a key: auth was re-keyed on the
+			// clone URL, RepositoryId still carries `int64 github`, and there is
+			// no honest conversion between the two. This asserts the refusal,
+			// because the refusal is the current contract — it changes when the
+			// message carries the key.
+			assert.ErrorContains(t, err, "named by its clone URL")
+			assert.Assert(t, repo == nil)
 		}
 	})
 
@@ -105,14 +110,14 @@ func TestAuthRepos_Dreaming(t *testing.T) {
 		pstream, err := c.List(ctx, connect.NewRequest(ni.Msg))
 		assert.NilError(t, err)
 
-		repos := make([]int64, 0)
+		// AND A LISTING CANNOT EXPRESS THEM EITHER, for the same reason: the
+		// stream would have to put a number where a clone URL belongs. It
+		// reports how many it could not express rather than streaming four
+		// repositories named zero.
 		for pstream.Receive() {
-			repos = append(repos, pstream.Msg().GetId().GetGithub())
+			t.Fatalf("a repository was streamed with id %v, which the message cannot carry", pstream.Msg().GetId())
 		}
-
-		assert.Equal(t, len(repos), 4)
-		// assert.Equal(t, slices.Contains(prjs, projectID), true)
-		// assert.Equal(t, slices.Contains(prjs, projectID2), true)
+		assert.ErrorContains(t, pstream.Err(), "named by clone URL")
 	})
 
 }

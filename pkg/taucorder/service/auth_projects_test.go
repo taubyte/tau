@@ -92,8 +92,15 @@ func TestAuthProjects_Dreaming(t *testing.T) {
 		assert.Equal(t, prj.Msg.GetId(), projectID)
 		assert.Equal(t, prj.Msg.GetName(), "fake-project")
 		assert.Equal(t, prj.Msg.GetProvider(), "github")
-		assert.Equal(t, prj.Msg.GetRepositories().GetCode().GetId().GetGithub(), int64(2))
-		assert.Equal(t, prj.Msg.GetRepositories().GetConfig().GetId().GetGithub(), int64(1))
+		// THE REPOSITORY ID IS ABSENT ON PURPOSE. A repository is named by its
+		// clone URL and RepositoryId can only carry a numeric github id, so the
+		// service leaves it unset rather than fabricate one — "an absent field
+		// is a value the reader already handles; a fabricated number is not".
+		// What still addresses them is the project they belong to.
+		assert.Assert(t, prj.Msg.GetRepositories().GetCode().GetId() == nil)
+		assert.Assert(t, prj.Msg.GetRepositories().GetConfig().GetId() == nil)
+		assert.Equal(t, prj.Msg.GetRepositories().GetCode().GetProjectId(), projectID)
+		assert.Equal(t, prj.Msg.GetRepositories().GetConfig().GetProjectId(), projectID)
 	})
 
 	t.Run("Get project 2", func(t *testing.T) {
@@ -107,8 +114,10 @@ func TestAuthProjects_Dreaming(t *testing.T) {
 		assert.Equal(t, prj.Msg.GetId(), projectID2)
 		assert.Equal(t, prj.Msg.GetName(), "fake-project-2")
 		assert.Equal(t, prj.Msg.GetProvider(), "github")
-		assert.Equal(t, prj.Msg.GetRepositories().GetCode().GetId().GetGithub(), int64(4))
-		assert.Equal(t, prj.Msg.GetRepositories().GetConfig().GetId().GetGithub(), int64(3))
+		assert.Assert(t, prj.Msg.GetRepositories().GetCode().GetId() == nil)
+		assert.Assert(t, prj.Msg.GetRepositories().GetConfig().GetId() == nil)
+		assert.Equal(t, prj.Msg.GetRepositories().GetCode().GetProjectId(), projectID2)
+		assert.Equal(t, prj.Msg.GetRepositories().GetConfig().GetProjectId(), projectID2)
 	})
 
 	t.Run("List projects", func(t *testing.T) {

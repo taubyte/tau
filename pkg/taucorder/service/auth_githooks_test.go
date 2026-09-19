@@ -77,8 +77,8 @@ func TestAuthGitHooks_Dreaming(t *testing.T) {
 	defer server.Shutdown(ctx)
 
 	createFakeProject(t, u, "fake-project", 1, "fake-user", "github.com/acme/config", "github.com/acme/code")
-	hook2 := registerFakeRepo(t, u, "2")
-	hook3 := registerFakeRepo(t, u, "3")
+	hook2 := registerFakeRepo(t, u, "github.com/acme/two")
+	hook3 := registerFakeRepo(t, u, "github.com/acme/three")
 
 	t.Parallel()
 

@@ -40,6 +40,20 @@ func RenderReaders(pkg string, root []*engine.Node, kinds []string) []byte {
 		body.WriteString("\n")
 	}
 
+	// EVERY READER, BY KIND. A consumer that walks a project meets resources by
+	// kind at runtime and cannot name a type per branch; and a test can exercise
+	// what the generator emitted for every kind rather than for the handful
+	// somebody remembered to call.
+	body.WriteString("// Readers is every kind's reader, by the kind's own name.\n")
+	body.WriteString("var Readers = map[string]func(Resource) any{\n")
+	for _, kind := range kinds {
+		if len(Locations(root, kind)) == 0 {
+			continue
+		}
+		fmt.Fprintf(&body, "\t%q: func(r Resource) any { return Read%s(r) },\n", kind, goIdent(kind))
+	}
+	body.WriteString("}\n\n")
+
 	// THE CROSS-KIND QUESTIONS. What a project builds and where its content
 	// comes from are asked of every resource rather than of one kind, so they
 	// get the union of what any kind declares under those keys.
