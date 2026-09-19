@@ -777,11 +777,17 @@ func databaseSettings(target project.Resource) map[string]string {
 	// vault, on the node, at the moment a connection is opened — carrying the
 	// value here would put a password in a spec that is logged, cached and
 	// compared.
+	//
+	// FILED UNDER THE MODEL, like every other field in this function. It used to
+	// be read from `<model>/credentials/name` and written to a bare
+	// `credentials/name` — the right path in, an invented one out — which is a
+	// key `database` does not declare at all. `stream` and `bus` DO declare a
+	// bare one, so the constant looked right wherever a reader happened to check.
 	if name := target.String(model, "credentials", "name"); name != "" {
-		out[settingCredentials] = name
+		out[model+"/"+settingCredentials] = name
 	}
 	if namespace := target.String(model, "credentials", "namespace"); namespace != "" {
-		out[settingCredentialsScope] = namespace
+		out[model+"/"+settingCredentialsScope] = namespace
 	}
 	return out
 }
@@ -945,11 +951,24 @@ func unservableKind(reach project.Reach, target project.Resource) string {
 
 const raftConsensus = "raft"
 
-// The vocabulary's own paths, so a reader finds the attribute by searching the
-// schema for the string.
+// The vocabulary's own compiled keys, so a reader finds the attribute by
+// searching the schema for the string.
+//
+// THAT SENTENCE USED TO BE FALSE, and nothing noticed for as long as it was.
+// Three of these were not any attribute's key: `keys/ttl` and `keys/size` where
+// the vocabulary declares `ttl` and `size` — `keys` is an InSection, a heading
+// in an editor, not a path — and `versioning` where it declares
+// `object/versioning`. The far end had copied the same inventions, so writer
+// and reader agreed with each other and with nothing else, and what an author
+// wrote simply stopped taking effect.
+//
+// TestEveryEmittedSettingIsAnAttribute now holds every key here to
+// schema.IsAttribute, so the next rename is a red test rather than a silent
+// default. A key that is composed rather than copied — a handle, a resolved
+// scope — is listed in that test as such, with the reason.
 const (
-	settingTTL       = "keys/ttl"
-	settingSize      = "keys/size"
+	settingTTL       = "ttl"
+	settingSize      = "size"
 	settingQuota     = "quota"
 	settingMountPath = "path"
 
@@ -970,7 +989,7 @@ const (
 	// versions are kept.
 	settingStorageType = "type"
 	settingStorageSize = "size"
-	settingVersioning  = "versioning"
+	settingVersioning  = "object/versioning"
 
 	// objectStorage is the one data model this cloud serves.
 	objectStorage = "object"

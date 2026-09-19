@@ -139,8 +139,8 @@ func asTierError(err error) error {
 // The setting keys services/worker writes, which are the vocabulary's own
 // attribute paths.
 const (
-	cacheTTL  = "keys/ttl"
-	cacheSize = "keys/size"
+	cacheTTL  = "ttl"
+	cacheSize = "size"
 )
 
 // store opens the one database, once. It is under the same lock as the map so

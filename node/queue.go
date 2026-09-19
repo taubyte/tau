@@ -160,6 +160,10 @@ func wrapNotLeader(err error) error {
 // id and an id does not change when its `max_attempts` does, so a node would
 // keep enforcing the number from before the redeploy until it restarted.
 func (q *queues) queue(grant invoke.Grant) (*queue.Queue, error) {
+	if err := servableQueue(grant); err != nil {
+		return nil, err
+	}
+
 	group, err := q.ready()
 	if err != nil {
 		return nil, err
@@ -190,7 +194,30 @@ const (
 	settingRetryFactor  = "queue/retry/factor"
 	settingRetryCeiling = "queue/retry/ceiling"
 	settingDeadLetter   = "queue/dead_letter/name"
+
+	// WHAT HAPPENS TO TWO CONCURRENT WRITES, which the vocabulary REQUIRES a
+	// queue to state and which nothing here read. `crdt` and `raft` are two
+	// different promises — one converges on an order, the other decides it —
+	// and a queue served on the wrong one hands two consumers the same item.
+	settingQueueConsensus = "queue/consensus"
 )
+
+// ErrQueueConsensusUnserved is a queue whose author asked for a consensus this
+// node cannot keep.
+//
+// IT IS THE REFUSAL node/log.go ALREADY MAKES, and its absence here was the
+// asymmetry: a `crdt` log was refused by name while a `crdt` queue was served
+// as raft without a word. An author who wrote the field got the opposite of
+// what it says, and the only way to find out was to observe the behaviour.
+var ErrQueueConsensusUnserved = errors.New("node: this cloud serves raft queues and that one asks for crdt")
+
+// servableQueue refuses a queue this node cannot keep the promise of.
+func servableQueue(grant invoke.Grant) error {
+	if c := grant.Settings[settingQueueConsensus]; c != "" && c != "raft" {
+		return fmt.Errorf("%w: %q", ErrQueueConsensusUnserved, c)
+	}
+	return nil
+}
 
 // configOf reads what the resource declared.
 //

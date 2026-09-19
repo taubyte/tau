@@ -228,7 +228,7 @@ func TestACredentialIsReadFromTheVault(t *testing.T) {
 	require.NoError(t, n.Secrets().Local().Set(t.Context(), "shop", "prod", "QmCred", []byte("app:s3cret")))
 
 	settings := postgresSettings()
-	settings["credentials/name"] = "QmCred"
+	settings["sql/credentials/name"] = "QmCred"
 
 	_, err := d.Exec(t.Context(), dbGrantFor("shop/prod/QmLedger", settings), "x", nil)
 	require.NoError(t, err)
@@ -245,7 +245,7 @@ func TestOnlyTheFirstColonSplits(t *testing.T) {
 	require.NoError(t, n.Secrets().Local().Set(t.Context(), "shop", "prod", "QmCred", []byte("app:a:b:c")))
 
 	settings := postgresSettings()
-	settings["credentials/name"] = "QmCred"
+	settings["sql/credentials/name"] = "QmCred"
 	_, err := d.Exec(t.Context(), dbGrantFor("shop/prod/QmLedger", settings), "x", nil)
 	require.NoError(t, err)
 
@@ -262,7 +262,7 @@ func TestNoColonIsAPasswordWithNoUser(t *testing.T) {
 	require.NoError(t, n.Secrets().Local().Set(t.Context(), "shop", "prod", "QmCred", []byte("justapassword")))
 
 	settings := postgresSettings()
-	settings["credentials/name"] = "QmCred"
+	settings["sql/credentials/name"] = "QmCred"
 	_, err := d.Exec(t.Context(), dbGrantFor("shop/prod/QmLedger", settings), "x", nil)
 	require.NoError(t, err)
 
@@ -277,7 +277,7 @@ func TestAMissingCredentialFailsTheOpen(t *testing.T) {
 	d, _ := backingWith(t, engine)
 
 	settings := postgresSettings()
-	settings["credentials/name"] = "QmNeverSet"
+	settings["sql/credentials/name"] = "QmNeverSet"
 
 	_, err := d.Exec(t.Context(), dbGrantFor("shop/prod/QmLedger", settings), "x", nil)
 	require.Error(t, err)

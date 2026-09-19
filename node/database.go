@@ -411,7 +411,7 @@ func (d *databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 		}
 	}
 
-	if reference := grant.Settings[databaseCredentialsSetting]; reference != "" {
+	if reference := grant.Settings[model+"/"+databaseCredentialsSetting]; reference != "" {
 		username, password, err := d.credentials(ctx, project, environment, reference)
 		if err != nil {
 			return database.Spec{}, err
@@ -511,7 +511,10 @@ const databaseStore = "databases"
 
 // The setting keys services/worker writes.
 const (
-	databaseTypeSetting        = "type"
+	databaseTypeSetting = "type"
+	// UNDER THE MODEL, as `sql/credentials/name` — which is where the vocabulary
+	// declares it and where every other connection field already sat. A bare
+	// `credentials/name` is a key `database` does not have.
 	databaseCredentialsSetting = "credentials/name"
 )
 
