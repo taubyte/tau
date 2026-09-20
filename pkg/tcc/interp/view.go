@@ -50,12 +50,12 @@ type Layout struct {
 // what was lowered — so the object says which of its resources nobody wrote, and
 // decompile can stop at what somebody did.
 func (c *Compiler) lower(ctx context.Context, authored Object, validations []NextValidation) (Object, []NextValidation, error) {
-	return c.lowerFor(ctx, c.env["environment"], authored, validations)
+	return c.lowerFor(ctx, c.bound(), authored, validations)
 }
 
-// lowerFor reads the lowered view as one environment does — the second pass reads the
-// same documents back, so it needs the same environment the first pass did.
-func (c *Compiler) lowerFor(ctx context.Context, env string, authored Object, validations []NextValidation) (Object, []NextValidation, error) {
+// lowerFor reads the lowered view under the same BINDING — the second pass reads the
+// same documents back, so it needs the same binding the first pass did.
+func (c *Compiler) lowerFor(ctx context.Context, b engine.Bound, authored Object, validations []NextValidation) (Object, []NextValidation, error) {
 	if c.layout.Resource == "" {
 		return nil, nil, errors.New("interp: this schema declares lowerings but no layout, so nothing can be lowered — see WithLayout")
 	}
@@ -117,7 +117,7 @@ func (c *Compiler) lowerFor(ctx context.Context, env string, authored Object, va
 	if err != nil {
 		return nil, nil, err
 	}
-	obj, moreValidations, err := lowered.AuthoredFor(ctx, env)
+	obj, moreValidations, err := lowered.AuthoredFor(ctx, b)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -294,11 +294,11 @@ func (c *Compiler) viewOptions() []Option {
 	for k, v := range c.env {
 		out = append(out, WithEnv(k, v))
 	}
-	// The DECLARED environments travel too. The lowered pass reads the same documents
-	// back, so without them it is a compile that does not know preview's spelling of a
-	// field is a field — and the second pass rejects what the first one just read.
-	if len(c.environments) > 0 {
-		out = append(out, WithEnvironments(c.environments...))
+	// The DECLARED values travel too. The lowered pass reads the same documents back, so
+	// without them it is a compile that does not know a variant spelling of a field is a
+	// field — and the second pass rejects what the first one just read.
+	for name, values := range c.varValues {
+		out = append(out, WithVariable(name, values...))
 	}
 	return out
 }

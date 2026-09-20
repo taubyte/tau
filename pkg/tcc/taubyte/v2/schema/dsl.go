@@ -88,7 +88,6 @@ var (
 	RepoBranch       = engine.RepoBranch
 	RepoName         = engine.RepoName
 	Required         = engine.Required
-	PerEnv           = engine.PerEnv
 	Resource         = engine.Resource
 	Root             = engine.Root
 	SchemaDefinition = engine.SchemaDefinition
@@ -96,6 +95,7 @@ var (
 	Section          = engine.Section
 	Singular         = engine.Singular
 	Identity         = engine.Identity
+	Varying          = engine.Varying
 	Leaf             = engine.Leaf
 	Derived          = engine.Derived
 	Strict           = engine.Strict
@@ -156,3 +156,20 @@ func DefaultWhen[T string | AKey](field T, in ...string) engine.Option {
 }
 func RequiredUnless[T string | AKey](field T) engine.Option { return engine.RequiredUnless(field) }
 func KindFrom[T string | AKey](field T) engine.RefOpt       { return engine.KindFrom(field) }
+
+// EnvironmentVar is THE NAME OF THIS VOCABULARY'S ONE VARIABLE. The engine has no such
+// word — it learns its axes from the root — so the word is declared here, once, and
+// every place that spells it reads this constant.
+const EnvironmentVar = "environment"
+
+// PerEnv says this attribute may be written per ENVIRONMENT, as `<key>_<env>` beside the
+// key itself. It is the vocabulary's reading of the engine's generic Varies: environment
+// is the one axis tau configuration has, and naming it here rather than in the engine is
+// what lets a second axis be added by a declaration instead of a patch.
+//
+// Marked rather than universal because not every field may vary: an `id` or a `name` is
+// IDENTITY, and two environments of one resource share it — a suffix there would make
+// them two resources wearing one name. Where a field that cannot vary has to differ, the
+// whole resource is written for that environment instead, which is the same rule one
+// segment up the path.
+func PerEnv() AttrOption { return engine.Varies(EnvironmentVar) }

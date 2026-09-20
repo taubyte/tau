@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/spf13/afero"
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
 	"github.com/taubyte/tau/pkg/tcc/interp/decompile"
 )
@@ -88,7 +89,7 @@ func ReadBack(plan []interp.Derived, cs []interp.Carriage) map[string]string {
 func WithLocal(path string) Option                { return interp.WithLocal(path) }
 func WithVirtual(fs afero.Fs, path string) Option { return interp.WithVirtual(fs, path) }
 func WithBranch(branch string) Option             { return interp.WithBranch(branch) }
-func WithEnvironment(env string) Option           { return interp.WithEnv("environment", env) }
+func WithEnvironment(env string) Option           { return interp.WithEnv(EnvironmentVar, env) }
 
 // DecompileToVirtual and WithAsLowered are the decompiler's own options, re-exported so a
 // caller depends on this package alone. WithAsLowered is the DEPTH: without it a
@@ -106,4 +107,8 @@ func NewDecompiler(o ...decompile.Option) (*decompile.Decompiler, error) {
 // suffixes a document may carry. It is not the environment being compiled (that is
 // WithEnvironment): one document serves them all, so production's compile has to know
 // preview's spelling is a field and not a typo.
-func WithEnvironments(names ...string) Option { return interp.WithEnvironments(names...) }
+func WithEnvironments(names ...string) Option { return interp.WithVariable(EnvironmentVar, names...) }
+
+// InEnvironment is the binding CompileFor and AuthoredFor take: this vocabulary's one
+// variable, held at one value. A caller that says nothing compiles the bare keys.
+func InEnvironment(name string) engine.Bound { return engine.Bound{EnvironmentVar: name} }

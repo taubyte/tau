@@ -201,12 +201,21 @@ func deployed(t *testing.T, dir string, environments ...string) *pkgregister.Reg
 	if len(environments) == 0 {
 		environments = []string{"prod"}
 	}
+	// SAME RULE AS deploy.compileFor: a project with no environment table has no axis to
+	// bind. `prod` is the name its one deployment is filed under in the register, not a
+	// value a document may suffix a key with — so that compile reads the bare keys, and
+	// the publication below is still keyed by the name.
+	declared, err := schema.EnvironmentsOf(afero.NewOsFs(), dir)
+	require.NoError(t, err)
+
 	for _, environment := range environments {
 		options := []schema.Option{
 			schema.WithLocal(dir),
 			schema.WithBranch("main"),
-			schema.WithProjectEnvironments(afero.NewOsFs(), dir),
-			schema.WithEnvironment(environment),
+			schema.WithEnvironments(schema.EnvironmentNames(declared)...),
+		}
+		if len(declared) > 0 {
+			options = append(options, schema.WithEnvironment(environment))
 		}
 
 		c, err := schema.New(options...)

@@ -2,6 +2,7 @@ package schema_test
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"testing"
 
@@ -21,7 +22,7 @@ func TestZZPopulation(t *testing.T) {
 		walk = func(n *engine.Node) {
 			for _, a := range n.Attributes {
 				total++
-				if a.Meta["perEnv"] == true {
+				if slices.Contains(engine.VariesBy(a), schema.EnvironmentVar) {
 					marked++
 					byKind[kind] = append(byKind[kind], a.Name)
 				}

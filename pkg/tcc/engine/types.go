@@ -33,10 +33,52 @@ func IdentityOf(root *Node) (id, name string) {
 type instance struct {
 	schema *schemaDef
 	seer   *yaseer.Seer
-	// envs is every environment the project declares — the closed set of suffixes a
-	// document may carry. WHICH one is being read is an argument to ProcessFor.
-	envs []string
+	// vars is every variable the vocabulary declares, in its order, with the closed set
+	// of values each may take in THIS project — the whole set of suffixes a document may
+	// carry. WHICH value each variable holds for a given read is an argument to
+	// ProcessFor.
+	vars Vars
 }
+
+// Var is one variable and the values it may take in this project. The name comes from
+// the vocabulary (Varying, on the root); the values come from the caller, because they
+// are a property of the project being read rather than of the language it is written in.
+type Var struct {
+	Name   string
+	Values []string
+}
+
+// Vars is every variable, IN THE ROOT'S ORDER. Built by the engine rather than handed to
+// it, so precedence is the vocabulary's to state and never a caller's to choose by the
+// order it happened to pass its options in.
+type Vars []Var
+
+// Values is the closed set this variable may take, nil when it is not one of ours.
+func (v Vars) Values(name string) []string {
+	for _, each := range v {
+		if each.Name == name {
+			return each.Values
+		}
+	}
+	return nil
+}
+
+// Has reports whether this project declares any value at all for the variable. A
+// variable with no values has no variant keys, so binding one is refused rather than
+// read as the bare key — see NewWith.
+func (v Vars) Has(name string) bool {
+	for _, each := range v {
+		if each.Name == name {
+			return len(each.Values) > 0
+		}
+	}
+	return false
+}
+
+// Bound is what the variables ARE for one read: one value per variable, and a variable
+// absent from it reads the bare key. It is a map rather than a slice because a caller
+// says what it knows; the ORDER the engine resolves them in comes from the root.
+type Bound map[string]string
 
 type schemaDef struct {
 	root *Node
@@ -52,11 +94,11 @@ type Engine interface {
 	Schema() Schema
 	Parse() (object.Object[SeerRef], error)           // load linked to seer
 	Process() (object.Object[object.Refrence], error) // load & process
-	// ProcessFor is Process as one ENVIRONMENT reads it: marked attributes take their
-	// `<key>_<env>` spelling where the document writes one. An argument rather than
-	// instance state, because one branch feeds several deployments and they share the
-	// parsed documents.
-	ProcessFor(env string) (object.Object[object.Refrence], error)
+	// ProcessFor is Process UNDER ONE BINDING: an attribute that varies takes its
+	// `<key>_<value>` spelling where the document writes one. An argument rather than
+	// instance state, because one parse serves every binding and they share the parsed
+	// documents.
+	ProcessFor(b Bound) (object.Object[object.Refrence], error)
 	Dump(obj object.Object[object.Refrence]) error // dump object to filesystem using engine's seer and sync
 }
 

@@ -269,6 +269,6 @@ func WithProjectEnvironments(fs afero.Fs, path string) Option {
 		if err != nil {
 			return err
 		}
-		return interp.WithEnvironments(EnvironmentNames(envs)...)(c)
+		return interp.WithVariable(EnvironmentVar, EnvironmentNames(envs)...)(c)
 	}
 }

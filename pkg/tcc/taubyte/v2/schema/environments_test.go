@@ -190,7 +190,7 @@ func TestOneCompilerReadsEveryEnvironment(t *testing.T) {
 			name = "no environment"
 		}
 		t.Run(name, func(t *testing.T) {
-			obj, _, err := c.CompileFor(context.Background(), tc.env)
+			obj, _, err := c.CompileFor(context.Background(), schema.InEnvironment(tc.env))
 			assert.NilError(t, err)
 			flat := obj.Flat()
 

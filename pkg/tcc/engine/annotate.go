@@ -542,14 +542,59 @@ func Resource(schemaPkg, iface, specType, specPkg string) NodeOption {
 	return GroupAnnotate("resource", [4]string{schemaPkg, iface, specType, specPkg})
 }
 
-// PerEnv says this attribute may be written per ENVIRONMENT, as `<key>_<env>` beside
-// the key itself. Marked rather than universal because not every field may vary: an
-// `id` or a `name` is IDENTITY, and two environments of one resource share it — a
-// suffix there would make them two resources wearing one name. Where a field that
-// cannot vary has to differ, the whole resource is written for that environment
-// instead, which is the same rule one segment up the path.
+// Varies says this attribute may be written per VARIABLE, as `<key>_<value>` beside
+// the key itself. Marked rather than universal because not every field may vary: a
+// key that IDENTIFIES the thing it is written on cannot, and two readings of one
+// resource share it — a suffix there would make them two resources wearing one name.
+// Where a field that cannot vary has to differ, the whole resource is written again,
+// which is the same rule one segment up the path.
 //
-// The mark is read by the loader (node.go's env-first resolution), by strict mode
-// (which claims the suffixed key so it is not "unknown"), and by whatever emits a
-// schema for an editor — one declaration, three consumers, none of them a list.
-func PerEnv() Option { return Annotate("perEnv", true) }
+// Each name must be one the root declares with Varying; an attribute that varies by a
+// variable the vocabulary does not have is a definition error, reported when the
+// engine is built rather than at the line of the document that trips over it.
+//
+// APPENDS rather than sets, because Annotate overwrites and two Varies() on one
+// attribute mean two axes, not the second one only.
+//
+// The mark has two consumers: the loader (node.go's variant-first resolution) and
+// strict mode (which claims the suffixed key so it is not "unknown"). One
+// declaration, and neither of them a list.
+func Varies(vars ...string) Option {
+	return func(a *Attribute) {
+		if a.Meta == nil {
+			a.Meta = map[string]any{}
+		}
+		was, _ := a.Meta["varies"].([]string)
+		a.Meta["varies"] = append(append([]string(nil), was...), vars...)
+	}
+}
+
+// VariesBy is the mark read back: the variables this attribute may be written per, in
+// declaration order. nil when the attribute does not vary.
+func VariesBy(a *Attribute) []string {
+	if a == nil {
+		return nil
+	}
+	vars, _ := a.Meta["varies"].([]string)
+	return vars
+}
+
+// Varying declares the variables of this vocabulary, IN PRECEDENCE ORDER: when one
+// attribute varies by several, this is the order they are tried in.
+//
+// Stated ONCE, on the root, like Identity, because which axes a configuration has is a
+// convention of the whole vocabulary rather than of any kind in it — and because the
+// loader has to know the set before it can tell an override from a typo.
+func Varying(names ...string) NodeOption {
+	return GroupAnnotate("variables", append([]string(nil), names...))
+}
+
+// VariablesOf reads it back. nil for a vocabulary that declares none, which is a
+// vocabulary with no variant keys at all: every suffix is then a typo.
+func VariablesOf(root *Node) []string {
+	if root == nil {
+		return nil
+	}
+	names, _ := root.Meta["variables"].([]string)
+	return names
+}

@@ -329,12 +329,25 @@ const DefaultEnvironment = "prod"
 // back. Saying so in one place is what keeps the writer and the reader from
 // disagreeing about a format nobody else names.
 func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *specs.Project, error) {
-	c, err := schema.New(
+	declared, err := schema.EnvironmentsOf(fs, dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("deploy: reading the environment table: %w", err)
+	}
+
+	options := []schema.Option{
 		schema.WithVirtual(fs, dir),
-		schema.WithProjectEnvironments(fs, dir),
+		schema.WithEnvironments(schema.EnvironmentNames(declared)...),
 		schema.WithBranch(branch),
-		schema.WithEnvironment(environment),
-	)
+	}
+	// A PROJECT WITH NO TABLE HAS NOTHING TO BIND. DefaultEnvironment names that
+	// project's one deployment in the register; it is not a value any document may
+	// suffix a key with, and reading for a value the project never declared is
+	// refused — rightly, because it would be a compile no override could reach.
+	if len(declared) > 0 {
+		options = append(options, schema.WithEnvironment(environment))
+	}
+
+	c, err := schema.New(options...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("deploy: reading the configuration: %w", err)
 	}

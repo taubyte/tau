@@ -1,6 +1,7 @@
 package schema_test
 
 import (
+	"slices"
 	"sort"
 	"testing"
 
@@ -139,7 +140,7 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		var walk func(n *engine.Node)
 		walk = func(n *engine.Node) {
 			for _, a := range n.Attributes {
-				if a.Meta["perEnv"] == true {
+				if slices.Contains(engine.VariesBy(a), schema.EnvironmentVar) {
 					seen[kind+"/"+a.Name] = true
 				}
 			}

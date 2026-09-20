@@ -15,10 +15,21 @@ rich enough; if something seems impossible, you are using it wrong. Every time t
 looked like an engine limitation it turned out to be a construct not yet found.
 
 When it really is a missing primitive — say so, name the SHAPE the generic layer is
-missing, and add it in the generic layer's own language. `Lowerable`, `LoweredRoot` and
-`ContainerKeys` are what that looks like: none of them knows a kind, each replaced a
-"there is exactly one of these" assumption rather than carving out a special case. A term
-in `engine` or `interp` that names a v2 kind is the thing this rule is really against.
+missing, and add it in the generic layer's own language. `Lowerable`, `LoweredRoot`,
+`ContainerKeys` and `Varying`/`Varies` are what that looks like: none of them knows a
+kind, each replaced a "there is exactly one of these" assumption rather than carving out
+a special case. A term in `engine` or `interp` that names a v2 kind is the thing this
+rule is really against.
+
+`Varying` is the worked example of the WHOLE path, including what it replaced. The
+engine used to spell `PerEnv`/`envPath`/`EnvMatcher` and interp used to read
+`c.env["environment"]` as a literal — one vocabulary's word in the layer that must not
+have one, and an axis nothing else could ever have a second of. The generic shape is
+"a vocabulary declares its VARIABLES on the root, an attribute VARIES by them, a key may
+be written as a VARIANT `<key>_<value>`, and a read is made under a BINDING". The word
+`environment` now lives in `schema/dsl.go` as `EnvironmentVar`, `PerEnv()` is this
+vocabulary's `engine.Varies(EnvironmentVar)`, and the root says `Varying(EnvironmentVar)`.
+Adding a second axis is now a name on that line, not a patch to `pkg/tcc/`.
 
 `tools/tcc-gen` is the exception — it carries `--dsl v1|v2` to select the vocabulary.
 

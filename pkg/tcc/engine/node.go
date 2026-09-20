@@ -150,41 +150,41 @@ func (n *Node) childrenToSlice() []any {
 const ambiguousPath = "ambiguous path"
 
 // walk is what a load carries down that the schema cannot state: the per-compile
-// decisions. `strict` was threaded alone; `env` joins it rather than becoming a
+// decisions. `strict` was threaded alone; the binding joins it rather than becoming a
 // second parameter on five signatures.
 type walk struct {
 	strict bool
-	// env is the environment this compile is for, "" for none. A vocabulary that
-	// never sets one is unaffected by every line below that reads it — which is why
-	// per-environment resolution needs no opt-in: v1 passes "" and resolves exactly
-	// as it did.
-	env string
-	// envs is every environment the project DECLARES, and it is a different question
-	// from `env`. One document serves them all, so a document written for three
-	// environments carries all three spellings at once and each compile reads one of
-	// them — which means strict has to know the whole set, or production's compile
-	// rejects preview's line as an unknown key. The set is closed and declared, so
-	// `id_preview` is still a typo and so is `timeout_prevew`.
-	envs []string
+	// bound is what the variables ARE for this read, nil for a read that binds none. A
+	// vocabulary that declares no variable is unaffected by every line below that reads
+	// it — which is why variant resolution needs no opt-in: an empty binding resolves
+	// exactly as a schema with no variables does.
+	bound Bound
+	// vars is every variable the vocabulary declares with the values this project gives
+	// it, and it is a different question from `bound`. One document serves them all, so
+	// a document written for three values carries all three spellings at once and each
+	// read takes one of them — which means strict has to know the whole set, or one
+	// read rejects another's line as an unknown key. The set is closed and declared, so
+	// `id_a` is still a typo and so is `<key>_typo`.
+	vars Vars
 }
 
-// envPath is attr's path with the environment appended to its LAST segment —
-// `execution/memory` for `preview` is `execution/memory_preview`.
+// variantPath is attr's path with a variable's value appended to its LAST segment — the
+// path `x/y` under the value `a` is `x/y_a`.
 //
-// A BRANCH IS SUFFIXED TOO, and it is a key the DOCUMENT chooses rather than one
-// the schema names. The schema cannot say in advance which branch will be there,
-// but a matcher can spell every alternative it admits — see EnvMatcher.
+// A MATCHER IS SUFFIXED TOO, and it matches a key the DOCUMENT chooses rather than one
+// the schema names. The schema cannot say in advance which alternative will be there,
+// but a matcher can spell every one it admits — see SuffixMatcher.
 //
-// THE UNSUFFIXED BRANCH STILL NAMES THE CHOICE. An attribute that captures WHICH
-// branch was taken is not itself per-environment, so it reads the bare key —
-// which is the PerEnv contract everywhere else too: `<key>_<env>` sits BESIDE the
-// key, overriding its value and never replacing its declaration.
+// THE UNSUFFIXED ALTERNATIVE STILL NAMES THE CHOICE. An attribute that captures WHICH
+// alternative was taken does not itself vary, so it reads the bare key — which is the
+// Varies contract everywhere else too: `<key>_<value>` sits BESIDE the key, overriding
+// its value and never replacing its declaration.
 //
-// nil when there is nothing to suffix: no environment, or a matcher that cannot
-// spell itself — All() admits keys nobody can enumerate, so there is no set to
-// suffix and no environment spelling to ask it for.
-func envPath(path []StringMatch, env string) []StringMatch {
-	if env == "" || len(path) == 0 {
+// nil when there is nothing to suffix: no value, or a matcher that cannot spell itself —
+// All() admits keys nobody can enumerate, so there is no set to suffix and no variant
+// spelling to ask it for.
+func variantPath(path []StringMatch, value string) []StringMatch {
+	if value == "" || len(path) == 0 {
 		return nil
 	}
 
@@ -193,12 +193,12 @@ func envPath(path []StringMatch, env string) []StringMatch {
 
 	switch last := path[len(path)-1].(type) {
 	case string:
-		out[len(out)-1] = last + "_" + env
-	case EnvMatcher:
+		out[len(out)-1] = last + "_" + value
+	case SuffixMatcher:
 		// THE MATCHER SPELLS ITSELF. Only it knows what it admits, so only it
-		// can say what its environment spelling is — rebuilding one here would
+		// can say what its suffixed spelling is — rebuilding one here would
 		// be this function knowing the shape of every matcher there will ever be.
-		out[len(out)-1] = last.InEnv(env)
+		out[len(out)-1] = last.Suffixed(value)
 	default:
 		return nil
 	}
@@ -551,6 +551,57 @@ func requiredName(attr *Attribute, resolved []string) string {
 	return attr.Name
 }
 
+// variantOf is which of this attribute's variant keys the document actually writes, nil
+// for none — in which case the attribute reads its declared path.
+//
+// THE ROOT'S ORDER IS THE PRECEDENCE, and it is the only place an order is stated: the
+// variables are tried as the vocabulary listed them with Varying, so which axis wins is
+// never decided by the order a caller passed its options in.
+//
+// TWO VARIANTS WRITTEN AT ONCE IS A CONFLICT, NOT A PRECEDENCE QUESTION. An attribute
+// that varies by two variables and is written for both has two answers in the document,
+// and the author stated both deliberately; quietly taking whichever the root listed first
+// would be a decision nobody wrote. This is the same stance ambiguousPath takes for a
+// switch with two of its alternatives open.
+//
+// NO COMPOUND SUFFIX. `<key>_<a>_<b>` is not a thing: a value that needs two variables at
+// once is a different resource, which is the rule Varies already states one segment up.
+func variantOf(attr *Attribute, query *yaseer.Query, w walk) ([]StringMatch, error) {
+	if len(w.bound) == 0 {
+		return nil, nil
+	}
+	by := VariesBy(attr)
+	if len(by) == 0 {
+		return nil, nil
+	}
+
+	var found []StringMatch
+	var foundVia, foundAt string
+	for _, name := range w.vars {
+		if !slices.Contains(by, name.Name) {
+			continue
+		}
+		value, isBound := w.bound[name.Name]
+		if !isBound {
+			continue
+		}
+		path := variantPath(attr.Path, value)
+		if path == nil {
+			continue
+		}
+		vq, resolved, err := inferPathQuery(path, query)
+		if err != nil || !hasScalar(vq) {
+			continue
+		}
+		at := strings.Join(resolved, "/")
+		if found != nil {
+			return nil, wrapErrorWithLocation(query, fmt.Errorf("attribute '%s' is written for both %s (%s) and %s (%s) — two answers, and nothing says which", attr.Name, foundVia, foundAt, name.Name, at), "conflicting variants")
+		}
+		found, foundVia, foundAt = path, name.Name, at
+	}
+	return found, nil
+}
+
 func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, w walk) error {
 	if len(n.Attributes) == 0 {
 		return nil
@@ -562,8 +613,8 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		if len(attr.Path) == 0 {
 			attr.Path = []StringMatch{attr.Name}
 		}
-		// THE ENVIRONMENT'S VALUE FIRST. `memory_preview` beside `memory` is the same
-		// field said for one environment, so it is a path tried BEFORE the declared
+		// THE VARIANT'S VALUE FIRST. `<key>_<value>` beside `<key>` is the same field
+		// said for one value of one variable, so it is a path tried BEFORE the declared
 		// one — the mirror of Compat below, which is tried after.
 		//
 		// PRESENCE decides, not validity. If something is written at the suffixed key
@@ -572,12 +623,10 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		// deploying a value nobody chose. `resolved` follows, so every message names
 		// the key the author actually wrote.
 		path := attr.Path
-		if attr.Meta["perEnv"] == true {
-			if ep := envPath(path, w.env); ep != nil {
-				if eq, _, eerr := inferPathQuery(ep, query); eerr == nil && hasScalar(eq) {
-					path = ep
-				}
-			}
+		if found, err := variantOf(attr, query, w); err != nil {
+			return err
+		} else if found != nil {
+			path = found
 		}
 		aq, resolved, err := inferPathQuery(path, query)
 		if err != nil {
@@ -791,7 +840,7 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query, w walk, claimed ...map
 	// cannot read is a mistake rather than an extension. See strict.go — it used to
 	// be dropped in silence, and it still is for a vocabulary that does not opt in.
 	if w.strict {
-		if err := checkKeys(n, query, w.envs); err != nil {
+		if err := checkKeys(n, query, w.vars); err != nil {
 			return nil, err
 		}
 	}
@@ -841,7 +890,7 @@ func mergeInto[T ObjectDataType](into, from object.Object[T]) {
 // claimedUnder is the set of keys this node's OWN attributes declare inside the child
 // group named `key` — the second segment of every attribute path that starts there. The
 // group must not read those as entries of its own.
-func claimedUnder(n *Node, key string, envs []string) map[string]bool {
+func claimedUnder(n *Node, key string, vars Vars) map[string]bool {
 	var out map[string]bool
 	claim := func(k string) {
 		if out == nil {
@@ -862,22 +911,23 @@ func claimedUnder(n *Node, key string, envs []string) map[string]bool {
 			continue
 		}
 		claim(second)
-		// AND ITS ENVIRONMENT SPELLINGS, where a block and an access GROUP share a
-		// name. An agent's `model:` is both — the block naming which model answers,
-		// and the group granting access to models — so what is not claimed here is
-		// walked as an access entry. `model/name` is claimed and `model/name_preview`
-		// was not, which made an override of a marked field read as an entry named
-		// `name_preview` and fail with `required attribute 'ops'`: an error about a
-		// shape the author never wrote.
+		// AND ITS VARIANT SPELLINGS, where a block and an access GROUP share a name.
+		// A `model:` can be both — the block naming which one answers, and the group
+		// granting access to them — so what is not claimed here is walked as an access
+		// entry. `model/name` was claimed and `model/name_a` was not, which made an
+		// override of a varying field read as an entry named `name_a` and fail with
+		// `required attribute 'ops'`: an error about a shape the author never wrote.
 		//
 		// Only where the second segment is also the LAST: a suffix lands on the leaf,
-		// so `engine/postgres/host` suffixes `host` and claiming `postgres_preview`
-		// would reserve a branch key nothing writes.
-		if len(a.Path) == 2 && a.Meta["perEnv"] == true {
-			for _, env := range envs {
-				if ep := envPath(a.Path, env); ep != nil {
-					if last, ok := ep[len(ep)-1].(string); ok {
-						claim(last)
+		// so a three-segment path suffixes its leaf and claiming the middle segment
+		// would reserve a key nothing writes.
+		if len(a.Path) == 2 {
+			for _, name := range VariesBy(a) {
+				for _, value := range vars.Values(name) {
+					if vp := variantPath(a.Path, value); vp != nil {
+						if last, ok := vp[len(vp)-1].(string); ok {
+							claim(last)
+						}
 					}
 				}
 			}
@@ -946,7 +996,7 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 		if !matched {
 			return nil
 		}
-		cobj, err := load[T](itm, childQuery, w, claimedUnder(n, l, w.envs))
+		cobj, err := load[T](itm, childQuery, w, claimedUnder(n, l, w.vars))
 		if err != nil {
 			return err
 		}

@@ -107,7 +107,7 @@ func (c *claim) claimGroup(child *Node) {
 }
 
 // attrClaims is what a node's attributes may be read from.
-func attrClaims(n *Node, envs []string) *claim {
+func attrClaims(n *Node, vars Vars) *claim {
 	c := newClaim()
 	for _, attr := range n.Attributes {
 		path := attr.Path
@@ -116,13 +116,16 @@ func attrClaims(n *Node, envs []string) *claim {
 			path = []StringMatch{attr.Name}
 		}
 		c.insert(path)
-		// The environment's spelling of this field is a key the schema CAN read, so
-		// it is claimed like any other — otherwise every override is an unknown key.
-		// Claimed only where the attribute is marked, so `id_preview` stays a typo.
-		if attr.Meta["perEnv"] == true {
-			for _, env := range envs {
-				if ep := envPath(path, env); ep != nil {
-					c.insert(ep)
+		// EVERY VARIANT SPELLING OF THIS FIELD IS A KEY THE SCHEMA CAN READ, so each is
+		// claimed like any other — otherwise every override is an unknown key. The
+		// UNION, not the cross product: there are no compound suffixes, so an attribute
+		// that varies by two variables claims each value of each, and nothing more.
+		// Claimed only where the attribute is marked, so a suffix on an unmarked key
+		// stays a typo.
+		for _, name := range VariesBy(attr) {
+			for _, value := range vars.Values(name) {
+				if vp := variantPath(path, value); vp != nil {
+					c.insert(vp)
 				}
 			}
 		}
@@ -134,7 +137,7 @@ func attrClaims(n *Node, envs []string) *claim {
 }
 
 // checkKeys rejects any key in this node's document that the schema cannot read.
-func checkKeys(n *Node, query *yaseer.Query, envs []string) error {
+func checkKeys(n *Node, query *yaseer.Query, vars Vars) error {
 	// A node with no attributes and no children expresses no opinion about its
 	// document — it reads nothing and produces an empty object either way. "Every
 	// key is unknown" is vacuous there rather than stricter, so it is left alone.
@@ -143,7 +146,7 @@ func checkKeys(n *Node, query *yaseer.Query, envs []string) error {
 	}
 
 	if !n.Group {
-		c := attrClaims(n, envs)
+		c := attrClaims(n, vars)
 		if n.Nested {
 			// a nested resource's child groups are keys of its own document
 			for _, child := range n.Children {
@@ -166,7 +169,7 @@ func checkKeys(n *Node, query *yaseer.Query, envs []string) error {
 		return err
 	}
 
-	inner := attrClaims(n, envs)
+	inner := attrClaims(n, vars)
 	for _, child := range n.Children {
 		inner.claimGroup(child)
 	}

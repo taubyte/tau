@@ -8,9 +8,10 @@ import (
 type Option func(c *Compiler) error
 
 // Env is the compile environment: named compile-time parameters that DSL
-// declarations reference by name. interp itself consumes only "branch" (the
-// IndexDriver bakes it into index paths); every other key is owned by the schema
-// that reads it — e.g. the taubyte schema's WithCloud sets "cloud", consumed by a
+// declarations reference by name. interp spells none of these keys: the VARIABLES
+// among them are the ones the schema root declares with Varying, which is where the
+// compile binding comes from, and every other key is owned by the schema that reads
+// it — e.g. the taubyte schema's WithCloud sets "cloud", consumed by a
 // PromoteEnvKeyed declaration, not by interp.
 type Env map[string]string
 
@@ -54,13 +55,19 @@ func WithLayout(l Layout) Option {
 // WithBranch pins the compile branch, which the IndexDriver bakes into index paths.
 func WithBranch(branch string) Option { return WithEnv("branch", branch) }
 
-// WithEnvironments names every environment the project DECLARES. One document serves
-// them all, so it carries every environment's spelling of a field at once and each
-// compile reads one — which means the loader needs the whole set to tell an override
-// from a typo, and WithEnv("environment", …) alone cannot supply it.
-func WithEnvironments(names ...string) Option {
+// WithVariable names every value one of the schema's variables may take in THIS
+// project. One document serves them all, so it carries every value's spelling of a
+// field at once and each compile reads one — which means the loader needs the whole set
+// to tell an override from a typo, and WithEnv alone cannot supply it.
+//
+// Repeatable, one call per variable: the values are a property of the project, and the
+// variables themselves are the root's to declare.
+func WithVariable(name string, values ...string) Option {
 	return func(c *Compiler) error {
-		c.environments = names
+		if c.varValues == nil {
+			c.varValues = map[string][]string{}
+		}
+		c.varValues[name] = append([]string(nil), values...)
 		return nil
 	}
 }

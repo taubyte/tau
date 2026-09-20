@@ -18,9 +18,15 @@ func loadFixture(t testing.TB, dir, environment, branch string) *specs.Project {
 	t.Helper()
 
 	options := []schema.Option{schema.WithLocal(dir), schema.WithBranch(branch)}
-	if environment != "" {
+	// SAME RULE AS deploy.compileFor: a project with no environment table has no axis
+	// to bind, and the name its one deployment is filed under in the register is not a
+	// value a document may suffix a key with. So `prod` here reads exactly the bare
+	// keys, which is what that deployment runs.
+	declared, err := schema.EnvironmentsOf(afero.NewOsFs(), dir)
+	require.NoError(t, err)
+	if environment != "" && len(declared) > 0 {
 		options = append(options,
-			schema.WithProjectEnvironments(afero.NewOsFs(), dir),
+			schema.WithEnvironments(schema.EnvironmentNames(declared)...),
 			schema.WithEnvironment(environment))
 	}
 

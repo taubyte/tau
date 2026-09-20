@@ -3539,7 +3539,11 @@ var v2Root = Root(
 	// A resource is stored under its `id` and called by the name of the document it was
 	// written in — the interpreter's two field names, which are this vocabulary's to
 	// choose and therefore this vocabulary's to state.
-	Identity("id", "name"))
+	Identity("id", "name"),
+	// AND ITS ONE VARIABLE. Environment is the axis a key may be suffixed with here;
+	// the engine has no such word, so the root is where it is said. A second axis would
+	// be a second name on this line, in precedence order, and nothing below it changes.
+	Varying(EnvironmentVar))
 
 var TaubyteProject = SchemaDefinition(v2Root)
 
