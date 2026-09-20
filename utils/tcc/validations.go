@@ -101,3 +101,32 @@ func ProcessDNSValidations(
 	}
 	return nil
 }
+
+// Deferred is what a compile could not check, grouped by the validator it asked
+// for, with each distinct value once and in order.
+//
+// THE SCHEMA CANNOT CHECK A REGION AND NEVER WILL. A region name is an opaque
+// label the implementation defines: the config holds no list of them, so
+// "eu-wst" is refusable only where the cloud is finally in the room. The same
+// is true of a domain nobody has proved and an image nobody has pulled.
+//
+// SO THE HONEST THING IS TO SAY SO. A compile that reports nothing about these
+// reads as "your config is checked", and the first time an author learns their
+// region label means nothing is a deploy that placed their database somewhere
+// they did not write. This does not check them — nothing here can — it names
+// what is outstanding and who has to answer it.
+func Deferred(validations []engine.NextValidation) map[string][]string {
+	out := map[string][]string{}
+	seen := map[string]bool{}
+	for _, v := range validations {
+		value, ok := v.Value.(string)
+		if !ok || value == "" {
+			continue
+		}
+		if at := v.Validator + "\x00" + value; !seen[at] {
+			seen[at] = true
+			out[v.Validator] = append(out[v.Validator], value)
+		}
+	}
+	return out
+}
