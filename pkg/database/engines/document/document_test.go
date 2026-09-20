@@ -139,7 +139,7 @@ func TestADocumentIsStoredAsJson(t *testing.T) {
 	c := open(t, store, spec("shop", "prod", "orders"))
 	require.NoError(t, c.Put(t.Context(), "order:1", map[string]any{"status": "paid"}))
 
-	require.JSONEq(t, `{"status":"paid"}`, string(store.values["shop/prod/orders/order:1"]))
+	require.JSONEq(t, `{"status":"paid"}`, string(store.values["shop/prod/document/orders/order:1"]))
 }
 
 // ── the query ────────────────────────────────────────────────────────────────
@@ -250,7 +250,7 @@ func TestASeparatorInANameIsRefused(t *testing.T) {
 	require.NoError(t, err, "the registry's probe is address-less; refusing here would make this unregistrable")
 
 	_, err = conn.(database.DocumentConn).Get(context.Background(), "1")
-	require.ErrorIs(t, err, document.ErrSeparator)
+	require.ErrorIs(t, err, database.ErrSeparator)
 }
 
 // ── what it refuses ──────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ func TestAnUnreadableRowDoesNotBreakAQuery(t *testing.T) {
 	store := newStore()
 	c := open(t, store, spec("shop", "prod", "orders"))
 	require.NoError(t, c.Put(t.Context(), "good", map[string]any{"status": "paid"}))
-	require.NoError(t, store.Put(t.Context(), "shop/prod/orders/junk", []byte("not json")))
+	require.NoError(t, store.Put(t.Context(), "shop/prod/document/orders/junk", []byte("not json")))
 
 	all, err := c.Query(t.Context(), nil)
 	require.NoError(t, err)
@@ -383,7 +383,7 @@ func TestARowTakenBetweenTheListAndTheReadIsSkipped(t *testing.T) {
 
 	// List will name it; the read will not find it.
 	store.mu.Lock()
-	delete(store.values, "shop/prod/orders/gone")
+	delete(store.values, "shop/prod/document/orders/gone")
 	store.mu.Unlock()
 
 	all, err := c.Query(ctx, nil)

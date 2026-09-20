@@ -62,7 +62,6 @@ var (
 	ErrNotFound    = errors.New("document: no such document")
 	ErrNoID        = errors.New("document: no id")
 	ErrNotAnObject = errors.New("document: a document is an object")
-	ErrSeparator   = errors.New("document: a project, environment or database name may not contain \"/\"")
 )
 
 // Engine opens document databases over one store.
@@ -86,20 +85,8 @@ func (e *Engine) Open(_ context.Context, spec database.Spec) (database.Conn, err
 		return nil, fmt.Errorf("document: this engine backs %s and not %s", database.Document, spec.Type)
 	}
 
-	prefix, err := prefixOf(spec)
+	prefix, err := spec.Prefix()
 	return &conn{store: e.store, prefix: prefix, err: err}, nil
-}
-
-func prefixOf(spec database.Spec) (string, error) {
-	for _, segment := range []string{spec.Project, spec.Environment, spec.Name} {
-		if segment == "" {
-			return "", errors.New("document: a database with no project, environment or name addresses nothing")
-		}
-		if strings.Contains(segment, "/") {
-			return "", fmt.Errorf("%w: %s/%s/%s", ErrSeparator, spec.Project, spec.Environment, spec.Name)
-		}
-	}
-	return strings.Join([]string{spec.Project, spec.Environment, spec.Name}, "/") + "/", nil
 }
 
 type conn struct {

@@ -264,8 +264,8 @@ func TestAWrongWidthRowIsSkipped(t *testing.T) {
 	ctx := t.Context()
 
 	require.NoError(t, c.Upsert(ctx, "good", []float32{1, 0}, nil))
-	require.NoError(t, store.Put(ctx, "shop/prod/knowledge/wide", []byte(`{"embedding":[1,0,0,0]}`)))
-	require.NoError(t, store.Put(ctx, "shop/prod/knowledge/junk", []byte("not json")))
+	require.NoError(t, store.Put(ctx, "shop/prod/vector/knowledge/wide", []byte(`{"embedding":[1,0,0,0]}`)))
+	require.NoError(t, store.Put(ctx, "shop/prod/vector/knowledge/junk", []byte("not json")))
 
 	found, err := c.Search(ctx, []float32{1, 0}, 0)
 	require.NoError(t, err)
@@ -357,7 +357,7 @@ func TestASeparatorInANameIsRefused(t *testing.T) {
 	require.NoError(t, err, "the registry's probe is address-less")
 
 	require.ErrorIs(t, conn.(database.VectorConn).Upsert(
-		context.Background(), "a", []float32{1, 0}, nil), vector.ErrSeparator)
+		context.Background(), "a", []float32{1, 0}, nil), database.ErrSeparator)
 }
 
 func TestAStoreFailureIsReported(t *testing.T) {

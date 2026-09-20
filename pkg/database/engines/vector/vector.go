@@ -73,7 +73,6 @@ var (
 	ErrNotFound    = errors.New("vector: no such vector")
 	ErrWidth       = errors.New("vector: that is not this database's width")
 	ErrNoMetric    = errors.New("vector: no such metric")
-	ErrSeparator   = errors.New("vector: a project, environment or database name may not contain \"/\"")
 	ErrNoDimension = errors.New("vector: this database declares no width")
 )
 
@@ -99,7 +98,7 @@ func (e *Engine) Open(_ context.Context, spec database.Spec) (database.Conn, err
 	}
 
 	c := &conn{store: e.store, metric: Cosine}
-	c.prefix, c.err = prefixOf(spec)
+	c.prefix, c.err = spec.Prefix()
 	if c.err != nil {
 		return c, nil
 	}
@@ -129,18 +128,6 @@ func (e *Engine) Open(_ context.Context, spec database.Spec) (database.Conn, err
 	}
 	c.width = n
 	return c, nil
-}
-
-func prefixOf(spec database.Spec) (string, error) {
-	for _, segment := range []string{spec.Project, spec.Environment, spec.Name} {
-		if segment == "" {
-			return "", errors.New("vector: a database with no project, environment or name addresses nothing")
-		}
-		if strings.Contains(segment, "/") {
-			return "", fmt.Errorf("%w: %s/%s/%s", ErrSeparator, spec.Project, spec.Environment, spec.Name)
-		}
-	}
-	return strings.Join([]string{spec.Project, spec.Environment, spec.Name}, "/") + "/", nil
 }
 
 type conn struct {

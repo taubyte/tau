@@ -76,6 +76,15 @@ var (
 	ErrDuplicate    = errors.New("database: that engine is registered for that type already")
 	ErrWrongSurface = errors.New("database: the engine does not implement its type's operations")
 	ErrUnknownType  = errors.New("database: not a data model this vocabulary declares")
+
+	// ErrSeparator is an address segment carrying the separator between
+	// segments. It is the isolation: without it a database literally named
+	// "../production/ledger" in staging would be a readable path into
+	// production's, exactly as it would be for a secret.
+	ErrSeparator = errors.New(`database: a project, environment or database name may not contain "/"`)
+
+	// ErrUnaddressable is a spec with a hole where an address segment belongs.
+	ErrUnaddressable = errors.New("database: a spec with no project, environment, model or name addresses nothing")
 )
 
 // Spec is which database to open.
@@ -384,4 +393,33 @@ func (r *Registry) String() string {
 		fmt.Fprintf(&b, "%s: %s\n", t, strings.Join(names, ", "))
 	}
 	return b.String()
+}
+
+// Prefix is where a resident engine keeps this database's entries, and it is
+// the ONE addressing rule all of them share. It was three copies of itself, one
+// per engine, which is how they came to share a namespace.
+//
+// THE MODEL IS IN THE PATH, and that is not tidiness. A resource id is stable
+// across an edit — that is what lets a rotated credential arrive under the same
+// key — so an author who changes `kv:` to `vector:` keeps the id, and a path
+// without the model hands the vector store the kv store's bytes. The three
+// engines over one node's store collided the same way, on nothing worse than
+// two resources with the same name.
+//
+// WHAT IT DOES NOT FIX is an id declared, deleted, and declared again as the
+// same model: same path, so rows nobody declared are read by whatever took the
+// id back. Closing that needs durable per-id state, which is itself something
+// to reclaim; what closes it instead is the sweep, and the window is how long
+// the sweep takes to run.
+func (s Spec) Prefix() (string, error) {
+	segments := []string{s.Project, s.Environment, string(s.Type), s.Name}
+	for _, segment := range segments {
+		if segment == "" {
+			return "", ErrUnaddressable
+		}
+		if strings.Contains(segment, "/") {
+			return "", fmt.Errorf("%w: %s", ErrSeparator, strings.Join(segments, "/"))
+		}
+	}
+	return strings.Join(segments, "/") + "/", nil
 }

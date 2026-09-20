@@ -55,12 +55,11 @@ type Store interface {
 const Name = "distributed"
 
 var (
-	ErrNoStore   = errors.New("kv: no store to open onto")
-	ErrNotFound  = errors.New("kv: no such key")
-	ErrNoKey     = errors.New("kv: no key")
-	ErrFull      = errors.New("kv: this database is at its declared size")
-	ErrNoWatch   = errors.New("kv: watch is not served yet")
-	ErrSeparator = errors.New("kv: a project, environment or database name may not contain \"/\"")
+	ErrNoStore  = errors.New("kv: no store to open onto")
+	ErrNotFound = errors.New("kv: no such key")
+	ErrNoKey    = errors.New("kv: no key")
+	ErrFull     = errors.New("kv: this database is at its declared size")
+	ErrNoWatch  = errors.New("kv: watch is not served yet")
 )
 
 // Engine opens kv databases over one store.
@@ -97,7 +96,7 @@ func (e *Engine) Open(_ context.Context, spec database.Spec) (database.Conn, err
 		return nil, fmt.Errorf("kv: this engine backs %s and not %s", database.KV, spec.Type)
 	}
 
-	prefix, err := prefixOf(spec)
+	prefix, err := spec.Prefix()
 	return &conn{store: e.store, prefix: prefix, err: err}, nil
 }
 
@@ -106,17 +105,6 @@ func (e *Engine) Open(_ context.Context, spec database.Spec) (database.Conn, err
 // THE SEPARATOR CHECK IS THE ISOLATION, exactly as it is for a secret: without
 // it a database literally named "../production/ledger" in staging would be a
 // readable path into production's.
-func prefixOf(spec database.Spec) (string, error) {
-	for _, segment := range []string{spec.Project, spec.Environment, spec.Name} {
-		if segment == "" {
-			return "", fmt.Errorf("kv: a database with no project, environment or name addresses nothing")
-		}
-		if strings.Contains(segment, "/") {
-			return "", fmt.Errorf("%w: %s/%s/%s", ErrSeparator, spec.Project, spec.Environment, spec.Name)
-		}
-	}
-	return strings.Join([]string{spec.Project, spec.Environment, spec.Name}, "/") + "/", nil
-}
 
 // conn is one database.
 type conn struct {

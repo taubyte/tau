@@ -158,7 +158,7 @@ func TestThereIsNoLifetime(t *testing.T) {
 	require.NoError(t, c.Put(t.Context(), "k", []byte("v")))
 
 	// The stored bytes are the value and nothing else: no header, no deadline.
-	require.Equal(t, []byte("v"), store.values["shop/prod/ledger/k"])
+	require.Equal(t, []byte("v"), store.values["shop/prod/kv/ledger/k"])
 }
 
 func TestListIsScopedSortedAndStripped(t *testing.T) {
@@ -224,8 +224,8 @@ func TestASeparatorInANameIsRefused(t *testing.T) {
 
 		typed := conn.(database.KVConn)
 		_, err = typed.Get(context.Background(), "k")
-		require.ErrorIs(t, err, kv.ErrSeparator, "%v", s)
-		require.ErrorIs(t, typed.Put(context.Background(), "k", nil), kv.ErrSeparator)
+		require.ErrorIs(t, err, database.ErrSeparator, "%v", s)
+		require.ErrorIs(t, typed.Put(context.Background(), "k", nil), database.ErrSeparator)
 	}
 }
 
@@ -313,10 +313,15 @@ func TestAStoreFailureIsNotAMiss(t *testing.T) {
 
 // TestTheKeyOnTheWireCarriesTheDeployment, which is what keeps one store
 // holding every database on a node.
+//
+// AND THE MODEL, which is what keeps it holding databases of every KIND. A
+// resource id survives an edit, so an author who rewrites `kv:` as `vector:`
+// keeps it — and the three engines sharing this store once shared this path,
+// so the vector store would have opened onto the kv store's bytes.
 func TestTheStoredKeyIsScoped(t *testing.T) {
 	store := newStore()
 	c := open(t, store, spec("shop", "prod", "ledger"))
 	require.NoError(t, c.Put(t.Context(), "order:1", []byte("v")))
 
-	require.Equal(t, []string{"shop/prod/ledger/order:1"}, store.keys())
+	require.Equal(t, []string{"shop/prod/kv/ledger/order:1"}, store.keys())
 }
