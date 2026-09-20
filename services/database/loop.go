@@ -54,6 +54,7 @@ func (s *Service) run(ctx context.Context) {
 
 // reconsider walks this node's copies once.
 func (s *Service) reconsider(ctx context.Context) {
+	floor, known := s.floor.read(ctx)
 	byRegion := s.members()
 	for _, spec := range s.holdings.OnDisk(ctx) {
 		select {
@@ -61,12 +62,12 @@ func (s *Service) reconsider(ctx context.Context) {
 			return
 		default:
 		}
-		s.reconsiderOne(ctx, byRegion, spec)
+		s.reconsiderOne(ctx, byRegion, spec, floor, known)
 	}
 }
 
 // reconsiderOne decides about one copy, and lets go of it if it may.
-func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]placement.Member, spec database.Spec) {
+func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]placement.Member, spec database.Spec, floor int, known bool) {
 	// THE ADDRESS ROUND-TRIPS THROUGH THE SPEC. Name is what storeName wrote,
 	// so reading it back as the id reproduces the same key and the same prefix.
 	at := address{project: spec.Project, environment: spec.Environment, id: spec.Name}
@@ -88,8 +89,16 @@ func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]place
 		return
 	}
 
-	desired, keep := moved(at, byRegion, declaration.regions, s.replication, s.peer, s.region)
+	desired, keep := moved(at, byRegion, declaration.regions, floor, s.peer, s.region)
 	if keep {
+		return
+	}
+
+	// ADDITIVE-ONLY UNTIL THE FLOOR IS KNOWN. A node that has never read what
+	// the cloud declared does not know how many copies a database is supposed
+	// to have, and the whole of release is a comparison against that number.
+	// It keeps serving and keeps what it holds.
+	if !known {
 		return
 	}
 
@@ -100,7 +109,7 @@ func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]place
 		return
 	}
 
-	if !s.mayGo(ctx, at, desired) {
+	if !s.mayGo(ctx, at, desired, floor) {
 		s.own.stay(key)
 		return
 	}
@@ -115,7 +124,7 @@ func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]place
 }
 
 // mayGo is this node's own digest, compared against its replacements'.
-func (s *Service) mayGo(ctx context.Context, at address, desired map[string][]string) bool {
+func (s *Service) mayGo(ctx context.Context, at address, desired map[string][]string, floor int) bool {
 	kv, err := s.kv(ctx, at)
 	if err != nil {
 		return false
@@ -124,7 +133,7 @@ func (s *Service) mayGo(ctx context.Context, at address, desired map[string][]st
 	if err != nil {
 		return false
 	}
-	return release(ctx, at, keys, sum, desired, s.replication, s.ask)
+	return release(ctx, at, keys, sum, desired, floor, s.ask)
 }
 
 // ask is one peer's answer about one database.

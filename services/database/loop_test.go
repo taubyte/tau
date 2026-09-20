@@ -13,7 +13,7 @@ import (
 )
 
 // sweeping builds a service that holds one database and can see a fleet.
-func sweeping(t *testing.T, holds *says, fleet map[string][]placement.Member, region string) *Service {
+func sweeping(t *testing.T, holds *says, at map[string][]placement.Member, region string) *Service {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -27,11 +27,10 @@ func sweeping(t *testing.T, holds *says, fleet map[string][]placement.Member, re
 
 	s, err := New(server,
 		WithEngines(registry),
-		WithRegister(&published{revision: 1, object: compiled()}),
+		WithRegister(declaringFloor(t, compiled(), 1)),
 		WithHoldings(holds),
-		WithMembers(func() map[string][]placement.Member { return fleet }),
+		WithMembers(func() map[string][]placement.Member { return at }),
 		WithRegion(region),
-		WithReplication(1),
 		WithIdle(time.Hour))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })

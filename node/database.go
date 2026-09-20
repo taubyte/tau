@@ -629,7 +629,6 @@ func (n *Node) openDatabase(ctx context.Context) error {
 		// the only thing that can let go of a copy.
 		databaseService.WithHoldings(nodeHoldings{d: &databases{node: n}}),
 		databaseService.WithRegion(n.cfg.Region),
-		databaseService.WithReplication(n.cfg.Replication),
 
 		// THE FLEET AS THIS NODE SEES IT, asked each sweep rather than taken
 		// once: a snapshot at construction would place every database on the

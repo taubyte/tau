@@ -91,9 +91,9 @@ type Service struct {
 	peer   string
 	region string
 
-	// replication is the floor: how many nodes hold each database, in EACH
-	// pinned region.
-	replication int
+	// floor is how many nodes hold each database in EACH pinned region, read
+	// from what the cloud published rather than from this node's config.
+	floor *fleetFloor
 
 	// sweep is how often this node reconsiders what it holds.
 	sweep     time.Duration
@@ -124,10 +124,9 @@ type options struct {
 	idle     time.Duration
 	holdings Holdings
 
-	members     func() map[string][]placement.Member
-	region      string
-	replication int
-	sweep       time.Duration
+	members func() map[string][]placement.Member
+	region  string
+	sweep   time.Duration
 
 	serverOptions []rpc.ServerOption
 }
@@ -150,15 +149,6 @@ func WithMembers(members func() map[string][]placement.Member) Option {
 func WithRegion(region string) Option {
 	return func(o *options) error {
 		o.region = region
-		return nil
-	}
-}
-
-// WithReplication is the floor on how many nodes hold each database, in EACH
-// pinned region. Zero means DefaultReplication.
-func WithReplication(n int) Option {
-	return func(o *options) error {
-		o.replication = n
 		return nil
 	}
 }
@@ -274,10 +264,6 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 		return nil, err
 	}
 
-	floor, err := Config{Replication: o.replication}.withDefaults()
-	if err != nil {
-		return nil, err
-	}
 	sweep := o.sweep
 	if sweep == 0 {
 		sweep = DefaultSweep
@@ -291,7 +277,7 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 		members:       o.members,
 		peer:          h.ID().String(),
 		region:        o.region,
-		replication:   floor.Replication,
+		floor:         &fleetFloor{from: fleetFrom(o.source)},
 		sweep:         sweep,
 		own:           newHoldings(),
 		serverOptions: o.serverOptions,
@@ -485,4 +471,15 @@ func (l *localOne) Keys(ctx context.Context, prefix string) ([]string, error) {
 		return nil, err
 	}
 	return kv.List(ctx, prefix)
+}
+
+// fleetFrom is the register's fleet half, when it has one. A source that only
+// resolves projects is a legitimate thing to build this service over — it reads
+// the default and never changes its mind.
+func fleetFrom(source register.Registry) fleetSource {
+	from, ok := source.(fleetSource)
+	if !ok {
+		return nil
+	}
+	return from
 }

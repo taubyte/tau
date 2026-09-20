@@ -13,6 +13,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/database"
+	"github.com/taubyte/tau/pkg/fleet"
 	databasev1 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v1"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v1/databasev1connect"
 	"github.com/taubyte/tau/pkg/register"
@@ -77,6 +78,10 @@ func compiled() []byte {
 type published struct {
 	revision uint64
 	object   []byte
+
+	// fleetDoc is what this cloud declares about itself, or nil for a cloud
+	// that has declared nothing — which every node reads as the default.
+	fleetDoc []byte
 }
 
 func (p *published) Resolve(context.Context, string, string) (register.Pointer, error) {
@@ -84,10 +89,30 @@ func (p *published) Resolve(context.Context, string, string) (register.Pointer, 
 }
 
 func (p *published) Object(_ context.Context, id register.ObjectID) ([]byte, error) {
-	if id != register.IDOf(p.object) {
-		return nil, fmt.Errorf("no such object")
+	switch id {
+	case register.IDOf(p.object):
+		return p.object, nil
+	case register.IDOf(p.fleetDoc):
+		if p.fleetDoc != nil {
+			return p.fleetDoc, nil
+		}
 	}
-	return p.object, nil
+	return nil, fmt.Errorf("no such object")
+}
+
+func (p *published) ResolveFleet(context.Context) (register.Pointer, error) {
+	if p.fleetDoc == nil {
+		return register.Pointer{}, fmt.Errorf("%w: the fleet", register.ErrNotPublished)
+	}
+	return register.Pointer{Object: register.IDOf(p.fleetDoc), Revision: 1}, nil
+}
+
+// declaring is a cloud that has published a floor.
+func declaringFloor(t *testing.T, object []byte, replication int) *published {
+	t.Helper()
+	doc, err := fleet.Encode(fleet.Fleet{Replication: replication})
+	require.NoError(t, err)
+	return &published{revision: 1, object: object, fleetDoc: doc}
 }
 
 // serving is the service on one host and a client on another, over mocknet.

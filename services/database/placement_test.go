@@ -10,7 +10,7 @@ import (
 )
 
 // fleet is nodes in one unnamed region, for the cases regions do not decide.
-func fleet(ids ...string) map[string][]placement.Member {
+func oneRegionFleet(ids ...string) map[string][]placement.Member {
 	return map[string][]placement.Member{anyRegion: members(ids...)}
 }
 
@@ -31,7 +31,7 @@ func at(project, id string) address {
 
 // TestADatabaseLandsOnTheReplicationFloor.
 func TestADatabaseLandsOnTheReplicationFloor(t *testing.T) {
-	members := fleet("n1", "n2", "n3", "n4", "n5")
+	members := oneRegionFleet("n1", "n2", "n3", "n4", "n5")
 
 	held := holders(at("shop", "QmSessions"), members, unpinned, DefaultReplication)[anyRegion]
 	require.Len(t, held, DefaultReplication, "the default is two, because one is not replication")
@@ -53,7 +53,7 @@ func TestADatabaseLandsOnTheReplicationFloor(t *testing.T) {
 // whoever wrote it; placing on it would put two tenants' data on one pair of
 // machines because they picked the same word.
 func TestTwoDatabasesInTwoProjectsDoNotShareASet(t *testing.T) {
-	members := fleet("n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8")
+	members := oneRegionFleet("n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8")
 
 	shop := holders(at("shop", "QmTokens"), members, unpinned, 2)[anyRegion]
 	books := holders(at("books", "QmTokens"), members, unpinned, 2)[anyRegion]
@@ -68,8 +68,8 @@ func TestTwoDatabasesInTwoProjectsDoNotShareASet(t *testing.T) {
 // holders do not budge. A naive hash-and-mod reshuffles the whole key space on
 // every restart, which is a fleet-wide data movement storm.
 func TestANodeGoingAwayMovesOnlyWhatItHeld(t *testing.T) {
-	before := fleet("n1", "n2", "n3", "n4", "n5")
-	after := fleet("n1", "n2", "n3", "n4")
+	before := oneRegionFleet("n1", "n2", "n3", "n4", "n5")
+	after := oneRegionFleet("n1", "n2", "n3", "n4")
 
 	var moved, untouched int
 	for _, id := range []string{"QmA", "QmB", "QmC", "QmD", "QmE", "QmF", "QmG", "QmH"} {
@@ -93,7 +93,7 @@ func TestANodeGoingAwayMovesOnlyWhatItHeld(t *testing.T) {
 // about itself: a node can lie itself OUT of a set and never into one.
 func TestANodeThatDeclinesIsSkipped(t *testing.T) {
 	all := members("n1", "n2", "n3", "n4")
-	held := holders(at("shop", "QmSessions"), fleet("n1", "n2", "n3", "n4"), unpinned, 2)[anyRegion]
+	held := holders(at("shop", "QmSessions"), oneRegionFleet("n1", "n2", "n3", "n4"), unpinned, 2)[anyRegion]
 
 	declining := make([]placement.Member, len(all))
 	copy(declining, all)
@@ -111,22 +111,8 @@ func TestANodeThatDeclinesIsSkipped(t *testing.T) {
 // TestAFleetSmallerThanTheFloorIsHeldByAllOfIt, rather than refusing: a
 // two-node cloud asked for three copies keeps two, which is what it has.
 func TestAFleetSmallerThanTheFloorIsHeldByAllOfIt(t *testing.T) {
-	members := fleet("n1", "n2")
+	members := oneRegionFleet("n1", "n2")
 	require.Len(t, holders(at("shop", "QmSessions"), members, unpinned, 3)[anyRegion], 2)
-}
-
-// TestTheReplicationFloorIsTwoUnlessAnOperatorSaysOtherwise.
-func TestTheReplicationFloorIsTwoUnlessAnOperatorSaysOtherwise(t *testing.T) {
-	filled, err := Config{}.withDefaults()
-	require.NoError(t, err)
-	require.Equal(t, 2, filled.Replication)
-
-	filled, err = Config{Replication: 3}.withDefaults()
-	require.NoError(t, err)
-	require.Equal(t, 3, filled.Replication)
-
-	_, err = Config{Replication: -1}.withDefaults()
-	require.ErrorContains(t, err, "a database nobody holds is not kept")
 }
 
 func contains(ids []string, id string) bool {

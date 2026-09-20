@@ -1,9 +1,6 @@
 package database
 
-import (
-	"fmt"
-	"time"
-)
+import "time"
 
 // config.go is what an operator declares about a database node.
 //
@@ -17,8 +14,12 @@ import (
 // the two do not interact: size bounds what one database may grow to, this
 // bounds how many copies of it exist.
 
-// DefaultReplication is how many nodes hold a kv database when an operator says
-// nothing.
+// DefaultReplication is how many nodes hold a kv database when the cloud has
+// published no fleet document.
+//
+// EVERY NODE REACHES IT THE SAME WAY, which is what keeps a cloud that has
+// declared nothing in agreement with itself: a definitive absence read by two
+// nodes is the same absence.
 //
 // TWO, BECAUSE ONE IS NOT REPLICATION. A single copy is lost with the node that
 // holds it, and the whole reason a database service exists rather than a
@@ -38,25 +39,6 @@ const DefaultReplication = 2
 // notices one.
 const DefaultSweep = 30 * time.Second
 
-// Config is what an operator declared about this node's databases.
-type Config struct {
-	// Replication is the FLOOR on how many nodes hold each kv database. Zero
-	// means DefaultReplication.
-	//
-	// IT IS A FLOOR AND NOT A TARGET. Placement puts a database on exactly this
-	// many, and the maintenance loop brings a new replica online when one of
-	// them goes — so the number is what the cloud restores to, not a ceiling it
-	// drifts under.
-	Replication int
-}
-
-// withDefaults fills what an operator left out and refuses what cannot be met.
-func (c Config) withDefaults() (Config, error) {
-	if c.Replication == 0 {
-		c.Replication = DefaultReplication
-	}
-	if c.Replication < 1 {
-		return Config{}, fmt.Errorf("database: replication %d: a database nobody holds is not kept", c.Replication)
-	}
-	return c, nil
-}
+// The floor itself is NOT here. It is a property of the fleet, and a fleet
+// property configured per node is two nodes disagreeing forever — see
+// pkg/fleet and fleet.go.
