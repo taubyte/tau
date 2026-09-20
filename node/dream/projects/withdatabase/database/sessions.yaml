@@ -1,0 +1,6 @@
+id: QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfG
+description: tau's own kv, so the whole round trip is the platform's rather than somebody else's server
+kv:
+    distributed:
+        size: 64MB
+        consensus: crdt

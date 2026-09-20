@@ -175,3 +175,43 @@ func TestTheSmallestProjectAnswers(t *testing.T) {
 	require.Equal(t, 201, posted.Code, "and a POST is a different answer from the same component")
 	require.Equal(t, "/orders", posted.Header().Get("x-path"))
 }
+
+func kitchenSinkWASM(t *testing.T) []byte {
+	t.Helper()
+	code, err := os.ReadFile(filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", "cacher.wasm"))
+	require.NoError(t, err, "run `cargo component build --release` in pkg/invoke/wasm/fixtures/cacher")
+	return code
+}
+
+// TestAProjectThatKeepsSomething.
+//
+// The smallest project where a request changes state that outlives it: one
+// function, one kv database it is granted, one route. The guest picks its
+// operation off the path and carries the value in the body, so a PUT and a GET
+// are two requests through the whole platform — gateway, placement, the tier,
+// the grant, and tau's own replicated store — rather than two calls to a fake.
+//
+// WHAT THIS CATCHES THAT A UNIT TEST CANNOT: the grant has to survive being
+// compiled, published, resolved into an invoke.Spec and handed to the tier under
+// the label the AUTHOR wrote. `sessions` is that label, and the guest asks for
+// it by name; a break anywhere along it is a refusal here.
+func TestAProjectThatKeepsSomething(t *testing.T) {
+	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
+
+	r := deploy(t, "withdatabase", "keep.example.com", kitchenSinkWASM(t))
+
+	// A WRITE IS 204 AND A REFUSAL IS 403, so the status says which arm of the
+	// host interface answered rather than only that something did.
+	stored := r.ask(t, http.MethodPost, "/kv-put/sessions/token-1")
+	require.Equal(t, 204, stored.Code, "the write was refused: %s", stored.Body.String())
+
+	read := r.ask(t, http.MethodGet, "/kv-get/sessions/token-1")
+	require.Equal(t, 200, read.Code, "the read was refused: %s", read.Body.String())
+	require.Equal(t, "body", read.Body.String(), "what came back is not what went in")
+
+	// AND A KEY NOBODY WROTE IS A MISS, which is its own arm of the interface
+	// rather than an empty success.
+	missing := r.ask(t, http.MethodGet, "/kv-get/sessions/never-written")
+	require.Equal(t, 404, missing.Code)
+	require.NotEqual(t, "body", missing.Body.String())
+}
