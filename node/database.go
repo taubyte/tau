@@ -15,7 +15,6 @@ import (
 	vecengine "github.com/taubyte/tau/pkg/database/engines/vector"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/raft"
 	databaseService "github.com/taubyte/tau/services/database"
 )
 
@@ -616,21 +615,18 @@ func (n *Node) openDatabase(ctx context.Context) error {
 	// up yet — a group opened at construction sits with no known peers, aborts
 	// its election, and answers every write with "no leader". node/queue.go
 	// opens its own in the background for the same reason.
-	// NO RAFT GROUP IS OPENED HERE, and that is a decision rather than an
-	// omission. cluster-service.md settled it on 2026-08-31: a raft group is a
-	// CONSISTENCY DOMAIN, owned by a cluster service that can scope it to a
-	// region and hold policy over who joins — explicitly NOT one group per
-	// service type, which is what a node opening its own would be. A node runs
-	// zero to many services; five of them opening five groups is the shape that
-	// note exists to refuse.
+	// THIS NODE OWNS NO CONSISTENCY DOMAIN, and that is a decision rather than
+	// an omission. cluster-service.md settled it on 2026-08-31: a raft group is
+	// a CONSISTENCY DOMAIN, owned by a service that can scope it to a region
+	// and hold policy over who joins — explicitly NOT one group per service
+	// type, which is what a node opening its own would be. A node runs zero to
+	// many services; five of them opening five groups is the shape that note
+	// exists to refuse.
 	//
-	// So this hands the service no cluster, no raft engine is registered, and a
-	// database declaring `consensus: raft` is refused BY NAME until there is
-	// something whose job it is to own the group. raftstore.go is the half that
-	// is ready: it is a store over a raft.Cluster somebody else supplies.
-	var cluster func() (raft.Cluster, error)
-
-	registry, err := databaseService.Engines(ctx, store, cluster)
+	// So the service is handed no Clusters, no raft engine is registered, and a
+	// database declaring `consensus: raft` is refused BY NAME until something
+	// whose job it is owns the group. raftstore.go is the half that is ready.
+	registry, err := databaseService.Engines(ctx, store, nil)
 	if err != nil {
 		return fmt.Errorf("node: %s: %w", Database, err)
 	}

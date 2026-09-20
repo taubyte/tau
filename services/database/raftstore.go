@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/taubyte/tau/pkg/raft"
@@ -46,28 +45,27 @@ import (
 // arriving in its sharpest form. Where an engine IS decides who can answer, and
 // for raft the answer is exactly one node at a time.
 type raftStore struct {
-	// open is the group, on first use.
+	// groups is who owns the consistency domain this database's rows live in.
 	//
-	// LAZY BECAUSE A CLUSTER OPENED AT CONSTRUCTION NEVER ELECTS. A node builds
-	// its services before it starts them, and raft finds its peers over a swarm
-	// that is not up yet — so a group opened then sits with no known peers and
-	// aborts its election, and every write after that is told there is no
-	// leader. pkg/queue's own group is opened in the background for exactly
-	// this reason.
-	open    func() (raft.Cluster, error)
+	// ASKED ON FIRST USE AND NOT AT CONSTRUCTION, because a node builds its
+	// services before it starts them and raft finds its peers over a swarm that
+	// is not up yet — a group opened then has no known peers and aborts its
+	// election. Whoever implements Clusters decides whether the ask blocks;
+	// what this file guarantees is that it happens no earlier than it must.
+	groups  Clusters
 	timeout time.Duration
-
-	once    sync.Once
-	cluster raft.Cluster
-	err     error
 }
 
-// group resolves the cluster once. A failure is remembered, because a node
-// whose raft will not open is not a node the next request will do better on —
-// unlike a database, whose store is somebody else's and may come back.
-func (s *raftStore) group() (raft.Cluster, error) {
-	s.once.Do(func() { s.cluster, s.err = s.open() })
-	return s.cluster, s.err
+// group is the cluster for this store's domain.
+//
+// IT ASKS EVERY TIME AND MEMOIZES NOTHING. Holding the group here would be this
+// store deciding how long a consistency domain lives, which is the one thing it
+// is not entitled to decide — a group can be transferred, closed by policy or
+// re-formed in another region, and a cached handle would keep answering from
+// the one it first saw. Whoever implements Clusters owns that lifetime and the
+// caching that goes with it, exactly as services/database owns its engines.
+func (s *raftStore) group(ctx context.Context) (raft.Cluster, error) {
+	return s.groups.Cluster(ctx, Domain)
 }
 
 // ErrNotLeading is a raft database reached on a node that is not its leader. It
@@ -79,7 +77,7 @@ func (s *raftStore) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	if err := s.current(ctx); err != nil {
 		return nil, false, err
 	}
-	cluster, err := s.group()
+	cluster, err := s.group(ctx)
 	if err != nil {
 		return nil, false, err
 	}
@@ -91,7 +89,7 @@ func (s *raftStore) Put(ctx context.Context, key string, value []byte) error {
 	if err := s.leading(ctx); err != nil {
 		return err
 	}
-	cluster, err := s.group()
+	cluster, err := s.group(ctx)
 	if err != nil {
 		return err
 	}
@@ -108,7 +106,7 @@ func (s *raftStore) Delete(ctx context.Context, key string) error {
 	if err := s.leading(ctx); err != nil {
 		return err
 	}
-	cluster, err := s.group()
+	cluster, err := s.group(ctx)
 	if err != nil {
 		return err
 	}
@@ -125,7 +123,7 @@ func (s *raftStore) List(ctx context.Context, prefix string) ([]string, error) {
 	if err := s.current(ctx); err != nil {
 		return nil, err
 	}
-	cluster, err := s.group()
+	cluster, err := s.group(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +142,7 @@ func (s *raftStore) List(ctx context.Context, prefix string) ([]string, error) {
 // still refuses, and the refusal is the caller's cue to ask that one instead.
 // Which node that is, is placement's question and not this store's.
 func (s *raftStore) leading(ctx context.Context) error {
-	cluster, err := s.group()
+	cluster, err := s.group(ctx)
 	if err != nil {
 		return err
 	}
@@ -174,7 +172,7 @@ func (s *raftStore) current(ctx context.Context) error {
 	if err := s.leading(ctx); err != nil {
 		return err
 	}
-	cluster, err := s.group()
+	cluster, err := s.group(ctx)
 	if err != nil {
 		return err
 	}

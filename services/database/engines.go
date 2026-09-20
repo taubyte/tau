@@ -40,13 +40,40 @@ type raftEngine struct{ *kvengine.Engine }
 
 func (raftEngine) Name() string { return servedConsensus["raft"] }
 
+// Clusters hands out the raft group a consistency domain lives in.
+//
+// IT IS AN INTERFACE AND NOT A FUNCTION because it names the thing that will
+// implement it. cluster-service.md settled on 2026-08-31 that a raft group is a
+// consistency domain owned by a service — scoped to a region, holding policy
+// over who joins — and this is the shape of the call that service will answer.
+// A `func(string) (raft.Cluster, error)` passed down would have been the same
+// call with nothing to look up.
+//
+// NIL MEANS THIS CLOUD KEEPS NO RAFT, which is not a failure: no raft engine is
+// registered, and a database that declared `consensus: raft` is refused by name
+// rather than served by merge.
+type Clusters interface {
+	// Cluster is the group for one domain, opened if this is the first ask.
+	// The domain is the consistency boundary's name and not a service's — two
+	// services making one atomic decision share one.
+	Cluster(ctx context.Context, domain string) (raft.Cluster, error)
+}
+
+// Domain is the consistency domain a database's rows live in.
+//
+// ONE DOMAIN FOR EVERY DATABASE ON THIS CLOUD IS A PLACEHOLDER, and a poor one:
+// the right granularity is per database at least, so two projects cannot stall
+// each other's writes. It is named here so the day a cluster service exists,
+// what has to change is this constant and not every caller.
+const Domain = "database"
+
 // Engines builds the registry a database node serves from.
 //
 // A NODE CAN SERVE ONE, THE OTHER OR BOTH, and which it serves is which stores
 // the composer has: a node with no raft cluster cannot keep a raft database,
 // and says so by not registering the engine rather than by accepting one and
 // merging its writes.
-func Engines(ctx context.Context, crdt kvengine.Store, cluster func() (raft.Cluster, error)) (*database.Registry, error) {
+func Engines(ctx context.Context, crdt kvengine.Store, groups Clusters) (*database.Registry, error) {
 	registry := database.NewRegistry()
 
 	if crdt != nil {
@@ -59,8 +86,8 @@ func Engines(ctx context.Context, crdt kvengine.Store, cluster func() (raft.Clus
 		}
 	}
 
-	if cluster != nil {
-		engine, err := kvengine.New(&raftStore{open: cluster, timeout: applyTimeout})
+	if groups != nil {
+		engine, err := kvengine.New(&raftStore{groups: groups, timeout: applyTimeout})
 		if err != nil {
 			return nil, err
 		}
