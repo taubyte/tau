@@ -129,6 +129,25 @@ func (c *crons) step(ctx context.Context, now time.Time) int {
 		return 0
 	}
 
+	// AND LEADING IS NOT THE SAME AS KNOWING. A node that has just won an
+	// election holds committed entries it has not applied, and Get reads applied
+	// state — so without this, a fresh leader reads the position its predecessor
+	// already advanced and fires the slot a second time. The vocabulary's
+	// example for this path is a billing run where every period must happen
+	// exactly once.
+	//
+	// The other direction is worse and quieter: a fresh leader that misses the
+	// FIRST-SIGHT record treats the schedule as new, moves the position to now,
+	// and the slot in between never fires on any node, ever.
+	//
+	// ONCE PER CYCLE COVERS EVERY SCHEDULE, and it belongs behind the leader
+	// check because Barrier is leader-only itself. pkg/queue pays for the same
+	// thing in prepare(), and node/log.go before reading a head.
+	if err := cluster.Barrier(applyTimeout); err != nil {
+		logger.Warnf("cron: reading the fleet's schedule positions: %s", err)
+		return 0
+	}
+
 	var fired int
 	for _, schedule := range c.node.worker.Schedules(ctx) {
 		if schedule.Refused != "" {

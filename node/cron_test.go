@@ -3,11 +3,13 @@ package node
 import (
 	"encoding/json"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -383,4 +385,82 @@ func TestSlotAtIsTheMostRecentSlotSincePast(t *testing.T) {
 	slot, ok = slotAt(scheduleFor("0 3 * * *", ""), at(2, 30), at(3, 0))
 	require.True(t, ok)
 	require.Equal(t, at(3, 0), slot)
+}
+
+// unapplied is a node that has just won an election: entries its predecessor
+// committed are in its log and not yet in its state. Get answers the stale
+// applied view until Barrier is called, which is what Barrier is for —
+// pkg/raft's own doc says Get "may return stale data" and "for strong
+// consistency, call Barrier() first".
+type unapplied struct {
+	*raft.MockCluster
+
+	mu      sync.Mutex
+	stale   map[string][]byte
+	applied bool
+}
+
+func withUnapplied(stale map[string][]byte) *unapplied {
+	return &unapplied{MockCluster: raft.NewMockCluster(), stale: stale}
+}
+
+func (u *unapplied) Get(key string) ([]byte, bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	if !u.applied {
+		value, held := u.stale[key]
+		return value, held
+	}
+	return u.MockCluster.Get(key)
+}
+
+func (u *unapplied) Barrier(d time.Duration) error {
+	u.mu.Lock()
+	u.applied = true
+	u.mu.Unlock()
+	return u.MockCluster.Barrier(d)
+}
+
+// TestAFreshLeaderDoesNotFireASlotItsPredecessorAlreadyFired.
+//
+// Leading is not the same as knowing. A node that has just won an election
+// holds committed entries it has not applied, and a schedule's position is read
+// out of applied state — so without a barrier a new leader reads the position
+// as its PREDECESSOR left it one slot ago, finds the current slot owing, and
+// runs somebody's job a second time. Nothing errors and the position afterwards
+// is exactly what it should be, so nothing anywhere ever notices.
+//
+// The vocabulary's example for this path is a billing run where every period
+// must happen exactly once.
+func TestAFreshLeaderDoesNotFireASlotItsPredecessorAlreadyFired(t *testing.T) {
+	answers := &answering{name: "wasm", status: 200}
+	key := pastPrefix + "shop/prod/" + cronID
+
+	// THE PREDECESSOR CLAIMED 03:00 AND DIED. Its entry is committed, so it is
+	// in this node's log; this node's applied state still says 02:00.
+	cluster := withUnapplied(map[string][]byte{
+		key: []byte(strconv.FormatInt(at(2, 0).Unix(), 10)),
+	})
+	require.NoError(t, cluster.MockCluster.Set(key,
+		[]byte(strconv.FormatInt(at(3, 0).Unix(), 10)), time.Second))
+
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+		WithRuntimes(answers),
+		WithRaft(func(string) (raft.Cluster, error) { return cluster, nil }))
+	require.NoError(t, n.Start(t.Context()))
+
+	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1,
+		Compiled: withCron(schedule{Spec: "0 3 * * *"}),
+	})
+	require.NoError(t, err)
+	_, err = n.Worker().Resolve(t.Context(), workerTarget())
+	require.NoError(t, err)
+	<-n.work.forming
+
+	c := &crons{node: n}
+	require.Equal(t, 0, c.step(t.Context(), at(3, 0).Add(5*time.Second)),
+		"the 03:00 slot was already claimed by the node this one replaced")
+	require.Empty(t, answers.seen(), "somebody's job ran twice")
 }
