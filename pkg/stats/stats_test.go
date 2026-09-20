@@ -324,3 +324,35 @@ func TestAddressesAreCarriedAndCopied(t *testing.T) {
 		[]string{"203.0.113.7", "2001:db8::1", "edge.example.com"},
 		v.Route("shop", time.Minute)[0].Addresses)
 }
+
+// TestByRegionIsTheMemberSetAPlacementRunsOver.
+//
+// ONE PLACEMENT PER REGION IS WHAT A PIN MEANS: a database pinned to eu and us
+// has copies in BOTH, and the floor is how many in EACH — so the sets have to
+// come out separate rather than as one list carrying a label.
+func TestByRegionGroupsFreshNodes(t *testing.T) {
+	now := time.Unix(0, 0)
+	v, err := New(Options{Now: func() time.Time { return now }, Fresh: time.Minute})
+	require.NoError(t, err)
+
+	for _, n := range []struct{ peer, region string }{
+		{"eu1", "eu"}, {"eu2", "eu"}, {"us1", "us"}, {"nowhere", ""},
+	} {
+		require.NoError(t, v.Observe(Report{Peer: n.peer, Load: 0.1, Ready: true, Region: n.region}))
+	}
+
+	byRegion := v.ByRegion(time.Minute)
+	require.Len(t, byRegion["eu"], 2)
+	require.Len(t, byRegion["us"], 1)
+
+	// A NODE THAT WILL NOT SAY LANDS UNDER "", which is a key and never a region
+	// name — so a caller can tell "the cloud decides" from a region an operator
+	// actually declared.
+	require.Len(t, byRegion[""], 1)
+	require.Equal(t, "nowhere", byRegion[""][0].Peer)
+
+	// FRESH ONLY: a node that stopped reporting is one whose region nobody can
+	// vouch for any more, and placing a copy on it is placing it on a row.
+	now = now.Add(2 * time.Minute)
+	require.Empty(t, v.ByRegion(time.Minute), "a stale node was still placeable")
+}

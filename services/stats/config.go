@@ -102,6 +102,11 @@ type Config struct {
 	// Forget is how long a silent peer is remembered. Default 20x Interval,
 	// and it must exceed Fresh.
 	Forget time.Duration
+
+	// Region is where this node is, broadcast with every report. Empty means a
+	// node that will not say. See stats.Report.Region for why this one field is
+	// different in kind from everything else a node reports about itself.
+	Region string
 }
 
 // Option injects what this service is built from.

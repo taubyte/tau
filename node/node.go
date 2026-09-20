@@ -254,7 +254,13 @@ func (n *Node) openStats() error {
 		options = append(options, stats.WithClock(n.opts.now))
 	}
 
-	svc, err := stats.New(n.opts.host, n.cfg.Stats, options...)
+	// THE NODE'S REGION IS THE ONE STATS BROADCASTS. It is operator config on
+	// both sides, and carrying it here rather than asking the reporter for it
+	// keeps "where this node is" out of the per-tick measurement.
+	statsConfig := n.cfg.Stats
+	statsConfig.Region = n.cfg.Region
+
+	svc, err := stats.New(n.opts.host, statsConfig, options...)
 	if err != nil {
 		return err
 	}

@@ -173,6 +173,7 @@ func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
 				Ready:       r.GetReady(),
 				Addresses:   r.GetAddresses(),
 				Sockets:     socketsOf(r.GetSockets()),
+				Region:      r.GetRegion(),
 			})
 		}
 	}
@@ -222,6 +223,11 @@ func (s *Service) report(ctx context.Context) {
 		Ready:       snap.Ready,
 		Addresses:   snap.Addresses,
 		Sockets:     wireSockets(snap.Sockets),
+
+		// NOT FROM THE SNAPSHOT. Where a node is, is what an operator
+		// configured, not something it measures each tick — so it sits beside
+		// the peer id rather than travelling with the load.
+		Region: s.cfg.Region,
 	})
 	if err != nil {
 		return
@@ -239,6 +245,7 @@ func (s *Service) report(ctx context.Context) {
 		Ready:       snap.Ready,
 		Addresses:   snap.Addresses,
 		Sockets:     snap.Sockets,
+		Region:      s.cfg.Region,
 	})
 
 	s.opts.bus.Publish(ctx, b)

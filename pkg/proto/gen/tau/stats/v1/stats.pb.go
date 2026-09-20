@@ -130,7 +130,26 @@ type Report struct {
 	// listener, which is why it is reported: it is a fact about this node and
 	// this run, it changes when the node restarts, and the only way a client
 	// learns it is the SRV record built out of this.
-	Sockets       []*Socket `protobuf:"bytes,7,rep,name=sockets,proto3" json:"sockets,omitempty"`
+	Sockets []*Socket `protobuf:"bytes,7,rep,name=sockets,proto3" json:"sockets,omitempty"`
+	// region is where this node is, as one of the opaque labels a project writes.
+	// Empty means a node that will not say.
+	//
+	// IT IS THE ONE FIELD HERE A NODE CAN LIE ITSELF *INTO* SOMETHING WITH, and
+	// that is worth stating rather than discovering. Everything else a report
+	// carries is a claim about capacity: a node that overstates `load` or
+	// understates `serving` only ever takes LESS traffic, and pkg/placement is
+	// built on exactly that asymmetry — a member may decline, and can never raise
+	// its own score. A region is different, because placement groups members by
+	// it: a node that says `eu` joins the set competing for EU-pinned data, so a
+	// wrong label is a node holding data somebody pinned for a legal reason.
+	//
+	// It is reported anyway, because nothing else knows: the vocabulary never
+	// enumerates regions, so there is no registry to look a node up in and the
+	// operator's word is the only source there is. What that buys is an operator
+	// typo becoming a residency breach with nothing to catch it, and closing that
+	// means admitting a node's region rather than hearing it — which is a
+	// membership change, not a field.
+	Region        string `protobuf:"bytes,8,opt,name=region,proto3" json:"region,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -212,6 +231,13 @@ func (x *Report) GetSockets() []*Socket {
 		return x.Sockets
 	}
 	return nil
+}
+
+func (x *Report) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
 }
 
 // Socket is one name a client can open a connection to, and where.
@@ -300,7 +326,7 @@ var File_tau_stats_v1_stats_proto protoreflect.FileDescriptor
 
 const file_tau_stats_v1_stats_proto_rawDesc = "" +
 	"\n" +
-	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\xd0\x01\n" +
+	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\xe8\x01\n" +
 	"\x06Report\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12 \n" +
 	"\vincarnation\x18\x02 \x01(\x04R\vincarnation\x12\x12\n" +
@@ -308,7 +334,8 @@ const file_tau_stats_v1_stats_proto_rawDesc = "" +
 	"\aserving\x18\x04 \x03(\tR\aserving\x12\x14\n" +
 	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x1c\n" +
 	"\taddresses\x18\x06 \x03(\tR\taddresses\x12.\n" +
-	"\asockets\x18\a \x03(\v2\x14.tau.stats.v1.SocketR\asockets\"j\n" +
+	"\asockets\x18\a \x03(\v2\x14.tau.stats.v1.SocketR\asockets\x12\x16\n" +
+	"\x06region\x18\b \x01(\tR\x06region\"j\n" +
 	"\x06Socket\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x1c\n" +
