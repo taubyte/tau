@@ -25,12 +25,38 @@ import (
 // by digest or by heads. The fleet's promise is the floor, and the case where
 // the floor was exceeded is a backup question.
 //
-// # One direction, deliberately
+// # Two sweeps, and only one of them can delete anything
 //
-// The sweep RELEASES and never acquires. Acquiring is opening, which happens
-// when something asks, and the gate below is what makes that safe: nobody lets
-// go until somebody else has it, so a database is never held by nobody while it
-// waits to be asked for.
+// REPAIR asks the OTHER desired holders whether they have a database this node
+// holds and should keep. A peer that says it does not is nudged — and it opens
+// only on its own computation, never on this node's word, which is the decline
+// asymmetry in reverse. Nothing is deleted, so nothing has to be gated.
+//
+// RELEASE is the other direction, for a database this node should no longer
+// hold, and it is gated on the digest — see maintain.go.
+//
+// WHY REPAIR EXISTS AT ALL, given "nobody lets go until somebody else has it":
+// that argument covers MOVES and not node LOSS. A crashed node's copies are
+// simply gone, and opening-on-demand restores the floor only for databases
+// somebody happens to ask for. Repair is what notices.
+
+// pending is how many of this node's databases are below their floor as far as
+// it can tell: a co-holder that answered it does not hold one, or could not be
+// reached at all. It is ONE NUMBER on purpose — the fleet figure is the sum over
+// fresh nodes, so it costs O(1) per node per interval, and anybody who wants to
+// know WHICH asks this node directly.
+func (s *Service) pending() int {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	return s.pendingAt
+}
+
+// FleetRevision is the revision of the cloud document this node last computed
+// with. A node behind is behind by a number every other node can see.
+func (s *Service) FleetRevision() uint64 { return s.floor.revisionSeen() }
+
+// Pending is how many databases this node holds that are below their floor.
+func (s *Service) Pending() int { return s.pending() }
 
 // run reconsiders what this node holds, on an interval, until the context ends.
 func (s *Service) run(ctx context.Context) {
@@ -56,18 +82,27 @@ func (s *Service) run(ctx context.Context) {
 func (s *Service) reconsider(ctx context.Context) {
 	floor, known := s.floor.read(ctx)
 	byRegion := s.members()
+
+	short := 0
 	for _, spec := range s.holdings.OnDisk(ctx) {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		s.reconsiderOne(ctx, byRegion, spec, floor, known)
+		if s.reconsiderOne(ctx, byRegion, spec, floor, known) {
+			short++
+		}
 	}
+
+	s.pendingMu.Lock()
+	s.pendingAt = short
+	s.pendingMu.Unlock()
 }
 
-// reconsiderOne decides about one copy, and lets go of it if it may.
-func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]placement.Member, spec database.Spec, floor int, known bool) {
+// reconsiderOne decides about one copy, and reports whether it is below its
+// floor as far as this node can tell.
+func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]placement.Member, spec database.Spec, floor int, known bool) (short bool) {
 	// THE ADDRESS ROUND-TRIPS THROUGH THE SPEC. Name is what storeName wrote,
 	// so reading it back as the id reproduces the same key and the same prefix.
 	at := address{project: spec.Project, environment: spec.Environment, id: spec.Name}
@@ -86,12 +121,13 @@ func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]place
 		// nobody declares are reclaim's business and reclaim is gated on a
 		// revision rather than on a failed lookup; a transport error is not a
 		// fact about the declaration at all.
-		return
+		return false
 	}
 
 	desired, keep := moved(at, byRegion, declaration.regions, floor, s.peer, s.region)
 	if keep {
-		return
+		// THIS NODE IS ONE OF THE HOLDERS, so it checks the others.
+		return s.repair(ctx, at, byRegion, declaration.regions, floor)
 	}
 
 	// ADDITIVE-ONLY UNTIL THE FLOOR IS KNOWN. A node that has never read what
@@ -99,28 +135,86 @@ func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]place
 	// to have, and the whole of release is a comparison against that number.
 	// It keeps serving and keeps what it holds.
 	if !known {
-		return
+		return false
 	}
 
 	// ONE RELEASE AT A TIME PER DATABASE, and from here until it resolves this
 	// node answers keeps=false — so a peer asking cannot count this copy as a
 	// reason to let go of its own.
 	if !s.own.begin(key) {
-		return
+		return false
 	}
 
 	if !s.mayGo(ctx, at, desired, floor) {
 		s.own.stay(key)
-		return
+		return false
 	}
 	if err := s.holdings.Destroy(ctx, spec); err != nil {
 		// THE BYTES ARE STILL HERE, so this node still holds the database and
 		// says so. Recording it gone would make it answer held=false about data
 		// it has, which is how a fleet loses track of a copy that exists.
 		s.own.stay(key)
-		return
+		return false
 	}
 	s.own.gone(key)
+	return false
+}
+
+// repair asks this database's OTHER holders whether they have it, and reports
+// whether the floor is met as far as this node can tell.
+//
+// A PEER THAT SAYS NO IS NUDGED AND NEVER TOLD. Hold opens the database on the
+// answering node only if that node computes itself desired — its own placement
+// answer, from its own inputs. Acquiring on a stranger's word is the decline
+// asymmetry running backwards, and it is how a node that placement never chose
+// becomes a holder.
+//
+// UNREACHABLE COUNTS AS SHORT, because it is: a copy this node cannot confirm
+// is a copy it cannot count on. This number is advisory, so erring toward
+// "somebody look at this" is the right direction — unlike release, where the
+// same uncertainty must mean "change nothing".
+func (s *Service) repair(ctx context.Context, at address, byRegion map[string][]placement.Member, regions []string, floor int) (short bool) {
+	for _, region := range placementRegions(regions) {
+		held := 1 // this node
+		others := 0
+		for _, id := range placement.Desired(resourceOf(at), membersIn(byRegion, region), floor) {
+			if id == s.peer {
+				continue
+			}
+			others++
+			answer, err := s.nudge(ctx, id, at)
+			if err == nil && answer.held {
+				held++
+			}
+		}
+
+		want := floor
+		if others+1 < want {
+			// The region is smaller than the floor, so the floor is the region
+			// — the same bar release applies, and for the same reason.
+			want = others + 1
+		}
+		if held < want {
+			short = true
+		}
+	}
+	return short
+}
+
+// nudge is the cheap ask: has this peer got the database, and does it keep it.
+func (s *Service) nudge(ctx context.Context, peer string, at address) (keeper, error) {
+	id, err := libp2ppeer.Decode(peer)
+	if err != nil {
+		return keeper{}, err
+	}
+
+	client, err := NewClient(s.host, id)
+	if err != nil {
+		return keeper{}, err
+	}
+	defer client.Close()
+
+	return client.Hold(ctx, at)
 }
 
 // mayGo is this node's own digest, compared against its replacements'.

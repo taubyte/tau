@@ -136,6 +136,25 @@ message Report {
   // means admitting a node's region rather than hearing it — which is a
   // membership change, not a field.
   string region = 8;
+
+  // fleet_revision is the revision of the cloud's own document this node last
+  // computed placement with.
+  //
+  // IT IS HOW A NODE THAT IS BEHIND BECOMES VISIBLE. Placement's other inputs
+  // heal on their own; the fleet document is the one every node must agree on,
+  // and without a revision on the wire a node computing with a stale floor is
+  // indistinguishable from one that agrees.
+  uint64 fleet_revision = 9;
+
+  // databases_pending is how many of this node's databases are below their
+  // floor as far as it can tell -- a co-holder that said it does not have one,
+  // or could not be reached.
+  //
+  // ONE NUMBER AND NOT A LIST. The fleet figure is the sum over fresh rows, so
+  // it costs O(1) per node per interval however many databases a node holds;
+  // anybody who needs to know WHICH asks that node directly. A list here would
+  // make the heartbeat grow with the data.
+  uint32 databases_pending = 10;
 }
 
 // Socket is one name a client can open a connection to, and where.

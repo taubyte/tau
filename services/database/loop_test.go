@@ -13,7 +13,7 @@ import (
 )
 
 // sweeping builds a service that holds one database and can see a fleet.
-func sweeping(t *testing.T, holds *says, at map[string][]placement.Member, region string) *Service {
+func sweeping(t *testing.T, holds *says, at map[string][]placement.Member, region string, floor int) *Service {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -27,7 +27,7 @@ func sweeping(t *testing.T, holds *says, at map[string][]placement.Member, regio
 
 	s, err := New(server,
 		WithEngines(registry),
-		WithRegister(declaringFloor(t, compiled(), 1)),
+		WithRegister(declaringFloor(t, compiled(), floor)),
 		WithHoldings(holds),
 		WithMembers(func() map[string][]placement.Member { return at }),
 		WithRegion(region),
@@ -47,7 +47,7 @@ func TestASweepKeepsWhatItShould(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
 	fleet := map[string][]placement.Member{"eu": members("me")}
 
-	s := sweeping(t, holds, fleet, "eu")
+	s := sweeping(t, holds, fleet, "eu", 1)
 	s.peer = "me"
 
 	s.reconsider(t.Context())
@@ -65,7 +65,7 @@ func TestASweepHoldsOnWhenItsReplacementCannotBeReached(t *testing.T) {
 	// `other` is desired and is not this node — and is not dialable either.
 	fleet := map[string][]placement.Member{"eu": members("other")}
 
-	s := sweeping(t, holds, fleet, "eu")
+	s := sweeping(t, holds, fleet, "eu", 1)
 	s.peer = "me"
 
 	s.reconsider(t.Context())
@@ -82,7 +82,7 @@ func TestASweepHoldsOnWhenItsReplacementCannotBeReached(t *testing.T) {
 // which is what lets it need no shared index of who-holds-what.
 func TestASweepWalksOnlyWhatThisNodeHolds(t *testing.T) {
 	holds := &says{held: true}
-	s := sweeping(t, holds, map[string][]placement.Member{"eu": members("other")}, "eu")
+	s := sweeping(t, holds, map[string][]placement.Member{"eu": members("other")}, "eu", 1)
 	s.peer = "me"
 
 	s.reconsider(t.Context())
@@ -120,4 +120,52 @@ func TestASweepWithoutAFleetDoesNothing(t *testing.T) {
 		t.Fatal("a node with no fleet started sweeping anyway")
 	}
 	require.Empty(t, holds.destroyed)
+}
+
+// TestAHOLDERWATCHESITSCOHOLDERS.
+//
+// "Nobody lets go until somebody else has it" covers a MOVE and says nothing
+// about node LOSS: a crashed node's copies are simply gone, and opening on
+// demand restores the floor only for databases somebody happens to ask for.
+// Repair is what notices, and it notices from the node that has the data —
+// which is why it needs no shared index of who-holds-what.
+func TestASweepCountsACoHolderItCannotConfirm(t *testing.T) {
+	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
+	// Two desired at a floor of two, and the other one is not dialable.
+	fleet := map[string][]placement.Member{"eu": members("me", "other")}
+
+	s := sweeping(t, holds, fleet, "eu", 2)
+	s.peer = "me"
+
+	s.reconsider(t.Context())
+	require.Empty(t, holds.destroyed, "repair deleted something")
+	require.Equal(t, 1, s.Pending(),
+		"a database whose second copy could not be confirmed was counted as fine")
+}
+
+// TestAREGIONSMALLERTHANTHEFLOORISNOTSHORT. A one-node region asked for two
+// copies has one, which is what it has — reporting it as pending forever would
+// make the number mean "this cloud is small" rather than "something needs
+// repair".
+func TestASweepDoesNotReportASmallRegionAsShort(t *testing.T) {
+	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
+	fleet := map[string][]placement.Member{"eu": members("me")}
+
+	s := sweeping(t, holds, fleet, "eu", 2)
+	s.peer = "me"
+
+	s.reconsider(t.Context())
+	require.Zero(t, s.Pending())
+}
+
+// TestTHEFLEETREVISIONISONTHEWIRE, which is how a node computing placement with
+// a stale floor becomes visible to every other node. The rest of placement's
+// inputs heal on their own; this is the one they must all agree on.
+func TestASweepReportsTheFleetRevisionItComputedWith(t *testing.T) {
+	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
+	s := sweeping(t, holds, map[string][]placement.Member{"eu": members("me")}, "eu", 1)
+	s.peer = "me"
+
+	s.reconsider(t.Context())
+	require.Equal(t, uint64(1), s.FleetRevision())
 }

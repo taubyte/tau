@@ -146,6 +146,17 @@ type Report struct {
 	// region rather than hearing it, which is a membership change rather than a
 	// field, and it is not done.
 	Region string
+
+	// FleetRevision is the revision of the cloud's own document this node last
+	// computed placement with. It is how a node that is behind becomes visible:
+	// placement's other inputs heal on their own, and this is the one every
+	// node must agree on.
+	FleetRevision uint64
+
+	// DatabasesPending is how many of this node's databases are below their
+	// floor as far as it can tell. One number, not a list — the fleet figure is
+	// the sum over fresh rows, and which ones is asked of that node directly.
+	DatabasesPending int
 }
 
 // Socket is one name a client can open a connection to, and where — an SRV
@@ -175,6 +186,9 @@ type Node struct {
 	Addresses   []string
 	Sockets     []Socket
 	Region      string
+
+	FleetRevision    uint64
+	DatabasesPending int
 
 	// Age is how long ago this process received the report. It is on every row
 	// because a stale load figure is a confidently wrong one, and a caller
@@ -234,6 +248,8 @@ type row struct {
 	addresses   []string
 	sockets     []Socket
 	region      string
+	fleet       uint64
+	pending     int
 	received    time.Time
 }
 
@@ -282,6 +298,8 @@ func (v *View) Observe(r Report) error {
 		addresses:   append([]string(nil), r.Addresses...),
 		sockets:     append([]Socket(nil), r.Sockets...),
 		region:      r.Region,
+		fleet:       r.FleetRevision,
+		pending:     r.DatabasesPending,
 		received:    now,
 	}
 	return nil
@@ -384,7 +402,11 @@ func node(peer string, r *row, now time.Time) Node {
 		Addresses:   append([]string(nil), r.addresses...),
 		Sockets:     append([]Socket(nil), r.sockets...),
 		Region:      r.region,
-		Age:         now.Sub(r.received),
+
+		FleetRevision:    r.fleet,
+		DatabasesPending: r.pending,
+
+		Age: now.Sub(r.received),
 	}
 }
 

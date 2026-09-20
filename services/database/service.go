@@ -99,6 +99,11 @@ type Service struct {
 	sweep     time.Duration
 	stopSweep context.CancelFunc
 
+	// pendingAt is how many of this node's databases were below their floor at
+	// the last sweep. One number, gossiped; which ones is asked for directly.
+	pendingMu sync.Mutex
+	pendingAt int
+
 	// own is what this node is DOING about each database it holds, which is
 	// what makes its `keeps` answer honest: a node mid-release says so, and a
 	// peer cannot count it as a reason to leave too.

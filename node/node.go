@@ -853,12 +853,23 @@ func (n *Node) Close() error {
 // number would steer traffic on fiction — zero says "as available as anything
 // else", which in a fleet of nodes that all report zero is true.
 func (n *Node) Snapshot(context.Context) (stats.Snapshot, error) {
-	return stats.Snapshot{
+	snapshot := stats.Snapshot{
 		Ready:     true,
 		Serving:   n.serving(),
 		Addresses: n.addresses(),
 		Sockets:   n.proxySockets(),
-	}, nil
+	}
+
+	// WHAT THIS NODE'S OWN SERVICES SAY ABOUT PLACEMENT. The fleet revision is
+	// how a node computing with a stale floor becomes visible to every other
+	// node; the pending count is how much repair this node knows is outstanding
+	// among the databases it holds.
+	if n.database != nil {
+		snapshot.FleetRevision = n.database.FleetRevision()
+		snapshot.DatabasesPending = n.database.Pending()
+	}
+
+	return snapshot, nil
 }
 
 // addresses is where CLIENTS reach this node — the IPs a DNS answer is made of.

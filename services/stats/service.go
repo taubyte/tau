@@ -209,6 +209,9 @@ func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
 				Addresses:   r.GetAddresses(),
 				Sockets:     socketsOf(r.GetSockets()),
 				Region:      r.GetRegion(),
+
+				FleetRevision:    r.GetFleetRevision(),
+				DatabasesPending: int(r.GetDatabasesPending()),
 			})
 			s.beat(r.GetPeer(), r.GetIncarnation(), r.GetReady(), r.GetRegion())
 		}
@@ -264,6 +267,11 @@ func (s *Service) report(ctx context.Context) {
 		// configured, not something it measures each tick — so it sits beside
 		// the peer id rather than travelling with the load.
 		Region: s.cfg.Region,
+
+		// THESE DO come from the snapshot: they are what this node's own
+		// services answer about themselves, and they change every tick.
+		FleetRevision:    snap.FleetRevision,
+		DatabasesPending: uint32(snap.DatabasesPending),
 	})
 	if err != nil {
 		return
@@ -282,6 +290,9 @@ func (s *Service) report(ctx context.Context) {
 		Addresses:   snap.Addresses,
 		Sockets:     snap.Sockets,
 		Region:      s.cfg.Region,
+
+		FleetRevision:    snap.FleetRevision,
+		DatabasesPending: snap.DatabasesPending,
 	})
 	s.beat(s.peer, s.incarnation, snap.Ready, s.cfg.Region)
 
@@ -408,4 +419,23 @@ func (s *Service) Placement() map[string][]placement.Member {
 		}
 	}
 	return out
+}
+
+// Pending is how many databases the whole fleet knows to be below their floor,
+// summed over the nodes whose reports are current.
+//
+// SUMMED AND NOT MAXED, because a database short in two places is two problems:
+// each holder counts what IT cannot confirm, so the total is the amount of
+// repair outstanding rather than the number of databases involved.
+//
+// It is a number an operator watches, not one anything acts on — a node acts on
+// its own copies, which it can see exactly.
+func (s *Service) Pending(maxAge time.Duration) int {
+	total := 0
+	for _, n := range s.view.ByRegion(maxAge) {
+		for _, node := range n {
+			total += node.DatabasesPending
+		}
+	}
+	return total
 }

@@ -149,9 +149,26 @@ type Report struct {
 	// typo becoming a residency breach with nothing to catch it, and closing that
 	// means admitting a node's region rather than hearing it — which is a
 	// membership change, not a field.
-	Region        string `protobuf:"bytes,8,opt,name=region,proto3" json:"region,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Region string `protobuf:"bytes,8,opt,name=region,proto3" json:"region,omitempty"`
+	// fleet_revision is the revision of the cloud's own document this node last
+	// computed placement with.
+	//
+	// IT IS HOW A NODE THAT IS BEHIND BECOMES VISIBLE. Placement's other inputs
+	// heal on their own; the fleet document is the one every node must agree on,
+	// and without a revision on the wire a node computing with a stale floor is
+	// indistinguishable from one that agrees.
+	FleetRevision uint64 `protobuf:"varint,9,opt,name=fleet_revision,json=fleetRevision,proto3" json:"fleet_revision,omitempty"`
+	// databases_pending is how many of this node's databases are below their
+	// floor as far as it can tell -- a co-holder that said it does not have one,
+	// or could not be reached.
+	//
+	// ONE NUMBER AND NOT A LIST. The fleet figure is the sum over fresh rows, so
+	// it costs O(1) per node per interval however many databases a node holds;
+	// anybody who needs to know WHICH asks that node directly. A list here would
+	// make the heartbeat grow with the data.
+	DatabasesPending uint32 `protobuf:"varint,10,opt,name=databases_pending,json=databasesPending,proto3" json:"databases_pending,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Report) Reset() {
@@ -240,6 +257,20 @@ func (x *Report) GetRegion() string {
 	return ""
 }
 
+func (x *Report) GetFleetRevision() uint64 {
+	if x != nil {
+		return x.FleetRevision
+	}
+	return 0
+}
+
+func (x *Report) GetDatabasesPending() uint32 {
+	if x != nil {
+		return x.DatabasesPending
+	}
+	return 0
+}
+
 // Socket is one name a client can open a connection to, and where.
 //
 // It is an SRV record with the node left out: a lookup of
@@ -326,7 +357,7 @@ var File_tau_stats_v1_stats_proto protoreflect.FileDescriptor
 
 const file_tau_stats_v1_stats_proto_rawDesc = "" +
 	"\n" +
-	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\xe8\x01\n" +
+	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\xbc\x02\n" +
 	"\x06Report\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12 \n" +
 	"\vincarnation\x18\x02 \x01(\x04R\vincarnation\x12\x12\n" +
@@ -335,7 +366,10 @@ const file_tau_stats_v1_stats_proto_rawDesc = "" +
 	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x1c\n" +
 	"\taddresses\x18\x06 \x03(\tR\taddresses\x12.\n" +
 	"\asockets\x18\a \x03(\v2\x14.tau.stats.v1.SocketR\asockets\x12\x16\n" +
-	"\x06region\x18\b \x01(\tR\x06region\"j\n" +
+	"\x06region\x18\b \x01(\tR\x06region\x12%\n" +
+	"\x0efleet_revision\x18\t \x01(\x04R\rfleetRevision\x12+\n" +
+	"\x11databases_pending\x18\n" +
+	" \x01(\rR\x10databasesPending\"j\n" +
 	"\x06Socket\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x1c\n" +
