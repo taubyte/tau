@@ -612,14 +612,14 @@ func TestAuditRegions(t *testing.T) {
 	found = auditDocs(t, nil, map[string]string{
 		"/project.yaml":                       proj,
 		"/namespace/shop/meta.yaml":           shopID + "regions: [eu]\n",
-		"/namespace/shop/cache/sessions.yaml": cache("region:\n    auto:\n        name: us\n"),
+		"/namespace/shop/cache/sessions.yaml": cache("region:\n    pinned:\n        name: us\n"),
 	})
 	has(t, found, schema.Broken, `is placed in region "us", which its scope does not allow`)
 
 	found = auditDocs(t, nil, map[string]string{
 		"/project.yaml":                       proj,
 		"/namespace/shop/meta.yaml":           shopID + "regions: [eu]\n",
-		"/namespace/shop/cache/sessions.yaml": cache("region:\n    auto:\n        name: eu\n"),
+		"/namespace/shop/cache/sessions.yaml": cache("region:\n    pinned:\n        name: eu\n"),
 	})
 	hasNo(t, found, "which its scope does not allow")
 
@@ -643,7 +643,7 @@ func TestAuditRegions(t *testing.T) {
 	// the typo-catcher stops — `zz` is only wrong against a list somebody wrote.
 	found = auditDocs(t, nil, map[string]string{
 		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n",
-		"/cache/c.yaml": cache("region:\n    auto:\n        name: zz\n"),
+		"/cache/c.yaml": cache("region:\n    pinned:\n        name: zz\n"),
 	})
 	hasNo(t, found, "which its scope does not allow")
 
@@ -653,7 +653,7 @@ func TestAuditRegions(t *testing.T) {
 		"/project.yaml":                                    proj,
 		"/namespace/shop/meta.yaml":                        shopID + "regions: [eu]\n",
 		"/namespace/shop/namespace/eu/meta.yaml":           "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\n",
-		"/namespace/shop/namespace/eu/cache/sessions.yaml": cache("region:\n    auto:\n        name: us\n"),
+		"/namespace/shop/namespace/eu/cache/sessions.yaml": cache("region:\n    pinned:\n        name: us\n"),
 	})
 	has(t, found, schema.Broken, `is placed in region "us", which its scope does not allow`)
 }

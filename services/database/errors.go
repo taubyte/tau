@@ -64,3 +64,9 @@ var (
 // a RETRY and not a failure, which is why it is its own arm: a node that has
 // just started is a node whose next request will do better.
 var ErrGroupForming = errors.New("database: that database's raft group is still forming")
+
+// ErrOutsideAllowance is a resource pinned to a region its scope does not
+// permit. The compiler's audit reports a widening where a scope declares an
+// allowance to check against; this is the same refusal at the one moment the
+// region names are real, and it is an operator's to fix rather than a caller's.
+var ErrOutsideAllowance = errors.New("database: that region is outside what this scope allows")

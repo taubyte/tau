@@ -40,8 +40,8 @@ type Application struct {
 	ReadinessHttpPort              string
 	ReadinessKind                  string // which of http, function was written
 	RegionMain                     string // authored at region/failover/main
-	RegionName                     string // authored at region/{auto|cdn}/name
-	RegionPolicy                   string // which of auto, cdn, failover was written
+	RegionName                     string // authored at region/{pinned|cdn}/name
+	RegionPolicy                   string // which of pinned, cdn, failover was written
 	RegionStandby                  string // authored at region/failover/standby
 	SecretName                     string
 	SecretNamespace                string
@@ -128,8 +128,8 @@ type Function struct {
 	Name                string
 	Path                string
 	RegionMain          string // authored at region/failover/main
-	RegionName          string // authored at region/{auto|cdn}/name
-	RegionPolicy        string // which of auto, cdn, failover was written
+	RegionName          string // authored at region/{pinned|cdn}/name
+	RegionPolicy        string // which of pinned, cdn, failover was written
 	RegionStandby       string // authored at region/failover/standby
 	SecretName          string
 	SecretNamespace     string
@@ -212,8 +212,8 @@ type Worker struct {
 	Name                           string
 	Path                           string
 	RegionMain                     string // authored at region/failover/main
-	RegionName                     string // authored at region/{auto|cdn}/name
-	RegionPolicy                   string // which of auto, cdn, failover was written
+	RegionName                     string // authored at region/{pinned|cdn}/name
+	RegionPolicy                   string // which of pinned, cdn, failover was written
 	RegionStandby                  string // authored at region/failover/standby
 	Runtime                        string
 	SecretName                     string
@@ -300,8 +300,8 @@ type Sandbox struct {
 	Name                           string
 	Path                           string
 	RegionMain                     string // authored at region/failover/main
-	RegionName                     string // authored at region/{auto|cdn}/name
-	RegionPolicy                   string // which of auto, cdn, failover was written
+	RegionName                     string // authored at region/{pinned|cdn}/name
+	RegionPolicy                   string // which of pinned, cdn, failover was written
 	RegionStandby                  string // authored at region/failover/standby
 	SecretName                     string
 	SecretNamespace                string
@@ -506,8 +506,8 @@ type Cache struct {
 	InstancesValidatorNamespace string // authored at instances/{validator}/namespace
 	Name                        string
 	RegionMain                  string // authored at region/failover/main
-	RegionName                  string // authored at region/{auto|cdn}/name
-	RegionPolicy                string // which of auto, cdn, failover was written
+	RegionName                  string // authored at region/{pinned|cdn}/name
+	RegionPolicy                string // which of pinned, cdn, failover was written
 	RegionStandby               string // authored at region/failover/standby
 	Replicated                  bool
 	Size                        int64
@@ -564,8 +564,8 @@ type Database struct {
 	KvSize                       int64  // authored at kv/distributed/size
 	Name                         string
 	RegionMain                   string // authored at region/failover/main
-	RegionName                   string // authored at region/{auto|cdn}/name
-	RegionPolicy                 string // which of auto, cdn, failover was written
+	RegionName                   string // authored at region/{pinned|cdn}/name
+	RegionPolicy                 string // which of pinned, cdn, failover was written
 	RegionStandby                string // authored at region/failover/standby
 	SqlConsensus                 string // authored at sql/distributed/consensus
 	SqlCredentialsName           string // authored at sql/{postgres|mysql}/credentials/name
@@ -642,8 +642,8 @@ type Storage struct {
 	Name                        string
 	ObjectVersioning            bool
 	RegionMain                  string // authored at region/failover/main
-	RegionName                  string // authored at region/{auto|cdn}/name
-	RegionPolicy                string // which of auto, cdn, failover was written
+	RegionName                  string // authored at region/{pinned|cdn}/name
+	RegionPolicy                string // which of pinned, cdn, failover was written
 	RegionStandby               string // authored at region/failover/standby
 	Size                        int64  // authored at {object|streaming}/size
 	StreamingTtl                time.Duration
@@ -687,8 +687,8 @@ type Volume struct {
 	Name                       string
 	Quota                      int64
 	RegionMain                 string // authored at region/failover/main
-	RegionName                 string // authored at region/{auto|cdn}/name
-	RegionPolicy               string // which of auto, cdn, failover was written
+	RegionName                 string // authored at region/{pinned|cdn}/name
+	RegionPolicy               string // which of pinned, cdn, failover was written
 	RegionStandby              string // authored at region/failover/standby
 	Tags                       []string
 }
@@ -759,8 +759,8 @@ type Sync struct {
 	QueueRetryInterval       time.Duration
 	QueueVisibilityTimeout   time.Duration
 	RegionMain               string // authored at region/failover/main
-	RegionName               string // authored at region/{auto|cdn}/name
-	RegionPolicy             string // which of auto, cdn, failover was written
+	RegionName               string // authored at region/{pinned|cdn}/name
+	RegionPolicy             string // which of pinned, cdn, failover was written
 	RegionStandby            string // authored at region/failover/standby
 	Tags                     []string
 	Type                     string // which of queue, log was written
@@ -1156,8 +1156,8 @@ type Agent struct {
 	Name                    string
 	Path                    string
 	RegionMain              string // authored at region/failover/main
-	RegionName              string // authored at region/{auto|cdn}/name
-	RegionPolicy            string // which of auto, cdn, failover was written
+	RegionName              string // authored at region/{pinned|cdn}/name
+	RegionPolicy            string // which of pinned, cdn, failover was written
 	RegionStandby           string // authored at region/failover/standby
 	SecretName              string
 	SecretNamespace         string
@@ -1229,8 +1229,8 @@ type Workflow struct {
 	Name                string
 	OnError             string
 	RegionMain          string // authored at region/failover/main
-	RegionName          string // authored at region/{auto|cdn}/name
-	RegionPolicy        string // which of auto, cdn, failover was written
+	RegionName          string // authored at region/{pinned|cdn}/name
+	RegionPolicy        string // which of pinned, cdn, failover was written
 	RegionStandby       string // authored at region/failover/standby
 	Start               string
 	Tags                []string

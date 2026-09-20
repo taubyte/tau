@@ -599,25 +599,35 @@ func attachPlacement() {
 // one is a compile error.
 //
 //	region:                 region:                 region:
-//	    auto:                   cdn:                    failover:
+//	    pinned:                 cdn:                    failover:
 //	        name: eu                name: eu                main: eu
 //	                                                        standby: us
 //
-// AN ABSENT BLOCK IS `auto` WITH NO PIN, which is what almost every resource wants, so
-// the common case writes nothing at all and the feature costs only the lines that buy
-// something. That is also why the switch is not Required(): a switch inside an optional
-// block is demanded only when the block is there.
+// AN ABSENT BLOCK IS ANYWHERE THE ALLOWANCE PERMITS, which is what almost every
+// resource wants, so the common case writes nothing at all and the feature costs only
+// the lines that buy something. That is also why the switch is not Required(): a switch
+// inside an optional block is demanded only when the block is there.
+//
+// THERE IS NO `auto` BRANCH, and that there was one is worth recording. `auto` with no
+// name meant "anywhere" and `auto` with a name meant "only here" — one word for a
+// statement and its opposite, with the data-residency line hanging off which of the two
+// a reader guessed. The branch carrying the pin is now named for the pin, its `name` is
+// required, and "anywhere" is spelled by writing no block at all: the one spelling that
+// cannot be mistaken for a pin.
 func regionAttributes() []*Attribute {
 	return []*Attribute{
-		String(Key("region", "policy"), Path("region", Either("auto", "cdn", "failover")), Captures(), InSection("placement"),
-			Doc("Placement", "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.")),
+		String(Key("region", "policy"), Path("region", Either("pinned", "cdn", "failover")), Captures(), InSection("placement"),
+			Doc("Placement", "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.")),
 
-		// ONE FIELD ON TWO BRANCHES, because it is one fact: the region this is pinned
-		// to. A subset Either() is the same construct a database's per-type engine key
-		// uses, and it is what keeps `failover` from having a `name` that would mean
-		// neither of its two.
-		String(Key("region", "name"), Path("region", Either("auto", "cdn"), "name"), InSection("placement"),
-			Doc("Region", "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.")),
+		// ONE FIELD ON TWO BRANCHES, because it is one fact: the region named. A subset
+		// Either() is the same construct a database's per-type engine key uses, and it
+		// is what keeps `failover` from having a `name` that would mean neither of its
+		// two. REQUIRED on `pinned` and optional on `cdn`, because the branches ask it
+		// for different things: a pin naming no region pins nothing, while a cdn naming
+		// no home is seeded rather than unplaced.
+		String(Key("region", "name"), Path("region", Either("pinned", "cdn"), "name"),
+			RequiredWhen(Key("region", "policy"), "pinned"), InSection("placement"),
+			Doc("Region", "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.")),
 
 		String(Key("region", "main"), Path("region", "failover", "main"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), InSection("placement"),
 			Doc("Main", "Where this runs while it can.")),

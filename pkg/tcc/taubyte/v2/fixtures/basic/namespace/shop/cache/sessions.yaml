@@ -3,7 +3,7 @@ description: shop's sessions - same NAME as billing's, a different resource; raf
 size: 8MB
 consensus: raft
 region:
-    auto:
+    pinned:
         name: eu
 instances:
     limit: 5000

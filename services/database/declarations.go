@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // declarations.go turns "which database" into "what that database is".
@@ -41,6 +42,11 @@ type declared struct {
 
 	// consensus is how concurrent writes resolve, as the author wrote it.
 	consensus string
+
+	// regions is where this database's copies go, already resolved: what the
+	// resource's own region block declared, bounded by what its environment
+	// allows. placement.go is asked about these and nothing else.
+	regions []string
 }
 
 // served is what this service implements today.
@@ -154,6 +160,20 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	// network attacker as the server.
 	out.spec.Credentials.TLS = resource.String(model, "tls") != "disable"
 
+	// WHERE IT LIVES IS THE RESOURCE'S OWN STATEMENT, bounded by its
+	// environment's. Reading it here and not on the grant is the same rule the
+	// file doc gives for size and consensus: a caller that described the
+	// database could describe a different one.
+	region := placed{
+		policy:  resource.String("region", "policy"),
+		name:    resource.String("region", "name"),
+		main:    resource.String("region", "main"),
+		standby: resource.String("region", "standby"),
+	}
+	if out.regions, err = region.regions(ref, allowanceOf(project.Environments(), ref.environment)); err != nil {
+		return declared{}, fmt.Errorf("%s: %w", ref.id, err)
+	}
+
 	// PER-MODEL DECLARATIONS TRAVEL AS OPTIONS. A vector's width and metric mean
 	// nothing to the other three.
 	for _, option := range []string{"dimensions", "metric"} {
@@ -174,4 +194,26 @@ func (d *declared) option(name, value string) {
 		d.spec.Options = map[string]string{}
 	}
 	d.spec.Options[name] = value
+}
+
+// allowanceOf is the region ceiling a deployment declares: the list an
+// environment keeps its state in, and the ceiling every resource under it is
+// placed within. Empty means the cloud decides, which narrows nothing.
+//
+// A SHADOW HAS NO ALLOWANCE OF ITS OWN and takes the one it was written inside.
+// It is a deployment over another environment's state, so placing that state
+// was never its to do — which is why the vocabulary gives a shadow no `regions`
+// field rather than a rule about ignoring one.
+func allowanceOf(environments []schema.Environment, name string) []string {
+	for _, env := range environments {
+		if env.Name == name {
+			return env.Regions
+		}
+		for _, shadow := range env.Shadows {
+			if shadow.Name == name {
+				return env.Regions
+			}
+		}
+	}
+	return nil
 }

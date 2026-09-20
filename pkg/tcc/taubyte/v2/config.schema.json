@@ -41,8 +41,15 @@
             {
               "properties": {
                 "region": {
+                  "properties": {
+                    "pinned": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "auto"
+                    "pinned"
                   ],
                   "type": "object"
                 }
@@ -349,19 +356,25 @@
           "x-tau-section": "source"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {
@@ -1494,8 +1507,15 @@
             {
               "properties": {
                 "region": {
+                  "properties": {
+                    "pinned": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "auto"
+                    "pinned"
                   ],
                   "type": "object"
                 }
@@ -1905,19 +1925,25 @@
           "type": "object"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {
@@ -4179,8 +4205,15 @@
             {
               "properties": {
                 "region": {
+                  "properties": {
+                    "pinned": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "auto"
+                    "pinned"
                   ],
                   "type": "object"
                 }
@@ -4371,19 +4404,25 @@
           "type": "object"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {
@@ -8768,8 +8807,15 @@
             {
               "properties": {
                 "region": {
+                  "properties": {
+                    "pinned": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "auto"
+                    "pinned"
                   ],
                   "type": "object"
                 }
@@ -9391,19 +9437,25 @@
           "type": "object"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {
@@ -10429,8 +10481,15 @@
             {
               "properties": {
                 "region": {
+                  "properties": {
+                    "pinned": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "auto"
+                    "pinned"
                   ],
                   "type": "object"
                 }
@@ -10709,19 +10768,25 @@
           "x-tau-section": "network"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {
@@ -17489,8 +17554,15 @@
             {
               "properties": {
                 "region": {
+                  "properties": {
+                    "pinned": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "auto"
+                    "pinned"
                   ],
                   "type": "object"
                 }
@@ -17740,19 +17812,25 @@
           "type": "object"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {
@@ -19860,8 +19938,15 @@
             {
               "properties": {
                 "region": {
+                  "properties": {
+                    "pinned": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "auto"
+                    "pinned"
                   ],
                   "type": "object"
                 }
@@ -20035,19 +20120,25 @@
           "x-tau-section": "storage"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {
@@ -22122,8 +22213,15 @@
             {
               "properties": {
                 "region": {
+                  "properties": {
+                    "pinned": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "auto"
+                    "pinned"
                   ],
                   "type": "object"
                 }
@@ -22417,19 +22515,25 @@
           "type": "object"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {
@@ -23399,8 +23503,15 @@
         {
           "properties": {
             "region": {
+              "properties": {
+                "pinned": {
+                  "required": [
+                    "name"
+                  ]
+                }
+              },
               "required": [
-                "auto"
+                "pinned"
               ],
               "type": "object"
             }
@@ -23516,19 +23627,25 @@
           "type": "object"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {
@@ -25816,8 +25933,15 @@
             {
               "properties": {
                 "region": {
+                  "properties": {
+                    "pinned": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "auto"
+                    "pinned"
                   ],
                   "type": "object"
                 }
@@ -26164,19 +26288,25 @@
           "x-tau-section": "code"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {
@@ -27339,8 +27469,15 @@
         {
           "properties": {
             "region": {
+              "properties": {
+                "pinned": {
+                  "required": [
+                    "name"
+                  ]
+                }
+              },
               "required": [
-                "auto"
+                "pinned"
               ],
               "type": "object"
             }
@@ -27438,19 +27575,25 @@
           "x-tau-section": "run"
         },
         "region/policy": {
-          "description": "auto: anywhere the allowance permits, which is what omitting the whole block means. cdn: placed by caller location, within the allowance. failover: exactly two regions, the first one main.",
+          "description": "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.",
           "title": "Placement",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn|failover}",
+          "x-tau-path": "region/{pinned|cdn|failover}",
           "x-tau-section": "placement"
         },
         "region/name": {
-          "description": "auto: run only here — the pin, and the data-residency line. cdn: the home region; presence near callers follows demand. Omit it to leave the choice to the platform.",
+          "description": "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.",
           "title": "Region",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "region/{auto|cdn}/name",
+          "x-tau-path": "region/{pinned|cdn}/name",
+          "x-tau-required-when": {
+            "field": "region/policy",
+            "in": [
+              "pinned"
+            ]
+          },
           "x-tau-section": "placement"
         },
         "region": {

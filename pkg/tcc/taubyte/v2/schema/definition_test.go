@@ -2344,9 +2344,9 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 		return namedResource(t, resources(t, obj.Flat(), "cache"), "c"), nil
 	}
 
-	res, err := compile("region:\n    auto:\n        name: eu\n")
+	res, err := compile("region:\n    pinned:\n        name: eu\n")
 	assert.NilError(t, err)
-	assert.Equal(t, nested(res, "region", "policy"), "auto")
+	assert.Equal(t, nested(res, "region", "policy"), "pinned")
 	assert.Equal(t, nested(res, "region", "name"), "eu")
 
 	// A FIELDLESS BRANCH STILL CAPTURES, so `cdn` needs no filler field to be sayable.
@@ -2360,8 +2360,11 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 	assert.Equal(t, nested(res, "region", "main"), "eu")
 	assert.Equal(t, nested(res, "region", "standby"), "us")
 
-	// AN ABSENT BLOCK IS THE DEFAULT, and it writes nothing: `auto`, anywhere the
-	// allowance permits, is what the common case gets for free.
+	// AN ABSENT BLOCK IS THE DEFAULT, and it writes nothing: anywhere the allowance
+	// permits is what the common case gets for free. It is the ONLY spelling of
+	// "anywhere", which is what dropping `auto` bought — that branch said "anywhere"
+	// without a name and "only here" with one, so the residency line depended on
+	// which of the two a reader assumed.
 	res, err = compile("")
 	assert.NilError(t, err)
 	_, present := res["region"]
@@ -2383,10 +2386,15 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown key 'name'")
 
 	// EXACTLY ONE BRANCH is a property of the declaration, not a check somebody wrote.
-	_, err = compile("region:\n    auto:\n        name: eu\n    cdn: {}\n")
-	assert.ErrorContains(t, err, "ambiguous path: auto and cdn each match")
+	_, err = compile("region:\n    pinned:\n        name: eu\n    cdn: {}\n")
+	assert.ErrorContains(t, err, "each match")
 	_, err = compile("region: {}\n")
 	assert.ErrorContains(t, err, "attribute region/policy has an empty key")
+
+	// A PIN NAMING NO REGION PINS NOTHING, so `name` is required on this branch and
+	// optional on `cdn`, where an absent home means seeded rather than unplaced.
+	_, err = compile("region:\n    pinned: {}\n")
+	assert.ErrorContains(t, err, "required attribute 'region/pinned/name'")
 
 	// The ALLOWANCE is a scope's word and never a resource's: a resource may not widen
 	// or narrow what runs under it, because it is one of the things being placed.
