@@ -657,3 +657,45 @@ func TestAuditRegions(t *testing.T) {
 	})
 	has(t, found, schema.Broken, `is placed in region "us", which its scope does not allow`)
 }
+
+// auditDocsInEnv is auditDocs for ONE environment, which is the only way a
+// per-environment placement is visible to the audit: it reads a COMPILED resource, and
+// a compile is for one environment at a time.
+func auditDocsInEnv(t *testing.T, env string, docs map[string]string) []schema.Finding {
+	t.Helper()
+	fs := afero.NewMemMapFs()
+	for path, body := range docs {
+		assert.NilError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
+	}
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"),
+		schema.WithEnvironments("production", "preview"), schema.WithEnvironment(env))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	return schema.Audit(obj.Flat(), nil)
+}
+
+// TestTheSuffixIsNotAWayAroundTheCeiling.
+//
+// A per-environment placement is a placement like any other, so the scope's allowance
+// applies to it — otherwise `name_preview` would be the spelling that walks regulated
+// data out of the region a namespace was written to keep it in, which is the governance
+// statement regions.md §7 sells as the differentiator.
+func TestAPerEnvironmentPlacementIsBoundedToo(t *testing.T) {
+	const shopID = "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n"
+	docs := map[string]string{
+		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [eu, us]\n" +
+			"environments:\n    production:\n        branches: [main]\n    preview:\n        branches: [\"*\"]\n",
+		"/namespace/shop/meta.yaml": shopID + "regions: [eu]\n",
+		"/namespace/shop/cache/sessions.yaml": "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n" +
+			"size: 1MB\nconsensus: crdt\nregion:\n    pinned:\n        name: eu\n        name_preview: us\n",
+	}
+
+	// Production reads `name`, which shop allows.
+	hasNo(t, auditDocsInEnv(t, "production", docs), "which its scope does not allow")
+
+	// Preview reads `name_preview`, which it does not — same finding, same severity, on
+	// the environment's own spelling.
+	has(t, auditDocsInEnv(t, "preview", docs), schema.Broken,
+		`is placed in region "us", which its scope does not allow`)
+}

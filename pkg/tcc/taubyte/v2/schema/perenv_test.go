@@ -48,6 +48,17 @@ import (
 //     as `run_preview` sitting beside `run`.
 //   - REFERENCES — every one except `model/name`, which is marked with its namespace
 //     because a cheaper model in preview is the difference people actually ask for.
+//
+// PLACEMENT is marked, and it is the one entry here that arrives on every kind at once,
+// because regionAttributes is hung off whatever declares Placed() rather than written
+// per kind. `name`, `main` and `standby` take a suffix; what a preview deployment costs
+// to place is a CEILING and reads exactly like `size` does. The POLICY does not, and
+// nobody refused it — the policy IS the branch key, and envPath returns nil for a path
+// ending in an Either, so `failover` stays failover in every environment. What keeps
+// the marked half safe is that checkRegions reads these off the per-environment
+// compiled resource, so `name_preview` outside the scope's allowance is Broken exactly
+// as `name` would be: the governance statement is the ceiling, and a per-environment
+// placement only moves within it.
 func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 	want := []string{
 		"agent/egress", "agent/limits/concurrent", "agent/limits/memory",
@@ -95,6 +106,20 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"worker/execution/memory", "worker/execution/timeout",
 		"worker/source/image", "worker/value",
 		"workflow/concurrency", "workflow/timeout",
+
+		// PLACEMENT, on every kind that declares Placed() — one decision, not
+		// thirty-three. See regionAttributes: the leaves vary, the policy cannot.
+		"agent/region/main", "agent/region/name", "agent/region/standby",
+		"application/region/main", "application/region/name", "application/region/standby",
+		"cache/region/main", "cache/region/name", "cache/region/standby",
+		"database/region/main", "database/region/name", "database/region/standby",
+		"function/region/main", "function/region/name", "function/region/standby",
+		"sandbox/region/main", "sandbox/region/name", "sandbox/region/standby",
+		"storage/region/main", "storage/region/name", "storage/region/standby",
+		"sync/region/main", "sync/region/name", "sync/region/standby",
+		"volume/region/main", "volume/region/name", "volume/region/standby",
+		"worker/region/main", "worker/region/name", "worker/region/standby",
+		"workflow/region/main", "workflow/region/name", "workflow/region/standby",
 	}
 
 	seen := map[string]bool{}

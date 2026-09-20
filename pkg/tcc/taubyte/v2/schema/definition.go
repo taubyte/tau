@@ -603,6 +603,24 @@ func attachPlacement() {
 //	        name: eu                name: eu                main: eu
 //	                                                        standby: us
 //
+// THE REGIONS VARY PER ENVIRONMENT; THE POLICY DOES NOT. `name`, `main` and `standby`
+// are `PerEnv()`, so `name_preview: us` sits beside `name: eu` and a preview deployment
+// is placed where a preview should be — which is the CEILING axis the per-environment
+// rule already marks everywhere else it is spelled, since what a preview deployment
+// costs to place is the difference people actually ask for.
+//
+// The POLICY cannot be suffixed, and not because anyone refused it: the policy IS the
+// branch key, and `envPath` returns nil for a path ending in an `Either` — a key the
+// document chooses rather than one the schema names. So `failover` stays failover in
+// every environment, and a preview of a two-region database is two regions. Varying the
+// policy is a shape question, not a mark.
+//
+// AND THE ALLOWANCE STILL BOUNDS EVERY SPELLING. `checkRegions` reads these fields off
+// the COMPILED resource, which is compiled per environment, so `name_preview` outside
+// the scope's ceiling is Broken exactly as `name` would be. That is what makes this
+// safe to mark: the governance statement is the scope's allowance, and a per-environment
+// placement may only move within it.
+//
 // AN ABSENT BLOCK IS ANYWHERE THE ALLOWANCE PERMITS, which is what almost every
 // resource wants, so the common case writes nothing at all and the feature costs only
 // the lines that buy something. That is also why the switch is not Required(): a switch
@@ -626,12 +644,12 @@ func regionAttributes() []*Attribute {
 		// for different things: a pin naming no region pins nothing, while a cdn naming
 		// no home is seeded rather than unplaced.
 		String(Key("region", "name"), Path("region", Either("pinned", "cdn"), "name"),
-			RequiredWhen(Key("region", "policy"), "pinned"), InSection("placement"),
+			RequiredWhen(Key("region", "policy"), "pinned"), PerEnv(), InSection("placement"),
 			Doc("Region", "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.")),
 
-		String(Key("region", "main"), Path("region", "failover", "main"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), InSection("placement"),
+		String(Key("region", "main"), Path("region", "failover", "main"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), PerEnv(), InSection("placement"),
 			Doc("Main", "Where this runs while it can.")),
-		String(Key("region", "standby"), Path("region", "failover", "standby"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), InSection("placement"),
+		String(Key("region", "standby"), Path("region", "failover", "standby"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), PerEnv(), InSection("placement"),
 			Doc("Standby", "Where it runs when the main is gone.")),
 	}
 }

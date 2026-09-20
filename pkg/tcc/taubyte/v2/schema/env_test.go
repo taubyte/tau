@@ -89,3 +89,36 @@ func TestAnUndeclaredEnvironmentIsATypo(t *testing.T) {
 		"execution:\n    call: c\n    timeout: 1s\n    timeout_prevew: 5s\n    memory: 1MB\n")
 	assert.ErrorContains(t, err, "unknown key 'timeout_prevew'")
 }
+
+// TestAPlacementDiffersPerEnvironment. What a preview deployment costs to place is a
+// CEILING and reads exactly like `size` does — `[eu, us]` at a floor of two is four
+// nodes, and a throwaway environment should not be billed for production's residency.
+func TestAPlacementDiffersPerEnvironment(t *testing.T) {
+	const doc = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n" +
+		"execution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n" +
+		"region:\n    pinned:\n        name: eu\n        name_preview: us\n"
+
+	for _, tc := range []struct{ env, want string }{
+		{"production", "eu"}, // declared nowhere in the document: the base
+		{"preview", "us"},
+	} {
+		t.Run(tc.env, func(t *testing.T) {
+			fn, err := compileInEnv(t, tc.env, doc)
+			assert.NilError(t, err)
+			assert.Equal(t, nested(fn, "region", "name"), tc.want)
+			assert.Equal(t, nested(fn, "region", "policy"), "pinned")
+		})
+	}
+}
+
+// TestAPlacementPolicyCannotBeEnvironmentSuffixed, and nobody refused it: the policy IS
+// the branch key, and envPath returns nil for a path ending in an Either — a key the
+// document chooses rather than one the schema names. A resource that is `failover` in
+// production and `pinned` in preview is a different resource, which is the same rule
+// PerEnv states one segment up: write the whole resource for that environment instead.
+func TestAPlacementPolicyCannotBeEnvironmentSuffixed(t *testing.T) {
+	_, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
+		"execution: {call: c, timeout: 1s, memory: 1MB}\n"+
+		"region:\n    pinned:\n        name: eu\n    pinned_preview:\n        name: us\n")
+	assert.ErrorContains(t, err, "unknown key 'pinned_preview'")
+}
