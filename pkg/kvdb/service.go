@@ -1,6 +1,7 @@
 package kvdb
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 
 	ds "github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/query"
 )
 
 func (kvd *kvDatabase) cleanup() {
@@ -143,4 +145,45 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 
 func (k *kvDatabase) Factory() kvdb.Factory {
 	return k.factory
+}
+
+// Destroy closes this database and removes what this node holds for it.
+//
+// IT GOES UNDER THE CRDT RATHER THAN THROUGH IT. The replicated set lives at a
+// key prefix inside the node's own datastore — see New, which opens it at
+// `crdt/<path>` — so removing that prefix is a local write the broadcaster
+// never sees. Going through Delete would publish a tombstone per key, and every
+// replica would apply it: the node letting go would delete the database for the
+// whole fleet.
+//
+// CLOSE FIRST, so nothing is writing into the prefix while it is being removed
+// and the topic is already unsubscribed. Close also drops this database from the
+// factory, so a later New opens it again from whatever the fleet still holds.
+func (kvd *kvDatabase) Destroy(ctx context.Context) error {
+	path := kvd.path
+	store := kvd.factory.node.Store()
+	kvd.Close()
+
+	results, err := store.Query(ctx, query.Query{
+		Prefix:   ds.NewKey("crdt/" + path).String(),
+		KeysOnly: true,
+	})
+	if err != nil {
+		return err
+	}
+	defer results.Close()
+
+	batch, err := store.Batch(ctx)
+	if err != nil {
+		return err
+	}
+	for entry := range results.Next() {
+		if entry.Error != nil {
+			return entry.Error
+		}
+		if err := batch.Delete(ctx, ds.NewKey(entry.Key)); err != nil {
+			return err
+		}
+	}
+	return batch.Commit(ctx)
 }
