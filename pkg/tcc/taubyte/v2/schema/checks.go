@@ -89,10 +89,32 @@ type compiled struct {
 	fields map[string]any
 }
 
+// AuditOption narrows what an audit can know about the compile it is reading.
+type AuditOption func(*auditOf)
+
+type auditOf struct{ environment string }
+
+// AuditIn names the environment the object was compiled FOR.
+//
+// A COMPILE IS FOR ONE DEPLOYMENT and the object does not say which — the values
+// in it are already resolved, so `name_preview` and `name` are indistinguishable
+// once compiled. Without the name there is no way to ask whether a placement is
+// inside the regions THAT environment keeps its state in, because there is no way
+// to know which environment's list to read.
+//
+// Omitted, every check that does not need it still runs.
+func AuditIn(environment string) AuditOption {
+	return func(a *auditOf) { a.environment = environment }
+}
+
 // Audit runs every cross-resource check over a compiled object.
-func Audit(obj map[string]any, r Resolver) []Finding {
+func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	if r == nil {
 		r = StubResolver()
+	}
+	var in auditOf
+	for _, opt := range opts {
+		opt(&in)
 	}
 	root := obj
 	if inner, ok := obj[interp.ProjectKey].(map[string]any); ok {
@@ -118,7 +140,7 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	out = append(out, checkAccessDuplicates(all)...)
 	out = append(out, checkDatabaseOps(all)...)
 	out = append(out, checkWorkflows(all)...)
-	out = append(out, checkRegions(root, all)...)
+	out = append(out, checkRegions(root, all, in.environment)...)
 	// The record of what the compile produced sits BESIDE the project, so it is read
 	// from the object rather than from the project inside it.
 	out = append(out, checkAuthoredBuiltins(interp.LoweredOf(obj), all)...)
@@ -947,9 +969,9 @@ func effectiveAllowance(scopes map[string]scopeAllowance, path string) []string 
 // is also why this doubles as the typo-catcher — once a ceiling exists, `eu-wst` is
 // simply not within it — and why a project with no ceiling has no typo-catcher at all
 // until the deferred validation regionAttributes describes can be carried.
-func checkRegions(root map[string]any, all []compiled) []Finding {
+func checkRegions(root map[string]any, all []compiled, environment string) []Finding {
 	scopes := scopeAllowances(root)
-	var out []Finding
+	out := checkEnvironmentRegions(root)
 
 	paths := make([]string, 0, len(scopes))
 	for path := range scopes {
@@ -1001,7 +1023,82 @@ func checkRegions(root map[string]any, all []compiled) []Finding {
 		}
 	}
 
-	return append(out, checkEverythingIsPlaced(root, all)...)
+	out = append(out, checkEverythingIsPlaced(root, all)...)
+	return append(out, checkPlacedInsideTheEnvironment(root, all, environment)...)
+}
+
+// checkEnvironmentRegions: an environment narrows the project's allowance and
+// never widens it, exactly as a namespace does.
+//
+// AN ENVIRONMENT IS ON MANY REGIONS — that is why the field is a list — and the
+// regions it keeps its state in are still bounded by what the project allows.
+// Nothing checked this, so `regions: [ap]` under a project allowing only `eu`
+// compiled clean AND was honoured at runtime: the environment quietly widened
+// the one statement the project makes about where its data may ever be.
+func checkEnvironmentRegions(root map[string]any) []Finding {
+	allowed := listAt(root, "regions")
+	if len(allowed) == 0 {
+		return nil
+	}
+
+	var out []Finding
+	for _, env := range EnvironmentsIn(root) {
+		for _, region := range env.Regions {
+			if slices.Contains(allowed, region) {
+				continue
+			}
+			out = append(out, Finding{Broken, "environments", env.Name, "",
+				fmt.Sprintf("keeps state in region %q, which the project does not allow", region),
+				"An environment narrows the project's regions and never widens them: a deployment may not keep state where the project said nothing may.", ""})
+		}
+	}
+	return out
+}
+
+// checkPlacedInsideTheEnvironment: a resource is placed within the regions the
+// environment it is deployed to keeps its state in.
+//
+// IT NEEDS THE ENVIRONMENT'S NAME and says nothing without one — see AuditIn.
+// The placement being read is already resolved for whichever environment this
+// compile was for, so checking it against a different environment's list would
+// report the wrong deployment.
+func checkPlacedInsideTheEnvironment(root map[string]any, all []compiled, environment string) []Finding {
+	if environment == "" {
+		return nil
+	}
+
+	var allowed []string
+	for _, env := range EnvironmentsIn(root) {
+		if env.Name == environment {
+			allowed = env.Regions
+			break
+		}
+		// A SHADOW KEEPS NO STATE OF ITS OWN, so it is bounded by the
+		// environment it was written inside — which is also why the vocabulary
+		// gives it no regions field to disagree with.
+		for _, shadow := range env.Shadows {
+			if shadow.Name == environment {
+				allowed = env.Regions
+			}
+		}
+	}
+	if len(allowed) == 0 {
+		return nil
+	}
+
+	var out []Finding
+	for _, res := range all {
+		for _, field := range []string{"region/name", "region/main", "region/standby"} {
+			region := res.str(field)
+			if region == "" || slices.Contains(allowed, region) {
+				continue
+			}
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				fmt.Sprintf("is placed in region %q, which %s does not keep state in", region, environment),
+				"A deployment keeps its state in the regions it declares. Widen the environment's regions, or place this within them.", res.id})
+		}
+	}
+	return out
 }
 
 // checkEverythingIsPlaced: a resource with a physical footprint says where it is,

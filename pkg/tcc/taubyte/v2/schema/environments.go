@@ -147,18 +147,33 @@ func environmentsFrom(table map[string]any, of string) []Environment {
 	return out
 }
 
+// stringsIn reads a list of strings out of a compiled value, in EITHER of the
+// two shapes a compiled object arrives in.
+//
+// A COMPILE IN THIS PROCESS YIELDS []string; THE SAME OBJECT THROUGH THE
+// REGISTER YIELDS []any, because it went through JSON on the way. This read
+// handled only the second, and returned nil for the first — silently, since a
+// table with no branches and no regions is indistinguishable from one nobody
+// wrote.
+//
+// What that cost: Project.Environments() answered with empty Branches for an
+// in-process compile, so Deployments(branch) matched NOTHING and a push
+// resolved to no deployment at all; and empty Regions, so every consumer
+// reading an environment's allowance read no allowance.
 func stringsIn(v any) []string {
-	list, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(list))
-	for _, item := range list {
-		if s, ok := item.(string); ok {
-			out = append(out, s)
+	switch list := v.(type) {
+	case []string:
+		return append([]string(nil), list...)
+	case []any:
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
 		}
+		return out
 	}
-	return out
+	return nil
 }
 
 // Deployments is every deployment a pushed branch feeds, shadows included, in

@@ -671,12 +671,16 @@ func auditDocsInEnv(t *testing.T, env string, docs map[string]string) []schema.F
 	for path, body := range docs {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
 	}
-	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"),
-		schema.WithEnvironments("production", "preview"), schema.WithEnvironment(env))
+	opts := []schema.Option{schema.WithVirtual(fs, "/"), schema.WithBranch("main"),
+		schema.WithEnvironments("production", "preview")}
+	if env != "" {
+		opts = append(opts, schema.WithEnvironment(env))
+	}
+	c, err := schema.New(opts...)
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
-	return schema.Audit(obj.Flat(), nil)
+	return schema.Audit(obj.Flat(), nil, schema.AuditIn(env))
 }
 
 // TestTheSuffixIsNotAWayAroundTheCeiling.
@@ -743,4 +747,55 @@ func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 		"/project.yaml":  bare,
 		"/secret/s.yaml": "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\nsource: value\nrotation: 720h\n",
 	}), "is not placed anywhere")
+}
+
+// TestAnEnvironmentNarrowsTheProjectAndNeverWidensIt.
+//
+// AN ENVIRONMENT IS ON MANY REGIONS — that is why the field is a list — and the
+// regions it keeps its state in are still bounded by what the project allows.
+// Nothing checked this, so an environment could quietly widen the one statement
+// a project makes about where its data may ever be, and the runtime honoured it.
+func TestAnEnvironmentCannotWidenTheProject(t *testing.T) {
+	proj := func(envRegions string) string {
+		return "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [eu, us]\n" +
+			"region:\n    pinned:\n        name: eu\n" +
+			"environments:\n    production:\n        branches: [main]\n" + envRegions
+	}
+
+	has(t, auditDocs(t, nil, map[string]string{
+		"/project.yaml": proj("        regions: [ap]\n"),
+	}), schema.Broken, `keeps state in region "ap", which the project does not allow`)
+
+	hasNo(t, auditDocs(t, nil, map[string]string{
+		"/project.yaml": proj("        regions: [eu, us]\n"),
+	}), "which the project does not allow")
+}
+
+// TestAResourceIsPlacedWhereItsDeploymentKeepsState.
+//
+// THE AUDIT HAS TO BE TOLD WHICH DEPLOYMENT IT IS READING. A compile is for one
+// environment and the object does not say which — `name_preview` and `name` are
+// indistinguishable once resolved — so without the name there is no way to know
+// whose region list to check against.
+func TestAResourceIsPlacedWhereItsDeploymentKeepsState(t *testing.T) {
+	docs := map[string]string{
+		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [eu, us]\n" +
+			"environments:\n    production:\n        branches: [main]\n        regions: [eu]\n" +
+			"    preview:\n        branches: [\"*\"]\n        regions: [us]\n",
+		"/cache/c.yaml": "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" +
+			"region:\n    pinned:\n        name: eu\n        name_preview: us\n",
+	}
+
+	// Each deployment reads its own value, and each is inside its own list.
+	hasNo(t, auditDocsInEnv(t, "production", docs), "does not keep state in")
+	hasNo(t, auditDocsInEnv(t, "preview", docs), "does not keep state in")
+
+	// Now preview's value leaves preview's regions.
+	docs["/cache/c.yaml"] = "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" +
+		"region:\n    pinned:\n        name: eu\n        name_preview: eu\n"
+	has(t, auditDocsInEnv(t, "preview", docs), schema.Broken,
+		`is placed in region "eu", which preview does not keep state in`)
+
+	// TOLD NOTHING, IT SAYS NOTHING rather than guessing a deployment.
+	hasNo(t, auditDocsInEnv(t, "", docs), "does not keep state in")
 }
