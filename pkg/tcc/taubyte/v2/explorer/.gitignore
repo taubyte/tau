@@ -2,4 +2,13 @@ node_modules/
 dist/
 public/tcc.wasm
 public/wasm_exec.js
-src/gen/
+
+# src/gen holds ONE generated file and it is COMMITTED, unlike everything above
+# it here. The three other artifacts tcc-gen emits -- pkg/specs/kinds.go,
+# pkg/specs/project.go, config.schema.json -- are committed and drift-checked,
+# and this one was ignored while still being drift-checked. A fresh clone
+# therefore failed the check for a file it could not have: "drifted ... regenerate
+# with tcc-gen and adopt", about a file adopting cannot keep.
+#
+# A generated file that is not in the tree cannot be guarded against drifting
+# from the tree. It is in the tree now.
