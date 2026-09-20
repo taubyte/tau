@@ -90,7 +90,10 @@ func (c *counted) Watch(context.Context, string) (<-chan string, error) {
 	return nil, errors.New("counting: no watch")
 }
 
-func (c *counting) Name() string           { return "counting" }
+// NAMED FOR THE VOCABULARY'S ENGINE, because the registry is keyed by (type,
+// engine) and the engine is what the author wrote: `kv: {engine: distributed}`.
+// A fixture named after itself is one the registry can never be asked for.
+func (c *counting) Name() string           { return "distributed" }
 func (c *counting) Types() []database.Type { return []database.Type{database.KV} }
 
 func (c *counting) Open(context.Context, database.Spec) (database.Conn, error) {
@@ -128,7 +131,7 @@ func residing(t *testing.T, now func() time.Time, max int, idle time.Duration) (
 }
 
 func spec(name string) database.Spec {
-	return database.Spec{Type: database.KV, Engine: "counting", Project: "shop", Environment: "prod", Name: name}
+	return database.Spec{Type: database.KV, Engine: "distributed", Project: "shop", Environment: "prod", Name: name}
 }
 
 // TestADatabaseIsOpenedOnceAndKeptWarm, which is the whole reason this service

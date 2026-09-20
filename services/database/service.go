@@ -1,0 +1,273 @@
+// Package database serves a project's databases, and the reason it exists is
+// that v1 made the compute node do it.
+//
+// # What v1 did
+//
+// The substrate opened the database. Every node that ever served a request for
+// a project held that project's connection, its indexes and, for tau's own
+// engines, its rows — so the data plane was every node that had ever run code,
+// the connection table was unbounded and never expired, and a database's
+// warmth was an accident of which node got the traffic. node/database.go is
+// still that shape.
+//
+// # Why it is its own service and not part of storage
+//
+// data-services.md decided three data services because their requirements
+// differ at scale, and the mechanism — rather than the word "hot" — is
+// residency. A bucket's current version is DERIVED from its keys, so whichever
+// node holds the blocks can answer it. A database's is an open engine, which
+// costs more to build than the request that needs it. So a database has to be
+// served where its engine already is, and something has to own the engines to
+// be able to say where that is. resident.go is that table.
+//
+// # One cell of the grid, and it says so
+//
+// The `database` kind is four models — kv, sql, document, vector — on one axis
+// and a consensus on another. THIS SERVICE SERVES ONE CELL: tau's own kv over
+// the replicated CRDT store. Everything else is refused BY NAME, which is the
+// rule node/queue.go already keeps for a crdt queue and node/cache.go for a
+// cache, and the one the database kind has been missing entirely while
+// `consensus` was RequiredWhen and honoured by nobody.
+//
+// A service that answered every call it was given and quietly did the wrong
+// thing for three quarters of them would be worse than one that refuses, and
+// the refusals are told apart: "this service does not serve that model yet" is
+// an operator's problem and Unimplemented, while "that database is not a kv" is
+// the caller's and FailedPrecondition. declarations.go holds the list, so
+// growing it is one edit rather than a sweep.
+//
+// # What an operator declares about a database node
+//
+// How much it may hold and for how long: WithMaxResident and WithIdle. Both
+// have defaults, because a node that refused to start without them would be a
+// node an operator has to tune before it runs at all.
+//
+// # The thing this package does not do
+//
+// AUTHORIZATION. Any peer that can reach this service can read and write any
+// project's data. That is v2's OSS trust model stated where it applies — swarm
+// membership is the boundary and the private swarm key enforces it — and a
+// deployment that does not trust its own nodes needs a caller identity on every
+// request, not a flag here. The register and the secrets service say the same.
+package database
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/libp2p/go-libp2p/core/host"
+
+	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/database"
+	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
+)
+
+// Service is the engines this node holds, the declarations it reads them from,
+// and the host it answers on.
+type Service struct {
+	host    host.Host
+	engines *engines
+	declare *declarations
+
+	serverOptions []rpc.ServerOption
+
+	startMu   sync.Mutex
+	server    *rpc.Server
+	closeOnce sync.Once
+	closeErr  error
+	closed    atomic.Bool
+}
+
+// Option injects what this service is built from.
+type Option func(*options) error
+
+type options struct {
+	registry *database.Registry
+	source   register.Registry
+	now      func() time.Time
+	max      int
+	idle     time.Duration
+
+	serverOptions []rpc.ServerOption
+}
+
+// WithEngines is what this node can connect to. Required: a database service
+// with no engines can answer nothing, and saying so at construction is better
+// than answering every call with the same refusal.
+func WithEngines(r *database.Registry) Option {
+	return func(o *options) error {
+		if r == nil {
+			return ErrNoEngines
+		}
+		o.registry = r
+		return nil
+	}
+}
+
+// WithRegister is where declarations are read from. Required, and it is the
+// whole of why a caller cannot describe a database — see declarations.go.
+func WithRegister(source register.Registry) Option {
+	return func(o *options) error {
+		if source == nil {
+			return ErrNoRegister
+		}
+		o.source = source
+		return nil
+	}
+}
+
+// WithMaxResident bounds how many engines this node holds at once.
+func WithMaxResident(n int) Option {
+	return func(o *options) error {
+		if n < 1 {
+			return fmt.Errorf("database: %d resident databases is not a bound", n)
+		}
+		o.max = n
+		return nil
+	}
+}
+
+// WithIdle is how long an engine nobody has asked for stays open.
+func WithIdle(d time.Duration) Option {
+	return func(o *options) error {
+		if d <= 0 {
+			return fmt.Errorf("database: idle %s: an engine closed immediately is never warm", d)
+		}
+		o.idle = d
+		return nil
+	}
+}
+
+// WithClock injects the local clock. Tests use it; production does not.
+func WithClock(now func() time.Time) Option {
+	return func(o *options) error {
+		if now == nil {
+			return errors.New("database: a nil clock")
+		}
+		o.now = now
+		return nil
+	}
+}
+
+// WithServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen.
+func WithServerOptions(opts ...rpc.ServerOption) Option {
+	return func(o *options) error {
+		o.serverOptions = append(o.serverOptions, opts...)
+		return nil
+	}
+}
+
+// New validates and allocates. It binds nothing and opens nothing — no listener
+// until Start and no engine until a call asks for one — so a node can construct
+// every service before starting any of them.
+func New(h host.Host, opts ...Option) (*Service, error) {
+	if h == nil {
+		return nil, ErrNoHost
+	}
+
+	o := options{max: DefaultMaxResident, idle: DefaultIdle}
+	for _, apply := range opts {
+		if err := apply(&o); err != nil {
+			return nil, fmt.Errorf("database: option: %w", err)
+		}
+	}
+	if o.registry == nil {
+		return nil, ErrNoEngines
+	}
+	if o.source == nil {
+		return nil, ErrNoRegister
+	}
+
+	projects, err := register.NewCache(o.source, specs.Load)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Service{
+		host:          h,
+		engines:       newEngines(o.registry, o.now, o.max, o.idle),
+		declare:       &declarations{projects: projects},
+		serverOptions: o.serverOptions,
+	}, nil
+}
+
+// Start listens and serves. Calling it twice, or after Close, is an error
+// rather than a second listener leaking or a silent no-op.
+func (s *Service) Start(ctx context.Context) error {
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+
+	if s.closed.Load() {
+		return errors.New("database: closed")
+	}
+	if s.server != nil {
+		return errors.New("database: already started")
+	}
+
+	server, err := rpc.Listen(ctx, s.host, Protocol, s.mount(), s.serverOptions...)
+	if err != nil {
+		return fmt.Errorf("database: listening: %w", err)
+	}
+	s.server = server
+	return nil
+}
+
+// Close stops serving and releases every engine this node holds.
+func (s *Service) Close() error {
+	s.closeOnce.Do(func() {
+		s.closed.Store(true)
+
+		s.startMu.Lock()
+		server := s.server
+		s.server = nil
+		s.startMu.Unlock()
+
+		if server != nil {
+			s.closeErr = server.Close()
+		}
+		s.closeErr = errors.Join(s.closeErr, s.engines.closeAll())
+	})
+	return s.closeErr
+}
+
+// Held is how many engines this node has open. It exists for an operator asking
+// what a node is holding, and for a test of the bound.
+func (s *Service) Held() int { return s.engines.held() }
+
+// kv resolves one database and answers its kv surface, or says why it cannot.
+func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
+	declaration, err := s.declare.of(ctx, at)
+	if err != nil {
+		return nil, err
+	}
+	// WHAT THIS CLOUD SERVES, BEFORE WHAT THE CALLER ASKED FOR. A postgres
+	// reached through KVGet is two different mistakes depending on the order
+	// these are checked, and the one worth reporting is that this service does
+	// not serve sql — not that the caller used the wrong verb on a database it
+	// could never have used the right one on.
+	if err := declaration.serves(); err != nil {
+		return nil, err
+	}
+	if declaration.spec.Type != database.KV {
+		return nil, fmt.Errorf("%w: %s is a %s", ErrWrongModel, at.id, declaration.spec.Type)
+	}
+
+	conn, err := s.engines.open(ctx, at.key(), declaration.revision, declaration.spec)
+	if err != nil {
+		return nil, err
+	}
+
+	kv, ok := conn.(database.KVConn)
+	if !ok {
+		// Unreachable while Registry.Register proves an engine answers its
+		// type's operations. Kept rather than dropped so a change to that rule
+		// cannot pass silently through here.
+		return nil, fmt.Errorf("%w: %s answers no kv surface", ErrWrongModel, declaration.spec.Engine)
+	}
+	return kv, nil
+}
