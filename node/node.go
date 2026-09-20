@@ -330,6 +330,10 @@ func (n *Node) openSecrets() error {
 // conditions, and reading them back is how that is checked rather than asserted.
 func (n *Node) tiers() []invoke.Runtime { return n.runtimes }
 
+// Region is where this node is, as the operator configured it. Empty means a
+// node that will not say, which competes for nothing anybody pinned.
+func (n *Node) Region() string { return n.cfg.Region }
+
 func (n *Node) openWorker() error {
 	if !n.cfg.runs(Worker) {
 		return nil

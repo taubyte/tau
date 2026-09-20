@@ -33,6 +33,7 @@ import (
 	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/kvdb"
+	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/raft"
 )
 
@@ -47,6 +48,15 @@ const Protocol = "tau"
 // where a node keeps its state. `Others` is the per-service bag dream already
 // carries and `copies` is the only key anything else reads.
 const servicePrefix = "svc:"
+
+// regionPrefix marks the universe config entry naming the region a node is in:
+// `region:eu`.
+//
+// A KEY AND NOT A VALUE, because `Others` is a map[string]int and a region is a
+// label rather than a number — the same reason the service list is spelled as
+// keys. A node with no such entry is in no region, which is what a single-region
+// universe wants and what every test that is not about placement gets.
+const regionPrefix = "region:"
 
 // runtimes are the tiers nodes in this process run on.
 //
@@ -175,7 +185,7 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 	// developer running it. So every node here takes an ephemeral loopback
 	// port, which is also what makes a FLEET of them possible: two nodes
 	// cannot share one port, and :0 is how dream allocates every other one.
-	nodeConfig := node.Config{Services: servicesIn(cfg), Cloud: u.Name()}
+	nodeConfig := node.Config{Services: servicesIn(cfg), Cloud: u.Name(), Region: regionIn(cfg, h.ID().String())}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 
 	options := []node.Option{
@@ -235,12 +245,60 @@ func servicesIn(cfg *iface.ServiceConfig) []string {
 	return out
 }
 
+// regionIn is the region THIS node is in, out of the regions the universe
+// declares.
+//
+// A UNIVERSE EXPRESSES ONE NODE SHAPE. `copies: 4` is four nodes from one
+// config, so a fleet spread over two regions cannot be written as two configs —
+// the universe declares the regions and each node takes one.
+//
+// WHICH ONE IS HRW OVER THE PEER ID, the same rendezvous every placement in this
+// system uses. It spreads evenly, it needs no copy index that dream does not
+// carry, and it is reproducible: the same universe puts the same peer in the
+// same region every run, so a test that failed can be read.
+//
+// No region declared is a node in no region, which is what a single-region
+// universe wants and what every test not about placement gets.
+func regionIn(cfg *iface.ServiceConfig, peerID string) string {
+	if cfg == nil {
+		return ""
+	}
+
+	var declared []placement.Member
+	for key := range cfg.Others {
+		if name, ok := strings.CutPrefix(key, regionPrefix); ok && name != "" {
+			declared = append(declared, placement.Member{ID: name, Accepts: true})
+		}
+	}
+	if len(declared) == 0 {
+		return ""
+	}
+	return placement.Rank(peerID, declared)[0].ID
+}
+
+// Bag is a universe config's per-service map, which is where a node reads what
+// it runs and where it is.
+type Bag map[string]int
+
+// In spreads this universe's nodes across the named regions. Every node reads
+// the same list and takes one of them — see regionIn.
+//
+//	Others: nodeDream.Services(node.Register, node.Stats).In("eu", "us")
+func (b Bag) In(regions ...string) Bag {
+	for _, region := range regions {
+		if region != "" {
+			b[regionPrefix+region] = 1
+		}
+	}
+	return b
+}
+
 // Services renders a services list into the config bag create reads it from.
 // Merge it with whatever else the universe config carries.
 //
 //	Others: nodeDream.Services(node.Register, node.Stats)
-func Services(names ...string) map[string]int {
-	out := map[string]int{}
+func Services(names ...string) Bag {
+	out := Bag{}
 	for _, name := range names {
 		out[servicePrefix+name] = 1
 	}

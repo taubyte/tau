@@ -84,6 +84,17 @@ type Config struct {
 	// each other's traffic.
 	Cloud string
 
+	// Region is where this node is, as one of the opaque labels a project
+	// writes. Empty means a node that will not say, which competes for nothing
+	// anybody pinned — see services/database/placement.go: a node that cannot
+	// say where it is must not be handed data pinned for a legal reason.
+	//
+	// AN OPERATOR'S WORD AND NOT A DISCOVERY. The vocabulary never enumerates
+	// regions, so there is nothing for a node to look itself up in; what makes
+	// a label mean anything is that the same operator wrote it here and in the
+	// project's allowance.
+	Region string
+
 	// Container is the container tier this node runs, if any. See
 	// container.go, and in particular what its Runtime field is for.
 	Container ContainerConfig
