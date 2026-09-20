@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Run a test command on a build server instead of on this machine.
+#
+#   scripts/rtest go test ./services/database/ -race -count=1
+#   scripts/rtest go test ./node/dream/ -tags dreaming -count=1
+#   TAU_REMOTE=192.168.29.11 TAU_CAP_MEM=20G scripts/rtest make test-dreaming
+#
+# ★ WHY THIS EXISTS. The suites here are heavy enough to make the machine
+# somebody is working on unusable, and the dreaming ones are timing-sensitive:
+# a suite that loses the CPU to a compile fails tests that describe nothing but
+# the contention. The build servers are idle and have the cores.
+#
+# ★ IT SHIPS THE WORKING TREE, NOT HEAD, because the whole point is to test
+# what is not committed yet. But it ships only what the REPO contains -- every
+# tracked file plus anything new that is not ignored -- and never the build
+# caches, which are gigabytes of node_modules, target/ and wasm output that the
+# remote rebuilds anyway. Shipping the raw tree once took longer than the tests.
+#
+# ★ IT RUNS UNDER cap ON THE FAR SIDE, for the reason scripts/cap exists: an
+# unbounded test run kills the host it is on, and the host being remote does not
+# make that acceptable.
+set -euo pipefail
+
+host="${TAU_REMOTE:-192.168.29.12}"
+key="${TAU_REMOTE_KEY:-$HOME/.ssh/id_ed25519_homelab}"
+mem="${TAU_CAP_MEM:-12G}"
+dir="${TAU_REMOTE_DIR:-tau-rtest}"
+
+if [ $# -eq 0 ]; then
+	echo "usage: scripts/rtest <command...>   e.g. scripts/rtest go test ./pkg/... " >&2
+	exit 2
+fi
+
+ssh_opts=(-o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -i "$key")
+
+# THE FILE LIST IS git's, not the filesystem's. --exclude-standard is what keeps
+# an ignored 3 GB cache out of it without maintaining a second ignore list here.
+{ git ls-files; git ls-files --others --exclude-standard; } |
+	rsync -a --delete --files-from=- --exclude='.git/' \
+		-e "ssh ${ssh_opts[*]}" ./ "$host:$dir/"
+
+# Quote every argument so a -run regex or a path with a space survives the shell
+# on the far side.
+remote=""
+for arg in "$@"; do
+	remote+=" $(printf '%q' "$arg")"
+done
+
+exec ssh "${ssh_opts[@]}" "$host" \
+	"cd $dir && PATH=/usr/local/go/bin:\$PATH TAU_CAP_MEM=$mem ./scripts/cap$remote"
