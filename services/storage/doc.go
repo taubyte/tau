@@ -138,6 +138,30 @@
 // nothing weaker works. It is deferred, and its dependency does not exist: it
 // would need a consensus-group Join seam that is not in the tree.
 //
+// # R AND K ARE THE CLOUD'S, NOT THIS NODE'S
+//
+// The replica target and the durability barrier are read from the published
+// fleet document (pkg/fleet, fleet.go), never from per-node config, and for two
+// different reasons. R is a number every node must compute with identically:
+// two nodes given different R compute different desired sets forever, open
+// different shards, and bill a tenant's bytes differently depending on which is
+// asked. K is a number that states what this cloud PROMISES: two nodes with
+// different K disagree about nothing computable — each waits for its own count
+// — which is why the drift is invisible and why nothing in the cloud can catch
+// a node left at a bring-up value acking writes alone.
+//
+// NOT READ YET IS NOT ONE RULE. A node that has never read the document may
+// serve every read, open every shard, import blocks, write reference rows and
+// collect a DEAD object; it may not drop a misplaced block, because gate 5's
+// right-hand side is R and it has none. And it may not acknowledge a write,
+// because a put that cannot learn K cannot say what it waited for.
+//
+// THE SECOND OF THOSE IS AN AVAILABILITY CHANGE AND IS STATED RATHER THAN
+// DISCOVERED: a cold node booting into a register outage is READ-ONLY, so a
+// write can now fail for a reason that is not the write's. That is the right
+// direction — a refused write is visible and a lied-to write is not — and it is
+// a real cost, paid knowingly.
+//
 // # RECLAMATION: FIVE GATES, ONE ENUMERATION, TWO ORDERINGS
 //
 // THE SWEEP ENUMERATES THIS SERVICE'S OWN BLOCK INDEX AND NOTHING ELSE. The
@@ -177,6 +201,14 @@
 // POSSESSION IS PROVEN, NEVER CLAIMED. Gate 5 counts holders that PASSED a
 // probe, and there is no door that takes a claimed one. v1 conflated a claim
 // with possession and let a data-destruction path trust a peer's self-assertion.
+//
+// AND GATE 5 HAS A RIGHT-HAND SIDE THIS NODE DOES NOT OWN. The count is
+// compared against R as the CLOUD published it, so a node that has never read
+// the fleet document fails the gate outright rather than guessing — guessing
+// three where the cloud says five drops bytes two replicas short. Gates 1-4
+// never mention R, which is why the same node still collects a dead object: a
+// dead object is dead at every replication factor, and refusing that would
+// stop reclamation on every node that lost the register for no safety at all.
 //
 // # A CONSTRAINT ON THIS SERVICE'S STORE, and it must not be refactored away
 //
@@ -231,9 +263,15 @@
 //	     isolation. shard.go carries it.
 //	O-4  the kind's name. A service named storage with a kind named bucket is
 //	     already ruled acceptable; nothing here depends on which.
-//	O-5  K IS NEVER INFERRED. A single-node cloud writes Barrier: 1. The
-//	     service cannot tell a fleet of one from a partition of one, so it
-//	     refuses to guess. config.go, and TestKIsNeverInferred.
+//	O-5  K IS NEVER INFERRED, and the target is narrower than it reads. What
+//	     is refused is DERIVING K FROM THE MEMBERSHIP VIEW: the service cannot
+//	     tell a fleet of one from a partition of one, so a K that adapted to
+//	     what a node can currently see would ack a write during a partition
+//	     that no second node ever saw. A single-node cloud still WRITES 1 — it
+//	     has just written it once for the cloud rather than once per machine,
+//	     because a published constant cannot tell those two apart either, which
+//	     is exactly the property this wants. pkg/fleet.Storage, and
+//	     TestKIsNeverInferred.
 //	O-6  a build log's owner and lifetime. Untouched here; it decides which
 //	     buckets exist, not how one works.
 //

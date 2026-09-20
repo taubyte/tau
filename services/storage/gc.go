@@ -54,7 +54,9 @@ import (
 //     at nonce-derived offsets — one or two block reads, unforgeable without
 //     the bytes — so A REPLICA COUNT BECOMES A MEASUREMENT. The probe itself is
 //     an RPC and belongs to that round; the gate counts PROVEN holders and has
-//     no door that takes a claimed one.
+//     no door that takes a claimed one. AND R IS THE CLOUD'S, so a node that
+//     has never read it fails this gate outright rather than guessing at the
+//     number a delete is measured against (Policy, and fleet.go).
 //
 // ── THE SWEEP, AND THE ONE ENUMERATION IT MAY MAKE ───────────────────────
 //
@@ -135,10 +137,31 @@ type Gates struct {
 	ProvenHolders int
 }
 
+// Policy is what the cloud promises, as the gate that destroys data sees it.
+// It is neither measured nor a peer's claim, which is why it is an argument
+// and not a Gates field.
+//
+// Known IS NOT A NICETY. A node that has never read the cloud's replica target
+// has no right-hand side for gate 5: guessing three where the cloud says five
+// drops bytes two replicas short, and guessing three where it says two is
+// harmless and is still a guess on the path that destroys data. See fleet.go
+// for why the same unknown does NOT stop a dead-object collection.
+type Policy struct {
+	// Replicas is R as the cloud published it. It is meaningless unless Known.
+	Replicas int
+
+	// Known is whether this node has ever read R at all.
+	Known bool
+}
+
 // Open reports whether every gate that applies to this purpose is open, and
 // names the first one that is not. A caller that cannot say which gate closed
 // cannot be trusted to delete data, so the error always says.
-func (g Gates) Open(p Purpose, now time.Time, grace time.Duration, replicas int) error {
+//
+// POLICY IS A WHOLE ARGUMENT AND NOT TWO. An R and a "do I have an R" passed
+// separately are two things a caller can get from different reads; one value
+// carries the answer and its own validity together.
+func (g Gates) Open(p Purpose, now time.Time, grace time.Duration, policy Policy) error {
 	if !g.HoldsShard {
 		return fmt.Errorf("%w: %s: this node does not hold the referencing shard", ErrGateClosed, p)
 	}
@@ -161,8 +184,16 @@ func (g Gates) Open(p Purpose, now time.Time, grace time.Duration, replicas int)
 			return fmt.Errorf("%w: %s: observed %s ago, grace is %s", ErrGateClosed, p, elapsed, grace)
 		}
 	case MisplacementDrop:
-		if g.ProvenHolders < replicas {
-			return fmt.Errorf("%w: %s: %d other holders proved possession, %d required", ErrGateClosed, p, g.ProvenHolders, replicas)
+		// THE FLOOR IS THE RIGHT-HAND SIDE OF A DELETE, so a node without one
+		// does not get to pick. Gates 1-4 above needed no R, which is why a
+		// DEAD object is still collectable here — a dead object is dead at
+		// every replication factor, and refusing that would stop reclamation
+		// on every node that lost the register for no safety at all.
+		if !policy.Known {
+			return fmt.Errorf("%w: %s: this node has never read the cloud's replica target", ErrGateClosed, p)
+		}
+		if g.ProvenHolders < policy.Replicas {
+			return fmt.Errorf("%w: %s: %d other holders proved possession, %d required", ErrGateClosed, p, g.ProvenHolders, policy.Replicas)
 		}
 	default:
 		return fmt.Errorf("%w: unknown %s", ErrGateClosed, p)

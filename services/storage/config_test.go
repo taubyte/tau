@@ -18,28 +18,10 @@ import (
 func TestConfigDefaults(t *testing.T) {
 	c, err := Config{}.withDefaults()
 	require.NoError(t, err)
-	require.Equal(t, 3, c.R())
-	require.Equal(t, 2, c.K())
 	require.Equal(t, DefaultMaxSkew, c.MaxSkew)
 	require.Equal(t, 24*time.Hour, c.GraceGC)
 	require.Equal(t, 5*time.Second, c.Liveness)
 	require.Equal(t, 60*time.Second, c.Stabilize)
-}
-
-// TestKIsNeverInferred is owner decision O-5's default, at the place it bites.
-// A K that adapted to the membership view would ack a write during a partition
-// that no second node ever saw — which is v1's shipped lie, and the reason a
-// single-node cloud has to WRITE Barrier: 1 rather than have it guessed.
-func TestKIsNeverInferred(t *testing.T) {
-	one, err := Config{Replicas: 1, Barrier: 1}.withDefaults()
-	require.NoError(t, err)
-	require.Equal(t, 1, one.K(), "a single-node cloud says so in operator config")
-
-	// Nothing in this package reads a membership count to choose K: the only
-	// way to get K=1 is to have written it.
-	def, err := Config{}.withDefaults()
-	require.NoError(t, err)
-	require.Equal(t, 2, def.K())
 }
 
 func TestConfigRefusesWhatCannotBeCorrect(t *testing.T) {
@@ -48,9 +30,9 @@ func TestConfigRefusesWhatCannotBeCorrect(t *testing.T) {
 		cfg  Config
 		says string
 	}{
-		{"negative replicas", Config{Replicas: -1}, "places nothing"},
-		{"zero-ish barrier", Config{Barrier: -1}, "shipped lie"},
-		{"barrier above replicas", Config{Replicas: 2, Barrier: 3}, "every write would fail"},
+		// R and K are not here. They are the cloud's, so the pair that cannot
+		// be correct is refused where it is read — pkg/fleet.Storage.Resolved,
+		// and TestAPairThatCannotBeCorrectIsRefused in fleet_test.go.
 		{"negative grace", Config{GraceGC: -time.Hour}, "must be positive"},
 		{"negative skew", Config{MaxSkew: -time.Hour}, "must be positive"},
 		{"stabilize below liveness", Config{Liveness: 90 * time.Second, Stabilize: 60 * time.Second}, "faster than acknowledgement"},
@@ -205,14 +187,14 @@ func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 
 	require.Equal(t, []string{
 		"Accounted", "Address", "Blocks", "Bucket", "Catalog", "Clock", "Config", "Datastore",
-		"DeadObject", "DefaultMaxSkew",
+		"DeadObject", "DefaultBarrier", "DefaultMaxSkew", "DefaultReplicas",
 		"ErrEmptyIdentity", "ErrEmptyObjectName", "ErrGateClosed", "ErrLocalClockSkew",
 		"ErrLogicalOverflow", "ErrNoAddress", "ErrNotFound", "ErrNotThisServicesRow",
 		"ErrRemoteClockSkew", "ErrStampRange", "ErrWriterMismatch",
 		"Gates", "Local", "Marker", "Meter", "MisplacementDrop",
 		"NewAddress", "NewBloomMarker", "NewBucket", "NewClock", "NewExactMarker",
 		"NewLocal", "NewSweeper", "Newest", "Op", "OpAdd", "OpRefuse", "OpRemove",
-		"Order", "PackStamp", "ParseVersionKey", "Purpose",
+		"Order", "PackStamp", "ParseVersionKey", "Policy", "Purpose",
 		"Reference", "ShardOpener", "Shards", "SweepResult", "Sweeper",
 		"UnpackStamp", "Usage", "Version", "VersionKey", "VersionRecord",
 	}, dedupe(names))

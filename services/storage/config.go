@@ -18,6 +18,16 @@ import (
 // what an operator wrote down; THE NODE is passed in explicitly; RESOURCES are
 // narrow interfaces injected by whatever composes the node.
 //
+// WHAT AN OPERATOR WRITES DOWN PER NODE IS NOW FOUR DURATIONS, and that is the
+// whole of it. R and K are not here: they are what the CLOUD promises, and a
+// cloud-wide number configured per node is two nodes promising different
+// things with no way to notice. They are published once and read by every node
+// — pkg/fleet, and fleet.go. The four that remain are per-node facts by
+// construction: a clock budget is about this machine's NTP peer, a grace
+// window is timed from what THIS node observed, and the two membership
+// timescales make a node reach the same answer later rather than a different
+// answer forever.
+//
 // EVERY INTERFACE HERE IS DECLARED BY THE CONSUMER AND IS AS NARROW AS THE USE.
 // In particular there is no peer.Node anywhere in this package. peer.Node
 // bundles a host, a DHT, a datastore, a DAG and pubsub, and a test that wanted
@@ -33,25 +43,10 @@ import (
 //
 // REPLICATION POLICY IS THE PLATFORM'S, NOT A BUCKET'S, and the vocabulary
 // says so: the cache kind carries "NO MECHANISM AND NO REPLICA COUNT. How
-// copies are kept is the platform's to change." So Replicas and Barrier are
-// operator config and there is no per-bucket override anywhere in this
-// package.
+// copies are kept is the platform's to change." So R and K are published once
+// for the cloud and read by every node from it — pkg/fleet.Storage and
+// fleet.go — and there is no per-bucket override and no per-node one either.
 type Config struct {
-	// Replicas is R: how many nodes the repair loop drives a bucket's index
-	// and an object's bytes towards. Default 3.
-	Replicas int
-
-	// Barrier is K: how many acknowledgements a write waits for before it
-	// returns. Default 2.
-	//
-	// K IS NEVER INFERRED. A single-node cloud writes Barrier: 1 in operator
-	// config; the service cannot tell "the fleet is one node" from "I am
-	// partitioned from the other two", so it refuses to guess. That is owner
-	// decision O-5's default, and this is where it bites: a K that adapted to
-	// the membership view would ack a write during a partition that no second
-	// node ever saw, which is exactly v1's shipped lie.
-	Barrier int
-
 	// MaxSkew is how far ahead of local time a remote stamp may be and still
 	// advance this node's clock. Default 5m. See clock.go.
 	MaxSkew time.Duration
@@ -71,12 +66,6 @@ type Config struct {
 // correct. It is called once, by whatever constructs the service, and every
 // consumer in this package reads the result rather than re-deriving a default.
 func (c Config) withDefaults() (Config, error) {
-	if c.Replicas == 0 {
-		c.Replicas = 3
-	}
-	if c.Barrier == 0 {
-		c.Barrier = 2
-	}
 	if c.MaxSkew == 0 {
 		c.MaxSkew = DefaultMaxSkew
 	}
@@ -90,15 +79,6 @@ func (c Config) withDefaults() (Config, error) {
 		c.Stabilize = 60 * time.Second
 	}
 
-	if c.Replicas < 1 {
-		return Config{}, fmt.Errorf("storage: replicas %d: a target below one places nothing", c.Replicas)
-	}
-	if c.Barrier < 1 {
-		return Config{}, fmt.Errorf("storage: barrier %d: a write that waits for no acknowledgement is v1's shipped lie", c.Barrier)
-	}
-	if c.Barrier > c.Replicas {
-		return Config{}, fmt.Errorf("storage: barrier %d exceeds replicas %d: every write would fail", c.Barrier, c.Replicas)
-	}
 	if c.GraceGC <= 0 || c.MaxSkew <= 0 {
 		return Config{}, errors.New("storage: grace and skew budgets must be positive")
 	}
@@ -108,11 +88,29 @@ func (c Config) withDefaults() (Config, error) {
 	return c, nil
 }
 
-// R is the replica target.
-func (c Config) R() int { return c.Replicas }
-
-// K is the acknowledgement barrier.
-func (c Config) K() int { return c.Barrier }
+// DefaultReplicas is R when the cloud has published no fleet document, and
+// DefaultBarrier is K.
+//
+// EVERY NODE REACHES THEM THE SAME WAY, which is what keeps a cloud that has
+// declared nothing in agreement with itself: a definitive absence read by two
+// nodes is the same absence.
+//
+// THREE, BECAUSE THE SHARD ARITHMETIC IS SIZED FOR IT. shard.go's 256 shards
+// at R=3 is 768 shard-replicas over a fleet, which is the figure every cost
+// statement in this package is written against; it is also two copies surviving
+// one node going, on a service whose whole reason to exist rather than a
+// directory on a worker is that the bytes outlive the machine.
+//
+// TWO, BECAUSE A BARRIER OF ONE IS NOT A BARRIER. A write acked by the node
+// that took it has not left that node, which is the failure a durability
+// barrier exists to make impossible. Two is the smallest number that means a
+// second machine has the bytes before the caller is told so — and it is below
+// three deliberately, because waiting for every replica makes a single slow
+// node the write latency of the cloud.
+const (
+	DefaultReplicas = 3
+	DefaultBarrier  = 2
+)
 
 // Datastore is the slice of go-datastore this service's index needs, declared
 // here so nothing in this package can reach sideways out of the shard it was

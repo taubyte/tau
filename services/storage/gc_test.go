@@ -30,8 +30,8 @@ func TestEveryGateClosesByName(t *testing.T) {
 	observed := now.Add(-48 * time.Hour)
 	grace := 24 * time.Hour
 
-	require.NoError(t, openGates(observed).Open(DeadObject, now, grace, 3))
-	require.NoError(t, openGates(observed).Open(MisplacementDrop, now, grace, 3))
+	require.NoError(t, openGates(observed).Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}))
+	require.NoError(t, openGates(observed).Open(MisplacementDrop, now, grace, Policy{Replicas: 3, Known: true}))
 
 	for _, c := range []struct {
 		name    string
@@ -51,14 +51,14 @@ func TestEveryGateClosesByName(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			g := openGates(observed)
 			c.mutate(&g)
-			err := g.Open(c.purpose, now, grace, 3)
+			err := g.Open(c.purpose, now, grace, Policy{Replicas: 3, Known: true})
 			require.ErrorIs(t, err, ErrGateClosed)
 			require.Contains(t, err.Error(), c.says)
 			require.Contains(t, err.Error(), c.purpose.String())
 		})
 	}
 
-	err := openGates(observed).Open(Purpose(99), now, grace, 3)
+	err := openGates(observed).Open(Purpose(99), now, grace, Policy{Replicas: 3, Known: true})
 	require.ErrorIs(t, err, ErrGateClosed)
 	require.Contains(t, err.Error(), "purpose(99)")
 }
@@ -74,15 +74,15 @@ func TestTheTwoPurposesAskDifferentQuestions(t *testing.T) {
 	// An object nobody has ever tombstoned cannot be dead-object collected,
 	// and CAN be dropped as a misplacement once others prove they hold it.
 	g := openGates(time.Time{})
-	require.ErrorIs(t, g.Open(DeadObject, now, grace, 3), ErrGateClosed)
-	require.NoError(t, g.Open(MisplacementDrop, now, grace, 3))
+	require.ErrorIs(t, g.Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}), ErrGateClosed)
+	require.NoError(t, g.Open(MisplacementDrop, now, grace, Policy{Replicas: 3, Known: true}))
 
 	// And an object every gate is open for EXCEPT possession is collectable as
 	// dead and not droppable as a misplacement.
 	g = openGates(now.Add(-48 * time.Hour))
 	g.ProvenHolders = 0
-	require.NoError(t, g.Open(DeadObject, now, grace, 3))
-	require.ErrorIs(t, g.Open(MisplacementDrop, now, grace, 3), ErrGateClosed)
+	require.NoError(t, g.Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}))
+	require.ErrorIs(t, g.Open(MisplacementDrop, now, grace, Policy{Replicas: 3, Known: true}), ErrGateClosed)
 }
 
 func TestGraceIsMeasuredFromLocalObservation(t *testing.T) {
@@ -91,10 +91,10 @@ func TestGraceIsMeasuredFromLocalObservation(t *testing.T) {
 
 	// Exactly at the window it opens; one nanosecond short it does not.
 	g := openGates(now.Add(-grace))
-	require.NoError(t, g.Open(DeadObject, now, grace, 3))
+	require.NoError(t, g.Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}))
 
 	g = openGates(now.Add(-grace + time.Nanosecond))
-	require.ErrorIs(t, g.Open(DeadObject, now, grace, 3), ErrGateClosed)
+	require.ErrorIs(t, g.Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}), ErrGateClosed)
 }
 
 // dag builds a small DAG in memBlocks and returns the roots.
