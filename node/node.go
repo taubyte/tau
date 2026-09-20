@@ -945,6 +945,9 @@ func (n *Node) Worker() *worker.Service { return n.worker }
 // Secrets is this node's vault, or nil if it runs none.
 func (n *Node) Secrets() *secretsService.Service { return n.secrets }
 
+// Database is this node's database service, or nil if it runs none.
+func (n *Node) Database() *databaseService.Service { return n.database }
+
 // Stats is this node's view of the fleet, or nil.
 func (n *Node) Stats() *stats.Service { return n.stats }
 

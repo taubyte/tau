@@ -49,15 +49,15 @@ func TestACapturedBranchIsReportedAsTheDiscriminator(t *testing.T) {
 	require.True(t, model.Captures)
 	require.Equal(t, []string{"object", "streaming"}, model.Branch)
 
-	region := locationOf(t, "storage", "region/policy")
+	region := locationOf(t, "storage", "regions/policy")
 	require.True(t, region.Captures, "a kind may be discriminated twice")
 	require.Equal(t, []string{"pinned", "cdn", "failover"}, region.Branch, "declaration order, which is the order an author reads them in")
 
-	// A PLAIN SEGMENT IS NOT A BRANCH. `region/failover/main` is authored under a
+	// A PLAIN SEGMENT IS NOT A BRANCH. `regions/failover/main` is authored under a
 	// literal, so there is nothing to choose and nothing to report.
-	main := locationOf(t, "storage", "region/main")
+	main := locationOf(t, "storage", "regions/main")
 	require.Empty(t, main.Branch)
-	require.Equal(t, "region/failover/main", strings.Join(main.Authored, "/"))
+	require.Equal(t, "regions/failover/main", strings.Join(main.Authored, "/"))
 }
 
 // TestTHECODECCOMESFROMTHEVOCABULARY. A Duration and a Bytes both compile to a

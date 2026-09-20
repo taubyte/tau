@@ -25,20 +25,26 @@ import (
 // What is refused, and why, since the refusals are the argument:
 //
 //   - IDENTITY — `id`, `name`. Two environments of one resource are one resource.
+//
 //   - THE ACCESS BLOCK — `ops` is a capability. `ops_preview: [put]` is preview writing
 //     where production reads.
+//
 //   - CONTRACTS — a cron's `schedule` (and `schedule_preview: "0 0 30 2 *"` is the
 //     off-switch somebody would write instead of asking for one), a stream's `match`,
 //     a route's `path`, a workflow's `start` and `on_error`, a zone's `records`.
+//
 //   - SHAPES — `database/vector/dimensions` and an agent's `memory/dimensions`: an index
 //     built at another width is not the same index.
+//
 //   - RETRY POLICY — `max_attempts`, `retry/*`, a step's `attempts` and `backoff`. How
 //     many times a thing is tried before it is given up on is the same promise in
 //     every environment.
+//
 //   - WHAT IT RUNS — `source`, `execution/call`, `implements`, `instructions`. A branch
 //     resolves to one environment, so that difference already has a spelling.
 //     `source/image` is NOT in this set: an image is pulled rather than built, a
 //     coordinate like an external database's host.
+//
 //   - HOW IT IS BUILT, structurally — `build/script`, `build/dockerfile`,
 //     `build/target`. A different recipe is a different artifact, and the branch key
 //     itself cannot carry a suffix anyway (TestABuildBranchCannotBeEnvironmentSuffixed).
@@ -46,19 +52,18 @@ import (
 //     it builds with, the two commands, and where the product lands. That is the axis
 //     every other platform spells as a per-context build override, and it arrives here
 //     as `run_preview` sitting beside `run`.
+//
 //   - REFERENCES — every one except `model/name`, which is marked with its namespace
 //     because a cheaper model in preview is the difference people actually ask for.
 //
-// PLACEMENT is marked, and it is the one entry here that arrives on every kind at once,
-// because regionAttributes is hung off whatever declares Placed() rather than written
-// per kind. `name`, `main` and `standby` take a suffix; what a preview deployment costs
-// to place is a CEILING and reads exactly like `size` does. The POLICY does not, and
-// nobody refused it — the policy IS the branch key, and envPath returns nil for a path
-// ending in an Either, so `failover` stays failover in every environment. What keeps
-// the marked half safe is that checkRegions reads these off the per-environment
-// compiled resource, so `name_preview` outside the scope's allowance is Broken exactly
-// as `name` would be: the governance statement is the ceiling, and a per-environment
-// placement only moves within it.
+//   - PLACEMENT — a resource's own `regions` block. Its regions sit directly ON the
+//     branch key (`pinned: [eu, us]`) and envPath refuses a path ending in an Either,
+//     because a branch is a key the document chooses rather than one the schema names:
+//     there is nothing there to suffix. What IS per-environment is the SCOPE's own
+//     `regions`, a plain list — `regions_preview: [us]` at the project places every
+//     resource that says nothing, which is the lever, in one line. A resource that
+//     pins itself pins itself in every environment, which is what a residency line
+//     should do.
 func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 	want := []string{
 		"agent/egress", "agent/limits/concurrent", "agent/limits/memory",
@@ -108,18 +113,21 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"workflow/concurrency", "workflow/timeout",
 
 		// PLACEMENT, on every kind that declares Placed() — one decision, not
+		// eleven. The BRANCH takes the suffix: `pinned: [eu]` beside
+		// `pinned_preview: [us]`. See regionAttributes.
+		"agent/regions/in",
+		"application/regions/in",
+		"cache/regions/in",
+		"database/regions/in",
+		"function/regions/in",
+		"sandbox/regions/in",
+		"storage/regions/in",
+		"sync/regions/in",
+		"volume/regions/in",
+		"worker/regions/in",
+		"workflow/regions/in",
+
 		// thirty-three. See regionAttributes: the leaves vary, the policy cannot.
-		"agent/region/main", "agent/region/name", "agent/region/standby",
-		"application/region/main", "application/region/name", "application/region/standby",
-		"cache/region/main", "cache/region/name", "cache/region/standby",
-		"database/region/main", "database/region/name", "database/region/standby",
-		"function/region/main", "function/region/name", "function/region/standby",
-		"sandbox/region/main", "sandbox/region/name", "sandbox/region/standby",
-		"storage/region/main", "storage/region/name", "storage/region/standby",
-		"sync/region/main", "sync/region/name", "sync/region/standby",
-		"volume/region/main", "volume/region/name", "volume/region/standby",
-		"worker/region/main", "worker/region/name", "worker/region/standby",
-		"workflow/region/main", "workflow/region/name", "workflow/region/standby",
 	}
 
 	seen := map[string]bool{}

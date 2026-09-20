@@ -48,18 +48,23 @@ const projectID = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"
 // no list of regions and never will — so this is the only seam where being wrong
 // about one can ever be reported.
 func TestARegionLabelIsHandedToTheCaller(t *testing.T) {
+	cache := func(regions string) string {
+		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" + regions
+	}
+
 	asked := regionsAsked(validating(t, map[string]string{
-		"/project.yaml": projectID + "region:\n    pinned:\n        name: eu\n",
+		"/project.yaml": projectID,
+		"/cache/c.yaml": cache("regions:\n    pinned: [eu, us]\n"),
 	}))
-	require.Equal(t, []string{"eu"}, asked, "the project's own nested label was not carried")
+	require.ElementsMatch(t, []string{"eu", "us"}, asked,
+		"a nested, optional, REPEATED label was not carried")
 
 	// BOTH HALVES OF A FAILOVER, because either can be wrong on its own.
 	asked = regionsAsked(validating(t, map[string]string{
-		"/project.yaml": projectID + "region:\n    pinned:\n        name: eu\n",
-		"/cache/c.yaml": "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" +
-			"region:\n    failover:\n        main: us\n        standby: ap\n",
+		"/project.yaml": projectID,
+		"/cache/c.yaml": cache("regions:\n    failover:\n        main: us\n        standby: ap\n"),
 	}))
-	require.ElementsMatch(t, []string{"eu", "us", "ap"}, asked)
+	require.ElementsMatch(t, []string{"us", "ap"}, asked)
 }
 
 // TestAnAbsentBlockAsksNothingAndCompiles, which is the limit that made an

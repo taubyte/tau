@@ -18,8 +18,9 @@ func auditDocs(t *testing.T, r schema.Resolver, docs map[string]string) []schema
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"+
-			// a default, so a test that is not about placement is not about placement
-			"region:\n    pinned:\n        name: eu\n"), 0o644))
+			// a scope's regions place everything under them, so a test that is
+			// not about placement is not about placement
+			"regions: [eu]\n"), 0o644))
 	for path, body := range docs {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
 	}
@@ -616,21 +617,21 @@ func TestAuditRegions(t *testing.T) {
 	found = auditDocs(t, nil, map[string]string{
 		"/project.yaml":                       proj,
 		"/namespace/shop/meta.yaml":           shopID + "regions: [eu]\n",
-		"/namespace/shop/cache/sessions.yaml": cache("region:\n    pinned:\n        name: us\n"),
+		"/namespace/shop/cache/sessions.yaml": cache("regions:\n    pinned: [us]\n"),
 	})
 	has(t, found, schema.Broken, `is placed in region "us", which its scope does not allow`)
 
 	found = auditDocs(t, nil, map[string]string{
 		"/project.yaml":                       proj,
 		"/namespace/shop/meta.yaml":           shopID + "regions: [eu]\n",
-		"/namespace/shop/cache/sessions.yaml": cache("region:\n    pinned:\n        name: eu\n"),
+		"/namespace/shop/cache/sessions.yaml": cache("regions:\n    pinned: [eu]\n"),
 	})
 	hasNo(t, found, "which its scope does not allow")
 
 	// A FAILOVER'S TWO REGIONS ARE CHECKED SEPARATELY, because either half can escape.
 	found = auditDocs(t, nil, map[string]string{
 		"/project.yaml": proj,
-		"/cache/c.yaml": cache("region:\n    failover:\n        main: eu\n        standby: ap\n"),
+		"/cache/c.yaml": cache("regions:\n    failover:\n        main: eu\n        standby: ap\n"),
 	})
 	has(t, found, schema.Broken, `is placed in region "ap", which its scope does not allow`)
 
@@ -638,7 +639,7 @@ func TestAuditRegions(t *testing.T) {
 	// is already gone. The schema says there are two; only this can say they differ.
 	found = auditDocs(t, nil, map[string]string{
 		"/project.yaml": proj,
-		"/cache/c.yaml": cache("region:\n    failover:\n        main: eu\n        standby: eu\n"),
+		"/cache/c.yaml": cache("regions:\n    failover:\n        main: eu\n        standby: eu\n"),
 	})
 	has(t, found, schema.Broken, "fails over from eu to itself")
 
@@ -647,7 +648,7 @@ func TestAuditRegions(t *testing.T) {
 	// the typo-catcher stops — `zz` is only wrong against a list somebody wrote.
 	found = auditDocs(t, nil, map[string]string{
 		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n",
-		"/cache/c.yaml": cache("region:\n    pinned:\n        name: zz\n"),
+		"/cache/c.yaml": cache("regions:\n    pinned: [zz]\n"),
 	})
 	hasNo(t, found, "which its scope does not allow")
 
@@ -657,7 +658,7 @@ func TestAuditRegions(t *testing.T) {
 		"/project.yaml":                                    proj,
 		"/namespace/shop/meta.yaml":                        shopID + "regions: [eu]\n",
 		"/namespace/shop/namespace/eu/meta.yaml":           "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\n",
-		"/namespace/shop/namespace/eu/cache/sessions.yaml": cache("region:\n    pinned:\n        name: us\n"),
+		"/namespace/shop/namespace/eu/cache/sessions.yaml": cache("regions:\n    pinned: [us]\n"),
 	})
 	has(t, found, schema.Broken, `is placed in region "us", which its scope does not allow`)
 }
@@ -685,27 +686,24 @@ func auditDocsInEnv(t *testing.T, env string, docs map[string]string) []schema.F
 
 // TestTheSuffixIsNotAWayAroundTheCeiling.
 //
-// A per-environment placement is a placement like any other, so the scope's allowance
-// applies to it — otherwise `name_preview` would be the spelling that walks regulated
-// data out of the region a namespace was written to keep it in, which is the governance
-// statement regions.md §7 sells as the differentiator.
+// PER-ENVIRONMENT PLACEMENT IS A SCOPE'S `regions`, a plain list, so it takes a
+// suffix — and a suffixed list is a placement like any other, bounded by the
+// scope above it. Otherwise `regions_preview` would be the spelling that walks
+// regulated data out of the region a project was written to keep it in.
 func TestAPerEnvironmentPlacementIsBoundedToo(t *testing.T) {
 	const shopID = "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n"
 	docs := map[string]string{
-		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [eu, us]\n" +
+		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [eu]\n" +
 			"environments:\n    production:\n        branches: [main]\n    preview:\n        branches: [\"*\"]\n",
-		"/namespace/shop/meta.yaml": shopID + "regions: [eu]\n",
-		"/namespace/shop/cache/sessions.yaml": "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n" +
-			"size: 1MB\nconsensus: crdt\nregion:\n    pinned:\n        name: eu\n        name_preview: us\n",
+		"/namespace/shop/meta.yaml": shopID + "regions: [eu]\nregions_preview: [us]\n",
 	}
 
-	// Production reads `name`, which shop allows.
-	hasNo(t, auditDocsInEnv(t, "production", docs), "which its scope does not allow")
+	// Production reads `regions`, which the project allows.
+	hasNo(t, auditDocsInEnv(t, "production", docs), "which the scope above it does not")
 
-	// Preview reads `name_preview`, which it does not — same finding, same severity, on
-	// the environment's own spelling.
+	// Preview reads `regions_preview`, which it does not.
 	has(t, auditDocsInEnv(t, "preview", docs), schema.Broken,
-		`is placed in region "us", which its scope does not allow`)
+		`allows region "us", which the scope above it does not`)
 }
 
 // TestAnythingWithAFootprintIsPlaced.
@@ -715,7 +713,7 @@ func TestAPerEnvironmentPlacementIsBoundedToo(t *testing.T) {
 // would be the OTHER rule: every resource, every time, no default possible.
 func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 	const bare = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"
-	const defaulted = bare + "region:\n    pinned:\n        name: eu\n"
+	const defaulted = bare + "regions: [eu]\n"
 	cache := func(region string) string {
 		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" + region
 	}
@@ -726,7 +724,7 @@ func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 		"/cache/c.yaml": cache(""),
 	}), schema.Broken, "is not placed anywhere")
 
-	// The project says it once, for everything that does not.
+	// The project's own regions place everything that does not say.
 	hasNo(t, auditDocs(t, nil, map[string]string{
 		"/project.yaml": defaulted,
 		"/cache/c.yaml": cache(""),
@@ -735,7 +733,7 @@ func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 	// Or the resource says it itself.
 	hasNo(t, auditDocs(t, nil, map[string]string{
 		"/project.yaml": bare,
-		"/cache/c.yaml": cache("region:\n    pinned:\n        name: eu\n"),
+		"/cache/c.yaml": cache("regions:\n    pinned: [eu]\n"),
 	}), "is not placed anywhere")
 
 	// A KIND WITH NO FOOTPRINT IS NEVER ASKED, and the set is read off the
@@ -758,7 +756,6 @@ func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 func TestAnEnvironmentCannotWidenTheProject(t *testing.T) {
 	proj := func(envRegions string) string {
 		return "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [eu, us]\n" +
-			"region:\n    pinned:\n        name: eu\n" +
 			"environments:\n    production:\n        branches: [main]\n" + envRegions
 	}
 
@@ -783,16 +780,14 @@ func TestAResourceIsPlacedWhereItsDeploymentKeepsState(t *testing.T) {
 			"environments:\n    production:\n        branches: [main]\n        regions: [eu]\n" +
 			"    preview:\n        branches: [\"*\"]\n        regions: [us]\n",
 		"/cache/c.yaml": "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" +
-			"region:\n    pinned:\n        name: eu\n        name_preview: us\n",
+			"regions:\n    pinned: [eu]\n",
 	}
 
-	// Each deployment reads its own value, and each is inside its own list.
+	// production keeps state in eu and the cache is pinned to eu.
 	hasNo(t, auditDocsInEnv(t, "production", docs), "does not keep state in")
-	hasNo(t, auditDocsInEnv(t, "preview", docs), "does not keep state in")
 
-	// Now preview's value leaves preview's regions.
-	docs["/cache/c.yaml"] = "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" +
-		"region:\n    pinned:\n        name: eu\n        name_preview: eu\n"
+	// preview keeps state in us, and the same pin is now outside it — a resource
+	// pins itself in EVERY environment, which is what a residency line does.
 	has(t, auditDocsInEnv(t, "preview", docs), schema.Broken,
 		`is placed in region "eu", which preview does not keep state in`)
 

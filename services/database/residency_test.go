@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // cloud is a three-region allowance, which is the smallest one a cdn seed can
@@ -32,7 +30,7 @@ func TestNoBlockIsTheAllowance(t *testing.T) {
 // statement in the block that a fleet may never quietly widen: a database
 // pinned to eu that also kept copies in us would have left the EU.
 func TestPinnedIsOnlyThere(t *testing.T) {
-	held := regionsOf(t, placed{policy: "pinned", name: "eu"}, cloud)
+	held := regionsOf(t, placed{policy: "pinned", in: []string{"eu"}}, cloud)
 	require.Equal(t, []string{"eu"}, held, "a pin was spread across the allowance")
 }
 
@@ -56,9 +54,9 @@ func TestFailoverPlacesInBothFromTheStart(t *testing.T) {
 // named as a config error at the one moment region names are real.
 func TestAPinOutsideTheAllowanceIsRefused(t *testing.T) {
 	for _, p := range []placed{
-		{policy: "pinned", name: "ap"},
+		{policy: "pinned", in: []string{"ap"}},
 		{policy: "failover", main: "eu", standby: "ap"},
-		{policy: "cdn", name: "ap"},
+		{policy: "cdn", in: []string{"ap"}},
 	} {
 		_, err := p.regions(at("shop", "QmSessions"), []string{"eu", "us"})
 		require.ErrorIs(t, err, ErrOutsideAllowance, "%s was served outside its ceiling", p.policy)
@@ -70,7 +68,7 @@ func TestAPinOutsideTheAllowanceIsRefused(t *testing.T) {
 // has" — a set this service cannot enumerate, so it cannot be intersected with
 // and must not be treated as the empty set.
 func TestAnEmptyAllowanceNarrowsNothing(t *testing.T) {
-	held := regionsOf(t, placed{policy: "pinned", name: "eu"}, unpinned)
+	held := regionsOf(t, placed{policy: "pinned", in: []string{"eu"}}, unpinned)
 	require.Equal(t, []string{"eu"}, held)
 }
 
@@ -107,7 +105,7 @@ func TestCdnSeedsSpreadAcrossDatabases(t *testing.T) {
 // TestCdnWithAHomeStartsThere, because an author who named one has said where
 // the callers are and demand has nothing to add yet.
 func TestCdnWithAHomeStartsThere(t *testing.T) {
-	require.Equal(t, []string{"eu"}, regionsOf(t, placed{policy: "cdn", name: "eu"}, cloud))
+	require.Equal(t, []string{"eu"}, regionsOf(t, placed{policy: "cdn", in: []string{"eu"}}, cloud))
 }
 
 // TestASeedCannotExceedTheAllowance.
@@ -115,21 +113,4 @@ func TestASeedCannotExceedTheAllowance(t *testing.T) {
 	require.Equal(t, []string{"eu"}, regionsOf(t, placed{policy: "cdn"}, []string{"eu"}))
 	require.Equal(t, []string{anyRegion}, regionsOf(t, placed{policy: "cdn"}, unpinned),
 		"a cdn with no allowance to choose within is the unnamed bucket")
-}
-
-// TestAShadowTakesTheAllowanceItWasWrittenInside. A shadow is a deployment over
-// another environment's state, so placing that state was never its to do — the
-// vocabulary gives it no `regions` field at all.
-func TestAShadowTakesTheAllowanceItWasWrittenInside(t *testing.T) {
-	environments := []schema.Environment{
-		{Name: "preview", Regions: []string{"us"}},
-		{Name: "production", Regions: []string{"eu"}, Shadows: []schema.Environment{
-			{Name: "ab", Of: "production"},
-		}},
-	}
-
-	require.Equal(t, []string{"eu"}, allowanceOf(environments, "ab"))
-	require.Equal(t, []string{"eu"}, allowanceOf(environments, "production"))
-	require.Equal(t, []string{"us"}, allowanceOf(environments, "preview"))
-	require.Nil(t, allowanceOf(environments, "staging"), "an environment nobody declared has no ceiling to read")
 }

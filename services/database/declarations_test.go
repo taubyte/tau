@@ -38,7 +38,7 @@ func kvAt(region map[string]any) map[string]any {
 		"kv": map[string]any{"engine": "distributed", "consensus": "crdt"},
 	}
 	if region != nil {
-		out["region"] = region
+		out["regions"] = region
 	}
 	return out
 }
@@ -50,16 +50,18 @@ func sessions(t *testing.T, d *declarations) declared {
 	return got
 }
 
-// TestADatabaseInheritsTheProjectsPlacement, which is how a project says where
-// things go ONCE rather than on every resource.
+// TestADatabaseInheritsTheScopesRegions, which is how a project says where
+// things go ONCE rather than on every resource. It is the SAME WORD a resource
+// writes — one concept narrowing down, rather than an allowance and a placement
+// that differ by a letter.
 //
-// NOTHING LOWERED IT INTO THE DATABASE: the compiler writes no region a resource
-// did not author, so this is the walk up. A copy would be a fact decompile could
-// not give back.
+// NOTHING LOWERED IT INTO THE DATABASE: the compiler writes no placement a
+// resource did not author, so this is the walk up. A copy would be a fact
+// decompile could not give back.
 func TestADatabaseInheritsTheProjectsPlacement(t *testing.T) {
 	d := declaring(t, map[string]any{
 		"id": projectID, "name": "shop",
-		"region":   map[string]any{"policy": "pinned", "name": "eu"},
+		"regions":  []string{"eu"},
 		"database": map[string]any{kvID: kvAt(nil)},
 	})
 
@@ -71,7 +73,7 @@ func TestADatabaseInheritsTheProjectsPlacement(t *testing.T) {
 func TestADatabasesOwnPlacementWins(t *testing.T) {
 	d := declaring(t, map[string]any{
 		"id": projectID, "name": "shop",
-		"region": map[string]any{"policy": "pinned", "name": "eu"},
+		"regions": []string{"eu", "us", "ap"},
 		"database": map[string]any{kvID: kvAt(
 			map[string]any{"policy": "failover", "main": "us", "standby": "ap"})},
 	})
@@ -89,4 +91,44 @@ func TestNeitherIsNowhere(t *testing.T) {
 	})
 
 	require.Equal(t, []string{anyRegion}, sessions(t, d).regions)
+}
+
+// TestAShadowKeepsStateWhereItWasWrittenInside. A shadow is a deployment over
+// another environment's state, so placing that state was never its to do — the
+// vocabulary gives it no regions field at all.
+func TestAShadowTakesTheAllowanceItWasWrittenInside(t *testing.T) {
+	d := declaring(t, map[string]any{
+		"id": projectID, "name": "shop",
+		"regions": []string{"eu", "us"},
+		"environments": map[string]any{
+			"production": map[string]any{
+				"branches": []string{"main"},
+				"regions":  []string{"eu"},
+				"shadows":  map[string]any{"ab": map[string]any{"branches": []string{"main"}}},
+			},
+		},
+		"database": map[string]any{kvID: kvAt(nil)},
+	})
+
+	for _, env := range []string{"production", "ab"} {
+		got, err := d.of(context.Background(), address{project: projectID, environment: env, id: kvID})
+		require.NoError(t, err, env)
+		require.Equal(t, []string{"eu"}, got.regions, "%s did not keep state where production does", env)
+	}
+}
+
+// TestAnEnvironmentThatNamesNoRegionsTakesTheProjects, because `regions` is one
+// word at every level: a scope's is where everything under it may be AND where
+// anything that does not say otherwise is placed.
+func TestAnEnvironmentInheritsTheProjectsRegions(t *testing.T) {
+	d := declaring(t, map[string]any{
+		"id": projectID, "name": "shop",
+		"regions": []string{"eu", "us"},
+		"environments": map[string]any{
+			"prod": map[string]any{"branches": []string{"main"}},
+		},
+		"database": map[string]any{kvID: kvAt(nil)},
+	})
+
+	require.Equal(t, []string{"eu", "us"}, sessions(t, d).regions)
 }

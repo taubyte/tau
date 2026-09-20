@@ -8,7 +8,6 @@ import (
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // declarations.go turns "which database" into "what that database is".
@@ -164,15 +163,13 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	// environment's. Reading it here and not on the grant is the same rule the
 	// file doc gives for size and consensus: a caller that described the
 	// database could describe a different one.
+	// A RESOURCE'S OWN REGIONS, and where it sits when it declares none: the
+	// scope's `regions`, which is the same word, the same plural, and the
+	// allowance all at once. Nothing lowered it into the resource, so this is
+	// the walk up rather than a read of a copy — and a resource placed by
+	// neither is one the audit already calls Broken.
 	region := placedOf(resource)
-	if region.policy == "" {
-		// THE PROJECT'S DEFAULT, which is where a project says it once for
-		// everything that does not say it itself. Nothing lowered it into the
-		// resource, so this is the walk up rather than a read of a copy — and
-		// a resource with neither is one the audit already calls Broken.
-		region = placedOf(project.Root())
-	}
-	if out.regions, err = region.regions(ref, allowanceOf(project.Environments(), ref.environment)); err != nil {
+	if out.regions, err = region.regions(ref, allowanceOf(project, ref.environment)); err != nil {
 		return declared{}, fmt.Errorf("%s: %w", ref.id, err)
 	}
 
@@ -198,35 +195,39 @@ func (d *declared) option(name, value string) {
 	d.spec.Options[name] = value
 }
 
-// allowanceOf is the region ceiling a deployment declares: the list an
-// environment keeps its state in, and the ceiling every resource under it is
-// placed within. Empty means the cloud decides, which narrows nothing.
+// allowanceOf is where this deployment keeps its state: the environment's own
+// list, or the project's when it declares none. Empty means the cloud decides,
+// which narrows nothing.
 //
 // A SHADOW HAS NO ALLOWANCE OF ITS OWN and takes the one it was written inside.
 // It is a deployment over another environment's state, so placing that state
 // was never its to do — which is why the vocabulary gives a shadow no `regions`
 // field rather than a rule about ignoring one.
-func allowanceOf(environments []schema.Environment, name string) []string {
-	for _, env := range environments {
-		if env.Name == name {
+func allowanceOf(project *specs.Project, name string) []string {
+	for _, env := range project.Environments() {
+		if env.Name == name && len(env.Regions) > 0 {
 			return env.Regions
 		}
 		for _, shadow := range env.Shadows {
-			if shadow.Name == name {
+			if shadow.Name == name && len(env.Regions) > 0 {
 				return env.Regions
 			}
 		}
 	}
-	return nil
+
+	// THE PROJECT'S OWN, WHEN THE DEPLOYMENT NAMES NONE. `regions` is one word
+	// at every level: a scope's is where everything under it may be AND where
+	// anything that does not say otherwise is placed, and an environment that
+	// declares none inherits rather than resetting to the cloud's whole world.
+	return project.Root().Strings("regions")
 }
 
-// placedOf reads a region block off whatever carries one — a resource, or the
-// project it sits under. They are the same block, so this is one reader.
+// placedOf reads a resource's own placement block.
 func placedOf(r specs.Resource) placed {
 	return placed{
-		policy:  r.String("region", "policy"),
-		name:    r.String("region", "name"),
-		main:    r.String("region", "main"),
-		standby: r.String("region", "standby"),
+		policy:  r.String("regions", "policy"),
+		in:      r.Strings("regions", "in"),
+		main:    r.String("regions", "main"),
+		standby: r.String("regions", "standby"),
 	}
 }

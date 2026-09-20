@@ -169,20 +169,39 @@ type walk struct {
 }
 
 // envPath is attr's path with the environment appended to its LAST segment —
-// `execution/memory` for `preview` is `execution/memory_preview`. nil when there is
-// nothing to suffix: no environment, or a path whose last segment is an Either
-// branch, which is a key the document chooses rather than one the schema names.
+// `execution/memory` for `preview` is `execution/memory_preview`.
+//
+// A BRANCH IS SUFFIXED TOO, and it is a key the DOCUMENT chooses rather than one
+// the schema names. The schema cannot say in advance which branch will be there,
+// but a matcher can spell every alternative it admits — see EnvMatcher.
+//
+// THE UNSUFFIXED BRANCH STILL NAMES THE CHOICE. An attribute that captures WHICH
+// branch was taken is not itself per-environment, so it reads the bare key —
+// which is the PerEnv contract everywhere else too: `<key>_<env>` sits BESIDE the
+// key, overriding its value and never replacing its declaration.
+//
+// nil when there is nothing to suffix: no environment, or a matcher that cannot
+// spell itself — All() admits keys nobody can enumerate, so there is no set to
+// suffix and no environment spelling to ask it for.
 func envPath(path []StringMatch, env string) []StringMatch {
 	if env == "" || len(path) == 0 {
 		return nil
 	}
-	last, ok := path[len(path)-1].(string)
-	if !ok {
-		return nil
-	}
+
 	out := make([]StringMatch, len(path))
 	copy(out, path)
-	out[len(out)-1] = last + "_" + env
+
+	switch last := path[len(path)-1].(type) {
+	case string:
+		out[len(out)-1] = last + "_" + env
+	case EnvMatcher:
+		// THE MATCHER SPELLS ITSELF. Only it knows what it admits, so only it
+		// can say what its environment spelling is — rebuilding one here would
+		// be this function knowing the shape of every matcher there will ever be.
+		out[len(out)-1] = last.InEnv(env)
+	default:
+		return nil
+	}
 	return out
 }
 

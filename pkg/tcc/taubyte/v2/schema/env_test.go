@@ -96,29 +96,40 @@ func TestAnUndeclaredEnvironmentIsATypo(t *testing.T) {
 func TestAPlacementDiffersPerEnvironment(t *testing.T) {
 	const doc = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n" +
 		"execution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n" +
-		"region:\n    pinned:\n        name: eu\n        name_preview: us\n"
+		"regions:\n    pinned: [eu]\n    pinned_preview: [us]\n"
 
-	for _, tc := range []struct{ env, want string }{
-		{"production", "eu"}, // declared nowhere in the document: the base
-		{"preview", "us"},
+	for _, tc := range []struct {
+		env  string
+		want []string
+	}{
+		{"production", []string{"eu"}}, // declared nowhere in the document: the base
+		{"preview", []string{"us"}},
 	} {
 		t.Run(tc.env, func(t *testing.T) {
 			fn, err := compileInEnv(t, tc.env, doc)
 			assert.NilError(t, err)
-			assert.Equal(t, nested(fn, "region", "name"), tc.want)
-			assert.Equal(t, nested(fn, "region", "policy"), "pinned")
+			assert.DeepEqual(t, nested(fn, "regions", "in"), tc.want)
+
+			// AND THE UNSUFFIXED BRANCH STILL NAMES THE CHOICE, which is the
+			// PerEnv contract: the override sits BESIDE the key and replaces its
+			// value, never its declaration.
+			assert.Equal(t, nested(fn, "regions", "policy"), "pinned")
 		})
 	}
 }
 
-// TestAPlacementPolicyCannotBeEnvironmentSuffixed, and nobody refused it: the policy IS
-// the branch key, and envPath returns nil for a path ending in an Either — a key the
-// document chooses rather than one the schema names. A resource that is `failover` in
-// production and `pinned` in preview is a different resource, which is the same rule
-// PerEnv states one segment up: write the whole resource for that environment instead.
-func TestAPlacementPolicyCannotBeEnvironmentSuffixed(t *testing.T) {
-	_, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
+// TestAPolicyIsTheSameInEveryDeployment.
+//
+// The branch takes a suffix, which makes the incoherent thing SAYABLE: `failover:`
+// with a `pinned_preview:` beside it resolves to one branch's policy and another
+// branch's regions. It is a different resource in each deployment, which is the
+// rule PerEnv states one segment up — write the whole resource for that
+// environment instead. The schema cannot see it (both keys are legal on their
+// own), so the audit does.
+func TestAPolicyIsTheSameInEveryDeployment(t *testing.T) {
+	fn, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
 		"execution: {call: c, timeout: 1s, memory: 1MB}\n"+
-		"region:\n    pinned:\n        name: eu\n    pinned_preview:\n        name: us\n")
-	assert.ErrorContains(t, err, "unknown key 'pinned_preview'")
+		"regions:\n    failover:\n        main: eu\n        standby: us\n    pinned_preview: [us]\n")
+	assert.NilError(t, err, "each key is legal on its own, so the compile cannot refuse it")
+	assert.Equal(t, nested(fn, "regions", "policy"), "failover")
 }

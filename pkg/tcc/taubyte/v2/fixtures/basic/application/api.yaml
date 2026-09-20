@@ -29,7 +29,7 @@ variables:
     STRIPE_KEY:
         secret:
             name: stripe
-region:
+regions:
     failover:
         main: eu
         standby: us

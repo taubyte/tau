@@ -38,11 +38,11 @@ type Application struct {
 	ReadinessFunctionNamespace     string
 	ReadinessHttpPath              string
 	ReadinessHttpPort              string
-	ReadinessKind                  string // which of http, function was written
-	RegionMain                     string // authored at region/failover/main
-	RegionName                     string // authored at region/{pinned|cdn}/name
-	RegionPolicy                   string // which of pinned, cdn, failover was written
-	RegionStandby                  string // authored at region/failover/standby
+	ReadinessKind                  string   // which of http, function was written
+	RegionsIn                      []string // authored at regions/{pinned|cdn}
+	RegionsMain                    string   // authored at regions/failover/main
+	RegionsPolicy                  string   // which of pinned, cdn, failover was written
+	RegionsStandby                 string   // authored at regions/failover/standby
 	SecretName                     string
 	SecretNamespace                string
 	Source                         string
@@ -86,10 +86,10 @@ func ReadApplication(r Resource) Application {
 	out.ReadinessHttpPath = r.String("readiness", "http", "path")
 	out.ReadinessHttpPort = r.String("readiness", "http", "port")
 	out.ReadinessKind = r.String("readiness", "kind")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.SecretName = r.String("secret", "name")
 	out.SecretNamespace = r.String("secret", "namespace")
 	out.Source = r.String("source")
@@ -127,10 +127,10 @@ type Function struct {
 	Implements          string
 	Name                string
 	Path                string
-	RegionMain          string // authored at region/failover/main
-	RegionName          string // authored at region/{pinned|cdn}/name
-	RegionPolicy        string // which of pinned, cdn, failover was written
-	RegionStandby       string // authored at region/failover/standby
+	RegionsIn           []string // authored at regions/{pinned|cdn}
+	RegionsMain         string   // authored at regions/failover/main
+	RegionsPolicy       string   // which of pinned, cdn, failover was written
+	RegionsStandby      string   // authored at regions/failover/standby
 	SecretName          string
 	SecretNamespace     string
 	Source              string
@@ -168,10 +168,10 @@ func ReadFunction(r Resource) Function {
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
 	out.Path = r.String("path")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.SecretName = r.String("secret", "name")
 	out.SecretNamespace = r.String("secret", "namespace")
 	out.Source = r.String("source")
@@ -211,10 +211,10 @@ type Worker struct {
 	Implements                     string
 	Name                           string
 	Path                           string
-	RegionMain                     string // authored at region/failover/main
-	RegionName                     string // authored at region/{pinned|cdn}/name
-	RegionPolicy                   string // which of pinned, cdn, failover was written
-	RegionStandby                  string // authored at region/failover/standby
+	RegionsIn                      []string // authored at regions/{pinned|cdn}
+	RegionsMain                    string   // authored at regions/failover/main
+	RegionsPolicy                  string   // which of pinned, cdn, failover was written
+	RegionsStandby                 string   // authored at regions/failover/standby
 	Runtime                        string
 	SecretName                     string
 	SecretNamespace                string
@@ -258,10 +258,10 @@ func ReadWorker(r Resource) Worker {
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
 	out.Path = r.String("path")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.Runtime = r.String("runtime")
 	out.SecretName = r.String("secret", "name")
 	out.SecretNamespace = r.String("secret", "namespace")
@@ -299,10 +299,10 @@ type Sandbox struct {
 	LifetimeMax                    time.Duration
 	Name                           string
 	Path                           string
-	RegionMain                     string // authored at region/failover/main
-	RegionName                     string // authored at region/{pinned|cdn}/name
-	RegionPolicy                   string // which of pinned, cdn, failover was written
-	RegionStandby                  string // authored at region/failover/standby
+	RegionsIn                      []string // authored at regions/{pinned|cdn}
+	RegionsMain                    string   // authored at regions/failover/main
+	RegionsPolicy                  string   // which of pinned, cdn, failover was written
+	RegionsStandby                 string   // authored at regions/failover/standby
 	SecretName                     string
 	SecretNamespace                string
 	Source                         string
@@ -336,10 +336,10 @@ func ReadSandbox(r Resource) Sandbox {
 	out.LifetimeMax, _ = r.Duration("lifetime", "max")
 	out.Name = r.String("name")
 	out.Path = r.String("path")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.SecretName = r.String("secret", "name")
 	out.SecretNamespace = r.String("secret", "namespace")
 	out.Source = r.String("source")
@@ -505,10 +505,10 @@ type Cache struct {
 	InstancesValidatorName      string // authored at instances/{validator}/name
 	InstancesValidatorNamespace string // authored at instances/{validator}/namespace
 	Name                        string
-	RegionMain                  string // authored at region/failover/main
-	RegionName                  string // authored at region/{pinned|cdn}/name
-	RegionPolicy                string // which of pinned, cdn, failover was written
-	RegionStandby               string // authored at region/failover/standby
+	RegionsIn                   []string // authored at regions/{pinned|cdn}
+	RegionsMain                 string   // authored at regions/failover/main
+	RegionsPolicy               string   // which of pinned, cdn, failover was written
+	RegionsStandby              string   // authored at regions/failover/standby
 	Replicated                  bool
 	Size                        int64
 	Tags                        []string
@@ -530,10 +530,10 @@ func ReadCache(r Resource) Cache {
 	out.InstancesValidatorName = r.String("instances", "validator", "name")
 	out.InstancesValidatorNamespace = r.String("instances", "validator", "namespace")
 	out.Name = r.String("name")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.Replicated, _ = r.Bool("replicated")
 	out.Size, _ = r.Int("size")
 	out.Tags = r.Strings("tags")
@@ -563,18 +563,18 @@ type Database struct {
 	KvEngine                     string // which of distributed was written
 	KvSize                       int64  // authored at kv/distributed/size
 	Name                         string
-	RegionMain                   string // authored at region/failover/main
-	RegionName                   string // authored at region/{pinned|cdn}/name
-	RegionPolicy                 string // which of pinned, cdn, failover was written
-	RegionStandby                string // authored at region/failover/standby
-	SqlConsensus                 string // authored at sql/distributed/consensus
-	SqlCredentialsName           string // authored at sql/{postgres|mysql}/credentials/name
-	SqlCredentialsNamespace      string // authored at sql/{postgres|mysql}/credentials/namespace
-	SqlDatabase                  string // authored at sql/{postgres|mysql}/database
-	SqlEngine                    string // which of distributed, postgres, mysql was written
-	SqlHost                      string // authored at sql/{postgres|mysql}/host
-	SqlSize                      int64  // authored at sql/distributed/size
-	SqlTls                       string // authored at sql/{postgres|mysql}/tls
+	RegionsIn                    []string // authored at regions/{pinned|cdn}
+	RegionsMain                  string   // authored at regions/failover/main
+	RegionsPolicy                string   // which of pinned, cdn, failover was written
+	RegionsStandby               string   // authored at regions/failover/standby
+	SqlConsensus                 string   // authored at sql/distributed/consensus
+	SqlCredentialsName           string   // authored at sql/{postgres|mysql}/credentials/name
+	SqlCredentialsNamespace      string   // authored at sql/{postgres|mysql}/credentials/namespace
+	SqlDatabase                  string   // authored at sql/{postgres|mysql}/database
+	SqlEngine                    string   // which of distributed, postgres, mysql was written
+	SqlHost                      string   // authored at sql/{postgres|mysql}/host
+	SqlSize                      int64    // authored at sql/distributed/size
+	SqlTls                       string   // authored at sql/{postgres|mysql}/tls
 	Tags                         []string
 	Type                         string // which of kv, document, sql, vector was written
 	VectorConsensus              string // authored at vector/distributed/consensus
@@ -607,10 +607,10 @@ func ReadDatabase(r Resource) Database {
 	out.KvEngine = r.String("kv", "engine")
 	out.KvSize, _ = r.Int("kv", "size")
 	out.Name = r.String("name")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.SqlConsensus = r.String("sql", "consensus")
 	out.SqlCredentialsName = r.String("sql", "credentials", "name")
 	out.SqlCredentialsNamespace = r.String("sql", "credentials", "namespace")
@@ -641,11 +641,11 @@ type Storage struct {
 	InstancesValidatorNamespace string // authored at instances/{validator}/namespace
 	Name                        string
 	ObjectVersioning            bool
-	RegionMain                  string // authored at region/failover/main
-	RegionName                  string // authored at region/{pinned|cdn}/name
-	RegionPolicy                string // which of pinned, cdn, failover was written
-	RegionStandby               string // authored at region/failover/standby
-	Size                        int64  // authored at {object|streaming}/size
+	RegionsIn                   []string // authored at regions/{pinned|cdn}
+	RegionsMain                 string   // authored at regions/failover/main
+	RegionsPolicy               string   // which of pinned, cdn, failover was written
+	RegionsStandby              string   // authored at regions/failover/standby
+	Size                        int64    // authored at {object|streaming}/size
 	StreamingTtl                time.Duration
 	Tags                        []string
 	Type                        string // which of object, streaming was written
@@ -664,10 +664,10 @@ func ReadStorage(r Resource) Storage {
 	out.InstancesValidatorNamespace = r.String("instances", "validator", "namespace")
 	out.Name = r.String("name")
 	out.ObjectVersioning, _ = r.Bool("object", "versioning")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.Size, _ = r.Int("size")
 	out.StreamingTtl, _ = r.Duration("streaming", "ttl")
 	out.Tags = r.Strings("tags")
@@ -686,10 +686,10 @@ type Volume struct {
 	Id                         string
 	Name                       string
 	Quota                      int64
-	RegionMain                 string // authored at region/failover/main
-	RegionName                 string // authored at region/{pinned|cdn}/name
-	RegionPolicy               string // which of pinned, cdn, failover was written
-	RegionStandby              string // authored at region/failover/standby
+	RegionsIn                  []string // authored at regions/{pinned|cdn}
+	RegionsMain                string   // authored at regions/failover/main
+	RegionsPolicy              string   // which of pinned, cdn, failover was written
+	RegionsStandby             string   // authored at regions/failover/standby
 	Tags                       []string
 }
 
@@ -705,10 +705,10 @@ func ReadVolume(r Resource) Volume {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Quota, _ = r.Int("quota")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.Tags = r.Strings("tags")
 	return out
 }
@@ -758,10 +758,10 @@ type Sync struct {
 	QueueRetryFactor         float64
 	QueueRetryInterval       time.Duration
 	QueueVisibilityTimeout   time.Duration
-	RegionMain               string // authored at region/failover/main
-	RegionName               string // authored at region/{pinned|cdn}/name
-	RegionPolicy             string // which of pinned, cdn, failover was written
-	RegionStandby            string // authored at region/failover/standby
+	RegionsIn                []string // authored at regions/{pinned|cdn}
+	RegionsMain              string   // authored at regions/failover/main
+	RegionsPolicy            string   // which of pinned, cdn, failover was written
+	RegionsStandby           string   // authored at regions/failover/standby
 	Tags                     []string
 	Type                     string // which of queue, log was written
 }
@@ -786,10 +786,10 @@ func ReadSync(r Resource) Sync {
 	out.QueueRetryFactor, _ = r.Float("queue", "retry", "factor")
 	out.QueueRetryInterval, _ = r.Duration("queue", "retry", "interval")
 	out.QueueVisibilityTimeout, _ = r.Duration("queue", "visibility_timeout")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.Tags = r.Strings("tags")
 	out.Type = r.String("type")
 	return out
@@ -1155,10 +1155,10 @@ type Agent struct {
 	ModelNamespace          string
 	Name                    string
 	Path                    string
-	RegionMain              string // authored at region/failover/main
-	RegionName              string // authored at region/{pinned|cdn}/name
-	RegionPolicy            string // which of pinned, cdn, failover was written
-	RegionStandby           string // authored at region/failover/standby
+	RegionsIn               []string // authored at regions/{pinned|cdn}
+	RegionsMain             string   // authored at regions/failover/main
+	RegionsPolicy           string   // which of pinned, cdn, failover was written
+	RegionsStandby          string   // authored at regions/failover/standby
 	SecretName              string
 	SecretNamespace         string
 	Source                  string
@@ -1193,10 +1193,10 @@ func ReadAgent(r Resource) Agent {
 	out.ModelNamespace = r.String("model", "namespace")
 	out.Name = r.String("name")
 	out.Path = r.String("path")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.SecretName = r.String("secret", "name")
 	out.SecretNamespace = r.String("secret", "namespace")
 	out.Source = r.String("source")
@@ -1228,10 +1228,10 @@ type Workflow struct {
 	Kind                string
 	Name                string
 	OnError             string
-	RegionMain          string // authored at region/failover/main
-	RegionName          string // authored at region/{pinned|cdn}/name
-	RegionPolicy        string // which of pinned, cdn, failover was written
-	RegionStandby       string // authored at region/failover/standby
+	RegionsIn           []string // authored at regions/{pinned|cdn}
+	RegionsMain         string   // authored at regions/failover/main
+	RegionsPolicy       string   // which of pinned, cdn, failover was written
+	RegionsStandby      string   // authored at regions/failover/standby
 	Start               string
 	Tags                []string
 	Timeout             time.Duration
@@ -1258,10 +1258,10 @@ func ReadWorkflow(r Resource) Workflow {
 	out.Kind = r.String("kind")
 	out.Name = r.String("name")
 	out.OnError = r.String("on_error")
-	out.RegionMain = r.String("region", "main")
-	out.RegionName = r.String("region", "name")
-	out.RegionPolicy = r.String("region", "policy")
-	out.RegionStandby = r.String("region", "standby")
+	out.RegionsIn = r.Strings("regions", "in")
+	out.RegionsMain = r.String("regions", "main")
+	out.RegionsPolicy = r.String("regions", "policy")
+	out.RegionsStandby = r.String("regions", "standby")
 	out.Start = r.String("start")
 	out.Tags = r.Strings("tags")
 	out.Timeout, _ = r.Duration("timeout")

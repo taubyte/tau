@@ -48,8 +48,13 @@ const cdnSeed = 2
 // resource that wrote no block at all, which the vocabulary spells as "anywhere
 // the allowance permits".
 type placed struct {
-	policy  string
-	name    string
+	policy string
+
+	// in is every region the branch names. A resource is in MANY regions — a
+	// database pinned to eu and us has copies in both, and the floor is how many
+	// in EACH — which is why this is a list and why the vocabulary spells it
+	// with the same plural a scope uses for its allowance.
+	in      []string
 	main    string
 	standby string
 }
@@ -64,7 +69,7 @@ type placed struct {
 func (p placed) regions(at address, allowance []string) ([]string, error) {
 	switch p.policy {
 	case "pinned":
-		return within(p.policy, []string{p.name}, allowance)
+		return within(p.policy, p.in, allowance)
 	case "failover":
 		// BOTH, and not main-with-standby-as-fallback. Copies live in each of
 		// the two from the moment it is written — a standby that only receives
@@ -73,8 +78,8 @@ func (p placed) regions(at address, allowance []string) ([]string, error) {
 		// answer.
 		return within(p.policy, []string{p.main, p.standby}, allowance)
 	case "cdn":
-		if p.name != "" {
-			return within(p.policy, []string{p.name}, allowance)
+		if len(p.in) > 0 {
+			return within(p.policy, p.in, allowance)
 		}
 		return seeded(at, allowance), nil
 	}

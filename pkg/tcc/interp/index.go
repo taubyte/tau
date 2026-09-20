@@ -427,6 +427,46 @@ func makeLookup(config, configRoot object.Object[object.Refrence]) func(string, 
 	}
 }
 
+// attrValues is every value an attribute contributes to a deferred validation.
+//
+// ONE PER ELEMENT FOR A LIST, because each element is checked on its own: a
+// resource naming three labels has three chances to be wrong about one, and a
+// single validation carrying the whole list would make the answer "one of these
+// is bad" rather than which.
+func attrValues(instObj object.Object[object.Refrence], a *engine.Attribute) []string {
+	key := a.Segments
+	if len(key) == 0 {
+		key = []string{a.Name}
+	}
+
+	obj := instObj
+	if len(key) > 1 {
+		var err error
+		if obj, err = instObj.Fetch(key[:len(key)-1]...); err != nil || obj == nil {
+			return nil
+		}
+	}
+
+	switch v := obj.Get(key[len(key)-1]).(type) {
+	case string:
+		if v == "" {
+			return nil
+		}
+		return []string{v}
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
 // attrString reads an attribute off a compiled instance BY THE PATH ITS KEY IS.
 //
 // Segments is the key as declared — one level of the compiled object per entry —
@@ -467,23 +507,16 @@ func emitAttrValidations(ct transform.Context[object.Refrence], instObj object.O
 		if !ok {
 			continue
 		}
-		val, held := attrString(instObj, a)
-		if !held {
-			// AN ABSENT OPTIONAL VALUE EMITS NOTHING, rather than failing the
-			// compile. This read used to treat a missing key as an error, so an
-			// OPTIONAL attribute that declared a deferred validation broke every
-			// resource that omitted it — which is why no optional attribute could
-			// declare one at all.
-			continue
-		}
-		context := map[string]any{"project": projectId}
-		if appId != "" {
-			context["app"] = appId
-		}
-		store := ct.Store().Validators()
-		vals := append(store.Get(), engine.NewNextValidation(ve.Key, val, ve.Validator, context))
-		if _, err := store.Set(vals); err != nil {
-			return fmt.Errorf("storing validations failed with %w", err)
+		for _, val := range attrValues(instObj, a) {
+			context := map[string]any{"project": projectId}
+			if appId != "" {
+				context["app"] = appId
+			}
+			store := ct.Store().Validators()
+			vals := append(store.Get(), engine.NewNextValidation(ve.Key, val, ve.Validator, context))
+			if _, err := store.Set(vals); err != nil {
+				return fmt.Errorf("storing validations failed with %w", err)
+			}
 		}
 	}
 	return nil

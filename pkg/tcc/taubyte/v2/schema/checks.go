@@ -1002,9 +1002,8 @@ func checkRegions(root map[string]any, all []compiled, environment string) []Fin
 		allowed := effectiveAllowance(scopes, res.scope)
 		// Every field a label can be written in. They are read by identity — the
 		// attribute's key, joined — so a branch that is not taken simply holds nothing.
-		for _, field := range []string{"region/name", "region/main", "region/standby"} {
-			r := res.str(field)
-			if r == "" || len(allowed) == 0 || slices.Contains(allowed, r) {
+		for _, r := range placedIn(res) {
+			if len(allowed) == 0 || slices.Contains(allowed, r) {
 				continue
 			}
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
@@ -1016,7 +1015,18 @@ func checkRegions(root map[string]any, all []compiled, environment string) []Fin
 		// own property — two named fields, both required on the branch — but that they
 		// are DIFFERENT is not something the schema can say, and a standby equal to its
 		// main is a failover plan that fails to the thing that is already gone.
-		if main, standby := res.str("region/main"), res.str("region/standby"); main != "" && main == standby {
+		// A POLICY DOES NOT CHANGE BETWEEN ENVIRONMENTS, and the branch suffix
+		// makes that sayable by accident: `failover:` with a `pinned_preview:`
+		// beside it resolves to one policy and the other branch's regions. It is
+		// a different resource in each deployment, which is what writing the
+		// whole resource for that environment is for.
+		if res.str("regions/policy") == "failover" && len(listAt(res.fields, "regions/in")) > 0 {
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				"fails over in one environment and is pinned in another",
+				"A policy is the same in every deployment. Write this resource for that environment instead of suffixing another branch.", res.id})
+		}
+
+		if main, standby := res.str("regions/main"), res.str("regions/standby"); main != "" && main == standby {
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 				"fails over from " + main + " to itself",
 				"Failover takes two regions; the standby exists for when the main is gone.", res.id})
@@ -1088,9 +1098,8 @@ func checkPlacedInsideTheEnvironment(root map[string]any, all []compiled, enviro
 
 	var out []Finding
 	for _, res := range all {
-		for _, field := range []string{"region/name", "region/main", "region/standby"} {
-			region := res.str(field)
-			if region == "" || slices.Contains(allowed, region) {
+		for _, region := range placedIn(res) {
+			if slices.Contains(allowed, region) {
 				continue
 			}
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
@@ -1113,10 +1122,7 @@ func checkPlacedInsideTheEnvironment(root map[string]any, all []compiled, enviro
 // PLACED IS READ OFF THE SCHEMA, never a list kept beside it. A kind that gains
 // a footprint tomorrow is covered by this the moment it declares Placed().
 func checkEverythingIsPlaced(root map[string]any, all []compiled) []Finding {
-	if _, defaulted := root["region"].(map[string]any); defaulted {
-		return nil
-	}
-
+	scopes := scopeAllowances(root)
 	placed := make(map[string]bool, len(PlacedKinds()))
 	for _, kind := range PlacedKinds() {
 		placed[kind] = true
@@ -1124,12 +1130,33 @@ func checkEverythingIsPlaced(root map[string]any, all []compiled) []Finding {
 
 	var out []Finding
 	for _, res := range all {
-		if !placed[res.kind] || res.str("region/policy") != "" {
+		if !placed[res.kind] || res.str("regions/policy") != "" {
+			continue
+		}
+		// THE SCOPE'S OWN `regions` IS THE DEFAULT, which is the same word and
+		// the same list a resource writes — one concept narrowing down rather
+		// than an allowance and a placement that differ by a letter. A chain
+		// that declares one places everything under it that says nothing.
+		if len(effectiveAllowance(scopes, res.scope)) > 0 {
 			continue
 		}
 		out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 			"is not placed anywhere",
-			"Anything with a footprint declares a region. Write one here, or give the project a default for everything that does not.", res.id})
+			"Anything with a footprint is placed. Give it regions, or give a scope above it regions for everything that does not say.", res.id})
+	}
+	return out
+}
+
+// placedIn is every region a resource's own block names, across the branch it
+// took. `pinned` and `cdn` carry a LIST — a resource is in many regions, the
+// same way a scope allows many — and `failover` carries its two by name,
+// because which one is main is the statement rather than a position.
+func placedIn(res compiled) []string {
+	out := listAt(res.fields, "regions/in")
+	for _, field := range []string{"regions/main", "regions/standby"} {
+		if r := res.str(field); r != "" {
+			out = append(out, r)
+		}
 	}
 	return out
 }

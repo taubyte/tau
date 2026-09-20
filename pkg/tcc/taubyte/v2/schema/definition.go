@@ -595,12 +595,26 @@ func attachPlacement() {
 // the shape §2a warns against. A third region has no key to arrive under, and a missing
 // one is a compile error.
 //
-//	region:                 region:                 region:
-//	    pinned:                 cdn:                    failover:
-//	        name: eu                name: eu                main: eu
+//	regions:                regions:                regions:
+//	    pinned: [eu, us]        cdn: [eu]               failover:
+//	                                                        main: eu
 //	                                                        standby: us
 //
-// THE REGIONS VARY PER ENVIRONMENT; THE POLICY DOES NOT. `name`, `main` and `standby`
+// THE REGIONS VARY PER ENVIRONMENT, ON THE BRANCH ITSELF:
+//
+//	regions:
+//	    pinned: [eu]
+//	    pinned_preview: [us]
+//
+// A branch is a key the DOCUMENT chooses, so the suffix goes on whichever one it
+// chose — and the schema names every branch it could be, which is what a finite
+// matcher is for. The base branch still names the policy: a switch captures which
+// branch was taken and is not itself per-environment, which is the PerEnv contract
+// everywhere else too, where `<key>_<env>` sits BESIDE the key and overrides its
+// value without replacing its declaration.
+//
+// A SCOPE'S OWN `regions` IS PER-ENVIRONMENT AS WELL, and it is the cheaper lever:
+// `regions_preview: [us]` at the project places every resource that says nothing. `name`, `main` and `standby`
 // are `PerEnv()`, so `name_preview: us` sits beside `name: eu` and a preview deployment
 // is placed where a preview should be — which is the CEILING axis the per-environment
 // rule already marks everywhere else it is spelled, since what a preview deployment
@@ -631,22 +645,26 @@ func attachPlacement() {
 // cannot be mistaken for a pin.
 func regionAttributes() []*Attribute {
 	return []*Attribute{
-		String(Key("region", "policy"), Path("region", Either("pinned", "cdn", "failover")), Captures(), InSection("placement"),
-			Doc("Placement", "pinned: this region only — the data-residency line. cdn: seeded, then follows demand within the allowance. failover: exactly two regions, the first one main. Omit the block for anywhere the allowance permits.")),
+		String(Key("regions", "policy"), Path("regions", Either("pinned", "cdn", "failover")), Captures(), InSection("placement"),
+			Doc("Placement", "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.")),
 
-		// ONE FIELD ON TWO BRANCHES, because it is one fact: the region named. A subset
-		// Either() is the same construct a database's per-type engine key uses, and it
-		// is what keeps `failover` from having a `name` that would mean neither of its
-		// two. REQUIRED on `pinned` and optional on `cdn`, because the branches ask it
-		// for different things: a pin naming no region pins nothing, while a cdn naming
-		// no home is seeded rather than unplaced.
-		String(Key("region", "name"), Path("region", Either("pinned", "cdn"), "name"),
-			RequiredWhen(Key("region", "policy"), "pinned"), PerEnv(), EmitValidation("region", "region"), InSection("placement"),
-			Doc("Region", "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.")),
+		// A LIST, BECAUSE A RESOURCE IS IN MANY REGIONS. A database pinned to eu
+		// and us has copies in BOTH — the floor is how many in EACH — so the
+		// singular was never the shape. It is the same word and the same
+		// plurality a scope uses for its allowance, which is the point: one
+		// concept, narrowing down.
+		StringSlice(Key("regions", "in"), Path("regions", Either("pinned", "cdn")),
+			RequiredWhen(Key("regions", "policy"), "pinned"), PerEnv(), EmitValidation("region", "region"), InSection("placement"),
+			Doc("Regions", "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.")),
 
-		String(Key("region", "main"), Path("region", "failover", "main"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), PerEnv(), EmitValidation("region", "region"), InSection("placement"),
+		// FAILOVER KEEPS NAMED FIELDS, and it is the one branch that should. Its
+		// two regions are not a set: which one is main is the whole statement, and
+		// a two-element list would re-derive that from an index — the shape §2a
+		// warns against. A third has no key to arrive under, and a missing one is
+		// a compile error.
+		String(Key("regions", "main"), Path("regions", "failover", "main"), RequiredWhen(Key("regions", "policy"), "failover"), ShowWhen(Key("regions", "policy"), "failover"), EmitValidation("region", "region"), InSection("placement"),
 			Doc("Main", "Where this runs while it can.")),
-		String(Key("region", "standby"), Path("region", "failover", "standby"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), PerEnv(), EmitValidation("region", "region"), InSection("placement"),
+		String(Key("regions", "standby"), Path("regions", "failover", "standby"), RequiredWhen(Key("regions", "policy"), "failover"), ShowWhen(Key("regions", "policy"), "failover"), EmitValidation("region", "region"), InSection("placement"),
 			Doc("Standby", "Where it runs when the main is gone.")),
 	}
 }
@@ -3305,21 +3323,7 @@ var V2Resources = []*Node{
 // type signature — it comes back as a `notifications:` block with destinations when
 // the notification subsystem lands.
 func rootAttributes() []*Attribute {
-	// THE PROJECT'S DEFAULT PLACEMENT IS THE SAME BLOCK A RESOURCE WRITES, not a
-	// second, weaker spelling of it. A project that defaults to `failover` has
-	// said something a bare region name could not, and `name_preview` works here
-	// exactly as it does on a resource — which is what makes "production in the
-	// EU, preview anywhere" one line at the top of the project.
-	//
-	// IT IS WHAT MAKES A RESOURCE'S BLOCK OPTIONAL. Placement is required of
-	// every Placed() kind, and a resource that writes none inherits this. With
-	// neither, the resource is placed nowhere and the audit says so — see
-	// checkRegions.
-	//
-	// NOTHING LOWERS IT INTO THE RESOURCES. A fact nobody authored is a fact
-	// decompile cannot give back, so a consumer walks up to find it rather than
-	// reading a copy the compiler wrote.
-	return append([]*Attribute{
+	return []*Attribute{
 		String("id", IsCID(), Required(), Generated(GenCID), EmitValidation("project_id", "project_id"), Doc("ID", "Content-addressed identifier (CID) of the project.")),
 		String("name", IsVariableName(), Doc("Name", "Project name. Must be a valid variable name.")),
 
@@ -3351,9 +3355,18 @@ func rootAttributes() []*Attribute {
 		// cross-document, so neither the schema nor load time can see both ends of it.
 		// A scope that widened its parent's list would mean a child running where its
 		// parent said nothing may, which is the whole reason the ceiling exists.
-		StringSlice("regions",
-			Doc("Regions", "The regions everything in this project may run in. Absent means every region the cloud has. A scope below may narrow this list and may never widen it.")),
-	}, regionAttributes()...)
+		// THE SAME WORD A RESOURCE USES, and deliberately: a scope's regions are
+		// where everything under it may be, and a resource's are where it IS.
+		// One concept narrowing down, rather than an allowance and a placement
+		// that differ by a letter.
+		//
+		// IT IS ALSO THE DEFAULT. A resource that declares nothing is placed
+		// across this, which is what makes the block optional for almost
+		// everything — and PerEnv is what lets production stay in the EU while
+		// preview goes somewhere cheaper, in one line at the top of the project.
+		StringSlice("regions", PerEnv(),
+			Doc("Regions", "The regions everything in this project may be in, and where anything that does not say otherwise is placed. Absent means every region the cloud has. A scope below may narrow this list and may never widen it.")),
+	}
 }
 
 // namespacesGroup is the SCOPE container — a directory whose instances hold a
@@ -3396,8 +3409,8 @@ func namespacesGroup(depth int) *Node {
 		// declared here, where the container's own attributes are, and the project root
 		// declares the same one.
 		DefineIterGroup(append(identityAttributes(),
-			StringSlice("regions", InSection("identity"),
-				Doc("Regions", "The regions everything in this namespace may run in. Absent means the parent's. Narrows only; the audit reports a widening."))),
+			StringSlice("regions", PerEnv(), InSection("identity"),
+				Doc("Regions", "The regions everything in this namespace may be in, and where anything that does not say otherwise is placed. Absent means the parent's. Narrows only; the audit reports a widening."))),
 			children...).
 			With(Singular("Namespace"),
 				// namespace/shop/meta.yaml — the document this scope's own fields live
