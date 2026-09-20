@@ -28,9 +28,10 @@ const (
 	kvID      = "QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfG"
 	sqlID     = "QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs"
 	raftID    = "QmZ4gCbmYaFZ4dWJmvNBQKvNAWMYtHqQTHRDprHmxPh6Zk"
+	vectorID  = "QmPq9zYJvZ8kLpQ2mWfFPd6Fy1kVYhZLb8vtNJcXAGL3Rd"
 )
 
-// compiled is a project with three databases: one this service serves, one of a
+// compiled is a project with four databases: one this service serves, one of a
 // model it does not, and one asking for a consensus it does not keep.
 func compiled() []byte {
 	doc := map[string]any{
@@ -50,6 +51,13 @@ func compiled() []byte {
 					"name": "ledger", "type": "kv",
 					"kv": map[string]any{"engine": "distributed", "consensus": "raft", "size": float64(1 << 20)},
 				},
+				vectorID: map[string]any{
+					"name": "knowledge", "type": "vector",
+					"vector": map[string]any{
+						"engine": "distributed", "consensus": "crdt",
+						"dimensions": float64(1536), "metric": "cosine",
+					},
+				},
 			},
 		},
 
@@ -64,6 +72,8 @@ func compiled() []byte {
 				"branches/main/projects/" + projectID + "/database/" + sqlID},
 			"projects/" + projectID + "/database/ledger/links": []any{
 				"branches/main/projects/" + projectID + "/database/" + raftID},
+			"projects/" + projectID + "/database/knowledge/links": []any{
+				"branches/main/projects/" + projectID + "/database/" + vectorID},
 		},
 	}
 	raw, err := json.Marshal(doc)

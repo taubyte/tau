@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,15 +20,43 @@ import (
 // says is a Holdings that answers whatever a test needs, and records nothing
 // else: what this file is about is whether ASKING changes anything.
 type says struct {
+	mu        sync.Mutex
 	held      bool
 	onDisk    []database.Spec
 	destroyed []database.Spec
+	asked     int
 }
 
-func (s *says) Held(context.Context, database.Spec) bool { return s.held }
-func (s *says) OnDisk(context.Context) []database.Spec   { return s.onDisk }
+// reads is how many times a sweep has asked what this node holds.
+func (s *says) reads() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.asked
+}
+
+func (s *says) Held(context.Context, database.Spec) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.held
+}
+func (s *says) OnDisk(context.Context) []database.Spec {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.asked++
+	return s.onDisk
+}
+
+// Destroy behaves like the real one: what has been released is no longer held
+// and is no longer on disk. A fake that kept answering "held" would let a sweep
+// release the same database on every tick, which is a test asserting against a
+// node that cannot exist.
 func (s *says) Destroy(_ context.Context, spec database.Spec) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.destroyed = append(s.destroyed, spec)
+	s.held = false
+	s.onDisk = nil
 	return nil
 }
 

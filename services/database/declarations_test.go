@@ -21,6 +21,8 @@ func declaring(t *testing.T, root map[string]any) *declarations {
 		"indexes": map[string]any{
 			"projects/" + projectID + "/database/sessions/links": []any{
 				"branches/main/projects/" + projectID + "/database/" + kvID},
+			"projects/" + projectID + "/database/knowledge/links": []any{
+				"branches/main/projects/" + projectID + "/database/" + vectorID},
 		},
 	}
 	raw, err := json.Marshal(doc)
@@ -131,4 +133,46 @@ func TestAnEnvironmentInheritsTheProjectsRegions(t *testing.T) {
 	})
 
 	require.Equal(t, []string{"eu", "us"}, sessions(t, d).regions)
+}
+
+// TestWHATONLYONEMODELUNDERSTANDSTRAVELSASANOPTION.
+//
+// A vector's width and its distance metric mean nothing to the other three
+// models, so they do not get a field each on the spec — they are carried under
+// the vocabulary's own attribute names, which is what lets a reader find the
+// attribute by searching the schema for the string.
+func TestPerModelDeclarationsTravelAsOptions(t *testing.T) {
+	d := declaring(t, map[string]any{
+		"id": projectID, "name": "shop",
+		"regions": []string{"eu"},
+		"database": map[string]any{
+			vectorID: map[string]any{
+				"name": "knowledge", "type": "vector",
+				"vector": map[string]any{
+					"engine": "distributed", "consensus": "crdt",
+					"dimensions": float64(1536), "metric": "cosine",
+				},
+			},
+		},
+	})
+
+	// READING A DECLARATION IS NOT AGREEING TO SERVE IT. `of` reads what the
+	// author wrote; whether this cloud serves that model is asked separately,
+	// so a model nothing here implements still resolves.
+	got, err := d.of(context.Background(),
+		address{project: projectID, environment: "prod", id: vectorID})
+	require.NoError(t, err)
+
+	require.Equal(t, "1536", got.spec.Options["dimensions"])
+	require.Equal(t, "cosine", got.spec.Options["metric"])
+
+	// AND IT IS REFUSED BY NAME when somebody asks this cloud to serve it.
+	require.ErrorIs(t, got.serves(), ErrModelUnserved)
+}
+
+// TestACONSENSUSNOBODYWROTEISTHEDEFAULT, which is what a connector gets: it
+// resolves nothing, because somebody else's server does.
+func TestAnUnwrittenConsensusIsTheDefault(t *testing.T) {
+	require.Equal(t, defaultConsensus, declared{}.wants())
+	require.Equal(t, "raft", declared{consensus: "raft"}.wants())
 }

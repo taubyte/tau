@@ -169,3 +169,22 @@ func TestASweepReportsTheFleetRevisionItComputedWith(t *testing.T) {
 	s.reconsider(t.Context())
 	require.Equal(t, uint64(1), s.FleetRevision())
 }
+
+// TestACOPYTHISNODECANNOTRESOLVEISNOTACOPYITMAYDELETE.
+//
+// Bytes nobody declares are reclaim's business, and reclaim is gated on a
+// revision rather than on a failed lookup — a transport error is not a fact
+// about the declaration at all. So an unresolvable copy is left exactly alone:
+// not released, not counted as pending.
+func TestASweepLeavesWhatItCannotResolve(t *testing.T) {
+	holds := &says{held: true, onDisk: []database.Spec{{
+		Type: database.KV, Project: projectID, Environment: "prod", Name: "QmNobodyDeclaresThis",
+	}}}
+
+	s := sweeping(t, holds, map[string][]placement.Member{"eu": members("me")}, "eu", 1)
+	s.peer = "me"
+
+	s.reconsider(t.Context())
+	require.Empty(t, holds.destroyed, "a copy nobody could resolve was deleted")
+	require.Zero(t, s.Pending(), "it was counted as needing repair instead of being left alone")
+}
