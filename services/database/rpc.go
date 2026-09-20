@@ -174,3 +174,23 @@ func wire(err error) error {
 		return connect.NewError(connect.CodeUnavailable, err)
 	}
 }
+
+// KVDigest is what this node holds for one database, as one comparable value.
+//
+// IT IS A READ OF THIS NODE'S COPY and never a read of the database. A caller
+// asking two nodes gets two answers, and that is the point: equal means they
+// converged, unequal means the one about to leave must stay. See digest.go.
+func (h *handler) KVDigest(ctx context.Context, req *connect.Request[databasev1.Ref]) (*connect.Response[databasev1.KVDigestValue], error) {
+	at := addressOf(req.Msg)
+
+	kv, err := h.s.kv(ctx, at)
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	keys, sum, err := digestOf(ctx, kv)
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(&databasev1.KVDigestValue{Keys: keys, Digest: sum}), nil
+}

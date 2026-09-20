@@ -96,6 +96,9 @@ const (
 	DatabaseServiceKVDeleteProcedure = "/tau.database.v1.DatabaseService/KVDelete"
 	// DatabaseServiceKVListProcedure is the fully-qualified name of the DatabaseService's KVList RPC.
 	DatabaseServiceKVListProcedure = "/tau.database.v1.DatabaseService/KVList"
+	// DatabaseServiceKVDigestProcedure is the fully-qualified name of the DatabaseService's KVDigest
+	// RPC.
+	DatabaseServiceKVDigestProcedure = "/tau.database.v1.DatabaseService/KVDigest"
 )
 
 // DatabaseServiceClient is a client for the tau.database.v1.DatabaseService service.
@@ -111,6 +114,10 @@ type DatabaseServiceClient interface {
 	// values would turn one call into an export of the database, and every
 	// caller that only wanted to enumerate would be making it.
 	KVList(context.Context, *connect.Request[v1.KVListRequest]) (*connect.Response[v1.KVKeys], error)
+	// KVDigest is what one node holds for a database, as one comparable value.
+	// It answers a question no other call can: whether it is safe to stop
+	// holding something. See KVDigestValue.
+	KVDigest(context.Context, *connect.Request[v1.Ref]) (*connect.Response[v1.KVDigestValue], error)
 }
 
 // NewDatabaseServiceClient constructs a client for the tau.database.v1.DatabaseService service. By
@@ -148,6 +155,12 @@ func NewDatabaseServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(databaseServiceMethods.ByName("KVList")),
 			connect.WithClientOptions(opts...),
 		),
+		kVDigest: connect.NewClient[v1.Ref, v1.KVDigestValue](
+			httpClient,
+			baseURL+DatabaseServiceKVDigestProcedure,
+			connect.WithSchema(databaseServiceMethods.ByName("KVDigest")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -157,6 +170,7 @@ type databaseServiceClient struct {
 	kVPut    *connect.Client[v1.KVPutRequest, v1.Empty]
 	kVDelete *connect.Client[v1.KVDeleteRequest, v1.Empty]
 	kVList   *connect.Client[v1.KVListRequest, v1.KVKeys]
+	kVDigest *connect.Client[v1.Ref, v1.KVDigestValue]
 }
 
 // KVGet calls tau.database.v1.DatabaseService.KVGet.
@@ -179,6 +193,11 @@ func (c *databaseServiceClient) KVList(ctx context.Context, req *connect.Request
 	return c.kVList.CallUnary(ctx, req)
 }
 
+// KVDigest calls tau.database.v1.DatabaseService.KVDigest.
+func (c *databaseServiceClient) KVDigest(ctx context.Context, req *connect.Request[v1.Ref]) (*connect.Response[v1.KVDigestValue], error) {
+	return c.kVDigest.CallUnary(ctx, req)
+}
+
 // DatabaseServiceHandler is an implementation of the tau.database.v1.DatabaseService service.
 type DatabaseServiceHandler interface {
 	// KVGet reads one key. NotFound is a miss.
@@ -192,6 +211,10 @@ type DatabaseServiceHandler interface {
 	// values would turn one call into an export of the database, and every
 	// caller that only wanted to enumerate would be making it.
 	KVList(context.Context, *connect.Request[v1.KVListRequest]) (*connect.Response[v1.KVKeys], error)
+	// KVDigest is what one node holds for a database, as one comparable value.
+	// It answers a question no other call can: whether it is safe to stop
+	// holding something. See KVDigestValue.
+	KVDigest(context.Context, *connect.Request[v1.Ref]) (*connect.Response[v1.KVDigestValue], error)
 }
 
 // NewDatabaseServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -225,6 +248,12 @@ func NewDatabaseServiceHandler(svc DatabaseServiceHandler, opts ...connect.Handl
 		connect.WithSchema(databaseServiceMethods.ByName("KVList")),
 		connect.WithHandlerOptions(opts...),
 	)
+	databaseServiceKVDigestHandler := connect.NewUnaryHandler(
+		DatabaseServiceKVDigestProcedure,
+		svc.KVDigest,
+		connect.WithSchema(databaseServiceMethods.ByName("KVDigest")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.database.v1.DatabaseService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DatabaseServiceKVGetProcedure:
@@ -235,6 +264,8 @@ func NewDatabaseServiceHandler(svc DatabaseServiceHandler, opts ...connect.Handl
 			databaseServiceKVDeleteHandler.ServeHTTP(w, r)
 		case DatabaseServiceKVListProcedure:
 			databaseServiceKVListHandler.ServeHTTP(w, r)
+		case DatabaseServiceKVDigestProcedure:
+			databaseServiceKVDigestHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -258,4 +289,8 @@ func (UnimplementedDatabaseServiceHandler) KVDelete(context.Context, *connect.Re
 
 func (UnimplementedDatabaseServiceHandler) KVList(context.Context, *connect.Request[v1.KVListRequest]) (*connect.Response[v1.KVKeys], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.database.v1.DatabaseService.KVList is not implemented"))
+}
+
+func (UnimplementedDatabaseServiceHandler) KVDigest(context.Context, *connect.Request[v1.Ref]) (*connect.Response[v1.KVDigestValue], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.database.v1.DatabaseService.KVDigest is not implemented"))
 }

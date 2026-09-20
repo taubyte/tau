@@ -120,6 +120,30 @@ message KVKeys {
   bool more = 2;
 }
 
+// KVDigest asks a node what it holds for one database, as one comparable value.
+//
+// IT IS THE ONLY WAY A NODE LEAVING A DATABASE CAN KNOW IT IS SAFE TO GO.
+// Placement moves a database by having one node stop holding it and another
+// start; "another node is alive and should hold this" is NOT the same statement
+// as "another node HAS this", and the difference is the whole failure. A region
+// goes dark, an operator repins to somewhere else to restore service, the
+// region comes back, reads the new placement and drops the only copies there
+// ever were -- because the new holders were alive the whole time and never
+// received a row, their source having been down.
+//
+// So the departing node asks, and it compares. Equal digests mean the other
+// node holds the same keys with the same values, which for a store whose writes
+// converge is a proof and not a sample.
+message KVDigestValue {
+  // keys is how many this node holds for the database, which makes an
+  // unequal answer readable instead of only unequal.
+  uint64 keys = 1;
+
+  // digest covers the keys AND their values. Keys alone would call two nodes
+  // converged while one of them held a stale value for every one of them.
+  bytes digest = 2;
+}
+
 // ------------------------------------------------------------------ results
 
 // Empty stays a message rather than google.protobuf.Empty so a field can be
@@ -141,4 +165,9 @@ service DatabaseService {
   // values would turn one call into an export of the database, and every
   // caller that only wanted to enumerate would be making it.
   rpc KVList(KVListRequest) returns (KVKeys);
+
+  // KVDigest is what one node holds for a database, as one comparable value.
+  // It answers a question no other call can: whether it is safe to stop
+  // holding something. See KVDigestValue.
+  rpc KVDigest(Ref) returns (KVDigestValue);
 }

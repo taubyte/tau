@@ -153,3 +153,19 @@ func splitHandle(handle string) (project, environment, id string) {
 	}
 	return parts[0], parts[1], parts[2]
 }
+
+// Digest is what the node this client reaches holds for one database.
+//
+// IT IS THE QUESTION A DEPARTING NODE ASKS ITS REPLACEMENTS. Placement says who
+// SHOULD hold a database; this says who DOES. Dropping a copy on the strength
+// of the first is what loses the data when the second has not caught up — see
+// digest.go.
+func (c *Client) Digest(ctx context.Context, at address) (uint64, []byte, error) {
+	out, err := c.svc.KVDigest(ctx, connect.NewRequest(&databasev1.Ref{
+		Project: at.project, Environment: at.environment, Id: at.id, Instance: at.instance,
+	}))
+	if err != nil {
+		return 0, nil, tierError(err)
+	}
+	return out.Msg.GetKeys(), out.Msg.GetDigest(), nil
+}
