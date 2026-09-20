@@ -177,20 +177,63 @@ func wire(err error) error {
 
 // KVDigest is what this node holds for one database, as one comparable value.
 //
-// IT IS A READ OF THIS NODE'S COPY and never a read of the database. A caller
-// asking two nodes gets two answers, and that is the point: equal means they
-// converged, unequal means the one about to leave must stay. See digest.go.
+// IT DOES NOT OPEN. A node that answered by opening the database would become a
+// holder BECAUSE IT WAS ASKED, and would then answer a digest that looks
+// converged — which is how a node placement never chose ends up authorising
+// another node's drop. Not held is an answer, not a miss.
 func (h *handler) KVDigest(ctx context.Context, req *connect.Request[databasev1.Ref]) (*connect.Response[databasev1.KVDigestValue], error) {
 	at := addressOf(req.Msg)
+
+	holding, err := h.holding(ctx, at)
+	if err != nil {
+		return nil, wire(err)
+	}
+	if !holding.GetHeld() {
+		return connect.NewResponse(&databasev1.KVDigestValue{Keeps: holding.GetKeeps()}), nil
+	}
 
 	kv, err := h.s.kv(ctx, at)
 	if err != nil {
 		return nil, wire(err)
 	}
-
 	keys, sum, err := digestOf(ctx, kv)
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&databasev1.KVDigestValue{Keys: keys, Digest: sum}), nil
+
+	// KEEPS IS READ AFTER THE OPEN, not before it. Serving a database records
+	// that this node holds it, so a keeps taken beforehand answers false for
+	// the first ask about every database — and the first ask is the one a
+	// departing node makes.
+	return connect.NewResponse(&databasev1.KVDigestValue{
+		Keys: keys, Digest: sum, Held: true, Keeps: h.s.own.keeps(at.key()),
+	}), nil
+}
+
+// Hold is KVDigest without the digest: whether this node has a database and
+// means to keep it. It is what the repair sweep asks of co-holders, which needs
+// presence rather than proof of convergence.
+func (h *handler) Hold(ctx context.Context, req *connect.Request[databasev1.Ref]) (*connect.Response[databasev1.Holding], error) {
+	holding, err := h.holding(ctx, addressOf(req.Msg))
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(holding), nil
+}
+
+// holding answers both without opening anything.
+//
+// KEEPS IS THIS NODE'S OWN ANSWER and never a report of somebody else's: it is
+// what this node has decided about its own copy, under the same lock as its own
+// release. That is what makes it something a peer may rely on — a node that
+// says it keeps a database will not let go without its own gated release.
+func (h *handler) holding(ctx context.Context, at address) (*databasev1.Holding, error) {
+	declaration, err := h.s.declared(ctx, at)
+	if err != nil {
+		return nil, err
+	}
+	if h.s.holdings == nil || !h.s.holdings.Held(ctx, declaration.spec) {
+		return &databasev1.Holding{}, nil
+	}
+	return &databasev1.Holding{Held: true, Keeps: h.s.own.keeps(at.key())}, nil
 }

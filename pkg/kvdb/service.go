@@ -2,6 +2,8 @@ package kvdb
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -186,4 +188,67 @@ func (kvd *kvDatabase) Destroy(ctx context.Context) error {
 		}
 	}
 	return batch.Commit(ctx)
+}
+
+// Holding reports whether this node has any bytes for a database path, WITHOUT
+// opening it.
+//
+// THE WITHOUT IS THE POINT. Opening subscribes, so a node that answered "do you
+// hold this?" by opening would become a holder because it was asked — and would
+// then answer a digest that looks converged, authorising a drop by a node whose
+// replacement it never was.
+//
+// It reads the same prefix Destroy removes, so it is true for a copy this node
+// has never opened in this run: a restarted node holds what it held.
+func (f *factory) Holding(ctx context.Context, path string) (bool, error) {
+	results, err := f.node.Store().Query(ctx, query.Query{
+		Prefix: ds.NewKey("crdt/" + path).String(), KeysOnly: true, Limit: 1,
+	})
+	if err != nil {
+		return false, err
+	}
+	defer results.Close()
+
+	entry, held := results.NextSync()
+	if entry.Error != nil {
+		return false, entry.Error
+	}
+	return held, nil
+}
+
+// Paths is every database path this node has bytes for under a prefix, cut to
+// `depth` segments below it.
+//
+// THE DEPTH IS THE CALLER'S, because only the caller knows how it names a
+// database — the keys below that are the CRDT's own structure, and a reader
+// that guessed where the name ends would enumerate internals as databases.
+func (f *factory) Paths(ctx context.Context, under string, depth int) ([]string, error) {
+	results, err := f.node.Store().Query(ctx, query.Query{
+		Prefix: ds.NewKey("crdt/" + under).String(), KeysOnly: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer results.Close()
+
+	seen := map[string]bool{}
+	var out []string
+	for entry := range results.Next() {
+		if entry.Error != nil {
+			return nil, entry.Error
+		}
+		segments := ds.NewKey(entry.Key).Namespaces()
+		// "crdt" plus the prefix's own segments, then the caller's depth.
+		want := 1 + len(ds.NewKey(under).Namespaces()) + depth
+		if len(segments) < want {
+			continue
+		}
+		path := strings.Join(segments[1:want], "/")
+		if !seen[path] {
+			seen[path] = true
+			out = append(out, path)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }

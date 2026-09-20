@@ -99,6 +99,8 @@ const (
 	// DatabaseServiceKVDigestProcedure is the fully-qualified name of the DatabaseService's KVDigest
 	// RPC.
 	DatabaseServiceKVDigestProcedure = "/tau.database.v1.DatabaseService/KVDigest"
+	// DatabaseServiceHoldProcedure is the fully-qualified name of the DatabaseService's Hold RPC.
+	DatabaseServiceHoldProcedure = "/tau.database.v1.DatabaseService/Hold"
 )
 
 // DatabaseServiceClient is a client for the tau.database.v1.DatabaseService service.
@@ -118,6 +120,10 @@ type DatabaseServiceClient interface {
 	// It answers a question no other call can: whether it is safe to stop
 	// holding something. See KVDigestValue.
 	KVDigest(context.Context, *connect.Request[v1.Ref]) (*connect.Response[v1.KVDigestValue], error)
+	// Hold is whether this node has a database and means to keep it. It is
+	// KVDigest without the digest, for the sweep that checks co-holders are
+	// still there.
+	Hold(context.Context, *connect.Request[v1.Ref]) (*connect.Response[v1.Holding], error)
 }
 
 // NewDatabaseServiceClient constructs a client for the tau.database.v1.DatabaseService service. By
@@ -161,6 +167,12 @@ func NewDatabaseServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(databaseServiceMethods.ByName("KVDigest")),
 			connect.WithClientOptions(opts...),
 		),
+		hold: connect.NewClient[v1.Ref, v1.Holding](
+			httpClient,
+			baseURL+DatabaseServiceHoldProcedure,
+			connect.WithSchema(databaseServiceMethods.ByName("Hold")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -171,6 +183,7 @@ type databaseServiceClient struct {
 	kVDelete *connect.Client[v1.KVDeleteRequest, v1.Empty]
 	kVList   *connect.Client[v1.KVListRequest, v1.KVKeys]
 	kVDigest *connect.Client[v1.Ref, v1.KVDigestValue]
+	hold     *connect.Client[v1.Ref, v1.Holding]
 }
 
 // KVGet calls tau.database.v1.DatabaseService.KVGet.
@@ -198,6 +211,11 @@ func (c *databaseServiceClient) KVDigest(ctx context.Context, req *connect.Reque
 	return c.kVDigest.CallUnary(ctx, req)
 }
 
+// Hold calls tau.database.v1.DatabaseService.Hold.
+func (c *databaseServiceClient) Hold(ctx context.Context, req *connect.Request[v1.Ref]) (*connect.Response[v1.Holding], error) {
+	return c.hold.CallUnary(ctx, req)
+}
+
 // DatabaseServiceHandler is an implementation of the tau.database.v1.DatabaseService service.
 type DatabaseServiceHandler interface {
 	// KVGet reads one key. NotFound is a miss.
@@ -215,6 +233,10 @@ type DatabaseServiceHandler interface {
 	// It answers a question no other call can: whether it is safe to stop
 	// holding something. See KVDigestValue.
 	KVDigest(context.Context, *connect.Request[v1.Ref]) (*connect.Response[v1.KVDigestValue], error)
+	// Hold is whether this node has a database and means to keep it. It is
+	// KVDigest without the digest, for the sweep that checks co-holders are
+	// still there.
+	Hold(context.Context, *connect.Request[v1.Ref]) (*connect.Response[v1.Holding], error)
 }
 
 // NewDatabaseServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -254,6 +276,12 @@ func NewDatabaseServiceHandler(svc DatabaseServiceHandler, opts ...connect.Handl
 		connect.WithSchema(databaseServiceMethods.ByName("KVDigest")),
 		connect.WithHandlerOptions(opts...),
 	)
+	databaseServiceHoldHandler := connect.NewUnaryHandler(
+		DatabaseServiceHoldProcedure,
+		svc.Hold,
+		connect.WithSchema(databaseServiceMethods.ByName("Hold")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.database.v1.DatabaseService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DatabaseServiceKVGetProcedure:
@@ -266,6 +294,8 @@ func NewDatabaseServiceHandler(svc DatabaseServiceHandler, opts ...connect.Handl
 			databaseServiceKVListHandler.ServeHTTP(w, r)
 		case DatabaseServiceKVDigestProcedure:
 			databaseServiceKVDigestHandler.ServeHTTP(w, r)
+		case DatabaseServiceHoldProcedure:
+			databaseServiceHoldHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -293,4 +323,8 @@ func (UnimplementedDatabaseServiceHandler) KVList(context.Context, *connect.Requ
 
 func (UnimplementedDatabaseServiceHandler) KVDigest(context.Context, *connect.Request[v1.Ref]) (*connect.Response[v1.KVDigestValue], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.database.v1.DatabaseService.KVDigest is not implemented"))
+}
+
+func (UnimplementedDatabaseServiceHandler) Hold(context.Context, *connect.Request[v1.Ref]) (*connect.Response[v1.Holding], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.database.v1.DatabaseService.Hold is not implemented"))
 }

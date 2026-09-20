@@ -512,7 +512,22 @@ type KVDigestValue struct {
 	Keys uint64 `protobuf:"varint,1,opt,name=keys,proto3" json:"keys,omitempty"`
 	// digest covers the keys AND their values. Keys alone would call two nodes
 	// converged while one of them held a stale value for every one of them.
-	Digest        []byte `protobuf:"bytes,2,opt,name=digest,proto3" json:"digest,omitempty"`
+	Digest []byte `protobuf:"bytes,2,opt,name=digest,proto3" json:"digest,omitempty"`
+	// held says this node has a copy at all. Asking must not create one: a node
+	// that answered by OPENING the database would become a holder because it was
+	// asked, and would then answer a digest that looks converged.
+	Held bool `protobuf:"varint,3,opt,name=held,proto3" json:"held,omitempty"`
+	// keeps says this node means to go on holding it — its OWN placement answer,
+	// decided under the same lock as its own release.
+	//
+	// IT IS A DIFFERENT QUESTION FROM held, AND THE DIFFERENCE IS THE WHOLE GATE.
+	// A node mid-release holds the bytes and is about to delete them. Counting it
+	// as a reason to leave is how two nodes delete a database between them: a pin
+	// that moved between revisions, two nodes relabelled inside one freshness
+	// window, or two nodes draining at once -- a rolling restart -- each leave
+	// both nodes computing the other desired and both dropping. A node that is
+	// leaving answers false, so neither may go.
+	Keeps         bool `protobuf:"varint,4,opt,name=keeps,proto3" json:"keeps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -561,6 +576,79 @@ func (x *KVDigestValue) GetDigest() []byte {
 	return nil
 }
 
+func (x *KVDigestValue) GetHeld() bool {
+	if x != nil {
+		return x.Held
+	}
+	return false
+}
+
+func (x *KVDigestValue) GetKeeps() bool {
+	if x != nil {
+		return x.Keeps
+	}
+	return false
+}
+
+// Holding is the cheap half of KVDigestValue: whether a node has a database and
+// means to keep it, with no digest computed.
+//
+// IT IS WHAT REPAIR ASKS. A holder checking that its co-holders are still there
+// needs no proof of convergence, only presence -- and a peer answering
+// held=false while keeps=true is a nudge to open, which it does on its OWN
+// computation and never on a stranger's word.
+type Holding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Held          bool                   `protobuf:"varint,1,opt,name=held,proto3" json:"held,omitempty"`
+	Keeps         bool                   `protobuf:"varint,2,opt,name=keeps,proto3" json:"keeps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Holding) Reset() {
+	*x = Holding{}
+	mi := &file_tau_database_v1_database_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Holding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Holding) ProtoMessage() {}
+
+func (x *Holding) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_database_v1_database_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Holding.ProtoReflect.Descriptor instead.
+func (*Holding) Descriptor() ([]byte, []int) {
+	return file_tau_database_v1_database_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Holding) GetHeld() bool {
+	if x != nil {
+		return x.Held
+	}
+	return false
+}
+
+func (x *Holding) GetKeeps() bool {
+	if x != nil {
+		return x.Keeps
+	}
+	return false
+}
+
 // Empty stays a message rather than google.protobuf.Empty so a field can be
 // added later without every caller recompiling against a different type.
 type Empty struct {
@@ -571,7 +659,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_tau_database_v1_database_proto_msgTypes[8]
+	mi := &file_tau_database_v1_database_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -583,7 +671,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_database_v1_database_proto_msgTypes[8]
+	mi := &file_tau_database_v1_database_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -596,7 +684,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_tau_database_v1_database_proto_rawDescGZIP(), []int{8}
+	return file_tau_database_v1_database_proto_rawDescGZIP(), []int{9}
 }
 
 var File_tau_database_v1_database_proto protoreflect.FileDescriptor
@@ -628,17 +716,23 @@ const file_tau_database_v1_database_proto_rawDesc = "" +
 	"\x05limit\x18\x04 \x01(\rR\x05limit\"0\n" +
 	"\x06KVKeys\x12\x12\n" +
 	"\x04keys\x18\x01 \x03(\tR\x04keys\x12\x12\n" +
-	"\x04more\x18\x02 \x01(\bR\x04more\";\n" +
+	"\x04more\x18\x02 \x01(\bR\x04more\"e\n" +
 	"\rKVDigestValue\x12\x12\n" +
 	"\x04keys\x18\x01 \x01(\x04R\x04keys\x12\x16\n" +
-	"\x06digest\x18\x02 \x01(\fR\x06digest\"\a\n" +
-	"\x05Empty2\xde\x02\n" +
+	"\x06digest\x18\x02 \x01(\fR\x06digest\x12\x12\n" +
+	"\x04held\x18\x03 \x01(\bR\x04held\x12\x14\n" +
+	"\x05keeps\x18\x04 \x01(\bR\x05keeps\"3\n" +
+	"\aHolding\x12\x12\n" +
+	"\x04held\x18\x01 \x01(\bR\x04held\x12\x14\n" +
+	"\x05keeps\x18\x02 \x01(\bR\x05keeps\"\a\n" +
+	"\x05Empty2\x96\x03\n" +
 	"\x0fDatabaseService\x12@\n" +
 	"\x05KVGet\x12\x1d.tau.database.v1.KVGetRequest\x1a\x18.tau.database.v1.KVValue\x12>\n" +
 	"\x05KVPut\x12\x1d.tau.database.v1.KVPutRequest\x1a\x16.tau.database.v1.Empty\x12D\n" +
 	"\bKVDelete\x12 .tau.database.v1.KVDeleteRequest\x1a\x16.tau.database.v1.Empty\x12A\n" +
 	"\x06KVList\x12\x1e.tau.database.v1.KVListRequest\x1a\x17.tau.database.v1.KVKeys\x12@\n" +
-	"\bKVDigest\x12\x14.tau.database.v1.Ref\x1a\x1e.tau.database.v1.KVDigestValueB\xc3\x01\n" +
+	"\bKVDigest\x12\x14.tau.database.v1.Ref\x1a\x1e.tau.database.v1.KVDigestValue\x126\n" +
+	"\x04Hold\x12\x14.tau.database.v1.Ref\x1a\x18.tau.database.v1.HoldingB\xc3\x01\n" +
 	"\x13com.tau.database.v1B\rDatabaseProtoP\x01Z?github.com/taubyte/tau/pkg/proto/gen/tau/database/v1;databasev1\xa2\x02\x03TDX\xaa\x02\x0fTau.Database.V1\xca\x02\x0fTau\\Database\\V1\xe2\x02\x1bTau\\Database\\V1\\GPBMetadata\xea\x02\x11Tau::Database::V1b\x06proto3"
 
 var (
@@ -653,7 +747,7 @@ func file_tau_database_v1_database_proto_rawDescGZIP() []byte {
 	return file_tau_database_v1_database_proto_rawDescData
 }
 
-var file_tau_database_v1_database_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_tau_database_v1_database_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_tau_database_v1_database_proto_goTypes = []any{
 	(*Ref)(nil),             // 0: tau.database.v1.Ref
 	(*KVGetRequest)(nil),    // 1: tau.database.v1.KVGetRequest
@@ -663,28 +757,31 @@ var file_tau_database_v1_database_proto_goTypes = []any{
 	(*KVListRequest)(nil),   // 5: tau.database.v1.KVListRequest
 	(*KVKeys)(nil),          // 6: tau.database.v1.KVKeys
 	(*KVDigestValue)(nil),   // 7: tau.database.v1.KVDigestValue
-	(*Empty)(nil),           // 8: tau.database.v1.Empty
+	(*Holding)(nil),         // 8: tau.database.v1.Holding
+	(*Empty)(nil),           // 9: tau.database.v1.Empty
 }
 var file_tau_database_v1_database_proto_depIdxs = []int32{
-	0, // 0: tau.database.v1.KVGetRequest.ref:type_name -> tau.database.v1.Ref
-	0, // 1: tau.database.v1.KVPutRequest.ref:type_name -> tau.database.v1.Ref
-	0, // 2: tau.database.v1.KVDeleteRequest.ref:type_name -> tau.database.v1.Ref
-	0, // 3: tau.database.v1.KVListRequest.ref:type_name -> tau.database.v1.Ref
-	1, // 4: tau.database.v1.DatabaseService.KVGet:input_type -> tau.database.v1.KVGetRequest
-	3, // 5: tau.database.v1.DatabaseService.KVPut:input_type -> tau.database.v1.KVPutRequest
-	4, // 6: tau.database.v1.DatabaseService.KVDelete:input_type -> tau.database.v1.KVDeleteRequest
-	5, // 7: tau.database.v1.DatabaseService.KVList:input_type -> tau.database.v1.KVListRequest
-	0, // 8: tau.database.v1.DatabaseService.KVDigest:input_type -> tau.database.v1.Ref
-	2, // 9: tau.database.v1.DatabaseService.KVGet:output_type -> tau.database.v1.KVValue
-	8, // 10: tau.database.v1.DatabaseService.KVPut:output_type -> tau.database.v1.Empty
-	8, // 11: tau.database.v1.DatabaseService.KVDelete:output_type -> tau.database.v1.Empty
-	6, // 12: tau.database.v1.DatabaseService.KVList:output_type -> tau.database.v1.KVKeys
-	7, // 13: tau.database.v1.DatabaseService.KVDigest:output_type -> tau.database.v1.KVDigestValue
-	9, // [9:14] is the sub-list for method output_type
-	4, // [4:9] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	0,  // 0: tau.database.v1.KVGetRequest.ref:type_name -> tau.database.v1.Ref
+	0,  // 1: tau.database.v1.KVPutRequest.ref:type_name -> tau.database.v1.Ref
+	0,  // 2: tau.database.v1.KVDeleteRequest.ref:type_name -> tau.database.v1.Ref
+	0,  // 3: tau.database.v1.KVListRequest.ref:type_name -> tau.database.v1.Ref
+	1,  // 4: tau.database.v1.DatabaseService.KVGet:input_type -> tau.database.v1.KVGetRequest
+	3,  // 5: tau.database.v1.DatabaseService.KVPut:input_type -> tau.database.v1.KVPutRequest
+	4,  // 6: tau.database.v1.DatabaseService.KVDelete:input_type -> tau.database.v1.KVDeleteRequest
+	5,  // 7: tau.database.v1.DatabaseService.KVList:input_type -> tau.database.v1.KVListRequest
+	0,  // 8: tau.database.v1.DatabaseService.KVDigest:input_type -> tau.database.v1.Ref
+	0,  // 9: tau.database.v1.DatabaseService.Hold:input_type -> tau.database.v1.Ref
+	2,  // 10: tau.database.v1.DatabaseService.KVGet:output_type -> tau.database.v1.KVValue
+	9,  // 11: tau.database.v1.DatabaseService.KVPut:output_type -> tau.database.v1.Empty
+	9,  // 12: tau.database.v1.DatabaseService.KVDelete:output_type -> tau.database.v1.Empty
+	6,  // 13: tau.database.v1.DatabaseService.KVList:output_type -> tau.database.v1.KVKeys
+	7,  // 14: tau.database.v1.DatabaseService.KVDigest:output_type -> tau.database.v1.KVDigestValue
+	8,  // 15: tau.database.v1.DatabaseService.Hold:output_type -> tau.database.v1.Holding
+	10, // [10:16] is the sub-list for method output_type
+	4,  // [4:10] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_tau_database_v1_database_proto_init() }
@@ -698,7 +795,7 @@ func file_tau_database_v1_database_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_database_v1_database_proto_rawDesc), len(file_tau_database_v1_database_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -77,6 +77,16 @@ type Service struct {
 	engines *engines
 	declare *declarations
 
+	// holdings is what this node has on disk and the only thing that can let
+	// go of it. Nil on a node composed without one, which answers held=false
+	// to every ask — honest for a node that holds nothing of its own.
+	holdings Holdings
+
+	// own is what this node is DOING about each database it holds, which is
+	// what makes its `keeps` answer honest: a node mid-release says so, and a
+	// peer cannot count it as a reason to leave too.
+	own *holdings
+
 	serverOptions []rpc.ServerOption
 
 	startMu   sync.Mutex
@@ -95,8 +105,19 @@ type options struct {
 	now      func() time.Time
 	max      int
 	idle     time.Duration
+	holdings Holdings
 
 	serverOptions []rpc.ServerOption
+}
+
+// WithHoldings is what this node has on disk. A service without one answers
+// held=false to every ask and can let go of nothing — which is the truth for a
+// node that composes no local store.
+func WithHoldings(h Holdings) Option {
+	return func(o *options) error {
+		o.holdings = h
+		return nil
+	}
 }
 
 // WithEngines is what this node can connect to. Required: a database service
@@ -195,6 +216,8 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 		host:          h,
 		engines:       newEngines(o.registry, o.now, o.max, o.idle),
 		declare:       &declarations{projects: projects},
+		holdings:      o.holdings,
+		own:           newHoldings(),
 		serverOptions: o.serverOptions,
 	}, nil
 }
@@ -242,6 +265,26 @@ func (s *Service) Close() error {
 // what a node is holding, and for a test of the bound.
 func (s *Service) Held() int { return s.engines.held() }
 
+// declared resolves one database to what its author wrote, WITHOUT opening it.
+//
+// IT IS THE HALF kv() DOES FIRST, split out because two callers must not open:
+// a node asked whether it holds a database would become a holder by answering,
+// and the maintenance sweep decides about databases it may be letting go of.
+func (s *Service) declared(ctx context.Context, at address) (declared, error) {
+	declaration, err := s.declare.of(ctx, at)
+	if err != nil {
+		return declared{}, err
+	}
+	// WHAT THIS CLOUD SERVES, BEFORE WHAT THE CALLER ASKED FOR — see kv().
+	if err := declaration.serves(); err != nil {
+		return declared{}, err
+	}
+	if declaration.spec.Type != database.KV {
+		return declared{}, fmt.Errorf("%w: %s is a %s", ErrWrongModel, at.id, declaration.spec.Type)
+	}
+	return declaration, nil
+}
+
 // kv resolves one database and answers its kv surface, or says why it cannot.
 func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
 	declaration, err := s.declare.of(ctx, at)
@@ -264,6 +307,13 @@ func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// SERVING A DATABASE IS HOLDING IT, and a node that holds one means to keep
+	// it until its own release says otherwise. Without this a node answers
+	// keeps=false forever and no move anywhere in the fleet could ever complete
+	// — the gate would refuse every drop on the word of nodes that all claim to
+	// be leaving.
+	s.own.hold(at.key())
 
 	kv, ok := conn.(database.KVConn)
 	if !ok {

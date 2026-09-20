@@ -623,6 +623,10 @@ func (n *Node) openDatabase(ctx context.Context) error {
 	svc, err := databaseService.New(n.opts.host,
 		databaseService.WithEngines(registry),
 		databaseService.WithRegister(n.registerSource()),
+		// WHAT THIS NODE ACTUALLY HOLDS, which is a different question from what
+		// it can open: a node answers "do you hold this" from its disk, and is
+		// the only thing that can let go of a copy.
+		databaseService.WithHoldings(nodeHoldings{d: &databases{node: n}}),
 	)
 	if err != nil {
 		return err
@@ -693,4 +697,109 @@ func (d *databases) storesFor(_ context.Context, spec database.Spec) (database.S
 	d.stores[name] = db
 	d.node.closers = append(d.node.closers, closerFunc(db.Close))
 	return cacheStore{db}, nil
+}
+
+// nodeHoldings answers services/database's Holdings over this node's own store.
+//
+// IT ASKS THE DISK AND NOT THE TABLE of stores opened this run. A restarted node
+// holds everything it held before and has opened none of it — a holder that
+// answered from its warm table would say it holds nothing, and every move that
+// needed it would either wait forever or, worse, count its "not held" as a
+// reason for somebody else to let go.
+type nodeHoldings struct{ d *databases }
+
+// probe is the factory's disk-level surface. It is asserted rather than
+// required of kvdb.Factory: holding is a fact about a NODE's bytes, and the
+// shared interface is also implemented by handles that keep none.
+type probe interface {
+	Holding(ctx context.Context, path string) (bool, error)
+	Paths(ctx context.Context, under string, depth int) ([]string, error)
+}
+
+func (h nodeHoldings) probe() (probe, bool) {
+	p, ok := h.d.node.opts.databases.(probe)
+	return p, ok
+}
+
+// storeName is the one name a database is known by here — the same function
+// that addresses it and names its topic.
+func storeName(spec database.Spec) (string, error) {
+	prefix, err := spec.Prefix()
+	if err != nil {
+		return "", err
+	}
+	return databaseStore + "/" + strings.TrimSuffix(prefix, "/"), nil
+}
+
+func (h nodeHoldings) Held(ctx context.Context, spec database.Spec) bool {
+	name, err := storeName(spec)
+	if err != nil {
+		return false
+	}
+
+	p, ok := h.probe()
+	if !ok {
+		// A COMPOSER'S FACTORY THAT CANNOT BE ASKED HOLDS NOTHING, as far as
+		// anybody else is concerned. Answering "yes" on a guess would let a
+		// peer drop the last copy.
+		return false
+	}
+	held, err := p.Holding(ctx, name)
+	return err == nil && held
+}
+
+func (h nodeHoldings) Destroy(ctx context.Context, spec database.Spec) error {
+	name, err := storeName(spec)
+	if err != nil {
+		return err
+	}
+
+	h.d.storesMu.Lock()
+	db, open := h.d.stores[name]
+	delete(h.d.stores, name)
+	h.d.storesMu.Unlock()
+
+	if !open {
+		// NOT OPEN IS NOT ABSENT — a restarted node holds bytes it has not
+		// opened — so it is opened for exactly as long as it takes to destroy.
+		if db, err = h.d.node.opts.databases.New(logger, name, rebroadcastSeconds); err != nil {
+			return err
+		}
+	}
+
+	destroyer, ok := db.(interface {
+		Destroy(context.Context) error
+	})
+	if !ok {
+		return fmt.Errorf("node: this store cannot release a database it holds")
+	}
+	return destroyer.Destroy(ctx)
+}
+
+func (h nodeHoldings) OnDisk(ctx context.Context) []database.Spec {
+	p, ok := h.probe()
+	if !ok {
+		return nil
+	}
+
+	// FOUR SEGMENTS BELOW THE PREFIX, which is what Spec.Prefix writes:
+	// project, environment, model, name. Everything under that is the CRDT's
+	// own structure and is none of this function's business.
+	paths, err := p.Paths(ctx, databaseStore, 4)
+	if err != nil {
+		return nil
+	}
+
+	out := make([]database.Spec, 0, len(paths))
+	for _, path := range paths {
+		parts := strings.Split(strings.TrimPrefix(path, databaseStore+"/"), "/")
+		if len(parts) != 4 {
+			continue
+		}
+		out = append(out, database.Spec{
+			Project: parts[0], Environment: parts[1],
+			Type: database.Type(parts[2]), Name: parts[3],
+		})
+	}
+	return out
 }

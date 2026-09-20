@@ -154,18 +154,39 @@ func splitHandle(handle string) (project, environment, id string) {
 	return parts[0], parts[1], parts[2]
 }
 
-// Digest is what the node this client reaches holds for one database.
+// Digest is what the node this client reaches holds for one database, and
+// whether it means to keep it.
 //
 // IT IS THE QUESTION A DEPARTING NODE ASKS ITS REPLACEMENTS. Placement says who
-// SHOULD hold a database; this says who DOES. Dropping a copy on the strength
-// of the first is what loses the data when the second has not caught up — see
-// digest.go.
-func (c *Client) Digest(ctx context.Context, at address) (uint64, []byte, error) {
-	out, err := c.svc.KVDigest(ctx, connect.NewRequest(&databasev1.Ref{
-		Project: at.project, Environment: at.environment, Id: at.id, Instance: at.instance,
-	}))
+// SHOULD hold a database; this says who DOES, and whether they are about to
+// stop. Dropping on the strength of the first loses the data when the second has
+// not caught up; dropping on the strength of `held` alone loses it when the
+// other node is leaving too.
+func (c *Client) Digest(ctx context.Context, at address) (keeper, error) {
+	out, err := c.svc.KVDigest(ctx, connect.NewRequest(c.ref(at)))
 	if err != nil {
-		return 0, nil, tierError(err)
+		return keeper{}, tierError(err)
 	}
-	return out.Msg.GetKeys(), out.Msg.GetDigest(), nil
+	return keeper{
+		keys:  out.Msg.GetKeys(),
+		sum:   out.Msg.GetDigest(),
+		held:  out.Msg.GetHeld(),
+		keeps: out.Msg.GetKeeps(),
+	}, nil
+}
+
+// Hold is Digest without the digest: what the repair sweep asks of a co-holder,
+// which needs presence rather than proof of convergence.
+func (c *Client) Hold(ctx context.Context, at address) (keeper, error) {
+	out, err := c.svc.Hold(ctx, connect.NewRequest(c.ref(at)))
+	if err != nil {
+		return keeper{}, tierError(err)
+	}
+	return keeper{held: out.Msg.GetHeld(), keeps: out.Msg.GetKeeps()}, nil
+}
+
+func (c *Client) ref(at address) *databasev1.Ref {
+	return &databasev1.Ref{
+		Project: at.project, Environment: at.environment, Id: at.id, Instance: at.instance,
+	}
 }

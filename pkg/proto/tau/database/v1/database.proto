@@ -142,6 +142,35 @@ message KVDigestValue {
   // digest covers the keys AND their values. Keys alone would call two nodes
   // converged while one of them held a stale value for every one of them.
   bytes digest = 2;
+
+  // held says this node has a copy at all. Asking must not create one: a node
+  // that answered by OPENING the database would become a holder because it was
+  // asked, and would then answer a digest that looks converged.
+  bool held = 3;
+
+  // keeps says this node means to go on holding it — its OWN placement answer,
+  // decided under the same lock as its own release.
+  //
+  // IT IS A DIFFERENT QUESTION FROM held, AND THE DIFFERENCE IS THE WHOLE GATE.
+  // A node mid-release holds the bytes and is about to delete them. Counting it
+  // as a reason to leave is how two nodes delete a database between them: a pin
+  // that moved between revisions, two nodes relabelled inside one freshness
+  // window, or two nodes draining at once -- a rolling restart -- each leave
+  // both nodes computing the other desired and both dropping. A node that is
+  // leaving answers false, so neither may go.
+  bool keeps = 4;
+}
+
+// Holding is the cheap half of KVDigestValue: whether a node has a database and
+// means to keep it, with no digest computed.
+//
+// IT IS WHAT REPAIR ASKS. A holder checking that its co-holders are still there
+// needs no proof of convergence, only presence -- and a peer answering
+// held=false while keeps=true is a nudge to open, which it does on its OWN
+// computation and never on a stranger's word.
+message Holding {
+  bool held = 1;
+  bool keeps = 2;
 }
 
 // ------------------------------------------------------------------ results
@@ -170,4 +199,9 @@ service DatabaseService {
   // It answers a question no other call can: whether it is safe to stop
   // holding something. See KVDigestValue.
   rpc KVDigest(Ref) returns (KVDigestValue);
+
+  // Hold is whether this node has a database and means to keep it. It is
+  // KVDigest without the digest, for the sweep that checks co-holders are
+  // still there.
+  rpc Hold(Ref) returns (Holding);
 }
