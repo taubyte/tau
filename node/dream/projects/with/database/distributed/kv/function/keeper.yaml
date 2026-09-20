@@ -14,3 +14,5 @@ execution:
 database:
     sessions:
         ops: [get, put]
+    ledger:
+        ops: [get, put]

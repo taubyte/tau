@@ -54,6 +54,7 @@ import (
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 
+	databaseService "github.com/taubyte/tau/services/database"
 	dnsService "github.com/taubyte/tau/services/dns"
 	registerService "github.com/taubyte/tau/services/register"
 	secretsService "github.com/taubyte/tau/services/secrets"
@@ -78,6 +79,11 @@ type Node struct {
 	dns      *dnsService.Service
 
 	secrets *secretsService.Service
+
+	// database is the service that owns this project's engines, when this node
+	// runs it. A node that does not runs no database of its own — it reaches
+	// one in the fleet, which is the whole reason the service exists.
+	database *databaseService.Service
 
 	// decider is this node's component tier, narrowed to the two worlds its own
 	// policy drives — see decides in authorizer.go. Nil on a node with no asset
@@ -192,6 +198,12 @@ func (n *Node) open() error {
 	// BEFORE THE WORKER, which resolves a secret on the request path and takes
 	// the vault as a collaborator rather than looking one up per invocation.
 	if err := n.openSecrets(); err != nil {
+		return err
+	}
+	// BEFORE THE WORKER, for the reason the vault is: the wasm tier takes its kv
+	// backing as a collaborator when the worker is composed, so a service opened
+	// afterwards would be one the tier never saw.
+	if err := n.openDatabase(context.Background()); err != nil {
 		return err
 	}
 	if err := n.openWorker(); err != nil {
@@ -409,7 +421,12 @@ func (n *Node) openWorker() error {
 			wasm.WithStreams(publisher),
 			wasm.WithBus(n.busStreams()),
 			wasm.WithSQL(servers),
-			wasm.WithKV(servers),
+			// KV GOES THROUGH THE DATABASE SERVICE, and the other three do not
+			// YET: services/database serves one cell of the grid — tau's own kv
+			// over the replicated store — and the rest move as they are served.
+			// A partial cutover is visible here rather than hidden behind a
+			// backing that silently answers either way.
+			wasm.WithKV(n.kvBacking(servers)),
 			wasm.WithDocuments(servers),
 			wasm.WithVectors(servers),
 			wasm.WithQueues(n.workQueues()),

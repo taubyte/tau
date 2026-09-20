@@ -139,7 +139,7 @@ func deploy(t *testing.T, name, host string, wasm []byte) *running {
 	require.NoError(t, u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			nodeDream.Protocol: {Others: nodeDream.Services(
-				node.Register, node.Worker, node.Stats, node.Gateway)},
+				node.Register, node.Worker, node.Stats, node.Gateway, node.Database)},
 		},
 	}))
 
@@ -228,4 +228,21 @@ func TestAProjectWithAKvDatabaseKeepsSomething(t *testing.T) {
 	missing := r.ask(t, http.MethodGet, "/kv-get/sessions/never-written")
 	require.Equal(t, 404, missing.Code)
 	require.NotEqual(t, "body", missing.Body.String())
+
+	// AND THE LEDGER IS REFUSED, which is what proves the database SERVICE is in
+	// this path rather than the worker's own engines.
+	//
+	// `ledger` declares `consensus: raft` and this cloud keeps crdt.
+	// services/database refuses that by name — the rule node/queue.go already
+	// keeps for a crdt queue and node/cache.go for a cache — and node's
+	// in-process backing never checked consensus at all, so a write landing
+	// here would mean the old path was still serving. A system of record asking
+	// for raft and silently getting last-writer-wins is the defect this closes.
+	refused := r.ask(t, http.MethodPost, "/kv-put/ledger/entry-1")
+	require.Equal(t, 403, refused.Code,
+		"a raft ledger was written to on a cloud that keeps crdt: %s", refused.Body.String())
+	require.Contains(t, refused.Body.String(), "does not keep that consensus",
+		"the refusal did not reach the guest")
+	require.Contains(t, refused.Body.String(), "raft",
+		"the refusal reached the guest without naming what was asked for")
 }

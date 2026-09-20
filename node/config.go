@@ -40,6 +40,11 @@ const (
 	Secrets  = "secrets"
 	Proxy    = "proxy"
 	DNS      = "dns"
+
+	// Database holds a project's databases. It is its OWN service and not the
+	// worker's job — v1 made the substrate open them, so the data plane was
+	// every node that had ever run code. See services/database.
+	Database = "database"
 )
 
 // The two halves of the build service, named by the build service itself
@@ -62,7 +67,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Register, Worker, Stats, Gateway, Auth, Secrets, Proxy, DNS, BuildBackend}
+var All = []string{Register, Worker, Stats, Gateway, Auth, Secrets, Database, Proxy, DNS, BuildBackend}
 
 // BuildFrontend is NOT in All. All is what a single-node development cloud
 // starts, and that node runs the backend; putting the public half in the

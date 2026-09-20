@@ -1,0 +1,6 @@
+id: QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfH
+description: a ledger that asks for raft, because entries must not resolve by merge - this cloud serves crdt, so reaching it is refused by name rather than served weaker than written
+kv:
+    distributed:
+        size: 16MB
+        consensus: raft

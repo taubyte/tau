@@ -15,6 +15,7 @@ import (
 	vecengine "github.com/taubyte/tau/pkg/database/engines/vector"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	databaseService "github.com/taubyte/tau/services/database"
 )
 
 // database.go backs `taubyte:sql/store` on this node, over pkg/database.
@@ -587,4 +588,54 @@ func (d *databases) Close() error {
 	}
 	d.open = nil
 	return err
+}
+
+// openDatabase starts this node's database service, when it runs one.
+//
+// THE ENGINES ARE THIS NODE'S AND THE DECLARATIONS ARE THE REGISTER'S, which is
+// the split the service was built for: it opens what a project declared, and it
+// reads what a project declared rather than being told.
+func (n *Node) openDatabase(ctx context.Context) error {
+	if !n.cfg.runs(Database) {
+		return nil
+	}
+
+	// TAU'S OWN KV, BUILT THE WAY node/database.go BUILDS IT. The registry is
+	// the same object either half would have used; what changes is who holds
+	// the connection afterwards.
+	registry, err := (&databases{node: n}).engines(ctx, database.KV)
+	if err != nil {
+		return fmt.Errorf("node: %s: %w", Database, err)
+	}
+
+	svc, err := databaseService.New(n.opts.host,
+		databaseService.WithEngines(registry),
+		databaseService.WithRegister(n.registerSource()),
+	)
+	if err != nil {
+		return err
+	}
+
+	n.database = svc
+	n.closers = append(n.closers, svc)
+	return nil
+}
+
+// kvBacking is what the wasm tier opens a kv through.
+//
+// THE SERVICE WHEN THERE IS ONE, and this node's own engines otherwise. The
+// second half is what v1 did everywhere and is kept only for a node that runs
+// no database service and can reach none — a single-process test, a composition
+// that predates the service. A node that runs the service takes Local(), which
+// is the absence of a hop rather than a shortcut.
+//
+// REACHING ONE IN THE FLEET IS NOT HERE YET. A node with no database service of
+// its own still falls back, so the data plane is still the worker's on that
+// node — that is the remaining half of the cutover, and it is stated rather
+// than papered over.
+func (n *Node) kvBacking(own wasmtier.KVs) wasmtier.KVs {
+	if n.database != nil {
+		return n.database.Local()
+	}
+	return own
 }
