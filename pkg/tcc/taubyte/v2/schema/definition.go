@@ -573,23 +573,20 @@ func attachPlacement() {
 // is simply not within it — and where no scope declares one, the only place left that
 // knows is the implementation, at deploy.
 //
-// WHICH IS THE SEAM `EmitValidation` EXISTS FOR, AND IT CANNOT CARRY THIS ONE. That is
-// a limit worth writing down rather than discovering: `emitAttrValidations`
-// (interp/index.go) reads the value with `GetString(a.Name)` and treats a missing key
-// as an error, so an OPTIONAL attribute declaring one fails the compile of every
-// resource that omits it — `region/name is not a string: does not exist`, on a document
-// with no region block at all. And the read is a flat map lookup, so a nested name is
-// not addressable: `region/name` is a level in the compiled object, not a key. Its two
-// existing users are a zone's `fqdn` and the project's `id` — both required, both
-// top-level — which is why neither has been hit.
+// WHICH IS THE SEAM `EmitValidation` EXISTS FOR, and it now carries this one. It could
+// not before, and both reasons were in `emitAttrValidations` (interp/index.go): it read
+// the value with `GetString(a.Name)` and treated a missing key as an error, so an
+// OPTIONAL attribute declaring one failed the compile of every resource that omitted it;
+// and that read was a flat lookup, so a nested name was not addressable — `region/name`
+// is a level in the compiled object, not a key. Its two existing users were a zone's
+// `fqdn` and the project's `id`, both required and both top-level, which is why neither
+// had been hit. It now walks Segments, the key as declared, and emits nothing for an
+// absent optional value.
 //
-// Two things the generic layer is missing, named rather than worked around: an absent
-// optional value has to emit nothing instead of failing, and an attribute's identity
-// has to be read as the PATH it is — the same walk `interp.Attr(Key(...))` and
-// checks.go's `fieldValue` already do. Neither knows a kind. When they land, these four
-// fields take `EmitValidation("region", "region")` and nothing else here changes; the
-// consumer side is a second job, since utils/tcc/validations.go answers `dns` and
-// `project_id` and nothing else.
+// THE CONSUMER SIDE IS STILL OPEN, and it is named rather than assumed: utils/tcc
+// answers `dns` and `project_id` and dispatches by validator name, so a `region`
+// validation is carried and not yet checked. Checking it needs the cloud's own list of
+// regions, which nothing can answer until a node reports the region it is in.
 //
 // THE POLICY IS THE VOCABULARY'S OWN SWITCH: a closed set of alternative keys, each
 // branch carrying its own fields. `failover` takes EXACTLY TWO, and "the first one is
@@ -644,12 +641,12 @@ func regionAttributes() []*Attribute {
 		// for different things: a pin naming no region pins nothing, while a cdn naming
 		// no home is seeded rather than unplaced.
 		String(Key("region", "name"), Path("region", Either("pinned", "cdn"), "name"),
-			RequiredWhen(Key("region", "policy"), "pinned"), PerEnv(), InSection("placement"),
+			RequiredWhen(Key("region", "policy"), "pinned"), PerEnv(), EmitValidation("region", "region"), InSection("placement"),
 			Doc("Region", "pinned: the only region this runs in. cdn: the home it starts from before demand moves it — omit it and the platform seeds the choice.")),
 
-		String(Key("region", "main"), Path("region", "failover", "main"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), PerEnv(), InSection("placement"),
+		String(Key("region", "main"), Path("region", "failover", "main"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), PerEnv(), EmitValidation("region", "region"), InSection("placement"),
 			Doc("Main", "Where this runs while it can.")),
-		String(Key("region", "standby"), Path("region", "failover", "standby"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), PerEnv(), InSection("placement"),
+		String(Key("region", "standby"), Path("region", "failover", "standby"), RequiredWhen(Key("region", "policy"), "failover"), ShowWhen(Key("region", "policy"), "failover"), PerEnv(), EmitValidation("region", "region"), InSection("placement"),
 			Doc("Standby", "Where it runs when the main is gone.")),
 	}
 }

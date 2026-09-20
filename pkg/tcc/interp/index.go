@@ -427,6 +427,36 @@ func makeLookup(config, configRoot object.Object[object.Refrence]) func(string, 
 	}
 }
 
+// attrString reads an attribute off a compiled instance BY THE PATH ITS KEY IS.
+//
+// Segments is the key as declared — one level of the compiled object per entry —
+// so `region/name` is a level called `region` holding `name`. A flat lookup of
+// the joined name finds nothing there, which is the second reason a nested
+// attribute could not declare a deferred validation. An attribute whose key has
+// one segment carries no Segments and is its Name.
+//
+// Absent is reported as not-held rather than as an error: see the caller.
+func attrString(instObj object.Object[object.Refrence], a *engine.Attribute) (string, bool) {
+	key := a.Segments
+	if len(key) == 0 {
+		key = []string{a.Name}
+	}
+
+	obj := instObj
+	if len(key) > 1 {
+		var err error
+		if obj, err = instObj.Fetch(key[:len(key)-1]...); err != nil || obj == nil {
+			return "", false
+		}
+	}
+
+	val, err := obj.GetString(key[len(key)-1])
+	if err != nil || val == "" {
+		return "", false
+	}
+	return val, true
+}
+
 // emitAttrValidations fires the deferred (index-time) validations declared on an
 // iterator's attributes — the domain fqdn's EmitValidation("domain","dns"),
 // carrying the {project[, app]} scope context pass4/domain.go attached. Distinct
@@ -437,9 +467,14 @@ func emitAttrValidations(ct transform.Context[object.Refrence], instObj object.O
 		if !ok {
 			continue
 		}
-		val, err := instObj.GetString(a.Name)
-		if err != nil {
-			return fmt.Errorf("%s is not a string: %w", a.Name, err)
+		val, held := attrString(instObj, a)
+		if !held {
+			// AN ABSENT OPTIONAL VALUE EMITS NOTHING, rather than failing the
+			// compile. This read used to treat a missing key as an error, so an
+			// OPTIONAL attribute that declared a deferred validation broke every
+			// resource that omitted it — which is why no optional attribute could
+			// declare one at all.
+			continue
 		}
 		context := map[string]any{"project": projectId}
 		if appId != "" {

@@ -375,7 +375,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -397,7 +398,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -415,7 +417,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"
@@ -1944,7 +1947,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -1966,7 +1970,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -1984,7 +1989,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"
@@ -4423,7 +4429,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -4445,7 +4452,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -4463,7 +4471,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"
@@ -9456,7 +9465,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -9478,7 +9488,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -9496,7 +9507,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"
@@ -10787,7 +10799,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -10809,7 +10822,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -10827,7 +10841,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"
@@ -17831,7 +17846,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -17853,7 +17869,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -17871,7 +17888,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"
@@ -20139,7 +20157,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -20161,7 +20180,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -20179,7 +20199,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"
@@ -22534,7 +22555,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -22556,7 +22578,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -22574,7 +22597,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"
@@ -23646,7 +23670,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -23668,7 +23693,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -23686,7 +23712,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"
@@ -26307,7 +26334,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -26329,7 +26357,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -26347,7 +26376,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"
@@ -27594,7 +27624,8 @@
               "pinned"
             ]
           },
-          "x-tau-section": "placement"
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
         },
         "region": {
           "properties": {
@@ -27616,7 +27647,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 },
                 "standby": {
                   "description": "Where it runs when the main is gone.",
@@ -27634,7 +27666,8 @@
                     "in": [
                       "failover"
                     ]
-                  }
+                  },
+                  "x-tau-validation": "region"
                 }
               },
               "type": "object"

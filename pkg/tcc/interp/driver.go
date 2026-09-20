@@ -264,9 +264,13 @@ func holderOf(sel object.Selector[object.Refrence], a *engine.Attribute) (object
 func (d *CompileDriver) applyRootOps(ct transform.Context[object.Refrence], o object.Object[object.Refrence], attrs []*engine.Attribute) error {
 	for _, a := range attrs {
 		if ve, ok := a.Meta["emitValidation"].(engine.ValidationEmit); ok {
-			val, err := o.GetString(a.Name)
-			if err != nil {
-				return fmt.Errorf("%s is not a string: %w", a.Name, err)
+			// THE SAME READ emitAttrValidations does, through the same helper:
+			// by the PATH the key is, and absent emits nothing. It was a second
+			// copy of the flat lookup, so the project's own region block — which
+			// is nested and optional — failed every compile that omitted it.
+			val, held := attrString(o, a)
+			if !held {
+				continue
 			}
 			store := ct.Store().Validators()
 			vals := append(store.Get(), engine.NewNextValidation(ve.Key, val, ve.Validator, map[string]any{}))
