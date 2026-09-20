@@ -15,6 +15,7 @@ import (
 	vecengine "github.com/taubyte/tau/pkg/database/engines/vector"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/raft"
 	databaseService "github.com/taubyte/tau/services/database"
 )
 
@@ -600,10 +601,36 @@ func (n *Node) openDatabase(ctx context.Context) error {
 		return nil
 	}
 
-	// TAU'S OWN KV, BUILT THE WAY node/database.go BUILDS IT. The registry is
-	// the same object either half would have used; what changes is who holds
-	// the connection afterwards.
-	registry, err := (&databases{node: n}).engines(ctx, database.KV)
+	// BOTH HALVES OF THE CONSENSUS AXIS, from the two things this node already
+	// has: the replicated CRDT store every other v2 store is built on, and the
+	// raft cluster the queues and crons run in. A node missing either serves
+	// the other and refuses what it cannot keep, which is the point — a ledger
+	// that asked for raft must not be merged.
+	store, err := (&databases{node: n}).cacheStoreFor(ctx)
+	if err != nil {
+		return fmt.Errorf("node: %s: %w", Database, err)
+	}
+
+	// THE GROUP IS OPENED ON FIRST USE AND NOT HERE. A node builds its services
+	// before it starts them, and raft finds its peers over a swarm that is not
+	// up yet — a group opened at construction sits with no known peers, aborts
+	// its election, and answers every write with "no leader". node/queue.go
+	// opens its own in the background for the same reason.
+	// NO RAFT GROUP IS OPENED HERE, and that is a decision rather than an
+	// omission. cluster-service.md settled it on 2026-08-31: a raft group is a
+	// CONSISTENCY DOMAIN, owned by a cluster service that can scope it to a
+	// region and hold policy over who joins — explicitly NOT one group per
+	// service type, which is what a node opening its own would be. A node runs
+	// zero to many services; five of them opening five groups is the shape that
+	// note exists to refuse.
+	//
+	// So this hands the service no cluster, no raft engine is registered, and a
+	// database declaring `consensus: raft` is refused BY NAME until there is
+	// something whose job it is to own the group. raftstore.go is the half that
+	// is ready: it is a store over a raft.Cluster somebody else supplies.
+	var cluster func() (raft.Cluster, error)
+
+	registry, err := databaseService.Engines(ctx, store, cluster)
 	if err != nil {
 		return fmt.Errorf("node: %s: %w", Database, err)
 	}
@@ -638,4 +665,27 @@ func (n *Node) kvBacking(own wasmtier.KVs) wasmtier.KVs {
 		return n.database.Local()
 	}
 	return own
+}
+
+// cacheStoreFor opens the replicated store tau's own engines are built on.
+//
+// IT IS THE SAME STORE node/database.go's own engines use, lifted out so the
+// database service can be handed it without going through a *databases whose
+// job it is taking over.
+func (d *databases) cacheStoreFor(context.Context) (kvengine.Store, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.node.opts.databases == nil {
+		return nil, ErrNoCacheStore
+	}
+	if d.db == nil {
+		db, err := d.node.opts.databases.New(logger, databaseStore, rebroadcastSeconds)
+		if err != nil {
+			return nil, fmt.Errorf("node: opening the database store: %w", err)
+		}
+		d.db = db
+		d.node.closers = append(d.node.closers, closerFunc(db.Close))
+	}
+	return cacheStore{d.db}, nil
 }

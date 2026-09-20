@@ -43,6 +43,9 @@ type declared struct {
 	consensus string
 }
 
+// tauEngine is what the vocabulary calls tau's own, on both consensus arms.
+const tauEngine = "distributed"
+
 // served is what this service implements today: tau's own kv over the
 // replicated CRDT store.
 //
@@ -53,8 +56,26 @@ type declared struct {
 // every call it was given and quietly did the wrong thing for three quarters of
 // them is worse than one that refuses.
 var (
-	servedModels    = []database.Type{database.KV}
-	servedConsensus = []string{"crdt"}
+	servedModels = []database.Type{database.KV}
+
+	// servedConsensus maps what an author wrote to the engine that keeps it.
+	//
+	// THE VOCABULARY'S `engine` IS `distributed` FOR BOTH, because from where
+	// the author sits the difference is not which engine — it is how concurrent
+	// writes resolve. pkg/database's registry is keyed by (type, engine), so the
+	// resolution becomes the engine name INSIDE this service and nowhere else:
+	// the spec that leaves here carries it, the declaration that arrived did
+	// not, and a reader of the vocabulary sees one engine with two behaviours
+	// rather than two engines.
+	servedConsensus = map[string]string{
+		"crdt": "distributed-crdt",
+		"raft": "distributed-raft",
+	}
+
+	// defaultConsensus is what a distributed database with none written gets.
+	// The vocabulary makes it RequiredWhen distributed, so this is for a
+	// connector and for a document that predates the field.
+	defaultConsensus = "crdt"
 )
 
 // serves refuses a declaration this service cannot honour, naming which half of
@@ -63,14 +84,21 @@ func (d declared) serves() error {
 	if !slices.Contains(servedModels, d.spec.Type) {
 		return fmt.Errorf("%w: %s", ErrModelUnserved, d.spec.Type)
 	}
-
-	// ABSENT IS THE DEFAULT AND NOT A REFUSAL. `consensus` is RequiredWhen the
-	// engine is distributed, so a connector carries none — and refusing every
-	// database that did not write one would refuse every external postgres.
-	if d.consensus != "" && !slices.Contains(servedConsensus, d.consensus) {
+	if _, known := servedConsensus[d.wants()]; !known {
 		return fmt.Errorf("%w: %q", ErrConsensusUnserved, d.consensus)
 	}
 	return nil
+}
+
+// wants is the resolution this database asked for. Absent is the default and
+// not a refusal: `consensus` is RequiredWhen the engine is distributed, so a
+// connector carries none and refusing every database that did not write one
+// would refuse every external postgres.
+func (d declared) wants() string {
+	if d.consensus == "" {
+		return defaultConsensus
+	}
+	return d.consensus
 }
 
 // declarations reads compiled projects.
@@ -132,6 +160,14 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	}
 	if n, ok := resource.Int(model, "size"); ok {
 		out.size = n
+	}
+
+	// THE ENGINE THE SPEC NAMES IS THE ONE THAT KEEPS THE DECLARED RESOLUTION.
+	// tau's own engine is `distributed` in the vocabulary either way; which
+	// store backs it is this service's to decide and the registry's to be keyed
+	// by. A connector names its own engine and keeps it.
+	if named, served := servedConsensus[out.wants()]; served && out.spec.Engine == tauEngine {
+		out.spec.Engine = named
 	}
 
 	// TLS IS ON UNLESS THE AUTHOR WROTE `disable`, which is the vocabulary's own

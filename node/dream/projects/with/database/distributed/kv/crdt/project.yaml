@@ -1,0 +1,3 @@
+id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR
+name: kvcrdt
+description: a function and the kv it keeps things in - tau's own engine, resolving concurrent writes by merge

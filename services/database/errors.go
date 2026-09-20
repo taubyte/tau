@@ -59,3 +59,8 @@ var (
 	// what it stored fails later, looking like a bug in the workload.
 	ErrNotSet = errors.New("database: no such key")
 )
+
+// ErrGroupForming is a raft database reached before its group has formed. It is
+// a RETRY and not a failure, which is why it is its own arm: a node that has
+// just started is a node whose next request will do better.
+var ErrGroupForming = errors.New("database: that database's raft group is still forming")

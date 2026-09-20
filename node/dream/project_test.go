@@ -43,14 +43,17 @@ import (
 // A project's path under projects/ mirrors the vocabulary's own axes, so the
 // directory IS the description and nothing has to be looked up:
 //
-//	with/function                    one function, one route, nothing else
-//	with/database/distributed/kv     …and a database, tau's own engine, kv model
-//	with/database/postgres/sql       …and a database, a connector, sql model
-//	with/sync/queue                  …and a queue
+//	with/function                          one function, one route, nothing else
+//	with/database/distributed/kv/crdt      …and a kv, tau's engine, merge resolution
+//	with/database/distributed/kv/raft      …the same cell this cloud does not serve
+//	with/database/postgres/sql             …and a database behind a connector
+//	with/sync/queue                        …and a queue
 //
-// `database` is four models on one axis and an engine on another, and a project
-// that said only "withdatabase" would be claiming to exercise a grid it touches
-// one cell of. The path spends a directory to stop that.
+// `database` is a grid — four models, an engine axis, a consensus axis — and a
+// project that said only "withdatabase" would claim to exercise all of it while
+// touching one cell. ONE PROJECT PER CELL, so a directory is a claim somebody
+// can check: the crdt one round-trips and the raft one is refused, and neither
+// hides inside the other.
 //
 // # They start small on purpose
 //
@@ -212,7 +215,7 @@ func kitchenSinkWASM(t *testing.T) []byte {
 func TestAProjectWithAKvDatabaseKeepsSomething(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	r := deploy(t, "with/database/distributed/kv", "keep.example.com", kitchenSinkWASM(t))
+	r := deploy(t, "with/database/distributed/kv/crdt", "keep.example.com", kitchenSinkWASM(t))
 
 	// A WRITE IS 204 AND A REFUSAL IS 403, so the status says which arm of the
 	// host interface answered rather than only that something did.
@@ -229,18 +232,32 @@ func TestAProjectWithAKvDatabaseKeepsSomething(t *testing.T) {
 	require.Equal(t, 404, missing.Code)
 	require.NotEqual(t, "body", missing.Body.String())
 
-	// AND THE LEDGER IS REFUSED, which is what proves the database SERVICE is in
-	// this path rather than the worker's own engines.
-	//
-	// `ledger` declares `consensus: raft` and this cloud keeps crdt.
-	// services/database refuses that by name — the rule node/queue.go already
-	// keeps for a crdt queue and node/cache.go for a cache — and node's
-	// in-process backing never checked consensus at all, so a write landing
-	// here would mean the old path was still serving. A system of record asking
-	// for raft and silently getting last-writer-wins is the defect this closes.
+}
+
+// TestALedgerIsRefusedUntilSomethingOwnsItsGroup.
+//
+// `consensus: raft` is what an author writes when entries must not resolve by
+// merge, and services/database can keep it — raftstore.go is a store over a
+// raft.Cluster, leader-gated, barriered before a read. What is missing is not
+// the implementation but the OWNER of the group.
+//
+// cluster-service.md settled that on 2026-08-31: a raft group is a consistency
+// domain, scoped to a region, with policy over who joins — and explicitly not
+// one group per service type, which is what a node opening its own would be. A
+// node runs zero to many services, so five of them would be five groups.
+//
+// So no cluster is handed to the service, no raft engine is registered, and
+// this is refused BY NAME — which is still the whole point: the alternative is
+// accepting the write and merging it, and a ledger that silently resolved two
+// entries into one is the defect the declaration exists to prevent.
+func TestALedgerIsRefusedUntilSomethingOwnsItsGroup(t *testing.T) {
+	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
+
+	r := deploy(t, "with/database/distributed/kv/raft", "ledger.example.com", kitchenSinkWASM(t))
+
 	refused := r.ask(t, http.MethodPost, "/kv-put/ledger/entry-1")
 	require.Equal(t, 403, refused.Code,
-		"a raft ledger was written to on a cloud that keeps crdt: %s", refused.Body.String())
+		"a raft ledger was written to on a cloud that keeps none: %s", refused.Body.String())
 	require.Contains(t, refused.Body.String(), "does not keep that consensus",
 		"the refusal did not reach the guest")
 	require.Contains(t, refused.Body.String(), "raft",

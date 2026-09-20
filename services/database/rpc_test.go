@@ -172,14 +172,14 @@ func TestAModelThisServiceDoesNotServeIsRefusedByName(t *testing.T) {
 	require.ErrorContains(t, err, "does not serve that model")
 }
 
-// TestAConsensusThisServiceDoesNotKeepIsRefusedByName.
+// TestANodeThatCannotKeepAConsensusRefusesByName.
 //
-// This is the gap the vocabulary has carried since `consensus` was declared:
-// RequiredWhen the engine is distributed, and read by nobody, so a system of
-// record asking for raft silently got last-writer-wins. node/queue.go refuses a
-// crdt queue by name and node/cache.go refuses a cache the same way; the one
-// kind the vocabulary calls a system of record had no such check.
-func TestAConsensusThisServiceDoesNotKeepIsRefusedByName(t *testing.T) {
+// raft IS served — see raftstore.go — but only by a node that has a raft
+// cluster to keep it in. This one has only the crdt store, so a ledger asking
+// for raft is refused BY NAME rather than registered under it and merged, which
+// is the defect the vocabulary carried while `consensus` was RequiredWhen and
+// read by nobody.
+func TestANodeThatCannotKeepAConsensusRefusesByName(t *testing.T) {
 	client, _ := serving(t)
 
 	_, err := client.KVPut(t.Context(), connect.NewRequest(&databasev1.KVPutRequest{

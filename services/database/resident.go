@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -175,6 +176,14 @@ func (e *engines) drop(el *list.Element) {
 	// its own timeout, and the request that happened to evict it is not the
 	// request that should pay for that.
 	go r.conn.Close()
+}
+
+// keeps reports whether this node has the engine a spec names. It is asked
+// BEFORE opening so the refusal is the one the author can act on — "this cloud
+// does not keep raft" — rather than the registry's "no engine registered", which
+// names an internal string nobody wrote.
+func (e *engines) keeps(spec database.Spec) bool {
+	return slices.Contains(e.registry.EnginesFor(spec.Type), spec.Engine)
 }
 
 // held is how many engines this node has open, for an operator asking and for a
