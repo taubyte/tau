@@ -1,6 +1,7 @@
 package database
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -224,4 +225,48 @@ func TestAHoleInThePinnedListIsNotAnywhere(t *testing.T) {
 	require.Equal(t, []string{anyRegion}, placementRegions(nil))
 	require.Equal(t, []string{"eu", "us"}, placementRegions([]string{"us", "eu", "us"}),
 		"a region named twice is one region, and the order is stable")
+}
+
+// TestAnUnpinnedDatabaseIsPlacedOverEveryMember.
+//
+// "The cloud decides" means one placement over every member REGARDLESS OF WHERE IT IS,
+// which is what the file doc promises — and the sentinel makes that easy to get wrong.
+// `anyRegion` is a key, so looking it up in a map keyed by what nodes REPORT answers
+// with the nodes that reported nothing. On a fleet where every node knows its region
+// that is none of them, and every unpinned database is held by nobody at all.
+func TestAnUnpinnedDatabaseIsPlacedOverEveryMember(t *testing.T) {
+	byRegion := map[string][]placement.Member{
+		"eu": members("eu1", "eu2"),
+		"us": members("us1", "us2"),
+	}
+
+	held := holders(at("shop", "QmSessions"), byRegion, unpinned, DefaultReplication)
+	require.Len(t, held, 1, "an unpinned database is one placement, not one per region")
+	require.Len(t, held[anyRegion], DefaultReplication,
+		"nobody holds it: the sentinel was looked up instead of being the union")
+
+	// AND EVERY NODE AGREES ABOUT ITSELF, which is the acquire/drop decision. A node
+	// answers for the union it is part of, not for the bucket its region names.
+	for _, node := range []struct{ id, region string }{
+		{"eu1", "eu"}, {"eu2", "eu"}, {"us1", "us"}, {"us2", "us"},
+	} {
+		want := slices.Contains(held[anyRegion], node.id)
+		got := holds(at("shop", "QmSessions"), byRegion, unpinned, DefaultReplication, node.id, node.region)
+		require.Equal(t, want, got, "%s in %s disagrees with the placement", node.id, node.region)
+	}
+}
+
+// TestANodeThatReportsNoRegionNeverHoldsPinnedData, which is the safe direction: a node
+// that cannot say where it is must not be handed data somebody pinned for a legal
+// reason, and it must not become the sole holder of everything unpinned either.
+func TestANodeThatReportsNoRegionNeverHoldsPinnedData(t *testing.T) {
+	byRegion := map[string][]placement.Member{
+		"eu":      members("eu1", "eu2"),
+		anyRegion: members("nowhere"),
+	}
+
+	require.False(t, holds(at("shop", "QmSessions"), byRegion, []string{"eu"},
+		DefaultReplication, "nowhere", anyRegion), "an unplaced node took EU-pinned data")
+	require.NotContains(t, holders(at("shop", "QmSessions"), byRegion, []string{"eu"},
+		DefaultReplication)["eu"], "nowhere")
 }

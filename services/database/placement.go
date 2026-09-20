@@ -33,9 +33,10 @@ import (
 // # An unpinned environment is the cloud's choice
 //
 // Empty regions means the cloud decides, which here means one placement over
-// every member regardless of where it is. That is the single-region case and
-// the development case, and it is not a special path: it is the map with one
-// entry whose key nobody named.
+// every member regardless of where it is — the UNION of every bucket, not the
+// bucket named by the sentinel. See membersIn: getting that backwards left
+// every unpinned database held by nobody, and the doc said the right thing
+// while the code did the other one.
 
 // anyRegion is the bucket members fall in when an environment names no regions.
 // It is a key and never a region name, so a cloud that later pins the
@@ -72,7 +73,7 @@ func resourceOf(at address) string {
 func holders(at address, byRegion map[string][]placement.Member, regions []string, replication int) map[string][]string {
 	out := make(map[string][]string, len(regions))
 	for _, region := range placementRegions(regions) {
-		out[region] = placement.Desired(resourceOf(at), byRegion[region], replication)
+		out[region] = placement.Desired(resourceOf(at), membersIn(byRegion, region), replication)
 	}
 	return out
 }
@@ -90,12 +91,40 @@ func holders(at address, byRegion map[string][]placement.Member, regions []strin
 // residency line holding at the one place it has to.
 func holds(at address, byRegion map[string][]placement.Member, regions []string, replication int, id, region string) bool {
 	for _, pinned := range placementRegions(regions) {
-		if pinned != region {
+		if pinned != anyRegion && pinned != region {
 			continue
 		}
-		return placement.Holds(resourceOf(at), byRegion[pinned], replication, id)
+		return placement.Holds(resourceOf(at), membersIn(byRegion, pinned), replication, id)
 	}
 	return false
+}
+
+// membersIn is the member set one placement runs over: a named region's own members,
+// or EVERY member when nothing was pinned.
+//
+// THE SENTINEL IS A UNION, NOT A BUCKET, and that distinction is the whole function.
+// `anyRegion` is a key this package chose; the map is keyed by what nodes REPORT. Look
+// the sentinel up and the answer is the nodes that reported nothing — which on a fleet
+// where every node knows its region is none of them, so every unpinned database is held
+// by nobody. And on a fleet with ONE misconfigured node, that node becomes the sole
+// holder of every unpinned database in the cloud. Both were live until a test asked.
+//
+// A node that reports no region still competes for unpinned databases, because it is a
+// member of the union like any other. It competes for no PINNED one, which is the safe
+// direction: a node that cannot say where it is must not be handed data somebody pinned
+// for a legal reason.
+func membersIn(byRegion map[string][]placement.Member, region string) []placement.Member {
+	if region != anyRegion {
+		return byRegion[region]
+	}
+
+	out := make([]placement.Member, 0, len(byRegion))
+	for _, members := range byRegion {
+		out = append(out, members...)
+	}
+	// Rank copies and orders by score then id, so the map's iteration order does not
+	// reach the answer.
+	return out
 }
 
 // placementRegions is where copies go: what the environment pinned, or the one
