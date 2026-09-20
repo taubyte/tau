@@ -38,11 +38,25 @@ import (
 // a green test here says is that the whole path holds, from a file somebody
 // wrote to bytes on a socket.
 //
+// # Where a project lives says what it exercises
+//
+// A project's path under projects/ mirrors the vocabulary's own axes, so the
+// directory IS the description and nothing has to be looked up:
+//
+//	with/function                    one function, one route, nothing else
+//	with/database/distributed/kv     …and a database, tau's own engine, kv model
+//	with/database/postgres/sql       …and a database, a connector, sql model
+//	with/sync/queue                  …and a queue
+//
+// `database` is four models on one axis and an engine on another, and a project
+// that said only "withdatabase" would be claiming to exercise a grid it touches
+// one cell of. The path spends a directory to stop that.
+//
 // # They start small on purpose
 //
-// `onefunction` is the smallest project that answers anything: one function, one
-// zone, one route. Everything that goes wrong in it goes wrong for every project
-// after it, so it is the one to read first when the corpus turns red.
+// `with/function` is the smallest project that answers anything: one function,
+// one zone, one route. Everything that goes wrong in it goes wrong for every
+// project after it, so it is the one to read first when the corpus turns red.
 //
 // # The one substitution
 //
@@ -165,7 +179,7 @@ func handlerWASM(t *testing.T) []byte {
 func TestTheSmallestProjectAnswers(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	r := deploy(t, "onefunction", "hello.example.com", handlerWASM(t))
+	r := deploy(t, "with/function", "hello.example.com", handlerWASM(t))
 
 	got := r.ask(t, http.MethodGet, "/")
 	require.Equal(t, 200, got.Code, "a GET reached the function")
@@ -198,7 +212,7 @@ func kitchenSinkWASM(t *testing.T) []byte {
 func TestAProjectWithAKvDatabaseKeepsSomething(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	r := deploy(t, "withkvdatabase", "keep.example.com", kitchenSinkWASM(t))
+	r := deploy(t, "with/database/distributed/kv", "keep.example.com", kitchenSinkWASM(t))
 
 	// A WRITE IS 204 AND A REFUSAL IS 403, so the status says which arm of the
 	// host interface answered rather than only that something did.
