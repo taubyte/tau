@@ -104,7 +104,7 @@ func serving(t *testing.T) (databasev1connect.DatabaseServiceClient, *Service) {
 	require.NoError(t, mn.LinkAll())
 	require.NoError(t, mn.ConnectAllButSelf())
 
-	engine := &counting{}
+	engine := &accounting{}
 	registry := database.NewRegistry()
 	require.NoError(t, registry.Register(t.Context(), engine))
 

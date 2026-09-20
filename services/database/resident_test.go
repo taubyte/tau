@@ -15,9 +15,15 @@ import (
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 )
 
-// counting is an engine that answers with a connection remembering whether it
-// was closed, so the table's promises are observable.
-type counting struct {
+// accounting is an engine that accounts for every connection it hands out: how
+// many were opened, and how many are still live.
+//
+// THAT IS WHAT MAKES THE TABLE'S PROMISES ASSERTABLE. "Opened once and kept
+// warm", "a newer deployment closes what it replaces", "an idle one is let go"
+// and "nothing outlived the service" are all statements about connections
+// nobody holds a reference to any more — so the only way to check them is for
+// the connections themselves to say.
+type accounting struct {
 	mu     sync.Mutex
 	opened int
 	live   int
@@ -28,17 +34,18 @@ type counting struct {
 	refuse error
 }
 
-// counted is a real kv over a map, because Registry.Register opens a probe and
-// refuses an engine whose connection does not answer its type's operations.
-type counted struct {
-	e      *counting
+// accounted is one of its connections: a real kv over a map, because
+// Registry.Register opens a probe and refuses an engine whose connection does
+// not answer its type's operations.
+type accounted struct {
+	e      *accounting
 	closed bool
 
 	mu   sync.Mutex
 	rows map[string][]byte
 }
 
-func (c *counted) Close() error {
+func (c *accounted) Close() error {
 	c.e.mu.Lock()
 	defer c.e.mu.Unlock()
 	if !c.closed {
@@ -48,7 +55,7 @@ func (c *counted) Close() error {
 	return nil
 }
 
-func (c *counted) Get(_ context.Context, key string) ([]byte, error) {
+func (c *accounted) Get(_ context.Context, key string) ([]byte, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	value, held := c.rows[key]
@@ -58,21 +65,21 @@ func (c *counted) Get(_ context.Context, key string) ([]byte, error) {
 	return value, nil
 }
 
-func (c *counted) Put(_ context.Context, key string, value []byte) error {
+func (c *accounted) Put(_ context.Context, key string, value []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.rows[key] = value
 	return nil
 }
 
-func (c *counted) Delete(_ context.Context, key string) error {
+func (c *accounted) Delete(_ context.Context, key string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.rows, key)
 	return nil
 }
 
-func (c *counted) List(_ context.Context, prefix string) ([]string, error) {
+func (c *accounted) List(_ context.Context, prefix string) ([]string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -86,21 +93,19 @@ func (c *counted) List(_ context.Context, prefix string) ([]string, error) {
 	return out, nil
 }
 
-func (c *counted) Watch(context.Context, string) (<-chan string, error) {
-	return nil, errors.New("counting: no watch")
+func (c *accounted) Watch(context.Context, string) (<-chan string, error) {
+	return nil, errors.New("accounting: no watch")
 }
 
 // NAMED FOR THE VOCABULARY'S ENGINE, because the registry is keyed by (type,
 // engine) and the engine is what the author wrote: `kv: {engine: distributed}`.
 // A fixture named after itself is one the registry can never be asked for.
-// NAMED FOR THE ENGINE THE RESOLVER ASKS FOR, which is not quite what the author
-// wrote: the vocabulary says `engine: distributed` on both consensus arms, and
-// declarations.go turns the declared resolution into the engine name the
-// registry is keyed by.
-func (c *counting) Name() string           { return servedConsensus["crdt"] }
-func (c *counting) Types() []database.Type { return []database.Type{database.KV} }
+// NAMED FOR THE VOCABULARY'S ENGINE, which is the only name there is: the
+// registry is keyed by (type, engine) and `engine` is what the author wrote.
+func (c *accounting) Name() string           { return "distributed" }
+func (c *accounting) Types() []database.Type { return []database.Type{database.KV} }
 
-func (c *counting) Open(context.Context, database.Spec) (database.Conn, error) {
+func (c *accounting) Open(context.Context, database.Spec) (database.Conn, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.refuse != nil {
@@ -108,19 +113,21 @@ func (c *counting) Open(context.Context, database.Spec) (database.Conn, error) {
 	}
 	c.opened++
 	c.live++
-	return &counted{e: c, rows: map[string][]byte{}}, nil
+	return &accounted{e: c, rows: map[string][]byte{}}, nil
 }
 
-func (c *counting) counts() (opened, live int) {
+// counts is what it has accounted for: opens since the baseline, and
+// connections not yet closed.
+func (c *accounting) counts() (opened, live int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.opened, c.live
 }
 
-func residing(t *testing.T, now func() time.Time, max int, idle time.Duration) (*engines, *counting) {
+func residing(t *testing.T, now func() time.Time, max int, idle time.Duration) (*engines, *accounting) {
 	t.Helper()
 
-	engine := &counting{}
+	engine := &accounting{}
 	registry := database.NewRegistry()
 	require.NoError(t, registry.Register(t.Context(), engine))
 
@@ -135,7 +142,7 @@ func residing(t *testing.T, now func() time.Time, max int, idle time.Duration) (
 }
 
 func spec(name string) database.Spec {
-	return database.Spec{Type: database.KV, Engine: servedConsensus["crdt"], Project: "shop", Environment: "prod", Name: name}
+	return database.Spec{Type: database.KV, Engine: "distributed", Project: "shop", Environment: "prod", Name: name}
 }
 
 // TestADatabaseIsOpenedOnceAndKeptWarm, which is the whole reason this service

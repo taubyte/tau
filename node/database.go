@@ -615,19 +615,12 @@ func (n *Node) openDatabase(ctx context.Context) error {
 	// up yet — a group opened at construction sits with no known peers, aborts
 	// its election, and answers every write with "no leader". node/queue.go
 	// opens its own in the background for the same reason.
-	// THIS NODE OWNS NO CONSISTENCY DOMAIN, and that is a decision rather than
-	// an omission. cluster-service.md settled it on 2026-08-31: a raft group is
-	// a CONSISTENCY DOMAIN, owned by a service that can scope it to a region
-	// and hold policy over who joins — explicitly NOT one group per service
-	// type, which is what a node opening its own would be. A node runs zero to
-	// many services; five of them opening five groups is the shape that note
-	// exists to refuse.
-	//
-	// So the service is handed no Clusters, no raft engine is registered, and a
-	// database declaring `consensus: raft` is refused BY NAME until something
-	// whose job it is owns the group. raftstore.go is the half that is ready.
-	registry, err := databaseService.Engines(ctx, store, nil)
+	engine, err := kvengine.New(store)
 	if err != nil {
+		return fmt.Errorf("node: %s: %w", Database, err)
+	}
+	registry := database.NewRegistry()
+	if err := registry.Register(ctx, engine); err != nil {
 		return fmt.Errorf("node: %s: %w", Database, err)
 	}
 

@@ -43,57 +43,43 @@ type declared struct {
 	consensus string
 }
 
-// tauEngine is what the vocabulary calls tau's own, on both consensus arms.
-const tauEngine = "distributed"
-
-// served is what this service implements today: tau's own kv over the
-// replicated CRDT store.
+// served is what this service implements today.
 //
-// THE LIST IS HERE AND NOT SPREAD THROUGH THE HANDLERS, so growing it is one
-// edit and a reader can see the whole of what this cloud answers. `database`
-// has four models on one axis and a consensus on another, and this is one cell
-// of that grid — which is a thing to STATE, because a service that answered
-// every call it was given and quietly did the wrong thing for three quarters of
-// them is worse than one that refuses.
+// THE NAMES ARE THE SCHEMA'S. `database` declares a model — kv, sql, document,
+// vector — and, for tau's own engine, how concurrent writes resolve. Those are
+// the words an author writes and they are the words here; nothing is renamed on
+// the way in and there is no second vocabulary to map between.
 var (
-	servedModels = []database.Type{database.KV}
-
-	// servedConsensus maps what an author wrote to the engine that keeps it.
-	//
-	// THE VOCABULARY'S `engine` IS `distributed` FOR BOTH, because from where
-	// the author sits the difference is not which engine — it is how concurrent
-	// writes resolve. pkg/database's registry is keyed by (type, engine), so the
-	// resolution becomes the engine name INSIDE this service and nowhere else:
-	// the spec that leaves here carries it, the declaration that arrived did
-	// not, and a reader of the vocabulary sees one engine with two behaviours
-	// rather than two engines.
-	servedConsensus = map[string]string{
-		"crdt": "distributed-crdt",
-		"raft": "distributed-raft",
-	}
-
-	// defaultConsensus is what a distributed database with none written gets.
-	// The vocabulary makes it RequiredWhen distributed, so this is for a
-	// connector and for a document that predates the field.
-	defaultConsensus = "crdt"
+	servedModels    = []database.Type{database.KV}
+	servedConsensus = []string{"crdt"}
 )
+
+// defaultConsensus is what a database that wrote none gets. `consensus` is
+// RequiredWhen the engine is distributed, so this is for a connector, which
+// resolves nothing because somebody else's server does.
+const defaultConsensus = "crdt"
 
 // serves refuses a declaration this service cannot honour, naming which half of
 // it is the problem.
+//
+// RAFT IS REFUSED AND NOT MERGED. An author writes it when entries must not
+// resolve by merge — a ledger — and serving it as crdt would answer the one
+// thing the field exists to prevent. What is missing is not the store but the
+// thing that owns a raft group: cluster-service.md settled on 2026-08-31 that a
+// group is a consistency domain owned by a service, scoped to a region, and not
+// one group per service type. Until that exists, this cloud does not keep raft
+// and says so.
 func (d declared) serves() error {
 	if !slices.Contains(servedModels, d.spec.Type) {
 		return fmt.Errorf("%w: %s", ErrModelUnserved, d.spec.Type)
 	}
-	if _, known := servedConsensus[d.wants()]; !known {
-		return fmt.Errorf("%w: %q", ErrConsensusUnserved, d.consensus)
+	if !slices.Contains(servedConsensus, d.wants()) {
+		return fmt.Errorf("%w: %q", ErrConsensusUnserved, d.wants())
 	}
 	return nil
 }
 
-// wants is the resolution this database asked for. Absent is the default and
-// not a refusal: `consensus` is RequiredWhen the engine is distributed, so a
-// connector carries none and refusing every database that did not write one
-// would refuse every external postgres.
+// wants is the resolution this database asked for.
 func (d declared) wants() string {
 	if d.consensus == "" {
 		return defaultConsensus
@@ -160,14 +146,6 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	}
 	if n, ok := resource.Int(model, "size"); ok {
 		out.size = n
-	}
-
-	// THE ENGINE THE SPEC NAMES IS THE ONE THAT KEEPS THE DECLARED RESOLUTION.
-	// tau's own engine is `distributed` in the vocabulary either way; which
-	// store backs it is this service's to decide and the registry's to be keyed
-	// by. A connector names its own engine and keeps it.
-	if named, served := servedConsensus[out.wants()]; served && out.spec.Engine == tauEngine {
-		out.spec.Engine = named
 	}
 
 	// TLS IS ON UNLESS THE AUTHOR WROTE `disable`, which is the vocabulary's own

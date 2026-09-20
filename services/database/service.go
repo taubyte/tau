@@ -256,15 +256,6 @@ func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
 	if err := declaration.serves(); err != nil {
 		return nil, err
 	}
-
-	// AND WHETHER THIS NODE CAN KEEP IT, which is not the same question. The
-	// resolution an author asked for is served by an engine, and a node without
-	// the store behind that engine does not have it: a node with no raft cluster
-	// cannot keep a ledger, and must say so rather than register a crdt engine
-	// under the name and merge the writes.
-	if !s.engines.keeps(declaration.spec) {
-		return nil, fmt.Errorf("%w: %q", ErrConsensusUnserved, declaration.wants())
-	}
 	if declaration.spec.Type != database.KV {
 		return nil, fmt.Errorf("%w: %s is a %s", ErrWrongModel, at.id, declaration.spec.Type)
 	}
