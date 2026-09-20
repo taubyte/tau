@@ -51,7 +51,7 @@ func TestACapturedBranchIsReportedAsTheDiscriminator(t *testing.T) {
 
 	region := locationOf(t, "storage", "region/policy")
 	require.True(t, region.Captures, "a kind may be discriminated twice")
-	require.Equal(t, []string{"auto", "cdn", "failover"}, region.Branch)
+	require.Equal(t, []string{"pinned", "cdn", "failover"}, region.Branch, "declaration order, which is the order an author reads them in")
 
 	// A PLAIN SEGMENT IS NOT A BRANCH. `region/failover/main` is authored under a
 	// literal, so there is nothing to choose and nothing to report.

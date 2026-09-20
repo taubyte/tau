@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/spf13/afero"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"gotest.tools/v3/assert"
@@ -15,7 +17,9 @@ func auditDocs(t *testing.T, r schema.Resolver, docs map[string]string) []schema
 	t.Helper()
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"+
+			// a default, so a test that is not about placement is not about placement
+			"region:\n    pinned:\n        name: eu\n"), 0o644))
 	for path, body := range docs {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
 	}
@@ -698,4 +702,45 @@ func TestAPerEnvironmentPlacementIsBoundedToo(t *testing.T) {
 	// the environment's own spelling.
 	has(t, auditDocsInEnv(t, "preview", docs), schema.Broken,
 		`is placed in region "us", which its scope does not allow`)
+}
+
+// TestAnythingWithAFootprintIsPlaced.
+//
+// The rule has two halves in two documents — required here, defaulted there —
+// which is why it is an audit and not Required() on the attribute. Required()
+// would be the OTHER rule: every resource, every time, no default possible.
+func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
+	const bare = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"
+	const defaulted = bare + "region:\n    pinned:\n        name: eu\n"
+	cache := func(region string) string {
+		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" + region
+	}
+
+	// Neither says where it goes.
+	has(t, auditDocs(t, nil, map[string]string{
+		"/project.yaml": bare,
+		"/cache/c.yaml": cache(""),
+	}), schema.Broken, "is not placed anywhere")
+
+	// The project says it once, for everything that does not.
+	hasNo(t, auditDocs(t, nil, map[string]string{
+		"/project.yaml": defaulted,
+		"/cache/c.yaml": cache(""),
+	}), "is not placed anywhere")
+
+	// Or the resource says it itself.
+	hasNo(t, auditDocs(t, nil, map[string]string{
+		"/project.yaml": bare,
+		"/cache/c.yaml": cache("region:\n    pinned:\n        name: eu\n"),
+	}), "is not placed anywhere")
+
+	// A KIND WITH NO FOOTPRINT IS NEVER ASKED, and the set is read off the
+	// schema rather than listed here — a `component` is built, not placed, and
+	// a kind that gains a footprint tomorrow is covered the moment it declares
+	// Placed().
+	require.NotContains(t, schema.PlacedKinds(), "secret")
+	hasNo(t, auditDocs(t, nil, map[string]string{
+		"/project.yaml":  bare,
+		"/secret/s.yaml": "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\nsource: value\nrotation: 720h\n",
+	}), "is not placed anywhere")
 }

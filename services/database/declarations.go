@@ -164,11 +164,13 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	// environment's. Reading it here and not on the grant is the same rule the
 	// file doc gives for size and consensus: a caller that described the
 	// database could describe a different one.
-	region := placed{
-		policy:  resource.String("region", "policy"),
-		name:    resource.String("region", "name"),
-		main:    resource.String("region", "main"),
-		standby: resource.String("region", "standby"),
+	region := placedOf(resource)
+	if region.policy == "" {
+		// THE PROJECT'S DEFAULT, which is where a project says it once for
+		// everything that does not say it itself. Nothing lowered it into the
+		// resource, so this is the walk up rather than a read of a copy — and
+		// a resource with neither is one the audit already calls Broken.
+		region = placedOf(project.Root())
 	}
 	if out.regions, err = region.regions(ref, allowanceOf(project.Environments(), ref.environment)); err != nil {
 		return declared{}, fmt.Errorf("%s: %w", ref.id, err)
@@ -216,4 +218,15 @@ func allowanceOf(environments []schema.Environment, name string) []string {
 		}
 	}
 	return nil
+}
+
+// placedOf reads a region block off whatever carries one — a resource, or the
+// project it sits under. They are the same block, so this is one reader.
+func placedOf(r specs.Resource) placed {
+	return placed{
+		policy:  r.String("region", "policy"),
+		name:    r.String("region", "name"),
+		main:    r.String("region", "main"),
+		standby: r.String("region", "standby"),
+	}
 }

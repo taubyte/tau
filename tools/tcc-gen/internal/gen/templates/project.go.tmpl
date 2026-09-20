@@ -187,6 +187,15 @@ func (p *Project) ID() string { return p.id }
 // Name is what the author called it.
 func (p *Project) Name() string { return p.name }
 
+// Root is the project's own document, read the way any resource is.
+//
+// THE PROJECT IS A SCOPE THAT ALSO CARRIES FIELDS, and what it carries is what
+// everything under it falls back to — its default placement, its allowance.
+// Consumers WALK UP to find those rather than reading a copy, because nothing
+// lowers them into the resources: a fact nobody authored is a fact decompile
+// cannot give back.
+func (p *Project) Root() Resource { return Resource(p.root) }
+
 // Resource resolves a name the way the vocabulary does: in the scope that
 // asked, then in each parent.
 //

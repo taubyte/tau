@@ -1000,6 +1000,40 @@ func checkRegions(root map[string]any, all []compiled) []Finding {
 				"Failover takes two regions; the standby exists for when the main is gone.", res.id})
 		}
 	}
+
+	return append(out, checkEverythingIsPlaced(root, all)...)
+}
+
+// checkEverythingIsPlaced: a resource with a physical footprint says where it is,
+// or the project says it for everything that does not.
+//
+// WHY HERE AND NOT IN THE SCHEMA. "Required, unless the project declared a
+// default" is a rule whose two halves are in different documents, and an
+// attribute cannot see the project it sits under — the same reason the ceiling
+// is checked here. Required() on the block would be the other rule: every
+// resource, every time, with no default possible.
+//
+// PLACED IS READ OFF THE SCHEMA, never a list kept beside it. A kind that gains
+// a footprint tomorrow is covered by this the moment it declares Placed().
+func checkEverythingIsPlaced(root map[string]any, all []compiled) []Finding {
+	if _, defaulted := root["region"].(map[string]any); defaulted {
+		return nil
+	}
+
+	placed := make(map[string]bool, len(PlacedKinds()))
+	for _, kind := range PlacedKinds() {
+		placed[kind] = true
+	}
+
+	var out []Finding
+	for _, res := range all {
+		if !placed[res.kind] || res.str("region/policy") != "" {
+			continue
+		}
+		out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+			"is not placed anywhere",
+			"Anything with a footprint declares a region. Write one here, or give the project a default for everything that does not.", res.id})
+	}
 	return out
 }
 

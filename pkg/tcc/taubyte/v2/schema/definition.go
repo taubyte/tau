@@ -3308,7 +3308,21 @@ var V2Resources = []*Node{
 // type signature — it comes back as a `notifications:` block with destinations when
 // the notification subsystem lands.
 func rootAttributes() []*Attribute {
-	return []*Attribute{
+	// THE PROJECT'S DEFAULT PLACEMENT IS THE SAME BLOCK A RESOURCE WRITES, not a
+	// second, weaker spelling of it. A project that defaults to `failover` has
+	// said something a bare region name could not, and `name_preview` works here
+	// exactly as it does on a resource — which is what makes "production in the
+	// EU, preview anywhere" one line at the top of the project.
+	//
+	// IT IS WHAT MAKES A RESOURCE'S BLOCK OPTIONAL. Placement is required of
+	// every Placed() kind, and a resource that writes none inherits this. With
+	// neither, the resource is placed nowhere and the audit says so — see
+	// checkRegions.
+	//
+	// NOTHING LOWERS IT INTO THE RESOURCES. A fact nobody authored is a fact
+	// decompile cannot give back, so a consumer walks up to find it rather than
+	// reading a copy the compiler wrote.
+	return append([]*Attribute{
 		String("id", IsCID(), Required(), Generated(GenCID), EmitValidation("project_id", "project_id"), Doc("ID", "Content-addressed identifier (CID) of the project.")),
 		String("name", IsVariableName(), Doc("Name", "Project name. Must be a valid variable name.")),
 
@@ -3342,7 +3356,7 @@ func rootAttributes() []*Attribute {
 		// parent said nothing may, which is the whole reason the ceiling exists.
 		StringSlice("regions",
 			Doc("Regions", "The regions everything in this project may run in. Absent means every region the cloud has. A scope below may narrow this list and may never widen it.")),
-	}
+	}, regionAttributes()...)
 }
 
 // namespacesGroup is the SCOPE container — a directory whose instances hold a
