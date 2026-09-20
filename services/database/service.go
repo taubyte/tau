@@ -63,6 +63,9 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/database"
+	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
+	"github.com/taubyte/tau/pkg/invoke"
+	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 )
@@ -270,4 +273,76 @@ func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
 		return nil, fmt.Errorf("%w: %s answers no kv surface", ErrWrongModel, declaration.spec.Engine)
 	}
 	return kv, nil
+}
+
+// Local is this service as the compute tier's own seam, with no stream.
+//
+// IT IS THE ABSENCE OF A HOP AND NOT A SHORTCUT. A node that runs the database
+// service already holds the engines, so dialling itself to reach them would add
+// a stream and a serialization to every call — the same rule node/secrets.go
+// keeps for a vault and services/worker keeps for a register. A node that does
+// NOT run the service uses Client, and nothing above the seam can tell which it
+// got.
+func (s *Service) Local() wasmtier.KVs { return &localKV{service: s} }
+
+type localKV struct{ service *Service }
+
+var _ wasmtier.KVs = (*localKV)(nil)
+
+func (l *localKV) OpenKV(_ context.Context, grant invoke.Grant) (wasmtier.KV, error) {
+	project, environment, id := splitHandle(grant.Handle)
+	if project == "" || environment == "" || id == "" {
+		return nil, fmt.Errorf("%w: %q", ErrNoID, grant.Handle)
+	}
+	return &localOne{
+		service: l.service,
+		at:      address{project: project, environment: environment, id: id},
+	}, nil
+}
+
+// localOne resolves per call, exactly as the wire does — so what is resident,
+// and whether a newer deployment has replaced it, is decided in one place for
+// both callers.
+type localOne struct {
+	service *Service
+	at      address
+}
+
+func (l *localOne) Get(ctx context.Context, key string) ([]byte, error) {
+	kv, err := l.service.kv(ctx, l.at)
+	if err != nil {
+		return nil, err
+	}
+	value, err := kv.Get(ctx, key)
+	if errors.Is(err, kvengine.ErrNotFound) {
+		return nil, fmt.Errorf("%w: %s", wasmtier.ErrNotFound, key)
+	}
+	return value, err
+}
+
+func (l *localOne) Put(ctx context.Context, key string, value []byte) error {
+	kv, err := l.service.kv(ctx, l.at)
+	if err != nil {
+		return err
+	}
+	return kv.Put(ctx, key, value)
+}
+
+func (l *localOne) Delete(ctx context.Context, key string) error {
+	kv, err := l.service.kv(ctx, l.at)
+	if err != nil {
+		return err
+	}
+	if err := kv.Delete(ctx, key); err != nil && !errors.Is(err, kvengine.ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
+func (l *localOne) Keys(ctx context.Context, prefix string) ([]string, error) {
+	kv, err := l.service.kv(ctx, l.at)
+	if err != nil {
+		return nil, err
+	}
+	return kv.List(ctx, prefix)
 }

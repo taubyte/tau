@@ -183,7 +183,7 @@ func kitchenSinkWASM(t *testing.T) []byte {
 	return code
 }
 
-// TestAProjectThatKeepsSomething.
+// TestAProjectWithAKvDatabaseKeepsSomething.
 //
 // The smallest project where a request changes state that outlives it: one
 // function, one kv database it is granted, one route. The guest picks its
@@ -195,10 +195,10 @@ func kitchenSinkWASM(t *testing.T) []byte {
 // compiled, published, resolved into an invoke.Spec and handed to the tier under
 // the label the AUTHOR wrote. `sessions` is that label, and the guest asks for
 // it by name; a break anywhere along it is a refusal here.
-func TestAProjectThatKeepsSomething(t *testing.T) {
+func TestAProjectWithAKvDatabaseKeepsSomething(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	r := deploy(t, "withdatabase", "keep.example.com", kitchenSinkWASM(t))
+	r := deploy(t, "withkvdatabase", "keep.example.com", kitchenSinkWASM(t))
 
 	// A WRITE IS 204 AND A REFUSAL IS 403, so the status says which arm of the
 	// host interface answered rather than only that something did.
