@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 	"testing"
 
+	"github.com/ipfs/go-log/v2"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
@@ -713,4 +716,73 @@ func TestABadMetaIsMalformed(t *testing.T) {
 
 	require.ErrorIs(t, index.Upsert(t.Context(), "a", []float32{1, 0}, []byte("not json")),
 		wasmtier.ErrMalformed)
+}
+
+// ── letting go of a copy ─────────────────────────────────────────────────────
+
+// releasing is a kvdb.Factory whose stores can be destroyed, which memFactory's
+// cannot. Destroying behaves like the real one: the store is closed and dropped
+// from the factory, so a later open builds a new one from whatever the fleet
+// still holds.
+type releasing struct {
+	mu     sync.Mutex
+	byPath map[string]*releasable
+}
+
+func (f *releasing) New(_ log.StandardLogger, path string, _ int) (kvdb.KVDB, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.byPath == nil {
+		f.byPath = map[string]*releasable{}
+	}
+	if held, ok := f.byPath[path]; ok {
+		return held, nil
+	}
+	db := &releasable{factory: f, path: path}
+	f.byPath[path] = db
+	return db, nil
+}
+
+func (f *releasing) Close() {}
+
+type releasable struct {
+	kvdb.KVDB
+	factory *releasing
+	path    string
+
+	destroyed bool
+}
+
+func (r *releasable) Destroy(context.Context) error {
+	r.factory.mu.Lock()
+	defer r.factory.mu.Unlock()
+	r.destroyed = true
+	delete(r.factory.byPath, r.path)
+	return nil
+}
+
+// TestARELEASEDDATABASEISNOTSERVEDFROMTHETABLEAGAIN.
+//
+// Destroying a database closes the store it destroys. A node that kept that
+// store in the table it serves from went on answering every later call out of a
+// closed store — not-found for rows another node holds, and the CRDT's own
+// bookkeeping written back under the prefix that was just removed, which makes
+// this node advertise a database it does not have.
+func TestAReleasedDatabaseIsNotServedFromTheNodesTableAgain(t *testing.T) {
+	factory := &releasing{}
+	d := &databases{node: &Node{opts: options{databases: factory}}}
+	spec := database.Spec{Type: database.KV, Project: "shop", Environment: "prod", Name: "QmA"}
+
+	first, err := d.storesFor(t.Context(), spec)
+	require.NoError(t, err)
+
+	require.NoError(t, nodeHoldings{d: d}.Destroy(t.Context(), spec))
+	require.True(t, first.(cacheStore).db.(*releasable).destroyed,
+		"the release destroyed a store the node was not serving from")
+
+	again, err := d.storesFor(t.Context(), spec)
+	require.NoError(t, err)
+	require.False(t, again.(cacheStore).db.(*releasable).destroyed,
+		"the node went on serving the store it destroyed")
 }

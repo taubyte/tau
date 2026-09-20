@@ -348,15 +348,21 @@ func (s *Service) Held() int { return s.engines.held() }
 
 // declared resolves one database to what its author wrote, WITHOUT opening it.
 //
-// IT IS THE HALF kv() DOES FIRST, split out because two callers must not open:
-// a node asked whether it holds a database would become a holder by answering,
-// and the maintenance sweep decides about databases it may be letting go of.
+// IT IS THE HALF kv() DOES FIRST, split out because three callers must not
+// open: a node asked whether it holds a database would become a holder by
+// answering, the maintenance sweep decides about databases it may be letting go
+// of, and a write resolves before it may take the release fence.
+//
+// WHAT THIS CLOUD SERVES, BEFORE WHAT THE CALLER ASKED FOR. A postgres reached
+// through KVGet is two different mistakes depending on the order these are
+// checked, and the one worth reporting is that this service does not serve sql
+// — not that the caller used the wrong verb on a database it could never have
+// used the right one on.
 func (s *Service) declared(ctx context.Context, at address) (declared, error) {
 	declaration, err := s.declare.of(ctx, at)
 	if err != nil {
 		return declared{}, err
 	}
-	// WHAT THIS CLOUD SERVES, BEFORE WHAT THE CALLER ASKED FOR — see kv().
 	if err := declaration.serves(); err != nil {
 		return declared{}, err
 	}
@@ -368,22 +374,15 @@ func (s *Service) declared(ctx context.Context, at address) (declared, error) {
 
 // kv resolves one database and answers its kv surface, or says why it cannot.
 func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
-	declaration, err := s.declare.of(ctx, at)
+	declaration, err := s.declared(ctx, at)
 	if err != nil {
 		return nil, err
 	}
-	// WHAT THIS CLOUD SERVES, BEFORE WHAT THE CALLER ASKED FOR. A postgres
-	// reached through KVGet is two different mistakes depending on the order
-	// these are checked, and the one worth reporting is that this service does
-	// not serve sql — not that the caller used the wrong verb on a database it
-	// could never have used the right one on.
-	if err := declaration.serves(); err != nil {
-		return nil, err
-	}
-	if declaration.spec.Type != database.KV {
-		return nil, fmt.Errorf("%w: %s is a %s", ErrWrongModel, at.id, declaration.spec.Type)
-	}
+	return s.open(ctx, at, declaration)
+}
 
+// open answers the kv surface of a database that has already been resolved.
+func (s *Service) open(ctx context.Context, at address, declaration declared) (database.KVConn, error) {
 	conn, err := s.engines.open(ctx, at.key(), declaration.revision, declaration.spec)
 	if err != nil {
 		return nil, err
@@ -404,6 +403,39 @@ func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
 		return nil, fmt.Errorf("%w: %s answers no kv surface", ErrWrongModel, declaration.spec.Engine)
 	}
 	return kv, nil
+}
+
+// mutate runs one write against a database, behind the release fence.
+//
+// THE FENCE IS HERE AND NOT IN THE ENGINE, because what it protects is not the
+// store's own consistency but the release gate's: a replacement proved it holds
+// the same rows as of the moment this node began letting go, and a row accepted
+// after that is in neither copy it vouched for. See maintain.go.
+//
+// THE FENCE IS UP BEFORE THE STORE IS OPENED, and not checked beside an open
+// connection: opening answers a handle on a store, and between answering it and
+// writing through it a release could clear its gate and destroy that store.
+//
+// RESOLVING COMES FIRST ALL THE SAME, because the key is the caller's. A fence
+// that admitted an entry per address asked for would be a table any peer could
+// grow by naming databases this deployment does not declare.
+func (s *Service) mutate(ctx context.Context, at address, do func(database.KVConn) error) error {
+	declaration, err := s.declared(ctx, at)
+	if err != nil {
+		return err
+	}
+
+	key := at.key()
+	if !s.own.writing(key) {
+		return ErrReleasing
+	}
+	defer s.own.wrote(key)
+
+	kv, err := s.open(ctx, at, declaration)
+	if err != nil {
+		return err
+	}
+	return do(kv)
 }
 
 // Local is this service as the compute tier's own seam, with no stream.
@@ -452,22 +484,18 @@ func (l *localOne) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (l *localOne) Put(ctx context.Context, key string, value []byte) error {
-	kv, err := l.service.kv(ctx, l.at)
-	if err != nil {
-		return err
-	}
-	return kv.Put(ctx, key, value)
+	return l.service.mutate(ctx, l.at, func(kv database.KVConn) error {
+		return kv.Put(ctx, key, value)
+	})
 }
 
 func (l *localOne) Delete(ctx context.Context, key string) error {
-	kv, err := l.service.kv(ctx, l.at)
-	if err != nil {
-		return err
-	}
-	if err := kv.Delete(ctx, key); err != nil && !errors.Is(err, kvengine.ErrNotFound) {
-		return err
-	}
-	return nil
+	return l.service.mutate(ctx, l.at, func(kv database.KVConn) error {
+		if err := kv.Delete(ctx, key); err != nil && !errors.Is(err, kvengine.ErrNotFound) {
+			return err
+		}
+		return nil
+	})
 }
 
 func (l *localOne) Keys(ctx context.Context, prefix string) ([]string, error) {

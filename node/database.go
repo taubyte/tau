@@ -612,7 +612,13 @@ func (n *Node) openDatabase(ctx context.Context) error {
 	// up yet — a group opened at construction sits with no known peers, aborts
 	// its election, and answers every write with "no leader". node/queue.go
 	// opens its own in the background for the same reason.
-	engine, err := kvengine.New((&databases{node: n}).storesFor)
+	//
+	// ONE STORE TABLE FOR THE NODE, shared by the engine that serves this
+	// node's databases and the holdings that let go of them. Two tables is how
+	// a destroyed store stays warm and serving: the eviction lands in one of
+	// them and every later open comes out of the other.
+	stores := &databases{node: n}
+	engine, err := kvengine.New(stores.storesFor)
 	if err != nil {
 		return fmt.Errorf("node: %s: %w", Database, err)
 	}
@@ -627,7 +633,7 @@ func (n *Node) openDatabase(ctx context.Context) error {
 		// WHAT THIS NODE ACTUALLY HOLDS, which is a different question from what
 		// it can open: a node answers "do you hold this" from its disk, and is
 		// the only thing that can let go of a copy.
-		databaseService.WithHoldings(nodeHoldings{d: &databases{node: n}}),
+		databaseService.WithHoldings(nodeHoldings{d: stores}),
 		databaseService.WithRegion(n.cfg.Region),
 
 		// THE FLEET AS THIS NODE SEES IT, asked each sweep rather than taken
@@ -682,14 +688,15 @@ func (n *Node) kvBacking(own wasmtier.KVs) wasmtier.KVs {
 // The factory caches by path, so two opens of one database share a store and a
 // node carries as many as it HOLDS rather than as many as exist.
 func (d *databases) storesFor(_ context.Context, spec database.Spec) (database.Store, error) {
-	// NAMED BY THE SAME FUNCTION THAT ADDRESSES IT. Spec.Prefix already names a
-	// database uniquely and already refuses a separator in any segment, which is
-	// exactly what a topic name needs.
-	name, err := spec.Prefix()
+	// NAMED BY THE SAME FUNCTION THAT ADDRESSES IT AND THAT RELEASES IT.
+	// Spec.Prefix already names a database uniquely and already refuses a
+	// separator in any segment, which is exactly what a topic name needs — and
+	// storeName is what nodeHoldings.Destroy evicts by, so the two agree by
+	// construction rather than by two expressions that happen to match.
+	name, err := storeName(spec)
 	if err != nil {
 		return nil, err
 	}
-	name = strings.TrimSuffix(name, "/")
 
 	d.storesMu.Lock()
 	defer d.storesMu.Unlock()
@@ -701,7 +708,7 @@ func (d *databases) storesFor(_ context.Context, spec database.Spec) (database.S
 		return cacheStore{db}, nil
 	}
 
-	db, err := d.node.opts.databases.New(logger, databaseStore+"/"+name, rebroadcastSeconds)
+	db, err := d.node.opts.databases.New(logger, name, rebroadcastSeconds)
 	if err != nil {
 		return nil, fmt.Errorf("node: opening the store for %s: %w", name, err)
 	}

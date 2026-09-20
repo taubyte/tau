@@ -154,6 +154,26 @@ const (
 	leaving
 )
 
+// state is what this node is doing about one database, and what is being done
+// to it while that is decided.
+type state struct {
+	intent intent
+
+	// sealed is a copy whose gate has been cleared and whose bytes are about to
+	// go: nothing may start writing into it.
+	sealed bool
+
+	// writing is how many writes are in flight, and written records that one
+	// completed since this node began letting the database go.
+	//
+	// THE GATE'S ANSWER IS ABOUT A MOMENT. A replacement proved it holds the
+	// same rows as of the digest taken when the release began; a row accepted
+	// after that is in neither copy it vouched for, so the release has to take
+	// the answer again over the copy including it rather than delete it.
+	writing int
+	written bool
+}
+
 // holdings is what this node is doing about each database it holds.
 //
 // IT EXISTS TO MAKE `keeps` HONEST. A node answers keeps=false while it is
@@ -162,22 +182,38 @@ const (
 // once their inputs heal — which is how a rolling restart stops being a way to
 // delete a database.
 //
+// IT IS ALSO THE WRITE FENCE, for the same reason and in the same place: what a
+// peer is entitled to rely on and what this node is still accepting rows into
+// are one decision, and deciding them in two tables is deciding them twice.
+//
 // THE LOCK IS NEVER HELD ACROSS THE NETWORK. A release takes it to mark
 // `leaving`, releases it to go ask, and takes it again to commit or back out.
 // Holding it across the asks would make two nodes probing each other deadlock.
 type holdings struct {
 	mu sync.Mutex
-	at map[string]intent
+	at map[string]*state
 }
 
-func newHoldings() *holdings { return &holdings{at: map[string]intent{}} }
+func newHoldings() *holdings { return &holdings{at: map[string]*state{}} }
+
+// of answers the entry for one database, making it if there is none. Called
+// with h.mu held.
+func (h *holdings) of(key string) *state {
+	at, held := h.at[key]
+	if !held {
+		at = &state{}
+		h.at[key] = at
+	}
+	return at
+}
 
 // keeps answers what a peer asking this node is entitled to rely on: that this
 // node will not let go without its own gated release.
 func (h *holdings) keeps(key string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.at[key] == kept
+	at, held := h.at[key]
+	return held && at.intent == kept
 }
 
 // begin marks a database as leaving, and reports false if this node is already
@@ -186,20 +222,91 @@ func (h *holdings) keeps(key string) bool {
 func (h *holdings) begin(key string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.at[key] != kept {
+	at, held := h.at[key]
+	if !held || at.intent != kept {
 		return false
 	}
-	h.at[key] = leaving
+	at.intent = leaving
+	at.written = false
 	return true
 }
 
+// seal stops this database accepting writes, and reports what the gate's answer
+// is still about.
+//
+// It refuses to seal over a HALF-DONE write: that row is already past the fence
+// and would land after the digest the replacements answered, so it would go
+// with the delete. The release backs out and asks again next sweep.
+//
+// A sealed copy is CLEAN when nothing was written into it since the release
+// began. A dirty one is sealed all the same — the caller takes the gate's
+// answer again over the copy including the new rows, which cannot be overtaken
+// a second time because nothing can be written into a sealed copy.
+func (h *holdings) seal(key string) (sealed, clean bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	at, held := h.at[key]
+	if !held || at.intent != leaving || at.writing > 0 {
+		return false, false
+	}
+	at.sealed = true
+	return true, !at.written
+}
+
+// writing takes a write slot, and reports whether the write may proceed.
+//
+// A WRITE IS REFUSED ONLY WHILE THE BYTES ARE GOING, which is the sealed
+// window. A node letting go of a database is still that database's holder until
+// it is not, and refusing writes for the length of a digest round would be an
+// outage per sweep — so everything before the seal is accepted, and makes the
+// release take its answer again instead.
+func (h *holdings) writing(key string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	at := h.of(key)
+	if at.sealed {
+		return false
+	}
+	// WRITING IS HOLDING, the same statement hold() makes: this node is serving
+	// the database, so it means to keep it until its own release says otherwise.
+	if at.intent != leaving {
+		at.intent = kept
+	}
+	at.writing++
+	return true
+}
+
+// wrote releases the slot writing took.
+func (h *holdings) wrote(key string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	at, held := h.at[key]
+	if !held {
+		return
+	}
+	if at.writing > 0 {
+		at.writing--
+	}
+	if at.intent == leaving {
+		at.written = true
+	}
+}
+
 // stay backs out of a release: the replacements did not answer, so this node
-// keeps the copy and will ask again next sweep.
+// keeps the copy, accepts writes into it again, and will ask again next sweep.
 func (h *holdings) stay(key string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.at[key] == leaving {
-		h.at[key] = kept
+	at, held := h.at[key]
+	if !held {
+		return
+	}
+	at.sealed = false
+	if at.intent == leaving {
+		at.intent = kept
 	}
 }
 
@@ -214,7 +321,7 @@ func (h *holdings) gone(key string) {
 func (h *holdings) hold(key string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.at[key] != leaving {
-		h.at[key] = kept
+	if at := h.of(key); at.intent != leaving {
+		at.intent = kept
 	}
 }

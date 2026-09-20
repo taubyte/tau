@@ -149,7 +149,36 @@ func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]place
 		s.own.stay(key)
 		return false
 	}
-	if err := s.holdings.Destroy(ctx, spec); err != nil {
+
+	// THE ANSWER IS ABOUT THE COPY AS IT WAS WHEN THE ASKING STARTED, and every
+	// RTT of that asking is a window this node was still accepting rows in. So
+	// writes are shut off here, before anything is deleted — and a copy written
+	// into meanwhile is asked about AGAIN rather than deleted on an answer that
+	// is no longer about it. The second round cannot be overtaken in turn,
+	// because nothing can be written into a sealed copy.
+	sealed, clean := s.own.seal(key)
+	if !sealed {
+		// A WRITE IS HALF DONE. It is already past the fence and would land
+		// after the digest the replacements answered, so this node keeps the
+		// copy and asks again next sweep.
+		s.own.stay(key)
+		return false
+	}
+	if !clean && !s.mayGo(ctx, at, desired, floor) {
+		s.own.stay(key)
+		return false
+	}
+
+	// THE RESIDENT ENGINE IS A HANDLE ON THE STORE THIS IS ABOUT TO DESTROY,
+	// and destroying closes it. Dropped before, so nothing is served from a
+	// store being deleted, and again after, because a read in between reopens
+	// it — a table that kept it would answer not-found for rows the fleet still
+	// holds, and put this store's own bookkeeping back under the prefix that
+	// was just removed.
+	s.engines.forget(key)
+	err = s.holdings.Destroy(ctx, spec)
+	s.engines.forget(key)
+	if err != nil {
 		// THE BYTES ARE STILL HERE, so this node still holds the database and
 		// says so. Recording it gone would make it answer held=false about data
 		// it has, which is how a fleet loses track of a copy that exists.

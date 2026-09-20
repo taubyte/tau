@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/placement"
 )
 
@@ -201,4 +202,85 @@ func TestAReleaseAlreadyUnderwayIsNotBegunTwice(t *testing.T) {
 	require.True(t, h.keeps(key))
 	h.gone(key)
 	require.False(t, h.keeps(key))
+}
+
+// TestAWRITEISREFUSEDONLYWHILETHEBYTESAREGOING.
+//
+// A node letting go of a database is still that database's holder until it is
+// not, so refusing writes for the length of a digest round would be an outage
+// per sweep. What is refused is the sealed window — from the moment the gate
+// has been cleared until the copy is gone — which is the only stretch where a
+// write would land in a store nothing will read again.
+func TestAWriteIsRefusedOnlyWhileTheCopyIsSealed(t *testing.T) {
+	h := newHoldings()
+	const key = "shop/prod/kv/QmSessions"
+
+	h.hold(key)
+	require.True(t, h.writing(key))
+	h.wrote(key)
+
+	require.True(t, h.begin(key))
+	require.True(t, h.writing(key), "a write was refused before anything had been decided")
+	h.wrote(key)
+
+	sealed, clean := h.seal(key)
+	require.True(t, sealed)
+	require.False(t, clean, "a write landed during the release and the gate's answer was reused anyway")
+	require.False(t, h.writing(key), "a write was accepted into a copy about to be deleted")
+
+	h.stay(key)
+	require.True(t, h.writing(key), "a release that backed out left the database unwritable")
+}
+
+// TestNOTHINGISSEALEDOVERAHALFDONEWRITE, or the row goes with the delete: the
+// write is already past the fence and lands after the digest the peers answered.
+func TestASealIsRefusedWhileAWriteIsInFlight(t *testing.T) {
+	h := newHoldings()
+	const key = "shop/prod/kv/QmSessions"
+
+	h.hold(key)
+	require.True(t, h.begin(key))
+	require.True(t, h.writing(key))
+
+	sealed, _ := h.seal(key)
+	require.False(t, sealed, "the copy was frozen while something was still writing into it")
+
+	h.wrote(key)
+	sealed, clean := h.seal(key)
+	require.True(t, sealed)
+	require.False(t, clean)
+}
+
+// TestARELEASENOBODYWROTEINTOISCLEAN, which is the common case and must cost
+// nothing: no second digest round, no refused write.
+func TestAnUntouchedCopySealsClean(t *testing.T) {
+	h := newHoldings()
+	const key = "shop/prod/kv/QmSessions"
+
+	h.hold(key)
+	require.True(t, h.begin(key))
+
+	sealed, clean := h.seal(key)
+	require.True(t, sealed)
+	require.True(t, clean)
+}
+
+// TestTHEFENCEISNOTATABLEAPEERCANGROW.
+//
+// The key a write is fenced under is the CALLER's address. A fence that
+// recorded one entry per address asked for would be a map any peer could grow
+// without limit by naming databases this deployment does not declare, so
+// resolving comes before the fence and an unresolvable write records nothing.
+func TestAWriteToAnUndeclaredDatabaseRecordsNothing(t *testing.T) {
+	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
+	s := sweeping(t, holds, map[string][]placement.Member{"eu": members("me")}, "eu", 1)
+
+	at := address{project: projectID, environment: "prod", id: "QmNobodyDeclaresThis"}
+	require.Error(t, s.mutate(t.Context(), at, func(database.KVConn) error {
+		return nil
+	}))
+
+	s.own.mu.Lock()
+	defer s.own.mu.Unlock()
+	require.Empty(t, s.own.at, "an address nobody declared left an entry behind")
 }

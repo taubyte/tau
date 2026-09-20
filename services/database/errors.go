@@ -54,6 +54,16 @@ var (
 	// ErrNoKey is an operation with nothing to operate on.
 	ErrNoKey = errors.New("database: no key")
 
+	// ErrReleasing is a write to a database this node is in the act of letting
+	// go of: the gate has been cleared and the bytes are being deleted. It is a
+	// RETRY and not a failure — the copy is moving and the node taking it over
+	// holds the same rows — which is why it is Unavailable on the wire.
+	//
+	// IT IS THE SEALED WINDOW ONLY. A node that refused writes for the whole of
+	// a release would be an outage per sweep; everything before the seal is
+	// accepted and makes the release ask again instead.
+	ErrReleasing = errors.New("database: this node is releasing that database")
+
 	// ErrNotSet is a key nobody wrote. It is its own arm rather than an empty
 	// value, for the reason the secrets service gives: a workload handed "" for
 	// what it stored fails later, looking like a bug in the workload.

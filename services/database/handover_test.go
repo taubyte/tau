@@ -1,6 +1,8 @@
 package database
 
 import (
+	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,12 +22,13 @@ import (
 // mutated after Start: the sweep is already running by then, so a test that
 // assigned to a field afterwards would be racing its own subject.
 type pair struct {
-	at     address
-	nodes  map[string]*Service
-	holds  map[string]*says
-	fleet  map[string][]placement.Member
-	going  string // the peer placement does NOT want
-	saying *says
+	at      address
+	nodes   map[string]*Service
+	holds   map[string]*says
+	engines map[string]*accounting
+	fleet   map[string][]placement.Member
+	going   string // the peer placement does NOT want
+	saying  *says
 }
 
 func pairOf(t *testing.T, floor int) *pair {
@@ -57,13 +60,15 @@ func pairOf(t *testing.T, floor int) *pair {
 		keeping[id] = true
 	}
 
-	out := &pair{at: at, fleet: fleet, nodes: map[string]*Service{}, holds: map[string]*says{}}
+	out := &pair{at: at, fleet: fleet, nodes: map[string]*Service{},
+		holds: map[string]*says{}, engines: map[string]*accounting{}}
 	for _, h := range hosts {
 		peer := h.ID().String()
 		holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
 
+		engine := &accounting{}
 		registry := database.NewRegistry()
-		require.NoError(t, registry.Register(t.Context(), &accounting{}))
+		require.NoError(t, registry.Register(t.Context(), engine))
 
 		s, err := New(h,
 			WithEngines(registry),
@@ -79,7 +84,7 @@ func pairOf(t *testing.T, floor int) *pair {
 		require.NoError(t, s.Start(t.Context()))
 		t.Cleanup(func() { s.Close() })
 
-		out.nodes[peer], out.holds[peer] = s, holds
+		out.nodes[peer], out.holds[peer], out.engines[peer] = s, holds, engine
 		if !keeping[peer] {
 			out.going, out.saying = peer, holds
 		}
@@ -226,4 +231,82 @@ func TestACoHolderThatDoesNotHoldItIsPending(t *testing.T) {
 	require.Equal(t, 1, s.Pending(),
 		"a database whose second copy does not exist was counted as fine")
 	require.Empty(t, holds.destroyed, "repair is not allowed to delete anything")
+}
+
+// TestTHEENGINEGOESWITHTHECOPY.
+//
+// Destroying a database closes the store behind the connection this node was
+// serving it from. A resident table that kept that connection would answer
+// every later call out of a destroyed store — not-found for rows another node
+// holds, and, on a write, the store's own bookkeeping back under the prefix
+// that was just removed, which is a node advertising a database it does not
+// have.
+func TestAReleasedDatabaseIsNoLongerResident(t *testing.T) {
+	p := pairOf(t, 1)
+
+	for peer := range p.nodes {
+		p.write(t, peer, "session:1", "alice")
+	}
+
+	p.nodes[p.going].reconsider(t.Context())
+	require.Len(t, p.saying.destroyed, 1, "the node that should not hold it kept it")
+
+	require.Zero(t, p.nodes[p.going].Held(),
+		"the released database is still resident, so every later call is served from the store that was destroyed")
+	require.Eventually(t, func() bool {
+		_, live := p.engines[p.going].counts()
+		return live == 0
+	}, time.Second, 5*time.Millisecond, "the connection to the destroyed store was left open")
+}
+
+// TestAWRITEACCEPTEDDURINGARELEASEISNOTDELETEDBYIT.
+//
+// The gate proves a replacement holds the same rows AS OF THE MOMENT IT ASKS. A
+// write accepted after that is in neither copy the replacement vouched for, so
+// the only other copy of it is the single delta this node published — and a
+// node that has stopped holding the database rebroadcasts no heads, so a
+// dropped delivery is permanent loss of an acked write.
+func TestAWriteDuringAReleaseIsNotDeletedByIt(t *testing.T) {
+	p := pairOf(t, 1)
+
+	for peer := range p.nodes {
+		p.write(t, peer, "session:1", "alice")
+	}
+
+	// FROM INSIDE THE WINDOW: the row arrives while the replacement is
+	// answering the digest ask, which is where every RTT of the release is.
+	var (
+		mu    sync.Mutex
+		wrote error
+		tried bool
+	)
+	for peer, holds := range p.holds {
+		if peer == p.going {
+			continue
+		}
+		holds.whenHeld(func() {
+			mu.Lock()
+			defer mu.Unlock()
+			if tried {
+				return
+			}
+			tried = true
+
+			kv, err := p.nodes[p.going].Local().OpenKV(context.Background(), sessionsGrant())
+			if err != nil {
+				wrote = err
+				return
+			}
+			wrote = kv.Put(context.Background(), "session:2", []byte("bob"))
+		})
+	}
+
+	p.nodes[p.going].reconsider(t.Context())
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.True(t, tried, "nothing was written during the release, so this proves nothing")
+	require.NoError(t, wrote, "a write was refused before anything had been decided")
+	require.Empty(t, p.saying.destroyed,
+		"a write accepted during the release was deleted with the database")
 }

@@ -177,6 +177,24 @@ func (e *engines) drop(el *list.Element) {
 	go r.conn.Close()
 }
 
+// forget drops one database's engine, closing it.
+//
+// IT IS NOT AN EXPIRY AND NOT A BOUND. Those two let go of a connection that is
+// merely cold, and the table is still right about it. This is the one case
+// where the table is WRONG: the node has stopped holding the database and the
+// store behind the connection has been destroyed, so serving one more call from
+// it would answer not-found for rows another node holds — and a write would put
+// the store's own bookkeeping back under the prefix that was just removed,
+// which is how a node ends up advertising a database it does not have.
+func (e *engines) forget(key string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if el, held := e.byRef[key]; held {
+		e.drop(el)
+	}
+}
+
 // held is how many engines this node has open, for an operator asking and for a
 // test of the bound.
 func (e *engines) held() int {

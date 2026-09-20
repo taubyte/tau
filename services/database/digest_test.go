@@ -25,6 +25,19 @@ type says struct {
 	onDisk    []database.Spec
 	destroyed []database.Spec
 	asked     int
+
+	// onHeld runs when this node is asked whether it holds a database, which is
+	// the one moment a test can act from INSIDE another node's release window:
+	// the asker has taken its digest and has deleted nothing yet.
+	onHeld func()
+}
+
+// whenHeld arranges for f to run the next time somebody asks what this node
+// holds.
+func (s *says) whenHeld(f func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onHeld = f
 }
 
 // reads is how many times a sweep has asked what this node holds.
@@ -36,8 +49,15 @@ func (s *says) reads() int {
 
 func (s *says) Held(context.Context, database.Spec) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.held
+	held, hook := s.held, s.onHeld
+	s.mu.Unlock()
+
+	// OUTSIDE THE LOCK, because the hook writes through a service that answers
+	// on this same fake.
+	if hook != nil {
+		hook()
+	}
+	return held
 }
 func (s *says) OnDisk(context.Context) []database.Spec {
 	s.mu.Lock()

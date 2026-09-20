@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/taubyte/tau/pkg/database"
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 	databasev1 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v1"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v1/databasev1connect"
@@ -63,11 +64,10 @@ func (h *handler) KVPut(ctx context.Context, req *connect.Request[databasev1.KVP
 		return nil, wire(ErrNoKey)
 	}
 
-	kv, err := h.s.kv(ctx, at)
+	err := h.s.mutate(ctx, at, func(kv database.KVConn) error {
+		return kv.Put(ctx, req.Msg.GetKey(), req.Msg.GetValue())
+	})
 	if err != nil {
-		return nil, wire(err)
-	}
-	if err := kv.Put(ctx, req.Msg.GetKey(), req.Msg.GetValue()); err != nil {
 		return nil, wire(err)
 	}
 	return connect.NewResponse(&databasev1.Empty{}), nil
@@ -81,11 +81,13 @@ func (h *handler) KVDelete(ctx context.Context, req *connect.Request[databasev1.
 		return nil, wire(ErrNoKey)
 	}
 
-	kv, err := h.s.kv(ctx, at)
+	err := h.s.mutate(ctx, at, func(kv database.KVConn) error {
+		if err := kv.Delete(ctx, req.Msg.GetKey()); err != nil && !errors.Is(err, kvengine.ErrNotFound) {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, wire(err)
-	}
-	if err := kv.Delete(ctx, req.Msg.GetKey()); err != nil && !errors.Is(err, kvengine.ErrNotFound) {
 		return nil, wire(err)
 	}
 	return connect.NewResponse(&databasev1.Empty{}), nil
@@ -169,6 +171,12 @@ func wire(err error) error {
 
 	case errors.Is(err, ErrTooManyResident):
 		return connect.NewError(connect.CodeResourceExhausted, err)
+
+	// A NODE MID-RELEASE IS UNAVAILABLE FOR THAT DATABASE AND NOT BROKEN. It
+	// lands on the default's code and is named anyway: the default is about
+	// what came out of an engine, and this is a decision this service made.
+	case errors.Is(err, ErrReleasing):
+		return connect.NewError(connect.CodeUnavailable, err)
 
 	default:
 		return connect.NewError(connect.CodeUnavailable, err)
