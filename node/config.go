@@ -99,6 +99,17 @@ type Config struct {
 	// container.go, and in particular what its Runtime field is for.
 	Container ContainerConfig
 
+	// Replication is the floor on how many nodes hold each database, in EACH
+	// region it is pinned to. Zero means the database service's default.
+	//
+	// IT IS A PROPERTY OF THE FLEET and it is configured per node, which means
+	// two nodes given different numbers disagree about who should hold what —
+	// permanently, unlike every other placement input, which heals. The fix is
+	// one value the fleet shares rather than a field here; until then a deploy
+	// that writes the same number into every node's config is what makes it
+	// true, and nothing checks that it did.
+	Replication int
+
 	// Per-service operator configuration. Each is that service's own; nothing
 	// here reinterprets it.
 	Stats   stats.Config

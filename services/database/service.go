@@ -66,6 +66,7 @@ import (
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 )
@@ -81,6 +82,22 @@ type Service struct {
 	// go of it. Nil on a node composed without one, which answers held=false
 	// to every ask — honest for a node that holds nothing of its own.
 	holdings Holdings
+
+	// members is the fleet a placement runs over, grouped by region. Nil on a
+	// node that cannot see one, which is a node that never moves anything.
+	members func() map[string][]placement.Member
+
+	// peer and region are who this node is in that fleet.
+	peer   string
+	region string
+
+	// replication is the floor: how many nodes hold each database, in EACH
+	// pinned region.
+	replication int
+
+	// sweep is how often this node reconsiders what it holds.
+	sweep     time.Duration
+	stopSweep context.CancelFunc
 
 	// own is what this node is DOING about each database it holds, which is
 	// what makes its `keeps` answer honest: a node mid-release says so, and a
@@ -107,7 +124,52 @@ type options struct {
 	idle     time.Duration
 	holdings Holdings
 
+	members     func() map[string][]placement.Member
+	region      string
+	replication int
+	sweep       time.Duration
+
 	serverOptions []rpc.ServerOption
+}
+
+// WithMembers is how this node sees the fleet: the member set a placement runs
+// over, grouped by the region each node reports.
+//
+// A FUNCTION AND NOT A LIST, because membership changes under the service and a
+// snapshot taken at construction would place every database on the fleet as it
+// was when the process started.
+func WithMembers(members func() map[string][]placement.Member) Option {
+	return func(o *options) error {
+		o.members = members
+		return nil
+	}
+}
+
+// WithRegion is where this node is. Empty means a node that will not say, which
+// competes for nothing anybody pinned.
+func WithRegion(region string) Option {
+	return func(o *options) error {
+		o.region = region
+		return nil
+	}
+}
+
+// WithReplication is the floor on how many nodes hold each database, in EACH
+// pinned region. Zero means DefaultReplication.
+func WithReplication(n int) Option {
+	return func(o *options) error {
+		o.replication = n
+		return nil
+	}
+}
+
+// WithSweep is how often this node reconsiders what it holds. Zero means
+// DefaultSweep.
+func WithSweep(d time.Duration) Option {
+	return func(o *options) error {
+		o.sweep = d
+		return nil
+	}
 }
 
 // WithHoldings is what this node has on disk. A service without one answers
@@ -212,11 +274,25 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 		return nil, err
 	}
 
+	floor, err := Config{Replication: o.replication}.withDefaults()
+	if err != nil {
+		return nil, err
+	}
+	sweep := o.sweep
+	if sweep == 0 {
+		sweep = DefaultSweep
+	}
+
 	return &Service{
 		host:          h,
 		engines:       newEngines(o.registry, o.now, o.max, o.idle),
 		declare:       &declarations{projects: projects},
 		holdings:      o.holdings,
+		members:       o.members,
+		peer:          h.ID().String(),
+		region:        o.region,
+		replication:   floor.Replication,
+		sweep:         sweep,
 		own:           newHoldings(),
 		serverOptions: o.serverOptions,
 	}, nil
@@ -240,6 +316,14 @@ func (s *Service) Start(ctx context.Context) error {
 		return fmt.Errorf("database: listening: %w", err)
 	}
 	s.server = server
+
+	// THE SWEEP RUNS FOR AS LONG AS THIS SERVICE DOES, not for as long as the
+	// caller's context: a Start whose ctx ends when the caller returns would
+	// leave a node that serves and never reconsiders anything.
+	sweepCtx, stopSweep := context.WithCancel(context.WithoutCancel(ctx))
+	s.stopSweep = stopSweep
+	go s.run(sweepCtx)
+
 	return nil
 }
 
@@ -251,7 +335,13 @@ func (s *Service) Close() error {
 		s.startMu.Lock()
 		server := s.server
 		s.server = nil
+		stop := s.stopSweep
+		s.stopSweep = nil
 		s.startMu.Unlock()
+
+		if stop != nil {
+			stop()
+		}
 
 		if server != nil {
 			s.closeErr = server.Close()

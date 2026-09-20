@@ -24,6 +24,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/taubyte/tau/pkg/membership"
+	"github.com/taubyte/tau/pkg/placement"
 	statsv1 "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v1"
 	"github.com/taubyte/tau/pkg/stats"
 )
@@ -35,6 +37,19 @@ type Service struct {
 	opts options
 	peer string
 	view *stats.View
+
+	// members is the PLACEMENT view, which runs on a longer timescale than the
+	// routing one — see beat. Nil only in a service composed without one.
+	members *membership.Set
+
+	// regionMu guards regions, which is where a peer's region is kept for as
+	// long as MEMBERSHIP remembers it rather than as long as the routing view
+	// does. The two forget on different timescales — routing drops a row at 20
+	// intervals, placement keeps a peer far longer — and reading the region out
+	// of the routing view meant a settled node lost its region while it was
+	// still in the placement set, landing under "" as if it had never said.
+	regionMu sync.Mutex
+	regions  map[string]string
 
 	// incarnation distinguishes this run from the last. It is chosen once, at
 	// construction, and never lowered — see the proto's field comment.
@@ -82,11 +97,31 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 		return nil, err
 	}
 
+	// THE PLACEMENT VIEW'S LIVENESS IS THIS SERVICE'S FRESHNESS, because both
+	// answer "has this peer reported lately" and there is only one heartbeat.
+	//
+	// STABILIZE SCALES WITH IT, and pkg/membership refuses the alternative in so
+	// many words: a stabilize shorter than liveness would have placement moving
+	// faster than acknowledgement. Four freshness windows, floored at the
+	// package default, so a fleet that gossips slowly settles slowly and one
+	// that gossips quickly still waits a minute before data moves onto a peer.
+	stabilize := 4 * c.Fresh
+	if stabilize < defaultStabilize {
+		stabilize = defaultStabilize
+	}
+	members, err := membership.New(membership.Options{
+		Liveness: c.Fresh, Stabilize: stabilize, Now: o.now,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &Service{
 		cfg:         c,
 		opts:        o,
 		peer:        h.ID().String(),
 		view:        view,
+		members:     members,
 		incarnation: uint64(o.now().UnixNano()),
 		done:        make(chan struct{}),
 	}, nil
@@ -175,6 +210,7 @@ func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
 				Sockets:     socketsOf(r.GetSockets()),
 				Region:      r.GetRegion(),
 			})
+			s.beat(r.GetPeer(), r.GetIncarnation(), r.GetReady(), r.GetRegion())
 		}
 	}
 }
@@ -247,6 +283,7 @@ func (s *Service) report(ctx context.Context) {
 		Sockets:     snap.Sockets,
 		Region:      s.cfg.Region,
 	})
+	s.beat(s.peer, s.incarnation, snap.Ready, s.cfg.Region)
 
 	s.opts.bus.Publish(ctx, b)
 }
@@ -301,6 +338,74 @@ func wireSockets(in []stats.Socket) []*statsv1.Socket {
 			Transport: s.Transport,
 			Port:      uint32(s.Port),
 		})
+	}
+	return out
+}
+
+// defaultStabilize is the floor on how long a peer must be settled before data
+// moves onto it, and it is pkg/membership's own default restated rather than
+// imported: this package decides the window and that one decides what it means.
+const defaultStabilize = time.Minute
+
+// beat feeds the placement view, which runs on a different timescale from the
+// routing view and deliberately so.
+//
+// ROUTING WANTS FRESH; PLACEMENT WANTS SETTLED. A node that blinks for one
+// interval should stop receiving requests immediately and must NOT move a
+// database — moving one costs a copy handed over and a copy deleted, and doing
+// that on a blip is how a fleet spends its day rebalancing. pkg/membership is
+// written for exactly this split: Live is the acknowledgement target, Stable is
+// "who owns data", and it requires continuous presence in both directions.
+func (s *Service) beat(peer string, incarnation uint64, accepts bool, region string) {
+	if s.members == nil || peer == "" {
+		return
+	}
+	// Observe refuses a stale run on its own, the same way the view does.
+	s.members.Observe(membership.Beat{Peer: peer, Incarnation: incarnation, Accepts: accepts})
+
+	s.regionMu.Lock()
+	defer s.regionMu.Unlock()
+	if s.regions == nil {
+		s.regions = map[string]string{}
+	}
+	s.regions[peer] = region
+}
+
+// Placement is the member set a placement runs over, grouped by the region each
+// node reports.
+//
+// IT IS THE STABLE SET AND NOT THE FRESH ONE — see beat. View.ByRegion answers
+// the routing question and is the wrong input here: it would move data on a
+// blip.
+//
+// A STABLE MEMBER THIS NODE HAS NO REGION FOR IS STILL A MEMBER, under "" — the
+// key for "said nothing", which is never a region name. Dropping it would make a
+// node invisible to placement entirely, which is worse than placing it in the
+// bucket for nodes that will not say where they are.
+func (s *Service) Placement() map[string][]placement.Member {
+	if s.members == nil {
+		return nil
+	}
+
+	s.regionMu.Lock()
+	defer s.regionMu.Unlock()
+
+	out := map[string][]placement.Member{}
+	known := map[string]bool{}
+	for _, m := range s.members.StablePlacement() {
+		at := s.regions[m.ID]
+		out[at] = append(out[at], m)
+		known[m.ID] = true
+	}
+
+	// FORGOTTEN BY MEMBERSHIP IS FORGOTTEN HERE, so a fleet that has churned
+	// does not carry a region for every peer it has ever heard from.
+	for peer := range s.regions {
+		if !known[peer] {
+			if _, remembered := s.members.Get(peer); !remembered {
+				delete(s.regions, peer)
+			}
+		}
 	}
 	return out
 }

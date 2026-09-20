@@ -20,11 +20,12 @@ import (
 // else: what this file is about is whether ASKING changes anything.
 type says struct {
 	held      bool
+	onDisk    []database.Spec
 	destroyed []database.Spec
 }
 
 func (s *says) Held(context.Context, database.Spec) bool { return s.held }
-func (s *says) OnDisk(context.Context) []database.Spec   { return nil }
+func (s *says) OnDisk(context.Context) []database.Spec   { return s.onDisk }
 func (s *says) Destroy(_ context.Context, spec database.Spec) error {
 	s.destroyed = append(s.destroyed, spec)
 	return nil

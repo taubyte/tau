@@ -1,6 +1,9 @@
 package database
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // config.go is what an operator declares about a database node.
 //
@@ -24,6 +27,16 @@ import "fmt"
 // number a corp will set on a fleet large enough to lose two at once, and that
 // is why this is a knob rather than a constant.
 const DefaultReplication = 2
+
+// DefaultSweep is how often a node reconsiders what it holds.
+//
+// IT IS NOT A HEARTBEAT. Nothing waits on a sweep: a database that moved is
+// served by its old holder until the new one has it, and a sweep that ran every
+// second would spend the fleet's bandwidth asking questions whose answers
+// change on the timescale membership settles on — which is minutes. This is the
+// rate at which a fleet finishes reacting to a change, not the rate at which it
+// notices one.
+const DefaultSweep = 30 * time.Second
 
 // Config is what an operator declared about this node's databases.
 type Config struct {

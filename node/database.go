@@ -15,6 +15,7 @@ import (
 	vecengine "github.com/taubyte/tau/pkg/database/engines/vector"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/placement"
 	databaseService "github.com/taubyte/tau/services/database"
 )
 
@@ -627,6 +628,20 @@ func (n *Node) openDatabase(ctx context.Context) error {
 		// it can open: a node answers "do you hold this" from its disk, and is
 		// the only thing that can let go of a copy.
 		databaseService.WithHoldings(nodeHoldings{d: &databases{node: n}}),
+		databaseService.WithRegion(n.cfg.Region),
+		databaseService.WithReplication(n.cfg.Replication),
+
+		// THE FLEET AS THIS NODE SEES IT, asked each sweep rather than taken
+		// once: a snapshot at construction would place every database on the
+		// fleet as it was when the process started. A node running no stats
+		// sees no fleet and moves nothing, which is the honest answer for a
+		// node that cannot tell who else is there.
+		databaseService.WithMembers(func() map[string][]placement.Member {
+			if n.stats == nil {
+				return nil
+			}
+			return n.stats.Placement()
+		}),
 	)
 	if err != nil {
 		return err
