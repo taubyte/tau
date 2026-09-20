@@ -85,6 +85,10 @@ var (
 
 	// ErrUnaddressable is a spec with a hole where an address segment belongs.
 	ErrUnaddressable = errors.New("database: a spec with no project, environment, model or name addresses nothing")
+
+	// ErrNoStore is an engine with nowhere to keep entries. It was one per
+	// resident engine; the door is shared, so the refusal is too.
+	ErrNoStore = errors.New("database: no store to open onto")
 )
 
 // Spec is which database to open.

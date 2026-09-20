@@ -44,38 +44,30 @@ import (
 // pkg/cache keep over a kvdb, and for the same reason — the rules above are
 // testable against a map, and which node's write another sees is the store's
 // business rather than this package's.
-type Store interface {
-	Get(ctx context.Context, key string) ([]byte, bool, error)
-	Put(ctx context.Context, key string, value []byte) error
-	Delete(ctx context.Context, key string) error
-	List(ctx context.Context, prefix string) ([]string, error)
-}
-
 // Name is the engine name the vocabulary uses for tau's own.
 const Name = "distributed"
 
 var (
-	ErrNoStore  = errors.New("kv: no store to open onto")
 	ErrNotFound = errors.New("kv: no such key")
 	ErrNoKey    = errors.New("kv: no key")
 	ErrFull     = errors.New("kv: this database is at its declared size")
 	ErrNoWatch  = errors.New("kv: watch is not served yet")
 )
 
-// Engine opens kv databases over one store.
+// Engine opens kv databases, each over the store its provider hands out.
 //
-// ONE STORE FOR EVERY DATABASE ON A NODE, separated by a key prefix — the same
-// arrangement node/cache.go keeps, and for the same reason: a store per
-// resource would be a CRDT, a broadcaster and a pubsub topic each.
-type Engine struct{ store Store }
+// A PROVIDER AND NOT A STORE: see database.Stores. One store for every database
+// on a node is one pubsub topic carrying every database's rows, which makes
+// placement a decoration and makes a local drop a fleet-wide delete.
+type Engine struct{ stores database.Stores }
 
-// New builds the engine. It is handed a store rather than building one: what a
-// replicated store is made of belongs to whoever composed the node.
-func New(store Store) (*Engine, error) {
-	if store == nil {
-		return nil, ErrNoStore
+// New builds the engine. It is handed a provider rather than building one: what
+// a replicated store is made of belongs to whoever composed the node.
+func New(stores database.Stores) (*Engine, error) {
+	if stores == nil {
+		return nil, database.ErrNoStore
 	}
-	return &Engine{store: store}, nil
+	return &Engine{stores: stores}, nil
 }
 
 func (e *Engine) Name() string           { return Name }
@@ -91,13 +83,26 @@ func (e *Engine) Types() []database.Type { return []database.Type{database.KV} }
 // project and no environment — it is proving the SURFACE, not an address — and
 // an engine that refused it could not be registered at all. So the address is
 // checked here and reported where it is used.
-func (e *Engine) Open(_ context.Context, spec database.Spec) (database.Conn, error) {
+func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, error) {
 	if spec.Type != database.KV {
 		return nil, fmt.Errorf("kv: this engine backs %s and not %s", database.KV, spec.Type)
 	}
 
 	prefix, err := spec.Prefix()
-	return &conn{store: e.store, prefix: prefix, err: err}, nil
+	if err != nil {
+		// THE REGISTRATION PROBE LANDS HERE. pkg/database opens one connection
+		// per type with no project and no environment to prove the SURFACE, not
+		// an address — so asking the provider for that database's store would
+		// refuse to register an engine that is perfectly good. The address is
+		// reported where it is used instead.
+		return &conn{err: err}, nil
+	}
+
+	store, err := e.stores(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	return &conn{store: store, prefix: prefix}, nil
 }
 
 // prefixOf is where this database's entries live.
@@ -108,7 +113,7 @@ func (e *Engine) Open(_ context.Context, spec database.Spec) (database.Conn, err
 
 // conn is one database.
 type conn struct {
-	store  Store
+	store  database.Store
 	prefix string
 
 	// err is why this connection addresses nothing, when it does. Every

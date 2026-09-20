@@ -70,10 +70,10 @@ func spec(project, environment, name string) database.Spec {
 	}
 }
 
-func open(t *testing.T, store document.Store, s database.Spec) database.DocumentConn {
+func open(t *testing.T, store database.Store, s database.Spec) database.DocumentConn {
 	t.Helper()
 
-	engine, err := document.New(store)
+	engine, err := document.New(database.OneStore(store))
 	require.NoError(t, err)
 
 	conn, err := engine.Open(t.Context(), s)
@@ -104,12 +104,12 @@ func seed(t *testing.T, c database.DocumentConn) {
 
 func TestAnEngineNeedsAStore(t *testing.T) {
 	_, err := document.New(nil)
-	require.ErrorIs(t, err, document.ErrNoStore)
+	require.ErrorIs(t, err, database.ErrNoStore)
 }
 
 // TestItRegisters, which is what proves the surface.
 func TestTheEngineSatisfiesTheRegistry(t *testing.T) {
-	engine, err := document.New(newStore())
+	engine, err := document.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	registry := database.NewRegistry()
@@ -243,7 +243,7 @@ func TestEachDatabaseIsItsOwnCollection(t *testing.T) {
 }
 
 func TestASeparatorInANameIsRefused(t *testing.T) {
-	engine, err := document.New(newStore())
+	engine, err := document.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	conn, err := engine.Open(context.Background(), spec("shop", "staging", "../production/orders"))
@@ -298,7 +298,7 @@ func TestAStoreFailureIsReported(t *testing.T) {
 }
 
 func TestTheWrongTypeIsRefused(t *testing.T) {
-	engine, err := document.New(newStore())
+	engine, err := document.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	_, err = engine.Open(context.Background(), database.Spec{
@@ -310,7 +310,7 @@ func TestTheWrongTypeIsRefused(t *testing.T) {
 // TestEveryOperationAnswersAnUnaddressableConnection, so the deferred error is
 // not only on the read path.
 func TestAnUnaddressableConnectionFailsEverything(t *testing.T) {
-	engine, err := document.New(newStore())
+	engine, err := document.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	conn, err := engine.Open(context.Background(), spec("shop", "", "orders"))

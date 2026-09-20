@@ -43,13 +43,6 @@ import (
 )
 
 // Store is the same four-method door every other engine here keeps.
-type Store interface {
-	Get(ctx context.Context, key string) ([]byte, bool, error)
-	Put(ctx context.Context, key string, value []byte) error
-	Delete(ctx context.Context, key string) error
-	List(ctx context.Context, prefix string) ([]string, error)
-}
-
 // Name is the engine name the vocabulary uses for tau's own.
 const Name = "distributed"
 
@@ -68,7 +61,6 @@ const (
 )
 
 var (
-	ErrNoStore     = errors.New("vector: no store to open onto")
 	ErrNoID        = errors.New("vector: no id")
 	ErrNotFound    = errors.New("vector: no such vector")
 	ErrWidth       = errors.New("vector: that is not this database's width")
@@ -76,14 +68,20 @@ var (
 	ErrNoDimension = errors.New("vector: this database declares no width")
 )
 
-// Engine opens vector databases over one store.
-type Engine struct{ store Store }
+// Engine opens vector databases, each over the store its provider hands out.
+//
+// A PROVIDER AND NOT A STORE: see database.Stores. One store for every database
+// on a node is one pubsub topic carrying every database's rows, which makes
+// placement a decoration and makes a local drop a fleet-wide delete.
+type Engine struct{ stores database.Stores }
 
-func New(store Store) (*Engine, error) {
-	if store == nil {
-		return nil, ErrNoStore
+// New builds the engine. It is handed a provider rather than building one: what
+// a replicated store is made of belongs to whoever composed the node.
+func New(stores database.Stores) (*Engine, error) {
+	if stores == nil {
+		return nil, database.ErrNoStore
 	}
-	return &Engine{store: store}, nil
+	return &Engine{stores: stores}, nil
 }
 
 func (e *Engine) Name() string           { return Name }
@@ -92,16 +90,26 @@ func (e *Engine) Types() []database.Type { return []database.Type{database.Vecto
 // Open answers a connection scoped to one database of one deployment. An
 // unaddressable spec is a connection that fails rather than an open that does —
 // the registry probes with one.
-func (e *Engine) Open(_ context.Context, spec database.Spec) (database.Conn, error) {
+func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, error) {
 	if spec.Type != database.Vector {
 		return nil, fmt.Errorf("vector: this engine backs %s and not %s", database.Vector, spec.Type)
 	}
 
-	c := &conn{store: e.store, metric: Cosine}
-	c.prefix, c.err = spec.Prefix()
-	if c.err != nil {
-		return c, nil
+	prefix, err := spec.Prefix()
+	if err != nil {
+		// THE REGISTRATION PROBE LANDS HERE. pkg/database opens one connection
+		// per type with no project and no environment to prove the SURFACE, not
+		// an address — so asking the provider for that database's store would
+		// refuse to register an engine that is perfectly good. The address is
+		// reported where it is used instead.
+		return &conn{err: err}, nil
 	}
+
+	store, err := e.stores(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	c := &conn{store: store, prefix: prefix, metric: Cosine}
 
 	if metric := spec.Options[OptionMetric]; metric != "" {
 		switch metric {
@@ -131,7 +139,7 @@ func (e *Engine) Open(_ context.Context, spec database.Spec) (database.Conn, err
 }
 
 type conn struct {
-	store  Store
+	store  database.Store
 	prefix string
 	metric string
 	width  int

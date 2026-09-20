@@ -86,10 +86,10 @@ func spec(project, environment, name string) database.Spec {
 	}
 }
 
-func open(t *testing.T, store kv.Store, s database.Spec) database.KVConn {
+func open(t *testing.T, store database.Store, s database.Spec) database.KVConn {
 	t.Helper()
 
-	engine, err := kv.New(store)
+	engine, err := kv.New(database.OneStore(store))
 	require.NoError(t, err)
 
 	conn, err := engine.Open(t.Context(), s)
@@ -103,14 +103,14 @@ func open(t *testing.T, store kv.Store, s database.Spec) database.KVConn {
 
 func TestAnEngineNeedsAStore(t *testing.T) {
 	_, err := kv.New(nil)
-	require.ErrorIs(t, err, kv.ErrNoStore)
+	require.ErrorIs(t, err, database.ErrNoStore)
 }
 
 // TestItRegisters, which is what proves the surface: Register opens a probe and
 // type-asserts it, so an engine that answered no kv methods would be refused
 // here rather than at the first call.
 func TestTheEngineSatisfiesTheRegistry(t *testing.T) {
-	engine, err := kv.New(newStore())
+	engine, err := kv.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	registry := database.NewRegistry()
@@ -208,7 +208,7 @@ func TestEachDatabaseIsItsOwnKeySpace(t *testing.T) {
 // the same reason: a database named "../production/ledger" would otherwise be a
 // path into production's.
 func TestASeparatorInANameIsRefused(t *testing.T) {
-	engine, err := kv.New(newStore())
+	engine, err := kv.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	for _, s := range []database.Spec{
@@ -230,7 +230,7 @@ func TestASeparatorInANameIsRefused(t *testing.T) {
 }
 
 func TestAnEmptySegmentAddressesNothing(t *testing.T) {
-	engine, err := kv.New(newStore())
+	engine, err := kv.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	for _, s := range []database.Spec{
@@ -281,7 +281,7 @@ func TestWatchSaysItIsNotServed(t *testing.T) {
 }
 
 func TestTheWrongTypeIsRefused(t *testing.T) {
-	engine, err := kv.New(newStore())
+	engine, err := kv.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	// THE TYPE IS REFUSED AT OPEN and not deferred: unlike an address, it is a
@@ -324,4 +324,71 @@ func TestTheStoredKeyIsScoped(t *testing.T) {
 	require.NoError(t, c.Put(t.Context(), "order:1", []byte("v")))
 
 	require.Equal(t, []string{"shop/prod/kv/ledger/order:1"}, store.keys())
+}
+
+// TestEachDatabaseGetsItsOwnStore.
+//
+// THIS IS WHAT A TOPIC PER DATABASE MEANS IN THIS PACKAGE: the provider is asked
+// PER SPEC, so which replicas a write or a delete reaches is decided per
+// database. With one store for all of them, every subscriber held every
+// database's rows — placement decided nothing — and a Delete was a tombstone
+// every replica applied, so a node dropping a copy it no longer holds deleted
+// the copy the node that had just acquired it was holding.
+func TestEachDatabaseGetsItsOwnStore(t *testing.T) {
+	stores := map[string]*memStore{}
+	var asked []string
+
+	engine, err := kv.New(func(_ context.Context, s database.Spec) (database.Store, error) {
+		name, err := s.Prefix()
+		if err != nil {
+			return nil, err
+		}
+		asked = append(asked, name)
+		if _, held := stores[name]; !held {
+			stores[name] = newStore()
+		}
+		return stores[name], nil
+	})
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	openOne := func(name string) database.KVConn {
+		conn, err := engine.Open(ctx, spec("shop", "prod", name))
+		require.NoError(t, err)
+		return conn.(database.KVConn)
+	}
+
+	ledger, tokens := openOne("ledger"), openOne("tokens")
+	require.Equal(t, []string{"shop/prod/kv/ledger/", "shop/prod/kv/tokens/"}, asked,
+		"the provider was not asked per database")
+	require.Len(t, stores, 2, "two databases shared one store")
+
+	require.NoError(t, ledger.Put(ctx, "k", []byte("v")))
+	require.NoError(t, tokens.Put(ctx, "k", []byte("v")))
+
+	// DROPPING ONE LEAVES THE OTHER ALONE, which is the whole property: this
+	// delete reaches the ledger's replicas and nobody else's.
+	require.NoError(t, ledger.Delete(ctx, "k"))
+	_, err = ledger.Get(ctx, "k")
+	require.ErrorIs(t, err, kv.ErrNotFound)
+
+	value, err := tokens.Get(ctx, "k")
+	require.NoError(t, err)
+	require.Equal(t, []byte("v"), value, "a drop in one database reached another")
+}
+
+// TestTheRegistrationProbeAsksForNoStore. Register opens one connection per type
+// with no project and no environment to prove the SURFACE, not an address — so
+// an engine whose provider refused that spec would be unregistrable.
+func TestTheRegistrationProbeAsksForNoStore(t *testing.T) {
+	asked := 0
+	engine, err := kv.New(func(context.Context, database.Spec) (database.Store, error) {
+		asked++
+		return nil, errors.New("kv: the probe asked for a store")
+	})
+	require.NoError(t, err)
+
+	registry := database.NewRegistry()
+	require.NoError(t, registry.Register(t.Context(), engine))
+	require.Zero(t, asked, "registration asked the provider for a store")
 }

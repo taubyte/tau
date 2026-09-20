@@ -47,31 +47,29 @@ import (
 )
 
 // Store is the same four-method door the kv engine keeps.
-type Store interface {
-	Get(ctx context.Context, key string) ([]byte, bool, error)
-	Put(ctx context.Context, key string, value []byte) error
-	Delete(ctx context.Context, key string) error
-	List(ctx context.Context, prefix string) ([]string, error)
-}
-
 // Name is the engine name the vocabulary uses for tau's own.
 const Name = "distributed"
 
 var (
-	ErrNoStore     = errors.New("document: no store to open onto")
 	ErrNotFound    = errors.New("document: no such document")
 	ErrNoID        = errors.New("document: no id")
 	ErrNotAnObject = errors.New("document: a document is an object")
 )
 
-// Engine opens document databases over one store.
-type Engine struct{ store Store }
+// Engine opens document databases, each over the store its provider hands out.
+//
+// A PROVIDER AND NOT A STORE: see database.Stores. One store for every database
+// on a node is one pubsub topic carrying every database's rows, which makes
+// placement a decoration and makes a local drop a fleet-wide delete.
+type Engine struct{ stores database.Stores }
 
-func New(store Store) (*Engine, error) {
-	if store == nil {
-		return nil, ErrNoStore
+// New builds the engine. It is handed a provider rather than building one: what
+// a replicated store is made of belongs to whoever composed the node.
+func New(stores database.Stores) (*Engine, error) {
+	if stores == nil {
+		return nil, database.ErrNoStore
 	}
-	return &Engine{store: store}, nil
+	return &Engine{stores: stores}, nil
 }
 
 func (e *Engine) Name() string           { return Name }
@@ -80,17 +78,30 @@ func (e *Engine) Types() []database.Type { return []database.Type{database.Docum
 // Open answers a connection scoped to one database of one deployment. An
 // unaddressable spec is a connection that fails rather than an open that does —
 // the registry probes with one, proving the surface and not an address.
-func (e *Engine) Open(_ context.Context, spec database.Spec) (database.Conn, error) {
+func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, error) {
 	if spec.Type != database.Document {
 		return nil, fmt.Errorf("document: this engine backs %s and not %s", database.Document, spec.Type)
 	}
 
 	prefix, err := spec.Prefix()
-	return &conn{store: e.store, prefix: prefix, err: err}, nil
+	if err != nil {
+		// THE REGISTRATION PROBE LANDS HERE. pkg/database opens one connection
+		// per type with no project and no environment to prove the SURFACE, not
+		// an address — so asking the provider for that database's store would
+		// refuse to register an engine that is perfectly good. The address is
+		// reported where it is used instead.
+		return &conn{err: err}, nil
+	}
+
+	store, err := e.stores(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	return &conn{store: store, prefix: prefix}, nil
 }
 
 type conn struct {
-	store  Store
+	store  database.Store
 	prefix string
 	err    error
 }

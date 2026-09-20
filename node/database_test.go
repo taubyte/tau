@@ -409,9 +409,13 @@ func TestAKvDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNotFound, "the tier's miss, so it is not read as an outage")
 }
 
-// TestTheKvStoreIsOpenedOnceAndOnlyIfUsed, which is the same rule the cache
-// backing keeps: a node serving no kv database opens nothing.
-func TestTheKvStoreIsLazyAndShared(t *testing.T) {
+// TestAStoreIsOpenedPerDatabaseAndOnlyIfUsed.
+//
+// LAZY is the rule the cache backing keeps: a node serving no kv database opens
+// nothing. PER DATABASE is what replaced "one store for all of them" — a store
+// is a pubsub topic, so a node now carries as many as it HOLDS rather than one
+// carrying every database's rows.
+func TestTheKvStoreIsLazyAndPerDatabase(t *testing.T) {
 	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
 	d := &databases{node: n}
 
@@ -425,13 +429,22 @@ func TestTheKvStoreIsLazyAndShared(t *testing.T) {
 	}
 
 	opened, _ = factory.counts()
-	var stores int
-	for _, name := range opened {
-		if name == databaseStore {
-			stores++
-		}
+	for _, want := range []string{
+		databaseStore + "/shop/prod/kv/QmA",
+		databaseStore + "/shop/prod/kv/QmB",
+		databaseStore + "/other/prod/kv/QmA",
+	} {
+		require.Contains(t, opened, want, "%v", opened)
 	}
-	require.Equal(t, 1, stores, "three databases, one store: %v", opened)
+	require.NotContains(t, opened, databaseStore, "a store holding all three: %v", opened)
+
+	// AND ASKING AGAIN OPENS NOTHING MORE: the factory caches by path, so a
+	// database this node already holds costs no second topic.
+	before := len(opened)
+	_, err := d.OpenKV(t.Context(), kvGrantFor("shop/prod/QmA"))
+	require.NoError(t, err)
+	opened, _ = factory.counts()
+	require.Len(t, opened, before, "reopening a held database opened another store")
 }
 
 // TestTwoKvDatabasesDoNotSeeEachOther, and neither do two deployments of one.
@@ -586,7 +599,9 @@ func TestABadDocumentIsMalformed(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrMalformed)
 }
 
-// TestTheTwoOwnEnginesShareOneStoreAndNotOneKeySpace.
+// TestTheTwoOwnEnginesDoNotShareAStoreAtALL, which is stronger than the key-space
+// separation this used to assert: they are not in the same store, so they cannot
+// collide and a drop in one cannot reach the other's replicas.
 func TestKvAndDocumentsDoNotCollide(t *testing.T) {
 	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
 	d := &databases{node: n}
@@ -608,15 +623,14 @@ func TestKvAndDocumentsDoNotCollide(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"where":"document"}`, string(raw))
 
-	// ONE STORE FOR BOTH, separated by the resource id in the key.
+	// A STORE EACH, named by the same function that addresses the database —
+	// which is a pubsub topic each, so which replicas a write or a delete reaches
+	// is decided per database rather than per node.
 	opened, _ := factory.counts()
-	var stores int
-	for _, name := range opened {
-		if name == databaseStore {
-			stores++
-		}
-	}
-	require.Equal(t, 1, stores, "%v", opened)
+	require.Contains(t, opened, databaseStore+"/shop/prod/kv/QmTokens")
+	require.Contains(t, opened, databaseStore+"/shop/prod/document/QmOrders")
+	require.NotContains(t, opened, databaseStore,
+		"a store holding every database was opened after all: %v", opened)
 }
 
 // ── tau's own vector engine ──────────────────────────────────────────────────

@@ -71,7 +71,12 @@ type databases struct {
 	mu       sync.Mutex
 	open     map[string]database.Conn
 	registry *database.Registry
-	db       kvdb.KVDB
+
+	// storesMu guards stores, and it is NOT d.mu. openFor holds d.mu across
+	// registry.Open, which reaches storesFor — one mutex for both would
+	// deadlock on the first database anybody opened.
+	storesMu sync.Mutex
+	stores   map[string]kvdb.KVDB
 }
 
 var (
@@ -498,24 +503,16 @@ func (d *databases) engines(ctx context.Context, want database.Type) (*database.
 	if d.node.opts.databases == nil {
 		return nil, ErrNoCacheStore
 	}
-	if d.db == nil {
-		db, err := d.node.opts.databases.New(logger, databaseStore, rebroadcastSeconds)
-		if err != nil {
-			return nil, fmt.Errorf("node: opening the database store: %w", err)
-		}
-		d.db = db
-		d.node.closers = append(d.node.closers, closerFunc(db.Close))
-	}
 
 	var engine database.Engine
 	var err error
 	switch want {
 	case database.KV:
-		engine, err = kvengine.New(cacheStore{d.db})
+		engine, err = kvengine.New(d.storesFor)
 	case database.Document:
-		engine, err = docengine.New(cacheStore{d.db})
+		engine, err = docengine.New(d.storesFor)
 	default:
-		engine, err = vecengine.New(cacheStore{d.db})
+		engine, err = vecengine.New(d.storesFor)
 	}
 	if err != nil {
 		return nil, err
@@ -526,7 +523,7 @@ func (d *databases) engines(ctx context.Context, want database.Type) (*database.
 	return d.registry, nil
 }
 
-// databaseStore is the one kvdb every kv database on this node lives in.
+// databaseStore is the prefix every database's own kvdb is named under.
 //
 // SEPARATE FROM THE CACHES', because they are different kinds with different
 // lifetimes: a cache evicts and a database does not, and one CRDT holding both
@@ -605,9 +602,8 @@ func (n *Node) openDatabase(ctx context.Context) error {
 	// raft cluster the queues and crons run in. A node missing either serves
 	// the other and refuses what it cannot keep, which is the point — a ledger
 	// that asked for raft must not be merged.
-	store, err := (&databases{node: n}).cacheStoreFor(ctx)
-	if err != nil {
-		return fmt.Errorf("node: %s: %w", Database, err)
+	if n.opts.databases == nil {
+		return fmt.Errorf("node: %s: %w", Database, ErrNoCacheStore)
 	}
 
 	// THE GROUP IS OPENED ON FIRST USE AND NOT HERE. A node builds its services
@@ -615,7 +611,7 @@ func (n *Node) openDatabase(ctx context.Context) error {
 	// up yet — a group opened at construction sits with no known peers, aborts
 	// its election, and answers every write with "no leader". node/queue.go
 	// opens its own in the background for the same reason.
-	engine, err := kvengine.New(store)
+	engine, err := kvengine.New((&databases{node: n}).storesFor)
 	if err != nil {
 		return fmt.Errorf("node: %s: %w", Database, err)
 	}
@@ -656,25 +652,45 @@ func (n *Node) kvBacking(own wasmtier.KVs) wasmtier.KVs {
 	return own
 }
 
-// cacheStoreFor opens the replicated store tau's own engines are built on.
+// storesFor is the provider every resident engine on this node is handed: the
+// kvdb ONE database's entries live in.
 //
-// IT IS THE SAME STORE node/database.go's own engines use, lifted out so the
-// database service can be handed it without going through a *databases whose
-// job it is taking over.
-func (d *databases) cacheStoreFor(context.Context) (kvengine.Store, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+// A KVDB PER DATABASE IS A PUBSUB TOPIC PER DATABASE, which is the point rather
+// than a side effect — see database.Stores. One store for all of them meant
+// every subscriber held every database's rows, so placement decided nothing,
+// and a Delete was a tombstone every replica applied, so dropping a copy this
+// node no longer holds deleted the copy the node that just acquired it holds.
+//
+// The factory caches by path, so two opens of one database share a store and a
+// node carries as many as it HOLDS rather than as many as exist.
+func (d *databases) storesFor(_ context.Context, spec database.Spec) (database.Store, error) {
+	// NAMED BY THE SAME FUNCTION THAT ADDRESSES IT. Spec.Prefix already names a
+	// database uniquely and already refuses a separator in any segment, which is
+	// exactly what a topic name needs.
+	name, err := spec.Prefix()
+	if err != nil {
+		return nil, err
+	}
+	name = strings.TrimSuffix(name, "/")
+
+	d.storesMu.Lock()
+	defer d.storesMu.Unlock()
 
 	if d.node.opts.databases == nil {
 		return nil, ErrNoCacheStore
 	}
-	if d.db == nil {
-		db, err := d.node.opts.databases.New(logger, databaseStore, rebroadcastSeconds)
-		if err != nil {
-			return nil, fmt.Errorf("node: opening the database store: %w", err)
-		}
-		d.db = db
-		d.node.closers = append(d.node.closers, closerFunc(db.Close))
+	if db, held := d.stores[name]; held {
+		return cacheStore{db}, nil
 	}
-	return cacheStore{d.db}, nil
+
+	db, err := d.node.opts.databases.New(logger, databaseStore+"/"+name, rebroadcastSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("node: opening the store for %s: %w", name, err)
+	}
+	if d.stores == nil {
+		d.stores = map[string]kvdb.KVDB{}
+	}
+	d.stores[name] = db
+	d.node.closers = append(d.node.closers, closerFunc(db.Close))
+	return cacheStore{db}, nil
 }

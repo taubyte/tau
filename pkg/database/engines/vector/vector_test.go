@@ -78,10 +78,10 @@ func spec(metric string, dimensions string) database.Spec {
 	}
 }
 
-func open(t *testing.T, store vector.Store, s database.Spec) database.VectorConn {
+func open(t *testing.T, store database.Store, s database.Spec) database.VectorConn {
 	t.Helper()
 
-	engine, err := vector.New(store)
+	engine, err := vector.New(database.OneStore(store))
 	require.NoError(t, err)
 
 	conn, err := engine.Open(t.Context(), s)
@@ -95,11 +95,11 @@ func open(t *testing.T, store vector.Store, s database.Spec) database.VectorConn
 
 func TestAnEngineNeedsAStore(t *testing.T) {
 	_, err := vector.New(nil)
-	require.ErrorIs(t, err, vector.ErrNoStore)
+	require.ErrorIs(t, err, database.ErrNoStore)
 }
 
 func TestTheEngineSatisfiesTheRegistry(t *testing.T) {
-	engine, err := vector.New(newStore())
+	engine, err := vector.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	registry := database.NewRegistry()
@@ -347,7 +347,7 @@ func TestEachDatabaseIsItsOwnCollection(t *testing.T) {
 }
 
 func TestASeparatorInANameIsRefused(t *testing.T) {
-	engine, err := vector.New(newStore())
+	engine, err := vector.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	bad := spec("", "2")
@@ -371,7 +371,7 @@ func TestAStoreFailureIsReported(t *testing.T) {
 }
 
 func TestTheWrongTypeIsRefused(t *testing.T) {
-	engine, err := vector.New(newStore())
+	engine, err := vector.New(database.OneStore(newStore()))
 	require.NoError(t, err)
 
 	_, err = engine.Open(context.Background(), database.Spec{
