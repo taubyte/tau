@@ -112,7 +112,8 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: nodeDream.Services(node.Register, node.Worker, node.Stats)},
+			nodeDream.Protocol: {Others: nodeDream.Services(
+				node.Register, node.Worker, node.Stats, node.Primitives)},
 		},
 	}))
 
@@ -165,7 +166,7 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 		}
 		last = string(res.Body)
 		return res.Status == 204
-	}, 90*time.Second, time.Second, "the run could never be started: %s", &lastOf{&last})
+	}, formingBudget, time.Second, "the run could never be started: %s", &lastOf{&last})
 
 	// AND THE PIPELINE RUNS ITSELF. `reserve` invokes `reserve_stock` and hands
 	// on, `settle` waits the 30s its author wrote, `charge` invokes

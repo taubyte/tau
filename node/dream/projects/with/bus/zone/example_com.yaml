@@ -1,0 +1,3 @@
+id: QmXZy3vTBqdo6va5ouo2muAh8kHF4j8t8HWtpgyKoBVn7y
+description: the zone this project answers for - a generated host would work the same way and would make the test compute the label it dials, which is a property proven elsewhere
+fqdn: example.com

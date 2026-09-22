@@ -1,0 +1,5 @@
+id: QmPZVNdFnq1vBqWQ56rTHJkFUuA16uBpHUZSDzLToCVdVz
+description: what makes the arrival visible - the delivery path writes the payload under `done`, so a read of that key afterwards is proof the item reached the guest intact
+size: 1MB
+ttl: 1h
+consensus: crdt

@@ -1,0 +1,8 @@
+id: QmUe2uW5rFtAgNJNFxnVXkDQUTouU2MhDfX742F83XhrDp
+description: the queue itself - raft, so a claim two nodes could both make is one the group orders
+queue:
+    consensus: raft
+    visibility_timeout: 30s
+    max_attempts: 3
+    dead_letter:
+        name: jobs_dead

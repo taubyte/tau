@@ -1,0 +1,5 @@
+id: QmRyqPptfDU49BKh2tJhmebYgrRcXazPPUeNbSyRP4TEHa
+description: the bucket both guests reach - the name is a row in a replicated kvdb and the bytes are in the DAG, so an object that crosses the swarm crosses through two different mechanisms and this is where both are declared
+object:
+    versioning: true
+    size: 1MB

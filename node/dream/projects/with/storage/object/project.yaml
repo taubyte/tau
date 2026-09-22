@@ -1,0 +1,4 @@
+id: QmZffKYbdXoTA6mNhc3crEJgcDWtvbXaKM7CiqHT3yjZBq
+name: storageobject
+description: one function over one object store - a guest on one node writes an object and a guest on another reads it back, which is the whole of "content-addressed, served to the project's peers"
+regions: [eu]

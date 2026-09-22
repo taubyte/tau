@@ -1,0 +1,5 @@
+id: QmPZVNdFnq1vBqWQ56rTHJkFUuA16uBpHUZSDzLToCVdVz
+description: crdt, so this cloud serves it - raft is refused by name and gossip is served stronger than asked, and a value written on one node reaching another is the whole claim
+size: 1MB
+ttl: 1h
+consensus: crdt

@@ -1,0 +1,4 @@
+id: QmbTQyexNmgaKn1VVa4F9ViVzvh5Wp9JP5JzgLGBNE7qij
+description: where an item lands once max_attempts is spent - declared because a dead_letter naming nothing resolves to nothing, not because this project expects to fill it
+queue:
+    consensus: raft

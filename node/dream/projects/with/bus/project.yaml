@@ -1,0 +1,4 @@
+id: QmNfgasoKgxZHPDUAR7Ue95mY7f69gaz6kCX11a8WQQbCf
+name: bus
+description: a workload publishes to a bus, and a browser that deployed nothing attaches to the bus by name and gets what was published
+regions: [eu]

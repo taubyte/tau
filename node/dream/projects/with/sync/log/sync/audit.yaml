@@ -1,0 +1,6 @@
+id: QmajPLN2oC26LknD2ZuwjtKwuiVdZWJa2EsNN2FmQ1w55U
+description: the log itself - raft, because a position two appenders could both take is one the group has to assign, and it is the only consensus this cloud serves for a log at all
+log:
+    consensus: raft
+    retention:
+        age: 168h

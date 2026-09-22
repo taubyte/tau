@@ -1,0 +1,7 @@
+id: QmREVyn7gTwpYmasPnrCgkT9CFHi2YX8w3nmqsd3PzQvvU
+description: every minute, because the first sight of a schedule records where the clock is and fires nothing - so a test has to wait for a real slot to come round, and a minute is the finest grain a cron expression has
+schedule: "* * * * *"
+timezone: UTC
+function:
+    cacher:
+        ops: [invoke]

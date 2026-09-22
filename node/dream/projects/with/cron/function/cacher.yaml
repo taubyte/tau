@@ -1,0 +1,13 @@
+id: QmNP8ZJRT6En1LVfTwkbiD4HgdeRxvpHGn4m5Sp2cY8UxS
+description: what the clock fires - it declares no trigger of its own, which is the vocabulary's sentence about a cron said from the other end
+source: services/cacher
+build:
+    commands:
+        image: rust:1.83
+        install: cargo fetch --locked
+        run: cargo build --release --target wasm32-wasip2
+        output: target/wasm32-wasip2/release/cacher.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MiB

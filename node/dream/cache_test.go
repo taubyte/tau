@@ -5,6 +5,7 @@ package dream_test
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,7 +15,6 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -33,6 +33,18 @@ import (
 // So this is the only test in the tree where a wasm guest calls a host function
 // that writes to a replicated store. Nothing is faked: the universe's nodes
 // build their own wasm tier, their own cache backing and their own kvdb.
+//
+// AND THE PROJECT IS AUTHORED RATHER THAN TRANSCRIBED, for project_test's
+// reason. The object this file used to publish was written by hand, so it was a
+// statement of what the compiler was believed to produce and nothing ever
+// checked it — and it had already drifted, in the two places the queue's
+// conversion found first. It omitted `execution/timeout`, which is Required(),
+// so tcc would have REFUSED the very project this test claimed to be running;
+// and it omitted `implements`, which the vocabulary defaults to `handler`, so
+// the field the authorizer path turns on (services/worker/resolve.go:502) was
+// absent from every invocation here. projects/with/cache is compiled instead,
+// which is the only way a cache's declaration and a cache's behaviour are
+// tested as one thing.
 
 // cacherWASM is the same fixture pkg/invoke/wasm runs, addressed here by the
 // cid the asset store gives it.
@@ -43,143 +55,88 @@ func cacherWASM(t *testing.T) []byte {
 	return code
 }
 
+// THESE OUTLIVED THIS FILE'S OWN OBJECT, and they are not cache's. Every other
+// hand-built project in this package — instance_test, edge_test, cron_test,
+// storage_test, bus_test, channel_test — is keyed by them, so they are spelled
+// once here rather than six times. They are grandfathered ids and NOT the
+// corpus rule's: base58btc(0x12 0x20 || sha256(name)) over `cache` is
+// QmUg4HC6eXGm73Pjb6NSrQVKeywXznE31MFwPBVWdKDQAU, which is what
+// projects/with/cache/project.yaml carries. Nothing compares the two, because a
+// compiled object's id is an index prefix locate() cuts and never an isolation
+// boundary — see deployed.
 const (
 	cacheProjectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
 	cacheFuncID    = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"
-	cacheID        = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB"
 )
 
-// withCache is a project whose one function reaches one cache, compiled by
-// hand for the reason fixture_test.go gives: what a compiler produces is
-// proven in services/worker against the vocabulary's own fixture, and what is
-// proven here is the wiring.
+// target is the workload this package invokes.
 //
-// The component is addressed by the cid the store handed back, which is what a
-// `source: {kind: component}` carries.
-func withCache(componentCID string) []byte {
-	doc := map[string]any{
-		"object": map[string]any{
-			"id":   cacheProjectID,
-			"name": "shop",
-			"function": map[string]any{
-				cacheFuncID: map[string]any{
-					"name":      "cacher",
-					"execution": map[string]any{"call": "handle", "memory": 33554432},
-					"source":    map[string]any{"kind": "component", "component": componentCID},
-					// The access block, as the compiler writes it: keyed by the
-					// label, with the verbs beside it.
-					"cache": map[string]any{
-						"sessions": map[string]any{"ops": []any{"get", "put", "delete", "list"}},
-					},
-				},
-			},
-			"cache": map[string]any{
-				cacheID: map[string]any{
-					"name": "sessions",
-					// crdt, so this cloud serves it: raft is refused
-					// by name and gossip is served stronger than asked.
-					"consensus": "crdt",
-					"size":      1000000,
-					"ttl":       float64(time.Hour),
-				},
-			},
-		},
-		"indexes": map[string]any{
-			"projects/" + cacheProjectID + "/function/cacher/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/function/" + cacheFuncID},
-			"projects/" + cacheProjectID + "/cache/sessions/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/cache/" + cacheID},
-		},
-	}
-
-	raw, err := json.Marshal(doc)
-	if err != nil {
-		panic(err)
-	}
-	return raw
-}
-
+// `cacher` IS A FILENAME NOW, for the two tests below: it is the stem of
+// projects/with/cache/function/cacher.yaml, and a rename there stops this
+// resolving. The tests that still assemble their own object spell the same
+// string as a `"name"` instead.
 func target() specs.Address {
 	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "cacher"}
 }
 
 // TestAGuestWritesAndReadsAReplicatedCache — the whole chain, in one universe.
+//
+// ONE NODE, because what is under test here is the reach and not the crossing:
+// the test below does the crossing.
+//
+// THE HOST IS INERT. deploy names one because a register keeps its pointers by
+// fqdn, but every request is put to the worker directly — the project declares
+// no zone and no gateway, exactly as the object it replaces did.
 func TestARealComponentReachesARealCache(t *testing.T) {
 	// NO INJECTED TIER. The nodes build their own, which is the point: an
 	// injected one would be the test's wasm runtime with the test's cache
 	// backing, and what is being proven is the node's.
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	m, err := dream.New(t.Context())
-	require.NoError(t, err)
-	defer m.Close()
-
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: nodeDream.Services(node.Register, node.Worker, node.Stats)},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
-	require.NotEmpty(t, pids)
-
-	n := nodeOf(t, pids[0])
-	store, ok := nodeDream.Assets(pids[0])
-	require.True(t, ok, "the node has an asset store")
-
-	// THE COMPONENT GOES IN BY CID, which is what a resource naming its own
-	// component carries — no build service in this universe.
-	cid, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-	require.NoError(t, err)
-
-	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: withCache(cid),
-	})
-	require.NoError(t, err)
+	r := deploy(t, "with/cache", "sessions.example.com", cacherWASM(t))
 
 	// The grant survived the compile, the publish and the resolve.
-	spec, err := n.Worker().Resolve(t.Context(), target())
+	//
+	// NOTHING RETRIES HERE, and that is a property of this project rather than
+	// an omission. The queue's first send waits out a raft bootstrap; a crdt
+	// cache opens no group at all, and deploy published on the very node being
+	// asked — so a resolve that needs a second attempt is a fault and not a
+	// cold cloud.
+	spec, err := r.node.Worker().Resolve(t.Context(), target())
 	require.NoError(t, err)
 	require.Equal(t, "wasm", spec.Runtime)
 	require.Len(t, spec.Reaches, 1)
 	require.Equal(t, "sessions", spec.Reaches[0].Label)
-	require.Equal(t, "shop/prod/"+cacheID, spec.Reaches[0].Handle, "the resolved id, not the label")
+	// THE HANDLE IS ASKED OF THE COMPILED PROJECT rather than restated. A
+	// hardcoded id here would be a second statement of what the compiler
+	// produced, which is the one thing these projects exist to stop — see idOf.
+	require.Equal(t, "shop/prod/"+r.idOf(t, "cache", "sessions"), spec.Reaches[0].Handle,
+		"the resolved id, not the label")
 	require.Empty(t, spec.Reaches[0].Refused)
 
 	// A ROUND TRIP THROUGH THE GUEST: it writes the body into the cache and
 	// reads it back, so what comes out came through the host function.
-	res, err := n.Worker().Invoke(t.Context(), target(), &invoke.Request{
-		Method: "POST", Path: "/roundtrip/sessions/user:1", Body: []byte("alice"),
-	})
+	res, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/roundtrip/sessions/user:1", "alice")
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status, string(res.Body))
 	require.Equal(t, "alice", string(res.Body))
 
 	// AND THE ROW IS REALLY THERE, read back through a second invocation so
 	// the value survived the instance rather than living in it.
-	res, err = n.Worker().Invoke(t.Context(), target(), &invoke.Request{
-		Method: "POST", Path: "/get/sessions/user:1",
-	})
+	res, err = r.onCarrying(t.Context(), target(), http.MethodPost, "/get/sessions/user:1", "")
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status, string(res.Body))
 	require.Equal(t, "alice", string(res.Body))
 
 	// A key nobody wrote is a miss and not an outage.
-	res, err = n.Worker().Invoke(t.Context(), target(), &invoke.Request{
-		Method: "POST", Path: "/get/sessions/user:2",
-	})
+	res, err = r.onCarrying(t.Context(), target(), http.MethodPost, "/get/sessions/user:2", "")
 	require.NoError(t, err)
 	require.Equal(t, 404, res.Status)
 	require.Equal(t, "not-found", string(res.Body))
 
 	// And a cache the config never granted is refused BY NAME, with the
 	// instance still alive afterwards.
-	res, err = n.Worker().Invoke(t.Context(), target(), &invoke.Request{
-		Method: "POST", Path: "/get/somebody-elses/k",
-	})
+	res, err = r.onCarrying(t.Context(), target(), http.MethodPost, "/get/somebody-elses/k", "")
 	require.NoError(t, err)
 	require.Equal(t, "no-such-cache:somebody-elses", string(res.Body))
 }
@@ -187,51 +144,21 @@ func TestARealComponentReachesARealCache(t *testing.T) {
 // TestAValueWrittenOnOneNodeIsReadableOnAnother. A cache is a replicated store
 // and nothing has ever proven a workload's own data crosses — every other test
 // of replication is about the register.
+//
+// THE COMPONENT GOES INTO ONE STORE AND IS READ FROM BOTH. This test used to
+// Put it into every node's store and then Put it a second time to learn the
+// cid, which read as though the second Put mattered; it never did, because the
+// same bytes always yield the same id. deployFleet stores it once, and the
+// second node fetching it by cid over the swarm is pkg/assets' own claim —
+// exercised rather than worked around.
 func TestACacheReplicatesBetweenNodes(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	m, err := dream.New(t.Context())
-	require.NoError(t, err)
-	defer m.Close()
-
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: map[string]int{"copies": 2}},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
-	require.Len(t, pids, 2)
-
-	first, second := nodeOf(t, pids[0]), nodeOf(t, pids[1])
-
-	// The component has to be readable from whichever node runs the workload,
-	// so it goes into both stores. In a cloud the build service publishes it
-	// once and the byte plane moves it; that plane is what services/storage
-	// still owes (see pkg/assets' own doc).
-	for _, pid := range pids {
-		store, ok := nodeDream.Assets(pid)
-		require.True(t, ok)
-		_, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-		require.NoError(t, err)
-	}
-
-	store, _ := nodeDream.Assets(pids[0])
-	cid, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-	require.NoError(t, err)
-
-	_, err = first.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: withCache(cid),
-	})
-	require.NoError(t, err)
+	cloud := deployFleet(t, 2, "with/cache", "sessions.example.com", cacherWASM(t))
+	first, second := cloud[0], cloud[1]
 
 	// Written on the first node, through its guest.
-	res, err := first.Worker().Invoke(t.Context(), target(), &invoke.Request{
-		Method: "POST", Path: "/put/sessions/shared", Body: []byte("crosses"),
-	})
+	res, err := first.onCarrying(t.Context(), target(), http.MethodPost, "/put/sessions/shared", "crosses")
 	require.NoError(t, err)
 	require.Equal(t, 204, res.Status, string(res.Body))
 
@@ -240,14 +167,20 @@ func TestACacheReplicatesBetweenNodes(t *testing.T) {
 	// row. Eventually, because a CRDT is eventually consistent and that is
 	// exactly what this cache declared.
 	require.Eventually(t, func() bool {
-		res, err := second.Worker().Invoke(t.Context(), target(), &invoke.Request{
-			Method: "POST", Path: "/get/sessions/shared",
-		})
+		res, err := second.onCarrying(t.Context(), target(), http.MethodPost, "/get/sessions/shared", "")
 		return err == nil && res.Status == 200 && string(res.Body) == "crosses"
 	}, 60*time.Second, 500*time.Millisecond, "a workload's own data never crossed the swarm")
 }
 
 // ── streams ──────────────────────────────────────────────────────────────────
+//
+// WHAT FOLLOWS IS STILL A HAND-BUILT OBJECT, AND IT IS A DIFFERENT KIND.
+// `stream` is taubyte:stream/publisher, sharing this file with cache only
+// because it shares the fixture — so the conversion above does not reach it and
+// nothing has ever compiled the declaration below. It carries the same debt the
+// cache half just paid, named here rather than left to be rediscovered: a
+// projects/with/stream/distributed project is the fix, and the fixture already
+// exports `publish`.
 
 const streamID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zs"
 

@@ -1,0 +1,16 @@
+id: QmNP8ZJRT6En1LVfTwkbiD4HgdeRxvpHGn4m5Sp2cY8UxS
+description: reaches the cache on all four verbs, so a refusal in the test is the grant refusing and never the component missing an export
+source: services/cacher
+build:
+    commands:
+        image: rust:1.83
+        install: cargo fetch --locked
+        run: cargo build --release --target wasm32-wasip2
+        output: target/wasm32-wasip2/release/cacher.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MiB
+cache:
+    sessions:
+        ops: [get, put, delete, list]

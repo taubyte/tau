@@ -1,0 +1,6 @@
+id: QmVjqSMRfAxGyHmdSdTR4tchvucBXukUz38DtSLTvj7zZH
+description: the conduit, and what answers it - a channel naming nothing is a name that dials into a void, so `serve` is not optional the way a description is
+protocol: reserve
+serve:
+    function:
+        name: server

@@ -1,0 +1,6 @@
+id: QmVYRA67L6sJ1c8bZTwcs7UBvFdYesu414kPa2V9whE42e
+description: tau's own kv asking for raft - a ledger, where two entries silently merged into one is the defect the declaration prevents
+kv:
+    distributed:
+        size: 64MB
+        consensus: raft

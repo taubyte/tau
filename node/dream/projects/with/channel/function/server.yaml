@@ -1,0 +1,13 @@
+id: QmaSyM5zu2BQimJMNgFdSEbza2XFMagNnRSGW1JKneLWM3
+description: the far end - no route reaches it and no access block is written for it, because a channel's server is addressed by being named as one and not by being called
+source: services/cacher
+build:
+    commands:
+        image: rust:1.83
+        install: cargo fetch --locked
+        run: cargo build --release --target wasm32-wasip2
+        output: target/wasm32-wasip2/release/cacher.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MiB

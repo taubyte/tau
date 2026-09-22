@@ -103,3 +103,72 @@ lowercases emails in several places; do the same for any new identifier.
 - [ ] Does correctness rest on a read-then-write guard? It must not.
 - [ ] Are numeric key segments zero-padded to fixed width?
 - [ ] Are case-insensitive identifiers normalised before keying?
+
+## Every resource kind gets a test project
+
+A test project per resource kind, and projects that **combine** kinds, is how the
+logic gets validated and how the v2 schema gets refined. Both halves matter, and the
+second is the one that is easy to skip.
+
+`node/dream/projects/` is the **only** thing in this repo that runs a declaration all
+the way through: yaml → tcc → compile → publish → resolve → grant. A test that builds
+a compiled object in Go and publishes that has skipped every step where the schema has
+an opinion.
+
+### A kind is not proven until a project shows it
+
+A passing test that assembles its own compiled object proves that object works. It says
+nothing about the kind as an author declares it, because the declaration never ran. Do
+not describe such a kind as working, done, or covered — describe it as having a test
+that does not exercise the declared path. The distinction is the whole point of this
+rule, and it is easy to lose in a status table.
+
+### Why this is a rule and not a preference
+
+`node/dream/queue_test.go` used to hand-build its compiled object. Converting it to a
+real corpus project showed the fixture had been describing **a different deployment
+than the one under test**:
+
+- the dead-letter queue was missing `max_attempts` and `visibility_timeout` entirely —
+  the compiler materialises them from `DefaultWhen("type","queue")`, so the runtime
+  always had them and the fixture under-stated the queue it claimed to test;
+- `implements` was empty, where the vocabulary defaults it to `handler` and
+  `services/worker/worker_test.go` asserts exactly that.
+
+Neither was visible from the Go side. Both fell out of compiling the yaml once.
+
+### Negative projects, too
+
+A project that must **fail** to compile is the only way a missing check surfaces. Two
+validators are named in the schema's own comments as enforcing sync constraints and are
+**defined nowhere** — `checkSyncOps` (`definition.go:1238`, `:1418`, `:2239`,
+`services/worker/consume.go:171`) and `checkDeadLetterIsAQueue` (`definition.go:1420`).
+Today `ops: [append]` on a queue compiles clean, and so does a `dead_letter` pointing at
+a log. Nothing noticed, because nothing ever asked the compiler to refuse.
+
+### Combinations are where the references live
+
+A single-kind project tests the kind. A project combining kinds tests what sits
+*between* them — Refs, namespaces, scoping. `dead_letter` is `Ref("sync")`, and the
+schema comment says why the check cannot live on the Ref: *"a Ref cannot say 'a sync of
+type queue'"*. That constraint can only be enforced across resources, which is exactly
+the shape nobody wrote.
+
+### Only for kinds that are actually implemented
+
+A project for a kind whose runtime is half-built tests nothing and fails for reasons
+that teach nothing. Write projects for kinds that are finished; for the rest, the
+project is part of finishing them.
+
+### Checklist
+
+- [ ] Does this kind have a project under `node/dream/projects/`?
+- [ ] Does the test DEPLOY that project, rather than publish a Go literal?
+- [ ] Is there a project combining this kind with the kinds it references?
+- [ ] Is there a project that must be REFUSED, covering each constraint the schema
+      claims to enforce?
+- [ ] Are the ids real CIDv0 — `base58btc(0x12 0x20 || sha256(<bare resource name>))`,
+      no trailing newline? A fabricated one fails at runtime with
+      `multihash length inconsistent`, not at compile.
+- [ ] If the compiled object differs from what you expected, is the COMPILER wrong, or
+      were you? It is usually you.

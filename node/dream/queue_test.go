@@ -3,19 +3,13 @@
 package dream_test
 
 import (
-	"bytes"
-	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
-	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
-	"github.com/taubyte/tau/pkg/invoke"
-	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
 // queue_test is background work, end to end and with nothing faked: a guest
@@ -26,80 +20,15 @@ import (
 // tier, the tier's fakes a queue, the queue's fakes raft. What none of them can
 // show is that a workload declaring `receive` in a compiled project is a
 // workload something actually comes and invokes.
-
-const (
-	jobsID     = "QmezXKNabfuAJze6dJ8d45PW14eJBM9JAomTC8uT3Jqn48"
-	jobsDeadID = "QmQ5XpS9mZCWE5Dc4TkBaGLSjk2rA9qj7BtGauhkcQj2tz"
-)
-
-// withQueue is a project whose one function both sends to a queue and receives
-// from it, and writes what it receives into a cache.
 //
-// THE DELIVERY PATH IS WHAT MAKES THE ARRIVAL VISIBLE. The fixture component
-// routes on its path, so `/put/sessions/done` means "write the body under
-// `done`" — and a test that can read that key back afterwards has proof the
-// item reached the guest with its payload intact.
-func withQueue(componentCID string) []byte {
-	doc := map[string]any{
-		"object": map[string]any{
-			"id":   cacheProjectID,
-			"name": "shop",
-			"function": map[string]any{
-				cacheFuncID: map[string]any{
-					"name":      "cacher",
-					"execution": map[string]any{"call": "handle", "memory": 33554432},
-					"source":    map[string]any{"kind": "component", "component": componentCID},
-					"cache": map[string]any{
-						"sessions": map[string]any{"ops": []any{"get", "put"}},
-					},
-					"sync": map[string]any{
-						"jobs": map[string]any{
-							"ops":     []any{"send", "receive"},
-							"deliver": map[string]any{"path": "/put/sessions/done"},
-						},
-					},
-				},
-			},
-			"cache": map[string]any{
-				cacheID: map[string]any{
-					"name": "sessions", "consensus": "crdt",
-					"size": 1000000, "ttl": float64(time.Hour),
-				},
-			},
-			"sync": map[string]any{
-				jobsID: map[string]any{
-					"name": "jobs", "type": "queue",
-					"queue": map[string]any{
-						"consensus":          "raft",
-						"visibility_timeout": float64(30 * time.Second),
-						"max_attempts":       float64(3),
-						"dead_letter":        map[string]any{"name": jobsDeadID},
-					},
-				},
-				jobsDeadID: map[string]any{
-					"name": "jobs_dead", "type": "queue",
-					"queue": map[string]any{"consensus": "raft"},
-				},
-			},
-		},
-		"indexes": map[string]any{
-			"projects/" + cacheProjectID + "/function/cacher/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/function/" + cacheFuncID},
-			"projects/" + cacheProjectID + "/cache/sessions/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/cache/" + cacheID},
-			"projects/" + cacheProjectID + "/sync/jobs/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/sync/" + jobsID},
-			"projects/" + cacheProjectID + "/sync/jobs_dead/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/sync/" + jobsDeadID},
-		},
-	}
-
-	raw, err := json.Marshal(doc)
-	if err != nil {
-		panic(err)
-	}
-	return raw
-}
+// AND THE PROJECT IS AUTHORED RATHER THAN TRANSCRIBED, for project_test's
+// reason: the object this test used to publish was written by hand, so it was a
+// statement of what the compiler was believed to produce and nothing ever
+// checked it. It had already drifted — it omitted `execution/timeout`, which is
+// Required(), so tcc would have refused the very project this test claimed to
+// be running. The yaml under projects/with/sync/queue is compiled here, which
+// is the only way a queue's declaration and a queue's behaviour are tested as
+// one thing.
 
 // lastOf renders whatever the last attempt said, at the moment the assertion
 // gives up rather than at the moment it was written.
@@ -107,38 +36,22 @@ type lastOf struct{ s *string }
 
 func (l *lastOf) String() string { return *l.s }
 
-// TestAGuestPushesAndThePlatformComesBackWithIt — the whole claim of the
-// delivered half of a queue.
+// TestAnItemSentByAGuestIsDeliveredToOne — the whole claim of the delivered
+// half of a queue.
+//
+// ONE NODE, because what is under test is delivery and not replication: the
+// queue's group is raft either way, and a single-node universe forms it through
+// the same bootstrap a fleet does. A fleet would add the placement of the
+// dispatcher to the things this test could fail on without adding anything to
+// what it proves.
+//
+// THE HOST IS INERT. deploy names one because a register keeps its pointers by
+// fqdn, but every request below is put to the worker directly — the project
+// declares no zone and no gateway, exactly as the object it replaces did.
 func TestAnItemSentByAGuestIsDeliveredToOne(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	m, err := dream.New(t.Context())
-	require.NoError(t, err)
-	defer m.Close()
-
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: nodeDream.Services(node.Register, node.Worker, node.Stats)},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
-	require.NotEmpty(t, pids)
-
-	n := nodeOf(t, pids[0])
-	store, ok := nodeDream.Assets(pids[0])
-	require.True(t, ok)
-
-	cid, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-	require.NoError(t, err)
-
-	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: withQueue(cid),
-	})
-	require.NoError(t, err)
+	r := deploy(t, "with/sync/queue", "jobs.example.com", cacherWASM(t))
 
 	// THE GUEST IS THE PRODUCER, which is the ordinary shape: a request comes
 	// in, the work is queued, and the request answers immediately.
@@ -148,34 +61,68 @@ func TestAnItemSentByAGuestIsDeliveredToOne(t *testing.T) {
 	// wait out raft's bootstrap. That refusal IS the contract — the arm exists
 	// so a caller can retry — so a test that only ever sent once would be
 	// testing a cloud that had already been running.
+	//
+	// THE BUDGET IS THE FORMING ITSELF, PRICED — see formingBudget.
 	var last string
 	require.Eventually(t, func() bool {
-		res, err := n.Worker().Invoke(t.Context(), target(), &invoke.Request{
-			Method: "POST", Path: "/send/jobs/order-1", Body: []byte("ship it"),
-		})
+		res, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/send/jobs/order-1", "ship it")
 		if err != nil {
 			last = err.Error()
 			return false
 		}
 		last = string(res.Body)
 		return res.Status == 204
-	}, 90*time.Second, time.Second, "the guest could never queue anything: %s", &lastOf{&last})
+	}, formingBudget, time.Second, "the guest could never queue anything: %s", &lastOf{&last})
 
 	// AND NOBODY ASKS FOR IT BACK. The node's own claim loop finds the item,
 	// invokes the workload that declared `receive`, and the delivery lands on
 	// the path the entry declared — which for this component means the payload
 	// is written into the cache under `done`.
+	//
+	// THE CEILING HERE IS ONE MISSED CLAIM CYCLE. By this line the group has a
+	// leader — the send above proved it — so what is left is claimEvery
+	// (node/dispatch.go:60, 2s) for a poll with no notification behind it, a
+	// warm invoke of a component this node has already run, and this loop's own
+	// 500ms granularity: under 3s. The rest is the cost of REPORTING a stall
+	// rather than a bound on one, and it is the number this assertion has
+	// always carried.
 	require.Eventually(t, func() bool {
-		res, err := n.Worker().Invoke(t.Context(), target(), &invoke.Request{
-			Method: "POST", Path: "/get/sessions/done",
-		})
+		res, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/get/sessions/done", "")
 		return err == nil && res.Status == 200 && string(res.Body) == "ship it"
 	}, 60*time.Second, 500*time.Millisecond, "nothing ever delivered the item")
 
 	// AND IT IS ACKNOWLEDGED, so the queue is empty rather than holding an item
 	// that will be handed round again.
+	//
+	// THE HANDLE IS ASKED OF THE COMPILED PROJECT, and out here rather than in
+	// the tick. `shop` is the project the register knows this deployment by and
+	// `prod` the environment deploy publishes under, and the last segment is
+	// whatever the label `jobs` became — read back rather than typed, for
+	// idOf's reason. It is resolved once because testify runs the condition on
+	// its own goroutine, where a failed require kills that goroutine and leaves
+	// this waiting out the whole budget for something it already knew.
+	jobs := "shop/prod/" + r.idOf(t, "sync", "jobs")
 	require.Eventually(t, func() bool {
-		ready, claimed, ok := n.QueueDepth("shop/prod/" + jobsID)
+		ready, claimed, ok := r.node.QueueDepth(jobs)
 		return ok && ready == 0 && claimed == 0
 	}, 60*time.Second, 500*time.Millisecond, "the item was delivered and never settled")
+
+	// AND ACKNOWLEDGED IS NOT THE ONLY WAY TO BE GONE, which is why the dead
+	// letter is read too. An item handed round until max_attempts is spent is
+	// BURIED, and the entry that buries it takes it out of this queue in the
+	// same batch (pkg/queue/queue.go:389-411) — so a queue left at 0/0 is what
+	// a burial looks like as well, and every assertion above passes on an item
+	// nobody ever kept. node/queue.go:255-261 says in its own words that this
+	// blind spot once let a workflow step which buried every run through it
+	// pass an end-to-end test.
+	//
+	// IT IS A MOMENT AND NOT A WAIT, because by this line the source queue
+	// holds nothing: there is no item left for a later cycle to bury. And that
+	// a burial would be VISIBLE here is pkg/queue's own claim, already proven
+	// one layer down by TestSweepAloneReachesTheDeadLetter — the source ends at
+	// 0/0 and the dead letter ends holding one.
+	buried, held, ok := r.node.QueueDepth("shop/prod/" + r.idOf(t, "sync", "jobs_dead"))
+	require.True(t, ok, "the dead letter could not be read at all")
+	require.Zero(t, buried, "the item was buried rather than acknowledged")
+	require.Zero(t, held, "something is holding an item in the dead letter")
 }
