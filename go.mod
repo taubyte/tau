@@ -1,145 +1,126 @@
 module github.com/taubyte/tau
 
-go 1.27
+go 1.27.0
 
-require (
-	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
-	github.com/avast/retry-go/v4 v4.6.1
-	github.com/foxcpp/go-mockdns v1.0.0
-	github.com/fxamacker/cbor/v2 v2.9.1
-	github.com/go-git/go-git/v5 v5.19.1
-	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/gorilla/websocket v1.5.3
-	github.com/h2non/filetype v1.1.3
-	github.com/ipfs/go-cid v0.6.1
-	github.com/ipfs/go-datastore v0.9.1
-	github.com/ipfs/go-log/v2 v2.9.2
-	github.com/jedib0t/go-pretty/v6 v6.4.6
-	github.com/jellydator/ttlcache/v3 v3.3.0
-	github.com/libp2p/go-libp2p v0.48.0
-	github.com/libp2p/go-libp2p-pubsub v0.17.0
-	github.com/miekg/dns v1.1.72
-	github.com/mitchellh/mapstructure v1.5.0 // indirect
-	github.com/multiformats/go-multiaddr v0.16.1
-	github.com/multiformats/go-multicodec v0.10.0
-	github.com/multiformats/go-varint v0.1.0
-	github.com/otiai10/copy v1.12.0
-	github.com/pkg/errors v0.9.1
-	github.com/pterm/pterm v0.12.65
-	github.com/shirou/gopsutil/v4 v4.24.5
-	github.com/spf13/afero v1.11.0
-	github.com/taubyte/domain-validation v1.0.1
-	github.com/taubyte/go-sdk v0.3.9
-	github.com/urfave/cli/v2 v2.25.7
-	go.uber.org/zap v1.28.0
-	golang.org/x/crypto v0.51.0
-	golang.org/x/exp v0.0.0-20260603202125-055de637280b
-	golang.org/x/net v0.55.0
-	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sys v0.45.0
-	golang.org/x/term v0.43.0
-	gopkg.in/go-playground/webhooks.v5 v5.17.0
-	gopkg.in/yaml.v3 v3.0.1
-	gotest.tools/v3 v3.5.2
-)
-
+// The database drivers a machine links, imported for their side effects by
+// node/boot. See node/boot/engines.go: pkg/database and its engines stay
+// driver-free, and the composition root is where a driver registers itself.
 require (
 	connectrpc.com/connect v1.18.1
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/CAFxX/httpcompression v0.0.9
 	github.com/Masterminds/semver v1.5.0
+	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
+	github.com/avast/retry-go/v4 v4.6.1
 	github.com/briandowns/spinner v1.23.0
 	github.com/c-bata/go-prompt v0.2.6
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/cloudflare/circl v1.6.3
 	github.com/cockroachdb/pebble v0.0.0-20231218155426-48b54c29d8fe
 	github.com/cockroachdb/pebble/v2 v2.1.5
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/containerd/containerd v1.7.33
+	github.com/expr-lang/expr v1.17.8
+	github.com/foxcpp/go-mockdns v1.0.0
 	github.com/fsnotify/fsnotify v1.7.0
+	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/go-git/go-billy/v5 v5.9.0
+	github.com/go-git/go-git/v5 v5.19.1
+	github.com/go-sql-driver/mysql v1.10.1
 	github.com/go-webauthn/webauthn v0.17.2
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v71 v71.0.0
 	github.com/google/jsonschema-go v0.4.2
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
+	github.com/gorilla/websocket v1.5.3
+	github.com/h2non/filetype v1.1.3
 	github.com/h2non/gock v1.2.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/raft v1.7.3
 	github.com/ipfs/bbloom v0.1.0
 	github.com/ipfs/boxo v0.41.0
+	github.com/ipfs/go-cid v0.6.1
+	github.com/ipfs/go-datastore v0.9.1
 	github.com/ipfs/go-ds-pebble v0.5.11
 	github.com/ipfs/go-ipld-format v0.6.3
+	github.com/ipfs/go-log/v2 v2.9.2
 	github.com/ipsn/go-ipfs v0.0.0-20190407150747-8b9b72514244
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jarcoal/httpmock v1.3.1
+	github.com/jedib0t/go-pretty/v6 v6.4.6
+	github.com/jellydator/ttlcache/v3 v3.3.0
+	github.com/libp2p/go-libp2p v0.48.0
 	github.com/libp2p/go-libp2p-gostream v0.6.0
 	github.com/libp2p/go-libp2p-kad-dht v0.41.0
+	github.com/libp2p/go-libp2p-pubsub v0.17.0
 	github.com/libp2p/go-libp2p-record v0.3.1
 	github.com/mattn/go-runewidth v0.0.16
+	github.com/miekg/dns v1.1.72
 	github.com/mitchellh/go-ps v1.0.0
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.0
 	github.com/modelcontextprotocol/go-sdk v1.4.1
+	github.com/mr-tron/base58 v1.3.0
+	github.com/multiformats/go-multiaddr v0.16.1
+	github.com/multiformats/go-multicodec v0.10.0
 	github.com/multiformats/go-multihash v0.2.3
+	github.com/multiformats/go-varint v0.1.0
 	github.com/olekukonko/ts v0.0.0-20171002115256-78ecb04241c0
 	github.com/opencontainers/runtime-spec v1.2.0
+	github.com/otiai10/copy v1.12.0
+	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.9
+	github.com/pterm/pterm v0.12.65
 	github.com/rs/cors v1.11.1
+	github.com/samyfodil/mushql v0.0.0-00010101000000-000000000000
 	github.com/samyfodil/wazy v0.2.1-0.20260902164748-35e45b48b257
+	github.com/shirou/gopsutil/v4 v4.24.5
+	github.com/spf13/afero v1.11.0
 	github.com/stretchr/testify v1.11.1
+	github.com/taubyte/domain-validation v1.0.1
+	github.com/taubyte/go-sdk v0.3.9
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c
 	github.com/unrolled/secure v1.0.9
+	github.com/urfave/cli/v2 v2.25.7
 	github.com/vbauerster/mpb/v8 v8.7.5
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7
 	go.starlark.net v0.0.0-20251109183026-be02852a5e1f
+	go.uber.org/zap v1.28.0
+	golang.org/x/crypto v0.51.0
+	golang.org/x/exp v0.0.0-20260603202125-055de637280b
 	golang.org/x/mod v0.36.0
+	golang.org/x/net v0.55.0
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.20.0
+	golang.org/x/sys v0.46.0
+	golang.org/x/term v0.43.0
 	golang.org/x/text v0.37.0
 	golang.org/x/tools v0.45.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
+	gopkg.in/go-playground/webhooks.v5 v5.17.0
 	gopkg.in/ini.v1 v1.67.0
-)
-
-require github.com/expr-lang/expr v1.17.8
-
-// The database drivers a machine links, imported for their side effects by
-// node/boot. See node/boot/engines.go: pkg/database and its engines stay
-// driver-free, and the composition root is where a driver registers itself.
-require (
-	github.com/go-sql-driver/mysql v1.10.1
-	github.com/jackc/pgx/v5 v5.10.0
-)
-
-require (
-	cel.dev/expr v0.25.1 // indirect
-	filippo.io/edwards25519 v1.2.0 // indirect
-	github.com/BurntSushi/toml v1.3.2 // indirect
-	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
-	github.com/docker/go-connections v0.7.0 // indirect
-	github.com/google/nftables v0.3.0 // indirect
-	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
-	github.com/mdlayher/socket v0.5.0 // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	gopkg.in/yaml.v3 v3.0.1
+	gotest.tools/v3 v3.5.2
 )
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	atomicgo.dev/schedule v0.0.2 // indirect
+	cel.dev/expr v0.25.1 // indirect
 	cyphar.com/go-pathrs v0.2.1 // indirect
 	dario.cat/mergo v1.0.0 // indirect
 	filippo.io/bigmod v0.1.1-0.20260103110540-f8a47775ebe5 // indirect
+	filippo.io/edwards25519 v1.2.0 // indirect
 	filippo.io/keygen v0.0.0-20260114151900-8e2790ea4c5b // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20230306123547-8075edf89bb0 // indirect
+	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/Jorropo/jsync v1.0.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -151,12 +132,12 @@ require (
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
 	github.com/bwesterb/go-ristretto v1.2.3 // indirect
-	github.com/cloudflare/circl v1.6.3
 	github.com/cockroachdb/crlib v0.0.0-20241112164430-1264a2edc35b // indirect
 	github.com/cockroachdb/errors v1.11.3 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
@@ -184,6 +165,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/distribution/reference v0.6.0 // indirect
+	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dunglas/httpsfv v1.1.0 // indirect
@@ -209,6 +191,7 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
+	github.com/google/nftables v0.3.0 // indirect
 	github.com/gookit/color v1.5.3 // indirect
 	github.com/gxed/hashland/keccakpg v0.0.1 // indirect
 	github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
@@ -230,6 +213,9 @@ require (
 	github.com/ipfs/go-peertaskqueue v0.8.3 // indirect
 	github.com/ipld/go-codec-dagpb v1.7.0 // indirect
 	github.com/ipld/go-ipld-prime v0.24.0 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
@@ -259,6 +245,8 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-tty v0.0.3 // indirect
+	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
+	github.com/mdlayher/socket v0.5.0 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/mikioh/tcpinfo v0.0.0-20190314235526-30a79bb1804b // indirect
 	github.com/mikioh/tcpopt v0.0.0-20190314235656-172688c1accc // indirect
@@ -266,6 +254,7 @@ require (
 	github.com/minio/minlz v1.0.1-0.20250507153514-87eb42fe8882 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mitchellh/go-testing-interface v1.0.0 // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
@@ -273,7 +262,6 @@ require (
 	github.com/moby/sys/signal v0.7.0 // indirect
 	github.com/moby/sys/user v0.3.0 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
-	github.com/mr-tron/base58 v1.3.0
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
 	github.com/multiformats/go-multiaddr-dns v0.5.0 // indirect
@@ -318,6 +306,7 @@ require (
 	github.com/quic-go/quic-go v0.59.1 // indirect
 	github.com/quic-go/webtransport-go v0.10.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
@@ -354,12 +343,15 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
+	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/telemetry v0.0.0-20260508192327-42602be52be6 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
 	google.golang.org/genproto v0.0.0-20231211222908-989df2bf70f3 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
+
