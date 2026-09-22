@@ -35,6 +35,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
@@ -233,7 +234,12 @@ func Start(ctx context.Context, f File) (*Running, error) {
 		// The node is handed a function so a composition that is not a machine
 		// (dream) can hand it something else.
 		node.WithRaft(func(namespace string) (raft.Cluster, error) {
-			return raft.New(p, namespace)
+			// SNAPSHOTS GO UNDER THIS NODE'S OWN ROOT. The default is a
+			// machine-wide /tmp path keyed by namespace alone, so two nodes
+			// that open the same group name share one snapshot store and
+			// write each other's state — latent while there was one group
+			// per node, and multiplied by a group per database.
+			return raft.New(p, namespace, raft.WithSnapshotRoot(filepath.Join(f.Root, "raft")))
 		}),
 		node.WithAssets(store),
 		// A VOLUME IS THE ONE THING A NODE KEEPS AS A DIRECTORY, so it gets the

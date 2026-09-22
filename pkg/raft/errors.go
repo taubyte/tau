@@ -15,6 +15,10 @@ var (
 	// ErrInvalidCommand is returned for malformed commands
 	ErrInvalidCommand = errors.New("invalid command")
 
+	// ErrNoFSM is returned by a read on a cluster that has no state machine to
+	// read from, which is a cluster that never finished initializing
+	ErrNoFSM = errors.New("cluster has no FSM")
+
 	// ErrAlreadyClosed is returned when operating on a closed cluster
 	ErrAlreadyClosed = errors.New("cluster already closed")
 

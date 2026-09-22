@@ -37,6 +37,14 @@ func (m *MockCluster) Get(key string) ([]byte, bool) {
 	return v, ok
 }
 
+// TryGet answers as Get does. THE MOCK HAS NO FAILING READ — the map behind it
+// cannot fail — so a test that needs one builds its own store rather than
+// reaching for this.
+func (m *MockCluster) TryGet(key string) ([]byte, bool, error) {
+	value, held := m.Get(key)
+	return value, held, nil
+}
+
 func (m *MockCluster) Delete(key string, _ time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

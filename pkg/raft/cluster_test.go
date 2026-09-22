@@ -833,6 +833,10 @@ func (m *mockCustomFSM) Get(key string) ([]byte, bool) {
 	return nil, false
 }
 
+func (m *mockCustomFSM) TryGet(key string) ([]byte, bool, error) {
+	return nil, false, nil
+}
+
 func (m *mockCustomFSM) Keys(prefix string) []string {
 	return []string{}
 }

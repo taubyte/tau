@@ -589,15 +589,26 @@ func (c *cluster) Set(key string, value []byte, timeout time.Duration) error {
 }
 
 func (c *cluster) Get(key string) ([]byte, bool) {
+	value, found, _ := c.TryGet(key)
+	return value, found
+}
+
+// TryGet answers as Get does, plus the reason a read came back empty.
+//
+// A CLUSTER THAT CANNOT READ SAYS SO RATHER THAN SAYING THE KEY IS FREE. A
+// closed cluster and a cluster with no state machine both answered false
+// through Get, which a caller allocating from an absent key reads as an empty
+// keyspace.
+func (c *cluster) TryGet(key string) ([]byte, bool, error) {
 	if c.closed.Load() {
-		return nil, false
+		return nil, false, ErrShutdown
 	}
 
 	if c.fsm == nil {
-		return nil, false
+		return nil, false, ErrNoFSM
 	}
 
-	return c.fsm.Get(key)
+	return c.fsm.TryGet(key)
 }
 
 func (c *cluster) Delete(key string, timeout time.Duration) error {

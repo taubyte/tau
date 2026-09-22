@@ -3,6 +3,7 @@ package raft
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path"
 	"strings"
@@ -144,18 +145,7 @@ func (f *kvFSM) applyCommand(ctx context.Context, cmd *Command) FSMResponse {
 		return FSMResponse{Error: err}
 
 	case CommandBatch:
-		if len(cmd.Batch) == 0 {
-			return FSMResponse{Error: ErrInvalidCommand}
-		}
-		for i := range cmd.Batch {
-			if cmd.Batch[i].Type == CommandBatch {
-				return FSMResponse{Error: ErrInvalidCommand}
-			}
-			if resp := f.applyCommand(ctx, &cmd.Batch[i]); resp.Error != nil {
-				return resp
-			}
-		}
-		return FSMResponse{}
+		return f.applyBatch(ctx, cmd.Batch)
 
 	case CommandMerge:
 		if cmd.Merge == nil || len(cmd.Merge.Delta) == 0 {
@@ -182,6 +172,108 @@ func (f *kvFSM) applyCommand(ctx context.Context, cmd *Command) FSMResponse {
 	default:
 		return FSMResponse{Error: ErrInvalidCommand}
 	}
+}
+
+// applyBatch applies a batch as ONE STORE BATCH, so that a batch which fails
+// anywhere leaves nothing behind.
+//
+// A BATCH THAT WROTE HALF OF ITSELF IS WORSE THAN A BATCH THAT WROTE NOTHING.
+// Its callers pair keys that only mean anything together — an op and the head
+// that covers it, an item and the queue position it sits at — and a member
+// that landed without its siblings is a hole nothing repairs: raft records the
+// error as the future's response, advances lastApplied regardless, and never
+// offers the entry again.
+//
+// WHAT IS GUARANTEED AND WHAT IS NOT, precisely, because the comment this
+// replaces claimed more than the code delivered. Everything that can be
+// refused is refused before anything is written: every member is validated and
+// every entry encoded first, so what is left once the store batch is open is
+// staging the writes and committing them — and a staging Put that fails
+// returns without committing, which abandons the whole batch rather than
+// leaving part of it. The commit is atomic wherever the store's Batch is:
+// pebble's, which is what a node runs on, applies as one WAL record under one
+// sequence number. go-datastore's Batching interface promises grouping and
+// explicitly NOT transactions, so a datastore whose batch replays operations
+// one at a time can still apply part of this one; atomicity comes from the
+// implementation, never from the interface.
+//
+// WHAT IT BUYS IS CRASH ATOMICITY AND NOT READER ATOMICITY. No reader in this
+// process ever saw half a batch, before this change or after: Apply holds the
+// state machine's write lock for the whole of it and every reader takes the
+// read lock. What one store batch adds is that a machine which dies mid-apply
+// cannot come back holding half. Durability is a separate question with a
+// separate answer: the store is opened with pebble's default NoSync, so a
+// machine that dies can lose a committed batch ENTIRELY and the log replays
+// it — what it cannot do is lose half.
+func (f *kvFSM) applyBatch(ctx context.Context, cmds []Command) FSMResponse {
+	if len(cmds) == 0 {
+		return FSMResponse{Error: ErrInvalidCommand}
+	}
+
+	type write struct {
+		key ds.Key
+		raw []byte
+	}
+
+	// The clock advances on a copy and is published only once the batch has
+	// landed, so a refused batch leaves no trace at all — not even Lamport
+	// timestamps that no entry carries.
+	clock := f.clock
+	writes := make([]write, 0, len(cmds))
+
+	for i := range cmds {
+		var key string
+		entry := CRDTEntry{WallClock: time.Now().UnixNano()}
+
+		switch cmds[i].Type {
+		case CommandSet:
+			if cmds[i].Set == nil {
+				return FSMResponse{Error: ErrInvalidCommand}
+			}
+			key, entry.Value = cmds[i].Set.Key, cmds[i].Set.Value
+
+		case CommandDelete:
+			if cmds[i].Delete == nil {
+				return FSMResponse{Error: ErrInvalidCommand}
+			}
+			key, entry.Deleted = cmds[i].Delete.Key, true
+
+		default:
+			// A MEMBER IS A SET OR A DELETE AND NOTHING ELSE. A nested batch
+			// says nothing a flat one does not, and a merge reads the entry it
+			// arbitrates against — a read the open batch cannot serve, because
+			// a go-datastore batch is write-only and cannot see its own staged
+			// writes. Cluster.Batch builds neither, but Cluster.Apply carries
+			// whatever a caller encoded.
+			return FSMResponse{Error: ErrInvalidCommand}
+		}
+
+		clock++
+		entry.Timestamp = clock
+
+		raw, err := cbor.Marshal(entry)
+		if err != nil {
+			return FSMResponse{Error: err}
+		}
+		writes = append(writes, write{key: f.dataKey(key), raw: raw})
+	}
+
+	batch, err := f.store.Batch(ctx)
+	if err != nil {
+		return FSMResponse{Error: err}
+	}
+	for _, w := range writes {
+		if err := batch.Put(ctx, w.key, w.raw); err != nil {
+			return FSMResponse{Error: err}
+		}
+	}
+	if err := batch.Commit(ctx); err != nil {
+		return FSMResponse{Error: err}
+	}
+
+	f.clock = clock
+
+	return FSMResponse{}
 }
 
 func (f *kvFSM) getEntry(ctx context.Context, key string) (CRDTEntry, error) {
@@ -262,19 +354,40 @@ func (f *kvFSM) Restore(snapshot io.ReadCloser) error {
 	return nil
 }
 
-// Get retrieves a value from the FSM
-func (f *kvFSM) Get(key string) ([]byte, bool) {
+// TryGet retrieves a value and says why it is not there when it is not.
+//
+// A STORE THAT FAILED IS NOT A KEY THAT IS ABSENT. Get has nowhere to put the
+// difference, so it answers false for both, and a caller that reads a failed
+// read as "nothing written yet" then writes over state it could not see. Every
+// caller that has an error to return should call this one instead.
+//
+// Three answers, not two: the value; absent, which is a key never written or a
+// tombstone; and an error, which is the store failing or an entry that will
+// not decode. The second of those is permanent — retrying will not mend a
+// corrupt entry — and it is still an error rather than an absence, because a
+// key whose bytes are unreadable is not a key nobody wrote.
+func (f *kvFSM) TryGet(key string) ([]byte, bool, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
 	entry, err := f.getEntry(f.ctx, key)
 	if err != nil {
-		return nil, false
+		if errors.Is(err, ds.ErrNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
 	}
 	if entry.Deleted {
-		return nil, false
+		return nil, false, nil
 	}
-	return entry.Value, true
+	return entry.Value, true, nil
+}
+
+// Get retrieves a value from the FSM. It cannot tell an absent key from a
+// store that failed — both answer false; TryGet is the one that can.
+func (f *kvFSM) Get(key string) ([]byte, bool) {
+	value, found, _ := f.TryGet(key)
+	return value, found
 }
 
 // Keys returns all keys matching a prefix

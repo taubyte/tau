@@ -164,13 +164,21 @@ func (h *healer) registerVoteObserver() {
 			return false
 		}
 	})
-	h.cluster.raft.RegisterObserver(observer)
+	// THE RAFT IS CAPTURED HERE AND NEVER RE-READ BELOW. yieldAndRejoin re-runs
+	// initialize (healing.go:553 -> cluster.go:137), which replaces cluster.raft
+	// while this observer's goroutine is still running: re-reading the field
+	// would deregister this observer from the NEW raft -- leaving it registered
+	// on the one it actually watches, and removing an observer the new healer
+	// owns. The field is written without the cluster lock, so the re-read was
+	// also a data race the -race detector fails on.
+	on := h.cluster.raft
+	on.RegisterObserver(observer)
 
 	go func() {
 		for {
 			select {
 			case <-h.cluster.ctx.Done():
-				h.cluster.raft.DeregisterObserver(observer)
+				on.DeregisterObserver(observer)
 				return
 			case obs := <-ch:
 				h.processVoteObservation(obs)
@@ -541,7 +549,7 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 		h.cluster.raft.Shutdown()
 	}
 
-	healLogger.Infof("[%s] wiping raft state (logs + stable)", h.cluster.node.ID().ShortString())
+	healLogger.Infof("[%s] wiping raft state (logs, stable and applied data)", h.cluster.node.ID().ShortString())
 	h.wipeRaftState(ctx)
 
 	if h.cluster.snaps != nil {
@@ -562,11 +570,23 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 	h.superseded.Store(true)
 }
 
+// wipeRaftState clears everything the yielding node believed about the cluster
+// it is leaving: its log, its stable state, and the state machine those two
+// produced.
+//
+// THE APPLIED DATA GOES TOO, and leaving it was the hole. A node that yields
+// rejoins as a voter and takes the winner's state from the leader — by snapshot
+// when the leader has one, and Restore already clears this prefix before
+// loading it, or by log replication from the first index when it does not. On
+// that second path the entries this node applied in the cluster it is leaving
+// are still in the store, under keys the winning group never committed. It is a
+// voter; the next election it wins serves them, behind a barrier, as committed
+// state.
 func (h *healer) wipeRaftState(ctx context.Context) {
 	store := h.cluster.node.Store()
 	storagePrefix := path.Join(RaftStoragePrefix, h.cluster.namespace)
 
-	for _, sub := range []string{"log", "stable"} {
+	for _, sub := range []string{"log", "stable", "data"} {
 		prefix := path.Join(storagePrefix, sub)
 		results, err := store.Query(ctx, query.Query{
 			Prefix:   prefix,

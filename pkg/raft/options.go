@@ -4,6 +4,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -46,6 +48,28 @@ func WithSnapshotDir(dir string) Option {
 			return fmt.Errorf("snapshot dir cannot be empty")
 		}
 		c.snapshotDir = dir
+		return nil
+	}
+}
+
+// WithSnapshotRoot puts this cluster's snapshots under a directory the CALLER
+// owns, in a subdirectory named after the namespace.
+//
+// IT IS THE OPTION A COMPOSITION THAT RUNS TWO NODES NEEDS. The default is
+// /tmp/tau-raft-snapshots/<namespace>, which is a machine-wide path: two nodes
+// in one process, or two processes on one machine, share one snapshot store per
+// namespace and write each other's state. Handing each node its own root is
+// what makes that impossible rather than unlikely.
+//
+// THE NAMESPACE STILL NAMES THE SUBDIRECTORY, because one node opens many
+// groups — one per resource in the case of a database — and a root shared
+// between them would be the same collision one level down.
+func WithSnapshotRoot(root string) Option {
+	return func(c *cluster) error {
+		if root == "" {
+			return fmt.Errorf("snapshot root cannot be empty")
+		}
+		c.snapshotDir = filepath.Join(root, strings.ReplaceAll(c.namespace, "/", "_"))
 		return nil
 	}
 }

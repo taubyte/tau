@@ -26,7 +26,20 @@ type Cluster interface {
 	// Get retrieves a value by key from local committed state
 	// Note: May return stale data on followers (replication lag)
 	// For strong consistency, call Barrier() first
+	// Note: false is both "no such key" and "the read failed", and NOTHING HERE
+	// CAN MAKE A CALLER NOTICE THE DIFFERENCE — a caller that allocates from an
+	// absent key (a head, a floor, the next free position) hands out what the
+	// read could not see. Those callers must use TryGet; adding TryGet did not
+	// convert them, and tau still has some that read through here.
+	// Note: converting one means converting its test doubles in the same
+	// change. A double that embeds MockCluster and overrides Get inherits
+	// TryGet unchanged, so the override silently stops being consulted.
 	Get(key string) ([]byte, bool)
+
+	// TryGet retrieves a value by key and reports a failed read as an error
+	// rather than as an absent key. A caller that acts on absence — by
+	// allocating from zero, by treating a key as free — MUST use this one.
+	TryGet(key string) ([]byte, bool, error)
 
 	// Delete removes a key (replicated via Raft)
 	// Returns ErrNotLeader if not leader
@@ -90,6 +103,8 @@ type FSM interface {
 	raft.FSM
 	// Get retrieves a value by key from local committed state
 	Get(key string) ([]byte, bool)
+	// TryGet retrieves a value by key, distinguishing an absent key from a failed read
+	TryGet(key string) ([]byte, bool, error)
 	// Keys returns all keys matching a prefix
 	Keys(prefix string) []string
 	// ExportState returns full KV state (CRDT entries) for merge/heal
