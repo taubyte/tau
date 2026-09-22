@@ -398,6 +398,15 @@ func (v *volumes) loop(ctx context.Context, done chan<- struct{}) {
 // checkpointTick is how often the loop asks which volumes are due.
 const checkpointTick = 5 * time.Second
 
+// applyTimeout bounds the last checkpoint a closing node takes.
+//
+// IT IS THE BOUND ON A REQUEST AND NOT ON A CLUSTER, which is the reading it
+// has everywhere else in this tree: work that has not committed in five seconds
+// is work the caller should stop waiting for. It lived beside node/cron.go's
+// slot claim until the clock moved into services/primitives, and this is the
+// one caller left.
+const applyTimeout = 5 * time.Second
+
 // Close stops holding volumes. The directories stay: they are what a restart
 // finds, and re-reading them from the store would be slower and older.
 func (v *volumes) Close() error {

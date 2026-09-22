@@ -37,7 +37,6 @@ func mounting(t *testing.T) (*Node, *volumes) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
 		WithRoot(t.TempDir()), WithAssets(&memAssets{blobs: map[string][]byte{}}))
 	require.NoError(t, n.Start(t.Context()))
-	<-n.work.forming
 
 	return n, &volumes{node: n}
 }
@@ -108,7 +107,6 @@ func TestAVolumeIsRestoredOnAnotherNode(t *testing.T) {
 	first, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
 		WithRoot(t.TempDir()), WithAssets(store), WithDatabases(replicated))
 	require.NoError(t, first.Start(t.Context()))
-	<-first.work.forming
 
 	grant := mountGrant("shop/prod/QmData", nil)
 	source := &volumes{node: first}
@@ -127,7 +125,6 @@ func TestAVolumeIsRestoredOnAnotherNode(t *testing.T) {
 	second, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
 		WithRoot(t.TempDir()), WithAssets(store), WithDatabases(replicated))
 	require.NoError(t, second.Start(t.Context()))
-	<-second.work.forming
 
 	restored, err := (&volumes{node: second}).Mount(t.Context(), grant)
 	require.NoError(t, err)
@@ -594,7 +591,6 @@ func TestTheNodeAWorkloadLeftDoesNotPutItsOldBytesBack(t *testing.T) {
 		n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
 			WithRoot(t.TempDir()), WithAssets(store), WithDatabases(replicated))
 		require.NoError(t, n.Start(t.Context()))
-		<-n.work.forming
 		return &volumes{node: n}
 	}
 

@@ -354,11 +354,16 @@ func startedBy(proj *specs.Project, t Target, workflow specs.Resource, id string
 }
 
 // The keys the shell's entry record becomes.
+//
+// TWO OF THEM ARE BORROWED AND NOT SPELLED. invoke.StartGrant reads back what
+// this writes, so a rename on one side and not the other is a workflow that
+// silently records no entry at all — see pkg/invoke/start.go for what that
+// already cost once.
 const (
 	opStart = "start"
 
-	settingStartKind   = "entry/start/kind"
-	settingStartHandle = "entry/start/handle"
+	settingStartKind   = invoke.SettingStartKind
+	settingStartHandle = invoke.SettingStartHandle
 	settingStartAs     = "entry/start/as"
 )
 
@@ -758,7 +763,12 @@ func databaseSettings(target specs.Resource) map[string]string {
 	// and `metric` are a vector's and mean nothing to the other three, which is
 	// why they travel as settings rather than as fields on anything.
 	out := map[string]string{settingType: model}
-	for _, field := range []string{"engine", "host", "database", "tls", "dimensions", "metric"} {
+	//
+	// `consensus` IS IN THE LIST BECAUSE A NODE WITH NO DATABASE SERVICE STILL
+	// OPENS ONE. Without it a ledger that asked for raft reached that node's
+	// own engines as a crdt and was merged -- silently, which is the one thing
+	// the field exists to prevent. Carried, the fallback refuses it by name.
+	for _, field := range []string{"engine", "host", "database", "tls", "consensus", "dimensions", "metric"} {
 		if value := target.String(model, field); value != "" {
 			out[model+"/"+field] = value
 			continue

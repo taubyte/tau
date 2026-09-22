@@ -1245,9 +1245,12 @@ type syncType struct {
 }
 
 var syncTypes = []syncType{
-	// Claim / visibility-timeout / ack / DLQ — not pop-and-delete. Today's pkg/raft
-	// Queue.Pop deletes before returning, so a consumer that crashes loses the job with
-	// no trace (resources.md §3.2).
+	// Claim / visibility-timeout / ack / DLQ — not pop-and-delete. It was written here
+	// as the thing a runtime still owed, back when a pop deleted the item before
+	// returning it and a consumer that crashed lost the job with no trace; pkg/queue
+	// implements the whole of it now — a claim is exclusive and invisible for a
+	// timeout, an unacknowledged item comes back, attempts are counted with a backoff,
+	// and one that gives up is buried in the dead letter.
 	{
 		name:  "queue",
 		ops:   Verbs{DeliveredOp("receive"), WriteOp("send")},
