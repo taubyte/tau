@@ -2,13 +2,18 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"strconv"
 
 	"connectrpc.com/connect"
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/database"
+	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	databasev1 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v1"
@@ -152,6 +157,142 @@ func splitHandle(handle string) (project, environment, id string) {
 		return "", "", ""
 	}
 	return parts[0], parts[1], parts[2]
+}
+
+// kv is one database on the node this client reaches, in THIS package's own
+// vocabulary rather than the tier's.
+//
+// IT IS FOR A FORWARD AND NOT FOR A WORKER. OpenKV above answers the compute
+// tier's seam, where a miss is the tier's miss; this answers database.KVConn,
+// so a routed connection can put the same operation somewhere else without the
+// two surfaces having to agree about anything but the wire.
+//
+// THE HOP COUNT TRAVELS WITH THE CALL, which is what bounds forwarding — see
+// forward.go.
+func (c *Client) kv(at address, hops int) database.KVConn {
+	return &oneKV{svc: c.svc, ref: c.ref(at), hops: hops}
+}
+
+// oneKV is one database on another node.
+type oneKV struct {
+	svc  databasev1connect.DatabaseServiceClient
+	ref  *databasev1.Ref
+	hops int
+}
+
+var _ database.KVConn = (*oneKV)(nil)
+
+// sent marks a request with how far it has come, so the node that answers it
+// knows whether it may send it on again.
+func (o *oneKV) sent(req interface{ Header() http.Header }) {
+	req.Header().Set(hopHeader, strconv.Itoa(o.hops))
+}
+
+func (o *oneKV) Get(ctx context.Context, key string) ([]byte, error) {
+	req := connect.NewRequest(&databasev1.KVGetRequest{Ref: o.ref, Key: key})
+	o.sent(req)
+	out, err := o.svc.KVGet(ctx, req)
+	if err != nil {
+		return nil, refusal(err)
+	}
+	return out.Msg.GetValue(), nil
+}
+
+func (o *oneKV) Put(ctx context.Context, key string, value []byte) error {
+	req := connect.NewRequest(&databasev1.KVPutRequest{Ref: o.ref, Key: key, Value: value})
+	o.sent(req)
+	_, err := o.svc.KVPut(ctx, req)
+	return refusal(err)
+}
+
+func (o *oneKV) Delete(ctx context.Context, key string) error {
+	req := connect.NewRequest(&databasev1.KVDeleteRequest{Ref: o.ref, Key: key})
+	o.sent(req)
+	_, err := o.svc.KVDelete(ctx, req)
+	return refusal(err)
+}
+
+// List asks for every key under a prefix, paging until the node says there are
+// no more — the surface this answers has no paging and the wire deliberately
+// does, exactly as remoteKV.Keys resolves it for the tier.
+func (o *oneKV) List(ctx context.Context, prefix string) ([]string, error) {
+	var out []string
+	after := ""
+	for {
+		req := connect.NewRequest(&databasev1.KVListRequest{Ref: o.ref, Prefix: prefix, After: after})
+		o.sent(req)
+		page, err := o.svc.KVList(ctx, req)
+		if err != nil {
+			return nil, refusal(err)
+		}
+
+		keys := page.Msg.GetKeys()
+		out = append(out, keys...)
+		if !page.Msg.GetMore() || len(keys) == 0 {
+			return out, nil
+		}
+		after = keys[len(keys)-1]
+	}
+}
+
+// Watch is not carried over the wire, because nothing carries it: the engine
+// underneath answers the same refusal and a channel that never delivers would
+// be worse than being told.
+func (o *oneKV) Watch(context.Context, string) (<-chan string, error) {
+	return nil, kvengine.ErrNoWatch
+}
+
+// Close releases nothing: the stream belongs to the Client that made this.
+func (o *oneKV) Close() error { return nil }
+
+// refusal is wire() read backwards: a status from another node becomes this
+// package's own sentinel, so a forwarded answer reaches the caller as the arm a
+// local one would have produced.
+//
+// THE CODE AND NOT THE SENTENCE, which is what tierError already says in the
+// other direction. The two are the one table read both ways, and the sentence
+// the answering node wrote travels along with it so an operator reads what
+// actually happened rather than this node's guess at it.
+//
+// ONE CODE CAN STAND FOR TWO SENTINELS — NotFound is a key nobody wrote and an
+// id nobody declared — and this picks the one a caller acts on. What survives
+// the round trip is the CODE, which is the thing a caller decides with; naming
+// that here is better than a second wire field nobody else would read.
+func refusal(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// AN ANSWER OR A SILENCE, BEFORE ANY CODE IS READ. A peer that is gone, a
+	// peer that never ran this service, a stream that died mid-call -- all of
+	// them arrive as Unavailable, which is the same code a voter's own refusal
+	// arrives as, and the caller has to walk on from one and stop at the other.
+	// What tells them apart is the mark the answering node put on it.
+	//
+	// IT WRAPS ErrNotHere, so a walk over the voters continues past a node that
+	// did not answer exactly as it continues past one that answered "not me".
+	var status *connect.Error
+	if !errors.As(err, &status) || status.Meta().Get(answerHeader) == "" {
+		return fmt.Errorf("%w: %w", ErrUnreachable, err)
+	}
+
+	switch connect.CodeOf(err) {
+	case connect.CodeNotFound:
+		return fmt.Errorf("%w: %s", kvengine.ErrNotFound, err)
+	case connect.CodeUnimplemented:
+		return fmt.Errorf("%w: %s", ErrConsensusUnserved, err)
+	case connect.CodeFailedPrecondition:
+		return fmt.Errorf("%w: %s", ErrWrongModel, err)
+	case connect.CodeInvalidArgument:
+		return fmt.Errorf("%w: %s", ErrNoKey, err)
+	case connect.CodeResourceExhausted:
+		return fmt.Errorf("%w: %s", ErrTooManyResident, err)
+	default:
+		// UNAVAILABLE AND EVERYTHING UNNAMED ARE A RETRY, which is what wire()
+		// answers for both — so passing it through unchanged reproduces the
+		// code it came in as.
+		return err
+	}
 }
 
 // Digest is what the node this client reaches holds for one database, and

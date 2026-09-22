@@ -98,6 +98,55 @@ func (s *Service) reconsider(ctx context.Context) {
 	s.pendingMu.Lock()
 	s.pendingAt = short
 	s.pendingMu.Unlock()
+
+	s.reconsiderLedgers(ctx)
+}
+
+// reconsiderLedgers asks the other voters of every raft database this node has
+// opened a group for whether they have opened theirs.
+//
+// IT IS THE ONLY THING THAT RE-CHECKS, and without it a ledger runs forever as
+// whatever its first round of asking produced. Membership is established once,
+// by a best-effort round on a request that failed: warm fires when the local
+// group has no leader, and once a leader exists nothing calls it again. A node
+// whose peers were booting when it asked bootstraps a cluster of ONE, leads it,
+// answers every write from its own disk -- and the declared floor is three. "A
+// write costs a round trip" costs none, and losing that node discards writes
+// that were acked as committed.
+//
+// IT WALKS WHAT THIS NODE OPENED AND NOT WHAT IS ON DISK. OnDisk answers about
+// the replicated store, which a ledger does not live in, so the sweep above
+// never names one.
+//
+// WHAT IT COSTS, SAID RATHER THAN HIDDEN: one call per other voter per ledger
+// per sweep, which is the same order as the repair sweep's -- it asks every
+// co-holder about every database this node holds. The cheaper rule is to ask
+// only when the group is short of its floor, and the group's own membership is
+// not a thing this service can see: pkg/raft answers it to a Cluster holder,
+// and what this service holds is a database.Store in front of one.
+func (s *Service) reconsiderLedgers(ctx context.Context) {
+	for _, at := range s.ledgers() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		declaration, err := s.declared(ctx, at)
+		if err != nil {
+			// A LEDGER THIS NODE CANNOT RESOLVE IS NOT ONE IT MAY LEAVE. A
+			// transport error is not a fact about the declaration, and leaving
+			// a group is a membership change rather than something a failed
+			// lookup decides.
+			continue
+		}
+
+		// THE OTHERS AND NOT "THE OTHERS IF THIS NODE IS STILL ONE OF THEM".
+		// The group has this node in it either way, and the voters placement
+		// names today are who it has to converge with.
+		others, _ := s.desired(ctx, at, declaration)
+		s.warm(ctx, at, others)
+	}
 }
 
 // reconsiderOne decides about one copy, and reports whether it is below its
@@ -121,6 +170,18 @@ func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]place
 		// nobody declares are reclaim's business and reclaim is gated on a
 		// revision rather than on a failed lookup; a transport error is not a
 		// fact about the declaration at all.
+		return false
+	}
+
+	// A RAFT DATABASE'S COPIES ARE ITS GROUP'S MEMBERSHIP, and this half of the
+	// sweep has nothing it may do about one. Its floor is met by voters rather
+	// than by converged digests, and letting go of it is RemoveServer rather
+	// than a local drop — so a sweep that treated it like a crdt copy would
+	// compare a digest nobody keeps and then delete bytes the group still
+	// counts on. The rows on disk here are a database that USED to be crdt;
+	// reclaiming those is reclaim's business, which is gated on a revision
+	// rather than on this. What DOES watch a ledger is reconsiderLedgers.
+	if declaration.spec.Consensus == database.Raft {
 		return false
 	}
 

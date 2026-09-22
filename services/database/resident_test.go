@@ -32,6 +32,12 @@ type accounting struct {
 	// Registry.Register opens a probe connection to prove the engine backs the
 	// type it claims, so an engine that never opens cannot be registered.
 	refuse error
+
+	// answers is what every operation on its connections returns instead of
+	// doing anything, which is how a fixture stands in for a raft store whose
+	// group is led somewhere else or has not formed. Nil is an engine that
+	// answers normally.
+	answers error
 }
 
 // accounted is one of its connections: a real kv over a map, because
@@ -56,6 +62,9 @@ func (c *accounted) Close() error {
 }
 
 func (c *accounted) Get(_ context.Context, key string) ([]byte, error) {
+	if err := c.answers(); err != nil {
+		return nil, err
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	value, held := c.rows[key]
@@ -66,6 +75,9 @@ func (c *accounted) Get(_ context.Context, key string) ([]byte, error) {
 }
 
 func (c *accounted) Put(_ context.Context, key string, value []byte) error {
+	if err := c.answers(); err != nil {
+		return err
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.rows[key] = value
@@ -73,6 +85,9 @@ func (c *accounted) Put(_ context.Context, key string, value []byte) error {
 }
 
 func (c *accounted) Delete(_ context.Context, key string) error {
+	if err := c.answers(); err != nil {
+		return err
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.rows, key)
@@ -80,6 +95,9 @@ func (c *accounted) Delete(_ context.Context, key string) error {
 }
 
 func (c *accounted) List(_ context.Context, prefix string) ([]string, error) {
+	if err := c.answers(); err != nil {
+		return nil, err
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -97,11 +115,34 @@ func (c *accounted) Watch(context.Context, string) (<-chan string, error) {
 	return nil, errors.New("accounting: no watch")
 }
 
+// answers is what this connection refuses with, read from the engine so a test
+// can change its mind after the connection is warm.
+func (c *accounted) answers() error {
+	c.e.mu.Lock()
+	defer c.e.mu.Unlock()
+	return c.e.answers
+}
+
+// forgetProbe drops the registration probe from the count, so what a test
+// counts afterwards is the connections the SERVICE asked for. pkg/database
+// opens one per type to prove the engine answers its operations, which is not
+// an open anything under test decided to make.
+func (c *accounting) forgetProbe() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.opened = 0
+}
+
+// refusing makes every operation on this engine's connections answer err.
+func (c *accounting) refusing(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.answers = err
+}
+
 // NAMED FOR THE VOCABULARY'S ENGINE, because the registry is keyed by (type,
 // engine) and the engine is what the author wrote: `kv: {engine: distributed}`.
 // A fixture named after itself is one the registry can never be asked for.
-// NAMED FOR THE VOCABULARY'S ENGINE, which is the only name there is: the
-// registry is keyed by (type, engine) and `engine` is what the author wrote.
 func (c *accounting) Name() string           { return "distributed" }
 func (c *accounting) Types() []database.Type { return []database.Type{database.KV} }
 

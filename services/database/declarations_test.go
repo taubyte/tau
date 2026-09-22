@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 )
@@ -167,12 +168,43 @@ func TestPerModelDeclarationsTravelAsOptions(t *testing.T) {
 	require.Equal(t, "cosine", got.spec.Options["metric"])
 
 	// AND IT IS REFUSED BY NAME when somebody asks this cloud to serve it.
-	require.ErrorIs(t, got.serves(), ErrModelUnserved)
+	require.ErrorIs(t, got.serves(servedConsensus), ErrModelUnserved)
 }
 
 // TestACONSENSUSNOBODYWROTEISTHEDEFAULT, which is what a connector gets: it
 // resolves nothing, because somebody else's server does.
+//
+// IT IS RESOLVED ONTO THE SPEC AND NOT ASKED FOR LATER, so the provider that
+// picks a store is handed a spec that always says which one.
 func TestAnUnwrittenConsensusIsTheDefault(t *testing.T) {
-	require.Equal(t, defaultConsensus, declared{}.wants())
-	require.Equal(t, "raft", declared{consensus: "raft"}.wants())
+	d := declaring(t, map[string]any{
+		"id": projectID, "name": "shop",
+		"database": map[string]any{kvID: map[string]any{
+			"name": "sessions", "type": "kv",
+			"kv": map[string]any{"engine": "distributed"},
+		}},
+	})
+
+	require.Equal(t, defaultConsensus, sessions(t, d).spec.Consensus)
+	require.Equal(t, defaultConsensus, sessions(t, d).wants())
+	require.Equal(t, database.Raft, declared{spec: database.Spec{Consensus: database.Raft}}.wants())
+}
+
+// TestWHATTHISNODECANKEEPISTHECOMPOSERSANSWER. Both resolutions are served by
+// this package; which of them a NODE can keep depends on whether it was handed
+// somewhere to open a group, and a node that was not refuses by name rather
+// than answering unavailable forever.
+func TestAConsensusThisNodeWasNotGivenIsRefusedByName(t *testing.T) {
+	d := declaring(t, map[string]any{
+		"id": projectID, "name": "shop",
+		"database": map[string]any{kvID: map[string]any{
+			"name": "ledger", "type": "kv",
+			"kv": map[string]any{"engine": "distributed", "consensus": "raft"},
+		}},
+	})
+
+	ledger := sessions(t, d)
+	require.ErrorIs(t, ledger.serves(servedConsensus), ErrConsensusUnserved)
+	require.ErrorContains(t, ledger.serves(servedConsensus), "raft")
+	require.NoError(t, ledger.serves([]string{database.CRDT, database.Raft}))
 }

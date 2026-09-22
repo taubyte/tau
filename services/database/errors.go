@@ -1,6 +1,9 @@
 package database
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // errors.go is this package's vocabulary of refusals, in one place so the wire
 // mapping in rpc.go is a table over named things rather than string matching.
@@ -73,7 +76,62 @@ var (
 // ErrGroupForming is a raft database reached before its group has formed. It is
 // a RETRY and not a failure, which is why it is its own arm: a node that has
 // just started is a node whose next request will do better.
+//
+// IT IS NEVER A MISS AND NEVER A WAIT. A ledger's reader acts on "no such key",
+// so answering one for a group that has not formed is worse than refusing; and
+// waiting is the thirty seconds raft.New spends looking for peers, which is the
+// gateway timeout node/queue.go was written to stop.
 var ErrGroupForming = errors.New("database: that database's raft group is still forming")
+
+// ErrNotLeading is a raft database reached on a node that is not its group's
+// leader. It is a RETRY: one node at a time may answer for a group, and which
+// one is a fact the caller can act on rather than a failure of the database.
+var ErrNotLeading = errors.New("database: this node does not lead that database's raft group")
+
+// NotLeading is that refusal with the leader's name on it, which is what lets
+// one operation be sent on instead of handed back.
+//
+// THE STORE NAMES THE LEADER AND DOES NOT DIAL IT. A store that forwarded would
+// be a second write path with its own failure modes, reaching back up through
+// the service that composed it — node/queue.go's rule, kept. What is different
+// here is that this service HAS somewhere to send it, so the refusal carries
+// the address instead of being the end of the call.
+type NotLeading struct{ Leader string }
+
+func (e NotLeading) Error() string {
+	if e.Leader == "" {
+		return ErrNotLeading.Error() + ": and no node leads it yet"
+	}
+	return ErrNotLeading.Error() + ": " + e.Leader + " does"
+}
+
+func (e NotLeading) Unwrap() error { return ErrNotLeading }
+
+// ErrNotHere is a raft database this node is not a voter for and cannot name a
+// node that is. Opening the group would make this node a voter BECAUSE
+// SOMEBODY ASKED, which is the same act Holdings.Held refuses for a crdt copy,
+// so it refuses instead and the caller retries elsewhere.
+var ErrNotHere = errors.New("database: another node holds that database")
+
+// ErrUnreachable is a voter that did not answer at all -- a peer that cannot be
+// decoded, dialled, or that answered something no node of this service wrote.
+//
+// IT WRAPS ErrNotHere BECAUSE IT IS THE SAME INSTRUCTION AND A DIFFERENT FACT.
+// A call walking the voters continues past both, which is the whole reason the
+// walk exists: one machine going would otherwise take every ledger call made
+// through every node outside the group with it. What it must NOT do is continue
+// past a refusal the group itself wrote -- that is the group talking, and the
+// next voter would only say it again.
+var ErrUnreachable = fmt.Errorf("%w: and it could not be reached", ErrNotHere)
+
+// ErrGroupClosed is a raft database on a node that is shutting down: it has
+// closed its groups and will open no more.
+//
+// IT IS NOT ErrGroupForming, which is the distinction the caller acts on. A
+// node told a group is forming retries HERE and waits for one that will never
+// form; told this, it asks another voter. Same code on the wire, different
+// sentence and a different place for the next call to land.
+var ErrGroupClosed = fmt.Errorf("%w: this node has closed its raft groups", ErrNotHere)
 
 // ErrOutsideAllowance is a resource pinned to a region its scope does not
 // permit. The compiler's audit reports a widening where a scope declares an

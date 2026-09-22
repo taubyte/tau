@@ -69,6 +69,20 @@ const (
 // engines carry the name of the server they speak to.
 const Tau = "distributed"
 
+// How concurrent writes to one key resolve. The names are the schema's own, so
+// nothing is renamed on the way in and there is no second vocabulary to map
+// between.
+const (
+	// CRDT merges them. No write is lost on the wire, but two writes to one key
+	// are resolved into one and the loser is gone with no error to anybody.
+	CRDT = "crdt"
+
+	// Raft orders them: one holder at a time, so a write costs a round trip and
+	// nothing is silently discarded. It is what an author writes when entries
+	// must not resolve by merge -- a ledger cannot be kept the other way.
+	Raft = "raft"
+)
+
 var (
 	ErrNoEngine     = errors.New("database: no engine registered for this type")
 	ErrNoName       = errors.New("database: an engine with no name")
@@ -104,6 +118,17 @@ type Spec struct {
 	Project     string
 	Environment string
 	Name        string
+
+	// Consensus is how two concurrent writes to one key resolve, spelled as the
+	// schema spells it. Empty is CRDT, which is what a database that wrote
+	// none gets.
+	//
+	// BESIDE Engine AND NOT IN Options, because it is the same KIND of fact: it
+	// says what the connection IS rather than what one data model understands
+	// about itself. Every model tau's own engine backs declares it, a store is
+	// chosen by it before a single per-model field is read, and a vector's
+	// `dimensions` is true of nothing but a vector.
+	Consensus string
 
 	// Address is where an external server is, empty for Tau's own engine.
 	Address string

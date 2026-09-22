@@ -1,4 +1,4 @@
 id: QmUdCG9AxqbBi1A3Sa8s4kvVgCYfJ1YCpS6vwqrbn3fjXD
 name: kvraft
-description: a function and a LEDGER it may not have - tau's own engine asked for raft, which this cloud keeps none of
+description: a function and a LEDGER - tau's own engine asked for raft, so entries are ordered by one holder at a time rather than merged
 regions: [eu]

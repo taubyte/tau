@@ -20,14 +20,30 @@
 // served where its engine already is, and something has to own the engines to
 // be able to say where that is. resident.go is that table.
 //
-// # One cell of the grid, and it says so
+// # One column of the grid, and it says so
 //
 // The `database` kind is four models — kv, sql, document, vector — on one axis
-// and a consensus on another. THIS SERVICE SERVES ONE CELL: tau's own kv over
-// the replicated CRDT store. Everything else is refused BY NAME, which is the
-// rule node/queue.go already keeps for a crdt queue and node/cache.go for a
-// cache, and the one the database kind has been missing entirely while
-// `consensus` was RequiredWhen and honoured by nobody.
+// and a consensus on another. THIS SERVICE SERVES ONE MODEL, kv, on BOTH
+// resolutions: crdt over the replicated store every node has, and raft over a
+// group per database on a node composed with somewhere to open one. Everything
+// else is refused BY NAME, which is the rule node/queue.go already keeps for a
+// crdt queue and node/cache.go for a cache, and the one the database kind was
+// missing entirely while `consensus` was RequiredWhen and honoured by nobody.
+//
+// The two resolutions differ in WHO MAY ANSWER, which is what this service
+// decides. A crdt copy converges, so every node holding one answers from its
+// own. A raft group decides an order, so exactly one node — the leader, behind
+// a barrier — may answer at a time, and a call that lands anywhere else is sent
+// to it. See forward.go.
+//
+// WHAT THIS SERVICE DOES NOT DECIDE, said rather than implied: the order itself
+// is the group's, and so is what happens to it when a namespace ends up with
+// two groups that each believe they are it. pkg/raft reconciles that pair by
+// merging their state last-writer-wins — which is the resolution `consensus:
+// raft` exists to avoid — and the fix is that a namespace only ever has one
+// group, which is an owner this cloud has not settled. Until it has, the
+// promise held here is the one a single group keeps: one writer, a round trip
+// per write, and no merge on any path this service takes.
 //
 // A service that answered every call it was given and quietly did the wrong
 // thing for three quarters of them would be worse than one that refuses, and
@@ -91,6 +107,23 @@ type Service struct {
 	peer   string
 	region string
 
+	// consensus is what this node can KEEP, which is a narrower question than
+	// what this package implements: a raft database needs a group to be opened
+	// in, and a composition either handed this service one or did not.
+	consensus []string
+
+	// warming is which databases this node is currently asking the other
+	// desired holders about, so a request path that finds no leader starts one
+	// round of asking rather than one per request.
+	warmMu  sync.Mutex
+	warming map[string]bool
+
+	// ledgersOpen is every raft database this node has opened a group for. It
+	// is what this node IS rather than what placement wants it to be -- see
+	// forward.go's opening.
+	ledgerMu    sync.Mutex
+	ledgersOpen map[string]address
+
 	// floor is how many nodes hold each database in EACH pinned region, read
 	// from what the cloud published rather than from this node's config.
 	floor *fleetFloor
@@ -129,9 +162,10 @@ type options struct {
 	idle     time.Duration
 	holdings Holdings
 
-	members func() map[string][]placement.Member
-	region  string
-	sweep   time.Duration
+	members   func() map[string][]placement.Member
+	region    string
+	sweep     time.Duration
+	consensus []string
 
 	serverOptions []rpc.ServerOption
 }
@@ -145,6 +179,29 @@ type options struct {
 func WithMembers(members func() map[string][]placement.Member) Option {
 	return func(o *options) error {
 		o.members = members
+		return nil
+	}
+}
+
+// WithConsensus is what this node can keep: the resolutions a database may
+// declare and still be served here.
+//
+// IT IS THE COMPOSER'S ANSWER AND NOT THIS PACKAGE'S. Both halves of the axis
+// are implemented — a crdt database over the replicated store, a raft one over
+// a group per database — but a group has to be opened in something, and a node
+// composed without that cannot keep a ledger. A service told it could would
+// answer "unavailable" forever; told the truth, it refuses by name and an
+// operator knows to change the cloud rather than the config.
+//
+// The default is crdt alone, which is what every node has.
+func WithConsensus(kinds ...string) Option {
+	return func(o *options) error {
+		for _, kind := range kinds {
+			if kind == "" {
+				return errors.New("database: an unnamed consensus")
+			}
+		}
+		o.consensus = append(o.consensus, kinds...)
 		return nil
 	}
 }
@@ -274,6 +331,11 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 		sweep = DefaultSweep
 	}
 
+	consensus := o.consensus
+	if len(consensus) == 0 {
+		consensus = servedConsensus
+	}
+
 	return &Service{
 		host:          h,
 		engines:       newEngines(o.registry, o.now, o.max, o.idle),
@@ -282,6 +344,7 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 		members:       o.members,
 		peer:          h.ID().String(),
 		region:        o.region,
+		consensus:     consensus,
 		floor:         &fleetFloor{from: fleetFrom(o.source)},
 		sweep:         sweep,
 		own:           newHoldings(),
@@ -363,7 +426,7 @@ func (s *Service) declared(ctx context.Context, at address) (declared, error) {
 	if err != nil {
 		return declared{}, err
 	}
-	if err := declaration.serves(); err != nil {
+	if err := declaration.serves(s.consensus); err != nil {
 		return declared{}, err
 	}
 	if declaration.spec.Type != database.KV {
@@ -382,7 +445,20 @@ func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
 }
 
 // open answers the kv surface of a database that has already been resolved.
+//
+// WHERE A DATABASE IS ANSWERED FROM IS DECIDED BY ITS CONSENSUS, and by nothing
+// else in this function. A crdt copy is answered by every node that holds one,
+// so this node answers its own; a raft one is answered by one node at a time,
+// so the connection knows who that is — see forward.go.
 func (s *Service) open(ctx context.Context, at address, declaration declared) (database.KVConn, error) {
+	if declaration.spec.Consensus == database.Raft {
+		return s.route(ctx, at, declaration)
+	}
+	return s.here(ctx, at, declaration)
+}
+
+// here is this node's own connection to a database, warm.
+func (s *Service) here(ctx context.Context, at address, declaration declared) (database.KVConn, error) {
 	conn, err := s.engines.open(ctx, at.key(), declaration.revision, declaration.spec)
 	if err != nil {
 		return nil, err

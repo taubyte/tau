@@ -23,11 +23,17 @@ import (
 //
 // # It is also where size and consensus stop being decoration
 //
-// Both are RequiredWhen the engine is distributed, and today neither reaches a
-// runtime: services/worker carries engine, host, database, tls, dimensions and
-// metric onto the grant, and nothing carries the other two. Reading the
-// declaration rather than the grant reads all of it, which is why they appear
+// Both are RequiredWhen the engine is distributed, and neither used to reach a
+// runtime: services/worker carried engine, host, database, tls, dimensions and
+// metric onto the grant, and nothing carried the other two. Reading the
+// DECLARATION rather than the grant reads all of it, which is why they appear
 // below and did not appear there.
+//
+// `consensus` is on the grant now as well, and for the other half of the same
+// rule: a node that runs no database service opens a kv through its own
+// engines, and one that could not see the word would keep a ledger as a crdt
+// without saying so. Carrying it there buys a refusal by name, not a second
+// opinion — what this service serves from is still read here.
 
 // declared is one database as its author wrote it, plus the deployment that
 // wrote it — the revision is what tells a warm engine it has been replaced.
@@ -38,9 +44,6 @@ type declared struct {
 	// size is the ceiling the author declared, in bytes. Zero means none was
 	// written, which the vocabulary only allows for a connector.
 	size int64
-
-	// consensus is how concurrent writes resolve, as the author wrote it.
-	consensus string
 
 	// regions is where this database's copies go, already resolved: what the
 	// resource's own region block declared, bounded by what its environment
@@ -55,42 +58,47 @@ type declared struct {
 // the words an author writes and they are the words here; nothing is renamed on
 // the way in and there is no second vocabulary to map between.
 var (
-	servedModels    = []database.Type{database.KV}
-	servedConsensus = []string{"crdt"}
+	servedModels = []database.Type{database.KV}
+
+	// servedConsensus is what a node keeps when its composer said nothing. A
+	// crdt store is the one every node has — it is the replicated store every
+	// other v2 store is built on — and raft needs a group to be opened in,
+	// which a composition either hands this service or does not.
+	servedConsensus = []string{database.CRDT}
 )
 
 // defaultConsensus is what a database that wrote none gets. `consensus` is
 // RequiredWhen the engine is distributed, so this is for a connector, which
 // resolves nothing because somebody else's server does.
-const defaultConsensus = "crdt"
+const defaultConsensus = database.CRDT
 
-// serves refuses a declaration this service cannot honour, naming which half of
-// it is the problem.
+// serves refuses a declaration this node cannot honour, naming which half of it
+// is the problem.
 //
-// RAFT IS REFUSED AND NOT MERGED. An author writes it when entries must not
-// resolve by merge — a ledger — and serving it as crdt would answer the one
-// thing the field exists to prevent. What is missing is not the store but the
-// thing that owns a raft group: cluster-service.md settled on 2026-08-31 that a
-// group is a consistency domain owned by a service, scoped to a region, and not
-// one group per service type. Until that exists, this cloud does not keep raft
-// and says so.
-func (d declared) serves() error {
+// WHAT THIS NODE KEEPS AND NOT WHAT THE PACKAGE IMPLEMENTS. raft is served
+// here, over a group per database — but only by a node that was composed with
+// something to open a group in. Refusing at the door means an operator is told
+// "this cloud does not keep that consensus" rather than discovering it as an
+// unavailable database, which is the rule node/queue.go keeps for a crdt queue
+// and node/cache.go for a cache.
+//
+// RAFT IS REFUSED AND NOT MERGED, wherever it is refused. An author writes it
+// when entries must not resolve by merge — a ledger — and serving it as crdt
+// would answer the one thing the field exists to prevent.
+func (d declared) serves(consensus []string) error {
 	if !slices.Contains(servedModels, d.spec.Type) {
 		return fmt.Errorf("%w: %s", ErrModelUnserved, d.spec.Type)
 	}
-	if !slices.Contains(servedConsensus, d.wants()) {
+	if !slices.Contains(consensus, d.wants()) {
 		return fmt.Errorf("%w: %q", ErrConsensusUnserved, d.wants())
 	}
 	return nil
 }
 
-// wants is the resolution this database asked for.
-func (d declared) wants() string {
-	if d.consensus == "" {
-		return defaultConsensus
-	}
-	return d.consensus
-}
+// wants is the resolution this database asked for, already defaulted — of()
+// resolves it onto the spec, so the provider that picks a store is handed a
+// spec that always says.
+func (d declared) wants() string { return d.spec.Consensus }
 
 // declarations reads compiled projects.
 type declarations struct {
@@ -146,8 +154,12 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 			Name:     ref.storeName(),
 			Address:  resource.String(model, "host"),
 			Database: resource.String(model, "database"),
+
+			// RESOLVED HERE AND NOWHERE LATER. The store a resident engine is
+			// handed is chosen by this word, so a hole in it would be a
+			// database kept by whichever branch happened to be first.
+			Consensus: consensusOf(resource.String(model, "consensus")),
 		},
-		consensus: resource.String(model, "consensus"),
 	}
 	if n, ok := resource.Int(model, "size"); ok {
 		out.size = n
@@ -186,6 +198,15 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	}
 
 	return out, nil
+}
+
+// consensusOf is what the author wrote, or what a database that wrote nothing
+// gets.
+func consensusOf(written string) string {
+	if written == "" {
+		return defaultConsensus
+	}
+	return written
 }
 
 func (d *declared) option(name, value string) {

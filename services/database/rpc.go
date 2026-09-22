@@ -40,6 +40,7 @@ var _ databasev1connect.DatabaseServiceHandler = (*handler)(nil)
 
 func (h *handler) KVGet(ctx context.Context, req *connect.Request[databasev1.KVGetRequest]) (*connect.Response[databasev1.KVValue], error) {
 	at := addressOf(req.Msg.GetRef())
+	ctx = hopsIn(ctx, req.Header())
 	if req.Msg.GetKey() == "" {
 		return nil, wire(ErrNoKey)
 	}
@@ -60,6 +61,7 @@ func (h *handler) KVGet(ctx context.Context, req *connect.Request[databasev1.KVG
 // writing.
 func (h *handler) KVPut(ctx context.Context, req *connect.Request[databasev1.KVPutRequest]) (*connect.Response[databasev1.Empty], error) {
 	at := addressOf(req.Msg.GetRef())
+	ctx = hopsIn(ctx, req.Header())
 	if req.Msg.GetKey() == "" {
 		return nil, wire(ErrNoKey)
 	}
@@ -77,6 +79,7 @@ func (h *handler) KVPut(ctx context.Context, req *connect.Request[databasev1.KVP
 // it gone and it is gone.
 func (h *handler) KVDelete(ctx context.Context, req *connect.Request[databasev1.KVDeleteRequest]) (*connect.Response[databasev1.Empty], error) {
 	at := addressOf(req.Msg.GetRef())
+	ctx = hopsIn(ctx, req.Header())
 	if req.Msg.GetKey() == "" {
 		return nil, wire(ErrNoKey)
 	}
@@ -102,6 +105,7 @@ func (h *handler) KVDelete(ctx context.Context, req *connect.Request[databasev1.
 // engine pages, nothing above changes.
 func (h *handler) KVList(ctx context.Context, req *connect.Request[databasev1.KVListRequest]) (*connect.Response[databasev1.KVKeys], error) {
 	at := addressOf(req.Msg.GetRef())
+	ctx = hopsIn(ctx, req.Header())
 
 	kv, err := h.s.kv(ctx, at)
 	if err != nil {
@@ -135,14 +139,41 @@ func (h *handler) KVList(ctx context.Context, req *connect.Request[databasev1.KV
 	return connect.NewResponse(&databasev1.KVKeys{Keys: keys, More: more}), nil
 }
 
-// wire is the one code table: every connect.NewError in this package goes
+// wire is how a failure leaves this service: the one status table, plus the
+// mark that says this node wrote it.
+func wire(err error) error {
+	return answered(code(err))
+}
+
+// answerHeader marks a refusal as this service's own answer.
+//
+// WHAT IT SEPARATES IS AN ANSWER FROM A SILENCE, which no status code can: a
+// node that refuses a ledger and a node that is not there both reach the caller
+// as Unavailable, and the caller has to walk on from one and stop at the other.
+// A voter that ANSWERS ends the walk even when the answer is a refusal — that
+// is the group talking, and the next voter would only say it again.
+//
+// A HEADER AND NOT A CODE, because the code is the instruction and this is
+// about who produced it. p2p/rpc already carries error metadata end to end.
+const answerHeader = "Tau-Database-Answer"
+
+// answered puts this service's mark on a refusal it wrote. See refusal().
+func answered(err error) error {
+	var status *connect.Error
+	if errors.As(err, &status) {
+		status.Meta().Set(answerHeader, "1")
+	}
+	return err
+}
+
+// code is the one status table: every connect.NewError in this package goes
 // through it, so the mapping from a failure to a wire status is decided once.
 //
 // THE DEFAULT IS Unavailable AND NOT Internal, for the reason services/register
 // gives: everything not named below came out of an engine or a store, and that
 // is the caller's cue to retry somewhere else. Internal says "stop, this
 // request is broken", which for a replicated store is the wrong instruction.
-func wire(err error) error {
+func code(err error) error {
 	switch {
 	case errors.Is(err, ErrNoProject), errors.Is(err, ErrNoEnvironment),
 		errors.Is(err, ErrNoID), errors.Is(err, ErrNoKey):
@@ -176,6 +207,14 @@ func wire(err error) error {
 	// lands on the default's code and is named anyway: the default is about
 	// what came out of an engine, and this is a decision this service made.
 	case errors.Is(err, ErrReleasing):
+		return connect.NewError(connect.CodeUnavailable, err)
+
+	// A RAFT DATABASE THIS NODE CANNOT ANSWER FOR RIGHT NOW is the same kind of
+	// sentence and is named for the same reason: a group that has not formed, a
+	// node that does not lead one, and a node that is not in one are three
+	// facts about WHERE the answer is, not about whether there is one. The
+	// caller retries and the gateway places the next call somewhere else.
+	case errors.Is(err, ErrGroupForming), errors.Is(err, ErrNotLeading), errors.Is(err, ErrNotHere):
 		return connect.NewError(connect.CodeUnavailable, err)
 
 	default:
@@ -240,6 +279,15 @@ func (h *handler) holding(ctx context.Context, at address) (*databasev1.Holding,
 	if err != nil {
 		return nil, err
 	}
+
+	// A RAFT DATABASE IS HELD BY ITS GROUP'S VOTERS, and a node becomes one by
+	// opening the group rather than by having bytes on a disk. Holdings answers
+	// about the replicated store, which a ledger does not live in, so it would
+	// answer no about every ledger in the cloud.
+	if declaration.spec.Consensus == database.Raft {
+		return h.s.voting(ctx, at, declaration), nil
+	}
+
 	if h.s.holdings == nil || !h.s.holdings.Held(ctx, declaration.spec) {
 		return &databasev1.Holding{}, nil
 	}
