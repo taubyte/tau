@@ -35,8 +35,18 @@ ssh_opts=(-o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -i "$key")
 
 # THE FILE LIST IS git's, not the filesystem's. --exclude-standard is what keeps
 # an ignored 3 GB cache out of it without maintaining a second ignore list here.
+#
+# ★ A TRACKED FILE THE WORKING TREE HAS DELETED IS STILL IN `git ls-files`, and
+# without --delete-missing-args rsync fails the WHOLE transfer on the first one
+# ("link_stat ... No such file or directory", exit 23) -- so a change that
+# removes a file could not be tested at all without staging the deletion first,
+# which is exactly the commit this script exists to avoid needing. The flag
+# makes a listed-but-absent path a deletion on the far side, which is what the
+# working tree says it is; plain --delete cannot reach it, because with
+# --files-from it only prunes directories the transfer actually visits, so a
+# stale .go file would sit there and break the build.
 { git ls-files; git ls-files --others --exclude-standard; } |
-	rsync -a --delete --files-from=- --exclude='.git/' \
+	rsync -a --delete --delete-missing-args --files-from=- --exclude='.git/' \
 		-e "ssh ${ssh_opts[*]}" ./ "$host:$dir/"
 
 # Quote every argument so a -run regex or a path with a space survives the shell
