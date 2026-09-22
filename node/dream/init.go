@@ -18,6 +18,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/stats"
 )
 
 // Protocol is what a universe calls a v2 node.
@@ -148,6 +150,112 @@ func init() {
 	}
 }
 
+// A DREAM FLEET IS ONE PROCESS ON LOOPBACK, AND raft.DefaultTimeoutConfig IS
+// NOT. That default is sized for nodes on separate continents, and in a
+// universe most of it is dead wait: a group's voters find each other inside a
+// single 200ms discovery poll (BootstrapCheckInterval, pkg/raft/vars.go:7) and
+// then sit out a 30s bootstrap window before anyone is allowed to found the
+// group. Production keeps the default — see node/boot/boot.go, which passes no
+// timeouts at all. Only dream tunes.
+//
+// TUNING DREAM'S RAFT IS NOT NEW HERE: v1's dream has always done it
+// (dream/common/raft.go, 50ms timeouts and a 1s window) and so does the CLI's
+// dev cloud (cli/node/start.go, a 5s window and a 1s heartbeat). Both are sized
+// for a group that bootstraps alone — v1's own comment says as much — while a
+// v2 universe forms real multi-voter groups, so this is the same idea with the
+// founding window taken seriously.
+//
+// EVERY NUMBER BELOW IS A MEASURED FLOOR TIMES THE DEFAULT'S OWN RATIO, never a
+// value that made a test pass. The measurement is 20 group openings across
+// three universes on the build server at load 7, with raft-cluster logging on:
+// discovery (the cluster's own start to its first sighting of a peer) p50
+// 0.202s, p90 0.401s, max 0.802s, and a worst case of 3.2s seen in a run of the
+// whole package.
+const (
+	// dreamBootstrapTimeout is the window raft.New waits for peers before it
+	// decides who founds the group (pkg/raft/cluster.go:193-221).
+	//
+	// IT IS TWO MARGINS ON TWO DIFFERENT QUANTITIES, and only one of them can
+	// wedge a group:
+	//
+	//   - A node whose peers are ALL first seen after 0.8*timeout
+	//     (bootstrapThreshold, cluster.go:81, applied at :222) is a late
+	//     joiner: it is left out of the founder set and asks to be added as a
+	//     voter once the group exists (cluster.go:224-228). Slower, still
+	//     correct. 4s against the worst per-node discovery measured here (3.2s)
+	//     is 1.25x — thin, and deliberately so; see below.
+	//   - A universe where EVERY node is late founds nothing at all, and that
+	//     is the one that hangs. It needs the whole mesh to be late rather than
+	//     one node, and in every universe measured at least one node had seen a
+	//     peer inside 0.80s, so the margin on the quantity that can actually
+	//     wedge a group is 5x.
+	//
+	// THE THIN MARGIN IS THE CHEAP ONE TO LOSE, which is why the window is not
+	// wider. Nothing leaves this window early unless there is already a leader
+	// to join, so a fresh universe pays it in full on every group and every
+	// second added here is a second added to most tests in the package — while
+	// the cost of crossing the thin margin is one node joining a beat late.
+	dreamBootstrapTimeout = 5 * time.Second
+
+	// dreamHeartbeat is what a follower waits without a leader before standing
+	// for election, and it is the timeout the FIRST election after a bootstrap
+	// has to run out (hashicorp randomizes it over 1x-2x).
+	//
+	// ITS FLOOR IS ONE COLD RPC, and pkg/raft already names that floor:
+	// minTransportTimeout is 1s (cluster.go:390) for "a dial + libp2p stream
+	// negotiation on a cold peer", and createTransport (:393) holds the I/O
+	// deadline at it however low the heartbeat goes. Below that floor a
+	// follower would be calling elections against RPCs still in flight. 2s is
+	// twice it, and the first election after a bootstrap has been measured at
+	// 2-4s, which is the 1x-2x randomization and nothing else.
+	dreamHeartbeat = 2 * time.Second
+)
+
+// dreamStabilize is how long a peer must be continuously present before this
+// universe will place data on it. It is ONE LIVENESS WINDOW, which is the
+// shortest pkg/membership permits and, measurably, the only term in the settle
+// barrier that is not already sub-second.
+//
+// ★ WHY A UNIVERSE MAY GO THIS LOW AND A CLOUD MAY NOT. Stabilize buys off
+// placement thrash: a peer that restarts and is back in four seconds must not
+// have its share of the fleet's bytes moved out and back, so a cloud refuses to
+// move on anything shorter than a minute (services/stats/config.go). A universe
+// is one process on loopback whose nodes are goroutines that do not restart, so
+// there is no thrash to buy and the minute is a minute of nothing happening.
+//
+// ★ SHORTENING IT IS NOT A WIDER BUDGET, IT IS A NARROWER PROMISE. A peer
+// enters the placement set after being CONTINUOUSLY live for this long, so the
+// window is also the length of the run a starved node has to complete without
+// missing three consecutive beats — 3 beats at 15s rather than 12 at a minute.
+// A shorter window is therefore strictly harder to interrupt, which is why this
+// is the direction the fix goes rather than a longer wait for it.
+//
+// MEASURED on an idle build server, five runs: node/dream's settle barrier
+// (project_test.go's deployFleetOf) sat at 1m5.001s, of which 60s was this
+// window and 5.00s the first peer report heard, while the register's CRDT and
+// the fleet document were both there at 1.0s. The barrier's budget is 120s, so
+// a minute-long window left 55s for everything else and a loaded box spent it.
+// One liveness window puts the same barrier at 20.000s.
+var dreamStabilize = stats.Config{}.Freshness()
+
+// dreamTimeouts is DefaultTimeoutConfig's shape at dream's scale: election is
+// twice heartbeat and commit and lease equal it, exactly as the default has
+// 30s/15s/15s/15s. The lease is not a free choice either — hashicorp rejects a
+// LeaderLeaseTimeout larger than the heartbeat outright (raft/config.go:369),
+// so equal to it is the ceiling.
+//
+// THE SNAPSHOT NUMBERS ARE THE DEFAULT'S, UNTOUCHED. No universe lives ten
+// minutes or writes 32768 entries, so a smaller interval or threshold could
+// only add snapshot work to tests that never reach one.
+var dreamTimeouts = raft.TimeoutConfig{
+	HeartbeatTimeout:   dreamHeartbeat,
+	ElectionTimeout:    2 * dreamHeartbeat,
+	CommitTimeout:      dreamHeartbeat,
+	LeaderLeaseTimeout: dreamHeartbeat,
+	SnapshotInterval:   raft.DefaultTimeoutConfig.SnapshotInterval,
+	SnapshotThreshold:  raft.DefaultTimeoutConfig.SnapshotThreshold,
+}
+
 func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cfg *iface.ServiceConfig) (io.Closer, error) {
 	runtimes.Lock()
 	tiers := append([]invoke.Runtime(nil), runtimes.list...)
@@ -187,6 +295,7 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 	// cannot share one port, and :0 is how dream allocates every other one.
 	nodeConfig := node.Config{Services: servicesIn(cfg), Cloud: u.Name(), Region: regionIn(cfg, h.ID().String())}
 	nodeConfig.DNSListen = "127.0.0.1:0"
+	nodeConfig.Stats.Stabilize = dreamStabilize
 
 	options := []node.Option{
 		node.WithHost(h),
@@ -198,7 +307,16 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 		// stand-in, and a build queue in a universe replicates the way it does
 		// in a fleet.
 		node.WithRaft(func(namespace string) (raft.Cluster, error) {
-			return raft.New(p, namespace)
+			// SNAPSHOTS GO UNDER THIS NODE'S OWN ROOT. The default is a
+			// machine-wide /tmp path keyed by namespace alone, so two nodes
+			// that open the same group name share one snapshot store and
+			// write each other's state — latent while there was one group
+			// per node, and multiplied by a group per database.
+			return raft.New(p, namespace,
+				raft.WithSnapshotRoot(filepath.Join(root, "raft")),
+				raft.WithTimeouts(dreamTimeouts),
+				raft.WithBootstrapTimeout(dreamBootstrapTimeout),
+			)
 		}),
 		node.WithAssets(store),
 		// THE UNIVERSE'S OWN DIRECTORY, so a volume in a dream is a volume: a

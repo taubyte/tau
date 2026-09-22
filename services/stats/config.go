@@ -108,6 +108,19 @@ type Config struct {
 	// and it must exceed Fresh.
 	Forget time.Duration
 
+	// Stabilize is how long a peer must be continuously present before data
+	// may be placed on it, and continuously absent before it leaves. Default
+	// max(4x Fresh, one minute); it must be at least Fresh.
+	//
+	// IT IS THE ONLY WAY DOWN FROM THE MINUTE, and the minute is a fleet
+	// policy rather than a property of the mechanism: a cloud pays one copy
+	// handed over and one copy deleted every time placement moves, so it
+	// refuses to move on anything shorter however fast the fleet gossips. A
+	// universe is one process on loopback whose nodes do not restart, so it
+	// has no thrash to buy off and a minute is a minute of nothing happening —
+	// see node/dream, which is the only thing in this repo that sets it.
+	Stabilize time.Duration
+
 	// Region is where this node is, broadcast with every report. Empty means a
 	// node that will not say. See stats.Report.Region for why this one field is
 	// different in kind from everything else a node reports about itself.
@@ -161,6 +174,16 @@ const (
 	DefaultInterval = 5 * time.Second
 	freshIntervals  = 3
 	forgetIntervals = 20
+
+	// stabilizeFreshWindows is how many freshness windows a peer must be
+	// continuously present for before data moves onto it — see Config.Stabilize
+	// for why there is a floor under the product.
+	stabilizeFreshWindows = 4
+
+	// defaultStabilize is that floor, and it is pkg/membership's own default
+	// restated rather than imported: this package decides the window and that
+	// one decides what it means.
+	defaultStabilize = time.Minute
 )
 
 var (
@@ -184,6 +207,22 @@ func (c Config) withDefaults() (Config, error) {
 	if c.Fresh < c.Interval {
 		return Config{}, fmt.Errorf("stats: fresh %s is shorter than the %s interval: every row would be stale before its replacement was sent",
 			c.Fresh, c.Interval)
+	}
+	if c.Stabilize == 0 {
+		// FOUR FRESHNESS WINDOWS, FLOORED AT THE FLEET POLICY, so a fleet that
+		// gossips slowly settles slowly and one that gossips quickly still
+		// waits a minute before data moves onto a peer.
+		c.Stabilize = stabilizeFreshWindows * c.Fresh
+		if c.Stabilize < defaultStabilize {
+			c.Stabilize = defaultStabilize
+		}
+	}
+	if c.Stabilize < c.Fresh {
+		// pkg/membership refuses this in so many words, and it is refused here
+		// too so the operator hears it about the field they wrote rather than
+		// about a liveness window they never named.
+		return Config{}, fmt.Errorf("stats: stabilize %s is shorter than the %s freshness window: placement would move faster than acknowledgement",
+			c.Stabilize, c.Fresh)
 	}
 	return c, nil
 }

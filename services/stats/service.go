@@ -100,17 +100,11 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 	// THE PLACEMENT VIEW'S LIVENESS IS THIS SERVICE'S FRESHNESS, because both
 	// answer "has this peer reported lately" and there is only one heartbeat.
 	//
-	// STABILIZE SCALES WITH IT, and pkg/membership refuses the alternative in so
-	// many words: a stabilize shorter than liveness would have placement moving
-	// faster than acknowledgement. Four freshness windows, floored at the
-	// package default, so a fleet that gossips slowly settles slowly and one
-	// that gossips quickly still waits a minute before data moves onto a peer.
-	stabilize := 4 * c.Fresh
-	if stabilize < defaultStabilize {
-		stabilize = defaultStabilize
-	}
+	// STABILIZE IS READ AND NOT DERIVED HERE — withDefaults derives it, floors
+	// it and refuses one shorter than the freshness window, so the number an
+	// operator can write and the number this service runs on are one number.
 	members, err := membership.New(membership.Options{
-		Liveness: c.Fresh, Stabilize: stabilize, Now: o.now,
+		Liveness: c.Fresh, Stabilize: c.Stabilize, Now: o.now,
 	})
 	if err != nil {
 		return nil, err
@@ -352,11 +346,6 @@ func wireSockets(in []stats.Socket) []*statsv1.Socket {
 	}
 	return out
 }
-
-// defaultStabilize is the floor on how long a peer must be settled before data
-// moves onto it, and it is pkg/membership's own default restated rather than
-// imported: this package decides the window and that one decides what it means.
-const defaultStabilize = time.Minute
 
 // beat feeds the placement view, which runs on a different timescale from the
 // routing view and deliberately so.
