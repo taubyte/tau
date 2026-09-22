@@ -33,6 +33,19 @@ var (
 	// ErrEmptyID is returned by Push for an empty item id.
 	ErrEmptyID = errors.New("queue: item id must not be empty")
 
+	// ErrReservedKey is returned by PushWith for an operation that writes into
+	// this queue's own keyspace or its dead letter's. What a caller commits
+	// alongside a push is its own record that the push happened; these keys are
+	// this package's state machine, and a second author of them has none of its
+	// rules.
+	ErrReservedKey = errors.New("queue: that key belongs to this queue")
+
+	// ErrMalformedOp is returned by PushWith for an operation that is neither a
+	// set nor a delete, or is both. raft.BatchOp is a struct a caller fills in
+	// by hand, so the one shape it cannot express is refused here rather than
+	// applied as whatever the store makes of it.
+	ErrMalformedOp = errors.New("queue: an operation must be exactly one of set or delete")
+
 	// ErrForeignKey is returned when a key under this queue's prefix was not
 	// written by this queue. It is a fault in whatever wrote it, so it is
 	// reported rather than skipped.

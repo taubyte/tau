@@ -76,13 +76,18 @@ func TestACronStartsAWorkflow(t *testing.T) {
 	require.Equal(t, "sync", start.Settings[settingStartKind])
 	require.Equal(t, "queue", start.Settings[settingSyncType],
 		"a start is a SEND, so the entry has to name the queue type and not only the kind")
-	require.NotEmpty(t, start.Settings[settingStartHandle],
-		"where a start lands, off the workflow's own entry record")
 	require.Equal(t, "send", start.Settings[settingStartAs])
 
-	// AND THE HANDLE IS THE FIRST STEP'S QUEUE and not the workflow's own,
-	// which is the whole point of the entry record.
-	require.NotContains(t, start.Settings[settingStartHandle], start.Handle[len("shop/prod/"):])
+	// AND THE GRANT ITSELF IS THE FIRST STEP'S QUEUE, which is where a send
+	// actually lands. It used to be the WORKFLOW's — a handle no consumer ever
+	// opens — so a cron that started a pipeline pushed an item nothing drained,
+	// claimed its slot, and reported success. This assertion used to say the
+	// two differ; it now says which one a firer is handed.
+	require.Equal(t, "sync", start.Kind)
+	require.Equal(t, []string{"send"}, start.Ops)
+	require.Equal(t, start.Settings[settingStartHandle], start.Handle,
+		"a firer gets the queue the entry record names, already resolved")
+	require.Contains(t, start.Handle, "shop/prod/")
 }
 
 // TestATargetNothingRunsIsSAIDRatherThanDropped, which is still the answer for

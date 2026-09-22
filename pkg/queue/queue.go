@@ -5,6 +5,7 @@ import (
 	"math/rand/v2"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -113,13 +114,54 @@ type Queue struct {
 // the same group to drain it.
 func (q *Queue) Config() Config { return q.cfg }
 
+// Item is one thing to push: the pair [Queue.Push] takes, for the form that
+// takes several.
+type Item struct {
+	ID   string
+	Data []byte
+}
+
 // Push adds an item. An id already in the queue — waiting, claimed, or backing
 // off — is a no-op, so a producer that cannot tell whether its last push landed
 // may repeat it. An id that was acked is gone, and pushing it again is a new
 // item.
 func (q *Queue) Push(id string, data []byte) error {
-	if id == "" {
-		return ErrEmptyID
+	return q.PushWith([]Item{{ID: id, Data: data}})
+}
+
+// PushWith adds items and applies the caller's OWN operations in the same
+// replicated entry, so a producer gets both or neither.
+//
+// IT EXISTS BECAUSE A PRODUCER'S RECORD OF A PUSH MUST NOT OUTLIVE THE PUSH. A
+// clock claims a period and then pushes the work that period owes; as two
+// entries, a leader that dies between them has spent the period and produced
+// nothing, and no later turn can tell — the claim it left behind says the work
+// was already done. As one entry there is no between. That is the caller shape
+// this is for and the only one: a key OUTSIDE this queue whose whole meaning is
+// "the push happened".
+//
+// THE OPERATIONS MAY NOT TOUCH THIS QUEUE OR ITS DEAD LETTER, refused with
+// [ErrReservedKey]. Every state transition in this package is one Batch and
+// that is what makes an item impossible to lose between two places; a caller
+// writing into the middle of those keys would be a second author of them with
+// none of the rules.
+//
+// Everything else is [Queue.Push]'s: an id this queue already holds is skipped
+// rather than refused, and no items at all still commits the operations.
+func (q *Queue) PushWith(items []Item, also ...raft.BatchOp) error {
+	for _, item := range items {
+		if item.ID == "" {
+			return ErrEmptyID
+		}
+	}
+	for _, op := range also {
+		key, err := touched(op)
+		if err != nil {
+			return err
+		}
+		if q.owns(key) {
+			return fmt.Errorf("%w: %q", ErrReservedKey, key)
+		}
 	}
 
 	q.group.mu.Lock()
@@ -128,21 +170,55 @@ func (q *Queue) Push(id string, data []byte) error {
 	if err := q.prepare(); err != nil {
 		return err
 	}
-	if _, exists := q.group.store.Get(q.keys.index(id)); exists {
+
+	ops := append([]raft.BatchOp(nil), also...)
+	at := addClamped(q.group.now(), q.cfg.Delay)
+	seen := make(map[string]bool, len(items))
+	for _, item := range items {
+		// AN ID TWICE IN ONE CALL IS ONE ITEM, for the same reason an id
+		// already in the queue is one. The index read below is of COMMITTED
+		// state, which nothing in this batch has reached, so without this the
+		// same id would land under two ready keys with one index naming
+		// whichever the apply wrote last — an item nothing can ever claim.
+		if seen[item.ID] {
+			continue
+		}
+		seen[item.ID] = true
+		if _, exists := q.group.store.Get(q.keys.index(item.ID)); exists {
+			continue
+		}
+
+		value, err := record{ID: item.ID, Data: item.Data, DeliverAt: at.UnixNano()}.encode()
+		if err != nil {
+			return err
+		}
+		key := q.keys.ready(at, item.ID)
+		ops = append(ops, set(key, value), set(q.keys.index(item.ID), []byte(key)))
+	}
+
+	if len(ops) == 0 {
 		return nil
 	}
+	return q.group.store.Batch(ops, q.cfg.ApplyTimeout)
+}
 
-	at := addClamped(q.group.now(), q.cfg.Delay)
-	value, err := record{ID: id, Data: data, DeliverAt: at.UnixNano()}.encode()
-	if err != nil {
-		return err
+// owns is whether a key is part of this queue's state machine or its dead
+// letter's.
+func (q *Queue) owns(key string) bool {
+	return strings.HasPrefix(key, q.keys.prefix) || strings.HasPrefix(key, q.dead.prefix)
+}
+
+// touched is the key one operation acts on, refusing one that names neither
+// side or both — which a caller assembling a raft.BatchOp by hand can write and
+// which the store would apply as something nobody meant.
+func touched(op raft.BatchOp) (string, error) {
+	switch {
+	case op.Set != nil && op.Delete == nil:
+		return op.Set.Key, nil
+	case op.Delete != nil && op.Set == nil:
+		return op.Delete.Key, nil
 	}
-
-	key := q.keys.ready(at, id)
-	return q.group.store.Batch([]raft.BatchOp{
-		set(key, value),
-		set(q.keys.index(id), []byte(key)),
-	}, q.cfg.ApplyTimeout)
+	return "", ErrMalformedOp
 }
 
 // Remove withdraws an item nobody has claimed: Push's counterpart, for a

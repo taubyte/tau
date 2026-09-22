@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -113,7 +114,7 @@ func depth(t *testing.T, n *Node) (ready, claimed int) {
 func consuming(t *testing.T, answers *answering, compiled []byte) (*Node, *dispatcher) {
 	t.Helper()
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Primitives}},
 		WithRuntimes(answers))
 	require.NoError(t, n.Start(t.Context()))
 
@@ -128,9 +129,9 @@ func consuming(t *testing.T, answers *answering, compiled []byte) (*Node, *dispa
 	_, err = n.Worker().Resolve(t.Context(), workerTarget())
 	require.NoError(t, err)
 
-	// Start forms the queue cluster in the background; the mock one is
-	// instant, so waiting for it is what makes a step deterministic.
-	<-n.work.forming
+	// Start forms the primitives service's group in the background; the mock
+	// one is instant, so waiting for it is what makes a step deterministic.
+	<-n.Primitives().Formed()
 
 	// AND A DELIVERY IS PLACED, so this node has to be in its own view before it
 	// can take its own work. Asking placement while the first stats report is
@@ -151,7 +152,7 @@ func push(t *testing.T, n *Node, id string, data []byte) {
 
 	consumers := n.Worker().Consumers(t.Context())
 	require.NotEmpty(t, consumers, "the fixture declares a consumer")
-	require.NoError(t, n.work.Send(t.Context(), consumers[0].Queue, id, data))
+	require.NoError(t, n.syncs.Send(t.Context(), consumers[0].Queue, id, data))
 }
 
 // TestAnItemPushedIsAnItemDelivered — the whole point of the file: something
@@ -352,6 +353,31 @@ func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 	default:
 		t.Fatal("Close returned with the claim loop still running")
 	}
+}
+
+// TestACOMPUTENODEWITHNOCONSENSUSOFITSOWNSTILLCLAIMS. The loop used to be gated
+// on this node having raft, on the reasoning that "a node running a worker
+// without raft opens no queue and simply finds none" — which was true while the
+// queue was the worker's own group and stopped being true with the cutover: a
+// queue is the primitives service's, and node/primitives.go resolves it through
+// stats to a service on another node. Under the old gate such a node could
+// claim and never tried, silently.
+func TestAWorkerWithNoRaftStillRunsTheClaimLoop(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+
+	// BUILT WITHOUT THE HARNESS, which always hands a node a raft opener: what
+	// is under test is the composition that has none.
+	n, err := New(Config{Services: []string{Worker, Stats}},
+		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
+		WithRuntimes(&answering{name: "wasm", status: 200}))
+	require.NoError(t, err)
+	t.Cleanup(func() { n.Close() })
+	require.NoError(t, n.Start(t.Context()))
+
+	require.NotNil(t, n.dispatchDone,
+		"a compute node reaches a primitives service in the fleet, so it has queues to drain")
 }
 
 // errNoAnswer is a tier that could not start an instance at all — the failure a

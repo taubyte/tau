@@ -1,0 +1,310 @@
+syntax = "proto3";
+
+// primitives is the service that holds a project's coordination primitives —
+// the `sync` kind's two types, `queue` and `log` — and it exists because
+// nothing sat between them and the guest.
+//
+// IN V1 THE COMPUTE NODE HELD THEM. node/queue.go opened a raft cluster in the
+// worker's own process and node/log.go put every log's records in one store
+// every node carries, so the thing that decides who writes next was a property
+// of whichever machine happened to run the code. A queue and a log are not the
+// worker's state; they are the platform's, and they outlive the invocation that
+// touched them.
+//
+// # Why it is not the database service and not the storage service
+//
+// A database is a closed set of data MODELS — kv, sql, document, vector — each
+// with its own operation surface, and a caller reaches one by naming a key. A
+// queue has no key and a log's position is issued rather than chosen.
+//
+// Storage is bytes an author NAMES, reads back by name, lists, meters and
+// garbage-collects against a quota. A log record and a queue item are bytes the
+// platform keeps as a consequence of ordering something: never addressed as
+// objects, never listed, never metered. Same disk, different question — which
+// is why these are small and storage's are not.
+//
+// # The caller names a primitive; it does not describe one
+//
+// Every call carries the deployment and the resource id and NOTHING about what
+// that resource is. No visibility timeout, no retry budget, no dead letter, no
+// retention, no consensus. The service resolves the declaration out of the
+// register itself, for the reason database.proto gives: a caller that described
+// the queue could describe a DIFFERENT one — shorten somebody else's visibility
+// timeout, point a dead letter at a queue it may not write — and the service
+// would have no way to tell.
+//
+// # A delivery is a token and the token is the exclusion
+//
+// Claim hands an item out with a token that identifies THAT handing-out. An ack
+// or a nack carrying a token the queue no longer holds is refused, which is the
+// only thing stopping a consumer whose claim expired from acknowledging work
+// that has since been given to somebody else. So the token round-trips
+// verbatim: it is opaque and a caller that builds one gets nothing.
+package tau.primitives.v1;
+
+// Ref is one sync resource, in one environment of one project.
+//
+// THE ID AND NEVER THE AUTHOR'S LABEL, for the reason database.proto states: a
+// label is local to the resource that wrote it, and two projects may both call
+// a queue `jobs`.
+message Ref {
+  string project = 1;
+  string environment = 2;
+
+  // id is the sync resource's content-addressed id.
+  string id = 3;
+
+  // instance names one of many, for a resource whose config says it holds many.
+  // Empty is the resource itself. It is a separate field rather than a suffix
+  // on id, because a separator inside an id is how one instance reads another's
+  // items.
+  string instance = 4;
+}
+
+// ---------------------------------------------------------------- queue
+
+message QueueSendRequest {
+  Ref ref = 1;
+
+  // id is the item's identity, and it is the caller's. An id the queue already
+  // holds is a no-op, so a producer that cannot tell whether its last send
+  // landed may repeat it.
+  string id = 2;
+
+  bytes data = 3;
+}
+
+// QueueClaimRequest asks for up to max items. A claim is EXCLUSIVE: an item
+// handed out here is invisible to every other consumer until its visibility
+// timeout expires or it is settled.
+message QueueClaimRequest {
+  Ref ref = 1;
+
+  // max is how many items to hand out at once. Zero means one, and a larger ask
+  // than the service's ceiling gets the ceiling.
+  uint32 max = 2;
+}
+
+// Delivery is one handing-out of one item.
+message Delivery {
+  string id = 1;
+  bytes data = 2;
+
+  // attempt is which delivery this is, counting from one. A consumer reading it
+  // knows the work has been tried before without asking anybody.
+  uint32 attempt = 3;
+
+  // deadline is when this claim expires and the item becomes deliverable again,
+  // in unix nanoseconds.
+  int64 deadline = 4;
+
+  // token identifies THIS delivery and must round-trip verbatim. It is opaque:
+  // a settle carrying a token the queue no longer holds is refused, which is
+  // what stops an expired consumer from acknowledging work somebody else now
+  // has.
+  string token = 5;
+}
+
+message Deliveries {
+  repeated Delivery deliveries = 1;
+}
+
+// QueueSettleRequest ends one delivery.
+//
+// ACK AND NACK ARE ONE MESSAGE WITH A DISCRIMINATOR rather than two calls,
+// because they are the same act — giving a delivery back — differing only in
+// whether the work was done. A consumer that got them the wrong way round would
+// have made the same mistake with two calls.
+message QueueSettleRequest {
+  Ref ref = 1;
+  Delivery delivery = 2;
+
+  // done says the work succeeded, so the item is discarded. False gives the
+  // item back now rather than waiting out the visibility timeout, which counts
+  // as a failed delivery: it comes back after the retry delay, or moves to the
+  // dead letter if that attempt was its last.
+  bool done = 3;
+}
+
+message QueueDepthValue {
+  // ready is waiting items, INCLUDING ones whose delay or backoff has not
+  // elapsed. claimed is items a consumer currently holds.
+  uint64 ready = 1;
+  uint64 claimed = 2;
+
+  // dead is what the queue's dead letter holds. It is here rather than behind a
+  // second Ref because a dead letter is not a declared resource — nothing can
+  // name it — so this is the only way anybody can see one at all.
+  uint64 dead = 3;
+}
+
+// ---------------------------------------------------------------- log
+
+message LogAppendRequest {
+  Ref ref = 1;
+  bytes data = 2;
+}
+
+// LogCursor is where a record landed. It is opaque on purpose: a position is a
+// promise only one consensus can keep, so nothing about its contents is
+// promised and a caller that assembles one gets a refusal.
+message LogCursor {
+  string cursor = 1;
+}
+
+message LogReadRequest {
+  Ref ref = 1;
+
+  // after is the cursor of the last record the caller already has. Empty starts
+  // at the oldest record still held, which is NOT position zero: retention
+  // takes the front.
+  string after = 2;
+  uint32 limit = 3;
+}
+
+message LogRecord {
+  string cursor = 1;
+
+  // at is unix SECONDS, off the LOG's clock rather than the appender's: what a
+  // log orders is when it took the record.
+  int64 at = 2;
+
+  bytes data = 3;
+}
+
+message LogRecords {
+  repeated LogRecord records = 1;
+}
+
+// ---------------------------------------------------------------- cron
+
+// CronTarget is one thing a schedule edges to, as an address whatever fires it
+// can invoke.
+//
+// THE ADDRESS AND NOT A REFERENCE, which is the same rule a run's message
+// follows: a fire that named its target and looked it up at delivery would fire
+// whatever the deployment says NOW, so a redeploy between the claim and the
+// delivery would silently retarget it. What travels is the target of the
+// deployment that claimed the slot.
+message CronTarget {
+  string project = 1;
+  string environment = 2;
+
+  // scope is where the target lives inside the project — an application, a
+  // workflow — as the segments the compiled object nests it under.
+  repeated string scope = 3;
+
+  string kind = 4;
+  string name = 5;
+}
+
+// CronStart is one workflow a schedule begins a run of.
+//
+// A WORKFLOW IS STARTED AND NOT FIRED, which is a different act and not a
+// different reliability: a run begins as an item in its first step's DECLARED
+// queue, so what travels is the grant that names that queue rather than an
+// address something invokes.
+//
+// THE HANDLE IS THE QUEUE'S AND NOT THE WORKFLOW'S. A grant handled by the
+// workflow's own id names a queue nothing drains — the send is accepted, the
+// slot is spent, and the run never happens. See invoke.StartGrant, which is the
+// one place that rebuild lives.
+message CronStart {
+  string handle = 1;
+
+  // label is the author's own name for the workflow, for a message that says
+  // which one. Nothing resolves anything from it.
+  string label = 2;
+}
+
+// CronFire is one thing one slot of one schedule owes, on its way to whatever
+// does it.
+//
+// IT IS THE BODY OF A QUEUE ITEM AND NOT A CALL. It is pushed by the node that
+// claimed the slot and claimed back by whichever node delivers it, so the two
+// are never the same act and what the second one knows is only what the first
+// wrote down.
+message CronFire {
+  // cron is the author's own name for the schedule, which is what the fired
+  // workload is told it is a run of.
+  string cron = 1;
+
+  // slot is the scheduled moment this is a run of, in unix seconds — NOT the
+  // moment it is delivered. A run spread by jitter and a run that was late both
+  // say what period they are a run of.
+  int64 slot = 2;
+
+  // what this item owes. ONE ITEM IS ONE THING A SLOT OWES, so a target that
+  // fails does not nack a workflow start that already succeeded — and each gets
+  // its own attempt budget and its own place in the dead letter.
+  oneof owes {
+    CronTarget target = 3;
+    CronStart start = 5;
+  }
+
+  // jitter is how far the fire may be spread from the slot, in nanoseconds, as
+  // the author declared it. It travels with the item because it is waited out
+  // by the consumer, after the claim — a producer that slept first would leave
+  // the slot unclaimed for the length of the window.
+  int64 jitter = 4;
+}
+
+// CronTaskRequest is one window of the clock, handed to the node that will
+// generate and distribute what it owes.
+//
+// THE WINDOW AND NOT A MINUTE, because a cloud that stalled owes the schedules
+// inside `(since, upto]` ONE run each and not one per minute it missed. The
+// tasked node takes the most recent slot in the window and skips the rest.
+//
+// IT CARRIES NOTHING ELSE — no schedule, no position, no task id. Which crons
+// exist is a property of the deployments the tasked node is already serving,
+// and the minute a leader has handed out is that leader's own memory: a field
+// here for either would be a second opinion the two nodes could disagree about.
+message CronTaskRequest {
+  // since and upto bound the window `(since, upto]`, in unix SECONDS. A cron
+  // expression's finest grain is a minute, so both are minute boundaries and
+  // nothing finer can be expressed.
+  int64 since = 1;
+  int64 upto = 2;
+}
+
+// ------------------------------------------------------------------ results
+
+// Empty stays a message rather than google.protobuf.Empty so a field can be
+// added later without every caller recompiling against a different type.
+message Empty {}
+
+service PrimitivesService {
+  // QueueSend pushes one item.
+  rpc QueueSend(QueueSendRequest) returns (Empty);
+
+  // QueueClaim hands items out exclusively. An empty answer means nothing is
+  // deliverable, which is not the same as an empty queue: items can be delayed,
+  // backing off, or already claimed.
+  rpc QueueClaim(QueueClaimRequest) returns (Deliveries);
+
+  // QueueSettle ends one delivery. See QueueSettleRequest.
+  rpc QueueSettle(QueueSettleRequest) returns (Empty);
+
+  // QueueDepth is what a queue holds, for an operator asking. It is
+  // observability and never a decision: it reads local state without a barrier.
+  rpc QueueDepth(Ref) returns (QueueDepthValue);
+
+  // LogAppend adds one record and answers the cursor it landed at.
+  rpc LogAppend(LogAppendRequest) returns (LogCursor);
+
+  // LogRead answers the records after a cursor, oldest first. Fewer than limit
+  // means caught up.
+  rpc LogRead(LogReadRequest) returns (LogRecords);
+
+  // CronTask hands one window of the clock to this node: "the window
+  // `(since, upto]` is yours — generate and distribute what it owes."
+  //
+  // THE ANSWER IS THE WHOLE OF THE RE-TASKING PROTOCOL. A window this node
+  // could not generate is refused, and the leader that handed it out does not
+  // record it as spent — so the next turn hands the same window out again,
+  // widened by whatever has come round since. There is no task record, no
+  // lease and no retry queue anywhere: an unanswered tasking is simply one the
+  // clock has not moved past.
+  rpc CronTask(CronTaskRequest) returns (Empty);
+}

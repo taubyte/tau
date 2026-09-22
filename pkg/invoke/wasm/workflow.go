@@ -42,12 +42,6 @@ const (
 // queue backing — a workflow is queues, so it is the same backing.
 var ErrNoWorkflows = errors.New("wasm: this resource starts a workflow and this tier has nothing to queue one with")
 
-// The settings the composer writes from the workflow's `entry/start` record.
-const (
-	settingStartKind   = "entry/start/kind"
-	settingStartHandle = "entry/start/handle"
-)
-
 // workflowKind is the vocabulary's own name for the kind.
 const workflowKind = "workflow"
 
@@ -127,12 +121,13 @@ func (r *Runtime) workflowImports(spec invoke.Spec) []component.Option {
 		// THE COMPOSER RESOLVED WHERE A START LANDS. A tier that read the
 		// workflow to find out would need the compiled project on the request
 		// path, which is the whole reason a grant carries a handle at all.
-		// THE TYPE IS CHECKED AND NOT ONLY THE KIND. `sync` covers a queue and a
-		// log, and a start is a SEND — so a workflow whose entry recorded a log
-		// would be starting a run into something with no delivery at all.
-		handle := grant.Settings[settingStartHandle]
-		if handle == "" || grant.Settings[settingStartKind] != syncKind ||
-			grant.Settings[settingSyncType] != queueType {
+		//
+		// AND THE REBUILD IS SHARED — see invoke.StartGrant. It was this
+		// function's alone, and the other firer of a start passed the
+		// workflow's own grant instead: an item in a queue named after the
+		// workflow, which no consumer ever opens.
+		queued, ok := invoke.StartGrant(grant)
+		if !ok {
 			return errorResult(workflowFailure(errWorkflowUnavailable,
 				label+" records no queue to start at")), nil
 		}
@@ -141,13 +136,7 @@ func (r *Runtime) workflowImports(spec invoke.Spec) []component.Option {
 				"this node has nothing to queue a run with")), nil
 		}
 
-		// THE GRANT HANDED ON IS THE QUEUE'S AND THE OPS ARE THE QUEUE'S, so
-		// the backing enforces what it always does and this function invents no
-		// permission: what was checked above is the workflow grant.
-		if err := r.queues.Send(ctx, invoke.Grant{
-			Kind: syncKind, Label: label, Handle: handle,
-			Ops: []string{"send"}, Settings: grant.Settings,
-		}, id, input); err != nil {
+		if err := r.queues.Send(ctx, queued, id, input); err != nil {
 			if errors.Is(err, ErrNotWritable) {
 				return errorResult(workflowFailure(errWorkflowNotWritable, err.Error())), nil
 			}

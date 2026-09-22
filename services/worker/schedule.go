@@ -25,7 +25,8 @@ import (
 //
 // The schedule, the zone it is written in, what happens when a run overlaps the
 // next tick, and how far to spread the start. All four are the author's, and
-// what a node does with them is node/cron.go's.
+// what is done with them is services/primitives/cron.go's — this walk decides
+// nothing about time.
 
 // Schedule is one cron, resolved: when it fires and what it fires.
 type Schedule struct {
@@ -55,10 +56,14 @@ type Schedule struct {
 	// Fires is every target this cron edges to, in the form Invoke takes.
 	Fires []Target
 
-	// Starts is every workflow it begins a run of, as the grant that says
-	// where a start lands. A cron that starts a pipeline is the ordinary shape
-	// — the fixture's own does it — and starting one is a SEND rather than an
-	// invocation, so it cannot travel as a Target.
+	// Starts is every workflow it begins a run of, as THE FIRST STEP'S QUEUE
+	// GRANT — which is where a start actually lands. A cron that starts a
+	// pipeline is the ordinary shape (the fixture's own does it) and starting
+	// one is a SEND rather than an invocation, so it cannot travel as a Target.
+	//
+	// THE HANDLE IS THE QUEUE'S AND NOT THE WORKFLOW'S. The entry record that
+	// says which queue is still on Settings, so a caller that wants to see what
+	// was resolved can; what it must not have to do is resolve it again.
 	Starts []invoke.Grant
 
 	// Refused, when set, is why this cloud will not fire it — and it names the
@@ -75,7 +80,8 @@ const cronKind = "cron"
 // not enumerate, so what a node can fire is what it is already serving. A cron
 // in a deployment nothing has touched does not fire — which for a schedule is a
 // sharper consequence than for a queue, since nothing else will wake the
-// deployment up. See node/cron.go, which is where that is dealt with.
+// deployment up. The composer hands this to services/primitives, which runs the
+// clock over it.
 func (s *Service) Schedules(ctx context.Context) []Schedule {
 	var out []Schedule
 	s.eachDeployment(ctx, func(proj *specs.Project, name, environment string) {
@@ -173,9 +179,18 @@ func scheduleOf(proj *specs.Project, name, environment string, scope []string, c
 	return out, true
 }
 
-// startGrant is the grant a cron spends to begin a run, built the same way a
-// workload's is — through the workflow's own `entry/start` record, so the two
-// callers cannot disagree about where a start lands.
+// startGrant is the grant a cron spends to begin a run.
+//
+// WHAT IT ANSWERS IS THE QUEUE'S GRANT AND NOT THE WORKFLOW'S, and that is the
+// whole of what a firer needs: a workflow runs on no tier, so starting one is a
+// SEND to its first step's queue and a grant handled by the workflow's own id
+// names a queue nothing drains. That is what this used to answer — the item was
+// accepted, the cron's slot was claimed, and the run never happened, with
+// nothing red anywhere.
+//
+// THE REBUILD IS invoke.StartGrant's, which is also what pkg/invoke/wasm's
+// `workflow.start` calls. A convention with two implementations is a convention
+// one of them gets wrong, and this is the one that did.
 func startGrant(proj *specs.Project, name, environment string, scope []string, reach specs.Reach) (invoke.Grant, error) {
 	target, id, err := proj.Reached(scope, reach)
 	if err != nil {
@@ -194,7 +209,13 @@ func startGrant(proj *specs.Project, name, environment string, scope []string, r
 	if grant.Refused != "" {
 		return invoke.Grant{}, fmt.Errorf("%s", grant.Refused)
 	}
-	return grant, nil
+
+	queued, ok := invoke.StartGrant(grant)
+	if !ok {
+		return invoke.Grant{}, fmt.Errorf(
+			"workflow %q records no queue to start at, so a tick has nowhere to land", reach.Label)
+	}
+	return queued, nil
 }
 
 // unfireable says why a target cannot be invoked on a tick, or "" when it can.

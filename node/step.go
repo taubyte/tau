@@ -8,7 +8,7 @@ import (
 	"strconv"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/queue"
+	primitivesService "github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -68,7 +68,7 @@ var ErrNoStepTarget = errors.New("node: a workflow step's driver was granted no 
 // backed off or dead-lettered is the queue's, decided from the budget the step
 // declared — see node/dispatch.go, which acks on success and leaves a failure
 // to the queue exactly as it does for any other consumer.
-func (d *dispatcher) runStep(ctx context.Context, consumer worker.Consumer, item queue.Delivery) error {
+func (d *dispatcher) runStep(ctx context.Context, consumer worker.Consumer, item primitivesService.Delivery) error {
 	// A STEP THAT ONLY WAITS INVOKES NOTHING, and the vocabulary's own fixture
 	// has one: `- name: settle / wait: 30s`. The lowering gives such a step a
 	// queue with the wait as its `delay` and a driver with no `call` to grant,
@@ -84,7 +84,7 @@ func (d *dispatcher) runStep(ctx context.Context, consumer worker.Consumer, item
 		if len(consumer.Sends) == 0 {
 			return fmt.Errorf("%w: %s", ErrNoStepTarget, consumer.Target.Name)
 		}
-		return wrapNotLeader(d.sendOn(ctx, consumer.Sends[0], item.ID, item.Data))
+		return d.sendOn(ctx, consumer.Sends[0], item.ID, item.Data)
 	}
 
 	// PLACED, like every other invocation in this node. The driver is platform
@@ -122,13 +122,18 @@ func (d *dispatcher) runStep(ctx context.Context, consumer worker.Consumer, item
 	// step whose send landed and whose ack did not hands the next step the same
 	// work rather than a second copy of it — which is what makes a redelivery
 	// of THIS step safe.
-	return wrapNotLeader(d.sendOn(ctx, consumer.Sends[0], item.ID, res.Body))
+	return d.sendOn(ctx, consumer.Sends[0], item.ID, res.Body)
 }
 
 // sendOn hands the result to the next step's queue.
+//
+// THE REFUSAL ARRIVES ALREADY IN THE TIER'S WORDS. The primitives service maps
+// a write off the leader onto ErrNotWritable itself, on both arms, so nothing
+// is re-wrapped here — which is what makes a step on a follower say the same
+// thing whether the namespace was in this process or on another node.
 func (d *dispatcher) sendOn(ctx context.Context, to invoke.Grant, id string, body []byte) error {
-	if d.node.work == nil {
-		return ErrNoRaft
+	if d.node.syncs == nil {
+		return ErrNoPrimitives
 	}
-	return d.node.work.Send(ctx, to, id, body)
+	return d.node.syncs.Send(ctx, to, id, body)
 }

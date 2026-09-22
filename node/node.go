@@ -42,7 +42,7 @@ import (
 	"strings"
 	"sync"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/container"
 	"github.com/taubyte/tau/pkg/invoke/static"
@@ -56,6 +56,7 @@ import (
 
 	databaseService "github.com/taubyte/tau/services/database"
 	dnsService "github.com/taubyte/tau/services/dns"
+	primitivesService "github.com/taubyte/tau/services/primitives"
 	registerService "github.com/taubyte/tau/services/register"
 	secretsService "github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/stats"
@@ -85,6 +86,12 @@ type Node struct {
 	// one in the fleet, which is the whole reason the service exists.
 	database *databaseService.Service
 
+	// primitives is the service that owns this project's `sync` kind — its
+	// queues and its logs — when this node runs it. A node that does not
+	// reaches one in the fleet; see node/primitives.go for why there is no
+	// third answer.
+	primitives *primitivesService.Service
+
 	// decider is this node's component tier, narrowed to the two worlds its own
 	// policy drives — see decides in authorizer.go. Nil on a node with no asset
 	// store, which is a node that runs no components.
@@ -111,10 +118,10 @@ type Node struct {
 	// is not.
 	bus *streams
 
-	// work is this node's queue backing, shared by the wasm tier's `send` and
-	// the dispatcher's claim. One raft cluster and one open Queue per handle,
-	// so two consumers of one queue are one consumer of it.
-	work *queues
+	// syncs is this node's one reach into the primitives service, shared by the
+	// wasm tier's `send` and `append` and the dispatcher's claim. A second
+	// would be a second stream to the same peer.
+	syncs *syncBacking
 
 	auth          *authService.Service
 	buildBackend  *backend.Service
@@ -134,18 +141,24 @@ type Node struct {
 	closersMu sync.Mutex
 	closers   []io.Closer
 
-	// registerMu guards the stream to a remote register, which is opened on
-	// first use and re-opened if the node it names changes.
-	registerMu     sync.Mutex
-	registerClient *registerService.Client
-	registerAt     libp2ppeer.ID
+	// THE THREE LOCATORS, each one rule: if this node runs the service, use it
+	// directly; otherwise ask stats which node does and dial that one. The rule
+	// is p2p/rpc's — see node/locate.go — and each holds at most one stream,
+	// opened on first use and re-opened when the node it names changes.
+	//
+	// registers is read by everything that reads configuration. sends is the
+	// wasm tier's queue and log path and the dispatcher's claim. clocks is the
+	// one window a minute the leader hands out, and it is the only one of the
+	// three that does NOT prefer this node's own — see [Node.clockNow].
+	registers *rpc.Reacher[registerSeam]
+	sends     *rpc.Reacher[syncSeam]
+	clocks    *rpc.Reacher[primitivesService.Clocks]
 
 	// loopsStop ends the background loops this node runs, and each Done is
 	// closed when that loop has stopped. All three are nil on a node that runs
 	// neither a worker nor consensus.
 	loopsStop      context.CancelFunc
 	dispatchDone   chan struct{}
-	cronDone       chan struct{}
 	proxyDone      chan struct{}
 	checkpointDone chan struct{}
 
@@ -183,9 +196,16 @@ func New(cfg Config, opts ...Option) (*Node, error) {
 // open constructs in dependency order. Anything opened is recorded as it is
 // opened, so a failure half way closes what it made.
 func (n *Node) open() error {
-	// STATS FIRST. Everything else routes on the view it maintains, including
-	// the locators below, so a node that runs it must have it before they are
-	// wired.
+	// THE LOCATORS FIRST, because everything opened below may be handed one and
+	// because a vault built during composition builds its own. Nothing they
+	// read is read yet: each closure reads a field of this node at CALL time,
+	// so a service opened after this is still found through a reach made before
+	// it — including the stats view the next line opens.
+	n.openReach()
+
+	// STATS NEXT. Everything else routes on the view it maintains, including
+	// the locators above, so a node that runs it must have it before anything
+	// asks one of them who does what.
 	if err := n.openStats(); err != nil {
 		return err
 	}
@@ -204,6 +224,12 @@ func (n *Node) open() error {
 	// backing as a collaborator when the worker is composed, so a service opened
 	// afterwards would be one the tier never saw.
 	if err := n.openDatabase(context.Background()); err != nil {
+		return err
+	}
+	// AND BEFORE THE WORKER FOR THE SAME REASON THE DATABASE IS: the wasm tier
+	// takes its queue and log backings as collaborators when the worker is
+	// composed, so a service opened afterwards would be one the tier never saw.
+	if err := n.openPrimitives(); err != nil {
 		return err
 	}
 	if err := n.openWorker(); err != nil {
@@ -350,7 +376,7 @@ func (n *Node) openWorker() error {
 	// dispatcher reads the queue one from its own goroutine and a field
 	// created later would be a field written while it is being read. They open
 	// nothing until something reaches one.
-	n.workQueues()
+	n.syncBacking()
 	n.busStreams()
 
 	// A DECLARED TIER IS BUILT HERE; an injected one was built by whoever
@@ -408,7 +434,7 @@ func (n *Node) openWorker() error {
 		// ONE VAULT FOR THE NODE, not one per consumer. It holds a stream to a
 		// remote secrets service and opening a second would be a second stream
 		// to the same peer; the worker below is handed this same value.
-		n.vault = &vault{node: n}
+		n.vault = newVault(n)
 		n.closers = append(n.closers, n.vault)
 
 		// THE PEER THIS INSTANCE RUNS ON, for `taubyte:workload/identity`. It is
@@ -439,8 +465,13 @@ func (n *Node) openWorker() error {
 			wasm.WithKV(n.kvBacking(servers)),
 			wasm.WithDocuments(servers),
 			wasm.WithVectors(servers),
-			wasm.WithQueues(n.workQueues()),
-			wasm.WithLogs(&logs{node: n}),
+			// AND THE `sync` KIND GOES THROUGH THE PRIMITIVES SERVICE, both
+			// types of it, which is what takes the namespace out of whichever
+			// machine happened to run the code. There is no fallback to the
+			// node's own queues here and node/primitives.go says why: a queue
+			// answered either way is two queues that cannot see each other.
+			wasm.WithQueues(n.syncBacking()),
+			wasm.WithLogs(n.syncBacking()),
 			wasm.WithStorage(objects),
 			wasm.WithAdmission(admit),
 			wasm.WithChannels(&channels{node: n}),
@@ -505,7 +536,7 @@ func (n *Node) openWorker() error {
 	case n.secrets != nil || n.stats != nil:
 		// A worker with no wasm tier — an injected one, or a node with no
 		// asset store — never built the shared vault above.
-		n.vault = &vault{node: n}
+		n.vault = newVault(n)
 		n.closers = append(n.closers, n.vault)
 		options = append(options, worker.WithSecrets(n.vault))
 	}
@@ -703,6 +734,23 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.secrets != nil {
 		order = append(order, n.secrets)
 	}
+	// THE DATABASE BEFORE THE WORKER THAT READS THROUGH IT. It was in neither
+	// this list nor any other, which is two failures at once: its listener was
+	// never bound, so every peer that tried to reach it got "protocols not
+	// supported" — invisible for as long as the only caller was the node's own
+	// Local() — and its maintenance sweep never ran, so nothing on a composed
+	// node ever reconsidered what it held.
+	if n.database != nil {
+		order = append(order, n.database)
+	}
+	// AND THE PRIMITIVES SERVICE BEFORE THE WORKER THAT SENDS THROUGH IT, for
+	// the reason above it: Start binds the listener, begins forming the group
+	// off the request path and starts the lifecycle pass, and a service in
+	// neither this list nor any other is one whose peers get "protocols not
+	// supported" and whose queues nothing ever sweeps.
+	if n.primitives != nil {
+		order = append(order, n.primitives)
+	}
 	if n.worker != nil {
 		order = append(order, n.worker)
 	}
@@ -734,16 +782,9 @@ func (n *Node) Start(ctx context.Context) error {
 		return err
 	}
 
-	// THE QUEUE CLUSTER FORMS IN THE BACKGROUND from here, because raft's
-	// bootstrap waits up to thirty seconds for peers and a guest's first
-	// `queue.send` must not be what pays for that.
-	if n.work != nil {
-		n.work.form()
-	}
-
 	// THE BACKGROUND LOOPS LAST. They outlive the call that started them, so
 	// they take a context of their own that Close cancels.
-	needsLoops := n.proxy != nil || (n.worker != nil && n.opts.raft != nil)
+	needsLoops := n.proxy != nil || n.worker != nil || n.disks != nil
 	if !needsLoops {
 		n.started = true
 		return nil
@@ -763,25 +804,35 @@ func (n *Node) Start(ctx context.Context) error {
 		}()
 	}
 
-	// THE DISPATCHER, and only on a node that has both halves. It reads what
-	// the worker holds and claims from the queues this node opened, so a node
-	// running neither has nothing to drain — and one running a worker without
-	// raft opens no queue and simply finds none.
-	if n.worker != nil && n.opts.raft != nil {
+	// THE DISPATCHER, on any node that runs a worker. It reads what the worker
+	// holds and claims the queues those consumers name, so a node running no
+	// worker has nothing to drain.
+	//
+	// AND IT IS NOT GATED ON RAFT ANY MORE. It used to be, and the reason it
+	// gave — "a node running a worker without raft opens no queue and simply
+	// finds none" — went stale with the cutover: a queue is the primitives
+	// service's now, and node/primitives.go resolves it through stats to a
+	// service on ANOTHER node when this one runs none. A compute node with no
+	// consensus of its own can claim, and under the old gate it never tried.
+	if n.worker != nil {
 		n.dispatchDone = make(chan struct{})
 		go (&dispatcher{node: n}).loop(loopCtx, n.dispatchDone)
 
-		// AND THE CLOCK, on the same condition and for the same reason: a cron
-		// fires exactly once across a fleet because the leader records the slot
-		// before invoking anything, which is a raft write.
-		n.cronDone = make(chan struct{})
-		go (&crons{node: n}).loop(loopCtx, n.cronDone)
+		// THE CLOCK IS NOT A LOOP HERE ANY MORE. A schedule is claimed and
+		// fired by the primitives service, on the one ticker it already runs —
+		// see services/primitives/cron.go. What this node contributes is which
+		// crons exist and how to reach a workload, both of which
+		// openPrimitives hands over.
+	}
 
-		// AND THE CHECKPOINTS, which is what makes a volume survive its node.
-		if n.disks != nil {
-			n.checkpointDone = make(chan struct{})
-			go n.disks.loop(loopCtx, n.checkpointDone)
-		}
+	// THE CHECKPOINTS, which is what makes a volume survive its node — and
+	// which raft has nothing to do with either. A checkpoint is a row in a
+	// replicated kvdb that ANY node may write; node/volume.go's own doc records
+	// the leader-only write as the bug it was, because a volume is mounted
+	// wherever placement put the workload and not on a leader.
+	if n.disks != nil {
+		n.checkpointDone = make(chan struct{})
+		go n.disks.loop(loopCtx, n.checkpointDone)
 	}
 
 	n.started = true
@@ -824,14 +875,14 @@ func (n *Node) Close() error {
 			if n.dispatchDone != nil {
 				<-n.dispatchDone
 			}
-			if n.cronDone != nil {
-				<-n.cronDone
-			}
 			if n.checkpointDone != nil {
 				<-n.checkpointDone
 			}
 		}
-		n.closeRegisterClient()
+		// THE LOCATORS BEFORE THE SERVICES THEY REACH, because a stream held
+		// onto another node is this node's to give back and nothing below
+		// knows it exists.
+		n.closeReach()
 
 		n.closersMu.Lock()
 		closers := append([]io.Closer(nil), n.closers...)
@@ -959,6 +1010,9 @@ func (n *Node) Secrets() *secretsService.Service { return n.secrets }
 // Database is this node's database service, or nil if it runs none.
 func (n *Node) Database() *databaseService.Service { return n.database }
 
+// Primitives is this node's primitives service, or nil if it runs none.
+func (n *Node) Primitives() *primitivesService.Service { return n.primitives }
+
 // Stats is this node's view of the fleet, or nil.
 func (n *Node) Stats() *stats.Service { return n.stats }
 
@@ -999,33 +1053,34 @@ func (n *Node) disksOrNil() container.Volumes {
 	return n.disks
 }
 
-// workQueues is this node's queue backing, built on first use by the wasm tier
-// that sends and by the dispatcher that claims.
-//
-// CONSTRUCTION ONLY, like busStreams. It writes a field and appends a closer,
-// and once Start has spawned the dispatcher that field is being read from
-// another goroutine — so openWorker asks for it whether or not this node has a
-// wasm tier, and nothing calls it afterwards.
-func (n *Node) workQueues() *queues {
-	if n.work == nil {
-		n.work = &queues{node: n}
-		n.closers = append(n.closers, n.work)
-	}
-	return n.work
-}
-
-// QueueDepth is what one of this node's queues holds: items waiting and items
-// claimed. A handle this node has never opened is not an error — it is a
-// question about something this node is not holding.
+// QueueDepth is what one declared queue holds: items waiting and items claimed.
 //
 // IT IS FOR AN OPERATOR AND FOR A TEST, like Loaded and Held, and it reads
 // local state without a barrier — so on a follower it can lag. Nothing decides
 // anything on it.
+//
+// THE HANDLE IS ALL A CALLER GIVES, which is what keeps it usable from outside:
+// the service reads everything else about the queue out of the declaration, so
+// a grant carrying only the handle is the whole of the address. `ok` is false
+// for a handle this deployment declares no queue for, for a node that can reach
+// no primitives service, and for one whose group has not formed — three
+// different facts that a depth cannot tell apart and that nothing here decides
+// on.
+//
+// A DEAD LETTER IS READ AS THE QUEUE IT IS, by the handle of the queue an
+// author named in `dead_letter`, because that is where exhausted items land.
+// A queue whose author declared none has a dead letter derived from its name,
+// which nothing declares and this cannot name — see the service's Depth.Dead
+// for the half that can.
 func (n *Node) QueueDepth(handle string) (ready, claimed int, ok bool) {
-	if n.work == nil {
+	if n.syncs == nil {
 		return 0, 0, false
 	}
-	return n.work.Depth(handle)
+	depth, err := n.syncs.Depth(context.Background(), invoke.Grant{Handle: handle})
+	if err != nil {
+		return 0, 0, false
+	}
+	return int(depth.Ready), int(depth.Claimed), true
 }
 
 // busStreams is this node's bus backing, built on first use.
@@ -1057,7 +1112,7 @@ var (
 )
 
 func (s *source) Resolve(ctx context.Context, name, environment string) (pkgregister.Pointer, error) {
-	c, err := s.client()
+	c, err := s.client(ctx)
 	if err != nil {
 		return pkgregister.Pointer{}, err
 	}
@@ -1065,15 +1120,31 @@ func (s *source) Resolve(ctx context.Context, name, environment string) (pkgregi
 }
 
 func (s *source) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
-	c, err := s.client()
+	c, err := s.client(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return c.Object(ctx, id)
 }
 
+// ResolveFleet is what the cloud declares about itself: the replication floor
+// every node has to compute placement with identically.
+//
+// THE LOCAL REGISTER ONLY, and that is a gap rather than a design. The document
+// is published, replicated and read the way a project is, but the register's
+// wire carries no call for it — so a node that runs no register of its own
+// cannot learn it and falls back to the default, which is at least a number
+// every such node reaches the same way. Closing it is an RPC on the register,
+// not a second path to the same bytes.
+func (s *source) ResolveFleet(ctx context.Context) (pkgregister.Pointer, error) {
+	if s.node.register == nil {
+		return pkgregister.Pointer{}, fmt.Errorf("%w: this node runs no register to read the fleet from", ErrNoRegister)
+	}
+	return s.node.register.Local().ResolveFleet(ctx)
+}
+
 func (s *source) ResolveHost(ctx context.Context, fqdn string) (string, string, error) {
-	c, err := s.client()
+	c, err := s.client(ctx)
 	if err != nil {
 		return "", "", err
 	}

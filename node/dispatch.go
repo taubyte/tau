@@ -9,8 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/queue"
+	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	primitivesService "github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -40,6 +43,16 @@ import (
 // every node serving a deployment runs this loop and all but one get
 // ErrNotLeader and return. Agreeing on a consumer would be a second election
 // answering a question raft already answers.
+//
+// # It claims through the primitives service and holds no queue of its own
+//
+// The items are in that service's namespace, and what this loop holds is the
+// seam onto it: Claim, Settle and nothing else. So the config the queue runs
+// under is the service's read of the DECLARATION rather than anything this
+// node describes, and the pass that buries an exhausted item nobody is claiming
+// is the service's lifecycle rather than a Sweep taken here before every cycle
+// — which this used to do, and which pkg/queue already runs at the top of every
+// Claim anyway.
 
 // dispatcher drains the queues of the deployments this node serves.
 type dispatcher struct {
@@ -78,9 +91,10 @@ const (
 
 // step performs exactly ONE cycle and reports how many items it delivered.
 func (d *dispatcher) step(ctx context.Context) int {
-	if d.node.worker == nil || d.node.work == nil {
+	if d.node.worker == nil || d.node.syncs == nil {
 		return 0
 	}
+	work := d.node.syncs
 
 	var delivered atomic.Int64
 	var wg sync.WaitGroup
@@ -93,32 +107,46 @@ func (d *dispatcher) step(ctx context.Context) int {
 			continue
 		}
 
-		held, err := d.node.work.queue(consumer.Queue)
-		if err != nil {
-			// A cluster still forming is not worth a line every two seconds:
-			// it clears on its own and the next cycle is the retry.
-			if !errors.Is(err, ErrQueuesForming) {
-				logger.Warnf("dispatch: opening the queue %q for %s: %s",
-					consumer.Queue.Label, consumer.Target.Name, err)
-			}
-			continue
-		}
-
-		// SWEEP BEFORE CLAIMING, and not only because Claim runs the same
-		// pass: a queue whose items are ALL claimed and expiring has nothing
-		// to claim, which is exactly when an exhausted item needs moving to
-		// the dead letter.
-		held.Sweep()
-
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			delivered.Add(int64(d.drain(ctx, consumer, held)))
+			delivered.Add(int64(d.drain(ctx, consumer, work)))
 		}()
 	}
 
 	wg.Wait()
 	return int(delivered.Load())
+}
+
+// ordinaryRefusal reports whether a refused claim is one NOT worth a line every
+// two seconds.
+//
+// A FOLLOWER CLAIMS NOTHING BY DESIGN, which is this file's whole point, and a
+// group still forming or a fleet with no service in it yet clears on its own
+// with the next cycle as the retry. Saying any of it twice a second would bury
+// the refusals that do not clear.
+//
+// IT IS MATCHED ON BOTH ARMS OR IT IS MATCHED ON NEITHER, and which names
+// travel is services/primitives/status.go's table to say rather than this
+// file's to guess. A status that exactly one refusal claims comes back AS that
+// refusal — ErrNotLeading does — and a status several share carries no name at
+// all, which is the case for ErrForming and ErrClosed: both are Unavailable,
+// so the code is what is left of them. So this matches the TIER's own arm for a
+// node that may not write, the two names, and the code — and that service's
+// own property test is what keeps the three answers the same on both arms.
+func ordinaryRefusal(err error) bool {
+	switch {
+	case errors.Is(err, ErrNoPrimitives),
+		errors.Is(err, wasmtier.ErrNotWritable),
+		errors.Is(err, primitivesService.ErrForming),
+		errors.Is(err, primitivesService.ErrClosed):
+		return true
+	default:
+		// UNAVAILABLE IS THE ANSWER FOR BOTH OF THE LAST TWO over the wire, and
+		// for a node that is shutting down — every one of them a caller acts on
+		// by asking again somewhere.
+		return connect.CodeOf(err) == connect.CodeUnavailable
+	}
 }
 
 // drain takes items from one queue until it is empty.
@@ -128,7 +156,7 @@ func (d *dispatcher) step(ctx context.Context) int {
 // describing a consumer the platform pushes to — a dispatcher that ignored it
 // would deliver one item at a time to a workload that declared it can take
 // eighty.
-func (d *dispatcher) drain(ctx context.Context, consumer worker.Consumer, held *queue.Queue) int {
+func (d *dispatcher) drain(ctx context.Context, consumer worker.Consumer, work syncSeam) int {
 	holding := max(consumer.Concurrency, 1)
 
 	take := d.perCycle
@@ -146,13 +174,29 @@ func (d *dispatcher) drain(ctx context.Context, consumer worker.Consumer, held *
 				if ctx.Err() != nil {
 					return
 				}
-				item, err := held.Claim()
+				// ONE AT A TIME, THOUGH THE SEAM TAKES A BATCH. A claim starts
+				// the item's visibility timer, so asking for thirty-two and
+				// then delivering them one after another would run the last
+				// one's timer out while the first were still being invoked —
+				// the item would be handed to somebody else and the ack
+				// refused. What a batch would save is round trips on a node
+				// that reaches the service over the swarm; what it would cost
+				// is a duplicate delivery, so it is not taken.
+				claimed, err := work.Claim(ctx, consumer.Queue, 1)
 				if err != nil {
-					// Nothing ready, or this node is not the leader. Both are
-					// ordinary and the next cycle is the retry.
+					if !ordinaryRefusal(err) {
+						logger.Warnf("dispatch: claiming %q for %s: %s",
+							consumer.Queue.Label, consumer.Target.Name, err)
+					}
 					return
 				}
-				d.deliver(ctx, consumer, held, item)
+				if len(claimed) == 0 {
+					// NOTHING DELIVERABLE IS NOT AN EMPTY QUEUE and it is not a
+					// refusal either: items may be delayed, backing off, or
+					// held by somebody else. The next cycle is the retry.
+					return
+				}
+				d.deliver(ctx, consumer, work, claimed[0])
 				delivered.Add(1)
 			}
 		}()
@@ -206,12 +250,26 @@ func (d *dispatcher) invoke(ctx context.Context, at worker.Target, req *invoke.R
 // visibility timeout governing exactly as written — the attempt is already
 // counted (Claim increments it) and pkg/queue's own sweep requeues it or buries
 // it when the deadline passes.
-func (d *dispatcher) deliver(ctx context.Context, consumer worker.Consumer, held *queue.Queue, item queue.Delivery) {
+func (d *dispatcher) deliver(ctx context.Context, consumer worker.Consumer, work syncSeam, item primitivesService.Delivery) {
 	// THE CLAIM'S DEADLINE BOUNDS THE INVOCATION. Past it the item is
 	// deliverable again, so a workload still running is a workload whose work
 	// somebody else has already been handed — and the ack would be refused
 	// anyway.
-	runCtx, stop := context.WithDeadline(ctx, item.Deadline)
+	//
+	// AS A DURATION AND NOT AS AN INSTANT. The deadline is stamped on the
+	// QUEUE'S clock, which this node injects — a test drives it and a dream
+	// universe drives it — and context.WithDeadline compares against the wall
+	// clock. Where the two read differently, handing it the instant either
+	// cancels every delivery before it starts or gives it an unbounded one.
+	// What the invocation is owed is the time left on the claim, measured on
+	// the clock the claim was stamped by.
+	budget := item.Deadline.Sub(d.node.clock())
+	if budget <= 0 {
+		// The claim expired between being handed out and reaching here.
+		// Somebody else holds it or is about to.
+		return
+	}
+	runCtx, stop := context.WithTimeout(ctx, budget)
 	defer stop()
 
 	// A BUILTIN IS RUN HERE AND NOT ON A TIER. `source: {kind: builtin}` names a
@@ -221,10 +279,10 @@ func (d *dispatcher) deliver(ctx context.Context, consumer worker.Consumer, held
 		if err := d.runStep(runCtx, consumer, item); err != nil {
 			logger.Warnf("dispatch: %s on %s/%s: %s",
 				consumer.Target.Name, consumer.Queue.Label, item.ID, err)
-			d.failed(consumer, held, item)
+			d.failed(ctx, consumer, work, item)
 			return
 		}
-		held.Ack(item)
+		d.acknowledge(ctx, consumer, work, item)
 		return
 	}
 
@@ -243,23 +301,56 @@ func (d *dispatcher) deliver(ctx context.Context, consumer worker.Consumer, held
 	case err != nil:
 		logger.Warnf("dispatch: %s failed on %s/%s: %s",
 			consumer.Target.Name, consumer.Queue.Label, item.ID, err)
-		d.failed(consumer, held, item)
+		d.failed(ctx, consumer, work, item)
 	case res.Status < 200 || res.Status > 299:
 		logger.Warnf("dispatch: %s answered %d for %s/%s",
 			consumer.Target.Name, res.Status, consumer.Queue.Label, item.ID)
-		d.failed(consumer, held, item)
+		d.failed(ctx, consumer, work, item)
 	default:
-		held.Ack(item)
+		d.acknowledge(ctx, consumer, work, item)
+	}
+}
+
+// acknowledge ends a delivery that succeeded.
+//
+// A REFUSED ACK IS WORTH A LINE, which it was not when the queue was in this
+// process and an Ack was a local write. It is now a call that can be refused by
+// a node that is no longer the leader or whose claim has already expired, and
+// what follows is a SECOND delivery of work that has already been done — so
+// somebody looking at a duplicate has the one line that says why.
+func (d *dispatcher) acknowledge(ctx context.Context, consumer worker.Consumer, work syncSeam, item primitivesService.Delivery) {
+	if err := work.Settle(ctx, consumer.Queue, item, true); err != nil {
+		logger.Warnf("dispatch: acknowledging %s/%s: %s", consumer.Queue.Label, item.ID, err)
 	}
 }
 
 // failed settles a delivery that did not succeed. See deliver's doc for why an
 // undeclared retry interval means doing nothing at all.
-func (d *dispatcher) failed(consumer worker.Consumer, held *queue.Queue, item queue.Delivery) {
-	if spaced(consumer.Queue.Settings[settingRetryEvery]) {
-		held.Nack(item)
+//
+// THE INTERVAL IS READ OFF THE GRANT AND NOT THE DECLARATION, which is the one
+// place this node still reads a queue's config at all: the decision is the
+// consumer's own — give it back now, or let the claim expire — and the number
+// it is made with is the author's either way. See settingRetryEvery.
+func (d *dispatcher) failed(ctx context.Context, consumer worker.Consumer, work syncSeam, item primitivesService.Delivery) {
+	if !spaced(consumer.Queue.Settings[settingRetryEvery]) {
+		return
+	}
+	if err := work.Settle(ctx, consumer.Queue, item, false); err != nil {
+		logger.Warnf("dispatch: returning %s/%s: %s", consumer.Queue.Label, item.ID, err)
 	}
 }
+
+// settingRetryEvery is the vocabulary's own path for a queue's retry interval,
+// and it is THE ONE SETTING THIS NODE STILL READS OFF A GRANT.
+//
+// IT IS UNDER `queue/` BECAUSE `sync` IS A TYPED KIND: a queue is `sync` at
+// `type: queue`, so every field it declares lives in the block named after the
+// type. Everything else about a queue is read by the primitives service out of
+// the DECLARATION, which is what stops a caller describing a queue into being
+// something else. This one survives here because the decision it feeds is the
+// CONSUMER'S own — hand the item back now, or let the claim expire — and the
+// number it is made with is the author's either way.
+const settingRetryEvery = "queue/retry/interval"
 
 // spaced reports whether the author declared a retry interval to space a
 // redelivery by. A written zero is a written answer — an author who means

@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/queue"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	primitivesService "github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -30,12 +30,19 @@ func stepConsumer(sends bool) worker.Consumer {
 	return c
 }
 
-func delivery(id string, body []byte) queue.Delivery {
-	return queue.Delivery{ID: id, Data: body, Attempt: 1, Deadline: time.Now().Add(time.Minute)}
+func delivery(id string, body []byte) primitivesService.Delivery {
+	return primitivesService.Delivery{ID: id, Data: body, Attempt: 1, Deadline: time.Now().Add(time.Minute)}
 }
 
 // withStepFunction is a project holding the author's half of a step: the
-// function the driver was granted `invoke` on.
+// function the driver was granted `invoke` on, and the two queues the lowering
+// gave the step — the one it receives from and the one it hands on to.
+//
+// THE QUEUES ARE DECLARED BECAUSE THE SERVICE READS THEM. A send used to carry
+// its own configuration on the grant, so a handle naming nothing at all opened
+// a queue with pkg/queue's defaults; the primitives service resolves the
+// declaration instead and refuses a resource this deployment does not name. So
+// a fixture that skipped them was testing a send nothing could have received.
 func withStepFunction() []byte {
 	return []byte(`{
 		"object": {
@@ -47,11 +54,25 @@ func withStepFunction() []byte {
 					"execution": {"call": "handle", "memory": 33554432},
 					"source": {"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv"}
 				}
+			},
+			"sync": {
+				"QmReserve": {
+					"name": "checkout_reserve", "type": "queue",
+					"queue": {"consensus": "raft", "visibility_timeout": 60000000000}
+				},
+				"QmCharge": {
+					"name": "checkout_charge", "type": "queue",
+					"queue": {"consensus": "raft", "visibility_timeout": 60000000000}
+				}
 			}
 		},
 		"indexes": {
 			"projects/` + projectID + `/function/reserve_stock/links": [
-				"branches/main/projects/` + projectID + `/function/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"]
+				"branches/main/projects/` + projectID + `/function/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"],
+			"projects/` + projectID + `/sync/checkout_reserve/links": [
+				"branches/main/projects/` + projectID + `/sync/QmReserve"],
+			"projects/` + projectID + `/sync/checkout_charge/links": [
+				"branches/main/projects/` + projectID + `/sync/QmCharge"]
 		}
 	}`)
 }
@@ -60,7 +81,7 @@ func withStepFunction() []byte {
 func stepping(t *testing.T, answers *answering) (*Node, *dispatcher) {
 	t.Helper()
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Primitives}},
 		WithRuntimes(answers))
 	require.NoError(t, n.Start(t.Context()))
 
@@ -68,7 +89,7 @@ func stepping(t *testing.T, answers *answering) (*Node, *dispatcher) {
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: withStepFunction(),
 	})
 	require.NoError(t, err)
-	<-n.work.forming
+	<-n.Primitives().Formed()
 
 	// THE STEP IS PLACED, so this node has to be in its own view before it can
 	// take its own work. Without the wait the test asks placement for a worker
@@ -164,11 +185,10 @@ func TestAWaitOnlyStepHandsTheItemOn(t *testing.T) {
 	require.Empty(t, answers.seen(), "a step that waits invokes nothing")
 
 	// AND WHAT IT CARRIES IS UNCHANGED: the run's state is the message.
-	held, err := n.work.queue(consumer.Sends[0])
+	claimed, err := n.syncs.Claim(t.Context(), consumer.Sends[0], 1)
 	require.NoError(t, err)
-	item, err := held.Claim()
-	require.NoError(t, err)
-	require.Equal(t, "carried", string(item.Data))
+	require.Len(t, claimed, 1)
+	require.Equal(t, "carried", string(claimed[0].Data))
 }
 
 // TestADRIVERGrantedNEITHERIsACompiledObjectThatDidNotComeFromTcc — it is
@@ -192,13 +212,12 @@ func TestTheDispatcherRunsTheStepBuiltin(t *testing.T) {
 	n, d := stepping(t, answers)
 
 	consumer := stepConsumer(true)
-	held, err := n.work.queue(consumer.Queue)
-	require.NoError(t, err)
-	require.NoError(t, held.Push("order-1", []byte("an order")))
+	require.NoError(t, n.syncs.Send(t.Context(), consumer.Queue, "order-1", []byte("an order")))
 
-	claimed, err := held.Claim()
+	claimed, err := n.syncs.Claim(t.Context(), consumer.Queue, 1)
 	require.NoError(t, err)
-	d.deliver(t.Context(), consumer, held, claimed)
+	require.Len(t, claimed, 1)
+	d.deliver(t.Context(), consumer, n.syncs, claimed[0])
 
 	// The step's own function ran, and the driver was never started as a
 	// workload: `checkout_reserve` is not a name the tier was asked for.
@@ -206,7 +225,8 @@ func TestTheDispatcherRunsTheStepBuiltin(t *testing.T) {
 	require.Len(t, seen, 1)
 	require.Equal(t, []string{"checkout_reserve"}, seen[0].Headers[headerStep])
 
-	ready, claimedCount := held.Depth()
-	require.Zero(t, ready)
-	require.Zero(t, claimedCount, "the delivery was acknowledged")
+	depth, err := n.syncs.Depth(t.Context(), consumer.Queue)
+	require.NoError(t, err)
+	require.Zero(t, depth.Ready)
+	require.Zero(t, depth.Claimed, "the delivery was acknowledged")
 }

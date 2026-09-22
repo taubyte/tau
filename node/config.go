@@ -18,6 +18,7 @@ import (
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/dns"
+	"github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/stats"
 	auth "github.com/taubyte/tau/services/v2/auth"
 	gateway "github.com/taubyte/tau/services/v2/gateway"
@@ -47,6 +48,16 @@ const (
 	Database = "database"
 )
 
+// Primitives holds a project's `sync` kind — its queues and its logs — for the
+// reason Database exists: v1 opened both inside the worker's own process, so
+// the thing that decides who writes next was a property of whichever machine
+// happened to run the code.
+//
+// IT IS BORROWED AND NOT SPELLED AGAIN, exactly as the two build roles below
+// are: a rename there would otherwise leave an operator's config naming a
+// service nothing starts.
+var Primitives = primitives.Descriptor.Name
+
 // The two halves of the build service, named by the build service itself
 // rather than spelled again here — a rename there would otherwise leave an
 // operator's config naming a service nothing starts.
@@ -67,7 +78,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Register, Worker, Stats, Gateway, Auth, Secrets, Database, Proxy, DNS, BuildBackend}
+var All = []string{Register, Worker, Stats, Gateway, Auth, Secrets, Database, Primitives, Proxy, DNS, BuildBackend}
 
 // BuildFrontend is NOT in All. All is what a single-node development cloud
 // starts, and that node runs the backend; putting the public half in the
@@ -127,10 +138,18 @@ var (
 	ErrNoHost      = errors.New("node: no host to answer on")
 	ErrNoDatabases = errors.New("node: a register needs somewhere to keep what is published")
 	ErrNoPubSub    = errors.New("node: stats needs somewhere to gossip")
-	// ErrNoRaft is a node that needs consensus and was given none. TWO THINGS
-	// need it: the build backend's job queue and any queue a project declares,
-	// and both are replicated work queues for the same reason.
-	ErrNoRaft = errors.New("node: a replicated queue needs raft, and nothing here opens one")
+	// ErrNoRaft is a node that needs consensus and was given none. FOUR THINGS
+	// need it: the build backend's job queue, the primitives service — whose
+	// whole kind is decisions about who writes next, so a node that cannot hold
+	// an election serves neither a queue nor a log — any queue a project
+	// declares, and a database whose author wrote `consensus: raft`, whose
+	// entries are ordered by a group.
+	//
+	// IT NAMES NO ONE OF THEM, because an operator whose ledger was refused
+	// being told about a queue reads it as a bug in something else. What is
+	// missing is the same thing in every case and the fix is the same: a
+	// composition that opens a group.
+	ErrNoRaft = errors.New("node: this needs raft consensus, and nothing here opens a group")
 
 	// ErrBothHalves is the one service combination this composition refuses.
 	ErrBothHalves = errors.New("node: " + build.Frontend.Name + " and " + build.Backend.Name +
