@@ -614,7 +614,7 @@ func TestTheNodesInferenceReadsTheNodeLate(t *testing.T) {
 	require.Nil(t, i.dialler(), "and nothing places a connection")
 
 	// A node that acquires them answers with them, through the same inference.
-	n.vault = &vault{node: n}
+	n.vault = newVault(n)
 	require.Equal(t, n.vault, i.resolver())
 
 	with, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})

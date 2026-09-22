@@ -89,7 +89,7 @@ func TestAWriteWithNoVaultAnywhereIsRefused(t *testing.T) {
 	// This node runs neither a vault nor the stats that would find one, so the
 	// vault has nothing to open — which is the shape a `Services` list that
 	// forgot the secrets service produces.
-	v := &vault{node: n}
+	v := newVault(n)
 	t.Cleanup(func() { v.Close() })
 
 	require.ErrorIs(t, v.Set(t.Context(), "shop", "prod", secretID, []byte("x")), ErrNoSecrets)

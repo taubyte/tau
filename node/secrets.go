@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	secretsService "github.com/taubyte/tau/services/secrets"
@@ -46,28 +46,41 @@ type holder interface {
 type vault struct {
 	node *Node
 
-	// mu guards the stream to a remote vault, opened on first use and
-	// re-opened if the node it names changes.
-	mu     sync.Mutex
-	client *secretsService.Client
-	at     libp2ppeer.ID
+	// reach is the one rule, as [rpc.Reach]: run it here, use it directly;
+	// otherwise ask stats who does and dial that one.
+	//
+	// A LOCAL VAULT IS NOT A CACHE, IT IS THE ABSENCE OF A HOP — and here it
+	// is also the absence of a secret on the wire, which is the one place in
+	// this composition where the short-circuit is a security property and not
+	// only a latency one.
+	reach *rpc.Reacher[holder]
 }
 
-// open is the one rule: run it here, use it directly; otherwise ask stats who
-// does and dial that one.
-//
-// A LOCAL VAULT IS NOT A CACHE, IT IS THE ABSENCE OF A HOP — and here it is
-// also the absence of a secret on the wire.
-func (v *vault) open() (holder, error) {
-	if v.node.secrets != nil {
-		return v.node.secrets.Local(), nil
-	}
-	return v.remote()
+// newVault is the only way to make one: the reach is what a vault IS, and a
+// zero value would be a vault that opens nothing.
+func newVault(n *Node) *vault {
+	v := &vault{node: n}
+	v.reach = rpc.Reach(n.opts.host, Secrets,
+		n.routeTo(Secrets, ErrNoSecrets, "this node runs neither a secrets service nor stats to find one"),
+		func() (holder, bool) {
+			if n.secrets == nil {
+				return nil, false
+			}
+			return n.secrets.Local(), true
+		},
+		func(id libp2ppeer.ID) (holder, error) {
+			c, err := secretsService.NewClient(n.opts.host, id)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		})
+	return v
 }
 
 // Secret is the read on the request path.
 func (v *vault) Secret(ctx context.Context, project, environment, secretID string) (string, error) {
-	h, err := v.open()
+	h, err := v.reach.Now(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -78,7 +91,7 @@ func (v *vault) Secret(ctx context.Context, project, environment, secretID strin
 // frontend. They are the one write in v2 that is not a git push, and the
 // frontend authorizes them exactly as it authorizes a deploy.
 func (v *vault) Set(ctx context.Context, project, environment, name string, value []byte) error {
-	h, err := v.open()
+	h, err := v.reach.Now(ctx)
 	if err != nil {
 		return err
 	}
@@ -86,7 +99,7 @@ func (v *vault) Set(ctx context.Context, project, environment, name string, valu
 }
 
 func (v *vault) Delete(ctx context.Context, project, environment, name string) error {
-	h, err := v.open()
+	h, err := v.reach.Now(ctx)
 	if err != nil {
 		return err
 	}
@@ -94,48 +107,11 @@ func (v *vault) Delete(ctx context.Context, project, environment, name string) e
 }
 
 func (v *vault) List(ctx context.Context, project, environment string) ([]string, error) {
-	h, err := v.open()
+	h, err := v.reach.Now(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return h.List(ctx, project, environment)
-}
-
-// remote finds a vault in the fleet and keeps the stream. Looked up per call
-// and cached by peer, not resolved once at construction: services start
-// concurrently, a vault can go, and which node answers is a routing question.
-func (v *vault) remote() (*secretsService.Client, error) {
-	n := v.node
-	if n.stats == nil {
-		return nil, fmt.Errorf("%w: this node runs neither a secrets service nor stats to find one", ErrNoSecrets)
-	}
-
-	nodes := n.stats.Route(Secrets, n.cfg.Stats.Freshness())
-	if len(nodes) == 0 {
-		return nil, ErrNoSecrets
-	}
-
-	id, err := libp2ppeer.Decode(nodes[0].Peer)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %q is not a peer", ErrNoSecrets, nodes[0].Peer)
-	}
-
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	if v.client != nil && v.at == id {
-		return v.client, nil
-	}
-	if v.client != nil {
-		v.client.Close()
-	}
-
-	c, err := secretsService.NewClient(n.opts.host, id)
-	if err != nil {
-		return nil, err
-	}
-	v.client, v.at = c, id
-	return c, nil
 }
 
 // Secret is pkg/invoke/wasm's Secrets: the value a grant names, read at the
@@ -164,13 +140,4 @@ func (v *vault) SecretFor(ctx context.Context, grant invoke.Grant) ([]byte, erro
 }
 
 // Close releases the stream to a remote vault, if one was opened.
-func (v *vault) Close() error {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	if v.client != nil {
-		v.client.Close()
-		v.client = nil
-	}
-	return nil
-}
+func (v *vault) Close() error { return v.reach.Close() }

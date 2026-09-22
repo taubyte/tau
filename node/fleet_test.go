@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
+	databaseService "github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -115,10 +117,10 @@ func TestTheStreamToARemoteRegisterIsKept(t *testing.T) {
 	require.NoError(t, err)
 	sees(t, compute, Register)
 
-	first, err := compute.remoteRegister()
+	first, err := compute.registers.Now(t.Context())
 	require.NoError(t, err)
 
-	again, err := compute.remoteRegister()
+	again, err := compute.registers.Now(t.Context())
 	require.NoError(t, err)
 	require.Same(t, first, again, "a second read opened a second stream")
 }
@@ -213,7 +215,8 @@ func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
 	_, err = only.Worker().Resolve(t.Context(), workerTarget())
 	require.NoError(t, err)
 
-	require.Nil(t, only.registerClient, "it dialled itself")
+	_, dialled := only.registers.At()
+	require.False(t, dialled, "it dialled itself")
 }
 
 // TestTheSeamsAreHandedThrough: an artifact resolver and a secret resolver
@@ -356,4 +359,70 @@ func TestABuiltResourceWithNoBuildServiceIsRefused(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("it waited instead of refusing")
 	}
+}
+
+// kvDatabaseID is a kv database one deployment declares.
+const kvDatabaseID = "QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfG"
+
+// withKvDatabase is a compiled project holding one, so the service reads a real
+// declaration rather than being told what it is.
+func withKvDatabase() []byte {
+	doc := map[string]any{
+		"object": map[string]any{
+			"id": "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR", "name": "shop",
+			"database": map[string]any{
+				kvDatabaseID: map[string]any{
+					"name": "sessions", "type": "kv",
+					"kv": map[string]any{"engine": "distributed", "consensus": "crdt"},
+				},
+			},
+		},
+		"indexes": map[string]any{
+			"projects/QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR/database/sessions/links": []any{
+				"branches/main/projects/QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR/database/" + kvDatabaseID},
+		},
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		panic(err)
+	}
+	return raw
+}
+
+// TestADATABASESERVICEISREACHABLEFROMANOTHERNODE.
+//
+// It was not, and nothing noticed: the service was built and never started, so
+// its listener was never bound. Every caller so far was the node's own Local()
+// seam, which is the absence of a hop — so the first peer to dial one got
+// "protocols not supported" from a node that was, by every other measure,
+// running the database service.
+//
+// A SWEEP THAT NEVER RAN IS THE OTHER HALF. Start is also what begins
+// reconsidering what this node holds, so a composed fleet moved nothing, ever.
+func TestADatabaseServiceIsReachableFromAnotherNode(t *testing.T) {
+	nodes := fleet(t,
+		Config{Services: []string{Register, Stats, Database}},
+		Config{Services: []string{Worker, Stats}},
+	)
+	holder, caller := nodes[0], nodes[1]
+
+	_, err := holder.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: withKvDatabase(),
+	})
+	require.NoError(t, err)
+
+	client, err := databaseService.NewClient(caller.opts.host, holder.opts.host.ID())
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	kv, err := client.OpenKV(t.Context(), invoke.Grant{Handle: "shop/prod/" + kvDatabaseID})
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		return kv.Put(t.Context(), "session:1", []byte("alice")) == nil
+	}, 30*time.Second, 100*time.Millisecond, "the database service was never reachable over the wire")
+
+	value, err := kv.Get(t.Context(), "session:1")
+	require.NoError(t, err)
+	require.Equal(t, []byte("alice"), value)
 }

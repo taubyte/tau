@@ -62,11 +62,17 @@ type fromStats struct {
 }
 
 func (f *fromStats) Known() []libp2ppeer.ID {
+	// A NODE WITH NO VIEW KNOWS NOTHING, and says so as a nil rather than as an
+	// empty list it built: the two read the same to a caller that counts them
+	// and not to one that asks whether it looked.
 	if f.node.stats == nil {
 		return nil
 	}
 
-	rows := f.node.stats.Route(f.name, f.node.cfg.Stats.Freshness())
+	// THE SAME ROWS JUDGED BY THE SAME TOLERANCE every reach on this node uses
+	// — see [Node.rowsFor]. What differs below is only what a row that does not
+	// decode means, which is this resolver's to say and not the view's.
+	rows := f.node.rowsFor(f.name)
 	out := make([]libp2ppeer.ID, 0, len(rows))
 	for _, row := range rows {
 		id, err := libp2ppeer.Decode(row.Peer)
@@ -237,7 +243,7 @@ func (n *Node) openBuildBackend() error {
 		case n.opts.secrets != nil:
 			buildOptions = append(buildOptions, artifact.WithSecrets(n.opts.secrets))
 		case n.secrets != nil || n.stats != nil:
-			v := &vault{node: n}
+			v := newVault(n)
 			n.closers = append(n.closers, v)
 			buildOptions = append(buildOptions, artifact.WithSecrets(v))
 		}
@@ -321,7 +327,7 @@ func (n *Node) openBuildFrontend() error {
 	// that does, and it exists at all only because a node running stats can
 	// find one.
 	if n.stats != nil {
-		v := &vault{node: n}
+		v := newVault(n)
 		n.closers = append(n.closers, v)
 		frontendOptions = append(frontendOptions, frontend.WithVault(v))
 	}
@@ -343,7 +349,7 @@ func (n *Node) openBuildFrontend() error {
 type buildRegister struct{ node *Node }
 
 func (b buildRegister) Environments(ctx context.Context, project string) ([]string, error) {
-	r, err := b.reader()
+	r, err := b.reader(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +357,7 @@ func (b buildRegister) Environments(ctx context.Context, project string) ([]stri
 }
 
 func (b buildRegister) Resolve(ctx context.Context, project, environment string) (pkgregister.Pointer, error) {
-	r, err := b.reader()
+	r, err := b.reader(ctx)
 	if err != nil {
 		return pkgregister.Pointer{}, err
 	}
@@ -359,19 +365,17 @@ func (b buildRegister) Resolve(ctx context.Context, project, environment string)
 }
 
 func (b buildRegister) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
-	r, err := b.reader()
+	r, err := b.reader(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return r.Object(ctx, id)
 }
 
-// reader is the register this node reads, local when it runs one.
-func (b buildRegister) reader() (artifact.Register, error) {
-	if b.node.register != nil {
-		return b.node.register.Local(), nil
-	}
-	return b.node.registerClientNow()
+// reader is the register this node reads, local when it runs one. It is
+// node/locate.go's one reach, narrowed to what a build may ask.
+func (b buildRegister) reader(ctx context.Context) (artifact.Register, error) {
+	return b.node.registers.Now(ctx)
 }
 
 // artifacts is what a BUILT resource currently runs.
@@ -470,9 +474,6 @@ func (n *Node) clock() time.Time {
 // is read-only on purpose — "nothing this composition wires is allowed to
 // deploy" — and this is the exception that proves it: a deploy is what a push
 // became, and a push is the only thing that may.
-func (n *Node) publisher(context.Context) (deploy.Register, error) {
-	if n.register != nil {
-		return n.register.Local(), nil
-	}
-	return n.registerClientNow()
+func (n *Node) publisher(ctx context.Context) (deploy.Register, error) {
+	return n.registers.Now(ctx)
 }
