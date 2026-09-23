@@ -3,8 +3,6 @@
 package dream_test
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,11 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
 	nodeDream "github.com/taubyte/tau/node/dream"
-	"github.com/taubyte/tau/pkg/invoke"
-	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 )
 
@@ -170,145 +164,4 @@ func TestACacheReplicatesBetweenNodes(t *testing.T) {
 		res, err := second.onCarrying(t.Context(), target(), http.MethodPost, "/get/sessions/shared", "")
 		return err == nil && res.Status == 200 && string(res.Body) == "crosses"
 	}, 60*time.Second, 500*time.Millisecond, "a workload's own data never crossed the swarm")
-}
-
-// ── streams ──────────────────────────────────────────────────────────────────
-//
-// WHAT FOLLOWS IS STILL A HAND-BUILT OBJECT, AND IT IS A DIFFERENT KIND.
-// `stream` is taubyte:stream/publisher, sharing this file with cache only
-// because it shares the fixture — so the conversion above does not reach it and
-// nothing has ever compiled the declaration below. It carries the same debt the
-// cache half just paid, named here rather than left to be rediscovered: a
-// projects/with/stream/distributed project is the fix, and the fixture already
-// exports `publish`.
-
-const streamID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zs"
-
-// withStream is a project whose one function publishes to one stream.
-func withStream(componentCID string) []byte {
-	doc := map[string]any{
-		"object": map[string]any{
-			"id":   cacheProjectID,
-			"name": "shop",
-			"function": map[string]any{
-				cacheFuncID: map[string]any{
-					"name":      "cacher",
-					"execution": map[string]any{"call": "handle", "memory": 33554432},
-					"source":    map[string]any{"kind": "component", "component": componentCID},
-					"stream": map[string]any{
-						"orders": map[string]any{"ops": []any{"publish"}},
-					},
-				},
-			},
-			"stream": map[string]any{
-				// The swarm's own engine, which is the one this cloud holds;
-				// kafka and nats are refused by name.
-				streamID: map[string]any{"name": "orders", "engine": "distributed"},
-			},
-		},
-		"indexes": map[string]any{
-			"projects/" + cacheProjectID + "/function/cacher/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/function/" + cacheFuncID},
-			"projects/" + cacheProjectID + "/stream/orders/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/stream/" + streamID},
-		},
-	}
-
-	raw, err := json.Marshal(doc)
-	if err != nil {
-		panic(err)
-	}
-	return raw
-}
-
-// TestAGuestPublishesAndAnotherNodeReceivesIt — the stream capability across
-// real gossipsub, which is the only thing that shows the topic a guest's label
-// resolved to is the topic another node is listening on.
-func TestAGuestsMessageCrossesTheSwarm(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
-	m, err := dream.New(t.Context())
-	require.NoError(t, err)
-	defer m.Close()
-
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: map[string]int{"copies": 2}},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
-	require.Len(t, pids, 2)
-
-	first, second := nodeOf(t, pids[0]), nodeOf(t, pids[1])
-
-	for _, pid := range pids {
-		store, ok := nodeDream.Assets(pid)
-		require.True(t, ok)
-		_, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-		require.NoError(t, err)
-	}
-	store, _ := nodeDream.Assets(pids[0])
-	cid, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-	require.NoError(t, err)
-
-	_, err = first.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: withStream(cid),
-	})
-	require.NoError(t, err)
-
-	// THE LISTENER IS THE OTHER NODE, and it subscribes to the topic the
-	// composer derives rather than to one this test spelled — so a change to
-	// how a handle becomes a topic breaks this rather than passing quietly.
-	// It resolves on the SECOND node once the register's CRDT reaches it, which
-	// is also what proves the compiled project crossed.
-	var handle string
-	require.Eventually(t, func() bool {
-		spec, err := second.Worker().Resolve(t.Context(), target())
-		if err != nil {
-			return false
-		}
-		require.Len(t, spec.Reaches, 1)
-		require.Empty(t, spec.Reaches[0].Refused)
-		handle = spec.Reaches[0].Handle
-		return true
-	}, 60*time.Second, 500*time.Millisecond, "the project never reached the second node")
-
-	topic, err := second.PubSub().Join(second.StreamTopic(handle))
-	require.NoError(t, err)
-	defer topic.Close()
-
-	sub, err := topic.Subscribe()
-	require.NoError(t, err)
-	defer sub.Cancel()
-
-	received := make(chan []byte, 1)
-	go func() {
-		msg, err := sub.Next(t.Context())
-		if err == nil {
-			received <- msg.Data
-		}
-	}()
-
-	// A gossipsub mesh needs both sides joined before a publish reaches
-	// anybody, so the publish is retried until it does — which is what the
-	// kind's own doc says about delivery.
-	require.Eventually(t, func() bool {
-		res, err := first.Worker().Invoke(t.Context(), target(), &invoke.Request{
-			Method: "POST", Path: "/publish/orders/", Body: []byte("order:1"),
-		})
-		require.NoError(t, err)
-		require.Equal(t, 204, res.Status, string(res.Body))
-
-		select {
-		case got := <-received:
-			require.Equal(t, "order:1", string(got))
-			return true
-		default:
-			return false
-		}
-	}, 60*time.Second, 500*time.Millisecond, "a guest's message never crossed the swarm")
 }

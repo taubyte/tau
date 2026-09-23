@@ -1,0 +1,4 @@
+id: QmWuuXAAT97WT75cXRUhMqjiSqmkXgcTjbACLLNR8PaG8k
+name: streamdistributed
+description: one function on both ends of a stream - it publishes to the topic, and declares the subscription the platform has no dispatcher for yet
+regions: [eu]
