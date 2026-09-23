@@ -57,4 +57,6 @@ for arg in "$@"; do
 done
 
 exec ssh "${ssh_opts[@]}" "$host" \
-	"cd $dir && PATH=/usr/local/go/bin:\$PATH TAU_CAP_MEM=$mem ./scripts/cap$remote"
+	"cd $dir && PATH=/usr/local/go/bin:\$PATH TAU_CAP_MEM=$mem \
+		TAU_CAP_TOTAL=${TAU_CAP_TOTAL:-8G} TAU_CAP_TOTAL_HIGH=${TAU_CAP_TOTAL_HIGH:-6G} \
+		TAU_CAP_CPU=${TAU_CAP_CPU:-400%} TAU_NO_CAP=${TAU_NO_CAP:-0} ./scripts/cap$remote"
