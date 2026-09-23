@@ -17,7 +17,19 @@ func NewConfig(u *dream.Universe, config *iface.ServiceConfig) (tauConfig.Config
 		return nil, err
 	}
 
-	p2pListen := []string{fmt.Sprintf(dream.DefaultP2PListenFormat, config.Port)}
+	// PORT 0, ALWAYS: THE BIND IS THE ALLOCATION. dream picks no port numbers —
+	// it asks the kernel for one by listening on 0, and reads back what it got
+	// once the host is up (dream.createService). Predicting a number first and
+	// binding it later is a window another process can step into, and four
+	// dreaming packages in parallel step into it.
+	//
+	// config.Port is not consulted on the way in: a universe assigns its own
+	// p2p ports, and the field carries the real one back out after the bind.
+	//
+	// The announce is the listen address for the same reason it always was —
+	// dream is one process on loopback — and a zero port in an announce reads
+	// as "the port I bound" (peer.node.SimpleAddrsFactory).
+	p2pListen := []string{fmt.Sprintf(dream.DefaultP2PListenFormat, 0)}
 	ports := make(map[string]int)
 	for _, k := range []string{"http", "p2p", "dns", "ipfs"} {
 		ports[k] = config.Others[k]
@@ -41,6 +53,9 @@ func NewConfig(u *dream.Universe, config *iface.ServiceConfig) (tauConfig.Config
 		tauConfig.WithSwarmKey(config.SwarmKey),
 		tauConfig.WithPrivateKey(privKey),
 		tauConfig.WithPorts(ports),
+		// Unset is 0, which is the kernel picking; a universe started with an
+		// explicit `--bind <service>@<port>/http` pins it instead, because that
+		// is a port somebody asked for rather than one dream guessed.
 		tauConfig.WithHttpListen(fmt.Sprintf("%s:%d", dream.DefaultHost, config.Others["http"])),
 		tauConfig.WithVerbose(config.Others["verbose"] != 0),
 		tauConfig.WithEnableHTTPS(config.Others["secure"] != 0),

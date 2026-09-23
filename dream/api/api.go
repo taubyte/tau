@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/taubyte/tau/dream"
@@ -20,17 +22,18 @@ type Service struct {
 // Deprecated: Use New instead
 //
 // BigBang is the test/mock entry point (the tau CLI calls New directly and
-// keeps the fixed 1421 default). It allocates a kernel-free port and sets
-// dream.DreamApiPort before starting the server: process-local consumers
-// (taucorder, the dream http client) build their default URLs from
-// DreamApiPort, so setting it here keeps them all in agreement while making
-// concurrent test binaries collision-free.
+// keeps the fixed 1421 default). It lets the kernel pick the port and then
+// publishes it as dream.DreamApiPort: process-local consumers (taucorder, the
+// dream http client) build their default URLs from DreamApiPort, so setting it
+// here keeps them all in agreement while making concurrent test binaries
+// collision-free.
+//
+// THE PORT IS PUBLISHED AFTER THE BIND, NOT BEFORE IT. DreamApiPort is set to
+// 0 only long enough for New to ask for a kernel-assigned port; the real one
+// is read back off the listener, so no consumer can be handed a number that
+// was merely reserved and might already belong to someone else.
 func BigBang(m *dream.Multiverse) error {
-	ports, err := dream.GetFreePorts(1)
-	if err != nil {
-		return err
-	}
-	dream.DreamApiPort = ports[0]
+	dream.DreamApiPort = 0
 
 	srv, err := New(m, nil)
 	if err != nil {
@@ -38,6 +41,20 @@ func BigBang(m *dream.Multiverse) error {
 	}
 
 	srv.server.Start()
+
+	listen, err := srv.server.GetListenAddress()
+	if err != nil {
+		return err
+	}
+
+	// Still 0 means Start never got a listener — it reports that synchronously
+	// before it spawns anything, so Error() is the reason and reading it here
+	// is reading a settled value.
+	port, err := strconv.Atoi(listen.Port())
+	if err != nil || port == 0 {
+		return fmt.Errorf("dream api did not bind: %w", srv.server.Error())
+	}
+	dream.DreamApiPort = port
 
 	if _, err = srv.Ready(10 * time.Second); err != nil {
 		return err

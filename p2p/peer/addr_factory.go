@@ -64,22 +64,48 @@ func IpfsStyleAddrsFactory(announce []string, noAnnounce []string) libp2p.Option
 // override will make the factory ignore discovered addresses
 //
 //	only use for public nodes
+//
+// A ZERO PORT IN AN ANNOUNCE MEANS "WHATEVER I BOUND", and is the one case
+// where the host's own addresses are announced even under override. Listening
+// on /tcp/0 is how a caller asks the kernel to allocate, and the allocation
+// only exists once the host is up — long after this option was handed to
+// libp2p. Announcing /tcp/0 verbatim would publish an address nothing can
+// dial, so such an entry stands for the real listen addresses instead, which
+// the factory receives on every call.
 func (p *node) SimpleAddrsFactory(announce []string, override bool) libp2p.Option {
 	announceAddrs := make([]ma.Multiaddr, 0, len(announce))
+	var announceBound bool
 	for _, a := range announce {
 		addr, err := ma.NewMultiaddr(a)
-		if err == nil {
-			announceAddrs = append(announceAddrs, addr)
+		if err != nil {
+			continue
 		}
+		if hasUnboundPort(addr) {
+			announceBound = true
+			continue
+		}
+		announceAddrs = append(announceAddrs, addr)
 	}
 
 	return libp2p.AddrsFactory(func(allAddrs []ma.Multiaddr) []ma.Multiaddr {
-		addrs := make([]ma.Multiaddr, 0, len(announceAddrs))
+		addrs := make([]ma.Multiaddr, 0, len(announceAddrs)+len(allAddrs))
 		addrs = append(addrs, announceAddrs...)
-		if !override {
+		if announceBound || !override {
 			addrs = append(addrs, allAddrs...)
 		}
 
 		return addrs
 	})
+}
+
+// hasUnboundPort says whether an address names port 0 — a request for a port
+// rather than a port.
+func hasUnboundPort(addr ma.Multiaddr) bool {
+	for _, proto := range []int{ma.P_TCP, ma.P_UDP} {
+		if port, err := addr.ValueForProtocol(proto); err == nil && port == "0" {
+			return true
+		}
+	}
+
+	return false
 }

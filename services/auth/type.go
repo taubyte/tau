@@ -54,6 +54,13 @@ func (s *AuthService) Node() peer.Node {
 	return s.node
 }
 
+// Http is the listener this service answers on, so a caller that let the
+// kernel pick the port can ask which one it got. Same accessor the gateway and
+// substrate already expose, for the same reason.
+func (s *AuthService) Http() http.Service {
+	return s.http
+}
+
 func (s *AuthService) KV() kv.KVDB {
 	return s.db
 }

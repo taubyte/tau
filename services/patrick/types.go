@@ -53,3 +53,10 @@ type Assignment struct {
 	MonkeyPID string `cbor:"1,keyasint"`
 	Timestamp int64  `cbor:"2,keyasint"`
 }
+
+// Http is the listener this service answers on, so a caller that let the
+// kernel pick the port can ask which one it got. Same accessor the gateway and
+// substrate already expose, for the same reason.
+func (s *PatrickService) Http() http.Service {
+	return s.http
+}

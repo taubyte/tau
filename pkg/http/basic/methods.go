@@ -7,6 +7,7 @@ import (
 	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/http/options"
 
+	"net"
 	"net/http"
 	"net/url"
 )
@@ -41,9 +42,30 @@ func (s *Service) SetOption(optIface interface{}) error {
 	return nil
 }
 
+// Start binds and then serves.
+//
+// THE BIND HAPPENS HERE AND NOT INSIDE ListenAndServe, so that a caller who
+// asked for port 0 can find out what it got: the kernel allocates at bind
+// time, and the listen address is rewritten to the one actually taken before
+// this returns, which is what makes GetListenAddress answer the truth. It also
+// means a port that cannot be taken is an error the caller can see on Error()
+// right away rather than one that surfaces from a goroutine later.
 func (s *Service) Start() {
+	addr := s.Server.Addr
+	if addr == "" {
+		addr = ":http" // what ListenAndServe defaults to
+	}
+
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		s.err = err
+		s.Kill()
+		return
+	}
+	s.ListenAddress = listener.Addr().String()
+
 	go func() {
-		s.err = s.Server.ListenAndServe()
+		s.err = s.Server.Serve(listener)
 		if s.err != http.ErrServerClosed {
 			s.Kill()
 		}

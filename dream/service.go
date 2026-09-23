@@ -5,17 +5,12 @@ import (
 	"os"
 	"path"
 	"sort"
-	"strings"
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	peer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
 )
-
-// otherPortKeys is the fixed order in which "Others" ports are assigned from
-// a freshly reserved batch of ports.
-var otherPortKeys = []string{"http", "p2p", "dns", "ipfs"}
 
 func (u *Universe) createService(name string, config *commonIface.ServiceConfig) error {
 	if config.Disabled {
@@ -39,47 +34,28 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 		config.Others = make(map[string]int)
 	}
 
-	var (
-		node peer.Node
-		err  error
-	)
-
-	// Binding a service can race another process for the same kernel-picked
-	// port between reservation and bind; retry a few times with a fresh batch
-	// of ports rather than failing the whole service start.
-	for attempt := 0; attempt < 3; attempt++ {
-		if attempt > 0 {
-			for _, k := range otherPortKeys {
-				config.Others[k] = 0
-			}
-		}
-
-		var ports []int
-		ports, err = GetFreePorts(len(otherPortKeys))
-		if err != nil {
-			return err
-		}
-
-		for i, k := range otherPortKeys {
-			if prt, ok := config.Others[k]; !ok || prt == 0 {
-				config.Others[k] = ports[i]
-
-				if k == "p2p" {
-					config.Port = config.Others[k]
-				}
-			}
-		}
-
-		node, err = u.startService(name, config)
-		if err == nil {
-			break
-		}
-		if !strings.Contains(err.Error(), "address already in use") {
-			return err
-		}
-	}
+	// NO PORTS ARE CHOSEN HERE. The service listens on 0 and the kernel
+	// allocates at bind time (dream/common.NewConfig), so there is nothing to
+	// reserve and nothing to collide over. The retry-on-"address already in
+	// use" loop this replaced existed only to paper over the window between
+	// reserving a port and binding it; with no window there is nothing to
+	// retry, and a bind that fails now says something real.
+	service, err := u.startService(name, config)
 	if err != nil {
 		return err
+	}
+	node := service.Node()
+
+	// THE PORTS ARE READ BACK, NEVER PREDICTED, so what a universe reports —
+	// and what u.GetPort hands a test — is the port that was actually taken.
+	p2pPort, err := boundP2PPort(node)
+	if err != nil {
+		return fmt.Errorf("service `%s`: %w", name, err)
+	}
+	config.Others["p2p"] = p2pPort
+	config.Port = p2pPort
+	if httpPort, serving := boundHTTPPort(service); serving {
+		config.Others["http"] = httpPort
 	}
 
 	config.Databases = kvdb.New(node)

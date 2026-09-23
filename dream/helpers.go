@@ -10,67 +10,67 @@ import (
 	"encoding/pem"
 	"fmt"
 	mrand "math/rand"
-	"net"
 	"os"
 	"path"
+	"strconv"
 	"strings"
+
+	"github.com/multiformats/go-multiaddr"
+	commonIface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/p2p/peer"
+	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-// GetFreePorts reserves n distinct ports from the kernel: it binds n TCP
-// listeners on :0 (held simultaneously so they're distinct) and verifies UDP
-// is bindable on each (seer serves DNS over UDP). Listeners are released on
-// return; the tiny release-to-rebind window is covered by bind-retry at the
-// call sites.
-func GetFreePorts(n int) ([]int, error) {
-	var (
-		tcpListeners []net.Listener
-		udpConns     []*net.UDPConn
-	)
-	defer func() {
-		for _, l := range tcpListeners {
-			l.Close()
+// boundP2PPort is the tcp port a node is listening on.
+//
+// THE BIND IS THE ALLOCATION. Every node dream starts listens on port 0, so
+// the number does not exist until the host is up — this is where it is read,
+// and nothing in dream may predict it. Reserving a port by binding a throwaway
+// listener and closing it again, which is what this replaced, leaves a window
+// in which any other process can take the same number; four dreaming packages
+// running in parallel lost that race often enough to fail a universe outright.
+//
+// IT READS THE LISTEN ADDRESSES, NOT THE ANNOUNCED ONES. Announcing is a
+// configurable view of a node and can be overridden; listening is what it did.
+func boundP2PPort(node peer.Node) (int, error) {
+	for _, addr := range node.Peer().Network().ListenAddresses() {
+		value, err := addr.ValueForProtocol(multiaddr.P_TCP)
+		if err != nil {
+			continue
 		}
-		for _, c := range udpConns {
-			c.Close()
-		}
-	}()
-
-	ports := make([]int, 0, n)
-	for len(ports) < n {
-		var bound bool
-		for range 10 {
-			l, err := net.Listen("tcp", DefaultHost+":0")
-			if err != nil {
-				return nil, fmt.Errorf("listening on a free tcp port failed with: %w", err)
-			}
-
-			port := l.Addr().(*net.TCPAddr).Port
-
-			udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", DefaultHost, port))
-			if err != nil {
-				l.Close()
-				continue
-			}
-
-			udpConn, err := net.ListenUDP("udp", udpAddr)
-			if err != nil {
-				// port not bindable on udp (e.g. taken by another process); release and retry
-				l.Close()
-				continue
-			}
-
-			tcpListeners = append(tcpListeners, l)
-			udpConns = append(udpConns, udpConn)
-			ports = append(ports, port)
-			bound = true
-			break
-		}
-		if !bound {
-			return nil, fmt.Errorf("failed to reserve a free tcp+udp port after 10 attempts")
+		port, err := strconv.Atoi(value)
+		if err == nil && port != 0 {
+			return port, nil
 		}
 	}
 
-	return ports, nil
+	return 0, fmt.Errorf("node `%s` is not listening on a tcp port", node.ID())
+}
+
+// boundHTTPPort is the port a service's http listener took, for the services
+// that have one. The second return says whether this service serves http at
+// all — most do not, and a universe reports ports only for those that do.
+//
+// THE SERVICE IS ASKED, because it is the only one who knows: dream hands it a
+// listen address with port 0 and the kernel answers at bind time, inside the
+// service's own http stack.
+func boundHTTPPort(service commonIface.Service) (int, bool) {
+	serving, ok := service.(interface{ Http() httpIface.Service })
+	if !ok || serving.Http() == nil {
+		return 0, false
+	}
+
+	address, err := serving.Http().GetListenAddress()
+	if err != nil {
+		return 0, false
+	}
+
+	port, err := strconv.Atoi(address.Port())
+	if err != nil || port == 0 {
+		return 0, false
+	}
+
+	return port, true
 }
 
 // GetCacheFolder returns the cache folder for the dream

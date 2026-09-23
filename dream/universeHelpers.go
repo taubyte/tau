@@ -94,7 +94,11 @@ func (u *Universe) KillNodeByNameID(name, id string) error {
 	}
 }
 
-func (u *Universe) startService(protocol string, config *commonIface.ServiceConfig) (peer.Node, error) {
+// startService builds a service and returns IT, not just its node: the node
+// answers for the p2p port it bound, and the service answers for the http one
+// — see boundP2PPort and boundHTTPPort. Both are read after the fact, because
+// dream lets the kernel allocate.
+func (u *Universe) startService(protocol string, config *commonIface.ServiceConfig) (commonIface.Service, error) {
 	creationMethod, err := Registry.service(protocol)
 	if err != nil {
 		return nil, err
@@ -108,7 +112,7 @@ func (u *Universe) startService(protocol string, config *commonIface.ServiceConf
 	u.registerService(protocol, service)
 	u.toClose(service)
 
-	return service.Node(), nil
+	return service, nil
 }
 
 func (s *Simple) startClient(name string, config *commonIface.ClientConfig) error {

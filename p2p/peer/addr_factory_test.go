@@ -4,9 +4,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/libp2p/go-libp2p/config"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/taubyte/tau/p2p/keypair"
 )
 
 func TestMakeAddrsFactory_AnnounceOnly(t *testing.T) {
@@ -161,4 +163,67 @@ func mustMultiaddr(t *testing.T, s string) ma.Multiaddr {
 	addr, err := ma.NewMultiaddr(s)
 	require.NoError(t, err)
 	return addr
+}
+
+// A node told to listen on a kernel-picked port announces the port it got, not
+// the zero it asked with — otherwise every address it publishes is undialable
+// and nothing can mesh with it.
+func TestANodeThatLetTheKernelPickAnnouncesThePortItBound(t *testing.T) {
+	unbound := []string{"/ip4/127.0.0.1/tcp/0"}
+
+	node, err := NewPublic(
+		t.Context(),
+		nil,
+		keypair.NewRaw(),
+		nil,
+		unbound,
+		unbound,
+		BootstrapParams{},
+	)
+	require.NoError(t, err)
+	defer node.Close()
+
+	addrs := node.Peer().Addrs()
+	require.NotEmpty(t, addrs, "a node listening on tcp/0 announced nothing")
+	for _, addr := range addrs {
+		port, err := addr.ValueForProtocol(ma.P_TCP)
+		require.NoError(t, err)
+		require.NotEqual(t, "0", port, "announced %s, which nothing can dial", addr)
+	}
+
+	listening, err := addrs[0].ValueForProtocol(ma.P_TCP)
+	require.NoError(t, err)
+
+	// ListenAddresses also carries /p2p-circuit, which names no tcp port.
+	var bound string
+	for _, addr := range node.Peer().Network().ListenAddresses() {
+		if port, err := addr.ValueForProtocol(ma.P_TCP); err == nil {
+			bound = port
+		}
+	}
+	require.Equal(t, bound, listening, "announced a port other than the one bound")
+}
+
+// An announce that names a real port still wins over the host's own addresses,
+// which is what override has always meant.
+func TestAnAnnouncedPortStillOverridesWhatTheHostBound(t *testing.T) {
+	node := Mock(t.Context())
+	defer node.Close()
+
+	var cfg config.Config
+	require.NoError(t, node.SimpleAddrsFactory([]string{"/ip4/1.2.3.4/tcp/4001"}, true)(&cfg))
+
+	result := cfg.AddrsFactory([]ma.Multiaddr{mustMultiaddr(t, "/ip4/127.0.0.1/tcp/9999")})
+	require.Len(t, result, 1)
+	require.Equal(t, "/ip4/1.2.3.4/tcp/4001", result[0].String())
+}
+
+// A zero port is a request for a port, not a port.
+func TestHasUnboundPort(t *testing.T) {
+	for _, addr := range []string{"/ip4/127.0.0.1/tcp/0", "/ip4/127.0.0.1/udp/0/quic-v1"} {
+		require.True(t, hasUnboundPort(mustMultiaddr(t, addr)), addr)
+	}
+	for _, addr := range []string{"/ip4/127.0.0.1/tcp/4001", "/ip4/1.2.3.4/udp/4001/quic-v1"} {
+		require.False(t, hasUnboundPort(mustMultiaddr(t, addr)), addr)
+	}
 }

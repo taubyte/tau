@@ -3,7 +3,7 @@ package dream
 import (
 	"errors"
 	"fmt"
-	"strings"
+	"path"
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
@@ -137,21 +137,8 @@ func (u *Universe) Simple(name string) (*Simple, error) {
 }
 
 func (u *Universe) CreateSimpleNode(name string, config *SimpleConfig) (peer.Node, error) {
-	var err error
-
 	if _, exists := u.simples[name]; exists {
 		return nil, fmt.Errorf("simple Node `%s` exists in universe `%s`", name, u.Name())
-	}
-
-	// only retry with a fresh port if we're the one who allocated it; an
-	// explicit config.Port is a caller's choice, not ours to change
-	allocatedPort := config.Port == 0
-	if allocatedPort {
-		ports, ferr := GetFreePorts(1)
-		if ferr != nil {
-			return nil, ferr
-		}
-		config.Port = ports[0]
 	}
 
 	upeers := u.Peers()
@@ -162,34 +149,38 @@ func (u *Universe) CreateSimpleNode(name string, config *SimpleConfig) (peer.Nod
 		}
 	}
 
-	var simpleNode peer.Node
-	for attempt := 0; attempt < 3; attempt++ {
-		if attempt > 0 {
-			ports, perr := GetFreePorts(1)
-			if perr != nil {
-				return nil, perr
-			}
-			config.Port = ports[0]
-		}
-
-		simpleNode, err = peer.NewLitePublic(
-			u.ctx,
-			fmt.Sprintf("%s/simple-%s-%d", u.root, name, config.Port),
-			keypair.NewRaw(),
-			u.swarmKey,
-			[]string{fmt.Sprintf(DefaultP2PListenFormat, config.Port)},
-			[]string{fmt.Sprintf(DefaultP2PListenFormat, config.Port)},
-			peer.BootstrapParams{Enable: len(bpeers) > 0, Peers: bpeers},
-		)
-		if err == nil {
-			break
-		}
-		if !allocatedPort || !strings.Contains(err.Error(), "address already in use") {
-			break
-		}
-	}
+	// THE DIRECTORY IS NAMED AFTER THE NODE, NOT AFTER A PORT. It only has to
+	// be unique among the simples of this universe, and the name already is —
+	// CreateSimpleNode refuses a name this universe is using. The port was
+	// never what made it unique; it was there because the number happened to
+	// be known early, and a path that depends on a port cannot be built before
+	// the host binds. Naming it after the simple also means the directory can
+	// be found by the name a test uses, and a simple killed and recreated
+	// under the same name gets its own state back rather than a second copy.
+	//
+	// PORT 0: the bind is the allocation, and the real number is read off the
+	// host below. The announce is the listen address as it always was; a zero
+	// port there reads as "whatever I bound" (peer.node.SimpleAddrsFactory).
+	listen := []string{fmt.Sprintf(DefaultP2PListenFormat, 0)}
+	simpleNode, err := peer.NewLitePublic(
+		u.ctx,
+		path.Join(u.root, "simple-"+name),
+		keypair.NewRaw(),
+		u.swarmKey,
+		listen,
+		listen,
+		peer.BootstrapParams{Enable: len(bpeers) > 0, Peers: bpeers},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating me error: %v", err)
+	}
+
+	// config.Port is an output, not an input: a universe assigns its own ports
+	// and this is the one it got. Everything that reports or dials this simple
+	// reads it from here.
+	if config.Port, err = boundP2PPort(simpleNode); err != nil {
+		simpleNode.Close()
+		return nil, fmt.Errorf("simple node `%s`: %w", name, err)
 	}
 
 	simple := &Simple{Node: simpleNode, clients: make(map[string]commonIface.Client)}
