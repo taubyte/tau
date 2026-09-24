@@ -4,11 +4,9 @@ package dream_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -31,6 +29,26 @@ import (
 //
 // So this runs two real components: fixtures/cacher reaches the cache, and
 // fixtures/guard decides.
+//
+// AND THE PROJECT IS AUTHORED RATHER THAN TRANSCRIBED, for project_test's
+// reason. The object this file used to publish was written by hand, so it was a
+// statement of what the compiler was believed to produce and nothing ever
+// checked it — and it had drifted in both of the ways every conversion before it
+// found. Neither function carried `execution/timeout`, which is Required(), so
+// tcc would have REFUSED the very project this test claimed to be running; and
+// all five resource ids were minted rather than derived — the two functions a
+// two-character edit of fixture_test's own id, the three caches an incrementing
+// base58 tail over one digest. projects/with/authorizer is compiled instead.
+//
+// THE ONE FIELD THIS TEST IS ABOUT IS THE ONE THE LITERAL GOT RIGHT, and it had
+// no choice: `implements: authorizer` is the only non-default world in the
+// corpus, and a guard that says anything else is refused at resolve rather than
+// instantiated and handed a question it would read as a request
+// (services/worker/resolve.go:507). What the literal left to the default was the
+// CALLER's — the reaching function carried no `implements` at all, so the
+// setting reached the tier absent and ran as a handler only because an empty
+// world IS the handler (pkg/invoke/wasm/wasm.go:386). Compiled, it says
+// `handler` out loud, which is what the assertions below now read.
 
 func guardWASM(t *testing.T) []byte {
 	t.Helper()
@@ -39,82 +57,24 @@ func guardWASM(t *testing.T) []byte {
 	return code
 }
 
-const (
-	guardedFuncID  = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYGa"
-	keeperFuncID   = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYGb"
-	openCacheID    = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioG1"
-	closedCacheID  = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioG2"
-	unsureCacheID  = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioG3"
-	guardedProject = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
-)
-
+// guardedTarget is the guest, and keeperTarget the function that decides for it.
+//
+// BOTH ARE FILENAMES UNDER projects/with/authorizer/function, and a rename there
+// stops these resolving.
 func guardedTarget() specs.Address {
 	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "reacher"}
 }
 
-// withGuardedCaches is one guest, one authorizer and three caches it guards.
-//
-// The three are the guard fixture's three arms, selected by the cache's NAME,
-// which is what the caller writes in its access block and therefore what travels
-// to the guard as the target's label.
-func withGuardedCaches(reacherCID, keeperCID string) []byte {
-	cache := func(name string) map[string]any {
-		return map[string]any{
-			"name": name, "consensus": "crdt", "size": 1000000, "ttl": float64(time.Hour),
-			"authorizer": map[string]any{"name": "keeper"},
-		}
-	}
-
-	doc := map[string]any{
-		"object": map[string]any{
-			"id":   guardedProject,
-			"name": "shop",
-			"function": map[string]any{
-				guardedFuncID: map[string]any{
-					"name":      "reacher",
-					"execution": map[string]any{"call": "handle", "memory": 33554432},
-					"source":    map[string]any{"kind": "component", "component": reacherCID},
-					"cache": map[string]any{
-						"sessions":    map[string]any{"ops": []any{"get", "put", "delete"}},
-						"forbidden":   map[string]any{"ops": []any{"get", "put"}},
-						"undecidable": map[string]any{"ops": []any{"get"}},
-					},
-				},
-				keeperFuncID: map[string]any{
-					"name":       "keeper",
-					"implements": "authorizer",
-					"execution":  map[string]any{"call": "authorize", "memory": 8388608},
-					"source":     map[string]any{"kind": "component", "component": keeperCID},
-				},
-			},
-			"cache": map[string]any{
-				openCacheID:   cache("sessions"),
-				closedCacheID: cache("forbidden"),
-				unsureCacheID: cache("undecidable"),
-			},
-		},
-		"indexes": map[string]any{
-			"projects/" + guardedProject + "/function/reacher/links": []any{
-				"branches/main/projects/" + guardedProject + "/function/" + guardedFuncID},
-			"projects/" + guardedProject + "/function/keeper/links": []any{
-				"branches/main/projects/" + guardedProject + "/function/" + keeperFuncID},
-			"projects/" + guardedProject + "/cache/sessions/links": []any{
-				"branches/main/projects/" + guardedProject + "/cache/" + openCacheID},
-			"projects/" + guardedProject + "/cache/forbidden/links": []any{
-				"branches/main/projects/" + guardedProject + "/cache/" + closedCacheID},
-			"projects/" + guardedProject + "/cache/undecidable/links": []any{
-				"branches/main/projects/" + guardedProject + "/cache/" + unsureCacheID},
-		},
-	}
-
-	raw, err := json.Marshal(doc)
-	if err != nil {
-		panic(err)
-	}
-	return raw
+func keeperTarget() specs.Address {
+	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "keeper"}
 }
 
 // TestAGuestReachesAGuardedCacheAndASecondComponentDecides.
+//
+// THE THREE CACHES ARE THE GUARD FIXTURE'S THREE ARMS, selected by the cache's
+// NAME — which is what the caller writes in its access block and therefore what
+// travels to the guard as the target's label. Renaming one in the corpus moves
+// it to a different arm.
 func TestAGuardDecidesForARealGuest(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
@@ -143,9 +103,18 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	keeper, err := store.Put(t.Context(), bytes.NewReader(guardWASM(t)))
 	require.NoError(t, err)
 
+	// TWO ARTIFACTS, WHICH IS WHY THIS PROJECT CANNOT GO THROUGH deploy. Every
+	// other corpus project runs one binary under several names; here the guard
+	// is a different component built against a different world, and pointing it
+	// at the cacher would be the very substitution `implements` exists to refuse.
+	//
+	// AND THE UNIVERSE IS THE SMALLEST ONE THAT ANSWERS: no gateway, no zone and
+	// no host, because both halves of this are put to the worker directly.
+	compiled, _ := project(t, "with/authorizer", artifacts{"": reacher, "keeper": keeper})
+
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1,
-		Compiled: withGuardedCaches(reacher, keeper),
+		Compiled: compiled,
 	})
 	require.NoError(t, err)
 
@@ -157,6 +126,19 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 		require.Empty(t, g.Refused, g.Label)
 		require.Equal(t, "keeper", g.Settings["authorizer/name"], g.Label)
 	}
+
+	// AND THE TWO WORLDS SURVIVED THE COMPILE, which is what the hand-built
+	// object could only assert about itself. The guard's is the corpus's one
+	// non-default `implements`, and it is the string the tier instantiates it
+	// under; the guest's is the default the vocabulary fills in, and the
+	// difference between the two is what keeps a handler from standing in for an
+	// authorizer.
+	require.Equal(t, "handler", spec.Settings["implements"])
+
+	guard, err := n.Worker().Resolve(t.Context(), keeperTarget())
+	require.NoError(t, err)
+	require.Equal(t, "authorizer", guard.Settings["implements"])
+	require.Equal(t, "authorize", guard.Settings["execution/call"])
 
 	ask := func(path string, body []byte) *invoke.Response {
 		t.Helper()

@@ -1,0 +1,7 @@
+id: QmSuowwXXoGuZedUomLnZWreRVbzd2x78UeFwM3vHk5r97
+description: the arm that is decided against - the guard grants nothing on it, which is somebody refusing rather than nobody answering
+size: 1MB
+ttl: 1h
+consensus: crdt
+authorizer:
+    name: keeper

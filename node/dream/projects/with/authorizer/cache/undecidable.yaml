@@ -1,0 +1,7 @@
+id: QmYANmVdjFroLVqRrqxVUaqbtEuC9fSDXPhNHnVFS3HKmQ
+description: the arm the guard will not decide - a different sentence from a refusal, and serving it anyway would grant exactly the access this cache said somebody else decides
+size: 1MB
+ttl: 1h
+consensus: crdt
+authorizer:
+    name: keeper

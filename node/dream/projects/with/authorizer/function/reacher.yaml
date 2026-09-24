@@ -1,0 +1,24 @@
+id: QmZj1DgpxueYqSPdKMUEyffDMS1ZjBPeJi1g9N4pxghyxK
+description: the guest - it asks each cache for the ops it wants, and every one of those caches names a guard, so nothing it is allowed to do is settled by this file
+source: services/cacher
+build:
+    commands:
+        image: rust:1.83
+        install: cargo fetch --locked
+        run: cargo build --release --target wasm32-wasip2
+        output: target/wasm32-wasip2/release/cacher.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MiB
+# `delete` IS ASKED FOR AND NEVER GRANTED. The guard answers with a fixed set of
+# get and put, so a delete refused in the test is refused out of an answer
+# already given rather than by a second question - which is the whole reason the
+# contract says an authorizer returns the complete set.
+cache:
+    sessions:
+        ops: [get, put, delete]
+    forbidden:
+        ops: [get, put]
+    undecidable:
+        ops: [get]

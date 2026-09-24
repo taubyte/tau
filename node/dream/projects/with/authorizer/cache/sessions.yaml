@@ -1,0 +1,10 @@
+id: QmPZVNdFnq1vBqWQ56rTHJkFUuA16uBpHUZSDzLToCVdVz
+description: the arm the guard grants - get and put come back and delete never does, so a denial on a delete is the kept answer refusing and not a fresh decision
+# THE NAME IS WHAT THE GUARD DECIDES ON. It reads the target's label, which is
+# this file's stem, so renaming any of these three caches moves it to a
+# different arm of the fixture and the test stops describing what it says it does.
+size: 1MB
+ttl: 1h
+consensus: crdt
+authorizer:
+    name: keeper

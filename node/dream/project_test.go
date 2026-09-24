@@ -92,12 +92,32 @@ import (
 // about the project's structure is touched, and the artifact a real deploy would
 // have produced is the one thing a universe cannot make for itself.
 
+// artifacts says which component each resource is pointed at, keyed by the label
+// the author wrote, with "" the artifact everything unnamed gets.
+//
+// A MAP RATHER THAN ONE CID BECAUSE A PROJECT MAY NEED TWO WORLDS. Every project
+// here but one runs a single binary under several names, and the substitution
+// that made that work — point everything carrying a `source` at the one artifact
+// handed in — cannot express the authorizer project, where the guard is a
+// DIFFERENT component built against a different host interface. Naming the
+// exception and defaulting the rest leaves every other project saying what it
+// said: one artifact, for everything.
+type artifacts map[string]string
+
+// of is the component this resource runs, which is its own entry when it has one.
+func (a artifacts) of(label string) string {
+	if cid, named := a[label]; named {
+		return cid
+	}
+	return a[""]
+}
+
 // project compiles one of the authored projects under projects/ and points every
-// function at the component the caller names. It answers the bytes a register is
-// published AND the object they were marshalled from, because a test that has to
-// name a resource reads the id out of what was published rather than restating
-// one — see idOf.
-func project(t *testing.T, name, componentCID string) ([]byte, map[string]any) {
+// function at the component the caller names for it. It answers the bytes a
+// register is published AND the object they were marshalled from, because a test
+// that has to name a resource reads the id out of what was published rather than
+// restating one — see idOf.
+func project(t *testing.T, name string, components artifacts) ([]byte, map[string]any) {
 	t.Helper()
 
 	c, err := schema.New(
@@ -126,7 +146,10 @@ func project(t *testing.T, name, componentCID string) ([]byte, map[string]any) {
 			if _, isSource := res["source"]; !isSource {
 				continue
 			}
-			res["source"] = map[string]any{"kind": "component", "component": componentCID}
+			label, _ := res["name"].(string)
+			cid := components.of(label)
+			require.NotEmpty(t, cid, "%s names %q and nothing was handed in for it", name, label)
+			res["source"] = map[string]any{"kind": "component", "component": cid}
 			swapped++
 		}
 	}
@@ -259,10 +282,10 @@ type deployed struct {
 // off a handle carrying the project (node/database.go:395) — so publishing
 // twice needs no change to the universe, the zone, or the node, only for the
 // start and the publish to stop being one function.
-func publish(t *testing.T, nodes []*node.Node, at deployed, component string) []*running {
+func publish(t *testing.T, nodes []*node.Node, at deployed, components artifacts) []*running {
 	t.Helper()
 
-	compiled, obj := project(t, at.name, component)
+	compiled, obj := project(t, at.name, components)
 	_, err := nodes[0].Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: at.project, Environment: "prod", Revision: 1,
 		Compiled: compiled, Hosts: []string{at.host},
@@ -310,7 +333,7 @@ func deploy(t *testing.T, name, host string, wasm []byte) *running {
 	cid, err := store.Put(t.Context(), bytes.NewReader(wasm))
 	require.NoError(t, err)
 
-	return publish(t, []*node.Node{n}, deployed{project: "shop", name: name, host: host}, cid)[0]
+	return publish(t, []*node.Node{n}, deployed{project: "shop", name: name, host: host}, artifacts{"": cid})[0]
 }
 
 func handlerWASM(t *testing.T) []byte {
@@ -982,7 +1005,7 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, projects ...deployed) 
 
 	fleets := make([][]*running, 0, len(projects))
 	for _, at := range projects {
-		fleets = append(fleets, publish(t, nodes, at, cid))
+		fleets = append(fleets, publish(t, nodes, at, artifacts{"": cid}))
 	}
 
 	// EVERY NODE HAS TO HAVE EVERY PROJECT, THE FLOOR AND THE FLEET before
