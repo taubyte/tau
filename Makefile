@@ -1,6 +1,19 @@
 GOMEMLIMIT ?= 4GiB
 FLAGS ?=
-DREAM_P ?= 4
+
+# ONE DREAMING PACKAGE IS A MULTI-NODE UNIVERSE, so this is a share of the
+# MACHINE and not a fixed number. It was 4, which on a four-core box runs four
+# universes against four cores: the raft and crdt tests there do not fail an
+# assertion, they MISS A DEADLINE -- a group that never finishes forming, a
+# rebroadcast that never lands inside its window -- and that reads as a bug in
+# the code rather than as a box with no headroom.
+#
+# MEASURED on a four-core box: at -p 2 the ledger test hung past the 30m
+# timeout against a ~100s norm and the crdt kv test missed its 60s window;
+# both pass 3/3 isolated, and the whole suite is green at -p 1. A quarter of
+# the cores reproduces that -- 1 on four cores, 2 on eight -- and never less
+# than one.
+DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1 ] && p=1; echo $$p)
 
 # Tagged sweeps discover their packages instead of sweeping ./... so they only
 # build and run the packages that actually carry tagged tests. Scoped to the
