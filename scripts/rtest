@@ -33,21 +33,41 @@ fi
 
 ssh_opts=(-o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -i "$key")
 
-# THE FILE LIST IS git's, not the filesystem's. --exclude-standard is what keeps
-# an ignored 3 GB cache out of it without maintaining a second ignore list here.
+# WHAT GIT IGNORES IS WHAT IS EXCLUDED, and everything else is synced with
+# --delete. Stated as an exclude list rather than a file list, because those two
+# spellings differ on the one case that matters: a file the REMOTE has and the
+# local tree does not.
 #
-# ★ A TRACKED FILE THE WORKING TREE HAS DELETED IS STILL IN `git ls-files`, and
-# without --delete-missing-args rsync fails the WHOLE transfer on the first one
-# ("link_stat ... No such file or directory", exit 23) -- so a change that
-# removes a file could not be tested at all without staging the deletion first,
-# which is exactly the commit this script exists to avoid needing. The flag
-# makes a listed-but-absent path a deletion on the far side, which is what the
-# working tree says it is; plain --delete cannot reach it, because with
-# --files-from it only prunes directories the transfer actually visits, so a
-# stale .go file would sit there and break the build.
-{ git ls-files; git ls-files --others --exclude-standard; } |
-	rsync -a --delete --delete-missing-args --files-from=- --exclude='.git/' \
-		-e "ssh ${ssh_opts[*]}" ./ "$host:$dir/"
+# ★ --files-from CANNOT DELETE A FILE IT WAS NEVER TOLD ABOUT. That was the
+# previous shape here, and this comment used to claim --delete-missing-args
+# covered it. It does not: that flag turns a LISTED-but-absent path into a
+# deletion, and a stale file is absent from the list entirely, so nothing ever
+# looked at it. With --files-from rsync also treats each entry as its own
+# transfer root, so --delete has no directory to prune and is a no-op.
+#
+# MEASURED, not argued: a worktree at a commit predating node/cron.go synced
+# into a directory that still had it, and the build died on redeclarations that
+# exist in neither tree. Every green run in a reused directory was one stale
+# file away from describing a tree that never existed.
+#
+# ★ AN EXCLUDED PATH IS PROTECTED FROM --delete, which is the whole reason this
+# works: `git ls-files --others --ignored --directory` is every path git ignores,
+# with directories collapsed, so a 3 GB target/ or node_modules/ on the far side
+# is neither sent nor removed. Only what git would track can be pruned.
+#
+# .git/ stays excluded, and therefore stays protected, exactly as before.
+# ★ EVERY PATTERN IS ANCHORED WITH A LEADING SLASH, and leaving it off is a
+# quiet way to delete a tracked directory. git prints repo-root-relative PATHS;
+# rsync reads a pattern with no slash as "match this name at ANY depth". So an
+# ignored `services/monkey/` at the root also matched the TRACKED
+# `core/services/monkey/`, which was then never sent and never built. Anchoring
+# says what git meant: this path, from the top.
+#
+# Process substitution rather than a temp file: this script ends in `exec`, so
+# an EXIT trap would never fire and every run would leak one.
+rsync -a --delete --exclude='.git/' \
+	--exclude-from=<(git ls-files --others --ignored --exclude-standard --directory | sed 's|^|/|') \
+	-e "ssh ${ssh_opts[*]}" ./ "$host:$dir/"
 
 # Quote every argument so a -run regex or a path with a space survives the shell
 # on the far side.
