@@ -1,0 +1,18 @@
+id: QmRQU7wVZSSJxC3PEPxnDfQdSL7q1Mn2d5g2L7Vos1iYCy
+description: the name the internet reaches, serving no path of its own - a function decides every destination and another may stop the request before that question is asked
+host:
+    zone:
+        in:
+            name: example_com
+        name: edge
+# A FUNCTION DECIDES WHERE EVERYTHING GOES, so there is no static route. The
+# compiler still emits `route.match: prefix` for one, and an empty prefix
+# matches every path at the lowest specificity - which is what "no static
+# routes" has to mean for a name that must still match something.
+router:
+    name: picker
+transformers:
+    - name: shaper
+      # Closed, because a filter that fails open stops filtering exactly when
+      # something is wrong.
+      fail: closed

@@ -1,0 +1,20 @@
+id: QmcMwon2o4JQSgWXcaEw6AjViyDiCCTJKyTmSxX93V985J
+description: what every request passes through first - it may change the request or answer it outright, and answering is how a gateway refuses without anything behind it ever running
+# THE REFUSING ARM IS THE POINT. `outcome` is forward-or-answer, and the WIT
+# world says what answer is for: it "stops the chain here and the response goes
+# back to the client, which is how a filter rejects without the request ever
+# reaching a workload". That is gateway authorization, and it is spelled
+# `transformers:` rather than `authorizer:` because the question is per-request
+# and its answer is a response, not the set of ops an authorizer returns.
+implements: gateway-transformer
+source: services/shaper
+build:
+    commands:
+        image: rust:1.83
+        install: cargo fetch --locked
+        run: cargo build --release --target wasm32-wasip2
+        output: target/wasm32-wasip2/release/shaper.wasm
+execution:
+    call: transform
+    timeout: 15s
+    memory: 16MiB

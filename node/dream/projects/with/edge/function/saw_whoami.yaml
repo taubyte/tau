@@ -1,0 +1,17 @@
+id: QmZ79Rn2MWFZ9WndYMkfVtrsVCPuAwZx7BaqMRG2yygpoE
+description: the handler at the end of the chain, named for what reaching it proves
+# THE NAME IS THE ASSERTION. picker's fallback arm answers with the path it was
+# handed, slashes turned into underscores - so a request for /whoami reaches a
+# function of this name only if the router actually SAW the path. A router that
+# ignored its argument would name something else and the request would 404.
+source: services/cacher
+build:
+    commands:
+        image: rust:1.83
+        install: cargo fetch --locked
+        run: cargo build --release --target wasm32-wasip2
+        output: target/wasm32-wasip2/release/cacher.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MiB

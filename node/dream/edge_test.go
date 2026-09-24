@@ -4,7 +4,6 @@ package dream_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -34,14 +33,9 @@ import (
 // So this runs three real components behind one request: shaper transforms,
 // picker routes, cacher handles.
 
-const (
-	edgeGatewayID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Ze"
-	edgeZoneID    = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zf"
-	shaperFuncID  = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYEa"
-	pickerFuncID  = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYEb"
-	handlerFuncID = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYEc"
-	edgeHost      = "edge.example.com"
-)
+// edgeHost is the name the corpus project's gateway answers on: its zone is
+// `example.com` and the gateway's host label is `edge`.
+const edgeHost = "edge.example.com"
 
 func shaperWASM(t *testing.T) []byte {
 	t.Helper()
@@ -55,83 +49,6 @@ func pickerWASM(t *testing.T) []byte {
 	code, err := os.ReadFile(filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", "picker.wasm"))
 	require.NoError(t, err, "run `cargo component build --release` in pkg/invoke/wasm/fixtures/picker")
 	return code
-}
-
-// withEdge is a gateway routed by a function, with a transformer in front of it.
-//
-// THE HANDLER IS CALLED `saw_whoami` ON PURPOSE. picker's fallback arm answers
-// with the path it was handed, slashes turned into underscores — so a request
-// for `/whoami` routes to a function of that name only if the router actually
-// SAW the path. A router that ignored its argument would route to the wrong
-// name and this would 404.
-func withEdge(handlerCID, shaperCID, pickerCID string) []byte {
-	doc := map[string]any{
-		"object": map[string]any{
-			"id":   cacheProjectID,
-			"name": "shop",
-			"function": map[string]any{
-				handlerFuncID: map[string]any{
-					"name":      "saw_whoami",
-					"execution": map[string]any{"call": "handle", "memory": 33554432},
-					"source":    map[string]any{"kind": "component", "component": handlerCID},
-				},
-				shaperFuncID: map[string]any{
-					"name":       "shaper",
-					"implements": "gateway-transformer",
-					"execution":  map[string]any{"call": "transform", "memory": 16777216},
-					"source":     map[string]any{"kind": "component", "component": shaperCID},
-				},
-				pickerFuncID: map[string]any{
-					"name":       "picker",
-					"implements": "gateway-router",
-					"execution":  map[string]any{"call": "route", "memory": 16777216},
-					"source":     map[string]any{"kind": "component", "component": pickerCID},
-				},
-			},
-			"gateway": map[string]any{
-				edgeGatewayID: map[string]any{
-					"name": "edge",
-					"host": map[string]any{
-						"kind": "zone", "name": "edge",
-						"zone": map[string]any{"in": map[string]any{"name": edgeZoneID}},
-					},
-					// A FUNCTION DECIDES WHERE EVERYTHING GOES, so there is
-					// no static route — and `route: {match: prefix}` with no
-					// path is exactly what the compiler emits for one. An empty
-					// prefix matches every path at the lowest specificity,
-					// which is what "no static routes" has to mean for a name
-					// that still has to match something.
-					"routing": "router",
-					"route":   map[string]any{"match": "prefix"},
-					"router":  map[string]any{"name": "picker"},
-					"transformers": []any{
-						map[string]any{"name": "shaper", "fail": "closed"},
-					},
-				},
-			},
-			"zone": map[string]any{
-				edgeZoneID: map[string]any{"name": "example_com", "fqdn": "example.com"},
-			},
-		},
-		"indexes": map[string]any{
-			"projects/" + cacheProjectID + "/function/saw_whoami/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/function/" + handlerFuncID},
-			"projects/" + cacheProjectID + "/function/shaper/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/function/" + shaperFuncID},
-			"projects/" + cacheProjectID + "/function/picker/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/function/" + pickerFuncID},
-			"projects/" + cacheProjectID + "/gateway/edge/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/gateway/" + edgeGatewayID},
-			"projects/" + cacheProjectID + "/zone/example_com/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/zone/" + edgeZoneID},
-		},
-	}
-
-	raw, err := json.Marshal(doc)
-	if err != nil {
-		panic(err)
-	}
-	return raw
 }
 
 // TestARequestPassesThroughARealTransformerAndARealRouter.
@@ -166,9 +83,17 @@ func TestTheEdgeChainRunsRealComponents(t *testing.T) {
 	pickerCID, err := store.Put(t.Context(), bytes.NewReader(pickerWASM(t)))
 	require.NoError(t, err)
 
+	// THREE ARTIFACTS, one per world. This and projects/with/authorizer are the
+	// only projects that need more than one: everywhere else a single binary
+	// runs under several names, and here each of the three is built against a
+	// different host interface.
+	compiled, _ := project(t, "with/edge", artifacts{
+		"": handlerCID, "shaper": shaperCID, "picker": pickerCID,
+	})
+
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1,
-		Compiled: withEdge(handlerCID, shaperCID, pickerCID),
+		Compiled: compiled,
 		Hosts:    []string{edgeHost},
 	})
 	require.NoError(t, err)
