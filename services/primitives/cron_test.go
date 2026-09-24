@@ -69,6 +69,8 @@ func nightly(spec string) Schedule {
 	return Schedule{
 		Handle: projectID + "/prod/" + cronID,
 		Name:   "nightly",
+		ID:     cronID,
+		Path:   "/billing/nightly",
 		Spec:   spec,
 		Fires:  []Target{{Project: projectID, Environment: "prod", Kind: "function", Name: "checkout"}},
 	}
@@ -155,6 +157,10 @@ func TestACronFiresItsTarget(t *testing.T) {
 	req := fired.seen()[0]
 	require.Equal(t, "POST", req.Method)
 	require.Equal(t, []string{"nightly"}, req.Headers[headerCron])
+	require.Equal(t, []string{cronID}, req.Headers[headerCronID],
+		"the name is scoped and renameable; the id is what the callee can look up")
+	require.Equal(t, []string{"/billing/nightly"}, req.Headers[headerCronPath],
+		"where it lives, which the name alone does not say")
 	require.Equal(t, []string{"2026-09-05T03:00:00Z"}, req.Headers[headerFiredAt],
 		"the SLOT and not now, so a late run says what it is a run of")
 }

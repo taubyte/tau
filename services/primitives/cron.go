@@ -156,8 +156,12 @@ type Schedule struct {
 	Handle string
 
 	// Name is the author's own name for it, which is what a fired workload is
-	// told it is a run of.
+	// told it is a run of — together with ID, the cron's own resource id, and
+	// Path, where it lives, because a name alone is unique only inside its own
+	// scope and does not survive a rename. See deliveryHeaders.
 	Name string
+	ID   string
+	Path string
 
 	// Spec is the cron expression and Timezone is the IANA zone it is written
 	// in. A cron expression alone does not name a moment.
@@ -280,12 +284,22 @@ const (
 )
 
 // deliveryHeaders for a fired schedule. A workload invoked by a clock has no
-// request to read, so what it is told is which cron and which moment — and the
+// request to read, so what it is told is WHICH CRON and which moment — and the
 // MOMENT IS THE SLOT rather than now, so a run spread by jitter, a run that was
 // late and a run that is a redelivery all say what they are a run of.
+//
+// WHICH CRON IS THREE HEADERS BECAUSE A NAME IS NOT AN IDENTITY. The name is
+// what the author typed and is unique only inside its own scope — three
+// applications can each hold a `nightly`, and a rename changes it. So the id
+// goes with it, which is what the cron is called everywhere the author's name
+// is not, and the path, which is where it lives: together they are the
+// resource, and a workload fired by several crons can tell them apart, look
+// its own up, and say in a log which one it is a run of.
 const (
-	headerCron    = "X-Taubyte-Cron"
-	headerFiredAt = "X-Taubyte-Fired-At"
+	headerCron     = "X-Taubyte-Cron"
+	headerCronID   = "X-Taubyte-Cron-Id"
+	headerCronPath = "X-Taubyte-Cron-Path"
+	headerFiredAt  = "X-Taubyte-Fired-At"
 )
 
 // cronParser is the five-field form the vocabulary documents — "0 3 * * *" —
@@ -779,11 +793,16 @@ func (c *crons) run(ctx context.Context, held *queue.Queue, schedule Schedule, i
 		c.settle(held, schedule, item, c.begin(runCtx, fire, start))
 		return
 	}
-	c.settle(held, schedule, item, c.invoke(runCtx, fire))
+	c.settle(held, schedule, item, c.invoke(runCtx, schedule, fire))
 }
 
 // invoke is a fire that names a workload, and answers whether it was done.
-func (c *crons) invoke(ctx context.Context, fire *primitivesv1.CronFire) bool {
+//
+// THE IDENTITY IS READ OFF THE SCHEDULE AND NOT THE ITEM. The item carries the
+// name it was written with; the schedule is the cron as it stands this minute.
+// They differ only across a rename, and there the live one is what the callee
+// can look up — the handle naming the queue is the id either way.
+func (c *crons) invoke(ctx context.Context, schedule Schedule, fire *primitivesv1.CronFire) bool {
 	at := Target{
 		Project:     fire.GetTarget().GetProject(),
 		Environment: fire.GetTarget().GetEnvironment(),
@@ -797,8 +816,10 @@ func (c *crons) invoke(ctx context.Context, fire *primitivesv1.CronFire) bool {
 		Method: http.MethodPost,
 		Path:   "/",
 		Headers: map[string][]string{
-			headerCron:    {fire.GetCron()},
-			headerFiredAt: {slot.Format(time.RFC3339)},
+			headerCron:     {schedule.Name},
+			headerCronID:   {schedule.ID},
+			headerCronPath: {schedule.Path},
+			headerFiredAt:  {slot.Format(time.RFC3339)},
 		},
 	})
 	switch {

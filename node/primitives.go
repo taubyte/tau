@@ -344,6 +344,8 @@ func (n *Node) schedules(ctx context.Context) []primitivesService.Schedule {
 		out = append(out, primitivesService.Schedule{
 			Handle:    s.Handle,
 			Name:      s.Name,
+			ID:        s.ID,
+			Path:      s.Path,
 			Spec:      s.Spec,
 			Timezone:  s.Timezone,
 			OnOverlap: s.OnOverlap,

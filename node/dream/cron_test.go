@@ -106,6 +106,17 @@ func TestAScheduleFiresOnceAcrossAFleet(t *testing.T) {
 	require.Equal(t, []string{"everyminute"}, req.Headers["X-Taubyte-Cron"])
 	require.NotEmpty(t, req.Headers["X-Taubyte-Fired-At"])
 
+	// AND THE WHOLE IDENTITY AND NOT JUST THE NAME. A function fired by a clock
+	// has no request to read, so a name it cannot look up and that three
+	// applications could each hold leaves it nothing to act on. The id is the
+	// cron out of the object this project compiled to — projects/with/cron's
+	// own cron/everyminute.yaml — which is what makes this an end-to-end claim
+	// and not a restatement of what the service put in the map.
+	require.Equal(t, []string{"QmREVyn7gTwpYmasPnrCgkT9CFHi2YX8w3nmqsd3PzQvvU"},
+		req.Headers["X-Taubyte-Cron-Id"])
+	require.Equal(t, []string{"/everyminute"}, req.Headers["X-Taubyte-Cron-Path"],
+		"at the project root, which is where this project puts it")
+
 	// AND ONLY ONE NODE FIRED IT. A second fire of the same slot would be two
 	// nodes agreeing to do the same job, which is exactly what one leader
 	// handing one minute to one node exists to prevent — so this waits out the

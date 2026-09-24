@@ -111,3 +111,25 @@ func TestAHostIsMatchedCaseInsensitively(t *testing.T) {
 	require.True(t, found, "the fixture declares a host with an fqdn")
 	require.Empty(t, p.At("nothing.example.invalid"))
 }
+
+// TestANamespaceIsScopeOfReadBackwards: what a consumer renders is what an
+// author would have typed, and what ScopeOf resolves it back to.
+func TestANamespaceIsScopeOfReadBackwards(t *testing.T) {
+	for _, one := range []struct {
+		scope []string
+		name  string
+		want  string
+	}{
+		{nil, "nightly", "/nightly"},
+		{[]string{"billing"}, "nightly", "/billing/nightly"},
+		{[]string{"shop", "billing"}, "nightly", "/shop/billing/nightly"},
+	} {
+		path := specs.NamespaceOf(one.scope, one.name)
+		require.Equal(t, one.want, path)
+
+		// The leading slash is the whole claim: an asker anywhere resolves it
+		// to the same place.
+		require.Equal(t, append(append([]string{}, one.scope...), one.name),
+			specs.ScopeOf([]string{"somewhere", "else"}, path))
+	}
+}

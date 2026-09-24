@@ -733,6 +733,17 @@ func scopeOf(asker []string, namespace string) []string {
 	return append(append([]string{}, asker...), segments(namespace)...)
 }
 
+// NamespaceOf is a resolved scope and a name written back as the absolute
+// namespace the grammar reads — "/billing/ledger", leading slash and all.
+//
+// IT IS ScopeOf READ BACKWARDS, and it is here for the same reason: a consumer
+// holding a scope chain and wanting the path an author would have typed was
+// joining it by hand, and a hand-joined path that forgets the leading slash is
+// a RELATIVE one — the exact confusion ScopeOf exists to state once.
+func NamespaceOf(scope []string, name string) string {
+	return "/" + strings.Join(append(append([]string{}, scope...), name), "/")
+}
+
 func segments(path string) []string {
 	var out []string
 	for _, segment := range strings.Split(path, "/") {

@@ -35,10 +35,25 @@ type Schedule struct {
 	// scoped the way everything else replicated is.
 	Handle string
 
+	// ID is the cron's own resource id, which is the half of the handle a
+	// fired workload can do something with: it is what the cron is called
+	// everywhere the author's name is not, and it survives a rename.
+	//
+	// Carried rather than cut back out of Handle, because a joined string
+	// read backwards is a separator bug waiting to name the wrong resource —
+	// and the id is in hand where the handle is built.
+	ID string
+
 	// Name and Scope are where the cron itself lives, for a message that says
 	// which one.
 	Name  string
 	Scope []string
+
+	// Path is Name and Scope written back as the absolute namespace an author
+	// would have typed — "/billing/nightly". It is rendered here, where the
+	// scope chain is in hand, so that nothing downstream joins segments with a
+	// copy of the grammar's leading slash.
+	Path string
 
 	// Spec is the cron expression and Timezone is the IANA zone it is written
 	// in. A cron expression alone does not name a moment.
@@ -126,8 +141,10 @@ func scheduleOf(proj *specs.Project, name, environment string, scope []string, c
 
 	out := Schedule{
 		Handle:    specs.Handle(name, environment, id),
+		ID:        id,
 		Name:      cron,
 		Scope:     scope,
+		Path:      specs.NamespaceOf(scope, cron),
 		Spec:      spec,
 		Timezone:  resource.String("timezone"),
 		OnOverlap: resource.String("on_overlap"),
