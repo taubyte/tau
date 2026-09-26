@@ -9,6 +9,12 @@ host:
 route:
     path: /
     match: prefix
+    # AN ATTACHMENT IS A STANDING SUBSCRIPTION, so a route to a bus has to name
+    # something that can refuse it: whoever completes the handshake receives
+    # everything published from then on, and nothing downstream gets a second
+    # chance to say no.
+    authorizer:
+        name: doorman
     handler:
         bus:
             name: live

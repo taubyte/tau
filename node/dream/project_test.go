@@ -308,6 +308,13 @@ func publish(t *testing.T, nodes []*node.Node, at deployed, components artifacts
 // the one that has to retry, and every test below is written that way.
 func deploy(t *testing.T, name, host string, wasm []byte) *running {
 	t.Helper()
+	return deployWith(t, name, host, wasm, nil)
+}
+
+// deployWith is deploy for a project that needs more than one binary, keyed by
+// the label the author wrote — see the artifacts map.
+func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][]byte) *running {
+	t.Helper()
 
 	m, err := dream.New(t.Context())
 	require.NoError(t, err)
@@ -333,7 +340,14 @@ func deploy(t *testing.T, name, host string, wasm []byte) *running {
 	cid, err := store.Put(t.Context(), bytes.NewReader(wasm))
 	require.NoError(t, err)
 
-	return publish(t, []*node.Node{n}, deployed{project: "shop", name: name, host: host}, artifacts{"": cid})[0]
+	held := artifacts{"": cid}
+	for label, code := range extra {
+		id, err := store.Put(t.Context(), bytes.NewReader(code))
+		require.NoError(t, err)
+		held[label] = id
+	}
+
+	return publish(t, []*node.Node{n}, deployed{project: "shop", name: name, host: host}, held)[0]
 }
 
 func handlerWASM(t *testing.T) []byte {
@@ -663,7 +677,7 @@ func TestAKvDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
 func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	u := deployFleetOf(t, 3, kitchenSinkWASM(t),
+	u := deployFleetOf(t, 3, kitchenSinkWASM(t), nil,
 		deployed{project: "shop", name: "with/database/distributed/kv/crdt", host: "keep.example.com"},
 		deployed{project: "market", name: "with/database/distributed/kv/crdt-b", host: "keepb.example.com"})
 	shop, market := u.fleets[0], u.fleets[1]
@@ -832,7 +846,7 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	u := deployFleetOf(t, 3, kitchenSinkWASM(t),
+	u := deployFleetOf(t, 3, kitchenSinkWASM(t), nil,
 		deployed{project: "shop", name: "with/database/distributed/kv/raft", host: "ledger.example.com"},
 		deployed{project: "market", name: "with/database/distributed/kv/raft-b", host: "ledgerb.example.com"})
 	shop, market := u.fleets[0], u.fleets[1]
@@ -942,7 +956,14 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 // survives losing a node.
 func deployFleet(t *testing.T, copies int, name, host string, wasm []byte) []*running {
 	t.Helper()
-	return deployFleetOf(t, copies, wasm,
+	return deployFleetWith(t, copies, name, host, wasm, nil)
+}
+
+// deployFleetWith is deployFleet for a project that needs more than one binary,
+// keyed by the label the author wrote — see the artifacts map.
+func deployFleetWith(t *testing.T, copies int, name, host string, wasm []byte, extra map[string][]byte) []*running {
+	t.Helper()
+	return deployFleetOf(t, copies, wasm, extra,
 		deployed{project: "shop", name: name, host: host}).fleets[0]
 }
 
@@ -959,7 +980,7 @@ type universe struct {
 // adds is a publish per project and a settle barrier that waits for every one
 // of them. The universe, the region, the fleet document and the component are
 // shared exactly as a real cloud shares them between its tenants.
-func deployFleetOf(t *testing.T, copies int, wasm []byte, projects ...deployed) universe {
+func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byte, projects ...deployed) universe {
 	t.Helper()
 	require.NotEmpty(t, projects, "a universe with nothing published in it proves nothing")
 
@@ -1003,9 +1024,19 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, projects ...deployed) 
 	cid, err := store.Put(t.Context(), bytes.NewReader(wasm))
 	require.NoError(t, err)
 
+	// EVERY EXTRA BINARY IS STORED THE SAME WAY, keyed by the label the author
+	// wrote. A project whose functions are built against different worlds needs
+	// more than one, and `""` stays what everything unnamed gets.
+	held := artifacts{"": cid}
+	for label, code := range extra {
+		id, err := store.Put(t.Context(), bytes.NewReader(code))
+		require.NoError(t, err)
+		held[label] = id
+	}
+
 	fleets := make([][]*running, 0, len(projects))
 	for _, at := range projects {
-		fleets = append(fleets, publish(t, nodes, at, artifacts{"": cid}))
+		fleets = append(fleets, publish(t, nodes, at, held))
 	}
 
 	// EVERY NODE HAS TO HAVE EVERY PROJECT, THE FLOOR AND THE FLEET before

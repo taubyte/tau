@@ -5,6 +5,8 @@ package dream_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -45,7 +47,8 @@ const busFor = "live.example.com"
 func TestABrowserAttachesAndAGuestReachesIt(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	cloud := deployFleet(t, 2, "with/bus", busFor, cacherWASM(t))
+	cloud := deployFleetWith(t, 2, "with/bus", busFor, cacherWASM(t),
+		map[string][]byte{"doorman": doormanWASM(t)})
 	publishing, edge := cloud[0], cloud[1]
 
 	// THE BROWSER ATTACHES TO THE OTHER NODE, which runs no part of this
@@ -120,10 +123,59 @@ func TestABrowserAttachesAndAGuestReachesIt(t *testing.T) {
 // TestABusIsNotAnHttpRoute. The name resolves and the request is the wrong one,
 // which is a different answer from "nothing serves this" — and the difference
 // is whether somebody goes looking for a typo.
+// doormanWASM is the guard the corpus route names: it denies when told to by
+// header and otherwise grants `subscribe` and never `publish`.
+func doormanWASM(t *testing.T) []byte {
+	t.Helper()
+	code, err := os.ReadFile(filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", "doorman.wasm"))
+	require.NoError(t, err, "run `cargo component build --release` in pkg/invoke/wasm/fixtures/doorman")
+	return code
+}
+
+// TestAGuardCanRefuseAnAttachmentBeforeItUpgrades — the claim the vocabulary
+// now REQUIRES, run end to end.
+//
+// An attachment is a standing subscription: whoever completes the handshake
+// receives everything published from then on, and nothing downstream gets a
+// second chance. So the route names a guard, and this is the guard saying no —
+// with a real component, in the http-authorizer world, on the request itself,
+// before any upgrade happened.
+func TestAGuardRefusesAnAttachmentBeforeTheUpgrade(t *testing.T) {
+	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
+
+	r := deployWith(t, "with/bus", busFor, cacherWASM(t),
+		map[string][]byte{"doorman": doormanWASM(t)})
+
+	srv := httptest.NewServer(r.node.Handler())
+	defer srv.Close()
+
+	// REFUSED, and it is the guard that refused: the header is the fixture's
+	// own deny arm, and nothing else on this path reads it.
+	_, res, err := websocket.DefaultDialer.Dial(
+		"ws://"+strings.TrimPrefix(srv.URL, "http://")+"/",
+		http.Header{"Host": []string{busFor}, "X-Deny": []string{"not on the list"}})
+	require.Error(t, err, "the handshake must not complete")
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
+
+	// AND THE SAME REQUEST WITHOUT IT ATTACHES, which is what makes the refusal
+	// above a decision rather than a broken route.
+	require.Eventually(t, func() bool {
+		conn, res, err := websocket.DefaultDialer.Dial(
+			"ws://"+strings.TrimPrefix(srv.URL, "http://")+"/",
+			http.Header{"Host": []string{busFor}})
+		if err != nil {
+			return false
+		}
+		defer conn.Close()
+		return res.StatusCode == http.StatusSwitchingProtocols
+	}, 60*time.Second, 500*time.Millisecond, "the guard never admitted anyone")
+}
+
 func TestAPlainRequestToABusNameIsToldToUpgrade(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	r := deploy(t, "with/bus", busFor, cacherWASM(t))
+	r := deployWith(t, "with/bus", busFor, cacherWASM(t),
+		map[string][]byte{"doorman": doormanWASM(t)})
 
 	got := r.ask(t, http.MethodGet, "/")
 
