@@ -76,7 +76,14 @@ for arg in "$@"; do
 	remote+=" $(printf '%q' "$arg")"
 done
 
+# ★ $HOME/go/bin IS ON THE PATH because `go install`ed tools live there and a
+# non-login shell does not look. The proto drift test shells out to
+# protoc-gen-go and protoc-gen-connect-go at the versions pkg/proto/buf.gen.yaml
+# pins, and it FAILS rather than skips when they are absent -- correctly, since a
+# drift check that skipped would report green having checked nothing. Without
+# this the tools can be installed on the box and still be invisible here, which
+# reads as a code failure and is a PATH.
 exec ssh "${ssh_opts[@]}" "$host" \
-	"cd $dir && PATH=/usr/local/go/bin:\$PATH TAU_CAP_MEM=$mem \
+	"cd $dir && PATH=/usr/local/go/bin:\$HOME/go/bin:\$PATH TAU_CAP_MEM=$mem \
 		TAU_CAP_TOTAL=${TAU_CAP_TOTAL:-8G} TAU_CAP_TOTAL_HIGH=${TAU_CAP_TOTAL_HIGH:-6G} \
 		TAU_CAP_CPU=${TAU_CAP_CPU:-400%} TAU_NO_CAP=${TAU_NO_CAP:-0} ./scripts/cap$remote"
