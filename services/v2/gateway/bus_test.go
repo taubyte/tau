@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/specs"
 )
 
@@ -89,7 +90,7 @@ func upgradeRequest(host string) *http.Request {
 // message that was published by something else entirely.
 func TestABrowserGetsWhatIsPublishedToTheBus(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{}, WithBuses(buses))
+	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
 
 	conn, res, err := dial(t, h.listen(t), fqdn)
@@ -111,7 +112,7 @@ func TestABrowserGetsWhatIsPublishedToTheBus(t *testing.T) {
 // A read-only socket would be a different kind.
 func TestABrowserPublishesToTheBus(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{}, WithBuses(buses))
+	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
 
 	conn, _, err := dial(t, h.listen(t), fqdn)
@@ -133,7 +134,7 @@ func TestABrowserPublishesToTheBus(t *testing.T) {
 // defect can have.
 func TestTheHandleIsTheOneAWorkloadWouldGet(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{}, WithBuses(buses))
+	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
 	fqdn, id := busNamed(t, "presence", "")
 
 	conn, _, err := dial(t, h.listen(t), fqdn)
@@ -148,7 +149,7 @@ func TestTheHandleIsTheOneAWorkloadWouldGet(t *testing.T) {
 // reachable name — the compiled project cannot know the cloud it runs in.
 func TestABusIsReachedAtItsGeneratedName(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, WithBuses(buses))
+	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "tau.example.io")
 	require.True(t, strings.HasSuffix(fqdn, ".tau.example.io"))
 
@@ -162,7 +163,7 @@ func TestABusIsReachedAtItsGeneratedName(t *testing.T) {
 // name nothing serves, and this name resolves — saying so sends somebody
 // looking for a typo they did not make.
 func TestAPlainRequestToABusIsToldToUpgrade(t *testing.T) {
-	h := newHarness(t, Config{}, WithBuses(&fakeBuses{}))
+	h := newHarness(t, Config{}, WithBuses(&fakeBuses{}), WithAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
 
 	w := recorder()
@@ -287,7 +288,7 @@ func TestABusWithInstancesNeedsAnAdmission(t *testing.T) {
 // said is a close frame, which a browser reports as a network error.
 func TestAnUnreachableBusIsAnswered(t *testing.T) {
 	buses := &fakeBuses{err: errors.New("no gossip")}
-	h := newHarness(t, Config{}, WithBuses(buses))
+	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
 
 	w := recorder()
@@ -302,7 +303,7 @@ func TestAnUnreachableBusIsAnswered(t *testing.T) {
 func TestAnAttachmentIsMeteredAsAnAttach(t *testing.T) {
 	buses := &fakeBuses{}
 	m := &meter{}
-	h := newHarness(t, Config{}, WithBuses(buses), WithMeter(m))
+	h := newHarness(t, Config{}, WithBuses(buses), WithMeter(m), WithAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
 
 	conn, _, err := dial(t, h.listen(t), fqdn)
@@ -348,6 +349,12 @@ type fakeAdmits struct {
 	asked    []string
 	declared []map[string]string
 	refuse   error
+}
+
+// AdmitRequest grants everything: these tests are about the attachment, and a
+// guard that refused would make every one of them a test of the guard.
+func (f *fakeAdmits) AdmitRequest(_ context.Context, _ specs.Address, _ *invoke.Request) (*invoke.Admission, error) {
+	return &invoke.Admission{Granted: []string{"subscribe", "publish"}}, nil
 }
 
 func (f *fakeAdmits) AdmitInstance(_ context.Context, _ string, settings map[string]string, instance string) error {

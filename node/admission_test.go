@@ -291,3 +291,9 @@ func TestABrowserTurnedAwayIsARefusal(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNotAdmitted)
 	require.ErrorContains(t, err, "that room is full")
 }
+
+// AuthorizeRequest is the third decision a tier makes. These doubles exist for
+// the other two, so it answers the way an absent guard would.
+func (*deciding) AuthorizeRequest(context.Context, invoke.Spec, *invoke.Request) (*invoke.Admission, error) {
+	return &invoke.Admission{Granted: []string{}}, nil
+}

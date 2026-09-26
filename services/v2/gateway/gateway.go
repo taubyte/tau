@@ -250,6 +250,15 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Body:    body,
 	}
 
+	// THE GUARD RUNS BEFORE THE CHAIN, because a transformer shapes traffic and
+	// a guard decides whether there is traffic to shape. Running it after would
+	// hand somebody's filter a request the policy had not admitted, and would
+	// make the refusal depend on what the chain did to it first.
+	if code, why := s.admitted(ctx, m, projectName, environment, req); why != "" {
+		refuse(w, code, why)
+		return
+	}
+
 	// THE CHAIN RUNS BEFORE ANYTHING ELSE SEES THE REQUEST, in the order it was
 	// declared, and any one of them may stop it.
 	if answer, code, why := s.shaped(ctx, m, projectName, environment, req); why != "" {
@@ -333,6 +342,52 @@ func writeTo(w http.ResponseWriter, res *invoke.Response) {
 //
 // It answers (address, nil, 0, "") to invoke, (_, answer, 0, "") to serve that
 // response, and (_, nil, code, why) to refuse.
+// admitted asks the route's guard, or the gateway's, whether this request may
+// pass. An empty reason is a pass.
+//
+// A ROUTE'S OWN ANSWERS INSTEAD OF THE GATEWAY'S, which is what having both
+// sites is for: a gateway states the policy its routes inherit, and a route
+// that needs its own says so where the route is written.
+//
+// WHAT A REFUSAL SAYS IS DELIBERATELY LITTLE. The guard's reason is for an
+// operator — a refusal that repeated it would describe somebody's policy to
+// anyone who asked, which is the rule `refuse` keeps everywhere else.
+func (s *Service) admitted(ctx context.Context, m match, projectName, environment string, req *invoke.Request) (int, string) {
+	name, scope := m.guard()
+	if name == "" {
+		return 0, ""
+	}
+	if s.admits == nil {
+		// A composition fault rather than a deployment one: the project says
+		// this name is guarded and this node cannot run the guard. Serving it
+		// would be serving exactly what the author said to decide about.
+		return http.StatusNotImplemented, "this route is guarded and that is not available here"
+	}
+	if scope == nil {
+		scope = m.host.Scope
+	}
+
+	admission, err := s.admits.AdmitRequest(ctx, specs.Address{
+		Project:     projectName,
+		Environment: environment,
+		Scope:       scope,
+		Kind:        "function",
+		Name:        name,
+	}, req)
+	if err != nil {
+		return http.StatusServiceUnavailable, "the function that guards this name could not be run"
+	}
+	if admission.Denied != "" {
+		return http.StatusForbidden, "this request was not admitted"
+	}
+	if len(admission.Granted) == 0 {
+		// A GRANT OF NOTHING IS A DECIDED REFUSAL, and it is the commonest one
+		// this world has — not an error, and not a pass.
+		return http.StatusForbidden, "this request was not admitted"
+	}
+	return 0, ""
+}
+
 func (s *Service) destination(ctx context.Context, m match, projectName, environment string, req *invoke.Request) (specs.Address, *invoke.Response, int, string) {
 	router, scope := m.router()
 	if router == "" {

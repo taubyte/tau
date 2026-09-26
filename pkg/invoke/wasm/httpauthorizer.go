@@ -39,18 +39,6 @@ const (
 // understood is a guard that did not answer.
 var ErrNotAnHTTPAuthorizer = errors.New("wasm: that component did not answer as an http authorizer")
 
-// Admission is what an http authorizer decided.
-//
-// `Granted` is every op the caller gets on whatever the route names — a bus
-// declares `subscribe` and `publish`, so an EMPTY LIST IS A REFUSAL THAT WAS
-// DECIDED, and a list holding only `subscribe` is a caller who may listen and
-// not send. `Denied` is a refusal to decide, and its reason is for an operator:
-// see the same split in Decision, which this deliberately mirrors.
-type Admission struct {
-	Granted []string
-	Denied  string
-}
-
 // AuthorizeRequest instantiates spec as an http authorizer and asks it about
 // one request.
 //
@@ -58,10 +46,10 @@ type Admission struct {
 // function of the question and whatever it reads, and a warm pool of guards
 // would be a second lifecycle to reason about. The set it answers with is what
 // stops a cold start landing on every operation the caller then performs.
-func (r *Runtime) AuthorizeRequest(ctx context.Context, spec invoke.Spec, req *invoke.Request) (Admission, error) {
+func (r *Runtime) AuthorizeRequest(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Admission, error) {
 	instance, runtime, err := r.instantiate(ctx, spec, WorldHTTPAuthorizer)
 	if err != nil {
-		return Admission{}, err
+		return nil, err
 	}
 	defer runtime.Close(ctx)
 
@@ -70,10 +58,10 @@ func (r *Runtime) AuthorizeRequest(ctx context.Context, spec invoke.Spec, req *i
 	// handler's and the transformer's.
 	out, err := instance.Call(ctx, authorizeExport, requestValue(req))
 	if err != nil {
-		return Admission{}, fmt.Errorf("wasm: asking %s: %w", spec.Name, err)
+		return nil, fmt.Errorf("wasm: asking %s: %w", spec.Name, err)
 	}
 	if len(out) != 1 {
-		return Admission{}, fmt.Errorf("%w: %s returned %d values", ErrNotAnHTTPAuthorizer, spec.Name, len(out))
+		return nil, fmt.Errorf("%w: %s returned %d values", ErrNotAnHTTPAuthorizer, spec.Name, len(out))
 	}
 	return admissionFrom(out[0], spec.Name)
 }
@@ -83,7 +71,7 @@ func (r *Runtime) AuthorizeRequest(ctx context.Context, spec invoke.Spec, req *i
 // EVERY FIELD IS CHECKED, for decisionFrom's reason: what came back was
 // produced by somebody else's component, and a shape that is not this world's
 // must read as an error naming the guard rather than as permission.
-func admissionFrom(value component.Value, name string) (Admission, error) {
+func admissionFrom(value component.Value, name string) (*invoke.Admission, error) {
 	var variant *component.VariantValue
 	switch v := value.(type) {
 	case *component.VariantValue:
@@ -91,17 +79,17 @@ func admissionFrom(value component.Value, name string) (Admission, error) {
 	case component.VariantValue:
 		variant = &v
 	default:
-		return Admission{}, fmt.Errorf("%w: %s answered with a %T rather than a decision", ErrNotAnHTTPAuthorizer, name, value)
+		return nil, fmt.Errorf("%w: %s answered with a %T rather than a decision", ErrNotAnHTTPAuthorizer, name, value)
 	}
 
 	switch variant.Disc {
 	case admissionDenied:
 		why, ok := variant.Payload.(string)
 		if !ok {
-			return Admission{}, fmt.Errorf("%w: %s denied with a %T rather than a reason",
+			return nil, fmt.Errorf("%w: %s denied with a %T rather than a reason",
 				ErrNotAnHTTPAuthorizer, name, variant.Payload)
 		}
-		return Admission{Denied: why}, nil
+		return &invoke.Admission{Denied: why}, nil
 
 	case admissionGranted:
 		// A GRANT OF NOTHING IS STILL A GRANT, and it is the commonest refusal
@@ -109,24 +97,24 @@ func admissionFrom(value component.Value, name string) (Admission, error) {
 		// empty slice, and reading that as malformed would turn "you get
 		// nothing" into an author's bug — decisionFrom says the same.
 		if variant.Payload == nil {
-			return Admission{Granted: []string{}}, nil
+			return &invoke.Admission{Granted: []string{}}, nil
 		}
 		list, ok := variant.Payload.([]component.Value)
 		if !ok {
-			return Admission{}, fmt.Errorf("%w: %s granted a %T rather than a list",
+			return nil, fmt.Errorf("%w: %s granted a %T rather than a list",
 				ErrNotAnHTTPAuthorizer, name, variant.Payload)
 		}
 		ops := make([]string, 0, len(list))
 		for _, entry := range list {
 			op, ok := entry.(string)
 			if !ok {
-				return Admission{}, fmt.Errorf("%w: %s granted an op that is not a string",
+				return nil, fmt.Errorf("%w: %s granted an op that is not a string",
 					ErrNotAnHTTPAuthorizer, name)
 			}
 			ops = append(ops, op)
 		}
-		return Admission{Granted: ops}, nil
+		return &invoke.Admission{Granted: ops}, nil
 	}
 
-	return Admission{}, fmt.Errorf("%w: %s answered with arm %d", ErrNotAnHTTPAuthorizer, name, variant.Disc)
+	return nil, fmt.Errorf("%w: %s answered with arm %d", ErrNotAnHTTPAuthorizer, name, variant.Disc)
 }

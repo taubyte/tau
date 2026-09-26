@@ -217,6 +217,18 @@ func splitScope(namespace string) []string {
 // routes; a single route whose `target` is `router` picks that route's handler.
 // The route's own is the more specific of the two and wins where both are
 // written.
+// guard is the authorizer this route answers to: its own if it named one, and
+// the gateway's otherwise.
+func (m match) guard() (name string, scope []string) {
+	if n := m.resource.Sub("route").Sub("authorizer").String("name"); n != "" {
+		return n, scopeOrNil(m.resource.Sub("route").Sub("authorizer").String("namespace"))
+	}
+	if n := m.resource.Sub("authorizer").String("name"); n != "" {
+		return n, scopeOrNil(m.resource.Sub("authorizer").String("namespace"))
+	}
+	return "", nil
+}
+
 func (m match) router() (name string, scope []string) {
 	// THE ROUTE'S OWN ROUTER LIVES UNDER `route/router`, not under the handler.
 	// This used to read `route/handler/name`, which is Required only when the

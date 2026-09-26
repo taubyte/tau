@@ -606,6 +606,25 @@ type Outcome struct {
 	Answer  *Response
 }
 
+// Admission is what a route's guard decided about one request.
+//
+// IT LIVES HERE BESIDE Outcome AND Routing because a gateway speaks these and
+// not the tier's own types: the worker interface it calls through is written in
+// this package, so a decision that stayed in pkg/invoke/wasm would make the
+// edge import a runtime it never runs.
+//
+// `Granted` is every op the caller gets on whatever the route names, so AN
+// EMPTY LIST IS A REFUSAL THAT WAS DECIDED — a bus declares `subscribe` and
+// `publish`, and a grant of only `subscribe` is a browser that may listen and
+// not send, which a yes/no cannot express. `Denied` is a refusal to DECIDE, and
+// its reason is for an operator: what the caller sees is composed by a
+// transformer, not by the guard, so a refusal that described the policy would
+// describe somebody's deployment to anyone who asked.
+type Admission struct {
+	Granted []string
+	Denied  string
+}
+
 // Runtime starts instances. That is the entire contract, and it is small on
 // purpose: everything else an engine might be asked to do is the same for all
 // of them and lives in Pool.

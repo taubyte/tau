@@ -168,6 +168,12 @@ func instanceOf(handle string) string {
 type decides interface {
 	Authorize(ctx context.Context, spec invoke.Spec, q wasmtier.Question) (wasmtier.Decision, error)
 	Admit(ctx context.Context, spec invoke.Spec, o wasmtier.Opening) (wasmtier.Verdict, error)
+
+	// AuthorizeRequest is the third, and the one asked about traffic rather
+	// than about a workload: `who: caller` has no answer when the caller came
+	// from the internet, so the question is the REQUEST and the answer is the
+	// ops it gets.
+	AuthorizeRequest(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Admission, error)
 }
 
 // wasmTier is what a guard or a validator is instantiated through, or nil on a

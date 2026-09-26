@@ -79,6 +79,15 @@ type Admits interface {
 	// for the reason KVs.OpenKV is: one type answers this and the tier's own
 	// admission at once, and Go cannot have two methods of one name.
 	AdmitInstance(ctx context.Context, handle string, settings map[string]string, instance string) error
+
+	// AdmitRequest asks a route's guard whether one request may pass, and with
+	// what ops. `at` names the FUNCTION the route or the gateway declared.
+	//
+	// IT ANSWERS WITH A SET rather than a bool because a route to a bus needs
+	// "may listen, may not send" to be sayable — an attachment is a standing
+	// subscription, and granting it wholesale is not the same decision as
+	// letting somebody read.
+	AdmitRequest(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Admission, error)
 }
 
 // Attachment is one connection's view of a bus: what arrives, and what it

@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/specs"
 	gateway "github.com/taubyte/tau/services/v2/gateway"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -97,6 +98,47 @@ func (a *admissions) AdmitInstance(ctx context.Context, handle string, settings 
 		Kind: "bus", Label: labelOf(handle), Handle: handle, Settings: settings,
 	}, instance)
 }
+
+// AdmitRequest is the gateway's other Admits: not which instance may exist, but
+// whether a REQUEST may pass at all, and with what ops.
+//
+// IT IS ON THIS TYPE AND NOT A NEW ONE for the reason AdmitInstance gives about
+// itself -- one type answers the admissions this node makes, and two would be
+// two places to look for what said no.
+//
+// IT RUNS ON THE NODE THAT TOOK THE CONNECTION, like every other admission
+// here, and unlike a transformer. A transformer is routed to a worker so it
+// lands where the project is warm; a guard is instantiated per question and has
+// no warmth to find, so routing it would buy a hop and nothing else.
+//
+// THE WORLD IS NOT CHECKED HERE because instantiate does it: a function that
+// implements anything but http-authorizer is refused before it runs, which for
+// a control whose job is to be able to say no is the difference between a
+// refusal and a component answering a question it read as a request.
+func (a *admissions) AdmitRequest(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Admission, error) {
+	tier := a.node.wasmTier()
+	if tier == nil || a.node.worker == nil {
+		return nil, fmt.Errorf("%w: %s", ErrNoGuard, at.Name)
+	}
+
+	// THE GUARD'S OWN SPEC, resolved like any other function -- its own access
+	// block, its own limits, its own artifact. Nothing about being an
+	// authorizer changes how it is found.
+	guard, err := a.node.worker.Resolve(ctx, worker.Target{
+		Project:     at.Project,
+		Environment: at.Environment,
+		Scope:       at.Scope,
+		Kind:        "function",
+		Name:        at.Name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("node: resolving the authorizer %q: %w", at.Name, err)
+	}
+	return tier.AuthorizeRequest(ctx, guard, req)
+}
+
+// ErrNoGuard is a route that names an authorizer this node cannot run.
+var ErrNoGuard = errors.New("node: this route is guarded by a function and this node cannot run one")
 
 // labelOf is something to name the store by in a message. The handle carries
 // the resolved id and a browser never saw the author's label, so the id is what

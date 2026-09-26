@@ -267,3 +267,9 @@ func TestAnUnguardedGrantKeepsItsOwnOps(t *testing.T) {
 	require.Equal(t, []string{"get", "put", "delete"}, ops)
 	require.Empty(t, answers.questions())
 }
+
+// AuthorizeRequest is the third decision a tier makes. These doubles exist for
+// the other two, so it answers the way an absent guard would.
+func (*guarding) AuthorizeRequest(context.Context, invoke.Spec, *invoke.Request) (*invoke.Admission, error) {
+	return &invoke.Admission{Granted: []string{}}, nil
+}
