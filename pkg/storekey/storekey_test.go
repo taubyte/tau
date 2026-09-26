@@ -40,3 +40,27 @@ func TestAKeyThatStaysIsAllowed(t *testing.T) {
 		require.NoError(t, storekey.Check(prefix, key), "key %q", key)
 	}
 }
+
+// TestAKeyBuiltFromAFixedPrefixHasToBeCanonical — the register's shape, where
+// there is no tenant prefix to stay inside and the question is whether the key
+// is the one it looks like.
+func TestCanonicalRefusesWhatCleanWouldChange(t *testing.T) {
+	for _, key := range []string{
+		"h/../p/victim/prod",
+		"h/..",
+		"p/./shop/prod",
+		"h//doubled",
+		"o/a/../../b",
+	} {
+		require.ErrorIs(t, storekey.Canonical(key), storekey.ErrNotCanonical, "key %q", key)
+	}
+	for _, key := range []string{
+		"h/shop.example.com",
+		"p/shop/prod",
+		"o/QmSomeObjectId",
+		"c/shop/prod",
+		"",
+	} {
+		require.NoError(t, storekey.Canonical(key), "key %q", key)
+	}
+}

@@ -65,6 +65,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/taubyte/tau/pkg/storekey"
 )
 
 var (
@@ -166,6 +168,50 @@ const (
 	claimsPrefix  = "c" + sep
 )
 
+// guarded is the injected store with the key grammar enforced on the way in.
+//
+// EVERY KEY HERE IS A FIXED PREFIX PLUS SOMEBODY ELSE'S TEXT -- a fqdn out of a
+// Host header, a project and an environment out of a publication -- and the
+// stores this runs over put the key through ds.NewKey, which is path.Clean. So
+// a name holding ".." collapsed the prefix away before the row was touched:
+//
+//	hostKey("../p/victim/prod")  ->  "h/../p/victim/prod"  ->  /p/victim/prod
+//
+// which READS another project's pointer on a request whose Host header said so,
+// and WRITES one on a publish whose project declared that name. A legitimate
+// fqdn, project or environment holds no such segment, so nothing addressable is
+// lost by refusing it.
+//
+// IT IS ONE WRAPPER AND NOT A CHECK IN EACH BUILDER. There are four builders
+// and fourteen call sites; a rule spelled at each of them is a rule the
+// fifteenth forgets.
+type guarded struct{ Store }
+
+func (g guarded) Get(ctx context.Context, key string) ([]byte, bool, error) {
+	if err := storekey.Canonical(key); err != nil {
+		return nil, false, err
+	}
+	return g.Store.Get(ctx, key)
+}
+
+func (g guarded) Put(ctx context.Context, key string, value []byte) error {
+	if err := storekey.Canonical(key); err != nil {
+		return err
+	}
+	return g.Store.Put(ctx, key, value)
+}
+
+// List checks the prefix WITHOUT its trailing separator, which is load-bearing
+// rather than cosmetic: "p/shop/" is how a scan says shop's deployments and not
+// shopX's, and path.Clean drops that slash. Trimming one before asking keeps
+// the boundary the caller meant while still refusing a prefix that traverses.
+func (g guarded) List(ctx context.Context, prefix string) ([]string, error) {
+	if err := storekey.Canonical(strings.TrimSuffix(prefix, sep)); err != nil {
+		return nil, err
+	}
+	return g.Store.List(ctx, prefix)
+}
+
 func objectKey(id ObjectID) string { return objectPrefix + string(id) }
 
 func pointerKey(project, environment string) string {
@@ -207,7 +253,7 @@ func New(opts ...Option) (*Register, error) {
 	if o.store == nil {
 		return nil, errors.New("register: no store to publish into")
 	}
-	return &Register{store: o.store}, nil
+	return &Register{store: guarded{o.store}}, nil
 }
 
 // Option configures a Register.

@@ -54,3 +54,34 @@ func Check(prefix, key string) error {
 	}
 	return fmt.Errorf("%w: %q", ErrEscapes, key)
 }
+
+// ErrNotCanonical is a key that path.Clean would change, which means the key
+// that gets stored is not the key that was asked for.
+var ErrNotCanonical = errors.New("storekey: that key is not the key it would be stored under")
+
+// Canonical answers whether a WHOLE key is already what the store will make of
+// it — no "..", no "." and no doubled separators.
+//
+// IT IS THE RULE FOR A KEY BUILT FROM A FIXED PREFIX rather than joined onto a
+// tenant's. pkg/register addresses rows as "h/"+fqdn, "p/"+project+"/"+env and
+// so on, where the prefix is one character this package chose and the rest is
+// somebody else's text: a fqdn out of a Host header, a project out of a
+// publication. There is no tenant prefix to stay inside, so the question is not
+// "does this escape" but "is this the key it looks like" -- and a key holding
+// ".." is not, because ds.NewKey collapses it first:
+//
+//	"h/" + "../p/victim/prod"  ->  /p/victim/prod
+//
+// which reads, and on a publish WRITES, another project's row.
+//
+// A legitimate fqdn, project or environment holds none of these, so refusing
+// them costs nothing that was ever addressable.
+func Canonical(key string) error {
+	if key == "" {
+		return nil
+	}
+	if path.Clean("/"+key) != "/"+key {
+		return fmt.Errorf("%w: %q", ErrNotCanonical, key)
+	}
+	return nil
+}
