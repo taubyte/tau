@@ -57,8 +57,18 @@ func TestAUniverseSpreadsItsNodesAcrossRegions(t *testing.T) {
 
 	require.Len(t, seen, 2, "every node landed in one region: %v", seen)
 
-	// AND IT IS THE SAME EVERY RUN. The assignment is HRW over the peer id, so
-	// a universe that failed can be read rather than re-rolled.
+	// AND IT IS BALANCED, which is the claim the old assignment could not make.
+	// It was HRW over the peer id: an independent coin flip per node, so four
+	// nodes over two regions landed together one run in eight and this test was
+	// a 12.5% flake. Round-robin over the copy index spreads by construction,
+	// so two-and-two is not a probable outcome here, it is the only one.
+	require.Equal(t, map[string]int{"eu": 2, "us": 2}, seen)
+
+	// AND IT IS THE SAME EVERY RUN, which the peer id could never give: dream
+	// mints a fresh one per node per run, so an assignment derived from it was
+	// re-rolled every time. The copy index and the sorted region list are both
+	// the same on the next run, so a universe that failed can be read rather
+	// than re-rolled.
 	for _, id := range pids {
 		n, _ := nodeDream.Node(id)
 		was := n.Region()

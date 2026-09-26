@@ -34,7 +34,6 @@ import (
 	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/kvdb"
-	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/stats"
 )
@@ -293,7 +292,7 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 	// developer running it. So every node here takes an ephemeral loopback
 	// port, which is also what makes a FLEET of them possible: two nodes
 	// cannot share one port, and :0 is how dream allocates every other one.
-	nodeConfig := node.Config{Services: servicesIn(cfg), Cloud: u.Name(), Region: regionIn(cfg, h.ID().String())}
+	nodeConfig := node.Config{Services: servicesIn(cfg), Cloud: u.Name(), Region: regionIn(cfg)}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Stats.Stabilize = dreamStabilize
 
@@ -370,28 +369,41 @@ func servicesIn(cfg *iface.ServiceConfig) []string {
 // config, so a fleet spread over two regions cannot be written as two configs —
 // the universe declares the regions and each node takes one.
 //
-// WHICH ONE IS HRW OVER THE PEER ID, the same rendezvous every placement in this
-// system uses. It spreads evenly, it needs no copy index that dream does not
-// carry, and it is reproducible: the same universe puts the same peer in the
-// same region every run, so a test that failed can be read.
+// WHICH ONE IS THE COPY INDEX, round-robin over the regions in name order.
+//
+// IT WAS HRW OVER THE PEER ID, and this comment claimed that "spreads evenly"
+// and is "reproducible: the same universe puts the same peer in the same region
+// every run". Neither held. HRW spreads evenly in expectation ACROSS MANY KEYS,
+// and four nodes over two regions is not many: each node is an independent coin
+// flip, so all four land together 2*(1/2)^4 = ONE RUN IN EIGHT. And dream mints
+// a fresh peer id per run, so "the same peer every run" described a peer that
+// never came back -- the assignment was re-rolled each time, and a spread the
+// placement tests depend on was a 12.5% flake with a real failure behind it.
+//
+// The copy index is what dream has and HRW was working around: `copies: 4` is
+// four nodes from one config, and dream already counts them to name their
+// directories. Round-robin over it spreads by construction rather than by
+// expectation, and the regions are sorted so the mapping does not depend on a
+// map's iteration order either.
 //
 // No region declared is a node in no region, which is what a single-region
 // universe wants and what every test not about placement gets.
-func regionIn(cfg *iface.ServiceConfig, peerID string) string {
+func regionIn(cfg *iface.ServiceConfig) string {
 	if cfg == nil {
 		return ""
 	}
 
-	var declared []placement.Member
+	var declared []string
 	for key := range cfg.Others {
 		if name, ok := strings.CutPrefix(key, regionPrefix); ok && name != "" {
-			declared = append(declared, placement.Member{ID: name, Accepts: true})
+			declared = append(declared, name)
 		}
 	}
 	if len(declared) == 0 {
 		return ""
 	}
-	return placement.Rank(peerID, declared)[0].ID
+	sort.Strings(declared)
+	return declared[cfg.Others[dream.CopyKey]%len(declared)]
 }
 
 // Bag is a universe config's per-service map, which is where a node reads what

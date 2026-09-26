@@ -34,6 +34,13 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 		config.Others = make(map[string]int)
 	}
 
+	// WHICH COPY THIS IS, so a node can be told apart from its siblings by
+	// something other than a key it mints at boot. `copies: 4` is four nodes
+	// from one config, and without an ordinal the only thing that differs
+	// between them is a random peer id — which is not something a spread can
+	// be built on. See node/dream.regionIn, which is the reason this exists.
+	config.Others[CopyKey] = serviceCount
+
 	// NO PORTS ARE CHOSEN HERE. The service listens on 0 and the kernel
 	// allocates at bind time (dream/common.NewConfig), so there is nothing to
 	// reserve and nothing to collide over. The retry-on-"address already in
@@ -113,6 +120,11 @@ func (u *Universe) Service(name string, config *commonIface.ServiceConfig) error
 // THE LOCK IS RELEASED BEFORE THE SERVICE IS STARTED, which is not tidiness: a
 // service calls registerService as it comes up, and that takes this same lock.
 // Holding it across the start would deadlock on the first node.
+// CopyKey is where a node reads which copy of its config it is, counting from
+// zero. It is not a service and not a region: both of those are prefixed, and
+// every reader of Others matches on its own prefix.
+const CopyKey = "copy"
+
 func (u *Universe) reserveSlot(name string) int {
 	u.lock.Lock()
 	defer u.lock.Unlock()
