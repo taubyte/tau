@@ -90,7 +90,6 @@ var upgrader = websocket.Upgrader{
 
 // attachable is one bus that answers on a name.
 type attachable struct {
-	host     specs.Host
 	resource specs.Resource
 
 	// id is the resolved resource id, which is half of the handle. The label
@@ -98,20 +97,32 @@ type attachable struct {
 	id string
 }
 
-// busesAt is every bus in this project answering on a name.
-func (s *Service) busesAt(p *specs.Project, name string) []attachable {
-	var out []attachable
-	for _, h := range p.At(s.lookupName(name)) {
-		if h.Kind != busKind {
-			continue
-		}
-		r, id, err := p.Resource(h.Scope, h.Kind, h.Name)
-		if err != nil {
-			continue
-		}
-		out = append(out, attachable{host: h, resource: r, id: id})
+// attachRouted is a bus reached the way everything else is: a route named it.
+//
+// THE ROUTE HAS ALREADY DECIDED EVERYTHING BUT THE UPGRADE by the time this
+// runs -- the path matched, the methods were checked, CORS was written, the
+// rate limit was spent and the transformer chain had its say, any one of which
+// may have answered instead. What is left is whether this is a websocket, and
+// which bus the route named.
+func (s *Service) attachRouted(w http.ResponseWriter, r *http.Request, billed *crossing, m match, p *specs.Project, projectName, environment string) {
+	if !upgrading(r) {
+		// The name and the path are right and the request is not the one this
+		// serves. 404 here would send somebody hunting a typo in a route that
+		// matched.
+		refuse(w, http.StatusUpgradeRequired, "this route is a bus: attach to it with a websocket")
+		return
 	}
-	return out
+
+	at := m.address(projectName, environment)
+	resource, id, err := p.Resource(at.Scope, busKind, at.Name)
+	if err != nil {
+		// The route names a bus the compiled object does not hold -- a deploy
+		// that removed it, or a namespace this node cannot complete.
+		refuse(w, http.StatusNotFound, "the bus this route names is not here")
+		return
+	}
+
+	s.attach(w, r, billed, attachable{resource: resource, id: id}, m.stripped(r.URL.Path), projectName, environment)
 }
 
 // upgrading reports whether this request is asking for a websocket. A plain GET
@@ -154,24 +165,18 @@ func instanceSettings(resource specs.Resource) map[string]string {
 }
 
 // attach holds one browser on one bus until either end goes away.
-func (s *Service) attach(w http.ResponseWriter, r *http.Request, billed *crossing, buses []attachable, projectName, environment string) {
+func (s *Service) attach(w http.ResponseWriter, r *http.Request, billed *crossing, bus attachable, path, projectName, environment string) {
 	if s.buses == nil {
 		// A composition fault rather than a deployment one: this node runs a
 		// gateway without the gossip an attachment needs.
 		refuse(w, http.StatusNotImplemented, "attaching to a bus is not available here")
 		return
 	}
-	if len(buses) > 1 {
-		// Two buses on one name. Two gateways on one name are told apart by
-		// their paths; nothing tells these apart, so serving the first would
-		// be a coin toss made once at compile time and kept forever.
-		refuse(w, http.StatusBadGateway, "more than one bus answers on this name")
-		return
-	}
 
-	bus := buses[0]
-
-	instance, ok := instanceOf(r.URL.Path)
+	// THE PATH IS WHAT THE ROUTE LEFT, not what the client sent: a route that
+	// strips its prefix means the instance is named by the rest, the same way
+	// every other handler is handed a stripped path.
+	instance, ok := instanceOf(path)
 	if !ok {
 		// An instance name is a KEY and not a path — it is looked up exactly,
 		// and a separator in it would make one instance reachable by two names.

@@ -1,12 +1,6 @@
 id: QmQnyoePgjpEAzxQ93KRtUxwwzFYG5iA1sHEEUTG7nz2aQ
-description: the topic, and the name a browser attaches to - writing `host:` is the whole difference between a bus the project can reach and one the internet can
+description: the topic - it owns no name of its own, so what a browser attaches to is the gateway route that names it as a handler
 # NO `instances:` BLOCK, DELIBERATELY. One bus, one topic, nothing for a caller
-# to name - which is the shape a gateway can serve today, and it is attached to
-# at `/`. A bus that admits instances through a validator is addressed by path
-# and refused by name, so adding the block here would take this project's
-# browser off the door it dials.
-host:
-    zone:
-        name: live
-        in:
-            name: example_com
+# to name, attached to at the route's own path. A bus that admits instances
+# through a validator is addressed by the path the route leaves, so adding the
+# block here would take this project's browser off the door it dials.

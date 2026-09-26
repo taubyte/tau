@@ -823,7 +823,7 @@ route:
 	// refusal, at the offending line, naming what was allowed instead.
 	assert.ErrorContains(t, err, "unknown key 'kv'",
 		"a real but non-HTTP kind must not be a handler")
-	assert.ErrorContains(t, err, "application, function, gateway, mcp, website",
+	assert.ErrorContains(t, err, "agent, application, bus, function, gateway, mcp, website",
 		"the refusal has to say what a handler may be")
 	// the position is the value's, so for a key holding a block it lands on the
 	// first line inside that block rather than on the key
@@ -1924,25 +1924,30 @@ func TestABusIsAStreamThatCannotBecomeALog(t *testing.T) {
 	assert.ErrorContains(t, compile("/stream/s.yaml", "distributed: {}\ninstances:\n    validator:\n        name: f\n"),
 		"unknown key 'instances'")
 
-	// The websocket is an ADDRESS, so it is the same `host:` a gateway declares — and
-	// the bus is what answers on it.
-	assert.NilError(t, compile("/bus/chat.yaml", "host:\n    generated:\n        name: chat\n"))
+	// A BUS OWNS NO NAME. The websocket is an address, and an address on this
+	// vocabulary is a gateway's -- a bus is reached by a route naming it as the
+	// handler, which is how it gains the path, the methods, the rate limit and the
+	// transformer chain it used to skip by having a `host:` of its own.
+	assert.ErrorContains(t, compile("/bus/chat.yaml", "host:\n    generated:\n        name: chat\n"),
+		"unknown key 'host'")
 	assert.ErrorContains(t, compile("/stream/s.yaml", "distributed: {}\nhost:\n    generated:\n        name: x\n"),
 		"unknown key 'host'")
 	// …and the deleted flag is not a spelling of it.
 	assert.ErrorContains(t, compile("/bus/chat.yaml", "websocket: true\n"), "unknown key 'websocket'")
 
 	chat := namedResource(t, resources(t, compileBasic(t), "bus"), "chat")
-	assert.Equal(t, nested(chat, "host", "kind"), "generated")
-	assert.Equal(t, nested(chat, "host", "name"), "chat")
-	// It answers on a name, so a client is told what to dial rather than guessing.
+	assert.Assert(t, nested(chat, "host", "kind") == nil, "a bus owns no name of its own")
+
+	// THE NAME BELONGS TO WHAT ROUTES TO IT, and a client is still told what to
+	// dial rather than guessing -- gateway/presence declares a generated name and
+	// names the bus as its handler, so the reachable name is the gateway's.
 	found := false
 	for _, r := range schema.ReachableNames(rootOf(compileBasic(t))) {
-		if r.Name == "chat" && r.Generated {
+		if r.Name == "presence" && r.Generated {
 			found = true
 		}
 	}
-	assert.Assert(t, found, "a bus with a host has to appear in ReachableNames")
+	assert.Assert(t, found, "the gateway that routes to a bus has to appear in ReachableNames")
 
 	// The verbs are the stream's, deliberately: what you DO to a bus is what you do to
 	// a topic, and the kinds differ in what happens afterwards.

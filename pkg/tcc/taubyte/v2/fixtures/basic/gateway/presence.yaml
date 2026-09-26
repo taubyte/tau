@@ -1,0 +1,16 @@
+id: QmPcQEYRbkGHUqhSVsEXVwvfDDRPHaEMqzEfMMaBPFBbfR
+description: the same door, on a name this cloud hands out rather than one anybody owns - a generated name needs no zone and no certificate block, because it sits under the cloud's own wildcard
+host:
+    generated:
+        name: presence
+# GATEWAY-WIDE, covering every route this gateway serves rather than being
+# repeated on each. With one route the two spellings coincide; the difference is
+# which one a second route would inherit.
+authorizer:
+    name: doorman
+route:
+    path: /
+    match: prefix
+    handler:
+        bus:
+            name: presence

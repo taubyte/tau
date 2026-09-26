@@ -134,6 +134,7 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	out = append(out, checkVariables(all)...)
 	out = append(out, checkBuild(all)...)
 	out = append(out, checkTransformerWorlds(all)...)
+	out = append(out, checkBusIsGuarded(all, byKind)...)
 	out = append(out, checkMountedSites(all)...)
 	out = append(out, checkHostWorlds(all)...)
 	out = append(out, checkHandlerPorts(all)...)
@@ -672,8 +673,21 @@ func checkHostWorlds(all []compiled) []Finding {
 	type use struct{ name, own, ns, wants, where string }
 	var uses []use
 	for _, res := range all {
+		// AN AUTHORIZER'S WORLD DEPENDS ON WHAT IS ASKING. A kind with Ops()
+		// names one that is asked `who: caller` about a workload; a gateway
+		// names one that is asked about the REQUEST, because whoever reached
+		// the edge is not a workload and has none of a caller's fields.
+		authorizerWorld := "authorizer"
+		if res.kind == "gateway" {
+			authorizerWorld = "http-authorizer"
+		}
 		if n := res.at("authorizer", "name"); n != "" {
-			uses = append(uses, use{n, res.scope, res.at("authorizer", "namespace"), "authorizer", res.kind + "/" + res.name + " authorizer"})
+			uses = append(uses, use{n, res.scope, res.at("authorizer", "namespace"), authorizerWorld, res.kind + "/" + res.name + " authorizer"})
+		}
+		// AND A ROUTE MAY NAME ITS OWN, beside the gateway-wide one above --
+		// the second site routerAttributes already has for a router.
+		if n := res.at("route", "authorizer", "name"); n != "" && res.kind == "gateway" {
+			uses = append(uses, use{n, res.scope, res.at("route", "authorizer", "namespace"), "http-authorizer", res.kind + "/" + res.name + " route authorizer"})
 		}
 		wants := ""
 		switch res.kind {
@@ -1463,6 +1477,56 @@ func checkHandlerPorts(all []compiled) []Finding {
 // and a function does not say which it was built for — so the most tcc can do is
 // report a function used as BOTH, which cannot be right whichever world it was built
 // against.
+// checkBusIsGuarded: a route that attaches a browser to a bus has to name an
+// AUTHORIZER on that bus.
+//
+// WHY A BUS AND NOT EVERY HANDLER. A request is one-shot and answers to whoever
+// asked; an ATTACHMENT IS A STANDING SUBSCRIPTION to an n:n topic, so whoever
+// completes the handshake receives everything published from then on, including
+// what was meant for somebody else. An unguarded route to a bus is not a page
+// left public -- it is the whole topic left readable by anyone who knows the
+// name, and nothing downstream gets a second chance to say no.
+//
+// AND A TRANSFORMER IS NOT AN AUTHORIZER, which is the distinction this check
+// exists to hold. A transformer SHAPES traffic and may answer instead of
+// forwarding, so a chain CAN refuse -- but refusing is a side effect of a
+// pipeline stage, and what guards the topic is then only discoverable by
+// reading that stage's code. An authorizer is the policy itself: it is asked
+// who is calling and what they are attempting, and it answers with THE OPS THEY
+// GET. A bus declares Ops(subscribe, publish), so the question is exactly the
+// one the authorizer world already answers, and `authorizer:` is already on the
+// kind because attachAccess gives one to everything with verbs.
+//
+// IT IS DECLARED ON THE ROUTE AND NOT ON THE BUS, which is the half that took
+// two tries to get right. A bus has Ops(subscribe, publish) so it carries an
+// `authorizer:` of its own -- but that one is the `authorizer` world, asked
+// `who: caller` about a WORKLOAD. Whoever completed the handshake is a browser,
+// which has no project, no environment and no scope, so a bus-side guard would
+// be handed a caller nobody filled in and would have to guess whether the
+// traffic was HTTP at all. The guard that can answer is the route's, in the
+// `http-authorizer` world, because that one is asked about the request.
+//
+// EITHER SITE SATISFIES IT. A gateway that guards everything it serves says so
+// once at the top; a route that needs its own says so where the route is
+// written. That is the shape routerAttributes already has, and it is what
+// "unless the gateway has an authorizer for all routes" means.
+func checkBusIsGuarded(all []compiled, byKind map[string][]compiled) []Finding {
+	var out []Finding
+	for _, res := range all {
+		if res.kind != "gateway" || res.at("route", "handler", "kind") != "bus" {
+			continue
+		}
+		if res.at("route", "authorizer", "name") != "" || res.at("authorizer", "name") != "" {
+			continue
+		}
+
+		out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+			"this route attaches to a bus and nothing decides who may",
+			"Whoever completes the websocket handshake here receives everything published to the topic from then on. Name an `authorizer:` on this route, or on the gateway to cover every route it serves — a function in the http-authorizer world, asked about the request and answering with the ops the caller gets. The bus's own `authorizer:` cannot do it: that one is asked about a workload caller, and a browser is not one.", res.id})
+	}
+	return out
+}
+
 func checkTransformerWorlds(all []compiled) []Finding {
 	worlds := map[string]map[string]bool{}
 	for _, res := range all {

@@ -1,0 +1,20 @@
+id: QmPjgiv816ygGgxYKEFHhDoabVar1Cv6CAQvEa8aFubUtG
+description: the same name, a different path - what publishes to the bus is reached over HTTP here, so one host carries both halves and the gateway is what tells them apart
+host:
+    zone:
+        in:
+            name: example_com
+        name: live
+# TWO GATEWAYS ON ONE NAME ARE TOLD APART BY THEIR PATHS, and `/broadcast` is
+# longer than the bus route's `/`, so it wins on specificity and everything
+# else still falls through to the attachment.
+#
+# NO `strip_prefix`. The function reads the bus out of the path it is given, so
+# taking the prefix off would hand it a path it cannot parse.
+route:
+    path: /broadcast
+    match: prefix
+    methods: [POST]
+    handler:
+        function:
+            name: cacher

@@ -117,3 +117,93 @@ world authorizer {
     // `execution/call` here to carry a second name.
     export authorize: func(q: question) -> decision;
 }
+
+// deciding is what every authorizing world may read, and nothing else.
+//
+// FACTORED RATHER THAN COPIED. `authorizer` above states this subset inline and
+// `gateway-transformer` states it again, each with the same paragraph about why
+// nothing here SENDS: a queue, a stream, a bus, a log, a workflow or a channel
+// is a side effect, and a decision that emits one cannot be re-asked without
+// changing the system it is deciding about. Three copies of a security-relevant
+// list is three places for it to drift, so a world that only imports is what
+// the rest include.
+//
+// IT DECLARES NO TYPES AND NO EXPORTS, which is what makes including it safe:
+// the flattening this host does reads the component's own type section, and a
+// `use` from an imported interface would leave an export's signature naming a
+// type the host must resolve separately. Nothing here is used that way.
+world deciding {
+    import taubyte:sql/store@0.1.0;
+    import taubyte:kv/store@0.1.0;
+    import taubyte:document/store@0.1.0;
+    import taubyte:vector/store@0.1.0;
+    import taubyte:cache/store@0.1.0;
+    import taubyte:secret/vault@0.1.0;
+
+    // What the authorizer itself is. Its own identity, not the caller's.
+    import taubyte:workload/identity@0.1.0;
+}
+
+// The world a tau HTTP AUTHORIZER is compiled to.
+//
+// # Why the traffic names it and not the component that asks
+//
+// The obvious name for this was `gateway-authorizer`, and it is the wrong axis:
+// it names the CALLER. A gateway serves several kinds of traffic and is not the
+// only thing that serves HTTP, so a world named for it would have to be copied
+// the first time anything else needed the same question answered. What is being
+// decided here is an HTTP REQUEST, so that is the name, and `pubsub` is its
+// sibling for the day something needs a topic decided rather than a request.
+//
+// # It is not the `authorizer` world above, and the difference is the question
+//
+// That one is asked `who: caller` — a WORKLOAD, with a project, an environment,
+// a kind and a scope. A browser completing a websocket handshake is not a
+// workload and has none of those, so asking that world about ingress means
+// handing it a caller nobody filled in. It would have to guess whether the
+// traffic was HTTP at all.
+//
+// # It is not a transformer either
+//
+// A transformer SHAPES traffic and may answer instead of forwarding, so a chain
+// CAN refuse — but refusing is then a side effect of a pipeline stage, and what
+// guards a route is only discoverable by reading that stage's code. This is the
+// policy itself: it is asked about the request and answers with THE OPS THE
+// CALLER GETS, which is what makes "may listen, may not send" sayable.
+world http-authorizer {
+    include deciding;
+
+    // THE SAME `request` THE HANDLER AND TRANSFORMER WORLDS DECLARE, field for
+    // field, and inline for their reason: a `use` from an imported interface
+    // leaves the export's signature naming a type the host must resolve
+    // separately.
+    record header {
+        name: string,
+        value: string,
+    }
+
+    record request {
+        method: string,
+        path: string,
+        headers: list<header>,
+        body: list<u8>,
+    }
+
+    // The answer.
+    //
+    // `granted` carries every op this caller gets on whatever the route names —
+    // a bus declares `subscribe` and `publish`, so an empty list is a refusal
+    // that was DECIDED and a list holding only `subscribe` is a browser that may
+    // listen and not send. `denied` is a refusal to decide, and its reason is
+    // for an operator rather than for the caller: composing what the caller sees
+    // is a transformer's job, and a refusal that described the policy would
+    // describe somebody's deployment to anyone who asked.
+    variant decision {
+        granted(list<string>),
+        denied(string),
+    }
+
+    // The name is fixed, for the reason the authorizer world gives: a route
+    // names the FUNCTION, not an export within it.
+    export authorize: func(req: request) -> decision;
+}

@@ -186,23 +186,8 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A BUS ANSWERS ON A NAME TOO, and what tells the two apart is the request
-	// rather than the name: an author may put an HTTP gateway and a bus on one
-	// host, and only one of them is being asked for.
-	if buses := s.busesAt(proj, name); len(buses) > 0 && upgrading(r) {
-		s.attach(w, r, billed, buses, projectName, environment)
-		return
-	}
-
 	candidates := s.candidatesAt(proj, name, projectName)
 	if len(candidates) == 0 {
-		if len(s.busesAt(proj, name)) > 0 {
-			// The name is real and the request is not the one it serves. 404
-			// here would send somebody looking for a typo in a name that
-			// resolves.
-			refuse(w, http.StatusUpgradeRequired, "this name is a bus: attach to it with a websocket")
-			return
-		}
 		// The register says this project owns the name and the compiled
 		// project has nothing at it — a deploy that removed the gateway but
 		// whose claim has not been released, or a name in a zone this node
@@ -276,6 +261,17 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// failing.
 		billed.served = true
 		writeTo(w, answer)
+		return
+	}
+
+	// A BUS IS ATTACHED TO RATHER THAN INVOKED, and it happens HERE -- after the
+	// transformer chain and before the router -- because that is what routing a
+	// bus was for. It used to own a `host:` and be found by walking the hosts
+	// index, which skipped the path, the methods, the CORS, the rate limit and
+	// the chain: a bus could not be authorized or rate-limited at all. Reached as
+	// a handler, it gets every one of them for the price of being named.
+	if m.Handler.String("kind") == busKind {
+		s.attachRouted(w, r, billed, m, proj, projectName, environment)
 		return
 	}
 

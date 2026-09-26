@@ -1,5 +1,2 @@
 id: QmYPYQZbvUtfwDmL9ufg5Ec7Gq7FcJT8XeDRCnv3UL7K71
 description: one bus, one topic - no instances block, so there is nothing for a caller to name and nobody to admit
-host:
-    generated:
-        name: presence

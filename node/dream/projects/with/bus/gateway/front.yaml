@@ -1,0 +1,14 @@
+id: QmRQU7wVZSSJxC3PEPxnDfQdSL7q1Mn2d5g2L7Vos1iYCy
+description: the door the browser attaches through - a bus owns no name, so reaching one costs a route and gains everything a route carries
+host:
+    zone:
+        in:
+            name: example_com
+        name: live
+# NO `methods:`. A websocket handshake is a GET and nothing else reaches this.
+route:
+    path: /
+    match: prefix
+    handler:
+        bus:
+            name: live

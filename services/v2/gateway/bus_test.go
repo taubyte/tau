@@ -30,11 +30,22 @@ func busNamed(t testing.TB, name, cloud string) (fqdn, id string) {
 	p, err := specs.Load(compiled(t))
 	require.NoError(t, err)
 
+	// THE NAME BELONGS TO THE GATEWAY THAT ROUTES TO IT. A bus owns no host, so
+	// finding one means finding the route that names it as its handler -- which
+	// is the same walk the service does, from the other end.
 	for _, h := range p.Hosts() {
-		if h.Kind != busKind || h.Name != name {
+		if h.Kind != "gateway" {
 			continue
 		}
-		_, resolved, err := p.Resource(h.Scope, h.Kind, h.Name)
+		gw, _, err := p.Resource(h.Scope, h.Kind, h.Name)
+		if err != nil {
+			continue
+		}
+		handler := gw.Sub("route").Sub("handler")
+		if handler.String("kind") != busKind || handler.String("name") != name {
+			continue
+		}
+		_, resolved, err := p.Resource(h.Scope, busKind, name)
 		require.NoError(t, err)
 
 		fqdn = h.Fqdn
@@ -43,7 +54,7 @@ func busNamed(t testing.TB, name, cloud string) (fqdn, id string) {
 		}
 		return fqdn, resolved
 	}
-	t.Fatalf("the fixture has no bus called %q", name)
+	t.Fatalf("no gateway route names a bus called %q", name)
 	return "", ""
 }
 

@@ -96,11 +96,16 @@ func TestABrowserAttachesAndAGuestReachesIt(t *testing.T) {
 	// is the shape of it. The 60s here is the cost of REPORTING a mesh that
 	// never formed rather than a bound on one that does, and it is the number
 	// this assertion has always carried.
+	// THE PUBLISH GOES THROUGH THE GATEWAY TOO, and that is the difference
+	// between this project and what it used to prove. The workload used to be
+	// invoked straight on the worker, so the gateway was only ever tested on the
+	// attachment half; now ONE NAME carries both -- `/broadcast` reaches the
+	// function and everything else attaches to the bus -- and the whole chain a
+	// user actually has is real: HTTP in, a grant resolved, a topic published,
+	// a websocket out, on two different nodes.
 	require.Eventually(t, func() bool {
-		res, err := publishing.onCarrying(t.Context(), target(),
-			http.MethodPost, "/broadcast/live/", "deploy finished")
-		require.NoError(t, err)
-		require.Equal(t, 204, res.Status, string(res.Body))
+		res := publishing.askCarrying(t, http.MethodPost, "/broadcast/live/", "deploy finished")
+		require.Equal(t, 204, res.Code, res.Body.String())
 
 		select {
 		case got := <-received:

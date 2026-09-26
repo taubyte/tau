@@ -199,7 +199,7 @@ var secNetwork = Section("network", "Network", "How this workload is reached, an
 // The honest limit: this is the config's word for it, not the artifact's. If the build
 // can read the world out of the component's WIT imports, that is the better source and
 // this becomes the thing checked against it rather than the thing believed.
-var hostWorlds = []string{"handler", "authorizer", "instance-validator", "gateway-transformer", "proxy-transformer", "gateway-router", "proxy-router"}
+var hostWorlds = []string{"handler", "authorizer", "http-authorizer", "instance-validator", "gateway-transformer", "proxy-transformer", "gateway-router", "proxy-router"}
 
 // HostWorlds is every host interface a workload may be built against.
 //
@@ -386,6 +386,39 @@ func routerAttributes(section, world string, at ...string) []*Attribute {
 			Doc("Router Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
 		String(Key(nm...), IsVariableName(), Ref("function", ByName(), Serves()), InSection(section),
 			Doc("Router", "A function that decides where each request goes. Written "+where+", never beside one; it must be built against the "+world+" world.")),
+	}
+}
+
+// httpAuthorizerAttributes are the guard on traffic arriving at a name: a
+// route's own, or the gateway's for every route it serves.
+//
+// TWO SITES FOR ONE CONTROL, the way routerAttributes already has two -- a
+// gateway-wide `router` and a per-route `route/router`. A gateway that guards
+// everything it serves says so once; a route that needs its own says so where
+// the route is written, and the route's is the one that answers.
+//
+// IT IS NOT authorizerAttributes, and the difference is the QUESTION. That one
+// hangs off a kind with Ops() and is asked `who: caller` -- a workload, with a
+// project, an environment and a scope. Whoever opened a socket to the edge has
+// none of those, so a world asked about a workload would be handed a caller
+// nobody filled in and would have to guess whether the traffic was HTTP at all.
+// This names a function in the `http-authorizer` world, which is asked about
+// the REQUEST and answers with the ops it gets.
+func httpAuthorizerAttributes(at ...string) []*Attribute {
+	nm := append(append([]string{}, at...), "authorizer", "name")
+	ns := append(append([]string{}, at...), "authorizer", "namespace")
+	where := "any route this gateway serves"
+	if len(at) > 0 {
+		where = "this route"
+	}
+	return []*Attribute{
+		// NO Serves(), for the reason authorizerAttributes omits it: an inbound
+		// block is a way the thing is REACHED, and a guard is asked about
+		// traffic rather than being the traffic's destination.
+		String(Key(nm...), IsVariableName(), Ref("function", ByName()), InSection("policy"),
+			Doc("Authorizer", "A function that decides whether a request to "+where+" may pass, and answers with the ops the caller gets. It must be built against the http-authorizer world. A route's own answers instead of the gateway's.")),
+		String(Key(ns...), IsNamespacePath(), InSection("policy"),
+			Doc("Authorizer Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
 	}
 }
 
@@ -1036,7 +1069,17 @@ func attachBuild() {
 // a request and a response — the same shape a function has. Leaving it out meant an
 // agent could be declared and never reached: nothing could route to one, and the audit
 // could not complain either, because a kind no route can name is not one it checks.
-var handlerKinds = []string{"function", "application", "website", "gateway", "mcp", "agent"}
+// A BUS IS IN HERE BECAUSE IT IS REACHED THE WAY EVERYTHING ELSE IS. It used to
+// own a name of its own -- hostAttributes and AnswersAt, like a gateway -- and the
+// gateway found it by walking the hosts index instead of by matching a route. That
+// was a SECOND INGRESS: two ways to own one name, with collision handling in
+// ServeHTTP for an author who used both, and a bus that skipped everything a route
+// carries -- path, methods, CORS, rate limit, and the transformer chain, which is
+// to say a bus could not be authorized or rate-limited at all.
+//
+// It goes through the gateway to gain a websocket, and inherits the whole pipeline
+// by being a handler like any other.
+var handlerKinds = []string{"function", "application", "website", "gateway", "mcp", "agent", "bus"}
 
 // externalStreamEngines are the pubsub clusters reached over the network, and
 // streamEngines is those plus tau's own. Closed, for the same reason a database's are:
@@ -2331,7 +2374,7 @@ var V2Resources = []*Node{
 		resource(
 			// A gateway with no host block is reachable only by being mounted beneath
 			// another one, which is what collapsed the old `domains` kind into this one.
-			append(append(append(append(identityAttributes(), hostAttributes("naming")...),
+			append(append(append(append(append(append(identityAttributes(), hostAttributes("naming")...),
 				routerAttributes("route", "gateway-router", "router")...),
 				routerAttributes("handler", "gateway-router", "route", "router")...),
 				// EITHER A ROUTER OR ROUTES, and inside a route either a handler or a
@@ -2401,7 +2444,7 @@ var V2Resources = []*Node{
 				Int(Key("rate_limit", "rpm"), PerEnv(), InSection("policy"), Doc("Rate Limit", "Requests per minute.")),
 				Int(Key("rate_limit", "burst"), PerEnv(), InSection("policy"), Doc("Burst", "Requests allowed above the sustained rate.")),
 				String(Key("rate_limit", "key"), InSection("policy"), Doc("Rate Limit Key", "What the limit is counted per: \"ip\" or \"header:<name>\".")),
-			),
+			), httpAuthorizerAttributes()...), httpAuthorizerAttributes("route")...),
 			Nested(transformersGroup()),
 			GroupDoc("A name, the policy at it, and what it serves — one static route, or a function that routes."), Category("internet"), Icon("route"),
 			AnswersAt("host"),
@@ -2409,7 +2452,7 @@ var V2Resources = []*Node{
 			Section("naming", "Naming", "The name served, and where its certificate comes from."),
 			Section("route", "Route", "The path served and how it is matched."),
 			Section("handler", "Handler", "What serves it."),
-			Section("policy", "Policy", "CORS and rate limiting, at the name."),
+			Section("policy", "Policy", "Who may reach this, and how often — the authorizer, CORS and rate limiting."),
 			Resource("gateway", "Gateway", "Gateway", "gateway"),
 		)),
 
@@ -2706,13 +2749,9 @@ var V2Resources = []*Node{
 	// spellings for one operation would make every cross-cutting query ask twice.
 	DefineGroup("bus",
 		resource(
-			commonAttributes(append(append([]*Attribute{},
-				hostAttributes("websocket")...),
-				instanceAttributes()...)...),
-			GroupDoc("An ephemeral n:n message bus: everything attached gets what is sent, and nothing is kept. Give it a host and a browser can attach over websocket."), Icon("cable"), Category("trigger"),
-			AnswersAt("host"),
+			commonAttributes(instanceAttributes()...),
+			GroupDoc("An ephemeral n:n message bus: everything attached gets what is sent, and nothing is kept. Point a gateway route at it and a browser can attach over websocket."), Icon("cable"), Category("trigger"),
 			secIdentity, secAccess,
-			Section("websocket", "Websocket", "The name a browser attaches to, if this bus is reachable from outside."),
 			secInstances,
 			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
 			Resource("bus", "Bus", "Bus", "bus"),

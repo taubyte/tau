@@ -1,0 +1,19 @@
+id: QmbWJyVQLGqRrJLMM9jGHvvLmHqzVcnaupNCRRWLNsJLiR
+description: the door a browser attaches through - a bus owns no name of its own, so the way in is a route like any other handler's
+host:
+    zone:
+        in:
+            name: example_com
+        name: attach
+# NO `methods:`. A websocket handshake is a GET and nothing else reaches this,
+# so naming methods here would only be a way to get it wrong.
+route:
+    path: /
+    match: prefix
+    # THE ROUTE'S OWN, which is what a route that needs a guard the rest of the
+    # gateway does not is for.
+    authorizer:
+        name: doorman
+    handler:
+        bus:
+            name: chat

@@ -1,8 +1,5 @@
 id: QmYb8sCzT9dGqLxKRp7BwVn2jMhFcXPtUdEaWqRk4vNhJ5
 description: browsers attach and get what is sent from then on - nothing is kept and nothing can be, which is why it is not a stream
-host:
-    generated:
-        name: chat
 instances:
     limit: 200
     validator:
