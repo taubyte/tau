@@ -2,6 +2,7 @@ package schema_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -370,4 +371,112 @@ func TestAFillThatSaysNothingStillRecordsItsCommit(t *testing.T) {
 	filled := interp.MountedOf(obj.Flat())
 	assert.Equal(t, len(filled), 1)
 	hasNo(t, schema.Audit(obj.Flat(), nil, schema.AuditIn("production")), "was not read from")
+}
+
+// asking records what the compiler asked for, and answers with a fixed tree. It is
+// what a real caller is: a git checkout with credentials tcc does not have.
+type asking struct {
+	asked  []interp.Mount
+	files  map[string]string
+	commit string
+	err    error
+}
+
+func (a *asking) Mount(_ context.Context, m interp.Mount) (afero.Fs, string, error) {
+	a.asked = append(a.asked, m)
+	if a.err != nil {
+		return nil, "", a.err
+	}
+	fs := afero.NewMemMapFs()
+	for path, body := range a.files {
+		if err := afero.WriteFile(fs, path, []byte(body), 0o644); err != nil {
+			return nil, "", err
+		}
+	}
+	return fs, a.commit, nil
+}
+
+// TestOneCall — the two passes with the loop on tcc's side.
+//
+// Compile discovers, asks, merges and compiles. The caller does not sequence
+// anything, and the object it gets back is the one the hand-driven two passes
+// produce — so the convenience cannot drift from the primitive under it.
+func TestAMounterMakesItOneCall(t *testing.T) {
+	fs := mountedProject(t, delegating)
+	ask := &asking{commit: "def456", files: map[string]string{
+		"taubyte.yaml": "serve:\n    mode: spa\n    index: app.html\n",
+	}}
+
+	site, err := compileMounted(t, fs, "production", schema.WithMounter(ask))
+	assert.NilError(t, err)
+
+	assert.Equal(t, nested(site, "serve", "mode"), "spa")
+	assert.Equal(t, nested(site, "serve", "index"), "app.html")
+	assert.DeepEqual(t, ask.asked, mountsOf(t, fs, "production"))
+}
+
+// TestTheMounterIsAskedOnce — discovery is itself a compile, so a compiler that
+// asked on every call would fetch once per environment read and, worse, could not
+// terminate if the mount request were derived from a mounted document.
+func TestTheMounterIsAskedOncePerMount(t *testing.T) {
+	fs := mountedProject(t, delegating)
+	ask := &asking{commit: "def456", files: map[string]string{"taubyte.yaml": "serve:\n    mode: spa\n"}}
+
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"),
+		schema.WithEnvironments("production", "staging"), schema.WithEnvironment("production"),
+		schema.WithMounter(ask))
+	assert.NilError(t, err)
+	for range 3 {
+		_, _, err := c.Compile(context.Background())
+		assert.NilError(t, err)
+	}
+	assert.Equal(t, len(ask.asked), 1)
+}
+
+// TestANonDelegatingProjectNeverAsks — the callback costs nothing to wire, so a
+// caller can always pass it. A project that delegates nothing must not pay a fetch.
+func TestAMounterIsNotAskedWhenNothingDelegates(t *testing.T) {
+	fs := mountedProject(t, "source:\n    git: https://github.com/acme/docs\n    branch: main\n")
+	ask := &asking{commit: "def456"}
+
+	_, err := compileMounted(t, fs, "production", schema.WithMounter(ask))
+	assert.NilError(t, err)
+	assert.Equal(t, len(ask.asked), 0)
+}
+
+// TestAFailedFetchFailsTheCompile.
+//
+// THIS IS WHERE A MOUNT DIFFERS FROM A VERIFICATION. A Resolver that cannot answer
+// says yes, because it is asked about something tcc already read. A mounter that
+// cannot answer is missing configuration, and carrying on would compile a project
+// whose serving block silently vanished.
+func TestAMounterThatFailsFailsTheCompile(t *testing.T) {
+	fs := mountedProject(t, delegating)
+	ask := &asking{err: errors.New("no such ref")}
+
+	_, err := compileMounted(t, fs, "production", schema.WithMounter(ask))
+	assert.ErrorContains(t, err, "no such ref")
+	assert.ErrorContains(t, err, "website/docs")
+}
+
+// TestAHandAnswerWins — the two ways in are one mechanism, so mixing them has to
+// have an answer. A caller holding one repository already checked out passes it and
+// lets the callback do the rest; asking again would discard what it just gave.
+func TestAMountAnsweredByHandIsNotAsked(t *testing.T) {
+	fs := mountedProject(t, delegating)
+	mounts := mountsOf(t, fs, "production")
+	ask := &asking{commit: "def456", files: map[string]string{"taubyte.yaml": "serve:\n    mode: static\n"}}
+
+	site, err := compileMounted(t, fs, "production", schema.WithMounter(ask),
+		fulfil(t, mounts[0], "abc123", map[string]string{"taubyte.yaml": "serve:\n    mode: spa\n"}))
+	assert.NilError(t, err)
+	assert.Equal(t, nested(site, "serve", "mode"), "spa")
+	assert.Equal(t, len(ask.asked), 0)
+}
+
+// TestANilMounterIsRefused — a caller that passed nil meant to pass something.
+func TestANilMounterIsRefused(t *testing.T) {
+	_, err := schema.New(schema.WithVirtual(mountedProject(t, delegating), "/"),
+		schema.WithBranch("main"), schema.WithMounter(nil))
+	assert.ErrorContains(t, err, "nil mounter")
 }

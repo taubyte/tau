@@ -411,3 +411,89 @@ func (c *Compiler) recordMounts(obj Object) error {
 	}
 	return obj.Child(MountedKey).Add(rec)
 }
+
+// Mounter answers a Mount while the compile is running, so a caller makes ONE call
+// instead of driving two passes itself.
+//
+// IT IS THE SHAPE Resolver HAS and deliberately not Resolver itself: a resolver
+// answers a question ABOUT a value tcc already read, and its stub says yes on
+// purpose. This answers with configuration, so a stub that said yes would compile a
+// project missing the blocks somebody delegated. There is no stub; absent, the
+// mounts go unanswered and the audit says so.
+//
+// TCC STILL DOES NO GIT. The callback is the caller's, with the caller's credentials
+// and the caller's cache; tcc only says which repository at which commit-ish it needs
+// and where the answer goes.
+type Mounter interface {
+	// Mount checks out what a Mount names and answers with the filesystem it landed
+	// in and the COMMIT that checkout is of. An error fails the compile: a caller
+	// that cannot fetch must not be taken to mean the resource delegates nothing.
+	Mount(ctx context.Context, m Mount) (afero.Fs, string, error)
+}
+
+// WithMounter makes the two passes internal: Compile discovers what it needs, asks
+// this, merges the answers and compiles the whole. A caller that wants to check out on
+// its own terms — in parallel, from a warm cache, or not at all — uses Mounts and
+// WithMounted instead, which is what this is built on.
+func WithMounter(f Mounter) Option {
+	return func(c *Compiler) error {
+		if f == nil {
+			return fmt.Errorf("interp: a nil mounter")
+		}
+		c.mounter = f
+		return nil
+	}
+}
+
+// mountAll is the first pass, run once, when a Mounter is wired.
+//
+// IT IS LAZY AND NOT PART OF New, because discovering what to mount is itself a
+// compile: the engine has to exist before it can say which resources delegate. So
+// the compiler is built unmounted, asks, and rebuilds itself over the merged view —
+// which is the same thing a caller driving both passes does by hand, with the same
+// two compiles, done where a caller cannot forget one.
+func (c *Compiler) mountAll(ctx context.Context) error {
+	if c.mounter == nil || c.mountedOnce {
+		return nil
+	}
+	c.mountedOnce = true
+
+	mounts, err := c.Mounts(ctx)
+	if err != nil {
+		return err
+	}
+	if len(mounts) == 0 {
+		return nil
+	}
+
+	for _, m := range mounts {
+		// An answer already given by hand wins. A caller mixing the two is telling
+		// tcc it has this one and not the others, and asking anyway would throw away
+		// the answer it just gave.
+		if _, done := c.mounted[m.At]; done {
+			continue
+		}
+		fs, commit, err := c.mounter.Mount(ctx, m)
+		if err != nil {
+			return fmt.Errorf("mounting %s: %w", m, err)
+		}
+		if err := WithMounted(m, fs, commit)(c); err != nil {
+			return err
+		}
+	}
+
+	view, from, err := c.mountedView()
+	if err != nil {
+		return err
+	}
+	c.seerOptions = []yaseer.Option{yaseer.VirtualFS(view, "/")}
+	c.baseFs, c.basePath = view, "/"
+	c.from = from
+
+	// The engine reads documents, so it is the thing that has to be looking at the
+	// merged tree. Rebuilt rather than patched: one engine over one filesystem is
+	// the invariant that makes a delegated block indistinguishable from an authored
+	// one everywhere downstream.
+	c.engine, err = engine.NewWith(c.project, c.varValues, c.seerOptions...)
+	return err
+}

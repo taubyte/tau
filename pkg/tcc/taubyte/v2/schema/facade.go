@@ -97,6 +97,15 @@ type Mount = interp.Mount
 func WithMounted(m Mount, fs afero.Fs, commit string) Option {
 	return interp.WithMounted(m, fs, commit)
 }
+
+// Mounter answers those mounts as the compile runs, which is the same two passes
+// with the loop on tcc's side of the call. Most callers want this one; Mounts and
+// WithMounted are for a caller that needs the fetches in its own hands.
+type Mounter = interp.Mounter
+
+func WithMounter(m Mounter) Option {
+	return interp.WithMounter(m)
+}
 func WithBranch(branch string) Option   { return interp.WithBranch(branch) }
 func WithEnvironment(env string) Option { return interp.WithEnv(EnvironmentVar, env) }
 

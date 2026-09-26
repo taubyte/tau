@@ -53,6 +53,13 @@ type Compiler struct {
 	// `source.config` — see mount.go.
 	mounted map[string]filled
 
+	// mounter answers Mounts during the compile, so a caller makes one call. nil
+	// when a caller drives the two passes itself. See mount.go.
+	mounter Mounter
+	// mountedOnce guards mountAll: the discovery pass must run once, and it is a
+	// compile, so re-entering it would not terminate.
+	mountedOnce bool
+
 	// from is the commit each answered fill was read at, keyed by mount point. It is
 	// what makes "this block came from there" a fact rather than a claim.
 	from map[string]string
@@ -82,7 +89,10 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c 
 	// one. The view replaces the filesystem option rather than being layered after
 	// it: WithLocal and WithVirtual are the only writers of seerOptions, and two
 	// filesystems for one compile is the ambiguity this exists to remove.
-	if len(c.mounted) > 0 {
+	// Merged HERE only when the caller answered by hand; with a mounter, mountAll
+	// merges once after it has asked. Merging in both places would layer a view over
+	// a view, and a fill would then read as conflicting with itself.
+	if len(c.mounted) > 0 && c.mounter == nil {
 		view, from, mErr := c.mountedView()
 		if mErr != nil {
 			return nil, mErr
@@ -114,6 +124,9 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 
 // CompileFor is Compile under one BINDING — see AuthoredFor.
 func (c *Compiler) CompileFor(ctx context.Context, b engine.Bound) (Object, []NextValidation, error) {
+	if err := c.mountAll(ctx); err != nil {
+		return nil, nil, err
+	}
 	obj, validations, err := c.AuthoredFor(ctx, b)
 	if err != nil {
 		return obj, validations, err
