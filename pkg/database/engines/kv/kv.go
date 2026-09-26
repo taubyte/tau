@@ -38,6 +38,8 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/database"
+
+	"github.com/taubyte/tau/pkg/storekey"
 )
 
 // Store is where entries live: the same four-method door services/secrets and
@@ -131,7 +133,11 @@ func (c *conn) Get(ctx context.Context, key string) ([]byte, error) {
 		return nil, ErrNoKey
 	}
 
-	value, found, err := c.store.Get(ctx, c.prefix+key)
+	at, err := c.key(key)
+	if err != nil {
+		return nil, err
+	}
+	value, found, err := c.store.Get(ctx, at)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +157,11 @@ func (c *conn) Put(ctx context.Context, key string, value []byte) error {
 	if key == "" {
 		return ErrNoKey
 	}
-	return c.store.Put(ctx, c.prefix+key, value)
+	at, err := c.key(key)
+	if err != nil {
+		return err
+	}
+	return c.store.Put(ctx, at, value)
 }
 
 // Delete removes an entry. Deleting what is not there succeeds: the caller
@@ -163,7 +173,11 @@ func (c *conn) Delete(ctx context.Context, key string) error {
 	if key == "" {
 		return ErrNoKey
 	}
-	return c.store.Delete(ctx, c.prefix+key)
+	at, err := c.key(key)
+	if err != nil {
+		return err
+	}
+	return c.store.Delete(ctx, at)
 }
 
 // List names the keys under a prefix, sorted, WITHOUT this database's own
@@ -174,7 +188,11 @@ func (c *conn) List(ctx context.Context, prefix string) ([]string, error) {
 		return nil, c.err
 	}
 
-	keys, err := c.store.List(ctx, c.prefix+prefix)
+	at, err := c.key(prefix)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := c.store.List(ctx, at)
 	if err != nil {
 		return nil, err
 	}
@@ -204,3 +222,16 @@ func (c *conn) Watch(context.Context, string) (<-chan string, error) {
 // Close releases nothing, because Open allocated nothing: the store belongs to
 // whoever composed the engine and is shared by every database on the node.
 func (c *conn) Close() error { return nil }
+
+// key is this store's addressing of a key a GUEST supplied: the prefix it
+// belongs to, joined, once it is known the join stays inside that prefix.
+//
+// IT IS ONE METHOD AND NOT A CHECK AT EACH CALL, so a method added later gets
+// the rule by addressing an entry at all rather than by its author remembering
+// to. See pkg/storekey for what the rule is, and what not having it cost.
+func (c *conn) key(k string) (string, error) {
+	if err := storekey.Check(c.prefix, k); err != nil {
+		return "", err
+	}
+	return c.prefix + k, nil
+}

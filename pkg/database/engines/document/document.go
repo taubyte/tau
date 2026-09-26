@@ -44,6 +44,8 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/database"
+
+	"github.com/taubyte/tau/pkg/storekey"
 )
 
 // Store is the same four-method door the kv engine keeps.
@@ -116,7 +118,11 @@ func (c *conn) Get(ctx context.Context, id string) (map[string]any, error) {
 		return nil, ErrNoID
 	}
 
-	raw, found, err := c.store.Get(ctx, c.prefix+id)
+	at, err := c.key(id)
+	if err != nil {
+		return nil, err
+	}
+	raw, found, err := c.store.Get(ctx, at)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +152,11 @@ func (c *conn) Put(ctx context.Context, id string, doc map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("document: %s is not encodable: %w", id, err)
 	}
-	return c.store.Put(ctx, c.prefix+id, raw)
+	at, err := c.key(id)
+	if err != nil {
+		return err
+	}
+	return c.store.Put(ctx, at, raw)
 }
 
 func (c *conn) Delete(ctx context.Context, id string) error {
@@ -156,7 +166,11 @@ func (c *conn) Delete(ctx context.Context, id string) error {
 	if id == "" {
 		return ErrNoID
 	}
-	return c.store.Delete(ctx, c.prefix+id)
+	at, err := c.key(id)
+	if err != nil {
+		return err
+	}
+	return c.store.Delete(ctx, at)
 }
 
 // Query walks the collection and returns what matches, ordered by id so two
@@ -274,4 +288,17 @@ func number(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// key is this store's addressing of a key a GUEST supplied: the prefix it
+// belongs to, joined, once it is known the join stays inside that prefix.
+//
+// IT IS ONE METHOD AND NOT A CHECK AT EACH CALL, so a method added later gets
+// the rule by addressing an entry at all rather than by its author remembering
+// to. See pkg/storekey for what the rule is, and what not having it cost.
+func (c *conn) key(k string) (string, error) {
+	if err := storekey.Check(c.prefix, k); err != nil {
+		return "", err
+	}
+	return c.prefix + k, nil
 }

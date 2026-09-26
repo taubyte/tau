@@ -40,6 +40,8 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/database"
+
+	"github.com/taubyte/tau/pkg/storekey"
 )
 
 // Store is the same four-method door every other engine here keeps.
@@ -170,7 +172,11 @@ func (c *conn) Upsert(ctx context.Context, id string, embedding []float32, meta 
 	if err != nil {
 		return fmt.Errorf("vector: %s is not encodable: %w", id, err)
 	}
-	return c.store.Put(ctx, c.prefix+id, raw)
+	at, err := c.key(id)
+	if err != nil {
+		return err
+	}
+	return c.store.Put(ctx, at, raw)
 }
 
 func (c *conn) Delete(ctx context.Context, id string) error {
@@ -180,7 +186,11 @@ func (c *conn) Delete(ctx context.Context, id string) error {
 	if id == "" {
 		return ErrNoID
 	}
-	return c.store.Delete(ctx, c.prefix+id)
+	at, err := c.key(id)
+	if err != nil {
+		return err
+	}
+	return c.store.Delete(ctx, at)
 }
 
 // Search reads the collection and answers with the k closest, best first.
@@ -286,4 +296,17 @@ func norm(v []float32) float32 {
 		sum += float64(x) * float64(x)
 	}
 	return float32(math.Sqrt(sum))
+}
+
+// key is this store's addressing of a key a GUEST supplied: the prefix it
+// belongs to, joined, once it is known the join stays inside that prefix.
+//
+// IT IS ONE METHOD AND NOT A CHECK AT EACH CALL, so a method added later gets
+// the rule by addressing an entry at all rather than by its author remembering
+// to. See pkg/storekey for what the rule is, and what not having it cost.
+func (c *conn) key(k string) (string, error) {
+	if err := storekey.Check(c.prefix, k); err != nil {
+		return "", err
+	}
+	return c.prefix + k, nil
 }

@@ -46,6 +46,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/taubyte/tau/pkg/storekey"
 )
 
 // Store is where entries live: the same four-method door services/secrets
@@ -195,7 +197,12 @@ func (c *Cache) Get(ctx context.Context, key string) ([]byte, error) {
 		return nil, ErrNoKey
 	}
 
-	raw, found, err := c.store.Get(ctx, c.prefix+key)
+	at, err := c.key(key)
+	if err != nil {
+		return nil, err
+	}
+
+	raw, found, err := c.store.Get(ctx, at)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +242,12 @@ func (c *Cache) Put(ctx context.Context, key string, value []byte) error {
 		expires = written.Add(c.ttl)
 	}
 
-	if err := c.store.Put(ctx, c.prefix+key, encode(written, expires, value)); err != nil {
+	at, err := c.key(key)
+	if err != nil {
+		return err
+	}
+
+	if err := c.store.Put(ctx, at, encode(written, expires, value)); err != nil {
 		return err
 	}
 
@@ -353,7 +365,12 @@ func (c *Cache) victims(key string, need int64) []string {
 // an entry the store still holds would leak its bytes out of the accounting
 // until the next open.
 func (c *Cache) drop(ctx context.Context, key string) error {
-	if err := c.store.Delete(ctx, c.prefix+key); err != nil {
+	at, err := c.key(key)
+	if err != nil {
+		return err
+	}
+
+	if err := c.store.Delete(ctx, at); err != nil {
 		return err
 	}
 	c.forget(key)
@@ -403,4 +420,17 @@ func decode(raw []byte) (written, expires time.Time, value []byte) {
 		expires = time.Unix(0, at)
 	}
 	return written, expires, raw[headerSize:]
+}
+
+// key is this store's addressing of a key a GUEST supplied: the prefix it
+// belongs to, joined, once it is known the join stays inside that prefix.
+//
+// IT IS ONE METHOD AND NOT A CHECK AT EACH CALL, so a method added later gets
+// the rule by addressing an entry at all rather than by its author remembering
+// to. See pkg/storekey for what the rule is, and what not having it cost.
+func (c *Cache) key(k string) (string, error) {
+	if err := storekey.Check(c.prefix, k); err != nil {
+		return "", err
+	}
+	return c.prefix + k, nil
 }
