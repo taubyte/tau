@@ -2,7 +2,8 @@ package database
 
 import (
 	"fmt"
-	"regexp"
+
+	"github.com/taubyte/tau/utils/regex"
 
 	spec "github.com/taubyte/tau/legacy/specs/common"
 	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
@@ -18,7 +19,7 @@ func (s *Service) fetchConfig(project, application, matcher string) (*structureS
 	// Find the config that matches the inputted match
 	for _, databaseConfig := range databases {
 		if databaseConfig.Regex {
-			matched, err := regexp.Match(databaseConfig.Match, []byte(matcher))
+			matched, err := regex.MatchString(databaseConfig.Match, matcher)
 			if err != nil {
 				return nil, commit, branch, fmt.Errorf("matching regex `%s` with `%s` failed with: %s", matcher, databaseConfig.Match, err)
 			}

@@ -1,7 +1,7 @@
 package pubsub
 
 import (
-	"regexp"
+	"github.com/taubyte/tau/utils/regex"
 
 	spec "github.com/taubyte/tau/legacy/specs/common"
 	structureSpec "github.com/taubyte/tau/legacy/specs/structure"
@@ -21,7 +21,7 @@ func (s *Service) getMessagingsMap(matcher *common.MatchDefinition) (*common.Mes
 		if m.Match == matcher.Channel {
 			foundMatch = true
 		} else if m.Regex {
-			regMatch, _ := regexp.Match(m.Match, []byte(matcher.Channel))
+			regMatch, _ := regex.MatchString(m.Match, matcher.Channel)
 			if regMatch {
 				foundMatch = true
 			}

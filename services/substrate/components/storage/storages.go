@@ -2,7 +2,8 @@ package substrate
 
 import (
 	"fmt"
-	"regexp"
+
+	"github.com/taubyte/tau/utils/regex"
 
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
 	spec "github.com/taubyte/tau/legacy/specs/common"
@@ -37,7 +38,7 @@ func (s *Service) getStoreConfig(project, application, matcher string) (*structu
 	// Find the config that matches the inputted match
 	for _, storageConfig := range storages {
 		if storageConfig.Regex {
-			matched, err := regexp.Match(storageConfig.Match, []byte(matcher))
+			matched, err := regex.MatchString(storageConfig.Match, matcher)
 			if err != nil {
 				return nil, commit, branch, fmt.Errorf("matching regex `%s` with `%s` failed with: %s", matcher, storageConfig.Match, err)
 			}

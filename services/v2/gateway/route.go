@@ -1,9 +1,10 @@
 package gateway
 
 import (
-	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/taubyte/tau/utils/regex"
 
 	"github.com/taubyte/tau/pkg/specs"
 )
@@ -115,7 +116,7 @@ func pathScore(kind, declared, path string) (int, bool) {
 			return 1 << 20, true
 		}
 	case "regex":
-		re, err := regexp.Compile(declared)
+		re, err := regex.Compile(declared)
 		if err != nil {
 			// A route whose pattern does not compile matches nothing. It is
 			// not an error here: refusing the whole request would take down

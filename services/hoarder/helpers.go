@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
+
+	"github.com/taubyte/tau/utils/regex"
 
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	spec "github.com/taubyte/tau/legacy/specs/common"
@@ -19,7 +20,7 @@ import (
 var errNoConfigMatch = errors.New("no config matches")
 
 func handleRegex(pattern, match string) error {
-	matched, err := regexp.Match(pattern, []byte(match))
+	matched, err := regex.MatchString(pattern, match)
 	if err != nil {
 		return fmt.Errorf("parsing regex pattern `%s` failed with: %w", pattern, err)
 	}
