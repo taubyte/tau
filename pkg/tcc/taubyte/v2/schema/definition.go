@@ -2343,6 +2343,17 @@ var V2Resources = []*Node{
 				// with NEITHER is still a zone: it declares an fqdn this cloud
 				// is authoritative for, and what it answers is what it routes --
 				// which is every zone in the corpus today.
+				// THE LINES THEMSELVES, which is what the node serves today.
+				//
+				// A file is the shape an author wants and it is not yet the shape
+				// anything reads: the lines have to reach the compiled object, and
+				// nothing in the lowering vocabulary reads a file -- Sets takes Attr,
+				// Text and Concat, all of which are values the object already holds.
+				// Until that term exists, or the build emits the file as an artifact
+				// this node fetches, a zone answers with what is written here.
+				StringSlice("records", InSection("records"),
+					Doc("Records", "Zone-file lines, e.g. \"www 300 IN A 1.2.3.4\", \"@ 3600 IN MX 10 mail.example.com.\".")),
+
 				String("file", IsRepoPath(), InSection("records"),
 					Doc("Zone File", "Path to a zone file in this repository, e.g. \"dns/example.com.zone\". Served with this zone's fqdn as $ORIGIN. Use NS records in it to delegate a subtree elsewhere.")),
 

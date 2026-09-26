@@ -311,7 +311,7 @@
                   "x-tau-section": "source"
                 },
                 "branch": {
-                  "description": "Branch to read. Omitted means the repository's default branch.",
+                  "description": "Branch to read, e.g. \"main\". Per environment: `branch_staging: develop`. Omitted means the repository's default branch.",
                   "title": "Branch",
                   "type": "string",
                   "x-tau-section": "source",
@@ -326,6 +326,19 @@
                   "description": "Where in that repository the content is. Omitted means its root.",
                   "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
                   "title": "Path",
+                  "type": "string",
+                  "x-tau-section": "source",
+                  "x-tau-show-when": {
+                    "field": "source/kind",
+                    "in": [
+                      "git"
+                    ]
+                  }
+                },
+                "config": {
+                  "description": "A file in that repository carrying this resource's serving block, e.g. \"taubyte.yaml\". Read at the commit its artifact was built from. What it may declare is fixed: the blocks this kind delegates, and nothing that names or reaches anything.",
+                  "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+                  "title": "Config",
                   "type": "string",
                   "x-tau-section": "source",
                   "x-tau-show-when": {
@@ -1667,7 +1680,7 @@
                   "x-tau-section": "code"
                 },
                 "branch": {
-                  "description": "Branch to read. Omitted means the repository's default branch.",
+                  "description": "Branch to read, e.g. \"main\". Per environment: `branch_staging: develop`. Omitted means the repository's default branch.",
                   "title": "Branch",
                   "type": "string",
                   "x-tau-section": "code",
@@ -1682,6 +1695,19 @@
                   "description": "Where in that repository the content is. Omitted means its root.",
                   "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
                   "title": "Path",
+                  "type": "string",
+                  "x-tau-section": "code",
+                  "x-tau-show-when": {
+                    "field": "source/kind",
+                    "in": [
+                      "git"
+                    ]
+                  }
+                },
+                "config": {
+                  "description": "A file in that repository carrying this resource's serving block, e.g. \"taubyte.yaml\". Read at the commit its artifact was built from. What it may declare is fixed: the blocks this kind delegates, and nothing that names or reaches anything.",
+                  "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+                  "title": "Config",
                   "type": "string",
                   "x-tau-section": "code",
                   "x-tau-show-when": {
@@ -3027,91 +3053,36 @@
       ]
     },
     "Bus": {
-      "allOf": [
+      "description": "An ephemeral n:n message bus: everything attached gets what is sent, and nothing is kept. Point a gateway route at it and a browser can attach over websocket.",
+      "oneOf": [
         {
-          "oneOf": [
-            {
+          "properties": {
+            "instances": {
               "properties": {
-                "host": {
+                "validator": {
                   "required": [
-                    "generated"
-                  ],
-                  "type": "object"
+                    "name"
+                  ]
                 }
               },
               "required": [
-                "host"
-              ]
-            },
-            {
-              "properties": {
-                "host": {
-                  "properties": {
-                    "zone": {
-                      "properties": {
-                        "in": {
-                          "required": [
-                            "name"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "in"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "zone"
-                  ],
-                  "type": "object"
-                }
-              },
-              "required": [
-                "host"
-              ]
-            },
-            {
-              "not": {
-                "required": [
-                  "host"
-                ]
-              }
+                "validator"
+              ],
+              "type": "object"
             }
+          },
+          "required": [
+            "instances"
           ]
         },
         {
-          "oneOf": [
-            {
-              "properties": {
-                "instances": {
-                  "properties": {
-                    "validator": {
-                      "required": [
-                        "name"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "validator"
-                  ],
-                  "type": "object"
-                }
-              },
-              "required": [
-                "instances"
-              ]
-            },
-            {
-              "not": {
-                "required": [
-                  "instances"
-                ]
-              }
-            }
-          ]
+          "not": {
+            "required": [
+              "instances"
+            ]
+          }
         }
       ],
-      "description": "An ephemeral n:n message bus: everything attached gets what is sent, and nothing is kept. Give it a host and a browser can attach over websocket.",
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -3143,69 +3114,6 @@
           "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
-        },
-        "host/kind": {
-          "description": "generated: a name under the cloud's own zone, resolved when it is deployed. zone: a name in a zone you own and delegated here.",
-          "title": "Host",
-          "type": "string",
-          "x-tau-dynamic": true,
-          "x-tau-path": "host/{generated|zone}",
-          "x-tau-section": "websocket"
-        },
-        "host/name": {
-          "description": "The label within that zone, e.g. \"shop\". Omit it for the zone apex.",
-          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-          "title": "Name",
-          "type": "string",
-          "x-tau-dynamic": true,
-          "x-tau-path": "host/{generated|zone}/name",
-          "x-tau-section": "websocket"
-        },
-        "host": {
-          "properties": {
-            "zone": {
-              "properties": {
-                "in": {
-                  "properties": {
-                    "namespace": {
-                      "description": "Where that zone lives. Omitted means this resource's own scope, then its parents.",
-                      "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
-                      "title": "Namespace",
-                      "type": "string",
-                      "x-tau-section": "websocket"
-                    }
-                  },
-                  "type": "object"
-                }
-              },
-              "type": "object"
-            }
-          },
-          "type": "object"
-        },
-        "host/zone/in/name": {
-          "description": "The zone this name lives in, as \"zone/<name>\". Only for a zone you own; a generated name has no zone to choose.",
-          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-          "title": "Zone",
-          "type": "string",
-          "x-tau-dynamic": true,
-          "x-tau-path": "host/{generated|zone}/in/name",
-          "x-tau-ref": {
-            "group": "zone"
-          },
-          "x-tau-required-when": {
-            "field": "host/kind",
-            "in": [
-              "zone"
-            ]
-          },
-          "x-tau-section": "websocket",
-          "x-tau-show-when": {
-            "field": "host/kind",
-            "in": [
-              "zone"
-            ]
-          }
         },
         "instances/admission": {
           "description": "How a new instance is let in. validator: a function decides.",
@@ -4147,11 +4055,6 @@
           "description": "What this resource may reach, and what it therefore depends on.",
           "id": "access",
           "title": "Access"
-        },
-        {
-          "description": "The name a browser attaches to, if this bus is reachable from outside.",
-          "id": "websocket",
-          "title": "Websocket"
         },
         {
           "description": "Whether this holds one instance or many, how many, and who admits a new one.",
@@ -6549,7 +6452,7 @@
                   "x-tau-section": "source"
                 },
                 "branch": {
-                  "description": "Branch to read. Omitted means the repository's default branch.",
+                  "description": "Branch to read, e.g. \"main\". Per environment: `branch_staging: develop`. Omitted means the repository's default branch.",
                   "title": "Branch",
                   "type": "string",
                   "x-tau-section": "source",
@@ -6564,6 +6467,19 @@
                   "description": "Where in that repository the content is. Omitted means its root.",
                   "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
                   "title": "Path",
+                  "type": "string",
+                  "x-tau-section": "source",
+                  "x-tau-show-when": {
+                    "field": "source/kind",
+                    "in": [
+                      "git"
+                    ]
+                  }
+                },
+                "config": {
+                  "description": "A file in that repository carrying this resource's serving block, e.g. \"taubyte.yaml\". Read at the commit its artifact was built from. What it may declare is fixed: the blocks this kind delegates, and nothing that names or reaches anything.",
+                  "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+                  "title": "Config",
                   "type": "string",
                   "x-tau-section": "source",
                   "x-tau-show-when": {
@@ -10614,6 +10530,8 @@
           "enum": [
             "handler",
             "authorizer",
+            "http-authorizer",
+            "dns-resolver",
             "instance-validator",
             "gateway-transformer",
             "proxy-transformer",
@@ -10672,7 +10590,7 @@
                   "x-tau-section": "code"
                 },
                 "branch": {
-                  "description": "Branch to read. Omitted means the repository's default branch.",
+                  "description": "Branch to read, e.g. \"main\". Per environment: `branch_staging: develop`. Omitted means the repository's default branch.",
                   "title": "Branch",
                   "type": "string",
                   "x-tau-section": "code",
@@ -10687,6 +10605,19 @@
                   "description": "Where in that repository the content is. Omitted means its root.",
                   "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
                   "title": "Path",
+                  "type": "string",
+                  "x-tau-section": "code",
+                  "x-tau-show-when": {
+                    "field": "source/kind",
+                    "in": [
+                      "git"
+                    ]
+                  }
+                },
+                "config": {
+                  "description": "A file in that repository carrying this resource's serving block, e.g. \"taubyte.yaml\". Read at the commit its artifact was built from. What it may declare is fixed: the blocks this kind delegates, and nothing that names or reaches anything.",
+                  "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+                  "title": "Config",
                   "type": "string",
                   "x-tau-section": "code",
                   "x-tau-show-when": {
@@ -12137,6 +12068,26 @@
             {
               "properties": {
                 "route": {
+                  "properties": {
+                    "handler": {
+                      "required": [
+                        "bus"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "handler"
+                  ]
+                }
+              },
+              "required": [
+                "route"
+              ]
+            },
+            {
+              "properties": {
+                "route": {
                   "not": {
                     "required": [
                       "handler"
@@ -12339,6 +12290,28 @@
               "title": "Methods",
               "type": "array",
               "x-tau-section": "route"
+            },
+            "authorizer": {
+              "properties": {
+                "name": {
+                  "description": "A function that decides whether a request to this route may pass, and answers with the ops the caller gets. It must be built against the http-authorizer world. A route's own answers instead of the gateway's.",
+                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                  "title": "Authorizer",
+                  "type": "string",
+                  "x-tau-ref": {
+                    "group": "function"
+                  },
+                  "x-tau-section": "policy"
+                },
+                "namespace": {
+                  "description": "Where that function lives. Omitted means this resource's own scope, then its parents.",
+                  "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                  "title": "Authorizer Namespace",
+                  "type": "string",
+                  "x-tau-section": "policy"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"
@@ -12427,7 +12400,7 @@
           "title": "Handler",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "route/handler/{function|application|website|gateway|mcp|agent}",
+          "x-tau-path": "route/handler/{function|application|website|gateway|mcp|agent|bus}",
           "x-tau-section": "handler"
         },
         "route/handler/namespace": {
@@ -12435,7 +12408,7 @@
           "title": "Namespace",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "route/handler/{function|application|website|gateway|mcp|agent}/namespace",
+          "x-tau-path": "route/handler/{function|application|website|gateway|mcp|agent|bus}/namespace",
           "x-tau-section": "handler"
         },
         "route/handler/name": {
@@ -12444,7 +12417,7 @@
           "title": "Name",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "route/handler/{function|application|website|gateway|mcp|agent}/name",
+          "x-tau-path": "route/handler/{function|application|website|gateway|mcp|agent|bus}/name",
           "x-tau-ref": {
             "group": "",
             "kind-from": "route/handler/kind"
@@ -12463,7 +12436,7 @@
           "title": "Port",
           "type": "string",
           "x-tau-dynamic": true,
-          "x-tau-path": "route/handler/{function|application|website|gateway|mcp|agent}/port",
+          "x-tau-path": "route/handler/{function|application|website|gateway|mcp|agent|bus}/port",
           "x-tau-section": "handler"
         },
         "cors": {
@@ -12523,6 +12496,28 @@
             "key": {
               "description": "What the limit is counted per: \"ip\" or \"header:<name>\".",
               "title": "Rate Limit Key",
+              "type": "string",
+              "x-tau-section": "policy"
+            }
+          },
+          "type": "object"
+        },
+        "authorizer": {
+          "properties": {
+            "name": {
+              "description": "A function that decides whether a request to any route this gateway serves may pass, and answers with the ops the caller gets. It must be built against the http-authorizer world. A route's own answers instead of the gateway's.",
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+              "title": "Authorizer",
+              "type": "string",
+              "x-tau-ref": {
+                "group": "function"
+              },
+              "x-tau-section": "policy"
+            },
+            "namespace": {
+              "description": "Where that function lives. Omitted means this resource's own scope, then its parents.",
+              "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+              "title": "Authorizer Namespace",
               "type": "string",
               "x-tau-section": "policy"
             }
@@ -13452,7 +13447,7 @@
           "title": "Handler"
         },
         {
-          "description": "CORS and rate limiting, at the name.",
+          "description": "Who may reach this, and how often — the authorizer, CORS and rate limiting.",
           "id": "policy",
           "title": "Policy"
         }
@@ -17710,7 +17705,7 @@
                   "x-tau-section": "code"
                 },
                 "branch": {
-                  "description": "Branch to read. Omitted means the repository's default branch.",
+                  "description": "Branch to read, e.g. \"main\". Per environment: `branch_staging: develop`. Omitted means the repository's default branch.",
                   "title": "Branch",
                   "type": "string",
                   "x-tau-section": "code",
@@ -17725,6 +17720,19 @@
                   "description": "Where in that repository the content is. Omitted means its root.",
                   "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
                   "title": "Path",
+                  "type": "string",
+                  "x-tau-section": "code",
+                  "x-tau-show-when": {
+                    "field": "source/kind",
+                    "in": [
+                      "git"
+                    ]
+                  }
+                },
+                "config": {
+                  "description": "A file in that repository carrying this resource's serving block, e.g. \"taubyte.yaml\". Read at the commit its artifact was built from. What it may declare is fixed: the blocks this kind delegates, and nothing that names or reaches anything.",
+                  "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+                  "title": "Config",
                   "type": "string",
                   "x-tau-section": "code",
                   "x-tau-show-when": {
@@ -24736,7 +24744,7 @@
                   "x-tau-section": "source"
                 },
                 "branch": {
-                  "description": "Branch to read. Omitted means the repository's default branch.",
+                  "description": "Branch to read, e.g. \"main\". Per environment: `branch_staging: develop`. Omitted means the repository's default branch.",
                   "title": "Branch",
                   "type": "string",
                   "x-tau-section": "source",
@@ -24751,6 +24759,19 @@
                   "description": "Where in that repository the content is. Omitted means its root.",
                   "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
                   "title": "Path",
+                  "type": "string",
+                  "x-tau-section": "source",
+                  "x-tau-show-when": {
+                    "field": "source/kind",
+                    "in": [
+                      "git"
+                    ]
+                  }
+                },
+                "config": {
+                  "description": "A file in that repository carrying this resource's serving block, e.g. \"taubyte.yaml\". Read at the commit its artifact was built from. What it may declare is fixed: the blocks this kind delegates, and nothing that names or reaches anything.",
+                  "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+                  "title": "Config",
                   "type": "string",
                   "x-tau-section": "source",
                   "x-tau-show-when": {
@@ -26074,6 +26095,8 @@
           "enum": [
             "handler",
             "authorizer",
+            "http-authorizer",
+            "dns-resolver",
             "instance-validator",
             "gateway-transformer",
             "proxy-transformer",
@@ -26132,7 +26155,7 @@
                   "x-tau-section": "code"
                 },
                 "branch": {
-                  "description": "Branch to read. Omitted means the repository's default branch.",
+                  "description": "Branch to read, e.g. \"main\". Per environment: `branch_staging: develop`. Omitted means the repository's default branch.",
                   "title": "Branch",
                   "type": "string",
                   "x-tau-section": "code",
@@ -26147,6 +26170,19 @@
                   "description": "Where in that repository the content is. Omitted means its root.",
                   "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
                   "title": "Path",
+                  "type": "string",
+                  "x-tau-section": "code",
+                  "x-tau-show-when": {
+                    "field": "source/kind",
+                    "in": [
+                      "git"
+                    ]
+                  }
+                },
+                "config": {
+                  "description": "A file in that repository carrying this resource's serving block, e.g. \"taubyte.yaml\". Read at the commit its artifact was built from. What it may declare is fixed: the blocks this kind delegates, and nothing that names or reaches anything.",
+                  "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+                  "title": "Config",
                   "type": "string",
                   "x-tau-section": "code",
                   "x-tau-show-when": {
@@ -28672,7 +28708,7 @@
       ]
     },
     "Zone": {
-      "description": "A DNS zone served authoritatively by this cloud, and the records you own in it.",
+      "description": "A DNS zone served authoritatively by this cloud: a zone file you own, and a function asked for the names it does not carry.",
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -28721,6 +28757,35 @@
           "title": "Records",
           "type": "array",
           "x-tau-section": "records"
+        },
+        "file": {
+          "description": "Path to a zone file in this repository, e.g. \"dns/example.com.zone\". Served with this zone's fqdn as $ORIGIN. Use NS records in it to delegate a subtree elsewhere.",
+          "pattern": "^[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+          "title": "Zone File",
+          "type": "string",
+          "x-tau-section": "records"
+        },
+        "resolver": {
+          "properties": {
+            "name": {
+              "description": "A function asked for names this zone's file does not answer. Built against the dns-resolver world. Without a file it answers the whole zone.",
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+              "title": "Resolver",
+              "type": "string",
+              "x-tau-ref": {
+                "group": "function"
+              },
+              "x-tau-section": "records"
+            },
+            "namespace": {
+              "description": "Where that function lives. Omitted means this resource's own scope, then its parents.",
+              "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+              "title": "Resolver Namespace",
+              "type": "string",
+              "x-tau-section": "records"
+            }
+          },
+          "type": "object"
         },
         "function": {
           "additionalProperties": {
@@ -29590,9 +29655,9 @@
           "title": "Access"
         },
         {
-          "description": "Records this zone answers, in zone-file notation.",
+          "description": "What this zone answers with: a zone file, or a function.",
           "id": "records",
-          "title": "Records"
+          "title": "Answers"
         }
       ]
     }

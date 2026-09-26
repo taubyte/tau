@@ -21,11 +21,11 @@ export type ApplicationBuildKind = "dockerfile";
 export type FunctionKind = "component" | "builtin" | "git";
 export type FunctionRegionsPolicy = "pinned" | "cdn" | "failover";
 export type FunctionBuildKind = "commands" | "script";
-export type FunctionImplements = "handler" | "authorizer" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
+export type FunctionImplements = "handler" | "authorizer" | "http-authorizer" | "dns-resolver" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
 export type WorkerKind = "component" | "builtin" | "git" | "image";
 export type WorkerRegionsPolicy = "pinned" | "cdn" | "failover";
 export type WorkerBuildKind = "commands" | "script" | "dockerfile";
-export type WorkerImplements = "handler" | "authorizer" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
+export type WorkerImplements = "handler" | "authorizer" | "http-authorizer" | "dns-resolver" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
 export type WorkerRuntime = "wasm" | "container";
 export type SandboxKind = "image" | "git";
 export type SandboxRegionsPolicy = "pinned" | "cdn" | "failover";
@@ -66,7 +66,7 @@ export type SyncLogConsensus = "crdt" | "raft";
 export type GatewayHostKind = "generated" | "zone";
 export type GatewayRouting = "route" | "router";
 export type GatewayRouteTarget = "handler" | "router";
-export type GatewayHandlerKind = "function" | "application" | "website" | "gateway" | "mcp" | "agent";
+export type GatewayHandlerKind = "function" | "application" | "website" | "gateway" | "mcp" | "agent" | "bus";
 export type GatewayCertSource = "generated" | "provided";
 export type GatewayMatch = "prefix" | "exact" | "regex";
 export type GatewayMethods = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
@@ -78,7 +78,6 @@ export type ProxyCertSource = "generated" | "provided";
 export type ProxyKey = "ip" | "subnet";
 export type StreamEngine = "distributed" | "kafka" | "nats";
 export type StreamTls = "verify-full" | "require" | "disable";
-export type BusHostKind = "generated" | "zone";
 export type BusInstancesAdmission = "validator";
 export type MCPCache_scope = "none" | "public" | "principal";
 export type ChannelServeKind = "application" | "function";
@@ -453,6 +452,16 @@ export class ApplicationConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   /** Which application this is — the key its settings live under. */
   async readinessKind(): Promise<ApplicationReadinessKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["readiness"]).catch(() => null);
@@ -741,6 +750,16 @@ export class FunctionConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   async call(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["execution", "call"])) as string | undefined;
   }
@@ -1025,6 +1044,16 @@ export class WorkerConfig extends ResourceConfig {
   }
   unsetPath(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
   }
 
   async image(): Promise<string | undefined> {
@@ -1333,6 +1362,16 @@ export class SandboxConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   async idle(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["lifetime", "idle"])) as string | undefined;
   }
@@ -1632,6 +1671,16 @@ export class ComponentConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   /** Which component this is — the key its settings live under. */
   async buildKind(): Promise<ComponentBuildKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
@@ -1787,6 +1836,16 @@ export class WebsiteConfig extends ResourceConfig {
   }
   unsetPath(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
   }
 
   async index(): Promise<string | undefined> {
@@ -3091,6 +3150,26 @@ export class ZoneConfig extends ResourceConfig {
   unsetRecords(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["records"]);
   }
+
+  async file(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["file"])) as string | undefined;
+  }
+  setFile(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["file"], v);
+  }
+  unsetFile(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["file"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["resolver", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["resolver", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["resolver", "namespace"]);
+  }
 }
 
 /** Typed accessors for a gateway's config. */
@@ -3259,7 +3338,7 @@ export class GatewayConfig extends ResourceConfig {
   async handlerKind(): Promise<GatewayHandlerKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["route", "handler"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["function", "application", "website", "gateway", "mcp", "agent"] as readonly string[]) if (k in block) return k as GatewayHandlerKind;
+    for (const k of ["function", "application", "website", "gateway", "mcp", "agent", "bus"] as readonly string[]) if (k in block) return k as GatewayHandlerKind;
     return undefined;
   }
 
@@ -3729,46 +3808,6 @@ export class BusConfig extends ResourceConfig {
   }
 
   /** Which bus this is — the key its settings live under. */
-  async hostKind(): Promise<BusHostKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["host"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["generated", "zone"] as readonly string[]) if (k in block) return k as BusHostKind;
-    return undefined;
-  }
-
-  /** Lives under the bus's kind, so the branch is explicit. */
-  async hostName(hostKind: BusHostKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "name"])) as string | undefined;
-  }
-  setHostName(hostKind: BusHostKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "name"], v);
-  }
-  unsetHostName(hostKind: BusHostKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "name"]);
-  }
-
-  async namespace(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["host", "zone", "in", "namespace"])) as string | undefined;
-  }
-  setNamespace(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["host", "zone", "in", "namespace"], v);
-  }
-  unsetNamespace(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["host", "zone", "in", "namespace"]);
-  }
-
-  /** Lives under the bus's kind, so the branch is explicit. */
-  async hostZoneInName(hostKind: BusHostKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "in", "name"])) as string | undefined;
-  }
-  setHostZoneInName(hostKind: BusHostKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "in", "name"], v);
-  }
-  unsetHostZoneInName(hostKind: BusHostKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "in", "name"]);
-  }
-
-  /** Which bus this is — the key its settings live under. */
   async instancesAdmission(): Promise<BusInstancesAdmission | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["instances"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
@@ -3806,6 +3845,16 @@ export class BusConfig extends ResourceConfig {
   }
   unsetLimit(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["instances", "limit"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
   }
 }
 
@@ -4303,6 +4352,16 @@ export class AgentConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   /** Which agent this is — the key its settings live under. */
   async regionsPolicy(): Promise<AgentRegionsPolicy | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
@@ -4608,6 +4667,7 @@ export interface Application {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   readinesskind?: string;
   port?: string;
   livenesskind?: string;
@@ -4641,6 +4701,7 @@ export interface Function {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   call?: string;
   timeout?: number;
   memory?: number;
@@ -4673,6 +4734,7 @@ export interface Worker {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   image?: string;
   call?: string;
   timeout?: number;
@@ -4707,6 +4769,7 @@ export interface Sandbox {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   idle?: number;
   max?: number;
   egress?: string[];
@@ -4744,6 +4807,7 @@ export interface Component {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   buildkind?: string;
   buildimage?: string;
   buildoutput?: string;
@@ -4763,6 +4827,7 @@ export interface Website {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   index?: string;
   mode?: WebsiteMode;
   not_found?: string;
@@ -4917,6 +4982,8 @@ export interface Zone {
   tags?: string[];
   fqdn?: string;
   records?: string[];
+  file?: string;
+  namespace?: string;
 }
 
 /** Gateway as decoded from the compiled config object. */
@@ -4994,14 +5061,11 @@ export interface Bus {
   name?: string;
   description?: string;
   tags?: string[];
-  hostkind?: string;
-  hostname?: string;
-  namespace?: string;
-  hostzoneinname?: string;
   instancesadmission?: string;
   instancesvalidatornamespace?: string;
   instancesvalidatorname?: string;
   limit?: number;
+  namespace?: string;
 }
 
 /** MCP as decoded from the compiled config object. */
@@ -5065,6 +5129,7 @@ export interface Agent {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   regionspolicy?: string;
   regionsin?: string[];
   main?: string;

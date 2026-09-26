@@ -47,6 +47,7 @@ type Application struct {
 	SecretNamespace                string
 	Source                         string
 	SourceBranch                   string
+	SourceConfig                   string
 	SourceGit                      string
 	SourceImage                    string
 	SourceImagePullSecretName      string
@@ -94,6 +95,7 @@ func ReadApplication(r Resource) Application {
 	out.SecretNamespace = r.String("secret", "namespace")
 	out.Source = r.String("source")
 	out.SourceBranch = r.String("source", "branch")
+	out.SourceConfig = r.String("source", "config")
 	out.SourceGit = r.String("source", "git")
 	out.SourceImage = r.String("source", "image")
 	out.SourceImagePullSecretName = r.String("source", "image_pull_secret", "name")
@@ -137,6 +139,7 @@ type Function struct {
 	SourceBranch        string
 	SourceBuiltin       string
 	SourceComponent     string
+	SourceConfig        string
 	SourceGit           string
 	SourceKind          string // which of component, builtin, git was written
 	SourceNamespace     string
@@ -178,6 +181,7 @@ func ReadFunction(r Resource) Function {
 	out.SourceBranch = r.String("source", "branch")
 	out.SourceBuiltin = r.String("source", "builtin")
 	out.SourceComponent = r.String("source", "component")
+	out.SourceConfig = r.String("source", "config")
 	out.SourceGit = r.String("source", "git")
 	out.SourceKind = r.String("source", "kind")
 	out.SourceNamespace = r.String("source", "namespace")
@@ -222,6 +226,7 @@ type Worker struct {
 	SourceBranch                   string
 	SourceBuiltin                  string
 	SourceComponent                string
+	SourceConfig                   string
 	SourceGit                      string
 	SourceImage                    string
 	SourceImagePullSecretName      string
@@ -269,6 +274,7 @@ func ReadWorker(r Resource) Worker {
 	out.SourceBranch = r.String("source", "branch")
 	out.SourceBuiltin = r.String("source", "builtin")
 	out.SourceComponent = r.String("source", "component")
+	out.SourceConfig = r.String("source", "config")
 	out.SourceGit = r.String("source", "git")
 	out.SourceImage = r.String("source", "image")
 	out.SourceImagePullSecretName = r.String("source", "image_pull_secret", "name")
@@ -307,6 +313,7 @@ type Sandbox struct {
 	SecretNamespace                string
 	Source                         string
 	SourceBranch                   string
+	SourceConfig                   string
 	SourceGit                      string
 	SourceImage                    string
 	SourceImagePullSecretName      string
@@ -344,6 +351,7 @@ func ReadSandbox(r Resource) Sandbox {
 	out.SecretNamespace = r.String("secret", "namespace")
 	out.Source = r.String("source")
 	out.SourceBranch = r.String("source", "branch")
+	out.SourceConfig = r.String("source", "config")
 	out.SourceGit = r.String("source", "git")
 	out.SourceImage = r.String("source", "image")
 	out.SourceImagePullSecretName = r.String("source", "image_pull_secret", "name")
@@ -399,6 +407,7 @@ type Component struct {
 	SecretNamespace string
 	Source          string
 	SourceBranch    string
+	SourceConfig    string
 	SourceGit       string
 	SourceKind      string // which of git was written
 	SourcePath      string
@@ -425,6 +434,7 @@ func ReadComponent(r Resource) Component {
 	out.SecretNamespace = r.String("secret", "namespace")
 	out.Source = r.String("source")
 	out.SourceBranch = r.String("source", "branch")
+	out.SourceConfig = r.String("source", "config")
 	out.SourceGit = r.String("source", "git")
 	out.SourceKind = r.String("source", "kind")
 	out.SourcePath = r.String("source", "path")
@@ -454,6 +464,7 @@ type Website struct {
 	ServeNotFound   string
 	Source          string
 	SourceBranch    string
+	SourceConfig    string
 	SourceGit       string
 	SourceKind      string // which of git was written
 	SourcePath      string
@@ -483,6 +494,7 @@ func ReadWebsite(r Resource) Website {
 	out.ServeNotFound = r.String("serve", "not_found")
 	out.Source = r.String("source")
 	out.SourceBranch = r.String("source", "branch")
+	out.SourceConfig = r.String("source", "config")
 	out.SourceGit = r.String("source", "git")
 	out.SourceKind = r.String("source", "kind")
 	out.SourcePath = r.String("source", "path")
@@ -797,28 +809,36 @@ func ReadSync(r Resource) Sync {
 
 // Zone is that kind, read from a compiled object.
 type Zone struct {
-	Description string
-	Fqdn        string
-	Id          string
-	Name        string
-	Records     []string
-	Tags        []string
+	Description       string
+	File              string
+	Fqdn              string
+	Id                string
+	Name              string
+	Records           []string
+	ResolverName      string
+	ResolverNamespace string
+	Tags              []string
 }
 
 // ReadZone decodes one from a resource.
 func ReadZone(r Resource) Zone {
 	var out Zone
 	out.Description = r.String("description")
+	out.File = r.String("file")
 	out.Fqdn = r.String("fqdn")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Records = r.Strings("records")
+	out.ResolverName = r.String("resolver", "name")
+	out.ResolverNamespace = r.String("resolver", "namespace")
 	out.Tags = r.Strings("tags")
 	return out
 }
 
 // Gateway is that kind, read from a compiled object.
 type Gateway struct {
+	AuthorizerName             string
+	AuthorizerNamespace        string
 	CertificateSecretName      string
 	CertificateSecretNamespace string
 	CertificateSource          string
@@ -837,10 +857,12 @@ type Gateway struct {
 	RateLimitBurst             int64
 	RateLimitKey               string
 	RateLimitRpm               int64
-	RouteHandlerKind           string // which of function, application, website, gateway, mcp, agent was written
-	RouteHandlerName           string // authored at route/handler/{function|application|website|gateway|mcp|agent}/name
-	RouteHandlerNamespace      string // authored at route/handler/{function|application|website|gateway|mcp|agent}/namespace
-	RouteHandlerPort           string // authored at route/handler/{function|application|website|gateway|mcp|agent}/port
+	RouteAuthorizerName        string
+	RouteAuthorizerNamespace   string
+	RouteHandlerKind           string // which of function, application, website, gateway, mcp, agent, bus was written
+	RouteHandlerName           string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/name
+	RouteHandlerNamespace      string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/namespace
+	RouteHandlerPort           string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/port
 	RouteMatch                 string
 	RouteMethods               []string
 	RoutePath                  string
@@ -857,6 +879,8 @@ type Gateway struct {
 // ReadGateway decodes one from a resource.
 func ReadGateway(r Resource) Gateway {
 	var out Gateway
+	out.AuthorizerName = r.String("authorizer", "name")
+	out.AuthorizerNamespace = r.String("authorizer", "namespace")
 	out.CertificateSecretName = r.String("certificate", "secret", "name")
 	out.CertificateSecretNamespace = r.String("certificate", "secret", "namespace")
 	out.CertificateSource = r.String("certificate", "source")
@@ -875,6 +899,8 @@ func ReadGateway(r Resource) Gateway {
 	out.RateLimitBurst, _ = r.Int("rate_limit", "burst")
 	out.RateLimitKey = r.String("rate_limit", "key")
 	out.RateLimitRpm, _ = r.Int("rate_limit", "rpm")
+	out.RouteAuthorizerName = r.String("route", "authorizer", "name")
+	out.RouteAuthorizerNamespace = r.String("route", "authorizer", "namespace")
 	out.RouteHandlerKind = r.String("route", "handler", "kind")
 	out.RouteHandlerName = r.String("route", "handler", "name")
 	out.RouteHandlerNamespace = r.String("route", "handler", "namespace")
@@ -994,10 +1020,6 @@ type Bus struct {
 	AuthorizerName              string
 	AuthorizerNamespace         string
 	Description                 string
-	HostKind                    string // which of generated, zone was written
-	HostName                    string // authored at host/{generated|zone}/name
-	HostZoneInName              string // authored at host/{generated|zone}/in/name
-	HostZoneInNamespace         string
 	Id                          string
 	InstancesAdmission          string // which of validator was written
 	InstancesLimit              int64
@@ -1013,10 +1035,6 @@ func ReadBus(r Resource) Bus {
 	out.AuthorizerName = r.String("authorizer", "name")
 	out.AuthorizerNamespace = r.String("authorizer", "namespace")
 	out.Description = r.String("description")
-	out.HostKind = r.String("host", "kind")
-	out.HostName = r.String("host", "name")
-	out.HostZoneInName = r.String("host", "zone", "in", "name")
-	out.HostZoneInNamespace = r.String("host", "zone", "in", "namespace")
 	out.Id = r.String("id")
 	out.InstancesAdmission = r.String("instances", "admission")
 	out.InstancesLimit, _ = r.Int("instances", "limit")
@@ -1163,6 +1181,7 @@ type Agent struct {
 	SecretNamespace         string
 	Source                  string
 	SourceBranch            string
+	SourceConfig            string
 	SourceGit               string
 	SourceKind              string // which of git was written
 	SourcePath              string
@@ -1201,6 +1220,7 @@ func ReadAgent(r Resource) Agent {
 	out.SecretNamespace = r.String("secret", "namespace")
 	out.Source = r.String("source")
 	out.SourceBranch = r.String("source", "branch")
+	out.SourceConfig = r.String("source", "config")
 	out.SourceGit = r.String("source", "git")
 	out.SourceKind = r.String("source", "kind")
 	out.SourcePath = r.String("source", "path")
@@ -1339,6 +1359,7 @@ type SourceBlock struct {
 	SourceBranch                   string
 	SourceBuiltin                  string
 	SourceComponent                string
+	SourceConfig                   string
 	SourceGit                      string
 	SourceImage                    string
 	SourceImagePullSecretName      string
@@ -1355,6 +1376,7 @@ func ReadSourceBlock(r Resource) SourceBlock {
 	out.SourceBranch = r.String("source", "branch")
 	out.SourceBuiltin = r.String("source", "builtin")
 	out.SourceComponent = r.String("source", "component")
+	out.SourceConfig = r.String("source", "config")
 	out.SourceGit = r.String("source", "git")
 	out.SourceImage = r.String("source", "image")
 	out.SourceImagePullSecretName = r.String("source", "image_pull_secret", "name")

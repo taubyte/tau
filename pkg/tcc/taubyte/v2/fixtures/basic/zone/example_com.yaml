@@ -1,4 +1,15 @@
 id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL
 description: the zone this cloud answers for; the gateway's own name needs no record here
 fqdn: example.com
+
+# THE FILE IS THE SHAPE, AND THE LINES ARE WHAT IS SERVED -- both, because the
+# half that joins them does not exist yet. A zone file carries what a list of
+# strings cannot (an SOA across parentheses, per-record TTLs, $ORIGIN), and the
+# server parses one line at a time, so nothing today turns the file into what it
+# reads. Until that lands this zone says it twice, which is the honest way to
+# say it: remove the records and the cloud answers nothing for this fqdn.
 file: dns/example.com.zone
+records:
+    - "@ 3600 IN MX 10 mail.example.com."
+    - "docs 300 IN CNAME hosted.notion.so."
+    - "vpn 300 IN A 203.0.113.9"
