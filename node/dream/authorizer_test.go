@@ -110,7 +110,7 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	//
 	// AND THE UNIVERSE IS THE SMALLEST ONE THAT ANSWERS: no gateway, no zone and
 	// no host, because both halves of this are put to the worker directly.
-	compiled, _ := project(t, "with/authorizer", artifacts{"": reacher, "keeper": keeper})
+	compiled, _ := project(t, "with/cache/authorizer", artifacts{"": reacher, "keeper": keeper})
 
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1,

@@ -87,7 +87,7 @@ func TestARealComponentReachesARealCache(t *testing.T) {
 	// backing, and what is being proven is the node's.
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	r := deploy(t, "with/cache", "sessions.example.com", cacherWASM(t))
+	r := deploy(t, "with/cache/crdt", "sessions.example.com", cacherWASM(t))
 
 	// The grant survived the compile, the publish and the resolve.
 	//
@@ -148,7 +148,7 @@ func TestARealComponentReachesARealCache(t *testing.T) {
 func TestACacheReplicatesBetweenNodes(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	cloud := deployFleet(t, 2, "with/cache", "sessions.example.com", cacherWASM(t))
+	cloud := deployFleet(t, 2, "with/cache/crdt", "sessions.example.com", cacherWASM(t))
 	first, second := cloud[0], cloud[1]
 
 	// Written on the first node, through its guest.

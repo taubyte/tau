@@ -1,4 +1,4 @@
-id: QmbVddGGRngbxanVgpeYnPvu3qR9ogY1Eq5YCbfgYagAPL
-name: cron
+id: QmY5pPkam6TjHWKuMS1cJoGaxWSSEF9icQ1JJ83NwKRqZa
+name: cronskip
 description: a clock nobody sets - the cloud reads the schedule itself and invokes the function, so the only thing that starts this project is time passing
 regions: [eu]

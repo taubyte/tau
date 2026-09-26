@@ -1,0 +1,18 @@
+id: QmRBWMUGXcrEZ2XeGUGq177HY9wr7TTEWWkkkR283UuHcX
+description: a schedule that states its whole firing block - with/cron/skip leans on the defaults for all three of these, so between them the two projects write every arm a cron has
+schedule: "0 3 * * *"
+# NOT UTC, WHICH IS THE POINT. An omitted zone means UTC, so writing it proves
+# nothing about the field; a zone with daylight saving in it is the one a
+# schedule can be read wrong in. `0 3 * * *` is a different instant here than
+# it is in with/cron/skip, which is the whole reason the field exists.
+timezone: Europe/Paris
+# QUEUE, which skip is the default instead of. It is the arm a billing run
+# needs -- every period happens exactly once even when one overruns -- and it
+# is the one that can build a backlog, so a project that never writes it is a
+# project where that trade-off is untested.
+on_overlap: queue
+# AND A WINDOW, so a fleet reading one schedule does not fire as a herd.
+jitter: 30s
+function:
+    cacher:
+        ops: [invoke]

@@ -1,4 +1,4 @@
-id: QmZEDwPfbUF9WAui2sFGQJZyYucnV3zfuUHW8FahdJQB2B
-name: edge
+id: QmZE95w3aZRy99CcwzKtRcEJe48my9Ngfv6SuRZi3xuA7N
+name: gatewayrouter
 description: the whole way in, with nothing faked - a request meets a transformer that may answer it, a router that decides where it goes, and only then a handler. the three run in three different worlds behind one HTTP call
 regions: [eu]

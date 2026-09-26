@@ -4,7 +4,7 @@ host:
     zone:
         in:
             name: example_com
-        name: edge
+        name: routed
 # A FUNCTION DECIDES WHERE EVERYTHING GOES, so there is no static route. The
 # compiler still emits `route.match: prefix` for one, and an empty prefix
 # matches every path at the lowest specificity - which is what "no static

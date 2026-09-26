@@ -61,7 +61,7 @@ func TestAScheduleFiresOnceAcrossAFleet(t *testing.T) {
 	// pointers by fqdn, but nothing here is asked over HTTP: a cron reaches its
 	// target through the worker, and the project declares no zone and no
 	// gateway — exactly as the object it replaces did.
-	cloud := deployFleet(t, 2, "with/cron", "cron.example.com", cacherWASM(t))
+	cloud := deployFleet(t, 2, "with/cron/skip", "cron.example.com", cacherWASM(t))
 	first, second := cloud[0].node, cloud[1].node
 
 	// BOTH NODES HAVE TO HOLD IT, which is what makes this a test of the claim

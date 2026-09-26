@@ -33,9 +33,9 @@ import (
 // So this runs three real components behind one request: shaper transforms,
 // picker routes, cacher handles.
 
-// edgeHost is the name the corpus project's gateway answers on: its zone is
-// `example.com` and the gateway's host label is `edge`.
-const edgeHost = "edge.example.com"
+// routedHost is the name the corpus project's gateway answers on: its zone is
+// `example.com` and the gateway's host label is `routed`.
+const routedHost = "routed.example.com"
 
 func shaperWASM(t *testing.T) []byte {
 	t.Helper()
@@ -52,7 +52,7 @@ func pickerWASM(t *testing.T) []byte {
 }
 
 // TestARequestPassesThroughARealTransformerAndARealRouter.
-func TestTheEdgeChainRunsRealComponents(t *testing.T) {
+func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	m, err := dream.New(t.Context())
@@ -87,21 +87,21 @@ func TestTheEdgeChainRunsRealComponents(t *testing.T) {
 	// only projects that need more than one: everywhere else a single binary
 	// runs under several names, and here each of the three is built against a
 	// different host interface.
-	compiled, _ := project(t, "with/edge", artifacts{
+	compiled, _ := project(t, "with/gateway/router", artifacts{
 		"": handlerCID, "shaper": shaperCID, "picker": pickerCID,
 	})
 
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1,
 		Compiled: compiled,
-		Hosts:    []string{edgeHost},
+		Hosts:    []string{routedHost},
 	})
 	require.NoError(t, err)
 
 	ask := func(path string, headers ...string) *httptest.ResponseRecorder {
 		t.Helper()
-		r := httptest.NewRequest(http.MethodPost, "http://"+edgeHost+path, bytes.NewReader([]byte("body")))
-		r.Host = edgeHost
+		r := httptest.NewRequest(http.MethodPost, "http://"+routedHost+path, bytes.NewReader([]byte("body")))
+		r.Host = routedHost
 		for i := 0; i+1 < len(headers); i += 2 {
 			r.Header.Set(headers[i], headers[i+1])
 		}
