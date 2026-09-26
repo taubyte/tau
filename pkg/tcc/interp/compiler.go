@@ -47,6 +47,15 @@ type Compiler struct {
 	// this actually write" sees the same documents the compile read back, not a second
 	// guess at them. See LoweredFS.
 	loweredView afero.Fs
+
+	// mounted is every answered Mount, keyed by the mount point tcc asked for. Empty
+	// on a project that delegates nothing, which is every project until one says
+	// `source.config` — see mount.go.
+	mounted map[string]filled
+
+	// from is the commit each answered fill was read at, keyed by mount point. It is
+	// what makes "this block came from there" a fact rather than a claim.
+	from map[string]string
 }
 
 var DefaultBranch = "main"
@@ -66,6 +75,21 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c 
 		if err := option(c); err != nil {
 			return nil, err
 		}
+	}
+
+	// EVERY ANSWERED FILL IS MERGED BEFORE THE ENGINE IS BUILT, so the loader reads
+	// one tree and nothing downstream can tell a delegated block from an authored
+	// one. The view replaces the filesystem option rather than being layered after
+	// it: WithLocal and WithVirtual are the only writers of seerOptions, and two
+	// filesystems for one compile is the ambiguity this exists to remove.
+	if len(c.mounted) > 0 {
+		view, from, mErr := c.mountedView()
+		if mErr != nil {
+			return nil, mErr
+		}
+		c.seerOptions = []yaseer.Option{yaseer.VirtualFS(view, "/")}
+		c.baseFs, c.basePath = view, "/"
+		c.from = from
 	}
 
 	// The DECLARED values travel with the engine because the loader needs them whichever
@@ -91,10 +115,23 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 // CompileFor is Compile under one BINDING — see AuthoredFor.
 func (c *Compiler) CompileFor(ctx context.Context, b engine.Bound) (Object, []NextValidation, error) {
 	obj, validations, err := c.AuthoredFor(ctx, b)
-	if err != nil || !UsesLowering(c.compileRoot) {
+	if err != nil {
 		return obj, validations, err
 	}
-	return c.lowerFor(ctx, b, obj, validations)
+	if UsesLowering(c.compileRoot) {
+		obj, validations, err = c.lowerFor(ctx, b, obj, validations)
+		if err != nil {
+			return obj, validations, err
+		}
+	}
+	// WHERE EACH DELEGATED BLOCK CAME FROM, recorded last so it survives a lowering
+	// that rebuilt the object. A consumer answers "which commit is this serving" from
+	// the object alone, which is the only thing that keeps the whole visible when part
+	// of it was written somewhere else.
+	if err := c.recordMounts(obj); err != nil {
+		return nil, nil, err
+	}
+	return obj, validations, nil
 }
 
 // bound is what the compile variables ARE for this compiler: the compile-environment

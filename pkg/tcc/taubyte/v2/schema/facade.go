@@ -88,8 +88,17 @@ func ReadBack(plan []interp.Derived, cs []interp.Carriage) map[string]string {
 
 func WithLocal(path string) Option                { return interp.WithLocal(path) }
 func WithVirtual(fs afero.Fs, path string) Option { return interp.WithVirtual(fs, path) }
-func WithBranch(branch string) Option             { return interp.WithBranch(branch) }
-func WithEnvironment(env string) Option           { return interp.WithEnv(EnvironmentVar, env) }
+
+// Mount and WithMounted are the two halves of reading a resource's delegated block
+// from the repository its content comes from: Compiler.Mounts says what is needed,
+// and this answers one. See pkg/tcc/interp/mount.go for why it is two passes.
+type Mount = interp.Mount
+
+func WithMounted(m Mount, fs afero.Fs, commit string) Option {
+	return interp.WithMounted(m, fs, commit)
+}
+func WithBranch(branch string) Option   { return interp.WithBranch(branch) }
+func WithEnvironment(env string) Option { return interp.WithEnv(EnvironmentVar, env) }
 
 // DecompileToVirtual and WithAsLowered are the decompiler's own options, re-exported so a
 // caller depends on this package alone. WithAsLowered is the DEPTH: without it a

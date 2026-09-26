@@ -135,6 +135,7 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	out = append(out, checkBuild(all)...)
 	out = append(out, checkTransformerWorlds(all)...)
 	out = append(out, checkBusIsGuarded(all, byKind)...)
+	out = append(out, checkDelegatedFills(obj, all)...)
 	out = append(out, checkMountedSites(all)...)
 	out = append(out, checkHostWorlds(all)...)
 	out = append(out, checkHandlerPorts(all)...)
@@ -1477,6 +1478,38 @@ func checkHandlerPorts(all []compiled) []Finding {
 // and a function does not say which it was built for — so the most tcc can do is
 // report a function used as BOTH, which cannot be right whichever world it was built
 // against.
+// checkDelegatedFills: a resource that says its serving block lives in its own
+// repository, compiled without that block having been read.
+//
+// IT IS A FINDING AND NOT A REFUSAL, because the compile is legitimate: what it
+// produced is the configuration repository's own values, which is exactly what a
+// project got before it delegated anything, and the first deploy of a resource has
+// no artifact to read a commit from yet.
+//
+// IT IS ALSO NOT SILENCE, which is the whole point. "First deploy, correctly using
+// the defaults" and "the fill has been broken for six weeks" produce the same object
+// and are not the same thing, so the difference is said out loud. An unwired caller
+// gets this finding rather than a green compile that quietly dropped somebody's
+// serving rules -- which is the one place this must NOT behave like Resolver, whose
+// stub says yes on purpose.
+func checkDelegatedFills(obj map[string]any, all []compiled) []Finding {
+	filled := interp.MountedOf(obj)
+
+	var out []Finding
+	for _, res := range all {
+		if res.at("source", "config") == "" {
+			continue
+		}
+		if _, read := filled[res.id]; read {
+			continue
+		}
+		out = append(out, Finding{Check, res.kind, res.name, res.scope,
+			"its serving block was not read from " + res.at("source", "git"),
+			"This resource says `source.config: " + res.at("source", "config") + "`, so what it serves is decided in that repository -- and this compile did not read it. What was compiled is whatever this repository says instead. That is correct for a first deploy, and it is what a broken fetch also looks like, so it is reported rather than assumed.", res.id})
+	}
+	return out
+}
+
 // checkBusIsGuarded: a route that attaches a browser to a bus has to name an
 // AUTHORIZER on that bus.
 //

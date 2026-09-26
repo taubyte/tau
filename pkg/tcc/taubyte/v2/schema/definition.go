@@ -199,7 +199,7 @@ var secNetwork = Section("network", "Network", "How this workload is reached, an
 // The honest limit: this is the config's word for it, not the artifact's. If the build
 // can read the world out of the component's WIT imports, that is the better source and
 // this becomes the thing checked against it rather than the thing believed.
-var hostWorlds = []string{"handler", "authorizer", "http-authorizer", "instance-validator", "gateway-transformer", "proxy-transformer", "gateway-router", "proxy-router"}
+var hostWorlds = []string{"handler", "authorizer", "http-authorizer", "dns-resolver", "instance-validator", "gateway-transformer", "proxy-transformer", "gateway-router", "proxy-router"}
 
 // HostWorlds is every host interface a workload may be built against.
 //
@@ -1960,11 +1960,11 @@ var V2Resources = []*Node{
 	DefineGroup("website",
 		resource(
 			commonAttributes(append(contentSource("source", "git"),
-				String(Key("serve", "index"), Default("index.html"), InSection("serving"),
+				String(Key("serve", "index"), Default("index.html"), Delegable(), InSection("serving"),
 					Doc("Index Document", "What a request for a directory returns, e.g. \"/docs/\" -> /docs/index.html.")),
-				String(Key("serve", "mode"), InSet("static", "spa"), Default("static"), InSection("serving"),
+				String(Key("serve", "mode"), InSet("static", "spa"), Default("static"), Delegable(), InSection("serving"),
 					Doc("Mode", "static: an unmatched path returns the not-found document with 404. spa: it returns the index document with 200, because the page's own router renders the route.")),
-				String(Key("serve", "not_found"), InSection("serving"), ShowWhen(Key("serve", "mode"), "static"),
+				String(Key("serve", "not_found"), Delegable(), InSection("serving"), ShowWhen(Key("serve", "mode"), "static"),
 					Doc("Not Found Document", "Returned with 404 for a path the site does not have. Omitted means a bare 404.")),
 			)...),
 			Nested(variablesGroup(buildLifetime)),
@@ -2329,11 +2329,39 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				String("fqdn", IsFqdn(), Required(), Field("Fqdn"), Accessor("FQDN"), EmitValidation("zone", "dns"), InSection("identity"), Doc("Zone", "The zone apex this cloud answers for, e.g. \"example.com\". Delegate it with NS records at your registrar. The cloud's OWN zone is not declared here — it is generated, and a resource reaches it with host.generated.")),
-				StringSlice("records", InSection("records"), Doc("Records", "Zone-file lines, e.g. \"www 300 IN A 1.2.3.4\", \"@ 3600 IN MX 10 mail.example.com.\".")),
+				// A FILE, A RESOLVER, OR BOTH -- and NOT a switch between them,
+				// which is what this was and why it was wrong. The two answer
+				// different halves of one zone: a file is what an author knows
+				// when they deploy, including the NS records that DELEGATE a
+				// subtree somewhere else, and a resolver is for the names whose
+				// answer is not known until they are asked. A zone that has both
+				// serves the file and falls back to the function, which is the
+				// commonest real shape: a handful of fixed records, a delegated
+				// subdomain, and one label per tenant that no file could list.
+				//
+				// So neither is Required and neither excludes the other. A zone
+				// with NEITHER is still a zone: it declares an fqdn this cloud
+				// is authoritative for, and what it answers is what it routes --
+				// which is every zone in the corpus today.
+				String("file", IsRepoPath(), InSection("records"),
+					Doc("Zone File", "Path to a zone file in this repository, e.g. \"dns/example.com.zone\". Served with this zone's fqdn as $ORIGIN. Use NS records in it to delegate a subtree elsewhere.")),
+
+				// ASKED ONLY FOR WHAT THE FILE DOES NOT ANSWER, so adding one to
+				// a zone that has a file cannot change an answer the file
+				// already gives -- a record an author can read in their own
+				// repository is not overridden by code. The precedence is that
+				// way round and not the other for the same reason a route's
+				// authorizer beats the gateway's: the more specific statement
+				// wins, and a file is as specific as a statement gets.
+				String(Key("resolver", "name"), IsVariableName(), Ref("function", ByName(), Serves()), InSection("records"),
+					Doc("Resolver", "A function asked for names this zone's file does not answer. Built against the dns-resolver world. Without a file it answers the whole zone.")),
+				String(Key("resolver", "namespace"), IsNamespacePath(), InSection("records"),
+					Doc("Resolver Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
 			),
-			GroupDoc("A DNS zone served authoritatively by this cloud, and the records you own in it."), Category("internet"), Icon("dns"),
+			GroupDoc("A DNS zone served authoritatively by this cloud: a zone file you own, and a function asked for the names it does not carry."), Category("internet"), Icon("dns"),
 			secIdentity, secAccess,
-			Section("records", "Records", "Records this zone answers, in zone-file notation."),
+
+			Section("records", "Answers", "What this zone answers with: a zone file, or a function."),
 			Resource("zone", "Zone", "Zone", "zone"),
 		)),
 

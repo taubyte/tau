@@ -571,6 +571,25 @@ func Varies(vars ...string) Option {
 
 // VariesBy is the mark read back: the variables this attribute may be written per, in
 // declaration order. nil when the attribute does not vary.
+// Delegable marks an attribute whose value MAY come from the repository a
+// resource's content comes from, rather than from the configuration document.
+//
+// IT IS THE SCHEMA'S ANSWER AND NOT THE AUTHOR'S. A resource says only WHETHER it
+// delegates (`source.config`); WHAT may be delegated is this, so no document can
+// widen it. Identity, references and access blocks carry no such mark and
+// therefore cannot be written from somewhere else, which is what keeps the
+// resource list a property of the configuration repository alone.
+func Delegable() Option { return Annotate("delegable", true) }
+
+// IsDelegable reports whether this attribute carries that mark.
+func IsDelegable(a *Attribute) bool {
+	if a == nil {
+		return false
+	}
+	ok, _ := a.Meta["delegable"].(bool)
+	return ok
+}
+
 func VariesBy(a *Attribute) []string {
 	if a == nil {
 		return nil

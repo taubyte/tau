@@ -173,3 +173,7 @@ const EnvironmentVar = "environment"
 // whole resource is written for that environment instead, which is the same rule one
 // segment up the path.
 func PerEnv() AttrOption { return engine.Varies(EnvironmentVar) }
+
+// Delegable marks a value that may be written in the repository the resource's
+// content comes from instead of here. See source.config.
+func Delegable() AttrOption { return engine.Delegable() }

@@ -93,10 +93,47 @@ func contentSource(section string, branches ...string) []*engine.Attribute {
 			attrs = append(attrs,
 				String(Key("source", "git"), Path("source", "git"), IsGitURL(), InSection(section),
 					Doc("Repository", "Clone URL of the repository, e.g. \"https://gitlab.com/acme/prompts\". The host is the provider; nothing else names it.")),
-				String(Key("source", "branch"), RepoBranch(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
-					Doc("Branch", "Branch to read. Omitted means the repository's default branch.")),
+				// PerEnv, because an environment IS the axis this whole schema
+				// varies on -- `Varying(EnvironmentVar)` on the root -- and
+				// `environments[].branches` already says which branches feed a
+				// deployment. That rule stops at the config repository: a site
+				// in its own repo had ONE branch for every environment, so a
+				// staging deployment read whatever production reads.
+				//
+				//	branch:         main
+				//	branch_staging: develop
+				//
+				// Omitted still means the repository's default branch, which is
+				// what an environment with nothing said about it gets.
+				String(Key("source", "branch"), RepoBranch(), PerEnv(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
+					Doc("Branch", "Branch to read, e.g. \"main\". Per environment: `branch_staging: develop`. Omitted means the repository's default branch.")),
 				String(Key("source", "path"), IsRepoPath(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
-					Doc("Path", "Where in that repository the content is. Omitted means its root.")))
+					Doc("Path", "Where in that repository the content is. Omitted means its root.")),
+
+				// THE ONE KEY THAT LETS CONFIG LIVE WITH THE THING IT DESCRIBES.
+				//
+				// Serving behaviour -- what a directory returns, what an unknown
+				// path returns -- is a property of the BUILD: it changes when the
+				// site changes, and it is decided by whoever writes the site. When
+				// the site lives in its own repository, stating it here means a
+				// cross-repository change for something the site's own author owns,
+				// which is why every competing platform reads it from the source
+				// tree instead.
+				//
+				// WHAT MAY BE IN THAT FILE IS THE SCHEMA'S TO SAY, not the
+				// author's. Identity stays here -- id, name, kind, scope, source,
+				// access, and everything a reference resolves against -- and only
+				// the blocks this vocabulary delegates may come from there. A file
+				// that mints a resource, writes an identity field or opens an
+				// access block is refused, because the compile that reads it has
+				// already decided what exists.
+				//
+				// AND IT MAY NOT SAY WHAT THIS DOCUMENT ALREADY SAYS. A field with
+				// two authors is the same defect as a switch with two branches
+				// open: there is no rule for which wins that is not a surprise. So
+				// both-set is refused, naming both, rather than resolved.
+				String(Key("source", "config"), IsRepoPath(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
+					Doc("Config", "A file in that repository carrying this resource's serving block, e.g. \"taubyte.yaml\". Read at the commit its artifact was built from. What it may declare is fixed: the blocks this kind delegates, and nothing that names or reaches anything.")))
 		default:
 			panic("contentSource: unknown branch " + b)
 		}

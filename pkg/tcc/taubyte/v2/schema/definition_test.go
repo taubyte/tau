@@ -1023,17 +1023,28 @@ func TestZoneIsNotRouting(t *testing.T) {
 
 	zone := only(t, resources(t, flat, "zone"))
 	assert.Equal(t, zone["fqdn"], "example.com")
-	records := zone["records"].([]string)
-	assert.Equal(t, len(records), 4)
+	// A FILE AND NOT LINES IN YAML, which is what "kept verbatim" finally means:
+	// a zone exported from another provider is a zone file, and this points at
+	// it rather than asking an author to unpick it into strings. $ORIGIN, $TTL,
+	// the parentheses that carry an SOA across lines and `@` for the apex all
+	// survive, because the file is the thing that is served.
+	assert.Equal(t, zone["file"], "dns/example.com.zone")
 
-	// zone-file notation, kept verbatim: the compiler stores what you wrote, so a
-	// zone exported from another provider round-trips without translation.
-	assert.Assert(t, strings.Contains(records[0], "MX 10 mail.example.com."))
-
-	// A zone carries no routing and no verbs pointed at it: nothing `uses` a name.
+	// A zone still carries no ROUTING -- it says what a name resolves to, not
+	// where a request goes -- and this fixture's zone reaches nothing.
 	for k := range zone {
 		assert.Assert(t, !strings.HasPrefix(k, "use-"), "a zone declared %q", k)
 	}
+
+	// AND NOTHING IS POINTED AT IT EITHER. A zone is an INGRESS kind, like the
+	// gateway, the proxy and the website it sits beside: it is how a name
+	// enters this cloud, not a thing a workload holds and calls. So it declares
+	// no verbs, and with no verbs attachAccess gives it no authorizer -- "a
+	// kind nothing can reach has no authorizer to declare".
+	//
+	// A RECORD NOBODY KNOWS AT DEPLOY IS THE RESOLVER'S, which is what that arm
+	// is for: asked per query, answering from whatever it can read. That is the
+	// dynamic half, and it needs no verbs on the zone to do it.
 	_, ok := schema.EffectOf("zone", "get")
 	assert.Assert(t, !ok, "zones must not be a target kind")
 
@@ -1515,7 +1526,11 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 	assert.Equal(t, step.Namespace, "call/namespace")
 
 	// the inbound blocks are derived from the references, not listed anywhere
-	assert.DeepEqual(t, schema.InboundBlocks(), []string{"forward", "route/handler", "route/router", "router", "serve"})
+	// `resolver` is here because a zone's is REACHED the way a gateway's router
+	// is: a query arrives and that function answers it. It is not a guard, which
+	// is asked about traffic without being its destination -- an http-authorizer
+	// is named the same way and is deliberately absent from this list.
+	assert.DeepEqual(t, schema.InboundBlocks(), []string{"forward", "resolver", "route/handler", "route/router", "router", "serve"})
 
 	// how an access entry is written, and where a document lives
 	access := schema.AccessEntryShape()

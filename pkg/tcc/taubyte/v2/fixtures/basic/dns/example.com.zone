@@ -1,0 +1,18 @@
+; The zone this cloud answers for. $ORIGIN is the zone's own fqdn and is
+; supplied by the platform, so this file does not repeat it -- which is what
+; lets the same file serve a zone that gets renamed.
+;
+; EVERYTHING A ZONE FILE HAS IS USABLE HERE, and that is the point of it being
+; a file: `@` for the apex, a TTL that defaults per-record, a comment that
+; explains a record to whoever reads it next, and parentheses to carry one
+; record across lines. None of that survived a list of strings in yaml.
+
+@       3600    IN  MX      10 mail.example.com.
+
+; SPF, split across lines the way a long TXT is written by hand.
+@       3600    IN  TXT     ( "v=spf1"
+                              "include:_spf.google.com"
+                              "~all" )
+
+docs     300    IN  CNAME   hosted.notion.so.
+vpn      300    IN  A       203.0.113.9

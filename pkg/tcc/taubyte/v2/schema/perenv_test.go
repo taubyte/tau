@@ -129,6 +129,20 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"workflow/regions/in",
 
 		// thirty-three. See regionAttributes: the leaves vary, the policy cannot.
+
+		// THE BRANCH A GIT SOURCE READS, on every kind that can take one.
+		// `environments[].branches` already binds branches to a deployment, and
+		// that rule stopped at the CONFIG repository: a resource whose content
+		// lives in its own repo had one branch for every environment, so a
+		// staging deployment read whatever production reads. The environment is
+		// the axis this schema varies on, so it is the axis this varies on too.
+		"agent/source/branch",
+		"application/source/branch",
+		"component/source/branch",
+		"function/source/branch",
+		"sandbox/source/branch",
+		"website/source/branch",
+		"worker/source/branch",
 	}
 
 	seen := map[string]bool{}
