@@ -1,0 +1,11 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1He
+description: the component the function runs - its own build, published under its own id
+source:
+    git: https://github.com/acme/handler
+    branch: main
+build:
+    commands:
+        image: rust:1.83
+        install: cargo fetch --locked
+        run: cargo build --release --target wasm32-wasip2
+        output: target/wasm32-wasip2/release/handler.wasm

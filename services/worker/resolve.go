@@ -46,11 +46,16 @@ var (
 // Artifacts answers what a BUILT resource currently runs.
 //
 // IT IS A SEAM BECAUSE THE COMPILED CONFIG GENUINELY DOES NOT KNOW. A resource
-// whose source is an image or a component names the artifact itself and needs
-// nothing here. One whose source is a path in the repository names the SOURCE,
-// and what came out of building it is the build service's to say — so a worker
-// that guessed a naming convention would be hardcoding one, and a worker that
-// silently ran nothing would be worse.
+// whose source is an image names the artifact itself and needs nothing here.
+// Every other source names the SOURCE — a path in this repository, a clone URL,
+// or another COMPONENT of this project — and what came out of building it is the
+// build service's to say, so a worker that guessed a naming convention would be
+// hardcoding one and a worker that silently ran nothing would be worse.
+//
+// A COMPONENT REFERENCE IS ASKED ABOUT HERE AND NOT ANSWERED WITH. It is a
+// `Ref("component")`, so the compiled resource carries the component's own
+// resource id — which is what this is asked about, under kind `component`,
+// because that is the id its build published under.
 //
 // Absent, a built resource is refused with ErrNoArtifact, which says what is
 // missing rather than failing later as an image that does not exist.
@@ -1115,7 +1120,27 @@ func (s *Service) artifactOf(ctx context.Context, t Target, r specs.Resource, re
 	case "image":
 		return r.String("source", "image"), nil
 	case "component":
-		return r.String("source", "component"), nil
+		// A COMPONENT IS A REFERENCE, NOT AN ARTIFACT. `source.component` is
+		// declared `Ref("component")` with `IsVariableName()`, so what a
+		// compiled resource carries here is the referenced COMPONENT'S OWN
+		// RESOURCE ID -- and a resource id is not something the asset store has
+		// ever heard of.
+		//
+		// Returning it verbatim is the mistake the builtin arm below documents,
+		// one case further down: it skipped the artifact seam, and the tier then
+		// asked the store for the bytes of a configuration document. A component
+		// IS built (it is in BuiltKinds), so the answer is the same seam every
+		// other built resource uses -- asked about the COMPONENT, not about the
+		// workload that names it, because the artifact was published under the
+		// component's own id.
+		component := r.String("source", "component")
+		if component == "" {
+			return "", fmt.Errorf("%w: %s/%s names no component", ErrNoArtifact, t.Kind, t.Name)
+		}
+		if s.artifacts == nil {
+			return "", fmt.Errorf("%w: component %s", ErrNoArtifact, component)
+		}
+		return s.artifacts.Artifact(ctx, t.Project, t.Environment, "component", component)
 	case sourceBuiltin:
 		// A BUILTIN HAS NO ARTIFACT AND ASKING FOR ONE IS THE BUG. The program
 		// is one the runtime ships — a workflow step's driver, an agent's loop

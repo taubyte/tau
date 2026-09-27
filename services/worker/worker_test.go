@@ -71,7 +71,20 @@ func TestTheTierComesFromTheVocabulary(t *testing.T) {
 
 	spec := h.Runtime.specs()[0]
 	require.Equal(t, "wasm", spec.Runtime)
-	require.Equal(t, "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv", spec.Artifact, "a component's cid")
+	// WHAT THE SEAM RESOLVED FOR THE COMPONENT. This line used to be the bare
+	// `QmS4ust…` under the comment "a component's cid", and that comment was the
+	// conflation the bug was made of: `source.component` is a `Ref("component")`,
+	// so the compiled resource carries the COMPONENT RESOURCE's id — a
+	// configuration document id, which the asset store has never held anything
+	// under.
+	//
+	// The harness's resolver answers `registry/<project>/<env>/<kind>@sha256:<id>`,
+	// so both halves of the fix are legible here: the seam was asked at all, and
+	// it was asked as a `component` about the component rather than as this
+	// `function` about itself. The arguments themselves are asserted in
+	// artifact_test.go rather than read back out of a fake's string.
+	require.Equal(t, "registry/shop/prod/component@sha256:QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv",
+		spec.Artifact)
 	require.Equal(t, int64(32_000_000), spec.Memory)
 	require.Equal(t, 20*time.Second, spec.Timeout, "a duration compiles to nanoseconds and comes back a duration")
 }
