@@ -361,8 +361,8 @@ func heldAuthorities() int {
 }
 
 // TestTheRegistryForgetsADatabaseNobodyIsServing. An entry is keyed on the
-// cluster, and a cluster is one per node per boot — node/database.go caches one
-// per namespace and drops the lot when the groups go — so a node that restarts
+// cluster, and a cluster is one per node per boot — node/ledger caches one per
+// namespace and drops the lot when the groups go — so a node that restarts
 // fifty times is fifty clusters under one prefix. Held strongly, every dead
 // entry pinned its cluster, that cluster's state machine and its store handle
 // until the process exited, and nothing anywhere could evict one.

@@ -198,8 +198,8 @@ func TestALogAppendedThroughTheNodeIsReadBackFromTheService(t *testing.T) {
 }
 
 // TestAWORKERFINDSAPRIMITIVESSERVICEITDOESNOTRUN — the whole point of a
-// composition that reports what it runs, and the arm node/database.go's kv
-// backing still does not have.
+// composition that reports what it runs, and the arm node/database.go's kvBacking
+// still does not have.
 //
 // IT IS A REAL HOP: a real gossipsub carries the view, the item crosses a p2p
 // stream, and the node that answers is the one holding the namespace.

@@ -38,8 +38,8 @@ import (
 //
 // `kv`, `document` and `vector` on the `distributed` engine are the node's to
 // register, because they are backed by the swarm this node is already on and
-// need nothing provisioned. See node/database.go's `engines`, which registers
-// them on first use and lets a composer's own win.
+// need nothing provisioned. See node/database's `engines`, which registers them
+// on first use and lets a composer's own win.
 
 // databaseEngines is the registry a machine serves external databases from.
 //

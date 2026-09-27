@@ -148,7 +148,7 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 			Project:     ref.project,
 			Environment: ref.environment,
 
-			// THE ID AND NEVER THE LABEL, for the reason node/database.go
+			// THE ID AND NEVER THE LABEL, for the reason node/database
 			// already gives: two workloads may call one database different
 			// things, and two databases may both be called `tokens`.
 			Name:     ref.storeName(),

@@ -261,7 +261,7 @@ func (r *running) idOf(t *testing.T, group, label string) string {
 // pkg/register keys its pointers by (register.go:171), what the gateway puts
 // into specs.Address, what the worker copies into the grant handle
 // (services/worker/resolve.go:189) and what finally becomes
-// database.Spec.Project (node/database.go:432) — the segment every isolation
+// database.Spec.Project (node/database/database.go) — the segment every isolation
 // claim below rests on.
 //
 // TWO PROJECTS CANNOT SHARE A HOST, which is the one other thing that has to
@@ -279,7 +279,7 @@ type deployed struct {
 // IT IS SPLIT OUT OF deploy BECAUSE A UNIVERSE WAS NEVER SINGLE-PROJECT and
 // only this helper was. The register keys pointers by project, every cache is
 // keyed by the deployment it belongs to, and a node's database connections hang
-// off a handle carrying the project (node/database.go:395) — so publishing
+// off a handle carrying the project (node/database/database.go) — so publishing
 // twice needs no change to the universe, the zone, or the node, only for the
 // start and the publish to stop being one function.
 func publish(t *testing.T, nodes []*node.Node, at deployed, components artifacts) []*running {
@@ -672,11 +672,11 @@ func TestAKvDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
 // falling out of the topic, and neither says what the other says.
 //
 // IT IS STILL A FLEET, and not because one node would pass: one node shares the
-// store cache (node/database.go:766) and the key prefix both, so a single-node
-// version of this fails too. It is a fleet because a topic nobody gossips over
-// is a name and not a channel — the value has to TRAVEL for the topic to be a
-// thing at all, and the negative has to be asked of a node that took neither
-// write.
+// store cache (node/database/holdings.go) and the key prefix both, so a
+// single-node version of this fails too. It is a fleet because a topic nobody
+// gossips over is a name and not a channel — the value has to TRAVEL for the
+// topic to be a thing at all, and the negative has to be asked of a node that
+// took neither write.
 //
 // AND THE NEGATIVE IS NEVER AN Eventually. "market never sees shop's value" is
 // a claim about a window, and an Eventually around it would only ever say the
