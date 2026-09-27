@@ -11,6 +11,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/taubyte/tau/node/primitive"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	primitivesService "github.com/taubyte/tau/services/primitives"
@@ -156,7 +157,7 @@ func ordinaryRefusal(err error) bool {
 // describing a consumer the platform pushes to — a dispatcher that ignored it
 // would deliver one item at a time to a workload that declared it can take
 // eighty.
-func (d *dispatcher) drain(ctx context.Context, consumer worker.Consumer, work syncSeam) int {
+func (d *dispatcher) drain(ctx context.Context, consumer worker.Consumer, work primitive.Seam) int {
 	holding := max(consumer.Concurrency, 1)
 
 	take := d.perCycle
@@ -250,7 +251,7 @@ func (d *dispatcher) invoke(ctx context.Context, at worker.Target, req *invoke.R
 // visibility timeout governing exactly as written — the attempt is already
 // counted (Claim increments it) and pkg/queue's own sweep requeues it or buries
 // it when the deadline passes.
-func (d *dispatcher) deliver(ctx context.Context, consumer worker.Consumer, work syncSeam, item primitivesService.Delivery) {
+func (d *dispatcher) deliver(ctx context.Context, consumer worker.Consumer, work primitive.Seam, item primitivesService.Delivery) {
 	// THE CLAIM'S DEADLINE BOUNDS THE INVOCATION. Past it the item is
 	// deliverable again, so a workload still running is a workload whose work
 	// somebody else has already been handed — and the ack would be refused
@@ -318,7 +319,7 @@ func (d *dispatcher) deliver(ctx context.Context, consumer worker.Consumer, work
 // a node that is no longer the leader or whose claim has already expired, and
 // what follows is a SECOND delivery of work that has already been done — so
 // somebody looking at a duplicate has the one line that says why.
-func (d *dispatcher) acknowledge(ctx context.Context, consumer worker.Consumer, work syncSeam, item primitivesService.Delivery) {
+func (d *dispatcher) acknowledge(ctx context.Context, consumer worker.Consumer, work primitive.Seam, item primitivesService.Delivery) {
 	if err := work.Settle(ctx, consumer.Queue, item, true); err != nil {
 		logger.Warnf("dispatch: acknowledging %s/%s: %s", consumer.Queue.Label, item.ID, err)
 	}
@@ -331,7 +332,7 @@ func (d *dispatcher) acknowledge(ctx context.Context, consumer worker.Consumer, 
 // place this node still reads a queue's config at all: the decision is the
 // consumer's own — give it back now, or let the claim expire — and the number
 // it is made with is the author's either way. See settingRetryEvery.
-func (d *dispatcher) failed(ctx context.Context, consumer worker.Consumer, work syncSeam, item primitivesService.Delivery) {
+func (d *dispatcher) failed(ctx context.Context, consumer worker.Consumer, work primitive.Seam, item primitivesService.Delivery) {
 	if !spaced(consumer.Queue.Settings[settingRetryEvery]) {
 		return
 	}

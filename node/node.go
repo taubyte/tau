@@ -44,6 +44,7 @@ import (
 
 	"github.com/taubyte/tau/node/cache"
 	"github.com/taubyte/tau/node/model"
+	"github.com/taubyte/tau/node/primitive"
 	"github.com/taubyte/tau/node/stream"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
@@ -124,7 +125,7 @@ type Node struct {
 	// syncs is this node's one reach into the primitives service, shared by the
 	// wasm tier's `send` and `append` and the dispatcher's claim. A second
 	// would be a second stream to the same peer.
-	syncs *syncBacking
+	syncs *primitive.Backing
 
 	auth          *authService.Service
 	buildBackend  *backend.Service
@@ -154,7 +155,7 @@ type Node struct {
 	// one window a minute the leader hands out, and it is the only one of the
 	// three that does NOT prefer this node's own — see [Node.clockNow].
 	registers *rpc.Reacher[registerSeam]
-	sends     *rpc.Reacher[syncSeam]
+	sends     *rpc.Reacher[primitive.Seam]
 	clocks    *rpc.Reacher[primitivesService.Clocks]
 
 	// loopsStop ends the background loops this node runs, and each Done is
@@ -379,7 +380,10 @@ func (n *Node) openWorker() error {
 	// dispatcher reads the queue one from its own goroutine and a field
 	// created later would be a field written while it is being read. They open
 	// nothing until something reaches one.
-	n.syncBacking()
+	syncs, err := n.syncBacking()
+	if err != nil {
+		return err
+	}
 	n.busStreams()
 
 	// A DECLARED TIER IS BUILT HERE; an injected one was built by whoever
@@ -495,8 +499,8 @@ func (n *Node) openWorker() error {
 			// machine happened to run the code. There is no fallback to the
 			// node's own queues here and node/primitives.go says why: a queue
 			// answered either way is two queues that cannot see each other.
-			wasm.WithQueues(n.syncBacking()),
-			wasm.WithLogs(n.syncBacking()),
+			wasm.WithQueues(syncs),
+			wasm.WithLogs(syncs),
 			wasm.WithStorage(objects),
 			wasm.WithAdmission(admit),
 			wasm.WithChannels(&channels{node: n}),

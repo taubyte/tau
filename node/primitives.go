@@ -8,16 +8,20 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/node/primitive"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
-	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/worker"
 )
 
-// primitives.go is how everything on this node reaches the `sync` kind — the
-// queues a guest sends to, the logs it appends to, and the claim half the
-// dispatcher drives.
+// primitives.go starts this node's primitives service, and decides how
+// everything here reaches one: the queues a guest sends to, the logs it appends
+// to, the claim half the dispatcher drives, and the window a leader hands out.
+//
+// The adapter every one of those callers holds is node/primitive. What is left
+// here is the part only the root can do — name the machine's resources, name
+// which arm answers, and say where a minute goes.
 //
 // # The service owns the namespace, and the node owns the machine
 //
@@ -65,76 +69,6 @@ import (
 // service and has no view of the fleet to find one in.
 var ErrNoPrimitives = errors.New("node: no primitives service is reachable")
 
-// syncSeam is every surface this node reaches the primitives service through:
-// the two the wasm tier asks for, and the claim half node/dispatch.go drives.
-// Both *primitives.Tier and *primitives.Client answer all three, which is what
-// makes the choice between them invisible above this line.
-type syncSeam interface {
-	wasmtier.Queues
-	wasmtier.Logs
-	primitivesService.Consumers
-}
-
-// syncBacking is the seam every caller on this node holds. It resolves which
-// arm to use PER CALL rather than at construction, because a node that runs no
-// service of its own may see no fleet yet when it is composed and a register
-// that appears later must still be found.
-type syncBacking struct{ node *Node }
-
-var (
-	_ wasmtier.Queues             = (*syncBacking)(nil)
-	_ wasmtier.Logs               = (*syncBacking)(nil)
-	_ primitivesService.Consumers = (*syncBacking)(nil)
-)
-
-func (b *syncBacking) Send(ctx context.Context, grant invoke.Grant, id string, data []byte) error {
-	seam, err := b.node.sends.Now(ctx)
-	if err != nil {
-		return err
-	}
-	return seam.Send(ctx, grant, id, data)
-}
-
-func (b *syncBacking) Claim(ctx context.Context, grant invoke.Grant, max int) ([]primitivesService.Delivery, error) {
-	seam, err := b.node.sends.Now(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return seam.Claim(ctx, grant, max)
-}
-
-func (b *syncBacking) Settle(ctx context.Context, grant invoke.Grant, delivery primitivesService.Delivery, done bool) error {
-	seam, err := b.node.sends.Now(ctx)
-	if err != nil {
-		return err
-	}
-	return seam.Settle(ctx, grant, delivery, done)
-}
-
-func (b *syncBacking) Depth(ctx context.Context, grant invoke.Grant) (primitivesService.Depth, error) {
-	seam, err := b.node.sends.Now(ctx)
-	if err != nil {
-		return primitivesService.Depth{}, err
-	}
-	return seam.Depth(ctx, grant)
-}
-
-func (b *syncBacking) Append(ctx context.Context, grant invoke.Grant, data []byte) (string, error) {
-	seam, err := b.node.sends.Now(ctx)
-	if err != nil {
-		return "", err
-	}
-	return seam.Append(ctx, grant, data)
-}
-
-func (b *syncBacking) Read(ctx context.Context, grant invoke.Grant, after string, limit uint32) ([]wasmtier.Record, error) {
-	seam, err := b.node.sends.Now(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return seam.Read(ctx, grant, after, limit)
-}
-
 // openPrimitivesReach wires the two reaches into the primitives service. They
 // are two because the CLOCK'S POLICY IS NOT THE SEND'S — see [Node.clockNow] —
 // and the pair costs nothing: a node that runs the service never dials for a
@@ -148,13 +82,13 @@ func (n *Node) openPrimitivesReach() {
 	// engine: a node holding the namespace that dialled itself to reach it
 	// would add a stream and a serialization to every send.
 	n.sends = rpc.Reach(n.opts.host, Primitives, pick,
-		func() (syncSeam, bool) {
+		func() (primitive.Seam, bool) {
 			if n.primitives == nil {
 				return nil, false
 			}
 			return n.primitives.Local(), true
 		},
-		func(id libp2ppeer.ID) (syncSeam, error) {
+		func(id libp2ppeer.ID) (primitive.Seam, error) {
 			c, err := primitivesService.NewClient(n.opts.host, id)
 			if err != nil {
 				return nil, err
@@ -188,7 +122,7 @@ func (n *Node) openPrimitivesReach() {
 // somewhere it chose. So the node comes from the same stats view every other
 // locator here reads, and it is this one only when the view says so.
 //
-// AND THE SAME-NODE CASE PAYS NO ROUND TRIP, which is syncBacking's rule read
+// AND THE SAME-NODE CASE PAYS NO ROUND TRIP, which is the send path's rule read
 // once more: a node that holds the namespace and dialled itself to reach it
 // would add a stream and a serialization to a call that is already in the right
 // process.
@@ -279,7 +213,16 @@ func (n *Node) openPrimitives() error {
 	// which is pkg/raft's to give. See services/primitives/cron.go.
 	if n.cfg.runs(Worker) {
 		options = append(options,
-			primitivesService.WithSchedules(n.schedules),
+			// THE NIL CHECK IS THAT FIELD READ, and it is made here where the
+			// type is still concrete: a nil *worker.Service handed over as an
+			// interface is not a nil interface, so the adapter could not make
+			// it on the other side of the call.
+			primitivesService.WithSchedules(func(ctx context.Context) []primitivesService.Schedule {
+				if n.worker == nil {
+					return nil
+				}
+				return primitive.Schedules(ctx, n.worker)
+			}),
 			primitivesService.WithFire(n.fire),
 			primitivesService.WithTasking(n.taskCron))
 	}
@@ -304,58 +247,23 @@ func (n *Node) openPrimitives() error {
 // syncBacking is this node's one reach into the primitives service, built on
 // first use by the wasm tier that sends and by the dispatcher that claims.
 //
-// CONSTRUCTION ONLY, like workQueues and busStreams. It writes a field, and
-// once Start has spawned the dispatcher that field is being read from another
-// goroutine — so openWorker asks for it whether or not this node has a wasm
-// tier, and nothing calls it afterwards.
-func (n *Node) syncBacking() *syncBacking {
-	if n.syncs == nil {
-		n.syncs = &syncBacking{node: n}
-	}
-	return n.syncs
-}
-
-// schedules is every cron in the deployments this node's worker already holds,
-// in the shape the primitives service reads them.
+// CONSTRUCTION ONLY, like busStreams. It writes a field, and once Start has
+// spawned the dispatcher that field is being read from another goroutine — so
+// openWorker asks for it whether or not this node has a wasm tier, and nothing
+// calls it afterwards.
 //
-// IT IS THE ONE PLACE THE TWO SHAPES MEET, which is what keeps a consensus
-// service from importing a compute one: the composer holds both and neither
-// holds the other. A node whose worker has not been built yet, or which has
-// resolved nothing, answers none — and the service's pass over none does
-// nothing, which is the same answer it gave when it lived here.
-func (n *Node) schedules(ctx context.Context) []primitivesService.Schedule {
-	if n.worker == nil {
-		return nil
-	}
-
-	held := n.worker.Schedules(ctx)
-	out := make([]primitivesService.Schedule, 0, len(held))
-	for _, s := range held {
-		fires := make([]primitivesService.Target, 0, len(s.Fires))
-		for _, at := range s.Fires {
-			fires = append(fires, primitivesService.Target{
-				Project:     at.Project,
-				Environment: at.Environment,
-				Scope:       at.Scope,
-				Kind:        at.Kind,
-				Name:        at.Name,
-			})
+// THE REACH IS WHAT IT IS HANDED, and that reach is this node's answer to which
+// arm serves the `sync` kind — see [Node.openPrimitivesReach]. The adapter never
+// learns which one it got.
+func (n *Node) syncBacking() (*primitive.Backing, error) {
+	if n.syncs == nil {
+		backing, err := primitive.New(n.sends)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, primitivesService.Schedule{
-			Handle:    s.Handle,
-			Name:      s.Name,
-			ID:        s.ID,
-			Path:      s.Path,
-			Spec:      s.Spec,
-			Timezone:  s.Timezone,
-			OnOverlap: s.OnOverlap,
-			Jitter:    s.Jitter,
-			Fires:     fires,
-			Starts:    s.Starts,
-			Refused:   s.Refused,
-		})
+		n.syncs = backing
 	}
-	return out
+	return n.syncs, nil
 }
 
 // fire runs what a claimed fire names, wherever it should run.
