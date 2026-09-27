@@ -200,17 +200,26 @@ func TestThePublicRoleServesNoP2PRPC(t *testing.T) {
 		"the public role's routes and limits live in ingress.go, as they do in gateway's")
 }
 
-// The provider adapter is a package of its own so that go-github is imported in
-// exactly one place in this tree's build service, and so that a second provider
-// is a sibling package rather than a branch in a shared file.
-func TestTheProviderAdapterIsTheOnlyPlaceThatKnowsAProvider(t *testing.T) {
+// The identity adapter is a package of its own, and it names NO provider: the
+// host picks the forge through pkg/forge, so no provider SDK is imported
+// anywhere in this tree's build service and a new forge is a binding, not a
+// sibling package.
+func TestTheIdentityAdapterKnowsNoProvider(t *testing.T) {
 	frontendImports, ok := imports(t, "frontend")
 	require.True(t, ok)
 	requireNoImport(t, frontendImports, "github.com/google/go-github",
-		"the frontend knows Identity, not a provider; githubauth is where a provider is known")
+		"the frontend knows Identity, not a provider")
+	requireNoImport(t, frontendImports, "github.com/taubyte/tau/pkg/forge",
+		"the frontend knows Identity, not how it is answered")
 
-	adapterImports, ok := imports(t, filepath.Join("frontend", "githubauth"))
-	require.True(t, ok, "the provider adapter must exist")
+	adapterImports, ok := imports(t, filepath.Join("frontend", "forgeauth"))
+	require.True(t, ok, "the identity adapter must exist")
+	requireNoImport(t, adapterImports, "github.com/google/go-github",
+		"a provider SDK is a driver's, in pkg/forge, never the adapter's")
+	requireNoImport(t, adapterImports, "github.com/taubyte/tau/pkg/forge/github",
+		"the adapter asks by host; which driver answers is the node's binding")
+	requireNoImport(t, adapterImports, "github.com/taubyte/tau/pkg/forge/gitlab",
+		"the adapter asks by host; which driver answers is the node's binding")
 	requireNoImport(t, adapterImports, backendPkg,
 		"the public role's own adapter must not reach the private role")
 	requireNoImport(t, adapterImports, "github.com/taubyte/tau/services/auth",

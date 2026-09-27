@@ -18,7 +18,7 @@ import (
 	"github.com/taubyte/tau/services/build/clients"
 	"github.com/taubyte/tau/services/build/deploy"
 	"github.com/taubyte/tau/services/build/frontend"
-	"github.com/taubyte/tau/services/build/frontend/githubauth"
+	"github.com/taubyte/tau/services/build/frontend/forgeauth"
 	authService "github.com/taubyte/tau/services/v2/auth"
 )
 
@@ -310,7 +310,11 @@ func (n *Node) openBuildFrontend() error {
 	// THE PROVIDER IS THE IDENTITY. Whether a caller may act on a repository is
 	// that repository's host's answer and never this cloud's, which is what
 	// keeps a token this cloud has not stored from becoming one it has.
-	identity, err := githubauth.New()
+	registry, err := forges(n.cfg.Forges)
+	if err != nil {
+		return err
+	}
+	identity, err := forgeauth.New(registry)
 	if err != nil {
 		return err
 	}

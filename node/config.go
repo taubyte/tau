@@ -106,6 +106,10 @@ type Config struct {
 	// project's allowance.
 	Region string
 
+	// Forges are the git hosts this cloud serves, and the driver for each.
+	// Empty means DefaultForges. See forge.go.
+	Forges []Forge
+
 	// Container is the container tier this node runs, if any. See
 	// container.go, and in particular what its Runtime field is for.
 	Container ContainerConfig

@@ -55,7 +55,7 @@
 //
 // Hooks, Projects, Backend and Identity (config.go) are declared here and
 // satisfied elsewhere: services/build/clients holds the p2p adapters for the
-// first three, githubauth holds the provider adapter for the fourth. Nothing in
+// first three, forgeauth answers the fourth through pkg/forge, by host. Nothing in
 // this package constructs a client, so every route runs against fakes on
 // httptest with no libp2p host, no listener and no port — which is what makes
 // service-conventions.md §6's bar reachable without a universe underneath.
