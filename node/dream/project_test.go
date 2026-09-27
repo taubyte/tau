@@ -315,6 +315,17 @@ func deploy(t *testing.T, name, host string, wasm []byte) *running {
 // the label the author wrote — see the artifacts map.
 func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][]byte) *running {
 	t.Helper()
+	return deployServing(t, name, host, wasm, extra,
+		node.Register, node.Worker, node.Stats, node.Gateway, node.Database, node.Primitives)
+}
+
+// deployServing is deployWith over a chosen set of services.
+//
+// THE SET IS A PARAMETER BECAUSE NOT EVERY WAY IN IS HTTP. A zone answered by a
+// function is reached over UDP by a resolver, and that node runs no gateway at
+// all -- so the default list is the common case rather than the only one.
+func deployServing(t *testing.T, name, host string, wasm []byte, extra map[string][]byte, services ...string) *running {
+	t.Helper()
 
 	m, err := dream.New(t.Context())
 	require.NoError(t, err)
@@ -324,8 +335,7 @@ func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][
 	require.NoError(t, err)
 	require.NoError(t, u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: nodeDream.Services(
-				node.Register, node.Worker, node.Stats, node.Gateway, node.Database, node.Primitives)},
+			nodeDream.Protocol: {Others: nodeDream.Services(services...)},
 		},
 	}))
 

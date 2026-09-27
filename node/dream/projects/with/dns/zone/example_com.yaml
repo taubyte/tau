@@ -1,0 +1,5 @@
+id: QmTniihhxT15FiarAABFLPUXmQ8byWiaAMuBznRShLvNqx
+description: the zone this project is authoritative for, answered entirely by its resolver - no records are written here, which is what makes the function the only thing that can answer
+fqdn: example.com
+resolver:
+    name: warren

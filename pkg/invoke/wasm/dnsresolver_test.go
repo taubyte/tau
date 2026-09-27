@@ -59,8 +59,9 @@ func TestADNSResolverIsToldWhichTypeWasAsked(t *testing.T) {
 
 	got, err := r.Resolve(t.Context(), warrenSpec(), invoke.Question{Name: "geo.example.com", Type: "AAAA"})
 	require.NoError(t, err)
-	require.Equal(t, []string{"geo 60 IN AAAA 203.0.113.9"}, got.Records,
-		"the guest echoes the type it was asked, so this is the field arriving")
+	require.Equal(t, []string{"geo 60 IN AAAA 2001:db8::9"}, got.Records,
+		"the guest BRANCHED on the type it was asked -- an AAAA holds an IPv6 address, "+
+			"and a single template that spliced the type in would emit a line no parser accepts")
 }
 
 // TestEMPTYISNOTABSENCE. The name is in the zone and holds nothing of this
