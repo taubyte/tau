@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/kvdb"
+	nodeDatabase "github.com/taubyte/tau/node/database"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
@@ -134,7 +135,17 @@ func backingWith(t *testing.T, e database.Engine, extra ...Option) (*databases, 
 	t.Helper()
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}},
 		append([]Option{WithDatabaseEngines(registryWith(t, e))}, extra...)...)
-	return &databases{node: n}, n
+	return backingFor(t, n), n
+}
+
+// backingFor is the node's database backing, built the way the root builds it:
+// with the store provider, the ledger table and the disk surface this node's
+// composition actually has.
+func backingFor(t *testing.T, n *Node) *databases {
+	t.Helper()
+	d, err := newDatabases(n)
+	require.NoError(t, err)
+	return d
 }
 
 // ── the connection ───────────────────────────────────────────────────────────
@@ -319,7 +330,7 @@ func TestNoEngineRegisteredIsNamed(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
-	_, err = (&databases{node: n}).Exec(t.Context(),
+	_, err = backingFor(t, n).Exec(t.Context(),
 		dbGrantFor("shop/prod/QmLedger", postgresSettings()), "x", nil)
 	require.ErrorIs(t, err, ErrNoEngines)
 }
@@ -391,7 +402,7 @@ func kvGrantFor(handle string) invoke.Grant {
 // engine here.
 func TestAKvDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 	ctx := t.Context()
 
 	db, err := d.OpenKV(ctx, kvGrantFor("shop/prod/QmTokens"))
@@ -420,10 +431,10 @@ func TestAKvDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 // carrying every database's rows.
 func TestTheKvStoreIsLazyAndPerDatabase(t *testing.T) {
 	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 
 	opened, _ := factory.counts()
-	require.NotContains(t, opened, databaseStore, "nothing has asked for a database yet")
+	require.NotContains(t, opened, nodeDatabase.Prefix, "nothing has asked for a database yet")
 
 	for _, handle := range []string{"shop/prod/QmA", "shop/prod/QmB", "other/prod/QmA"} {
 		db, err := d.OpenKV(t.Context(), kvGrantFor(handle))
@@ -433,13 +444,13 @@ func TestTheKvStoreIsLazyAndPerDatabase(t *testing.T) {
 
 	opened, _ = factory.counts()
 	for _, want := range []string{
-		databaseStore + "/shop/prod/kv/QmA",
-		databaseStore + "/shop/prod/kv/QmB",
-		databaseStore + "/other/prod/kv/QmA",
+		nodeDatabase.Prefix + "/shop/prod/kv/QmA",
+		nodeDatabase.Prefix + "/shop/prod/kv/QmB",
+		nodeDatabase.Prefix + "/other/prod/kv/QmA",
 	} {
 		require.Contains(t, opened, want, "%v", opened)
 	}
-	require.NotContains(t, opened, databaseStore, "a store holding all three: %v", opened)
+	require.NotContains(t, opened, nodeDatabase.Prefix, "a store holding all three: %v", opened)
 
 	// AND ASKING AGAIN OPENS NOTHING MORE: the factory caches by path, so a
 	// database this node already holds costs no second topic.
@@ -453,7 +464,7 @@ func TestTheKvStoreIsLazyAndPerDatabase(t *testing.T) {
 // TestTwoKvDatabasesDoNotSeeEachOther, and neither do two deployments of one.
 func TestKvDatabasesAreIsolated(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 	ctx := t.Context()
 
 	mine, err := d.OpenKV(ctx, kvGrantFor("shop/prod/QmA"))
@@ -484,7 +495,7 @@ func TestARegisteredKvEngineIsNotReplaced(t *testing.T) {
 	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
 		WithDatabaseEngines(registryWith(t, engine)))
 
-	d := &databases{node: n}
+	d := backingFor(t, n)
 	db, err := d.OpenKV(t.Context(), kvGrantFor("shop/prod/QmA"))
 	require.NoError(t, err)
 	require.NoError(t, db.Put(t.Context(), "k", []byte("v")))
@@ -492,7 +503,7 @@ func TestARegisteredKvEngineIsNotReplaced(t *testing.T) {
 	require.Equal(t, 1, engine.opened, "the composer's engine served it")
 
 	opened, _ := factory.counts()
-	require.NotContains(t, opened, databaseStore, "and the node's own store was never opened")
+	require.NotContains(t, opened, nodeDatabase.Prefix, "and the node's own store was never opened")
 }
 
 // TestAKvDatabaseNeedsSomewhereToPutIt, so a node with no database factory
@@ -507,7 +518,7 @@ func TestAKvDatabaseNeedsAStore(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
-	_, err = (&databases{node: n}).OpenKV(t.Context(), kvGrantFor("shop/prod/QmA"))
+	_, err = backingFor(t, n).OpenKV(t.Context(), kvGrantFor("shop/prod/QmA"))
 	require.ErrorIs(t, err, ErrNoCacheStore)
 }
 
@@ -550,7 +561,7 @@ func docGrantFor(handle string) invoke.Grant {
 // as JSON — which is where pkg/database's map meets the ABI's bytes.
 func TestADocumentDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 	ctx := t.Context()
 
 	docs, err := d.OpenDocuments(ctx, docGrantFor("shop/prod/QmOrders"))
@@ -575,7 +586,7 @@ func TestADocumentDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 // answer the same way whether or not anything matched.
 func TestFindWithNoFilterAnswersAnArray(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 	ctx := t.Context()
 
 	docs, err := d.OpenDocuments(ctx, docGrantFor("shop/prod/QmEmpty"))
@@ -590,7 +601,7 @@ func TestFindWithNoFilterAnswersAnArray(t *testing.T) {
 // fixes it and does not retry it.
 func TestABadDocumentIsMalformed(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 	ctx := t.Context()
 
 	docs, err := d.OpenDocuments(ctx, docGrantFor("shop/prod/QmOrders"))
@@ -607,7 +618,7 @@ func TestABadDocumentIsMalformed(t *testing.T) {
 // collide and a drop in one cannot reach the other's replicas.
 func TestKvAndDocumentsDoNotCollide(t *testing.T) {
 	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 	ctx := t.Context()
 
 	kvDB, err := d.OpenKV(ctx, kvGrantFor("shop/prod/QmTokens"))
@@ -630,9 +641,9 @@ func TestKvAndDocumentsDoNotCollide(t *testing.T) {
 	// which is a pubsub topic each, so which replicas a write or a delete reaches
 	// is decided per database rather than per node.
 	opened, _ := factory.counts()
-	require.Contains(t, opened, databaseStore+"/shop/prod/kv/QmTokens")
-	require.Contains(t, opened, databaseStore+"/shop/prod/document/QmOrders")
-	require.NotContains(t, opened, databaseStore,
+	require.Contains(t, opened, nodeDatabase.Prefix+"/shop/prod/kv/QmTokens")
+	require.Contains(t, opened, nodeDatabase.Prefix+"/shop/prod/document/QmOrders")
+	require.NotContains(t, opened, nodeDatabase.Prefix,
 		"a store holding every database was opened after all: %v", opened)
 }
 
@@ -653,7 +664,7 @@ func vecGrantFor(handle, metric string) invoke.Grant {
 // models the `database` kind declares.
 func TestAVectorDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 	ctx := t.Context()
 
 	index, err := d.OpenVectors(ctx, vecGrantFor("shop/prod/QmK", "cosine"))
@@ -679,7 +690,7 @@ func TestAVectorDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 // was trained and getting it wrong ranks badly rather than erroring.
 func TestTheMetricComesOffTheResource(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 	ctx := t.Context()
 
 	// dot ranks the LONGER vector first where cosine would not.
@@ -697,7 +708,7 @@ func TestTheMetricComesOffTheResource(t *testing.T) {
 // TestTheDeclaredWidthIsEnforcedThroughTheBacking.
 func TestAWrongWidthIsTheTiersError(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 	ctx := t.Context()
 
 	index, err := d.OpenVectors(ctx, vecGrantFor("shop/prod/QmK", "cosine"))
@@ -709,7 +720,7 @@ func TestAWrongWidthIsTheTiersError(t *testing.T) {
 
 func TestABadMetaIsMalformed(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d := &databases{node: n}
+	d := backingFor(t, n)
 
 	index, err := d.OpenVectors(t.Context(), vecGrantFor("shop/prod/QmK", "cosine"))
 	require.NoError(t, err)
@@ -746,6 +757,13 @@ func (f *releasing) New(_ log.StandardLogger, path string, _ int) (kvdb.KVDB, er
 
 func (f *releasing) Close() {}
 
+func (f *releasing) held(path string) (*releasable, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	db, ok := f.byPath[path]
+	return db, ok
+}
+
 type releasable struct {
 	kvdb.KVDB
 	factory *releasing
@@ -762,27 +780,74 @@ func (r *releasable) Destroy(context.Context) error {
 	return nil
 }
 
-// TestARELEASEDDATABASEISNOTSERVEDFROMTHETABLEAGAIN.
+// TestARELEASEISTHEFACTORYSANDNOTTHEADAPTERS.
 //
-// Destroying a database closes the store it destroys. A node that kept that
-// store in the table it serves from went on answering every later call out of a
-// closed store — not-found for rows another node holds, and the CRDT's own
-// bookkeeping written back under the prefix that was just removed, which makes
-// this node advertise a database it does not have.
-func TestAReleasedDatabaseIsNotServedFromTheNodesTableAgain(t *testing.T) {
+// What node/database keeps is a table of stores it serves from; what can
+// actually remove bytes is the factory an operator gave this node, and only the
+// root holds that. NOT OPEN IS NOT ABSENT — a restarted node holds bytes it has
+// never opened — so the release opens it for exactly as long as the destroy
+// takes, and does NOT register a closer for a store that is about to be gone.
+func TestTheRootReleasesThroughTheFactoryItWasGiven(t *testing.T) {
 	factory := &releasing{}
-	d := &databases{node: &Node{opts: options{databases: factory}}}
-	spec := database.Spec{Type: database.KV, Project: "shop", Environment: "prod", Name: "QmA"}
+	n := &Node{opts: options{databases: factory}}
+	seam := databaseStores{node: n}
+	const name = "databases/shop/prod/kv/QmA"
 
-	first, err := d.storesFor(t.Context(), spec)
+	store, err := seam.Store(name)
 	require.NoError(t, err)
+	require.NotNil(t, store)
+	require.Len(t, n.closers, 1, "a store the node serves from was not registered with the closers")
 
-	require.NoError(t, nodeHoldings{d: d}.Destroy(t.Context(), spec))
-	require.True(t, first.(cacheStore).db.(*releasable).destroyed,
-		"the release destroyed a store the node was not serving from")
+	require.NoError(t, seam.Release(t.Context(), name))
 
-	again, err := d.storesFor(t.Context(), spec)
-	require.NoError(t, err)
-	require.False(t, again.(cacheStore).db.(*releasable).destroyed,
-		"the node went on serving the store it destroyed")
+	_, still := factory.held(name)
+	require.False(t, still, "the destroyed store is still the factory's")
+	require.Len(t, n.closers, 1, "a store opened only to be destroyed was registered with the closers")
+
+	// AND A COPY THIS NODE NEVER OPENED IS STILL RELEASED, which is the case
+	// this branch exists for.
+	require.NoError(t, seam.Release(t.Context(), "databases/shop/prod/kv/QmNeverOpened"))
+	released, ok := factory.held("databases/shop/prod/kv/QmNeverOpened")
+	require.False(t, ok)
+	require.Nil(t, released)
+}
+
+// TestASTORETHATCANNOTBERELEASEDSAYSSO, rather than reporting a drop that never
+// happened — which would advertise this node as no longer a holder while its
+// bytes are still here.
+func TestAStoreThatCannotBeReleasedIsNamed(t *testing.T) {
+	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	seam := databaseStores{node: n}
+
+	require.ErrorContains(t, seam.Release(t.Context(), "databases/shop/prod/kv/QmA"),
+		"cannot release a database it holds")
+
+	opened, _ := factory.counts()
+	require.Contains(t, opened, "databases/shop/prod/kv/QmA")
+}
+
+// TestANODEWITHNODATABASEFACTORYNEITHERSERVESNORRELEASES, which is a composition
+// fault and is named as one rather than panicking on the first write.
+func TestTheStoreSeamNeedsAFactory(t *testing.T) {
+	seam := databaseStores{node: &Node{opts: options{}}}
+
+	_, err := seam.Store("databases/shop/prod/kv/QmA")
+	require.ErrorIs(t, err, ErrNoCacheStore)
+	require.ErrorIs(t, seam.Release(t.Context(), "databases/shop/prod/kv/QmA"), ErrNoCacheStore)
+}
+
+// TestAFACTORYTHATCANNOTBEASKEDWHATITHOLDSISNOTONE, so the node hands the
+// adapter nothing rather than a surface that would have to guess.
+func TestTheDiskSurfaceIsAssertedAndMayBeAbsent(t *testing.T) {
+	require.Nil(t, databaseDisk(nil), "a node with no factory has no disk to ask")
+	require.Nil(t, databaseDisk(&memFactory{}), "a factory that keeps no bytes answered as a disk")
+	require.NotNil(t, databaseDisk(&probing{}))
+}
+
+// probing is a factory that can be asked what it holds, which pkg/kvdb's is.
+type probing struct{ memFactory }
+
+func (p *probing) Holding(context.Context, string) (bool, error) { return false, nil }
+func (p *probing) Paths(context.Context, string, int) ([]string, error) {
+	return nil, nil
 }

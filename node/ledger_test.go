@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	nodeDatabase "github.com/taubyte/tau/node/database"
 	"github.com/taubyte/tau/node/ledger"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/raft"
@@ -30,9 +31,9 @@ func TestTheGroupAndTheStoreAgreeOnTheNameADatabaseHas(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ledger.Domain+"/shop/prod/kv/QmLedger", group)
 
-	store, err := storeName(spec)
+	store, err := nodeDatabase.Name(spec)
 	require.NoError(t, err)
-	require.Equal(t, databaseStore+"/shop/prod/kv/QmLedger", store)
+	require.Equal(t, nodeDatabase.Prefix+"/shop/prod/kv/QmLedger", store)
 }
 
 // TestWHICHSTOREADATABASEGETSISITSOWNDECLARATION, and not a second engine: the
@@ -45,7 +46,7 @@ func TestTheConsensusPicksTheStoreAndNotASecondEngine(t *testing.T) {
 	d, err := newDatabases(n)
 	require.NoError(t, err)
 
-	crdt, err := d.storesFor(t.Context(), database.Spec{
+	crdt, err := d.holdings.Entries(t.Context(), database.Spec{
 		Type: database.KV, Engine: database.Tau, Consensus: database.CRDT,
 		Project: "shop", Environment: "prod", Name: "QmSessions",
 	})
@@ -53,7 +54,7 @@ func TestTheConsensusPicksTheStoreAndNotASecondEngine(t *testing.T) {
 	require.IsType(t, cacheStore{}, crdt)
 
 	require.Eventually(t, func() bool {
-		ledger, err := d.storesFor(t.Context(), ledgerSpec())
+		ledger, err := d.holdings.Entries(t.Context(), ledgerSpec())
 		if err != nil {
 			return false
 		}
@@ -62,7 +63,7 @@ func TestTheConsensusPicksTheStoreAndNotASecondEngine(t *testing.T) {
 
 	// AND A DATABASE THAT DECLARED NOTHING IS A CRDT ONE, which is what every
 	// caller that predates the field keeps getting.
-	silent, err := d.storesFor(t.Context(), database.Spec{
+	silent, err := d.holdings.Entries(t.Context(), database.Spec{
 		Type: database.KV, Engine: database.Tau,
 		Project: "shop", Environment: "prod", Name: "QmSessions",
 	})
@@ -87,7 +88,7 @@ func TestANodeWithNowhereToOpenAGroupKeepsNoLedger(t *testing.T) {
 	d, err := newDatabases(&Node{opts: options{}})
 	require.NoError(t, err)
 
-	_, err = d.storesFor(t.Context(), ledgerSpec())
+	_, err = d.holdings.Entries(t.Context(), ledgerSpec())
 	require.ErrorIs(t, err, ErrNoRaft)
 
 	// AND CLOSING ONE IS NOT A PANIC OVER A TABLE THAT WAS NEVER BUILT.

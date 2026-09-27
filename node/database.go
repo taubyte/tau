@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/taubyte/tau/core/kvdb"
+	nodeDatabase "github.com/taubyte/tau/node/database"
 	"github.com/taubyte/tau/node/ledger"
 	"github.com/taubyte/tau/pkg/database"
 	docengine "github.com/taubyte/tau/pkg/database/engines/document"
@@ -75,11 +76,12 @@ type databases struct {
 	open     map[string]database.Conn
 	registry *database.Registry
 
-	// storesMu guards stores, and it is NOT d.mu. openFor holds d.mu across
-	// registry.Open, which reaches storesFor — one mutex for both would
-	// deadlock on the first database anybody opened.
-	storesMu sync.Mutex
-	stores   map[string]kvdb.KVDB
+	// holdings is where tau's own engines put a database's entries, and what
+	// this node answers "do you hold this" from. IT IS ITS OWN LOCK and not
+	// d.mu: openFor holds d.mu across registry.Open, which reaches the
+	// provider, so one mutex for both would deadlock on the first database
+	// anybody opened.
+	holdings *nodeDatabase.Holdings
 
 	// ledgers is the other half of the consensus axis: the groups a
 	// `consensus: raft` database's entries are ordered in. It is nil on a node
@@ -95,16 +97,101 @@ type databases struct {
 // node whose groups are gone.
 func newDatabases(n *Node) (*databases, error) {
 	d := &databases{node: n}
-	if n.opts.raft == nil {
-		return d, nil
+
+	if n.opts.raft != nil {
+		ledgers, err := ledger.New(n.opts.raft, ledger.Budget)
+		if err != nil {
+			return nil, fmt.Errorf("node: %s: %w", Database, err)
+		}
+		d.ledgers = ledgers
 	}
 
-	ledgers, err := ledger.New(n.opts.raft, ledger.Budget)
+	holdings, err := nodeDatabase.NewHoldings(
+		databaseStores{node: n},
+		databaseLedgers{ledgers: d.ledgers},
+		// THE DISK-LEVEL SURFACE IS ASSERTED rather than required of
+		// kvdb.Factory: holding is a fact about a NODE's bytes, and the shared
+		// interface is also implemented by handles that keep none.
+		databaseDisk(n.opts.databases),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("node: %s: %w", Database, err)
 	}
-	d.ledgers = ledgers
+	d.holdings = holdings
 	return d, nil
+}
+
+// databaseStores opens the store one database's entries live in, on the first
+// request that reaches that database — the same lazy seam node/cache.go,
+// node/storage.go and node/volume.go keep, with the name as its argument because
+// a node carries one store per database rather than one for all of them.
+type databaseStores struct{ node *Node }
+
+var _ nodeDatabase.Stores = databaseStores{}
+
+func (s databaseStores) Store(name string) (database.Store, error) {
+	if s.node.opts.databases == nil {
+		return nil, ErrNoCacheStore
+	}
+	db, err := s.node.opts.databases.New(logger, name, rebroadcastSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("node: opening the store for %s: %w", name, err)
+	}
+	// THROUGH addCloser AND NOT AN APPEND, because this runs on the request
+	// path: two concurrent first-opens of different backings would otherwise
+	// append to one slice at once.
+	s.node.addCloser(closerFunc(db.Close))
+	return cacheStore{db}, nil
+}
+
+// Release lets go of this node's copy.
+//
+// IT IS OPENED TO BE DESTROYED AND NOT REGISTERED WITH THE CLOSERS. Not open is
+// not absent — a restarted node holds bytes it has never opened — and the
+// factory caches by path, so this is the store the node was serving from when
+// there was one. Destroying closes it and drops it from the factory, so a later
+// open builds a new one from whatever the fleet still holds.
+func (s databaseStores) Release(ctx context.Context, name string) error {
+	if s.node.opts.databases == nil {
+		return ErrNoCacheStore
+	}
+	db, err := s.node.opts.databases.New(logger, name, rebroadcastSeconds)
+	if err != nil {
+		return err
+	}
+
+	destroyer, ok := db.(interface {
+		Destroy(context.Context) error
+	})
+	if !ok {
+		return fmt.Errorf("node: this store cannot release a database it holds")
+	}
+	return destroyer.Destroy(ctx)
+}
+
+// databaseLedgers is the root's answer for `consensus: raft`.
+//
+// THE REFUSAL IS HERE AND NOT IN THE ADAPTER, because ErrNoRaft is the one
+// sentinel every consumer of consensus on this node shares and names none of
+// them — see config.go.
+type databaseLedgers struct{ ledgers *ledger.Ledgers }
+
+var _ nodeDatabase.Ledgers = databaseLedgers{}
+
+func (l databaseLedgers) Store(spec database.Spec) (database.Store, error) {
+	if l.ledgers == nil {
+		return nil, ErrNoRaft
+	}
+	return l.ledgers.Store(spec)
+}
+
+// databaseDisk is the factory's own disk-level surface, or nil when it has none.
+func databaseDisk(factory kvdb.Factory) nodeDatabase.Disk {
+	disk, ok := factory.(nodeDatabase.Disk)
+	if !ok {
+		return nil
+	}
+	return disk
 }
 
 var (
@@ -556,11 +643,11 @@ func (d *databases) engines(ctx context.Context, want database.Type) (*database.
 	var err error
 	switch want {
 	case database.KV:
-		engine, err = kvengine.New(d.storesFor)
+		engine, err = kvengine.New(d.holdings.Entries)
 	case database.Document:
-		engine, err = docengine.New(d.storesFor)
+		engine, err = docengine.New(d.holdings.Entries)
 	default:
-		engine, err = vecengine.New(d.storesFor)
+		engine, err = vecengine.New(d.holdings.Entries)
 	}
 	if err != nil {
 		return nil, err
@@ -570,13 +657,6 @@ func (d *databases) engines(ctx context.Context, want database.Type) (*database.
 	}
 	return d.registry, nil
 }
-
-// databaseStore is the prefix every database's own kvdb is named under.
-//
-// SEPARATE FROM THE CACHES', because they are different kinds with different
-// lifetimes: a cache evicts and a database does not, and one CRDT holding both
-// would make a cache's churn the database's replication traffic.
-const databaseStore = "databases"
 
 // The setting keys services/worker writes.
 const (
@@ -665,7 +745,7 @@ func (n *Node) openDatabase(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	engine, err := kvengine.New(stores.storesFor)
+	engine, err := kvengine.New(stores.holdings.Entries)
 	if err != nil {
 		return fmt.Errorf("node: %s: %w", Database, err)
 	}
@@ -690,7 +770,7 @@ func (n *Node) openDatabase(ctx context.Context) error {
 		// WHAT THIS NODE ACTUALLY HOLDS, which is a different question from what
 		// it can open: a node answers "do you hold this" from its disk, and is
 		// the only thing that can let go of a copy.
-		databaseService.WithHoldings(nodeHoldings{d: stores}),
+		databaseService.WithHoldings(stores.holdings),
 		databaseService.WithRegion(n.cfg.Region),
 
 		// THE FLEET AS THIS NODE SEES IT, asked each sweep rather than taken
@@ -735,170 +815,4 @@ func (n *Node) kvBacking(own wasmtier.KVs) wasmtier.KVs {
 		return n.database.Local()
 	}
 	return own
-}
-
-// storesFor is the provider every resident engine on this node is handed: the
-// kvdb ONE database's entries live in.
-//
-// A KVDB PER DATABASE IS A PUBSUB TOPIC PER DATABASE, which is the point rather
-// than a side effect — see database.Stores. One store for all of them meant
-// every subscriber held every database's rows, so placement decided nothing,
-// and a Delete was a tombstone every replica applied, so dropping a copy this
-// node no longer holds deleted the copy the node that just acquired it holds.
-//
-// The factory caches by path, so two opens of one database share a store and a
-// node carries as many as it HOLDS rather than as many as exist.
-func (d *databases) storesFor(_ context.Context, spec database.Spec) (database.Store, error) {
-	// WHICH KIND OF STORE IS THE DATABASE'S OWN DECLARATION AND NOT THIS NODE'S
-	// CHOICE. `consensus` is the axis the vocabulary declares beside the model,
-	// and it reaches here on the spec rather than as a second engine, because
-	// the schema declares ONE engine for tau's own.
-	//
-	// A LEDGER IS A STORE TOO, which is the whole of the difference between the
-	// two resolutions — see node/ledger, where the group, the leadership and the
-	// barrier are. What is decided here is only which of the two things this
-	// node holds keeps a database's entries, and ErrNoRaft is the answer for a
-	// node composed with neither.
-	if spec.Consensus == database.Raft {
-		if d.ledgers == nil {
-			return nil, ErrNoRaft
-		}
-		return d.ledgers.Store(spec)
-	}
-
-	// NAMED BY THE SAME FUNCTION THAT ADDRESSES IT AND THAT RELEASES IT.
-	// Spec.Prefix already names a database uniquely and already refuses a
-	// separator in any segment, which is exactly what a topic name needs — and
-	// storeName is what nodeHoldings.Destroy evicts by, so the two agree by
-	// construction rather than by two expressions that happen to match.
-	name, err := storeName(spec)
-	if err != nil {
-		return nil, err
-	}
-
-	d.storesMu.Lock()
-	defer d.storesMu.Unlock()
-
-	if d.node.opts.databases == nil {
-		return nil, ErrNoCacheStore
-	}
-	if db, held := d.stores[name]; held {
-		return cacheStore{db}, nil
-	}
-
-	db, err := d.node.opts.databases.New(logger, name, rebroadcastSeconds)
-	if err != nil {
-		return nil, fmt.Errorf("node: opening the store for %s: %w", name, err)
-	}
-	if d.stores == nil {
-		d.stores = map[string]kvdb.KVDB{}
-	}
-	d.stores[name] = db
-	d.node.addCloser(closerFunc(db.Close))
-	return cacheStore{db}, nil
-}
-
-// nodeHoldings answers services/database's Holdings over this node's own store.
-//
-// IT ASKS THE DISK AND NOT THE TABLE of stores opened this run. A restarted node
-// holds everything it held before and has opened none of it — a holder that
-// answered from its warm table would say it holds nothing, and every move that
-// needed it would either wait forever or, worse, count its "not held" as a
-// reason for somebody else to let go.
-type nodeHoldings struct{ d *databases }
-
-// probe is the factory's disk-level surface. It is asserted rather than
-// required of kvdb.Factory: holding is a fact about a NODE's bytes, and the
-// shared interface is also implemented by handles that keep none.
-type probe interface {
-	Holding(ctx context.Context, path string) (bool, error)
-	Paths(ctx context.Context, under string, depth int) ([]string, error)
-}
-
-func (h nodeHoldings) probe() (probe, bool) {
-	p, ok := h.d.node.opts.databases.(probe)
-	return p, ok
-}
-
-// storeName is the one name a database is known by here — the same function
-// that addresses it and names its topic.
-func storeName(spec database.Spec) (string, error) {
-	prefix, err := spec.Prefix()
-	if err != nil {
-		return "", err
-	}
-	return databaseStore + "/" + strings.TrimSuffix(prefix, "/"), nil
-}
-
-func (h nodeHoldings) Held(ctx context.Context, spec database.Spec) bool {
-	name, err := storeName(spec)
-	if err != nil {
-		return false
-	}
-
-	p, ok := h.probe()
-	if !ok {
-		// A COMPOSER'S FACTORY THAT CANNOT BE ASKED HOLDS NOTHING, as far as
-		// anybody else is concerned. Answering "yes" on a guess would let a
-		// peer drop the last copy.
-		return false
-	}
-	held, err := p.Holding(ctx, name)
-	return err == nil && held
-}
-
-func (h nodeHoldings) Destroy(ctx context.Context, spec database.Spec) error {
-	name, err := storeName(spec)
-	if err != nil {
-		return err
-	}
-
-	h.d.storesMu.Lock()
-	db, open := h.d.stores[name]
-	delete(h.d.stores, name)
-	h.d.storesMu.Unlock()
-
-	if !open {
-		// NOT OPEN IS NOT ABSENT — a restarted node holds bytes it has not
-		// opened — so it is opened for exactly as long as it takes to destroy.
-		if db, err = h.d.node.opts.databases.New(logger, name, rebroadcastSeconds); err != nil {
-			return err
-		}
-	}
-
-	destroyer, ok := db.(interface {
-		Destroy(context.Context) error
-	})
-	if !ok {
-		return fmt.Errorf("node: this store cannot release a database it holds")
-	}
-	return destroyer.Destroy(ctx)
-}
-
-func (h nodeHoldings) OnDisk(ctx context.Context) []database.Spec {
-	p, ok := h.probe()
-	if !ok {
-		return nil
-	}
-
-	// FOUR SEGMENTS BELOW THE PREFIX, which is what Spec.Prefix writes:
-	// project, environment, model, name. Everything under that is the CRDT's
-	// own structure and is none of this function's business.
-	paths, err := p.Paths(ctx, databaseStore, 4)
-	if err != nil {
-		return nil
-	}
-
-	out := make([]database.Spec, 0, len(paths))
-	for _, path := range paths {
-		parts := strings.Split(strings.TrimPrefix(path, databaseStore+"/"), "/")
-		if len(parts) != 4 {
-			continue
-		}
-		out = append(out, database.Spec{
-			Project: parts[0], Environment: parts[1],
-			Type: database.Type(parts[2]), Name: parts[3],
-		})
-	}
-	return out
 }

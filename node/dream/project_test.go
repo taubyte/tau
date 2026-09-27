@@ -655,7 +655,7 @@ func TestAKvDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
 // stores is the project segment of Spec.Prefix (pkg/database/database.go:443).
 //
 // THAT ONE SEGMENT REACHES TWO PLACES AND BOTH ARE LOAD-BEARING. Prefix names
-// the STORE — storeName turns it into a path (node/database.go:1167) and
+// the STORE — database.Name turns it into a path (node/database/database.go) and
 // pkg/kvdb turns that one variable into both the on-disk prefix and the gossip
 // topic (pkg/kvdb/service.go:136 and :107) — and Prefix is ALSO what the kv
 // engine puts in front of every key it writes (pkg/database/engines/kv/kv.go:91

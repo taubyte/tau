@@ -29,17 +29,20 @@ import (
 func TestEveryLazyOpenerAppendsItsCloserSafely(t *testing.T) {
 	n, _, factory := makeNode(t, Config{})
 
-	// TWO OF THE THREE, which is enough: what has to be excluded is two
-	// DIFFERENT adapters appending at once, and these two hold two different
-	// mutexes. The third (databases.storesFor) takes a composed spec to reach
-	// and carries the identical one-line fix.
+	// ALL THREE, and what has to be excluded is two DIFFERENT adapters appending
+	// at once: each of these holds its own mutex, so none of them excludes
+	// another.
 	//
-	// BOTH ARE REACHED THROUGH THEIR SEAMS, because the adapters that ask them
-	// live in node/admit and node/storage now, and what appends here is what the
-	// root hands over.
+	// EVERY ONE IS REACHED THROUGH ITS SEAM, because the adapters that ask them
+	// live in node/admit, node/storage and node/database now, and what appends
+	// here is what the root hands over.
 	openers := []func() error{
 		func() error { _, err := admissionStores{node: n}.Store(); return err },
 		func() error { _, err := storageStores{node: n}.Store(); return err },
+		func() error {
+			_, err := databaseStores{node: n}.Store("databases/shop/prod/kv/QmA")
+			return err
+		},
 	}
 
 	const rounds = 8
