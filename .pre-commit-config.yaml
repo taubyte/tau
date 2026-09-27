@@ -10,8 +10,16 @@ repos:
 -   repo: https://github.com/TekWizely/pre-commit-golang
     rev: v1.0.0-rc.1
     hooks:
+      # ee/ IS EXCLUDED BECAUSE IT IS A SUBMODULE AND NOT THIS REPO'S CODE.
+      # Without it these hooks reformatted 22 files inside ee on an ordinary
+      # commit here -- import order, struct-tag alignment, comment indentation --
+      # which leaves a read-only submodule dirty and shows up as a bare `m ee` in
+      # git status, easy to mistake for somebody else's work in progress. gen/ and
+      # *.pb.go are excluded for the same class of reason: generated trees are not
+      # ours to reformat either.
       - id: go-fmt
         files: '.*\.go$'
+        exclude: '^ee/'
       - id: go-imports
         files: '.*\.go$'
-        exclude: '(gen/.*.go|.*\.pb\.go)$'
+        exclude: '(^ee/|gen/.*.go|.*\.pb\.go)$'
