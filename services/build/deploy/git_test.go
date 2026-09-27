@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/services/build/deploy"
 )
 
@@ -81,7 +83,7 @@ func TestACloneReadsTheCommitAndNotTheBranch(t *testing.T) {
 	path, first, second := repository(t)
 	require.NotEqual(t, first, second)
 
-	clone := deploy.NewClone(nil, deploy.WithURL(func(string) (string, error) { return path, nil }))
+	clone := deploy.NewClone(nil, deploy.WithAddress(func(string) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 
 	for name, want := range map[string]string{first: "example.com", second: "moved.example"} {
 		dir, done, err := clone.Checkout(t.Context(), "local/repo", "main", name)
@@ -104,7 +106,7 @@ func TestACloneReadsTheCommitAndNotTheBranch(t *testing.T) {
 // instead would deploy a commit nobody pushed.
 func TestACommitThatIsNotThere(t *testing.T) {
 	path, _, _ := repository(t)
-	clone := deploy.NewClone(nil, deploy.WithURL(func(string) (string, error) { return path, nil }))
+	clone := deploy.NewClone(nil, deploy.WithAddress(func(string) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 
 	_, _, err := clone.Checkout(t.Context(), "local/repo", "main",
 		"1111111111111111111111111111111111111111")
@@ -125,7 +127,7 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 	path, first, second := repository(t)
 	r := registry(t)
 
-	clone := deploy.NewClone(nil, deploy.WithURL(func(string) (string, error) { return path, nil }))
+	clone := deploy.NewClone(nil, deploy.WithAddress(func(string) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 	d, err := deploy.New(
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(clone),
@@ -157,21 +159,32 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// The two URL policies, because which one a cloud uses decides whether a deploy
-// key is usable at all.
+// How a cloud reaches a repository: https reads what is public, and a forged
+// address is the one the forge serving the host gives — the ssh account
+// included, which is the driver's to say and not a `git@` spelled here.
 func TestHowACloudReachesARepository(t *testing.T) {
-	url, err := deploy.HTTPS("github.com/acme/shop")
+	address, err := deploy.HTTPS("github.com/acme/shop")
 	require.NoError(t, err)
-	require.Equal(t, "https://github.com/acme/shop.git", url)
-
-	url, err = deploy.SSH("github.com/acme/shop")
-	require.NoError(t, err)
-	require.Equal(t, "git@github.com:acme/shop.git", url)
-
+	require.Equal(t, forge.Address{URL: "https://github.com/acme/shop.git"}, address)
 	_, err = deploy.HTTPS("")
 	require.Error(t, err)
-	_, err = deploy.SSH("")
-	require.Error(t, err)
+
+	f := fake.New(fake.GitHubLike)
+	forges, err := f.Registry(forge.Policy{})
+	require.NoError(t, err)
+	forged := deploy.Forged(forges, forge.SSH)
+
+	address, err = forged(f.Keys().Writable.String())
+	require.NoError(t, err)
+	require.NotEmpty(t, address.SSHAccount, "an ssh address says which account a key authenticates as")
+	require.NotEmpty(t, address.URL)
+
+	_, err = forged("codeberg.org/acme/shop")
+	var none *forge.NoDriverError
+	require.ErrorAs(t, err, &none, "a host no forge is bound to is not reached by guessing")
+
+	_, err = forged("")
+	require.ErrorContains(t, err, "not a repository")
 }
 
 // keys stands in for auth. A deploy key is PER REPOSITORY, which is what lets
@@ -187,7 +200,9 @@ func (k keys) DeployKey(context.Context, string) (string, error) { return k.key,
 
 func TestReadingAPrivateRepository(t *testing.T) {
 	path, first, _ := repository(t)
-	local := deploy.WithURL(func(string) (string, error) { return path, nil })
+	local := deploy.WithAddress(func(string) (forge.Address, error) {
+		return forge.Address{URL: path, SSHAccount: "git"}, nil
+	})
 
 	// A repository that needs no key: auth says so with an empty string and no
 	// error, and the clone proceeds unauthenticated.
@@ -207,7 +222,16 @@ func TestReadingAPrivateRepository(t *testing.T) {
 	// A key that is not one fails at the clone rather than being ignored.
 	_, _, err = deploy.NewClone(keys{key: "not a pem"}, local).
 		Checkout(t.Context(), "local/repo", "main", first)
-	require.Error(t, err)
+	require.ErrorContains(t, err, "parsing private key")
+
+	// A KEY OVER HTTPS AUTHENTICATES NOTHING, so it is refused by name rather
+	// than cloned anonymously and failed as a missing repository.
+	overHTTPS := deploy.WithAddress(func(string) (forge.Address, error) {
+		return forge.Address{URL: path}, nil
+	})
+	_, _, err = deploy.NewClone(keys{key: "any"}, overHTTPS).
+		Checkout(t.Context(), "local/repo", "main", first)
+	require.ErrorContains(t, err, "which is not ssh")
 }
 
 // A repository key that is not one never reaches the network.

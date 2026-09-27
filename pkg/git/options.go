@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -68,8 +69,16 @@ func EmbeddedToken(token string) Option {
  *
  * key: The key to use.
  */
-func SSHKey(key string) Option {
+func SSHKey(key string) Option { return SSHKeyAs("git", key) }
+
+// SSHKeyAs is SSHKey authenticating as account, which is a HOST fact: GitHub
+// and GitLab answer ssh as "git", and a forge that does not is named by its
+// driver (pkg/forge's Address.SSHAccount) rather than assumed here.
+func SSHKeyAs(account, key string) Option {
 	return func(c *Repository) error {
+		if account == "" {
+			return errors.New("an ssh key needs the account it authenticates as")
+		}
 		// Parse the private key first to ensure it's valid
 		_, err := gossh.ParsePrivateKey([]byte(key))
 		if err != nil {
@@ -77,7 +86,7 @@ func SSHKey(key string) Option {
 		}
 
 		// Create SSH authentication using the parsed private key
-		auth, err := ssh.NewPublicKeys("git", []byte(key), "")
+		auth, err := ssh.NewPublicKeys(account, []byte(key), "")
 		if err != nil {
 			return fmt.Errorf("adding SSH Key failed with %w", err)
 		}

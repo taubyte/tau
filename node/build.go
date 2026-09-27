@@ -11,6 +11,7 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
+	"github.com/taubyte/tau/pkg/forge"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/artifact"
@@ -203,8 +204,12 @@ func (n *Node) openBuildBackend() error {
 
 	// SSH, BECAUSE A DEPLOY KEY IS AN SSH KEY. auth holds one per repository,
 	// and a cloud reaching a provider over https could only read what is
-	// already public.
-	clone := deploy.NewClone(repositories, deploy.WithURL(deploy.SSH))
+	// already public. The address and its account are the forge's.
+	registry, err := forges(n.cfg.Forges)
+	if err != nil {
+		return err
+	}
+	clone := deploy.NewClone(repositories, deploy.WithAddress(deploy.Forged(registry, forge.SSH)))
 
 	options := []deploy.Option{
 		deploy.WithProjects(projects),

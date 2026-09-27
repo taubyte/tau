@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
@@ -42,20 +42,21 @@ type Credentials interface {
 type Clone struct {
 	credentials Credentials
 
-	// url turns a repository key into something to clone.
+	// address turns a repository key into where to clone it from, and as whom.
 	//
 	// IT IS CLOUD POLICY AND NOT REPOSITORY FACT. A key is a host and a path
 	// under it and says nothing about transport, so whether this cloud reaches
-	// github.com over https or ssh — or reaches an internal mirror at all — is
-	// the operator's answer and not the pushed payload's.
-	url func(repositoryKey string) (string, error)
+	// a host over https or ssh — or reaches it at all — is the operator's
+	// answer and not the pushed payload's. The ssh ACCOUNT is the forge's: see
+	// Forged.
+	address func(repositoryKey string) (forge.Address, error)
 }
 
 var _ Checkout = (*Clone)(nil)
 
 // NewClone builds one. A nil credentials reads public repositories only.
 func NewClone(credentials Credentials, opts ...CloneOption) *Clone {
-	c := &Clone{credentials: credentials, url: HTTPS}
+	c := &Clone{credentials: credentials, address: HTTPS}
 	for _, apply := range opts {
 		apply(c)
 	}
@@ -65,36 +66,56 @@ func NewClone(credentials Credentials, opts ...CloneOption) *Clone {
 // CloneOption configures a Clone.
 type CloneOption func(*Clone)
 
-// WithURL is how this cloud reaches a repository. Default HTTPS.
-func WithURL(url func(repositoryKey string) (string, error)) CloneOption {
+// WithAddress is how this cloud reaches a repository. Default HTTPS.
+func WithAddress(address func(repositoryKey string) (forge.Address, error)) CloneOption {
 	return func(c *Clone) {
-		if url != nil {
-			c.url = url
+		if address != nil {
+			c.address = address
 		}
 	}
 }
 
-// HTTPS is `https://<key>.git`.
-func HTTPS(repositoryKey string) (string, error) {
-	key, err := repokey.Parse("https://" + repositoryKey)
+// HTTPS is `https://<key>.git`, which reads what is public and nothing else.
+func HTTPS(repositoryKey string) (forge.Address, error) {
+	key, err := parse(repositoryKey)
 	if err != nil {
-		return "", fmt.Errorf("deploy: %q is not a repository: %w", repositoryKey, err)
+		return forge.Address{}, err
 	}
-	return "https://" + key.String() + ".git", nil
+	return forge.Address{URL: "https://" + key.String() + ".git"}, nil
 }
 
-// SSH is `git@<host>:<owner>/<name>.git`, which is what a deploy key needs.
-func SSH(repositoryKey string) (string, error) {
+// Forged is the address the forge serving a key's host gives it, over the
+// given protocol. SSH is what a deploy key needs, and the account it
+// authenticates as is the driver's to say — not a `git@` spelled here.
+//
+// ASKED ANONYMOUSLY, because an address is a host fact and not a permission:
+// the credential a clone uses is the repository's deploy key, handed to git,
+// never a caller's token.
+func Forged(forges *forge.Registry, over forge.Protocol) func(repositoryKey string) (forge.Address, error) {
+	return func(repositoryKey string) (forge.Address, error) {
+		key, err := parse(repositoryKey)
+		if err != nil {
+			return forge.Address{}, err
+		}
+		session, err := forges.For(key, forge.Anonymous())
+		if err != nil {
+			return forge.Address{}, fmt.Errorf("deploy: %w", err)
+		}
+		return session.CloneAddress(key, over)
+	}
+}
+
+func parse(repositoryKey string) (repokey.Key, error) {
 	key, err := repokey.Parse("https://" + repositoryKey)
 	if err != nil {
-		return "", fmt.Errorf("deploy: %q is not a repository: %w", repositoryKey, err)
+		return repokey.Key{}, fmt.Errorf("deploy: %q is not a repository: %w", repositoryKey, err)
 	}
-	return "git@" + key.Host + ":" + strings.TrimPrefix(key.FullName(), "/") + ".git", nil
+	return key, nil
 }
 
 // Checkout clones into a directory this process owns and removes.
 func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit string) (string, func(), error) {
-	url, err := c.url(repositoryKey)
+	address, err := c.address(repositoryKey)
 	if err != nil {
 		return "", nil, err
 	}
@@ -108,7 +129,7 @@ func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit stri
 	release := func() { os.RemoveAll(root) }
 
 	options := []git.Option{
-		git.URL(url),
+		git.URL(address.URL),
 		git.Root(root),
 		git.Branch(branch),
 		git.Output(io.Discard),
@@ -120,7 +141,13 @@ func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit stri
 			return "", nil, fmt.Errorf("deploy: reading %s's key: %w", repositoryKey, err)
 		}
 		if key != "" {
-			options = append(options, git.SSHKey(key))
+			// A KEY OVER HTTPS AUTHENTICATES NOTHING, and git would say so as a
+			// failed clone of what reads as a missing repository.
+			if address.SSHAccount == "" {
+				release()
+				return "", nil, fmt.Errorf("deploy: %s has a deploy key and is reached by %q, which is not ssh", repositoryKey, address.URL)
+			}
+			options = append(options, git.SSHKeyAs(address.SSHAccount, key))
 		}
 	}
 
