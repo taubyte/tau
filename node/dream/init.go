@@ -16,6 +16,7 @@ package dream
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -115,8 +116,75 @@ var built struct {
 }
 
 type running struct {
-	node   *node.Node
-	assets *assets.Store
+	node      *node.Node
+	assets    *assets.Store
+	artifacts *Built
+}
+
+// Built is what a build service would have published, for a universe that runs
+// none.
+//
+// A UNIVERSE HAS NO BUILD SERVICE AND THIS IS NOT A WAY TO GIVE IT ONE. Building
+// a corpus project needs a git server and a toolchain, so what each resource runs
+// is a component this tree already ships — which is a DEPLOYMENT fact, and the
+// artifact seam is precisely where a deployment fact belongs. In a cloud the
+// build service writes the component into the asset store and its cid reaches the
+// worker through worker.Artifacts; here the TEST writes it into the asset store
+// and hands the same mapping through the same seam. The project keeps the
+// `source:` its author wrote.
+//
+// IT REPLACED A REWRITE OF THE COMPILED DOCUMENT, and that is the whole reason it
+// exists. The corpus used to overwrite every resource's source with
+// `{kind: component, component: <cid>}` before publishing, which made `component`
+// mean "this already IS an artifact, skip the build" — a meaning the vocabulary
+// never gave it (`source.component` is a `Ref("component")`, so it carries a
+// configuration document's id) and which only worked because the worker handed
+// that id straight to the asset store. That was a bug, and the corpus was
+// incapable of catching it: the one source kind an author can write there was
+// only ever exercised with something that already was an artifact. See
+// services/worker/artifact_test.go.
+//
+// THE KIND IS DROPPED, exactly as the real resolver drops it (node/build.go): a
+// resource id is already unique, so a component asked about under kind
+// `component` and a workload asked about under its own kind are one lookup.
+type Built struct {
+	mu   sync.Mutex
+	cids map[string]string
+}
+
+// Publish records what a build produced for each resource of one deployment,
+// keyed by resource id — the shape a build service leaves behind, and the shape
+// the seam is asked in.
+func (b *Built) Publish(project, environment string, byResource map[string]string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.cids == nil {
+		b.cids = map[string]string{}
+	}
+	for resource, cid := range byResource {
+		b.cids[builtKey(project, environment, resource)] = cid
+	}
+}
+
+// Artifact is worker.Artifacts: what this resource currently runs.
+//
+// AN UNKNOWN RESOURCE IS A REFUSAL NAMING IT, never an empty string. A tier
+// handed "" asks the asset store for nothing and fails somewhere else, which is
+// how a project the test forgot to stage would read as a broken runtime.
+func (b *Built) Artifact(_ context.Context, project, environment, _, resource string) (string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	cid, ok := b.cids[builtKey(project, environment, resource)]
+	if !ok {
+		return "", fmt.Errorf("dream: nothing was staged for %s/%s/%s", project, environment, resource)
+	}
+	return cid, nil
+}
+
+func builtKey(project, environment, resource string) string {
+	return strings.Join([]string{project, environment, resource}, "\x00")
 }
 
 // Node is the node running on a peer, for a test that has its id.
@@ -133,13 +201,23 @@ func Node(peerID string) (*node.Node, bool) {
 // through the node; the asset store is built for it rather than handed to it,
 // and a test that wants a REAL component to run has to be able to address one.
 // In a cloud the build service writes here and a cid reaches the worker through
-// the artifact seam; in a universe with no build service, a resource naming its
-// component directly needs the bytes to already be in the store.
+// the artifact seam; in a universe the test writes here, and the cid reaches the
+// worker through the same seam — see Artifacts.
 func Assets(peerID string) (*assets.Store, bool) {
 	built.Lock()
 	defer built.Unlock()
 	r, ok := built.byPeer[peerID]
 	return r.assets, ok
+}
+
+// Artifacts is this node's artifact seam, for a test that has to say what a
+// build produced. It is the other half of Assets: the bytes go in there, and
+// which resource runs them is said here.
+func Artifacts(peerID string) (*Built, bool) {
+	built.Lock()
+	defer built.Unlock()
+	r, ok := built.byPeer[peerID]
+	return r.artifacts, ok
 }
 
 func init() {
@@ -277,6 +355,10 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 		return nil, err
 	}
 
+	// THE SEAM A CLOUD FILLS WITH ITS BUILD SERVICE. A universe runs none, so it
+	// is filled by whoever staged the components — see Built.
+	staged := &Built{}
+
 	// A DIRECTORY PER PEER, under the universe's own temporary root, so two
 	// nodes in one universe do not share a volume by accident — which would
 	// make a test of "the bytes moved" pass without anything moving.
@@ -318,6 +400,7 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 			)
 		}),
 		node.WithAssets(store),
+		node.WithArtifacts(staged),
 		// THE UNIVERSE'S OWN DIRECTORY, so a volume in a dream is a volume: a
 		// real directory, checkpointed and restored the way it is on a machine.
 		node.WithRoot(root),
@@ -338,7 +421,7 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 
 	id := h.ID().String()
 	built.Lock()
-	built.byPeer[id] = running{node: n, assets: store}
+	built.byPeer[id] = running{node: n, assets: store, artifacts: staged}
 	built.Unlock()
 
 	return closer{id: id, node: n, root: root}, nil
