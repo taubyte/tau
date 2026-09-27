@@ -590,6 +590,40 @@ func IsDelegable(a *Attribute) bool {
 	return ok
 }
 
+// Inlined marks an attribute that names a FILE whose CONTENT belongs in the
+// compiled object, under `into`.
+//
+// # Why the content and not the path
+//
+// A path is only useful to something that can open it, and nothing downstream of
+// a compile can: a node holds the compiled object and an artifact store, not the
+// repository. So an attribute that names a file either has its content read here
+// or names something nobody will ever read -- which is what a declared-and-dead
+// attribute is.
+//
+// # What `into` is for
+//
+// The content lands under a DIFFERENT key from the path, and that key is the one
+// consumers already read. The author writes a file; the object carries what was in
+// it; and nothing downstream learns a second shape. Which key is the VOCABULARY'S
+// choice and not this package's -- engine carries the string and does not know what
+// it means.
+//
+// IT IS NOT A LOWERING. Sets/Attr/Text/Concat compose values the object already
+// holds; this reaches outside the document for one it does not, which is why it is
+// a mark read by a compile pass rather than a term in that vocabulary.
+func Inlined(into string) Option { return Annotate("inlined", into) }
+
+// InlinedInto is the key this attribute's file content belongs under, or "" when
+// the attribute carries no such mark.
+func InlinedInto(a *Attribute) string {
+	if a == nil {
+		return ""
+	}
+	into, _ := a.Meta["inlined"].(string)
+	return into
+}
+
 func VariesBy(a *Attribute) []string {
 	if a == nil {
 		return nil

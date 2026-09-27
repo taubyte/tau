@@ -46,7 +46,10 @@ func TestDecompileWritesEveryDocument(t *testing.T) {
 
 	want := map[string]bool{}
 	assert.NilError(t, filepath.Walk("../fixtures/basic", func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".yaml") {
+		// EVERY FILE, not every document: a zone names a file the compile reads into
+		// the object, and a decompile that dropped it would hand back a zone pointing
+		// at nothing.
+		if err != nil || info.IsDir() {
 			return err
 		}
 		rel, _ := filepath.Rel("../fixtures/basic", path)

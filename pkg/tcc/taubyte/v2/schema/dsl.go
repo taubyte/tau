@@ -177,3 +177,8 @@ func PerEnv() AttrOption { return engine.Varies(EnvironmentVar) }
 // Delegable marks a value that may be written in the repository the resource's
 // content comes from instead of here. See source.config.
 func Delegable() AttrOption { return engine.Delegable() }
+
+// Inlined marks an attribute that names a file whose CONTENT belongs in the
+// compiled object, under the key given -- see engine.Inlined. The vocabulary
+// chooses the key; a consumer reads that key and never learns there was a file.
+func Inlined(into string) AttrOption { return engine.Inlined(into) }

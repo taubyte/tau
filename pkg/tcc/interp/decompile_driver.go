@@ -457,6 +457,17 @@ func applyNestedInverse(inst object.Object[object.Refrence], children, groups []
 func applyInstanceInverse(sel object.Selector[object.Refrence], iter *engine.Node, idField, nameField string) error {
 	attrs := iter.Attributes
 
+	// 0. Inlined: drop the key a pointed-at FILE was read into (a zone's
+	//    `records`); the source (`file`) survived compile, and the decompiler
+	//    writes the file itself back from those lines (interp.InlinedFiles).
+	//    Kept in the document as well, it would say what the author wrote AND
+	//    what was read for them.
+	for _, a := range attrs {
+		if into := engine.InlinedInto(a); into != "" {
+			sel.Delete(into)
+		}
+	}
+
 	// 1. DerivedBool: drop the synthesized bool (functions `secure`); the source
 	//    (`type`) survived compile, so nothing is reconstructed.
 	for _, a := range attrs {

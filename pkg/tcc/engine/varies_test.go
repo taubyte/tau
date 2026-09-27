@@ -263,3 +263,11 @@ func TestAMatcherThatCannotEnumerateItselfHasNoVariantSpelling(t *testing.T) {
 	assert.Assert(t, !suffixed.Match("two"), "the bare alternative still names the choice")
 	assert.Assert(t, strings.Contains(suffixed.String(), "one_a1"))
 }
+
+func TestInlinedInto(t *testing.T) {
+	assert.Equal(t, InlinedInto(nil), "")
+	a := &Attribute{Name: "file"}
+	assert.Equal(t, InlinedInto(a), "")
+	Inlined("records")(a)
+	assert.Equal(t, InlinedInto(a), "records")
+}

@@ -109,8 +109,21 @@ func TestZonesAreReadFromACompiledProject(t *testing.T) {
 		}
 		found = true
 		require.NotEmpty(t, z.Records, "the zone was found and its records were not")
-		require.Contains(t, z.Records[0], "IN MX",
-			"the records are the zone-file lines the author wrote")
+
+		// THE LINES OF THE FILE, WHICH IS WHERE THEY COME FROM NOW. The fixture
+		// declares `file:` and no `records:`; the compile reads the file into the
+		// object, so these are the file's lines in the file's order -- comments
+		// and blanks included, because the parser that reads them already knows
+		// what to ignore and a compile deciding what a zone file says would be a
+		// compile with an opinion about DNS.
+		//
+		// NOT Records[0]: a real zone file opens with a comment, and asserting a
+		// position asserts the file's layout rather than its content.
+		joined := strings.Join(z.Records, "\n")
+		require.Regexp(t, `IN\s+MX`, joined, "the records are the zone-file lines the author wrote")
+		require.Contains(t, joined, ";", "and nothing stripped the author's comments")
+		require.Contains(t, joined, "include:_spf.google.com",
+			"including a record written across lines, which a list of strings in yaml could not carry")
 	}
 	require.True(t, found, "the fixture's zone was not among %v", zones)
 }

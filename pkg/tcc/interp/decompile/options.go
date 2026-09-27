@@ -8,6 +8,7 @@ import (
 func WithLocal(path string) Option {
 	return func(d *Decompiler) error {
 		d.seerOptions = append(d.seerOptions, yaseer.SystemFS(path))
+		d.files = afero.NewBasePathFs(afero.NewOsFs(), path)
 		return nil
 	}
 }
@@ -15,6 +16,7 @@ func WithLocal(path string) Option {
 func WithVirtual(fs afero.Fs, path string) Option {
 	return func(d *Decompiler) error {
 		d.seerOptions = append(d.seerOptions, yaseer.VirtualFS(fs, path))
+		d.files = afero.NewBasePathFs(fs, path)
 		return nil
 	}
 }

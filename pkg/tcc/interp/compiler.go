@@ -137,6 +137,14 @@ func (c *Compiler) CompileFor(ctx context.Context, b engine.Bound) (Object, []Ne
 			return obj, validations, err
 		}
 	}
+	// THE FILES THE DOCUMENT POINTS AT, read in AFTER lowering for the reason the
+	// provenance below is: lowerFor rebuilds the object from the documents, so
+	// anything written before it is discarded. That cost one confusing hour --
+	// the write succeeded, the selector read it back, and Flat() showed nothing.
+	if err := c.inlineFiles(obj); err != nil {
+		return obj, validations, err
+	}
+
 	// WHERE EACH DELEGATED BLOCK CAME FROM, recorded last so it survives a lowering
 	// that rebuilt the object. A consumer answers "which commit is this serving" from
 	// the object alone, which is the only thing that keeps the whole visible when part

@@ -2354,7 +2354,7 @@ var V2Resources = []*Node{
 				StringSlice("records", InSection("records"),
 					Doc("Records", "Zone-file lines, e.g. \"www 300 IN A 1.2.3.4\", \"@ 3600 IN MX 10 mail.example.com.\".")),
 
-				String("file", IsRepoPath(), InSection("records"),
+				String("file", IsRepoPath(), Inlined("records"), InSection("records"),
 					Doc("Zone File", "Path to a zone file in this repository, e.g. \"dns/example.com.zone\". Served with this zone's fqdn as $ORIGIN. Use NS records in it to delegate a subtree elsewhere.")),
 
 				// ASKED ONLY FOR WHAT THE FILE DOES NOT ANSWER, so adding one to
