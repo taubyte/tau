@@ -854,6 +854,28 @@ func Handle(project, environment, id string) string {
 	return strings.Join([]string{project, environment, id}, "/")
 }
 
+// SplitHandle is Handle read backwards: the deployment a resolved resource
+// belongs to, and the resource's own id.
+//
+// IT IS HERE BECAUSE THE WRITER IS. Every consumer of a handle has to take it
+// apart again — a node deciding who may open an instance, a service opening the
+// engine a grant names — and each of them was doing it with its own SplitN and
+// its own idea of what a short handle means. Two spellings of one format agree
+// by coincidence and diverge on the first edit to either, which is the argument
+// Handle already makes.
+//
+// A SHORT HANDLE ANSWERS EMPTY RATHER THAN REFUSING, and the caller decides what
+// that means: a name that resolves to nothing is a bug to report where it can be
+// named, and reporting it here would be reporting it three layers from whoever
+// can say which resource it was.
+func SplitHandle(handle string) (project, environment, id string) {
+	parts := strings.SplitN(handle, "/", 3)
+	for len(parts) < 3 {
+		parts = append(parts, "")
+	}
+	return parts[0], parts[1], parts[2]
+}
+
 // Locate is where a resource id lives: its kind, the scope chain it is in, and
 // its name.
 //
