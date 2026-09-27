@@ -625,6 +625,46 @@ type Admission struct {
 	Denied  string
 }
 
+// Question is one DNS question put to a zone's resolver.
+//
+// THE NAME IS ABSOLUTE AND LOWER-CASED, as it arrived on the wire, so a guest
+// matching on it does not have to guess whether the apex is included or how it
+// was capitalised. Type is the TEXT form — "A", "AAAA", "SRV" — and not the
+// number, for the reason an answer is a line: a resolver wanting a type this
+// system has not heard of can still be asked about it.
+type Question struct {
+	Name string
+	Type string
+}
+
+// Resolution is what a zone's resolver answered.
+//
+// IT LIVES HERE BESIDE Admission for that type's reason: the DNS server speaks
+// this and not the tier's own types, so an answer that stayed in
+// pkg/invoke/wasm would make the server import a runtime it never runs.
+//
+// THE THREE ANSWERS DNS ACTUALLY HAS, which is why this is not a []string:
+//
+//	Exists=true, Records non-empty — here they are.
+//	Exists=true, Records empty     — the name is in this zone and holds nothing
+//	                                 of the type asked for. NOERROR with no
+//	                                 records, which is what stops a client
+//	                                 looking elsewhere for a name that is here.
+//	Exists=false                   — no such name in this zone. NXDOMAIN.
+//
+// Collapsing the middle two would make a resolver unable to say the difference,
+// and a server that confuses them misleads everything that asks: NXDOMAIN for a
+// name that exists poisons a negative cache, and NOERROR for one that does not
+// stops a client trying anywhere else.
+//
+// Records are zone-file lines relative to the zone's apex — "geo 60 IN A
+// 203.0.113.9" — exactly as the file arm holds them, so both arms of a zone
+// parse the same way.
+type Resolution struct {
+	Records []string
+	Exists  bool
+}
+
 // Runtime starts instances. That is the entire contract, and it is small on
 // purpose: everything else an engine might be asked to do is the same for all
 // of them and lives in Pool.
