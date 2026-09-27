@@ -435,7 +435,10 @@ func (n *Node) openWorker() error {
 			return err
 		}
 
-		servers := &databases{node: n}
+		servers, err := newDatabases(n)
+		if err != nil {
+			return err
+		}
 		n.closers = append(n.closers, servers)
 
 		objects, err := storage.New(n.opts.assets, storageStores{node: n}, n.opts.now)

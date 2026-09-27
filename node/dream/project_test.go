@@ -821,15 +821,15 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 // TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups.
 //
 // The same claim as the crdt twin above, aimed at the mechanism raft uses
-// instead of a topic. A ledger's group is named by groupName, which is
-// raftDomain joined to the same Spec.Prefix (node/database.go:823), and pkg/raft
-// makes that name the libp2p protocol id its voters dial each other on
+// instead of a topic. A ledger's group is named by ledger.Namespace, which is
+// ledger.Domain joined to the same Spec.Prefix (node/ledger/ledger.go), and
+// pkg/raft makes that name the libp2p protocol id its voters dial each other on
 // (pkg/raft/stream.go:65-71). Drop the project segment and the two projects
 // derive ONE group: they join it, and they elect one leader between them.
 //
 // A SHARED GROUP DOES NOT LEAK ROWS, and that had to be measured rather than
-// assumed. With the project dropped from groupName alone, both projects commit
-// into one log and every row assertion below still passes: the kv engine
+// assumed. With the project dropped from ledger.Namespace alone, both projects
+// commit into one log and every row assertion below still passes: the kv engine
 // prefixes every key with Spec.Prefix (pkg/database/engines/kv/kv.go:91 and
 // :105) whatever log carried it, so the entries stay apart inside the one log.
 // What a shared group costs is the isolation `consensus: raft` was asked for —

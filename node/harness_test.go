@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"path"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/ipfs/go-log/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
@@ -222,117 +220,4 @@ func makeNode(t *testing.T, cfg Config, extra ...Option) (*Node, host.Host, *mem
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	return n, h, factory
-}
-
-// follower is a cluster that is not the leader, or that fails where raft fails.
-// It exists because the mock is a no-op leader — every write succeeds — and
-// leadership is exactly what the writes in this package argue about: pkg/raft
-// has no conditional write, so "am I the leader" plus a barrier is the whole of
-// why a head or a claim is safe to read.
-type follower struct {
-	*raft.MockCluster
-
-	// leader, when false, is a node that lost the election between being asked
-	// and answering.
-	leader bool
-
-	// barrier and commit are what raft answered, so a caller's handling of each
-	// is a separate question from its handling of the other. A log's commit is a
-	// Batch — the position and the head move in one entry — so that is where a
-	// lost election shows up.
-	barrier error
-	commit  error
-
-	// leaderID is who leads instead of this node. A ledger's refusal carries it,
-	// which is what makes the call re-issuable rather than merely refused, so a
-	// fixture that could not name one could not stand in for a follower at all.
-	leaderID    libp2ppeer.ID
-	leaderError error
-
-	// emptyAfterBarrier is a group that went away between the barrier and the
-	// read: every answer from the state machine is empty from then on, which is
-	// what a closed cluster and a nil state machine both look like.
-	emptyAfterBarrier bool
-
-	// wrote is what a Set or a Delete answered — the single-entry half of what
-	// commit is for a Batch, and where a lost lease shows up for a ledger.
-	wrote error
-
-	// barriers and closed are what a caller DID, for the two claims that are
-	// about the call rather than about its answer: that a read takes a barrier,
-	// and that a node closes the groups it opened.
-	mu       sync.Mutex
-	barriers int
-	closed   bool
-}
-
-func notLeading() *follower {
-	return &follower{MockCluster: raft.NewMockCluster()}
-}
-
-func (f *follower) IsLeader() bool { return f.leader && !f.emptyAfterBarrier }
-
-func (f *follower) Get(key string) ([]byte, bool) {
-	if f.emptyAfterBarrier {
-		return nil, false
-	}
-	return f.MockCluster.Get(key)
-}
-
-func (f *follower) Keys(prefix string) []string {
-	if f.emptyAfterBarrier {
-		return nil
-	}
-	return f.MockCluster.Keys(prefix)
-}
-
-func (f *follower) Leader() (libp2ppeer.ID, error) {
-	return f.leaderID, f.leaderError
-}
-
-func (f *follower) Barrier(d time.Duration) error {
-	f.mu.Lock()
-	f.barriers++
-	f.mu.Unlock()
-
-	if f.barrier != nil {
-		return f.barrier
-	}
-	return f.MockCluster.Barrier(d)
-}
-
-func (f *follower) Set(key string, value []byte, d time.Duration) error {
-	if f.wrote != nil {
-		return f.wrote
-	}
-	return f.MockCluster.Set(key, value, d)
-}
-
-func (f *follower) Delete(key string, d time.Duration) error {
-	if f.wrote != nil {
-		return f.wrote
-	}
-	return f.MockCluster.Delete(key, d)
-}
-
-func (f *follower) Close() error {
-	f.mu.Lock()
-	f.closed = true
-	f.mu.Unlock()
-	return f.MockCluster.Close()
-}
-
-// did is what a caller did to this cluster: how many barriers it took, and
-// whether it closed the group.
-func (f *follower) did() (barriers int, closed bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.barriers, f.closed
-}
-
-func (f *follower) Batch(ops []raft.BatchOp, d time.Duration) error {
-	if f.commit != nil {
-		return f.commit
-	}
-	return f.MockCluster.Batch(ops, d)
 }
