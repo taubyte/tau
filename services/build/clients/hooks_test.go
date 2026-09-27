@@ -32,28 +32,23 @@ func newHooks(t *testing.T, get func(string) (*authv1.Hook, error)) *HookClient 
 	return c
 }
 
-func githubHook(id, secret, key string) *authv1.Hook {
-	return &authv1.Hook{Hook: &authv1.Hook_Github{
-		Github: &authv1.GithubHook{Id: id, Secret: secret, RepositoryKey: key},
-	}}
-}
-
-// The pair is what comes back, because the pair decides an authentication: the
-// secret verifies the body and the key says which repository it is good for.
-// v1 fetched only the first of them.
-func TestGetReturnsTheSecretAndTheRepositoryTogether(t *testing.T) {
+// The whole hook is what comes back, because together its fields decide an
+// authentication: the scheme and secret verify the body and the key says which
+// repository it is good for. v1 fetched only the secret.
+func TestGetReturnsTheHookWhole(t *testing.T) {
 	var asked string
 	c := newHooks(t, func(id string) (*authv1.Hook, error) {
 		asked = id
-		return githubHook(id, "s3cret", "github.com/acme/pay"), nil
+		return &authv1.Hook{Id: id, RepositoryKey: "gitlab.example.com/acme/pay", Handle: "7", Scheme: "standard-webhooks", Secret: []byte("s3cret")}, nil
 	})
 
 	got, err := c.Get(t.Context(), "hook-1")
 
 	require.NoError(t, err)
 	require.Equal(t, "hook-1", asked)
-	require.Equal(t, "s3cret", got.GetSecret())
-	require.Equal(t, "github.com/acme/pay", got.GetRepositoryKey())
+	require.Equal(t, []byte("s3cret"), got.GetSecret())
+	require.Equal(t, "standard-webhooks", got.GetScheme())
+	require.Equal(t, "gitlab.example.com/acme/pay", got.GetRepositoryKey())
 }
 
 func TestAnUnknownHookStaysNotFound(t *testing.T) {
@@ -63,24 +58,6 @@ func TestAnUnknownHookStaysNotFound(t *testing.T) {
 
 	_, err := c.Get(t.Context(), "hook-1")
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
-}
-
-// auth's Hook is a oneof whose bitbucket case is reachable in the schema and
-// unreachable in the running service. A hook of another provider has no secret
-// to verify with, and answering it as a decided refusal is what keeps the
-// frontend from treating an absent secret as an empty one.
-func TestAHookOfAnotherProviderIsARefusalAndNotANilSecret(t *testing.T) {
-	for _, hook := range []*authv1.Hook{
-		{},
-		{Hook: &authv1.Hook_Bitbucket{Bitbucket: &authv1.BitbucketHook{Id: "hook-1"}}},
-	} {
-		c := newHooks(t, func(string) (*authv1.Hook, error) { return hook, nil })
-
-		got, err := c.Get(t.Context(), "hook-1")
-
-		require.Nil(t, got)
-		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
-	}
 }
 
 func TestGetRefusesAnEmptyHookIdWithoutDialling(t *testing.T) {

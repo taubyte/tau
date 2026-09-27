@@ -34,9 +34,10 @@
 // `pkg/taucorder/proto/taucorder/v1/common.proto`'s `RepositoryId { oneof {
 // int64 github = 1; string bitbucket = 2; } }`: a provider-keyed union is
 // what a numeric-id world needs and a clone-URL-keyed one does not — it is the
-// shape this schema exists to not repeat. `GithubHook.provider_hook_id` below
-// is a different number and stays: it is the id GitHub assigned to the
-// *webhook* it created, the provider's to name, not a repository identity.
+// shape this schema exists to not repeat. `Hook.handle` below is a different
+// thing and stays: it is the id a forge assigned to the *webhook* it created,
+// the forge's to name, not a repository identity — and a string, because
+// Bitbucket's is a UUID where others number theirs.
 //
 // STREAMING: every `List` below is server-streaming; everything else is
 // unary. Today's cbor transport (`p2p/streams/client`) sends one request and

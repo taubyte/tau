@@ -14,12 +14,12 @@ import (
 // the cache and the rate limiter are both keyed by it.
 const maxHookIDLength = 256
 
-// handleWebhook is POST /github/{hook}, and THE ORDER OF THE CHECKS IS THE
+// handleWebhook is POST /hook/{hook}, and THE ORDER OF THE CHECKS IS THE
 // DESIGN. Each one is placed where it is because of what it costs and what it
 // is allowed to know, and the file reads top to bottom in the order a stranger's
 // bytes are believed:
 //
-//	nothing is believed          -> the path, the method, the event, the size
+//	nothing is believed          -> the path, the method, the encoding, the size
 //	the cloud is asked           -> only after the rate limits
 //	the bytes are authenticated  -> only after the secret
 //	the bytes are interpreted    -> only after the signature
@@ -52,28 +52,17 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A HEADER CHECK, AND IT IS FREE. GitHub sends `ping` when a hook is
-	// created and a dozen other event types after that; answering them 202 is
-	// what keeps a newly registered hook from showing as failing in the
-	// provider's own UI, which is what v1 does by returning an error to ping.
-	// It happens before any lookup, so an event this cloud does not handle
-	// costs nothing but the headers.
-	switch event := r.Header.Get(eventHeader); event {
-	case "push":
-	case "":
-		respond(w, problem(http.StatusBadRequest, "not a webhook"))
-		return
-	default:
-		accepted(w, "not a push event")
-		return
-	}
+	// NO EVENT CHECK HERE. Which header names the event is the forge's —
+	// X-GitHub-Event, X-Gitlab-Event, X-Event-Key — and this route names no
+	// forge, so a ping is told apart from a push only after the delivery
+	// verifies (ErrNotAPush below). It costs a cached, rate-limited lookup,
+	// which is what every push already costs.
 
 	// ONE ENCODING, BECAUSE THE HOOK IS THIS CLOUD'S OWN. GitHub can be asked
 	// to send `application/x-www-form-urlencoded` with the payload in a form
-	// field, and auth creates every hook with ContentType "json"
-	// (services/auth/github_client.go:186). Accepting the form encoding would
-	// be a second parser for a stranger's bytes, for a shape this cloud never
-	// asks for.
+	// field, and every hook this cloud registers asks for json. Accepting the
+	// form encoding would be a second parser for a stranger's bytes, for a
+	// shape this cloud never asks for.
 	if !isJSON(r.Header.Get("Content-Type")) {
 		respond(w, problem(http.StatusUnsupportedMediaType, "expected application/json"))
 		return
@@ -117,35 +106,40 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// AN EMPTY SECRET IS A 500, NEVER A SKIPPED MAC. See signature.go.
-	if err := verifySignature(hook.GetSecret(), body, r.Header.Get(signatureHeader)); err != nil {
-		if errors.Is(err, errNoSecret) {
-			s.log("hook %s has no secret; refusing to accept an unauthenticated push", hookID)
-			respond(w, problem(http.StatusInternalServerError, "hook is not configured"))
-			return
-		}
-		respond(w, problem(http.StatusForbidden, "signature does not verify"))
+	// AN EMPTY SECRET IS A 500, NEVER A SKIPPED MAC. It is a hook this cloud
+	// registered and cannot check, which is the operator's to see; forge refuses
+	// it too, but its refusal reads as a delivery that did not verify.
+	if len(hook.GetSecret()) == 0 {
+		s.log("hook %s has no secret; refusing to accept an unauthenticated push", hookID)
+		respond(w, problem(http.StatusInternalServerError, "hook is not configured"))
 		return
 	}
 
-	// From here the bytes are authenticated, so they may be interpreted.
-	event, err := parsePush(body)
-	if err != nil {
-		respond(w, err)
+	// THE BYTES ARE AUTHENTICATED, AND ONLY THEN INTERPRETED, by the forge that
+	// serves the hook's host, under the scheme stored WITH the hook. Verify also
+	// holds the check v1 does not have: the signature was made with a secret the
+	// URL chose, while the repository is named by the BODY, so a push is only
+	// ever for the hook's own repository — otherwise a signature under any hook
+	// this cloud has registered would authorize a job for any repository it has.
+	event, err := s.deliveries.Verify(hook, r.Header, body)
+	switch {
+	case errors.Is(err, ErrNotAPush):
+		accepted(w, "not a push event")
 		return
-	}
-
-	// THE HOOK BINDS THE REPOSITORY, AND THIS IS THE CHECK v1 DOES NOT HAVE.
-	// The signature was verified with a secret chosen by the URL, while the
-	// repository is named by the BODY — so without this line a signature made
-	// under any hook this cloud has registered authorizes a job for any
-	// repository it has registered, including one the signer cannot push to.
-	// auth.proto already carries repository_key on GithubHook; v1 fetched only
-	// the secret and dropped the binding in transit.
-	if event.Repository.String() != hook.GetRepositoryKey() {
-		s.log("hook %s is registered for %q and signed a push for %q",
-			hookID, hook.GetRepositoryKey(), event.Repository)
-		respond(w, problem(http.StatusForbidden, "hook is not registered for that repository"))
+	case errors.Is(err, ErrRefDeleted):
+		respond(w, ignored("ref deleted"))
+		return
+	case errors.Is(err, ErrMalformed):
+		s.log("hook %s: %v", hookID, err)
+		respond(w, problem(http.StatusBadRequest, "malformed payload"))
+		return
+	case errors.Is(err, ErrUnverified):
+		s.log("hook %s: %v", hookID, err)
+		respond(w, problem(http.StatusForbidden, "delivery does not verify"))
+		return
+	case err != nil:
+		s.log("hook %s cannot be verified here: %v", hookID, err)
+		respond(w, problem(http.StatusInternalServerError, "hook is not configured"))
 		return
 	}
 
@@ -158,9 +152,9 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
 
-	jobID, err := s.backend.Enqueue(ctx, event.Repository.String(), event.Ref, event.CommitSHA)
+	jobID, err := s.backend.Enqueue(ctx, event.Repository, event.Ref, event.Commit)
 	if err != nil {
-		s.log("enqueue %s %s: %v", event.Repository, event.CommitSHA, err)
+		s.log("enqueue %s %s: %v", event.Repository, event.Commit, err)
 		respond(w, err)
 		return
 	}

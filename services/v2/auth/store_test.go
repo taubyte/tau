@@ -82,14 +82,8 @@ func TestUnregisterLeavesNothingBehind(t *testing.T) {
 	require.NoError(t, registerRepository(t.Context(), kv, key, who))
 	require.NoError(t, linkRepositoryToProject(t.Context(), kv, key, "proj-1"))
 
-	batch, err := kv.Batch(t.Context())
-	require.NoError(t, err)
-	require.NoError(t, batch.Put(hookProviderRow("hook-1"), []byte("github")))
-	require.NoError(t, batch.Put(hookGithubIDRow("hook-1"), []byte("42")))
-	require.NoError(t, batch.Put(hookGithubSecretRow("hook-1"), []byte("s3cr3t")))
-	require.NoError(t, batch.Put(hookGithubRepoRow("hook-1"), []byte(key.String())))
-	require.NoError(t, batch.Put(repoHookRow(key, "hook-1"), nil))
-	require.NoError(t, batch.Commit())
+	require.NoError(t, putHook(t.Context(), kv, "hook-1", hook(key.String())))
+	require.NoError(t, kv.Put(t.Context(), repoHookRow(key, "hook-1"), nil))
 
 	require.NoError(t, deleteRepository(t.Context(), kv, key))
 
@@ -98,8 +92,8 @@ func TestUnregisterLeavesNothingBehind(t *testing.T) {
 
 	_, registered := repositoryOwner(t.Context(), kv, key)
 	assert.False(t, registered)
-	_, err = fetchHookProvider(t.Context(), kv, "hook-1")
-	assert.Error(t, err)
+	_, err = fetchHook(t.Context(), kv, "hook-1")
+	assert.ErrorIs(t, err, errNoHook)
 }
 
 func assertNothingUnderPrefix(t testing.TB, kv kvdb.KVDB, prefix string) {

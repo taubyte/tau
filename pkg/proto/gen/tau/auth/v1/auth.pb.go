@@ -36,9 +36,10 @@
 // `pkg/taucorder/proto/taucorder/v1/common.proto`'s `RepositoryId { oneof {
 // int64 github = 1; string bitbucket = 2; } }`: a provider-keyed union is
 // what a numeric-id world needs and a clone-URL-keyed one does not — it is the
-// shape this schema exists to not repeat. `GithubHook.provider_hook_id` below
-// is a different number and stays: it is the id GitHub assigned to the
-// *webhook* it created, the provider's to name, not a repository identity.
+// shape this schema exists to not repeat. `Hook.handle` below is a different
+// thing and stays: it is the id a forge assigned to the *webhook* it created,
+// the forge's to name, not a repository identity — and a string, because
+// Bitbucket's is a UUID where others number theirs.
 //
 // STREAMING: every `List` below is server-streaming; everything else is
 // unary. Today's cbor transport (`p2p/streams/client`) sends one request and
@@ -462,143 +463,34 @@ func (x *RepositoryRef) GetRepositoryKey() string {
 	return ""
 }
 
-// GithubHook is a webhook GitHub calls for pushes to one repository.
-// `provider_hook_id` is GITHUB'S id for the webhook object itself — distinct
-// from, and unrelated to, repository identity. It is a legitimate
-// provider-native number for the reason repository ids are not: GitHub owns
-// the webhook resource and assigns its id: nothing here could derive it, the
-// way a repository's key is derived from its own clone URL.
-type GithubHook struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ProviderHookId int64                  `protobuf:"varint,2,opt,name=provider_hook_id,json=providerHookId,proto3" json:"provider_hook_id,omitempty"`
-	Secret         string                 `protobuf:"bytes,3,opt,name=secret,proto3" json:"secret,omitempty"`
-	RepositoryKey  string                 `protobuf:"bytes,4,opt,name=repository_key,json=repositoryKey,proto3" json:"repository_key,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *GithubHook) Reset() {
-	*x = GithubHook{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GithubHook) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GithubHook) ProtoMessage() {}
-
-func (x *GithubHook) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GithubHook.ProtoReflect.Descriptor instead.
-func (*GithubHook) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *GithubHook) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *GithubHook) GetProviderHookId() int64 {
-	if x != nil {
-		return x.ProviderHookId
-	}
-	return 0
-}
-
-func (x *GithubHook) GetSecret() string {
-	if x != nil {
-		return x.Secret
-	}
-	return ""
-}
-
-func (x *GithubHook) GetRepositoryKey() string {
-	if x != nil {
-		return x.RepositoryKey
-	}
-	return ""
-}
-
-// BitbucketHook exists because core/services/auth's Hook interface already
-// declares `Bitbucket() (*BitbucketHook, error)` as an extension point.
-// services/auth/hooks.Fetch has no Bitbucket case yet — Hook.bitbucket is
-// reachable in the schema and unreachable in the running service until one is
-// written.
-type BitbucketHook struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *BitbucketHook) Reset() {
-	*x = BitbucketHook{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BitbucketHook) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BitbucketHook) ProtoMessage() {}
-
-func (x *BitbucketHook) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use BitbucketHook.ProtoReflect.Descriptor instead.
-func (*BitbucketHook) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *BitbucketHook) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
+// Hook is a webhook a forge calls for pushes to one repository.
+//
+// THERE IS NO PROVIDER FIELD AND NO PER-PROVIDER MESSAGE. The host in
+// `repository_key` is the forge, exactly as it is everywhere else in this
+// schema; which driver reads a delivery is the receiving cloud's binding for
+// that host (pkg/forge.Registry).
 type Hook struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Hook:
-	//
-	//	*Hook_Github
-	//	*Hook_Bitbucket
-	Hook          isHook_Hook `protobuf_oneof:"hook"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// repository_key is the one repository this hook may speak for. A delivery
+	// naming any other is refused, whatever its signature.
+	RepositoryKey string `protobuf:"bytes,2,opt,name=repository_key,json=repositoryKey,proto3" json:"repository_key,omitempty"`
+	// handle is the forge's own id for the webhook it created: opaque.
+	Handle string `protobuf:"bytes,3,opt,name=handle,proto3" json:"handle,omitempty"`
+	// scheme is how the forge signs deliveries (pkg/forge.Scheme), STORED WITH
+	// THE HOOK so a hook created under one procedure is never checked under
+	// another — an instance upgraded later keeps verifying its older hooks.
+	Scheme string `protobuf:"bytes,4,opt,name=scheme,proto3" json:"scheme,omitempty"`
+	// secret is the hook's key material (pkg/forge.Secret), raw — the string a
+	// forge was actually given is derived from it per scheme — so it is bytes.
+	Secret        []byte `protobuf:"bytes,5,opt,name=secret,proto3" json:"secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Hook) Reset() {
 	*x = Hook{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[9]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -610,7 +502,7 @@ func (x *Hook) String() string {
 func (*Hook) ProtoMessage() {}
 
 func (x *Hook) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[9]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -623,49 +515,43 @@ func (x *Hook) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hook.ProtoReflect.Descriptor instead.
 func (*Hook) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{9}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *Hook) GetHook() isHook_Hook {
+func (x *Hook) GetId() string {
 	if x != nil {
-		return x.Hook
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Hook) GetRepositoryKey() string {
+	if x != nil {
+		return x.RepositoryKey
+	}
+	return ""
+}
+
+func (x *Hook) GetHandle() string {
+	if x != nil {
+		return x.Handle
+	}
+	return ""
+}
+
+func (x *Hook) GetScheme() string {
+	if x != nil {
+		return x.Scheme
+	}
+	return ""
+}
+
+func (x *Hook) GetSecret() []byte {
+	if x != nil {
+		return x.Secret
 	}
 	return nil
 }
-
-func (x *Hook) GetGithub() *GithubHook {
-	if x != nil {
-		if x, ok := x.Hook.(*Hook_Github); ok {
-			return x.Github
-		}
-	}
-	return nil
-}
-
-func (x *Hook) GetBitbucket() *BitbucketHook {
-	if x != nil {
-		if x, ok := x.Hook.(*Hook_Bitbucket); ok {
-			return x.Bitbucket
-		}
-	}
-	return nil
-}
-
-type isHook_Hook interface {
-	isHook_Hook()
-}
-
-type Hook_Github struct {
-	Github *GithubHook `protobuf:"bytes,1,opt,name=github,proto3,oneof"`
-}
-
-type Hook_Bitbucket struct {
-	Bitbucket *BitbucketHook `protobuf:"bytes,2,opt,name=bitbucket,proto3,oneof"`
-}
-
-func (*Hook_Github) isHook_Hook() {}
-
-func (*Hook_Bitbucket) isHook_Hook() {}
 
 type HookRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -676,7 +562,7 @@ type HookRef struct {
 
 func (x *HookRef) Reset() {
 	*x = HookRef{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[10]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -688,7 +574,7 @@ func (x *HookRef) String() string {
 func (*HookRef) ProtoMessage() {}
 
 func (x *HookRef) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[10]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -701,7 +587,7 @@ func (x *HookRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HookRef.ProtoReflect.Descriptor instead.
 func (*HookRef) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{10}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *HookRef) GetId() string {
@@ -721,7 +607,7 @@ type RegisterDomainRequest struct {
 
 func (x *RegisterDomainRequest) Reset() {
 	*x = RegisterDomainRequest{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[11]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -733,7 +619,7 @@ func (x *RegisterDomainRequest) String() string {
 func (*RegisterDomainRequest) ProtoMessage() {}
 
 func (x *RegisterDomainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[11]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -746,7 +632,7 @@ func (x *RegisterDomainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterDomainRequest.ProtoReflect.Descriptor instead.
 func (*RegisterDomainRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{11}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RegisterDomainRequest) GetFqdn() string {
@@ -778,7 +664,7 @@ type RegisterDomainResponse struct {
 
 func (x *RegisterDomainResponse) Reset() {
 	*x = RegisterDomainResponse{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[12]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -790,7 +676,7 @@ func (x *RegisterDomainResponse) String() string {
 func (*RegisterDomainResponse) ProtoMessage() {}
 
 func (x *RegisterDomainResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[12]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -803,7 +689,7 @@ func (x *RegisterDomainResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterDomainResponse.ProtoReflect.Descriptor instead.
 func (*RegisterDomainResponse) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{12}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RegisterDomainResponse) GetToken() string {
@@ -851,7 +737,7 @@ type Certificate struct {
 
 func (x *Certificate) Reset() {
 	*x = Certificate{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[13]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -863,7 +749,7 @@ func (x *Certificate) String() string {
 func (*Certificate) ProtoMessage() {}
 
 func (x *Certificate) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[13]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -876,7 +762,7 @@ func (x *Certificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Certificate.ProtoReflect.Descriptor instead.
 func (*Certificate) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{13}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Certificate) GetPem() []byte {
@@ -895,7 +781,7 @@ type CacheEntry struct {
 
 func (x *CacheEntry) Reset() {
 	*x = CacheEntry{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[14]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -907,7 +793,7 @@ func (x *CacheEntry) String() string {
 func (*CacheEntry) ProtoMessage() {}
 
 func (x *CacheEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[14]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -920,7 +806,7 @@ func (x *CacheEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheEntry.ProtoReflect.Descriptor instead.
 func (*CacheEntry) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{14}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CacheEntry) GetData() []byte {
@@ -939,7 +825,7 @@ type FqdnRequest struct {
 
 func (x *FqdnRequest) Reset() {
 	*x = FqdnRequest{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[15]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -951,7 +837,7 @@ func (x *FqdnRequest) String() string {
 func (*FqdnRequest) ProtoMessage() {}
 
 func (x *FqdnRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[15]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -964,7 +850,7 @@ func (x *FqdnRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FqdnRequest.ProtoReflect.Descriptor instead.
 func (*FqdnRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{15}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *FqdnRequest) GetFqdn() string {
@@ -984,7 +870,7 @@ type SetCertificateRequest struct {
 
 func (x *SetCertificateRequest) Reset() {
 	*x = SetCertificateRequest{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[16]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -996,7 +882,7 @@ func (x *SetCertificateRequest) String() string {
 func (*SetCertificateRequest) ProtoMessage() {}
 
 func (x *SetCertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[16]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1009,7 +895,7 @@ func (x *SetCertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCertificateRequest.ProtoReflect.Descriptor instead.
 func (*SetCertificateRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{16}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SetCertificateRequest) GetFqdn() string {
@@ -1035,7 +921,7 @@ type CacheKeyRequest struct {
 
 func (x *CacheKeyRequest) Reset() {
 	*x = CacheKeyRequest{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[17]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1047,7 +933,7 @@ func (x *CacheKeyRequest) String() string {
 func (*CacheKeyRequest) ProtoMessage() {}
 
 func (x *CacheKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[17]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1060,7 +946,7 @@ func (x *CacheKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheKeyRequest.ProtoReflect.Descriptor instead.
 func (*CacheKeyRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{17}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CacheKeyRequest) GetKey() string {
@@ -1080,7 +966,7 @@ type SetCacheRequest struct {
 
 func (x *SetCacheRequest) Reset() {
 	*x = SetCacheRequest{}
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[18]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1092,7 +978,7 @@ func (x *SetCacheRequest) String() string {
 func (*SetCacheRequest) ProtoMessage() {}
 
 func (x *SetCacheRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v1_auth_proto_msgTypes[18]
+	mi := &file_tau_auth_v1_auth_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1105,7 +991,7 @@ func (x *SetCacheRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCacheRequest.ProtoReflect.Descriptor instead.
 func (*SetCacheRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{18}
+	return file_tau_auth_v1_auth_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SetCacheRequest) GetKey() string {
@@ -1152,18 +1038,12 @@ const file_tau_auth_v1_auth_proto_rawDesc = "" +
 	"deploy_key\x18\x03 \x01(\tR\tdeployKey\"6\n" +
 	"\rRepositoryRef\x12%\n" +
 	"\x0erepository_key\x18\x01 \x01(\tR\rrepositoryKey\"\x85\x01\n" +
-	"\n" +
-	"GithubHook\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12(\n" +
-	"\x10provider_hook_id\x18\x02 \x01(\x03R\x0eproviderHookId\x12\x16\n" +
-	"\x06secret\x18\x03 \x01(\tR\x06secret\x12%\n" +
-	"\x0erepository_key\x18\x04 \x01(\tR\rrepositoryKey\"\x1f\n" +
-	"\rBitbucketHook\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"}\n" +
-	"\x04Hook\x121\n" +
-	"\x06github\x18\x01 \x01(\v2\x17.tau.auth.v1.GithubHookH\x00R\x06github\x12:\n" +
-	"\tbitbucket\x18\x02 \x01(\v2\x1a.tau.auth.v1.BitbucketHookH\x00R\tbitbucketB\x06\n" +
-	"\x04hook\"\x19\n" +
+	"\x04Hook\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
+	"\x0erepository_key\x18\x02 \x01(\tR\rrepositoryKey\x12\x16\n" +
+	"\x06handle\x18\x03 \x01(\tR\x06handle\x12\x16\n" +
+	"\x06scheme\x18\x04 \x01(\tR\x06scheme\x12\x16\n" +
+	"\x06secret\x18\x05 \x01(\fR\x06secret\"\x19\n" +
 	"\aHookRef\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"J\n" +
 	"\x15RegisterDomainRequest\x12\x12\n" +
@@ -1226,7 +1106,7 @@ func file_tau_auth_v1_auth_proto_rawDescGZIP() []byte {
 	return file_tau_auth_v1_auth_proto_rawDescData
 }
 
-var file_tau_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_tau_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_tau_auth_v1_auth_proto_goTypes = []any{
 	(*Empty)(nil),                  // 0: tau.auth.v1.Empty
 	(*Project)(nil),                // 1: tau.auth.v1.Project
@@ -1235,61 +1115,57 @@ var file_tau_auth_v1_auth_proto_goTypes = []any{
 	(*CreateProjectResponse)(nil),  // 4: tau.auth.v1.CreateProjectResponse
 	(*Repository)(nil),             // 5: tau.auth.v1.Repository
 	(*RepositoryRef)(nil),          // 6: tau.auth.v1.RepositoryRef
-	(*GithubHook)(nil),             // 7: tau.auth.v1.GithubHook
-	(*BitbucketHook)(nil),          // 8: tau.auth.v1.BitbucketHook
-	(*Hook)(nil),                   // 9: tau.auth.v1.Hook
-	(*HookRef)(nil),                // 10: tau.auth.v1.HookRef
-	(*RegisterDomainRequest)(nil),  // 11: tau.auth.v1.RegisterDomainRequest
-	(*RegisterDomainResponse)(nil), // 12: tau.auth.v1.RegisterDomainResponse
-	(*Certificate)(nil),            // 13: tau.auth.v1.Certificate
-	(*CacheEntry)(nil),             // 14: tau.auth.v1.CacheEntry
-	(*FqdnRequest)(nil),            // 15: tau.auth.v1.FqdnRequest
-	(*SetCertificateRequest)(nil),  // 16: tau.auth.v1.SetCertificateRequest
-	(*CacheKeyRequest)(nil),        // 17: tau.auth.v1.CacheKeyRequest
-	(*SetCacheRequest)(nil),        // 18: tau.auth.v1.SetCacheRequest
+	(*Hook)(nil),                   // 7: tau.auth.v1.Hook
+	(*HookRef)(nil),                // 8: tau.auth.v1.HookRef
+	(*RegisterDomainRequest)(nil),  // 9: tau.auth.v1.RegisterDomainRequest
+	(*RegisterDomainResponse)(nil), // 10: tau.auth.v1.RegisterDomainResponse
+	(*Certificate)(nil),            // 11: tau.auth.v1.Certificate
+	(*CacheEntry)(nil),             // 12: tau.auth.v1.CacheEntry
+	(*FqdnRequest)(nil),            // 13: tau.auth.v1.FqdnRequest
+	(*SetCertificateRequest)(nil),  // 14: tau.auth.v1.SetCertificateRequest
+	(*CacheKeyRequest)(nil),        // 15: tau.auth.v1.CacheKeyRequest
+	(*SetCacheRequest)(nil),        // 16: tau.auth.v1.SetCacheRequest
 }
 var file_tau_auth_v1_auth_proto_depIdxs = []int32{
-	7,  // 0: tau.auth.v1.Hook.github:type_name -> tau.auth.v1.GithubHook
-	8,  // 1: tau.auth.v1.Hook.bitbucket:type_name -> tau.auth.v1.BitbucketHook
-	2,  // 2: tau.auth.v1.ProjectService.Get:input_type -> tau.auth.v1.ProjectRef
-	0,  // 3: tau.auth.v1.ProjectService.List:input_type -> tau.auth.v1.Empty
-	3,  // 4: tau.auth.v1.ProjectService.Create:input_type -> tau.auth.v1.CreateProjectRequest
-	6,  // 5: tau.auth.v1.RepositoryService.Get:input_type -> tau.auth.v1.RepositoryRef
-	0,  // 6: tau.auth.v1.RepositoryService.List:input_type -> tau.auth.v1.Empty
-	6,  // 7: tau.auth.v1.RepositoryService.Register:input_type -> tau.auth.v1.RepositoryRef
-	6,  // 8: tau.auth.v1.RepositoryService.Unregister:input_type -> tau.auth.v1.RepositoryRef
-	10, // 9: tau.auth.v1.HookService.Get:input_type -> tau.auth.v1.HookRef
-	0,  // 10: tau.auth.v1.HookService.List:input_type -> tau.auth.v1.Empty
-	11, // 11: tau.auth.v1.DomainService.Register:input_type -> tau.auth.v1.RegisterDomainRequest
-	15, // 12: tau.auth.v1.CertificateService.GetCertificate:input_type -> tau.auth.v1.FqdnRequest
-	16, // 13: tau.auth.v1.CertificateService.SetCertificate:input_type -> tau.auth.v1.SetCertificateRequest
-	15, // 14: tau.auth.v1.CertificateService.GetStaticCertificate:input_type -> tau.auth.v1.FqdnRequest
-	16, // 15: tau.auth.v1.CertificateService.SetStaticCertificate:input_type -> tau.auth.v1.SetCertificateRequest
-	17, // 16: tau.auth.v1.CertificateService.GetCache:input_type -> tau.auth.v1.CacheKeyRequest
-	18, // 17: tau.auth.v1.CertificateService.SetCache:input_type -> tau.auth.v1.SetCacheRequest
-	17, // 18: tau.auth.v1.CertificateService.DeleteCache:input_type -> tau.auth.v1.CacheKeyRequest
-	1,  // 19: tau.auth.v1.ProjectService.Get:output_type -> tau.auth.v1.Project
-	2,  // 20: tau.auth.v1.ProjectService.List:output_type -> tau.auth.v1.ProjectRef
-	4,  // 21: tau.auth.v1.ProjectService.Create:output_type -> tau.auth.v1.CreateProjectResponse
-	5,  // 22: tau.auth.v1.RepositoryService.Get:output_type -> tau.auth.v1.Repository
-	6,  // 23: tau.auth.v1.RepositoryService.List:output_type -> tau.auth.v1.RepositoryRef
-	0,  // 24: tau.auth.v1.RepositoryService.Register:output_type -> tau.auth.v1.Empty
-	0,  // 25: tau.auth.v1.RepositoryService.Unregister:output_type -> tau.auth.v1.Empty
-	9,  // 26: tau.auth.v1.HookService.Get:output_type -> tau.auth.v1.Hook
-	10, // 27: tau.auth.v1.HookService.List:output_type -> tau.auth.v1.HookRef
-	12, // 28: tau.auth.v1.DomainService.Register:output_type -> tau.auth.v1.RegisterDomainResponse
-	13, // 29: tau.auth.v1.CertificateService.GetCertificate:output_type -> tau.auth.v1.Certificate
-	0,  // 30: tau.auth.v1.CertificateService.SetCertificate:output_type -> tau.auth.v1.Empty
-	13, // 31: tau.auth.v1.CertificateService.GetStaticCertificate:output_type -> tau.auth.v1.Certificate
-	0,  // 32: tau.auth.v1.CertificateService.SetStaticCertificate:output_type -> tau.auth.v1.Empty
-	14, // 33: tau.auth.v1.CertificateService.GetCache:output_type -> tau.auth.v1.CacheEntry
-	0,  // 34: tau.auth.v1.CertificateService.SetCache:output_type -> tau.auth.v1.Empty
-	0,  // 35: tau.auth.v1.CertificateService.DeleteCache:output_type -> tau.auth.v1.Empty
-	19, // [19:36] is the sub-list for method output_type
-	2,  // [2:19] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	2,  // 0: tau.auth.v1.ProjectService.Get:input_type -> tau.auth.v1.ProjectRef
+	0,  // 1: tau.auth.v1.ProjectService.List:input_type -> tau.auth.v1.Empty
+	3,  // 2: tau.auth.v1.ProjectService.Create:input_type -> tau.auth.v1.CreateProjectRequest
+	6,  // 3: tau.auth.v1.RepositoryService.Get:input_type -> tau.auth.v1.RepositoryRef
+	0,  // 4: tau.auth.v1.RepositoryService.List:input_type -> tau.auth.v1.Empty
+	6,  // 5: tau.auth.v1.RepositoryService.Register:input_type -> tau.auth.v1.RepositoryRef
+	6,  // 6: tau.auth.v1.RepositoryService.Unregister:input_type -> tau.auth.v1.RepositoryRef
+	8,  // 7: tau.auth.v1.HookService.Get:input_type -> tau.auth.v1.HookRef
+	0,  // 8: tau.auth.v1.HookService.List:input_type -> tau.auth.v1.Empty
+	9,  // 9: tau.auth.v1.DomainService.Register:input_type -> tau.auth.v1.RegisterDomainRequest
+	13, // 10: tau.auth.v1.CertificateService.GetCertificate:input_type -> tau.auth.v1.FqdnRequest
+	14, // 11: tau.auth.v1.CertificateService.SetCertificate:input_type -> tau.auth.v1.SetCertificateRequest
+	13, // 12: tau.auth.v1.CertificateService.GetStaticCertificate:input_type -> tau.auth.v1.FqdnRequest
+	14, // 13: tau.auth.v1.CertificateService.SetStaticCertificate:input_type -> tau.auth.v1.SetCertificateRequest
+	15, // 14: tau.auth.v1.CertificateService.GetCache:input_type -> tau.auth.v1.CacheKeyRequest
+	16, // 15: tau.auth.v1.CertificateService.SetCache:input_type -> tau.auth.v1.SetCacheRequest
+	15, // 16: tau.auth.v1.CertificateService.DeleteCache:input_type -> tau.auth.v1.CacheKeyRequest
+	1,  // 17: tau.auth.v1.ProjectService.Get:output_type -> tau.auth.v1.Project
+	2,  // 18: tau.auth.v1.ProjectService.List:output_type -> tau.auth.v1.ProjectRef
+	4,  // 19: tau.auth.v1.ProjectService.Create:output_type -> tau.auth.v1.CreateProjectResponse
+	5,  // 20: tau.auth.v1.RepositoryService.Get:output_type -> tau.auth.v1.Repository
+	6,  // 21: tau.auth.v1.RepositoryService.List:output_type -> tau.auth.v1.RepositoryRef
+	0,  // 22: tau.auth.v1.RepositoryService.Register:output_type -> tau.auth.v1.Empty
+	0,  // 23: tau.auth.v1.RepositoryService.Unregister:output_type -> tau.auth.v1.Empty
+	7,  // 24: tau.auth.v1.HookService.Get:output_type -> tau.auth.v1.Hook
+	8,  // 25: tau.auth.v1.HookService.List:output_type -> tau.auth.v1.HookRef
+	10, // 26: tau.auth.v1.DomainService.Register:output_type -> tau.auth.v1.RegisterDomainResponse
+	11, // 27: tau.auth.v1.CertificateService.GetCertificate:output_type -> tau.auth.v1.Certificate
+	0,  // 28: tau.auth.v1.CertificateService.SetCertificate:output_type -> tau.auth.v1.Empty
+	11, // 29: tau.auth.v1.CertificateService.GetStaticCertificate:output_type -> tau.auth.v1.Certificate
+	0,  // 30: tau.auth.v1.CertificateService.SetStaticCertificate:output_type -> tau.auth.v1.Empty
+	12, // 31: tau.auth.v1.CertificateService.GetCache:output_type -> tau.auth.v1.CacheEntry
+	0,  // 32: tau.auth.v1.CertificateService.SetCache:output_type -> tau.auth.v1.Empty
+	0,  // 33: tau.auth.v1.CertificateService.DeleteCache:output_type -> tau.auth.v1.Empty
+	17, // [17:34] is the sub-list for method output_type
+	0,  // [0:17] is the sub-list for method input_type
+	0,  // [0:0] is the sub-list for extension type_name
+	0,  // [0:0] is the sub-list for extension extendee
+	0,  // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_tau_auth_v1_auth_proto_init() }
@@ -1297,17 +1173,13 @@ func file_tau_auth_v1_auth_proto_init() {
 	if File_tau_auth_v1_auth_proto != nil {
 		return
 	}
-	file_tau_auth_v1_auth_proto_msgTypes[9].OneofWrappers = []any{
-		(*Hook_Github)(nil),
-		(*Hook_Bitbucket)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_auth_v1_auth_proto_rawDesc), len(file_tau_auth_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   5,
 		},

@@ -51,11 +51,12 @@
 // nothing but a well-shaped Authorization header one replicated entry per HTTP
 // request. v1 has no version of this on either surface.
 //
-// # Its dependencies are four interfaces, and they are why it is testable
+// # Its dependencies are five interfaces, and they are why it is testable
 //
-// Hooks, Projects, Backend and Identity (config.go) are declared here and
-// satisfied elsewhere: services/build/clients holds the p2p adapters for the
-// first three, forgeauth answers the fourth through pkg/forge, by host. Nothing in
+// Hooks, Projects, Backend, Identity and Deliveries (config.go) are declared
+// here and satisfied elsewhere: services/build/clients holds the p2p adapters
+// for the first three, and forgeauth answers the last two through pkg/forge,
+// by host — so this package names no forge. Nothing in
 // this package constructs a client, so every route runs against fakes on
 // httptest with no libp2p host, no listener and no port — which is what makes
 // service-conventions.md §6's bar reachable without a universe underneath.

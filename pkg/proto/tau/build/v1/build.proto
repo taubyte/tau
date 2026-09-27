@@ -8,11 +8,10 @@ syntax = "proto3";
 //
 // EVERY RPC BELOW IS SERVED BY THE BACKEND. The frontend calls them; it
 // hosts no RPC surface of its own. Its only listener is plain HTTP:
-//   - the GitHub webhook itself (services/patrick/github.go's
-//     githubHookHandler, POST /github/{hook}), signature-verified against a
-//     hook secret it fetches from auth over tau.auth.v1's already-modeled
-//     HookService.Get — not duplicated here.
-//   - the GitHub-OAuth-token-authenticated job API a human or the CLI calls
+//   - a forge's push webhook (POST /hook/{hook}), verified under the scheme
+//     and secret stored with the hook, which it fetches from auth over
+//     tau.auth.v1's already-modeled HookService.Get — not duplicated here.
+//   - the forge-token-authenticated job API a human or the CLI calls
 //     (services/patrick/api.go's setupJobRoutes: GET /jobs/{projectId},
 //     GET /job/{jid}, POST /cancel/{jid}, POST /retry/{jid}, plus
 //     GET /download/{jobId}/{resourceId} and GET /logs/{cid}).

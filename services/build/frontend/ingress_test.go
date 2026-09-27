@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
 	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
@@ -50,10 +49,9 @@ func TestAPathValueCannotBeOverriddenFromAnywhereElse(t *testing.T) {
 func TestAWildcardIsOneSegment(t *testing.T) {
 	h := newHarness(t, Config{})
 
-	for _, path := range []string{"/github/a/b", "/github/", "/job/a/b", "/jobs/a/b"} {
+	for _, path := range []string{"/hook/a/b", "/hook/", "/job/a/b", "/jobs/a/b"} {
 		t.Run(path, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
-			r.Header.Set(eventHeader, "push")
 			r.Header.Set("Content-Type", "application/json")
 			require.Equal(t, http.StatusNotFound, h.do(t, r).Code)
 		})
@@ -66,8 +64,8 @@ func TestTheMethodIsPartOfTheRoute(t *testing.T) {
 	h := newHarness(t, Config{})
 
 	for _, tc := range []struct{ method, path string }{
-		{http.MethodGet, "/github/" + testHookID},
-		{http.MethodPut, "/github/" + testHookID},
+		{http.MethodGet, "/hook/" + testHookID},
+		{http.MethodPut, "/hook/" + testHookID},
 		{http.MethodPost, "/job/" + testJobID},
 		{http.MethodPost, "/jobs/" + testProject},
 		{http.MethodGet, "/cancel/" + testJobID},
@@ -83,13 +81,10 @@ func TestTheMethodIsPartOfTheRoute(t *testing.T) {
 // Five routes and no others: no /ping, no bare-cid log route, no /download.
 func TestNothingElseIsServed(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.hooks.get = func(id string) (*authv1.GithubHook, error) {
-		return &authv1.GithubHook{Id: id, Secret: testSecret, RepositoryKey: testRepoKey}, nil
-	}
 
 	for _, path := range []string{
 		"/", "/ping", "/logs/bafycid", "/download/" + testJobID + "/resource-1",
-		"/config/" + testProject, "/github", "/jobs", "/job",
+		"/config/" + testProject, "/hook", "/github/" + testHookID, "/jobs", "/job",
 	} {
 		t.Run(path, func(t *testing.T) {
 			require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodGet, path, testToken)).Code)

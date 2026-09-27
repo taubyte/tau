@@ -2,9 +2,6 @@ package frontend
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +21,7 @@ import (
 	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
 )
 
-// This package's whole fixture is four fakes and an httptest recorder. There is
+// This package's whole fixture is five fakes and an httptest recorder. There is
 // no libp2p host, no listener and no port anywhere in it — which is the claim
 // doc.go makes about why the four dependencies are interfaces, held here as a
 // test rather than as a sentence.
@@ -39,15 +36,15 @@ const (
 	testSHA     = "1111111111111111111111111111111111111111"
 )
 
-// ── the four fakes ───────────────────────────────────────────────────────────
+// ── the fakes ────────────────────────────────────────────────────────────────
 
 type fakeHooks struct {
 	mu    sync.Mutex
 	calls int
-	get   func(id string) (*authv1.GithubHook, error)
+	get   func(id string) (*authv1.Hook, error)
 }
 
-func (f *fakeHooks) Get(_ context.Context, id string) (*authv1.GithubHook, error) {
+func (f *fakeHooks) Get(_ context.Context, id string) (*authv1.Hook, error) {
 	f.mu.Lock()
 	f.calls++
 	f.mu.Unlock()
@@ -57,13 +54,40 @@ func (f *fakeHooks) Get(_ context.Context, id string) (*authv1.GithubHook, error
 	if id != testHookID {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no hook %s", id))
 	}
-	return &authv1.GithubHook{Id: id, Secret: testSecret, RepositoryKey: testRepoKey}, nil
+	return &authv1.Hook{Id: id, Secret: []byte(testSecret), RepositoryKey: testRepoKey}, nil
 }
 
 func (f *fakeHooks) count() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls
+}
+
+// fakeDeliveries stands in for the forge. HOW a delivery is verified is
+// pkg/forge's, tested there against every scheme, and forgeauth's end-to-end
+// test runs real signed deliveries through this handler; what this package owns
+// is what the handler does with each answer, so the fake is the answers.
+//
+// By default a delivery verifies when its test signature is the hook's secret,
+// and means the push its body names, for the hook's own repository.
+type fakeDeliveries struct {
+	verify func(hook *authv1.Hook, header http.Header, body []byte) (Push, error)
+}
+
+const testSignatureHeader = "X-Test-Signature"
+
+func (f *fakeDeliveries) Verify(hook *authv1.Hook, header http.Header, body []byte) (Push, error) {
+	if f.verify != nil {
+		return f.verify(hook, header, body)
+	}
+	if header.Get(testSignatureHeader) != string(hook.GetSecret()) {
+		return Push{}, fmt.Errorf("%w: wrong signature", ErrUnverified)
+	}
+	var p struct{ Ref, After string }
+	if err := json.Unmarshal(body, &p); err != nil {
+		return Push{}, err
+	}
+	return Push{Repository: hook.GetRepositoryKey(), Ref: p.Ref, Commit: p.After}, nil
 }
 
 type fakeProjects struct {
@@ -194,12 +218,13 @@ func (f *fakeIdentity) WriteAccess(_ context.Context, token string, key repokey.
 
 type harness struct {
 	*Service
-	hooks    *fakeHooks
-	projects *fakeProjects
-	backend  *fakeBackend
-	identity *fakeIdentity
-	clock    *clock
-	logs     *logs
+	hooks      *fakeHooks
+	deliveries *fakeDeliveries
+	projects   *fakeProjects
+	backend    *fakeBackend
+	identity   *fakeIdentity
+	clock      *clock
+	logs       *logs
 }
 
 type clock struct {
@@ -240,16 +265,17 @@ func newHarness(t *testing.T, cfg Config, opts ...Option) *harness {
 	t.Helper()
 
 	h := &harness{
-		hooks:    &fakeHooks{},
-		projects: &fakeProjects{},
-		backend:  &fakeBackend{},
-		identity: &fakeIdentity{},
-		clock:    &clock{at: time.Unix(1700000000, 0).UTC()},
-		logs:     &logs{},
+		hooks:      &fakeHooks{},
+		deliveries: &fakeDeliveries{},
+		projects:   &fakeProjects{},
+		backend:    &fakeBackend{},
+		identity:   &fakeIdentity{},
+		clock:      &clock{at: time.Unix(1700000000, 0).UTC()},
+		logs:       &logs{},
 	}
 
 	opts = append([]Option{WithClock(h.clock.now), WithLogger(h.logs.write)}, opts...)
-	svc, err := New(cfg, append([]Option{WithHooks(h.hooks), WithProjects(h.projects), WithBackend(h.backend), WithIdentity(h.identity)}, opts...)...)
+	svc, err := New(cfg, append([]Option{WithHooks(h.hooks), WithDeliveries(h.deliveries), WithProjects(h.projects), WithBackend(h.backend), WithIdentity(h.identity)}, opts...)...)
 	require.NoError(t, err)
 	h.Service = svc
 	return h
@@ -265,33 +291,17 @@ func (h *harness) do(t *testing.T, r *http.Request) *httptest.ResponseRecorder {
 
 // ── request builders ─────────────────────────────────────────────────────────
 
-// pushBody is a GitHub push payload with only the fields this role reads.
-func pushBody(cloneURL, ref, after string) []byte {
-	body, err := json.Marshal(map[string]any{
-		"ref":    ref,
-		"after":  after,
-		"before": "0000000000000000000000000000000000000000",
-		// Present on purpose: nothing below must read them, and a change that
-		// starts to would have to touch push.go's fixture as well as its code.
-		"commits":    []map[string]any{{"added": []string{"a.go"}, "modified": []string{"b.go"}}},
-		"pushed_at":  1700000000,
-		"repository": map[string]any{"id": 42, "clone_url": cloneURL, "ssh_url": "git@github.com:acme/pay.git"},
-	})
+// pushBody is what the fake reads a push out of.
+func pushBody(ref, after string) []byte {
+	body, err := json.Marshal(map[string]any{"ref": ref, "after": after})
 	if err != nil {
 		panic(err)
 	}
 	return body
 }
 
-func sign(secret string, body []byte) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(body)
-	return signaturePrefix + hex.EncodeToString(mac.Sum(nil))
-}
-
 type webhookOpts struct {
 	hookID      string
-	event       string
 	contentType string
 	signature   string
 	body        []byte
@@ -302,24 +312,20 @@ func webhookRequest(o webhookOpts) *http.Request {
 	if o.hookID == "" {
 		o.hookID = testHookID
 	}
-	if o.event == "" {
-		o.event = "push"
-	}
 	if o.contentType == "" {
 		o.contentType = "application/json"
 	}
 	if o.body == nil {
-		o.body = pushBody("https://github.com/acme/pay.git", "refs/heads/main", testSHA)
+		o.body = pushBody("refs/heads/main", testSHA)
 	}
 	if o.signature == "" && !o.omitSig {
-		o.signature = sign(testSecret, o.body)
+		o.signature = testSecret
 	}
 
-	r := httptest.NewRequest(http.MethodPost, "/github/"+o.hookID, strings.NewReader(string(o.body)))
-	r.Header.Set(eventHeader, o.event)
+	r := httptest.NewRequest(http.MethodPost, "/hook/"+o.hookID, strings.NewReader(string(o.body)))
 	r.Header.Set("Content-Type", o.contentType)
 	if o.signature != "" {
-		r.Header.Set(signatureHeader, o.signature)
+		r.Header.Set(testSignatureHeader, o.signature)
 	}
 	return r
 }

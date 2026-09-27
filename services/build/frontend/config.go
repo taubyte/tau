@@ -2,7 +2,9 @@ package frontend
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -221,17 +223,58 @@ func (c Config) withDefaults() (Config, error) {
 
 // Hooks is what auth knows about one webhook.
 type Hooks interface {
-	// Get returns the GithubHook registered under id.
+	// Get returns the hook registered under id.
 	//
-	// It hands back the generated message rather than two bare strings because
-	// THE PAIR DECIDES AN AUTHENTICATION: `secret` verifies the body, and
-	// `repository_key` says which repository that signature is good for. Two
-	// same-typed returns are transposable, and v1 fetched only the first of
-	// them — services/patrick/github.go's githubCheckHookAndExtractSecret sets
-	// exactly one context variable — which is the whole of how a signature
-	// under one hook came to authorize a job for any repository.
-	Get(ctx context.Context, hookID string) (*authv1.GithubHook, error)
+	// It hands back the generated message rather than bare strings because
+	// THE FIELDS DECIDE AN AUTHENTICATION TOGETHER: the scheme and secret
+	// verify the body, and `repository_key` says which repository that
+	// signature is good for. v1 fetched only the secret — services/patrick/
+	// github.go's githubCheckHookAndExtractSecret sets exactly one context
+	// variable — which is the whole of how a signature under one hook came to
+	// authorize a job for any repository.
+	Get(ctx context.Context, hookID string) (*authv1.Hook, error)
 }
+
+// Deliveries authenticates a webhook delivery and says what it means.
+//
+// IT IS AN INTERFACE FOR THE REASON Identity IS: which forge signed a delivery,
+// how, and where in the payload the push is, are the host's answers — and this
+// package names no host. forgeauth answers it through pkg/forge.
+type Deliveries interface {
+	// Verify checks one delivery against the hook it was addressed to, under
+	// the scheme and secret stored WITH the hook, and returns the push it
+	// proves. A push is always for the hook's own repository: a delivery
+	// naming any other does not verify.
+	//
+	// ErrNotAPush and ErrRefDeleted are genuine deliveries this cloud does not
+	// build; ErrMalformed is a genuine delivery naming no usable push;
+	// ErrUnverified is a delivery that is not genuine. Anything else is a hook
+	// this cloud cannot check at all.
+	Verify(hook *authv1.Hook, header http.Header, body []byte) (Push, error)
+}
+
+// Push is what a verified delivery means: build.proto's PushEvent, and nothing
+// else. Everything else a payload carries is a stranger's bytes a forge relayed.
+type Push struct {
+	Repository string
+	Ref        string
+	Commit     string
+}
+
+var (
+	// ErrNotAPush is a genuine delivery of an event this cloud does not build
+	// on — a ping when a hook is created, and a dozen others after.
+	ErrNotAPush = errors.New("build: not a push event")
+
+	// ErrRefDeleted is a genuine push that deletes its ref.
+	ErrRefDeleted = errors.New("build: the push deletes its ref")
+
+	// ErrUnverified is a delivery that does not prove it came from the hook.
+	ErrUnverified = errors.New("build: the delivery does not verify")
+
+	// ErrMalformed is a delivery that verified and names no usable push.
+	ErrMalformed = errors.New("build: the delivery names no usable push")
+)
 
 // Projects is what auth knows about who owns a project.
 type Projects interface {

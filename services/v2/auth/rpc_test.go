@@ -84,10 +84,7 @@ func TestProjectList_OverTheWire(t *testing.T) {
 func TestHookList_OverTheWire(t *testing.T) {
 	h := newWireHarness(t)
 
-	batch, err := h.Service.kv.Batch(t.Context())
-	require.NoError(t, err)
-	require.NoError(t, batch.Put(hookProviderRow("hook-1"), []byte("github")))
-	require.NoError(t, batch.Commit())
+	require.NoError(t, putHook(t.Context(), h.Service.kv, "hook-1", hook("github.com/acme/pay")))
 
 	stream, err := h.Hooks.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
 	require.NoError(t, err)

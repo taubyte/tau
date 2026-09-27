@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 
 	"connectrpc.com/connect"
 
@@ -14,56 +15,36 @@ import (
 // rather than a method set on *Service.
 //
 // NOTHING IN THIS RPC SURFACE CREATES A HOOK. auth.proto declares only Get
-// and List for HookService — no Register — because a webhook is created by
-// calling GitHub's API with a caller's OAuth token
-// (services/auth/github.go's registerGitHubRepository, via
-// client.CreatePushHook), and that whole surface is the GitHub-token HTTP
-// API this schema deliberately does not model (auth.proto's package doc).
-// So on the v2 inter-service RPC surface, hooks are read-only: whatever
-// eventually rewrites the GitHub-token HTTP path will write hook rows using
-// the same store.go layout this file reads, the way v1's
-// registerGitHubRepository calls hooks.NewGithub(...).Register(ctx) directly
-// against its own store rather than over p2p. Until that surface exists,
-// nothing in this package populates a hook row outside of a test.
+// and List for HookService: a webhook is created on the FORGE, with a
+// credential that may create one there, and filed here through store.go's
+// putHook by whatever registers the repository.
 type hookHandler struct{ s *Service }
 
 var _ authv1connect.HookServiceHandler = (*hookHandler)(nil)
 
-// Get returns a webhook by id.
+// Get returns a webhook by id. There is no per-provider case: the host in the
+// repository key is the forge, and the scheme stored with the hook is how its
+// deliveries are checked.
 func (h *hookHandler) Get(ctx context.Context, req *connect.Request[authv1.HookRef]) (*connect.Response[authv1.Hook], error) {
 	id := req.Msg.GetId()
 	if err := requireID("id", id); err != nil {
 		return nil, err
 	}
 
-	provider, err := fetchHookProvider(ctx, h.s.kv, id)
-	if err != nil {
+	record, err := fetchHook(ctx, h.s.kv, id)
+	if errors.Is(err, errNoHook) {
 		return nil, errNotFound("%w", err)
 	}
-
-	switch provider {
-	case "github":
-		record, err := fetchGithubHook(ctx, h.s.kv, id)
-		if err != nil {
-			return nil, errInternal("hook %q: %w", id, err)
-		}
-		return connect.NewResponse(&authv1.Hook{
-			Hook: &authv1.Hook_Github{Github: &authv1.GithubHook{
-				Id:             id,
-				ProviderHookId: record.providerHookID,
-				Secret:         record.secret,
-				RepositoryKey:  record.repository,
-			}},
-		}), nil
-	default:
-		// BitbucketHook is reachable in the schema (auth.proto's Hook
-		// oneof) and unreachable in the running service — nothing writes a
-		// "bitbucket" provider row anywhere in this package, the same gap
-		// v1's own hooks.Fetch has (services/auth/hooks/hooks.go's Fetch:
-		// `default: return nil, errors.New("unknown/unsupported git
-		// provider " + provider)`).
-		return nil, errUnimplemented("hook %q has unsupported provider %q", id, provider)
+	if err != nil {
+		return nil, errInternal("%w", err)
 	}
+	return connect.NewResponse(&authv1.Hook{
+		Id:            id,
+		RepositoryKey: record.repository,
+		Handle:        record.handle,
+		Scheme:        record.scheme,
+		Secret:        []byte(record.secret),
+	}), nil
 }
 
 // List streams the id of every stored webhook.

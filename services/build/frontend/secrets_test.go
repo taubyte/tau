@@ -35,7 +35,7 @@ func TestAHookIsBelievedForOneTTLAndNoLonger(t *testing.T) {
 // per request.
 func TestAnAnsweredMissIsRemembered(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.hooks.get = func(string) (*authv1.GithubHook, error) {
+	h.hooks.get = func(string) (*authv1.Hook, error) {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such hook"))
 	}
 
@@ -56,7 +56,7 @@ func TestAFailureToReachAuthIsNotRemembered(t *testing.T) {
 	} {
 		t.Run(connect.CodeOf(err).String(), func(t *testing.T) {
 			h := newHarness(t, Config{})
-			h.hooks.get = func(string) (*authv1.GithubHook, error) { return nil, err }
+			h.hooks.get = func(string) (*authv1.Hook, error) { return nil, err }
 
 			for range 3 {
 				h.do(t, webhookRequest(webhookOpts{}))
@@ -68,11 +68,11 @@ func TestAFailureToReachAuthIsNotRemembered(t *testing.T) {
 	// And once auth answers, the next push works — no stale refusal in the way.
 	h := newHarness(t, Config{})
 	failing := true
-	h.hooks.get = func(id string) (*authv1.GithubHook, error) {
+	h.hooks.get = func(id string) (*authv1.Hook, error) {
 		if failing {
 			return nil, connect.NewError(connect.CodeUnavailable, errors.New("down"))
 		}
-		return &authv1.GithubHook{Id: id, Secret: testSecret, RepositoryKey: testRepoKey}, nil
+		return &authv1.Hook{Id: id, Secret: []byte(testSecret), RepositoryKey: testRepoKey}, nil
 	}
 
 	require.Equal(t, http.StatusNotFound, h.do(t, webhookRequest(webhookOpts{})).Code)
@@ -90,8 +90,8 @@ func TestTheCacheHasACeiling(t *testing.T) {
 		WebhookRate:    Rate{Burst: 1000, Per: time.Minute},
 		HookRate:       Rate{Burst: 1000, Per: time.Minute},
 	})
-	h.hooks.get = func(id string) (*authv1.GithubHook, error) {
-		return &authv1.GithubHook{Id: id, Secret: testSecret, RepositoryKey: testRepoKey}, nil
+	h.hooks.get = func(id string) (*authv1.Hook, error) {
+		return &authv1.Hook{Id: id, Secret: []byte(testSecret), RepositoryKey: testRepoKey}, nil
 	}
 
 	for i := range 8 {

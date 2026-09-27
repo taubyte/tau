@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"strconv"
+	"context"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -15,18 +15,10 @@ import (
 // connect.ServerStream and is covered in rpc_test.go. Nothing in this
 // package's RPC surface creates a hook (hooks.go's package doc), so every
 // fixture below is written straight through store.go's own row functions —
-// exactly the shape a future GitHub-token HTTP rewrite would eventually
-// write through, per that same doc.
+// the same putHook whatever registers a repository writes through.
 
-func putGithubHookFixture(t testing.TB, s *Service, id string, providerHookID int64, secret, repository string) {
-	t.Helper()
-	batch, err := s.kv.Batch(t.Context())
-	require.NoError(t, err)
-	require.NoError(t, batch.Put(hookProviderRow(id), []byte("github")))
-	require.NoError(t, batch.Put(hookGithubIDRow(id), []byte(strconv.FormatInt(providerHookID, 10))))
-	require.NoError(t, batch.Put(hookGithubSecretRow(id), []byte(secret)))
-	require.NoError(t, batch.Put(hookGithubRepoRow(id), []byte(repository)))
-	require.NoError(t, batch.Commit())
+func hook(repository string) hookRecord {
+	return hookRecord{repository: repository, handle: "42", scheme: "hub-sha256", secret: "s3cr3t"}
 }
 
 func TestHookGet_NotFound(t *testing.T) {
@@ -38,84 +30,57 @@ func TestHookGet_NotFound(t *testing.T) {
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
 
-func TestHookGet_Github(t *testing.T) {
+// A hook carries its repository, the forge's handle, the scheme it was
+// created under and its secret — and nothing that names a provider.
+func TestHookGet(t *testing.T) {
 	s := newTestService(t)
 	h := &hookHandler{s}
-	putGithubHookFixture(t, s, "hook-1", 42, "s3cr3t", "github.com/acme/pay")
+	require.NoError(t, putHook(t.Context(), s.kv, "hook-1", hook("gitlab.example.com/acme/pay")))
 
 	res, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-1"}))
 	require.NoError(t, err)
-	gh := res.Msg.GetGithub()
-	require.NotNil(t, gh)
-	assert.Equal(t, "hook-1", gh.GetId())
-	assert.Equal(t, int64(42), gh.GetProviderHookId())
-	assert.Equal(t, "s3cr3t", gh.GetSecret())
-	assert.Equal(t, "github.com/acme/pay", gh.GetRepositoryKey())
-	assert.Nil(t, res.Msg.GetBitbucket())
+	assert.Equal(t, "hook-1", res.Msg.GetId())
+	assert.Equal(t, "gitlab.example.com/acme/pay", res.Msg.GetRepositoryKey())
+	assert.Equal(t, "42", res.Msg.GetHandle())
+	assert.Equal(t, "hub-sha256", res.Msg.GetScheme())
+	assert.Equal(t, []byte("s3cr3t"), res.Msg.GetSecret())
 }
 
-// TestHookGet_UnsupportedProvider is BitbucketHook's documented state:
-// reachable in the schema (auth.proto's Hook oneof), unreachable in the
-// running service (hooks.go's doc, mirroring services/auth/hooks/hooks.go's
-// own Fetch, which has no bitbucket case either).
-func TestHookGet_UnsupportedProvider(t *testing.T) {
-	s := newTestService(t)
-	h := &hookHandler{s}
-	require.NoError(t, s.kv.Put(t.Context(), hookProviderRow("hook-2"), []byte("bitbucket")))
+// A REGISTERED HOOK MISSING A ROW IS A BROKEN STORE, not an unknown hook:
+// answering NotFound would read, in a forge's delivery log, like a deleted hook.
+func TestHookGet_MissingRow(t *testing.T) {
+	for _, row := range []func(string) string{hookHandleRow, hookSchemeRow, hookSecretRow} {
+		s := newTestService(t)
+		h := &hookHandler{s}
+		require.NoError(t, putHook(t.Context(), s.kv, "hook-1", hook("github.com/acme/pay")))
+		require.NoError(t, s.kv.Delete(t.Context(), row("hook-1")))
 
-	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-2"}))
-	require.Error(t, err)
-	assert.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
+		_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-1"}))
+		require.Error(t, err)
+		assert.Equal(t, connect.CodeInternal, connect.CodeOf(err), row("hook-1"))
+	}
 }
 
-func TestHookGet_CorruptGithubRow(t *testing.T) {
+// A STORE THAT FAILED IS NOT AN UNKNOWN HOOK.
+func TestHookGet_StoreFailure(t *testing.T) {
 	s := newTestService(t)
-	h := &hookHandler{s}
-	require.NoError(t, s.kv.Put(t.Context(), hookProviderRow("hook-3"), []byte("github")))
-	require.NoError(t, s.kv.Put(t.Context(), hookGithubIDRow("hook-3"), []byte("not-a-number")))
+	require.NoError(t, putHook(t.Context(), s.kv, "hook-1", hook("github.com/acme/pay")))
+	s.kv = &gettingKVDB{Store: s.kv, fail: map[string]bool{hookRepoRow("hook-1"): true}}
 
-	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-3"}))
-	require.Error(t, err)
-	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
-}
-
-// TestHookGet_MissingSecretRow and TestHookGet_MissingRepositoryRow reach
-// fetchGithubHook's other two row reads failing — a hook whose /provider
-// and /github/id rows exist but is missing a row a real Register would
-// always have written together (store.go's registerRepository-equivalent
-// for hooks does not exist yet, per hooks.go's own doc, so nothing enforces
-// this today beyond fetchGithubHook noticing).
-func TestHookGet_MissingSecretRow(t *testing.T) {
-	s := newTestService(t)
-	h := &hookHandler{s}
-	require.NoError(t, s.kv.Put(t.Context(), hookProviderRow("hook-4"), []byte("github")))
-	require.NoError(t, s.kv.Put(t.Context(), hookGithubIDRow("hook-4"), []byte("1")))
-
-	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-4"}))
+	_, err := (&hookHandler{s}).Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-1"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
 
-func TestHookGet_MissingRepositoryRow(t *testing.T) {
-	s := newTestService(t)
-	h := &hookHandler{s}
-	require.NoError(t, s.kv.Put(t.Context(), hookProviderRow("hook-5"), []byte("github")))
-	require.NoError(t, s.kv.Put(t.Context(), hookGithubIDRow("hook-5"), []byte("1")))
-	require.NoError(t, s.kv.Put(t.Context(), hookGithubSecretRow("hook-5"), []byte("s3cr3t")))
-
-	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-5"}))
-	require.Error(t, err)
-	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+// gettingKVDB fails a read of the named rows.
+type gettingKVDB struct {
+	Store
+	fail map[string]bool
 }
 
-// TestHookGet_MissingProviderIDRow reaches fetchGithubHook's first row read
-// failing: a hook filed under a provider whose own rows were never written.
-func TestHookGet_MissingProviderIDRow(t *testing.T) {
-	s := newTestService(t)
-	h := &hookHandler{s}
-	require.NoError(t, s.kv.Put(t.Context(), hookProviderRow("hook-6"), []byte("github")))
-
-	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-6"}))
-	require.Error(t, err)
-	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+func (k *gettingKVDB) Get(ctx context.Context, key string) ([]byte, error) {
+	if k.fail[key] {
+		return nil, errStoreFailure
+	}
+	return k.Store.Get(ctx, key)
 }

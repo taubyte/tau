@@ -34,16 +34,16 @@ import "net/http"
 // Go's own method-and-wildcard patterns give the other two properties for free,
 // and both are asserted rather than assumed: a GET on a POST route is a 405
 // rather than a route that quietly does not exist, and a {wildcard} spans
-// exactly one segment, so /github/a/b is a 404 rather than a hook id with a
+// exactly one segment, so /hook/a/b is a 404 rather than a hook id with a
 // slash in it.
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
 
 	// The one route a stranger reaches. Everything it does is in webhook.go, in
 	// the order it does it.
-	mux.HandleFunc("POST /github/{hook}", s.handleWebhook)
+	mux.HandleFunc("POST /hook/{hook}", s.handleWebhook)
 
-	// The four a GitHub-token holder reaches. Each authorizes on the resource
+	// The four a forge-token holder reaches. Each authorizes on the resource
 	// before it acts (authz.go); a denial is a 404.
 	//
 	// EVERY ONE OF THEM GOES THROUGH admitted(), and none of them could be

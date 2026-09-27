@@ -32,9 +32,10 @@ syntax = "proto3";
 // `pkg/taucorder/proto/taucorder/v1/common.proto`'s `RepositoryId { oneof {
 // int64 github = 1; string bitbucket = 2; } }`: a provider-keyed union is
 // what a numeric-id world needs and a clone-URL-keyed one does not — it is the
-// shape this schema exists to not repeat. `GithubHook.provider_hook_id` below
-// is a different number and stays: it is the id GitHub assigned to the
-// *webhook* it created, the provider's to name, not a repository identity.
+// shape this schema exists to not repeat. `Hook.handle` below is a different
+// thing and stays: it is the id a forge assigned to the *webhook* it created,
+// the forge's to name, not a repository identity — and a string, because
+// Bitbucket's is a UUID where others number theirs.
 //
 // STREAMING: every `List` below is server-streaming; everything else is
 // unary. Today's cbor transport (`p2p/streams/client`) sends one request and
@@ -173,33 +174,26 @@ service RepositoryService {
 
 // ──────────────────────────────── Hooks ────────────────────────────────
 
-// GithubHook is a webhook GitHub calls for pushes to one repository.
-// `provider_hook_id` is GITHUB'S id for the webhook object itself — distinct
-// from, and unrelated to, repository identity. It is a legitimate
-// provider-native number for the reason repository ids are not: GitHub owns
-// the webhook resource and assigns its id: nothing here could derive it, the
-// way a repository's key is derived from its own clone URL.
-message GithubHook {
-  string id = 1;
-  int64 provider_hook_id = 2;
-  string secret = 3;
-  string repository_key = 4;
-}
-
-// BitbucketHook exists because core/services/auth's Hook interface already
-// declares `Bitbucket() (*BitbucketHook, error)` as an extension point.
-// services/auth/hooks.Fetch has no Bitbucket case yet — Hook.bitbucket is
-// reachable in the schema and unreachable in the running service until one is
-// written.
-message BitbucketHook {
-  string id = 1;
-}
-
+// Hook is a webhook a forge calls for pushes to one repository.
+//
+// THERE IS NO PROVIDER FIELD AND NO PER-PROVIDER MESSAGE. The host in
+// `repository_key` is the forge, exactly as it is everywhere else in this
+// schema; which driver reads a delivery is the receiving cloud's binding for
+// that host (pkg/forge.Registry).
 message Hook {
-  oneof hook {
-    GithubHook github = 1;
-    BitbucketHook bitbucket = 2;
-  }
+  string id = 1;
+  // repository_key is the one repository this hook may speak for. A delivery
+  // naming any other is refused, whatever its signature.
+  string repository_key = 2;
+  // handle is the forge's own id for the webhook it created: opaque.
+  string handle = 3;
+  // scheme is how the forge signs deliveries (pkg/forge.Scheme), STORED WITH
+  // THE HOOK so a hook created under one procedure is never checked under
+  // another — an instance upgraded later keeps verifying its older hooks.
+  string scheme = 4;
+  // secret is the hook's key material (pkg/forge.Secret), raw — the string a
+  // forge was actually given is derived from it per scheme — so it is bytes.
+  bytes secret = 5;
 }
 
 message HookRef {

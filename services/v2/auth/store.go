@@ -8,11 +8,12 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
+	datastore "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/core/kvdb"
@@ -429,92 +430,100 @@ func linkRepositoryToProject(ctx context.Context, kv Store, key repokey.Key, pro
 
 // ──────────────────────────────── hooks ────────────────────────────────
 //
-//	/hooks/<id>/provider          "github" — also the marker row
-//	/hooks/<id>/github/id         GitHub's own numeric webhook id, decimal
-//	/hooks/<id>/github/secret
-//	/hooks/<id>/github/repository the repository's canonical key
+//	/hooks/<id>/repository   the one repository key it speaks for — also the marker row
+//	/hooks/<id>/handle       the forge's own id for the webhook it created, opaque
+//	/hooks/<id>/scheme       how the forge signs deliveries (pkg/forge.Scheme)
+//	/hooks/<id>/secret       the wire secret the forge was given
 //
-// <id> is segment()-encoded like every other id here. Nothing in this
-// package generates a hook id — HookService only reads (hooks.go) — so the
-// id in these rows is whatever a caller sent, which is the second reason
-// the encoding is uniform rather than applied only where a collision has
-// already been demonstrated.
+// NO PROVIDER ROW. The host in the repository key is the forge, and a second
+// row saying which could only agree with it or lie. The scheme is stored and
+// never derived from the host: an instance upgraded to a stronger scheme keeps
+// verifying the hooks it created under the old one.
+//
+// <id> is segment()-encoded like every other id here.
 
 const hooksPrefix = "/hooks/"
 
-func hookRoot(id string) string            { return hooksPrefix + segment(id) }
-func hookProviderRow(id string) string     { return hookRoot(id) + hookProviderRowSuffix }
-func hookGithubIDRow(id string) string     { return hookRoot(id) + "/github/id" }
-func hookGithubSecretRow(id string) string { return hookRoot(id) + "/github/secret" }
-func hookGithubRepoRow(id string) string   { return hookRoot(id) + "/github/repository" }
+func hookRoot(id string) string      { return hooksPrefix + segment(id) }
+func hookRepoRow(id string) string   { return hookRoot(id) + hookMarkerSuffix }
+func hookHandleRow(id string) string { return hookRoot(id) + "/handle" }
+func hookSchemeRow(id string) string { return hookRoot(id) + "/scheme" }
+func hookSecretRow(id string) string { return hookRoot(id) + "/secret" }
 
-const hookProviderRowSuffix = "/provider"
+const hookMarkerSuffix = "/repository"
 
 func listHookIDs(ctx context.Context, kv Store) ([]string, error) {
-	rows, err := kv.ListRegEx(ctx, hooksPrefix, idRowPattern(hooksPrefix, hookProviderRowSuffix))
+	rows, err := kv.ListRegEx(ctx, hooksPrefix, idRowPattern(hooksPrefix, hookMarkerSuffix))
 	if err != nil {
 		return nil, err
 	}
-	return idsFromRows(rows, hooksPrefix, hookProviderRowSuffix)
+	return idsFromRows(rows, hooksPrefix, hookMarkerSuffix)
 }
 
-type githubHookRecord struct {
-	providerHookID int64
-	secret         string
-	repository     string
+type hookRecord struct {
+	repository string
+	handle     string
+	scheme     string
+	secret     string
 }
 
-// fetchHookProvider reads which provider a hook was filed under, or an error
-// if id was never registered.
-func fetchHookProvider(ctx context.Context, kv Store, id string) (string, error) {
-	provider, err := kv.Get(ctx, hookProviderRow(id))
-	if err != nil || provider == nil {
-		return "", fmt.Errorf("hook %q not found", id)
+// errNoHook is a hook id nothing registered, which is the one failure a
+// caller may be told as a NotFound; a registered hook missing a row is a store
+// that broke, and is not.
+var errNoHook = errors.New("no such hook")
+
+func fetchHook(ctx context.Context, kv Store, id string) (hookRecord, error) {
+	repository, err := kv.Get(ctx, hookRepoRow(id))
+	switch {
+	case errors.Is(err, datastore.ErrNotFound), err == nil && repository == nil:
+		return hookRecord{}, fmt.Errorf("hook %q: %w", id, errNoHook)
+	case err != nil:
+		// A STORE THAT FAILED IS NOT AN UNKNOWN HOOK. Answered as NotFound it
+		// would read, in a forge's delivery log, like a deleted hook.
+		return hookRecord{}, fmt.Errorf("hook %q: %w", id, err)
 	}
-	return string(provider), nil
+
+	record := hookRecord{repository: string(repository)}
+	for row, into := range map[string]*string{
+		hookHandleRow(id): &record.handle,
+		hookSchemeRow(id): &record.scheme,
+		hookSecretRow(id): &record.secret,
+	} {
+		value, err := kv.Get(ctx, row)
+		if err != nil || value == nil {
+			return hookRecord{}, fmt.Errorf("hook %q has no usable %s row: %v", id, row, err)
+		}
+		*into = string(value)
+	}
+	return record, nil
 }
 
-func fetchGithubHook(ctx context.Context, kv Store, id string) (githubHookRecord, error) {
-	rawID, err := kv.Get(ctx, hookGithubIDRow(id))
+// putHook files a hook whole, in one batch, so no reader ever sees a hook
+// with a repository and no secret.
+func putHook(ctx context.Context, kv Store, id string, h hookRecord) error {
+	batch, err := kv.Batch(ctx)
 	if err != nil {
-		return githubHookRecord{}, err
+		return fmt.Errorf("creating batch: %w", err)
 	}
-	providerHookID, err := strconv.ParseInt(string(rawID), 10, 64)
-	if err != nil {
-		return githubHookRecord{}, fmt.Errorf("hook %q's provider id %q is not a number: %w", id, rawID, err)
+	for row, value := range map[string]string{
+		hookRepoRow(id):   h.repository,
+		hookHandleRow(id): h.handle,
+		hookSchemeRow(id): h.scheme,
+		hookSecretRow(id): h.secret,
+	} {
+		if err := batch.Put(row, []byte(value)); err != nil {
+			return fmt.Errorf("batching hook %q: %w", id, err)
+		}
 	}
-	secret, err := kv.Get(ctx, hookGithubSecretRow(id))
-	if err != nil {
-		return githubHookRecord{}, err
-	}
-	repository, err := kv.Get(ctx, hookGithubRepoRow(id))
-	if err != nil {
-		return githubHookRecord{}, err
-	}
-	return githubHookRecord{
-		providerHookID: providerHookID,
-		secret:         string(secret),
-		repository:     string(repository),
-	}, nil
+	return batch.Commit()
 }
 
-// batchDeleteHook queues every row a hook owns, whatever its provider. There
-// is only one provider today (github; bitbucket is reachable in the schema
-// and unimplemented everywhere, per auth.proto's own doc on BitbucketHook),
-// so this only has one case to batch, but it is written to be extended by
-// provider rather than assumed to be github forever.
+// batchDeleteHook queues every row a hook owns.
 func batchDeleteHook(batch kvdb.Batch, id string) error {
-	if err := batch.Delete(hookProviderRow(id)); err != nil {
-		return fmt.Errorf("batching hook provider delete: %w", err)
-	}
-	if err := batch.Delete(hookGithubIDRow(id)); err != nil {
-		return fmt.Errorf("batching hook id delete: %w", err)
-	}
-	if err := batch.Delete(hookGithubSecretRow(id)); err != nil {
-		return fmt.Errorf("batching hook secret delete: %w", err)
-	}
-	if err := batch.Delete(hookGithubRepoRow(id)); err != nil {
-		return fmt.Errorf("batching hook repository delete: %w", err)
+	for _, row := range []string{hookRepoRow(id), hookHandleRow(id), hookSchemeRow(id), hookSecretRow(id)} {
+		if err := batch.Delete(row); err != nil {
+			return fmt.Errorf("batching hook delete: %w", err)
+		}
 	}
 	return nil
 }

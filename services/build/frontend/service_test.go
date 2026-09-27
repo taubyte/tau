@@ -13,10 +13,10 @@ import (
 )
 
 // New's error returns, the lifecycle, and the claim that this package needs
-// nothing but four fakes to stand up.
+// nothing but five fakes to stand up.
 
 func TestNewRefusesEveryMissingDependency(t *testing.T) {
-	hooks, projects, backend, identity := &fakeHooks{}, &fakeProjects{}, &fakeBackend{}, &fakeIdentity{}
+	hooks, deliveries, projects, backend, identity := &fakeHooks{}, &fakeDeliveries{}, &fakeProjects{}, &fakeBackend{}, &fakeIdentity{}
 
 	for _, tc := range []struct {
 		name string
@@ -25,21 +25,25 @@ func TestNewRefusesEveryMissingDependency(t *testing.T) {
 	}{
 		// Omitted entirely: the option was never passed.
 		{"no hooks", func() (*Service, error) {
-			return New(Config{}, WithProjects(projects), WithBackend(backend), WithIdentity(identity))
+			return New(Config{}, WithDeliveries(deliveries), WithProjects(projects), WithBackend(backend), WithIdentity(identity))
 		}, "hooks"},
+		{"no deliveries", func() (*Service, error) {
+			return New(Config{}, WithHooks(hooks), WithProjects(projects), WithBackend(backend), WithIdentity(identity))
+		}, "verify a webhook delivery"},
 		{"no projects", func() (*Service, error) {
-			return New(Config{}, WithHooks(hooks), WithBackend(backend), WithIdentity(identity))
+			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithBackend(backend), WithIdentity(identity))
 		}, "projects"},
 		{"no backend", func() (*Service, error) {
-			return New(Config{}, WithHooks(hooks), WithProjects(projects), WithIdentity(identity))
+			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithProjects(projects), WithIdentity(identity))
 		}, "backend"},
 		{"no identity", func() (*Service, error) {
-			return New(Config{}, WithHooks(hooks), WithProjects(projects), WithBackend(backend))
+			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithProjects(projects), WithBackend(backend))
 		}, "identity"},
 
 		// Passed as nil: the option itself refuses, so a bad argument fails
 		// where it was written rather than at the end of New.
 		{"a nil hooks", func() (*Service, error) { return New(Config{}, WithHooks(nil)) }, "hooks"},
+		{"a nil deliveries", func() (*Service, error) { return New(Config{}, WithDeliveries(nil)) }, "verify a webhook delivery"},
 		{"a nil projects", func() (*Service, error) { return New(Config{}, WithProjects(nil)) }, "projects"},
 		{"a nil backend", func() (*Service, error) { return New(Config{}, WithBackend(nil)) }, "backend"},
 		{"a nil identity", func() (*Service, error) { return New(Config{}, WithIdentity(nil)) }, "identity"},
@@ -177,8 +181,8 @@ func TestTheHTTPServerHookRunsBeforeItServes(t *testing.T) {
 
 // The claim doc.go makes: no libp2p host, no listener, no port, and the whole
 // route table reachable.
-func TestServiceNeedsOnlyFourFakes(t *testing.T) {
-	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithIdentity(&fakeIdentity{}))
+func TestServiceNeedsOnlyFiveFakes(t *testing.T) {
+	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithIdentity(&fakeIdentity{}))
 	require.NoError(t, err)
 	require.Nil(t, s.Addr())
 

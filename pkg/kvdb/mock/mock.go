@@ -7,14 +7,20 @@ import (
 	"sync"
 
 	"github.com/ipfs/go-cid"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/core/kvdb"
 )
 
 // Error constants
 var (
-	ErrClosed   = errors.New("kvdb is closed")
-	ErrNotFound = errors.New("key not found")
+	ErrClosed = errors.New("kvdb is closed")
+
+	// ErrNotFound IS go-datastore's, because that is what the real kvdb
+	// returns for a missing key. A mock with its own sentinel lets code that
+	// is correct against production misread the mock, and code that only
+	// works against the mock pass.
+	ErrNotFound = ds.ErrNotFound
 )
 
 // KVDB implements the KVDB interface using an in-memory map

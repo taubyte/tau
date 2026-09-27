@@ -157,8 +157,8 @@ func TestDeleteRepository_BatchCreationFails(t *testing.T) {
 
 func TestDeleteRepository_BatchedWriteFails(t *testing.T) {
 	// Three fixed deletes (key, registered_by, project) plus one hook's
-	// worth of rows (provider, github id, secret, repository, reverse
-	// index) — every position is exercised so every `if err :=
+	// worth of rows (repository, handle, scheme, secret, reverse index) —
+	// every position is exercised so every `if err :=
 	// batch.Delete(...); err != nil` line in deleteRepository and
 	// batchDeleteHook is reached, not just the first.
 	for failAt := 1; failAt <= 7; failAt++ {
@@ -166,10 +166,7 @@ func TestDeleteRepository_BatchedWriteFails(t *testing.T) {
 		key, err := parseRepoKey("github.com/acme/pay")
 		require.NoError(t, err)
 		require.NoError(t, registerRepository(t.Context(), real, key, "QmOwner"))
-		require.NoError(t, real.Put(t.Context(), hookProviderRow("hook-1"), []byte("github")))
-		require.NoError(t, real.Put(t.Context(), hookGithubIDRow("hook-1"), []byte("1")))
-		require.NoError(t, real.Put(t.Context(), hookGithubSecretRow("hook-1"), []byte("s")))
-		require.NoError(t, real.Put(t.Context(), hookGithubRepoRow("hook-1"), []byte(key.String())))
+		require.NoError(t, putHook(t.Context(), real, "hook-1", hook(key.String())))
 		require.NoError(t, real.Put(t.Context(), repoHookRow(key, "hook-1"), nil))
 
 		kv := &batchFailingKVDB{Store: real, failAt: failAt}
@@ -232,6 +229,16 @@ func TestListProjectIDs_Fails(t *testing.T) {
 	kv := &failingKVDB{Store: newStore(t), failListRegEx: true}
 	_, err := listProjectIDs(t.Context(), kv)
 	assert.Error(t, err)
+}
+
+func TestPutHook_Fails(t *testing.T) {
+	kv := &failingKVDB{Store: newStore(t), failBatch: true}
+	assert.Error(t, putHook(t.Context(), kv, "hook-1", hook("github.com/acme/pay")))
+
+	for failAt := 1; failAt <= 4; failAt++ {
+		kv := &batchFailingKVDB{Store: newStore(t), failAt: failAt}
+		assert.Error(t, putHook(t.Context(), kv, "hook-1", hook("github.com/acme/pay")), "failAt=%d", failAt)
+	}
 }
 
 func TestListHookIDs_Fails(t *testing.T) {

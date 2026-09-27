@@ -22,8 +22,8 @@ import (
 // only the secret (services/patrick/github.go's githubCheckHookAndExtractSecret
 // sets one context variable, "GithubSecret") and then let the BODY name the
 // repository — so a signature made under any registered hook authorized a job
-// for any repository. auth.proto already carries repository_key on GithubHook;
-// this returns the message so the pair cannot be separated again.
+// for any repository. auth.proto carries repository_key, the scheme and the
+// secret on one Hook; this returns the message so they cannot be separated again.
 type HookClient struct {
 	pool *Pool
 }
@@ -36,34 +36,24 @@ func Hooks(p *Pool) (*HookClient, error) {
 	return &HookClient{pool: p}, nil
 }
 
-// Get returns the GithubHook registered under id.
-//
-// A hook of another provider is a FailedPrecondition rather than a nil
-// dereference: auth.proto's Hook is a oneof and its BitbucketHook case is
-// reachable in the schema and unreachable in the running service, so the case
-// exists and has no secret to verify with. Answering it as "not a github hook"
-// is what keeps the frontend from treating an absent secret as an empty one.
-func (c *HookClient) Get(ctx context.Context, hookID string) (*authv1.GithubHook, error) {
+// Get returns the hook registered under id.
+func (c *HookClient) Get(ctx context.Context, hookID string) (*authv1.Hook, error) {
 	if hookID == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("build: hook id is required"))
 	}
 
-	var hook *authv1.GithubHook
+	var hook *authv1.Hook
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
 		hooks := authv1connect.NewHookServiceClient(client.HTTP(), client.URL())
 		resp, err := hooks.Get(ctx, connect.NewRequest(&authv1.HookRef{Id: hookID}))
 		if err != nil {
 			return err
 		}
-		hook = resp.Msg.GetGithub()
+		hook = resp.Msg
 		return nil
 	})
 	if err != nil {
 		return nil, err
-	}
-	if hook == nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
-			fmt.Errorf("build: hook %q is not a github hook", hookID))
 	}
 	return hook, nil
 }

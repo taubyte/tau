@@ -14,7 +14,7 @@ import (
 // bound on it is a security property rather than a performance one.
 //
 // v1 makes a p2p round trip to auth for a hook secret on EVERY unauthenticated
-// POST to /github/{hook} — the lookup is the route's Auth validator, so it runs
+// POST to a hook — the lookup is the route's Auth validator, so it runs
 // before anything has been proven — with no cache and no limit anywhere. A
 // stranger posting garbage therefore spends this node's connection to auth, and
 // spends it once per request.
@@ -126,8 +126,8 @@ func (c *cache[V]) forget(key string) {
 // is what makes a flood of invented hook ids cost one round trip each instead
 // of one per request. "auth is unreachable" is the opposite: remembering it
 // would keep this node refusing real pushes for a minute after auth came back.
-func (s *Service) hook(ctx context.Context, hookID string) (*authv1.GithubHook, error) {
-	return s.secrets.do(hookID, func() (*authv1.GithubHook, error) {
+func (s *Service) hook(ctx context.Context, hookID string) (*authv1.Hook, error) {
+	return s.secrets.do(hookID, func() (*authv1.Hook, error) {
 		ctx, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
 		defer cancel()
 		return s.hooks.Get(ctx, hookID)

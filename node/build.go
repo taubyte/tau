@@ -319,7 +319,7 @@ func (n *Node) openBuildFrontend() error {
 	if err != nil {
 		return err
 	}
-	identity, err := forgeauth.New(registry)
+	forges, err := forgeauth.New(registry)
 	if err != nil {
 		return err
 	}
@@ -328,7 +328,8 @@ func (n *Node) openBuildFrontend() error {
 		frontend.WithHooks(hooks),
 		frontend.WithProjects(projects),
 		frontend.WithBackend(builds),
-		frontend.WithIdentity(identity),
+		frontend.WithIdentity(forges),
+		frontend.WithDeliveries(forges),
 	}
 	// THE PUBLIC ROLE NEVER HOLDS A VAULT ITSELF. It is the one process a
 	// stranger reaches, and withDefaults already refuses it running the

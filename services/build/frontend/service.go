@@ -25,12 +25,13 @@ import (
 // satisfies them — which is also what lets every route in this package be
 // tested against fakes with no host, no listener and no port.
 type Service struct {
-	hooks    Hooks
-	projects Projects
-	backend  Backend
-	identity Identity
-	vault    Vault
-	cfg      Config
+	hooks      Hooks
+	deliveries Deliveries
+	projects   Projects
+	backend    Backend
+	identity   Identity
+	vault      Vault
+	cfg        Config
 
 	now    func() time.Time
 	logf   func(string, ...any)
@@ -41,7 +42,7 @@ type Service struct {
 	// The keyed ones are all keyed by a string a stranger chooses, so all three
 	// are the same bounded, expiring map; the global ones are one bucket each
 	// and cannot be keyed at all. See secrets.go and ratelimit.go.
-	secrets       *cache[*authv1.GithubHook]
+	secrets       *cache[*authv1.Hook]
 	hookBuckets   *cache[*bucket]
 	callerBuckets *cache[*bucket]
 	globalHooks   *bucket
@@ -66,11 +67,12 @@ type Service struct {
 type Option func(*options) error
 
 type options struct {
-	hooks    Hooks
-	projects Projects
-	backend  Backend
-	identity Identity
-	vault    Vault
+	hooks      Hooks
+	deliveries Deliveries
+	projects   Projects
+	backend    Backend
+	identity   Identity
+	vault      Vault
 
 	tune func(*http.Server)
 	now  func() time.Time
@@ -124,6 +126,17 @@ func WithVault(v Vault) Option {
 			return errors.New("build: no vault to write secrets into")
 		}
 		o.vault = v
+		return nil
+	}
+}
+
+// WithDeliveries is how a webhook delivery is verified and read. Required.
+func WithDeliveries(d Deliveries) Option {
+	return func(o *options) error {
+		if d == nil {
+			return errors.New("build: no way to verify a webhook delivery")
+		}
+		o.deliveries = d
 		return nil
 	}
 }
@@ -216,6 +229,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	switch {
 	case o.hooks == nil:
 		return nil, errors.New("build: no hooks to verify a webhook against")
+	case o.deliveries == nil:
+		return nil, errors.New("build: no way to verify a webhook delivery")
 	case o.projects == nil:
 		return nil, errors.New("build: no projects to authorize against")
 	case o.backend == nil:
@@ -225,21 +240,22 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	}
 
 	s := &Service{
-		hooks:    o.hooks,
-		projects: o.projects,
-		backend:  o.backend,
-		identity: o.identity,
-		vault:    o.vault,
-		cfg:      effective,
-		tune:     o.tune,
-		now:      o.now,
-		logf:     o.logf,
+		hooks:      o.hooks,
+		deliveries: o.deliveries,
+		projects:   o.projects,
+		backend:    o.backend,
+		identity:   o.identity,
+		vault:      o.vault,
+		cfg:        effective,
+		tune:       o.tune,
+		now:        o.now,
+		logf:       o.logf,
 	}
 
 	// A miss is remembered only when it is an ANSWER — see secrets.go's
 	// terminal. Remembering "auth is unreachable" would keep this node
 	// refusing real pushes for a whole TTL after auth came back.
-	s.secrets = newCache[*authv1.GithubHook](s.cfg.SecretCacheMax, s.cfg.SecretCacheTTL, s.now, terminal)
+	s.secrets = newCache[*authv1.Hook](s.cfg.SecretCacheMax, s.cfg.SecretCacheTTL, s.now, terminal)
 	// A bucket's lifetime is one refill period, because a bucket untouched for
 	// that long has refilled to full and is indistinguishable from a new one.
 	//
