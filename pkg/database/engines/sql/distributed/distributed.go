@@ -53,7 +53,7 @@ type Files func(ctx context.Context, spec database.Spec) (dir string, err error)
 // UnderRoot is the Files provider a node composes: one directory per database
 // beneath the node's own root, named by database.Spec.Prefix.
 //
-// THE PREFIX BECOMES ONE PATH SEGMENT, escaped the way node/volume.go escapes a
+// THE PREFIX BECOMES ONE PATH SEGMENT, escaped the way node/volume escapes a
 // volume handle: a prefix carries slashes, and a directory per segment would
 // put one project's databases inside another project's name.
 //

@@ -122,7 +122,7 @@ func containerTier(c ContainerConfig, disks container.Volumes) (invoke.Runtime, 
 	}
 	// A NODE WITH NOWHERE TO PUT A DIRECTORY MOUNTS NOTHING, and the tier says
 	// so on the workload that declared one rather than starting it with an
-	// empty layer. See node/volume.go.
+	// empty layer. See node/volume.
 	if disks != nil {
 		options = append(options, container.WithVolumes(disks))
 	}

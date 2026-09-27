@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"time"
 )
 
@@ -256,6 +257,27 @@ func (s Spec) Mounted() []Grant {
 		}
 	}
 	return out
+}
+
+// Number is a setting the composer wrote as a count: a byte ceiling, an
+// instance limit.
+//
+// ABSENT OR UNPARSEABLE IS ZERO, and every backing reads zero as "no limit"
+// rather than as a refusal. The vocabulary makes these fields required, so a
+// missing one means the composer did not read it — which is a bug to find in a
+// log, where a store that refused every request over a field nobody wrote would
+// be an outage.
+//
+// IT IS HERE AND NOT IN EACH BACKING because four of them had spelled the same
+// strconv.ParseInt with the same fallback, one per kind, and a fifth would have
+// too. Reading a setting is this type's own job: it is the one that says what
+// the keys are.
+func (g Grant) Number(setting string) int64 {
+	n, err := strconv.ParseInt(g.Settings[setting], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // Allows reports whether this grant carries a verb. A refused grant allows

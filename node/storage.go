@@ -146,7 +146,7 @@ func (b *buckets) OpenBucket(_ context.Context, grant invoke.Grant) (wasmtier.Bu
 		// THE PREFIX ENDS IN "/" so a bucket called QmA cannot see QmAB's,
 		// which is the rule pkg/cache states and keeps for the same reason.
 		prefix: "objects/" + grant.Handle + "/",
-		size:   bytesOf(grant.Settings[settingObjectSize]),
+		size:   grant.Number(settingObjectSize),
 		now:    b.node.opts.now,
 	}, nil
 }
@@ -554,7 +554,7 @@ var ErrBadObjectName = errors.New("node: an object name may not be empty or cont
 // bucket. A guest in staging could read, overwrite and delete production
 // objects, with no error anywhere on the path.
 //
-// It refuses rather than cleaning, which is the same answer node/volume.go's
+// It refuses rather than cleaning, which is the same answer node/volume's
 // `within` gives a checkpoint entry and for the same reason: nothing legitimate
 // names a parent, so a name that does is not one of ours and is worth failing
 // on rather than silently rewriting into some other object.

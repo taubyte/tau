@@ -46,7 +46,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -108,7 +107,7 @@ func (c *Caches) Open(ctx context.Context, grant invoke.Grant) (wasmtier.Cache, 
 	opened, err := pkgcache.Open(ctx, store, pkgcache.Config{
 		Prefix: grant.Handle,
 		TTL:    duration(grant.Settings[settingTTL]),
-		Size:   byteCount(grant.Settings[settingSize]),
+		Size:   grant.Number(settingSize),
 	})
 	if err != nil {
 		return nil, err
@@ -197,21 +196,15 @@ const (
 var Settings = []string{settingTTL, settingSize}
 
 // A ZERO OR UNPARSEABLE SETTING IS NO LIMIT rather than a refusal. The
-// vocabulary makes `size` required, so an absent one means the composer did not
+// vocabulary makes `ttl` required, so an absent one means the composer did not
 // read it — and a cache with no ceiling is a bug to find in a log, where a
-// cache that refuses every write is an outage.
+// cache that refuses every write is an outage. `size` is read the same way, by
+// [invoke.Grant.Number], which is where that sentence is written down for every
+// backing that reads a count off a grant.
 func duration(s string) time.Duration {
 	d, err := time.ParseDuration(s)
 	if err != nil {
 		return 0
 	}
 	return d
-}
-
-func byteCount(s string) int64 {
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
 }

@@ -47,9 +47,9 @@ import (
 	"github.com/taubyte/tau/node/model"
 	"github.com/taubyte/tau/node/primitive"
 	"github.com/taubyte/tau/node/stream"
+	"github.com/taubyte/tau/node/volume"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/invoke/container"
 	"github.com/taubyte/tau/pkg/invoke/static"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/register"
@@ -110,7 +110,7 @@ type Node struct {
 	// disks is this node's volume backing: a directory per handle under the
 	// root, checkpointed into the asset store. Nil on a node with no root,
 	// which is a node that mounts nothing.
-	disks *volumes
+	disks *volume.Volumes
 
 	// admit decides whether one instance of a store that holds many may exist.
 	// It is shared by the wasm tier and the gateway: a workload opening
@@ -392,7 +392,11 @@ func (n *Node) openWorker() error {
 	// a container backend an operator named and a wasm engine the process
 	// already holds.
 	if n.cfg.Container.declared() {
-		tier, err := containerTier(n.cfg.Container, n.disksOrNil())
+		disks, err := n.disksOrNil()
+		if err != nil {
+			return err
+		}
+		tier, err := containerTier(n.cfg.Container, disks)
 		if err != nil {
 			return err
 		}
@@ -866,12 +870,15 @@ func (n *Node) Start(ctx context.Context) error {
 
 	// THE CHECKPOINTS, which is what makes a volume survive its node — and
 	// which raft has nothing to do with either. A checkpoint is a row in a
-	// replicated kvdb that ANY node may write; node/volume.go's own doc records
+	// replicated kvdb that ANY node may write; node/volume's own doc records
 	// the leader-only write as the bug it was, because a volume is mounted
 	// wherever placement put the workload and not on a leader.
 	if n.disks != nil {
 		n.checkpointDone = make(chan struct{})
-		go n.disks.loop(loopCtx, n.checkpointDone)
+		go func() {
+			defer close(n.checkpointDone)
+			n.disks.Run(loopCtx, checkpointTick)
+		}()
 	}
 
 	n.started = true
@@ -1059,23 +1066,6 @@ func (n *Node) Stats() *stats.Service { return n.stats }
 // something to it — a stream subscriber, a test listening for what a workload
 // published.
 func (n *Node) PubSub() stats.PubSub { return n.opts.pubsub }
-
-// disksOrNil is this node's volume backing, or nil when it has no root to put
-// one in. CONSTRUCTION ONLY, like the other two.
-//
-// A NIL RETURN IS THE STATEMENT. A tier handed nothing refuses a workload that
-// declares a mount, which is the only unserved capability that would lose data
-// rather than fail.
-func (n *Node) disksOrNil() container.Volumes {
-	if n.opts.root == "" {
-		return nil
-	}
-	if n.disks == nil {
-		n.disks = &volumes{node: n}
-		n.closers = append(n.closers, n.disks)
-	}
-	return n.disks
-}
 
 // QueueDepth is what one declared queue holds: items waiting and items claimed.
 //

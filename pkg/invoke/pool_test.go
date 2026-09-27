@@ -994,3 +994,43 @@ func TestAPooledConnectionReportsAnImpossibleHalfClose(t *testing.T) {
 	err = c.(interface{ CloseWrite() error }).CloseWrite()
 	require.Error(t, err, "net.Pipe cannot half-close and must not pretend to")
 }
+
+// TestASETTINGReadAsANumberIsReadTheSameWayByEveryBacking.
+//
+// Four of them had spelled this parse themselves — a cache's size, a volume's
+// quota, a bucket's size, a store's instance limit — and every one of them read
+// an absent or unparseable field as "no limit" rather than as a refusal. It is
+// one method now, and this is the table that says what the fallback is: the
+// vocabulary makes these fields required, so a missing one is a composer that did
+// not read it, which is a bug to find in a log where a store that refused every
+// request would be an outage.
+func TestASettingReadAsANumber(t *testing.T) {
+	for _, c := range []struct {
+		setting string
+		want    int64
+	}{
+		{"size", 1024},
+		{"negative", -1},
+		{"zero", 0},
+		{"empty", 0},
+		{"words", 0},
+		{"fractional", 0},
+		{"absent", 0},
+		{"huge", 0},
+	} {
+		g := Grant{Settings: map[string]string{
+			"size":       "1024",
+			"negative":   "-1",
+			"zero":       "0",
+			"empty":      "",
+			"words":      "a lot",
+			"fractional": "10.5",
+			"huge":       "99999999999999999999",
+		}}
+		require.Equal(t, c.want, g.Number(c.setting), c.setting)
+	}
+
+	// AND A GRANT THAT CARRIES NO SETTINGS AT ALL is the same answer rather than
+	// a panic: a refused grant has none, and every backing reads one.
+	require.Zero(t, Grant{}.Number("size"))
+}

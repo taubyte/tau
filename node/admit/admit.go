@@ -71,7 +71,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -363,12 +362,13 @@ func singleSegment(instance string) error {
 
 // room refuses an admission that would take the store past its ceiling.
 func (a *Admissions) room(ctx context.Context, rows Rows, grant invoke.Grant) error {
-	limit, err := strconv.ParseInt(grant.Settings[settingLimit], 10, 64)
-	if err != nil || limit <= 0 {
+	limit := grant.Number(settingLimit)
+	if limit <= 0 {
 		// Unparseable is treated as absent, and absent is no ceiling — the
 		// vocabulary requires the field, so a missing one means the composer
 		// did not read it, and refusing every instance over a field nobody
-		// wrote would be an outage where this is a bug to find in a log.
+		// wrote would be an outage where this is a bug to find in a log. The
+		// reading is [invoke.Grant.Number]'s, which every backing shares.
 		return nil
 	}
 
