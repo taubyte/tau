@@ -669,7 +669,8 @@ func (n *Node) openPlacement() error {
 		return nil
 	}
 
-	options := []placement.Option{}
+	// THE PROJECTS, so a resource's own regions reach the choice of node.
+	options := []placement.Option{placement.WithProjects(n.registerSource())}
 	if n.worker != nil {
 		options = append(options, placement.WithLocal(n.worker))
 	}

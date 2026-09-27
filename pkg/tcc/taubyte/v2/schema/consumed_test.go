@@ -96,141 +96,111 @@ import (
 // says nothing, because the path came from a caller and the caller is where this
 // can see it.
 
-// The reasons, said once each. A family of attributes that is unread for one
-// reason gets one sentence and every member points at it, so the decision is
-// stated in one place and the entries below stay a list of names.
+// # What an excuse can say, and what it cannot
+//
+// An excuse is one of these three:
+//
+//   - HANDLED. The value is not ignored; it is used somewhere this scan cannot
+//     see. The compile consumed it (a reference's namespace, a lowering's
+//     terms), or the runtime refuses by name the branch that holds it.
+//   - INERT. It asks the cloud to do nothing: a label, an advisory note. There
+//     is nothing for a runtime to apply, so there is nothing to ignore.
+//   - PREPARATORY, which is said of a KIND and not an attribute: see
+//     preparatoryKinds. Every declaration on it is ignored, and may be, because
+//     the kind has NO RUNTIME AT ALL — no tier runs it and nothing dispatches
+//     it. Its name must be spelled nowhere in services/ or node/; the day it
+//     is, the kind has a runtime and the excuse fails.
+//
+// What an entry CANNOT say is that a RUNNABLE kind ignores a declaration. That
+// is a deployment lie — the author writes it, it compiles, it deploys, and the
+// cloud does something else — and the fix is in the runtime serving the kind:
+// apply the value, or refuse it by name (worker's unservableKind is the
+// pattern), which is itself a read this test sees. It is never tcc's to refuse:
+// the compile answers what the config says, not what the platform can do.
+type class int
+
 const (
-	noTagReader = "a label the author writes for whoever reads the document. Nothing in the cloud selects, groups, meters or places a resource by one."
-
-	noToolNarrowing = "which of an mcp's tools one grant is for. An mcp's tools ARE its access block (services/worker/mcp.go), and a grant travels as the fields AccessEntryShape names — ops, name, namespace, timeout, path, deliver/* — so an entry naming three of thirty is served as thirty."
-
-	noPlacementReader = "where a resource's copies go. services/database is the only reader of a placement block in this cloud (placedOf, bounded by the environment's allowance); every other placed kind compiles its regions and nothing consults them."
-
-	noCPUCeiling = "a CPU ceiling. services/worker carries execution/memory and execution/timeout onto the grant and no tier reads a cpu share, so the number binds nothing."
-
-	secretScopeConsumed = "the namespace half of a variable's secret reference. worker resolves the value by the name beside it, which compiled to the secret's ID, so the scope had already done its work — see resolve.go's envOf."
-
-	componentScopeConsumed = "the namespace half of a `source: {component: …}` reference. worker asks the artifact seam for the component ID the name compiled to, so the scope was consumed resolving it."
-
-	noSourceConfigReader = "a config file inside a git source. pkg/specs' Source() carries kind, path, git, branch, image and component, and the build is handed those — this one reaches nothing."
-
-	noPullSecretReader = "the registry credential for a private image. worker carries source/image and source/kind and nothing resolves a pull secret, so a private image is pulled with no credential."
-
-	noProbeRunner = "a probe nothing runs. No tier reads either block, so a workload is sent traffic as soon as it starts and is never restarted for failing a check."
-
-	noInstanceCeiling = "the ceiling on how many instances of an application may exist. worker carries limits/concurrency and nothing carries this one."
-
-	noSandboxReaper = "when an idle sandbox is reclaimed, and how long one may live at all. No tier reads either, so a sandbox lives as long as whatever holds it."
-
-	noCacheReplication = "whether a cache's entries are replicated across the swarm. Nothing reads it: a cache is served by the node that holds it and the word changes nothing."
-
-	noCacheEncryption = "the secret holding the key a cache's entries are encrypted with. Nothing in the cloud reads it — `encryption` appears in no service — so a cache that declares a key is stored without one."
-
-	noCheckpointBudget = "the recovery-point budget and what to do when it is missed. worker carries checkpoint/interval and nothing reads either of these, so the budget is neither measured nor acted on."
-
-	gatewayServesPlaintext = "a gateway's certificate. node/boot serves a gateway with an http.Server carrying no TLSConfig, and the only reader of a certificate block anywhere is services/v2/proxy, for a proxy's own — so a gateway that declares TLS compiles clean and is served in the clear."
-
-	proxyCertScopeConsumed = "the namespace half of a proxy's certificate secret. tls.go resolves the secret by the name beside it, which compiled to the secret's ID."
-
-	noHandlerPort = "which of a handler's ports a gateway route reaches. The route resolves to a kind, a name and a namespace, and nothing reads the port — so a workload listening on more than one is not told which, which is the case the attribute's own doc exists for."
-
-	noStreamingStorage = "the lifetime of a streaming storage's entries. This cloud serves one storage model — `object`, which worker checks by name — so the other branch's only field is never reached."
-
-	noSecretRotation = "how often a secret's value is expected to rotate. The vocabulary calls it advisory, and nothing reads it: no service rotates one or reports one overdue."
-
-	noExternalStreamEngine = "the credentials for a stream on somebody else's broker. worker refuses a stream on any engine but tau's (unservableKind), so a Kafka or NATS credential is never reached."
-
-	noLocalStream = "restricting a stream to the node it was published from. Nothing reads it, so every stream is published to the swarm."
-
-	deadLetterScopeConsumed = "the namespace half of a dead-letter reference. services/primitives opens the queue the name compiled to — another queue's ID — so the scope was consumed resolving it."
-
-	zoneFileUnserved = "a zone file in the repository. The vocabulary says why itself: nothing in the lowering vocabulary reads a file, so a zone answers with its `records` lines. A parallel change is making this one live; when a reader lands, this entry has to go with it."
-
-	agentLoopUnrun = "nothing runs an agent's loop. The lowering produces a function with `source: {builtin: agent}`, and the word `agent` appears in no service — so which model it answers with, what it is told, and how far it may go reach nothing."
-
-	agentLowered = "consumed by the agent's lowering: limits/timeout and limits/memory become the loop function's execution/timeout and execution/memory, and the memory block becomes a vector database's dimensions and size — the embedder's name being the gate on producing it at all. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption; the entry is here to say it happens."
-
-	workflowLowered = "consumed by the workflow's lowering: a step's retry budget becomes its queue's max_attempts, delay and retry/*, `on_error` becomes its dead-letter queue, `call/*` becomes the step driver's grant on the function it calls, and `start` becomes the entry record worker reads at entry/start/*. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption; the entry is here to say it happens."
-
-	noStepIO = "a step's input expression and where its result is bound. The driver is `source: {builtin: step}` and nothing reads either, so a run's message travels between steps unshaped."
-
-	noRunCeiling = "how many runs of a workflow may be in flight. Each step's queue is opened with what the lowering set, and this ceiling is not among those."
+	handled class = iota + 1
+	inert
 )
 
-// unread is every attribute the vocabulary declares that nothing reads, and WHY
-// that is acceptable. A `*` kind excuses the attribute on every kind where
-// nothing reads it, which is how one sentence covers a field twenty-three kinds
-// declare; where one kind DOES read it — a database's regions — the entry is
-// never consulted for that kind, and the reason says so.
+type excuse struct {
+	class  class
+	reason string
+}
+
+// The reasons, said once each. A family of attributes excused for one reason
+// gets one sentence and every member points at it.
+var (
+	noTagReader = excuse{inert, "a label the author writes for whoever reads the document. It asks the cloud for nothing."}
+
+	advisoryRotation = excuse{inert, "how often a secret's value is expected to rotate. The vocabulary calls it advisory: it states an expectation and asks the cloud to do nothing."}
+
+	secretScopeConsumed = excuse{handled, "the namespace half of a variable's secret reference. The compile resolved the name beside it to the secret's ID, so the scope had already done its work — see resolve.go's envOf."}
+
+	componentScopeConsumed = excuse{handled, "the namespace half of a `source: {component: …}` reference. The compile resolved the name to the component's ID, so the scope was consumed resolving it."}
+
+	proxyCertScopeConsumed = excuse{handled, "the namespace half of a proxy's certificate secret. The compile resolved the name beside it to the secret's ID."}
+
+	deadLetterScopeConsumed = excuse{handled, "the namespace half of a dead-letter reference. The compile resolved the name to another queue's ID, so the scope was consumed resolving it."}
+
+	streamingStorageRefused = excuse{handled, "the lifetime of a streaming storage's entries. worker refuses any storage whose type is not `object` by name (unservableKind), so this branch's only field is never served weaker than written — it is never served."}
+
+	regionsRefused = excuse{handled, "where a resource's copies go, on a kind nothing places by region. worker reads the block's policy and refuses the grant by name (unservable), so the regions under it are never served weaker than written — the target is not served."}
+
+	externalStreamRefused = excuse{handled, "the credentials for a stream on somebody else's broker. worker refuses a stream on any engine but tau's by name (unservableKind), so the credential is never served weaker than written."}
+
+	agentLowered = excuse{handled, "consumed by the agent's lowering: limits/timeout and limits/memory become the loop function's execution/timeout and execution/memory, and the memory block becomes a vector database's dimensions and size. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption."}
+
+	workflowLowered = excuse{handled, "consumed by the workflow's lowering: a step's retry budget becomes its queue's max_attempts, delay and retry/*, `on_error` becomes its dead-letter queue, `call/*` becomes the step driver's grant on the function it calls, and `start` becomes the entry record worker reads at entry/start/*. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption."}
+)
+
+// preparatoryKinds are the kinds with NO RUNTIME AT ALL, and why. Every
+// declaration on one is ignored and may be, because nothing runs the kind to
+// ignore it — checked, not trusted: see runtimeSpells.
+var preparatoryKinds = map[string]string{
+	"agent": "nothing runs an agent's loop. The lowering produces a function with `source: {builtin: agent}`, and no service or node dispatches that builtin — so which model it answers with, what it is told, and how far it may go reach nothing.",
+}
+
+// unread is every attribute the vocabulary declares that nothing reads, and
+// WHY that is acceptable. A `*` kind excuses the attribute on every kind where
+// nothing reads it.
 //
 // An entry here is a decision; a name missing from both this and a read is the
 // drift this test exists to catch. An entry that stops being needed — because
 // something started reading the attribute, or because no kind declares it any
 // more — fails too, which is how the change that wires one up is made to take
 // its excuse out.
-var unread = map[string]string{
-	// Declared by many kinds, read by nobody on any of them.
-	"*/tags":                               noTagReader,
-	"*/tools":                              noToolNarrowing,
-	"*/execution/cpu":                      noCPUCeiling,
-	"*/secret/namespace":                   secretScopeConsumed,
-	"*/source/config":                      noSourceConfigReader,
-	"*/source/namespace":                   componentScopeConsumed,
-	"*/source/image_pull_secret/name":      noPullSecretReader,
-	"*/source/image_pull_secret/namespace": noPullSecretReader,
+var unread = map[string]excuse{
+	"*/tags":             noTagReader,
+	"*/secret/namespace": secretScopeConsumed,
+	"*/source/namespace": componentScopeConsumed,
 
-	// Declared by every placed kind; read for a database and nothing else.
-	"*/regions/in":      noPlacementReader,
-	"*/regions/main":    noPlacementReader,
-	"*/regions/policy":  noPlacementReader,
-	"*/regions/standby": noPlacementReader,
+	"secret/rotation": advisoryRotation,
 
-	"application/limits/max_instances":         noInstanceCeiling,
-	"application/liveness/failures":            noProbeRunner,
-	"application/liveness/function/name":       noProbeRunner,
-	"application/liveness/function/namespace":  noProbeRunner,
-	"application/liveness/http/path":           noProbeRunner,
-	"application/liveness/http/port":           noProbeRunner,
-	"application/liveness/kind":                noProbeRunner,
-	"application/readiness/function/name":      noProbeRunner,
-	"application/readiness/function/namespace": noProbeRunner,
-	"application/readiness/http/path":          noProbeRunner,
-	"application/readiness/http/port":          noProbeRunner,
-	"application/readiness/kind":               noProbeRunner,
+	"sync/queue/dead_letter/namespace":   deadLetterScopeConsumed,
+	"proxy/certificate/secret/namespace": proxyCertScopeConsumed,
 
-	"sandbox/lifetime/idle": noSandboxReaper,
-	"sandbox/lifetime/max":  noSandboxReaper,
+	"cache/regions/in":         regionsRefused,
+	"cache/regions/main":       regionsRefused,
+	"cache/regions/standby":    regionsRefused,
+	"storage/regions/in":       regionsRefused,
+	"storage/regions/main":     regionsRefused,
+	"storage/regions/standby":  regionsRefused,
+	"sync/regions/in":          regionsRefused,
+	"sync/regions/main":        regionsRefused,
+	"sync/regions/standby":     regionsRefused,
+	"volume/regions/in":        regionsRefused,
+	"volume/regions/main":      regionsRefused,
+	"volume/regions/standby":   regionsRefused,
+	"workflow/regions/in":      regionsRefused,
+	"workflow/regions/main":    regionsRefused,
+	"workflow/regions/standby": regionsRefused,
 
-	"cache/replicated":               noCacheReplication,
-	"cache/encryption/key/name":      noCacheEncryption,
-	"cache/encryption/key/namespace": noCacheEncryption,
+	"storage/streaming/ttl":        streamingStorageRefused,
+	"stream/credentials/name":      externalStreamRefused,
+	"stream/credentials/namespace": externalStreamRefused,
 
-	"volume/checkpoint/rpo_budget":         noCheckpointBudget,
-	"volume/checkpoint/on_budget_exceeded": noCheckpointBudget,
-
-	"storage/streaming/ttl": noStreamingStorage,
-
-	"secret/rotation": noSecretRotation,
-
-	"sync/queue/dead_letter/namespace": deadLetterScopeConsumed,
-
-	"zone/file": zoneFileUnserved,
-
-	"gateway/certificate/source":           gatewayServesPlaintext,
-	"gateway/certificate/secret/name":      gatewayServesPlaintext,
-	"gateway/certificate/secret/namespace": gatewayServesPlaintext,
-	"gateway/route/handler/port":           noHandlerPort,
-	"proxy/certificate/secret/namespace":   proxyCertScopeConsumed,
-
-	"stream/local":                 noLocalStream,
-	"stream/credentials/name":      noExternalStreamEngine,
-	"stream/credentials/namespace": noExternalStreamEngine,
-
-	"agent/instructions":              agentLoopUnrun,
-	"agent/model/name":                agentLoopUnrun,
-	"agent/model/namespace":           agentLoopUnrun,
-	"agent/limits/concurrent":         agentLoopUnrun,
-	"agent/limits/steps":              agentLoopUnrun,
 	"agent/limits/timeout":            agentLowered,
 	"agent/limits/memory":             agentLowered,
 	"agent/memory/size":               agentLowered,
@@ -246,9 +216,6 @@ var unread = map[string]string{
 	"workflow/start":            workflowLowered,
 	"workflow/call/function":    workflowLowered,
 	"workflow/call/namespace":   workflowLowered,
-	"workflow/call/input":       noStepIO,
-	"workflow/call/result":      noStepIO,
-	"workflow/concurrency":      noRunCeiling,
 }
 
 // readers names every non-test file that reads a compiled resource, and the
@@ -270,6 +237,9 @@ var readers = map[string][]string{
 	// services/worker resolves a target of every kind onto a grant, which is
 	// what carries an author's declarations to the tier that runs it.
 	"services/worker/resolve.go": everyKind,
+	// regions.go reads the regions block of what a tier runs, for placement to
+	// choose a node by.
+	"services/worker/regions.go": {"application", "function", "sandbox", "worker"},
 	// schedule.go is the cron arm of the same service.
 	"services/worker/schedule.go": {"cron"},
 
@@ -345,7 +315,7 @@ func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {
 	idField, nameField := engine.IdentityOf(schema.CompileRoot())
 	viaVocabulary := map[string]bool{
 		shape.Ops: true, shape.Name: true, shape.Namespace: true, shape.Timeout: true,
-		shape.MountPath: true, shape.DeliverPort: true, shape.DeliverPath: true,
+		shape.MountPath: true, shape.DeliverPort: true, shape.DeliverPath: true, shape.Tools: true,
 		idField: true, nameField: true,
 	}
 
@@ -361,6 +331,7 @@ func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {
 
 	consulted := map[string]bool{}
 	dead := map[string][]string{}
+	consultedKinds := map[string]bool{}
 	for _, group := range schema.V2Resources {
 		kind, _ := group.Match.(string)
 		if kind == "" || len(group.Children) == 0 {
@@ -368,6 +339,7 @@ func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {
 		}
 		answersAt := engine.AnswersAtOf(group.Children[0])
 		typed := typedFields(t, root, kind)
+		inlined := inlinedInto(group.Children[0])
 
 		for _, key := range schema.AttributeNames(kind) {
 			switch {
@@ -382,13 +354,33 @@ func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {
 				continue
 			case reaches(perKind[kind], key, heads), reaches(perKind["*"], key, heads):
 				continue
+			// A FILE THE COMPILE READ. The attribute holds a path, the compile
+			// reads that file into the key the vocabulary names, and what is
+			// read is that key — so the path is read exactly when it is.
+			case inlined[key] != "" && (typed[inlined[key]] || reaches(perKind[kind], inlined[key], heads) || reaches(perKind["*"], inlined[key], heads)):
+				continue
 			}
 			if entry, ok := allowed(kind, key); ok {
 				consulted[entry] = true
 				continue
 			}
+			if _, ok := preparatoryKinds[kind]; ok {
+				consultedKinds[kind] = true
+				continue
+			}
 			dead[kind] = append(dead[kind], key)
 		}
+	}
+
+	// A PREPARATORY KIND THAT HAS A RUNTIME has become the lie the class exists
+	// to keep out: the kind runs now, and its declarations are ignored by what
+	// runs it. And one nothing needed has expired, like any other excuse.
+	for kind, reason := range preparatoryKinds {
+		require.NotEmpty(t, reason, "preparatory kind %s has no reason", kind)
+		require.Empty(t, runtimeSpells(t, root, kind),
+			"%s is excused as having no runtime, and the runtime spells it now. An ignored declaration on a kind that runs is not excusable: apply it where the kind is served, or refuse it there by name.", kind)
+		require.True(t, consultedKinds[kind],
+			"%s is excused as having no runtime and nothing on it needed the excuse - drop it", kind)
 	}
 
 	if len(dead) > 0 {
@@ -402,7 +394,8 @@ func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {
 		sort.Strings(lines)
 		require.Empty(t, lines,
 			"these attributes are declared and nothing reads them: an author can write one, it compiles, and the cloud does not do what the document says.\n"+
-				"Either read it where it belongs - a tier, a service, pkg/specs - or add it to `unread` with the reason it is declared and not read.\n"+
+				"Read it where the kind is served - a tier, a service, pkg/specs - and apply it, or refuse it there BY NAME the way worker's unservableKind does.\n"+
+				"`unread` does not take an ignored declaration on a kind that runs; it takes only what is handled elsewhere, inert, or on a kind with no runtime at all.\n"+
 				"If it IS read and this test cannot see it, the reader is missing from `readers` or is reached in a way the scan does not follow; fix that rather than allowlisting a live attribute.")
 	}
 
@@ -412,8 +405,9 @@ func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {
 	// change that makes an attribute live forgets to take its entry out.
 	var expired []string
 	for entry, reason := range unread {
-		require.NotEmpty(t, reason,
+		require.NotEmpty(t, reason.reason,
 			"`unread` carries %s with no reason; an entry without one is a TODO pretending to be a decision", entry)
+		require.NotZero(t, reason.class, "`unread` carries %s with no class", entry)
 		if !consulted[entry] {
 			expired = append(expired, entry)
 		}
@@ -1078,3 +1072,61 @@ func typedFields(t *testing.T, root, kind string) map[string]bool {
 	}
 	return out
 }
+
+// inlinedInto is each attribute of a kind that names a file the compile reads
+// into the object, and the key it is read into.
+func inlinedInto(iter *engine.Node) map[string]string {
+	out := map[string]string{}
+	for _, a := range iter.Attributes {
+		if into := engine.InlinedInto(a); into != "" {
+			out[a.Name] = into
+		}
+	}
+	return out
+}
+
+// runtimeSpells is every non-test file under services/ and node/ that spells the
+// kind as a string, which is what a runtime serving a kind cannot avoid doing:
+// it names what it dispatches, or the constant it switches on.
+func runtimeSpells(t *testing.T, root, kind string) []string {
+	if spelled == nil {
+		spelled = map[string][]string{}
+		for _, top := range []string{"services", "node"} {
+			err := filepath.WalkDir(filepath.Join(root, top), func(path string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return nil
+				}
+				if entry.IsDir() {
+					if skipped[entry.Name()] {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+					return nil
+				}
+				file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+				if err != nil {
+					return nil
+				}
+				relative, _ := filepath.Rel(root, path)
+				seen := map[string]bool{}
+				ast.Inspect(file, func(n ast.Node) bool {
+					if e, ok := n.(ast.Expr); ok {
+						if text, ok := stringLit(e); ok && !seen[text] {
+							seen[text] = true
+							spelled[text] = append(spelled[text], filepath.ToSlash(relative))
+						}
+					}
+					return true
+				})
+				return nil
+			})
+			require.NoError(t, err)
+		}
+	}
+	return spelled[kind]
+}
+
+// spelled is every string the runtime spells, and where; built once.
+var spelled map[string][]string

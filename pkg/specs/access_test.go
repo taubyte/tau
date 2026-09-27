@@ -198,3 +198,21 @@ func TestAnEntryCarriesItsNameNamespaceAndTimeout(t *testing.T) {
 	require.Equal(t, []string{"get", "put"}, reaches[0].Ops, "sorted")
 	require.Equal(t, 5*time.Second, reaches[0].Timeout)
 }
+
+// A TOOL BOUND TRAVELS WITH THE GRANT. Dropped here, an entry naming one tool of
+// a catalogue would reach the runtime as an entry on the whole catalogue, and
+// nothing downstream could tell.
+func TestAToolBoundTravelsWithTheGrant(t *testing.T) {
+	r, _, err := basic(t).Resource(nil, "agent", "support")
+	require.NoError(t, err)
+
+	mcps := r.Reaches("mcp")
+	require.Len(t, mcps, 1)
+	require.Equal(t, []string{"checkout"}, mcps[0].Tools)
+
+	// and an entry that names none is on every tool, which is the other half
+	r, _ = invoice(t)
+	for _, reach := range r.Reaches("database") {
+		require.Empty(t, reach.Tools)
+	}
+}

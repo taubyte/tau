@@ -25,6 +25,7 @@ function:
 mcp:
     tools:
         ops: [list, call]
+        tools: [checkout]
 storage:
     receipts:
         ops: [get, list]

@@ -2,6 +2,7 @@ package placement
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"sync"
@@ -13,8 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/stats"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -441,4 +444,108 @@ func TestAReportIsAlwaysOlderThanNothing(t *testing.T) {
 
 	_, err := New(newHost(t, mn), &table{}, WithMaxAge(0))
 	require.ErrorContains(t, err, "a report is always older than nothing")
+}
+
+// ── regions ──────────────────────────────────────────────────────────────────
+
+func TestInRegions(t *testing.T) {
+	a := at()
+	nodes := []stats.Node{
+		{Peer: "warm-us", Region: "us"},
+		{Peer: "warm-eu", Region: "eu"},
+		{Peer: "cold-quiet"},
+		{Peer: "cold-eu", Region: "eu"},
+	}
+	peers := func(ns []stats.Node) (out []string) {
+		for _, n := range ns {
+			out = append(out, n.Peer)
+		}
+		return out
+	}
+
+	got, err := inRegions(a, worker.Regions{}, nodes)
+	require.NoError(t, err)
+	require.Equal(t, nodes, got, "a resource that asks for nothing is placed as before")
+
+	got, err = inRegions(a, worker.Regions{Tiers: [][]string{{"eu"}}, Allowance: []string{"eu", "us"}}, nodes)
+	require.NoError(t, err)
+	require.Equal(t, []string{"warm-eu", "cold-eu"}, peers(got), "pinned: eu only, warm first; a node that will not say is not in eu")
+
+	got, err = inRegions(a, worker.Regions{Tiers: [][]string{{"eu"}, {"us"}}}, nodes)
+	require.NoError(t, err)
+	require.Equal(t, []string{"warm-eu", "cold-eu", "warm-us"}, peers(got),
+		"failover: every main node before the standby, even a colder one")
+
+	_, err = inRegions(a, worker.Regions{Tiers: [][]string{{"ap"}}, Allowance: []string{"eu", "us"}}, nodes)
+	require.ErrorIs(t, err, ErrOutsideAllowance)
+
+	_, err = inRegions(a, worker.Regions{Tiers: [][]string{{"ap"}}}, nodes)
+	require.ErrorIs(t, err, ErrNoRegion, "refused, not sent to the nearest node")
+}
+
+// fixtureSource serves the vocabulary's compiled fixture for any deployment.
+type fixtureSource struct {
+	raw []byte
+	err error
+}
+
+func (f fixtureSource) Resolve(context.Context, string, string) (register.Pointer, error) {
+	return register.Pointer{Object: "fixture", Revision: 1}, f.err
+}
+
+func (f fixtureSource) Object(context.Context, register.ObjectID) ([]byte, error) { return f.raw, nil }
+
+func compiledFixture(t *testing.T) []byte {
+	t.Helper()
+	c, err := schema.New(schema.WithLocal("../../../pkg/tcc/taubyte/v2/fixtures/basic"), schema.WithBranch("main"))
+	require.NoError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	require.NoError(t, err)
+	raw, err := json.Marshal(obj.Flat())
+	require.NoError(t, err)
+	return raw
+}
+
+// TestAResourcesOwnRegionsChooseTheNode. The fixture's `api` fails over from eu
+// to us: with no eu node it runs on the us one, and with neither it runs
+// nowhere rather than anywhere.
+func TestAResourcesOwnRegionsChooseTheNode(t *testing.T) {
+	raw := compiledFixture(t)
+	api := specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "api"}
+
+	local := &recording{}
+	router := &table{byName: map[string][]stats.Node{}}
+	w, h := newWorkers(t, router, WithLocal(local), WithProjects(fixtureSource{raw: raw}))
+
+	router.byName["worker"] = []stats.Node{{Peer: h.ID().String(), Region: "us"}}
+	_, err := w.Invoke(t.Context(), api, &invoke.Request{})
+	require.NoError(t, err)
+	require.Equal(t, 1, local.count(), "the standby took it")
+
+	router.byName["worker"] = []stats.Node{{Peer: h.ID().String(), Region: "ap"}}
+	_, err = w.Invoke(t.Context(), api, &invoke.Request{})
+	require.ErrorIs(t, err, ErrNoRegion)
+	_, err = w.Conn(t.Context(), api, "8080")
+	require.ErrorIs(t, err, ErrNoRegion)
+	require.Equal(t, 1, local.count())
+
+	// a resource the project does not hold is the worker's to refuse, by name
+	_, err = w.Invoke(t.Context(), specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "nope"}, &invoke.Request{})
+	require.NoError(t, err)
+}
+
+// TestAnUnreadableProjectIsARefusal: what it would have said about regions is
+// unknown, and "anywhere" is the one answer a pinned resource forbids.
+func TestAnUnreadableProjectIsARefusal(t *testing.T) {
+	local := &recording{}
+	router := &table{byName: map[string][]stats.Node{}}
+	w, h := newWorkers(t, router, WithLocal(local), WithProjects(fixtureSource{err: errors.New("register down")}))
+	router.byName["worker"] = []stats.Node{{Peer: h.ID().String()}}
+
+	_, err := w.Invoke(t.Context(), at(), &invoke.Request{})
+	require.ErrorContains(t, err, "register down")
+	require.Zero(t, local.count())
+
+	_, err = New(h, router, WithProjects(nil))
+	require.Error(t, err)
 }

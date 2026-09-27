@@ -181,7 +181,7 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	// the walk up rather than a read of a copy — and a resource placed by
 	// neither is one the audit already calls Broken.
 	region := placedOf(resource)
-	if out.regions, err = region.regions(ref, allowanceOf(project, ref.environment)); err != nil {
+	if out.regions, err = region.regions(ref, project.Allowance(ref.environment)); err != nil {
 		return declared{}, fmt.Errorf("%s: %w", ref.id, err)
 	}
 
@@ -214,33 +214,6 @@ func (d *declared) option(name, value string) {
 		d.spec.Options = map[string]string{}
 	}
 	d.spec.Options[name] = value
-}
-
-// allowanceOf is where this deployment keeps its state: the environment's own
-// list, or the project's when it declares none. Empty means the cloud decides,
-// which narrows nothing.
-//
-// A SHADOW HAS NO ALLOWANCE OF ITS OWN and takes the one it was written inside.
-// It is a deployment over another environment's state, so placing that state
-// was never its to do — which is why the vocabulary gives a shadow no `regions`
-// field rather than a rule about ignoring one.
-func allowanceOf(project *specs.Project, name string) []string {
-	for _, env := range project.Environments() {
-		if env.Name == name && len(env.Regions) > 0 {
-			return env.Regions
-		}
-		for _, shadow := range env.Shadows {
-			if shadow.Name == name && len(env.Regions) > 0 {
-				return env.Regions
-			}
-		}
-	}
-
-	// THE PROJECT'S OWN, WHEN THE DEPLOYMENT NAMES NONE. `regions` is one word
-	// at every level: a scope's is where everything under it may be AND where
-	// anything that does not say otherwise is placed, and an environment that
-	// declares none inherits rather than resetting to the cloud's whole world.
-	return project.Root().Strings("regions")
 }
 
 // placedOf reads a resource's own placement block.

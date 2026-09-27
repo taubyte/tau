@@ -627,7 +627,7 @@ func toolsAttributes(kind string) []*Attribute {
 		return nil
 	}
 	return []*Attribute{
-		StringSlice("tools", EachIsName(), InSection("access"),
+		StringSlice(accessTools, EachIsName(), InSection("access"),
 			Doc("Tools", "Which of the server's tools this entry is for, by name. Omitted means every tool it advertises, including ones added later.")),
 	}
 }
@@ -790,6 +790,10 @@ type AccessShape struct {
 	MountPath   string
 	DeliverPort string
 	DeliverPath string
+
+	// Tools narrows an entry on a catalogue to some of what it offers — see
+	// toolsAttributes. Only an mcp entry carries it.
+	Tools string
 }
 
 // AccessEntryShape reports it, by looking at the access group the vocabulary attaches to
@@ -806,6 +810,7 @@ func AccessEntryShape() AccessShape {
 		MountPath:   accessMountPath,
 		DeliverPort: engine.FieldName(Key(accessDeliver, accessPort)),
 		DeliverPath: engine.FieldName(Key(accessDeliver, accessPath)),
+		Tools:       accessTools,
 	}
 }
 
@@ -825,6 +830,7 @@ const (
 	accessMountPath = "path"
 	accessDeliver   = "deliver"
 	accessPort      = "port"
+	accessTools     = "tools"
 	accessPath      = "path"
 
 	// accessName OVERRIDES an entry's own label as the target's identity. An access

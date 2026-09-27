@@ -77,6 +77,15 @@ func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]stri
 				if !ok {
 					continue
 				}
+				// THE WORKFLOW'S PIN IS TAKEN OFF, and it is the second rewrite
+				// that has to be. The fixture pins `checkout` to eu, and nothing
+				// in this cloud places a workflow's queues by region — so the
+				// start grant is refused by name (worker's unservable), which is
+				// right and is tested there. What this test runs is a pipeline,
+				// not a placement.
+				if kind == "workflow" {
+					delete(res, "regions")
+				}
 				if kind == "function" {
 					source, _ := res["source"].(map[string]any)
 					// A DRIVER IS LEFT ALONE. Its source is the builtin this
