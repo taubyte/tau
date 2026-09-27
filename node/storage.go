@@ -168,7 +168,7 @@ func (b *buckets) store() (kvdb.KVDB, error) {
 		return nil, fmt.Errorf("node: opening the storage database: %w", err)
 	}
 	b.db = db
-	b.node.closers = append(b.node.closers, closerFunc(db.Close))
+	b.node.addCloser(closerFunc(db.Close))
 	return db, nil
 }
 

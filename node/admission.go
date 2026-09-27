@@ -351,7 +351,7 @@ func (a *admissions) store() (kvdb.KVDB, error) {
 		return nil, fmt.Errorf("node: opening the instances database: %w", err)
 	}
 	a.db = db
-	a.node.closers = append(a.node.closers, closerFunc(db.Close))
+	a.node.addCloser(closerFunc(db.Close))
 	return db, nil
 }
 

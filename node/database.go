@@ -774,7 +774,7 @@ func (d *databases) storesFor(_ context.Context, spec database.Spec) (database.S
 		d.stores = map[string]kvdb.KVDB{}
 	}
 	d.stores[name] = db
-	d.node.closers = append(d.node.closers, closerFunc(db.Close))
+	d.node.addCloser(closerFunc(db.Close))
 	return cacheStore{db}, nil
 }
 
