@@ -1,13 +1,8 @@
 package node
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
-	"io"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -341,42 +336,3 @@ func (f *follower) Batch(ops []raft.BatchOp, d time.Duration) error {
 	}
 	return f.MockCluster.Batch(ops, d)
 }
-
-// memAssets is a content-addressed store over a map. What pkg/assets does with
-// a DAG is its own test's; what matters here is the property every consumer
-// depends on — THE ID IS A FUNCTION OF THE CONTENT, so identical bytes are one
-// object. A fake that minted a fresh id per write would hide exactly the
-// behaviour storage.go relies on.
-type memAssets struct {
-	mu    sync.Mutex
-	blobs map[string][]byte
-}
-
-func (m *memAssets) Put(_ context.Context, content io.Reader) (string, error) {
-	body, err := io.ReadAll(content)
-	if err != nil {
-		return "", err
-	}
-
-	sum := sha256.Sum256(body)
-	id := "Qm" + hex.EncodeToString(sum[:])
-
-	m.mu.Lock()
-	m.blobs[id] = body
-	m.mu.Unlock()
-	return id, nil
-}
-
-func (m *memAssets) Get(_ context.Context, id string) (io.ReadSeekCloser, error) {
-	m.mu.Lock()
-	body, ok := m.blobs[id]
-	m.mu.Unlock()
-	if !ok {
-		return nil, os.ErrNotExist
-	}
-	return nopSeekCloser{bytes.NewReader(body)}, nil
-}
-
-type nopSeekCloser struct{ *bytes.Reader }
-
-func (nopSeekCloser) Close() error { return nil }

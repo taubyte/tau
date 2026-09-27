@@ -7,6 +7,7 @@ import (
 
 	"github.com/taubyte/tau/node/admit"
 	"github.com/taubyte/tau/node/cache"
+	"github.com/taubyte/tau/node/storage"
 	"github.com/taubyte/tau/node/volume"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -37,7 +38,7 @@ func TestEverySettingKeyNamesAnAttribute(t *testing.T) {
 	for kind, keys := range map[string][]string{
 		"cache":   append(append([]string(nil), cache.Settings...), admit.Settings...),
 		"volume":  volume.Settings,
-		"storage": {settingObjectType, settingObjectSize},
+		"storage": storage.Settings,
 		// ONE KEY LEFT, AND THAT IS THE CUTOVER RATHER THAN A GAP. Every other
 		// field of a queue and of a log is read by services/primitives out of
 		// the DECLARATION now — nested paths off the compiled resource, not a

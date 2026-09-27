@@ -53,10 +53,10 @@ func TestAnObjectCrossesTheSwarm(t *testing.T) {
 	// under, which is S3's contract and is this cloud's content id.
 	//
 	// NOT RETRIED, and that is a property of the kind rather than an omission.
-	// A bucket's index is the node's own kvdb (node/storage.go:166), which is
-	// crdt and has no group to form and nobody to elect — so unlike the queue's
-	// first send there is no `unavailable` arm here for a caller to act on, and
-	// an Eventually would be waiting for something that cannot happen.
+	// A bucket's index is the node's own kvdb (node/storage.go's storageStores),
+	// which is crdt and has no group to form and nobody to elect — so unlike the
+	// queue's first send there is no `unavailable` arm here for a caller to act
+	// on, and an Eventually would be waiting for something that cannot happen.
 	// deployFleet has already waited for every node to hold the project.
 	res, err := first.onCarrying(t.Context(), target(), http.MethodPost, "/obj-put/receipts/2026/01", "a receipt")
 	require.NoError(t, err)

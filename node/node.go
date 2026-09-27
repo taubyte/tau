@@ -46,6 +46,7 @@ import (
 	"github.com/taubyte/tau/node/cache"
 	"github.com/taubyte/tau/node/model"
 	"github.com/taubyte/tau/node/primitive"
+	"github.com/taubyte/tau/node/storage"
 	"github.com/taubyte/tau/node/stream"
 	"github.com/taubyte/tau/node/volume"
 	"github.com/taubyte/tau/p2p/rpc"
@@ -437,7 +438,10 @@ func (n *Node) openWorker() error {
 		servers := &databases{node: n}
 		n.closers = append(n.closers, servers)
 
-		objects := &buckets{node: n}
+		objects, err := storage.New(n.opts.assets, storageStores{node: n}, n.opts.now)
+		if err != nil {
+			return err
+		}
 		n.closers = append(n.closers, objects)
 
 		stores, err := cache.New(cacheStores{node: n})

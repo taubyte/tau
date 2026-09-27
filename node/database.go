@@ -497,8 +497,8 @@ func (d *databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 // error cached under the handle for the life of the node.
 //
 // So the separator is folded here, where the handle is read back apart, rather
-// than changed in the handle — which node/cache.go, node/storage.go and the
-// gateway's bus attach all depend on. A resource id is a CID and carries no
+// than changed in the handle — which node/cache, node/storage and the gateway's
+// bus attach all depend on. A resource id is a CID and carries no
 // ":", and an instance name is already refused if it carries a "/", so the
 // mapping is injective and two instances never share a key space.
 func databaseName(id string) string { return strings.ReplaceAll(id, "/", ":") }
