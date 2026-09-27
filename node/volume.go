@@ -449,7 +449,7 @@ func bytesOf(value string) int64 {
 // durationOr reads a duration, falling back when the compiled object carried
 // none.
 func durationOr(value string, fallback time.Duration) time.Duration {
-	if d := duration(value); d > 0 {
+	if d, err := time.ParseDuration(value); err == nil && d > 0 {
 		return d
 	}
 	return fallback

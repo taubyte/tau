@@ -42,6 +42,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/taubyte/tau/node/cache"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/container"
@@ -426,6 +427,11 @@ func (n *Node) openWorker() error {
 		objects := &buckets{node: n}
 		n.closers = append(n.closers, objects)
 
+		stores, err := cache.New(cacheStores{node: n})
+		if err != nil {
+			return err
+		}
+
 		// WHO MAY OPEN ONE INSTANCE OF A STORE THAT HOLDS MANY. It invokes the
 		// validator the target named, which is why it is here and not in the
 		// tier: the tier runs one workload and cannot reach another.
@@ -453,7 +459,7 @@ func (n *Node) openWorker() error {
 			// is where the wasm tier says it, instead of dropping the grant.
 			wasm.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }),
 			wasm.WithNode(self),
-			wasm.WithCaches(&caches{node: n}),
+			wasm.WithCaches(stores),
 			wasm.WithStreams(publisher),
 			wasm.WithBus(n.busStreams()),
 			wasm.WithSQL(servers),

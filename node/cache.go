@@ -4,194 +4,55 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
-	"sync"
-	"time"
 
 	ds "github.com/ipfs/go-datastore"
 
 	"github.com/taubyte/tau/core/kvdb"
-	"github.com/taubyte/tau/pkg/cache"
-	"github.com/taubyte/tau/pkg/invoke"
-	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/node/cache"
+	pkgcache "github.com/taubyte/tau/pkg/cache"
 )
 
-// cache.go backs `taubyte:cache/store` on this node.
+// cache.go opens the one database every cache on this node lives in.
 //
-// # One database for every cache this node serves
-//
-// A kvdb per cache would be a CRDT, a broadcaster and a pubsub topic per
-// resource — dozens on a node running a handful of projects — and every one of
-// them would have to be opened before the first request that touched it. One
-// database, with the handle as the key prefix, is the same isolation with one
-// set of moving parts: pkg/cache appends "/" to the prefix so a cache called
-// QmA cannot see QmAB's.
-//
-// # An open cache is kept, because seeding is not free
-//
-// pkg/cache scans what this node already holds when it opens, which is what
-// makes its ceiling exact rather than optimistic. That scan is bounded by the
-// declared size — it reads at most `size` bytes — but paying it per invocation
-// would put it on the request path. So an opened cache is remembered by handle
-// and reused, which is safe because a cache is a value over a store and the
-// store is what replicates.
-//
-// # What a redeploy does to it
-//
-// Nothing, and that is deliberate. A cache's DATA survives a deploy; only its
-// declared size and lifetime can change, and those are read from the grant when
-// it is first opened. A resource whose ttl an author shortened keeps serving
-// the old one on a node that already had it open — the vocabulary calls a ttl
-// "a floor, not a guarantee" and this is one of the ways it is not one.
-
-// caches is the node's Caches: it opens one kvdb lazily and keeps a cache per
-// handle.
-type caches struct {
-	node *Node
-
-	mu     sync.Mutex
-	db     kvdb.KVDB
-	opened map[string]*cache.Cache
-}
-
-var _ wasmtier.Caches = (*caches)(nil)
+// The adapter that keeps the caches is node/cache. What is left here is the part
+// only the root can do: reach the database factory an operator gave this node,
+// name the database, and register what it opened with the closers — none of
+// which a cache has an opinion about, which is why it is asked for through one
+// method and opened on the first request that needs it.
 
 // ErrNoCacheStore is a node asked for a cache with no database factory. It is
 // a composition fault: WithDatabases is what a node is given, and a node
 // running a worker without one can run nothing that reaches state.
 var ErrNoCacheStore = errors.New("node: no database factory to open a cache with")
 
-// Open resolves one grant into a cache.
-func (c *caches) Open(ctx context.Context, grant invoke.Grant) (wasmtier.Cache, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if held, ok := c.opened[grant.Handle]; ok {
-		return translated{held}, nil
-	}
-
-	store, err := c.store()
-	if err != nil {
-		return nil, err
-	}
-
-	opened, err := cache.Open(ctx, store, cache.Config{
-		Prefix: grant.Handle,
-		TTL:    duration(grant.Settings[cacheTTL]),
-		Size:   byteCount(grant.Settings[cacheSize]),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if c.opened == nil {
-		c.opened = map[string]*cache.Cache{}
-	}
-	c.opened[grant.Handle] = opened
-	return translated{opened}, nil
-}
-
-// translated is the adapter's other half: it turns pkg/cache's sentinels into
-// the tier's.
-//
-// THE TIER MUST NOT IMPORT pkg/cache. Its seam is four methods and two
-// sentinels, so any backing can satisfy it — a mushql-backed one, a cloud
-// bucket, an in-process map. Translating here is what keeps that true, and it
-// is the ONE thing three passing unit tests could not catch between them: a
-// miss that arrived as an unknown error was reported to the guest as
-// `unavailable`, so every cache miss read as an outage and an author would
-// have written a retry around the thing a cache does most.
-type translated struct{ *cache.Cache }
-
-func (t translated) Get(ctx context.Context, key string) ([]byte, error) {
-	value, err := t.Cache.Get(ctx, key)
-	return value, asTierError(err)
-}
-
-func (t translated) Put(ctx context.Context, key string, value []byte) error {
-	return asTierError(t.Cache.Put(ctx, key, value))
-}
-
-func (t translated) Delete(ctx context.Context, key string) error {
-	return asTierError(t.Cache.Delete(ctx, key))
-}
-
-func (t translated) List(ctx context.Context, prefix string) ([]string, error) {
-	names, err := t.Cache.List(ctx, prefix)
-	return names, asTierError(err)
-}
-
-// asTierError keeps the original as the wrapped cause, so a log still says
-// which key and which cache while the guest sees the arm it can act on.
-func asTierError(err error) error {
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, cache.ErrNotFound):
-		return fmt.Errorf("%w: %w", wasmtier.ErrNotFound, err)
-	case errors.Is(err, cache.ErrTooLarge):
-		return fmt.Errorf("%w: %w", wasmtier.ErrTooLarge, err)
-	default:
-		return err
-	}
-}
-
-// The setting keys services/worker writes, which are the vocabulary's own
-// attribute paths.
-const (
-	cacheTTL  = "ttl"
-	cacheSize = "size"
-)
-
-// store opens the one database, once. It is under the same lock as the map so
-// two concurrent first-requests cannot open two.
-func (c *caches) store() (cache.Store, error) {
-	if c.db != nil {
-		return cacheStore{c.db}, nil
-	}
-	if c.node.opts.databases == nil {
-		return nil, ErrNoCacheStore
-	}
-
-	db, err := c.node.opts.databases.New(logger, cacheDatabase, rebroadcastSeconds)
-	if err != nil {
-		return nil, fmt.Errorf("node: opening the cache database: %w", err)
-	}
-	c.db = db
-	c.node.closers = append(c.node.closers, closerFunc(db.Close))
-	return cacheStore{db}, nil
-}
-
 // cacheDatabase is the one database's name. It is not a service name — no node
 // "runs caches" — so it is spelled here rather than taken from the Services
 // list.
 const cacheDatabase = "caches"
 
-// A ZERO OR UNPARSEABLE SETTING IS NO LIMIT rather than a refusal. The
-// vocabulary makes `size` required, so an absent one means the composer did not
-// read it — and a cache with no ceiling is a bug to find in a log, where a
-// cache that refuses every write is an outage.
-func duration(s string) time.Duration {
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 0
-	}
-	return d
-}
+// cacheStores opens that database for node/cache.
+type cacheStores struct{ node *Node }
 
-func byteCount(s string) int64 {
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 0
+var _ cache.Stores = cacheStores{}
+
+func (s cacheStores) Store() (pkgcache.Store, error) {
+	if s.node.opts.databases == nil {
+		return nil, ErrNoCacheStore
 	}
-	return n
+	db, err := s.node.opts.databases.New(logger, cacheDatabase, rebroadcastSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("node: opening the cache database: %w", err)
+	}
+	s.node.addCloser(closerFunc(db.Close))
+	return cacheStore{db}, nil
 }
 
 func isNotFound(err error) bool { return errors.Is(err, ds.ErrNotFound) }
 
-// cacheStore adapts a kvdb to what pkg/cache needs — the same four methods
+// cacheStore adapts a kvdb to what a cache needs — the same four methods
 // services/secrets keeps, and the same separation of "not there" from "could
-// not look".
+// not look". node/database.go keeps its own stores through it too, which is why
+// it did not leave with the adapter.
 type cacheStore struct{ db kvdb.KVDB }
 
 func (s cacheStore) Get(ctx context.Context, key string) ([]byte, bool, error) {

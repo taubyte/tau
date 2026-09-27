@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/node/cache"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -32,7 +33,7 @@ import (
 // same constants, so it proves only that node agrees with itself.
 func TestEverySettingKeyNamesAnAttribute(t *testing.T) {
 	for kind, keys := range map[string][]string{
-		"cache":   {cacheTTL, cacheSize, settingInstanceAdmission, settingInstanceLimit, settingInstanceValidator, settingInstanceScope},
+		"cache":   append(append([]string(nil), cache.Settings...), settingInstanceAdmission, settingInstanceLimit, settingInstanceValidator, settingInstanceScope),
 		"volume":  {settingVolumeQuota, settingCheckpointFreq},
 		"storage": {settingObjectType, settingObjectSize},
 		// ONE KEY LEFT, AND THAT IS THE CUTOVER RATHER THAN A GAP. Every other
