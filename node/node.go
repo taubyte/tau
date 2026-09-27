@@ -43,6 +43,7 @@ import (
 	"sync"
 
 	"github.com/taubyte/tau/node/cache"
+	"github.com/taubyte/tau/node/stream"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/container"
@@ -117,7 +118,7 @@ type Node struct {
 	// the gateway's attach. Both reach the same topic, and a second would be a
 	// second join of it — a mesh each, with the browser on the one the workload
 	// is not.
-	bus *streams
+	bus *stream.Streams
 
 	// syncs is this node's one reach into the primitives service, shared by the
 	// wasm tier's `send` and `append` and the dispatcher's claim. A second
@@ -418,8 +419,10 @@ func (n *Node) openWorker() error {
 		// every resource that declares a cache, a stream, a database, a queue
 		// or a secret — which on a node that has the resources for them would
 		// be a refusal for no reason.
-		publisher := &streams{node: n, kind: "stream"}
-		n.closers = append(n.closers, publisher)
+		publisher, err := n.streamBacking(stream.Stream)
+		if err != nil {
+			return err
+		}
 
 		servers := &databases{node: n}
 		n.closers = append(n.closers, servers)
@@ -428,6 +431,11 @@ func (n *Node) openWorker() error {
 		n.closers = append(n.closers, objects)
 
 		stores, err := cache.New(cacheStores{node: n})
+		if err != nil {
+			return err
+		}
+
+		bus, err := n.busStreams()
 		if err != nil {
 			return err
 		}
@@ -461,7 +469,7 @@ func (n *Node) openWorker() error {
 			wasm.WithNode(self),
 			wasm.WithCaches(stores),
 			wasm.WithStreams(publisher),
-			wasm.WithBus(n.busStreams()),
+			wasm.WithBus(bus),
 			wasm.WithSQL(servers),
 			// KV GOES THROUGH THE DATABASE SERVICE, and the other three do not
 			// YET: services/database serves one cell of the grid — tau's own kv
@@ -671,7 +679,15 @@ func (n *Node) openGateway() error {
 	// "not available here" rather than accepting the connection and never
 	// delivering anything.
 	if n.opts.pubsub != nil {
-		gatewayOptions = append(gatewayOptions, gateway.WithBuses(&buses{streams: n.busStreams()}))
+		backing, err := n.busStreams()
+		if err != nil {
+			return err
+		}
+		buses, err := stream.NewBuses(backing)
+		if err != nil {
+			return err
+		}
+		gatewayOptions = append(gatewayOptions, gateway.WithBuses(buses))
 	}
 
 	// AND WHO MAY ATTACH TO ONE INSTANCE OF ONE, which is the same decision the
@@ -1027,11 +1043,6 @@ func (n *Node) Stats() *stats.Service { return n.stats }
 // published.
 func (n *Node) PubSub() stats.PubSub { return n.opts.pubsub }
 
-// BusTopic is what a bus's handle goes on the wire as. Whatever comes to attach
-// a browser has to listen on exactly what a publish reaches — the same argument
-// StreamTopic carries.
-func (n *Node) BusTopic(handle string) string { return topicFor("bus", n.cfg.Cloud, handle) }
-
 // admissions is this node's one admitter, shared by the wasm tier and the
 // gateway. CONSTRUCTION ONLY, like the other backings.
 func (n *Node) admissions() *admissions {
@@ -1088,26 +1099,6 @@ func (n *Node) QueueDepth(handle string) (ready, claimed int, ok bool) {
 	}
 	return int(depth.Ready), int(depth.Claimed), true
 }
-
-// busStreams is this node's bus backing, built on first use.
-//
-// It is a method rather than a line in openWorker because both the wasm tier
-// and the gateway want it and a node may run either without the other. Like
-// workQueues it is CONSTRUCTION ONLY: it writes a field and appends a closer.
-func (n *Node) busStreams() *streams {
-	if n.bus == nil {
-		n.bus = &streams{node: n, kind: "bus"}
-		n.closers = append(n.closers, n.bus)
-	}
-	return n.bus
-}
-
-// StreamTopic is what a stream's handle goes on the wire as.
-//
-// IT IS EXPORTED BECAUSE IT IS A CONTRACT, not a detail: whatever comes to
-// dispatch a `subscribe` has to listen on exactly what a publish reaches, and a
-// second derivation of it is the parallel table this vocabulary keeps deleting.
-func (n *Node) StreamTopic(handle string) string { return streamTopic(n.cfg.Cloud, handle) }
 
 // source reads the register for this node's own services.
 type source struct{ node *Node }
