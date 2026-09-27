@@ -86,3 +86,25 @@ func compiled() []byte {
 		}
 	}`)
 }
+
+// TestAnUnstagedResourceIsRefusedByName. A seam that answered "" for a resource
+// nobody staged would send the tier to the asset store for nothing, and the
+// failure would land somewhere else — reading as a broken runtime rather than as
+// a project the test forgot to stage.
+func TestAnUnstagedResourceIsRefusedByName(t *testing.T) {
+	var held nodeDream.Built
+	held.Publish("shop", "prod", map[string]string{"QmOne": "bafyone"})
+
+	cid, err := held.Artifact(t.Context(), "shop", "prod", "function", "QmOne")
+	require.NoError(t, err)
+	require.Equal(t, "bafyone", cid)
+
+	_, err = held.Artifact(t.Context(), "shop", "prod", "function", "QmOther")
+	require.ErrorContains(t, err, "QmOther", "and it says which resource")
+
+	// THE DEPLOYMENT IS PART OF THE KEY, the way it is in a cloud: two projects
+	// in one universe are two sets of artifacts, and a resource id that happened
+	// to be shared is not one artifact.
+	_, err = held.Artifact(t.Context(), "market", "prod", "function", "QmOne")
+	require.ErrorContains(t, err, "market")
+}
