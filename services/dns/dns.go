@@ -154,6 +154,34 @@ func (s *Service) AnswerContext(ctx context.Context, req *dns.Msg) *dns.Msg {
 		return reply
 	}
 
+	// THEN THE ZONE'S RESOLVER, for the names its file does not carry. Second
+	// because the file is the more specific statement and first would put a
+	// component start on every query the lines already answer.
+	//
+	// `absent` is NOT answered here. It is a positive statement that the name
+	// does not exist IN THAT ZONE, and a project may serve a name from a gateway
+	// while declaring the zone above it -- so the query carries on, and the
+	// verdict is spent at the bottom where nothing else answered either.
+	absent := false
+	if answer := s.resolved(ctx, q.Name, q.Qtype); answer != nil {
+		switch {
+		case !answer.Exists:
+			absent = true
+		case len(answer.Records) == 0:
+			// The name is there and holds nothing of this type: NOERROR with no
+			// records, which is what stops a client looking elsewhere.
+			return reply
+		default:
+			if records := s.resolvedRecords(s.apexOf(ctx, q.Name), q.Name, answer.Records); len(records) > 0 {
+				reply.Answer = records
+				return reply
+			}
+			// Answered lines that parse to nothing at this name is the same
+			// shape as `empty`: it said something, and none of it was about this.
+			return reply
+		}
+	}
+
 	// A name under the node zone is one node's own name, minted for an SRV
 	// target. It resolves to that node's addresses and nothing else.
 	if peer, ok := s.peerOf(name); ok {
@@ -178,6 +206,15 @@ func (s *Service) AnswerContext(ctx context.Context, req *dns.Msg) *dns.Msg {
 		// SERVFAIL would tell a resolver this server is broken and send it to
 		// ask somebody else.
 		if s.answersFor(ctx, q.Name) {
+			return reply
+		}
+
+		// A ZONE'S OWN RESOLVER SAID NO, and nothing else served it either. That
+		// is the one thing this server hears that is a statement about
+		// EXISTENCE rather than about what happens to be running, so it is the
+		// one case that earns NXDOMAIN -- which a resolver caches as an absence.
+		if absent {
+			reply.Rcode = dns.RcodeNameError
 			return reply
 		}
 

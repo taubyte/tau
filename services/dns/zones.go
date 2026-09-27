@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/invoke"
+
 	"github.com/miekg/dns"
 )
 
@@ -59,6 +61,106 @@ func WithZones(z Zones) Option {
 		o.zones = z
 		return nil
 	}
+}
+
+// Resolvers is asked for the names a zone's file does not carry.
+//
+// IT TAKES THE QUESTION AND NOT A ZONE, for the reason Zones takes a query name:
+// finding which zone covers a name is a walk up its labels, and whoever holds the
+// index is the only party that can do it cheaply. The same party knows whether
+// that zone named a resolver at all.
+//
+// A nil Resolution with a nil error means NOBODY WAS ASKED -- no zone here, or a
+// zone with no resolver -- which is different from a resolver answering `absent`.
+// The first falls through to whatever else this server can do; the second is a
+// statement that the name does not exist.
+type Resolvers interface {
+	Resolve(ctx context.Context, q invoke.Question) (*invoke.Resolution, error)
+}
+
+// WithResolvers is where resolved answers come from. A server without one answers
+// only what a zone wrote down and what it can route.
+func WithResolvers(r Resolvers) Option {
+	return func(o *options) error {
+		if r == nil {
+			return ErrNoResolvers
+		}
+		o.resolvers = r
+		return nil
+	}
+}
+
+// resolved asks the zone's resolver about one question.
+//
+// IT IS ASKED ONLY FOR WHAT THE RECORDS DID NOT ANSWER, which is the precedence
+// the vocabulary states: a record an author can read in their own repository is
+// not overridden by code. It is also the expensive arm -- a component
+// instantiated per question -- so asking it first would put a wasm start on every
+// query this server can already answer.
+//
+// AN ERROR IS NOT AN ANSWER. A resolver that failed has said nothing, so the
+// query carries on to routing rather than becoming an absence somebody caches.
+func (s *Service) resolved(ctx context.Context, qname string, qtype uint16) *invoke.Resolution {
+	if s.opts.resolvers == nil {
+		return nil
+	}
+
+	name := strings.ToLower(dns.Fqdn(qname))
+	kind, ok := dns.TypeToString[qtype]
+	if !ok {
+		// A type this build has no name for cannot be put to a guest that
+		// matches on the text form.
+		return nil
+	}
+
+	answer, err := s.opts.resolvers.Resolve(ctx, invoke.Question{Name: name, Type: kind})
+	if err != nil || answer == nil {
+		return nil
+	}
+	return answer
+}
+
+// apexOf is the zone that covers a name, whatever it declares.
+//
+// SEPARATE FROM declared() BECAUSE A ZONE WITH NO LINES IS STILL A ZONE. declared
+// bails when there are none -- it has nothing to parse -- but a resolver's answer
+// needs the apex its lines are relative to, and that zone may carry no file at
+// all. Costing one more Records call is the same trade the package doc already
+// makes for authored/answersFor: whoever backs this caches the project, which is
+// where the expense is.
+func (s *Service) apexOf(ctx context.Context, qname string) string {
+	if s.opts.zones == nil {
+		return ""
+	}
+	apex, _, err := s.opts.zones.Records(ctx, strings.ToLower(strings.TrimSuffix(qname, ".")))
+	if err != nil {
+		return ""
+	}
+	return apex
+}
+
+// resolvedRecords parses what a resolver answered, through the SAME path the
+// records arm uses -- one dns.NewRR per line under the zone's $ORIGIN.
+//
+// THE APEX COMES FROM THE ZONE AND NOT THE ANSWER, because a resolver answers in
+// lines relative to the zone it belongs to and has no business naming a
+// different one. A line that resolves to some other name is dropped, which is
+// the same filter declared() applies to the file.
+func (s *Service) resolvedRecords(apex, qname string, lines []string) []dns.RR {
+	want := dns.Fqdn(qname)
+	origin := "$ORIGIN " + dns.Fqdn(apex) + "\n$TTL " + strconv.FormatUint(uint64(s.ttlSeconds()), 10) + "\n"
+
+	var out []dns.RR
+	for _, line := range lines {
+		rr, parseErr := dns.NewRR(origin + line)
+		if parseErr != nil || rr == nil {
+			continue
+		}
+		if strings.EqualFold(rr.Header().Name, want) {
+			out = append(out, rr)
+		}
+	}
+	return out
 }
 
 // authored is every record a project declares that matches this question.

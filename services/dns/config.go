@@ -92,6 +92,10 @@ const (
 var (
 	ErrNoRouter = errors.New("dns: a server with no router has nothing to answer from")
 
+	// ErrNoResolvers is a nil source of resolved answers. Same reasoning as
+	// ErrNoZones: a server told to ask something must be given something to ask.
+	ErrNoResolvers = errors.New("dns: a nil resolver answers no question")
+
 	// ErrNoZones is a nil source of authored records, which is not the same as
 	// no source at all — see WithZones.
 	ErrNoZones = errors.New("dns: a nil source declares no records")
@@ -102,8 +106,9 @@ var (
 type Option func(*options) error
 
 type options struct {
-	router Router
-	zones  Zones
+	router    Router
+	zones     Zones
+	resolvers Resolvers
 }
 
 // WithRouter is where the answers come from. Required.
