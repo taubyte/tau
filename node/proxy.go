@@ -6,7 +6,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/stats"
 	v2proxy "github.com/taubyte/tau/services/v2/proxy"
-	"github.com/taubyte/tau/services/worker"
 )
 
 // proxy.go runs the L4 listeners for the proxies this node holds.
@@ -115,6 +114,3 @@ func (n *Node) proxySockets() []stats.Socket {
 	}
 	return out
 }
-
-// interface check: the worker is what the proxy reads deployments through.
-var _ v2proxy.Projects = (*worker.Service)(nil)
