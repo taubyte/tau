@@ -174,10 +174,14 @@ func (z *Zones) Resolve(ctx context.Context, q invoke.Question) (*invoke.Resolut
 	// THE RESOLVER'S OWN SPEC, resolved like any other function — its own access
 	// block, its own limits, its own artifact. Nothing about being a resolver
 	// changes how it is found.
+	//
+	// THE ASKER IS NOBODY, because a zone's namespace arrives absolute: the
+	// compiler resolved it where the project was open, and pkg/specs states the
+	// absolute-or-relative rule once so that no consumer keeps half of it.
 	resolver, err := z.projects.Resolve(ctx, worker.Target{
 		Project:     at.project,
 		Environment: at.environment,
-		Scope:       Namespace(at.zone.ResolverNamespace),
+		Scope:       specs.ScopeOf(nil, at.zone.ResolverNamespace),
 		Kind:        "function",
 		Name:        at.zone.ResolverName,
 	})
@@ -186,17 +190,4 @@ func (z *Zones) Resolve(ctx context.Context, q invoke.Question) (*invoke.Resolut
 	}
 
 	return z.guests.Resolve(ctx, resolver, q)
-}
-
-// Namespace splits a declared namespace into the scope chain a target wants.
-//
-// EXPORTED BECAUSE THE ROOT HAS ITS OWN COPY. node/admission.go splits one the
-// same way for a validator's scope; this is the same rule and the two should not
-// drift. Moving the other callers onto it is for whoever touches them next.
-func Namespace(namespace string) []string {
-	namespace = strings.Trim(namespace, "/")
-	if namespace == "" {
-		return nil
-	}
-	return strings.Split(namespace, "/")
 }

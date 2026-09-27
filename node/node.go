@@ -42,6 +42,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/taubyte/tau/node/admit"
 	"github.com/taubyte/tau/node/cache"
 	"github.com/taubyte/tau/node/model"
 	"github.com/taubyte/tau/node/primitive"
@@ -114,7 +115,7 @@ type Node struct {
 	// admit decides whether one instance of a store that holds many may exist.
 	// It is shared by the wasm tier and the gateway: a workload opening
 	// `chat/room-42` and a browser attaching to `/room-42` ask one question.
-	admit *admissions
+	admit *admit.Admissions
 
 	// bus is this node's one bus backing, shared by the wasm tier's publish and
 	// the gateway's attach. Both reach the same topic, and a second would be a
@@ -458,7 +459,10 @@ func (n *Node) openWorker() error {
 		// WHO MAY OPEN ONE INSTANCE OF A STORE THAT HOLDS MANY. It invokes the
 		// validator the target named, which is why it is here and not in the
 		// tier: the tier runs one workload and cannot reach another.
-		admit := n.admissions()
+		admits, err := n.admissions()
+		if err != nil {
+			return err
+		}
 
 		// ONE VAULT FOR THE NODE, not one per consumer. It holds a stream to a
 		// remote secrets service and opening a second would be a second stream
@@ -502,7 +506,7 @@ func (n *Node) openWorker() error {
 			wasm.WithQueues(syncs),
 			wasm.WithLogs(syncs),
 			wasm.WithStorage(objects),
-			wasm.WithAdmission(admit),
+			wasm.WithAdmission(admits),
 			wasm.WithChannels(&channels{node: n}),
 			wasm.WithAuthorizers(&authorizers{node: n}),
 			wasm.WithSecrets(n.vault),
@@ -703,7 +707,11 @@ func (n *Node) openGateway() error {
 	// tier asks about a workload — one implementation, because two answers to
 	// it would be two security policies for one config block.
 	if n.worker != nil {
-		gatewayOptions = append(gatewayOptions, gateway.WithAdmission(n.admissions()))
+		admits, err := n.admissions()
+		if err != nil {
+			return err
+		}
+		gatewayOptions = append(gatewayOptions, gateway.WithAdmission(admits))
 	}
 	if n.opts.now != nil {
 		gatewayOptions = append(gatewayOptions, gateway.WithClock(n.opts.now))
@@ -1051,16 +1059,6 @@ func (n *Node) Stats() *stats.Service { return n.stats }
 // something to it — a stream subscriber, a test listening for what a workload
 // published.
 func (n *Node) PubSub() stats.PubSub { return n.opts.pubsub }
-
-// admissions is this node's one admitter, shared by the wasm tier and the
-// gateway. CONSTRUCTION ONLY, like the other backings.
-func (n *Node) admissions() *admissions {
-	if n.admit == nil {
-		n.admit = &admissions{node: n}
-		n.closers = append(n.closers, n.admit)
-	}
-	return n.admit
-}
 
 // disksOrNil is this node's volume backing, or nil when it has no root to put
 // one in. CONSTRUCTION ONLY, like the other two.

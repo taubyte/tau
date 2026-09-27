@@ -51,8 +51,9 @@ func isNotFound(err error) bool { return errors.Is(err, ds.ErrNotFound) }
 
 // cacheStore adapts a kvdb to what a cache needs — the same four methods
 // services/secrets keeps, and the same separation of "not there" from "could
-// not look". node/database.go keeps its own stores through it too, which is why
-// it did not leave with the adapter.
+// not look". node/database.go keeps its own stores through it too, and
+// node/admit's rows are three of the four, which is why it did not leave with
+// the adapter and why its sentences name no kind.
 type cacheStore struct{ db kvdb.KVDB }
 
 func (s cacheStore) Get(ctx context.Context, key string) ([]byte, bool, error) {
@@ -63,7 +64,7 @@ func (s cacheStore) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	case isNotFound(err):
 		return nil, false, nil
 	default:
-		return nil, false, fmt.Errorf("node: reading a cache entry: %w", err)
+		return nil, false, fmt.Errorf("node: reading a row: %w", err)
 	}
 }
 

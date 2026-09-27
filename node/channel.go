@@ -89,7 +89,7 @@ func (c *channels) Dial(ctx context.Context, grant invoke.Grant, body []byte) ([
 		return nil, fmt.Errorf("%w: %s names nothing that serves it", wasmtier.ErrNoAnswer, grant.Label)
 	}
 
-	proj, environment, _ := splitHandle(grant.Handle)
+	proj, environment, _ := specs.SplitHandle(grant.Handle)
 	if proj == "" || environment == "" {
 		return nil, fmt.Errorf("node: the handle %q does not name a deployment", grant.Handle)
 	}
@@ -97,7 +97,7 @@ func (c *channels) Dial(ctx context.Context, grant invoke.Grant, body []byte) ([
 	res, err := c.invoke(ctx, worker.Target{
 		Project:     proj,
 		Environment: environment,
-		Scope:       splitNamespace(grant.Settings[settingServeScope]),
+		Scope:       specs.ScopeOf(nil, grant.Settings[settingServeScope]),
 		Kind:        kind,
 		Name:        name,
 	}, &invoke.Request{

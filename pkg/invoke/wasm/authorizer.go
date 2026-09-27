@@ -39,7 +39,7 @@ const (
 // Authorizers answers what one caller may do to one guarded target.
 //
 // IT IS A SEAM BECAUSE THIS TIER RUNS ONE WORKLOAD AND CANNOT REACH ANOTHER —
-// the argument node/admission.go makes for the instance validator, and it holds
+// the argument node/admit makes for the instance validator, and it holds
 // harder here: asking means resolving a second function, instantiating it as a
 // different world and calling it, none of which a running guest's tier has any
 // business doing on its own.

@@ -26,7 +26,7 @@ import (
 // An authorizer's answer is the complete set for a caller and a target, so a
 // host may keep it. An admission is about ONE instance and the node remembers
 // which instances it admitted rather than what the validator said — see
-// node/admission.go, which had that memory before this world existed.
+// node/admit, which had that memory before this world existed.
 
 // WorldValidator is `implements: instance-validator`.
 const WorldValidator = "instance-validator"

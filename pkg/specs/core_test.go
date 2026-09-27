@@ -133,3 +133,44 @@ func TestANamespaceIsScopeOfReadBackwards(t *testing.T) {
 			specs.ScopeOf([]string{"somewhere", "else"}, path))
 	}
 }
+
+// TestAHANDLEREADSBACKASWHATITWASBUILTFROM. Every consumer of a handle takes it
+// apart again, and two spellings of one format agree by coincidence and diverge
+// on the first edit to either — which is the argument Handle already makes about
+// being here at all.
+func TestAHandleReadsBackAsWhatItWasBuiltFrom(t *testing.T) {
+	for _, one := range []struct{ project, environment, id string }{
+		{"shop", "prod", "QmSessions"},
+		{"shop", "prod-shadow", "QmA"},
+		{"a", "b", "c"},
+	} {
+		project, environment, id := specs.SplitHandle(specs.Handle(one.project, one.environment, one.id))
+		require.Equal(t, one.project, project)
+		require.Equal(t, one.environment, environment)
+		require.Equal(t, one.id, id)
+	}
+}
+
+// TestASHORTHANDLEANSWERSEMPTYRATHERTHANREFUSING, and the caller decides what
+// that means: a name that resolves to nothing is a bug to report where the
+// resource can be named.
+func TestASplitHandleThatNamesNoDeployment(t *testing.T) {
+	for _, one := range []struct {
+		handle                   string
+		project, environment, id string
+	}{
+		{"", "", "", ""},
+		{"nonsense", "nonsense", "", ""},
+		{"shop/prod", "shop", "prod", ""},
+		{"shop//QmA", "shop", "", "QmA"},
+		// THE REST IS THE ID, slashes included: an addressed handle carries the
+		// instance after the resource, and cutting at the third separator would
+		// hand back a resource id that is not one.
+		{"shop/prod/QmA/room-42", "shop", "prod", "QmA/room-42"},
+	} {
+		project, environment, id := specs.SplitHandle(one.handle)
+		require.Equal(t, one.project, project, one.handle)
+		require.Equal(t, one.environment, environment, one.handle)
+		require.Equal(t, one.id, id, one.handle)
+	}
+}

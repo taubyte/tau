@@ -44,7 +44,7 @@ import (
 // Deciding whether an instance may exist means running the workload the target
 // named, which this tier cannot do: it runs one workload and has no way to
 // reach another. So it asks whoever composed it — see Admitter, and
-// node/admission.go for the implementation that invokes through the worker and
+// node/admit for the implementation that invokes through the worker and
 // counts against the ceiling.
 
 // Admitter decides whether a caller may open one instance of a store.
@@ -131,7 +131,7 @@ func (r *Runtime) addressed(ctx context.Context, spec invoke.Spec, grants map[st
 	// and the config is the thing a reader has.
 	//
 	// IT FAILS CLOSED, and that is where this parts from the instance validator
-	// in node/admission.go. That one treats "could not be run" as not a
+	// in node/admit. That one treats "could not be run" as not a
 	// refusal, because telling a caller its instance was turned down when
 	// nothing asked sends them to argue with a policy that never fired. Here the
 	// target has said in its own configuration that somebody else decides, so

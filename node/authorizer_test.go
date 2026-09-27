@@ -124,10 +124,34 @@ func TestTheInstanceIsReadOffTheHandle(t *testing.T) {
 	require.Empty(t, instanceOf("nonsense"))
 }
 
-// guarding stands in for the component tier on the authorize side, the way
-// `deciding` does on the admit side: what a REAL guard does with a real question
-// is pkg/invoke/wasm's own test, and what this proves is the node's policy
-// around it.
+const validatorID = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"
+
+// withValidator is a project whose one function is the control a target names —
+// a store's instance validator, or a route's guard. It is the SAME function
+// either way, which is the property both of those resolve paths rest on.
+func withValidator() []byte {
+	return []byte(`{
+		"object": {
+			"id": "` + projectID + `",
+			"name": "shop",
+			"function": {
+				"` + validatorID + `": {
+					"name": "may_open",
+					"execution": {"call": "handle", "memory": 33554432},
+					"source": {"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv"}
+				}
+			}
+		},
+		"indexes": {
+			"projects/` + projectID + `/function/may_open/links": [
+				"branches/main/projects/` + projectID + `/function/` + validatorID + `"]
+		}
+	}`)
+}
+
+// guarding stands in for the component tier here the way node/admit's own double
+// does for a validator: what a REAL guard does with a real question is
+// pkg/invoke/wasm's own test, and what this proves is the node's policy around it.
 type guarding struct {
 	decision wasmtier.Decision
 	err      error

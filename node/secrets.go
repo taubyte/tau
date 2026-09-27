@@ -10,6 +10,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/specs"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
@@ -121,7 +122,7 @@ func (v *vault) List(ctx context.Context, project, environment string) ([]string
 // what makes the two paths agree — a rotated secret reaches a variable at the
 // next deploy and reaches this at the next call, and both read the same row.
 func (v *vault) SecretFor(ctx context.Context, grant invoke.Grant) ([]byte, error) {
-	project, environment, id := splitHandle(grant.Handle)
+	project, environment, id := specs.SplitHandle(grant.Handle)
 	if project == "" || environment == "" || id == "" {
 		return nil, fmt.Errorf("node: %q does not address a secret", grant.Handle)
 	}

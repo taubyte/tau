@@ -8,6 +8,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -18,7 +19,7 @@ import (
 //
 // The wasm tier runs ONE workload and has no way to reach another; the node has
 // both a worker that can resolve a second function and a tier that can
-// instantiate it. node/admission.go makes that argument for a validator and it
+// instantiate it. node/admit makes that argument for a validator and it
 // holds harder here, because asking means instantiating a DIFFERENT WORLD —
 // `taubyte:authorizer` rather than the handler — which a running guest's tier
 // has no business arranging on its own.
@@ -83,7 +84,7 @@ func (a *authorizers) Ops(ctx context.Context, spec invoke.Spec, grant invoke.Gr
 		return nil, fmt.Errorf("node: %s is guarded by %q and this node cannot run one", grant.Label, name)
 	}
 
-	project, environment, _ := splitHandle(grant.Handle)
+	project, environment, _ := specs.SplitHandle(grant.Handle)
 	if project == "" || environment == "" {
 		return nil, fmt.Errorf("node: the handle %q does not name a deployment", grant.Handle)
 	}
@@ -94,7 +95,7 @@ func (a *authorizers) Ops(ctx context.Context, spec invoke.Spec, grant invoke.Gr
 	guard, err := a.node.worker.Resolve(ctx, worker.Target{
 		Project:     project,
 		Environment: environment,
-		Scope:       splitNamespace(grant.Settings[settingAuthorizerScope]),
+		Scope:       specs.ScopeOf(nil, grant.Settings[settingAuthorizerScope]),
 		Kind:        "function",
 		Name:        name,
 	})

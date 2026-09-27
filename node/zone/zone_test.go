@@ -344,13 +344,3 @@ func TestAnUnreadableProjectStopsTheResolverToo(t *testing.T) {
 	_, err = z.Resolve(t.Context(), invoke.Question{Name: "geo.example.com.", Type: "A"})
 	require.ErrorContains(t, err, "register unreachable")
 }
-
-// --- namespaces -------------------------------------------------------------
-
-func TestANamespaceIsAScopeChain(t *testing.T) {
-	require.Nil(t, zone.Namespace(""))
-	require.Nil(t, zone.Namespace("/"))
-	require.Equal(t, []string{"billing"}, zone.Namespace("billing"))
-	require.Equal(t, []string{"billing"}, zone.Namespace("/billing"))
-	require.Equal(t, []string{"billing", "dns"}, zone.Namespace("/billing/dns/"))
-}

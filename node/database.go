@@ -18,6 +18,7 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/pkg/specs"
 	databaseService "github.com/taubyte/tau/services/database"
 )
 
@@ -424,7 +425,7 @@ func (d *databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 		return database.Spec{}, fmt.Errorf("%w: %q is %q", ErrNotSQL, grant.Label, model)
 	}
 
-	project, environment, id := splitHandle(grant.Handle)
+	project, environment, id := specs.SplitHandle(grant.Handle)
 	spec := database.Spec{
 		Type:   want,
 		Engine: grant.Settings[model+"/engine"],
@@ -599,16 +600,6 @@ func (d *databases) credentials(ctx context.Context, project, environment, refer
 		return user, pass, nil
 	}
 	return "", value, nil
-}
-
-// splitHandle reads back what services/worker composed: project, environment,
-// and the resource's id.
-func splitHandle(handle string) (project, environment, id string) {
-	parts := strings.SplitN(handle, "/", 3)
-	for len(parts) < 3 {
-		parts = append(parts, "")
-	}
-	return parts[0], parts[1], parts[2]
 }
 
 // Close releases every connection this node opened.

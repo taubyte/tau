@@ -33,8 +33,11 @@ func TestEveryLazyOpenerAppendsItsCloserSafely(t *testing.T) {
 	// DIFFERENT adapters appending at once, and these two hold two different
 	// mutexes. The third (databases.storesFor) takes a composed spec to reach
 	// and carries the identical one-line fix.
+	//
+	// THE FIRST IS REACHED THROUGH ITS SEAM, because the adapter that asks it
+	// lives in node/admit now and what appends here is what the root hands over.
 	openers := []func() error{
-		func() error { _, err := (&admissions{node: n}).store(); return err },
+		func() error { _, err := admissionStores{node: n}.Store(); return err },
 		func() error { _, err := (&buckets{node: n}).store(); return err },
 	}
 

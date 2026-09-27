@@ -186,7 +186,7 @@ func TestAGuardCannotGrantWhatTheConfigNeverAsked(t *testing.T) {
 }
 
 // TestAGuardTHATCANNOTBERUNDENIES, and this is where an authorizer parts from
-// the instance validator in node/admission.go. That one treats "could not be
+// the instance validator in node/admit. That one treats "could not be
 // run" as not a refusal. Here the target has said in its own configuration that
 // somebody else decides, so serving it when that somebody cannot be reached
 // grants exactly the access it said was not ours to grant.
