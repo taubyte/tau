@@ -179,3 +179,51 @@ func TestANilResolverIsRefused(t *testing.T) {
 	_, err := New(Config{}, WithRouter(&fakeRouter{}), WithResolvers(nil))
 	require.ErrorIs(t, err, ErrNoResolvers)
 }
+
+// TestARESOLVEDLINENEEDSAZONETOBERELATIVETO. The lines a resolver answers are
+// relative to the zone's apex, and the apex comes from the zone source — so a
+// server given a resolver and no zones cannot place what it is told, and must
+// not guess. Both ways of having no apex are the same answer: it said something,
+// and none of it could be about this name.
+func TestAResolvedLineWithNoApexIsNotPlaced(t *testing.T) {
+	answer := map[string]*invoke.Resolution{
+		"geo.example.com.": records("geo 60 IN A 203.0.113.9"),
+	}
+
+	t.Run("no zone source at all", func(t *testing.T) {
+		s, err := New(Config{NodeZone: "nodes.example.com"},
+			WithRouter(&fakeRouter{nodes: map[string][]stats.Node{}}),
+			WithResolvers(&asked{answers: answer}))
+		require.NoError(t, err)
+		t.Cleanup(func() { s.Close() })
+
+		reply := s.Answer(query("geo.example.com", dns.TypeA))
+		require.Equal(t, dns.RcodeSuccess, reply.Rcode)
+		require.Empty(t, reply.Answer)
+	})
+
+	t.Run("the zone source failed", func(t *testing.T) {
+		z := &declared{apex: "example.com", err: errors.New("register unreachable")}
+		s, err := New(Config{NodeZone: "nodes.example.com"},
+			WithRouter(&fakeRouter{nodes: map[string][]stats.Node{}}),
+			WithZones(z), WithResolvers(&asked{answers: answer}))
+		require.NoError(t, err)
+		t.Cleanup(func() { s.Close() })
+
+		reply := s.Answer(query("geo.example.com", dns.TypeA))
+		require.Empty(t, reply.Answer, "an apex that could not be read is not an apex")
+	})
+}
+
+// TestATYPETHISBUILDHASNONAMEFORISNOTPUTTOAGUEST, because the question carries
+// the type as TEXT and a guest matches on it. A number nobody can spell is not a
+// question worth asking.
+func TestAnUnnamedQtypeIsNotAsked(t *testing.T) {
+	r := &asked{answers: map[string]*invoke.Resolution{}}
+	s, _ := resolving(t, "example.com", r)
+
+	// 666 has no entry in miekg's TypeToString. 65535 does -- it is "Reserved" --
+	// so it would have been asked, which is what this test first asserted against.
+	s.Answer(query("geo.example.com", 666))
+	require.Empty(t, r.question, "no text form, so nothing was asked")
+}
