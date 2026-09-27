@@ -7,8 +7,11 @@ import (
 	"net"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/dns"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // dns.go answers queries from what this node's stats view holds.
@@ -55,7 +58,15 @@ func (n *Node) openDNS() error {
 	// what it can route and nothing an author wrote — which is a real loss and
 	// is not a reason to refuse to answer at all.
 	if n.worker != nil {
-		options = append(options, dns.WithZones(&zones{node: n}))
+		z := &zones{node: n}
+		options = append(options, dns.WithZones(z))
+
+		// AND THE RESOLVER ARM, from the same object: it holds the label walk
+		// that finds which zone covers a name, and the resolver is named by that
+		// zone. Wired unconditionally alongside the records -- a zone that names
+		// no resolver answers nil from it, so this costs a node whose zones are
+		// all files exactly nothing.
+		options = append(options, dns.WithResolvers(z))
 	}
 
 	svc, err := dns.New(n.cfg.DNS, options...)
@@ -119,9 +130,24 @@ func (n *Node) DNSAddrs() []net.Addr {
 // nothing pays for its depth, which is stated rather than hidden.
 type zones struct{ node *Node }
 
-var _ dns.Zones = (*zones)(nil)
+var (
+	_ dns.Zones     = (*zones)(nil)
+	_ dns.Resolvers = (*zones)(nil)
+)
 
-func (z *zones) Records(ctx context.Context, name string) (string, []string, error) {
+// covered is the zone that answers for a name, and the deployment it came from.
+type covered struct {
+	zone        specs.Zone
+	project     string
+	environment string
+}
+
+// covering walks a query name up its labels to the zone that declares it.
+//
+// EXTRACTED BECAUSE BOTH ARMS NEED THE SAME WALK. The records come off the zone
+// and the resolver is named by it, so finding it twice by two slightly different
+// loops is how the two arms would come to disagree about which zone a name is in.
+func (z *zones) covering(ctx context.Context, name string) (*covered, error) {
 	labels := strings.Split(strings.ToLower(strings.TrimSuffix(name, ".")), ".")
 
 	source := z.node.registerSource()
@@ -138,12 +164,12 @@ func (z *zones) Records(ctx context.Context, name string) (string, []string, err
 			// The index says this project owns the apex and its compiled form
 			// is not readable here. The next label up is not the answer — this
 			// one is, and it is unavailable — so the walk stops.
-			return "", nil, fmt.Errorf("node: reading %s/%s for %s: %w", projectName, environment, apex, err)
+			return nil, fmt.Errorf("node: reading %s/%s for %s: %w", projectName, environment, apex, err)
 		}
 
 		for _, declared := range proj.Zones() {
 			if declared.Fqdn == apex {
-				return declared.Fqdn, declared.Records, nil
+				return &covered{zone: declared, project: projectName, environment: environment}, nil
 			}
 		}
 
@@ -152,5 +178,51 @@ func (z *zones) Records(ctx context.Context, name string) (string, []string, err
 		// carries on: a project may serve `shop.example.com` from a gateway
 		// and still declare `example.com` as a zone.
 	}
-	return "", nil, nil
+	return nil, nil
+}
+
+func (z *zones) Records(ctx context.Context, name string) (string, []string, error) {
+	at, err := z.covering(ctx, name)
+	if err != nil || at == nil {
+		return "", nil, err
+	}
+	return at.zone.Fqdn, at.zone.Records, nil
+}
+
+// Resolve asks the zone's own function about one name.
+//
+// NIL WITH NO ERROR IS "NOBODY WAS ASKED", and there are three ways to get
+// there: no zone covers the name, the zone named no resolver, or this node runs
+// no component tier. None of them is a statement about the name, so the server
+// carries on to whatever else it can do — a zone with a resolver it cannot run
+// must not start answering NXDOMAIN.
+func (z *zones) Resolve(ctx context.Context, q invoke.Question) (*invoke.Resolution, error) {
+	at, err := z.covering(ctx, q.Name)
+	if err != nil || at == nil {
+		return nil, err
+	}
+	if at.zone.ResolverName == "" {
+		return nil, nil
+	}
+
+	tier := z.node.wasmTier()
+	if tier == nil {
+		return nil, nil
+	}
+
+	// THE RESOLVER'S OWN SPEC, resolved like any other function — its own access
+	// block, its own limits, its own artifact. Nothing about being a resolver
+	// changes how it is found, which is what AdmitRequest says about a guard.
+	resolver, err := z.node.worker.Resolve(ctx, worker.Target{
+		Project:     at.project,
+		Environment: at.environment,
+		Scope:       splitNamespace(at.zone.ResolverNamespace),
+		Kind:        "function",
+		Name:        at.zone.ResolverName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("node: finding resolver %q for %s: %w", at.zone.ResolverName, at.zone.Fqdn, err)
+	}
+
+	return tier.Resolve(ctx, resolver, q)
 }

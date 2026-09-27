@@ -145,6 +145,10 @@ func (g *guarding) Authorize(_ context.Context, spec invoke.Spec, q wasmtier.Que
 	return g.decision, g.err
 }
 
+func (g *guarding) Resolve(context.Context, invoke.Spec, invoke.Question) (*invoke.Resolution, error) {
+	return nil, errors.New("not asked here")
+}
+
 func (g *guarding) Admit(context.Context, invoke.Spec, wasmtier.Opening) (wasmtier.Verdict, error) {
 	return wasmtier.Verdict{}, errors.New("not asked here")
 }

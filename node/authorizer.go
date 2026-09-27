@@ -174,6 +174,12 @@ type decides interface {
 	// from the internet, so the question is the REQUEST and the answer is the
 	// ops it gets.
 	AuthorizeRequest(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Admission, error)
+
+	// Resolve is the fourth, and the only one asked about a NAME. A DNS question
+	// carries no caller at all -- not a workload, not even a socket this node
+	// kept -- so it is the one decision here whose question is the thing being
+	// asked about and nothing else.
+	Resolve(ctx context.Context, spec invoke.Spec, q invoke.Question) (*invoke.Resolution, error)
 }
 
 // wasmTier is what a guard or a validator is instantiated through, or nil on a

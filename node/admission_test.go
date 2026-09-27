@@ -71,6 +71,10 @@ func (d *deciding) Authorize(context.Context, invoke.Spec, wasmtier.Question) (w
 	return wasmtier.Decision{}, errors.New("not asked here")
 }
 
+func (d *deciding) Resolve(context.Context, invoke.Spec, invoke.Question) (*invoke.Resolution, error) {
+	return nil, errors.New("not asked here")
+}
+
 func (d *deciding) Admit(_ context.Context, spec invoke.Spec, o wasmtier.Opening) (wasmtier.Verdict, error) {
 	d.mu.Lock()
 	d.saw = append(d.saw, o)
