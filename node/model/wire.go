@@ -1,4 +1,4 @@
-package node
+package model
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// model_wire.go is the three formats the vocabulary offers, and nothing else.
+// wire.go is the three formats the vocabulary offers, and nothing else.
 //
 // # Two shapes, not three
 //
@@ -157,7 +157,7 @@ const anthropicDefaultMaxTokens = 4096
 func providerRequest(format string, grant invoke.Grant, req *invoke.Inference) ([]byte, error) {
 	identifier := grant.Settings["identifier"]
 	if identifier == "" {
-		return nil, fmt.Errorf("%w: it names no identifier", ErrNoModelEndpoint)
+		return nil, fmt.Errorf("%w: it names no identifier", ErrNoEndpoint)
 	}
 
 	temperature := req.Temperature
@@ -187,7 +187,7 @@ func providerRequest(format string, grant invoke.Grant, req *invoke.Inference) (
 			Tools: openaiTools(req.Tools),
 		})
 	}
-	return nil, fmt.Errorf("%w: %q", ErrUnknownModelFormat, format)
+	return nil, fmt.Errorf("%w: %q", ErrUnknownFormat, format)
 }
 
 // providerAnswer reads one back.
@@ -196,7 +196,7 @@ func providerAnswer(format string, body []byte) (*invoke.Answer, error) {
 	case "anthropic":
 		var out anthropicAnswer
 		if err := json.Unmarshal(body, &out); err != nil {
-			return nil, fmt.Errorf("node: that provider's answer is not this format: %w", err)
+			return nil, fmt.Errorf("model: that provider's answer is not this format: %w", err)
 		}
 
 		// THE TEXT IS ASSEMBLED, because the answer is a list of blocks and a
@@ -225,10 +225,10 @@ func providerAnswer(format string, body []byte) (*invoke.Answer, error) {
 	case "openai", "ollama", "":
 		var out openaiAnswer
 		if err := json.Unmarshal(body, &out); err != nil {
-			return nil, fmt.Errorf("node: that provider's answer is not this format: %w", err)
+			return nil, fmt.Errorf("model: that provider's answer is not this format: %w", err)
 		}
 		if len(out.Choices) == 0 {
-			return nil, fmt.Errorf("node: that provider answered with no choices")
+			return nil, fmt.Errorf("model: that provider answered with no choices")
 		}
 		var calls []invoke.ToolCall
 		for _, c := range out.Choices[0].Message.ToolCalls {
@@ -243,7 +243,13 @@ func providerAnswer(format string, body []byte) (*invoke.Answer, error) {
 			Usage:      invoke.Usage{InputTokens: out.Usage.PromptTokens, OutputTokens: out.Usage.CompletionTokens},
 		}, nil
 	}
-	return nil, fmt.Errorf("%w: %q", ErrUnknownModelFormat, format)
+
+	// UNREACHABLE THROUGH Infer and kept anyway: providerRequest refuses a
+	// format this node does not speak before any call is made, so nothing can
+	// arrive here with one. What it buys is that the two switches are held to
+	// the same set — a format added to one and not the other stops being a
+	// silently empty answer.
+	return nil, fmt.Errorf("%w: %q", ErrUnknownFormat, format)
 }
 
 // anthropicTurns lifts the system turn out and turns the tool turns into

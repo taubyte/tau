@@ -43,6 +43,7 @@ import (
 	"sync"
 
 	"github.com/taubyte/tau/node/cache"
+	"github.com/taubyte/tau/node/model"
 	"github.com/taubyte/tau/node/stream"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
@@ -440,6 +441,16 @@ func (n *Node) openWorker() error {
 			return err
 		}
 
+		// INFERENCE IS ALWAYS OFFERED, even on a node that resolves no secret:
+		// a model served by something needing no credential — ollama on this
+		// machine — is a legitimate resource, and refusing to start a workload
+		// that reaches one would make the credential the thing that decides
+		// whether inference exists.
+		infer, err := n.inference()
+		if err != nil {
+			return err
+		}
+
 		// WHO MAY OPEN ONE INSTANCE OF A STORE THAT HOLDS MANY. It invokes the
 		// validator the target named, which is why it is here and not in the
 		// tier: the tier runs one workload and cannot reach another.
@@ -491,13 +502,7 @@ func (n *Node) openWorker() error {
 			wasm.WithChannels(&channels{node: n}),
 			wasm.WithAuthorizers(&authorizers{node: n}),
 			wasm.WithSecrets(n.vault),
-
-			// INFERENCE IS ALWAYS OFFERED, even on a node that resolves no
-			// secret: a model served by something needing no credential —
-			// ollama on this machine — is a legitimate resource, and refusing
-			// to start a workload that reaches one would make the credential
-			// the thing that decides whether inference exists.
-			wasm.WithInference(nodeInference(n)))
+			wasm.WithInference(infer))
 		if err != nil {
 			return err
 		}
@@ -713,7 +718,7 @@ func (n *Node) openGateway() error {
 // THE RULE IS THE ONE THE WORKER APPLIES: an injected resolver wins, then this
 // node's own vault. It is a method rather than three copies of the switch
 // because three consumers now ask the same question.
-func (n *Node) secretResolver() modelSecrets {
+func (n *Node) secretResolver() model.Secrets {
 	switch {
 	case n.opts.secrets != nil:
 		return n.opts.secrets
