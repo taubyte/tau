@@ -1115,7 +1115,27 @@ func (s *Service) artifactOf(ctx context.Context, t Target, r specs.Resource, re
 	case "image":
 		return r.String("source", "image"), nil
 	case "component":
-		return r.String("source", "component"), nil
+		// A COMPONENT IS A REFERENCE, NOT AN ARTIFACT. `source.component` is
+		// declared `Ref("component")` with `IsVariableName()`, so what a
+		// compiled resource carries here is the referenced COMPONENT'S OWN
+		// RESOURCE ID -- and a resource id is not something the asset store has
+		// ever heard of.
+		//
+		// Returning it verbatim is the mistake the builtin arm below documents,
+		// one case further down: it skipped the artifact seam, and the tier then
+		// asked the store for the bytes of a configuration document. A component
+		// IS built (it is in BuiltKinds), so the answer is the same seam every
+		// other built resource uses -- asked about the COMPONENT, not about the
+		// workload that names it, because the artifact was published under the
+		// component's own id.
+		component := r.String("source", "component")
+		if component == "" {
+			return "", fmt.Errorf("%w: %s/%s names no component", ErrNoArtifact, t.Kind, t.Name)
+		}
+		if s.artifacts == nil {
+			return "", fmt.Errorf("%w: component %s", ErrNoArtifact, component)
+		}
+		return s.artifacts.Artifact(ctx, t.Project, t.Environment, "component", component)
 	case sourceBuiltin:
 		// A BUILTIN HAS NO ARTIFACT AND ASKING FOR ONE IS THE BUG. The program
 		// is one the runtime ships — a workflow step's driver, an agent's loop
