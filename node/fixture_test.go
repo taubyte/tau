@@ -27,7 +27,7 @@ func compiled() []byte {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "checkout",
 					"execution": {"call": "handle", "memory": 33554432},
-					"source": {"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv"}
+					"source": "services/checkout"
 				}
 			},
 			"gateway": {
@@ -65,10 +65,10 @@ func workerTarget() specs.Address {
 
 func gatewayConfig() gateway.Config { return gateway.Config{} }
 
-// needsASecret is a project whose one function names a secret and nothing
-// else — a component source, so the artifact seam is not in the way. It is the
-// ordinary shape of anything imported from a platform that had environment
-// variables.
+// needsASecret is a project whose one function names a secret and nothing else.
+// It is the ordinary shape of anything imported from a platform that had
+// environment variables, and a test using it hands the node prebuilt() so that
+// the one seam left to refuse is the secrets one.
 func needsASecret() []byte {
 	return []byte(`{
 		"object": {
@@ -78,7 +78,7 @@ func needsASecret() []byte {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "checkout",
 					"execution": {"call": "handle", "memory": 33554432},
-					"source": {"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv"},
+					"source": "services/checkout",
 					"variables": {
 						"TOKEN": {"as": "env", "at": "run", "secret": {"name": "` + secretID + `"}}
 					}
@@ -94,6 +94,11 @@ func needsASecret() []byte {
 
 // needsBothSeams is a project whose one function is built by the platform and
 // wants a secret — the two things a worker refuses to invent.
+//
+// IT IS NO LONGER THE ONLY FIXTURE THAT NEEDS THE ARTIFACT SEAM: every workload
+// here does, because every source is a path in a repository and what came out of
+// building one is nothing a compiled document holds. What this one still says on
+// its own is BOTH refusals at once.
 func needsBothSeams() []byte {
 	return []byte(`{
 		"object": {

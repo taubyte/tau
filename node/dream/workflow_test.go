@@ -37,13 +37,19 @@ import (
 // THE ONE THING SUBSTITUTED IS WHICH ARTIFACT each function runs, which is a
 // deployment fact and not a lowering one: the fixture's functions name paths in
 // a repository nobody built here, so they are pointed at the component this
-// package already ships. Nothing about the workflow's shape is touched — and
-// the drivers' own `source: {kind: builtin}` is deliberately left alone, since
-// that is the thing under test.
+// package already ships. That fact is said through the ARTIFACT SEAM rather than
+// written into the document — see nodeDream.Built — so the fixture's own sources
+// are untouched, the drivers' `source: {kind: builtin}` included, which is the
+// thing under test.
 
-// runnableFixture is the vocabulary's project with every authored function
-// pointed at a component that exists.
-func runnableFixture(t *testing.T, componentCID string) []byte {
+// runnableFixture is the vocabulary's project, and the mapping saying which
+// component each of its authored functions runs.
+//
+// THE ENTRYPOINT IS STILL REWRITTEN, and it is the one rewrite that has to be:
+// the exported symbol belongs to the ARTIFACT, so pointing a function at a
+// different component and keeping the author's `call` names an export that is not
+// there. Nothing outside the document can say that.
+func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]string) {
 	t.Helper()
 
 	c, err := schema.New(
@@ -58,7 +64,7 @@ func runnableFixture(t *testing.T, componentCID string) []byte {
 	root, ok := flat["object"].(map[string]any)
 	require.True(t, ok)
 
-	var swapped int
+	pointed := map[string]string{}
 	var walk func(scope map[string]any)
 	walk = func(scope map[string]any) {
 		for kind, group := range scope {
@@ -66,7 +72,7 @@ func runnableFixture(t *testing.T, componentCID string) []byte {
 			if !ok {
 				continue
 			}
-			for _, v := range instances {
+			for id, v := range instances {
 				res, ok := v.(map[string]any)
 				if !ok {
 					continue
@@ -74,17 +80,20 @@ func runnableFixture(t *testing.T, componentCID string) []byte {
 				if kind == "function" {
 					source, _ := res["source"].(map[string]any)
 					// A DRIVER IS LEFT ALONE. Its source is the builtin this
-					// whole test is about.
+					// whole test is about, and a builtin has no artifact.
 					if s, _ := source["kind"].(string); s != "builtin" {
-						res["source"] = map[string]any{"kind": "component", "component": componentCID}
-						// AND THE ENTRYPOINT WITH IT, because the exported
-						// symbol belongs to the artifact: pointing a function
-						// at a different component and keeping the old `call`
-						// is naming an export that is not there.
+						// A FUNCTION THAT NAMES A COMPONENT RUNS THE
+						// COMPONENT'S BUILD, so that is the id the artifact is
+						// filed under -- which is what this fixture's `checkout`
+						// and `edge_router` do: they name `paylib`.
+						if component, _ := source["component"].(string); component != "" {
+							pointed[component] = componentCID
+						} else {
+							pointed[id] = componentCID
+						}
 						if exec, ok := res["execution"].(map[string]any); ok {
 							exec["call"] = "handle"
 						}
-						swapped++
 					}
 				}
 				walk(res)
@@ -92,11 +101,11 @@ func runnableFixture(t *testing.T, componentCID string) []byte {
 		}
 	}
 	walk(root)
-	require.NotZero(t, swapped)
+	require.NotZero(t, len(pointed))
 
 	raw, err := json.Marshal(flat)
 	require.NoError(t, err)
-	return raw
+	return raw, pointed
 }
 
 // TestAWholePipelineRuns: a workload starts it, every driver invokes the
@@ -128,8 +137,11 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 	cid, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
 	require.NoError(t, err)
 
+	compiled, pointed := runnableFixture(t, cid)
+	stagedOn(t, pids, "shop", pointed)
+
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: runnableFixture(t, cid),
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled,
 	})
 	require.NoError(t, err)
 

@@ -60,6 +60,8 @@ func TestAFleetServesARequestEndToEnd(t *testing.T) {
 	registry := nodeOf(t, pids[0])
 	require.NotNil(t, registry.Register(), "the first node runs the register")
 
+	stagedOn(t, pids, "shop", map[string]string{checkoutID: anArtifact})
+
 	_, err = registry.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1,
 		Compiled: compiled(), Hosts: []string{"shop.example.com"},
@@ -100,6 +102,11 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 	require.Len(t, pids, 2)
 
 	edge, compute := nodeOf(t, pids[0]), nodeOf(t, pids[1])
+
+	// WHAT THE FUNCTION RUNS, which a universe has no build service to say. The
+	// tier here records rather than starts, so the cid is never read -- what
+	// matters is that the worker resolved one at all.
+	stagedOn(t, pids, "shop", map[string]string{checkoutID: anArtifact})
 
 	_, err = edge.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1,

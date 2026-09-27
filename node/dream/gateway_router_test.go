@@ -87,9 +87,10 @@ func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	// only projects that need more than one: everywhere else a single binary
 	// runs under several names, and here each of the three is built against a
 	// different host interface.
-	compiled, _ := project(t, "with/gateway/router", artifacts{
+	compiled, _, pointed := project(t, "with/gateway/router", artifacts{
 		"": handlerCID, "shaper": shaperCID, "picker": pickerCID,
 	})
+	stagedOn(t, pids, "shop", pointed)
 
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1,

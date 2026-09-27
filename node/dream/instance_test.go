@@ -39,12 +39,16 @@ const (
 // TWO COMPONENTS, TWO WORLDS. The guest is a handler and the validator declares
 // `implements: instance-validator` and exports `admit(opening) -> verdict`.
 //
+// WHICH COMPONENT EACH ONE RUNS IS NOT IN HERE. Both name a path in a repository
+// the way an author writes it, and the artifacts they were staged with reach the
+// worker through the seam a cloud's build service fills — see stagedOn.
+//
 // It used to be ONE component in both roles, because that world was named by the
 // vocabulary and built by nothing — a validator had to BE a handler, told which
 // instance by a header and answering with an HTTP status. This test said so in
 // this comment. The world exists now, so the fixture's own shape is the one the
 // config describes.
-func withInstances(guestCID, validatorCID string) []byte {
+func withInstances() []byte {
 	doc := map[string]any{
 		"object": map[string]any{
 			"id":   cacheProjectID,
@@ -53,7 +57,7 @@ func withInstances(guestCID, validatorCID string) []byte {
 				cacheFuncID: map[string]any{
 					"name":      "cacher",
 					"execution": map[string]any{"call": "handle", "memory": 33554432},
-					"source":    map[string]any{"kind": "component", "component": guestCID},
+					"source":    "services/cacher",
 					"cache": map[string]any{
 						"rooms": map[string]any{"ops": []any{"get", "put"}},
 					},
@@ -62,7 +66,7 @@ func withInstances(guestCID, validatorCID string) []byte {
 					"name":       "may_open",
 					"implements": "instance-validator",
 					"execution":  map[string]any{"call": "admit", "memory": 8388608},
-					"source":     map[string]any{"kind": "component", "component": validatorCID},
+					"source":     "services/admitter",
 				},
 			},
 			"cache": map[string]any{
@@ -124,8 +128,10 @@ func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 	admits, err := store.Put(t.Context(), bytes.NewReader(admitterWASM(t)))
 	require.NoError(t, err)
 
+	stagedOn(t, pids, "shop", map[string]string{cacheFuncID: cid, mayOpenFunc: admits})
+
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(cid, admits),
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(),
 	})
 	require.NoError(t, err)
 
@@ -201,8 +207,10 @@ func TestTheInstanceLimitHoldsEndToEnd(t *testing.T) {
 	admits, err := store.Put(t.Context(), bytes.NewReader(admitterWASM(t)))
 	require.NoError(t, err)
 
+	stagedOn(t, pids, "shop", map[string]string{cacheFuncID: cid, mayOpenFunc: admits})
+
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(cid, admits),
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(),
 	})
 	require.NoError(t, err)
 

@@ -184,6 +184,25 @@ func (t *tier) Start(context.Context, invoke.Spec) (invoke.Instance, error) {
 	return nil, errors.New("tier: nothing is started in this test")
 }
 
+// prebuilt is the artifact seam of a node whose cloud has already built
+// everything, and it is an EXPLICIT option rather than one of makeNode's
+// defaults: whether a node can resolve what a resource runs is exactly what
+// several tests here are about.
+//
+// EVERY BUILT RESOURCE NEEDS ONE, and the fixtures in this package used to
+// pretend otherwise. They wrote `source: {kind: component, component: Qm…}` and
+// the worker handed that id to the tier verbatim, so naming a component was how a
+// fixture skipped the seam. It was never an artifact: `source.component` is a
+// `Ref("component")`, so the id is a configuration document's and the asset store
+// has never held anything under it — see services/worker/artifact_test.go. The
+// fixtures now name a path the way an author does, and a node expected to RUN
+// one of them is handed this.
+func prebuilt() Option {
+	return WithArtifacts(artifactsFunc(func(_ context.Context, _, _, _, resource string) (string, error) {
+		return "bafy" + resource, nil
+	}))
+}
+
 // makeNode is a node over fresh resources, not started.
 func makeNode(t *testing.T, cfg Config, extra ...Option) (*Node, host.Host, *memFactory) {
 	t.Helper()

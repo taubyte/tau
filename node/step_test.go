@@ -52,7 +52,7 @@ func withStepFunction() []byte {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "reserve_stock",
 					"execution": {"call": "handle", "memory": 33554432},
-					"source": {"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv"}
+					"source": "services/reserve"
 				}
 			},
 			"sync": {
@@ -82,7 +82,7 @@ func stepping(t *testing.T, answers *answering) (*Node, *dispatcher) {
 	t.Helper()
 
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Primitives}},
-		WithRuntimes(answers))
+		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{

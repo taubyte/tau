@@ -55,7 +55,7 @@ func withConsumer(c consumer) []byte {
 	workload := map[string]any{
 		"name":      "checkout",
 		"execution": map[string]any{"call": "handle", "memory": 33554432},
-		"source":    map[string]any{"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv"},
+		"source":    "services/checkout",
 		"sync":      map[string]any{"jobs": entry},
 	}
 	if c.Concurrency > 0 {
@@ -115,7 +115,7 @@ func consuming(t *testing.T, answers *answering, compiled []byte) (*Node, *dispa
 	t.Helper()
 
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Primitives}},
-		WithRuntimes(answers))
+		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -275,7 +275,7 @@ func TestAnInvocationThatErrorsIsNotAnAcknowledgement(t *testing.T) {
 func TestANodeDrainsOnlyWhatItHolds(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
-		WithRuntimes(answers))
+		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -342,7 +342,7 @@ func TestNoDeclaredConcurrencyIsOneAtATime(t *testing.T) {
 func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
-		WithRuntimes(answers))
+		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	require.NotNil(t, n.dispatchDone, "a node with a worker and raft runs one")

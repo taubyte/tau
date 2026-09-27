@@ -55,12 +55,19 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 			cfg.DNSListen = "127.0.0.1:0"
 		}
 
+		// EVERY NODE IN A FLEET CAN RESOLVE WHAT A RESOURCE RUNS, because a
+		// fleet's tests are about finding what this node does not run — a
+		// register, a vault, a worker — and a workload that cannot be resolved
+		// at all fails before the question is reached. The one test here that
+		// is ABOUT the build backend builds the real resolver itself, so this
+		// does not stand in for it.
 		n, err := New(cfg,
 			WithHost(hosts[i]),
 			WithPubSub(ps),
 			WithDatabases(&memFactory{}),
 			WithRuntimes(&tier{name: "wasm"}),
 			WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
+			prebuilt(),
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() { n.Close() })
@@ -275,7 +282,7 @@ func (f secretFunc) Secret(ctx context.Context, project, environment, secretID s
 // anything imported from a platform that had environment variables, so this is
 // the wiring between "it compiles" and "it runs".
 func TestAWorkerResolvesASecretFromItsOwnVault(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	require.NoError(t, n.Secrets().Local().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
@@ -319,7 +326,7 @@ func TestAWorkerFindsAVaultOnAnotherNode(t *testing.T) {
 // without its database password does not fail where the password is missing;
 // it fails somewhere else, later, as an application that looks broken.
 func TestAWorkerWithNoVaultAnywhereRefusesRatherThanRunning(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{

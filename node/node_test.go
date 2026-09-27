@@ -143,7 +143,7 @@ func TestANodeReportsWhatItRuns(t *testing.T) {
 // TestAWorkerAdvertisesTheEnvironmentsItHolds, so a router can send a request
 // where the compiled project is already warm.
 func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
-	n, _, _ := makeNode(t, Config{})
+	n, _, _ := makeNode(t, Config{}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	// Publish and resolve through this node's own register, which loads the
@@ -165,7 +165,7 @@ func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
 // replicated store, so a node running one already holds every answer; dialling
 // itself would add a stream and a serialization to a read on every request.
 func TestALocalRegisterNeedsNoStream(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}}, prebuilt())
 
 	// Nothing is started, so nothing is dialable — and the read still works.
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{

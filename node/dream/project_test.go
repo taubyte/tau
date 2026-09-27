@@ -51,6 +51,7 @@ import (
 // directory IS the description and nothing has to be looked up:
 //
 //	with/function                          one function, one route, nothing else
+//	with/component                         …whose source is a COMPONENT, not a path
 //	with/database/distributed/kv/crdt      …and a kv, tau's engine, merge resolution
 //	with/database/distributed/kv/raft      …and a ledger, where writes are ordered
 //	with/database/postgres/sql             …and a database behind a connector
@@ -88,9 +89,18 @@ import (
 //
 // Every function here names a source repository nobody built, because building
 // it needs a git server and a toolchain. So each is pointed at a component this
-// tree already ships. THAT IS A DEPLOYMENT FACT AND NOT A SHAPE ONE: nothing
-// about the project's structure is touched, and the artifact a real deploy would
-// have produced is the one thing a universe cannot make for itself.
+// tree already ships. THAT IS A DEPLOYMENT FACT AND NOT A SHAPE ONE, and it is
+// said where a deployment fact belongs: the ARTIFACT SEAM. The test puts the
+// component in the asset store and tells the universe's seam which resource runs
+// it, exactly as a cloud's build service does — see nodeDream.Built.
+//
+// IT USED TO BE SAID IN THE DOCUMENT, and that was the shape one. Every
+// resource's `source` was overwritten with `{kind: component, component: <cid>}`
+// before publishing, so `component` meant "this already IS an artifact" — which
+// the vocabulary never said it means, and which only worked because the worker
+// handed the reference straight to the asset store. The corpus was therefore
+// incapable of catching that bug: the one source kind an author can write there
+// was never exercised with what an author writes.
 
 // artifacts says which component each resource is pointed at, keyed by the label
 // the author wrote, with "" the artifact everything unnamed gets.
@@ -112,12 +122,17 @@ func (a artifacts) of(label string) string {
 	return a[""]
 }
 
-// project compiles one of the authored projects under projects/ and points every
-// function at the component the caller names for it. It answers the bytes a
-// register is published AND the object they were marshalled from, because a test
-// that has to name a resource reads the id out of what was published rather than
-// restating one — see idOf.
-func project(t *testing.T, name string, components artifacts) ([]byte, map[string]any) {
+// project compiles one of the authored projects under projects/ and says which
+// component each of its resources runs. It answers the bytes a register is
+// published, the object they were marshalled from — because a test that has to
+// name a resource reads the id out of what was published rather than restating
+// one, see idOf — and the mapping the universe's artifact seam is handed.
+//
+// THE COMPILED DOCUMENT IS NOT TOUCHED. What a resource RUNS is not in it: the
+// author wrote a path in a repository and the artifact is what came out of
+// building that, which is the build service's to say in a cloud and the test's to
+// say here. Both say it through worker.Artifacts.
+func project(t *testing.T, name string, components artifacts) ([]byte, map[string]any, map[string]string) {
 	t.Helper()
 
 	c, err := schema.New(
@@ -132,32 +147,47 @@ func project(t *testing.T, name string, components artifacts) ([]byte, map[strin
 	root, ok := flat["object"].(map[string]any)
 	require.True(t, ok, "%s compiled to something with no object in it", name)
 
-	var swapped int
+	pointed := map[string]string{}
 	for _, group := range root {
 		instances, ok := group.(map[string]any)
 		if !ok {
 			continue
 		}
-		for _, v := range instances {
+		for id, v := range instances {
 			res, ok := v.(map[string]any)
 			if !ok {
 				continue
 			}
+			// A RESOURCE WITH NO `source` RUNS NOTHING -- a zone, a cache, a
+			// channel. It is also how the set of things needing an artifact is
+			// read off the document rather than listed here.
 			if _, isSource := res["source"]; !isSource {
 				continue
 			}
 			label, _ := res["name"].(string)
 			cid := components.of(label)
 			require.NotEmpty(t, cid, "%s names %q and nothing was handed in for it", name, label)
-			res["source"] = map[string]any{"kind": "component", "component": cid}
-			swapped++
+
+			// A WORKLOAD WHOSE SOURCE IS A COMPONENT HAS NO BUILD OF ITS OWN, and
+			// the mapping says exactly that: the artifact is filed under the
+			// COMPONENT'S id -- which is the id the seam is asked about, see
+			// artifactOf in services/worker/resolve.go. Staging the workload's own
+			// id as well would let a seam asked the WRONG question answer anyway,
+			// and with/component exists to ask the right one.
+			if src, ok := res["source"].(map[string]any); ok {
+				if component, _ := src["component"].(string); component != "" {
+					pointed[component] = cid
+					continue
+				}
+			}
+			pointed[id] = cid
 		}
 	}
-	require.NotZero(t, swapped, "%s has nothing to run", name)
+	require.NotZero(t, len(pointed), "%s has nothing to run", name)
 
 	raw, err := json.Marshal(flat)
 	require.NoError(t, err)
-	return raw, root
+	return raw, root, pointed
 }
 
 // lastSaid renders whatever the last attempt answered, at the moment the
@@ -282,10 +312,23 @@ type deployed struct {
 // off a handle carrying the project (node/database/database.go) — so publishing
 // twice needs no change to the universe, the zone, or the node, only for the
 // start and the publish to stop being one function.
-func publish(t *testing.T, nodes []*node.Node, at deployed, components artifacts) []*running {
+//
+// IT TAKES PEER IDS AND NOT NODES because a project is two publishes and not
+// one: the register gets the compiled document, and every node's artifact seam
+// gets what a build produced. Placement chooses which node runs a workload, so a
+// staging on one of them would be a cloud where the build service is reachable
+// from one machine.
+func publish(t *testing.T, pids []string, at deployed, components artifacts) []*running {
 	t.Helper()
 
-	compiled, obj := project(t, at.name, components)
+	compiled, obj, pointed := project(t, at.name, components)
+	stagedOn(t, pids, at.project, pointed)
+
+	nodes := make([]*node.Node, 0, len(pids))
+	for _, id := range pids {
+		nodes = append(nodes, nodeOf(t, id))
+	}
+
 	_, err := nodes[0].Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: at.project, Environment: "prod", Revision: 1,
 		Compiled: compiled, Hosts: []string{at.host},
@@ -343,7 +386,6 @@ func deployServing(t *testing.T, name, host string, wasm []byte, extra map[strin
 	require.NoError(t, err)
 	require.NotEmpty(t, pids)
 
-	n := nodeOf(t, pids[0])
 	store, ok := nodeDream.Assets(pids[0])
 	require.True(t, ok)
 
@@ -357,7 +399,7 @@ func deployServing(t *testing.T, name, host string, wasm []byte, extra map[strin
 		held[label] = id
 	}
 
-	return publish(t, []*node.Node{n}, deployed{project: "shop", name: name, host: host}, held)[0]
+	return publish(t, pids[:1], deployed{project: "shop", name: name, host: host}, held)[0]
 }
 
 func handlerWASM(t *testing.T) []byte {
@@ -385,6 +427,34 @@ func TestTheSmallestProjectAnswers(t *testing.T) {
 	posted := r.ask(t, http.MethodPost, "/orders")
 	require.Equal(t, 201, posted.Code, "and a POST is a different answer from the same component")
 	require.Equal(t, "/orders", posted.Header().Get("x-path"))
+}
+
+// TestAFunctionThatNamesAComponentRunsTheCOMPONENTSARTIFACT.
+//
+// THE ONE SOURCE KIND WHOSE ARTIFACT BELONGS TO SOMETHING ELSE. Everywhere else
+// in this corpus a workload's source is a path and the artifact is its own; here
+// the function names a COMPONENT, and what runs is what that component's build
+// published — filed under the COMPONENT'S id and not under the function's.
+//
+// IT IS THE PROJECT THAT WOULD HAVE CAUGHT THE BUG, and the reason this corpus
+// could not. `source.component` is a `Ref("component")`, so a compiled resource
+// carries the component's RESOURCE id; the worker used to hand that to the asset
+// store verbatim, which is a content store being asked for a configuration
+// document. Nothing ran. The corpus could not see it because it rewrote every
+// source into exactly that shape with a real cid in it — so the one source kind
+// an author can write there was never exercised with what an author writes.
+//
+// A 200 HERE IS THE REFERENCE HAVING BEEN RESOLVED: the artifact is staged under
+// the component's id, the way a build publishes it, and nothing is staged under
+// the function's.
+func TestAFunctionThatNamesAComponentRunsItsArtifact(t *testing.T) {
+	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
+
+	r := deploy(t, "with/component", "shared.example.com", handlerWASM(t))
+
+	got := r.ask(t, http.MethodGet, "/")
+	require.Equal(t, 200, got.Code, "the component the function names answered")
+	require.Equal(t, "/", got.Header().Get("x-path"), "and the request reached it")
 }
 
 func kitchenSinkWASM(t *testing.T) []byte {
@@ -1046,7 +1116,7 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 
 	fleets := make([][]*running, 0, len(projects))
 	for _, at := range projects {
-		fleets = append(fleets, publish(t, nodes, at, held))
+		fleets = append(fleets, publish(t, pids, at, held))
 	}
 
 	// EVERY NODE HAS TO HAVE EVERY PROJECT, THE FLOOR AND THE FLEET before

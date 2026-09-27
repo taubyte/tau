@@ -138,7 +138,7 @@ func withValidator() []byte {
 				"` + validatorID + `": {
 					"name": "may_open",
 					"execution": {"call": "handle", "memory": 33554432},
-					"source": {"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv"}
+					"source": "services/may_open"
 				}
 			}
 		},
@@ -190,7 +190,7 @@ func guardingNode(t *testing.T, answers *guarding) (*Node, *authorizers) {
 	t.Helper()
 
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
-		WithRuntimes(&answering{name: "wasm", status: 200}))
+		WithRuntimes(&answering{name: "wasm", status: 200}), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 	n.decider = answers
 
