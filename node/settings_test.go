@@ -7,6 +7,7 @@ import (
 
 	"github.com/taubyte/tau/node/admit"
 	"github.com/taubyte/tau/node/cache"
+	nodeDatabase "github.com/taubyte/tau/node/database"
 	"github.com/taubyte/tau/node/storage"
 	"github.com/taubyte/tau/node/volume"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -48,7 +49,7 @@ func TestEverySettingKeyNamesAnAttribute(t *testing.T) {
 		"sync":     {settingRetryEvery},
 		"channel":  {settingProtocol, settingServeKind, settingServeName, settingServeScope},
 		"function": {settingAuthorizer, settingAuthorizerScope},
-		"database": {databaseTypeSetting, "sql/" + databaseCredentialsSetting},
+		"database": nodeDatabase.Settings,
 	} {
 		for _, key := range keys {
 			require.True(t, schema.IsAttribute(kind, key),

@@ -37,8 +37,10 @@ func TestTheGroupAndTheStoreAgreeOnTheNameADatabaseHas(t *testing.T) {
 }
 
 // TestWHICHSTOREADATABASEGETSISITSOWNDECLARATION, and not a second engine: the
-// schema declares ONE engine for tau's own, with a consensus beside it.
-func TestTheConsensusPicksTheStoreAndNotASecondEngine(t *testing.T) {
+// schema declares ONE engine for tau's own, with a consensus beside it. What the
+// root decides is only which of the two things it holds answers — the crdt store
+// it opens through the factory, or a group node/ledger forms.
+func TestTheRootPicksBetweenACrdtStoreAndAGroup(t *testing.T) {
 	cluster := &closing{MockCluster: raft.NewMockCluster()}
 
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
@@ -93,33 +95,6 @@ func TestANodeWithNowhereToOpenAGroupKeepsNoLedger(t *testing.T) {
 
 	// AND CLOSING ONE IS NOT A PANIC OVER A TABLE THAT WAS NEVER BUILT.
 	require.NoError(t, d.Close())
-}
-
-// TestALEDGERISNOTKEPTBYTHISNODESOWNENGINES.
-//
-// These engines are the fallback for a node that runs no database service and
-// can reach none. A ledger has nothing to keep its order in there — no group, no
-// owner, nowhere to send a write this node may not make — so it is refused BY
-// NAME. Serving it as crdt would resolve two entries into one with no error to
-// anybody.
-func TestALedgerIsNotKeptByThisNodesOwnEngines(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
-	d, err := newDatabases(n)
-	require.NoError(t, err)
-
-	grant := kvGrantFor("shop/prod/QmLedger")
-	grant.Settings["kv/consensus"] = database.Raft
-
-	_, err = d.OpenKV(t.Context(), grant)
-	require.ErrorIs(t, err, ErrConsensusUnserved)
-	require.ErrorContains(t, err, "raft")
-
-	// AND THE OTHER HALF OF THE AXIS IS UNCHANGED, which is the point of
-	// reading the word rather than guessing from what is registered.
-	crdt := kvGrantFor("shop/prod/QmSessions")
-	crdt.Settings["kv/consensus"] = database.CRDT
-	_, err = d.OpenKV(t.Context(), crdt)
-	require.NoError(t, err)
 }
 
 func ledgerSpec() database.Spec {

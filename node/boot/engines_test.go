@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/node"
+	nodeDatabase "github.com/taubyte/tau/node/database"
 	"github.com/taubyte/tau/pkg/database"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -58,14 +58,14 @@ func TestEveryExternalDatabaseEngineIsAdapted(t *testing.T) {
 	//
 	// FOR THE MODELS IT ACTUALLY BACKS, and that qualifier is the whole fix.
 	// This used to skip tau's engine for EVERY model, which assumed the node
-	// opens a distributed one for all four. It does not: node.TauBacked() is
+	// opens a distributed one for all four. It does not: nodeDatabase.TauBacked() is
 	// kv, document and vector, and `sql: {engine: distributed}` compiled,
 	// deployed and answered every query with "no database engine is registered
 	// in this build" — with this test green over it, because this was the line
 	// that looked away.
 	tauEngine := schema.TauEngine()
 	tauBacks := map[string]bool{}
-	for _, model := range node.TauBacked() {
+	for _, model := range nodeDatabase.TauBacked() {
 		tauBacks[string(model)] = true
 	}
 
