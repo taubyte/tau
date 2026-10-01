@@ -171,6 +171,35 @@ func Uninstall() error {
 	return c.Flush()
 }
 
+// acceptAnswersExprs is a whole rule that accepts a packet belonging to a
+// connection that already exists, and it is FIRST in every chain this package
+// installs.
+//
+// The drops below look at a packet's destination and nothing else, and a REPLY
+// has the asker's address as its destination. So without this the host could
+// open a connection to a restricted workload -- which is how every request
+// reaches one -- and the workload's answer, addressed to the host, was dropped
+// as egress to a local address. Every restricted container was unreachable from
+// the node that started it.
+//
+// IT OPENS NOTHING THE RULES CLOSE. A connection the workload opens toward a
+// denied address has its first packet in state NEW, and that packet is dropped,
+// so the connection never comes to exist and none of its packets is ever
+// ESTABLISHED. RELATED covers the ICMP errors that belong to a connection the
+// host opened. It assumes register 1 is free for reuse.
+func acceptAnswersExprs() []expr.Any {
+	return []expr.Any{
+		&expr.Ct{Register: 1, Key: expr.CtKeySTATE},
+		&expr.Bitwise{
+			SourceRegister: 1, DestRegister: 1, Len: 4,
+			Mask: binaryutil.NativeEndian.PutUint32(expr.CtStateBitESTABLISHED | expr.CtStateBitRELATED),
+			Xor:  binaryutil.NativeEndian.PutUint32(0),
+		},
+		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: []byte{0, 0, 0, 0}},
+		&expr.Verdict{Kind: expr.VerdictAccept},
+	}
+}
+
 // dropLocalExprs returns the tail of a rule that drops a packet addressed to
 // any address this host holds. The denied CIDRs cover loopback and the private
 // ranges, but a node's own routable address is in none of them, and on that
@@ -235,6 +264,7 @@ func InstallBridgeFilter(bridge string) error {
 					&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: ifname(bridge)},
 				}
 			}
+			c.AddRule(&nftables.Rule{Table: t, Chain: ch, Exprs: acceptAnswersExprs()})
 			c.AddRule(&nftables.Rule{Table: t, Chain: ch, Exprs: append(fromBridge(), dropLocalExprs()...)})
 			for _, fam := range []struct {
 				v6  bool
@@ -276,6 +306,7 @@ func InstallCgroupFilter(cgroupID uint64, level uint32) error {
 				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint64(cgroupID)},
 			}
 		}
+		c.AddRule(&nftables.Rule{Table: t, Chain: ch, Exprs: acceptAnswersExprs()})
 		c.AddRule(&nftables.Rule{Table: t, Chain: ch, Exprs: append(inCgroup(), dropLocalExprs()...)})
 		for _, fam := range []struct {
 			v6  bool

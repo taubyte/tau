@@ -205,3 +205,78 @@ func TestCgroupEgressDrop_Integration(t *testing.T) {
 		}
 	}
 }
+
+// THE HOST MUST STILL REACH WHAT IT STARTED. The egress rules drop what a
+// restricted workload SENDS toward a local or private address, and a reply is
+// something it sends: the host dials the workload, the workload answers to the
+// host's own address, and a rule that looked only at the destination dropped
+// the answer. Every restricted container was therefore unreachable from the
+// node that ran it -- found by the first end-to-end application test
+// (node/dream/application_test.go), with the container up and listening.
+//
+// So a connection the HOST opened is answered, and one the workload opens to the
+// same address is still refused.
+func TestARestrictedWorkloadAnswersTheHost_Integration(t *testing.T) {
+	const parent = "/sys/fs/cgroup/ngtest-in"
+	const child = parent + "/child"
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("mkdir cgroup: %v", err)
+	}
+	pid := strconv.Itoa(os.Getpid())
+	backToRoot := func() { os.WriteFile("/sys/fs/cgroup/cgroup.procs", []byte(pid), 0o644) }
+	t.Cleanup(func() {
+		backToRoot()
+		os.Remove(child)
+		os.Remove(parent)
+	})
+
+	var st unix.Stat_t
+	if err := unix.Stat(parent, &st); err != nil {
+		t.Fatalf("stat %s: %v", parent, err)
+	}
+	if err := InstallCgroupFilter(st.Ino, 1); err != nil {
+		t.Fatalf("InstallCgroupFilter: %v", err)
+	}
+	t.Cleanup(func() { delTestTable(t) })
+
+	// THE WORKLOAD: a listener created inside the filtered cgroup, so the
+	// sockets that answer on it belong to that cgroup.
+	if err := os.WriteFile(child+"/cgroup.procs", []byte(pid), 0o644); err != nil {
+		t.Fatalf("join cgroup: %v", err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conn.Write([]byte("answered"))
+			conn.Close()
+		}
+	}()
+
+	// It may not open a connection to the host's own address itself.
+	if c, err := net.DialTimeout("tcp", ln.Addr().String(), 2*time.Second); err == nil {
+		c.Close()
+		t.Fatal("the restricted workload dialled loopback itself and got through -- the firewall failed open")
+	}
+
+	// THE HOST, outside the cgroup, dials it and must get the answer.
+	backToRoot()
+	c, err := net.DialTimeout("tcp", ln.Addr().String(), 2*time.Second)
+	if err != nil {
+		out, _ := exec.Command("nft", "list", "table", "inet", tableName).CombinedOutput()
+		t.Fatalf("the host could not reach a restricted workload it dialled: %v\nruleset:\n%s", err, out)
+	}
+	defer c.Close()
+	c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	got := make([]byte, 8)
+	if n, err := c.Read(got); err != nil || string(got[:n]) != "answered" {
+		t.Fatalf("the restricted workload's answer did not reach the host: %q, %v", got[:n], err)
+	}
+}
