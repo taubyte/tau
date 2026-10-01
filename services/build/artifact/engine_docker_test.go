@@ -14,19 +14,24 @@ import (
 	"github.com/taubyte/tau/services/build/artifact"
 )
 
-// needsEgressRestriction skips when this machine cannot confine a container's
-// network.
+// needsEgressRestriction FAILS when this machine cannot confine a container's
+// network, and says what is missing.
 //
 // IT IS AN ENVIRONMENT CAPABILITY AND NOT A CHOICE. A build runs a stranger's
 // commands, so pkg/containers installs a firewall and REFUSES TO START THE
 // CONTAINER if it cannot — a rootless docker keeps its bridge in its own
-// namespace, so tau's netguard bridge is not there to find. That fail-closed
-// behaviour is the property; a test that turned the restriction off to get
-// green would be testing a build this service will never run.
+// namespace, and a process without CAP_NET_ADMIN cannot program it at all. That
+// fail-closed behaviour is the property; a test that turned the restriction off
+// to get green would be testing a build this service will never run.
+//
+// IT USED TO SKIP, and a skipped run prints `ok`: every machine that could not
+// build reported these as passing, having built nothing. They are selected by a
+// build tag, so whoever runs them asked for a real build — `make test-build`
+// gives them a rootful daemon and the privilege.
 func needsEgressRestriction(t *testing.T, err error) {
 	t.Helper()
-	if err != nil && strings.Contains(err.Error(), "tau-netguard0") {
-		t.Skip("this machine cannot restrict a container's egress (rootless docker); a build will not run here")
+	if err != nil && strings.Contains(err.Error(), "egress") {
+		t.Fatalf("this machine cannot restrict a container's egress, so no build runs here (rootful docker and CAP_NET_ADMIN are needed; use `make test-build`): %v", err)
 	}
 }
 
