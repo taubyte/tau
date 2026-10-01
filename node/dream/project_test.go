@@ -148,6 +148,7 @@ func project(t *testing.T, name string, components artifacts) ([]byte, map[strin
 	require.True(t, ok, "%s compiled to something with no object in it", name)
 
 	pointed := map[string]string{}
+	runs := 0
 	for _, group := range root {
 		instances, ok := group.(map[string]any)
 		if !ok {
@@ -164,6 +165,15 @@ func project(t *testing.T, name string, components artifacts) ([]byte, map[strin
 			if _, isSource := res["source"]; !isSource {
 				continue
 			}
+			// AN IMAGE IS ITS OWN ARTIFACT. A workload whose source names an
+			// image says what runs in the document itself -- the worker reads it
+			// straight off the resource (artifactOf in services/worker/resolve.go)
+			// and nothing is built -- so there is nothing to stage for it, and
+			// staging something anyway would hide a worker that went asking.
+			if src, ok := res["source"].(map[string]any); ok && src["kind"] == "image" {
+				runs++
+				continue
+			}
 			label, _ := res["name"].(string)
 			cid := components.of(label)
 			require.NotEmpty(t, cid, "%s names %q and nothing was handed in for it", name, label)
@@ -177,13 +187,15 @@ func project(t *testing.T, name string, components artifacts) ([]byte, map[strin
 			if src, ok := res["source"].(map[string]any); ok {
 				if component, _ := src["component"].(string); component != "" {
 					pointed[component] = cid
+					runs++
 					continue
 				}
 			}
 			pointed[id] = cid
+			runs++
 		}
 	}
-	require.NotZero(t, len(pointed), "%s has nothing to run", name)
+	require.NotZero(t, runs, "%s has nothing to run", name)
 
 	raw, err := json.Marshal(flat)
 	require.NoError(t, err)

@@ -60,6 +60,15 @@ const servicePrefix = "svc:"
 // universe wants and what every test that is not about placement gets.
 const regionPrefix = "region:"
 
+// containerPrefix marks the universe config entry naming the container daemon
+// its nodes run workloads on: `container:docker`.
+//
+// A UNIVERSE HAS NONE UNLESS IT ASKS, because a daemon is a property of the
+// machine running the test and most of them have none. A node without one runs
+// wasm and static sites and refuses a container workload by name; a universe
+// that names one builds the same tier a machine's config builds (node/container.go).
+const containerPrefix = "container:"
+
 // runtimes are the tiers nodes in this process run on.
 //
 // A COMPUTE TIER IS A LIVE OBJECT and dream's registry hands a service a
@@ -374,7 +383,11 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 	// developer running it. So every node here takes an ephemeral loopback
 	// port, which is also what makes a FLEET of them possible: two nodes
 	// cannot share one port, and :0 is how dream allocates every other one.
-	nodeConfig := node.Config{Services: servicesIn(cfg), Cloud: u.Name(), Region: regionIn(cfg)}
+	container, err := containerIn(cfg)
+	if err != nil {
+		return nil, err
+	}
+	nodeConfig := node.Config{Services: servicesIn(cfg), Cloud: u.Name(), Region: regionIn(cfg), Container: container}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Stats.Stabilize = dreamStabilize
 
@@ -489,6 +502,31 @@ func regionIn(cfg *iface.ServiceConfig) string {
 	return declared[cfg.Others[dream.CopyKey]%len(declared)]
 }
 
+// containerIn is the container tier a universe's nodes run, if it named one.
+//
+// AT MOST ONE, because a node has one container tier: two names would be a
+// choice nothing here could make honestly.
+func containerIn(cfg *iface.ServiceConfig) (node.ContainerConfig, error) {
+	if cfg == nil {
+		return node.ContainerConfig{}, nil
+	}
+
+	var named []string
+	for key := range cfg.Others {
+		if backend, ok := strings.CutPrefix(key, containerPrefix); ok && backend != "" {
+			named = append(named, backend)
+		}
+	}
+	switch len(named) {
+	case 0:
+		return node.ContainerConfig{}, nil
+	case 1:
+		return node.ContainerConfig{Backend: named[0]}, nil
+	}
+	sort.Strings(named)
+	return node.ContainerConfig{}, fmt.Errorf("dream: a node runs one container tier, and this universe names %v", named)
+}
+
 // Bag is a universe config's per-service map, which is where a node reads what
 // it runs and where it is.
 type Bag map[string]int
@@ -503,6 +541,15 @@ func (b Bag) In(regions ...string) Bag {
 			b[regionPrefix+region] = 1
 		}
 	}
+	return b
+}
+
+// Containers runs this universe's container workloads on the named daemon —
+// node.BackendDocker or node.BackendContainerd — the way a machine's config does.
+//
+//	Others: nodeDream.Services(node.Worker, node.Gateway).Containers(node.BackendDocker)
+func (b Bag) Containers(backend string) Bag {
+	b[containerPrefix+backend] = 1
 	return b
 }
 

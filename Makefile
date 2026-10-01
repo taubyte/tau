@@ -31,7 +31,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-dreaming test-raft test-docker test-containerd test-containers test-all vm-fixtures test-cli test-cli-cover proto-v2 proto-v2-check
+.PHONY: test test-dreaming test-raft test-docker test-containerd test-application test-containers test-all vm-fixtures test-cli test-cli-cover proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -93,7 +93,21 @@ test-docker:
 test-containerd:
 	go test -tags containerd_integration -run '_Integration$$' -p 1 -timeout 20m $(FLAGS) ./pkg/containers/...
 
-test-containers: test-docker test-containerd
+test-containers: test-docker test-containerd test-application
+
+# test-application runs a real application end to end: a corpus project
+# compiled, published, routed by the gateway and served by a container the
+# container tier started on docker. It needs a docker daemon AND CAP_NET_ADMIN,
+# because the tier always restricts egress and the backend refuses to create a
+# container it cannot firewall. So the binary is BUILT as the user and only the
+# binary runs under sudo -- nothing root-owned lands in the Go cache -- from
+# node/dream, where the corpus paths are relative. It fails rather than skips
+# without a daemon or the privilege.
+APPLICATION_TEST := $(CURDIR)/node/dream/application.test
+
+test-application:
+	cd node/dream && go test -c -tags 'dreaming docker_integration' -o $(APPLICATION_TEST) .
+	cd node/dream && sudo -n $(APPLICATION_TEST) -test.run '^TestAnApplicationAnswersThroughTheGateway$$' -test.timeout 10m -test.v
 
 test-all: test test-dreaming test-raft
 
