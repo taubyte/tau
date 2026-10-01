@@ -9,22 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/taubyte/tau/pkg/database"
+	"github.com/samyfodil/mushql/replication"
 
-	// mushql's pure-Go driver registers itself as "sqlite" from its own init,
-	// exactly as pkg/database/engines/sql's doc describes for pgx and the
-	// rest. It is named nowhere else in this package but driverName.
-	_ "github.com/samyfodil/mushql/puredriver"
+	"github.com/taubyte/tau/pkg/database"
 )
 
 // Name is the engine name the vocabulary uses for tau's own.
 const Name = "distributed"
-
-// driverName is what mushql's puredriver registers itself with database/sql
-// as. It is `sqlite` and not `mushql-pure` because that is the name the driver
-// documents; mushql/puredriver.DriverName is not used here only because naming
-// it would make a doc-only import of a 441-file package.
-const driverName = "sqlite"
 
 // fileName is the database inside one database's own directory.
 //
@@ -35,6 +26,13 @@ const driverName = "sqlite"
 const fileName = "database.db"
 
 var (
+	// ErrRaft is a `sql` database that declared raft. mushql commits through a
+	// caller's consensus log (replication.Leader with a Quorum), which needs a
+	// log that applies an opaque entry on every node in order -- and pkg/raft's
+	// state machine is key-value only. Refused by name until it has that, rather
+	// than served as something weaker than raft.
+	ErrRaft = errors.New("distributed: a raft sql database needs a consensus log this node cannot give it yet")
+
 	ErrNoFiles   = errors.New("distributed: no directory provider to open a database in")
 	ErrWrongType = errors.New("distributed: this engine backs sql and nothing else")
 	ErrNoRoot    = errors.New("distributed: a node with no root has nowhere to keep a sql database")
@@ -102,17 +100,42 @@ func InDir(dir string) Files {
 }
 
 // Engine backs the sql type with a mushql database per declared database.
-type Engine struct{ files Files }
+type Engine struct {
+	files Files
+	sync  func(topic string) replication.Option
+}
 
 var _ database.Engine = (*Engine)(nil)
 
+// Option configures an Engine.
+type Option func(*Engine)
+
+// WithSync is how a database's copies reach each other: handed the database's
+// own topic, it answers the replication transport for it. A node passes
+// replication/libp2p's SyncWith over its own host and pubsub router.
+//
+// WITHOUT ONE A DATABASE IS STILL CAPTURED: every write goes into its op log,
+// and a peer that later syncs picks it up. It is not served from nowhere.
+func WithSync(sync func(topic string) replication.Option) Option {
+	return func(e *Engine) { e.sync = sync }
+}
+
 // New builds the engine over a directory provider.
-func New(files Files) (*Engine, error) {
+func New(files Files, opts ...Option) (*Engine, error) {
 	if files == nil {
 		return nil, ErrNoFiles
 	}
-	return &Engine{files: files}, nil
+	e := &Engine{files: files}
+	for _, apply := range opts {
+		apply(e)
+	}
+	return e, nil
 }
+
+// topicOf is the replication topic of one database: its prefix, which already
+// names the project, the environment and the database, under tau's own root so
+// it shares a pubsub router with nothing else's.
+func topicOf(prefix string) string { return "tau/sql/" + strings.TrimSuffix(prefix, "/") }
 
 func (e *Engine) Name() string { return Name }
 
@@ -143,11 +166,25 @@ func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, e
 		return nil, fmt.Errorf("%w: was asked for %q", ErrWrongType, spec.Type)
 	}
 
-	switch _, err := spec.Prefix(); {
+	prefix, err := spec.Prefix()
+	switch {
 	case errors.Is(err, database.ErrUnaddressable):
 		return &conn{err: err}, nil
 	case err != nil:
 		return nil, err
+	}
+
+	// THE MODE IS THE DECLARATION'S. crdt is every node writing and converging;
+	// raft is refused by name, see ErrRaft. Anything else is a word this engine
+	// does not serve.
+	var mode replication.Option
+	switch spec.Consensus {
+	case database.CRDT, "":
+		mode = replication.CRDT()
+	case database.Raft:
+		return nil, fmt.Errorf("%w: %s", ErrRaft, prefix)
+	default:
+		return nil, fmt.Errorf("distributed: consensus %q is not one a sql database is served with", spec.Consensus)
 	}
 
 	dir, err := e.files(ctx, spec)
@@ -155,7 +192,11 @@ func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, e
 		return nil, err
 	}
 
-	db, err := sql.Open(driverName, filepath.Join(dir, fileName))
+	opts := []replication.Option{mode}
+	if e.sync != nil {
+		opts = append(opts, e.sync(topicOf(prefix)))
+	}
+	db, err := replication.Open(ctx, filepath.Join(dir, fileName), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("distributed: opening a database in %s: %w", dir, err)
 	}

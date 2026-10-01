@@ -1,0 +1,92 @@
+package distributed_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/samyfodil/mushql/replication"
+	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/database"
+	"github.com/taubyte/tau/pkg/database/engines/sql/distributed"
+)
+
+// replication_test is the engine's database on TWO nodes: two engines, each
+// with its own directory, joined by mushql's in-memory network on the topic
+// the engine derives from the database itself.
+//
+// THE SCHEMA A GUEST WRITES IS THE SCHEMA THAT REPLICATES. The table is created
+// after the database is open, with the integer key and the UNIQUE column
+// ordinary application code reaches for — the shape the old wrapper refused
+// outright, which is why this engine used to serve from one node's disk.
+
+// meshed is a sync option that joins every engine handed one to one network,
+// and the topics it was asked for.
+func meshed(t *testing.T, net *replication.MemNetwork, node string, topics *[]string) distributed.Option {
+	t.Helper()
+	return distributed.WithSync(func(topic string) replication.Option {
+		*topics = append(*topics, topic)
+		return replication.WithTransport(func(_ context.Context, s *replication.Syncer) (replication.Transport, error) {
+			return net.AddNode(replication.PeerID(node), s.OpSource()), nil
+		})
+	})
+}
+
+func TestAWriteOnOneNodeIsReadOnTheOther(t *testing.T) {
+	net := replication.NewMemNetwork()
+	var topics []string
+
+	left, err := distributed.New(distributed.InDir(t.TempDir()), meshed(t, net, "left", &topics))
+	require.NoError(t, err)
+	right, err := distributed.New(distributed.InDir(t.TempDir()), meshed(t, net, "right", &topics))
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	spec := ledger(t)
+	spec.Consensus = database.CRDT
+
+	l, err := left.Open(ctx, spec)
+	require.NoError(t, err)
+	defer l.Close()
+	r, err := right.Open(ctx, spec)
+	require.NoError(t, err)
+	defer r.Close()
+
+	require.Equal(t, []string{"tau/sql/acme/prod/sql/ledger", "tau/sql/acme/prod/sql/ledger"}, topics,
+		"both copies of one database sync on one topic, named by the database")
+
+	lc := l.(database.SQLConn)
+	_, err = lc.Exec(ctx, `CREATE TABLE entries (id INTEGER PRIMARY KEY, payee TEXT UNIQUE, amount INTEGER)`)
+	require.NoError(t, err)
+	_, err = lc.Exec(ctx, `INSERT INTO entries(payee, amount) VALUES(?, ?)`, "alice", 42)
+	require.NoError(t, err)
+
+	rc := r.(database.SQLConn)
+	require.Eventually(t, func() bool {
+		rows, err := rc.Query(ctx, `SELECT payee, amount FROM entries`)
+		if err != nil {
+			return false // the table itself has not arrived yet
+		}
+		defer rows.Close()
+		var payee string
+		var amount int64
+		return rows.Next() && rows.Scan(&payee, &amount) == nil && payee == "alice" && amount == 42
+	}, 20*time.Second, 100*time.Millisecond, "the row written on one node never reached the other")
+}
+
+// A RAFT SQL DATABASE IS REFUSED BY NAME, and so is a consensus nobody serves:
+// served as crdt, either would be a weaker promise than the one declared.
+func TestADatabaseIsServedOnlyWithTheConsensusItDeclared(t *testing.T) {
+	e, err := distributed.New(distributed.InDir(t.TempDir()))
+	require.NoError(t, err)
+
+	spec := ledger(t)
+	spec.Consensus = database.Raft
+	_, err = e.Open(context.Background(), spec)
+	require.ErrorIs(t, err, distributed.ErrRaft)
+
+	spec.Consensus = "gossip"
+	_, err = e.Open(context.Background(), spec)
+	require.ErrorContains(t, err, `consensus "gossip"`)
+}
