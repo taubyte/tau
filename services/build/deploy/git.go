@@ -9,6 +9,7 @@ import (
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git"
@@ -50,6 +51,10 @@ type Clone struct {
 	// answer and not the pushed payload's. The ssh ACCOUNT is the forge's: see
 	// Forged.
 	address func(repositoryKey string) (forge.Address, error)
+
+	// hostKeys are the ssh host keys a forge host may answer with. A clone over
+	// ssh to a host with none is refused: see git.SSHKeyAs.
+	hostKeys func(host string) []gossh.PublicKey
 }
 
 var _ Checkout = (*Clone)(nil)
@@ -71,6 +76,16 @@ func WithAddress(address func(repositoryKey string) (forge.Address, error)) Clon
 	return func(c *Clone) {
 		if address != nil {
 			c.address = address
+		}
+	}
+}
+
+// WithHostKeys is the ssh host keys each forge host may answer a clone with,
+// keyed by the host a repository key names.
+func WithHostKeys(keys func(host string) []gossh.PublicKey) CloneOption {
+	return func(c *Clone) {
+		if keys != nil {
+			c.hostKeys = keys
 		}
 	}
 }
@@ -147,7 +162,19 @@ func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit stri
 				release()
 				return "", nil, fmt.Errorf("deploy: %s has a deploy key and is reached by %q, which is not ssh", repositoryKey, address.URL)
 			}
-			options = append(options, git.SSHKeyAs(address.SSHAccount, key))
+			// THE HOST IS PINNED, BY THE FORGE THE KEY NAMES. A deploy key proves
+			// who is cloning; only the host key proves who answered.
+			var pinned []gossh.PublicKey
+			if c.hostKeys != nil {
+				if k, err := parse(repositoryKey); err == nil {
+					pinned = c.hostKeys(k.Host)
+				}
+			}
+			if len(pinned) == 0 {
+				release()
+				return "", nil, fmt.Errorf("deploy: no ssh host key is pinned for %s, and a clone that accepts any host can be answered by anyone", repositoryKey)
+			}
+			options = append(options, git.SSHKeyAs(address.SSHAccount, key, pinned))
 		}
 	}
 

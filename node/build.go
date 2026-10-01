@@ -11,6 +11,8 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
+	gossh "golang.org/x/crypto/ssh"
+
 	"github.com/taubyte/tau/pkg/forge"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build"
@@ -209,7 +211,13 @@ func (n *Node) openBuildBackend() error {
 	if err != nil {
 		return err
 	}
-	clone := deploy.NewClone(repositories, deploy.WithAddress(deploy.Forged(registry, forge.SSH)))
+	pinned, err := hostKeys(n.cfg.Forges)
+	if err != nil {
+		return err
+	}
+	clone := deploy.NewClone(repositories,
+		deploy.WithAddress(deploy.Forged(registry, forge.SSH)),
+		deploy.WithHostKeys(func(host string) []gossh.PublicKey { return pinned[host] }))
 
 	options := []deploy.Option{
 		deploy.WithProjects(projects),

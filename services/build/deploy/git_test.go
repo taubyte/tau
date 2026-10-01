@@ -2,6 +2,8 @@ package deploy_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"os"
 	"os/exec"
@@ -10,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
@@ -220,9 +223,19 @@ func TestReadingAPrivateRepository(t *testing.T) {
 	require.ErrorContains(t, err, "local/repo")
 
 	// A key that is not one fails at the clone rather than being ignored.
-	_, _, err = deploy.NewClone(keys{key: "not a pem"}, local).
+	pinned := deploy.WithHostKeys(func(host string) []gossh.PublicKey {
+		require.Equal(t, "local", host, "keys are asked for by the host the repository key names")
+		return []gossh.PublicKey{hostPublicKey(t)}
+	})
+	_, _, err = deploy.NewClone(keys{key: "not a pem"}, local, pinned).
 		Checkout(t.Context(), "local/repo", "main", first)
 	require.ErrorContains(t, err, "parsing private key")
+
+	// AN SSH CLONE TO A HOST NOTHING PINNED IS REFUSED, before git is asked: a
+	// deploy key proves who is cloning, and only the host key proves who answered.
+	_, _, err = deploy.NewClone(keys{key: "any"}, local).
+		Checkout(t.Context(), "local/repo", "main", first)
+	require.ErrorContains(t, err, "no ssh host key is pinned for local/repo")
 
 	// A KEY OVER HTTPS AUTHENTICATES NOTHING, so it is refused by name rather
 	// than cloned anonymously and failed as a missing repository.
@@ -238,4 +251,13 @@ func TestReadingAPrivateRepository(t *testing.T) {
 func TestAKeyThatIsNotARepository(t *testing.T) {
 	_, _, err := deploy.NewClone(nil).Checkout(t.Context(), "", "main", "abc")
 	require.ErrorContains(t, err, "not a repository")
+}
+
+func hostPublicKey(t *testing.T) gossh.PublicKey {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	key, err := gossh.NewPublicKey(pub)
+	require.NoError(t, err)
+	return key
 }

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 func TestForges(t *testing.T) {
@@ -31,4 +32,36 @@ func TestForges(t *testing.T) {
 
 	_, err = forges([]Forge{{Host: "Gitlab.com", Driver: ForgeGitLab}})
 	require.ErrorContains(t, err, `forge "Gitlab.com"`)
+}
+
+// EVERY FORGE A NODE SERVES IS CLONED FROM ONLY BY ITS PINNED HOST KEYS: the
+// public forges by the keys they publish, any other by the keys its operator
+// named, and a forge with none by nothing at all.
+func TestHostKeys(t *testing.T) {
+	keys, err := hostKeys(nil)
+	require.NoError(t, err)
+	require.Len(t, keys["github.com"], 3)
+	require.Len(t, keys["gitlab.com"], 3)
+	for host, want := range map[string]string{
+		"github.com": "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU",
+		"gitlab.com": "SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8",
+	} {
+		var got []string
+		for _, k := range keys[host] {
+			got = append(got, gossh.FingerprintSHA256(k))
+		}
+		require.Contains(t, got, want, "%s's published ed25519 fingerprint", host)
+	}
+
+	keys, err = hostKeys([]Forge{
+		{Host: "git.internal:8443", Driver: ForgeGitLab, Signing: true,
+			HostKeys: []string{"git.internal " + knownHostKeys["gitlab.com"][0], knownHostKeys["github.com"][0]}},
+		{Host: "ghe.example.com", Driver: ForgeGitHub},
+	})
+	require.NoError(t, err)
+	require.Len(t, keys["git.internal:8443"], 2, "a known_hosts line and a bare key both read")
+	require.Empty(t, keys["ghe.example.com"], "a forge that is not public and named no keys is cloned from by nothing")
+
+	_, err = hostKeys([]Forge{{Host: "git.internal", Driver: ForgeGitHub, HostKeys: []string{"not a key"}}})
+	require.ErrorContains(t, err, `forge "git.internal" host key`)
 }
