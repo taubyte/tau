@@ -172,6 +172,7 @@ type options struct {
 	admits  Admits
 	now     func() time.Time
 	meter   Meter
+	logf    func(format string, args ...any)
 }
 
 // WithHosts is where "whose name is this" is answered. Required.
@@ -241,6 +242,23 @@ func WithAdmission(a Admits) Option {
 			return errors.New("gateway: a nil admission")
 		}
 		o.admits = a
+		return nil
+	}
+}
+
+// WithLogger is where this service says why a route could not be served.
+//
+// THE CALLER IS TOLD A STATUS AND THE OPERATOR IS TOLD WHY. A stranger asking
+// the edge must not learn what failed inside a deployment, so the response says
+// only 502 or 504 — and without this the reason went nowhere at all: a container
+// tier that could not reach the workload it started read, from every side, as a
+// timeout. The default says nothing; a composer passes its own.
+func WithLogger(logf func(format string, args ...any)) Option {
+	return func(o *options) error {
+		if logf == nil {
+			return errors.New("gateway: a nil logger")
+		}
+		o.logf = logf
 		return nil
 	}
 }

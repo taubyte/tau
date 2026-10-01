@@ -697,6 +697,7 @@ func (n *Node) openGateway() error {
 		gateway.WithHosts(source),
 		gateway.WithSource(source),
 		gateway.WithWorkers(n.workers),
+		gateway.WithLogger(logger.Warnf),
 	}
 
 	// A BUS IS ATTACHED TO OVER GOSSIP, so a node with none says so by not

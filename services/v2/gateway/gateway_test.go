@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -614,4 +615,26 @@ func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 
 func TestWithMeterRefusesNil(t *testing.T) {
 	require.Error(t, WithMeter(nil)(&options{}))
+}
+
+// THE CALLER IS TOLD A STATUS AND THE OPERATOR IS TOLD WHY. Before this the
+// reason a route failed went nowhere: a container the tier started and could
+// not reach read, from every side, as a 504.
+func TestAWorkloadThatCannotServeIsLoggedWithItsReason(t *testing.T) {
+	var said []string
+	h := newHarness(t, Config{}, WithLogger(func(format string, args ...any) {
+		said = append(said, fmt.Sprintf(format, args...))
+	}))
+	h.Workers.fail(errors.New("the container answered nothing on 127.0.0.1:42759"))
+
+	w := h.do(t, http.MethodPost, "http://ask.example.com/", "")
+
+	require.Equal(t, http.StatusBadGateway, w.Code)
+	require.NotContains(t, w.Body.String(), "127.0.0.1", "the reason is the operator's, not the caller's")
+	require.Len(t, said, 1)
+	require.Contains(t, said[0], "the container answered nothing on 127.0.0.1:42759")
+	require.Contains(t, said[0], "shop/prod")
+
+	_, err := New(Config{}, WithLogger(nil))
+	require.Error(t, err)
 }

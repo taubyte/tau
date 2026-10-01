@@ -78,6 +78,10 @@ type Service struct {
 	// ordinary case; see meter.go.
 	meter Meter
 
+	// logf is where a failure the caller is not told about is said. See
+	// WithLogger.
+	logf func(format string, args ...any)
+
 	// mu guards the host table: which project owns a name, and when that was
 	// last asked.
 	mu    sync.Mutex
@@ -99,7 +103,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		return nil, err
 	}
 
-	var o options
+	o := options{logf: func(string, ...any) {}}
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
 			return nil, fmt.Errorf("gateway: option: %w", err)
@@ -141,6 +145,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		limits:   ratelimit.NewBuckets(o.now, cfg.MaxHosts),
 		now:      o.now,
 		meter:    o.meter,
+		logf:     o.logf,
 		owner:    map[string]ownerEntry{},
 	}, nil
 }
@@ -300,6 +305,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	res, err := s.workers.Invoke(ctx, at, req)
 	if err != nil {
+		s.logf("gateway: %s/%s %s/%s could not be served: %v", at.Project, at.Environment, at.Kind, at.Name, err)
 		refuse(w, statusFor(err), "this route could not be served")
 		return
 	}
@@ -405,6 +411,7 @@ func (s *Service) destination(ctx context.Context, m match, projectName, environ
 		Name:        router,
 	}, req)
 	if err != nil {
+		s.logf("gateway: %s/%s router %s could not be run: %v", projectName, environment, router, err)
 		return specs.Address{}, nil, http.StatusServiceUnavailable,
 			"the function that routes this name could not be run"
 	}
@@ -471,6 +478,7 @@ func (s *Service) shaped(ctx context.Context, m match, projectName, environment 
 			Name:        name,
 		}, req)
 		if err != nil {
+			s.logf("gateway: %s/%s transformer %s could not be run: %v", projectName, environment, name, err)
 			if t.String("fail") == "open" {
 				// The author said the request is better served without it.
 				continue
