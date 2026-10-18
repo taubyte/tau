@@ -74,13 +74,13 @@ func TestTheReaderIsChosenByTheDeclaredType(t *testing.T) {
 // TestTHERENDEREREMITSWHATTHELOCATIONSSAY, against the accessor surface a
 // compiled resource already answers with.
 func TestTheRenderedReaderAddressesCompiledKeys(t *testing.T) {
-	out := string(RenderReader("project", "storage", Locations(v2.GenerationRoot(), "storage")))
+	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"storage"}))
 
 	require.Contains(t, out, `out.Size, _ = r.Int("size")`,
 		"the hoisted field is read where it compiles")
-	require.Contains(t, out, `out.ObjectVersioning, _ = r.Bool("object", "versioning")`,
-		"a nested one is read where it nests")
-	require.Contains(t, out, `out.StreamingTtl, _ = r.Duration("streaming", "ttl")`)
+	require.Contains(t, out, `out.Versioning = present[bool](r.Bool("object", "versioning"))`,
+		"a nested one is read where it nests, in its block")
+	require.Contains(t, out, `out.Ttl = present[time.Duration](r.Duration("streaming", "ttl"))`)
 	require.Contains(t, out, `// authored at {object|streaming}/size`,
 		"and the generated source says where the value came from")
 	require.Contains(t, out, `// which of object, streaming was written`)

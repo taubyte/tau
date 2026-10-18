@@ -7,372 +7,1101 @@
 // comment on it says where it came from. That distinction is the reason these
 // are generated rather than written by hand - it is invisible in the yaml and
 // a reader that guesses reads the wrong place and reports nothing.
+//
+// A NUMBER OR A FLAG THAT MAY BE ABSENT IS A POINTER, nil when the object does
+// not carry it, because a quota of 0 is an answer and a missing quota is not.
+// A string is not: a compiled object omits what was not written, so absent
+// and empty are the same answer.
 package specs
 
 import "time"
 
+// The kinds, by the name a compiled object files them under.
+const (
+	KindApplication  = "application"
+	KindFunction     = "function"
+	KindWorker       = "worker"
+	KindSandbox      = "sandbox"
+	KindCron         = "cron"
+	KindComponent    = "component"
+	KindWebsite      = "website"
+	KindCache        = "cache"
+	KindDatabase     = "database"
+	KindStorage      = "storage"
+	KindVolume       = "volume"
+	KindSecret       = "secret"
+	KindSync         = "sync"
+	KindZone         = "zone"
+	KindGateway      = "gateway"
+	KindProxy        = "proxy"
+	KindStream       = "stream"
+	KindBus          = "bus"
+	KindMcp          = "mcp"
+	KindChannel      = "channel"
+	KindModel        = "model"
+	KindAgent        = "agent"
+	KindWorkflow     = "workflow"
+	KindNamespace    = "namespace"
+	KindEnvironments = "environments"
+)
+
 // Application is that kind, read from a compiled object.
 type Application struct {
-	As                             string
-	At                             string
-	BuildDockerfile                string // authored at build/dockerfile/path
-	BuildKind                      string // which of dockerfile was written
-	BuildTarget                    string // authored at build/dockerfile/target
-	Description                    string
-	Egress                         []string
-	ExecutionCpu                   int64
-	ExecutionMemory                int64
-	Id                             string
-	LimitsConcurrency              int64
-	LimitsMaxInstances             int64
-	LivenessFailures               int64
-	LivenessFunctionName           string
-	LivenessFunctionNamespace      string
-	LivenessHttpPath               string
-	LivenessHttpPort               string
-	LivenessKind                   string // which of http, function was written
-	Name                           string
-	Number                         int64
-	Path                           string
-	ReadinessFunctionName          string
-	ReadinessFunctionNamespace     string
-	ReadinessHttpPath              string
-	ReadinessHttpPort              string
-	ReadinessKind                  string   // which of http, function was written
-	RegionsIn                      []string // authored at regions/{pinned|cdn}
-	RegionsMain                    string   // authored at regions/failover/main
-	RegionsPolicy                  string   // which of pinned, cdn, failover was written
-	RegionsStandby                 string   // authored at regions/failover/standby
-	SecretName                     string
-	SecretNamespace                string
-	Source                         string
-	SourceBranch                   string
-	SourceConfig                   string
-	SourceGit                      string
-	SourceImage                    string
-	SourceImagePullSecretName      string
-	SourceImagePullSecretNamespace string
-	SourceKind                     string // which of image, git was written
-	SourcePath                     string
-	Tags                           []string
-	Value                          string
+	Build       ApplicationBuild
+	Description string
+	Egress      []string
+	Execution   ApplicationExecution
+	Id          string
+	Limits      ApplicationLimits
+	Liveness    ApplicationLiveness
+	Name        string
+	Ports       map[string]ApplicationPortsEntry
+	Readiness   ApplicationReadiness
+	Regions     Regions
+	Source      ApplicationSource
+	Tags        []string
+	Variables   map[string]VariablesEntry
 }
 
 // ReadApplication decodes one from a resource.
 func ReadApplication(r Resource) Application {
 	var out Application
-	out.As = r.String("as")
-	out.At = r.String("at")
-	out.BuildDockerfile = r.String("build", "dockerfile")
-	out.BuildKind = r.String("build", "kind")
-	out.BuildTarget = r.String("build", "target")
+	out.Build = ReadApplicationBuild(r)
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
-	out.ExecutionCpu, _ = r.Int("execution", "cpu")
-	out.ExecutionMemory, _ = r.Int("execution", "memory")
+	out.Execution = ReadApplicationExecution(r)
 	out.Id = r.String("id")
-	out.LimitsConcurrency, _ = r.Int("limits", "concurrency")
-	out.LimitsMaxInstances, _ = r.Int("limits", "max_instances")
-	out.LivenessFailures, _ = r.Int("liveness", "failures")
-	out.LivenessFunctionName = r.String("liveness", "function", "name")
-	out.LivenessFunctionNamespace = r.String("liveness", "function", "namespace")
-	out.LivenessHttpPath = r.String("liveness", "http", "path")
-	out.LivenessHttpPort = r.String("liveness", "http", "port")
-	out.LivenessKind = r.String("liveness", "kind")
+	out.Limits = ReadApplicationLimits(r)
+	out.Liveness = ReadApplicationLiveness(r)
 	out.Name = r.String("name")
-	out.Number, _ = r.Int("number")
-	out.Path = r.String("path")
-	out.ReadinessFunctionName = r.String("readiness", "function", "name")
-	out.ReadinessFunctionNamespace = r.String("readiness", "function", "namespace")
-	out.ReadinessHttpPath = r.String("readiness", "http", "path")
-	out.ReadinessHttpPort = r.String("readiness", "http", "port")
-	out.ReadinessKind = r.String("readiness", "kind")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
-	out.SecretName = r.String("secret", "name")
-	out.SecretNamespace = r.String("secret", "namespace")
-	out.Source = r.String("source")
-	out.SourceBranch = r.String("source", "branch")
-	out.SourceConfig = r.String("source", "config")
-	out.SourceGit = r.String("source", "git")
-	out.SourceImage = r.String("source", "image")
-	out.SourceImagePullSecretName = r.String("source", "image_pull_secret", "name")
-	out.SourceImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
-	out.SourceKind = r.String("source", "kind")
-	out.SourcePath = r.String("source", "path")
+	for _, name := range r.Keys("ports") {
+		if out.Ports == nil {
+			out.Ports = map[string]ApplicationPortsEntry{}
+		}
+		out.Ports[name] = ReadApplicationPortsEntry(r.Sub("ports", name))
+	}
+	out.Readiness = ReadApplicationReadiness(r)
+	out.Regions = ReadRegions(r)
+	out.Source = ReadApplicationSource(r)
 	out.Tags = r.Strings("tags")
+	for _, name := range r.Keys("variables") {
+		if out.Variables == nil {
+			out.Variables = map[string]VariablesEntry{}
+		}
+		out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))
+	}
+	return out
+}
+
+// Application's keys, and the values its fields may hold.
+const (
+	ApplicationKeyBuild       = "build"
+	ApplicationKeyDescription = "description"
+	ApplicationKeyEgress      = "egress"
+	ApplicationKeyExecution   = "execution"
+	ApplicationKeyId          = "id"
+	ApplicationKeyLimits      = "limits"
+	ApplicationKeyLiveness    = "liveness"
+	ApplicationKeyName        = "name"
+	ApplicationKeyPorts       = "ports"
+	ApplicationKeyReadiness   = "readiness"
+	ApplicationKeyRegions     = "regions"
+	ApplicationKeySource      = "source"
+	ApplicationKeyTags        = "tags"
+	ApplicationKeyVariables   = "variables"
+)
+
+// ApplicationBuild is the "build" block of Application, read from a compiled object.
+type ApplicationBuild struct {
+	Dockerfile string // authored at build/dockerfile/path
+	Kind       string // which of dockerfile was written
+	Target     string // authored at build/dockerfile/target
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadApplicationBuild decodes one from a resource.
+func ReadApplicationBuild(r Resource) ApplicationBuild {
+	var out ApplicationBuild
+	out.Dockerfile = r.String("build", "dockerfile")
+	out.Kind = r.String("build", "kind")
+	out.Target = r.String("build", "target")
+	out.Declared = r.Has("build", "dockerfile") ||
+		r.Has("build", "kind") ||
+		r.Has("build", "target")
+	return out
+}
+
+// ApplicationBuild's keys, and the values its fields may hold.
+const (
+	ApplicationBuildKeyDockerfile  = "build/dockerfile"
+	ApplicationBuildKeyKind        = "build/kind"
+	ApplicationBuildKeyTarget      = "build/target"
+	ApplicationBuildKindDockerfile = "dockerfile"
+)
+
+// ApplicationExecution is the "execution" block of Application, read from a compiled object.
+type ApplicationExecution struct {
+	Cpu    *int64
+	Memory int64
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadApplicationExecution decodes one from a resource.
+func ReadApplicationExecution(r Resource) ApplicationExecution {
+	var out ApplicationExecution
+	out.Cpu = present[int64](r.Int("execution", "cpu"))
+	out.Memory, _ = r.Int("execution", "memory")
+	out.Declared = r.Has("execution", "cpu") ||
+		r.Has("execution", "memory")
+	return out
+}
+
+// ApplicationExecution's keys, and the values its fields may hold.
+const (
+	ApplicationExecutionKeyCpu    = "execution/cpu"
+	ApplicationExecutionKeyMemory = "execution/memory"
+)
+
+// ApplicationLimits is the "limits" block of Application, read from a compiled object.
+type ApplicationLimits struct {
+	Concurrency  *int64
+	MaxInstances *int64
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadApplicationLimits decodes one from a resource.
+func ReadApplicationLimits(r Resource) ApplicationLimits {
+	var out ApplicationLimits
+	out.Concurrency = present[int64](r.Int("limits", "concurrency"))
+	out.MaxInstances = present[int64](r.Int("limits", "max_instances"))
+	out.Declared = r.Has("limits", "concurrency") ||
+		r.Has("limits", "max_instances")
+	return out
+}
+
+// ApplicationLimits's keys, and the values its fields may hold.
+const (
+	ApplicationLimitsKeyConcurrency  = "limits/concurrency"
+	ApplicationLimitsKeyMaxInstances = "limits/max_instances"
+)
+
+// ApplicationLiveness is the "liveness" block of Application, read from a compiled object.
+type ApplicationLiveness struct {
+	Failures          *int64 // defaulted
+	FunctionName      string
+	FunctionNamespace string
+	HttpPath          string
+	HttpPort          string
+	Kind              string // which of http, function was written
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadApplicationLiveness decodes one from a resource.
+func ReadApplicationLiveness(r Resource) ApplicationLiveness {
+	var out ApplicationLiveness
+	out.Failures = present[int64](r.Int("liveness", "failures"))
+	out.FunctionName = r.String("liveness", "function", "name")
+	out.FunctionNamespace = r.String("liveness", "function", "namespace")
+	out.HttpPath = r.String("liveness", "http", "path")
+	out.HttpPort = r.String("liveness", "http", "port")
+	out.Kind = r.String("liveness", "kind")
+	out.Declared = r.Has("liveness", "function", "name") ||
+		r.Has("liveness", "function", "namespace") ||
+		r.Has("liveness", "http", "path") ||
+		r.Has("liveness", "http", "port") ||
+		r.Has("liveness", "kind")
+	return out
+}
+
+// ApplicationLiveness's keys, and the values its fields may hold.
+const (
+	ApplicationLivenessKeyFailures          = "liveness/failures"
+	ApplicationLivenessKeyFunctionName      = "liveness/function/name"
+	ApplicationLivenessKeyFunctionNamespace = "liveness/function/namespace"
+	ApplicationLivenessKeyHttpPath          = "liveness/http/path"
+	ApplicationLivenessKeyHttpPort          = "liveness/http/port"
+	ApplicationLivenessKeyKind              = "liveness/kind"
+	ApplicationLivenessKindHttp             = "http"
+	ApplicationLivenessKindFunction         = "function"
+)
+
+// ApplicationPortsEntry is one entry of "ports" in Application, keyed by name.
+type ApplicationPortsEntry struct {
+	Number int64
+}
+
+// ReadApplicationPortsEntry decodes one from a resource.
+func ReadApplicationPortsEntry(r Resource) ApplicationPortsEntry {
+	var out ApplicationPortsEntry
+	out.Number, _ = r.Int("number")
+	return out
+}
+
+// ApplicationPortsEntry's keys, and the values its fields may hold.
+const (
+	ApplicationPortsEntryKeyNumber = "number"
+)
+
+// ApplicationReadiness is the "readiness" block of Application, read from a compiled object.
+type ApplicationReadiness struct {
+	FunctionName      string
+	FunctionNamespace string
+	HttpPath          string
+	HttpPort          string
+	Kind              string // which of http, function was written
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadApplicationReadiness decodes one from a resource.
+func ReadApplicationReadiness(r Resource) ApplicationReadiness {
+	var out ApplicationReadiness
+	out.FunctionName = r.String("readiness", "function", "name")
+	out.FunctionNamespace = r.String("readiness", "function", "namespace")
+	out.HttpPath = r.String("readiness", "http", "path")
+	out.HttpPort = r.String("readiness", "http", "port")
+	out.Kind = r.String("readiness", "kind")
+	out.Declared = r.Has("readiness", "function", "name") ||
+		r.Has("readiness", "function", "namespace") ||
+		r.Has("readiness", "http", "path") ||
+		r.Has("readiness", "http", "port") ||
+		r.Has("readiness", "kind")
+	return out
+}
+
+// ApplicationReadiness's keys, and the values its fields may hold.
+const (
+	ApplicationReadinessKeyFunctionName      = "readiness/function/name"
+	ApplicationReadinessKeyFunctionNamespace = "readiness/function/namespace"
+	ApplicationReadinessKeyHttpPath          = "readiness/http/path"
+	ApplicationReadinessKeyHttpPort          = "readiness/http/port"
+	ApplicationReadinessKeyKind              = "readiness/kind"
+	ApplicationReadinessKindHttp             = "http"
+	ApplicationReadinessKindFunction         = "function"
+)
+
+// Regions is the "regions" block of Agent, Application, Cache, Database, Function, Sandbox, Storage, Sync, Volume, Worker, Workflow, read from a compiled object.
+type Regions struct {
+	In      []string // authored at regions/{pinned|cdn}
+	Main    string   // authored at regions/failover/main
+	Policy  string   // which of pinned, cdn, failover was written
+	Standby string   // authored at regions/failover/standby
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadRegions decodes one from a resource.
+func ReadRegions(r Resource) Regions {
+	var out Regions
+	out.In = r.Strings("regions", "in")
+	out.Main = r.String("regions", "main")
+	out.Policy = r.String("regions", "policy")
+	out.Standby = r.String("regions", "standby")
+	out.Declared = r.Has("regions", "in") ||
+		r.Has("regions", "main") ||
+		r.Has("regions", "policy") ||
+		r.Has("regions", "standby")
+	return out
+}
+
+// Regions's keys, and the values its fields may hold.
+const (
+	RegionsKeyIn          = "regions/in"
+	RegionsKeyMain        = "regions/main"
+	RegionsKeyPolicy      = "regions/policy"
+	RegionsKeyStandby     = "regions/standby"
+	RegionsPolicyPinned   = "pinned"
+	RegionsPolicyCdn      = "cdn"
+	RegionsPolicyFailover = "failover"
+)
+
+// ApplicationSource is the "source" block of Application, read from a compiled object.
+type ApplicationSource struct {
+	Branch                   string
+	Config                   string
+	Git                      string
+	Image                    string
+	ImagePullSecretName      string
+	ImagePullSecretNamespace string
+	Kind                     string // which of image, git was written
+	Path                     string
+	Value                    string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadApplicationSource decodes one from a resource.
+func ReadApplicationSource(r Resource) ApplicationSource {
+	var out ApplicationSource
+	out.Branch = r.String("source", "branch")
+	out.Config = r.String("source", "config")
+	out.Git = r.String("source", "git")
+	out.Image = r.String("source", "image")
+	out.ImagePullSecretName = r.String("source", "image_pull_secret", "name")
+	out.ImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
+	out.Kind = r.String("source", "kind")
+	out.Path = r.String("source", "path")
+	out.Value = r.String("source")
+	out.Declared = r.Has("source") ||
+		r.Has("source", "branch") ||
+		r.Has("source", "config") ||
+		r.Has("source", "git") ||
+		r.Has("source", "image") ||
+		r.Has("source", "image_pull_secret", "name") ||
+		r.Has("source", "image_pull_secret", "namespace") ||
+		r.Has("source", "kind") ||
+		r.Has("source", "path")
+	return out
+}
+
+// ApplicationSource's keys, and the values its fields may hold.
+const (
+	ApplicationSourceKeyBranch                   = "source/branch"
+	ApplicationSourceKeyConfig                   = "source/config"
+	ApplicationSourceKeyGit                      = "source/git"
+	ApplicationSourceKeyImage                    = "source/image"
+	ApplicationSourceKeyImagePullSecretName      = "source/image_pull_secret/name"
+	ApplicationSourceKeyImagePullSecretNamespace = "source/image_pull_secret/namespace"
+	ApplicationSourceKeyKind                     = "source/kind"
+	ApplicationSourceKeyPath                     = "source/path"
+	ApplicationSourceKeyValue                    = "source"
+	ApplicationSourceKindImage                   = "image"
+	ApplicationSourceKindGit                     = "git"
+)
+
+// VariablesEntry is one entry of "variables" in Agent, Application, Component, Function, Sandbox, Website, Worker, keyed by name.
+type VariablesEntry struct {
+	As     string // defaulted
+	At     string // defaulted
+	Path   string
+	Secret VariablesEntrySecret
+	Value  string
+}
+
+// ReadVariablesEntry decodes one from a resource.
+func ReadVariablesEntry(r Resource) VariablesEntry {
+	var out VariablesEntry
+	out.As = r.String("as")
+	out.At = r.String("at")
+	out.Path = r.String("path")
+	out.Secret = ReadVariablesEntrySecret(r)
 	out.Value = r.String("value")
 	return out
 }
 
+// VariablesEntry's keys, and the values its fields may hold.
+const (
+	VariablesEntryKeyAs     = "as"
+	VariablesEntryKeyAt     = "at"
+	VariablesEntryKeyPath   = "path"
+	VariablesEntryKeySecret = "secret"
+	VariablesEntryKeyValue  = "value"
+	VariablesEntryAsEnv     = "env"
+	VariablesEntryAsFile    = "file"
+	VariablesEntryAtRun     = "run"
+	VariablesEntryAtBuild   = "build"
+	VariablesEntryAtBoth    = "both"
+)
+
+// VariablesEntrySecret is the "secret" block of VariablesEntry, read from a compiled object.
+type VariablesEntrySecret struct {
+	Name      string
+	Namespace string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadVariablesEntrySecret decodes one from a resource.
+func ReadVariablesEntrySecret(r Resource) VariablesEntrySecret {
+	var out VariablesEntrySecret
+	out.Name = r.String("secret", "name")
+	out.Namespace = r.String("secret", "namespace")
+	out.Declared = r.Has("secret", "name") ||
+		r.Has("secret", "namespace")
+	return out
+}
+
+// VariablesEntrySecret's keys, and the values its fields may hold.
+const (
+	VariablesEntrySecretKeyName      = "secret/name"
+	VariablesEntrySecretKeyNamespace = "secret/namespace"
+)
+
 // Function is that kind, read from a compiled object.
 type Function struct {
-	As                  string
-	At                  string
-	AuthorizerName      string
-	AuthorizerNamespace string
-	BuildImage          string // authored at build/{commands|script}/image
-	BuildInstall        string // authored at build/{commands}/install
-	BuildKind           string // which of commands, script was written
-	BuildOutput         string // authored at build/{commands|script}/output
-	BuildRun            string // authored at build/{commands}/run
-	BuildScript         string // authored at build/script/path
-	Description         string
-	Egress              []string
-	ExecutionCall       string
-	ExecutionCpu        int64
-	ExecutionMemory     int64
-	ExecutionTimeout    time.Duration
-	Id                  string
-	Implements          string
-	Name                string
-	Path                string
-	RegionsIn           []string // authored at regions/{pinned|cdn}
-	RegionsMain         string   // authored at regions/failover/main
-	RegionsPolicy       string   // which of pinned, cdn, failover was written
-	RegionsStandby      string   // authored at regions/failover/standby
-	SecretName          string
-	SecretNamespace     string
-	Source              string
-	SourceBranch        string
-	SourceBuiltin       string
-	SourceComponent     string
-	SourceConfig        string
-	SourceGit           string
-	SourceKind          string // which of component, builtin, git was written
-	SourceNamespace     string
-	SourcePath          string
-	Tags                []string
-	Value               string
+	Authorizer  Authorizer
+	Build       FunctionBuild
+	Description string
+	Egress      []string
+	Execution   FunctionExecution
+	Id          string
+	Implements  string // defaulted
+	Name        string
+	Regions     Regions
+	Source      FunctionSource
+	Tags        []string
+	Variables   map[string]VariablesEntry
 }
 
 // ReadFunction decodes one from a resource.
 func ReadFunction(r Resource) Function {
 	var out Function
-	out.As = r.String("as")
-	out.At = r.String("at")
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.BuildImage = r.String("build", "image")
-	out.BuildInstall = r.String("build", "install")
-	out.BuildKind = r.String("build", "kind")
-	out.BuildOutput = r.String("build", "output")
-	out.BuildRun = r.String("build", "run")
-	out.BuildScript = r.String("build", "script")
+	out.Authorizer = ReadAuthorizer(r)
+	out.Build = ReadFunctionBuild(r)
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
-	out.ExecutionCall = r.String("execution", "call")
-	out.ExecutionCpu, _ = r.Int("execution", "cpu")
-	out.ExecutionMemory, _ = r.Int("execution", "memory")
-	out.ExecutionTimeout, _ = r.Duration("execution", "timeout")
+	out.Execution = ReadFunctionExecution(r)
 	out.Id = r.String("id")
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
-	out.Path = r.String("path")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
-	out.SecretName = r.String("secret", "name")
-	out.SecretNamespace = r.String("secret", "namespace")
-	out.Source = r.String("source")
-	out.SourceBranch = r.String("source", "branch")
-	out.SourceBuiltin = r.String("source", "builtin")
-	out.SourceComponent = r.String("source", "component")
-	out.SourceConfig = r.String("source", "config")
-	out.SourceGit = r.String("source", "git")
-	out.SourceKind = r.String("source", "kind")
-	out.SourceNamespace = r.String("source", "namespace")
-	out.SourcePath = r.String("source", "path")
+	out.Regions = ReadRegions(r)
+	out.Source = ReadFunctionSource(r)
 	out.Tags = r.Strings("tags")
-	out.Value = r.String("value")
+	for _, name := range r.Keys("variables") {
+		if out.Variables == nil {
+			out.Variables = map[string]VariablesEntry{}
+		}
+		out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))
+	}
 	return out
 }
 
+// Function's keys, and the values its fields may hold.
+const (
+	FunctionKeyAuthorizer                = "authorizer"
+	FunctionKeyBuild                     = "build"
+	FunctionKeyDescription               = "description"
+	FunctionKeyEgress                    = "egress"
+	FunctionKeyExecution                 = "execution"
+	FunctionKeyId                        = "id"
+	FunctionKeyImplements                = "implements"
+	FunctionKeyName                      = "name"
+	FunctionKeyRegions                   = "regions"
+	FunctionKeySource                    = "source"
+	FunctionKeyTags                      = "tags"
+	FunctionKeyVariables                 = "variables"
+	FunctionImplementsHandler            = "handler"
+	FunctionImplementsAuthorizer         = "authorizer"
+	FunctionImplementsHttpAuthorizer     = "http-authorizer"
+	FunctionImplementsDnsResolver        = "dns-resolver"
+	FunctionImplementsInstanceValidator  = "instance-validator"
+	FunctionImplementsGatewayTransformer = "gateway-transformer"
+	FunctionImplementsProxyTransformer   = "proxy-transformer"
+	FunctionImplementsGatewayRouter      = "gateway-router"
+	FunctionImplementsProxyRouter        = "proxy-router"
+)
+
+// Authorizer is the "authorizer" block of Agent, Bus, Cache, Channel, Database, Function, Gateway, Mcp, Model, Sandbox, Secret, Storage, Stream, Sync, Volume, Worker, Workflow, read from a compiled object.
+type Authorizer struct {
+	Name      string
+	Namespace string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadAuthorizer decodes one from a resource.
+func ReadAuthorizer(r Resource) Authorizer {
+	var out Authorizer
+	out.Name = r.String("authorizer", "name")
+	out.Namespace = r.String("authorizer", "namespace")
+	out.Declared = r.Has("authorizer", "name") ||
+		r.Has("authorizer", "namespace")
+	return out
+}
+
+// Authorizer's keys, and the values its fields may hold.
+const (
+	AuthorizerKeyName      = "authorizer/name"
+	AuthorizerKeyNamespace = "authorizer/namespace"
+)
+
+// FunctionBuild is the "build" block of Function, read from a compiled object.
+type FunctionBuild struct {
+	Image   string // authored at build/{commands|script}/image
+	Install string // authored at build/{commands}/install
+	Kind    string // which of commands, script was written
+	Output  string // authored at build/{commands|script}/output
+	Run     string // authored at build/{commands}/run
+	Script  string // authored at build/script/path
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadFunctionBuild decodes one from a resource.
+func ReadFunctionBuild(r Resource) FunctionBuild {
+	var out FunctionBuild
+	out.Image = r.String("build", "image")
+	out.Install = r.String("build", "install")
+	out.Kind = r.String("build", "kind")
+	out.Output = r.String("build", "output")
+	out.Run = r.String("build", "run")
+	out.Script = r.String("build", "script")
+	out.Declared = r.Has("build", "image") ||
+		r.Has("build", "install") ||
+		r.Has("build", "kind") ||
+		r.Has("build", "output") ||
+		r.Has("build", "run") ||
+		r.Has("build", "script")
+	return out
+}
+
+// FunctionBuild's keys, and the values its fields may hold.
+const (
+	FunctionBuildKeyImage     = "build/image"
+	FunctionBuildKeyInstall   = "build/install"
+	FunctionBuildKeyKind      = "build/kind"
+	FunctionBuildKeyOutput    = "build/output"
+	FunctionBuildKeyRun       = "build/run"
+	FunctionBuildKeyScript    = "build/script"
+	FunctionBuildKindCommands = "commands"
+	FunctionBuildKindScript   = "script"
+)
+
+// FunctionExecution is the "execution" block of Function, read from a compiled object.
+type FunctionExecution struct {
+	Call    string
+	Cpu     *int64
+	Memory  int64
+	Timeout time.Duration
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadFunctionExecution decodes one from a resource.
+func ReadFunctionExecution(r Resource) FunctionExecution {
+	var out FunctionExecution
+	out.Call = r.String("execution", "call")
+	out.Cpu = present[int64](r.Int("execution", "cpu"))
+	out.Memory, _ = r.Int("execution", "memory")
+	out.Timeout, _ = r.Duration("execution", "timeout")
+	out.Declared = r.Has("execution", "call") ||
+		r.Has("execution", "cpu") ||
+		r.Has("execution", "memory") ||
+		r.Has("execution", "timeout")
+	return out
+}
+
+// FunctionExecution's keys, and the values its fields may hold.
+const (
+	FunctionExecutionKeyCall    = "execution/call"
+	FunctionExecutionKeyCpu     = "execution/cpu"
+	FunctionExecutionKeyMemory  = "execution/memory"
+	FunctionExecutionKeyTimeout = "execution/timeout"
+)
+
+// FunctionSource is the "source" block of Function, read from a compiled object.
+type FunctionSource struct {
+	Branch    string
+	Builtin   string
+	Component string
+	Config    string
+	Git       string
+	Kind      string // which of component, builtin, git was written
+	Namespace string
+	Path      string
+	Value     string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadFunctionSource decodes one from a resource.
+func ReadFunctionSource(r Resource) FunctionSource {
+	var out FunctionSource
+	out.Branch = r.String("source", "branch")
+	out.Builtin = r.String("source", "builtin")
+	out.Component = r.String("source", "component")
+	out.Config = r.String("source", "config")
+	out.Git = r.String("source", "git")
+	out.Kind = r.String("source", "kind")
+	out.Namespace = r.String("source", "namespace")
+	out.Path = r.String("source", "path")
+	out.Value = r.String("source")
+	out.Declared = r.Has("source") ||
+		r.Has("source", "branch") ||
+		r.Has("source", "builtin") ||
+		r.Has("source", "component") ||
+		r.Has("source", "config") ||
+		r.Has("source", "git") ||
+		r.Has("source", "kind") ||
+		r.Has("source", "namespace") ||
+		r.Has("source", "path")
+	return out
+}
+
+// FunctionSource's keys, and the values its fields may hold.
+const (
+	FunctionSourceKeyBranch     = "source/branch"
+	FunctionSourceKeyBuiltin    = "source/builtin"
+	FunctionSourceKeyComponent  = "source/component"
+	FunctionSourceKeyConfig     = "source/config"
+	FunctionSourceKeyGit        = "source/git"
+	FunctionSourceKeyKind       = "source/kind"
+	FunctionSourceKeyNamespace  = "source/namespace"
+	FunctionSourceKeyPath       = "source/path"
+	FunctionSourceKeyValue      = "source"
+	FunctionSourceKindComponent = "component"
+	FunctionSourceKindBuiltin   = "builtin"
+	FunctionSourceKindGit       = "git"
+)
+
 // Worker is that kind, read from a compiled object.
 type Worker struct {
-	As                             string
-	At                             string
-	AuthorizerName                 string
-	AuthorizerNamespace            string
-	BuildDockerfile                string // authored at build/dockerfile/path
-	BuildImage                     string // authored at build/{commands|script}/image
-	BuildInstall                   string // authored at build/{commands}/install
-	BuildKind                      string // which of commands, script, dockerfile was written
-	BuildOutput                    string // authored at build/{commands|script}/output
-	BuildRun                       string // authored at build/{commands}/run
-	BuildScript                    string // authored at build/script/path
-	BuildTarget                    string // authored at build/dockerfile/target
-	Description                    string
-	Egress                         []string
-	ExecutionCall                  string
-	ExecutionCpu                   int64
-	ExecutionMemory                int64
-	ExecutionTimeout               time.Duration
-	Id                             string
-	Implements                     string
-	Name                           string
-	Path                           string
-	RegionsIn                      []string // authored at regions/{pinned|cdn}
-	RegionsMain                    string   // authored at regions/failover/main
-	RegionsPolicy                  string   // which of pinned, cdn, failover was written
-	RegionsStandby                 string   // authored at regions/failover/standby
-	Runtime                        string
-	SecretName                     string
-	SecretNamespace                string
-	Source                         string
-	SourceBranch                   string
-	SourceBuiltin                  string
-	SourceComponent                string
-	SourceConfig                   string
-	SourceGit                      string
-	SourceImage                    string
-	SourceImagePullSecretName      string
-	SourceImagePullSecretNamespace string
-	SourceKind                     string // which of component, builtin, git, image was written
-	SourceNamespace                string
-	SourcePath                     string
-	Tags                           []string
-	Value                          string
+	Authorizer  Authorizer
+	Build       WorkerBuild
+	Description string
+	Egress      []string
+	Execution   WorkerExecution
+	Id          string
+	Implements  string // defaulted
+	Name        string
+	Regions     Regions
+	Runtime     string
+	Source      WorkerSource
+	Tags        []string
+	Variables   map[string]VariablesEntry
 }
 
 // ReadWorker decodes one from a resource.
 func ReadWorker(r Resource) Worker {
 	var out Worker
-	out.As = r.String("as")
-	out.At = r.String("at")
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.BuildDockerfile = r.String("build", "dockerfile")
-	out.BuildImage = r.String("build", "image")
-	out.BuildInstall = r.String("build", "install")
-	out.BuildKind = r.String("build", "kind")
-	out.BuildOutput = r.String("build", "output")
-	out.BuildRun = r.String("build", "run")
-	out.BuildScript = r.String("build", "script")
-	out.BuildTarget = r.String("build", "target")
+	out.Authorizer = ReadAuthorizer(r)
+	out.Build = ReadWorkerBuild(r)
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
-	out.ExecutionCall = r.String("execution", "call")
-	out.ExecutionCpu, _ = r.Int("execution", "cpu")
-	out.ExecutionMemory, _ = r.Int("execution", "memory")
-	out.ExecutionTimeout, _ = r.Duration("execution", "timeout")
+	out.Execution = ReadWorkerExecution(r)
 	out.Id = r.String("id")
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
-	out.Path = r.String("path")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
+	out.Regions = ReadRegions(r)
 	out.Runtime = r.String("runtime")
-	out.SecretName = r.String("secret", "name")
-	out.SecretNamespace = r.String("secret", "namespace")
-	out.Source = r.String("source")
-	out.SourceBranch = r.String("source", "branch")
-	out.SourceBuiltin = r.String("source", "builtin")
-	out.SourceComponent = r.String("source", "component")
-	out.SourceConfig = r.String("source", "config")
-	out.SourceGit = r.String("source", "git")
-	out.SourceImage = r.String("source", "image")
-	out.SourceImagePullSecretName = r.String("source", "image_pull_secret", "name")
-	out.SourceImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
-	out.SourceKind = r.String("source", "kind")
-	out.SourceNamespace = r.String("source", "namespace")
-	out.SourcePath = r.String("source", "path")
+	out.Source = ReadWorkerSource(r)
 	out.Tags = r.Strings("tags")
-	out.Value = r.String("value")
+	for _, name := range r.Keys("variables") {
+		if out.Variables == nil {
+			out.Variables = map[string]VariablesEntry{}
+		}
+		out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))
+	}
 	return out
 }
 
+// Worker's keys, and the values its fields may hold.
+const (
+	WorkerKeyAuthorizer                = "authorizer"
+	WorkerKeyBuild                     = "build"
+	WorkerKeyDescription               = "description"
+	WorkerKeyEgress                    = "egress"
+	WorkerKeyExecution                 = "execution"
+	WorkerKeyId                        = "id"
+	WorkerKeyImplements                = "implements"
+	WorkerKeyName                      = "name"
+	WorkerKeyRegions                   = "regions"
+	WorkerKeyRuntime                   = "runtime"
+	WorkerKeySource                    = "source"
+	WorkerKeyTags                      = "tags"
+	WorkerKeyVariables                 = "variables"
+	WorkerImplementsHandler            = "handler"
+	WorkerImplementsAuthorizer         = "authorizer"
+	WorkerImplementsHttpAuthorizer     = "http-authorizer"
+	WorkerImplementsDnsResolver        = "dns-resolver"
+	WorkerImplementsInstanceValidator  = "instance-validator"
+	WorkerImplementsGatewayTransformer = "gateway-transformer"
+	WorkerImplementsProxyTransformer   = "proxy-transformer"
+	WorkerImplementsGatewayRouter      = "gateway-router"
+	WorkerImplementsProxyRouter        = "proxy-router"
+	WorkerRuntimeWasm                  = "wasm"
+	WorkerRuntimeContainer             = "container"
+)
+
+// WorkerBuild is the "build" block of Worker, read from a compiled object.
+type WorkerBuild struct {
+	Dockerfile string // authored at build/dockerfile/path
+	Image      string // authored at build/{commands|script}/image
+	Install    string // authored at build/{commands}/install
+	Kind       string // which of commands, script, dockerfile was written
+	Output     string // authored at build/{commands|script}/output
+	Run        string // authored at build/{commands}/run
+	Script     string // authored at build/script/path
+	Target     string // authored at build/dockerfile/target
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadWorkerBuild decodes one from a resource.
+func ReadWorkerBuild(r Resource) WorkerBuild {
+	var out WorkerBuild
+	out.Dockerfile = r.String("build", "dockerfile")
+	out.Image = r.String("build", "image")
+	out.Install = r.String("build", "install")
+	out.Kind = r.String("build", "kind")
+	out.Output = r.String("build", "output")
+	out.Run = r.String("build", "run")
+	out.Script = r.String("build", "script")
+	out.Target = r.String("build", "target")
+	out.Declared = r.Has("build", "dockerfile") ||
+		r.Has("build", "image") ||
+		r.Has("build", "install") ||
+		r.Has("build", "kind") ||
+		r.Has("build", "output") ||
+		r.Has("build", "run") ||
+		r.Has("build", "script") ||
+		r.Has("build", "target")
+	return out
+}
+
+// WorkerBuild's keys, and the values its fields may hold.
+const (
+	WorkerBuildKeyDockerfile  = "build/dockerfile"
+	WorkerBuildKeyImage       = "build/image"
+	WorkerBuildKeyInstall     = "build/install"
+	WorkerBuildKeyKind        = "build/kind"
+	WorkerBuildKeyOutput      = "build/output"
+	WorkerBuildKeyRun         = "build/run"
+	WorkerBuildKeyScript      = "build/script"
+	WorkerBuildKeyTarget      = "build/target"
+	WorkerBuildKindCommands   = "commands"
+	WorkerBuildKindScript     = "script"
+	WorkerBuildKindDockerfile = "dockerfile"
+)
+
+// WorkerExecution is the "execution" block of Worker, read from a compiled object.
+type WorkerExecution struct {
+	Call    string
+	Cpu     *int64
+	Memory  int64
+	Timeout time.Duration
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadWorkerExecution decodes one from a resource.
+func ReadWorkerExecution(r Resource) WorkerExecution {
+	var out WorkerExecution
+	out.Call = r.String("execution", "call")
+	out.Cpu = present[int64](r.Int("execution", "cpu"))
+	out.Memory, _ = r.Int("execution", "memory")
+	out.Timeout, _ = r.Duration("execution", "timeout")
+	out.Declared = r.Has("execution", "call") ||
+		r.Has("execution", "cpu") ||
+		r.Has("execution", "memory") ||
+		r.Has("execution", "timeout")
+	return out
+}
+
+// WorkerExecution's keys, and the values its fields may hold.
+const (
+	WorkerExecutionKeyCall    = "execution/call"
+	WorkerExecutionKeyCpu     = "execution/cpu"
+	WorkerExecutionKeyMemory  = "execution/memory"
+	WorkerExecutionKeyTimeout = "execution/timeout"
+)
+
+// WorkerSource is the "source" block of Worker, read from a compiled object.
+type WorkerSource struct {
+	Branch                   string
+	Builtin                  string
+	Component                string
+	Config                   string
+	Git                      string
+	Image                    string
+	ImagePullSecretName      string
+	ImagePullSecretNamespace string
+	Kind                     string // which of component, builtin, git, image was written
+	Namespace                string
+	Path                     string
+	Value                    string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadWorkerSource decodes one from a resource.
+func ReadWorkerSource(r Resource) WorkerSource {
+	var out WorkerSource
+	out.Branch = r.String("source", "branch")
+	out.Builtin = r.String("source", "builtin")
+	out.Component = r.String("source", "component")
+	out.Config = r.String("source", "config")
+	out.Git = r.String("source", "git")
+	out.Image = r.String("source", "image")
+	out.ImagePullSecretName = r.String("source", "image_pull_secret", "name")
+	out.ImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
+	out.Kind = r.String("source", "kind")
+	out.Namespace = r.String("source", "namespace")
+	out.Path = r.String("source", "path")
+	out.Value = r.String("source")
+	out.Declared = r.Has("source") ||
+		r.Has("source", "branch") ||
+		r.Has("source", "builtin") ||
+		r.Has("source", "component") ||
+		r.Has("source", "config") ||
+		r.Has("source", "git") ||
+		r.Has("source", "image") ||
+		r.Has("source", "image_pull_secret", "name") ||
+		r.Has("source", "image_pull_secret", "namespace") ||
+		r.Has("source", "kind") ||
+		r.Has("source", "namespace") ||
+		r.Has("source", "path")
+	return out
+}
+
+// WorkerSource's keys, and the values its fields may hold.
+const (
+	WorkerSourceKeyBranch                   = "source/branch"
+	WorkerSourceKeyBuiltin                  = "source/builtin"
+	WorkerSourceKeyComponent                = "source/component"
+	WorkerSourceKeyConfig                   = "source/config"
+	WorkerSourceKeyGit                      = "source/git"
+	WorkerSourceKeyImage                    = "source/image"
+	WorkerSourceKeyImagePullSecretName      = "source/image_pull_secret/name"
+	WorkerSourceKeyImagePullSecretNamespace = "source/image_pull_secret/namespace"
+	WorkerSourceKeyKind                     = "source/kind"
+	WorkerSourceKeyNamespace                = "source/namespace"
+	WorkerSourceKeyPath                     = "source/path"
+	WorkerSourceKeyValue                    = "source"
+	WorkerSourceKindComponent               = "component"
+	WorkerSourceKindBuiltin                 = "builtin"
+	WorkerSourceKindGit                     = "git"
+	WorkerSourceKindImage                   = "image"
+)
+
 // Sandbox is that kind, read from a compiled object.
 type Sandbox struct {
-	As                             string
-	At                             string
-	AuthorizerName                 string
-	AuthorizerNamespace            string
-	BuildDockerfile                string // authored at build/dockerfile/path
-	BuildKind                      string // which of dockerfile was written
-	BuildTarget                    string // authored at build/dockerfile/target
-	Description                    string
-	Egress                         []string
-	ExecutionCpu                   int64
-	ExecutionMemory                int64
-	Id                             string
-	LifetimeIdle                   time.Duration
-	LifetimeMax                    time.Duration
-	Name                           string
-	Path                           string
-	RegionsIn                      []string // authored at regions/{pinned|cdn}
-	RegionsMain                    string   // authored at regions/failover/main
-	RegionsPolicy                  string   // which of pinned, cdn, failover was written
-	RegionsStandby                 string   // authored at regions/failover/standby
-	SecretName                     string
-	SecretNamespace                string
-	Source                         string
-	SourceBranch                   string
-	SourceConfig                   string
-	SourceGit                      string
-	SourceImage                    string
-	SourceImagePullSecretName      string
-	SourceImagePullSecretNamespace string
-	SourceKind                     string // which of image, git was written
-	SourcePath                     string
-	Tags                           []string
-	Value                          string
+	Authorizer  Authorizer
+	Build       SandboxBuild
+	Description string
+	Egress      []string
+	Execution   SandboxExecution
+	Id          string
+	Lifetime    SandboxLifetime
+	Name        string
+	Regions     Regions
+	Source      SandboxSource
+	Tags        []string
+	Variables   map[string]VariablesEntry
 }
 
 // ReadSandbox decodes one from a resource.
 func ReadSandbox(r Resource) Sandbox {
 	var out Sandbox
-	out.As = r.String("as")
-	out.At = r.String("at")
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.BuildDockerfile = r.String("build", "dockerfile")
-	out.BuildKind = r.String("build", "kind")
-	out.BuildTarget = r.String("build", "target")
+	out.Authorizer = ReadAuthorizer(r)
+	out.Build = ReadSandboxBuild(r)
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
-	out.ExecutionCpu, _ = r.Int("execution", "cpu")
-	out.ExecutionMemory, _ = r.Int("execution", "memory")
+	out.Execution = ReadSandboxExecution(r)
 	out.Id = r.String("id")
-	out.LifetimeIdle, _ = r.Duration("lifetime", "idle")
-	out.LifetimeMax, _ = r.Duration("lifetime", "max")
+	out.Lifetime = ReadSandboxLifetime(r)
 	out.Name = r.String("name")
-	out.Path = r.String("path")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
-	out.SecretName = r.String("secret", "name")
-	out.SecretNamespace = r.String("secret", "namespace")
-	out.Source = r.String("source")
-	out.SourceBranch = r.String("source", "branch")
-	out.SourceConfig = r.String("source", "config")
-	out.SourceGit = r.String("source", "git")
-	out.SourceImage = r.String("source", "image")
-	out.SourceImagePullSecretName = r.String("source", "image_pull_secret", "name")
-	out.SourceImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
-	out.SourceKind = r.String("source", "kind")
-	out.SourcePath = r.String("source", "path")
+	out.Regions = ReadRegions(r)
+	out.Source = ReadSandboxSource(r)
 	out.Tags = r.Strings("tags")
-	out.Value = r.String("value")
+	for _, name := range r.Keys("variables") {
+		if out.Variables == nil {
+			out.Variables = map[string]VariablesEntry{}
+		}
+		out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))
+	}
 	return out
 }
+
+// Sandbox's keys, and the values its fields may hold.
+const (
+	SandboxKeyAuthorizer  = "authorizer"
+	SandboxKeyBuild       = "build"
+	SandboxKeyDescription = "description"
+	SandboxKeyEgress      = "egress"
+	SandboxKeyExecution   = "execution"
+	SandboxKeyId          = "id"
+	SandboxKeyLifetime    = "lifetime"
+	SandboxKeyName        = "name"
+	SandboxKeyRegions     = "regions"
+	SandboxKeySource      = "source"
+	SandboxKeyTags        = "tags"
+	SandboxKeyVariables   = "variables"
+)
+
+// SandboxBuild is the "build" block of Sandbox, read from a compiled object.
+type SandboxBuild struct {
+	Dockerfile string // authored at build/dockerfile/path
+	Kind       string // which of dockerfile was written
+	Target     string // authored at build/dockerfile/target
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadSandboxBuild decodes one from a resource.
+func ReadSandboxBuild(r Resource) SandboxBuild {
+	var out SandboxBuild
+	out.Dockerfile = r.String("build", "dockerfile")
+	out.Kind = r.String("build", "kind")
+	out.Target = r.String("build", "target")
+	out.Declared = r.Has("build", "dockerfile") ||
+		r.Has("build", "kind") ||
+		r.Has("build", "target")
+	return out
+}
+
+// SandboxBuild's keys, and the values its fields may hold.
+const (
+	SandboxBuildKeyDockerfile  = "build/dockerfile"
+	SandboxBuildKeyKind        = "build/kind"
+	SandboxBuildKeyTarget      = "build/target"
+	SandboxBuildKindDockerfile = "dockerfile"
+)
+
+// SandboxExecution is the "execution" block of Sandbox, read from a compiled object.
+type SandboxExecution struct {
+	Cpu    *int64
+	Memory int64
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadSandboxExecution decodes one from a resource.
+func ReadSandboxExecution(r Resource) SandboxExecution {
+	var out SandboxExecution
+	out.Cpu = present[int64](r.Int("execution", "cpu"))
+	out.Memory, _ = r.Int("execution", "memory")
+	out.Declared = r.Has("execution", "cpu") ||
+		r.Has("execution", "memory")
+	return out
+}
+
+// SandboxExecution's keys, and the values its fields may hold.
+const (
+	SandboxExecutionKeyCpu    = "execution/cpu"
+	SandboxExecutionKeyMemory = "execution/memory"
+)
+
+// SandboxLifetime is the "lifetime" block of Sandbox, read from a compiled object.
+type SandboxLifetime struct {
+	Idle *time.Duration
+	Max  *time.Duration
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadSandboxLifetime decodes one from a resource.
+func ReadSandboxLifetime(r Resource) SandboxLifetime {
+	var out SandboxLifetime
+	out.Idle = present[time.Duration](r.Duration("lifetime", "idle"))
+	out.Max = present[time.Duration](r.Duration("lifetime", "max"))
+	out.Declared = r.Has("lifetime", "idle") ||
+		r.Has("lifetime", "max")
+	return out
+}
+
+// SandboxLifetime's keys, and the values its fields may hold.
+const (
+	SandboxLifetimeKeyIdle = "lifetime/idle"
+	SandboxLifetimeKeyMax  = "lifetime/max"
+)
+
+// SandboxSource is the "source" block of Sandbox, read from a compiled object.
+type SandboxSource struct {
+	Branch                   string
+	Config                   string
+	Git                      string
+	Image                    string
+	ImagePullSecretName      string
+	ImagePullSecretNamespace string
+	Kind                     string // which of image, git was written
+	Path                     string
+	Value                    string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadSandboxSource decodes one from a resource.
+func ReadSandboxSource(r Resource) SandboxSource {
+	var out SandboxSource
+	out.Branch = r.String("source", "branch")
+	out.Config = r.String("source", "config")
+	out.Git = r.String("source", "git")
+	out.Image = r.String("source", "image")
+	out.ImagePullSecretName = r.String("source", "image_pull_secret", "name")
+	out.ImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
+	out.Kind = r.String("source", "kind")
+	out.Path = r.String("source", "path")
+	out.Value = r.String("source")
+	out.Declared = r.Has("source") ||
+		r.Has("source", "branch") ||
+		r.Has("source", "config") ||
+		r.Has("source", "git") ||
+		r.Has("source", "image") ||
+		r.Has("source", "image_pull_secret", "name") ||
+		r.Has("source", "image_pull_secret", "namespace") ||
+		r.Has("source", "kind") ||
+		r.Has("source", "path")
+	return out
+}
+
+// SandboxSource's keys, and the values its fields may hold.
+const (
+	SandboxSourceKeyBranch                   = "source/branch"
+	SandboxSourceKeyConfig                   = "source/config"
+	SandboxSourceKeyGit                      = "source/git"
+	SandboxSourceKeyImage                    = "source/image"
+	SandboxSourceKeyImagePullSecretName      = "source/image_pull_secret/name"
+	SandboxSourceKeyImagePullSecretNamespace = "source/image_pull_secret/namespace"
+	SandboxSourceKeyKind                     = "source/kind"
+	SandboxSourceKeyPath                     = "source/path"
+	SandboxSourceKeyValue                    = "source"
+	SandboxSourceKindImage                   = "image"
+	SandboxSourceKindGit                     = "git"
+)
 
 // Cron is that kind, read from a compiled object.
 type Cron struct {
 	Description string
 	Id          string
-	Jitter      time.Duration
+	Jitter      *time.Duration
 	Name        string
-	OnOverlap   string
+	OnOverlap   string // defaulted
 	Schedule    string
 	Tags        []string
-	Timezone    string
+	Timezone    string // defaulted
 }
 
 // ReadCron decodes one from a resource.
@@ -380,7 +1109,7 @@ func ReadCron(r Resource) Cron {
 	var out Cron
 	out.Description = r.String("description")
 	out.Id = r.String("id")
-	out.Jitter, _ = r.Duration("jitter")
+	out.Jitter = present[time.Duration](r.Duration("jitter"))
 	out.Name = r.String("name")
 	out.OnOverlap = r.String("on_overlap")
 	out.Schedule = r.String("schedule")
@@ -389,435 +1118,1005 @@ func ReadCron(r Resource) Cron {
 	return out
 }
 
+// Cron's keys, and the values its fields may hold.
+const (
+	CronKeyDescription = "description"
+	CronKeyId          = "id"
+	CronKeyJitter      = "jitter"
+	CronKeyName        = "name"
+	CronKeyOnOverlap   = "on_overlap"
+	CronKeySchedule    = "schedule"
+	CronKeyTags        = "tags"
+	CronKeyTimezone    = "timezone"
+	CronOnOverlapSkip  = "skip"
+	CronOnOverlapQueue = "queue"
+	CronOnOverlapAllow = "allow"
+)
+
 // Component is that kind, read from a compiled object.
 type Component struct {
-	As              string
-	At              string
-	BuildImage      string // authored at build/{commands|script}/image
-	BuildInstall    string // authored at build/{commands}/install
-	BuildKind       string // which of commands, script was written
-	BuildOutput     string // authored at build/{commands|script}/output
-	BuildRun        string // authored at build/{commands}/run
-	BuildScript     string // authored at build/script/path
-	Description     string
-	Id              string
-	Name            string
-	Path            string
-	SecretName      string
-	SecretNamespace string
-	Source          string
-	SourceBranch    string
-	SourceConfig    string
-	SourceGit       string
-	SourceKind      string // which of git was written
-	SourcePath      string
-	Tags            []string
-	Value           string
+	Build       ComponentBuild
+	Description string
+	Id          string
+	Name        string
+	Source      ComponentSource
+	Tags        []string
+	Variables   map[string]VariablesEntry
 }
 
 // ReadComponent decodes one from a resource.
 func ReadComponent(r Resource) Component {
 	var out Component
-	out.As = r.String("as")
-	out.At = r.String("at")
-	out.BuildImage = r.String("build", "image")
-	out.BuildInstall = r.String("build", "install")
-	out.BuildKind = r.String("build", "kind")
-	out.BuildOutput = r.String("build", "output")
-	out.BuildRun = r.String("build", "run")
-	out.BuildScript = r.String("build", "script")
+	out.Build = ReadComponentBuild(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Path = r.String("path")
-	out.SecretName = r.String("secret", "name")
-	out.SecretNamespace = r.String("secret", "namespace")
-	out.Source = r.String("source")
-	out.SourceBranch = r.String("source", "branch")
-	out.SourceConfig = r.String("source", "config")
-	out.SourceGit = r.String("source", "git")
-	out.SourceKind = r.String("source", "kind")
-	out.SourcePath = r.String("source", "path")
+	out.Source = ReadComponentSource(r)
 	out.Tags = r.Strings("tags")
-	out.Value = r.String("value")
+	for _, name := range r.Keys("variables") {
+		if out.Variables == nil {
+			out.Variables = map[string]VariablesEntry{}
+		}
+		out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))
+	}
 	return out
 }
 
+// Component's keys, and the values its fields may hold.
+const (
+	ComponentKeyBuild       = "build"
+	ComponentKeyDescription = "description"
+	ComponentKeyId          = "id"
+	ComponentKeyName        = "name"
+	ComponentKeySource      = "source"
+	ComponentKeyTags        = "tags"
+	ComponentKeyVariables   = "variables"
+)
+
+// ComponentBuild is the "build" block of Component, read from a compiled object.
+type ComponentBuild struct {
+	Image   string // authored at build/{commands|script}/image
+	Install string // authored at build/{commands}/install
+	Kind    string // which of commands, script was written
+	Output  string // authored at build/{commands|script}/output
+	Run     string // authored at build/{commands}/run
+	Script  string // authored at build/script/path
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadComponentBuild decodes one from a resource.
+func ReadComponentBuild(r Resource) ComponentBuild {
+	var out ComponentBuild
+	out.Image = r.String("build", "image")
+	out.Install = r.String("build", "install")
+	out.Kind = r.String("build", "kind")
+	out.Output = r.String("build", "output")
+	out.Run = r.String("build", "run")
+	out.Script = r.String("build", "script")
+	out.Declared = r.Has("build", "image") ||
+		r.Has("build", "install") ||
+		r.Has("build", "kind") ||
+		r.Has("build", "output") ||
+		r.Has("build", "run") ||
+		r.Has("build", "script")
+	return out
+}
+
+// ComponentBuild's keys, and the values its fields may hold.
+const (
+	ComponentBuildKeyImage     = "build/image"
+	ComponentBuildKeyInstall   = "build/install"
+	ComponentBuildKeyKind      = "build/kind"
+	ComponentBuildKeyOutput    = "build/output"
+	ComponentBuildKeyRun       = "build/run"
+	ComponentBuildKeyScript    = "build/script"
+	ComponentBuildKindCommands = "commands"
+	ComponentBuildKindScript   = "script"
+)
+
+// ComponentSource is the "source" block of Component, read from a compiled object.
+type ComponentSource struct {
+	Branch string
+	Config string
+	Git    string
+	Kind   string // which of git was written
+	Path   string
+	Value  string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadComponentSource decodes one from a resource.
+func ReadComponentSource(r Resource) ComponentSource {
+	var out ComponentSource
+	out.Branch = r.String("source", "branch")
+	out.Config = r.String("source", "config")
+	out.Git = r.String("source", "git")
+	out.Kind = r.String("source", "kind")
+	out.Path = r.String("source", "path")
+	out.Value = r.String("source")
+	out.Declared = r.Has("source") ||
+		r.Has("source", "branch") ||
+		r.Has("source", "config") ||
+		r.Has("source", "git") ||
+		r.Has("source", "kind") ||
+		r.Has("source", "path")
+	return out
+}
+
+// ComponentSource's keys, and the values its fields may hold.
+const (
+	ComponentSourceKeyBranch = "source/branch"
+	ComponentSourceKeyConfig = "source/config"
+	ComponentSourceKeyGit    = "source/git"
+	ComponentSourceKeyKind   = "source/kind"
+	ComponentSourceKeyPath   = "source/path"
+	ComponentSourceKeyValue  = "source"
+	ComponentSourceKindGit   = "git"
+)
+
 // Website is that kind, read from a compiled object.
 type Website struct {
-	As              string
-	At              string
-	BuildImage      string // authored at build/{commands|script}/image
-	BuildInstall    string // authored at build/{commands}/install
-	BuildKind       string // which of commands, script was written
-	BuildOutput     string // authored at build/{commands|script}/output
-	BuildRun        string // authored at build/{commands}/run
-	BuildScript     string // authored at build/script/path
-	Description     string
-	Id              string
-	Name            string
-	Path            string
-	SecretName      string
-	SecretNamespace string
-	ServeIndex      string
-	ServeMode       string
-	ServeNotFound   string
-	Source          string
-	SourceBranch    string
-	SourceConfig    string
-	SourceGit       string
-	SourceKind      string // which of git was written
-	SourcePath      string
-	Tags            []string
-	Value           string
+	Build       WebsiteBuild
+	Description string
+	Id          string
+	Name        string
+	Serve       WebsiteServe
+	Source      WebsiteSource
+	Tags        []string
+	Variables   map[string]VariablesEntry
 }
 
 // ReadWebsite decodes one from a resource.
 func ReadWebsite(r Resource) Website {
 	var out Website
-	out.As = r.String("as")
-	out.At = r.String("at")
-	out.BuildImage = r.String("build", "image")
-	out.BuildInstall = r.String("build", "install")
-	out.BuildKind = r.String("build", "kind")
-	out.BuildOutput = r.String("build", "output")
-	out.BuildRun = r.String("build", "run")
-	out.BuildScript = r.String("build", "script")
+	out.Build = ReadWebsiteBuild(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Path = r.String("path")
-	out.SecretName = r.String("secret", "name")
-	out.SecretNamespace = r.String("secret", "namespace")
-	out.ServeIndex = r.String("serve", "index")
-	out.ServeMode = r.String("serve", "mode")
-	out.ServeNotFound = r.String("serve", "not_found")
-	out.Source = r.String("source")
-	out.SourceBranch = r.String("source", "branch")
-	out.SourceConfig = r.String("source", "config")
-	out.SourceGit = r.String("source", "git")
-	out.SourceKind = r.String("source", "kind")
-	out.SourcePath = r.String("source", "path")
+	out.Serve = ReadWebsiteServe(r)
+	out.Source = ReadWebsiteSource(r)
 	out.Tags = r.Strings("tags")
-	out.Value = r.String("value")
+	for _, name := range r.Keys("variables") {
+		if out.Variables == nil {
+			out.Variables = map[string]VariablesEntry{}
+		}
+		out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))
+	}
 	return out
 }
 
+// Website's keys, and the values its fields may hold.
+const (
+	WebsiteKeyBuild       = "build"
+	WebsiteKeyDescription = "description"
+	WebsiteKeyId          = "id"
+	WebsiteKeyName        = "name"
+	WebsiteKeyServe       = "serve"
+	WebsiteKeySource      = "source"
+	WebsiteKeyTags        = "tags"
+	WebsiteKeyVariables   = "variables"
+)
+
+// WebsiteBuild is the "build" block of Website, read from a compiled object.
+type WebsiteBuild struct {
+	Image   string // authored at build/{commands|script}/image
+	Install string // authored at build/{commands}/install
+	Kind    string // which of commands, script was written
+	Output  string // authored at build/{commands|script}/output
+	Run     string // authored at build/{commands}/run
+	Script  string // authored at build/script/path
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadWebsiteBuild decodes one from a resource.
+func ReadWebsiteBuild(r Resource) WebsiteBuild {
+	var out WebsiteBuild
+	out.Image = r.String("build", "image")
+	out.Install = r.String("build", "install")
+	out.Kind = r.String("build", "kind")
+	out.Output = r.String("build", "output")
+	out.Run = r.String("build", "run")
+	out.Script = r.String("build", "script")
+	out.Declared = r.Has("build", "image") ||
+		r.Has("build", "install") ||
+		r.Has("build", "kind") ||
+		r.Has("build", "output") ||
+		r.Has("build", "run") ||
+		r.Has("build", "script")
+	return out
+}
+
+// WebsiteBuild's keys, and the values its fields may hold.
+const (
+	WebsiteBuildKeyImage     = "build/image"
+	WebsiteBuildKeyInstall   = "build/install"
+	WebsiteBuildKeyKind      = "build/kind"
+	WebsiteBuildKeyOutput    = "build/output"
+	WebsiteBuildKeyRun       = "build/run"
+	WebsiteBuildKeyScript    = "build/script"
+	WebsiteBuildKindCommands = "commands"
+	WebsiteBuildKindScript   = "script"
+)
+
+// WebsiteServe is the "serve" block of Website, read from a compiled object.
+type WebsiteServe struct {
+	Index    string // defaulted
+	Mode     string // defaulted
+	NotFound string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadWebsiteServe decodes one from a resource.
+func ReadWebsiteServe(r Resource) WebsiteServe {
+	var out WebsiteServe
+	out.Index = r.String("serve", "index")
+	out.Mode = r.String("serve", "mode")
+	out.NotFound = r.String("serve", "not_found")
+	out.Declared = r.Has("serve", "not_found")
+	return out
+}
+
+// WebsiteServe's keys, and the values its fields may hold.
+const (
+	WebsiteServeKeyIndex    = "serve/index"
+	WebsiteServeKeyMode     = "serve/mode"
+	WebsiteServeKeyNotFound = "serve/not_found"
+	WebsiteServeModeStatic  = "static"
+	WebsiteServeModeSpa     = "spa"
+)
+
+// WebsiteSource is the "source" block of Website, read from a compiled object.
+type WebsiteSource struct {
+	Branch string
+	Config string
+	Git    string
+	Kind   string // which of git was written
+	Path   string
+	Value  string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadWebsiteSource decodes one from a resource.
+func ReadWebsiteSource(r Resource) WebsiteSource {
+	var out WebsiteSource
+	out.Branch = r.String("source", "branch")
+	out.Config = r.String("source", "config")
+	out.Git = r.String("source", "git")
+	out.Kind = r.String("source", "kind")
+	out.Path = r.String("source", "path")
+	out.Value = r.String("source")
+	out.Declared = r.Has("source") ||
+		r.Has("source", "branch") ||
+		r.Has("source", "config") ||
+		r.Has("source", "git") ||
+		r.Has("source", "kind") ||
+		r.Has("source", "path")
+	return out
+}
+
+// WebsiteSource's keys, and the values its fields may hold.
+const (
+	WebsiteSourceKeyBranch = "source/branch"
+	WebsiteSourceKeyConfig = "source/config"
+	WebsiteSourceKeyGit    = "source/git"
+	WebsiteSourceKeyKind   = "source/kind"
+	WebsiteSourceKeyPath   = "source/path"
+	WebsiteSourceKeyValue  = "source"
+	WebsiteSourceKindGit   = "git"
+)
+
 // Cache is that kind, read from a compiled object.
 type Cache struct {
-	AuthorizerName              string
-	AuthorizerNamespace         string
-	Consensus                   string
-	Description                 string
-	EncryptionKeyName           string
-	EncryptionKeyNamespace      string
-	Id                          string
-	InstancesAdmission          string // which of validator was written
-	InstancesLimit              int64
-	InstancesValidatorName      string // authored at instances/{validator}/name
-	InstancesValidatorNamespace string // authored at instances/{validator}/namespace
-	Name                        string
-	RegionsIn                   []string // authored at regions/{pinned|cdn}
-	RegionsMain                 string   // authored at regions/failover/main
-	RegionsPolicy               string   // which of pinned, cdn, failover was written
-	RegionsStandby              string   // authored at regions/failover/standby
-	Replicated                  bool
-	Size                        int64
-	Tags                        []string
-	Ttl                         time.Duration
+	Authorizer  Authorizer
+	Consensus   string
+	Description string
+	Encryption  CacheEncryption
+	Id          string
+	Instances   Instances
+	Name        string
+	Regions     Regions
+	Replicated  *bool
+	Size        int64
+	Tags        []string
+	Ttl         *time.Duration
 }
 
 // ReadCache decodes one from a resource.
 func ReadCache(r Resource) Cache {
 	var out Cache
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
 	out.Consensus = r.String("consensus")
 	out.Description = r.String("description")
-	out.EncryptionKeyName = r.String("encryption", "key", "name")
-	out.EncryptionKeyNamespace = r.String("encryption", "key", "namespace")
+	out.Encryption = ReadCacheEncryption(r)
 	out.Id = r.String("id")
-	out.InstancesAdmission = r.String("instances", "admission")
-	out.InstancesLimit, _ = r.Int("instances", "limit")
-	out.InstancesValidatorName = r.String("instances", "validator", "name")
-	out.InstancesValidatorNamespace = r.String("instances", "validator", "namespace")
+	out.Instances = ReadInstances(r)
 	out.Name = r.String("name")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
-	out.Replicated, _ = r.Bool("replicated")
+	out.Regions = ReadRegions(r)
+	out.Replicated = present[bool](r.Bool("replicated"))
 	out.Size, _ = r.Int("size")
 	out.Tags = r.Strings("tags")
-	out.Ttl, _ = r.Duration("ttl")
+	out.Ttl = present[time.Duration](r.Duration("ttl"))
 	return out
 }
 
+// Cache's keys, and the values its fields may hold.
+const (
+	CacheKeyAuthorizer   = "authorizer"
+	CacheKeyConsensus    = "consensus"
+	CacheKeyDescription  = "description"
+	CacheKeyEncryption   = "encryption"
+	CacheKeyId           = "id"
+	CacheKeyInstances    = "instances"
+	CacheKeyName         = "name"
+	CacheKeyRegions      = "regions"
+	CacheKeyReplicated   = "replicated"
+	CacheKeySize         = "size"
+	CacheKeyTags         = "tags"
+	CacheKeyTtl          = "ttl"
+	CacheConsensusRaft   = "raft"
+	CacheConsensusCrdt   = "crdt"
+	CacheConsensusGossip = "gossip"
+)
+
+// CacheEncryption is the "encryption" block of Cache, read from a compiled object.
+type CacheEncryption struct {
+	KeyName      string
+	KeyNamespace string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadCacheEncryption decodes one from a resource.
+func ReadCacheEncryption(r Resource) CacheEncryption {
+	var out CacheEncryption
+	out.KeyName = r.String("encryption", "key", "name")
+	out.KeyNamespace = r.String("encryption", "key", "namespace")
+	out.Declared = r.Has("encryption", "key", "name") ||
+		r.Has("encryption", "key", "namespace")
+	return out
+}
+
+// CacheEncryption's keys, and the values its fields may hold.
+const (
+	CacheEncryptionKeyKeyName      = "encryption/key/name"
+	CacheEncryptionKeyKeyNamespace = "encryption/key/namespace"
+)
+
+// Instances is the "instances" block of Bus, Cache, Database, Storage, read from a compiled object.
+type Instances struct {
+	Admission          string // which of validator was written
+	Limit              *int64
+	ValidatorName      string // authored at instances/{validator}/name
+	ValidatorNamespace string // authored at instances/{validator}/namespace
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadInstances decodes one from a resource.
+func ReadInstances(r Resource) Instances {
+	var out Instances
+	out.Admission = r.String("instances", "admission")
+	out.Limit = present[int64](r.Int("instances", "limit"))
+	out.ValidatorName = r.String("instances", "validator", "name")
+	out.ValidatorNamespace = r.String("instances", "validator", "namespace")
+	out.Declared = r.Has("instances", "admission") ||
+		r.Has("instances", "limit") ||
+		r.Has("instances", "validator", "name") ||
+		r.Has("instances", "validator", "namespace")
+	return out
+}
+
+// Instances's keys, and the values its fields may hold.
+const (
+	InstancesKeyAdmission          = "instances/admission"
+	InstancesKeyLimit              = "instances/limit"
+	InstancesKeyValidatorName      = "instances/validator/name"
+	InstancesKeyValidatorNamespace = "instances/validator/namespace"
+	InstancesAdmissionValidator    = "validator"
+)
+
 // Database is that kind, read from a compiled object.
 type Database struct {
-	AuthorizerName               string
-	AuthorizerNamespace          string
-	Description                  string
-	DocumentConsensus            string // authored at document/distributed/consensus
-	DocumentCredentialsName      string // authored at document/{mongo}/credentials/name
-	DocumentCredentialsNamespace string // authored at document/{mongo}/credentials/namespace
-	DocumentDatabase             string // authored at document/{mongo}/database
-	DocumentEngine               string // which of distributed, mongo was written
-	DocumentHost                 string // authored at document/{mongo}/host
-	DocumentSize                 int64  // authored at document/distributed/size
-	DocumentTls                  string // authored at document/{mongo}/tls
-	Id                           string
-	InstancesAdmission           string // which of validator was written
-	InstancesLimit               int64
-	InstancesValidatorName       string // authored at instances/{validator}/name
-	InstancesValidatorNamespace  string // authored at instances/{validator}/namespace
-	KvConsensus                  string // authored at kv/distributed/consensus
-	KvEngine                     string // which of distributed was written
-	KvSize                       int64  // authored at kv/distributed/size
-	Name                         string
-	RegionsIn                    []string // authored at regions/{pinned|cdn}
-	RegionsMain                  string   // authored at regions/failover/main
-	RegionsPolicy                string   // which of pinned, cdn, failover was written
-	RegionsStandby               string   // authored at regions/failover/standby
-	SqlConsensus                 string   // authored at sql/distributed/consensus
-	SqlCredentialsName           string   // authored at sql/{postgres|mysql}/credentials/name
-	SqlCredentialsNamespace      string   // authored at sql/{postgres|mysql}/credentials/namespace
-	SqlDatabase                  string   // authored at sql/{postgres|mysql}/database
-	SqlEngine                    string   // which of distributed, postgres, mysql was written
-	SqlHost                      string   // authored at sql/{postgres|mysql}/host
-	SqlSize                      int64    // authored at sql/distributed/size
-	SqlTls                       string   // authored at sql/{postgres|mysql}/tls
-	Tags                         []string
-	Type                         string // which of kv, document, sql, vector was written
-	VectorConsensus              string // authored at vector/distributed/consensus
-	VectorDimensions             int64
-	VectorEngine                 string // which of distributed was written
-	VectorMetric                 string
-	VectorSize                   int64 // authored at vector/distributed/size
+	Authorizer  Authorizer
+	Description string
+	Document    DatabaseDocument
+	Id          string
+	Instances   Instances
+	Kv          DatabaseKv
+	Name        string
+	Regions     Regions
+	Sql         DatabaseSql
+	Tags        []string
+	Type        string // which of kv, document, sql, vector was written
+	Vector      DatabaseVector
 }
 
 // ReadDatabase decodes one from a resource.
 func ReadDatabase(r Resource) Database {
 	var out Database
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
 	out.Description = r.String("description")
-	out.DocumentConsensus = r.String("document", "consensus")
-	out.DocumentCredentialsName = r.String("document", "credentials", "name")
-	out.DocumentCredentialsNamespace = r.String("document", "credentials", "namespace")
-	out.DocumentDatabase = r.String("document", "database")
-	out.DocumentEngine = r.String("document", "engine")
-	out.DocumentHost = r.String("document", "host")
-	out.DocumentSize, _ = r.Int("document", "size")
-	out.DocumentTls = r.String("document", "tls")
+	out.Document = ReadDatabaseDocument(r)
 	out.Id = r.String("id")
-	out.InstancesAdmission = r.String("instances", "admission")
-	out.InstancesLimit, _ = r.Int("instances", "limit")
-	out.InstancesValidatorName = r.String("instances", "validator", "name")
-	out.InstancesValidatorNamespace = r.String("instances", "validator", "namespace")
-	out.KvConsensus = r.String("kv", "consensus")
-	out.KvEngine = r.String("kv", "engine")
-	out.KvSize, _ = r.Int("kv", "size")
+	out.Instances = ReadInstances(r)
+	out.Kv = ReadDatabaseKv(r)
 	out.Name = r.String("name")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
-	out.SqlConsensus = r.String("sql", "consensus")
-	out.SqlCredentialsName = r.String("sql", "credentials", "name")
-	out.SqlCredentialsNamespace = r.String("sql", "credentials", "namespace")
-	out.SqlDatabase = r.String("sql", "database")
-	out.SqlEngine = r.String("sql", "engine")
-	out.SqlHost = r.String("sql", "host")
-	out.SqlSize, _ = r.Int("sql", "size")
-	out.SqlTls = r.String("sql", "tls")
+	out.Regions = ReadRegions(r)
+	out.Sql = ReadDatabaseSql(r)
 	out.Tags = r.Strings("tags")
 	out.Type = r.String("type")
-	out.VectorConsensus = r.String("vector", "consensus")
-	out.VectorDimensions, _ = r.Int("vector", "dimensions")
-	out.VectorEngine = r.String("vector", "engine")
-	out.VectorMetric = r.String("vector", "metric")
-	out.VectorSize, _ = r.Int("vector", "size")
+	out.Vector = ReadDatabaseVector(r)
 	return out
 }
 
+// Database's keys, and the values its fields may hold.
+const (
+	DatabaseKeyAuthorizer  = "authorizer"
+	DatabaseKeyDescription = "description"
+	DatabaseKeyDocument    = "document"
+	DatabaseKeyId          = "id"
+	DatabaseKeyInstances   = "instances"
+	DatabaseKeyKv          = "kv"
+	DatabaseKeyName        = "name"
+	DatabaseKeyRegions     = "regions"
+	DatabaseKeySql         = "sql"
+	DatabaseKeyTags        = "tags"
+	DatabaseKeyType        = "type"
+	DatabaseKeyVector      = "vector"
+	DatabaseTypeKv         = "kv"
+	DatabaseTypeDocument   = "document"
+	DatabaseTypeSql        = "sql"
+	DatabaseTypeVector     = "vector"
+)
+
+// DatabaseDocument is the "document" block of Database, read from a compiled object.
+type DatabaseDocument struct {
+	Consensus            string // authored at document/distributed/consensus
+	CredentialsName      string // authored at document/{mongo}/credentials/name
+	CredentialsNamespace string // authored at document/{mongo}/credentials/namespace
+	Database             string // authored at document/{mongo}/database
+	Engine               string // which of distributed, mongo was written
+	Host                 string // authored at document/{mongo}/host
+	Size                 *int64 // authored at document/distributed/size
+	Tls                  string // authored at document/{mongo}/tls
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadDatabaseDocument decodes one from a resource.
+func ReadDatabaseDocument(r Resource) DatabaseDocument {
+	var out DatabaseDocument
+	out.Consensus = r.String("document", "consensus")
+	out.CredentialsName = r.String("document", "credentials", "name")
+	out.CredentialsNamespace = r.String("document", "credentials", "namespace")
+	out.Database = r.String("document", "database")
+	out.Engine = r.String("document", "engine")
+	out.Host = r.String("document", "host")
+	out.Size = present[int64](r.Int("document", "size"))
+	out.Tls = r.String("document", "tls")
+	out.Declared = r.Has("document", "consensus") ||
+		r.Has("document", "credentials", "name") ||
+		r.Has("document", "credentials", "namespace") ||
+		r.Has("document", "database") ||
+		r.Has("document", "engine") ||
+		r.Has("document", "host") ||
+		r.Has("document", "size") ||
+		r.Has("document", "tls")
+	return out
+}
+
+// DatabaseDocument's keys, and the values its fields may hold.
+const (
+	DatabaseDocumentKeyConsensus            = "document/consensus"
+	DatabaseDocumentKeyCredentialsName      = "document/credentials/name"
+	DatabaseDocumentKeyCredentialsNamespace = "document/credentials/namespace"
+	DatabaseDocumentKeyDatabase             = "document/database"
+	DatabaseDocumentKeyEngine               = "document/engine"
+	DatabaseDocumentKeyHost                 = "document/host"
+	DatabaseDocumentKeySize                 = "document/size"
+	DatabaseDocumentKeyTls                  = "document/tls"
+	DatabaseDocumentConsensusCrdt           = "crdt"
+	DatabaseDocumentConsensusRaft           = "raft"
+	DatabaseDocumentEngineDistributed       = "distributed"
+	DatabaseDocumentEngineMongo             = "mongo"
+	DatabaseDocumentTlsVerifyFull           = "verify-full"
+	DatabaseDocumentTlsRequire              = "require"
+	DatabaseDocumentTlsDisable              = "disable"
+)
+
+// DatabaseKv is the "kv" block of Database, read from a compiled object.
+type DatabaseKv struct {
+	Consensus string // authored at kv/distributed/consensus
+	Engine    string // which of distributed was written
+	Size      *int64 // authored at kv/distributed/size
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadDatabaseKv decodes one from a resource.
+func ReadDatabaseKv(r Resource) DatabaseKv {
+	var out DatabaseKv
+	out.Consensus = r.String("kv", "consensus")
+	out.Engine = r.String("kv", "engine")
+	out.Size = present[int64](r.Int("kv", "size"))
+	out.Declared = r.Has("kv", "consensus") ||
+		r.Has("kv", "engine") ||
+		r.Has("kv", "size")
+	return out
+}
+
+// DatabaseKv's keys, and the values its fields may hold.
+const (
+	DatabaseKvKeyConsensus      = "kv/consensus"
+	DatabaseKvKeyEngine         = "kv/engine"
+	DatabaseKvKeySize           = "kv/size"
+	DatabaseKvConsensusCrdt     = "crdt"
+	DatabaseKvConsensusRaft     = "raft"
+	DatabaseKvEngineDistributed = "distributed"
+)
+
+// DatabaseSql is the "sql" block of Database, read from a compiled object.
+type DatabaseSql struct {
+	Consensus            string // authored at sql/distributed/consensus
+	CredentialsName      string // authored at sql/{postgres|mysql}/credentials/name
+	CredentialsNamespace string // authored at sql/{postgres|mysql}/credentials/namespace
+	Database             string // authored at sql/{postgres|mysql}/database
+	Engine               string // which of distributed, postgres, mysql was written
+	Host                 string // authored at sql/{postgres|mysql}/host
+	Size                 *int64 // authored at sql/distributed/size
+	Tls                  string // authored at sql/{postgres|mysql}/tls
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadDatabaseSql decodes one from a resource.
+func ReadDatabaseSql(r Resource) DatabaseSql {
+	var out DatabaseSql
+	out.Consensus = r.String("sql", "consensus")
+	out.CredentialsName = r.String("sql", "credentials", "name")
+	out.CredentialsNamespace = r.String("sql", "credentials", "namespace")
+	out.Database = r.String("sql", "database")
+	out.Engine = r.String("sql", "engine")
+	out.Host = r.String("sql", "host")
+	out.Size = present[int64](r.Int("sql", "size"))
+	out.Tls = r.String("sql", "tls")
+	out.Declared = r.Has("sql", "consensus") ||
+		r.Has("sql", "credentials", "name") ||
+		r.Has("sql", "credentials", "namespace") ||
+		r.Has("sql", "database") ||
+		r.Has("sql", "engine") ||
+		r.Has("sql", "host") ||
+		r.Has("sql", "size") ||
+		r.Has("sql", "tls")
+	return out
+}
+
+// DatabaseSql's keys, and the values its fields may hold.
+const (
+	DatabaseSqlKeyConsensus            = "sql/consensus"
+	DatabaseSqlKeyCredentialsName      = "sql/credentials/name"
+	DatabaseSqlKeyCredentialsNamespace = "sql/credentials/namespace"
+	DatabaseSqlKeyDatabase             = "sql/database"
+	DatabaseSqlKeyEngine               = "sql/engine"
+	DatabaseSqlKeyHost                 = "sql/host"
+	DatabaseSqlKeySize                 = "sql/size"
+	DatabaseSqlKeyTls                  = "sql/tls"
+	DatabaseSqlConsensusCrdt           = "crdt"
+	DatabaseSqlConsensusRaft           = "raft"
+	DatabaseSqlEngineDistributed       = "distributed"
+	DatabaseSqlEnginePostgres          = "postgres"
+	DatabaseSqlEngineMysql             = "mysql"
+	DatabaseSqlTlsVerifyFull           = "verify-full"
+	DatabaseSqlTlsRequire              = "require"
+	DatabaseSqlTlsDisable              = "disable"
+)
+
+// DatabaseVector is the "vector" block of Database, read from a compiled object.
+type DatabaseVector struct {
+	Consensus  string // authored at vector/distributed/consensus
+	Dimensions *int64
+	Engine     string // which of distributed was written
+	Metric     string
+	Size       *int64 // authored at vector/distributed/size
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadDatabaseVector decodes one from a resource.
+func ReadDatabaseVector(r Resource) DatabaseVector {
+	var out DatabaseVector
+	out.Consensus = r.String("vector", "consensus")
+	out.Dimensions = present[int64](r.Int("vector", "dimensions"))
+	out.Engine = r.String("vector", "engine")
+	out.Metric = r.String("vector", "metric")
+	out.Size = present[int64](r.Int("vector", "size"))
+	out.Declared = r.Has("vector", "consensus") ||
+		r.Has("vector", "dimensions") ||
+		r.Has("vector", "engine") ||
+		r.Has("vector", "metric") ||
+		r.Has("vector", "size")
+	return out
+}
+
+// DatabaseVector's keys, and the values its fields may hold.
+const (
+	DatabaseVectorKeyConsensus      = "vector/consensus"
+	DatabaseVectorKeyDimensions     = "vector/dimensions"
+	DatabaseVectorKeyEngine         = "vector/engine"
+	DatabaseVectorKeyMetric         = "vector/metric"
+	DatabaseVectorKeySize           = "vector/size"
+	DatabaseVectorConsensusCrdt     = "crdt"
+	DatabaseVectorConsensusRaft     = "raft"
+	DatabaseVectorEngineDistributed = "distributed"
+	DatabaseVectorMetricCosine      = "cosine"
+	DatabaseVectorMetricDot         = "dot"
+	DatabaseVectorMetricEuclidean   = "euclidean"
+)
+
 // Storage is that kind, read from a compiled object.
 type Storage struct {
-	AuthorizerName              string
-	AuthorizerNamespace         string
-	Description                 string
-	Id                          string
-	InstancesAdmission          string // which of validator was written
-	InstancesLimit              int64
-	InstancesValidatorName      string // authored at instances/{validator}/name
-	InstancesValidatorNamespace string // authored at instances/{validator}/namespace
-	Name                        string
-	ObjectVersioning            bool
-	RegionsIn                   []string // authored at regions/{pinned|cdn}
-	RegionsMain                 string   // authored at regions/failover/main
-	RegionsPolicy               string   // which of pinned, cdn, failover was written
-	RegionsStandby              string   // authored at regions/failover/standby
-	Size                        int64    // authored at {object|streaming}/size
-	StreamingTtl                time.Duration
-	Tags                        []string
-	Type                        string // which of object, streaming was written
+	Authorizer  Authorizer
+	Description string
+	Id          string
+	Instances   Instances
+	Name        string
+	Object      StorageObject
+	Regions     Regions
+	Size        int64 // authored at {object|streaming}/size
+	Streaming   StorageStreaming
+	Tags        []string
+	Type        string // which of object, streaming was written
 }
 
 // ReadStorage decodes one from a resource.
 func ReadStorage(r Resource) Storage {
 	var out Storage
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
-	out.InstancesAdmission = r.String("instances", "admission")
-	out.InstancesLimit, _ = r.Int("instances", "limit")
-	out.InstancesValidatorName = r.String("instances", "validator", "name")
-	out.InstancesValidatorNamespace = r.String("instances", "validator", "namespace")
+	out.Instances = ReadInstances(r)
 	out.Name = r.String("name")
-	out.ObjectVersioning, _ = r.Bool("object", "versioning")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
+	out.Object = ReadStorageObject(r)
+	out.Regions = ReadRegions(r)
 	out.Size, _ = r.Int("size")
-	out.StreamingTtl, _ = r.Duration("streaming", "ttl")
+	out.Streaming = ReadStorageStreaming(r)
 	out.Tags = r.Strings("tags")
 	out.Type = r.String("type")
 	return out
 }
 
+// Storage's keys, and the values its fields may hold.
+const (
+	StorageKeyAuthorizer  = "authorizer"
+	StorageKeyDescription = "description"
+	StorageKeyId          = "id"
+	StorageKeyInstances   = "instances"
+	StorageKeyName        = "name"
+	StorageKeyObject      = "object"
+	StorageKeyRegions     = "regions"
+	StorageKeySize        = "size"
+	StorageKeyStreaming   = "streaming"
+	StorageKeyTags        = "tags"
+	StorageKeyType        = "type"
+	StorageTypeObject     = "object"
+	StorageTypeStreaming  = "streaming"
+)
+
+// StorageObject is the "object" block of Storage, read from a compiled object.
+type StorageObject struct {
+	Versioning *bool
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadStorageObject decodes one from a resource.
+func ReadStorageObject(r Resource) StorageObject {
+	var out StorageObject
+	out.Versioning = present[bool](r.Bool("object", "versioning"))
+	out.Declared = r.Has("object", "versioning")
+	return out
+}
+
+// StorageObject's keys, and the values its fields may hold.
+const (
+	StorageObjectKeyVersioning = "object/versioning"
+)
+
+// StorageStreaming is the "streaming" block of Storage, read from a compiled object.
+type StorageStreaming struct {
+	Ttl *time.Duration
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadStorageStreaming decodes one from a resource.
+func ReadStorageStreaming(r Resource) StorageStreaming {
+	var out StorageStreaming
+	out.Ttl = present[time.Duration](r.Duration("streaming", "ttl"))
+	out.Declared = r.Has("streaming", "ttl")
+	return out
+}
+
+// StorageStreaming's keys, and the values its fields may hold.
+const (
+	StorageStreamingKeyTtl = "streaming/ttl"
+)
+
 // Volume is that kind, read from a compiled object.
 type Volume struct {
-	AuthorizerName             string
-	AuthorizerNamespace        string
-	CheckpointInterval         time.Duration
-	CheckpointOnBudgetExceeded string
-	CheckpointRpoBudget        time.Duration
-	Description                string
-	Id                         string
-	Name                       string
-	Quota                      int64
-	RegionsIn                  []string // authored at regions/{pinned|cdn}
-	RegionsMain                string   // authored at regions/failover/main
-	RegionsPolicy              string   // which of pinned, cdn, failover was written
-	RegionsStandby             string   // authored at regions/failover/standby
-	Tags                       []string
+	Authorizer  Authorizer
+	Checkpoint  VolumeCheckpoint
+	Description string
+	Id          string
+	Name        string
+	Quota       int64
+	Regions     Regions
+	Tags        []string
 }
 
 // ReadVolume decodes one from a resource.
 func ReadVolume(r Resource) Volume {
 	var out Volume
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.CheckpointInterval, _ = r.Duration("checkpoint", "interval")
-	out.CheckpointOnBudgetExceeded = r.String("checkpoint", "on_budget_exceeded")
-	out.CheckpointRpoBudget, _ = r.Duration("checkpoint", "rpo_budget")
+	out.Authorizer = ReadAuthorizer(r)
+	out.Checkpoint = ReadVolumeCheckpoint(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Quota, _ = r.Int("quota")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
+	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	return out
 }
 
+// Volume's keys, and the values its fields may hold.
+const (
+	VolumeKeyAuthorizer  = "authorizer"
+	VolumeKeyCheckpoint  = "checkpoint"
+	VolumeKeyDescription = "description"
+	VolumeKeyId          = "id"
+	VolumeKeyName        = "name"
+	VolumeKeyQuota       = "quota"
+	VolumeKeyRegions     = "regions"
+	VolumeKeyTags        = "tags"
+)
+
+// VolumeCheckpoint is the "checkpoint" block of Volume, read from a compiled object.
+type VolumeCheckpoint struct {
+	Interval         *time.Duration // defaulted
+	OnBudgetExceeded string         // defaulted
+	RpoBudget        *time.Duration
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadVolumeCheckpoint decodes one from a resource.
+func ReadVolumeCheckpoint(r Resource) VolumeCheckpoint {
+	var out VolumeCheckpoint
+	out.Interval = present[time.Duration](r.Duration("checkpoint", "interval"))
+	out.OnBudgetExceeded = r.String("checkpoint", "on_budget_exceeded")
+	out.RpoBudget = present[time.Duration](r.Duration("checkpoint", "rpo_budget"))
+	out.Declared = r.Has("checkpoint", "rpo_budget")
+	return out
+}
+
+// VolumeCheckpoint's keys, and the values its fields may hold.
+const (
+	VolumeCheckpointKeyInterval                  = "checkpoint/interval"
+	VolumeCheckpointKeyOnBudgetExceeded          = "checkpoint/on_budget_exceeded"
+	VolumeCheckpointKeyRpoBudget                 = "checkpoint/rpo_budget"
+	VolumeCheckpointOnBudgetExceededAlert        = "alert"
+	VolumeCheckpointOnBudgetExceededFreezeWrites = "freeze-writes"
+)
+
 // Secret is that kind, read from a compiled object.
 type Secret struct {
-	AuthorizerName      string
-	AuthorizerNamespace string
-	Description         string
-	Id                  string
-	Name                string
-	Rotation            time.Duration
-	Source              string
-	Tags                []string
+	Authorizer  Authorizer
+	Description string
+	Id          string
+	Name        string
+	Rotation    *time.Duration
+	Source      string // defaulted
+	Tags        []string
 }
 
 // ReadSecret decodes one from a resource.
 func ReadSecret(r Resource) Secret {
 	var out Secret
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Rotation, _ = r.Duration("rotation")
+	out.Rotation = present[time.Duration](r.Duration("rotation"))
 	out.Source = r.String("source")
 	out.Tags = r.Strings("tags")
 	return out
 }
 
+// Secret's keys, and the values its fields may hold.
+const (
+	SecretKeyAuthorizer  = "authorizer"
+	SecretKeyDescription = "description"
+	SecretKeyId          = "id"
+	SecretKeyName        = "name"
+	SecretKeyRotation    = "rotation"
+	SecretKeySource      = "source"
+	SecretKeyTags        = "tags"
+	SecretSourceValue    = "value"
+	SecretSourceOidc     = "oidc"
+)
+
 // Sync is that kind, read from a compiled object.
 type Sync struct {
-	AuthorizerName           string
-	AuthorizerNamespace      string
-	Description              string
-	Id                       string
-	LogConsensus             string
-	LogRetentionAge          time.Duration
-	LogRetentionSize         int64
-	Name                     string
-	QueueConsensus           string
-	QueueDeadLetterName      string
-	QueueDeadLetterNamespace string
-	QueueDelay               time.Duration
-	QueueMaxAttempts         int64
-	QueueRetryCeiling        time.Duration
-	QueueRetryFactor         float64
-	QueueRetryInterval       time.Duration
-	QueueVisibilityTimeout   time.Duration
-	RegionsIn                []string // authored at regions/{pinned|cdn}
-	RegionsMain              string   // authored at regions/failover/main
-	RegionsPolicy            string   // which of pinned, cdn, failover was written
-	RegionsStandby           string   // authored at regions/failover/standby
-	Tags                     []string
-	Type                     string // which of queue, log was written
+	Authorizer  Authorizer
+	Description string
+	Id          string
+	Log         SyncLog
+	Name        string
+	Queue       SyncQueue
+	Regions     Regions
+	Tags        []string
+	Type        string // which of queue, log was written
 }
 
 // ReadSync decodes one from a resource.
 func ReadSync(r Resource) Sync {
 	var out Sync
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
-	out.LogConsensus = r.String("log", "consensus")
-	out.LogRetentionAge, _ = r.Duration("log", "retention", "age")
-	out.LogRetentionSize, _ = r.Int("log", "retention", "size")
+	out.Log = ReadSyncLog(r)
 	out.Name = r.String("name")
-	out.QueueConsensus = r.String("queue", "consensus")
-	out.QueueDeadLetterName = r.String("queue", "dead_letter", "name")
-	out.QueueDeadLetterNamespace = r.String("queue", "dead_letter", "namespace")
-	out.QueueDelay, _ = r.Duration("queue", "delay")
-	out.QueueMaxAttempts, _ = r.Int("queue", "max_attempts")
-	out.QueueRetryCeiling, _ = r.Duration("queue", "retry", "ceiling")
-	out.QueueRetryFactor, _ = r.Float("queue", "retry", "factor")
-	out.QueueRetryInterval, _ = r.Duration("queue", "retry", "interval")
-	out.QueueVisibilityTimeout, _ = r.Duration("queue", "visibility_timeout")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
+	out.Queue = ReadSyncQueue(r)
+	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	out.Type = r.String("type")
 	return out
 }
 
+// Sync's keys, and the values its fields may hold.
+const (
+	SyncKeyAuthorizer  = "authorizer"
+	SyncKeyDescription = "description"
+	SyncKeyId          = "id"
+	SyncKeyLog         = "log"
+	SyncKeyName        = "name"
+	SyncKeyQueue       = "queue"
+	SyncKeyRegions     = "regions"
+	SyncKeyTags        = "tags"
+	SyncKeyType        = "type"
+	SyncTypeQueue      = "queue"
+	SyncTypeLog        = "log"
+)
+
+// SyncLog is the "log" block of Sync, read from a compiled object.
+type SyncLog struct {
+	Consensus     string
+	RetentionAge  *time.Duration
+	RetentionSize *int64
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadSyncLog decodes one from a resource.
+func ReadSyncLog(r Resource) SyncLog {
+	var out SyncLog
+	out.Consensus = r.String("log", "consensus")
+	out.RetentionAge = present[time.Duration](r.Duration("log", "retention", "age"))
+	out.RetentionSize = present[int64](r.Int("log", "retention", "size"))
+	out.Declared = r.Has("log", "consensus") ||
+		r.Has("log", "retention", "age") ||
+		r.Has("log", "retention", "size")
+	return out
+}
+
+// SyncLog's keys, and the values its fields may hold.
+const (
+	SyncLogKeyConsensus     = "log/consensus"
+	SyncLogKeyRetentionAge  = "log/retention/age"
+	SyncLogKeyRetentionSize = "log/retention/size"
+	SyncLogConsensusCrdt    = "crdt"
+	SyncLogConsensusRaft    = "raft"
+)
+
+// SyncQueue is the "queue" block of Sync, read from a compiled object.
+type SyncQueue struct {
+	Consensus           string
+	DeadLetterName      string
+	DeadLetterNamespace string
+	Delay               *time.Duration
+	MaxAttempts         *int64 // defaulted
+	RetryCeiling        *time.Duration
+	RetryFactor         *float64
+	RetryInterval       *time.Duration
+	VisibilityTimeout   *time.Duration // defaulted
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadSyncQueue decodes one from a resource.
+func ReadSyncQueue(r Resource) SyncQueue {
+	var out SyncQueue
+	out.Consensus = r.String("queue", "consensus")
+	out.DeadLetterName = r.String("queue", "dead_letter", "name")
+	out.DeadLetterNamespace = r.String("queue", "dead_letter", "namespace")
+	out.Delay = present[time.Duration](r.Duration("queue", "delay"))
+	out.MaxAttempts = present[int64](r.Int("queue", "max_attempts"))
+	out.RetryCeiling = present[time.Duration](r.Duration("queue", "retry", "ceiling"))
+	out.RetryFactor = present[float64](r.Float("queue", "retry", "factor"))
+	out.RetryInterval = present[time.Duration](r.Duration("queue", "retry", "interval"))
+	out.VisibilityTimeout = present[time.Duration](r.Duration("queue", "visibility_timeout"))
+	out.Declared = r.Has("queue", "consensus") ||
+		r.Has("queue", "dead_letter", "name") ||
+		r.Has("queue", "dead_letter", "namespace") ||
+		r.Has("queue", "delay") ||
+		r.Has("queue", "retry", "ceiling") ||
+		r.Has("queue", "retry", "factor") ||
+		r.Has("queue", "retry", "interval")
+	return out
+}
+
+// SyncQueue's keys, and the values its fields may hold.
+const (
+	SyncQueueKeyConsensus           = "queue/consensus"
+	SyncQueueKeyDeadLetterName      = "queue/dead_letter/name"
+	SyncQueueKeyDeadLetterNamespace = "queue/dead_letter/namespace"
+	SyncQueueKeyDelay               = "queue/delay"
+	SyncQueueKeyMaxAttempts         = "queue/max_attempts"
+	SyncQueueKeyRetryCeiling        = "queue/retry/ceiling"
+	SyncQueueKeyRetryFactor         = "queue/retry/factor"
+	SyncQueueKeyRetryInterval       = "queue/retry/interval"
+	SyncQueueKeyVisibilityTimeout   = "queue/visibility_timeout"
+	SyncQueueConsensusCrdt          = "crdt"
+	SyncQueueConsensusRaft          = "raft"
+)
+
 // Zone is that kind, read from a compiled object.
 type Zone struct {
-	Description       string
-	File              string
-	Fqdn              string
-	Id                string
-	Name              string
-	Records           []string
-	ResolverName      string
-	ResolverNamespace string
-	Tags              []string
+	Description string
+	File        string
+	Fqdn        string
+	Id          string
+	Name        string
+	Records     []string
+	Resolver    ZoneResolver
+	Tags        []string
 }
 
 // ReadZone decodes one from a resource.
@@ -829,465 +2128,1262 @@ func ReadZone(r Resource) Zone {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Records = r.Strings("records")
-	out.ResolverName = r.String("resolver", "name")
-	out.ResolverNamespace = r.String("resolver", "namespace")
+	out.Resolver = ReadZoneResolver(r)
 	out.Tags = r.Strings("tags")
 	return out
 }
 
+// Zone's keys, and the values its fields may hold.
+const (
+	ZoneKeyDescription = "description"
+	ZoneKeyFile        = "file"
+	ZoneKeyFqdn        = "fqdn"
+	ZoneKeyId          = "id"
+	ZoneKeyName        = "name"
+	ZoneKeyRecords     = "records"
+	ZoneKeyResolver    = "resolver"
+	ZoneKeyTags        = "tags"
+)
+
+// ZoneResolver is the "resolver" block of Zone, read from a compiled object.
+type ZoneResolver struct {
+	Name      string
+	Namespace string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadZoneResolver decodes one from a resource.
+func ReadZoneResolver(r Resource) ZoneResolver {
+	var out ZoneResolver
+	out.Name = r.String("resolver", "name")
+	out.Namespace = r.String("resolver", "namespace")
+	out.Declared = r.Has("resolver", "name") ||
+		r.Has("resolver", "namespace")
+	return out
+}
+
+// ZoneResolver's keys, and the values its fields may hold.
+const (
+	ZoneResolverKeyName      = "resolver/name"
+	ZoneResolverKeyNamespace = "resolver/namespace"
+)
+
 // Gateway is that kind, read from a compiled object.
 type Gateway struct {
-	AuthorizerName             string
-	AuthorizerNamespace        string
-	CertificateSecretName      string
-	CertificateSecretNamespace string
-	CertificateSource          string
-	CorsAllowSelf              bool
-	CorsMethods                []string
-	CorsOrigins                []string
-	Description                string
-	Fail                       string
-	HostKind                   string // which of generated, zone was written
-	HostName                   string // authored at host/{generated|zone}/name
-	HostZoneInName             string // authored at host/{generated|zone}/in/name
-	HostZoneInNamespace        string
-	Id                         string
-	Name                       string
-	Namespace                  string
-	RateLimitBurst             int64
-	RateLimitKey               string
-	RateLimitRpm               int64
-	RouteAuthorizerName        string
-	RouteAuthorizerNamespace   string
-	RouteHandlerKind           string // which of function, application, website, gateway, mcp, agent, bus was written
-	RouteHandlerName           string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/name
-	RouteHandlerNamespace      string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/namespace
-	RouteHandlerPort           string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/port
-	RouteMatch                 string
-	RouteMethods               []string
-	RoutePath                  string
-	RouteRouterName            string
-	RouteRouterNamespace       string
-	RouteStripPrefix           bool
-	RouteTarget                string // which of handler, router was written
-	RouterName                 string
-	RouterNamespace            string
-	Routing                    string // which of route, router was written
-	Tags                       []string
+	Authorizer   Authorizer
+	Certificate  Certificate
+	Cors         GatewayCors
+	Description  string
+	Host         HostBlock
+	Id           string
+	Name         string
+	RateLimit    GatewayRateLimit
+	Route        GatewayRoute
+	Router       Router
+	Routing      string // which of route, router was written
+	Tags         []string
+	Transformers []TransformersEntry
 }
 
 // ReadGateway decodes one from a resource.
 func ReadGateway(r Resource) Gateway {
 	var out Gateway
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.CertificateSecretName = r.String("certificate", "secret", "name")
-	out.CertificateSecretNamespace = r.String("certificate", "secret", "namespace")
-	out.CertificateSource = r.String("certificate", "source")
-	out.CorsAllowSelf, _ = r.Bool("cors", "allow_self")
-	out.CorsMethods = r.Strings("cors", "methods")
-	out.CorsOrigins = r.Strings("cors", "origins")
+	out.Authorizer = ReadAuthorizer(r)
+	out.Certificate = ReadCertificate(r)
+	out.Cors = ReadGatewayCors(r)
 	out.Description = r.String("description")
-	out.Fail = r.String("fail")
-	out.HostKind = r.String("host", "kind")
-	out.HostName = r.String("host", "name")
-	out.HostZoneInName = r.String("host", "zone", "in", "name")
-	out.HostZoneInNamespace = r.String("host", "zone", "in", "namespace")
+	out.Host = ReadHostBlock(r)
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.RateLimitBurst, _ = r.Int("rate_limit", "burst")
-	out.RateLimitKey = r.String("rate_limit", "key")
-	out.RateLimitRpm, _ = r.Int("rate_limit", "rpm")
-	out.RouteAuthorizerName = r.String("route", "authorizer", "name")
-	out.RouteAuthorizerNamespace = r.String("route", "authorizer", "namespace")
-	out.RouteHandlerKind = r.String("route", "handler", "kind")
-	out.RouteHandlerName = r.String("route", "handler", "name")
-	out.RouteHandlerNamespace = r.String("route", "handler", "namespace")
-	out.RouteHandlerPort = r.String("route", "handler", "port")
-	out.RouteMatch = r.String("route", "match")
-	out.RouteMethods = r.Strings("route", "methods")
-	out.RoutePath = r.String("route", "path")
-	out.RouteRouterName = r.String("route", "router", "name")
-	out.RouteRouterNamespace = r.String("route", "router", "namespace")
-	out.RouteStripPrefix, _ = r.Bool("route", "strip_prefix")
-	out.RouteTarget = r.String("route", "target")
-	out.RouterName = r.String("router", "name")
-	out.RouterNamespace = r.String("router", "namespace")
+	out.RateLimit = ReadGatewayRateLimit(r)
+	out.Route = ReadGatewayRoute(r)
+	out.Router = ReadRouter(r)
 	out.Routing = r.String("routing")
 	out.Tags = r.Strings("tags")
+	for _, e := range r.List("transformers") {
+		out.Transformers = append(out.Transformers, ReadTransformersEntry(e))
+	}
 	return out
 }
 
+// Gateway's keys, and the values its fields may hold.
+const (
+	GatewayKeyAuthorizer   = "authorizer"
+	GatewayKeyCertificate  = "certificate"
+	GatewayKeyCors         = "cors"
+	GatewayKeyDescription  = "description"
+	GatewayKeyHost         = "host"
+	GatewayKeyId           = "id"
+	GatewayKeyName         = "name"
+	GatewayKeyRateLimit    = "rate_limit"
+	GatewayKeyRoute        = "route"
+	GatewayKeyRouter       = "router"
+	GatewayKeyRouting      = "routing"
+	GatewayKeyTags         = "tags"
+	GatewayKeyTransformers = "transformers"
+	GatewayRoutingRoute    = "route"
+	GatewayRoutingRouter   = "router"
+)
+
+// Certificate is the "certificate" block of Gateway, Proxy, read from a compiled object.
+type Certificate struct {
+	SecretName      string
+	SecretNamespace string
+	Source          string // defaulted
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadCertificate decodes one from a resource.
+func ReadCertificate(r Resource) Certificate {
+	var out Certificate
+	out.SecretName = r.String("certificate", "secret", "name")
+	out.SecretNamespace = r.String("certificate", "secret", "namespace")
+	out.Source = r.String("certificate", "source")
+	out.Declared = r.Has("certificate", "secret", "name") ||
+		r.Has("certificate", "secret", "namespace")
+	return out
+}
+
+// Certificate's keys, and the values its fields may hold.
+const (
+	CertificateKeySecretName      = "certificate/secret/name"
+	CertificateKeySecretNamespace = "certificate/secret/namespace"
+	CertificateKeySource          = "certificate/source"
+	CertificateSourceGenerated    = "generated"
+	CertificateSourceProvided     = "provided"
+)
+
+// GatewayCors is the "cors" block of Gateway, read from a compiled object.
+type GatewayCors struct {
+	AllowSelf *bool
+	Methods   []string
+	Origins   []string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadGatewayCors decodes one from a resource.
+func ReadGatewayCors(r Resource) GatewayCors {
+	var out GatewayCors
+	out.AllowSelf = present[bool](r.Bool("cors", "allow_self"))
+	out.Methods = r.Strings("cors", "methods")
+	out.Origins = r.Strings("cors", "origins")
+	out.Declared = r.Has("cors", "allow_self") ||
+		r.Has("cors", "methods") ||
+		r.Has("cors", "origins")
+	return out
+}
+
+// GatewayCors's keys, and the values its fields may hold.
+const (
+	GatewayCorsKeyAllowSelf   = "cors/allow_self"
+	GatewayCorsKeyMethods     = "cors/methods"
+	GatewayCorsKeyOrigins     = "cors/origins"
+	GatewayCorsMethodsGET     = "GET"
+	GatewayCorsMethodsHEAD    = "HEAD"
+	GatewayCorsMethodsPOST    = "POST"
+	GatewayCorsMethodsPUT     = "PUT"
+	GatewayCorsMethodsDELETE  = "DELETE"
+	GatewayCorsMethodsCONNECT = "CONNECT"
+	GatewayCorsMethodsOPTIONS = "OPTIONS"
+	GatewayCorsMethodsTRACE   = "TRACE"
+	GatewayCorsMethodsPATCH   = "PATCH"
+)
+
+// HostBlock is the "host" block of Gateway, Proxy, read from a compiled object.
+type HostBlock struct {
+	Kind            string // which of generated, zone was written
+	Name            string // authored at host/{generated|zone}/name
+	ZoneInName      string // authored at host/{generated|zone}/in/name
+	ZoneInNamespace string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadHostBlock decodes one from a resource.
+func ReadHostBlock(r Resource) HostBlock {
+	var out HostBlock
+	out.Kind = r.String("host", "kind")
+	out.Name = r.String("host", "name")
+	out.ZoneInName = r.String("host", "zone", "in", "name")
+	out.ZoneInNamespace = r.String("host", "zone", "in", "namespace")
+	out.Declared = r.Has("host", "kind") ||
+		r.Has("host", "name") ||
+		r.Has("host", "zone", "in", "name") ||
+		r.Has("host", "zone", "in", "namespace")
+	return out
+}
+
+// HostBlock's keys, and the values its fields may hold.
+const (
+	HostBlockKeyKind            = "host/kind"
+	HostBlockKeyName            = "host/name"
+	HostBlockKeyZoneInName      = "host/zone/in/name"
+	HostBlockKeyZoneInNamespace = "host/zone/in/namespace"
+	HostBlockKindGenerated      = "generated"
+	HostBlockKindZone           = "zone"
+)
+
+// GatewayRateLimit is the "rate_limit" block of Gateway, read from a compiled object.
+type GatewayRateLimit struct {
+	Burst *int64
+	Key   string
+	Rpm   *int64
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadGatewayRateLimit decodes one from a resource.
+func ReadGatewayRateLimit(r Resource) GatewayRateLimit {
+	var out GatewayRateLimit
+	out.Burst = present[int64](r.Int("rate_limit", "burst"))
+	out.Key = r.String("rate_limit", "key")
+	out.Rpm = present[int64](r.Int("rate_limit", "rpm"))
+	out.Declared = r.Has("rate_limit", "burst") ||
+		r.Has("rate_limit", "key") ||
+		r.Has("rate_limit", "rpm")
+	return out
+}
+
+// GatewayRateLimit's keys, and the values its fields may hold.
+const (
+	GatewayRateLimitKeyBurst = "rate_limit/burst"
+	GatewayRateLimitKeyKey   = "rate_limit/key"
+	GatewayRateLimitKeyRpm   = "rate_limit/rpm"
+)
+
+// GatewayRoute is the "route" block of Gateway, read from a compiled object.
+type GatewayRoute struct {
+	AuthorizerName      string
+	AuthorizerNamespace string
+	HandlerKind         string // which of function, application, website, gateway, mcp, agent, bus was written
+	HandlerName         string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/name
+	HandlerNamespace    string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/namespace
+	HandlerPort         string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/port
+	Match               string // defaulted
+	Methods             []string
+	Path                string
+	RouterName          string
+	RouterNamespace     string
+	StripPrefix         *bool
+	Target              string // which of handler, router was written
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadGatewayRoute decodes one from a resource.
+func ReadGatewayRoute(r Resource) GatewayRoute {
+	var out GatewayRoute
+	out.AuthorizerName = r.String("route", "authorizer", "name")
+	out.AuthorizerNamespace = r.String("route", "authorizer", "namespace")
+	out.HandlerKind = r.String("route", "handler", "kind")
+	out.HandlerName = r.String("route", "handler", "name")
+	out.HandlerNamespace = r.String("route", "handler", "namespace")
+	out.HandlerPort = r.String("route", "handler", "port")
+	out.Match = r.String("route", "match")
+	out.Methods = r.Strings("route", "methods")
+	out.Path = r.String("route", "path")
+	out.RouterName = r.String("route", "router", "name")
+	out.RouterNamespace = r.String("route", "router", "namespace")
+	out.StripPrefix = present[bool](r.Bool("route", "strip_prefix"))
+	out.Target = r.String("route", "target")
+	out.Declared = r.Has("route", "authorizer", "name") ||
+		r.Has("route", "authorizer", "namespace") ||
+		r.Has("route", "handler", "kind") ||
+		r.Has("route", "handler", "name") ||
+		r.Has("route", "handler", "namespace") ||
+		r.Has("route", "handler", "port") ||
+		r.Has("route", "methods") ||
+		r.Has("route", "path") ||
+		r.Has("route", "router", "name") ||
+		r.Has("route", "router", "namespace") ||
+		r.Has("route", "strip_prefix") ||
+		r.Has("route", "target")
+	return out
+}
+
+// GatewayRoute's keys, and the values its fields may hold.
+const (
+	GatewayRouteKeyAuthorizerName      = "route/authorizer/name"
+	GatewayRouteKeyAuthorizerNamespace = "route/authorizer/namespace"
+	GatewayRouteKeyHandlerKind         = "route/handler/kind"
+	GatewayRouteKeyHandlerName         = "route/handler/name"
+	GatewayRouteKeyHandlerNamespace    = "route/handler/namespace"
+	GatewayRouteKeyHandlerPort         = "route/handler/port"
+	GatewayRouteKeyMatch               = "route/match"
+	GatewayRouteKeyMethods             = "route/methods"
+	GatewayRouteKeyPath                = "route/path"
+	GatewayRouteKeyRouterName          = "route/router/name"
+	GatewayRouteKeyRouterNamespace     = "route/router/namespace"
+	GatewayRouteKeyStripPrefix         = "route/strip_prefix"
+	GatewayRouteKeyTarget              = "route/target"
+	GatewayRouteHandlerKindFunction    = "function"
+	GatewayRouteHandlerKindApplication = "application"
+	GatewayRouteHandlerKindWebsite     = "website"
+	GatewayRouteHandlerKindGateway     = "gateway"
+	GatewayRouteHandlerKindMcp         = "mcp"
+	GatewayRouteHandlerKindAgent       = "agent"
+	GatewayRouteHandlerKindBus         = "bus"
+	GatewayRouteMatchPrefix            = "prefix"
+	GatewayRouteMatchExact             = "exact"
+	GatewayRouteMatchRegex             = "regex"
+	GatewayRouteMethodsGET             = "GET"
+	GatewayRouteMethodsHEAD            = "HEAD"
+	GatewayRouteMethodsPOST            = "POST"
+	GatewayRouteMethodsPUT             = "PUT"
+	GatewayRouteMethodsDELETE          = "DELETE"
+	GatewayRouteMethodsCONNECT         = "CONNECT"
+	GatewayRouteMethodsOPTIONS         = "OPTIONS"
+	GatewayRouteMethodsTRACE           = "TRACE"
+	GatewayRouteMethodsPATCH           = "PATCH"
+	GatewayRouteTargetHandler          = "handler"
+	GatewayRouteTargetRouter           = "router"
+)
+
+// Router is the "router" block of Gateway, Proxy, read from a compiled object.
+type Router struct {
+	Name      string
+	Namespace string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadRouter decodes one from a resource.
+func ReadRouter(r Resource) Router {
+	var out Router
+	out.Name = r.String("router", "name")
+	out.Namespace = r.String("router", "namespace")
+	out.Declared = r.Has("router", "name") ||
+		r.Has("router", "namespace")
+	return out
+}
+
+// Router's keys, and the values its fields may hold.
+const (
+	RouterKeyName      = "router/name"
+	RouterKeyNamespace = "router/namespace"
+)
+
+// TransformersEntry is one entry of "transformers" in Gateway, Proxy, in the order written.
+type TransformersEntry struct {
+	Fail      string // defaulted
+	Name      string
+	Namespace string
+}
+
+// ReadTransformersEntry decodes one from a resource.
+func ReadTransformersEntry(r Resource) TransformersEntry {
+	var out TransformersEntry
+	out.Fail = r.String("fail")
+	out.Name = r.String("name")
+	out.Namespace = r.String("namespace")
+	return out
+}
+
+// TransformersEntry's keys, and the values its fields may hold.
+const (
+	TransformersEntryKeyFail      = "fail"
+	TransformersEntryKeyName      = "name"
+	TransformersEntryKeyNamespace = "namespace"
+	TransformersEntryFailClosed   = "closed"
+	TransformersEntryFailOpen     = "open"
+)
+
 // Proxy is that kind, read from a compiled object.
 type Proxy struct {
-	CertificateSecretName         string
-	CertificateSecretNamespace    string
-	CertificateSource             string
-	Description                   string
-	Fail                          string
-	ForwardKind                   string // which of application was written
-	ForwardName                   string // authored at forward/{application}/name
-	ForwardNamespace              string // authored at forward/{application}/namespace
-	ForwardPort                   string // authored at forward/{application}/port
-	HostKind                      string // which of generated, zone was written
-	HostName                      string // authored at host/{generated|zone}/name
-	HostZoneInName                string // authored at host/{generated|zone}/in/name
-	HostZoneInNamespace           string
-	Id                            string
-	Name                          string
-	Namespace                     string
-	RateLimitBurst                int64
-	RateLimitConcurrent           int64
-	RateLimitConnectionsPerMinute int64
-	RateLimitKey                  string
-	RouterName                    string
-	RouterNamespace               string
-	Routing                       string // which of forward, router was written
-	Service                       string
-	Tags                          []string
-	TlsMode                       string
+	Certificate  Certificate
+	Description  string
+	Forward      ProxyForward
+	Host         HostBlock
+	Id           string
+	Name         string
+	RateLimit    ProxyRateLimit
+	Router       Router
+	Routing      string // which of forward, router was written
+	Service      string
+	Tags         []string
+	Tls          ProxyTls
+	Transformers []TransformersEntry
 }
 
 // ReadProxy decodes one from a resource.
 func ReadProxy(r Resource) Proxy {
 	var out Proxy
-	out.CertificateSecretName = r.String("certificate", "secret", "name")
-	out.CertificateSecretNamespace = r.String("certificate", "secret", "namespace")
-	out.CertificateSource = r.String("certificate", "source")
+	out.Certificate = ReadCertificate(r)
 	out.Description = r.String("description")
-	out.Fail = r.String("fail")
-	out.ForwardKind = r.String("forward", "kind")
-	out.ForwardName = r.String("forward", "name")
-	out.ForwardNamespace = r.String("forward", "namespace")
-	out.ForwardPort = r.String("forward", "port")
-	out.HostKind = r.String("host", "kind")
-	out.HostName = r.String("host", "name")
-	out.HostZoneInName = r.String("host", "zone", "in", "name")
-	out.HostZoneInNamespace = r.String("host", "zone", "in", "namespace")
+	out.Forward = ReadProxyForward(r)
+	out.Host = ReadHostBlock(r)
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Namespace = r.String("namespace")
-	out.RateLimitBurst, _ = r.Int("rate_limit", "burst")
-	out.RateLimitConcurrent, _ = r.Int("rate_limit", "concurrent")
-	out.RateLimitConnectionsPerMinute, _ = r.Int("rate_limit", "connections_per_minute")
-	out.RateLimitKey = r.String("rate_limit", "key")
-	out.RouterName = r.String("router", "name")
-	out.RouterNamespace = r.String("router", "namespace")
+	out.RateLimit = ReadProxyRateLimit(r)
+	out.Router = ReadRouter(r)
 	out.Routing = r.String("routing")
 	out.Service = r.String("service")
 	out.Tags = r.Strings("tags")
-	out.TlsMode = r.String("tls", "mode")
+	out.Tls = ReadProxyTls(r)
+	for _, e := range r.List("transformers") {
+		out.Transformers = append(out.Transformers, ReadTransformersEntry(e))
+	}
 	return out
 }
 
+// Proxy's keys, and the values its fields may hold.
+const (
+	ProxyKeyCertificate  = "certificate"
+	ProxyKeyDescription  = "description"
+	ProxyKeyForward      = "forward"
+	ProxyKeyHost         = "host"
+	ProxyKeyId           = "id"
+	ProxyKeyName         = "name"
+	ProxyKeyRateLimit    = "rate_limit"
+	ProxyKeyRouter       = "router"
+	ProxyKeyRouting      = "routing"
+	ProxyKeyService      = "service"
+	ProxyKeyTags         = "tags"
+	ProxyKeyTls          = "tls"
+	ProxyKeyTransformers = "transformers"
+	ProxyRoutingForward  = "forward"
+	ProxyRoutingRouter   = "router"
+)
+
+// ProxyForward is the "forward" block of Proxy, read from a compiled object.
+type ProxyForward struct {
+	Kind      string // which of application was written
+	Name      string // authored at forward/{application}/name
+	Namespace string // authored at forward/{application}/namespace
+	Port      string // authored at forward/{application}/port
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadProxyForward decodes one from a resource.
+func ReadProxyForward(r Resource) ProxyForward {
+	var out ProxyForward
+	out.Kind = r.String("forward", "kind")
+	out.Name = r.String("forward", "name")
+	out.Namespace = r.String("forward", "namespace")
+	out.Port = r.String("forward", "port")
+	out.Declared = r.Has("forward", "kind") ||
+		r.Has("forward", "name") ||
+		r.Has("forward", "namespace") ||
+		r.Has("forward", "port")
+	return out
+}
+
+// ProxyForward's keys, and the values its fields may hold.
+const (
+	ProxyForwardKeyKind         = "forward/kind"
+	ProxyForwardKeyName         = "forward/name"
+	ProxyForwardKeyNamespace    = "forward/namespace"
+	ProxyForwardKeyPort         = "forward/port"
+	ProxyForwardKindApplication = "application"
+)
+
+// ProxyRateLimit is the "rate_limit" block of Proxy, read from a compiled object.
+type ProxyRateLimit struct {
+	Burst                *int64
+	Concurrent           *int64
+	ConnectionsPerMinute *int64
+	Key                  string // defaulted
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadProxyRateLimit decodes one from a resource.
+func ReadProxyRateLimit(r Resource) ProxyRateLimit {
+	var out ProxyRateLimit
+	out.Burst = present[int64](r.Int("rate_limit", "burst"))
+	out.Concurrent = present[int64](r.Int("rate_limit", "concurrent"))
+	out.ConnectionsPerMinute = present[int64](r.Int("rate_limit", "connections_per_minute"))
+	out.Key = r.String("rate_limit", "key")
+	out.Declared = r.Has("rate_limit", "burst") ||
+		r.Has("rate_limit", "concurrent") ||
+		r.Has("rate_limit", "connections_per_minute")
+	return out
+}
+
+// ProxyRateLimit's keys, and the values its fields may hold.
+const (
+	ProxyRateLimitKeyBurst                = "rate_limit/burst"
+	ProxyRateLimitKeyConcurrent           = "rate_limit/concurrent"
+	ProxyRateLimitKeyConnectionsPerMinute = "rate_limit/connections_per_minute"
+	ProxyRateLimitKeyKey                  = "rate_limit/key"
+	ProxyRateLimitKeyIp                   = "ip"
+	ProxyRateLimitKeySubnet               = "subnet"
+)
+
+// ProxyTls is the "tls" block of Proxy, read from a compiled object.
+//
+// EVERY FIELD IN IT IS DEFAULTED, so the compiler writes it whether or not the
+// author did, and the compiled object cannot say which. It has no Declared.
+type ProxyTls struct {
+	Mode string // defaulted
+}
+
+// ReadProxyTls decodes one from a resource.
+func ReadProxyTls(r Resource) ProxyTls {
+	var out ProxyTls
+	out.Mode = r.String("tls", "mode")
+	return out
+}
+
+// ProxyTls's keys, and the values its fields may hold.
+const (
+	ProxyTlsKeyMode       = "tls/mode"
+	ProxyTlsModeNone      = "none"
+	ProxyTlsModeTerminate = "terminate"
+)
+
 // Stream is that kind, read from a compiled object.
 type Stream struct {
-	AuthorizerName       string
-	AuthorizerNamespace  string
-	CredentialsName      string // authored at {kafka|nats}/credentials/name
-	CredentialsNamespace string // authored at {kafka|nats}/credentials/namespace
-	Description          string
-	Engine               string // which of distributed, kafka, nats was written
-	Host                 string // authored at {kafka|nats}/host
-	Id                   string
-	Local                bool // authored at distributed/local
-	Name                 string
-	Tags                 []string
-	Tls                  string // authored at {kafka|nats}/tls
+	Authorizer  Authorizer
+	Credentials StreamCredentials
+	Description string
+	Engine      string // which of distributed, kafka, nats was written
+	Host        string // authored at {kafka|nats}/host
+	Id          string
+	Local       *bool // authored at distributed/local
+	Name        string
+	Tags        []string
+	Tls         string // authored at {kafka|nats}/tls
 }
 
 // ReadStream decodes one from a resource.
 func ReadStream(r Resource) Stream {
 	var out Stream
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.CredentialsName = r.String("credentials", "name")
-	out.CredentialsNamespace = r.String("credentials", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
+	out.Credentials = ReadStreamCredentials(r)
 	out.Description = r.String("description")
 	out.Engine = r.String("engine")
 	out.Host = r.String("host")
 	out.Id = r.String("id")
-	out.Local, _ = r.Bool("local")
+	out.Local = present[bool](r.Bool("local"))
 	out.Name = r.String("name")
 	out.Tags = r.Strings("tags")
 	out.Tls = r.String("tls")
 	return out
 }
 
+// Stream's keys, and the values its fields may hold.
+const (
+	StreamKeyAuthorizer     = "authorizer"
+	StreamKeyCredentials    = "credentials"
+	StreamKeyDescription    = "description"
+	StreamKeyEngine         = "engine"
+	StreamKeyHost           = "host"
+	StreamKeyId             = "id"
+	StreamKeyLocal          = "local"
+	StreamKeyName           = "name"
+	StreamKeyTags           = "tags"
+	StreamKeyTls            = "tls"
+	StreamEngineDistributed = "distributed"
+	StreamEngineKafka       = "kafka"
+	StreamEngineNats        = "nats"
+	StreamTlsVerifyFull     = "verify-full"
+	StreamTlsRequire        = "require"
+	StreamTlsDisable        = "disable"
+)
+
+// StreamCredentials is the "credentials" block of Stream, read from a compiled object.
+type StreamCredentials struct {
+	Name      string // authored at {kafka|nats}/credentials/name
+	Namespace string // authored at {kafka|nats}/credentials/namespace
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadStreamCredentials decodes one from a resource.
+func ReadStreamCredentials(r Resource) StreamCredentials {
+	var out StreamCredentials
+	out.Name = r.String("credentials", "name")
+	out.Namespace = r.String("credentials", "namespace")
+	out.Declared = r.Has("credentials", "name") ||
+		r.Has("credentials", "namespace")
+	return out
+}
+
+// StreamCredentials's keys, and the values its fields may hold.
+const (
+	StreamCredentialsKeyName      = "credentials/name"
+	StreamCredentialsKeyNamespace = "credentials/namespace"
+)
+
 // Bus is that kind, read from a compiled object.
 type Bus struct {
-	AuthorizerName              string
-	AuthorizerNamespace         string
-	Description                 string
-	Id                          string
-	InstancesAdmission          string // which of validator was written
-	InstancesLimit              int64
-	InstancesValidatorName      string // authored at instances/{validator}/name
-	InstancesValidatorNamespace string // authored at instances/{validator}/namespace
-	Name                        string
-	Tags                        []string
+	Authorizer  Authorizer
+	Description string
+	Id          string
+	Instances   Instances
+	Name        string
+	Tags        []string
 }
 
 // ReadBus decodes one from a resource.
 func ReadBus(r Resource) Bus {
 	var out Bus
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
-	out.InstancesAdmission = r.String("instances", "admission")
-	out.InstancesLimit, _ = r.Int("instances", "limit")
-	out.InstancesValidatorName = r.String("instances", "validator", "name")
-	out.InstancesValidatorNamespace = r.String("instances", "validator", "namespace")
+	out.Instances = ReadInstances(r)
 	out.Name = r.String("name")
 	out.Tags = r.Strings("tags")
 	return out
 }
 
+// Bus's keys, and the values its fields may hold.
+const (
+	BusKeyAuthorizer  = "authorizer"
+	BusKeyDescription = "description"
+	BusKeyId          = "id"
+	BusKeyInstances   = "instances"
+	BusKeyName        = "name"
+	BusKeyTags        = "tags"
+)
+
 // Mcp is that kind, read from a compiled object.
 type Mcp struct {
-	AuthorizerName      string
-	AuthorizerNamespace string
-	Description         string
-	Id                  string
-	Name                string
-	Tags                []string
-	ToolsCacheScope     string
-	ToolsCacheTtl       time.Duration
+	Authorizer  Authorizer
+	Description string
+	Id          string
+	Name        string
+	Tags        []string
+	Tools       McpTools
 }
 
 // ReadMcp decodes one from a resource.
 func ReadMcp(r Resource) Mcp {
 	var out Mcp
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Tags = r.Strings("tags")
-	out.ToolsCacheScope = r.String("tools", "cache_scope")
-	out.ToolsCacheTtl, _ = r.Duration("tools", "cache_ttl")
+	out.Tools = ReadMcpTools(r)
 	return out
 }
 
+// Mcp's keys, and the values its fields may hold.
+const (
+	McpKeyAuthorizer  = "authorizer"
+	McpKeyDescription = "description"
+	McpKeyId          = "id"
+	McpKeyName        = "name"
+	McpKeyTags        = "tags"
+	McpKeyTools       = "tools"
+)
+
+// McpTools is the "tools" block of Mcp, read from a compiled object.
+type McpTools struct {
+	CacheScope string // defaulted
+	CacheTtl   *time.Duration
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadMcpTools decodes one from a resource.
+func ReadMcpTools(r Resource) McpTools {
+	var out McpTools
+	out.CacheScope = r.String("tools", "cache_scope")
+	out.CacheTtl = present[time.Duration](r.Duration("tools", "cache_ttl"))
+	out.Declared = r.Has("tools", "cache_ttl")
+	return out
+}
+
+// McpTools's keys, and the values its fields may hold.
+const (
+	McpToolsKeyCacheScope       = "tools/cache_scope"
+	McpToolsKeyCacheTtl         = "tools/cache_ttl"
+	McpToolsCacheScopeNone      = "none"
+	McpToolsCacheScopePublic    = "public"
+	McpToolsCacheScopePrincipal = "principal"
+)
+
 // Channel is that kind, read from a compiled object.
 type Channel struct {
-	AuthorizerName      string
-	AuthorizerNamespace string
-	Description         string
-	Id                  string
-	Name                string
-	Protocol            string
-	ServeKind           string // which of application, function was written
-	ServeName           string // authored at serve/{application|function}/name
-	ServeNamespace      string // authored at serve/{application|function}/namespace
-	ServePort           string // authored at serve/{application|function}/port
-	Tags                []string
+	Authorizer  Authorizer
+	Description string
+	Id          string
+	Name        string
+	Protocol    string
+	Serve       ChannelServe
+	Tags        []string
 }
 
 // ReadChannel decodes one from a resource.
 func ReadChannel(r Resource) Channel {
 	var out Channel
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Protocol = r.String("protocol")
-	out.ServeKind = r.String("serve", "kind")
-	out.ServeName = r.String("serve", "name")
-	out.ServeNamespace = r.String("serve", "namespace")
-	out.ServePort = r.String("serve", "port")
+	out.Serve = ReadChannelServe(r)
 	out.Tags = r.Strings("tags")
 	return out
 }
 
+// Channel's keys, and the values its fields may hold.
+const (
+	ChannelKeyAuthorizer  = "authorizer"
+	ChannelKeyDescription = "description"
+	ChannelKeyId          = "id"
+	ChannelKeyName        = "name"
+	ChannelKeyProtocol    = "protocol"
+	ChannelKeyServe       = "serve"
+	ChannelKeyTags        = "tags"
+)
+
+// ChannelServe is the "serve" block of Channel, read from a compiled object.
+type ChannelServe struct {
+	Kind      string // which of application, function was written
+	Name      string // authored at serve/{application|function}/name
+	Namespace string // authored at serve/{application|function}/namespace
+	Port      string // authored at serve/{application|function}/port
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadChannelServe decodes one from a resource.
+func ReadChannelServe(r Resource) ChannelServe {
+	var out ChannelServe
+	out.Kind = r.String("serve", "kind")
+	out.Name = r.String("serve", "name")
+	out.Namespace = r.String("serve", "namespace")
+	out.Port = r.String("serve", "port")
+	out.Declared = r.Has("serve", "kind") ||
+		r.Has("serve", "name") ||
+		r.Has("serve", "namespace") ||
+		r.Has("serve", "port")
+	return out
+}
+
+// ChannelServe's keys, and the values its fields may hold.
+const (
+	ChannelServeKeyKind         = "serve/kind"
+	ChannelServeKeyName         = "serve/name"
+	ChannelServeKeyNamespace    = "serve/namespace"
+	ChannelServeKeyPort         = "serve/port"
+	ChannelServeKindApplication = "application"
+	ChannelServeKindFunction    = "function"
+)
+
 // Model is that kind, read from a compiled object.
 type Model struct {
-	AuthorizerName                      string
-	AuthorizerNamespace                 string
-	Description                         string
-	Format                              string
-	Id                                  string
-	Identifier                          string
-	InferenceKind                       string // which of remote, local was written
-	InferenceLocalName                  string
-	InferenceLocalNamespace             string
-	InferenceLocalPort                  string
-	InferenceRemoteCredentialsName      string
-	InferenceRemoteCredentialsNamespace string
-	InferenceRemoteEndpoint             string
-	Name                                string
-	ParametersMaxTokens                 int64
-	ParametersStop                      []string
-	ParametersTemperature               float64
-	ParametersTopP                      float64
-	Tags                                []string
+	Authorizer  Authorizer
+	Description string
+	Format      string
+	Id          string
+	Identifier  string
+	Inference   ModelInference
+	Name        string
+	Parameters  ModelParameters
+	Tags        []string
 }
 
 // ReadModel decodes one from a resource.
 func ReadModel(r Resource) Model {
 	var out Model
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
 	out.Description = r.String("description")
 	out.Format = r.String("format")
 	out.Id = r.String("id")
 	out.Identifier = r.String("identifier")
-	out.InferenceKind = r.String("inference", "kind")
-	out.InferenceLocalName = r.String("inference", "local", "name")
-	out.InferenceLocalNamespace = r.String("inference", "local", "namespace")
-	out.InferenceLocalPort = r.String("inference", "local", "port")
-	out.InferenceRemoteCredentialsName = r.String("inference", "remote", "credentials", "name")
-	out.InferenceRemoteCredentialsNamespace = r.String("inference", "remote", "credentials", "namespace")
-	out.InferenceRemoteEndpoint = r.String("inference", "remote", "endpoint")
+	out.Inference = ReadModelInference(r)
 	out.Name = r.String("name")
-	out.ParametersMaxTokens, _ = r.Int("parameters", "max_tokens")
-	out.ParametersStop = r.Strings("parameters", "stop")
-	out.ParametersTemperature, _ = r.Float("parameters", "temperature")
-	out.ParametersTopP, _ = r.Float("parameters", "top_p")
+	out.Parameters = ReadModelParameters(r)
 	out.Tags = r.Strings("tags")
 	return out
 }
 
+// Model's keys, and the values its fields may hold.
+const (
+	ModelKeyAuthorizer   = "authorizer"
+	ModelKeyDescription  = "description"
+	ModelKeyFormat       = "format"
+	ModelKeyId           = "id"
+	ModelKeyIdentifier   = "identifier"
+	ModelKeyInference    = "inference"
+	ModelKeyName         = "name"
+	ModelKeyParameters   = "parameters"
+	ModelKeyTags         = "tags"
+	ModelFormatOpenai    = "openai"
+	ModelFormatAnthropic = "anthropic"
+	ModelFormatOllama    = "ollama"
+)
+
+// ModelInference is the "inference" block of Model, read from a compiled object.
+type ModelInference struct {
+	Kind                       string // which of remote, local was written
+	LocalName                  string
+	LocalNamespace             string
+	LocalPort                  string
+	RemoteCredentialsName      string
+	RemoteCredentialsNamespace string
+	RemoteEndpoint             string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadModelInference decodes one from a resource.
+func ReadModelInference(r Resource) ModelInference {
+	var out ModelInference
+	out.Kind = r.String("inference", "kind")
+	out.LocalName = r.String("inference", "local", "name")
+	out.LocalNamespace = r.String("inference", "local", "namespace")
+	out.LocalPort = r.String("inference", "local", "port")
+	out.RemoteCredentialsName = r.String("inference", "remote", "credentials", "name")
+	out.RemoteCredentialsNamespace = r.String("inference", "remote", "credentials", "namespace")
+	out.RemoteEndpoint = r.String("inference", "remote", "endpoint")
+	out.Declared = r.Has("inference", "kind") ||
+		r.Has("inference", "local", "name") ||
+		r.Has("inference", "local", "namespace") ||
+		r.Has("inference", "local", "port") ||
+		r.Has("inference", "remote", "credentials", "name") ||
+		r.Has("inference", "remote", "credentials", "namespace") ||
+		r.Has("inference", "remote", "endpoint")
+	return out
+}
+
+// ModelInference's keys, and the values its fields may hold.
+const (
+	ModelInferenceKeyKind                       = "inference/kind"
+	ModelInferenceKeyLocalName                  = "inference/local/name"
+	ModelInferenceKeyLocalNamespace             = "inference/local/namespace"
+	ModelInferenceKeyLocalPort                  = "inference/local/port"
+	ModelInferenceKeyRemoteCredentialsName      = "inference/remote/credentials/name"
+	ModelInferenceKeyRemoteCredentialsNamespace = "inference/remote/credentials/namespace"
+	ModelInferenceKeyRemoteEndpoint             = "inference/remote/endpoint"
+	ModelInferenceKindRemote                    = "remote"
+	ModelInferenceKindLocal                     = "local"
+)
+
+// ModelParameters is the "parameters" block of Model, read from a compiled object.
+type ModelParameters struct {
+	MaxTokens   *int64
+	Stop        []string
+	Temperature *float64
+	TopP        *float64
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadModelParameters decodes one from a resource.
+func ReadModelParameters(r Resource) ModelParameters {
+	var out ModelParameters
+	out.MaxTokens = present[int64](r.Int("parameters", "max_tokens"))
+	out.Stop = r.Strings("parameters", "stop")
+	out.Temperature = present[float64](r.Float("parameters", "temperature"))
+	out.TopP = present[float64](r.Float("parameters", "top_p"))
+	out.Declared = r.Has("parameters", "max_tokens") ||
+		r.Has("parameters", "stop") ||
+		r.Has("parameters", "temperature") ||
+		r.Has("parameters", "top_p")
+	return out
+}
+
+// ModelParameters's keys, and the values its fields may hold.
+const (
+	ModelParametersKeyMaxTokens   = "parameters/max_tokens"
+	ModelParametersKeyStop        = "parameters/stop"
+	ModelParametersKeyTemperature = "parameters/temperature"
+	ModelParametersKeyTopP        = "parameters/top_p"
+)
+
 // Agent is that kind, read from a compiled object.
 type Agent struct {
-	As                      string
-	At                      string
-	AuthorizerName          string
-	AuthorizerNamespace     string
-	Description             string
-	Egress                  []string
-	Id                      string
-	Instructions            string
-	LimitsConcurrent        int64
-	LimitsMemory            int64
-	LimitsSteps             int64
-	LimitsTimeout           time.Duration
-	MemoryDimensions        int64
-	MemoryEmbedderName      string
-	MemoryEmbedderNamespace string
-	MemorySize              int64
-	ModelName               string
-	ModelNamespace          string
-	Name                    string
-	Path                    string
-	RegionsIn               []string // authored at regions/{pinned|cdn}
-	RegionsMain             string   // authored at regions/failover/main
-	RegionsPolicy           string   // which of pinned, cdn, failover was written
-	RegionsStandby          string   // authored at regions/failover/standby
-	SecretName              string
-	SecretNamespace         string
-	Source                  string
-	SourceBranch            string
-	SourceConfig            string
-	SourceGit               string
-	SourceKind              string // which of git was written
-	SourcePath              string
-	Tags                    []string
-	Value                   string
+	Authorizer   Authorizer
+	Description  string
+	Egress       []string
+	Id           string
+	Instructions string
+	Limits       AgentLimits
+	Memory       AgentMemory
+	Model        AgentModel
+	Name         string
+	Regions      Regions
+	Source       AgentSource
+	Tags         []string
+	Variables    map[string]VariablesEntry
 }
 
 // ReadAgent decodes one from a resource.
 func ReadAgent(r Resource) Agent {
 	var out Agent
-	out.As = r.String("as")
-	out.At = r.String("at")
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
+	out.Authorizer = ReadAuthorizer(r)
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
 	out.Id = r.String("id")
 	out.Instructions = r.String("instructions")
-	out.LimitsConcurrent, _ = r.Int("limits", "concurrent")
-	out.LimitsMemory, _ = r.Int("limits", "memory")
-	out.LimitsSteps, _ = r.Int("limits", "steps")
-	out.LimitsTimeout, _ = r.Duration("limits", "timeout")
-	out.MemoryDimensions, _ = r.Int("memory", "dimensions")
-	out.MemoryEmbedderName = r.String("memory", "embedder", "name")
-	out.MemoryEmbedderNamespace = r.String("memory", "embedder", "namespace")
-	out.MemorySize, _ = r.Int("memory", "size")
-	out.ModelName = r.String("model", "name")
-	out.ModelNamespace = r.String("model", "namespace")
+	out.Limits = ReadAgentLimits(r)
+	out.Memory = ReadAgentMemory(r)
+	out.Model = ReadAgentModel(r)
 	out.Name = r.String("name")
-	out.Path = r.String("path")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
-	out.SecretName = r.String("secret", "name")
-	out.SecretNamespace = r.String("secret", "namespace")
-	out.Source = r.String("source")
-	out.SourceBranch = r.String("source", "branch")
-	out.SourceConfig = r.String("source", "config")
-	out.SourceGit = r.String("source", "git")
-	out.SourceKind = r.String("source", "kind")
-	out.SourcePath = r.String("source", "path")
+	out.Regions = ReadRegions(r)
+	out.Source = ReadAgentSource(r)
 	out.Tags = r.Strings("tags")
-	out.Value = r.String("value")
+	for _, name := range r.Keys("variables") {
+		if out.Variables == nil {
+			out.Variables = map[string]VariablesEntry{}
+		}
+		out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))
+	}
 	return out
 }
 
+// Agent's keys, and the values its fields may hold.
+const (
+	AgentKeyAuthorizer   = "authorizer"
+	AgentKeyDescription  = "description"
+	AgentKeyEgress       = "egress"
+	AgentKeyId           = "id"
+	AgentKeyInstructions = "instructions"
+	AgentKeyLimits       = "limits"
+	AgentKeyMemory       = "memory"
+	AgentKeyModel        = "model"
+	AgentKeyName         = "name"
+	AgentKeyRegions      = "regions"
+	AgentKeySource       = "source"
+	AgentKeyTags         = "tags"
+	AgentKeyVariables    = "variables"
+)
+
+// AgentLimits is the "limits" block of Agent, read from a compiled object.
+type AgentLimits struct {
+	Concurrent *int64
+	Memory     *int64 // defaulted
+	Steps      int64
+	Timeout    *time.Duration // defaulted
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadAgentLimits decodes one from a resource.
+func ReadAgentLimits(r Resource) AgentLimits {
+	var out AgentLimits
+	out.Concurrent = present[int64](r.Int("limits", "concurrent"))
+	out.Memory = present[int64](r.Int("limits", "memory"))
+	out.Steps, _ = r.Int("limits", "steps")
+	out.Timeout = present[time.Duration](r.Duration("limits", "timeout"))
+	out.Declared = r.Has("limits", "concurrent") ||
+		r.Has("limits", "steps")
+	return out
+}
+
+// AgentLimits's keys, and the values its fields may hold.
+const (
+	AgentLimitsKeyConcurrent = "limits/concurrent"
+	AgentLimitsKeyMemory     = "limits/memory"
+	AgentLimitsKeySteps      = "limits/steps"
+	AgentLimitsKeyTimeout    = "limits/timeout"
+)
+
+// AgentMemory is the "memory" block of Agent, read from a compiled object.
+type AgentMemory struct {
+	Dimensions        *int64
+	EmbedderName      string
+	EmbedderNamespace string
+	Size              *int64
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadAgentMemory decodes one from a resource.
+func ReadAgentMemory(r Resource) AgentMemory {
+	var out AgentMemory
+	out.Dimensions = present[int64](r.Int("memory", "dimensions"))
+	out.EmbedderName = r.String("memory", "embedder", "name")
+	out.EmbedderNamespace = r.String("memory", "embedder", "namespace")
+	out.Size = present[int64](r.Int("memory", "size"))
+	out.Declared = r.Has("memory", "dimensions") ||
+		r.Has("memory", "embedder", "name") ||
+		r.Has("memory", "embedder", "namespace") ||
+		r.Has("memory", "size")
+	return out
+}
+
+// AgentMemory's keys, and the values its fields may hold.
+const (
+	AgentMemoryKeyDimensions        = "memory/dimensions"
+	AgentMemoryKeyEmbedderName      = "memory/embedder/name"
+	AgentMemoryKeyEmbedderNamespace = "memory/embedder/namespace"
+	AgentMemoryKeySize              = "memory/size"
+)
+
+// AgentModel is the "model" block of Agent, read from a compiled object.
+type AgentModel struct {
+	Name      string
+	Namespace string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadAgentModel decodes one from a resource.
+func ReadAgentModel(r Resource) AgentModel {
+	var out AgentModel
+	out.Name = r.String("model", "name")
+	out.Namespace = r.String("model", "namespace")
+	out.Declared = r.Has("model", "name") ||
+		r.Has("model", "namespace")
+	return out
+}
+
+// AgentModel's keys, and the values its fields may hold.
+const (
+	AgentModelKeyName      = "model/name"
+	AgentModelKeyNamespace = "model/namespace"
+)
+
+// AgentSource is the "source" block of Agent, read from a compiled object.
+type AgentSource struct {
+	Branch string
+	Config string
+	Git    string
+	Kind   string // which of git was written
+	Path   string
+	Value  string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadAgentSource decodes one from a resource.
+func ReadAgentSource(r Resource) AgentSource {
+	var out AgentSource
+	out.Branch = r.String("source", "branch")
+	out.Config = r.String("source", "config")
+	out.Git = r.String("source", "git")
+	out.Kind = r.String("source", "kind")
+	out.Path = r.String("source", "path")
+	out.Value = r.String("source")
+	out.Declared = r.Has("source") ||
+		r.Has("source", "branch") ||
+		r.Has("source", "config") ||
+		r.Has("source", "git") ||
+		r.Has("source", "kind") ||
+		r.Has("source", "path")
+	return out
+}
+
+// AgentSource's keys, and the values its fields may hold.
+const (
+	AgentSourceKeyBranch = "source/branch"
+	AgentSourceKeyConfig = "source/config"
+	AgentSourceKeyGit    = "source/git"
+	AgentSourceKeyKind   = "source/kind"
+	AgentSourceKeyPath   = "source/path"
+	AgentSourceKeyValue  = "source"
+	AgentSourceKindGit   = "git"
+)
+
 // Workflow is that kind, read from a compiled object.
 type Workflow struct {
-	As                  string
-	Attempts            int64
-	AuthorizerName      string
-	AuthorizerNamespace string
-	BackoffCeiling      string
-	BackoffFactor       float64
-	BackoffInterval     string
-	CallFunction        string
-	CallInput           string
-	CallNamespace       string
-	CallResult          string
-	Concurrency         int64
-	Description         string
-	Id                  string
-	Kind                string
-	Name                string
-	OnError             string
-	RegionsIn           []string // authored at regions/{pinned|cdn}
-	RegionsMain         string   // authored at regions/failover/main
-	RegionsPolicy       string   // which of pinned, cdn, failover was written
-	RegionsStandby      string   // authored at regions/failover/standby
-	Start               string
-	Tags                []string
-	Timeout             time.Duration
-	Wait                string
+	Authorizer  Authorizer
+	Concurrency *int64
+	Description string
+	Entry       map[string]WorkflowEntryEntry
+	Id          string
+	Name        string
+	Regions     Regions
+	Start       string
+	Steps       []WorkflowStepsEntry
+	Tags        []string
+	Timeout     *time.Duration
 }
 
 // ReadWorkflow decodes one from a resource.
 func ReadWorkflow(r Resource) Workflow {
 	var out Workflow
-	out.As = r.String("as")
-	out.Attempts, _ = r.Int("attempts")
-	out.AuthorizerName = r.String("authorizer", "name")
-	out.AuthorizerNamespace = r.String("authorizer", "namespace")
-	out.BackoffCeiling = r.String("backoff", "ceiling")
-	out.BackoffFactor, _ = r.Float("backoff", "factor")
-	out.BackoffInterval = r.String("backoff", "interval")
-	out.CallFunction = r.String("call", "function")
-	out.CallInput = r.String("call", "input")
-	out.CallNamespace = r.String("call", "namespace")
-	out.CallResult = r.String("call", "result")
-	out.Concurrency, _ = r.Int("concurrency")
+	out.Authorizer = ReadAuthorizer(r)
+	out.Concurrency = present[int64](r.Int("concurrency"))
 	out.Description = r.String("description")
+	for _, name := range r.Keys("entry") {
+		if out.Entry == nil {
+			out.Entry = map[string]WorkflowEntryEntry{}
+		}
+		out.Entry[name] = ReadWorkflowEntryEntry(r.Sub("entry", name))
+	}
 	out.Id = r.String("id")
+	out.Name = r.String("name")
+	out.Regions = ReadRegions(r)
+	out.Start = r.String("start")
+	for _, e := range r.List("steps") {
+		out.Steps = append(out.Steps, ReadWorkflowStepsEntry(e))
+	}
+	out.Tags = r.Strings("tags")
+	out.Timeout = present[time.Duration](r.Duration("timeout"))
+	return out
+}
+
+// Workflow's keys, and the values its fields may hold.
+const (
+	WorkflowKeyAuthorizer  = "authorizer"
+	WorkflowKeyConcurrency = "concurrency"
+	WorkflowKeyDescription = "description"
+	WorkflowKeyEntry       = "entry"
+	WorkflowKeyId          = "id"
+	WorkflowKeyName        = "name"
+	WorkflowKeyRegions     = "regions"
+	WorkflowKeyStart       = "start"
+	WorkflowKeySteps       = "steps"
+	WorkflowKeyTags        = "tags"
+	WorkflowKeyTimeout     = "timeout"
+)
+
+// WorkflowEntryEntry is one entry of "entry" in Workflow, keyed by name.
+type WorkflowEntryEntry struct {
+	As   string
+	Kind string
+	Name string
+}
+
+// ReadWorkflowEntryEntry decodes one from a resource.
+func ReadWorkflowEntryEntry(r Resource) WorkflowEntryEntry {
+	var out WorkflowEntryEntry
+	out.As = r.String("as")
 	out.Kind = r.String("kind")
 	out.Name = r.String("name")
+	return out
+}
+
+// WorkflowEntryEntry's keys, and the values its fields may hold.
+const (
+	WorkflowEntryEntryKeyAs   = "as"
+	WorkflowEntryEntryKeyKind = "kind"
+	WorkflowEntryEntryKeyName = "name"
+)
+
+// WorkflowStepsEntry is one entry of "steps" in Workflow, in the order written.
+type WorkflowStepsEntry struct {
+	Attempts *int64 // defaulted
+	Backoff  WorkflowStepsEntryBackoff
+	Call     WorkflowStepsEntryCall
+	Name     string
+	OnError  string // defaulted
+	Wait     string
+}
+
+// ReadWorkflowStepsEntry decodes one from a resource.
+func ReadWorkflowStepsEntry(r Resource) WorkflowStepsEntry {
+	var out WorkflowStepsEntry
+	out.Attempts = present[int64](r.Int("attempts"))
+	out.Backoff = ReadWorkflowStepsEntryBackoff(r)
+	out.Call = ReadWorkflowStepsEntryCall(r)
+	out.Name = r.String("name")
 	out.OnError = r.String("on_error")
-	out.RegionsIn = r.Strings("regions", "in")
-	out.RegionsMain = r.String("regions", "main")
-	out.RegionsPolicy = r.String("regions", "policy")
-	out.RegionsStandby = r.String("regions", "standby")
-	out.Start = r.String("start")
-	out.Tags = r.Strings("tags")
-	out.Timeout, _ = r.Duration("timeout")
 	out.Wait = r.String("wait")
 	return out
 }
+
+// WorkflowStepsEntry's keys, and the values its fields may hold.
+const (
+	WorkflowStepsEntryKeyAttempts = "attempts"
+	WorkflowStepsEntryKeyBackoff  = "backoff"
+	WorkflowStepsEntryKeyCall     = "call"
+	WorkflowStepsEntryKeyName     = "name"
+	WorkflowStepsEntryKeyOnError  = "on_error"
+	WorkflowStepsEntryKeyWait     = "wait"
+)
+
+// WorkflowStepsEntryBackoff is the "backoff" block of WorkflowStepsEntry, read from a compiled object.
+type WorkflowStepsEntryBackoff struct {
+	Ceiling  string
+	Factor   *float64
+	Interval string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadWorkflowStepsEntryBackoff decodes one from a resource.
+func ReadWorkflowStepsEntryBackoff(r Resource) WorkflowStepsEntryBackoff {
+	var out WorkflowStepsEntryBackoff
+	out.Ceiling = r.String("backoff", "ceiling")
+	out.Factor = present[float64](r.Float("backoff", "factor"))
+	out.Interval = r.String("backoff", "interval")
+	out.Declared = r.Has("backoff", "ceiling") ||
+		r.Has("backoff", "factor") ||
+		r.Has("backoff", "interval")
+	return out
+}
+
+// WorkflowStepsEntryBackoff's keys, and the values its fields may hold.
+const (
+	WorkflowStepsEntryBackoffKeyCeiling  = "backoff/ceiling"
+	WorkflowStepsEntryBackoffKeyFactor   = "backoff/factor"
+	WorkflowStepsEntryBackoffKeyInterval = "backoff/interval"
+)
+
+// WorkflowStepsEntryCall is the "call" block of WorkflowStepsEntry, read from a compiled object.
+type WorkflowStepsEntryCall struct {
+	Function  string
+	Input     string
+	Namespace string
+	Result    string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadWorkflowStepsEntryCall decodes one from a resource.
+func ReadWorkflowStepsEntryCall(r Resource) WorkflowStepsEntryCall {
+	var out WorkflowStepsEntryCall
+	out.Function = r.String("call", "function")
+	out.Input = r.String("call", "input")
+	out.Namespace = r.String("call", "namespace")
+	out.Result = r.String("call", "result")
+	out.Declared = r.Has("call", "function") ||
+		r.Has("call", "input") ||
+		r.Has("call", "namespace") ||
+		r.Has("call", "result")
+	return out
+}
+
+// WorkflowStepsEntryCall's keys, and the values its fields may hold.
+const (
+	WorkflowStepsEntryCallKeyFunction  = "call/function"
+	WorkflowStepsEntryCallKeyInput     = "call/input"
+	WorkflowStepsEntryCallKeyNamespace = "call/namespace"
+	WorkflowStepsEntryCallKeyResult    = "call/result"
+)
 
 // Namespace is that kind, read from a compiled object.
 type Namespace struct {
@@ -1309,10 +3405,20 @@ func ReadNamespace(r Resource) Namespace {
 	return out
 }
 
+// Namespace's keys, and the values its fields may hold.
+const (
+	NamespaceKeyDescription = "description"
+	NamespaceKeyId          = "id"
+	NamespaceKeyName        = "name"
+	NamespaceKeyRegions     = "regions"
+	NamespaceKeyTags        = "tags"
+)
+
 // Environments is that kind, read from a compiled object.
 type Environments struct {
 	Branches []string
 	Regions  []string
+	Shadows  map[string]EnvironmentsShadowsEntry
 }
 
 // ReadEnvironments decodes one from a resource.
@@ -1320,8 +3426,38 @@ func ReadEnvironments(r Resource) Environments {
 	var out Environments
 	out.Branches = r.Strings("branches")
 	out.Regions = r.Strings("regions")
+	for _, name := range r.Keys("shadows") {
+		if out.Shadows == nil {
+			out.Shadows = map[string]EnvironmentsShadowsEntry{}
+		}
+		out.Shadows[name] = ReadEnvironmentsShadowsEntry(r.Sub("shadows", name))
+	}
 	return out
 }
+
+// Environments's keys, and the values its fields may hold.
+const (
+	EnvironmentsKeyBranches = "branches"
+	EnvironmentsKeyRegions  = "regions"
+	EnvironmentsKeyShadows  = "shadows"
+)
+
+// EnvironmentsShadowsEntry is one entry of "shadows" in Environments, keyed by name.
+type EnvironmentsShadowsEntry struct {
+	Branches []string
+}
+
+// ReadEnvironmentsShadowsEntry decodes one from a resource.
+func ReadEnvironmentsShadowsEntry(r Resource) EnvironmentsShadowsEntry {
+	var out EnvironmentsShadowsEntry
+	out.Branches = r.Strings("branches")
+	return out
+}
+
+// EnvironmentsShadowsEntry's keys, and the values its fields may hold.
+const (
+	EnvironmentsShadowsEntryKeyBranches = "branches"
+)
 
 // Readers is every kind's reader, by the kind's own name.
 var Readers = map[string]func(Resource) any{
@@ -1412,4 +3548,12 @@ func ReadBuildBlock(r Resource) BuildBlock {
 	out.BuildScript = r.String("build", "script")
 	out.BuildTarget = r.String("build", "target")
 	return out
+}
+
+// present is a value the object may not carry: nil when it does not.
+func present[T any](v T, ok bool) *T {
+	if !ok {
+		return nil
+	}
+	return &v
 }

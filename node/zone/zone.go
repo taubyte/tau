@@ -164,7 +164,7 @@ func (z *Zones) Resolve(ctx context.Context, q invoke.Question) (*invoke.Resolut
 	if err != nil || at == nil {
 		return nil, err
 	}
-	if at.zone.ResolverName == "" {
+	if at.zone.Resolver.Name == "" {
 		return nil, nil
 	}
 	if z.guests == nil {
@@ -181,12 +181,12 @@ func (z *Zones) Resolve(ctx context.Context, q invoke.Question) (*invoke.Resolut
 	resolver, err := z.projects.Resolve(ctx, worker.Target{
 		Project:     at.project,
 		Environment: at.environment,
-		Scope:       specs.ScopeOf(nil, at.zone.ResolverNamespace),
+		Scope:       specs.ScopeOf(nil, at.zone.Resolver.Namespace),
 		Kind:        "function",
-		Name:        at.zone.ResolverName,
+		Name:        at.zone.Resolver.Name,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("zone: finding resolver %q for %s: %w", at.zone.ResolverName, at.zone.Fqdn, err)
+		return nil, fmt.Errorf("zone: finding resolver %q for %s: %w", at.zone.Resolver.Name, at.zone.Fqdn, err)
 	}
 
 	return z.guests.Resolve(ctx, resolver, q)

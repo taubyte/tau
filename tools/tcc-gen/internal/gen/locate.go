@@ -55,6 +55,14 @@ type Located struct {
 	// Required is the vocabulary's, carried so a renderer can tell an absent
 	// value from one that cannot be absent.
 	Required bool
+
+	// Defaulted marks a field the compiler fills in when the author did not.
+	// Its presence in a compiled object says nothing about what was written.
+	Defaulted bool
+
+	// Enum is the closed set of values the field may hold — an InSet(), or the
+	// branches a captured Either() records.
+	Enum []string
 }
 
 // Path is the compiled key, joined — the attribute's own identity.
@@ -72,47 +80,100 @@ func (l Located) Path() string { return strings.Join(l.Key, "/") }
 // What separates the two is already on the root: a child that is a top-level
 // group is a kind, and a kind is something this resource holds rather than
 // something it has.
+//
+// IT ALSO STOPS AT A NESTED GROUP. `ports`, `variables` and `transformers` are
+// entries the kind has many of, keyed by name or by position, and their fields
+// sit under an entry rather than on the kind. Flattened, an application read a
+// `number` off its own top level that no application has; Groups is where they
+// are answered instead.
 func Locations(root []*engine.Node, kind string) []Located {
+	iter := kindNode(root, kind)
+	if iter == nil {
+		return nil
+	}
+	fields, _ := shapeOf(iter, heldKinds(root))
+	return fields
+}
+
+// Group is a nested group a node declares: entries keyed by name (`ports`) or
+// held in order (`transformers`), each one carrying Fields and Groups of its own.
+type Group struct {
+	// Key is the group's own key in the compiled object.
+	Key string
+
+	// List marks a sequence: the entries are ordered and have no names.
+	List bool
+
+	Fields []Located
+	Groups []Group
+}
+
+// Groups is every nested group a kind declares, sorted by key.
+func Groups(root []*engine.Node, kind string) []Group {
+	iter := kindNode(root, kind)
+	if iter == nil {
+		return nil
+	}
+	_, groups := shapeOf(iter, heldKinds(root))
+	return groups
+}
+
+func heldKinds(root []*engine.Node) map[string]bool {
 	held := map[string]bool{}
 	for _, g := range root {
 		if name, ok := g.Match.(string); ok {
 			held[name] = true
 		}
 	}
+	return held
+}
 
+func kindNode(root []*engine.Node, kind string) *engine.Node {
 	for _, g := range root {
 		name, _ := g.Match.(string)
-		if name != kind || len(g.Children) == 0 {
-			continue
+		if name == kind && len(g.Children) > 0 {
+			return g.Children[0]
 		}
-
-		seen := map[string]bool{}
-		var out []Located
-		var walk func(n *engine.Node)
-		walk = func(n *engine.Node) {
-			if n == nil {
-				return
-			}
-			for _, a := range n.Attributes {
-				if a == nil || a.Name == "" || seen[a.Name] {
-					continue
-				}
-				seen[a.Name] = true
-				out = append(out, locate(a))
-			}
-			for _, c := range n.Children {
-				if held[childName(c)] {
-					continue
-				}
-				walk(c)
-			}
-		}
-		walk(g.Children[0])
-
-		sort.Slice(out, func(i, j int) bool { return out[i].Path() < out[j].Path() })
-		return out
 	}
 	return nil
+}
+
+// shapeOf is a node's own fields, and the nested groups beside them.
+func shapeOf(node *engine.Node, held map[string]bool) ([]Located, []Group) {
+	seen := map[string]bool{}
+	var fields []Located
+	var groups []Group
+	var walk func(n *engine.Node)
+	walk = func(n *engine.Node) {
+		if n == nil {
+			return
+		}
+		for _, a := range n.Attributes {
+			if a == nil || a.Name == "" || seen[a.Name] {
+				continue
+			}
+			seen[a.Name] = true
+			fields = append(fields, locate(a))
+		}
+		for _, c := range n.Children {
+			name := childName(c)
+			if held[name] {
+				continue
+			}
+			// A GROUP WITH AN ITERATOR IS ENTRIES, not more fields of this node.
+			if c.Group && name != "" && len(c.Children) == 1 && !c.Children[0].Group {
+				f, g := shapeOf(c.Children[0], held)
+				groups = append(groups, Group{Key: name, List: c.Sequence, Fields: f, Groups: g})
+				continue
+			}
+			walk(c)
+		}
+	}
+	walk(node)
+
+	sort.Slice(fields, func(i, j int) bool { return fields[i].Path() < fields[j].Path() })
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Key < groups[j].Key })
+	return fields, groups
 }
 
 func locate(a *engine.Attribute) Located {
@@ -126,6 +187,11 @@ func locate(a *engine.Attribute) Located {
 		Captures: a.Captures,
 		Required: a.Required,
 		Read:     readerFor(a),
+
+		Defaulted: a.Default != nil,
+	}
+	if enum, ok := a.Meta["enum"].([]string); ok {
+		l.Enum = append([]string(nil), enum...)
 	}
 
 	for _, p := range a.Path {
@@ -146,6 +212,10 @@ func locate(a *engine.Attribute) Located {
 	}
 	if len(l.Authored) == 0 {
 		l.Authored = append([]string(nil), l.Key...)
+	}
+	if l.Captures && len(l.Enum) == 0 {
+		// THE BRANCH TAKEN IS THE VALUE, so the branches are the set.
+		l.Enum = append([]string(nil), l.Branch...)
 	}
 	return l
 }
