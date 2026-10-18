@@ -12,9 +12,10 @@
 //
 // # What is kept from dream, and why
 //
-// The two things about a universe's network that were measured rather than
-// chosen are kept exactly: the canonical-direction dial (see dial) and the
-// bounded WaitForSwarm after it (see Add). Both are commented where they live.
+// The three things about a universe's network that were measured rather than
+// chosen are kept exactly: a peer's services start before it joins (see Add),
+// the canonical-direction dial (see dial), and the bounded WaitForSwarm after
+// it. Each is commented where it lives.
 // dream's 750ms settle is NOT here, because dream only ever paid it for a
 // simple — a client node — and a mesh has none.
 package mesh
@@ -109,8 +110,15 @@ func (m *Mesh) Peers() []peer.Node {
 	return append([]peer.Node(nil), m.peers...)
 }
 
-// Add makes a peer, bootstrapped to and meshed with every peer already here.
-func (m *Mesh) Add() (peer.Node, error) {
+// Add makes a peer, starts what runs on it, and then meshes it with every peer
+// already here.
+//
+// WHAT RUNS ON A PEER STARTS BEFORE IT JOINS, which is the order dream always
+// had and the one a fleet is measured against: a CRDT whose node starts after
+// it is already connected never fetches the heads it is told about (node/dream's
+// TestACacheReplicatesBetweenNodes stays at "a node never reached the project"
+// with the order reversed). start may be nil.
+func (m *Mesh) Add(start func(peer.Node) error) (peer.Node, error) {
 	existing := m.Peers()
 
 	bootstrap := peer.StandAlone()
@@ -133,6 +141,13 @@ func (m *Mesh) Add() (peer.Node, error) {
 	n, err := peer.NewPublic(m.ctx, dir, keypair.NewRaw(), m.swarmKey, []string{listen}, []string{listen}, bootstrap)
 	if err != nil {
 		return nil, err
+	}
+
+	if start != nil {
+		if err := start(n); err != nil {
+			n.Close()
+			return nil, err
+		}
 	}
 
 	m.dial(n, existing)

@@ -31,16 +31,14 @@ var logger = log.Logger("tau.register.dream")
 // Start runs a register on a new peer of m, and answers the peer. The service is
 // closed with the mesh, before its peer.
 func Start(m *mesh.Mesh) (peer.Node, error) {
-	node, err := m.Add()
-	if err != nil {
-		return nil, err
-	}
-	svc, err := create(m.Context(), node.Peer(), node)
-	if err != nil {
-		return nil, err
-	}
-	m.OnClose(svc)
-	return node, nil
+	return m.Add(func(node peer.Node) error {
+		svc, err := create(m.Context(), node.Peer(), node)
+		if err != nil {
+			return err
+		}
+		m.OnClose(svc)
+		return nil
+	})
 }
 
 func create(ctx context.Context, h host.Host, node peer.Node) (io.Closer, error) {

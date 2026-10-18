@@ -351,12 +351,8 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	u := &Universe{mesh: m}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add()
+		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index) })
 		if err != nil {
-			u.Close()
-			return nil, err
-		}
-		if err := create(m, p, cfg, index); err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
 		}

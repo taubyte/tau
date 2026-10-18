@@ -58,16 +58,14 @@ func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
 // the peer named, and answers the peer. The worker is closed with the mesh,
 // before its peer.
 func Start(m *mesh.Mesh, registerAt libp2ppeer.ID) (peer.Node, error) {
-	node, err := m.Add()
-	if err != nil {
-		return nil, err
-	}
-	svc, err := create(m.Context(), node.Peer(), registerAt)
-	if err != nil {
-		return nil, err
-	}
-	m.OnClose(svc)
-	return node, nil
+	return m.Add(func(node peer.Node) error {
+		svc, err := create(m.Context(), node.Peer(), registerAt)
+		if err != nil {
+			return err
+		}
+		m.OnClose(svc)
+		return nil
+	})
 }
 
 func create(ctx context.Context, h host.Host, at libp2ppeer.ID) (io.Closer, error) {
