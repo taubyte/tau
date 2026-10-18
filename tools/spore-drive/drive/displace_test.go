@@ -182,7 +182,7 @@ func testDisplace(t *testing.T, sd Spore) {
 
 		// the host's shapes are one node, keyed by its first shape
 		assert.Equal(t, main.PrivateKey, sdrive.parser.Hosts().Host(h.Name()).Shapes().Instance("shape1").Key())
-		assert.DeepEqual(t, main.Node.Services, []string{"auth", "secrets", "stats", "dns", "gateway", "build-backend"})
+		assert.DeepEqual(t, main.Node.Services, []string{"auth", "secrets", "discovery", "dns", "gateway", "build-backend"})
 		assert.Equal(t, main.Node.Cloud, "test.com")
 		assert.Equal(t, main.Node.Gateway.CloudFqdn, "gtest.com")
 		assert.Equal(t, main.HTTP, ":80")
@@ -197,7 +197,7 @@ func testDisplace(t *testing.T, sd Spore) {
 		assert.NilError(t, err, "libp2p reads the swarm key as written")
 
 		// build-frontend is split off, on the next port, with its own identity
-		assert.DeepEqual(t, frontend.Node.Services, []string{"build-frontend", "stats"})
+		assert.DeepEqual(t, frontend.Node.Services, []string{"build-frontend", "discovery"})
 		assert.DeepEqual(t, frontend.Listen, []string{"/ip4/0.0.0.0/tcp/4243"})
 		assert.Assert(t, frontend.PrivateKey != main.PrivateKey)
 		assert.Equal(t, frontend.HTTP, "")

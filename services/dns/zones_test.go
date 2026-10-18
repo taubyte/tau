@@ -41,7 +41,7 @@ func zoning(t *testing.T, apex string, lines ...string) (*Service, *declared) {
 	return s, z
 }
 
-// TestATYPETHISSERVERCANNOTROUTE is the whole point: no amount of stats
+// TestATYPETHISSERVERCANNOTROUTE is the whole point: no amount of discovery
 // produces an MX, and a project that moved its domain here and lost its mail
 // has not moved its domain.
 func TestAZoneAnswersTypesRoutingCannot(t *testing.T) {

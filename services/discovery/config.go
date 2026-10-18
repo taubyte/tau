@@ -1,4 +1,4 @@
-package stats
+package discovery
 
 import (
 	"context"
@@ -24,7 +24,7 @@ import (
 //
 // It is deliberately not "a pubsub": no topic management, no peer scoring, no
 // join/leave. The service is handed something already scoped to one topic,
-// because which topic stats gossips on is a composition decision and not a
+// because which topic discovery gossips on is a composition decision and not a
 // thing this package should be able to get wrong.
 type Bus interface {
 	// Publish broadcasts one encoded report. A failure is not fatal — the
@@ -162,7 +162,7 @@ func WithReporter(r Reporter) Option {
 func WithClock(now func() time.Time) Option {
 	return func(o *options) error {
 		if now == nil {
-			return errors.New("stats: a nil clock")
+			return errors.New("discovery: a nil clock")
 		}
 		o.now = now
 		return nil
@@ -187,8 +187,8 @@ const (
 )
 
 var (
-	ErrNoBus      = errors.New("stats: a service with no bus can neither report nor hear")
-	ErrNoReporter = errors.New("stats: a service with no reporter has nothing to say about itself")
+	ErrNoBus      = errors.New("discovery: a service with no bus can neither report nor hear")
+	ErrNoReporter = errors.New("discovery: a service with no reporter has nothing to say about itself")
 )
 
 func (c Config) withDefaults() (Config, error) {
@@ -196,7 +196,7 @@ func (c Config) withDefaults() (Config, error) {
 		c.Interval = DefaultInterval
 	}
 	if c.Interval <= 0 {
-		return Config{}, fmt.Errorf("stats: interval %s: a node that never reports is a node nothing can route to", c.Interval)
+		return Config{}, fmt.Errorf("discovery: interval %s: a node that never reports is a node nothing can route to", c.Interval)
 	}
 	if c.Fresh == 0 {
 		c.Fresh = freshIntervals * c.Interval
@@ -205,7 +205,7 @@ func (c Config) withDefaults() (Config, error) {
 		c.Forget = forgetIntervals * c.Interval
 	}
 	if c.Fresh < c.Interval {
-		return Config{}, fmt.Errorf("stats: fresh %s is shorter than the %s interval: every row would be stale before its replacement was sent",
+		return Config{}, fmt.Errorf("discovery: fresh %s is shorter than the %s interval: every row would be stale before its replacement was sent",
 			c.Fresh, c.Interval)
 	}
 	if c.Stabilize == 0 {
@@ -221,7 +221,7 @@ func (c Config) withDefaults() (Config, error) {
 		// pkg/membership refuses this in so many words, and it is refused here
 		// too so the operator hears it about the field they wrote rather than
 		// about a liveness window they never named.
-		return Config{}, fmt.Errorf("stats: stabilize %s is shorter than the %s freshness window: placement would move faster than acknowledgement",
+		return Config{}, fmt.Errorf("discovery: stabilize %s is shorter than the %s freshness window: placement would move faster than acknowledgement",
 			c.Stabilize, c.Fresh)
 	}
 	return c, nil

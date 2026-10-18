@@ -100,7 +100,7 @@ func TestTheNodeTerminatesAGeneratedNameWithTheCloudsWildcard(t *testing.T) {
 
 	f := File{
 		Node: node.Config{
-			Services: []string{node.Register, node.Stats, node.Gateway},
+			Services: []string{node.Register, node.Discovery, node.Gateway},
 			Gateway:  gateway.Config{CloudFqdn: cloud, Wildcard: wildcard},
 		},
 		Root:     t.TempDir(),
@@ -151,7 +151,7 @@ func TestTheHTTPSAddressIsInTheFile(t *testing.T) {
 // TestAnHTTPSAddressAlreadyTakenIsAnError, and the node is not left half up.
 func TestAnHTTPSAddressAlreadyTakenIsAnError(t *testing.T) {
 	first, err := Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Register, node.Stats, node.Gateway}},
+		Node:     node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
 		Root:     t.TempDir(),
 		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
 		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
@@ -162,7 +162,7 @@ func TestAnHTTPSAddressAlreadyTakenIsAnError(t *testing.T) {
 	require.Empty(t, first.Address(), "no clear listener was asked for")
 
 	_, err = Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Register, node.Stats, node.Gateway}},
+		Node:     node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
 		Root:     t.TempDir(),
 		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
 		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),

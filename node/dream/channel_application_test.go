@@ -33,7 +33,7 @@ import (
 // It runs under `make test-application`, for application_test's reason.
 func TestAChannelServedByAContainerDeliversToItsNamedPort(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{node.Register, node.Worker, node.Stats},
+		Services:  []string{node.Register, node.Worker, node.Discovery},
 		Container: node.BackendDocker,
 	})
 	require.NoError(t, err)

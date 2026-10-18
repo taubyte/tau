@@ -16,7 +16,7 @@ import (
 // TestBUSTOPICISTHECONTRACTWHATEVERATTACHES. Whatever comes to attach a browser
 // has to listen on exactly what a publish reaches.
 func TestTheNodeExposesBothTopics(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Worker, Discovery}})
 
 	require.Equal(t, stream.Topic(stream.Bus, n.cfg.Cloud, "h"), n.BusTopic("h"))
 	require.Equal(t, stream.Topic(stream.Stream, n.cfg.Cloud, "h"), n.StreamTopic("h"))
@@ -27,7 +27,7 @@ func TestTheNodeExposesBothTopics(t *testing.T) {
 // gateway's attach. Two would be two joins of one topic — a mesh each, with the
 // browser on the one the workload is not.
 func TestOneBusBackingIsSharedByBothConsumers(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats, Gateway}})
+	n, _, _ := makeNode(t, Config{Services: []string{Worker, Discovery, Gateway}})
 
 	first, err := n.busStreams()
 	require.NoError(t, err)

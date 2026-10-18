@@ -1,4 +1,4 @@
-// Package stats collects what every node says about itself, so dns and gateway
+// Package discovery collects what every node says about itself, so dns and gateway
 // can route from measurements instead of guesses.
 //
 // It is one half of v1's seer; dns is the other. The split is not tidiness: the
@@ -11,7 +11,7 @@
 // is still an answer — lives in pkg/stats, which has no host, no bus and no
 // goroutine in it. What is here is a ticker, an encoder and a subscription, so
 // that the interesting rules stay unit-testable and this file stays boring.
-package stats
+package discovery
 
 import (
 	"context"
@@ -26,11 +26,11 @@ import (
 
 	"github.com/taubyte/tau/pkg/membership"
 	"github.com/taubyte/tau/pkg/placement"
-	statsv1 "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v1"
+	discoveryv1 "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v1"
 	"github.com/taubyte/tau/pkg/stats"
 )
 
-// Service is a node's stats participation: it broadcasts this node's own
+// Service is a node's discovery participation: it broadcasts this node's own
 // numbers and keeps a view of everyone else's.
 type Service struct {
 	cfg  Config
@@ -69,7 +69,7 @@ type Service struct {
 // parity a retrofit instead of an adapter.
 func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 	if h == nil {
-		return nil, errors.New("stats: a service with no host does not know who it is reporting as")
+		return nil, errors.New("discovery: a service with no host does not know who it is reporting as")
 	}
 	c, err := cfg.withDefaults()
 	if err != nil {
@@ -126,11 +126,11 @@ func (s *Service) Start(ctx context.Context) error {
 	s.mu.Lock()
 	if s.stopped {
 		s.mu.Unlock()
-		return errors.New("stats: this service has been closed")
+		return errors.New("discovery: this service has been closed")
 	}
 	if s.cancel != nil {
 		s.mu.Unlock()
-		return errors.New("stats: already started")
+		return errors.New("discovery: already started")
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
@@ -142,7 +142,7 @@ func (s *Service) Start(ctx context.Context) error {
 		s.mu.Lock()
 		s.cancel = nil
 		s.mu.Unlock()
-		return fmt.Errorf("stats: subscribing: %w", err)
+		return fmt.Errorf("discovery: subscribing: %w", err)
 	}
 
 	var wg sync.WaitGroup
@@ -187,7 +187,7 @@ func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
 			if !ok {
 				return
 			}
-			var r statsv1.Report
+			var r discoveryv1.Report
 			if err := proto.Unmarshal(b, &r); err != nil {
 				continue
 			}
@@ -248,7 +248,7 @@ func (s *Service) report(ctx context.Context) {
 		return
 	}
 
-	b, err := proto.Marshal(&statsv1.Report{
+	b, err := proto.Marshal(&discoveryv1.Report{
 		Peer:        s.peer,
 		Incarnation: s.incarnation,
 		Load:        snap.Load,
@@ -318,7 +318,7 @@ func (s *Service) Get(peer string) (stats.Node, bool) { return s.view.Get(peer) 
 // uint32 because proto3 has no uint16, so a sender that put 70000 there would
 // otherwise become port 4464 on every reader — a routable-looking answer to a
 // listener nobody has.
-func socketsOf(in []*statsv1.Socket) []stats.Socket {
+func socketsOf(in []*discoveryv1.Socket) []stats.Socket {
 	out := make([]stats.Socket, 0, len(in))
 	for _, s := range in {
 		if s.GetPort() == 0 || s.GetPort() > math.MaxUint16 {
@@ -334,10 +334,10 @@ func socketsOf(in []*statsv1.Socket) []stats.Socket {
 	return out
 }
 
-func wireSockets(in []stats.Socket) []*statsv1.Socket {
-	out := make([]*statsv1.Socket, 0, len(in))
+func wireSockets(in []stats.Socket) []*discoveryv1.Socket {
+	out := make([]*discoveryv1.Socket, 0, len(in))
 	for _, s := range in {
-		out = append(out, &statsv1.Socket{
+		out = append(out, &discoveryv1.Socket{
 			Host:      s.Host,
 			Protocol:  s.Protocol,
 			Transport: s.Transport,

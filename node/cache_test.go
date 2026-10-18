@@ -27,7 +27,7 @@ func grant(handle string, settings map[string]string) invoke.Grant {
 func backing(t *testing.T) (wasmtier.Caches, *memFactory) {
 	t.Helper()
 
-	n, _, factory := makeNode(t, Config{Services: []string{Worker, Stats}})
+	n, _, factory := makeNode(t, Config{Services: []string{Worker, Discovery}})
 	c, err := cache.New(cacheStores{node: n})
 	require.NoError(t, err)
 	return c, factory
@@ -61,7 +61,7 @@ func TestACacheNeedsADatabaseFactory(t *testing.T) {
 	t.Cleanup(func() { mn.Close() })
 	h := newHost(t, mn)
 
-	n, err := New(Config{Services: []string{Worker, Stats}},
+	n, err := New(Config{Services: []string{Worker, Discovery}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithRuntimes(&tier{name: "wasm"}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
@@ -76,7 +76,7 @@ func TestACacheNeedsADatabaseFactory(t *testing.T) {
 // TestTHECACHEDATABASEISCLOSEDWITHTHENODE, so a node that opened one on its
 // first request does not leak it.
 func TestTheCacheDatabaseIsClosedWithTheNode(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Worker, Stats}})
+	n, _, factory := makeNode(t, Config{Services: []string{Worker, Discovery}})
 
 	c, err := cache.New(cacheStores{node: n})
 	require.NoError(t, err)
@@ -95,7 +95,7 @@ func TestTheCacheDatabaseIsClosedWithTheNode(t *testing.T) {
 // what makes a rotation reach one at the next deploy and the other at the next
 // call.
 func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 	ctx := t.Context()
 
@@ -124,7 +124,7 @@ func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
 // TestAMissIsTheTIERSMiss, so a guest is told "nothing is set" rather than "the
 // node is unhappy".
 func TestAnUnsetSecretIsTheTiersArm(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.vault.SecretFor(t.Context(), invoke.Grant{
@@ -136,7 +136,7 @@ func TestAnUnsetSecretIsTheTiersArm(t *testing.T) {
 // TestAHandleThatAddressesNothingIsRefused rather than reaching a row composed
 // out of empty segments.
 func TestAMalformedSecretHandleIsRefused(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
 	for _, handle := range []string{"", "shop", "shop/prod", "shop//QmStripe"} {

@@ -31,7 +31,7 @@ import (
 // # What this does not decide
 //
 // WHO to call is the caller's. Routing by load and freshness is a fleet view's
-// business — tau's lives in services/stats — and a transport package that
+// business — tau's lives in services/discovery — and a transport package that
 // imported a service to answer it would have the dependency backwards. Reach
 // takes `pick` as a function; the composition supplies the one that reads its
 // view.

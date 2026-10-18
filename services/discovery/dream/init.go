@@ -1,4 +1,4 @@
-// Package dream runs the stats service on a peer of an in-process mesh.
+// Package dream runs the discovery service on a peer of an in-process mesh.
 //
 // It is the first v2 service to run under dream, and it is what makes "parity"
 // a thing that can be tested rather than asserted: the service that runs here is
@@ -14,10 +14,10 @@ import (
 
 	"github.com/taubyte/tau/p2p/mesh"
 	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/services/stats"
+	"github.com/taubyte/tau/services/discovery"
 )
 
-// Start runs a stats service on a new peer of m, and answers the peer. The service is
+// Start runs a discovery service on a new peer of m, and answers the peer. The service is
 // closed with the mesh, before its peer.
 func Start(m *mesh.Mesh) (peer.Node, error) {
 	return m.Add(func(node peer.Node) error {
@@ -34,14 +34,14 @@ func create(ctx context.Context, h host.Host, node peer.Node, scope string) (io.
 	// The bus is built from the node's own pubsub, scoped to this universe:
 	// two universes on one machine must not pool their load figures and route
 	// each other's traffic.
-	bus, err := stats.NewBus(node.Messaging(), scope)
+	bus, err := discovery.NewBus(node.Messaging(), scope)
 	if err != nil {
 		return nil, err
 	}
 
-	svc, err := stats.New(h, stats.Config{},
-		stats.WithBus(bus),
-		stats.WithReporter(reporter(h)),
+	svc, err := discovery.New(h, discovery.Config{},
+		discovery.WithBus(bus),
+		discovery.WithReporter(reporter(h)),
 	)
 	if err != nil {
 		return nil, err
@@ -60,12 +60,12 @@ func create(ctx context.Context, h host.Host, node peer.Node, scope string) (io.
 // stays zero because nothing here measures it yet, and a made-up number would
 // steer routing on fiction. Zero is honest: it says "as available as anything
 // else", which inside a universe is true.
-func reporter(h host.Host) stats.Reporter {
-	return stats.ReporterFunc(func(context.Context) (stats.Snapshot, error) {
+func reporter(h host.Host) discovery.Reporter {
+	return discovery.ReporterFunc(func(context.Context) (discovery.Snapshot, error) {
 		addrs := make([]string, 0, len(h.Addrs()))
 		for _, a := range h.Addrs() {
 			addrs = append(addrs, a.String())
 		}
-		return stats.Snapshot{Ready: true, Addresses: addrs}, nil
+		return discovery.Snapshot{Ready: true, Addresses: addrs}, nil
 	})
 }

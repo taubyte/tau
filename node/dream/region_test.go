@@ -22,7 +22,7 @@ import (
 func TestAUniverseSpreadsItsNodesAcrossRegions(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		// FOUR NODES, so a spread is observable rather than asserted about one.
-		Services: []string{node.Register, node.Stats},
+		Services: []string{node.Register, node.Discovery},
 		Regions:  []string{"eu", "us"},
 		Copies:   4,
 	})
@@ -71,7 +71,7 @@ func TestAUniverseSpreadsItsNodesAcrossRegions(t *testing.T) {
 // placement — and what a single-region cloud is.
 func TestAUniverseThatNamesNoRegionHasNone(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{node.Register, node.Stats},
+		Services: []string{node.Register, node.Discovery},
 	})
 	require.NoError(t, err)
 	defer u.Close()

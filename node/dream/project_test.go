@@ -369,7 +369,7 @@ func deploy(t *testing.T, name, host string, wasm []byte) *running {
 func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][]byte) *running {
 	t.Helper()
 	return deployServing(t, name, host, wasm, extra,
-		node.Register, node.Worker, node.Stats, node.Gateway, node.Database, node.Primitives)
+		node.Register, node.Worker, node.Discovery, node.Gateway, node.Database, node.Primitives)
 }
 
 // deployServing is deployWith over a chosen set of services.
@@ -1067,7 +1067,7 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: []string{
-			node.Register, node.Worker, node.Stats, node.Gateway,
+			node.Register, node.Worker, node.Discovery, node.Gateway,
 			node.Database, node.Primitives},
 		// ONE REGION, NAMED, because the project pins its state to it and a
 		// node that cannot say where it is competes for nothing anybody
@@ -1135,7 +1135,7 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 				waiting = "the fleet document"
 				return false
 			}
-			if len(n.Stats().Placement()["eu"]) != copies {
+			if len(n.Discovery().Placement()["eu"]) != copies {
 				waiting = "the placement set"
 				return false
 			}

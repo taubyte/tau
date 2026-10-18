@@ -46,7 +46,7 @@ import (
 // does.
 //
 // WHICH NODE IS A ROUTING QUESTION AND NOT A WIRING ONE, so it is asked per
-// call of the same stats view every other locator here reads, and the stream is
+// call of the same discovery view every other locator here reads, and the stream is
 // cached by peer. Neither half is written here any more: p2p/rpc holds the
 // rule and node/locate.go holds the view, and what this file states is the one
 // thing that is the `sync` kind's own — that there are TWO reaches, because a
@@ -75,7 +75,7 @@ var ErrNoPrimitives = errors.New("node: no primitives service is reachable")
 // send, and a node that does not never dials for a clock, because it refuses
 // the window before asking. So at most one of the two ever holds a stream.
 func (n *Node) openPrimitivesReach() {
-	pick := n.routeTo(Primitives, ErrNoPrimitives, "this node runs neither one nor stats to find one")
+	pick := n.routeTo(Primitives, ErrNoPrimitives, "this node runs neither one nor discovery to find one")
 
 	// A LOCAL SERVICE IS THE ABSENCE OF A HOP AND NOT A SHORTCUT, which is
 	// locate.go's sentence about the register and services/database's about an
@@ -119,7 +119,7 @@ func (n *Node) openPrimitivesReach() {
 // IT IS DELIBERATELY NOT THE SEND PATH'S REACH. That one prefers this node's
 // own service because a send has no reason to leave; a tasking does — the whole
 // point of the leader's minute being a MESSAGE is that the walk happens
-// somewhere it chose. So the node comes from the same stats view every other
+// somewhere it chose. So the node comes from the same discovery view every other
 // locator here reads, and it is this one only when the view says so.
 //
 // AND THE SAME-NODE CASE PAYS NO ROUND TRIP, which is the send path's rule read
@@ -198,7 +198,7 @@ func (n *Node) openPrimitives() error {
 	//
 	// AND WHERE A MINUTE GOES, which is this node's answer and not the
 	// service's: the leader hands one window a minute to a node running the
-	// service, and which node that is comes from the same stats view every
+	// service, and which node that is comes from the same discovery view every
 	// other locator here reads. See [Node.taskCron].
 	//
 	// WHAT IS STILL NOT CLOSED, stated where it is paid: the tasking now leaves
@@ -272,7 +272,7 @@ func (n *Node) syncBacking() (*primitive.Backing, error) {
 // leader-only, so every fire in the cloud is handed out by one node; a firer
 // that also RAN what it claimed would leave the rest of the fleet idle. This is
 // node/dispatch.go's invoke, for its reasons and with its one exception — a
-// node with no stats can only reach itself, so it runs what it claimed rather
+// node with no discovery can only reach itself, so it runs what it claimed rather
 // than refusing it.
 func (n *Node) fire(ctx context.Context, at primitivesService.Target, req *invoke.Request) (*invoke.Response, error) {
 	target := worker.Target{

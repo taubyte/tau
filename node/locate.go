@@ -18,7 +18,7 @@ import (
 // locate.go is how one service on this node finds another.
 //
 // THERE IS ONE RULE AND IT IS THE SAME EVERYWHERE: if this node runs the
-// service, use it directly; otherwise ask stats which node does and dial that
+// service, use it directly; otherwise ask discovery which node does and dial that
 // one. Both halves read the same view, so there is one answer to "who does
 // this" and it is a local read rather than a lookup on the request path.
 //
@@ -26,7 +26,7 @@ import (
 // when a stream is established, so it belongs where streams are established,
 // and it was written five times here before it lived anywhere. What is left in
 // this package is the half that is tau's — WHO to call — because routing by
-// load and freshness is the stats view's business and a transport package that
+// load and freshness is the discovery view's business and a transport package that
 // imported a service to answer it would have the dependency backwards. See
 // [Node.routeTo].
 
@@ -49,7 +49,7 @@ type registerReader interface {
 }
 
 // registerSeam is the register as the REACH onto it hands it back: this node's
-// own when it runs one, a stream onto the node stats names when it does not.
+// own when it runs one, a stream onto the node discovery names when it does not.
 //
 // IT IS THE UNION OF WHAT ITS THREE CALLERS NEED, AND IT IS NOT WHAT ANY OF
 // THEM IS HANDED. registerReader, artifact.Register and deploy.Register are
@@ -78,11 +78,11 @@ type registerSeam interface {
 // and the two answers in this package are [rpc.Reach]'s and [rpc.ReachRouted]'s.
 //
 // `blind` is what a node with no view of a fleet at all is told, which is a
-// different sentence from an empty view: it is a composition that forgot stats
+// different sentence from an empty view: it is a composition that forgot discovery
 // rather than a fleet that has nothing.
 func (n *Node) routeTo(service string, absent error, blind string) func() (libp2ppeer.ID, error) {
 	return func() (libp2ppeer.ID, error) {
-		if n.stats == nil {
+		if n.discovery == nil {
 			return "", fmt.Errorf("%w: %s", absent, blind)
 		}
 
@@ -107,12 +107,12 @@ func (n *Node) routeTo(service string, absent error, blind string) func() (libp2
 // number, and the one thing that has actually gone wrong here is the number.
 //
 // WHAT A ROW THAT DOES NOT DECODE MEANS IS THE CALLER'S, and the two callers
-// answer differently on purpose — see [Node.routeTo] and fromStats.Known.
+// answer differently on purpose — see [Node.routeTo] and fromDiscovery.Known.
 func (n *Node) rowsFor(service string) []pkgstats.Node {
-	if n.stats == nil {
+	if n.discovery == nil {
 		return nil
 	}
-	return n.stats.Route(service, n.cfg.Stats.Freshness())
+	return n.discovery.Route(service, n.cfg.Discovery.Freshness())
 }
 
 // openReach wires every locator this node has, BEFORE anything that uses one.
@@ -123,7 +123,7 @@ func (n *Node) rowsFor(service string) []pkgstats.Node {
 // is still found by a reach built before it.
 func (n *Node) openReach() {
 	n.registers = rpc.Reach(n.opts.host, Register,
-		n.routeTo(Register, ErrNoRegister, "this node runs neither a register nor stats to find one"),
+		n.routeTo(Register, ErrNoRegister, "this node runs neither a register nor discovery to find one"),
 		func() (registerSeam, bool) {
 			// A LOCAL REGISTER IS NOT A CACHE, IT IS THE ABSENCE OF A HOP.
 			if n.register == nil {

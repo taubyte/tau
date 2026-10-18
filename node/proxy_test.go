@@ -68,7 +68,7 @@ func withProxy(change func(map[string]any)) []byte {
 func proxying(t *testing.T, compiled []byte) *Node {
 	t.Helper()
 
-	cfg := Config{Services: []string{Register, Worker, Stats, Proxy}}
+	cfg := Config{Services: []string{Register, Worker, Discovery, Proxy}}
 	cfg.Proxy.CloudFqdn = "tau.example.io"
 
 	// SWEEP FAST, BECAUSE THE SWEEP IS WHAT IS BEING TESTED. DefaultSweep is ten
@@ -145,7 +145,7 @@ func TestAProxyWithoutAWorkerIsRefusedAtConstruction(t *testing.T) {
 	t.Cleanup(func() { mn.Close() })
 	h := newHost(t, mn)
 
-	_, err := New(Config{Services: []string{Register, Stats, Proxy}},
+	_, err := New(Config{Services: []string{Register, Discovery, Proxy}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}))
 	require.ErrorContains(t, err, "a worker holds")
 }

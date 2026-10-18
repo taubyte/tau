@@ -33,7 +33,7 @@ func TestANodeRefusesBothHalvesOfTheBuildService(t *testing.T) {
 
 	// Either one alone is fine.
 	for _, only := range []string{BuildFrontend, BuildBackend} {
-		_, err := Config{Services: []string{only, Stats}}.withDefaults()
+		_, err := Config{Services: []string{only, Discovery}}.withDefaults()
 		require.NoError(t, err, only)
 	}
 }
@@ -66,7 +66,7 @@ func TestTheBackendNeedsARaft(t *testing.T) {
 	t.Cleanup(func() { mn.Close() })
 	h := newHost(t, mn)
 
-	_, err := New(Config{Services: []string{BuildBackend, Stats}},
+	_, err := New(Config{Services: []string{BuildBackend, Discovery}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}))
 	require.ErrorIs(t, err, ErrNoRaft)
 
@@ -111,7 +111,7 @@ func TestAuthMintsAKeyPairWhenItHasNone(t *testing.T) {
 // ── a node runs them, and says it does ───────────────────────────────────
 
 func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, Auth, BuildBackend}})
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Auth, BuildBackend}})
 	require.NoError(t, n.Start(t.Context()))
 
 	serving := n.serving()
@@ -131,7 +131,7 @@ func TestTheFrontendHoldsNeitherStore(t *testing.T) {
 	// it — a port baked into a service is why sibling worktrees collide — so an
 	// operator names one.
 	n, _, _ := makeNode(t, Config{
-		Services:      []string{Stats, BuildFrontend},
+		Services:      []string{Discovery, BuildFrontend},
 		BuildFrontend: frontend.Config{Listen: "127.0.0.1:0"},
 	})
 	require.NoError(t, n.Start(t.Context()))
@@ -148,12 +148,12 @@ func TestTheFrontendHoldsNeitherStore(t *testing.T) {
 // on this node reads.
 func TestTheResolverReadsTheSameViewAsEverythingElse(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Stats, Auth}},
-		Config{Services: []string{Stats}},
+		Config{Services: []string{Discovery, Auth}},
+		Config{Services: []string{Discovery}},
 	)
 	holder, seeker := nodes[0], nodes[1]
 
-	from := &fromStats{node: seeker, name: Auth}
+	from := &fromDiscovery{node: seeker, name: Auth}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -179,23 +179,23 @@ func TestTheResolverReadsTheSameViewAsEverythingElse(t *testing.T) {
 // A service nobody runs is a wait that ends with the caller's deadline and says
 // what it was looking for.
 func TestTheResolverGivesUp(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, n.Start(t.Context()))
 
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 
-	_, err := (&fromStats{node: n, name: BuildBackend}).Any(ctx)
+	_, err := (&fromDiscovery{node: n, name: BuildBackend}).Any(ctx)
 	require.ErrorContains(t, err, BuildBackend)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-// A node with no stats can locate nothing, and says so rather than blocking
+// A node with no discovery can locate nothing, and says so rather than blocking
 // until a deadline that will never produce an answer.
 func TestTheResolverOnANodeWithNoStats(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 
-	from := &fromStats{node: n, name: Auth}
+	from := &fromDiscovery{node: n, name: Auth}
 	require.Empty(t, from.Known())
 
 	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
@@ -207,7 +207,7 @@ func TestTheResolverOnANodeWithNoStats(t *testing.T) {
 // A row whose peer does not decode is skipped rather than failing the lookup,
 // so one bad row cannot hide the good ones beside it.
 func TestARowThatIsNotAPeerIsSkipped(t *testing.T) {
-	require.Equal(t, []libp2ppeer.ID(nil), (&fromStats{node: &Node{}, name: Auth}).Known())
+	require.Equal(t, []libp2ppeer.ID(nil), (&fromDiscovery{node: &Node{}, name: Auth}).Known())
 }
 
 // ── the register's one writer ────────────────────────────────────────────
@@ -216,7 +216,7 @@ func TestARowThatIsNotAPeerIsSkipped(t *testing.T) {
 // node running its own register that is a local call rather than a stream to
 // itself.
 func TestThePublisherIsLocalWhenThisNodeHasTheRegister(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 
 	publisher, err := n.publisher(t.Context())
 	require.NoError(t, err)
@@ -224,7 +224,7 @@ func TestThePublisherIsLocalWhenThisNodeHasTheRegister(t *testing.T) {
 
 	// With no register anywhere, it fails rather than silently dropping a
 	// deploy.
-	none, _, _ := makeNode(t, Config{Services: []string{Stats}})
+	none, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, none.Start(t.Context()))
 	_, err = none.publisher(t.Context())
 	require.ErrorIs(t, err, ErrNoRegister)
@@ -236,7 +236,7 @@ func TestThePublisherIsLocalWhenThisNodeHasTheRegister(t *testing.T) {
 // node answers is a routing question, and one held from construction would be
 // whichever node this dialled at boot, forever.
 func TestTheBuildRegisterReadsLocallyWhenThisNodeHasOne(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.NoError(t, n.Start(t.Context()))
 
 	r := buildRegister{n}
@@ -270,7 +270,7 @@ func TestTheBuildRegisterReadsLocallyWhenThisNodeHasOne(t *testing.T) {
 // of the three reads says so rather than answering emptily — an empty answer
 // would look like a project that was never deployed.
 func TestTheBuildRegisterWithNoRegisterAnywhere(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, n.Start(t.Context()))
 
 	r := buildRegister{n}
@@ -290,7 +290,7 @@ func TestTheBuildRegisterWithNoRegisterAnywhere(t *testing.T) {
 // push can be are independent: a node with no container backend still deploys
 // configuration, which is most of what a small cloud does.
 func TestABuildBackendWithNoContainerBackend(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, BuildBackend}})
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend}})
 	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, n.buildBackend, "it still runs, and still deploys configuration")
 }
@@ -303,7 +303,7 @@ func TestABuildBackendWithABackendThatIsNotOne(t *testing.T) {
 	h := newHost(t, mn)
 
 	_, err := New(Config{
-		Services:  []string{Stats, BuildBackend},
+		Services:  []string{Discovery, BuildBackend},
 		Container: ContainerConfig{Backend: "not-a-backend"},
 	},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
@@ -319,7 +319,7 @@ func TestWithAssets(t *testing.T) {
 	require.ErrorContains(t, WithAssets(nil)(&options{}), "asset store")
 
 	store := &countingAssets{}
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, BuildBackend}}, WithAssets(store))
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend}}, WithAssets(store))
 	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, n.buildBackend)
 }
@@ -335,7 +335,7 @@ func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
 
 	// No container backend, no injected runtime — and a worker still starts,
 	// with both tiers that need only the asset store.
-	n, err := New(Config{Services: []string{Stats, Worker}},
+	n, err := New(Config{Services: []string{Discovery, Worker}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
 		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
 		WithAssets(&countingAssets{}),
@@ -350,7 +350,7 @@ func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
 
 	// And with neither, it refuses rather than starting a worker that can run
 	// nothing.
-	_, err = New(Config{Services: []string{Stats, Worker}},
+	_, err = New(Config{Services: []string{Discovery, Worker}},
 		WithHost(newHost(t, mn)), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
 		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
 	)
@@ -408,7 +408,7 @@ func TestTheContainerBackendIsTheOperatorsChoice(t *testing.T) {
 func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	n, _, _ := makeNode(t,
-		Config{Services: []string{Stats}, Worker: worker.Config{PointerTTL: time.Minute}},
+		Config{Services: []string{Discovery}, Worker: worker.Config{PointerTTL: time.Minute}},
 		WithClock(func() time.Time { return now }))
 
 	a := &artifacts{node: n, seen: map[string]builtAt{}}
@@ -433,7 +433,7 @@ func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
 // build finishes, and remembering it would keep a node refusing a resource for
 // a whole TTL after it became runnable.
 func TestAFailedArtifactLookupIsNotRemembered(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, n.Start(t.Context()))
 
 	a := &artifacts{node: n, seen: map[string]builtAt{}}
@@ -458,13 +458,13 @@ func TestTheDeployBudgetHasAnEffectiveValue(t *testing.T) {
 // injected one — an injected one wins because it is the more specific
 // statement.
 func TestTheWorkerResolvesArtifactsThroughTheBuildService(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}})
 	require.NotNil(t, n.worker)
 
 	injected := artifactsFunc(func(context.Context, string, string, string, string) (string, error) {
 		return "bafyinjected", nil
 	})
-	with, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}}, WithArtifacts(injected))
+	with, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}}, WithArtifacts(injected))
 	require.NotNil(t, with.worker)
 }
 
@@ -491,7 +491,7 @@ func TestAnInjectedTierWins(t *testing.T) {
 	t.Cleanup(func() { mn.Close() })
 	h := newHost(t, mn)
 
-	n, err := New(Config{Services: []string{Stats, Worker}},
+	n, err := New(Config{Services: []string{Discovery, Worker}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
 		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
 		WithAssets(&countingAssets{}),
@@ -570,8 +570,8 @@ func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
 // node runs no build service at all.
 func TestAWorkerAsksTheBuildBackendOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, BuildBackend}},
-		Config{Services: []string{Worker, Stats}},
+		Config{Services: []string{Register, Discovery, BuildBackend}},
+		Config{Services: []string{Worker, Discovery}},
 	)
 	compute := nodes[1]
 

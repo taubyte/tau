@@ -27,7 +27,7 @@ func TestAHostWithoutBothBuildHalvesIsOneNode(t *testing.T) {
 	assert.Equal(t, len(nodes.instances), 1)
 	assert.Equal(t, nodes.instances[0].name, mainInstance)
 	assert.DeepEqual(t, nodes.instances[0].file.Node.Services,
-		[]string{node.Auth, node.Secrets, node.Stats, node.DNS, node.Gateway, node.BuildBackend, node.Proxy})
+		[]string{node.Auth, node.Secrets, node.Discovery, node.DNS, node.Gateway, node.BuildBackend, node.Proxy})
 }
 
 // TestEveryNodeRunsStats, even when no shape asked for seer.
@@ -39,7 +39,7 @@ func TestEveryNodeRunsStats(t *testing.T) {
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
 	assert.DeepEqual(t, nodes.instances[0].file.Node.Services,
-		[]string{node.Register, node.Database, node.Primitives, node.Worker, node.Gateway, node.Stats})
+		[]string{node.Register, node.Database, node.Primitives, node.Worker, node.Gateway, node.Discovery})
 	assert.Equal(t, nodes.instances[0].file.Node.Auth.DomainValidation.Private, "", "no auth, no domain key")
 }
 

@@ -32,7 +32,7 @@ import (
 // firewall. `make test-application` runs it.
 func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{node.Register, node.Worker, node.Stats},
+		Services:  []string{node.Register, node.Worker, node.Discovery},
 		Container: node.BackendDocker,
 	})
 	require.NoError(t, err)

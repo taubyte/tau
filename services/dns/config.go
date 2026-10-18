@@ -14,11 +14,11 @@ import (
 // THERE IS NO peer.Node AND NO host.Host IN THIS PACKAGE. dns does not join a
 // swarm, does not gossip and has no identity of its own on the network — it
 // answers queries from a view somebody else maintains. Taking a host to get at
-// stats would make this service impossible to test without one, for no gain.
+// discovery would make this service impossible to test without one, for no gain.
 
-// Router is the slice of stats this service needs: one read.
+// Router is the slice of discovery this service needs: one read.
 //
-// *services/stats.Service satisfies it. The interface exists so that dns can be
+// *services/discovery.Service satisfies it. The interface exists so that dns can be
 // tested against a table of nodes, and so that the day gateway wants the same
 // read there is one name for it rather than two.
 type Router interface {
@@ -43,13 +43,13 @@ type Config struct {
 	// answer. Default 30s.
 	//
 	// IT IS A PROMISE ABOUT HOW FAST A CHANGE PROPAGATES, and it is the reason
-	// it is not larger. A node that stops serving a name drops out of stats
+	// it is not larger. A node that stops serving a name drops out of discovery
 	// within a couple of report intervals, but a resolver holding a 300s
 	// answer keeps sending clients at it for five minutes regardless. The
 	// whole point of routing from live measurements is lost at the cache.
 	TTL time.Duration
 
-	// MaxAge is how stale a stats row may be and still be answered from.
+	// MaxAge is how stale a discovery row may be and still be answered from.
 	// Default 30s.
 	//
 	// dns states its own tolerance because pkg/stats deliberately has no

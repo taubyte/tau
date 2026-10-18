@@ -191,7 +191,7 @@ func (c *channels) conn(ctx context.Context, at specs.Address, port string) (net
 // PLACEMENT IS THE ONE THAT CAN LEAVE THIS MACHINE, and it already calls a
 // local worker directly rather than opening a stream to itself — so where it
 // exists it is strictly the better of the two. It does not exist on a node that
-// runs no stats, and there the local worker is the only workload reachable at
+// runs no discovery, and there the local worker is the only workload reachable at
 // all: a dial that lands is better than one that cannot be attempted, and one
 // that does not land says so.
 func (c *channels) invoke(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Response, error) {

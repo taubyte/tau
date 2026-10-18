@@ -417,7 +417,7 @@ func (r *Running) Close() error {
 // identity is this node's libp2p key, minted when the file names none.
 //
 // A NEW IDENTITY EVERY RESTART IS ALMOST NEVER WHAT SOMEBODY MEANT. Anything
-// that remembered this peer — a bootstrap list, another node's stats view, a
+// that remembered this peer — a bootstrap list, another node's discovery view, a
 // pinned address — forgets it, and the node rejoins as a stranger. It is minted
 // rather than refused because a first run has to be possible without generating
 // a key by hand, and it is logged so the second run is a choice.
@@ -453,7 +453,7 @@ func decode(name, value string) ([]byte, error) {
 	return out, nil
 }
 
-// Reach starts the smallest node that can find the fleet: it runs stats and
+// Reach starts the smallest node that can find the fleet: it runs discovery and
 // nothing else, joins the swarm this file describes, and waits until it has
 // seen a node running the service asked for.
 //
@@ -463,7 +463,7 @@ func decode(name, value string) ([]byte, error) {
 // the fleet moved. This joins, listens, and asks the same view everything else
 // asks.
 func Reach(ctx context.Context, f File, service string, within time.Duration) (*Running, error) {
-	f.Node = node.Config{Services: []string{node.Stats}, Cloud: f.Node.Cloud, Stats: f.Node.Stats}
+	f.Node = node.Config{Services: []string{node.Discovery}, Cloud: f.Node.Cloud, Discovery: f.Node.Discovery}
 	f.HTTP = ""
 
 	// A CLIENT DOES NOT KEEP THE FLEET'S DATA. Its own directory, removed with
@@ -483,7 +483,7 @@ func Reach(ctx context.Context, f File, service string, within time.Duration) (*
 
 	deadline := time.After(within)
 	for {
-		if found := running.Node.Stats().Route(service, f.Node.Stats.Freshness()); len(found) > 0 {
+		if found := running.Node.Discovery().Route(service, f.Node.Discovery.Freshness()); len(found) > 0 {
 			running.Found = found
 			return running, nil
 		}

@@ -12,13 +12,13 @@ import (
 )
 
 // A COMMAND IS NOT A NODE, but it has to talk to one, and the only way into a
-// private swarm is to join it. Reach is that: a stats-only node in a directory
+// private swarm is to join it. Reach is that: a discovery-only node in a directory
 // it owns, held open just long enough to find who runs what.
 func TestReachFindsAServiceInTheFleet(t *testing.T) {
 	key := base64.StdEncoding.EncodeToString(swarmKey())
 
 	fleet, err := Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Register, node.Stats}, Cloud: "acme"},
+		Node:     node.Config{Services: []string{node.Register, node.Discovery}, Cloud: "acme"},
 		Root:     t.TempDir(),
 		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
 		SwarmKey: key,

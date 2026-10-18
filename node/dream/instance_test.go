@@ -102,7 +102,7 @@ func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{node.Register, node.Worker, node.Stats},
+		Services: []string{node.Register, node.Worker, node.Discovery},
 	})
 	require.NoError(t, err)
 	defer u.Close()
@@ -176,7 +176,7 @@ func TestTheInstanceLimitHoldsEndToEnd(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{node.Register, node.Worker, node.Stats},
+		Services: []string{node.Register, node.Worker, node.Discovery},
 	})
 	require.NoError(t, err)
 	defer u.Close()

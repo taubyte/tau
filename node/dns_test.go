@@ -16,7 +16,7 @@ import (
 )
 
 // dns_test closes the loop the proxy opened: a proxy binds a port the kernel
-// chose, stats carries it, and a REAL resolver query gets it back. Every link
+// chose, discovery carries it, and a REAL resolver query gets it back. Every link
 // asserted on its own would leave the one that matters — that the three agree
 // about a name — untested.
 
@@ -25,17 +25,17 @@ import (
 func serving(t *testing.T, compiled []byte, hosts ...string) *Node {
 	t.Helper()
 
-	cfg := Config{Services: []string{Register, Worker, Stats, Proxy, DNS}}
+	cfg := Config{Services: []string{Register, Worker, Discovery, Proxy, DNS}}
 	cfg.Proxy.CloudFqdn = "tau.example.io"
 	cfg.DNS.NodeZone = "nodes.tau.example.io"
 
 	// A DEPLOY REACHES A RESOLVER IN TWO HOPS, and both are timers: the proxy
 	// notices what this node holds on its sweep, and the report carrying that
-	// goes out on the stats tick. Left at their defaults — ten seconds and five
+	// goes out on the discovery tick. Left at their defaults — ten seconds and five
 	// — this test would spend fifteen waiting for two clocks, so both are wound
 	// down rather than waited out.
 	cfg.Proxy.Sweep = 100 * time.Millisecond
-	cfg.Stats.Interval = 200 * time.Millisecond
+	cfg.Discovery.Interval = 200 * time.Millisecond
 
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
@@ -146,7 +146,7 @@ func TestDnsWithoutStatsIsRefusedAtConstruction(t *testing.T) {
 
 	_, err := New(Config{Services: []string{Register, DNS}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}))
-	require.ErrorIs(t, err, ErrNoStatsForDNS)
+	require.ErrorIs(t, err, ErrNoDiscoveryForDNS)
 }
 
 // TestTHEPORTISREPORTEDBACK, which is how anything asking for :0 finds out —
@@ -171,7 +171,7 @@ func TestADnsNodeSaysWhereItBound(t *testing.T) {
 // fleet gossips over — and the code reported `/ip6/…/tcp/4242` verbatim, so
 // every A query answered with no records at all.
 func TestTheReportCarriesAddressesAndNotMultiaddrs(t *testing.T) {
-	n, h, _ := makeNode(t, Config{Services: []string{Register, Stats}})
+	n, h, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.NoError(t, n.Start(t.Context()))
 
 	snap, err := n.Snapshot(t.Context())

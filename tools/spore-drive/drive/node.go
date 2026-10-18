@@ -48,7 +48,7 @@ const mainInstance = "node"
 var v1Services = map[string][]string{
 	"auth":      {node.Auth, node.Secrets},
 	"tns":       {node.Register},
-	"seer":      {node.Stats, node.DNS},
+	"seer":      {node.Discovery, node.DNS},
 	"substrate": {node.Worker, node.Gateway},
 	"gateway":   {node.Gateway},
 	"hoarder":   {node.Database, node.Primitives},
@@ -206,8 +206,8 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 
 	// EVERY NODE RUNS STATS. It is how a v2 node is seen by the fleet at all:
 	// a node that does not gossip its services is never routed to.
-	if !slices.Contains(services, node.Stats) {
-		services = append(services, node.Stats)
+	if !slices.Contains(services, node.Discovery) {
+		services = append(services, node.Discovery)
 	}
 
 	swarmFile, err := readAll(p.Cloud().P2P().Swarm().Open)
@@ -279,7 +279,7 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 		out.instances = append(out.instances, instance{
 			name: node.BuildFrontend,
 			port: mainPort + 1,
-			file: file([]string{node.BuildFrontend, node.Stats}, mainPort+1, frontendKey),
+			file: file([]string{node.BuildFrontend, node.Discovery}, mainPort+1, frontendKey),
 		})
 	}
 	out.instances = append([]instance{{name: mainInstance, port: mainPort, file: file(services, mainPort, key)}}, out.instances...)

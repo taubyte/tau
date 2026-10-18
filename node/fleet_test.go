@@ -25,7 +25,7 @@ import (
 //
 // One node proves the wiring; it does not prove the part that matters, which is
 // that a node finds what it does not run. A worker with no register has to
-// learn from stats which node has one and dial it — and every hop below is the
+// learn from discovery which node has one and dial it — and every hop below is the
 // production one: a real gossipsub, a real p2p stream, the real client.
 
 // fleet is n nodes on one mocknet, each told what to run.
@@ -83,7 +83,7 @@ func sees(t *testing.T, watcher *Node, name string) {
 	t.Helper()
 
 	require.Eventually(t, func() bool {
-		return len(watcher.Stats().Route(name, time.Minute)) > 0
+		return len(watcher.Discovery().Route(name, time.Minute)) > 0
 	}, 30*time.Second, 100*time.Millisecond, "%s never appeared in the view", name)
 }
 
@@ -91,8 +91,8 @@ func sees(t *testing.T, watcher *Node, name string) {
 // reports what it runs.
 func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats}},
-		Config{Services: []string{Worker, Stats}},
+		Config{Services: []string{Register, Discovery}},
+		Config{Services: []string{Worker, Discovery}},
 	)
 	registry, compute := nodes[0], nodes[1]
 
@@ -113,8 +113,8 @@ func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
 // dial on the request path.
 func TestTheStreamToARemoteRegisterIsKept(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats}},
-		Config{Services: []string{Worker, Stats}},
+		Config{Services: []string{Register, Discovery}},
+		Config{Services: []string{Worker, Discovery}},
 	)
 	registry, compute := nodes[0], nodes[1]
 
@@ -136,8 +136,8 @@ func TestTheStreamToARemoteRegisterIsKept(t *testing.T) {
 // with placement choosing the node.
 func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, Gateway}},
-		Config{Services: []string{Worker, Stats}},
+		Config{Services: []string{Register, Discovery, Gateway}},
+		Config{Services: []string{Worker, Discovery}},
 	)
 	edge, compute := nodes[0], nodes[1]
 
@@ -166,8 +166,8 @@ func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 // never left the machine.
 func TestAChannelDialCrossesToAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, Gateway}},
-		Config{Services: []string{Worker, Stats}},
+		Config{Services: []string{Register, Discovery, Gateway}},
+		Config{Services: []string{Worker, Discovery}},
 	)
 	edge, compute := nodes[0], nodes[1]
 
@@ -191,8 +191,8 @@ func TestAChannelDialCrossesToAnotherNode(t *testing.T) {
 // environment says so, and placement asks for that name first.
 func TestAWarmWorkerIsAdvertised(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats}},
-		Config{Services: []string{Worker, Stats}},
+		Config{Services: []string{Register, Discovery}},
+		Config{Services: []string{Worker, Discovery}},
 	)
 	registry, compute := nodes[0], nodes[1]
 
@@ -282,7 +282,7 @@ func (f secretFunc) Secret(ctx context.Context, project, environment, secretID s
 // anything imported from a platform that had environment variables, so this is
 // the wiring between "it compiles" and "it runs".
 func TestAWorkerResolvesASecretFromItsOwnVault(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}}, prebuilt())
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	require.NoError(t, n.Secrets().Local().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
@@ -298,12 +298,12 @@ func TestAWorkerResolvesASecretFromItsOwnVault(t *testing.T) {
 }
 
 // TestAWorkerFindsAVaultOnAnotherNode. A node that runs compute and no vault
-// learns from stats which node holds one and dials it — the same rule as the
+// learns from discovery which node holds one and dials it — the same rule as the
 // register, over the real gossipsub and the real stream.
 func TestAWorkerFindsAVaultOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Secrets, Stats}},
-		Config{Services: []string{Worker, Stats}},
+		Config{Services: []string{Register, Secrets, Discovery}},
+		Config{Services: []string{Worker, Discovery}},
 	)
 	holder, compute := nodes[0], nodes[1]
 
@@ -326,7 +326,7 @@ func TestAWorkerFindsAVaultOnAnotherNode(t *testing.T) {
 // without its database password does not fail where the password is missing;
 // it fails somewhere else, later, as an application that looks broken.
 func TestAWorkerWithNoVaultAnywhereRefusesRatherThanRunning(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}}, prebuilt())
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -343,7 +343,7 @@ func TestAWorkerWithNoVaultAnywhereRefusesRatherThanRunning(t *testing.T) {
 // that hangs until the client gives up, on a cloud where nothing was ever
 // going to answer.
 func TestABuiltResourceWithNoBuildServiceIsRefused(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
 	require.NoError(t, n.Secrets().Local().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
@@ -408,8 +408,8 @@ func withKvDatabase() []byte {
 // reconsidering what this node holds, so a composed fleet moved nothing, ever.
 func TestADatabaseServiceIsReachableFromAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, Database}},
-		Config{Services: []string{Worker, Stats}},
+		Config{Services: []string{Register, Discovery, Database}},
+		Config{Services: []string{Worker, Discovery}},
 	)
 	holder, caller := nodes[0], nodes[1]
 

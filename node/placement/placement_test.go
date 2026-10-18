@@ -424,7 +424,7 @@ func TestAConnectionHasNowhereToGoWhenNoNodeIsReady(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoWorkers)
 }
 
-// TestAPeerThatIsNotOneIsNotTried. A stats row carrying a string that does not
+// TestAPeerThatIsNotOneIsNotTried. A discovery row carrying a string that does not
 // decode is not a node that could not be reached — nothing was dialed — so it
 // is reported rather than retried.
 func TestAPeerThatIsNotOneIsNotTried(t *testing.T) {

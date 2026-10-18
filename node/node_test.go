@@ -18,13 +18,13 @@ import (
 
 // TestANodeRunsWhatItWasToldTo, and nothing else.
 func TestANodeRunsWhatItWasToldTo(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 
 	require.NotNil(t, n.Register())
-	require.NotNil(t, n.Stats())
+	require.NotNil(t, n.Discovery())
 	require.Nil(t, n.Worker())
 	require.Nil(t, n.Handler(), "it runs no gateway")
-	require.Equal(t, []string{Register, Stats}, n.Services())
+	require.Equal(t, []string{Register, Discovery}, n.Services())
 }
 
 // TestAnEmptyServiceListIsEveryService, which is the single-node development
@@ -35,7 +35,7 @@ func TestAnEmptyServiceListIsEveryService(t *testing.T) {
 	require.ElementsMatch(t, All, n.Services())
 	require.NotNil(t, n.Register())
 	require.NotNil(t, n.Worker())
-	require.NotNil(t, n.Stats())
+	require.NotNil(t, n.Discovery())
 	require.NotNil(t, n.Handler())
 }
 
@@ -64,7 +64,7 @@ func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
 	_, err = New(Config{Services: []string{Register}}, WithHost(h))
 	require.ErrorIs(t, err, ErrNoDatabases)
 
-	_, err = New(Config{Services: []string{Stats}}, WithHost(h))
+	_, err = New(Config{Services: []string{Discovery}}, WithHost(h))
 	require.ErrorIs(t, err, ErrNoPubSub)
 
 	_, err = New(Config{Services: []string{Worker}}, WithHost(h))
@@ -74,7 +74,7 @@ func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
 	// worker, and saying so at construction beats a 502 on the first request.
 	_, err = New(Config{Services: []string{Gateway}}, WithHost(h))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "stats")
+	require.Contains(t, err.Error(), "discovery")
 }
 
 // TestNothingIsOpenedTwiceAndEverythingIsClosed. A composition that failed part
@@ -124,14 +124,14 @@ func TestStartIsOnce(t *testing.T) {
 // TestANodeReportsWhatItRuns, which is what every locator in the fleet routes
 // on — a worker looking for a register, a gateway looking for a worker.
 func TestANodeReportsWhatItRuns(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}})
 
 	snapshot, err := n.Snapshot(t.Context())
 	require.NoError(t, err)
 	require.True(t, snapshot.Ready)
 	require.NotEmpty(t, snapshot.Addresses, "a node nothing can dial is not routable")
 
-	for _, name := range []string{Register, Worker, Stats} {
+	for _, name := range []string{Register, Worker, Discovery} {
 		require.Contains(t, snapshot.Serving, name)
 	}
 	require.NotContains(t, snapshot.Serving, Gateway, "it does not run one")
@@ -165,7 +165,7 @@ func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
 // replicated store, so a node running one already holds every answer; dialling
 // itself would add a stream and a serialization to a read on every request.
 func TestALocalRegisterNeedsNoStream(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}}, prebuilt())
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}}, prebuilt())
 
 	// Nothing is started, so nothing is dialable — and the read still works.
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -180,7 +180,7 @@ func TestALocalRegisterNeedsNoStream(t *testing.T) {
 
 // TestANodeWithNoRegisterSaysSoRatherThanHanging.
 func TestANodeWithNoRegisterSaysSo(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}})
+	n, _, _ := makeNode(t, Config{Services: []string{Worker, Discovery}})
 
 	_, err := n.Worker().Resolve(t.Context(), workerTarget())
 	require.ErrorIs(t, err, ErrNoRegister)
@@ -199,7 +199,7 @@ func TestANodeWithNoWayToFindARegister(t *testing.T) {
 
 	_, err = n.Worker().Resolve(t.Context(), workerTarget())
 	require.ErrorIs(t, err, ErrNoRegister)
-	require.Contains(t, err.Error(), "stats")
+	require.Contains(t, err.Error(), "discovery")
 }
 
 // TestTheGatewayIsServedByTheCaller. Handler() is what a composer serves,
@@ -249,7 +249,7 @@ func TestAWholeRequestPathOnOneNode(t *testing.T) {
 func TestTheClockReachesEverything(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	n, _, _ := makeNode(t, Config{}, WithClock(func() time.Time { return at }))
-	require.NotNil(t, n.Stats())
+	require.NotNil(t, n.Discovery())
 	require.NoError(t, n.Start(t.Context()))
 }
 
@@ -262,7 +262,7 @@ func TestWhatTheOptionsRefuse(t *testing.T) {
 		WithHost(nil), WithPubSub(nil), WithDatabases(nil),
 		WithRuntimes(nil), WithArtifacts(nil), WithSecrets(nil), WithClock(nil),
 	} {
-		_, err := New(Config{Services: []string{Stats}}, WithHost(h), WithPubSub(newPubSub(t, h)), opt)
+		_, err := New(Config{Services: []string{Discovery}}, WithHost(h), WithPubSub(newPubSub(t, h)), opt)
 		require.Error(t, err)
 	}
 }

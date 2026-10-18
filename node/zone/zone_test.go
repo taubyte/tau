@@ -18,7 +18,7 @@ import (
 // zone_test is the reason this package exists.
 //
 // Every one of these ran through a whole dream universe when the adapter took
-// *Node: a register, a worker, a stats view and a component tier, to assert
+// *Node: a register, a worker, a discovery view and a component tier, to assert
 // which label the walk tried second. Three interfaces later they are maps and
 // counters, and the cases that were impractical to reach — the index answering
 // for an apex whose project will not load, a zone naming a resolver on a node

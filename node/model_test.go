@@ -33,7 +33,7 @@ func TestTheInferenceBackingReadsTheNodeLate(t *testing.T) {
 	// AND A NIL ROUTER ARRIVES AS A NIL INTERFACE, which is the whole reason
 	// inferenceWorkers exists: n.workers is a concrete pointer, and a nil one put
 	// in an interface is not nil.
-	with, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	with, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}})
 	require.NoError(t, with.Start(t.Context()))
 	require.NotNil(t, with.inferenceWorkers(), "a node with placement can reach a port")
 }

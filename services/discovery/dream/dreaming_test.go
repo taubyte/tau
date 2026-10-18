@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/mesh"
-	statsDream "github.com/taubyte/tau/services/stats/dream"
+	discoveryDream "github.com/taubyte/tau/services/discovery/dream"
 )
 
 // THIS IS WHAT "PARITY" MEANS FOR A V2 SERVICE, and it is why it is a test
@@ -27,7 +27,7 @@ func TestAV2ServiceRunsUnderDream(t *testing.T) {
 
 	// A peer was built, its host taken out of it, and the v2 constructor
 	// called with only that. A peer back means all of it worked.
-	node, err := statsDream.Start(m)
+	node, err := discoveryDream.Start(m)
 	require.NoError(t, err)
 	require.NotEmpty(t, node.ID().String(), "the mesh is running a v2 service")
 }

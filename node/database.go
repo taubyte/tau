@@ -253,14 +253,14 @@ func (n *Node) openDatabase(ctx context.Context) error {
 
 		// THE FLEET AS THIS NODE SEES IT, asked each sweep rather than taken
 		// once: a snapshot at construction would place every database on the
-		// fleet as it was when the process started. A node running no stats
+		// fleet as it was when the process started. A node running no discovery
 		// sees no fleet and moves nothing, which is the honest answer for a
 		// node that cannot tell who else is there.
 		databaseService.WithMembers(func() map[string][]placement.Member {
-			if n.stats == nil {
+			if n.discovery == nil {
 				return nil
 			}
-			return n.stats.Placement()
+			return n.discovery.Placement()
 		}),
 	)
 	if err != nil {

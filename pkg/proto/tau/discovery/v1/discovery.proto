@@ -1,16 +1,16 @@
 syntax = "proto3";
 
-// stats is the half of v1's seer that can be lied to.
+// discovery is the half of v1's seer that can be lied to.
 //
 // v1's seer did DNS and also accumulated where things are and how loaded they
 // are. In v2 those are two services, because they have different shapes at
-// scale and different trust properties: `dns` answers queries, `stats`
-// collects usage, and BOTH dns and gateway read stats in order to route.
+// scale and different trust properties: `dns` answers queries, `discovery`
+// collects usage, and BOTH dns and gateway read discovery in order to route.
 //
 // THERE IS NO SERVICE BLOCK IN THIS FILE, AND THAT IS THE DESIGN.
 //
 // Every other v2 proto so far declares RPCs because it models a request one
-// service makes of another. Stats models the opposite: a fact a node
+// service makes of another. Discovery models the opposite: a fact a node
 // volunteers about itself, to everyone, repeatedly. That is a broadcast, and
 // it goes out over libp2p pubsub rather than over a ConnectRPC method, for
 // three reasons that are all the same reason —
@@ -35,7 +35,7 @@ syntax = "proto3";
 // every field below steers traffic. In a single-tenant fleet that is honest.
 // Verified reporting is an interface away, and it is not this message's job to
 // pretend otherwise.
-package tau.stats.v1;
+package tau.discovery.v1;
 
 // Report is what one node says about itself, broadcast periodically.
 //

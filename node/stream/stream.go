@@ -20,7 +20,7 @@
 //
 // Joining is what starts the gossip machinery for a topic, so a publisher that
 // rejoined per message would churn the mesh it depends on — the same reason
-// services/stats' bus joins once. So topics are kept by handle, and the handle
+// services/discovery' bus joins once. So topics are kept by handle, and the handle
 // is already scoped to a project and a deployment, which is what keeps two
 // projects publishing to a stream they both call `orders` apart.
 //
@@ -57,7 +57,7 @@ const (
 
 // Gossip joins a topic.
 //
-// DECLARED HERE, THOUGH services/stats SPELLS THE SAME METHOD, because this is
+// DECLARED HERE, THOUGH services/discovery SPELLS THE SAME METHOD, because this is
 // the consumer: a publisher has no business importing a service to name the
 // gossip it publishes over. Anything that can join a topic satisfies both.
 type Gossip interface {

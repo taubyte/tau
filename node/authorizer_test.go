@@ -189,7 +189,7 @@ func (g *guarding) questions() []wasmtier.Question {
 func guardingNode(t *testing.T, answers *guarding) (*Node, *authorizers) {
 	t.Helper()
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}},
 		WithRuntimes(&answering{name: "wasm", status: 200}), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 	n.decider = answers

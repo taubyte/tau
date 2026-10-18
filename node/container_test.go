@@ -52,7 +52,7 @@ func TestNoWorkerMeansNoBackend(t *testing.T) {
 	t.Cleanup(func() { mn.Close() })
 
 	n, err := New(Config{
-		Services:  []string{Register, Stats},
+		Services:  []string{Register, Discovery},
 		Container: ContainerConfig{Backend: "podman"},
 	},
 		WithHost(newHost(t, mn)),

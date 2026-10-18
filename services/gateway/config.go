@@ -28,7 +28,7 @@ type Hosts interface {
 // Workers runs a request against a resource.
 //
 // THE GATEWAY DOES NOT CHOOSE A NODE. Which worker answers is a routing
-// decision made from live measurements (services/stats), and putting it behind
+// decision made from live measurements (services/discovery), and putting it behind
 // this interface is what keeps that decision in one place instead of half here.
 // *services/worker.Client satisfies it for a fixed peer; a placement-aware
 // implementation satisfies it for a fleet.

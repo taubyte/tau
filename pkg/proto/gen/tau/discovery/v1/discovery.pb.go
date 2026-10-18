@@ -2,19 +2,19 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: tau/stats/v1/stats.proto
+// source: tau/discovery/v1/discovery.proto
 
-// stats is the half of v1's seer that can be lied to.
+// discovery is the half of v1's seer that can be lied to.
 //
 // v1's seer did DNS and also accumulated where things are and how loaded they
 // are. In v2 those are two services, because they have different shapes at
-// scale and different trust properties: `dns` answers queries, `stats`
-// collects usage, and BOTH dns and gateway read stats in order to route.
+// scale and different trust properties: `dns` answers queries, `discovery`
+// collects usage, and BOTH dns and gateway read discovery in order to route.
 //
 // THERE IS NO SERVICE BLOCK IN THIS FILE, AND THAT IS THE DESIGN.
 //
 // Every other v2 proto so far declares RPCs because it models a request one
-// service makes of another. Stats models the opposite: a fact a node
+// service makes of another. Discovery models the opposite: a fact a node
 // volunteers about itself, to everyone, repeatedly. That is a broadcast, and
 // it goes out over libp2p pubsub rather than over a ConnectRPC method, for
 // three reasons that are all the same reason —
@@ -40,7 +40,7 @@
 // Verified reporting is an interface away, and it is not this message's job to
 // pretend otherwise.
 
-package statsv1
+package discoveryv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -173,7 +173,7 @@ type Report struct {
 
 func (x *Report) Reset() {
 	*x = Report{}
-	mi := &file_tau_stats_v1_stats_proto_msgTypes[0]
+	mi := &file_tau_discovery_v1_discovery_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -185,7 +185,7 @@ func (x *Report) String() string {
 func (*Report) ProtoMessage() {}
 
 func (x *Report) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_stats_v1_stats_proto_msgTypes[0]
+	mi := &file_tau_discovery_v1_discovery_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -198,7 +198,7 @@ func (x *Report) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Report.ProtoReflect.Descriptor instead.
 func (*Report) Descriptor() ([]byte, []int) {
-	return file_tau_stats_v1_stats_proto_rawDescGZIP(), []int{0}
+	return file_tau_discovery_v1_discovery_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Report) GetPeer() string {
@@ -297,7 +297,7 @@ type Socket struct {
 
 func (x *Socket) Reset() {
 	*x = Socket{}
-	mi := &file_tau_stats_v1_stats_proto_msgTypes[1]
+	mi := &file_tau_discovery_v1_discovery_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -309,7 +309,7 @@ func (x *Socket) String() string {
 func (*Socket) ProtoMessage() {}
 
 func (x *Socket) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_stats_v1_stats_proto_msgTypes[1]
+	mi := &file_tau_discovery_v1_discovery_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -322,7 +322,7 @@ func (x *Socket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Socket.ProtoReflect.Descriptor instead.
 func (*Socket) Descriptor() ([]byte, []int) {
-	return file_tau_stats_v1_stats_proto_rawDescGZIP(), []int{1}
+	return file_tau_discovery_v1_discovery_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Socket) GetHost() string {
@@ -353,19 +353,19 @@ func (x *Socket) GetPort() uint32 {
 	return 0
 }
 
-var File_tau_stats_v1_stats_proto protoreflect.FileDescriptor
+var File_tau_discovery_v1_discovery_proto protoreflect.FileDescriptor
 
-const file_tau_stats_v1_stats_proto_rawDesc = "" +
+const file_tau_discovery_v1_discovery_proto_rawDesc = "" +
 	"\n" +
-	"\x18tau/stats/v1/stats.proto\x12\ftau.stats.v1\"\xbc\x02\n" +
+	" tau/discovery/v1/discovery.proto\x12\x10tau.discovery.v1\"\xc0\x02\n" +
 	"\x06Report\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12 \n" +
 	"\vincarnation\x18\x02 \x01(\x04R\vincarnation\x12\x12\n" +
 	"\x04load\x18\x03 \x01(\x01R\x04load\x12\x18\n" +
 	"\aserving\x18\x04 \x03(\tR\aserving\x12\x14\n" +
 	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x1c\n" +
-	"\taddresses\x18\x06 \x03(\tR\taddresses\x12.\n" +
-	"\asockets\x18\a \x03(\v2\x14.tau.stats.v1.SocketR\asockets\x12\x16\n" +
+	"\taddresses\x18\x06 \x03(\tR\taddresses\x122\n" +
+	"\asockets\x18\a \x03(\v2\x18.tau.discovery.v1.SocketR\asockets\x12\x16\n" +
 	"\x06region\x18\b \x01(\tR\x06region\x12%\n" +
 	"\x0efleet_revision\x18\t \x01(\x04R\rfleetRevision\x12+\n" +
 	"\x11databases_pending\x18\n" +
@@ -374,29 +374,28 @@ const file_tau_stats_v1_stats_proto_rawDesc = "" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x1c\n" +
 	"\ttransport\x18\x03 \x01(\tR\ttransport\x12\x12\n" +
-	"\x04port\x18\x04 \x01(\rR\x04portB\xab\x01\n" +
-	"\x10com.tau.stats.v1B\n" +
-	"StatsProtoP\x01Z9github.com/taubyte/tau/pkg/proto/gen/tau/stats/v1;statsv1\xa2\x02\x03TSX\xaa\x02\fTau.Stats.V1\xca\x02\fTau\\Stats\\V1\xe2\x02\x18Tau\\Stats\\V1\\GPBMetadata\xea\x02\x0eTau::Stats::V1b\x06proto3"
+	"\x04port\x18\x04 \x01(\rR\x04portB\xcb\x01\n" +
+	"\x14com.tau.discovery.v1B\x0eDiscoveryProtoP\x01ZAgithub.com/taubyte/tau/pkg/proto/gen/tau/discovery/v1;discoveryv1\xa2\x02\x03TDX\xaa\x02\x10Tau.Discovery.V1\xca\x02\x10Tau\\Discovery\\V1\xe2\x02\x1cTau\\Discovery\\V1\\GPBMetadata\xea\x02\x12Tau::Discovery::V1b\x06proto3"
 
 var (
-	file_tau_stats_v1_stats_proto_rawDescOnce sync.Once
-	file_tau_stats_v1_stats_proto_rawDescData []byte
+	file_tau_discovery_v1_discovery_proto_rawDescOnce sync.Once
+	file_tau_discovery_v1_discovery_proto_rawDescData []byte
 )
 
-func file_tau_stats_v1_stats_proto_rawDescGZIP() []byte {
-	file_tau_stats_v1_stats_proto_rawDescOnce.Do(func() {
-		file_tau_stats_v1_stats_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_tau_stats_v1_stats_proto_rawDesc), len(file_tau_stats_v1_stats_proto_rawDesc)))
+func file_tau_discovery_v1_discovery_proto_rawDescGZIP() []byte {
+	file_tau_discovery_v1_discovery_proto_rawDescOnce.Do(func() {
+		file_tau_discovery_v1_discovery_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_tau_discovery_v1_discovery_proto_rawDesc), len(file_tau_discovery_v1_discovery_proto_rawDesc)))
 	})
-	return file_tau_stats_v1_stats_proto_rawDescData
+	return file_tau_discovery_v1_discovery_proto_rawDescData
 }
 
-var file_tau_stats_v1_stats_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_tau_stats_v1_stats_proto_goTypes = []any{
-	(*Report)(nil), // 0: tau.stats.v1.Report
-	(*Socket)(nil), // 1: tau.stats.v1.Socket
+var file_tau_discovery_v1_discovery_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_tau_discovery_v1_discovery_proto_goTypes = []any{
+	(*Report)(nil), // 0: tau.discovery.v1.Report
+	(*Socket)(nil), // 1: tau.discovery.v1.Socket
 }
-var file_tau_stats_v1_stats_proto_depIdxs = []int32{
-	1, // 0: tau.stats.v1.Report.sockets:type_name -> tau.stats.v1.Socket
+var file_tau_discovery_v1_discovery_proto_depIdxs = []int32{
+	1, // 0: tau.discovery.v1.Report.sockets:type_name -> tau.discovery.v1.Socket
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -404,26 +403,26 @@ var file_tau_stats_v1_stats_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_tau_stats_v1_stats_proto_init() }
-func file_tau_stats_v1_stats_proto_init() {
-	if File_tau_stats_v1_stats_proto != nil {
+func init() { file_tau_discovery_v1_discovery_proto_init() }
+func file_tau_discovery_v1_discovery_proto_init() {
+	if File_tau_discovery_v1_discovery_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_stats_v1_stats_proto_rawDesc), len(file_tau_stats_v1_stats_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_discovery_v1_discovery_proto_rawDesc), len(file_tau_discovery_v1_discovery_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_tau_stats_v1_stats_proto_goTypes,
-		DependencyIndexes: file_tau_stats_v1_stats_proto_depIdxs,
-		MessageInfos:      file_tau_stats_v1_stats_proto_msgTypes,
+		GoTypes:           file_tau_discovery_v1_discovery_proto_goTypes,
+		DependencyIndexes: file_tau_discovery_v1_discovery_proto_depIdxs,
+		MessageInfos:      file_tau_discovery_v1_discovery_proto_msgTypes,
 	}.Build()
-	File_tau_stats_v1_stats_proto = out.File
-	file_tau_stats_v1_stats_proto_goTypes = nil
-	file_tau_stats_v1_stats_proto_depIdxs = nil
+	File_tau_discovery_v1_discovery_proto = out.File
+	file_tau_discovery_v1_discovery_proto_goTypes = nil
+	file_tau_discovery_v1_discovery_proto_depIdxs = nil
 }

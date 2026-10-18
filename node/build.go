@@ -45,7 +45,7 @@ import (
 // secrets (frontend/secrets.go) — and everything else is once per job.
 const maxAuthConnections = 4
 
-// pollInterval is how often a waiting lookup looks again. The stats view is
+// pollInterval is how often a waiting lookup looks again. The discovery view is
 // gossiped and changes on its own schedule; there is nothing to subscribe to.
 const pollInterval = 250 * time.Millisecond
 
@@ -53,22 +53,22 @@ const pollInterval = 250 * time.Millisecond
 // nothing that builds.
 var ErrNoBuildBackend = errors.New("node: no build service is reachable")
 
-// fromStats is a discovery.Resolver over the view every other locator on this
+// fromDiscovery is a discovery.Resolver over the view every other locator on this
 // node reads.
 //
 // THERE IS ONE ANSWER TO "WHO DOES THIS" AND THIS IS IT. A second lookup
 // mechanism for the build service would be a second answer that could disagree
 // with the one a worker and a gateway already use.
-type fromStats struct {
+type fromDiscovery struct {
 	node *Node
 	name string
 }
 
-func (f *fromStats) Known() []libp2ppeer.ID {
+func (f *fromDiscovery) Known() []libp2ppeer.ID {
 	// A NODE WITH NO VIEW KNOWS NOTHING, and says so as a nil rather than as an
 	// empty list it built: the two read the same to a caller that counts them
 	// and not to one that asks whether it looked.
-	if f.node.stats == nil {
+	if f.node.discovery == nil {
 		return nil
 	}
 
@@ -90,7 +90,7 @@ func (f *fromStats) Known() []libp2ppeer.ID {
 	return out
 }
 
-func (f *fromStats) Any(ctx context.Context) (libp2ppeer.ID, error) {
+func (f *fromDiscovery) Any(ctx context.Context) (libp2ppeer.ID, error) {
 	peers, err := f.Peers(ctx, 1)
 	if err != nil {
 		return "", err
@@ -98,7 +98,7 @@ func (f *fromStats) Any(ctx context.Context) (libp2ppeer.ID, error) {
 	return peers[0], nil
 }
 
-func (f *fromStats) Peers(ctx context.Context, want int) ([]libp2ppeer.ID, error) {
+func (f *fromDiscovery) Peers(ctx context.Context, want int) ([]libp2ppeer.ID, error) {
 	for {
 		if known := f.Known(); len(known) > 0 {
 			if want > 0 && len(known) > want {
@@ -122,11 +122,11 @@ func (f *fromStats) Peers(ctx context.Context, want int) ([]libp2ppeer.ID, error
 // signal that means what "this peer is gone" would mean here. Dropping a peer
 // on a failed dial would let one bad connection remove the only node running a
 // service from every lookup after it.
-func (f *fromStats) Failed(libp2ppeer.ID) {}
+func (f *fromDiscovery) Failed(libp2ppeer.ID) {}
 
 // dial opens a pool onto whichever node runs `service`, on `p`.
 func (n *Node) dial(p protocol.ID, service string) (*clients.Pool, error) {
-	pool, err := clients.NewPool(n.opts.host, &fromStats{node: n, name: service}, p, maxAuthConnections)
+	pool, err := clients.NewPool(n.opts.host, &fromDiscovery{node: n, name: service}, p, maxAuthConnections)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ func (n *Node) openBuildBackend() error {
 		switch {
 		case n.opts.secrets != nil:
 			buildOptions = append(buildOptions, artifact.WithSecrets(n.opts.secrets))
-		case n.secrets != nil || n.stats != nil:
+		case n.secrets != nil || n.discovery != nil:
 			v := newVault(n)
 			n.closers = append(n.closers, v)
 			buildOptions = append(buildOptions, artifact.WithSecrets(v))
@@ -342,9 +342,9 @@ func (n *Node) openBuildFrontend() error {
 	// THE PUBLIC ROLE NEVER HOLDS A VAULT ITSELF. It is the one process a
 	// stranger reaches, and withDefaults already refuses it running the
 	// backend for the same reason — so this is always the stream onto a node
-	// that does, and it exists at all only because a node running stats can
+	// that does, and it exists at all only because a node running discovery can
 	// find one.
-	if n.stats != nil {
+	if n.discovery != nil {
 		v := newVault(n)
 		n.closers = append(n.closers, v)
 		frontendOptions = append(frontendOptions, frontend.WithVault(v))
@@ -429,7 +429,7 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 	}
 
 	// THE VIEW IS ASKED BEFORE THE POOL IS, and the reason is that this runs on
-	// the REQUEST PATH. fromStats.Peers waits until a peer appears or the
+	// the REQUEST PATH. fromDiscovery.Peers waits until a peer appears or the
 	// context ends, which is right for a pool opened at startup — services come
 	// up concurrently — and wrong here: on a cloud running no build backend at
 	// all there is nothing to wait for, and a request whose context has no
@@ -439,7 +439,7 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 	// view, and if the view knows nobody, say so. A backend that appears a
 	// moment later is picked up by the next request, because a failed lookup is
 	// not cached.
-	if len((&fromStats{node: a.node, name: BuildBackend}).Known()) == 0 {
+	if len((&fromDiscovery{node: a.node, name: BuildBackend}).Known()) == 0 {
 		return "", fmt.Errorf("%w: %s/%s is built by the platform and no build service is reachable",
 			ErrNoBuildBackend, project, environment)
 	}

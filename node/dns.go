@@ -9,11 +9,11 @@ import (
 	"github.com/taubyte/tau/services/dns"
 )
 
-// dns.go answers queries from what this node's stats view holds.
+// dns.go answers queries from what this node's discovery view holds.
 //
 // # It is the last link, and without it the rest publishes into nothing
 //
-// A proxy binds a port the kernel chose and reports it; stats carries that to
+// A proxy binds a port the kernel chose and reports it; discovery carries that to
 // every node; and a client learns it by looking up an SRV record. Nothing in
 // that chain is reachable until something binds a socket and answers — so a
 // fleet with no dns node has a routing table nobody can read.
@@ -35,18 +35,18 @@ import (
 // dials by convention.
 const DefaultDNSListen = ":53"
 
-// ErrNoStatsForDNS is a dns node with nothing to answer from.
-var ErrNoStatsForDNS = errors.New("node: dns answers from the stats view, and this node runs none")
+// ErrNoDiscoveryForDNS is a dns node with nothing to answer from.
+var ErrNoDiscoveryForDNS = errors.New("node: dns answers from the discovery view, and this node runs none")
 
 func (n *Node) openDNS() error {
 	if !n.cfg.runs(DNS) {
 		return nil
 	}
-	if n.stats == nil {
-		return ErrNoStatsForDNS
+	if n.discovery == nil {
+		return ErrNoDiscoveryForDNS
 	}
 
-	options := []dns.Option{dns.WithRouter(n.stats)}
+	options := []dns.Option{dns.WithRouter(n.discovery)}
 
 	// AUTHORED RECORDS NEED A WORKER, because the records are in the compiled
 	// project and the worker is what holds one. A dns node without one answers

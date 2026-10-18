@@ -138,7 +138,7 @@ func TestTheExampleRoundTrips(t *testing.T) {
 // — which is the whole reason this package exists.
 func TestANodeStartsAndServes(t *testing.T) {
 	f := File{
-		Node:     node.Config{Services: []string{node.Register, node.Stats, node.Gateway}},
+		Node:     node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
 		Root:     t.TempDir(),
 		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
 		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
@@ -150,7 +150,7 @@ func TestANodeStartsAndServes(t *testing.T) {
 	defer running.Close()
 
 	require.NotNil(t, running.Node.Register())
-	require.NotNil(t, running.Node.Stats())
+	require.NotNil(t, running.Node.Discovery())
 	require.NotNil(t, running.Node.Handler())
 
 	// It reports itself, which is what the rest of the fleet routes on.
@@ -194,7 +194,7 @@ func TestAnAddressAlreadyTaken(t *testing.T) {
 	defer held.Close()
 
 	_, err = Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Stats, node.Gateway}},
+		Node:     node.Config{Services: []string{node.Discovery, node.Gateway}},
 		Root:     t.TempDir(),
 		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
 		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
@@ -255,7 +255,7 @@ func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
 	key := base64.StdEncoding.EncodeToString(swarmKey())
 
 	first, err := Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Register, node.Stats}},
+		Node:     node.Config{Services: []string{node.Register, node.Discovery}},
 		Root:     t.TempDir(),
 		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
 		SwarmKey: key,
@@ -268,7 +268,7 @@ func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
 	bootstrap := addrs[0].String() + "/p2p/" + first.Host().ID().String()
 
 	second, err := Start(t.Context(), File{
-		Node:      node.Config{Services: []string{node.Register, node.Stats}},
+		Node:      node.Config{Services: []string{node.Register, node.Discovery}},
 		Root:      t.TempDir(),
 		Listen:    []string{"/ip4/127.0.0.1/tcp/0"},
 		SwarmKey:  key,
@@ -285,7 +285,7 @@ func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
 // is the one a client can connect to.
 func TestAServingNodeSaysWhereItIsBound(t *testing.T) {
 	running, err := Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Register, node.Stats, node.Gateway}},
+		Node:     node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
 		Root:     t.TempDir(),
 		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
 		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),

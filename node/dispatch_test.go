@@ -114,7 +114,7 @@ func depth(t *testing.T, n *Node) (ready, claimed int) {
 func consuming(t *testing.T, answers *answering, compiled []byte) (*Node, *dispatcher) {
 	t.Helper()
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Primitives}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Primitives}},
 		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
@@ -134,7 +134,7 @@ func consuming(t *testing.T, answers *answering, compiled []byte) (*Node, *dispa
 	<-n.Primitives().Formed()
 
 	// AND A DELIVERY IS PLACED, so this node has to be in its own view before it
-	// can take its own work. Asking placement while the first stats report is
+	// can take its own work. Asking placement while the first discovery report is
 	// still in flight answers "no worker is ready to take this" — which is a
 	// property of how fast the machine is, and nothing this file is about.
 	sees(t, n, Worker)
@@ -274,7 +274,7 @@ func TestAnInvocationThatErrorsIsNotAnAcknowledgement(t *testing.T) {
 // nothing has resolved is not that.
 func TestANodeDrainsOnlyWhatItHolds(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}},
 		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
@@ -341,7 +341,7 @@ func TestNoDeclaredConcurrencyIsOneAtATime(t *testing.T) {
 // that is being torn down.
 func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}},
 		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
@@ -360,7 +360,7 @@ func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 // without raft opens no queue and simply finds none" — which was true while the
 // queue was the worker's own group and stopped being true with the cutover: a
 // queue is the primitives service's, and node/primitives.go resolves it through
-// stats to a service on another node. Under the old gate such a node could
+// discovery to a service on another node. Under the old gate such a node could
 // claim and never tried, silently.
 func TestAWorkerWithNoRaftStillRunsTheClaimLoop(t *testing.T) {
 	mn := mocknet.New()
@@ -369,7 +369,7 @@ func TestAWorkerWithNoRaftStillRunsTheClaimLoop(t *testing.T) {
 
 	// BUILT WITHOUT THE HARNESS, which always hands a node a raft opener: what
 	// is under test is the composition that has none.
-	n, err := New(Config{Services: []string{Worker, Stats}},
+	n, err := New(Config{Services: []string{Worker, Discovery}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
 		WithRuntimes(&answering{name: "wasm", status: 200}))
 	require.NoError(t, err)
@@ -487,7 +487,7 @@ func TestADeliveryIsPlacedRatherThanRunWhereItWasClaimed(t *testing.T) {
 }
 
 // TestANODEWITHNOPLACEMENTSTILLRUNSWHATITHOLDS. openPlacement skips a node
-// that runs no stats, and says why: such a node "can only reach itself". It
+// that runs no discovery, and says why: such a node "can only reach itself". It
 // must still drain the queues it holds rather than refuse work for want of a
 // fleet to spread it over.
 func TestANodeThatCanOnlyReachItselfStillRunsWhatItHolds(t *testing.T) {

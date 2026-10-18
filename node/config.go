@@ -18,11 +18,11 @@ import (
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/primitives"
 	proxy "github.com/taubyte/tau/services/proxy"
-	"github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -33,14 +33,14 @@ import (
 // misspelled service that starts nothing is a node that looks healthy and
 // answers nothing.
 const (
-	Register = "register"
-	Worker   = "worker"
-	Stats    = "stats"
-	Gateway  = "gateway"
-	Auth     = "auth"
-	Secrets  = "secrets"
-	Proxy    = "proxy"
-	DNS      = "dns"
+	Register  = "register"
+	Worker    = "worker"
+	Discovery = "discovery"
+	Gateway   = "gateway"
+	Auth      = "auth"
+	Secrets   = "secrets"
+	Proxy     = "proxy"
+	DNS       = "dns"
 
 	// Database holds a project's databases. It is its OWN service and not the
 	// worker's job — v1 made the substrate open them, so the data plane was
@@ -78,7 +78,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Register, Worker, Stats, Gateway, Auth, Secrets, Database, Primitives, Proxy, DNS, BuildBackend}
+var All = []string{Register, Worker, Discovery, Gateway, Auth, Secrets, Database, Primitives, Proxy, DNS, BuildBackend}
 
 // BuildFrontend is NOT in All. All is what a single-node development cloud
 // starts, and that node runs the backend; putting the public half in the
@@ -116,12 +116,12 @@ type Config struct {
 
 	// Per-service operator configuration. Each is that service's own; nothing
 	// here reinterprets it.
-	Stats   stats.Config
-	Worker  worker.Config
-	Gateway gateway.Config
-	Auth    auth.Config
-	Proxy   proxy.Config
-	DNS     dns.Config
+	Discovery discovery.Config
+	Worker    worker.Config
+	Gateway   gateway.Config
+	Auth      auth.Config
+	Proxy     proxy.Config
+	DNS       dns.Config
 
 	// DNSListen is the port this node's dns server answers on, e.g. ":53" or
 	// ":5353". Default DefaultDNSListen.
@@ -141,7 +141,7 @@ type Config struct {
 var (
 	ErrNoHost      = errors.New("node: no host to answer on")
 	ErrNoDatabases = errors.New("node: a register needs somewhere to keep what is published")
-	ErrNoPubSub    = errors.New("node: stats needs somewhere to gossip")
+	ErrNoPubSub    = errors.New("node: discovery needs somewhere to gossip")
 	// ErrNoRaft is a node that needs consensus and was given none. FOUR THINGS
 	// need it: the build backend's job queue, the primitives service — whose
 	// whole kind is decisions about who writes next, so a node that cannot hold
@@ -165,7 +165,7 @@ type Option func(*options) error
 
 type options struct {
 	host      host.Host
-	pubsub    stats.PubSub
+	pubsub    discovery.PubSub
 	databases kvdb.Factory
 	engines   *database.Registry
 	raft      func(namespace string) (raft.Cluster, error)
@@ -195,8 +195,8 @@ func WithHost(h host.Host) Option {
 	}
 }
 
-// WithPubSub is where stats gossips. Required when this node runs stats.
-func WithPubSub(ps stats.PubSub) Option {
+// WithPubSub is where discovery gossips. Required when this node runs discovery.
+func WithPubSub(ps discovery.PubSub) Option {
 	return func(o *options) error {
 		if ps == nil {
 			return ErrNoPubSub

@@ -12,7 +12,7 @@
 //
 // # A node reports what it runs, and everything routes on that
 //
-// The one non-obvious wire is stats. A node broadcasts the services it runs;
+// The one non-obvious wire is discovery. A node broadcasts the services it runs;
 // every locator then reads that same view — a worker looking for a register, a
 // gateway looking for a worker — so there is one answer to "who does this" and
 // it is a local read on the request path rather than a lookup.
@@ -64,13 +64,13 @@ import (
 	"github.com/taubyte/tau/node/placement"
 	authService "github.com/taubyte/tau/services/auth"
 	databaseService "github.com/taubyte/tau/services/database"
+	"github.com/taubyte/tau/services/discovery"
 	dnsService "github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 	v2proxy "github.com/taubyte/tau/services/proxy"
 	registerService "github.com/taubyte/tau/services/register"
 	secretsService "github.com/taubyte/tau/services/secrets"
-	"github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -79,12 +79,12 @@ type Node struct {
 	cfg  Config
 	opts options
 
-	stats    *stats.Service
-	register *registerService.Service
-	worker   *worker.Service
-	gateway  *gateway.Service
-	proxy    *v2proxy.Service
-	dns      *dnsService.Service
+	discovery *discovery.Service
+	register  *registerService.Service
+	worker    *worker.Service
+	gateway   *gateway.Service
+	proxy     *v2proxy.Service
+	dns       *dnsService.Service
 
 	secrets *secretsService.Service
 
@@ -149,7 +149,7 @@ type Node struct {
 	closers   []io.Closer
 
 	// THE THREE LOCATORS, each one rule: if this node runs the service, use it
-	// directly; otherwise ask stats which node does and dial that one. The rule
+	// directly; otherwise ask discovery which node does and dial that one. The rule
 	// is p2p/rpc's — see node/locate.go — and each holds at most one stream,
 	// opened on first use and re-opened when the node it names changes.
 	//
@@ -207,7 +207,7 @@ func (n *Node) open() error {
 	// because a vault built during composition builds its own. Nothing they
 	// read is read yet: each closure reads a field of this node at CALL time,
 	// so a service opened after this is still found through a reach made before
-	// it — including the stats view the next line opens.
+	// it — including the discovery view the next line opens.
 	n.openReach()
 
 	// STATS NEXT. Everything else routes on the view it maintains, including
@@ -256,7 +256,7 @@ func (n *Node) open() error {
 		return err
 	}
 	// AND DNS LAST OF THE EDGE SERVICES, because it publishes what the two
-	// above and every other node reported — it answers from the stats view and
+	// above and every other node reported — it answers from the discovery view and
 	// takes nothing else.
 	if err := n.openDNS(); err != nil {
 		return err
@@ -270,34 +270,34 @@ func (n *Node) open() error {
 }
 
 func (n *Node) openStats() error {
-	if !n.cfg.runs(Stats) {
+	if !n.cfg.runs(Discovery) {
 		return nil
 	}
 	if n.opts.pubsub == nil {
 		return ErrNoPubSub
 	}
 
-	bus, err := stats.NewBus(n.opts.pubsub, n.cfg.Cloud)
+	bus, err := discovery.NewBus(n.opts.pubsub, n.cfg.Cloud)
 	if err != nil {
 		return err
 	}
 
-	options := []stats.Option{stats.WithBus(bus), stats.WithReporter(n)}
+	options := []discovery.Option{discovery.WithBus(bus), discovery.WithReporter(n)}
 	if n.opts.now != nil {
-		options = append(options, stats.WithClock(n.opts.now))
+		options = append(options, discovery.WithClock(n.opts.now))
 	}
 
 	// THE NODE'S REGION IS THE ONE STATS BROADCASTS. It is operator config on
 	// both sides, and carrying it here rather than asking the reporter for it
 	// keeps "where this node is" out of the per-tick measurement.
-	statsConfig := n.cfg.Stats
-	statsConfig.Region = n.cfg.Region
+	discoveryConfig := n.cfg.Discovery
+	discoveryConfig.Region = n.cfg.Region
 
-	svc, err := stats.New(n.opts.host, statsConfig, options...)
+	svc, err := discovery.New(n.opts.host, discoveryConfig, options...)
 	if err != nil {
 		return err
 	}
-	n.stats = svc
+	n.discovery = svc
 	n.closers = append(n.closers, svc)
 	return nil
 }
@@ -563,7 +563,7 @@ func (n *Node) openWorker() error {
 	switch {
 	case n.opts.artifacts != nil:
 		options = append(options, worker.WithArtifacts(n.opts.artifacts))
-	case n.stats != nil:
+	case n.discovery != nil:
 		options = append(options, worker.WithArtifacts(&artifacts{node: n, seen: map[string]builtAt{}}))
 	}
 	// A SECRET IS RESOLVED THE SAME WAY AN ARTIFACT IS, and by the same rule:
@@ -575,7 +575,7 @@ func (n *Node) openWorker() error {
 		options = append(options, worker.WithSecrets(n.opts.secrets))
 	case n.vault != nil:
 		options = append(options, worker.WithSecrets(n.vault))
-	case n.secrets != nil || n.stats != nil:
+	case n.secrets != nil || n.discovery != nil:
 		// A worker with no wasm tier — an injected one, or a node with no
 		// asset store — never built the shared vault above.
 		n.vault = newVault(n)
@@ -665,11 +665,11 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 // to ask, so a dial could reach only the machine it started on.
 //
 // A NODE THAT RUNS NO STATS GETS NONE, and that is not an error here: routing
-// reads the view stats maintains, and a node without one is a node that can
+// reads the view discovery maintains, and a node without one is a node that can
 // only reach itself. Whoever needs it to leave the machine says so — the
 // gateway below refuses to start without it.
 func (n *Node) openPlacement() error {
-	if n.stats == nil {
+	if n.discovery == nil {
 		return nil
 	}
 
@@ -679,7 +679,7 @@ func (n *Node) openPlacement() error {
 		options = append(options, placement.WithLocal(n.worker))
 	}
 
-	workers, err := placement.New(n.opts.host, n.stats, options...)
+	workers, err := placement.New(n.opts.host, n.discovery, options...)
 	if err != nil {
 		return err
 	}
@@ -693,7 +693,7 @@ func (n *Node) openGateway() error {
 		return nil
 	}
 	if n.workers == nil {
-		return errors.New("node: a gateway routes from stats, and this node does not run one")
+		return errors.New("node: a gateway routes from discovery, and this node does not run one")
 	}
 
 	source := n.registerSource()
@@ -794,8 +794,8 @@ func (n *Node) Start(ctx context.Context) error {
 	// STATS FIRST, for the same reason it is built first: everything else
 	// routes on the view it maintains.
 	var order []starter
-	if n.stats != nil {
-		order = append(order, n.stats)
+	if n.discovery != nil {
+		order = append(order, n.discovery)
 	}
 	if n.register != nil {
 		order = append(order, n.register)
@@ -880,7 +880,7 @@ func (n *Node) Start(ctx context.Context) error {
 	// AND IT IS NOT GATED ON RAFT ANY MORE. It used to be, and the reason it
 	// gave — "a node running a worker without raft opens no queue and simply
 	// finds none" — went stale with the cutover: a queue is the primitives
-	// service's now, and node/primitives.go resolves it through stats to a
+	// service's now, and node/primitives.go resolves it through discovery to a
 	// service on ANOTHER node when this one runs none. A compute node with no
 	// consensus of its own can claim, and under the old gate it never tried.
 	if n.worker != nil {
@@ -985,8 +985,8 @@ func (n *Node) Close() error {
 // LOAD IS ZERO AND SAID TO BE. Nothing here measures it yet, and a made-up
 // number would steer traffic on fiction — zero says "as available as anything
 // else", which in a fleet of nodes that all report zero is true.
-func (n *Node) Snapshot(context.Context) (stats.Snapshot, error) {
-	snapshot := stats.Snapshot{
+func (n *Node) Snapshot(context.Context) (discovery.Snapshot, error) {
+	snapshot := discovery.Snapshot{
 		Ready:     true,
 		Serving:   n.serving(),
 		Addresses: n.addresses(),
@@ -1095,13 +1095,13 @@ func (n *Node) Database() *databaseService.Service { return n.database }
 // Primitives is this node's primitives service, or nil if it runs none.
 func (n *Node) Primitives() *primitivesService.Service { return n.primitives }
 
-// Stats is this node's view of the fleet, or nil.
-func (n *Node) Stats() *stats.Service { return n.stats }
+// Discovery is this node's view of the fleet, or nil.
+func (n *Node) Discovery() *discovery.Service { return n.discovery }
 
 // PubSub is the gossip this node was given, for a composer that has to attach
 // something to it — a stream subscriber, a test listening for what a workload
 // published.
-func (n *Node) PubSub() stats.PubSub { return n.opts.pubsub }
+func (n *Node) PubSub() discovery.PubSub { return n.opts.pubsub }
 
 // QueueDepth is what one declared queue holds: items waiting and items claimed.
 //

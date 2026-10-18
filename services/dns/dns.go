@@ -1,13 +1,13 @@
 // Package dns answers queries, and does nothing else.
 //
-// It is one half of v1's seer; stats is the other. v1's seer answered DNS AND
+// It is one half of v1's seer; discovery is the other. v1's seer answered DNS AND
 // accumulated where everything is, and the two have different shapes: this half
 // is read-mostly and latency-bound, the other is write-heavy and
 // staleness-tolerant. Splitting them lets each be sized, deployed and reasoned
 // about on its own, and it is why this package has no swarm identity, no
 // gossip, and one dependency — a read.
 //
-// # Answering is a projection of a stats read
+// # Answering is a projection of a discovery read
 //
 // A query for `shop.example.com` is the question "who serves shop.example.com",
 // which is exactly Route. Everything below is the translation of that answer
@@ -48,7 +48,7 @@
 // along in the ADDITIONAL section so a client does not pay a second round trip
 // for something this server already knows.
 //
-// AN ADDRESS THAT IS NOT AN IP IS SKIPPED RATHER THAN GUESSED AT. stats carries
+// AN ADDRESS THAT IS NOT AN IP IS SKIPPED RATHER THAN GUESSED AT. discovery carries
 // what nodes report and parses nothing (deliberately — see its doc). A hostname
 // in that list is a legitimate thing for a node to report and a thing this
 // service cannot put in an A record, so it is passed over, and a node whose
@@ -71,7 +71,7 @@ import (
 	"github.com/taubyte/tau/pkg/stats"
 )
 
-// Service answers DNS queries from a stats view.
+// Service answers DNS queries from a discovery view.
 type Service struct {
 	cfg  Config
 	opts options
@@ -381,7 +381,7 @@ func weightOf(load float64) uint16 {
 	return uint16(w)
 }
 
-// records turns nodes into A or AAAA records, in the order stats gave them —
+// records turns nodes into A or AAAA records, in the order discovery gave them —
 // least loaded first — capped at MaxRecords.
 //
 // THE ORDER IS THE ROUTING DECISION. Many clients take the first address, and

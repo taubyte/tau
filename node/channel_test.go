@@ -66,7 +66,7 @@ func TestAHandleThatNamesNoDeploymentIsRefused(t *testing.T) {
 func TestANodeThatCanReachNoWorkerAnswersNothing(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 	require.Nil(t, n.worker, "this node runs none")
-	require.Nil(t, n.workers, "and runs no stats to find one")
+	require.Nil(t, n.workers, "and runs no discovery to find one")
 
 	_, err := (&channels{node: n}).Dial(t.Context(), channelGrant(), []byte("x"))
 	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)

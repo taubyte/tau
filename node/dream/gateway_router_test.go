@@ -54,7 +54,7 @@ func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{node.Register, node.Worker, node.Stats, node.Gateway},
+		Services: []string{node.Register, node.Worker, node.Discovery, node.Gateway},
 	})
 	require.NoError(t, err)
 	defer u.Close()

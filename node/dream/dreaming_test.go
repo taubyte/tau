@@ -39,7 +39,7 @@ func TestAFleetServesARequestEndToEnd(t *testing.T) {
 	// question: the gateway runs no worker and no register, the worker runs no
 	// register, and the register serves neither.
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{node.Register, node.Stats},
+		Services: []string{node.Register, node.Discovery},
 	})
 	require.NoError(t, err)
 	defer u.Close()
@@ -96,8 +96,8 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 
 	// Both nodes see each other before anything is routed.
 	require.Eventually(t, func() bool {
-		return len(edge.Stats().Route(node.Worker, time.Minute)) > 0 &&
-			len(compute.Stats().Route(node.Register, time.Minute)) > 0
+		return len(edge.Discovery().Route(node.Worker, time.Minute)) > 0 &&
+			len(compute.Discovery().Route(node.Register, time.Minute)) > 0
 	}, 30*time.Second, 200*time.Millisecond, "the fleet never saw itself")
 
 	// A REQUEST, THROUGH THE GATEWAY, ALL THE WAY TO A TIER.

@@ -18,7 +18,7 @@ import (
 // name, how loaded are they, which port did their proxy get. A `zone` resource
 // is the opposite — it is a static assertion, in zone-file notation, about
 // names this project owns. `www 300 IN A 1.2.3.4` is not a routing decision and
-// no amount of stats will produce it.
+// no amount of discovery will produce it.
 //
 // It is also the only way this cloud answers a type it cannot route: MX, TXT,
 // CNAME, NS, CAA. A project that moves its domain here and loses its mail

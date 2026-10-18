@@ -36,7 +36,7 @@ import (
 // this file exists to end.
 func TestAnApplicationAnswersThroughTheGateway(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{node.Register, node.Worker, node.Stats, node.Gateway},
+		Services:  []string{node.Register, node.Worker, node.Discovery, node.Gateway},
 		Container: node.BackendDocker,
 	})
 	require.NoError(t, err)

@@ -38,7 +38,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/services/stats"
+	"github.com/taubyte/tau/services/discovery"
 )
 
 // runtimes are the tiers nodes in this process run on.
@@ -269,7 +269,7 @@ const (
 // ★ WHY A UNIVERSE MAY GO THIS LOW AND A CLOUD MAY NOT. Stabilize buys off
 // placement thrash: a peer that restarts and is back in four seconds must not
 // have its share of the fleet's bytes moved out and back, so a cloud refuses to
-// move on anything shorter than a minute (services/stats/config.go). A universe
+// move on anything shorter than a minute (services/discovery/config.go). A universe
 // is one process on loopback whose nodes are goroutines that do not restart, so
 // there is no thrash to buy and the minute is a minute of nothing happening.
 //
@@ -286,7 +286,7 @@ const (
 // the fleet document were both there at 1.0s. The barrier's budget is 120s, so
 // a minute-long window left 55s for everything else and a loaded box spent it.
 // One liveness window puts the same barrier at 20.000s.
-var dreamStabilize = stats.Config{}.Freshness()
+var dreamStabilize = discovery.Config{}.Freshness()
 
 // dreamTimeouts is DefaultTimeoutConfig's shape at dream's scale: election is
 // twice heartbeat and commit and lease equal it, exactly as the default has
@@ -424,7 +424,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int) error {
 		Container: node.ContainerConfig{Backend: cfg.Container},
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
-	nodeConfig.Stats.Stabilize = dreamStabilize
+	nodeConfig.Discovery.Stabilize = dreamStabilize
 
 	engines, err := boot.DatabaseEngines(ctx)
 	if err != nil {

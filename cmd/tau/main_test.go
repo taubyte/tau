@@ -88,7 +88,7 @@ func TestPrintExampleReportsAWriteFailure(t *testing.T) {
 func TestStartServesTheGatewayAndStops(t *testing.T) {
 	config := writeConfig(t, ""+
 		"node:\n"+
-		"  services: [register, stats, gateway]\n"+
+		"  services: [register, discovery, gateway]\n"+
 		"  cloud: test\n"+
 		"root: /nonexistent/overridden\n"+
 		"listen: [\"/ip4/127.0.0.1/tcp/0\"]\n"+

@@ -10,7 +10,7 @@
 //
 // # What it routes on
 //
-// LIVE MEASUREMENTS AND NOT A HASH. services/stats already carries what every
+// LIVE MEASUREMENTS AND NOT A HASH. services/discovery already carries what every
 // node says about itself — how loaded it is, whether it is ready, and what it
 // can answer for cheaply — so the choice is the least loaded node that has the
 // project warm, then the least loaded node at all.
@@ -46,9 +46,9 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// Router is the slice of stats this package needs: one read.
+// Router is the slice of discovery this package needs: one read.
 //
-// *services/stats.Service satisfies it. The interface is here so that placement
+// *services/discovery.Service satisfies it. The interface is here so that placement
 // can be tested against a table of nodes rather than a swarm.
 type Router interface {
 	Route(name string, maxAge time.Duration) []stats.Node
@@ -78,7 +78,7 @@ type Conns interface {
 
 // Routes is an Invoker that can also ask a router where a request goes.
 //
-// NOT `Router`, which in this package already means the stats read placement
+// NOT `Router`, which in this package already means the discovery read placement
 // decides FROM. Two things called Router, one choosing a node and one choosing a
 // destination, is a collision a reader has to hold in their head on every line.
 type Routes interface {
@@ -426,7 +426,7 @@ func (w *Workers) somewhere(ctx context.Context, at specs.Address, call func(Inv
 
 // candidates is the nodes that could take this, warmest first.
 //
-// The two lists are concatenated rather than merged: within each, stats has
+// The two lists are concatenated rather than merged: within each, discovery has
 // already ordered by load, and a warm node at higher load is still the better
 // choice than a cold one at lower — the fetch it saves is a whole compiled
 // project over the wire.

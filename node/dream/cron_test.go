@@ -146,11 +146,11 @@ func TestAScheduleFiresOnceAcrossAFleet(t *testing.T) {
 // a test moves it stops a node's presence machine dead: pkg/membership promotes
 // a peer to stable when now.Sub(liveSince) reaches the stabilize window
 // (membership.go:305), which is dreamStabilize for these nodes
-// (node/dream/init.go, and services/stats/config.go for the minute a cloud
+// (node/dream/init.go, and services/discovery/config.go for the minute a cloud
 // keeps) — so under a frozen clock that difference is zero forever, no peer
 // ever becomes stable,
-// and Stats().Placement() is EMPTY for as long as the universe runs.
-// services/stats/placement_test.go:50 asserts exactly that, as correct
+// and Discovery().Placement() is EMPTY for as long as the universe runs.
+// services/discovery/placement_test.go:50 asserts exactly that, as correct
 // behaviour: a peer that has just appeared holds nothing.
 //
 // So a frozen clock is not a slow universe, it is a universe in which no

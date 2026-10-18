@@ -126,7 +126,7 @@ func TestTheTopicCarriesTheProjectAndDeployment(t *testing.T) {
 }
 
 // TestTWOCLOUDSSHARINGAMACHINEDONOTDELIVEREACHOTHERSMESSAGES, which is the same
-// reason stats' own bus is scoped by cloud.
+// reason discovery' own bus is scoped by cloud.
 func TestTheTopicCarriesTheCloud(t *testing.T) {
 	require.NotEqual(t,
 		stream.Topic(stream.Stream, "one", "shop/prod/QmOrders"),
@@ -151,7 +151,7 @@ func TestTheKindIsInTheTopic(t *testing.T) {
 
 // TestATOPICISJOINEDONCEANDKEPT. Joining is what starts the gossip machinery for
 // a topic, so a publisher that rejoined per message would churn the mesh it
-// depends on — the same reason services/stats' bus joins once.
+// depends on — the same reason services/discovery' bus joins once.
 func TestATopicIsJoinedOncePerHandle(t *testing.T) {
 	s, gossip := publishing(t, stream.Stream)
 	ctx := t.Context()

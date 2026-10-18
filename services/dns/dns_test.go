@@ -25,7 +25,7 @@ import (
 //
 // IT IS LOCKED because the wire test drives the server over both transports and
 // the handlers run on the dns library's own goroutines. The real router is
-// services/stats, which is mutex-guarded for the same reason.
+// services/discovery, which is mutex-guarded for the same reason.
 type fakeRouter struct {
 	mu         sync.Mutex
 	nodes      map[string][]stats.Node
@@ -80,7 +80,7 @@ func query(name string, qtype uint16) *dns.Msg {
 	return m
 }
 
-// TestAnAnswerIsAStatsReadTurnedIntoRecords, in the order stats gave it —
+// TestAnAnswerIsAStatsReadTurnedIntoRecords, in the order discovery gave it —
 // least loaded first, because many clients take the first address.
 func TestAnAnswerIsAStatsReadTurnedIntoRecords(t *testing.T) {
 	r := serving("shop.example.com",
@@ -101,7 +101,7 @@ func TestAnAnswerIsAStatsReadTurnedIntoRecords(t *testing.T) {
 
 	name, maxAge := r.asked()
 	require.Equal(t, "shop.example.com", name,
-		"the trailing dot is not part of the name stats knows")
+		"the trailing dot is not part of the name discovery knows")
 	require.Equal(t, DefaultMaxAge, maxAge, "dns states its own staleness tolerance")
 }
 
@@ -147,7 +147,7 @@ func TestAAndAaaaAreAnsweredFromTheSameReport(t *testing.T) {
 	require.Equal(t, "2001:db8::1", v6.Answer[0].(*dns.AAAA).AAAA.String())
 }
 
-// TestAnAddressThatIsNotAnIpIsSkipped. stats carries what nodes report and
+// TestAnAddressThatIsNotAnIpIsSkipped. discovery carries what nodes report and
 // parses nothing, so a hostname is a legitimate entry and simply cannot be an
 // A record.
 func TestAnAddressThatIsNotAnIpIsSkipped(t *testing.T) {
@@ -196,7 +196,7 @@ func TestOneNodeWithManyAddressesStillRespectsTheCap(t *testing.T) {
 }
 
 // TestTheNameIsNormalisedBeforeItIsLookedUp. DNS is case-insensitive on the
-// wire and stats keys are exact, so a query in mixed case must not miss.
+// wire and discovery keys are exact, so a query in mixed case must not miss.
 func TestTheNameIsNormalisedBeforeItIsLookedUp(t *testing.T) {
 	r := serving("shop.example.com", stats.Node{Ready: true, Addresses: []string{"203.0.113.1"}})
 	s := newService(t, r, nil)
@@ -441,7 +441,7 @@ func TestTheServiceNameIsWhatStatsKnows(t *testing.T) {
 	s.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV))
 	name, _ := r.asked()
 	require.Equal(t, "shop.example.com", name,
-		"stats is asked about the workload, not about the underscore labels")
+		"discovery is asked about the workload, not about the underscore labels")
 }
 
 func TestAnSrvAnswerIsCapped(t *testing.T) {

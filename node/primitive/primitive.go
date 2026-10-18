@@ -29,7 +29,7 @@
 // # What is not here
 //
 // WHICH ARM — this node's own service or one across the swarm — and which node
-// a window of the clock is handed to. Both are read off the same stats view
+// a window of the clock is handed to. Both are read off the same discovery view
 // every other locator on this node reads, so they stay with the composition
 // that has the view; what is here is what is asked once an arm has been chosen.
 package primitive

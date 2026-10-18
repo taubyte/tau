@@ -135,7 +135,7 @@ func externalSQL(t *testing.T, name string, s server, port int) {
 	s.start(t, port)
 
 	r := deployServing(t, pointedAt(t, name, port), "orders.example.com", kitchenSinkWASM(t), nil,
-		node.Register, node.Worker, node.Stats, node.Gateway, node.Database, node.Primitives, node.Secrets)
+		node.Register, node.Worker, node.Discovery, node.Gateway, node.Database, node.Primitives, node.Secrets)
 
 	// THE CREDENTIALS ARE A SECRET THE AUTHOR NAMED, set the way a developer
 	// sets one. Without it the open is refused, which the first exec proves by

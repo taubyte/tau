@@ -90,10 +90,10 @@ func holdingSync(t *testing.T, cfg Config) *Node {
 // is the composition's own claim and the thing an operator's service list is
 // checked against.
 func TestANodeThatRunsPrimitivesOpensTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
 	require.NotNil(t, n.Primitives(), "the service list named it")
 
-	other, _, _ := makeNode(t, Config{Services: []string{Register, Stats}})
+	other, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.Nil(t, other.Primitives(), "the service list did not")
 }
 
@@ -142,7 +142,7 @@ func TestAPrimitivesNodeWithNoRecordStoreIsRefusedAtConstruction(t *testing.T) {
 // worker node now opens no raft group of its own at all, so there is no other
 // namespace an item could land in.
 func TestASendThroughTheNodeLandsInThePrimitivesNamespace(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
 	jobs := handleOf(primJobsID)
 
 	require.NoError(t, n.syncs.Send(t.Context(), jobs, "order-1", []byte("ship it")))
@@ -156,7 +156,7 @@ func TestASendThroughTheNodeLandsInThePrimitivesNamespace(t *testing.T) {
 // against it honest: it used to read this node's own group by a bare handle,
 // and after the cutover that group is empty.
 func TestQueueDepthAnswersFromTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
 	jobs := handleOf(primJobsID)
 
 	require.NoError(t, n.syncs.Send(t.Context(), jobs, "order-1", []byte("ship it")))
@@ -171,7 +171,7 @@ func TestQueueDepthAnswersFromTheService(t *testing.T) {
 // read the whole config off the grant, so a handle naming nothing at all opened
 // a queue with pkg/queue's defaults and a send into it looked like it worked.
 func TestASendToAQueueNobodyDeclaredIsRefused(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
 
 	err := n.syncs.Send(t.Context(), handleOf("QmNothingDeclaresThis"), "1", []byte("x"))
 	require.ErrorIs(t, err, primitivesService.ErrNotDeclared)
@@ -180,7 +180,7 @@ func TestASendToAQueueNobodyDeclaredIsRefused(t *testing.T) {
 // TestANAPPENDGOESTHROUGHTHESERVICETOO, which is the other half of the kind and
 // the one node/log.go used to answer out of the worker's own process.
 func TestALogAppendedThroughTheNodeIsReadBackFromTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
 	audit := handleOf(primAuditID)
 
 	cursor, err := n.syncs.Append(t.Context(), audit, []byte("first"))
@@ -205,8 +205,8 @@ func TestALogAppendedThroughTheNodeIsReadBackFromTheService(t *testing.T) {
 // stream, and the node that answers is the one holding the namespace.
 func TestAWorkerReachesAPrimitivesServiceOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, Primitives}},
-		Config{Services: []string{Worker, Stats}},
+		Config{Services: []string{Register, Discovery, Primitives}},
+		Config{Services: []string{Worker, Discovery}},
 	)
 	holder, compute := nodes[0], nodes[1]
 
@@ -230,8 +230,8 @@ func TestAWorkerReachesAPrimitivesServiceOnAnotherNode(t *testing.T) {
 // is not a dial on the request path.
 func TestTheStreamToARemotePrimitivesServiceIsKept(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, Primitives}},
-		Config{Services: []string{Worker, Stats}},
+		Config{Services: []string{Register, Discovery, Primitives}},
+		Config{Services: []string{Worker, Discovery}},
 	)
 	compute := nodes[1]
 	sees(t, compute, Primitives)
@@ -247,7 +247,7 @@ func TestTheStreamToARemotePrimitivesServiceIsKept(t *testing.T) {
 // dropping it, which is the failure a local fallback would have hidden: the
 // item would land in a group nothing drains and every assertion would pass.
 func TestASendWithNoPrimitivesAnywhereIsRefused(t *testing.T) {
-	nodes := fleet(t, Config{Services: []string{Worker, Stats}})
+	nodes := fleet(t, Config{Services: []string{Worker, Discovery}})
 
 	err := nodes[0].syncs.Send(t.Context(), handleOf(primJobsID), "1", []byte("x"))
 	require.ErrorIs(t, err, ErrNoPrimitives)
@@ -257,7 +257,7 @@ func TestASendWithNoPrimitivesAnywhereIsRefused(t *testing.T) {
 // group still forming rather than leaving a goroutine writing into a store that
 // has gone.
 func TestClosingANodeClosesThePrimitivesService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
 
 	require.NoError(t, n.Close())
 	require.NoError(t, n.Close(), "closing twice is not a second teardown")
@@ -272,7 +272,7 @@ func TestClosingANodeClosesThePrimitivesService(t *testing.T) {
 func TestATaskingForThisNodeSkipsTheWire(t *testing.T) {
 	n := holdingSync(t, Config{Services: []string{Register, Worker, Primitives}})
 
-	// No stats, so there is no fleet to pick from — and the one primitives
+	// No discovery, so there is no fleet to pick from — and the one primitives
 	// service this node can reach is its own.
 	require.NoError(t, n.taskCron(t.Context(), at(2, 59), at(3, 0)))
 
@@ -290,8 +290,8 @@ func TestATaskingForThisNodeSkipsTheWire(t *testing.T) {
 // leader free to task somebody else next minute.
 func TestAWindowHandedToAnotherNodeReachesItsPrimitivesService(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Worker, Stats, Primitives}},
-		Config{Services: []string{Stats, Primitives}},
+		Config{Services: []string{Register, Worker, Discovery, Primitives}},
+		Config{Services: []string{Discovery, Primitives}},
 	)
 	clock, holder := nodes[0], nodes[1]
 	<-holder.Primitives().Formed()

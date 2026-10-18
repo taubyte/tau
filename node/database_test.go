@@ -107,7 +107,7 @@ func TestTheRootReleasesThroughTheFactoryItWasGiven(t *testing.T) {
 // happened — which would advertise this node as no longer a holder while its
 // bytes are still here.
 func TestAStoreThatCannotBeReleasedIsNamed(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Discovery}})
 	seam := databaseStores{node: n}
 
 	require.ErrorContains(t, seam.Release(t.Context(), "databases/shop/prod/kv/QmA"),

@@ -17,7 +17,7 @@ import (
 // secrets.go wires the one store in v2 that git does not write.
 //
 // It is locate.go's rule again — run it here, use it directly; otherwise ask
-// stats who does — and the only thing that makes it its own file is that the
+// discovery who does — and the only thing that makes it its own file is that the
 // consumer is an interface services/worker declares rather than one this
 // package does.
 
@@ -48,7 +48,7 @@ type vault struct {
 	node *Node
 
 	// reach is the one rule, as [rpc.Reach]: run it here, use it directly;
-	// otherwise ask stats who does and dial that one.
+	// otherwise ask discovery who does and dial that one.
 	//
 	// A LOCAL VAULT IS NOT A CACHE, IT IS THE ABSENCE OF A HOP — and here it
 	// is also the absence of a secret on the wire, which is the one place in
@@ -62,7 +62,7 @@ type vault struct {
 func newVault(n *Node) *vault {
 	v := &vault{node: n}
 	v.reach = rpc.Reach(n.opts.host, Secrets,
-		n.routeTo(Secrets, ErrNoSecrets, "this node runs neither a secrets service nor stats to find one"),
+		n.routeTo(Secrets, ErrNoSecrets, "this node runs neither a secrets service nor discovery to find one"),
 		func() (holder, bool) {
 			if n.secrets == nil {
 				return nil, false
