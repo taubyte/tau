@@ -97,6 +97,14 @@ type Spec struct {
 	// Timeout bounds one request. Zero means the pool's default.
 	Timeout time.Duration
 
+	// CPU is a ceiling in millicores: 1000 is one core. Zero is no ceiling.
+	CPU int64
+
+	// Readiness, when set, is how a tier knows an instance may be given work:
+	// an HTTP GET on Path, on the port named Port (empty: the one port it was
+	// given), answered 2xx or 3xx. Absent, accepting a connection is ready.
+	Readiness *Probe
+
 	// Completes is a workload that runs to completion: each request starts it,
 	// hands it the request, and its exit is the answer. Nothing listens, so a
 	// tier that waits for a port or a poll would wait for nothing. It is the
@@ -337,6 +345,12 @@ type Request struct {
 
 	// Body is the payload. It may be nil.
 	Body []byte
+}
+
+// Probe is an HTTP readiness check: the path, and the declared port by name.
+type Probe struct {
+	Path string
+	Port string
 }
 
 // Response is what came back.

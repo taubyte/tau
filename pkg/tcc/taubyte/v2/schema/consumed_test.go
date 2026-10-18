@@ -150,6 +150,8 @@ var (
 
 	regionsRefused = excuse{handled, "where a resource's copies go, on a kind nothing places by region. worker reads the block's policy and refuses the grant by name (unservable), so the regions under it are never served weaker than written — the target is not served."}
 
+	replicationRaftOnly = excuse{handled, "whether a cache keeps a copy on every peer. The vocabulary says it is only a question under raft consensus, because crdt and gossip both put a copy on every peer whatever it says - and worker refuses a raft cache by name (unservableKind), so the one branch where this field decides anything is never served."}
+
 	externalStreamRefused = excuse{handled, "where somebody else's broker is and how to reach it: its host, its tls and its credentials, which only a kafka or nats stream declares. worker refuses a stream on any engine but tau's by name (unservableKind), so none of them is ever served weaker than written."}
 
 	agentLowered = excuse{handled, "consumed by the agent's lowering: limits/timeout and limits/memory become the loop function's execution/timeout and execution/memory, and the memory block becomes a vector database's dimensions and size. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption."}
@@ -199,6 +201,7 @@ var unread = map[string]excuse{
 	"workflow/regions/main":    regionsRefused,
 	"workflow/regions/standby": regionsRefused,
 
+	"cache/replicated":             replicationRaftOnly,
 	"storage/streaming/ttl":        streamingStorageRefused,
 	"stream/credentials/name":      externalStreamRefused,
 	"stream/credentials/namespace": externalStreamRefused,
@@ -241,6 +244,9 @@ var readers = map[string][]string{
 	// services/worker resolves a target of every kind onto a grant, which is
 	// what carries an author's declarations to the tier that runs it.
 	"services/worker/resolve.go": everyKind,
+	// unserved.go is resolve's arm for what a workload declares about itself:
+	// carried to the tier that honours it, or refused by name.
+	"services/worker/unserved.go": everyKind,
 	// regions.go reads the regions block of what a tier runs, for placement to
 	// choose a node by.
 	"services/worker/regions.go": {"application", "function", "sandbox", "worker"},

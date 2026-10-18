@@ -83,8 +83,22 @@ func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]stri
 				// start grant is refused by name (worker's unservable), which is
 				// right and is tested there. What this test runs is a pipeline,
 				// not a placement.
+				//
+				// SO ARE ITS RUN CEILING AND ITS STEPS' SELECTORS, for the same
+				// reason: a driver hands on the whole message, and nothing
+				// counts runs, so worker refuses the start by name over each
+				// (unservableWorkflow). What this test runs is the hand-on.
 				if kind == "workflow" {
 					delete(res, "regions")
+					delete(res, "concurrency")
+					steps, _ := res["steps"].([]any)
+					for _, s := range steps {
+						step, _ := s.(map[string]any)
+						if call, ok := step["call"].(map[string]any); ok {
+							delete(call, "input")
+							delete(call, "result")
+						}
+					}
 				}
 				if kind == "function" {
 					source, _ := res["source"].(map[string]any)

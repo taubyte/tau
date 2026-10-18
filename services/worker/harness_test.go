@@ -18,6 +18,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 
 	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1/workerv1connect"
@@ -164,6 +165,16 @@ func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {
 func compiled(t testing.TB) []byte {
 	t.Helper()
 
+	b, err := json.Marshal(servable(t, catalogue(t)))
+	require.NoError(t, err)
+	return b
+}
+
+// catalogue is the fixture compiled and nothing else: what an author wrote,
+// including what this cloud refuses.
+func catalogue(t testing.TB) map[string]any {
+	t.Helper()
+
 	c, err := schema.New(
 		schema.WithLocal("../../pkg/tcc/taubyte/v2/fixtures/basic"),
 		schema.WithBranch("main"))
@@ -171,10 +182,44 @@ func compiled(t testing.TB) []byte {
 
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)
+	return obj.Flat()
+}
 
-	b, err := json.Marshal(obj.Flat())
-	require.NoError(t, err)
-	return b
+// servable takes off what this cloud refuses of the fixture's applications,
+// which are what most of this package's tests run.
+//
+// THE FIXTURE IS THE VOCABULARY'S CATALOGUE, not a deployment this cloud can
+// serve: its applications declare cloud-wide instance ceilings, liveness
+// checks, a readiness function and a registry credential, and nothing here
+// applies any of them — so resolving one is refused by name, which
+// unserved_test asserts against the UNTOUCHED fixture. What the rest of these
+// tests exercise is ports, grants, scopes and the cache, and a refusal would
+// leave none of that to test.
+func servable(t testing.TB, flat map[string]any) map[string]any {
+	t.Helper()
+
+	root, ok := flat["object"].(map[string]any)
+	require.True(t, ok)
+	applications, ok := root[specs.KindApplication].(map[string]any)
+	require.True(t, ok)
+
+	for _, v := range applications {
+		app, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		delete(app, specs.ApplicationKeyLiveness)
+		if limits, ok := app[specs.ApplicationKeyLimits].(map[string]any); ok {
+			delete(limits, "max_instances")
+		}
+		if source, ok := app[specs.ApplicationKeySource].(map[string]any); ok {
+			delete(source, "image_pull_secret")
+		}
+		if readiness, ok := app[specs.ApplicationKeyReadiness].(map[string]any); ok && readiness["kind"] == specs.ApplicationReadinessKindFunction {
+			delete(app, specs.ApplicationKeyReadiness)
+		}
+	}
+	return flat
 }
 
 // countingRegister is the register with a tally, so a test can say how many

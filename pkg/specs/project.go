@@ -129,6 +129,10 @@ type Project struct {
 	// is one map hit. Listings scan it, which is fine because a listing is a
 	// walk of the project and never on the request path.
 	index map[string][]string
+
+	// filled is every resource whose delegated block this compile read, by id
+	// — the record the compiler writes beside the object. See Filled.
+	filled map[string]bool
 }
 
 // Load parses the bytes the register holds.
@@ -151,8 +155,29 @@ func Load(compiled []byte) (*Project, error) {
 	flat, _ := doc[indexesKey].(map[string]any)
 
 	index := readIndex(flat)
-	return &Project{id: id, name: name, root: root, index: index, located: locate(index, id)}, nil
+	return &Project{id: id, name: name, root: root, index: index, located: locate(index, id), filled: readFilled(doc)}, nil
 }
+
+// readFilled is the compiler's record of the delegated blocks it read.
+func readFilled(doc map[string]any) map[string]bool {
+	record, _ := doc[schema.MountedKey].(map[string]any)
+	if len(record) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(record))
+	for id := range record {
+		out[id] = true
+	}
+	return out
+}
+
+// Filled says the compile read this resource's `source.config` file into it.
+//
+// A RESOURCE THAT NAMES ONE AND WAS NOT FILLED was compiled with whatever the
+// config repository says instead, which is what a first deploy and a broken
+// fetch both look like. The compiler reports it; a consumer that serves the
+// resource is the one that has to decide what that means.
+func (p *Project) Filled(id string) bool { return p.filled[id] }
 
 // readIndex takes the trailing `links` off every key and keeps the values as
 // strings. It runs once per object, and an object is content-addressed, so it
@@ -1157,6 +1182,10 @@ type Source struct {
 	// runs; Image is a reference pulled rather than built.
 	Component string
 	Image     string
+
+	// Config is the file in that repository the resource's serving block is
+	// delegated to, or "". See Project.Filled for whether it was read.
+	Config string
 }
 
 // Built reports whether this source is something this platform makes. An image
@@ -1219,6 +1248,7 @@ func (r Resource) Source() Source {
 		Branch:    r.String("source", "branch"),
 		Component: r.String("source", "component"),
 		Image:     r.String("source", "image"),
+		Config:    r.String("source", "config"),
 	}
 }
 

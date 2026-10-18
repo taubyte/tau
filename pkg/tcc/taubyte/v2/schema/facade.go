@@ -103,6 +103,10 @@ func WithMounted(m Mount, fs afero.Fs, commit string) Option {
 // WithMounted are for a caller that needs the fetches in its own hands.
 type Mounter = interp.Mounter
 
+// MountedKey is where a compiled object records the delegated blocks its
+// compile read, beside the object itself.
+const MountedKey = interp.MountedKey
+
 func WithMounter(m Mounter) Option {
 	return interp.WithMounter(m)
 }

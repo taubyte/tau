@@ -189,7 +189,27 @@ func compiled(t *testing.T) []byte {
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)
 
-	b, err := json.Marshal(obj.Flat())
+	// THE FIXTURE'S `db` DECLARES TWO THINGS THIS CLOUD REFUSES BY NAME — a
+	// cloud-wide instance ceiling and a registry credential — and these tests
+	// are about the lookup reaching a tier, not about that refusal, which
+	// services/worker's unserved_test asserts against the untouched fixture.
+	flat := obj.Flat()
+	root, _ := flat["object"].(map[string]any)
+	applications, _ := root["application"].(map[string]any)
+	for _, v := range applications {
+		app, _ := v.(map[string]any)
+		if app["name"] != "db" {
+			continue
+		}
+		if limits, ok := app["limits"].(map[string]any); ok {
+			delete(limits, "max_instances")
+		}
+		if source, ok := app["source"].(map[string]any); ok {
+			delete(source, "image_pull_secret")
+		}
+	}
+
+	b, err := json.Marshal(flat)
 	require.NoError(t, err)
 	return b
 }

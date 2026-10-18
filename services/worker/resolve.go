@@ -157,6 +157,15 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 	// because which mechanism does the enforcing is the tier's business and
 	// the allowlist is the author's.
 	spec.Egress = workload.Egress
+
+	// WHAT THE WORKLOAD DECLARES ABOUT ITSELF: carried where a tier honours
+	// it, refused by name where none does. A kind this service answers itself
+	// runs on no tier, so there is nothing to carry it to.
+	if runtime != "" {
+		if err := applied(&spec, t, proj, r, resourceID); err != nil {
+			return invoke.Spec{}, err
+		}
+	}
 	return spec, nil
 }
 
@@ -952,7 +961,31 @@ func unservableKind(reach specs.Reach, target specs.Resource) string {
 				"it publishes to the swarm's own gossipsub and nothing else",
 				reach.Kind, reach.Label, engine)
 		}
+		// `local: true` ASKS FOR A STREAM ONLY THIS NODE HEARS, and a stream
+		// here is one gossipsub topic across the swarm: what is published
+		// reaches every node subscribed. `local: false` is exactly what is
+		// served, and is served.
+		if local := specs.ReadStream(target).Local; local != nil && *local {
+			return fmt.Sprintf("%s %q is local, and a stream here is one topic across the swarm — "+
+				"what it publishes would reach every node subscribed to it",
+				reach.Kind, reach.Label)
+		}
 		return ""
+	case volumeKind:
+		// A CHECKPOINT BUDGET IS A PROMISE ABOUT LOSS. The interval is served
+		// (settingsFor carries it); nothing measures a volume's last snapshot
+		// against a budget, so nothing would ever alert or freeze writes when
+		// it was passed. `on_budget_exceeded` is defaulted on every volume and
+		// means nothing without a budget, so the budget is what is tested.
+		checkpoint := specs.ReadVolume(target).Checkpoint
+		if budget := checkpoint.RpoBudget; budget != nil {
+			return fmt.Sprintf("%s %q declares an rpo_budget of %s, and nothing here measures a volume's last snapshot "+
+				"against one — it would never %s when the budget was passed",
+				reach.Kind, reach.Label, budget, checkpoint.OnBudgetExceeded)
+		}
+		return ""
+	case workflowKind:
+		return unservableWorkflow(reach, specs.ReadWorkflow(target))
 	case storageKind:
 		// STREAMING IS A DIFFERENT INTERFACE AND THIS CLOUD HAS ONLY ONE. Its
 		// verbs move bytes a caller does not hold all of at once, so serving it
@@ -1007,6 +1040,41 @@ func unservableKind(reach specs.Reach, target specs.Resource) string {
 		return fmt.Sprintf("%s %q declares consensus %q, and the store behind a cache here merges "+
 			"concurrent writes last-writer-wins — a write that lost would be gone with no error",
 			reach.Kind, reach.Label, consensus)
+	}
+
+	// AN ENCRYPTION KEY IS A PROMISE ABOUT WHAT A NODE CAN READ, and the store
+	// keeps entries as they were written: nothing here encrypts them with the
+	// key named, so every peer holding a copy holds the plaintext.
+	if key := specs.ReadCache(target).Encryption; key.KeyName != "" {
+		return fmt.Sprintf("%s %q is encrypted with the secret %s%s, and a cache here stores its entries as written — "+
+			"every peer holding a copy would hold them in the clear",
+			reach.Kind, reach.Label, key.KeyName, inNamespace(key.KeyNamespace))
+	}
+	return ""
+}
+
+// unservableWorkflow is what a workflow declares that its drivers do not do.
+//
+// THE DRIVER HANDS ON WHAT IT WAS HANDED. node/step.go invokes a step's
+// function with the item's bytes and sends the answer on as the next item:
+// the run's state is the message, and nothing parses it. So a step that asks
+// for a SELECTION of the state, or for its answer to be kept under a name in
+// it, would get the whole message and replace it — and a ceiling on runs in
+// flight has nothing counting runs to enforce it against.
+func unservableWorkflow(reach specs.Reach, workflow specs.Workflow) string {
+	if most := workflow.Concurrency; most != nil {
+		return fmt.Sprintf("%s %q allows %d runs in flight, and nothing here counts a workflow's runs — "+
+			"every start would be admitted", reach.Kind, reach.Label, *most)
+	}
+	for _, step := range workflow.Steps {
+		if input := step.Call.Input; input != "" {
+			return fmt.Sprintf("%s %q hands step %q the input %q, and a step here is handed the whole run's state — "+
+				"nothing evaluates a selection of it", reach.Kind, reach.Label, step.Name, input)
+		}
+		if result := step.Call.Result; result != "" {
+			return fmt.Sprintf("%s %q keeps step %q's answer as %q, and a step's answer here replaces the run's state — "+
+				"nothing keeps it under a name", reach.Kind, reach.Label, step.Name, result)
+		}
 	}
 	return ""
 }

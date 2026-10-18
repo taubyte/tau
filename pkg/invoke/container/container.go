@@ -303,6 +303,9 @@ type Image struct {
 	// Memory is the hard memory limit in bytes. Zero means the runtime's
 	// default, which for a serverless tier is a thing an operator should set.
 	Memory int64
+
+	// CPU is a ceiling in millicores. Zero is none.
+	CPU int64
 }
 
 // ImageFunc resolves a spec to an image.
@@ -317,7 +320,7 @@ type ImageFunc func(invoke.Spec) (Image, error)
 // for the cases that are not it — a registry mirror, a local override, a tier
 // whose artifact is not a reference at all.
 func ImageFromSpec(spec invoke.Spec) (Image, error) {
-	return Image{Ref: spec.Artifact, Env: spec.Env, Memory: spec.Memory}, nil
+	return Image{Ref: spec.Artifact, Env: spec.Env, Memory: spec.Memory, CPU: spec.CPU}, nil
 }
 
 // New builds the runtime. resolve says what image a spec runs.
@@ -542,14 +545,23 @@ func (e *Runtime) config(img Image, ports []core.PortMapping, port int, runtimeA
 		// access entry said.
 		Volumes: mounts,
 	}
-	if img.Memory > 0 {
+	if img.Memory > 0 || img.CPU > 0 {
 		cfg.Resources = &core.ResourceLimits{Memory: img.Memory}
+	}
+	// A MILLICORE CEILING IS A CFS QUOTA over a 100ms period: 250 millicores
+	// is 25ms of CPU in every 100ms, which is what both backends enforce.
+	if img.CPU > 0 {
+		cfg.Resources.CPUPeriod = cpuPeriod
+		cfg.Resources.CPUQuota = img.CPU * cpuPeriod / 1000
 	}
 	// Privileges stays nil. Nothing a function does needs a capability, a host
 	// device or an unconfined seccomp profile, and the one caller that does need
 	// them (BuildKit assembling layers) is not this one.
 	return cfg
 }
+
+// cpuPeriod is the CFS period a CPU ceiling is expressed over, in microseconds.
+const cpuPeriod = 100_000
 
 // sortedPortNames is the declared names in a stable order.
 //
@@ -667,9 +679,7 @@ func (i *instance) waitReady(ctx context.Context) error {
 		default:
 		}
 
-		conn, err := i.eng.opts.dial(ctx, "tcp", i.addr())
-		if err == nil {
-			conn.Close()
+		if i.ready(ctx) {
 			return nil
 		}
 
@@ -691,6 +701,41 @@ func (i *instance) waitReady(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// ready is one readiness check: a connection accepted, and — when the workload
+// declared a probe — its path answered 2xx or 3xx on the port it named.
+func (i *instance) ready(ctx context.Context) bool {
+	addr := i.addr()
+	probe := i.spec.Readiness
+	if probe != nil && probe.Port != "" {
+		port, ok := i.reachable[probe.Port]
+		if !ok {
+			return false
+		}
+		addr = "127.0.0.1:" + strconv.Itoa(port)
+	}
+	conn, err := i.eng.opts.dial(ctx, "tcp", addr)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	if probe == nil || probe.Path == "" {
+		return true
+	}
+
+	check, cancel := context.WithTimeout(ctx, i.eng.opts.readyInterval*10+time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(check, http.MethodGet, "http://"+addr+probe.Path, nil)
+	if err != nil {
+		return false
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	res.Body.Close()
+	return res.StatusCode >= 200 && res.StatusCode < 400
 }
 
 func exited(info *core.ContainerInfo) bool {

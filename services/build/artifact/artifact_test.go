@@ -691,3 +691,22 @@ func TestASecretsResolverMustNotBeNil(t *testing.T) {
 	)
 	require.ErrorContains(t, err, "secrets must not be nil")
 }
+
+// A RESOURCE WHOSE SERVING BLOCK IS DELEGATED TO A FILE THE COMPILE DID NOT
+// READ IS REFUSED BY NAME, rather than built and served by the block that file
+// was meant to replace.
+func TestAnUnreadDelegatedBlockIsRefusedByName(t *testing.T) {
+	delegated := projectConfig(t, "", map[string]string{
+		"component/paylib.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\n" +
+			"source:\n    git: https://github.com/acme/paylib\n    branch: main\n    config: taubyte.yaml\n" +
+			"build:\n    script:\n        image: taubyte/go-wasi:v2\n" +
+			"        path: .taubyte/build.sh\n        output: paylib.wasm\n",
+	})
+	e := &engine{}
+
+	err := builder(t, deployed(t, delegated), &checkout{dir: source(t)}, e, codeRepo).
+		Build(t.Context(), work(paylibRepo), newOut())
+	require.ErrorIs(t, err, artifact.ErrUnfilled)
+	require.ErrorContains(t, err, `component/paylib names source.config "taubyte.yaml"`)
+	require.Empty(t, e.seen())
+}

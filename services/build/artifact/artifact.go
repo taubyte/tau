@@ -79,6 +79,12 @@ var (
 	// cloud with no vault. It is a refusal rather than a build run without the
 	// value: a build that quietly lost its token fails somewhere further in,
 	// with a message about a dependency it could not fetch.
+	// ErrUnfilled is a resource that delegates its serving block to a file in
+	// its own repository, and whose deployment was compiled without reading
+	// it. Building it would publish an artifact served by the config
+	// repository's block instead of that file's.
+	ErrUnfilled = errors.New("artifact: this resource's serving block is delegated to a file the compile did not read")
+
 	ErrNoSecrets = errors.New("artifact: this build needs a secret and this cloud has nothing to resolve one with")
 )
 
@@ -334,6 +340,15 @@ func (b *Builder) plan(ctx context.Context, projectID string, deployments []stri
 			}
 			if !backs {
 				continue
+			}
+
+			// REFUSED, NOT BUILT AROUND. `source.config` says what this
+			// resource serves is decided in its own repository; the compiled
+			// object records every such file the compile read, and one it did
+			// not would be served by the block it was meant to replace.
+			if config := buildable.Source.Config; config != "" && !p.Filled(buildable.ID) {
+				return nil, fmt.Errorf("%w: %s/%s names source.config %q and the compile of %s did not read it",
+					ErrUnfilled, buildable.Kind, buildable.Name, config, environment)
 			}
 
 			out = append(out, item{
