@@ -243,7 +243,7 @@ func (r *running) askCarrying(t *testing.T, method, path, body string) *httptest
 //
 // A GATEWAY CHOOSES A ROUTE AND NEVER A NODE: ask hands the invocation to
 // placement, which takes the least loaded node that already has the project
-// warm (services/v2/placement/placement.go:390-405) and does not favour the one
+// warm (node/placement/placement.go:390-405) and does not favour the one
 // it is running on (:126-140). So a test that means "this node" has to say it
 // here, at the worker the gateway would have reached anyway — the guest still
 // runs, with its grant, its tier and that node's own engine behind it.

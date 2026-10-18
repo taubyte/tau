@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/services/v2/proxy"
+	"github.com/taubyte/tau/services/proxy"
 )
 
 // route_test drives a router over a real socket, because the peek loop is the

@@ -13,7 +13,7 @@
 //   - the BACKEND owns the queue, the job records and the run. It is
 //     reachable only over p2p, by peers libp2p has already authenticated.
 //
-// It diverges from services/v2/auth, which keeps `descriptor` unexported with
+// It diverges from services/auth, which keeps `descriptor` unexported with
 // one exported var in its own package. auth is one role behind one protocol
 // id; build is two roles behind one, so a per-role descriptor.go would type
 // that id twice and give service-conventions.md §5a's two-public-services
@@ -65,7 +65,7 @@ const (
 //
 // service-conventions.md §2d's own example additionally carries a `New`
 // closure adapting this into a shared registry's Descriptor/Config pair. No
-// such registry exists anywhere in the tree — services/v2/auth's descriptor
+// such registry exists anywhere in the tree — services/auth's descriptor
 // declines to guess its shape for the same reason — so these stay plain data.
 type Descriptor struct {
 	Name     string

@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/services/v2/proxy"
+	"github.com/taubyte/tau/services/proxy"
 )
 
 // deployments is what this node holds, and it changes between sweeps the way a

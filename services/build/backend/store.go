@@ -40,7 +40,7 @@ import (
 // is never "." or "..". Every boundary in every key is therefore at a fixed
 // segment index, whatever the id was and however deep it reads. It is auth's
 // segment(), carried rather than re-derived: it lost a repository to a raw
-// splice once (services/v2/auth/store.go tells that story in full), and the
+// splice once (services/auth/store.go tells that story in full), and the
 // inputs here are the same shape — a repository key is VARIABLE DEPTH, because
 // a GitLab subgroup nests (`gitlab.com/acme/team/widget` has owner
 // `acme/team`), and a git ref contains "/" by construction

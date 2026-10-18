@@ -30,7 +30,7 @@
 // satisfaction is asserted in this package's TEST files, where importing a
 // role costs nothing.
 //
-// It does not import services/v2/auth either. Dialling auth needs auth's
+// It does not import services/auth either. Dialling auth needs auth's
 // SCHEMA — the generated connect client — never auth's service package, which
 // would drag its store and its whole dependency set into a process that only
 // wanted to ask a question.

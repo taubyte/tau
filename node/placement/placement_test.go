@@ -497,7 +497,7 @@ func (f fixtureSource) Object(context.Context, register.ObjectID) ([]byte, error
 
 func compiledFixture(t *testing.T) []byte {
 	t.Helper()
-	c, err := schema.New(schema.WithLocal("../../../pkg/tcc/taubyte/v2/fixtures/basic"), schema.WithBranch("main"))
+	c, err := schema.New(schema.WithLocal("../../pkg/tcc/taubyte/v2/fixtures/basic"), schema.WithBranch("main"))
 	require.NoError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)

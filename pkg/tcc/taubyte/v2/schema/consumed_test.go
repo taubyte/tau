@@ -32,10 +32,10 @@ import (
 //
 // The sharp one when this was written was `gateway.certificate.*`: a gateway
 // may declare where its certificate comes from and which secret holds it, and
-// the only reader of those keys was services/v2/proxy, for a proxy's own copy
+// the only reader of those keys was services/proxy, for a proxy's own copy
 // of them. node/boot bound a gateway with an http.Server carrying no
 // TLSConfig, so a gateway that declared TLS was served in the clear. The
-// gateway now answers each handshake (services/v2/gateway/tls.go).
+// gateway now answers each handshake (services/gateway/tls.go).
 //
 // # What "read" means here, and what it deliberately excludes
 //
@@ -230,7 +230,7 @@ var unread = map[string]excuse{
 // kinds whose resources it reads. `*` is a file that reads every kind.
 //
 // THE ATTRIBUTION IS THE POINT. `certificate/source` is read in
-// services/v2/proxy/tls.go, for a proxy; a check that only asked whether the
+// services/proxy/tls.go, for a proxy; a check that only asked whether the
 // string appears somewhere would report a gateway's identically named attribute
 // as read and the config would go on saying TLS while the socket stays plain.
 //
@@ -261,22 +261,22 @@ var readers = map[string][]string{
 
 	// A gateway's server. bus.go is the arm that serves a bus reached through
 	// one, and it reads the bus.
-	"services/v2/gateway/gateway.go": {"gateway"},
-	"services/v2/gateway/policy.go":  {"gateway"},
-	"services/v2/gateway/route.go":   {"gateway"},
-	"services/v2/gateway/bus.go":     {"bus"},
+	"services/gateway/gateway.go": {"gateway"},
+	"services/gateway/policy.go":  {"gateway"},
+	"services/gateway/route.go":   {"gateway"},
+	"services/gateway/bus.go":     {"bus"},
 	// tls.go is which certificate answers a gateway's name: the node binds
 	// the listener, and the gateway is asked per handshake.
-	"services/v2/gateway/tls.go": {"gateway"},
+	"services/gateway/tls.go": {"gateway"},
 
 	// A proxy's. It terminates its own TLS — it IS its socket, where a
 	// gateway's is the node's.
-	"services/v2/proxy/proxy.go":  {"proxy"},
-	"services/v2/proxy/route.go":  {"proxy"},
-	"services/v2/proxy/shape.go":  {"proxy"},
-	"services/v2/proxy/socket.go": {"proxy"},
-	"services/v2/proxy/limits.go": {"proxy"},
-	"services/v2/proxy/tls.go":    {"proxy"},
+	"services/proxy/proxy.go":  {"proxy"},
+	"services/proxy/route.go":  {"proxy"},
+	"services/proxy/shape.go":  {"proxy"},
+	"services/proxy/socket.go": {"proxy"},
+	"services/proxy/limits.go": {"proxy"},
+	"services/proxy/tls.go":    {"proxy"},
 
 	// A zone's own server, which takes the generated Zone it serves.
 	"node/zone/zone.go": {"zone"},
@@ -707,7 +707,7 @@ func stringLit(e ast.Expr) (string, bool) {
 //	          is a read of route/handler/name, which is how a gateway reads its
 //	          handler. A name's prefix is scoped: see readsIn.
 //	helpers   `value := func(path ...string) int { n, _ := r.Int(path...) }` moves
-//	          the literal to the CALL, which is where services/v2/proxy reads its
+//	          the literal to the CALL, which is where services/proxy reads its
 //	          rate limit.
 //	loops     `for _, field := range []string{"identifier", "format"}` reads two
 //	          attributes at one call site, which is how a model's are read.

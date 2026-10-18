@@ -251,7 +251,7 @@ func TestAGatewayLevelRouterIsUnchanged(t *testing.T) {
 // the compile leaves it there. It is pinned against a COMPILED gateway, because
 // a hand-built map would agree with whatever path this package spelled.
 func TestARoutesOwnAuthorizerIsReadWhereTheCompilerPutsIt(t *testing.T) {
-	c, err := schema.New(schema.WithLocal("../../../node/dream/projects/with/bus"), schema.WithBranch("main"))
+	c, err := schema.New(schema.WithLocal("../../node/dream/projects/with/bus"), schema.WithBranch("main"))
 	require.NoError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)

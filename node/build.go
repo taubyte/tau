@@ -15,6 +15,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/backend"
@@ -22,7 +23,6 @@ import (
 	"github.com/taubyte/tau/services/build/deploy"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/build/frontend/forgeauth"
-	authService "github.com/taubyte/tau/services/v2/auth"
 )
 
 // build.go composes the two halves of the build service and the auth they both

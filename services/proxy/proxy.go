@@ -7,13 +7,6 @@
 // and Postgres, Redis, MQTT and a game server offer none of those. This accepts
 // a connection, decides nothing about what is inside it, and moves the bytes.
 //
-// # It lives under services/v2 because the word is taken
-//
-// `services/proxy` is the HTTP INGRESS — client to dns to proxy to node — and
-// shares only the word. The vocabulary's word belongs to the vocabulary's kind,
-// and the same disambiguation `services/v2/gateway` and `services/v2/auth`
-// already use applies here.
-//
 // # Nothing here names an address or a client port
 //
 // A proxy listens on every address this node has, on a port the kernel picked,
@@ -24,7 +17,7 @@
 //
 // # It terminates TLS, because nothing else can
 //
-// services/v2/gateway deliberately terminates nothing — it hands back an
+// services/gateway deliberately terminates nothing — it hands back an
 // http.Handler and whatever binds the socket owns the certificate. A proxy IS
 // the socket, so `tls: terminate` has to mean something here or mean nothing
 // anywhere. See tls.go for where the two kinds of certificate come from.

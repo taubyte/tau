@@ -324,7 +324,7 @@ var (
 //
 // ONE FACT, not authv1connect's whole client: naming only this keeps
 // deploy_key out of this package's vocabulary until the Runner needs it, which
-// is also the security question auth.proto and services/v2/auth/repositories.go
+// is also the security question auth.proto and services/auth/repositories.go
 // left open on purpose — "because nothing named the consumer". Build is that
 // consumer, and widening this interface is the change that answers it.
 //

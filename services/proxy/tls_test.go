@@ -19,7 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/services/v2/proxy"
+	"github.com/taubyte/tau/services/proxy"
 )
 
 // tls_test does a real handshake against a real listener, because what

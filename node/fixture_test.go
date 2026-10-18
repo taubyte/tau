@@ -2,7 +2,7 @@ package node
 
 import (
 	"github.com/taubyte/tau/pkg/specs"
-	gateway "github.com/taubyte/tau/services/v2/gateway"
+	gateway "github.com/taubyte/tau/services/gateway"
 )
 
 // fixture_test.go is the smallest compiled project that exercises the whole

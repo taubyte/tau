@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/taubyte/tau/pkg/stats"
-	v2proxy "github.com/taubyte/tau/services/v2/proxy"
+	v2proxy "github.com/taubyte/tau/services/proxy"
 )
 
 // proxy.go runs the L4 listeners for the proxies this node holds.

@@ -12,7 +12,7 @@ var (
 	// project, environment, bucket, instance or writer would encode to an
 	// empty segment, and go-datastore removes an empty segment when it cleans
 	// a key — a removed segment is a MOVED BOUNDARY, which is the class
-	// services/v2/auth lost a repository to. See store.go.
+	// services/auth lost a repository to. See store.go.
 	ErrEmptyIdentity = errors.New("storage: an identity segment is empty")
 
 	// ErrNoAddress is a key builder reached through an Address that NewAddress

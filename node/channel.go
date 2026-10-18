@@ -8,11 +8,11 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/taubyte/tau/node/placement"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-	"github.com/taubyte/tau/services/v2/placement"
 	"github.com/taubyte/tau/services/worker"
 )
 

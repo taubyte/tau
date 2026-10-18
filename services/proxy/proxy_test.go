@@ -18,7 +18,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
-	"github.com/taubyte/tau/services/v2/proxy"
+	"github.com/taubyte/tau/services/proxy"
 )
 
 // EVERY TEST HERE CARRIES REAL BYTES OVER REAL SOCKETS. What this service does

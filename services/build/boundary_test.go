@@ -163,7 +163,7 @@ func TestTheDialAdaptersImportNeitherRole(t *testing.T) {
 
 	requireNoImport(t, paths, backendPkg, "an adapter must not depend on the role that consumes it")
 	requireNoImport(t, paths, frontendPkg, "an adapter must not depend on the role that consumes it")
-	requireNoImport(t, paths, "github.com/taubyte/tau/services/v2/auth",
+	requireNoImport(t, paths, "github.com/taubyte/tau/services/auth",
 		"dialling auth needs auth's SCHEMA, never auth's service package and the store behind it")
 }
 

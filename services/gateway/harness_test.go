@@ -104,7 +104,7 @@ func compiled(t testing.TB) []byte {
 	t.Helper()
 
 	c, err := schema.New(
-		schema.WithLocal("../../../pkg/tcc/taubyte/v2/fixtures/basic"),
+		schema.WithLocal("../../pkg/tcc/taubyte/v2/fixtures/basic"),
 		schema.WithBranch("main"))
 	require.NoError(t, err)
 

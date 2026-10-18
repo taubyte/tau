@@ -14,7 +14,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/specs"
-	"github.com/taubyte/tau/services/v2/proxy"
+	"github.com/taubyte/tau/services/proxy"
 )
 
 // shape_test carries real bytes through a real chain, because what a

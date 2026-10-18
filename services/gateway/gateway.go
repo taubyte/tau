@@ -40,9 +40,6 @@
 // and one world answers it — see destination(), which runs AFTER the chain
 // because a router that saw the request first would be deciding from a body
 // somebody was about to redact.
-// It lives under services/v2 because v1 has a `services/gateway` and both run
-// in one binary for the whole span between the first v2 service and the swap —
-// the same reason services/v2/auth is where it is.
 package gateway
 
 import (

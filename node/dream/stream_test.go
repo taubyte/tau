@@ -78,7 +78,7 @@ import (
 // the v2 half starts from a decision instead of from that code.
 //
 // WHAT node/stream.go:108-127 SERVES IS NOT THIS. Its `subscribe(handle)` backs
-// `buses` — a BROWSER attaching over the gateway (services/v2/gateway/bus.go:286
+// `buses` — a BROWSER attaching over the gateway (services/gateway/bus.go:286
 // reads the payload straight off it). That is a websocket on the other end of
 // the topic, not a workload the platform started.
 //

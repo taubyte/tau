@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/node/stream"
-	gateway "github.com/taubyte/tau/services/v2/gateway"
+	gateway "github.com/taubyte/tau/services/gateway"
 )
 
 // stream_test is the reason this package exists.

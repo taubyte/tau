@@ -14,8 +14,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build/frontend"
-	authService "github.com/taubyte/tau/services/v2/auth"
 	"github.com/taubyte/tau/services/worker"
 )
 

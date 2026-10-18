@@ -12,10 +12,10 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/node/placement"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/stats"
-	"github.com/taubyte/tau/services/v2/placement"
 )
 
 // dispatch_test drives the claim loop synchronously, which is the whole reason

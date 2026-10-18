@@ -344,7 +344,7 @@
 // dial, and the two legitimately disagree under an asymmetric partition.
 //
 // THE SERVICE SHELL. New, Start, Close and the descriptor, following
-// services/v2/auth: New validates and allocates and binds nothing, Start listens
+// services/auth: New validates and allocates and binds nothing, Start listens
 // once, Close is idempotent and closes only what it started. Descriptor.Groups
 // is nil.
 package storage

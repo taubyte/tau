@@ -4,7 +4,7 @@
 //
 // It is the last mile: read a yaml file, build the machine's resources — a
 // libp2p identity, a gossipsub, a place to keep data — hand them to
-// services/v2/node, and serve what comes back.
+// node/, and serve what comes back.
 //
 // IT IS NOT A SECOND CONFIGURATION SYSTEM. The file's shape IS node.Config plus
 // the handful of things a machine has rather than a cloud: where it listens,
@@ -96,7 +96,7 @@ type File struct {
 	// EACH HANDSHAKE IS ANSWERED BY THE GATEWAY THAT SERVES ITS NAME: the
 	// cloud's own wildcard (node.gateway.wildcard) for a generated name, the
 	// secret a gateway names for one that provides its own. Nothing here
-	// issues a certificate — see services/v2/gateway's tls.go.
+	// issues a certificate — see services/gateway's tls.go.
 	HTTPS string `yaml:"https"`
 }
 

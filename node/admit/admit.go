@@ -77,7 +77,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/specs"
-	gateway "github.com/taubyte/tau/services/v2/gateway"
+	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/worker"
 )
 

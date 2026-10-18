@@ -59,7 +59,7 @@ func eachScope(proj *specs.Project, scope []string, visit func(scope []string)) 
 const proxyKind = specs.KindProxy
 
 // Proxy is one proxy resource in a deployment this node holds, addressed the
-// way services/v2/proxy takes one.
+// way services/proxy takes one.
 type Proxy struct {
 	Project     string
 	Environment string

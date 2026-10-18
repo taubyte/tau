@@ -7,7 +7,7 @@
 // acting on a push that arrived through the frontend, was authorized there,
 // and became a job with a record and a log somebody can watch. Every other
 // composition in this tree reads the register and cannot publish to it —
-// services/v2/node/locate.go says so in as many words.
+// node/locate.go says so in as many words.
 //
 // A person running a publish command against a swarm would go around all of
 // that: no commit, no authorization, no record, and a fleet whose state no
@@ -128,7 +128,7 @@ type Deploy struct {
 	checkout Checkout
 
 	// register is looked up per run rather than held, for the same reason
-	// services/v2/node does it: which node answers is a routing question, and a
+	// node/ does it: which node answers is a routing question, and a
 	// register can go away between two builds.
 	register func(context.Context) (Register, error)
 

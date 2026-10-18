@@ -25,7 +25,7 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-	"github.com/taubyte/tau/services/v2/gateway"
+	"github.com/taubyte/tau/services/gateway"
 )
 
 // tls_test is a REAL HANDSHAKE AGAINST THE NODE'S OWN LISTENER: the file names

@@ -13,7 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// proxy_test is about the WIRING, not about moving bytes — services/v2/proxy
+// proxy_test is about the WIRING, not about moving bytes — services/proxy
 // carries those over real sockets. What is proved here is that a node holding a
 // deployment finds its proxies, listens for them, and says so in the one report
 // everything else routes on: the name in Serving so an A record resolves, and

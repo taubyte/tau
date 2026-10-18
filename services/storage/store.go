@@ -31,7 +31,7 @@ import (
 //
 // ── IDENTITIES ARE BASE64URL, AND v1 SHOWS WHY ───────────────────────────
 //
-// segment() is services/v2/auth/store.go's, carried rather than re-derived:
+// segment() is services/auth/store.go's, carried rather than re-derived:
 // unpadded base64url, alphabet A-Za-z0-9-_, so an encoded id never contains
 // "/" and is never "." or "..". Every boundary in every key is at a fixed
 // segment index, whatever the id was.
@@ -40,7 +40,7 @@ import (
 // (services/hoarder/registry.go:44) — an UNSEPARATED CONCATENATION, so
 // ("ab","c") and ("a","bc") are one identity, and v2 would add two more fields
 // to that concatenation. That is two tenants sharing a namespace, the same
-// class as the repository takeover services/v2/auth/store.go records at
+// class as the repository takeover services/auth/store.go records at
 // length. Here the four identity parts are four segments and cannot merge at
 // any length.
 //

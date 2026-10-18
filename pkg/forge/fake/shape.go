@@ -3,7 +3,7 @@
 //
 // It exists for two jobs and is honest about both.
 //
-// The first is to be the forge every consumer's tests use. services/v2/auth
+// The first is to be the forge every consumer's tests use. services/auth
 // reaches its coverage with a libp2p mocknet and an in-memory store and no
 // network at all; a forge dependency that needed an HTTP server would break
 // that house style, so this one holds its repositories in a map and records

@@ -14,15 +14,15 @@ import (
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
+	auth "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/dns"
+	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/primitives"
+	proxy "github.com/taubyte/tau/services/proxy"
 	"github.com/taubyte/tau/services/stats"
-	auth "github.com/taubyte/tau/services/v2/auth"
-	gateway "github.com/taubyte/tau/services/v2/gateway"
-	proxy "github.com/taubyte/tau/services/v2/proxy"
 	"github.com/taubyte/tau/services/worker"
 )
 

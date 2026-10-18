@@ -22,7 +22,7 @@ import (
 // A transformer and a router are each proven twice elsewhere and neither proof
 // is this one: against the tier with a real component but no gateway
 // (pkg/invoke/wasm), and against the gateway with the worker faked
-// (services/v2/gateway). What neither can show is the path BETWEEN them — an
+// (services/gateway). What neither can show is the path BETWEEN them — an
 // HTTP request reaching a gateway, the gateway calling a worker over a new RPC,
 // placement choosing a node, the pool starting a component in a world that is
 // not the handler, and the answer coming back far enough to change what the

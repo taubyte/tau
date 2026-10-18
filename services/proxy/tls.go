@@ -14,7 +14,7 @@ import (
 //
 // # A proxy has to do this itself, where a gateway does not
 //
-// services/v2/gateway binds nothing: it hands back an http.Handler, and the
+// services/gateway binds nothing: it hands back an http.Handler, and the
 // node that serves it binds the socket and asks the gateway which certificate
 // answers each name (Service.Certificate there). A proxy has no such layer —
 // it IS the socket — so `tls: terminate` has to mean something here or mean

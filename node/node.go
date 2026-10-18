@@ -61,16 +61,16 @@ import (
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 
+	"github.com/taubyte/tau/node/placement"
+	authService "github.com/taubyte/tau/services/auth"
 	databaseService "github.com/taubyte/tau/services/database"
 	dnsService "github.com/taubyte/tau/services/dns"
+	gateway "github.com/taubyte/tau/services/gateway"
 	primitivesService "github.com/taubyte/tau/services/primitives"
+	v2proxy "github.com/taubyte/tau/services/proxy"
 	registerService "github.com/taubyte/tau/services/register"
 	secretsService "github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/stats"
-	authService "github.com/taubyte/tau/services/v2/auth"
-	gateway "github.com/taubyte/tau/services/v2/gateway"
-	"github.com/taubyte/tau/services/v2/placement"
-	v2proxy "github.com/taubyte/tau/services/v2/proxy"
 	"github.com/taubyte/tau/services/worker"
 )
 

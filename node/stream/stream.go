@@ -44,7 +44,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	gateway "github.com/taubyte/tau/services/v2/gateway"
+	gateway "github.com/taubyte/tau/services/gateway"
 )
 
 // The two kinds one type serves. They are the vocabulary's own words for them

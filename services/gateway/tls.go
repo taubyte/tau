@@ -50,7 +50,7 @@ import (
 // certificate.
 
 // Secrets resolves the secret a gateway's provided certificate names. It is
-// the same seam services/worker and services/v2/proxy take.
+// the same seam services/worker and services/proxy take.
 type Secrets interface {
 	Secret(ctx context.Context, project, environment, secretID string) (string, error)
 }
