@@ -208,3 +208,29 @@ func TestAConsensusThisNodeWasNotGivenIsRefusedByName(t *testing.T) {
 	require.ErrorContains(t, ledger.serves(servedConsensus), "raft")
 	require.NoError(t, ledger.serves([]string{database.CRDT, database.Raft}))
 }
+
+// TestEVERYMODELSCONNECTIONISREADOFFITSOWNBLOCK. The engines a model may have
+// differ, so each reads its own block, and a model that has no address, no
+// credential and no tls reads them empty rather than off another model's.
+func TestEveryModelsConnectionIsReadOffItsOwnBlock(t *testing.T) {
+	size := int64(42)
+	sql := blockOf(specs.Database{Type: specs.DatabaseTypeSql, Sql: specs.DatabaseSql{
+		Engine: specs.DatabaseSqlEnginePostgres, Host: "db:5432", Database: "shop",
+		Consensus: specs.DatabaseSqlConsensusRaft, Tls: specs.DatabaseSqlTlsDisable, Size: &size,
+	}})
+	require.Equal(t, typeBlock{specs.DatabaseSqlEnginePostgres, "db:5432", "shop", specs.DatabaseSqlConsensusRaft, &size, true}, sql)
+
+	document := blockOf(specs.Database{Type: specs.DatabaseTypeDocument, Document: specs.DatabaseDocument{
+		Engine: specs.DatabaseDocumentEngineMongo, Host: "mongo", Database: "docs", Tls: specs.DatabaseDocumentTlsRequire,
+	}})
+	require.Equal(t, "mongo", document.host)
+	require.False(t, document.plaintext, "require is not disable")
+
+	kv := blockOf(specs.Database{Type: specs.DatabaseTypeKv, Kv: specs.DatabaseKv{Engine: specs.DatabaseKvEngineDistributed, Size: &size}})
+	require.Equal(t, typeBlock{engine: specs.DatabaseKvEngineDistributed, size: &size}, kv)
+
+	vector := blockOf(specs.Database{Type: specs.DatabaseTypeVector, Vector: specs.DatabaseVector{Consensus: specs.DatabaseVectorConsensusCrdt}})
+	require.Equal(t, specs.DatabaseVectorConsensusCrdt, vector.consensus)
+
+	require.Equal(t, typeBlock{}, blockOf(specs.Database{}))
+}

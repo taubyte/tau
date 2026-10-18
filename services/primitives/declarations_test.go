@@ -10,6 +10,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	primitivesv1 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v1"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -209,4 +210,39 @@ func TestAnInstanceIsRefusedUntilTheVocabularyCanDeclareOne(t *testing.T) {
 	read, err := h.Local().Read(ctx, grantFor(tracesID), "", 0)
 	require.NoError(t, err)
 	require.Empty(t, read)
+}
+
+// TestAQUEUESBUDGETANDALOGSRETENTIONAREREADOFFTHEIROWNBLOCKS, and what the
+// author did not write is left for pkg/queue's own defaults.
+func TestAQueuesBudgetAndALogsRetentionAreReadOffTheirOwnBlocks(t *testing.T) {
+	d := func(v time.Duration) *time.Duration { return &v }
+	attempts, factor := int64(7), 1.5
+	spec := Spec{Project: "p", Environment: "e", Type: queueType, Name: "q"}
+
+	cfg := deliveryOf(spec, specs.SyncQueue{
+		VisibilityTimeout: d(time.Minute), Delay: d(time.Second),
+		RetryInterval: d(2 * time.Second), RetryCeiling: d(time.Hour),
+		MaxAttempts: &attempts, RetryFactor: &factor, DeadLetterName: "dead",
+	})
+	require.Equal(t, time.Minute, cfg.VisibilityTimeout)
+	require.Equal(t, time.Second, cfg.Delay)
+	require.Equal(t, 2*time.Second, cfg.RetryInterval)
+	require.Equal(t, time.Hour, cfg.RetryCeiling)
+	require.Equal(t, uint32(7), cfg.MaxAttempts)
+	require.Equal(t, 1.5, cfg.RetryFactor)
+	require.NotEmpty(t, cfg.DeadLetter)
+
+	unwritten := deliveryOf(spec, specs.SyncQueue{})
+	require.Zero(t, unwritten.VisibilityTimeout)
+	require.Zero(t, unwritten.MaxAttempts)
+	require.Empty(t, unwritten.DeadLetter)
+
+	size := int64(1 << 20)
+	keep := keepOf(specs.SyncLog{RetentionAge: d(24 * time.Hour), RetentionSize: &size})
+	require.Equal(t, 24*time.Hour, keep.age)
+	require.Equal(t, size, keep.size)
+	require.Equal(t, retention{}, keepOf(specs.SyncLog{}), "absent means forever")
+
+	require.Equal(t, consensusCRDT, consensusIn(specs.Sync{Type: logType, Log: specs.SyncLog{Consensus: consensusCRDT}}))
+	require.Equal(t, consensusRaft, consensusIn(specs.Sync{Type: queueType, Queue: specs.SyncQueue{Consensus: consensusRaft}}))
 }
