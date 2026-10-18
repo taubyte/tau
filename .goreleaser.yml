@@ -1,0 +1,47 @@
+# .goreleaser.yml builds the node binary, cmd/tau.
+#
+# THE ARCHIVE NAMES ARE AN INTERFACE. tools/spore-drive downloads
+# tau_<version>_linux_<arch>.tar.gz and expects a `tau` binary inside, so the
+# project name, binary name and default archive template stay as they are.
+version: 2
+project_name: tau
+release:
+  github:
+    owner: taubyte
+    name: tau
+  draft: false
+  replace_existing_draft: false
+  prerelease: auto
+  name_template: ""
+  disable: false
+  skip_upload: false
+
+builds:
+  - main: ./cmd/tau
+    id: tau
+    binary: tau
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    env:
+      - CGO_ENABLED=0
+      - GOAMD64=v2
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.date={{ .Date }}
+
+changelog:
+  disable: true
+
+checksum:
+  disable: true
+
+archives:
+  - files:
+      - none*

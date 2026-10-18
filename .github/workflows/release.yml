@@ -1,0 +1,34 @@
+on:
+  push:
+    # run only against tags
+    tags:
+      - '*'
+
+# GoReleaser publishes with GORELEASER_TOKEN (see env below); the default
+# token is only used by checkout, so read is enough.
+permissions:
+  contents: read
+
+jobs:
+  tau:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      -
+        name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.27.1'
+      -
+        name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v4
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          version: latest
+          args: release --clean --config .goreleaser.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GORELEASER_TOKEN }}
