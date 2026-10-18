@@ -1022,33 +1022,7 @@ func typedFields(t *testing.T, root, kind string) map[string]bool {
 	require.NoError(t, err)
 
 	reader := "Read" + strings.ToUpper(kind[:1]) + kind[1:]
-	keys := map[string]string{}
-	for _, declared := range generated.Decls {
-		function, ok := declared.(*ast.FuncDecl)
-		if !ok || function.Name.Name != reader {
-			continue
-		}
-		ast.Inspect(function, func(node ast.Node) bool {
-			assign, ok := node.(*ast.AssignStmt)
-			if !ok || len(assign.Lhs) == 0 {
-				return true
-			}
-			field, ok := assign.Lhs[0].(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			for _, right := range assign.Rhs {
-				call, ok := right.(*ast.CallExpr)
-				if !ok {
-					continue
-				}
-				for _, path := range pathsOf(call, nil, nil) {
-					keys[field.Sel.Name] = strings.Join(path, "/")
-				}
-			}
-			return true
-		})
-	}
+	keys := generatedKeys(generated, reader)
 	require.NotEmpty(t, keys, "`exposed` names %s and pkg/specs/kinds.go has no %s to read its fields off", kind, reader)
 
 	out := map[string]bool{}
@@ -1061,9 +1035,17 @@ func typedFields(t *testing.T, root, kind string) map[string]bool {
 			if !ok {
 				return true
 			}
-			if key, ok := keys[selector.Sel.Name]; ok {
-				out[key] = true
-				named = true
+			// A BLOCK'S FIELD IS NAMED THROUGH THE BLOCK — zone.Resolver.Name —
+			// so the selector is matched qualified, and bare for a kind's own.
+			names := []string{selector.Sel.Name}
+			if outer, ok := selector.X.(*ast.SelectorExpr); ok {
+				names = append(names, outer.Sel.Name+"."+selector.Sel.Name)
+			}
+			for _, name := range names {
+				if key, ok := keys[name]; ok {
+					out[key] = true
+					named = true
+				}
 			}
 			return true
 		})
@@ -1071,6 +1053,104 @@ func typedFields(t *testing.T, root, kind string) map[string]bool {
 			"`exposed` names %s as a consumer of %s and it names none of its fields - drop it, or the kind's attributes are being kept alive by a file that stopped using them", consumer, reader)
 	}
 	return out
+}
+
+// generatedKeys is every compiled key a generated reader decodes, by the field
+// a consumer names it through: `Fqdn` for a kind's own field, `Resolver.Name`
+// for one inside a block, and the same for an entry's. It follows the reader
+// into the block and entry readers it calls, carrying the prefix an entry is
+// read under (`r.Sub("ports", name)`, `range r.List("steps")`).
+func generatedKeys(file *ast.File, reader string) map[string]string {
+	funcs := map[string]*ast.FuncDecl{}
+	for _, declared := range file.Decls {
+		if function, ok := declared.(*ast.FuncDecl); ok {
+			funcs[function.Name.Name] = function
+		}
+	}
+	literal := func(call *ast.CallExpr) []string {
+		var out []string
+		for _, arg := range call.Args {
+			if text, ok := stringLit(arg); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	}
+
+	keys := map[string]string{}
+	var walk func(name string, prefix []string, qualifier string, depth int)
+	walk = func(name string, prefix []string, qualifier string, depth int) {
+		function, ok := funcs[name]
+		if !ok || depth > 8 {
+			return
+		}
+		lists := map[string][]string{}
+		ast.Inspect(function, func(node ast.Node) bool {
+			if loop, ok := node.(*ast.RangeStmt); ok {
+				if call, ok := loop.X.(*ast.CallExpr); ok {
+					if value, ok := loop.Value.(*ast.Ident); ok {
+						lists[value.Name] = literal(call)
+					}
+				}
+			}
+			assign, ok := node.(*ast.AssignStmt)
+			if !ok || len(assign.Lhs) == 0 {
+				return true
+			}
+			target := assign.Lhs[0]
+			if index, ok := target.(*ast.IndexExpr); ok {
+				target = index.X
+			}
+			field, ok := target.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			for _, right := range assign.Rhs {
+				ast.Inspect(right, func(node ast.Node) bool {
+					call, ok := node.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					callee, ok := call.Fun.(*ast.Ident)
+					if ok && strings.HasPrefix(callee.Name, "Read") && len(call.Args) == 1 {
+						inner := prefix
+						switch arg := call.Args[0].(type) {
+						case *ast.CallExpr:
+							inner = append(append([]string{}, prefix...), literal(arg)...)
+						case *ast.Ident:
+							if under, ok := lists[arg.Name]; ok {
+								inner = append(append([]string{}, prefix...), under...)
+							}
+						}
+						walk(callee.Name, inner, qualifier+field.Sel.Name+".", depth+1)
+						return false
+					}
+					method, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok {
+						return true
+					}
+					// A PRESENCE TEST IS NOT A VALUE: Declared says a block was
+					// written, and naming it reads none of the block's fields.
+					if method.Sel.Name == "Has" {
+						return false
+					}
+					for _, path := range pathsOf(call, nil, nil) {
+						key := strings.Join(append(append([]string{}, prefix...), path...), "/")
+						qualified := strings.Split(qualifier+field.Sel.Name, ".")
+						keys[strings.Join(qualified, ".")] = key
+						if n := len(qualified); n > 2 {
+							// What a consumer can spell in one selector chain.
+							keys[strings.Join(qualified[n-2:], ".")] = key
+						}
+					}
+					return false
+				})
+			}
+			return true
+		})
+	}
+	walk(reader, nil, "", 0)
+	return keys
 }
 
 // inlinedInto is each attribute of a kind that names a file the compile reads
