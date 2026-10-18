@@ -63,7 +63,7 @@ func RenderReaders(pkg string, root []*engine.Node, kinds []string) []byte {
 	}{
 		{"SourceBlock", []string{"source"}},
 		{"BuildBlock", []string{"build"}},
-		{"WorkloadBlock", []string{"egress", "execution", "implements", "limits", "ports", "runtime", "serve", "variables"}},
+		{"WorkloadBlock", []string{"egress", "execution", "implements", "limits", "name", "ports", "runtime", "serve", "variables"}},
 	} {
 		body.Write(RenderUnion(union.name, root, kinds, union.keys, m.groupsUnder(union.keys)))
 		body.WriteString("\n")
@@ -173,9 +173,28 @@ func RenderUnion(name string, root []*engine.Node, kinds []string, prefixes []st
 			// A FIELD DECLARED ON TWO KINDS IS ONE FIELD. It compiles at the
 			// same key or it is not the same field, so the first wins and a
 			// disagreement would be the vocabulary's to resolve, not this.
-			if _, held := seen[l.Path()]; !held {
-				seen[l.Path()] = l
+			//
+			// ITS LEGAL VALUES ARE EVERY KIND'S, though: `source/kind` is
+			// image or git on an application and component or builtin on a
+			// function, and a consumer switching on the union's discriminator
+			// has to be able to name all of them.
+			held, ok := seen[l.Path()]
+			if !ok {
+				held = l
+				held.Enum = append([]string{}, l.Enum...)
+				held.Branch = append([]string{}, l.Branch...)
 			}
+			for _, v := range l.Enum {
+				if !contains(held.Enum, v) {
+					held.Enum = append(held.Enum, v)
+				}
+			}
+			for _, v := range l.Branch {
+				if !contains(held.Branch, v) {
+					held.Branch = append(held.Branch, v)
+				}
+			}
+			seen[l.Path()] = held
 		}
 	}
 
@@ -241,7 +260,36 @@ func RenderUnion(name string, root []*engine.Node, kinds []string, prefixes []st
 	for _, l := range lines {
 		b.WriteString(reads[l.name])
 	}
-	fmt.Fprintf(&b, "\treturn out\n}\n")
+	fmt.Fprintf(&b, "\treturn out\n}\n\n")
+
+	// THE KEYS AND VALUES, under the same naming rule as a kind's own: what a
+	// generic consumer files a value under, or compares one against.
+	fmt.Fprintf(&b, "// %s's keys, and the values its fields may hold.\nconst (\n", name)
+	for _, l := range lines {
+		key := l.name
+		path := ""
+		for _, a := range at {
+			if goIdent(a.Path()) == key {
+				path = a.Path()
+			}
+		}
+		for _, g := range groups {
+			if goIdent(g.key) == key {
+				path = g.key
+			}
+		}
+		fmt.Fprintf(&b, "\t%sKey%s = %q\n", name, key, path)
+	}
+	for _, l := range at {
+		for _, v := range l.Enum {
+			value := v
+			if l.Read != "Int" && l.Read != "Float" {
+				value = fmt.Sprintf("%q", v)
+			}
+			fmt.Fprintf(&b, "\t%s%s%s = %s\n", name, goIdent(l.Path()), valueIdent(v), value)
+		}
+	}
+	fmt.Fprintf(&b, ")\n")
 	return b.Bytes()
 }
 

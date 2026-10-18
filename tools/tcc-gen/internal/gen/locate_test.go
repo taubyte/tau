@@ -144,3 +144,17 @@ func TestAGroupTwoKindsReadDifferentlyStopsTheGenerator(t *testing.T) {
 	m.order = append(m.order, kind("BStep", true))
 	require.Panics(t, func() { m.groupsUnder([]string{"steps"}) })
 }
+
+// TestAUNIONSDISCRIMINATORNAMESEVERYKINDSVALUES. `source/kind` is image or git
+// on an application and component or builtin on a function; a resolver
+// switching on the union's has to be able to name all four.
+func TestAUnionsDiscriminatorNamesEveryKindsValues(t *testing.T) {
+	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"application", "function"}))
+
+	require.Contains(t, out, `SourceBlockKeySourceKind`)
+	for _, value := range []string{"Image", "Git", "Component", "Builtin"} {
+		require.Contains(t, out, "SourceBlockSourceKind"+value+" ")
+	}
+	require.Contains(t, out, `WorkloadBlockKeyVariables`)
+	require.Contains(t, out, "which of image, git, component, builtin was written")
+}

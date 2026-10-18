@@ -3500,7 +3500,7 @@ type SourceBlock struct {
 	SourceImage                    string
 	SourceImagePullSecretName      string
 	SourceImagePullSecretNamespace string
-	SourceKind                     string // which of image, git was written
+	SourceKind                     string // which of image, git, component, builtin was written
 	SourceNamespace                string
 	SourcePath                     string
 }
@@ -3523,13 +3523,35 @@ func ReadSourceBlock(r Resource) SourceBlock {
 	return out
 }
 
+// SourceBlock's keys, and the values its fields may hold.
+const (
+	SourceBlockKeySource                         = "source"
+	SourceBlockKeySourceBranch                   = "source/branch"
+	SourceBlockKeySourceBuiltin                  = "source/builtin"
+	SourceBlockKeySourceComponent                = "source/component"
+	SourceBlockKeySourceConfig                   = "source/config"
+	SourceBlockKeySourceGit                      = "source/git"
+	SourceBlockKeySourceImage                    = "source/image"
+	SourceBlockKeySourceImagePullSecretName      = "source/image_pull_secret/name"
+	SourceBlockKeySourceImagePullSecretNamespace = "source/image_pull_secret/namespace"
+	SourceBlockKeySourceKind                     = "source/kind"
+	SourceBlockKeySourceNamespace                = "source/namespace"
+	SourceBlockKeySourcePath                     = "source/path"
+	SourceBlockSourceValue                       = "value"
+	SourceBlockSourceOidc                        = "oidc"
+	SourceBlockSourceKindImage                   = "image"
+	SourceBlockSourceKindGit                     = "git"
+	SourceBlockSourceKindComponent               = "component"
+	SourceBlockSourceKindBuiltin                 = "builtin"
+)
+
 // BuildBlock is every field any kind declares under "build", read from a compiled
 // object. A kind that declares none of them reads as the zero value.
 type BuildBlock struct {
 	BuildDockerfile string // authored at build/dockerfile/path
 	BuildImage      string // authored at build/{commands|script}/image
 	BuildInstall    string // authored at build/{commands}/install
-	BuildKind       string // which of dockerfile was written
+	BuildKind       string // which of dockerfile, commands, script was written
 	BuildOutput     string // authored at build/{commands|script}/output
 	BuildRun        string // authored at build/{commands}/run
 	BuildScript     string // authored at build/script/path
@@ -3550,8 +3572,23 @@ func ReadBuildBlock(r Resource) BuildBlock {
 	return out
 }
 
+// BuildBlock's keys, and the values its fields may hold.
+const (
+	BuildBlockKeyBuildDockerfile  = "build/dockerfile"
+	BuildBlockKeyBuildImage       = "build/image"
+	BuildBlockKeyBuildInstall     = "build/install"
+	BuildBlockKeyBuildKind        = "build/kind"
+	BuildBlockKeyBuildOutput      = "build/output"
+	BuildBlockKeyBuildRun         = "build/run"
+	BuildBlockKeyBuildScript      = "build/script"
+	BuildBlockKeyBuildTarget      = "build/target"
+	BuildBlockBuildKindDockerfile = "dockerfile"
+	BuildBlockBuildKindCommands   = "commands"
+	BuildBlockBuildKindScript     = "script"
+)
+
 // WorkloadBlock is every field any kind declares under these keys, read from a
-// compiled object: "egress", "execution", "implements", "limits", "ports", "runtime", "serve", "variables".
+// compiled object: "egress", "execution", "implements", "limits", "name", "ports", "runtime", "serve", "variables".
 // A kind that declares none of them reads as the zero value.
 type WorkloadBlock struct {
 	Egress             []string
@@ -3566,6 +3603,7 @@ type WorkloadBlock struct {
 	LimitsMemory       *int64
 	LimitsSteps        int64
 	LimitsTimeout      *time.Duration
+	Name               string
 	Ports              map[string]ApplicationPortsEntry
 	Runtime            string
 	ServeIndex         string
@@ -3593,6 +3631,7 @@ func ReadWorkloadBlock(r Resource) WorkloadBlock {
 	out.LimitsMemory = present[int64](r.Int("limits", "memory"))
 	out.LimitsSteps, _ = r.Int("limits", "steps")
 	out.LimitsTimeout = present[time.Duration](r.Duration("limits", "timeout"))
+	out.Name = r.String("name")
 	for _, name := range r.Keys("ports") {
 		if out.Ports == nil {
 			out.Ports = map[string]ApplicationPortsEntry{}
@@ -3615,6 +3654,48 @@ func ReadWorkloadBlock(r Resource) WorkloadBlock {
 	}
 	return out
 }
+
+// WorkloadBlock's keys, and the values its fields may hold.
+const (
+	WorkloadBlockKeyEgress                    = "egress"
+	WorkloadBlockKeyExecutionCall             = "execution/call"
+	WorkloadBlockKeyExecutionCpu              = "execution/cpu"
+	WorkloadBlockKeyExecutionMemory           = "execution/memory"
+	WorkloadBlockKeyExecutionTimeout          = "execution/timeout"
+	WorkloadBlockKeyImplements                = "implements"
+	WorkloadBlockKeyLimitsConcurrency         = "limits/concurrency"
+	WorkloadBlockKeyLimitsConcurrent          = "limits/concurrent"
+	WorkloadBlockKeyLimitsMaxInstances        = "limits/max_instances"
+	WorkloadBlockKeyLimitsMemory              = "limits/memory"
+	WorkloadBlockKeyLimitsSteps               = "limits/steps"
+	WorkloadBlockKeyLimitsTimeout             = "limits/timeout"
+	WorkloadBlockKeyName                      = "name"
+	WorkloadBlockKeyPorts                     = "ports"
+	WorkloadBlockKeyRuntime                   = "runtime"
+	WorkloadBlockKeyServeIndex                = "serve/index"
+	WorkloadBlockKeyServeKind                 = "serve/kind"
+	WorkloadBlockKeyServeMode                 = "serve/mode"
+	WorkloadBlockKeyServeName                 = "serve/name"
+	WorkloadBlockKeyServeNamespace            = "serve/namespace"
+	WorkloadBlockKeyServeNotFound             = "serve/not_found"
+	WorkloadBlockKeyServePort                 = "serve/port"
+	WorkloadBlockKeyVariables                 = "variables"
+	WorkloadBlockImplementsHandler            = "handler"
+	WorkloadBlockImplementsAuthorizer         = "authorizer"
+	WorkloadBlockImplementsHttpAuthorizer     = "http-authorizer"
+	WorkloadBlockImplementsDnsResolver        = "dns-resolver"
+	WorkloadBlockImplementsInstanceValidator  = "instance-validator"
+	WorkloadBlockImplementsGatewayTransformer = "gateway-transformer"
+	WorkloadBlockImplementsProxyTransformer   = "proxy-transformer"
+	WorkloadBlockImplementsGatewayRouter      = "gateway-router"
+	WorkloadBlockImplementsProxyRouter        = "proxy-router"
+	WorkloadBlockRuntimeWasm                  = "wasm"
+	WorkloadBlockRuntimeContainer             = "container"
+	WorkloadBlockServeKindApplication         = "application"
+	WorkloadBlockServeKindFunction            = "function"
+	WorkloadBlockServeModeStatic              = "static"
+	WorkloadBlockServeModeSpa                 = "spa"
+)
 
 // present is a value the object may not carry: nil when it does not.
 func present[T any](v T, ok bool) *T {
