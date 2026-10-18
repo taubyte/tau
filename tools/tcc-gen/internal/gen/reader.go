@@ -51,11 +51,21 @@ func RenderReaders(pkg string, root []*engine.Node, kinds []string) []byte {
 	// THE CROSS-KIND QUESTIONS. What a project builds and where its content
 	// comes from are asked of every resource rather than of one kind, so they
 	// get the union of what any kind declares under those keys.
-	for _, prefix := range []struct{ name, key string }{
-		{"SourceBlock", "source"},
-		{"BuildBlock", "build"},
+	//
+	// WorkloadBlock is the third such question: what a tier needs of whatever
+	// it runs. `execution` is a call and a timeout on a function and a cpu on an
+	// application, so no kind's own type answers it for every kind, and a
+	// resolver that knows only "something runnable" would otherwise spell the
+	// paths back out of the vocabulary.
+	for _, union := range []struct {
+		name string
+		keys []string
+	}{
+		{"SourceBlock", []string{"source"}},
+		{"BuildBlock", []string{"build"}},
+		{"WorkloadBlock", []string{"egress", "execution", "implements", "limits", "ports", "runtime", "serve", "variables"}},
 	} {
-		body.Write(RenderUnion(prefix.name, root, kinds, prefix.key))
+		body.Write(RenderUnion(union.name, root, kinds, union.keys, m.groupsUnder(union.keys)))
 		body.WriteString("\n")
 	}
 
@@ -149,11 +159,15 @@ func goIdent(path string) string {
 // remembered, which is wrong in both directions at once — it read
 // build/dockerfile off kinds that have none, and it would have missed a field
 // added to any kind.
-func RenderUnion(name string, root []*engine.Node, kinds []string, prefix string) []byte {
+func RenderUnion(name string, root []*engine.Node, kinds []string, prefixes []string, groups []unionGroup) []byte {
+	under := map[string]bool{}
+	for _, prefix := range prefixes {
+		under[prefix] = true
+	}
 	seen := map[string]Located{}
 	for _, kind := range kinds {
 		for _, l := range Locations(root, kind) {
-			if len(l.Key) == 0 || l.Key[0] != prefix {
+			if len(l.Key) == 0 || !under[l.Key[0]] {
 				continue
 			}
 			// A FIELD DECLARED ON TWO KINDS IS ONE FIELD. It compiles at the
@@ -171,10 +185,23 @@ func RenderUnion(name string, root []*engine.Node, kinds []string, prefix string
 	}
 	sort.Slice(at, func(i, j int) bool { return at[i].Path() < at[j].Path() })
 
+	quoted := make([]string, 0, len(prefixes))
+	for _, prefix := range prefixes {
+		quoted = append(quoted, fmt.Sprintf("%q", prefix))
+	}
+
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "// %s is every field any kind declares under %q, read from a compiled\n", name, prefix)
-	fmt.Fprintf(&b, "// object. A kind that declares none of them reads as the zero value.\n")
+	if len(quoted) == 1 {
+		fmt.Fprintf(&b, "// %s is every field any kind declares under %s, read from a compiled\n", name, quoted[0])
+		fmt.Fprintf(&b, "// object. A kind that declares none of them reads as the zero value.\n")
+	} else {
+		fmt.Fprintf(&b, "// %s is every field any kind declares under these keys, read from a\n", name)
+		fmt.Fprintf(&b, "// compiled object: %s.\n", strings.Join(quoted, ", "))
+		fmt.Fprintf(&b, "// A kind that declares none of them reads as the zero value.\n")
+	}
 	fmt.Fprintf(&b, "type %s struct {\n", name)
+	type line struct{ name, text string }
+	var lines []line
 	for _, l := range at {
 		note := ""
 		if strings.Join(l.Key, "/") != strings.Join(l.Authored, "/") {
@@ -183,27 +210,97 @@ func RenderUnion(name string, root []*engine.Node, kinds []string, prefix string
 		if l.Captures {
 			note = "  // which of " + strings.Join(l.Branch, ", ") + " was written"
 		}
-		fmt.Fprintf(&b, "\t%s %s%s\n", goIdent(l.Path()), fieldType(l), note)
+		lines = append(lines, line{goIdent(l.Path()), fmt.Sprintf("\t%s %s%s\n", goIdent(l.Path()), fieldType(l), note)})
+	}
+	for _, g := range groups {
+		lines = append(lines, line{goIdent(g.key), fmt.Sprintf("\t%s %s\n", goIdent(g.key), g.goType())})
+	}
+	sort.Slice(lines, func(i, j int) bool { return lines[i].name < lines[j].name })
+	for _, l := range lines {
+		b.WriteString(l.text)
 	}
 	fmt.Fprintf(&b, "}\n\n")
 
 	fmt.Fprintf(&b, "// Read%s decodes one from a resource.\nfunc Read%s(r Resource) %s {\n", name, name, name)
 	fmt.Fprintf(&b, "\tvar out %s\n", name)
+	reads := map[string]string{}
 	for _, l := range at {
-		args := make([]string, 0, len(l.Key))
-		for _, seg := range l.Key {
-			args = append(args, fmt.Sprintf("%q", seg))
-		}
-		call := strings.Join(args, ", ")
+		call := callArgs(l.Key)
 		switch {
 		case optional(l):
-			fmt.Fprintf(&b, "\tout.%s = present[%s](r.%s(%s))\n", goIdent(l.Path()), goTypeFor(l.Read), l.Read, call)
+			reads[goIdent(l.Path())] = fmt.Sprintf("\tout.%s = present[%s](r.%s(%s))\n", goIdent(l.Path()), goTypeFor(l.Read), l.Read, call)
 		case scalarPair(l.Read):
-			fmt.Fprintf(&b, "\tout.%s, _ = r.%s(%s)\n", goIdent(l.Path()), l.Read, call)
+			reads[goIdent(l.Path())] = fmt.Sprintf("\tout.%s, _ = r.%s(%s)\n", goIdent(l.Path()), l.Read, call)
 		default:
-			fmt.Fprintf(&b, "\tout.%s = r.%s(%s)\n", goIdent(l.Path()), l.Read, call)
+			reads[goIdent(l.Path())] = fmt.Sprintf("\tout.%s = r.%s(%s)\n", goIdent(l.Path()), l.Read, call)
 		}
+	}
+	for _, g := range groups {
+		reads[goIdent(g.key)] = g.read()
+	}
+	for _, l := range lines {
+		b.WriteString(reads[l.name])
 	}
 	fmt.Fprintf(&b, "\treturn out\n}\n")
 	return b.Bytes()
+}
+
+// unionGroup is a nested group a union carries whole: `variables` on every kind
+// that declares one, read into the one entry type they all share.
+type unionGroup struct {
+	key   string
+	entry string
+	list  bool
+}
+
+func (g unionGroup) goType() string {
+	if g.list {
+		return "[]" + g.entry
+	}
+	return "map[string]" + g.entry
+}
+
+func (g unionGroup) read() string {
+	field, call := goIdent(g.key), fmt.Sprintf("%q", g.key)
+	if g.list {
+		return fmt.Sprintf("\tfor _, e := range r.List(%s) {\n\t\tout.%s = append(out.%s, Read%s(e))\n\t}\n", call, field, field, g.entry)
+	}
+	return fmt.Sprintf("\tfor _, name := range r.Keys(%s) {\n\t\tif out.%s == nil {\n\t\t\tout.%s = map[string]%s{}\n\t\t}\n\t\tout.%s[name] = Read%s(r.Sub(%s, name))\n\t}\n",
+		call, field, field, g.entry, field, g.entry, call)
+}
+
+// groupsUnder is every nested group a kind declares at one of these keys, by
+// the entry type it reads as.
+//
+// ONE TYPE OR NONE. A union field holds one Go type, so two kinds whose entries
+// under the same key are different types cannot share it — and picking one
+// would decode the other kind's entries into a struct missing its fields. That
+// is the vocabulary's disagreement to resolve, so it stops the generator.
+func (m *model) groupsUnder(keys []string) []unionGroup {
+	under := map[string]bool{}
+	for _, key := range keys {
+		under[key] = true
+	}
+	found := map[string]unionGroup{}
+	for _, t := range m.order {
+		if t.role != "kind" {
+			continue
+		}
+		for _, mem := range t.members {
+			if mem.sub == nil || mem.sub.role != "entry" || len(mem.key) != 1 || !under[mem.key[0]] {
+				continue
+			}
+			g := unionGroup{key: mem.key[0], entry: mem.sub.name, list: mem.sub.list}
+			if held, ok := found[g.key]; ok && held != g {
+				panic(fmt.Sprintf("tcc-gen: %q reads as %s on one kind and %s on another, so no union can carry it", g.key, held.entry, g.entry))
+			}
+			found[g.key] = g
+		}
+	}
+	out := make([]unionGroup, 0, len(found))
+	for _, g := range found {
+		out = append(out, g)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
+	return out
 }

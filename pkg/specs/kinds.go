@@ -3550,6 +3550,72 @@ func ReadBuildBlock(r Resource) BuildBlock {
 	return out
 }
 
+// WorkloadBlock is every field any kind declares under these keys, read from a
+// compiled object: "egress", "execution", "implements", "limits", "ports", "runtime", "serve", "variables".
+// A kind that declares none of them reads as the zero value.
+type WorkloadBlock struct {
+	Egress             []string
+	ExecutionCall      string
+	ExecutionCpu       *int64
+	ExecutionMemory    int64
+	ExecutionTimeout   time.Duration
+	Implements         string
+	LimitsConcurrency  *int64
+	LimitsConcurrent   *int64
+	LimitsMaxInstances *int64
+	LimitsMemory       *int64
+	LimitsSteps        int64
+	LimitsTimeout      *time.Duration
+	Ports              map[string]ApplicationPortsEntry
+	Runtime            string
+	ServeIndex         string
+	ServeKind          string // which of application, function was written
+	ServeMode          string
+	ServeName          string // authored at serve/{application|function}/name
+	ServeNamespace     string // authored at serve/{application|function}/namespace
+	ServeNotFound      string
+	ServePort          string // authored at serve/{application|function}/port
+	Variables          map[string]VariablesEntry
+}
+
+// ReadWorkloadBlock decodes one from a resource.
+func ReadWorkloadBlock(r Resource) WorkloadBlock {
+	var out WorkloadBlock
+	out.Egress = r.Strings("egress")
+	out.ExecutionCall = r.String("execution", "call")
+	out.ExecutionCpu = present[int64](r.Int("execution", "cpu"))
+	out.ExecutionMemory, _ = r.Int("execution", "memory")
+	out.ExecutionTimeout, _ = r.Duration("execution", "timeout")
+	out.Implements = r.String("implements")
+	out.LimitsConcurrency = present[int64](r.Int("limits", "concurrency"))
+	out.LimitsConcurrent = present[int64](r.Int("limits", "concurrent"))
+	out.LimitsMaxInstances = present[int64](r.Int("limits", "max_instances"))
+	out.LimitsMemory = present[int64](r.Int("limits", "memory"))
+	out.LimitsSteps, _ = r.Int("limits", "steps")
+	out.LimitsTimeout = present[time.Duration](r.Duration("limits", "timeout"))
+	for _, name := range r.Keys("ports") {
+		if out.Ports == nil {
+			out.Ports = map[string]ApplicationPortsEntry{}
+		}
+		out.Ports[name] = ReadApplicationPortsEntry(r.Sub("ports", name))
+	}
+	out.Runtime = r.String("runtime")
+	out.ServeIndex = r.String("serve", "index")
+	out.ServeKind = r.String("serve", "kind")
+	out.ServeMode = r.String("serve", "mode")
+	out.ServeName = r.String("serve", "name")
+	out.ServeNamespace = r.String("serve", "namespace")
+	out.ServeNotFound = r.String("serve", "not_found")
+	out.ServePort = r.String("serve", "port")
+	for _, name := range r.Keys("variables") {
+		if out.Variables == nil {
+			out.Variables = map[string]VariablesEntry{}
+		}
+		out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))
+	}
+	return out
+}
+
 // present is a value the object may not carry: nil when it does not.
 func present[T any](v T, ok bool) *T {
 	if !ok {

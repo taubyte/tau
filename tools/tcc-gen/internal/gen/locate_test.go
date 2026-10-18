@@ -114,3 +114,33 @@ func TestAKindsFieldsAreNotWhatItHolds(t *testing.T) {
 		}
 	}
 }
+
+// TestAUNIONCARRIESAGROUPWHOLE. A resolver that runs "something runnable"
+// meets a function's variables and an application's alike, so the union holds
+// the group in the entry type every kind shares rather than a field per entry.
+func TestAUnionCarriesAGroupWhole(t *testing.T) {
+	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"application", "function"}))
+
+	require.Contains(t, out, "type WorkloadBlock struct {")
+	require.Contains(t, out, "\tVariables          map[string]VariablesEntry\n")
+	require.Contains(t, out, `out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))`)
+	require.Contains(t, out, `out.ExecutionCall = r.String("execution", "call")`,
+		"a field only one of the kinds declares is still the union's")
+	require.Contains(t, out, `out.Ports[name] = ReadApplicationPortsEntry(r.Sub("ports", name))`)
+}
+
+// TestAGROUPTWOKINDSREADDIFFERENTLYSTOPSTHEGENERATOR, because a union field
+// holds one type and the other kind's entries would decode into the wrong one.
+func TestAGroupTwoKindsReadDifferentlyStopsTheGenerator(t *testing.T) {
+	kind := func(entry string, list bool) *typeDef {
+		return &typeDef{role: "kind", members: []member{{key: []string{"steps"}, sub: &typeDef{role: "entry", name: entry, list: list}}}}
+	}
+	m := &model{order: []*typeDef{kind("AStep", true), kind("AStep", true)}}
+	require.Equal(t, []unionGroup{{key: "steps", entry: "AStep", list: true}}, m.groupsUnder([]string{"steps"}),
+		"two kinds agreeing is one field")
+	require.Equal(t, "[]AStep", m.groupsUnder([]string{"steps"})[0].goType())
+	require.Contains(t, m.groupsUnder([]string{"steps"})[0].read(), `out.Steps = append(out.Steps, ReadAStep(e))`)
+
+	m.order = append(m.order, kind("BStep", true))
+	require.Panics(t, func() { m.groupsUnder([]string{"steps"}) })
+}
