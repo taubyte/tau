@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
@@ -77,10 +79,10 @@ var (
 // The setting keys the composer writes for the `instances:` block, which are
 // the vocabulary's own attribute paths.
 const (
-	settingAdmission = "instances/admission"
-	settingLimit     = "instances/limit"
-	settingValidator = "instances/validator/name"
-	settingValidated = "instances/validator/namespace"
+	settingAdmission = specs.InstancesKeyAdmission
+	settingLimit     = specs.InstancesKeyLimit
+	settingValidator = specs.InstancesKeyValidatorName
+	settingValidated = specs.InstancesKeyValidatorNamespace
 )
 
 // reason is why an open did not happen, in the three shapes every interface

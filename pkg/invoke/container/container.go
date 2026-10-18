@@ -55,12 +55,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/taubyte/tau/pkg/containers/core"
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
 // Name is what the config vocabulary calls this tier.
-const Name = "container"
+const Name = specs.WorkerRuntimeContainer
 
 var (
 	ErrNoBackend = errors.New("container: no container backend")

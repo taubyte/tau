@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -32,8 +34,8 @@ import (
 // happens where the compiled project is open, which is the rule servedBy states
 // for a channel.
 const (
-	settingAuthorizer      = "authorizer/name"
-	settingAuthorizerScope = "authorizer/namespace"
+	settingAuthorizer      = specs.AuthorizerKeyName
+	settingAuthorizerScope = specs.AuthorizerKeyNamespace
 )
 
 // Authorizers answers what one caller may do to one guarded target.
@@ -69,7 +71,7 @@ func contains(ops []string, op string) bool {
 }
 
 // WorldAuthorizer is `implements: authorizer`.
-const WorldAuthorizer = "authorizer"
+const WorldAuthorizer = specs.WorkloadBlockImplementsAuthorizer
 
 // authorizeExport is fixed, unlike a handler's. A resource names the FUNCTION
 // that guards it, not an export inside it, so there is no `execution/call` here

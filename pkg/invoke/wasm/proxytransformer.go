@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -29,7 +31,7 @@ import (
 // worker can run.
 
 // WorldProxyTransformer is `implements: proxy-transformer`.
-const WorldProxyTransformer = "proxy-transformer"
+const WorldProxyTransformer = specs.WorkloadBlockImplementsProxyTransformer
 
 // shapeExport is fixed: a proxy names the function, not an export inside it.
 const shapeExport = "transform"

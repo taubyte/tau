@@ -66,6 +66,8 @@ import (
 	"io"
 	"sort"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"net/http"
 	"strings"
 
@@ -77,17 +79,17 @@ import (
 )
 
 // Name is the string the config vocabulary uses for this tier.
-const Name = "wasm"
+const Name = specs.WorkerRuntimeWasm
 
 // The two settings this tier reads, spelled as the vocabulary spells them.
 const (
 	// SettingCall is the exported symbol to enter the component at.
-	SettingCall = "execution/call"
+	SettingCall = specs.WorkloadBlockKeyExecutionCall
 
 	// SettingImplements is which host interface the component was built
 	// against. The schema defaults it to WorldHandler, so a resource that says
 	// nothing still says handler.
-	SettingImplements = "implements"
+	SettingImplements = specs.WorkloadBlockKeyImplements
 )
 
 // WorldHandler is the only host interface this tier serves: a component that
@@ -99,7 +101,7 @@ const (
 // would not fail cleanly — it would hand a component bytes it reads as
 // something else, which is the failure the vocabulary added `implements` to
 // prevent.
-const WorldHandler = "handler"
+const WorldHandler = specs.WorkloadBlockImplementsHandler
 
 // pooledWorlds is what Start can bring up, and worldExports is the export each
 // of them is driven through. A world with no fixed export takes the one the

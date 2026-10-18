@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -56,11 +58,11 @@ var (
 	ErrRefusedByProvider = errors.New("wasm: the provider refused that request")
 )
 
-const modelKind = "model"
+const modelKind = specs.KindModel
 
 // SettingMaxTokens is where the resource's own ceiling travels, as the
 // vocabulary's attribute path.
-const SettingMaxTokens = "parameters/max_tokens"
+const SettingMaxTokens = specs.ModelParametersKeyMaxTokens
 
 // Inferences calls the model a grant names.
 type Inferences interface {

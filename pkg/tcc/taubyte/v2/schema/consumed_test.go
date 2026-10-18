@@ -38,26 +38,28 @@ import (
 //
 // # What "read" means here, and what it deliberately excludes
 //
-// The runtime does not use the generated typed readers: of the 27 ReadX
-// functions in pkg/specs/kinds.go, only ReadZone has a production consumer, and
-// specs.Readers is consumed by its own test. What the runtime does instead is
-// address compiled keys as strings. So an attribute is READ when at least one of
-// these holds:
+// The runtime reads a compiled resource through pkg/specs' GENERATED readers —
+// `specs.ReadGateway(r).Route.Path` — and generated_readers_test.go holds it to
+// that. So an attribute is READ when at least one of these holds:
 //
+//   - A TYPED READ. A file in `readers` names a generated field whose reader
+//     decodes the attribute's compiled key — followed through ReadX calls,
+//     declared parameters, struct fields and results, blocks, entries and the
+//     ranges over them. See consumed_typed_test.go.
 //   - A SPELLED READ. A file in `readers` performs a reader-method call on a
 //     resource whose path matches the attribute's compiled key — literals, this
 //     package's own string consts, a `Sub(...)` prefix it was reached through,
 //     the elements of a literal list a loop reads it under, and the call sites
 //     of a helper in the same file that reads at a path its caller supplies.
+//     What is left of these is pkg/specs' own and the keys no field covers.
 //   - A KEY THE VOCABULARY HANDS THE READER. Three shapes are addressed by
 //     asking the schema for the field name rather than spelling it, so no file
 //     mentions them: the identity pair (engine.IdentityOf), the access entry
 //     (schema.AccessEntryShape, read by Resource.Reaches) and the block a kind
 //     answers on a name in (engine.AnswersAtOf, read by schema.ReachableNames
 //     for Project.Hosts).
-//   - A TYPED FIELD SOMEBODY USES. The kind's generated reader has a production
-//     consumer, and the struct field the attribute decodes into is named in one
-//     of the files listed in `exposed` for it.
+//   - A GENERATED STRUCT HANDED OUT BY pkg/specs, whose field the attribute
+//     decodes into is named in one of the files listed in `exposed` for it.
 //   - A NESTED GROUP'S FIELD, read where it actually sits. AttributeNames
 //     flattens the fields of a group the author keys — `variables`, `ports`,
 //     `entry` — into the kind's list without the group's path, so `kind` is an
@@ -223,7 +225,7 @@ var unread = map[string]excuse{
 // readers names every non-test file that reads a compiled resource, and the
 // kinds whose resources it reads. `*` is a file that reads every kind.
 //
-// THE ATTRIBUTION IS THE POINT. `certificate/source` is spelled in
+// THE ATTRIBUTION IS THE POINT. `certificate/source` is read in
 // services/v2/proxy/tls.go, for a proxy; a check that only asked whether the
 // string appears somewhere would report a gateway's identically named attribute
 // as read and the config would go on saying TLS while the socket stays plain.
@@ -272,11 +274,12 @@ var readers = map[string][]string{
 
 var everyKind = []string{"*"}
 
-// exposed names the generated typed readers that have a production consumer, and
-// the files that consume the struct. A field none of them names is decoded and
-// dropped, however faithfully the generated reader read it.
+// exposed names generated structs a consumer reaches through an accessor of
+// pkg/specs' own, which the typed scan does not follow, and the files that
+// consume them. A field none of them names is decoded and dropped, however
+// faithfully the generated reader read it.
 var exposed = map[string][]string{
-	// Project.Zones() is the only accessor in pkg/specs that hands a generated
+	// Project.Zones() is the one accessor in pkg/specs that hands a generated
 	// struct out, and these two are what read it.
 	"zone": {"node/zone/zone.go", "services/build/deploy/deploy.go"},
 }

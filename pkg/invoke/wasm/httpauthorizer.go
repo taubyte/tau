@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -26,7 +28,7 @@ import (
 // answering with the ops the caller gets.
 
 // WorldHTTPAuthorizer is `implements: http-authorizer`.
-const WorldHTTPAuthorizer = "http-authorizer"
+const WorldHTTPAuthorizer = specs.WorkloadBlockImplementsHttpAuthorizer
 
 // The decision variant's arms, in the order the WIT declares them.
 const (

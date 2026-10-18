@@ -132,7 +132,7 @@ func (i *Inferences) Infer(ctx context.Context, grant invoke.Grant, req *invoke.
 		return nil, err
 	}
 
-	format := grant.Settings["format"]
+	format := grant.Settings[specs.ModelKeyFormat]
 	body, err := providerRequest(format, grant, req)
 	if err != nil {
 		return nil, err
@@ -179,7 +179,7 @@ const maxProviderBody = 8 << 20
 // like a bad key: OpenAI takes a bearer token, Anthropic its own header plus a
 // version, and ollama takes nothing at all.
 func (i *Inferences) authorize(ctx context.Context, post *http.Request, format string, grant invoke.Grant) error {
-	name := grant.Settings["inference/remote/credentials/name"]
+	name := grant.Settings[specs.ModelInferenceKeyRemoteCredentialsName]
 	if name == "" {
 		// A local model, or a provider that needs none. Both are legitimate:
 		// ollama on the same machine wants no credential.
@@ -201,7 +201,7 @@ func (i *Inferences) authorize(ctx context.Context, post *http.Request, format s
 	}
 
 	switch format {
-	case "anthropic":
+	case specs.ModelFormatAnthropic:
 		post.Header.Set("x-api-key", value)
 		post.Header.Set("anthropic-version", anthropicVersion)
 	default:
@@ -230,17 +230,17 @@ const anthropicVersion = "2023-06-01"
 // let it reach a real resolver asks for a name that cannot exist rather than
 // one somebody owns.
 func (i *Inferences) reach(grant invoke.Grant) (string, *http.Client, error) {
-	path := pathFor(grant.Settings["format"])
+	path := pathFor(grant.Settings[specs.ModelKeyFormat])
 
-	switch grant.Settings["inference/kind"] {
-	case "remote":
-		base := strings.TrimSuffix(grant.Settings["inference/remote/endpoint"], "/")
+	switch grant.Settings[specs.ModelInferenceKeyKind] {
+	case specs.ModelInferenceKindRemote:
+		base := strings.TrimSuffix(grant.Settings[specs.ModelInferenceKeyRemoteEndpoint], "/")
 		if base == "" {
 			return "", nil, ErrNoEndpoint
 		}
 		return base + path, http.DefaultClient, nil
 
-	case "local":
+	case specs.ModelInferenceKindLocal:
 		at, port, err := localWorkload(grant)
 		if err != nil {
 			return "", nil, err
@@ -266,7 +266,7 @@ func (i *Inferences) reach(grant invoke.Grant) (string, *http.Client, error) {
 
 // localWorkload is which workload serves this model, and on which of its ports.
 func localWorkload(grant invoke.Grant) (specs.Address, string, error) {
-	name := grant.Settings["inference/local/name"]
+	name := grant.Settings[specs.ModelInferenceKeyLocalName]
 	if name == "" {
 		return specs.Address{}, "", fmt.Errorf("%w: it is served locally and names no workload", ErrNoEndpoint)
 	}
@@ -285,9 +285,9 @@ func localWorkload(grant invoke.Grant) (specs.Address, string, error) {
 		Project:     projectName,
 		Environment: environment,
 		Scope:       scope,
-		Kind:        "application",
+		Kind:        specs.KindApplication,
 		Name:        name,
-	}, grant.Settings["inference/local/port"], nil
+	}, grant.Settings[specs.ModelInferenceKeyLocalPort], nil
 }
 
 // settingLocalScope is where the resolved namespace chain travels. The composer
@@ -298,9 +298,9 @@ const settingLocalScope = "inference/local/scope"
 // pathFor is where each format's completions live under the base URL.
 func pathFor(format string) string {
 	switch format {
-	case "anthropic":
+	case specs.ModelFormatAnthropic:
 		return "/v1/messages"
-	case "ollama":
+	case specs.ModelFormatOllama:
 		return "/v1/chat/completions"
 	default:
 		return "/v1/chat/completions"

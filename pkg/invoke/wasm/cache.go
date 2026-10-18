@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -120,7 +122,7 @@ func grantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	return out
 }
 
-const cacheKind = "cache"
+const cacheKind = specs.KindCache
 
 // cacheImports registers the four functions for one instantiation.
 //

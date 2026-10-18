@@ -1,5 +1,7 @@
 package invoke
 
+import "github.com/taubyte/tau/pkg/specs"
+
 // start.go is the one place a workflow grant becomes the send that begins a
 // run.
 //
@@ -27,11 +29,11 @@ const (
 
 	// SettingSyncType is where the composer writes which primitive a sync grant
 	// names — `queue` or `log`.
-	SettingSyncType = "type"
+	SettingSyncType = specs.SyncKeyType
 
 	// SyncKind and QueueType are the kind and the type a start has to land on.
-	SyncKind  = "sync"
-	QueueType = "queue"
+	SyncKind  = specs.KindSync
+	QueueType = specs.SyncTypeQueue
 
 	// OpSend is the verb the produced grant carries, and the only one: what was
 	// checked before this was called is the WORKFLOW grant, and this function

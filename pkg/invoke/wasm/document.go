@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -57,7 +59,7 @@ var (
 	ErrMalformed = errors.New("wasm: that is not a json object")
 )
 
-const documentModel = "document"
+const documentModel = specs.DatabaseTypeDocument
 
 // Documents is one document database.
 type Documents interface {
@@ -81,7 +83,7 @@ func WithDocuments(d DocumentStores) Option {
 func documentGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for _, g := range spec.Reaches {
-		if g.Kind != databaseKind || g.Settings["type"] != documentModel {
+		if g.Kind != databaseKind || g.Settings[specs.DatabaseKeyType] != documentModel {
 			continue
 		}
 		if out == nil {

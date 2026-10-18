@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -29,7 +31,7 @@ import (
 // node/admit, which had that memory before this world existed.
 
 // WorldValidator is `implements: instance-validator`.
-const WorldValidator = "instance-validator"
+const WorldValidator = specs.WorkloadBlockImplementsInstanceValidator
 
 // admitExport is fixed: a store names the function, not an export within it.
 const admitExport = "admit"

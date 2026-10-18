@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -26,7 +28,7 @@ import (
 // cold-start-deduplication or scale-to-zero logic is about what gets called.
 
 // WorldGatewayTransformer is `implements: gateway-transformer`.
-const WorldGatewayTransformer = "gateway-transformer"
+const WorldGatewayTransformer = specs.WorkloadBlockImplementsGatewayTransformer
 
 // transformExport is fixed: a gateway names the function, not an export inside
 // it.

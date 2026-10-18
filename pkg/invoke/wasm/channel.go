@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -91,7 +93,7 @@ func WithChannels(c Channels) Option {
 }
 
 // channelKind is the vocabulary's own name for the kind.
-const channelKind = "channel"
+const channelKind = specs.KindChannel
 
 // channelGrantsOf is the channel entries of a spec's access block, by label.
 func channelGrantsOf(spec invoke.Spec) map[string]invoke.Grant {

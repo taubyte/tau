@@ -71,11 +71,11 @@ const (
 // outward walk an omitted namespace means happens where the compiled project
 // is open, and what arrives here is the chain it produced.
 const (
-	settingProtocol   = "protocol"
-	settingServeKind  = "serve/kind"
-	settingServeName  = "serve/name"
-	settingServeScope = "serve/namespace"
-	settingServePort  = "serve/port"
+	settingProtocol   = specs.ChannelKeyProtocol
+	settingServeKind  = specs.ChannelServeKeyKind
+	settingServeName  = specs.ChannelServeKeyName
+	settingServeScope = specs.ChannelServeKeyNamespace
+	settingServePort  = specs.ChannelServeKeyPort
 )
 
 // channels dials the workload a channel grant names.

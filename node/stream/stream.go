@@ -39,6 +39,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
@@ -49,8 +51,8 @@ import (
 // and they go on the wire, which is why they are constants and not two literals
 // at the two call sites.
 const (
-	Stream = "stream"
-	Bus    = "bus"
+	Stream = specs.KindStream
+	Bus    = specs.KindBus
 )
 
 // Gossip joins a topic.

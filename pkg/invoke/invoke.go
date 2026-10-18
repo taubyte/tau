@@ -38,6 +38,8 @@ import (
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 var (
@@ -252,7 +254,7 @@ type Grant struct {
 // neither serves it: a workload that declared one and did not get it writes to
 // somewhere that disappears, which is the one unserved capability that loses
 // data instead of failing.
-const MountKind = "volume"
+const MountKind = specs.KindVolume
 
 // Mounted is every filesystem this workload declared it would have.
 func (s Spec) Mounted() []Grant {

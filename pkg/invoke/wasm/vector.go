@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -47,7 +49,7 @@ var (
 	ErrWrongWidth = errors.New("wasm: that is not this database's vector width")
 )
 
-const vectorModel = "vector"
+const vectorModel = specs.DatabaseTypeVector
 
 // Match is one nearest-neighbour result, with its meta already JSON.
 type Match struct {
@@ -77,7 +79,7 @@ func WithVectors(v VectorStores) Option {
 func vectorGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for _, g := range spec.Reaches {
-		if g.Kind != databaseKind || g.Settings["type"] != vectorModel {
+		if g.Kind != databaseKind || g.Settings[specs.DatabaseKeyType] != vectorModel {
 			continue
 		}
 		if out == nil {

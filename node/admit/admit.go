@@ -151,10 +151,10 @@ var (
 
 // The setting keys services/worker writes for the `instances:` block.
 const (
-	settingAdmission = "instances/admission"
-	settingLimit     = "instances/limit"
-	settingValidator = "instances/validator/name"
-	settingScope     = "instances/validator/namespace"
+	settingAdmission = specs.InstancesKeyAdmission
+	settingLimit     = specs.InstancesKeyLimit
+	settingValidator = specs.InstancesKeyValidatorName
+	settingScope     = specs.InstancesKeyValidatorNamespace
 )
 
 // Settings is every attribute path this adapter reads off a grant.
@@ -253,7 +253,7 @@ func (a *Admissions) AdmitInstance(ctx context.Context, handle string, settings 
 	// from the internet.
 	project, environment, _ := specs.SplitHandle(handle)
 	return a.admit(ctx, wasmtier.Caller{Project: project, Environment: environment}, invoke.Grant{
-		Kind: "bus", Label: labelOf(handle), Handle: handle, Settings: settings,
+		Kind: specs.KindBus, Label: labelOf(handle), Handle: handle, Settings: settings,
 	}, instance)
 }
 
@@ -281,7 +281,7 @@ func (a *Admissions) AdmitRequest(ctx context.Context, at specs.Address, req *in
 		Project:     at.Project,
 		Environment: at.Environment,
 		Scope:       at.Scope,
-		Kind:        "function",
+		Kind:        specs.KindFunction,
 		Name:        at.Name,
 	})
 	if err != nil {
@@ -418,7 +418,7 @@ func (a *Admissions) ask(ctx context.Context, who wasmtier.Caller, grant invoke.
 		Project:     project,
 		Environment: environment,
 		Scope:       specs.ScopeOf(nil, grant.Settings[settingScope]),
-		Kind:        "function",
+		Kind:        specs.KindFunction,
 		Name:        name,
 	})
 	if err != nil {

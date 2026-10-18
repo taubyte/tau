@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -43,7 +45,7 @@ const (
 var ErrNoWorkflows = errors.New("wasm: this resource starts a workflow and this tier has nothing to queue one with")
 
 // workflowKind is the vocabulary's own name for the kind.
-const workflowKind = "workflow"
+const workflowKind = specs.KindWorkflow
 
 // workflowGrantsOf is every workflow grant.
 func workflowGrantsOf(spec invoke.Spec) map[string]invoke.Grant {

@@ -68,6 +68,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
@@ -154,8 +156,8 @@ func New(assets Assets, stores Stores, now func() time.Time) (*Buckets, error) {
 // The setting keys services/worker writes, which are the vocabulary's own
 // attribute paths.
 const (
-	settingSize = "size"
-	settingType = "type"
+	settingSize = specs.StorageKeySize
+	settingType = specs.StorageKeyType
 )
 
 // Settings is every attribute path this adapter reads off a grant.

@@ -380,7 +380,7 @@ func (s *Service) admitted(ctx context.Context, m match, projectName, environmen
 		Project:     projectName,
 		Environment: environment,
 		Scope:       scope,
-		Kind:        "function",
+		Kind:        specs.KindFunction,
 		Name:        name,
 	}, req)
 	if err != nil {
@@ -410,7 +410,7 @@ func (s *Service) destination(ctx context.Context, m match, projectName, environ
 		Project:     projectName,
 		Environment: environment,
 		Scope:       scope,
-		Kind:        "function",
+		Kind:        specs.KindFunction,
 		Name:        router,
 	}, req)
 	if err != nil {

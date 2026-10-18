@@ -41,6 +41,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
@@ -49,12 +51,12 @@ const Name = "static"
 
 // Settings this tier reads off a Spec, spelled as the vocabulary spells them.
 const (
-	SettingMode     = "serve/mode"
-	SettingIndex    = "serve/index"
-	SettingNotFound = "serve/not_found"
+	SettingMode     = specs.WebsiteServeKeyMode
+	SettingIndex    = specs.WebsiteServeKeyIndex
+	SettingNotFound = specs.WebsiteServeKeyNotFound
 
-	ModeStatic = "static"
-	ModeSPA    = "spa"
+	ModeStatic = specs.WebsiteServeModeStatic
+	ModeSPA    = specs.WebsiteServeModeSpa
 )
 
 // DefaultIndex is the vocabulary's own default for `serve/index`.

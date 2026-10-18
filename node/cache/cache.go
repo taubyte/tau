@@ -49,6 +49,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	pkgcache "github.com/taubyte/tau/pkg/cache"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
@@ -182,8 +184,8 @@ func asTierError(err error) error {
 // The setting keys services/worker writes, which are the vocabulary's own
 // attribute paths.
 const (
-	settingTTL  = "ttl"
-	settingSize = "size"
+	settingTTL  = specs.CacheKeyTtl
+	settingSize = specs.CacheKeySize
 )
 
 // Settings is every attribute path this adapter reads off a grant.

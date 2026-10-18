@@ -105,6 +105,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/container"
 )
@@ -235,8 +237,8 @@ func New(root string, assets Assets, stores Stores, log Log) (*Volumes, error) {
 // The setting keys services/worker writes for a mount, which are the
 // vocabulary's own attribute paths.
 const (
-	settingQuota    = "quota"
-	settingInterval = "checkpoint/interval"
+	settingQuota    = specs.VolumeKeyQuota
+	settingInterval = specs.VolumeCheckpointKeyInterval
 )
 
 // Settings is every attribute path this adapter reads off a grant.

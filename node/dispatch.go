@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/node/primitive"
@@ -351,7 +353,7 @@ func (d *dispatcher) failed(ctx context.Context, consumer worker.Consumer, work 
 // something else. This one survives here because the decision it feeds is the
 // CONSUMER'S own — hand the item back now, or let the claim expire — and the
 // number it is made with is the author's either way.
-const settingRetryEvery = "queue/retry/interval"
+const settingRetryEvery = specs.SyncQueueKeyRetryInterval
 
 // spaced reports whether the author declared a retry interval to space a
 // redelivery by. A written zero is a written answer — an author who means

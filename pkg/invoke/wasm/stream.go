@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -73,8 +75,8 @@ func WithBus(s Streams) Option {
 }
 
 const (
-	streamKind = "stream"
-	busKind    = "bus"
+	streamKind = specs.KindStream
+	busKind    = specs.KindBus
 )
 
 func streamGrantsOf(spec invoke.Spec) map[string]invoke.Grant {

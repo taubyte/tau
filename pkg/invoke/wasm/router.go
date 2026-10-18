@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -20,7 +22,7 @@ import (
 // transformer.go, which makes the same trade for the same reason.
 
 // WorldGatewayRouter is `implements: gateway-router`.
-const WorldGatewayRouter = "gateway-router"
+const WorldGatewayRouter = specs.WorkloadBlockImplementsGatewayRouter
 
 // routeExport is fixed: a gateway names the function, not an export inside it.
 const routeExport = "route"

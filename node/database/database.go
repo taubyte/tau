@@ -79,6 +79,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -259,7 +260,7 @@ func (d *Databases) conn(ctx context.Context, grant invoke.Grant) (database.SQLC
 
 	sqlConn, ok := opened.(database.SQLConn)
 	if !ok {
-		return nil, fmt.Errorf("%w: %s answers no sql surface", ErrNotSQL, grant.Settings["sql/engine"])
+		return nil, fmt.Errorf("%w: %s answers no sql surface", ErrNotSQL, grant.Settings[specs.DatabaseSqlKeyEngine])
 	}
 	return sqlConn, nil
 }
@@ -274,7 +275,7 @@ func (d *Databases) OpenKV(ctx context.Context, grant invoke.Grant) (wasmtier.KV
 
 	conn, ok := opened.(database.KVConn)
 	if !ok {
-		return nil, fmt.Errorf("database: %s answers no kv surface", grant.Settings["kv/engine"])
+		return nil, fmt.Errorf("database: %s answers no kv surface", grant.Settings[specs.DatabaseKvKeyEngine])
 	}
 	return keyValue{conn}, nil
 }
@@ -288,7 +289,7 @@ func (d *Databases) OpenDocuments(ctx context.Context, grant invoke.Grant) (wasm
 
 	conn, ok := opened.(database.DocumentConn)
 	if !ok {
-		return nil, fmt.Errorf("database: %s answers no document surface", grant.Settings["document/engine"])
+		return nil, fmt.Errorf("database: %s answers no document surface", grant.Settings[specs.DatabaseDocumentKeyEngine])
 	}
 	return documents{conn}, nil
 }
@@ -366,7 +367,7 @@ func (d *Databases) OpenVectors(ctx context.Context, grant invoke.Grant) (wasmti
 
 	conn, ok := opened.(database.VectorConn)
 	if !ok {
-		return nil, fmt.Errorf("database: %s answers no vector surface", grant.Settings["vector/engine"])
+		return nil, fmt.Errorf("database: %s answers no vector surface", grant.Settings[specs.DatabaseVectorKeyEngine])
 	}
 	return vectors{conn}, nil
 }
@@ -489,11 +490,12 @@ func (d *Databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 	if database.Type(model) != want {
 		return database.Spec{}, fmt.Errorf("%w: %q is %q", ErrNotSQL, grant.Label, model)
 	}
+	keys := keysOf[model]
 
 	project, environment, id := specs.SplitHandle(grant.Handle)
 	spec := database.Spec{
 		Type:   want,
-		Engine: grant.Settings[model+"/"+settingEngine],
+		Engine: grant.Settings[keys.engine],
 
 		Project:     project,
 		Environment: environment,
@@ -505,15 +507,15 @@ func (d *Databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 		// databases in one key space. It is the id for every engine and not
 		// just that one, because Spec.Name is what ADDRESSES the resource.
 		Name:     keyedAs(id),
-		Address:  grant.Settings[model+"/"+settingHost],
-		Database: grant.Settings[model+"/"+settingDatabase],
+		Address:  grant.Settings[keys.host],
+		Database: grant.Settings[keys.database],
 
 		// WHAT THE AUTHOR DECLARED ABOUT CONCURRENT WRITES, carried by
 		// services/worker onto the grant. Reading it is what lets the refusal
 		// below be by name.
-		Consensus: grant.Settings[model+"/"+settingConsensus],
+		Consensus: grant.Settings[keys.consensus],
 	}
-	if raw := grant.Settings[model+"/"+settingSize]; raw != "" {
+	if raw := grant.Settings[keys.size]; raw != "" {
 		size, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
 			return database.Spec{}, fmt.Errorf("database: %q declares a size %q that is not a number of bytes", grant.Label, raw)
@@ -535,13 +537,13 @@ func (d *Databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 	// attacker as the server, so the stronger one is what happens — and a
 	// server with a certificate this node will not verify fails to connect,
 	// loudly, instead of connecting to whoever answered.
-	spec.Credentials.TLS = grant.Settings[model+"/"+settingTLS] != "disable"
+	spec.Credentials.TLS = keys.tls == "" || grant.Settings[keys.tls] != keys.disabled
 
 	// PER-TYPE DECLARATIONS TRAVEL AS OPTIONS. A vector's width and metric mean
 	// nothing to the other three models, which is why they are a map here and
 	// not fields on the Spec.
-	for _, option := range []string{settingDimensions, settingMetric} {
-		if value := grant.Settings[model+"/"+option]; value != "" {
+	for option, key := range map[string]string{vecengine.OptionDimensions: keys.dimensions, vecengine.OptionMetric: keys.metric} {
+		if value := grant.Settings[key]; key != "" && value != "" {
 			if spec.Options == nil {
 				spec.Options = map[string]string{}
 			}
@@ -549,7 +551,7 @@ func (d *Databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 		}
 	}
 
-	if reference := grant.Settings[model+"/"+settingCredentials]; reference != "" {
+	if reference := grant.Settings[keys.credentials]; keys.credentials != "" && reference != "" {
 		username, password, err := d.credentials(ctx, project, environment, reference)
 		if err != nil {
 			return database.Spec{}, err
@@ -626,22 +628,45 @@ func (d *Databases) engines(ctx context.Context, want database.Type) (*database.
 	return d.registry, nil
 }
 
-// The setting keys services/worker writes, under the model.
-const (
-	settingType       = "type"
-	settingEngine     = "engine"
-	settingConsensus  = "consensus"
-	settingSize       = "size"
-	settingHost       = "host"
-	settingDatabase   = "database"
-	settingTLS        = "tls"
-	settingDimensions = "dimensions"
-	settingMetric     = "metric"
-	// UNDER THE MODEL, as `sql/credentials/name` — which is where the vocabulary
-	// declares it and where every other connection field already sat. A bare
-	// `credentials/name` is a key `database` does not have.
-	settingCredentials = "credentials/name"
-)
+// The setting keys services/worker writes, under the model. Each is the
+// vocabulary's own attribute path, so the generated constants are the keys.
+const settingType = specs.DatabaseKeyType
+
+// modelKeys is where one data model's connection fields travel. A field the
+// model does not declare has no key, and reads as absent.
+type modelKeys struct {
+	engine, consensus, size          string
+	host, database, tls, credentials string
+	dimensions, metric               string
+
+	// disabled is the model's own word for turning tls off.
+	disabled string
+}
+
+// keysOf is every model's keys. IT IS WRITTEN PER MODEL because the vocabulary
+// declares them per model: tau's own engines want no address, no credential
+// and no tls, and a width and a metric are a vector's alone.
+var keysOf = map[string]modelKeys{
+	specs.DatabaseTypeSql: {
+		engine: specs.DatabaseSqlKeyEngine, consensus: specs.DatabaseSqlKeyConsensus, size: specs.DatabaseSqlKeySize,
+		host: specs.DatabaseSqlKeyHost, database: specs.DatabaseSqlKeyDatabase,
+		tls: specs.DatabaseSqlKeyTls, disabled: specs.DatabaseSqlTlsDisable,
+		credentials: specs.DatabaseSqlKeyCredentialsName,
+	},
+	specs.DatabaseTypeDocument: {
+		engine: specs.DatabaseDocumentKeyEngine, consensus: specs.DatabaseDocumentKeyConsensus, size: specs.DatabaseDocumentKeySize,
+		host: specs.DatabaseDocumentKeyHost, database: specs.DatabaseDocumentKeyDatabase,
+		tls: specs.DatabaseDocumentKeyTls, disabled: specs.DatabaseDocumentTlsDisable,
+		credentials: specs.DatabaseDocumentKeyCredentialsName,
+	},
+	specs.DatabaseTypeKv: {
+		engine: specs.DatabaseKvKeyEngine, consensus: specs.DatabaseKvKeyConsensus, size: specs.DatabaseKvKeySize,
+	},
+	specs.DatabaseTypeVector: {
+		engine: specs.DatabaseVectorKeyEngine, consensus: specs.DatabaseVectorKeyConsensus, size: specs.DatabaseVectorKeySize,
+		dimensions: specs.DatabaseVectorKeyDimensions, metric: specs.DatabaseVectorKeyMetric,
+	},
+}
 
 // Settings is every attribute path this adapter reads off a grant.
 //
@@ -651,36 +676,18 @@ const (
 // the state an author has to write a word to reach. node/settings_test.go walks
 // this list against the schema, and its own doc carries the post-mortem that test
 // came out of.
-//
-// IT IS WRITTEN PER MODEL because the vocabulary declares it per model, and the
-// reads above are not: they compose `<model>/<key>` for whichever model the grant
-// names, so `kv/host` is asked for and is a key `database` does not declare. That
-// costs nothing — an absent key is an empty string and tau's own engines want no
-// address, no credential and no tls — but it is why this list cannot be derived
-// from what the code asks for, and why only what IS declared is listed.
-var Settings = []string{
-	settingType,
-
-	// EVERY MODEL declares which engine serves it and how concurrent writes to
-	// one key are ordered.
-	"sql/" + settingEngine, "kv/" + settingEngine,
-	"document/" + settingEngine, "vector/" + settingEngine,
-	"sql/" + settingConsensus, "kv/" + settingConsensus,
-	"document/" + settingConsensus, "vector/" + settingConsensus,
-
-	// THE TWO THAT REACH A SERVER SOMEBODY ELSE RUNS carry where it is, which
-	// database on it, whether the connection is verified, and the secret to
-	// authenticate with. tau's own engines declare none of those, which is the
-	// whole difference between declaring a database and provisioning one.
-	"sql/" + settingHost, "sql/" + settingDatabase,
-	"sql/" + settingTLS, "sql/" + settingCredentials,
-	"document/" + settingHost, "document/" + settingDatabase,
-	"document/" + settingTLS, "document/" + settingCredentials,
-
-	// AND A WIDTH AND A METRIC ARE A VECTOR'S ALONE, which is why they travel as
-	// options rather than as fields on the Spec.
-	"vector/" + settingDimensions, "vector/" + settingMetric,
-}
+var Settings = func() []string {
+	out := []string{settingType}
+	for _, keys := range keysOf {
+		for _, key := range []string{keys.engine, keys.consensus, keys.size, keys.host, keys.database, keys.tls, keys.credentials, keys.dimensions, keys.metric} {
+			if key != "" {
+				out = append(out, key)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}()
 
 // credentials reads the secret the configuration referenced.
 //

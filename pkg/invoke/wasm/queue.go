@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -64,11 +66,11 @@ var (
 const (
 	// syncKind is the vocabulary's kind; queueType is the type under it that this
 	// interface serves.
-	syncKind  = "sync"
-	queueType = "queue"
+	syncKind  = specs.KindSync
+	queueType = specs.SyncTypeQueue
 
 	// settingSyncType is where the composer writes which primitive a grant names.
-	settingSyncType = "type"
+	settingSyncType = specs.SyncKeyType
 )
 
 // Queues sends to the queue a grant names.

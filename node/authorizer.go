@@ -53,8 +53,8 @@ import (
 // — the outward walk from the TARGET happens where the compiled project is
 // open, which is what services/worker's guardedBy states at more length.
 const (
-	settingAuthorizer      = "authorizer/name"
-	settingAuthorizerScope = "authorizer/namespace"
+	settingAuthorizer      = specs.AuthorizerKeyName
+	settingAuthorizerScope = specs.AuthorizerKeyNamespace
 )
 
 // authorizers asks a guard, once per caller and target.
@@ -96,7 +96,7 @@ func (a *authorizers) Ops(ctx context.Context, spec invoke.Spec, grant invoke.Gr
 		Project:     project,
 		Environment: environment,
 		Scope:       specs.ScopeOf(nil, grant.Settings[settingAuthorizerScope]),
-		Kind:        "function",
+		Kind:        specs.KindFunction,
 		Name:        name,
 	})
 	if err != nil {

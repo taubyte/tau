@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
@@ -155,20 +157,20 @@ const anthropicDefaultMaxTokens = 4096
 
 // providerRequest builds the body for one call.
 func providerRequest(format string, grant invoke.Grant, req *invoke.Inference) ([]byte, error) {
-	identifier := grant.Settings["identifier"]
+	identifier := grant.Settings[specs.ModelKeyIdentifier]
 	if identifier == "" {
 		return nil, fmt.Errorf("%w: it names no identifier", ErrNoEndpoint)
 	}
 
 	temperature := req.Temperature
 	if temperature == nil {
-		temperature = floatSetting(grant, "parameters/temperature")
+		temperature = floatSetting(grant, specs.ModelParametersKeyTemperature)
 	}
-	topP := floatSetting(grant, "parameters/top_p")
+	topP := floatSetting(grant, specs.ModelParametersKeyTopP)
 	stop := append(stopSetting(grant), req.Stop...)
 
 	switch format {
-	case "anthropic":
+	case specs.ModelFormatAnthropic:
 		system, turns := anthropicTurns(req.Messages)
 		max := anthropicDefaultMaxTokens
 		if req.MaxTokens != nil {
@@ -180,7 +182,7 @@ func providerRequest(format string, grant invoke.Grant, req *invoke.Inference) (
 			Tools: anthropicTools(req.Tools),
 		})
 
-	case "openai", "ollama", "":
+	case specs.ModelFormatOpenai, specs.ModelFormatOllama, "":
 		return json.Marshal(openaiRequest{
 			Model: identifier, Messages: turnsOf(req.Messages),
 			Temperature: temperature, TopP: topP, MaxTokens: req.MaxTokens, Stop: stop,
@@ -193,7 +195,7 @@ func providerRequest(format string, grant invoke.Grant, req *invoke.Inference) (
 // providerAnswer reads one back.
 func providerAnswer(format string, body []byte) (*invoke.Answer, error) {
 	switch format {
-	case "anthropic":
+	case specs.ModelFormatAnthropic:
 		var out anthropicAnswer
 		if err := json.Unmarshal(body, &out); err != nil {
 			return nil, fmt.Errorf("model: that provider's answer is not this format: %w", err)
@@ -222,7 +224,7 @@ func providerAnswer(format string, body []byte) (*invoke.Answer, error) {
 			Usage:      invoke.Usage{InputTokens: out.Usage.InputTokens, OutputTokens: out.Usage.OutputTokens},
 		}, nil
 
-	case "openai", "ollama", "":
+	case specs.ModelFormatOpenai, specs.ModelFormatOllama, "":
 		var out openaiAnswer
 		if err := json.Unmarshal(body, &out); err != nil {
 			return nil, fmt.Errorf("model: that provider's answer is not this format: %w", err)
@@ -380,7 +382,7 @@ func floatSetting(grant invoke.Grant, key string) *float64 {
 // stopSetting reads the list back out of the one key it travels in. The
 // separator is a newline for the reason modelSettings gives.
 func stopSetting(grant invoke.Grant) []string {
-	raw := grant.Settings["parameters/stop"]
+	raw := grant.Settings[specs.ModelParametersKeyStop]
 	if raw == "" {
 		return nil
 	}

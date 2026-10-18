@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -33,7 +35,7 @@ const (
 )
 
 // logType is the `sync` type this interface serves.
-const logType = "log"
+const logType = specs.SyncTypeLog
 
 // The error variant's cases, in the order the WIT declares them.
 const (

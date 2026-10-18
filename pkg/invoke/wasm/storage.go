@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -165,7 +167,7 @@ func WithStorage(b Buckets) Option {
 }
 
 // storageKind is the vocabulary's own name for the kind.
-const storageKind = "storage"
+const storageKind = specs.KindStorage
 
 // storageGrantsOf is every storage grant, whatever its type.
 //

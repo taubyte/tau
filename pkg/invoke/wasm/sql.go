@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -98,8 +100,8 @@ func WithSQL(d SQL) Option {
 }
 
 const (
-	databaseKind = "database"
-	sqlModel     = "sql"
+	databaseKind = specs.KindDatabase
+	sqlModel     = specs.DatabaseTypeSql
 )
 
 // sqlGrantsOf is the database grants whose data model is SQL.
@@ -111,7 +113,7 @@ const (
 func sqlGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for _, g := range spec.Reaches {
-		if g.Kind != databaseKind || g.Settings["type"] != sqlModel {
+		if g.Kind != databaseKind || g.Settings[specs.DatabaseKeyType] != sqlModel {
 			continue
 		}
 		if out == nil {

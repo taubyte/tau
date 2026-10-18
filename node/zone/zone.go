@@ -182,7 +182,7 @@ func (z *Zones) Resolve(ctx context.Context, q invoke.Question) (*invoke.Resolut
 		Project:     at.project,
 		Environment: at.environment,
 		Scope:       specs.ScopeOf(nil, at.zone.Resolver.Namespace),
-		Kind:        "function",
+		Kind:        specs.KindFunction,
 		Name:        at.zone.Resolver.Name,
 	})
 	if err != nil {

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -28,7 +30,7 @@ import (
 // them.
 
 // WorldDNSResolver is `implements: dns-resolver`.
-const WorldDNSResolver = "dns-resolver"
+const WorldDNSResolver = specs.WorkloadBlockImplementsDnsResolver
 
 const resolveExport = "resolve"
 

@@ -51,7 +51,7 @@ const branchRef = "refs/heads/"
 
 // buildTime is what a variable's `at` says when it belongs to the build rather
 // than to the workload.
-const buildTime = "build"
+const buildTime = specs.VariablesEntryAtBuild
 
 var (
 	// ErrNeverDeployed is a code push for a project whose configuration has

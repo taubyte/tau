@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -50,7 +52,7 @@ var (
 	ErrNotSet = errors.New("wasm: nothing is set under that name")
 )
 
-const secretKind = "secret"
+const secretKind = specs.KindSecret
 
 // Secrets reads the value a grant names.
 //

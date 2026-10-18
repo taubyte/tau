@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -27,7 +29,7 @@ import (
 // trade transformer.go and router.go make.
 
 // WorldProxyRouter is `implements: proxy-router`.
-const WorldProxyRouter = "proxy-router"
+const WorldProxyRouter = specs.WorkloadBlockImplementsProxyRouter
 
 // directExport is fixed: a proxy names the function, not an export inside it.
 const directExport = "route"
