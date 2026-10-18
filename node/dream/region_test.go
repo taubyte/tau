@@ -5,8 +5,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 )
@@ -22,26 +20,16 @@ import (
 // fleet is one unnamed region, which is exactly the shape that hid the sentinel
 // bug in services/database.
 func TestAUniverseSpreadsItsNodesAcrossRegions(t *testing.T) {
-	m, err := dream.New(t.Context())
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		// FOUR NODES, so a spread is observable rather than asserted about one.
+		Services: []string{node.Register, node.Stats},
+		Regions:  []string{"eu", "us"},
+		Copies:   4,
+	})
 	require.NoError(t, err)
-	defer m.Close()
+	defer u.Close()
 
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			// FOUR NODES, so a spread is observable rather than asserted about one.
-			nodeDream.Protocol: {Others: func() map[string]int {
-				bag := nodeDream.Services(node.Register, node.Stats).In("eu", "us")
-				bag["copies"] = 4
-				return bag
-			}()},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
+	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
 	require.Len(t, pids, 4)
@@ -82,21 +70,13 @@ func TestAUniverseSpreadsItsNodesAcrossRegions(t *testing.T) {
 // TestANodeInNoRegionIsTheDefault, which is every test that is not about
 // placement — and what a single-region cloud is.
 func TestAUniverseThatNamesNoRegionHasNone(t *testing.T) {
-	m, err := dream.New(t.Context())
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Services: []string{node.Register, node.Stats},
+	})
 	require.NoError(t, err)
-	defer m.Close()
+	defer u.Close()
 
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: nodeDream.Services(node.Register, node.Stats)},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
+	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
 	n, running := nodeDream.Node(pids[0])

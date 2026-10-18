@@ -10,8 +10,7 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
-	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/p2p/mesh"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/services/register"
@@ -31,24 +30,19 @@ import (
 // pointer read back over the wire from the OTHER. Nothing is faked but the
 // universe — real hosts, real gossipsub, real CRDT, the same code a node runs.
 func TestAPublishOnOneNodeResolvesOnAnother(t *testing.T) {
-	m, err := dream.New(t.Context())
+	m, err := mesh.New(t.Context(), t.Name())
 	require.NoError(t, err)
 	defer m.Close()
 
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			registerDream.Protocol: {Others: map[string]int{"copies": 2}},
-		},
-	}))
-
-	pids, err := u.GetServicePids(registerDream.Protocol)
-	require.NoError(t, err)
+	var pids []string
+	for range 2 {
+		node, err := registerDream.Start(m)
+		require.NoError(t, err)
+		pids = append(pids, node.ID().String())
+	}
 	require.Len(t, pids, 2, "two register nodes, so replication is a thing that can be observed")
 
-	nodes := nodesByID(u)
+	nodes := nodesByID(m)
 	a, b := pids[0], pids[1]
 
 	// Each node's host dials the other's, so every call below genuinely
@@ -84,9 +78,9 @@ func TestAPublishOnOneNodeResolvesOnAnother(t *testing.T) {
 	require.Equal(t, []byte("memory: 64MB"), obj.Msg.GetCompiled())
 }
 
-func nodesByID(u *dream.Universe) map[string]peer.Node {
+func nodesByID(m *mesh.Mesh) map[string]peer.Node {
 	out := map[string]peer.Node{}
-	for _, n := range u.Peers() {
+	for _, n := range m.Peers() {
 		out[n.ID().String()] = n
 	}
 	return out

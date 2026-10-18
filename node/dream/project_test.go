@@ -17,8 +17,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/fleet"
@@ -382,20 +380,11 @@ func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][
 func deployServing(t *testing.T, name, host string, wasm []byte, extra map[string][]byte, services ...string) *running {
 	t.Helper()
 
-	m, err := dream.New(t.Context())
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: services})
 	require.NoError(t, err)
-	t.Cleanup(func() { m.Close() })
+	t.Cleanup(u.Close)
 
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: nodeDream.Services(services...)},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
+	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
 	store, ok := nodeDream.Assets(pids[0])
@@ -885,7 +874,7 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 		"databases/shop/prod/kv/" + sessions + "/broadcast":   false,
 		"databases/market/prod/kv/" + sessions + "/broadcast": false,
 	}
-	for _, n := range u.dream.All() {
+	for _, n := range u.dream.Peers() {
 		for _, topic := range n.Messaging().GetTopics() {
 			if !strings.HasPrefix(topic, "databases/") {
 				continue
@@ -1019,7 +1008,7 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 		domain + "/shop/prod/kv/" + ledger:   false,
 		domain + "/market/prod/kv/" + ledger: false,
 	}
-	for _, peer := range u.dream.All() {
+	for _, peer := range u.dream.Peers() {
 		for _, id := range peer.Peer().Mux().Protocols() {
 			namespace, isRaft := strings.CutPrefix(string(id), raft.ProtocolRaftPrefix)
 			if !isRaft || !strings.HasPrefix(namespace, domain+"/") {
@@ -1062,7 +1051,7 @@ func deployFleetWith(t *testing.T, copies int, name, host string, wasm []byte, e
 // universe is what deployFleetOf leaves running: dream's own handle on the
 // fleet, and one view of that fleet per project published into it.
 type universe struct {
-	dream  *dream.Universe
+	dream  *nodeDream.Universe
 	fleets [][]*running
 }
 
@@ -1076,29 +1065,20 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 	t.Helper()
 	require.NotEmpty(t, projects, "a universe with nothing published in it proves nothing")
 
-	m, err := dream.New(t.Context())
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Services: []string{
+			node.Register, node.Worker, node.Stats, node.Gateway,
+			node.Database, node.Primitives},
+		// ONE REGION, NAMED, because the project pins its state to it and a
+		// node that cannot say where it is competes for nothing anybody
+		// pinned.
+		Regions: []string{"eu"},
+		Copies:  copies,
+	})
 	require.NoError(t, err)
-	t.Cleanup(func() { m.Close() })
+	t.Cleanup(u.Close)
 
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: func() map[string]int {
-				// ONE REGION, NAMED, because the project pins its state to it
-				// and a node that cannot say where it is competes for nothing
-				// anybody pinned.
-				bag := nodeDream.Services(
-					node.Register, node.Worker, node.Stats, node.Gateway,
-					node.Database, node.Primitives).In("eu")
-				bag["copies"] = copies
-				return bag
-			}()},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
+	pids := u.Pids()
 	require.Len(t, pids, copies)
 
 	nodes := make([]*node.Node, 0, copies)

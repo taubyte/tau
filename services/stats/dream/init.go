@@ -1,4 +1,4 @@
-// Package dream makes the stats service available inside a dream universe.
+// Package dream runs the stats service on a peer of an in-process mesh.
 //
 // It is the first v2 service to run under dream, and it is what makes "parity"
 // a thing that can be tested rather than asserted: the service that runs here is
@@ -12,27 +12,31 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/host"
 
-	iface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
-	dreamv2 "github.com/taubyte/tau/dream/v2"
+	"github.com/taubyte/tau/p2p/mesh"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/stats"
 )
 
-// Protocol is what a universe calls this service.
-const Protocol = "stats"
-
-func init() {
-	if err := dreamv2.Register(Protocol, create); err != nil {
-		panic(err)
+// Start runs a stats service on a new peer of m, and answers the peer. The service is
+// closed with the mesh, before its peer.
+func Start(m *mesh.Mesh) (peer.Node, error) {
+	node, err := m.Add()
+	if err != nil {
+		return nil, err
 	}
+	svc, err := create(m.Context(), node.Peer(), node, m.Name())
+	if err != nil {
+		return nil, err
+	}
+	m.OnClose(svc)
+	return node, nil
 }
 
-func create(ctx context.Context, h host.Host, node peer.Node, u *dream.Universe, cfg *iface.ServiceConfig) (io.Closer, error) {
+func create(ctx context.Context, h host.Host, node peer.Node, scope string) (io.Closer, error) {
 	// The bus is built from the node's own pubsub, scoped to this universe:
 	// two universes on one machine must not pool their load figures and route
 	// each other's traffic.
-	bus, err := stats.NewBus(node.Messaging(), u.Name())
+	bus, err := stats.NewBus(node.Messaging(), scope)
 	if err != nil {
 		return nil, err
 	}

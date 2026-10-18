@@ -12,8 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/invoke"
@@ -37,24 +35,16 @@ func TestAFleetServesARequestEndToEnd(t *testing.T) {
 	recorder := &recordingTier{name: "wasm"}
 	defer nodeDream.Runtimes(nodeDream.Runtimes(recorder)...)
 
-	m, err := dream.New(t.Context())
-	require.NoError(t, err)
-	defer m.Close()
-
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-
 	// THREE NODES, EACH RUNNING ONE THING. Nothing here can answer its own
 	// question: the gateway runs no worker and no register, the worker runs no
 	// register, and the register serves neither.
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: nodeDream.Services(node.Register, node.Stats)},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Services: []string{node.Register, node.Stats},
+	})
 	require.NoError(t, err)
+	defer u.Close()
+
+	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
 	registry := nodeOf(t, pids[0])
@@ -81,24 +71,14 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 	recorder := &recordingTier{name: "wasm"}
 	defer nodeDream.Runtimes(nodeDream.Runtimes(recorder)...)
 
-	m, err := dream.New(t.Context())
-	require.NoError(t, err)
-	defer m.Close()
-
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-
 	// TWO NODES OF ONE SHAPE is all a universe can express in one config, so
 	// both run everything — and what is proven is that the gateway on one
 	// reaches a worker, wherever placement decides it is.
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: map[string]int{"copies": 2}},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Copies: 2})
 	require.NoError(t, err)
+	defer u.Close()
+
+	pids := u.Pids()
 	require.Len(t, pids, 2)
 
 	edge, compute := nodeOf(t, pids[0]), nodeOf(t, pids[1])

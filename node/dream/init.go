@@ -1,4 +1,5 @@
-// Package dream runs a whole v2 node inside a dream universe.
+// Package dream runs a fleet of whole v2 nodes inside one process: v2's
+// end-to-end test harness.
 //
 // # Why the node and not each service
 //
@@ -9,15 +10,18 @@
 // properties of how the pieces are wired, and the only way to test wiring is to
 // wire it.
 //
-// So this registers ONE service that is a whole node, and a universe of them is
-// a fleet. Which services each node runs comes from the universe's own config,
-// so a test writes the shape it wants to prove.
+// So a universe here is N whole nodes, each on its own libp2p peer, meshed on
+// loopback (p2p/mesh). Which services each node runs comes from the universe's
+// Config, so a test writes the shape it wants to prove.
+//
+// IT USED TO BE A SERVICE REGISTERED WITH v1's dream, and that is why it is not
+// any more: dream's universe is built around v1's service registry and clients,
+// so every v2 test binary that wanted a mesh linked all of v1.
 package dream
 
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,12 +31,8 @@ import (
 
 	"github.com/taubyte/tau/node/boot"
 
-	"github.com/libp2p/go-libp2p/core/host"
-
-	iface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
-	dreamv2 "github.com/taubyte/tau/dream/v2"
 	"github.com/taubyte/tau/node"
+	"github.com/taubyte/tau/p2p/mesh"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/invoke"
@@ -41,42 +41,12 @@ import (
 	"github.com/taubyte/tau/services/stats"
 )
 
-// Protocol is what a universe calls a v2 node.
-const Protocol = "tau"
-
-// servicePrefix marks an entry in the universe config's `Others` bag as one of
-// the services this node should run: `svc:register`, `svc:worker`.
-//
-// IT IS `Others` AND NOT `Root`, which is the node's data directory — dream
-// hands it to tauConfig.NewNode, so putting anything else there would move
-// where a node keeps its state. `Others` is the per-service bag dream already
-// carries and `copies` is the only key anything else reads.
-const servicePrefix = "svc:"
-
-// regionPrefix marks the universe config entry naming the region a node is in:
-// `region:eu`.
-//
-// A KEY AND NOT A VALUE, because `Others` is a map[string]int and a region is a
-// label rather than a number — the same reason the service list is spelled as
-// keys. A node with no such entry is in no region, which is what a single-region
-// universe wants and what every test that is not about placement gets.
-const regionPrefix = "region:"
-
-// containerPrefix marks the universe config entry naming the container daemon
-// its nodes run workloads on: `container:docker`.
-//
-// A UNIVERSE HAS NONE UNLESS IT ASKS, because a daemon is a property of the
-// machine running the test and most of them have none. A node without one runs
-// wasm and static sites and refuses a container workload by name; a universe
-// that names one builds the same tier a machine's config builds (node/container.go).
-const containerPrefix = "container:"
-
 // runtimes are the tiers nodes in this process run on.
 //
-// A COMPUTE TIER IS A LIVE OBJECT and dream's registry hands a service a
-// universe and a yaml-shaped config, which is neither. A composer that has one
-// sets it before starting a universe; a test that wants to see what a node
-// asked to start supplies a recorder.
+// A COMPUTE TIER IS A LIVE OBJECT shared by every node a test starts, so it is
+// set for the process rather than per universe. A composer that has one sets it
+// before starting a universe; a test that wants to see what a node asked to
+// start supplies a recorder.
 var runtimes struct {
 	sync.Mutex
 	list []invoke.Runtime
@@ -95,9 +65,8 @@ func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
 // clock is what nodes in this process believe the time is.
 //
 // IT IS SET THE WAY runtimes IS, and for the same reason: a clock is a live
-// object and dream's registry hands a service a universe and a yaml-shaped
-// config, which is neither. Unset means the wall clock, which is what a machine
-// has.
+// object shared by every node. Unset means the wall clock, which is what a
+// machine has.
 //
 // WHY A UNIVERSE WANTS ONE: anything a node does on a schedule — a cron slot, a
 // deploy budget expiring, a volume checkpoint coming due — otherwise has to be
@@ -121,10 +90,10 @@ func Clock(now func() time.Time) func() time.Time {
 
 // built is every node this process is running, by peer id, so a test can reach
 // one. Nothing in production reads it.
-var built struct {
+var built = struct {
 	sync.Mutex
 	byPeer map[string]running
-}
+}{byPeer: map[string]running{}}
 
 type running struct {
 	node      *node.Node
@@ -229,13 +198,6 @@ func Artifacts(peerID string) (*Built, bool) {
 	defer built.Unlock()
 	r, ok := built.byPeer[peerID]
 	return r.artifacts, ok
-}
-
-func init() {
-	built.byPeer = map[string]running{}
-	if err := dreamv2.Register(Protocol, create); err != nil {
-		panic(err)
-	}
 }
 
 // A DREAM FLEET IS ONE PROCESS ON LOOPBACK, AND raft.DefaultTimeoutConfig IS
@@ -344,7 +306,81 @@ var dreamTimeouts = raft.TimeoutConfig{
 	SnapshotThreshold:  raft.DefaultTimeoutConfig.SnapshotThreshold,
 }
 
-func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cfg *iface.ServiceConfig) (io.Closer, error) {
+// Config is the shape of a universe: how many nodes, and what each runs and
+// where it is.
+type Config struct {
+	// Services each node runs. None named means all of them, which is what
+	// node.Config already says an empty list means.
+	Services []string
+
+	// Copies is how many nodes. Zero is one.
+	Copies int
+
+	// Regions the nodes are spread across — see regionOf. None is a node in
+	// no region, which is what a single-region universe wants and what every
+	// test that is not about placement gets.
+	Regions []string
+
+	// Container is the daemon the nodes run container workloads on —
+	// node.BackendDocker or node.BackendContainerd — the way a machine's
+	// config names one.
+	//
+	// A UNIVERSE HAS NONE UNLESS IT ASKS, because a daemon is a property of
+	// the machine running the test and most of them have none. A node without
+	// one runs wasm and static sites and refuses a container workload by name;
+	// a universe that names one builds the same tier a machine's config builds
+	// (node/container.go).
+	Container string
+}
+
+// Universe is a running fleet of nodes.
+type Universe struct {
+	mesh *mesh.Mesh
+	pids []string
+}
+
+// Start runs a universe of cfg.Copies nodes, one after another, each meshed
+// with the ones before it. A node that fails to start closes whatever was
+// already running and is the error.
+func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
+	m, err := mesh.New(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	u := &Universe{mesh: m}
+	copies := max(cfg.Copies, 1)
+	for index := range copies {
+		p, err := m.Add()
+		if err != nil {
+			u.Close()
+			return nil, err
+		}
+		if err := create(m, p, cfg, index); err != nil {
+			u.Close()
+			return nil, fmt.Errorf("dream: node %d: %w", index, err)
+		}
+		u.pids = append(u.pids, p.ID().String())
+	}
+	return u, nil
+}
+
+// Name is the universe's name, which is also the cloud its nodes are in.
+func (u *Universe) Name() string { return u.mesh.Name() }
+
+// Pids are the nodes' peer ids, in the order they started.
+func (u *Universe) Pids() []string { return append([]string(nil), u.pids...) }
+
+// Peers are the nodes' libp2p peers, in the order they started.
+func (u *Universe) Peers() []peer.Node { return u.mesh.Peers() }
+
+// Close stops every node, then their peers.
+func (u *Universe) Close() { u.mesh.Close() }
+
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int) error {
+	ctx := m.Context()
+	h := p.Peer()
+
 	runtimes.Lock()
 	tiers := append([]invoke.Runtime(nil), runtimes.list...)
 	runtimes.Unlock()
@@ -363,19 +399,19 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 
 	store, err := assets.New(p)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// THE SEAM A CLOUD FILLS WITH ITS BUILD SERVICE. A universe runs none, so it
 	// is filled by whoever staged the components — see Built.
 	staged := &Built{}
 
-	// A DIRECTORY PER PEER, under the universe's own temporary root, so two
-	// nodes in one universe do not share a volume by accident — which would
-	// make a test of "the bytes moved" pass without anything moving.
+	// A DIRECTORY PER PEER, so two nodes in one universe do not share a volume
+	// by accident — which would make a test of "the bytes moved" pass without
+	// anything moving.
 	root, err := os.MkdirTemp("", "tau-node-"+h.ID().ShortString()+"-")
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// A UNIVERSE CANNOT HAVE :53, AND SHOULD NOT WANT IT. The default is the
@@ -384,29 +420,31 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 	// answering on the machine's own resolver port would be answering for the
 	// developer running it. So every node here takes an ephemeral loopback
 	// port, which is also what makes a FLEET of them possible: two nodes
-	// cannot share one port, and :0 is how dream allocates every other one.
-	container, err := containerIn(cfg)
-	if err != nil {
-		return nil, err
+	// cannot share one port, and :0 is how every other one is allocated.
+	nodeConfig := node.Config{
+		Services:  append([]string(nil), cfg.Services...),
+		Cloud:     m.Name(),
+		Region:    regionOf(cfg.Regions, index),
+		Container: node.ContainerConfig{Backend: cfg.Container},
 	}
-	nodeConfig := node.Config{Services: servicesIn(cfg), Cloud: u.Name(), Region: regionIn(cfg), Container: container}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Stats.Stabilize = dreamStabilize
 
-	engines, err := boot.DatabaseEngines(u.Context())
+	engines, err := boot.DatabaseEngines(ctx)
 	if err != nil {
-		return nil, err
+		os.RemoveAll(root)
+		return err
 	}
 
 	options := []node.Option{
 		node.WithHost(h),
 		node.WithPubSub(p.Messaging()),
 		node.WithDatabases(kvdb.New(p)),
-		// THE SAME RAFT A MACHINE OPENS, over the universe's own peer. dream is
-		// not a machine but it does have a peer.Node, which is the whole of
-		// what raft.New wants — so parity here is the real thing rather than a
-		// stand-in, and a build queue in a universe replicates the way it does
-		// in a fleet.
+		// THE SAME RAFT A MACHINE OPENS, over the universe's own peer. A
+		// universe is not a machine but it does have a peer.Node, which is the
+		// whole of what raft.New wants — so parity here is the real thing
+		// rather than a stand-in, and a build queue in a universe replicates
+		// the way it does in a fleet.
 		node.WithRaft(func(namespace string) (raft.Cluster, error) {
 			// SNAPSHOTS GO UNDER THIS NODE'S OWN ROOT. The default is a
 			// machine-wide /tmp path keyed by namespace alone, so two nodes
@@ -433,11 +471,13 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 
 	n, err := node.New(nodeConfig, options...)
 	if err != nil {
-		return nil, err
+		os.RemoveAll(root)
+		return err
 	}
 	if err := n.Start(ctx); err != nil {
 		n.Close()
-		return nil, err
+		os.RemoveAll(root)
+		return err
 	}
 
 	id := h.ID().String()
@@ -445,33 +485,12 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 	built.byPeer[id] = running{node: n, assets: store, artifacts: staged}
 	built.Unlock()
 
-	return closer{id: id, node: n, root: root}, nil
+	m.OnClose(closer{id: id, node: n, root: root})
+	return nil
 }
 
-// servicesIn reads the services a node runs out of the universe's config. None
-// named means all of them, which is what node.Config already says an empty list
-// means.
-func servicesIn(cfg *iface.ServiceConfig) []string {
-	if cfg == nil {
-		return nil
-	}
-
-	var out []string
-	for key := range cfg.Others {
-		if name, ok := strings.CutPrefix(key, servicePrefix); ok && name != "" {
-			out = append(out, name)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// regionIn is the region THIS node is in, out of the regions the universe
-// declares.
-//
-// A UNIVERSE EXPRESSES ONE NODE SHAPE. `copies: 4` is four nodes from one
-// config, so a fleet spread over two regions cannot be written as two configs —
-// the universe declares the regions and each node takes one.
+// regionOf is the region the index-th node is in, out of the regions the
+// universe declares.
 //
 // WHICH ONE IS THE COPY INDEX, round-robin over the regions in name order.
 //
@@ -479,27 +498,19 @@ func servicesIn(cfg *iface.ServiceConfig) []string {
 // and is "reproducible: the same universe puts the same peer in the same region
 // every run". Neither held. HRW spreads evenly in expectation ACROSS MANY KEYS,
 // and four nodes over two regions is not many: each node is an independent coin
-// flip, so all four land together 2*(1/2)^4 = ONE RUN IN EIGHT. And dream mints
-// a fresh peer id per run, so "the same peer every run" described a peer that
-// never came back -- the assignment was re-rolled each time, and a spread the
-// placement tests depend on was a 12.5% flake with a real failure behind it.
+// flip, so all four land together 2*(1/2)^4 = ONE RUN IN EIGHT. And a universe
+// mints a fresh peer id per run, so "the same peer every run" described a peer
+// that never came back -- the assignment was re-rolled each time, and a spread
+// the placement tests depend on was a 12.5% flake with a real failure behind
+// it.
 //
-// The copy index is what dream has and HRW was working around: `copies: 4` is
-// four nodes from one config, and dream already counts them to name their
-// directories. Round-robin over it spreads by construction rather than by
-// expectation, and the regions are sorted so the mapping does not depend on a
-// map's iteration order either.
-//
-// No region declared is a node in no region, which is what a single-region
-// universe wants and what every test not about placement gets.
-func regionIn(cfg *iface.ServiceConfig) string {
-	if cfg == nil {
-		return ""
-	}
-
+// Round-robin over the copy index spreads by construction rather than by
+// expectation, and the regions are sorted so the mapping does not depend on the
+// order a test happened to list them in.
+func regionOf(regions []string, index int) string {
 	var declared []string
-	for key := range cfg.Others {
-		if name, ok := strings.CutPrefix(key, regionPrefix); ok && name != "" {
+	for _, name := range regions {
+		if name != "" {
 			declared = append(declared, name)
 		}
 	}
@@ -507,70 +518,7 @@ func regionIn(cfg *iface.ServiceConfig) string {
 		return ""
 	}
 	sort.Strings(declared)
-	return declared[cfg.Others[dream.CopyKey]%len(declared)]
-}
-
-// containerIn is the container tier a universe's nodes run, if it named one.
-//
-// AT MOST ONE, because a node has one container tier: two names would be a
-// choice nothing here could make honestly.
-func containerIn(cfg *iface.ServiceConfig) (node.ContainerConfig, error) {
-	if cfg == nil {
-		return node.ContainerConfig{}, nil
-	}
-
-	var named []string
-	for key := range cfg.Others {
-		if backend, ok := strings.CutPrefix(key, containerPrefix); ok && backend != "" {
-			named = append(named, backend)
-		}
-	}
-	switch len(named) {
-	case 0:
-		return node.ContainerConfig{}, nil
-	case 1:
-		return node.ContainerConfig{Backend: named[0]}, nil
-	}
-	sort.Strings(named)
-	return node.ContainerConfig{}, fmt.Errorf("dream: a node runs one container tier, and this universe names %v", named)
-}
-
-// Bag is a universe config's per-service map, which is where a node reads what
-// it runs and where it is.
-type Bag map[string]int
-
-// In spreads this universe's nodes across the named regions. Every node reads
-// the same list and takes one of them — see regionIn.
-//
-//	Others: nodeDream.Services(node.Register, node.Stats).In("eu", "us")
-func (b Bag) In(regions ...string) Bag {
-	for _, region := range regions {
-		if region != "" {
-			b[regionPrefix+region] = 1
-		}
-	}
-	return b
-}
-
-// Containers runs this universe's container workloads on the named daemon —
-// node.BackendDocker or node.BackendContainerd — the way a machine's config does.
-//
-//	Others: nodeDream.Services(node.Worker, node.Gateway).Containers(node.BackendDocker)
-func (b Bag) Containers(backend string) Bag {
-	b[containerPrefix+backend] = 1
-	return b
-}
-
-// Services renders a services list into the config bag create reads it from.
-// Merge it with whatever else the universe config carries.
-//
-//	Others: nodeDream.Services(node.Register, node.Stats)
-func Services(names ...string) Bag {
-	out := Bag{}
-	for _, name := range names {
-		out[servicePrefix+name] = 1
-	}
-	return out
+	return declared[index%len(declared)]
 }
 
 type closer struct {

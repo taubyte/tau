@@ -13,8 +13,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/specs"
@@ -37,22 +35,14 @@ import (
 // that skipped here would print `ok` having started nothing — the exact silence
 // this file exists to end.
 func TestAnApplicationAnswersThroughTheGateway(t *testing.T) {
-	m, err := dream.New(t.Context())
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Services:  []string{node.Register, node.Worker, node.Stats, node.Gateway},
+		Container: node.BackendDocker,
+	})
 	require.NoError(t, err)
-	t.Cleanup(func() { m.Close() })
+	t.Cleanup(u.Close)
 
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: nodeDream.Services(
-				node.Register, node.Worker, node.Stats, node.Gateway,
-			).Containers(node.BackendDocker)},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
+	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
 	// NOTHING IS STAGED: the image is the artifact, named in the document.

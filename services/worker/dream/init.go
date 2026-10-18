@@ -1,4 +1,4 @@
-// Package dream makes the worker available inside a dream universe.
+// Package dream runs the worker on a peer of an in-process mesh.
 //
 // # What a universe can and cannot prove about a worker
 //
@@ -18,34 +18,26 @@ package dream
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"sync"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
-	iface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
-	dreamv2 "github.com/taubyte/tau/dream/v2"
+	"github.com/taubyte/tau/p2p/mesh"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/register"
 	registerService "github.com/taubyte/tau/services/register"
-	registerDream "github.com/taubyte/tau/services/register/dream"
 	"github.com/taubyte/tau/services/worker"
 )
 
-// Protocol is what a universe calls this service.
-const Protocol = "worker"
-
 // runtimes are the tiers a universe's workers run on.
 //
-// IT IS A PACKAGE-LEVEL HOOK AND THAT IS NOT AN ACCIDENT. dream's registry
-// hands a service a universe and a yaml-shaped config, and a compute tier is
-// neither — it is a live object holding a connection to a container daemon. A
-// composer that has one sets it before starting a universe; a test that does
-// not, does not.
+// IT IS A PACKAGE-LEVEL HOOK AND THAT IS NOT AN ACCIDENT. A compute tier is a
+// live object holding a connection to a container daemon, shared by every
+// worker a test starts. A composer that has one sets it before starting a
+// universe; a test that does not, does not.
 var runtimes struct {
 	sync.Mutex
 	list []invoke.Runtime
@@ -62,13 +54,23 @@ func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
 	return was
 }
 
-func init() {
-	if err := dreamv2.Register(Protocol, create); err != nil {
-		panic(err)
+// Start runs a worker on a new peer of m, reading projects from the register on
+// the peer named, and answers the peer. The worker is closed with the mesh,
+// before its peer.
+func Start(m *mesh.Mesh, registerAt libp2ppeer.ID) (peer.Node, error) {
+	node, err := m.Add()
+	if err != nil {
+		return nil, err
 	}
+	svc, err := create(m.Context(), node.Peer(), registerAt)
+	if err != nil {
+		return nil, err
+	}
+	m.OnClose(svc)
+	return node, nil
 }
 
-func create(ctx context.Context, h host.Host, _ peer.Node, u *dream.Universe, _ *iface.ServiceConfig) (io.Closer, error) {
+func create(ctx context.Context, h host.Host, at libp2ppeer.ID) (io.Closer, error) {
 	runtimes.Lock()
 	tiers := append([]invoke.Runtime(nil), runtimes.list...)
 	runtimes.Unlock()
@@ -88,7 +90,7 @@ func create(ctx context.Context, h host.Host, _ peer.Node, u *dream.Universe, _ 
 	}
 
 	svc, err := worker.New(h, worker.Config{},
-		worker.WithRegister(&universeRegister{host: h, universe: u}),
+		worker.WithRegister(&universeRegister{host: h, at: at}),
 		worker.WithPool(pool))
 	if err != nil {
 		pool.Close()
@@ -118,19 +120,16 @@ func (c closer) Close() error {
 	return err
 }
 
-// universeRegister finds a register node in the universe and reads from it.
+// universeRegister reads from the register on one named peer.
 //
-// IT LOOKS THE PEER UP PER CALL RATHER THAN AT CONSTRUCTION, because dream
-// starts every service concurrently and a worker built before the register
-// would have nothing to dial. That is also how a fleet works: which register
-// node answers is a routing question, not a wiring one.
+// IT DIALS ON FIRST USE RATHER THAN AT CONSTRUCTION, so a worker can be up
+// before its register answers; the client is kept once it is made.
 type universeRegister struct {
-	host     host.Host
-	universe *dream.Universe
+	host host.Host
+	at   libp2ppeer.ID
 
 	mu     sync.Mutex
 	client *registerService.Client
-	at     libp2ppeer.ID
 }
 
 func (r *universeRegister) Resolve(ctx context.Context, project, environment string) (register.Pointer, error) {
@@ -150,30 +149,17 @@ func (r *universeRegister) Object(ctx context.Context, id register.ObjectID) ([]
 }
 
 func (r *universeRegister) dial() (*registerService.Client, error) {
-	pids, err := r.universe.GetServicePids(registerDream.Protocol)
-	if err != nil || len(pids) == 0 {
-		return nil, fmt.Errorf("worker/dream: no register in this universe: %w", err)
-	}
-
-	id, err := libp2ppeer.Decode(pids[0])
-	if err != nil {
-		return nil, err
-	}
-
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.client != nil && r.at == id {
+	if r.client != nil {
 		return r.client, nil
 	}
-	if r.client != nil {
-		r.client.Close()
-	}
 
-	c, err := registerService.NewClient(r.host, id)
+	c, err := registerService.NewClient(r.host, r.at)
 	if err != nil {
 		return nil, err
 	}
-	r.client, r.at = c, id
+	r.client = c
 	return c, nil
 }
 

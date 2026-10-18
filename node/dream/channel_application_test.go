@@ -12,8 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 )
@@ -34,21 +32,13 @@ import (
 //
 // It runs under `make test-application`, for application_test's reason.
 func TestAChannelServedByAContainerDeliversToItsNamedPort(t *testing.T) {
-	m, err := dream.New(t.Context())
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Services:  []string{node.Register, node.Worker, node.Stats},
+		Container: node.BackendDocker,
+	})
 	require.NoError(t, err)
-	t.Cleanup(func() { m.Close() })
-
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: nodeDream.Services(
-				node.Register, node.Worker, node.Stats,
-			).Containers(node.BackendDocker)},
-		},
-	}))
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
 	store, ok := nodeDream.Assets(pids[0])

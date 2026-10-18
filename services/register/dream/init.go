@@ -1,4 +1,4 @@
-// Package dream makes the register available inside a dream universe.
+// Package dream runs the register on a peer of an in-process mesh.
 //
 // The store is a real replicated kvdb, not a map, because the interesting
 // question a universe can answer about a register is the one a map cannot:
@@ -12,16 +12,14 @@ import (
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/host"
 
-	iface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
-	dreamv2 "github.com/taubyte/tau/dream/v2"
+	"github.com/taubyte/tau/p2p/mesh"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/services/register"
 )
 
-// Protocol is what a universe calls this service.
-const Protocol = "register"
+// name is the register's kvdb.
+const name = "register"
 
 // rebroadcastSeconds is how often the CRDT under the store re-announces its
 // heads. Five is what every other kvdb in this repo uses; the register has no
@@ -30,14 +28,23 @@ const rebroadcastSeconds = 5
 
 var logger = log.Logger("tau.register.dream")
 
-func init() {
-	if err := dreamv2.Register(Protocol, create); err != nil {
-		panic(err)
+// Start runs a register on a new peer of m, and answers the peer. The service is
+// closed with the mesh, before its peer.
+func Start(m *mesh.Mesh) (peer.Node, error) {
+	node, err := m.Add()
+	if err != nil {
+		return nil, err
 	}
+	svc, err := create(m.Context(), node.Peer(), node)
+	if err != nil {
+		return nil, err
+	}
+	m.OnClose(svc)
+	return node, nil
 }
 
-func create(ctx context.Context, h host.Host, node peer.Node, _ *dream.Universe, _ *iface.ServiceConfig) (io.Closer, error) {
-	db, err := kvdb.New(node).New(logger, Protocol, rebroadcastSeconds)
+func create(ctx context.Context, h host.Host, node peer.Node) (io.Closer, error) {
+	db, err := kvdb.New(node).New(logger, name, rebroadcastSeconds)
 	if err != nil {
 		return nil, err
 	}

@@ -12,8 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -55,21 +53,13 @@ func pickerWASM(t *testing.T) []byte {
 func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	m, err := dream.New(t.Context())
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Services: []string{node.Register, node.Worker, node.Stats, node.Gateway},
+	})
 	require.NoError(t, err)
-	defer m.Close()
+	defer u.Close()
 
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	require.NoError(t, err)
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			nodeDream.Protocol: {Others: nodeDream.Services(
-				node.Register, node.Worker, node.Stats, node.Gateway)},
-		},
-	}))
-
-	pids, err := u.GetServicePids(nodeDream.Protocol)
-	require.NoError(t, err)
+	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
 	n := nodeOf(t, pids[0])

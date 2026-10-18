@@ -13,8 +13,7 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
-	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/p2p/mesh"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
@@ -46,29 +45,19 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	recorder := &recordingTier{name: "container"}
 	defer workerDream.Runtimes(workerDream.Runtimes(recorder)...)
 
-	m, err := dream.New(t.Context())
+	m, err := mesh.New(t.Context(), t.Name())
 	require.NoError(t, err)
 	defer m.Close()
 
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	registerNode, err := registerDream.Start(m)
+	require.NoError(t, err)
+	workerNode, err := workerDream.Start(m, registerNode.ID())
 	require.NoError(t, err)
 
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			registerDream.Protocol: {},
-			workerDream.Protocol:   {},
-		},
-	}))
+	registers := []string{registerNode.ID().String()}
+	workers := []string{workerNode.ID().String()}
 
-	registers, err := u.GetServicePids(registerDream.Protocol)
-	require.NoError(t, err)
-	require.NotEmpty(t, registers)
-
-	workers, err := u.GetServicePids(workerDream.Protocol)
-	require.NoError(t, err)
-	require.NotEmpty(t, workers)
-
-	nodes := nodesByID(u)
+	nodes := nodesByID(m)
 
 	// Publish, over the wire, into the register the worker will have to find.
 	publisher, err := registerService.NewClient(nodes[workers[0]].Peer(), decode(t, registers[0]))
@@ -113,23 +102,18 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 func TestAUniverseWithNoTierSaysSo(t *testing.T) {
 	defer workerDream.Runtimes(workerDream.Runtimes()...)
 
-	m, err := dream.New(t.Context())
+	m, err := mesh.New(t.Context(), t.Name())
 	require.NoError(t, err)
 	defer m.Close()
 
-	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	registerNode, err := registerDream.Start(m)
+	require.NoError(t, err)
+	workerNode, err := workerDream.Start(m, registerNode.ID())
 	require.NoError(t, err)
 
-	require.NoError(t, u.StartWithConfig(&dream.Config{
-		Services: map[string]commonIface.ServiceConfig{
-			registerDream.Protocol: {},
-			workerDream.Protocol:   {},
-		},
-	}))
-
-	registers, _ := u.GetServicePids(registerDream.Protocol)
-	workers, _ := u.GetServicePids(workerDream.Protocol)
-	nodes := nodesByID(u)
+	registers := []string{registerNode.ID().String()}
+	workers := []string{workerNode.ID().String()}
+	nodes := nodesByID(m)
 
 	publisher, err := registerService.NewClient(nodes[workers[0]].Peer(), decode(t, registers[0]))
 	require.NoError(t, err)
@@ -155,9 +139,9 @@ func TestAUniverseWithNoTierSaysSo(t *testing.T) {
 	require.Contains(t, last.Error(), "container", "and it names the tier the config asked for")
 }
 
-func nodesByID(u *dream.Universe) map[string]peer.Node {
+func nodesByID(m *mesh.Mesh) map[string]peer.Node {
 	out := map[string]peer.Node{}
-	for _, n := range u.Peers() {
+	for _, n := range m.Peers() {
 		out[n.ID().String()] = n
 	}
 	return out
