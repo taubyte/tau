@@ -1534,7 +1534,7 @@ var databaseTypes = []databaseType{
 
 	// Documents fetched by id, and asked questions by their fields. tau's own engine for
 	// it is not shipped yet — the same position `sql: distributed` is in, which is
-	// mushql — and the type is declared anyway because what an author writes does not
+	// musql — and the type is declared anyway because what an author writes does not
 	// change when the engine lands.
 	{
 		name:     "document",
@@ -2125,7 +2125,7 @@ var V2Resources = []*Node{
 	// field — a capacity number — because everything else about it (one writer,
 	// SQLite file format, WAL-mode refusal, savepoints) is runtime behaviour, not
 	// configuration. The thing a user would actually author is the schema and its
-	// migrations, and that is undesigned and blocked on mushql's differential
+	// migrations, and that is undesigned and blocked on musql's differential
 	// harness against real C SQLite. A kind with nothing to author is the same
 	// defect as `notification.email`: a lie with a type signature. It comes back
 	// when there is something to write in it.

@@ -773,7 +773,10 @@ func databaseSettings(target specs.Resource) map[string]string {
 	// OPENS ONE. Without it a ledger that asked for raft reached that node's
 	// own engines as a crdt and was merged -- silently, which is the one thing
 	// the field exists to prevent. Carried, the fallback refuses it by name.
-	for _, field := range []string{"engine", "host", "database", "tls", "consensus", "dimensions", "metric"} {
+	//
+	// `size` TRAVELS SO THE ENGINE CAN HOLD IT. A ceiling the author declared and
+	// nothing carried is a ceiling nothing enforces.
+	for _, field := range []string{"engine", "host", "database", "tls", "consensus", "size", "dimensions", "metric"} {
 		if value := target.String(model, field); value != "" {
 			out[model+"/"+field] = value
 			continue

@@ -79,6 +79,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -164,11 +165,10 @@ var (
 // rather than against a server somebody else runs.
 //
 // EXPORTED SO THE VOCABULARY CAN BE HELD TO IT. schema.DatabaseEngines() offers
-// tau's own engine for EVERY model, `sql` included — and nothing here opens a
-// distributed sql, so `sql: {engine: distributed}` compiled, deployed, and
-// answered every query with "no database engine is registered in this build".
-// The one test that checks engine coverage skipped tau's own engine for every
-// model, which is exactly where that hid.
+// tau's own engine for EVERY model, `sql` included. sql is not here because it
+// is not the swarm's store: it is a musql file per database, and the node
+// registers that engine into the composer's registry (node/sql.go), which is
+// where a workload's `sql` access is answered from.
 func TauBacked() []database.Type {
 	return []database.Type{database.KV, database.Document, database.Vector}
 }
@@ -513,6 +513,13 @@ func (d *Databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 		// below be by name.
 		Consensus: grant.Settings[model+"/"+settingConsensus],
 	}
+	if raw := grant.Settings[model+"/"+settingSize]; raw != "" {
+		size, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return database.Spec{}, fmt.Errorf("database: %q declares a size %q that is not a number of bytes", grant.Label, raw)
+		}
+		spec.Size = size
+	}
 
 	if spec.Consensus == database.Raft {
 		return database.Spec{}, fmt.Errorf("%w: %s", ErrConsensusUnserved, grant.Label)
@@ -624,6 +631,7 @@ const (
 	settingType       = "type"
 	settingEngine     = "engine"
 	settingConsensus  = "consensus"
+	settingSize       = "size"
 	settingHost       = "host"
 	settingDatabase   = "database"
 	settingTLS        = "tls"

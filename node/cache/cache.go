@@ -138,7 +138,7 @@ func (c *Caches) backing() (pkgcache.Store, error) {
 // the tier's.
 //
 // THE TIER MUST NOT IMPORT pkg/cache. Its seam is four methods and two
-// sentinels, so any backing can satisfy it — a mushql-backed one, a cloud
+// sentinels, so any backing can satisfy it — a musql-backed one, a cloud
 // bucket, an in-process map. Translating here is what keeps that true, and it
 // is the ONE thing three passing unit tests could not catch between them: a
 // miss that arrived as an unknown error was reported to the guest as

@@ -130,6 +130,10 @@ type Spec struct {
 	// `dimensions` is true of nothing but a vector.
 	Consensus string
 
+	// Size is the ceiling the author declared, in bytes, for tau's own engine.
+	// Zero is no ceiling, which only a connector to somebody else's server has.
+	Size int64
+
 	// Address is where an external server is, empty for Tau's own engine.
 	Address string
 

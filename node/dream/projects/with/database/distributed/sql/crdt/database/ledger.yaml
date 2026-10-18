@@ -1,0 +1,6 @@
+id: QmfSTxRqyGPyrPn5G2UnRdJUhh3KtGFNuXRPfQNYjuTXGi
+description: tau's own sql, so every statement is the platform's rather than somebody else's server
+sql:
+    distributed:
+        size: 64MB
+        consensus: crdt

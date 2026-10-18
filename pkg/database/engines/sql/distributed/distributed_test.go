@@ -213,13 +213,13 @@ func names(entries []os.DirEntry) []string {
 	return out
 }
 
-// TestConcurrentWritersThroughOneConnectionAllLand is not a mushql unit test
+// TestConcurrentWritersThroughOneConnectionAllLand is not a musql unit test
 // wearing tau's clothes: it is the shape every tau sql database is used in.
 // One database.SQLConn is shared by every guest invocation placed on the node,
 // so its *sql.DB pool hands out several connections at once and several
 // statements write the same file at the same time.
 //
-// mushql's driver doc says a second writer's commit fails with engine.ErrBusy
+// musql's driver doc says a second writer's commit fails with engine.ErrBusy
 // and that autocommit statements retry it — this is what asks whether the
 // retry is enough, since `exec` in this vocabulary is one statement with no
 // transaction around it.

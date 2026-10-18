@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/samyfodil/mushql/replication"
+	"github.com/samyfodil/musql/replication"
 
 	"github.com/taubyte/tau/pkg/database"
 )
@@ -26,7 +26,7 @@ const Name = "distributed"
 const fileName = "database.db"
 
 var (
-	// ErrRaft is a `sql` database that declared raft. mushql commits through a
+	// ErrRaft is a `sql` database that declared raft. musql commits through a
 	// caller's consensus log (replication.Leader with a Quorum), which needs a
 	// log that applies an opaque entry on every node in order -- and pkg/raft's
 	// state machine is key-value only. Refused by name until it has that, rather
@@ -99,7 +99,7 @@ func InDir(dir string) Files {
 	}
 }
 
-// Engine backs the sql type with a mushql database per declared database.
+// Engine backs the sql type with a musql database per declared database.
 type Engine struct {
 	files Files
 	sync  func(topic string) replication.Option
@@ -151,7 +151,7 @@ func (e *Engine) Types() []database.Type { return []database.Type{database.SQL} 
 // it matters twice over — an engine that asked its provider for a directory on
 // the probe would leave a `probe` database on the node's disk.
 //
-// IT DOES NOT TOUCH THE FILE. database/sql opens lazily and mushql creates the
+// IT DOES NOT TOUCH THE FILE. database/sql opens lazily and musql creates the
 // database on the first statement, so registration proves the surface without
 // writing anything.
 //
@@ -193,6 +193,13 @@ func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, e
 	}
 
 	opts := []replication.Option{mode}
+	// THE DECLARED CEILING, held by musql in its own format's bytes: a commit
+	// that would leave the file over it fails with "database or disk is full"
+	// and writes nothing. In crdt mode it bounds what this node writes, not
+	// what peers' merges may add — a refused merge would never converge.
+	if spec.Size > 0 {
+		opts = append(opts, replication.WithMaxSize(spec.Size))
+	}
 	if e.sync != nil {
 		opts = append(opts, e.sync(topicOf(prefix)))
 	}
@@ -209,7 +216,7 @@ func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, e
 // It mirrors pkg/database/engines/sql's conn rather than sharing it, because
 // that one is reached through a DSN function that cannot refuse the
 // registration probe without failing registration, and because this one is
-// where a mushql Syncer and its replication node will have to be held.
+// where a musql Syncer and its replication node will have to be held.
 type conn struct {
 	db *sql.DB
 

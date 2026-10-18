@@ -68,15 +68,16 @@ func TestEveryExternalDatabaseEngineIsAdapted(t *testing.T) {
 	for _, model := range nodeDatabase.TauBacked() {
 		tauBacks[string(model)] = true
 	}
+	// AND sql, which is not the swarm's store but a musql file per database: the
+	// node registers that engine itself on every node with a root, a host and a
+	// pubsub (node/sql.go), and node/dream's sql project proves it opens.
+	tauBacks[string(database.SQL)] = true
 
 	// absent is every engine nothing here opens, keyed by model, with the
 	// reason. KEYED BY MODEL because an engine is not absent everywhere: tau's
 	// own is real for three data models and a promise for the fourth.
 	absent := map[string]string{
 		"document/mongo": "no document adapter yet; the vocabulary declares the engine and nothing opens one",
-		"sql/distributed": "tau ships no distributed sql engine - the vocabulary declares it ahead of mushql, " +
-			"and DatabaseEngines() offers tau's own for every model. A project writing it compiles and deploys, " +
-			"and every query answers \"no database engine is registered in this build\".",
 	}
 
 	var missing []string

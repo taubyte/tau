@@ -435,6 +435,9 @@ func (n *Node) openWorker() error {
 			return err
 		}
 
+		if err := n.registerSQL(); err != nil {
+			return err
+		}
 		servers, err := newDatabases(n)
 		if err != nil {
 			return err

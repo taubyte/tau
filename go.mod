@@ -76,7 +76,7 @@ require (
 	github.com/pkg/sftp v1.13.9
 	github.com/pterm/pterm v0.12.65
 	github.com/rs/cors v1.11.1
-	github.com/samyfodil/mushql v0.0.0-00010101000000-000000000000
+	github.com/samyfodil/musql v0.0.0-00010101000000-000000000000
 	github.com/samyfodil/wazy v0.2.1-0.20260902164748-35e45b48b257
 	github.com/shirou/gopsutil/v4 v4.24.5
 	github.com/spf13/afero v1.11.0

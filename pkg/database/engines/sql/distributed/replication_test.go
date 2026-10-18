@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samyfodil/mushql/replication"
+	"github.com/samyfodil/musql/replication"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/database"
@@ -13,7 +13,7 @@ import (
 )
 
 // replication_test is the engine's database on TWO nodes: two engines, each
-// with its own directory, joined by mushql's in-memory network on the topic
+// with its own directory, joined by musql's in-memory network on the topic
 // the engine derives from the database itself.
 //
 // THE SCHEMA A GUEST WRITES IS THE SCHEMA THAT REPLICATES. The table is created
@@ -89,4 +89,33 @@ func TestADatabaseIsServedOnlyWithTheConsensusItDeclared(t *testing.T) {
 	spec.Consensus = "gossip"
 	_, err = e.Open(context.Background(), spec)
 	require.ErrorContains(t, err, `consensus "gossip"`)
+}
+
+// THE DECLARED SIZE IS A CEILING musql HOLDS: a write that would leave the
+// database over it fails with SQLite's own "full" and nothing of it lands.
+func TestADatabaseStopsAtItsDeclaredSize(t *testing.T) {
+	e, err := distributed.New(distributed.InDir(t.TempDir()))
+	require.NoError(t, err)
+
+	spec := ledger(t)
+	spec.Consensus = database.CRDT
+	spec.Size = 256 << 10
+	c, err := e.Open(context.Background(), spec)
+	require.NoError(t, err)
+	defer c.Close()
+
+	sc := c.(database.SQLConn)
+	ctx := context.Background()
+	_, err = sc.Exec(ctx, `CREATE TABLE blobs (id INTEGER PRIMARY KEY, b BLOB)`)
+	require.NoError(t, err)
+
+	big := make([]byte, 64<<10)
+	var full error
+	for range 64 {
+		if _, err := sc.Exec(ctx, `INSERT INTO blobs(b) VALUES(?)`, big); err != nil {
+			full = err
+			break
+		}
+	}
+	require.ErrorContains(t, full, "database or disk is full")
 }

@@ -1,5 +1,5 @@
 // Package distributed backs the `sql` data model with tau's own engine:
-// mushql, a pure-Go SQLite. Its sibling pkg/database/engines/sql is the other
+// musql, a pure-Go SQLite. Its sibling pkg/database/engines/sql is the other
 // half of the model — Postgres and MySQL over a DSN, on a server somebody else
 // runs.
 //
@@ -11,7 +11,7 @@
 // key: it is a file, and the engine underneath wants a path on a disk. So this
 // engine is handed a DIRECTORY provider rather than a store provider — see
 // Files — and the replication database.Store got for free from the kvdb
-// underneath is mushql's own (github.com/samyfodil/mushql/replication).
+// underneath is musql's own (github.com/samyfodil/musql/replication).
 //
 // # It replicates in the mode the database declared
 //
@@ -24,8 +24,8 @@
 //   - crdt: every node writes, and the copies converge. Constraints hold on a
 //     node's own writes; a peer's rows are applied without them, so two nodes
 //     writing one UNIQUE value keep the newer row and hold the other back until
-//     the value is free. That is mushql's contract and it is stated, not hidden.
-//   - raft: REFUSED BY NAME (ErrRaft). mushql commits a raft database through
+//     the value is free. That is musql's contract and it is stated, not hidden.
+//   - raft: REFUSED BY NAME (ErrRaft). musql commits a raft database through
 //     the caller's consensus log — replication.Leader with a Quorum, one entry
 //     per commit applied on every node in order — and pkg/raft's state machine
 //     is key-value only. Serving it as crdt instead would be a weaker promise
