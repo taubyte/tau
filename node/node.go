@@ -35,6 +35,7 @@ package node
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -733,6 +734,19 @@ func (n *Node) openGateway() error {
 		gatewayOptions = append(gatewayOptions, gateway.WithClock(n.opts.now))
 	}
 
+	// A PROVIDED CERTIFICATE IS A SECRET OF THE DEPLOYMENT, read through the
+	// resolver the worker and the proxy read through, and by the same rule:
+	// an injected one wins, then this node's own vault or one in the fleet.
+	switch {
+	case n.opts.secrets != nil:
+		gatewayOptions = append(gatewayOptions, gateway.WithSecrets(n.opts.secrets))
+	case n.vault != nil:
+		gatewayOptions = append(gatewayOptions, gateway.WithSecrets(n.vault))
+	}
+	if n.opts.terminates {
+		gatewayOptions = append(gatewayOptions, gateway.WithTLS())
+	}
+
 	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)
 	if err != nil {
 		return err
@@ -915,6 +929,16 @@ func (n *Node) Handler() http.Handler {
 		return nil
 	}
 	return n.gateway.Handler()
+}
+
+// TLSConfig is what a composer serving Handler over TLS answers handshakes
+// with: each name's certificate is the one its gateway declares. Nil when this
+// node runs no gateway.
+func (n *Node) TLSConfig() *tls.Config {
+	if n.gateway == nil {
+		return nil
+	}
+	return &tls.Config{GetCertificate: n.gateway.Certificate, MinVersion: tls.VersionTLS12}
 }
 
 // Close stops everything, in the reverse of the order it was opened. It is

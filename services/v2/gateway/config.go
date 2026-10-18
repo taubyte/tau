@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
@@ -151,6 +152,15 @@ type Config struct {
 	// before the workload sees any of it, so an unbounded upload is an
 	// unbounded allocation on a public listener.
 	MaxBody int64
+
+	// Wildcard is the certificate for this cloud's own zone, which is what a
+	// generated name answers a handshake with.
+	//
+	// IT IS THE OPERATOR'S FOR THE REASON CloudFqdn IS: a generated name ends
+	// in a zone no project declares, so no project can hold a key for it. A
+	// node with none terminates only the names whose gateways provide a
+	// certificate of their own. See tls.go.
+	Wildcard certificate.Pair
 }
 
 // Defaults.
@@ -179,6 +189,9 @@ type options struct {
 	now     func() time.Time
 	meter   Meter
 	logf    func(format string, args ...any)
+
+	secrets    Secrets
+	terminates bool
 }
 
 // WithHosts is where "whose name is this" is answered. Required.
@@ -265,6 +278,29 @@ func WithLogger(logf func(format string, args ...any)) Option {
 			return errors.New("gateway: a nil logger")
 		}
 		o.logf = logf
+		return nil
+	}
+}
+
+// WithSecrets is what reads a provided certificate. Optional: a gateway
+// without one refuses the handshake for a name that provides its own, and
+// serves every generated one.
+func WithSecrets(sec Secrets) Option {
+	return func(o *options) error {
+		if sec == nil {
+			return errors.New("gateway: a nil secret resolver")
+		}
+		o.secrets = sec
+		return nil
+	}
+}
+
+// WithTLS says the composer serves this handler over TLS too, answering each
+// handshake with Certificate. Without it a name that provides its own
+// certificate is refused over plain HTTP — see tls.go.
+func WithTLS() Option {
+	return func(o *options) error {
+		o.terminates = true
 		return nil
 	}
 }

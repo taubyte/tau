@@ -55,11 +55,16 @@ func hostsOf(t testing.TB, p *specs.Project, cloud string) []string {
 
 func newHarness(t testing.TB, cfg Config, opts ...Option) *harness {
 	t.Helper()
+	return newHarnessOf(t, compiled(t), cfg, opts...)
+}
+
+// newHarnessOf is a harness over a compiled project of the test's own.
+func newHarnessOf(t testing.TB, bytes []byte, cfg Config, opts ...Option) *harness {
+	t.Helper()
 
 	reg, err := register.New(register.WithStore(register.NewMemStore()))
 	require.NoError(t, err)
 
-	bytes := compiled(t)
 	p, err := specs.Load(bytes)
 	require.NoError(t, err)
 

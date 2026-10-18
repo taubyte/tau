@@ -30,11 +30,12 @@ import (
 // compiler files it into the object, the audit says nothing, the build is green,
 // and the cloud does not do the thing the document says.
 //
-// The sharp one when this was written is `gateway.certificate.*`: a gateway may
-// declare where its certificate comes from and which secret holds it, and the
-// only reader of those keys is services/v2/proxy, for a proxy's own copy of
-// them. node/boot binds a gateway with an http.Server carrying no TLSConfig, so
-// a gateway that declares TLS is served in the clear.
+// The sharp one when this was written was `gateway.certificate.*`: a gateway
+// may declare where its certificate comes from and which secret holds it, and
+// the only reader of those keys was services/v2/proxy, for a proxy's own copy
+// of them. node/boot bound a gateway with an http.Server carrying no
+// TLSConfig, so a gateway that declared TLS was served in the clear. The
+// gateway now answers each handshake (services/v2/gateway/tls.go).
 //
 // # What "read" means here, and what it deliberately excludes
 //
@@ -264,9 +265,12 @@ var readers = map[string][]string{
 	"services/v2/gateway/policy.go":  {"gateway"},
 	"services/v2/gateway/route.go":   {"gateway"},
 	"services/v2/gateway/bus.go":     {"bus"},
+	// tls.go is which certificate answers a gateway's name: the node binds
+	// the listener, and the gateway is asked per handshake.
+	"services/v2/gateway/tls.go": {"gateway"},
 
-	// A proxy's. It terminates its own TLS, which is why it is the only reader
-	// of a `certificate` block anywhere.
+	// A proxy's. It terminates its own TLS — it IS its socket, where a
+	// gateway's is the node's.
 	"services/v2/proxy/proxy.go":  {"proxy"},
 	"services/v2/proxy/route.go":  {"proxy"},
 	"services/v2/proxy/shape.go":  {"proxy"},

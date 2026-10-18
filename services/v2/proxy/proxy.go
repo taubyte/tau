@@ -63,6 +63,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/ratelimit"
 	"github.com/taubyte/tau/pkg/register"
@@ -164,10 +165,7 @@ type Config struct {
 }
 
 // Certificate is a chain and its key, in PEM.
-type Certificate struct {
-	Certificate string `yaml:"certificate"`
-	Key         string `yaml:"key"`
-}
+type Certificate = certificate.Pair
 
 // DefaultConnectTimeout is how long reaching a workload may take.
 const DefaultConnectTimeout = 10 * time.Second

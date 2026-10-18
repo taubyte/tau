@@ -175,6 +175,10 @@ type options struct {
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
 	now       func() time.Time
+
+	// terminates says whatever serves Handler serves it over TLS too, with
+	// TLSConfig. See WithTLS.
+	terminates bool
 }
 
 // WithHost is the libp2p host every p2p service answers on. Required.
@@ -295,6 +299,19 @@ func WithRoot(dir string) Option {
 			return errors.New("node: an empty root is not a directory")
 		}
 		o.root = dir
+		return nil
+	}
+}
+
+// WithTLS says the composer serves this node's gateway over TLS as well as
+// whatever plain listener it binds, answering handshakes with TLSConfig.
+//
+// IT IS THE COMPOSER'S TO SAY because it is the composer that binds: a node
+// does not know what sockets it is served on, and a gateway told nothing
+// refuses in the clear a name that provides a certificate of its own.
+func WithTLS() Option {
+	return func(o *options) error {
+		o.terminates = true
 		return nil
 	}
 }

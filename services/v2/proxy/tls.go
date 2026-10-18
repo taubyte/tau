@@ -3,10 +3,10 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
-	"encoding/pem"
+	"errors"
 	"fmt"
-	"strings"
 
+	"github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/specs"
 )
 
@@ -14,30 +14,18 @@ import (
 //
 // # A proxy has to do this itself, where a gateway does not
 //
-// services/v2/gateway deliberately terminates nothing: it hands back an
-// http.Handler and whatever binds the socket owns the certificate. A proxy has
-// no such layer — it IS the socket — so `tls: terminate` has to mean something
-// here or mean nothing anywhere.
+// services/v2/gateway binds nothing: it hands back an http.Handler, and the
+// node that serves it binds the socket and asks the gateway which certificate
+// answers each name (Service.Certificate there). A proxy has no such layer —
+// it IS the socket — so `tls: terminate` has to mean something here or mean
+// nothing anywhere.
 //
-// # Two ways to have a certificate, and neither invents one
+// # Where the certificate comes from is pkg/certificate's
 //
-// `provided` names a secret holding the chain and the key, which is the
-// vocabulary's own answer and the one that works for a zone somebody delegated.
-// `generated` means the name is under the cloud's own zone, which has a
-// wildcard — and that wildcard is the operator's, handed to this node in its
-// own config, for the same reason CloudFqdn is.
-//
-// NOTHING HERE ISSUES A CERTIFICATE. A name in a zone this cloud does not hold
-// a certificate for is refused rather than served with a wrong one or with
-// plaintext: a proxy that asked for TLS and got an open socket would be a
-// security control silently not applied.
-//
-// # The secret holds both halves, as one artifact
-//
-// They are issued together, they expire together, and rotating them in two
-// places leaves a window where they do not match — which is why the vocabulary
-// takes ONE reference. The value is PEM: the CERTIFICATE blocks are the chain,
-// in order, and the one key block is the key.
+// `provided` is the secret the resource names and `generated` is the
+// operator's wildcard for the cloud's own zone; the package says why neither
+// invents one. A gateway's names are terminated by the node with the same
+// code, so the two cannot disagree about what a wildcard covers.
 
 // Secrets resolves a secret a proxy refers to. It is the same seam
 // services/worker takes, and a node hands both the same thing.
@@ -99,50 +87,20 @@ func (s *Service) providedCertificate(ctx context.Context, r specs.Resource, b B
 }
 
 // wildcardFor is the cloud's own certificate, when it covers this name.
-//
-// IT IS THE OPERATOR'S AND NOT THE PROJECT'S, exactly as CloudFqdn is: a
-// generated host is `<label>.<project label>.<the cloud's zone>`, and no part
-// of the config that named it knows the last piece — let alone holds a key for
-// it.
 func (s *Service) wildcardFor(host string) (tls.Certificate, error) {
-	if s.cfg.Wildcard.Certificate == "" || s.cfg.Wildcard.Key == "" {
-		return tls.Certificate{}, fmt.Errorf("%w: it terminates TLS on a generated name and this cloud holds no certificate for its own zone", ErrUnservable)
+	cert, err := certificate.Wildcard(s.cfg.Wildcard, s.cfg.CloudFqdn, host)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("%w: it terminates TLS on a generated name and %w", ErrUnservable, err)
 	}
-	if s.cfg.CloudFqdn == "" || !strings.HasSuffix(strings.ToLower(host), "."+strings.ToLower(s.cfg.CloudFqdn)) {
-		return tls.Certificate{}, fmt.Errorf("%w: %s is not under %q, so this cloud's own certificate does not cover it", ErrUnservable, host, s.cfg.CloudFqdn)
-	}
-	return tls.X509KeyPair([]byte(s.cfg.Wildcard.Certificate), []byte(s.cfg.Wildcard.Key))
+	return cert, nil
 }
 
-// keyPair splits one PEM blob into the chain and the key.
-//
-// ONE SECRET HOLDS BOTH, which is what the vocabulary says and what a
-// Kubernetes TLS secret does. Splitting on the block type rather than on order
-// means a blob written key-first works, which is how half of them are written.
+// keyPair is the secret's PEM as a certificate, refused by name when half of
+// it is missing.
 func keyPair(blob []byte) (tls.Certificate, error) {
-	var chain, key []byte
-
-	rest := blob
-	for {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		if block.Type == "CERTIFICATE" {
-			chain = append(chain, pem.EncodeToMemory(block)...)
-			continue
-		}
-		if strings.HasSuffix(block.Type, "PRIVATE KEY") && key == nil {
-			key = pem.EncodeToMemory(block)
-		}
+	cert, err := certificate.KeyPair(blob)
+	if errors.Is(err, certificate.ErrNoChain) || errors.Is(err, certificate.ErrNoKey) {
+		return tls.Certificate{}, fmt.Errorf("%w: %w", ErrUnservable, err)
 	}
-
-	switch {
-	case len(chain) == 0:
-		return tls.Certificate{}, fmt.Errorf("%w: that certificate secret holds no certificate", ErrUnservable)
-	case len(key) == 0:
-		return tls.Certificate{}, fmt.Errorf("%w: that certificate secret holds no private key", ErrUnservable)
-	}
-	return tls.X509KeyPair(chain, key)
+	return cert, err
 }

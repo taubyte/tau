@@ -173,6 +173,7 @@ func TestANodeWithNoGatewayBindsNothing(t *testing.T) {
 		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
 		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
 		HTTP:     "127.0.0.1:0",
+		HTTPS:    "127.0.0.1:0",
 	}
 
 	running, err := Start(t.Context(), f)
@@ -180,7 +181,9 @@ func TestANodeWithNoGatewayBindsNothing(t *testing.T) {
 	defer running.Close()
 
 	require.Nil(t, running.Node.Handler())
+	require.Nil(t, running.Node.TLSConfig())
 	require.Empty(t, running.Address())
+	require.Empty(t, running.SecureAddress())
 }
 
 // TestAnAddressAlreadyTakenIsReportedAtBoot rather than as a gateway nobody can

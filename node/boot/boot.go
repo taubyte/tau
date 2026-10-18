@@ -29,6 +29,7 @@ package boot
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -84,14 +85,19 @@ type File struct {
 	// is answerable, and so that answering it is a line somebody wrote.
 	Open bool `yaml:"open"`
 
-	// HTTP is where the gateway is served, e.g. ":8080". Empty serves nothing,
-	// which is right for a node that runs no gateway.
-	//
-	// THERE IS NO TLS HERE. Where a certificate comes from is the auth
-	// service's question and a gateway that owned an ACME client would own it
-	// twice; a node facing the internet sits behind something that terminates,
-	// or serves this handler from a caller that does.
+	// HTTP is where the gateway is served in the clear, e.g. ":8080". Empty
+	// serves nothing there, which is right for a node that runs no gateway.
 	HTTP string `yaml:"http"`
+
+	// HTTPS is where the gateway is served over TLS, e.g. ":8443". Empty
+	// terminates nothing, and a node facing the internet then sits behind
+	// something that does.
+	//
+	// EACH HANDSHAKE IS ANSWERED BY THE GATEWAY THAT SERVES ITS NAME: the
+	// cloud's own wildcard (node.gateway.wildcard) for a generated name, the
+	// secret a gateway names for one that provides its own. Nothing here
+	// issues a certificate — see services/v2/gateway's tls.go.
+	HTTPS string `yaml:"https"`
 }
 
 var logger = log.Logger("tau.v2.boot")
@@ -166,6 +172,9 @@ type Running struct {
 	peer   peer.Node
 	server *http.Server
 
+	// secure is the TLS listener, when the file names one.
+	secure *http.Server
+
 	// temporary is a data directory this process made and owns, removed on
 	// Close. A node started from an operator's file has none.
 	temporary string
@@ -224,7 +233,15 @@ func Start(ctx context.Context, f File) (*Running, error) {
 		return nil, err
 	}
 
-	n, err := node.New(f.Node,
+	// A NODE THAT TERMINATES SAYS SO before its gateway is built, because the
+	// gateway decides from it what a name providing its own certificate gets
+	// over plain HTTP.
+	var serving []node.Option
+	if f.HTTPS != "" {
+		serving = append(serving, node.WithTLS())
+	}
+
+	n, err := node.New(f.Node, append(serving,
 		node.WithHost(p.Peer()),
 		node.WithDatabaseEngines(dbEngines),
 		node.WithPubSub(p.Messaging()),
@@ -246,7 +263,7 @@ func Start(ctx context.Context, f File) (*Running, error) {
 		// root the rest of this file already has. Without it a container that
 		// declares a mount is refused rather than started with an empty layer.
 		node.WithRoot(f.Root),
-	)
+	)...)
 	if err != nil {
 		p.Close()
 		return nil, err
@@ -258,7 +275,7 @@ func Start(ctx context.Context, f File) (*Running, error) {
 	}
 
 	r := &Running{Node: n, peer: p}
-	if err := r.serve(f.HTTP); err != nil {
+	if err := r.serve(f.HTTP, f.HTTPS); err != nil {
 		r.Close()
 		return nil, err
 	}
@@ -291,16 +308,34 @@ func addrInfos(addresses []string) ([]libp2ppeer.AddrInfo, error) {
 	return out, nil
 }
 
-// serve binds the gateway's handler, when there is one and somewhere to put it.
-func (r *Running) serve(address string) error {
+// serve binds the gateway's handler, when there is one and somewhere to put
+// it: in the clear on one address, over TLS on the other, or both.
+func (r *Running) serve(address, secure string) error {
 	handler := r.Node.Handler()
-	if handler == nil || address == "" {
+	if handler == nil {
 		return nil
 	}
 
+	var err error
+	if address != "" {
+		if r.server, err = listen(address, handler, nil); err != nil {
+			return err
+		}
+	}
+	if secure != "" {
+		if r.secure, err = listen(secure, handler, r.Node.TLSConfig()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// listen binds one address and serves the handler on it, over TLS when a
+// config is given.
+func listen(address string, handler http.Handler, config *tls.Config) (*http.Server, error) {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		return fmt.Errorf("boot: listening on %s: %w", address, err)
+		return nil, fmt.Errorf("boot: listening on %s: %w", address, err)
 	}
 
 	// READ AND HEADER TIMEOUTS ARE NOT OPTIONAL ON A PUBLIC LISTENER. A
@@ -311,14 +346,22 @@ func (r *Running) serve(address string) error {
 	// only ListenAndServe does — so it is carried for Address(), and an
 	// operator who wrote `:0` has no other way to learn the port. It was left
 	// unset, which made Address() answer "" for every node that was serving.
-	r.server = &http.Server{
+	server := &http.Server{
 		Addr:              listener.Addr().String(),
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
+		TLSConfig:         config,
 	}
-	go r.server.Serve(listener)
-	return nil
+
+	// THE CERTIFICATE COMES FROM GetCertificate, per name, so no file is
+	// passed: ServeTLS with empty paths uses the config as it is.
+	if config != nil {
+		go server.ServeTLS(listener, "", "")
+		return server, nil
+	}
+	go server.Serve(listener)
+	return server, nil
 }
 
 // Host is the libp2p host this node answers on, for a caller that started one
@@ -330,7 +373,7 @@ func (r *Running) Host() host.Host {
 	return r.peer.Peer()
 }
 
-// Address is where the gateway is being served, or "".
+// Address is where the gateway is being served in the clear, or "".
 func (r *Running) Address() string {
 	if r.server == nil {
 		return ""
@@ -338,11 +381,24 @@ func (r *Running) Address() string {
 	return r.server.Addr
 }
 
+// SecureAddress is where the gateway is being served over TLS, or "".
+func (r *Running) SecureAddress() string {
+	if r.secure == nil {
+		return ""
+	}
+	return r.secure.Addr
+}
+
 // Close stops serving, then the node, then the machine's resources.
 func (r *Running) Close() error {
 	var err error
 	if r.server != nil {
 		err = r.server.Close()
+	}
+	if r.secure != nil {
+		if closeErr := r.secure.Close(); err == nil {
+			err = closeErr
+		}
 	}
 	if r.Node != nil {
 		if closeErr := r.Node.Close(); err == nil {

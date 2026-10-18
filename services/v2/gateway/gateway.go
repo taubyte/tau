@@ -22,9 +22,10 @@
 //
 // # What it is not, yet
 //
-// IT DOES NOT TERMINATE TLS. Handler() returns an http.Handler and the composer
-// serves it — because where a certificate comes from is the auth service's
-// question and a gateway that owned an ACME client would own it twice.
+// IT DOES NOT BIND A SOCKET. Handler() returns an http.Handler and the composer
+// serves it; a composer that serves it over TLS asks Certificate which
+// certificate answers each name, because only the gateway can read that off
+// the compiled project. It issues none — see tls.go.
 //
 // IT RUNS TRANSFORMERS AND IT DOES NOT ROUTE. A transformer is a function built
 // against `implements: gateway-transformer`, and its world exists: the chain
@@ -81,6 +82,11 @@ type Service struct {
 	// logf is where a failure the caller is not told about is said. See
 	// WithLogger.
 	logf func(format string, args ...any)
+
+	// secrets reads a provided certificate, and terminates says the composer
+	// serves this handler over TLS too. See tls.go.
+	secrets    Secrets
+	terminates bool
 
 	// mu guards the host table: which project owns a name, and when that was
 	// last asked.
@@ -147,6 +153,9 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		meter:    o.meter,
 		logf:     o.logf,
 		owner:    map[string]ownerEntry{},
+
+		secrets:    o.secrets,
+		terminates: o.terminates,
 	}, nil
 }
 
@@ -220,6 +229,11 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cors(w, r, m.gateway.Cors, name)
+
+	if why := s.cleartext(m, r); why != "" {
+		refuse(w, http.StatusMisdirectedRequest, why)
+		return
+	}
 
 	if limit := m.gateway.RateLimit; limit.Rpm != nil && *limit.Rpm > 0 {
 		rpm, burst := *limit.Rpm, int64(0)
