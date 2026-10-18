@@ -3,6 +3,16 @@
 // Restore go in, Actions come out. There is no goroutine, no socket, no disk
 // and no clock read anywhere in this package.
 //
+// # What it is for
+//
+// Agreement among replicas that do NOT trust one another. Inside one cloud the
+// nodes are trusted, and pkg/raft and pkg/kvdb are what they agree with: a
+// crash is the only failure those tolerate, and it is the only one a node of
+// the same operator is assumed to have. This package is for the boundary where
+// that assumption stops holding — replicas run by parties that may lie,
+// equivocate or collude — which is why its fault model is f Byzantine replicas
+// out of 3f+1 and why every vote is a signature a third party can check.
+//
 // That shape is the whole design. A consensus bug is an interleaving — an
 // equivocating primary reaching a backup that is partitioned from the rest,
 // two views racing, a crash between signing a vote and sending it — and an
