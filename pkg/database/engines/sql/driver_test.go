@@ -22,7 +22,9 @@ type recorder struct {
 	dsns []string
 	rows [][]any
 	cols []string
-	fail error
+	// types are the columns' declared types, as a driver reports them.
+	types []string
+	fail  error
 }
 
 var registry = &recorder{}
@@ -49,7 +51,7 @@ func (r *recorder) opened() []string {
 
 func (r *recorder) reset() {
 	r.mu.Lock()
-	r.dsns, r.rows, r.cols, r.fail = nil, nil, nil, nil
+	r.dsns, r.rows, r.cols, r.types, r.fail = nil, nil, nil, nil, nil
 	r.mu.Unlock()
 }
 
@@ -75,7 +77,7 @@ func (s *fakeStmt) Exec([]driver.Value) (driver.Result, error) { return fakeResu
 func (s *fakeStmt) Query([]driver.Value) (driver.Rows, error) {
 	s.r.mu.Lock()
 	defer s.r.mu.Unlock()
-	return &fakeRows{cols: s.r.cols, values: s.r.rows}, nil
+	return &fakeRows{cols: s.r.cols, types: s.r.types, values: s.r.rows}, nil
 }
 
 type fakeResult struct{ affected int64 }
@@ -85,8 +87,16 @@ func (f fakeResult) RowsAffected() (int64, error) { return f.affected, nil }
 
 type fakeRows struct {
 	cols   []string
+	types  []string
 	values [][]any
 	at     int
+}
+
+func (r *fakeRows) ColumnTypeDatabaseTypeName(i int) string {
+	if i < len(r.types) {
+		return r.types[i]
+	}
+	return ""
 }
 
 func (r *fakeRows) Columns() []string { return r.cols }

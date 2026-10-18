@@ -31,7 +31,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-dreaming test-raft test-docker test-containerd test-application test-build test-containers test-all vm-fixtures test-cli test-cli-cover proto-v2 proto-v2-check
+.PHONY: test test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-containers test-all vm-fixtures test-cli test-cli-cover proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -93,7 +93,7 @@ test-docker:
 test-containerd:
 	go test -tags containerd_integration -run '_Integration$$' -p 1 -timeout 20m $(FLAGS) ./pkg/containers/...
 
-test-containers: test-docker test-containerd test-application test-build
+test-containers: test-docker test-containerd test-application test-build test-external-databases
 
 # test-application runs a real application end to end: a corpus project
 # compiled, published, routed by the gateway and served by a container the
@@ -117,6 +117,12 @@ BUILD_TEST := $(CURDIR)/services/build/artifact/artifact.test
 test-build:
 	cd services/build/artifact && go test -c -tags docker_integration -o $(BUILD_TEST) .
 	cd services/build/artifact && sudo -n $(BUILD_TEST) -test.run '^TestARealBuild' -test.timeout 15m -test.v
+
+# test-external-databases deploys projects/with/database/{postgres,mysql}/sql
+# against real servers the test starts in docker. No firewall is installed for a
+# server the TEST runs, so it needs a docker daemon and no sudo.
+test-external-databases:
+	go test -tags 'dreaming docker_integration' -run '^TestAnExternal' -count=1 -timeout 15m $(FLAGS) ./node/dream/
 
 test-all: test test-dreaming test-raft
 

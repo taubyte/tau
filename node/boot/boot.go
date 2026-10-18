@@ -218,7 +218,7 @@ func Start(ctx context.Context, f File) (*Running, error) {
 	// WHAT THIS MACHINE CAN CONNECT TO, built before the node so that a build
 	// with a broken engine refuses to start rather than serving every database
 	// query with a message about a registry. See engines.go.
-	dbEngines, err := databaseEngines(ctx)
+	dbEngines, err := DatabaseEngines(ctx)
 	if err != nil {
 		p.Close()
 		return nil, err

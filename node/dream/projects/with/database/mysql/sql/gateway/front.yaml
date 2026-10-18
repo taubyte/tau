@@ -1,0 +1,14 @@
+id: QmRQU7wVZSSJxC3PEPxnDfQdSL7q1Mn2d5g2L7Vos1iYCy
+description: the one way in
+host:
+    zone:
+        in:
+            name: example_com
+        name: orders
+route:
+    path: /
+    match: prefix
+    methods: [GET, POST]
+    handler:
+        function:
+            name: keeper

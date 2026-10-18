@@ -136,7 +136,7 @@ func project(t *testing.T, name string, components artifacts) ([]byte, map[strin
 	t.Helper()
 
 	c, err := schema.New(
-		schema.WithLocal(filepath.Join("projects", name)),
+		schema.WithLocal(projectDir(name)),
 		schema.WithBranch("main"))
 	require.NoError(t, err)
 
@@ -1164,4 +1164,14 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 	}, 120*time.Second, time.Second, "a node never reached %s", &lastSaid{&waiting})
 
 	return universe{dream: u, fleets: fleets}
+}
+
+// projectDir is where a named project lives: under projects/, or — for a test
+// that rewrote a copy, such as one pointing a database at a server it started —
+// at the absolute path it was given.
+func projectDir(name string) string {
+	if filepath.IsAbs(name) {
+		return name
+	}
+	return filepath.Join("projects", name)
 }

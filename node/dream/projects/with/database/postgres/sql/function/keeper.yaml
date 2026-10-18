@@ -1,0 +1,16 @@
+id: QmNPFXqtFpZ3HvPv1r9Dzz47FuN7j2u7yUFNDK4HFQhKEa
+description: runs the statement it was sent against the sql database it was granted - the path picks query or exec
+source: services/keeper
+build:
+    commands:
+        image: rust:1.83
+        install: cargo fetch --locked
+        run: cargo build --release --target wasm32-wasip2
+        output: target/wasm32-wasip2/release/keeper.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MB
+database:
+    orders:
+        ops: [query, exec]

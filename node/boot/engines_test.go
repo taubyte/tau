@@ -22,7 +22,7 @@ import (
 // connection and checks the surface, so this also proves the adapters answer
 // the operations `sql` declares.
 func TestTheExternalSqlEnginesRegister(t *testing.T) {
-	registry, err := databaseEngines(t.Context())
+	registry, err := DatabaseEngines(t.Context())
 	require.NoError(t, err)
 
 	names := map[string]bool{}
@@ -40,7 +40,7 @@ func TestTheExternalSqlEnginesRegister(t *testing.T) {
 // compiles, deploys and refuses every query — and this is where that is
 // noticed rather than in somebody's logs.
 func TestEveryExternalDatabaseEngineIsAdapted(t *testing.T) {
-	registry, err := databaseEngines(t.Context())
+	registry, err := DatabaseEngines(t.Context())
 	require.NoError(t, err)
 
 	// registered is what a machine can open, by data model.

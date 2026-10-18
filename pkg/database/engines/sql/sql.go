@@ -179,7 +179,16 @@ func (c *conn) Query(ctx context.Context, statement string, args ...any) (databa
 	if err != nil {
 		return nil, err
 	}
-	return &rows{Rows: r}, nil
+	types, err := r.ColumnTypes()
+	if err != nil {
+		r.Close()
+		return nil, err
+	}
+	binary := make([]bool, len(types))
+	for i, t := range types {
+		binary[i] = isBinary(t.DatabaseTypeName())
+	}
+	return &rows{Rows: r, binary: binary}, nil
 }
 
 // Exec answers what the statement changed.
@@ -210,6 +219,40 @@ func (c *conn) Close() error { return c.db.Close() }
 // rows adapts database/sql's result set to the seam's, which is deliberately
 // not database/sql's: pkg/database has no driver dependency, and this wrapper
 // is what that costs.
-type rows struct{ *sql.Rows }
+//
+// IT ALSO SAYS WHICH BYTES ARE TEXT. A driver may hand a text column over as
+// []byte — go-sql-driver/mysql does for every VARCHAR on the text protocol — and
+// a caller told only "bytes" reports it as a blob, so a MySQL `payee` came back
+// to a guest as `blob:5`. The column's declared type is the only thing that
+// knows, so it is asked once per result set.
+type rows struct {
+	*sql.Rows
+	binary []bool
+}
 
 func (r *rows) Columns() ([]string, error) { return r.Rows.Columns() }
+
+// Scan is database/sql's, then turns bytes scanned into an `any` back into the
+// string they are, unless their column is binary.
+func (r *rows) Scan(dest ...any) error {
+	if err := r.Rows.Scan(dest...); err != nil {
+		return err
+	}
+	for i, d := range dest {
+		p, ok := d.(*any)
+		if !ok || i >= len(r.binary) || r.binary[i] {
+			continue
+		}
+		if b, ok := (*p).([]byte); ok {
+			*p = string(b)
+		}
+	}
+	return nil
+}
+
+// isBinary is whether a declared column type holds bytes rather than text:
+// BLOB and its sizes and BINARY/VARBINARY in MySQL, BYTEA in PostgreSQL.
+func isBinary(declared string) bool {
+	t := strings.ToUpper(declared)
+	return strings.Contains(t, "BLOB") || strings.Contains(t, "BINARY") || t == "BYTEA"
+}

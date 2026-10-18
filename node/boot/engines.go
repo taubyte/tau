@@ -41,13 +41,17 @@ import (
 // need nothing provisioned. See node/database's `engines`, which registers them
 // on first use and lets a composer's own win.
 
-// databaseEngines is the registry a machine serves external databases from.
+// DatabaseEngines is the registry a machine serves external databases from.
+//
+// EXPORTED FOR node/dream, which composes nodes without boot and must still
+// reach the same engines: a cloud in dream that could not open an external
+// postgres would prove nothing about one that can.
 //
 // A REGISTRATION FAILURE IS A REFUSAL TO START. An engine that cannot open the
 // probe spec is an engine whose surface is wrong, which is a build fault rather
 // than an operator's — and a node that started anyway would answer every query
 // for that engine with a message about a registry instead.
-func databaseEngines(ctx context.Context) (*database.Registry, error) {
+func DatabaseEngines(ctx context.Context) (*database.Registry, error) {
 	registry := database.NewRegistry()
 
 	for _, engine := range []database.Engine{

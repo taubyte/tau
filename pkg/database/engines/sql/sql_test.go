@@ -173,3 +173,26 @@ func ping(t *testing.T, conn database.Conn) error {
 	}
 	return rows.Close()
 }
+
+// TEXT A DRIVER HANDS OVER AS BYTES IS TEXT, and a BLOB stays bytes: only the
+// column's declared type can tell them apart. go-sql-driver/mysql returns every
+// VARCHAR as []byte, which reached a guest as a blob before this.
+func TestBytesAreTextUnlessTheColumnIsBinary(t *testing.T) {
+	registry.reset()
+	registry.answer([]string{"payee", "photo"}, []any{[]byte("alice"), []byte{0xff, 0x00}})
+	registry.types = []string{"VARCHAR", "BLOB"}
+
+	conn, err := sqlengine.MySQL("recorder").Open(t.Context(), spec())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	rows, err := conn.(database.SQLConn).Query(t.Context(), "select payee, photo from people")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var payee, photo any
+	require.NoError(t, rows.Scan(&payee, &photo))
+	require.Equal(t, "alice", payee)
+	require.Equal(t, []byte{0xff, 0x00}, photo)
+}

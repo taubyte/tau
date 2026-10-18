@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/node/boot"
+
 	"github.com/libp2p/go-libp2p/core/host"
 
 	iface "github.com/taubyte/tau/core/common"
@@ -391,6 +393,11 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Stats.Stabilize = dreamStabilize
 
+	engines, err := boot.DatabaseEngines(u.Context())
+	if err != nil {
+		return nil, err
+	}
+
 	options := []node.Option{
 		node.WithHost(h),
 		node.WithPubSub(p.Messaging()),
@@ -417,6 +424,7 @@ func create(ctx context.Context, h host.Host, p peer.Node, u *dream.Universe, cf
 		// THE UNIVERSE'S OWN DIRECTORY, so a volume in a dream is a volume: a
 		// real directory, checkpointed and restored the way it is on a machine.
 		node.WithRoot(root),
+		node.WithDatabaseEngines(engines),
 		node.WithRuntimes(tiers...),
 	}
 	if now != nil {
