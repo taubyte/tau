@@ -1,4 +1,8 @@
-//go:build stress
+//go:build raft_integration && stress
+
+// The stress suite drives clusters with the raft_integration helpers
+// (waitForMember and friends), so it builds only with both tags:
+// go test -tags raft_integration,stress ./pkg/raft/
 
 package raft
 
