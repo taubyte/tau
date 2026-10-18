@@ -113,7 +113,7 @@ func TestTheLifecycleIsNotForgiving(t *testing.T) {
 	require.Error(t, h.Worker.Start(t.Context()), "a closed worker does not start again")
 }
 
-func TestTheProtocolIsNotV1s(t *testing.T) {
+func TestTheProtocolIsDerived(t *testing.T) {
 	require.Equal(t, "/tau/worker/v2", string(Protocol))
 	require.Equal(t, Protocol, Descriptor.Protocol)
 	require.Equal(t, IngressNone, Descriptor.Ingress,

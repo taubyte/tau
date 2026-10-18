@@ -21,7 +21,7 @@ type PubSubBroadcaster struct {
 // instance as well as the topic string: the cache exists only to avoid joining
 // the same topic twice on the same PubSub, which is an inherently per-PubSub
 // concern. Keying by topic alone aliased broadcasters across DIFFERENT nodes
-// that happen to share a topic name (e.g. every patrick node uses
+// that happen to share a topic name (e.g. v1's patrick nodes all used
 // "patrick/broadcast"). Because tau runs many nodes in one process under Dream,
 // a live node could be handed a broadcaster bound to another (already-closed)
 // node's context and PubSub — so its CRDT rebroadcasts returned the dead node's

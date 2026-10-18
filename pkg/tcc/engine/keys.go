@@ -9,7 +9,7 @@ import (
 // A KEY MAY NOT CONTAIN "/".
 //
 // The compiled configuration is an OBJECT, and "/" is what separates one level of it
-// from the next — in a TNS path, in a lowering's `At(path…)`, in every walk over the
+// from the next — in a register path, in a lowering's `At(path…)`, in every walk over the
 // tree. A key with a slash in it is a key pretending to be a path: it reads as
 // hierarchy everywhere it is printed and is one opaque leaf everywhere it is stored,
 // so a CRDT can only replace it whole and two writers touching different halves of it

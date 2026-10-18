@@ -72,7 +72,7 @@ import (
 //     exactly-once, and nobody has chosen.
 //
 // V1 ANSWERED IT AND IS NOT A PRECEDENT.
-// services/substrate/components/pubsub/subscribe.go:16-39 looks a message up and
+// v1's services/substrate/components/pubsub/subscribe.go:16-39 looks a message up and
 // invokes EVERY workload that matches, on every node holding one — the fan-out
 // arm, taken by default rather than decided. It is named here so whoever builds
 // the v2 half starts from a decision instead of from that code.

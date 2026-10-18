@@ -37,7 +37,7 @@ import (
 // segment index, whatever the id was.
 //
 // v1's storage identity is mh.Hash(m.ProjectId + m.ApplicationId + m.Match)
-// (services/hoarder/registry.go:44) — an UNSEPARATED CONCATENATION, so
+// (v1's services/hoarder/registry.go:44) — an UNSEPARATED CONCATENATION, so
 // ("ab","c") and ("a","bc") are one identity, and v2 would add two more fields
 // to that concatenation. That is two tenants sharing a namespace, the same
 // class as the repository takeover services/auth/store.go records at
@@ -388,7 +388,7 @@ func (a Address) listPrefix(namePrefix string) (string, error) {
 // content, one write is silently discarded" — holds by construction rather
 // than by discipline. v1 left a TODO over a read-modify-write on an LWW CRDT
 // asking what happens when two nodes update a version at the same time
-// (services/substrate/components/storage/storage/methods.go:79). This is the
+// (v1's services/substrate/components/storage/storage/methods.go:79). This is the
 // answer: nothing happens, because they are not the same key.
 func (a Address) versionKey(name string, stamp uint64, writer string) (string, error) {
 	prefix, err := a.objectPrefix(name)

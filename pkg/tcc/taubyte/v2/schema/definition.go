@@ -472,7 +472,7 @@ func certificateSecret(section string) []*Attribute {
 //
 // So this replaces v1's `match`/`regex`, which was this capability spelled as a lookup:
 // the data plane knew only a name and walked every config regex-matching it
-// (services/hoarder/helpers.go). That made every store a pattern, gave the pattern no
+// (v1's services/hoarder/helpers.go). That made every store a pattern, gave the pattern no
 // owner, and answered "may this instance exist" with "does this string match". NOTHING
 // IN THIS VOCABULARY CARRIES THAT PAIR ANY MORE — `stream` was the last to hold it, and
 // it went because a topic is named by the resource rather than matched by it — and
@@ -1976,7 +1976,7 @@ var V2Resources = []*Node{
 			Resource("component", "Component", "Component", "component"),
 		)),
 
-	// Build -> zip -> hoarder -> serve, unchanged. What left: domains, paths and
+	// Build -> zip -> storage -> serve, unchanged. What left: domains, paths and
 	// the serving section. A website is served because a domain edges to it.
 	// A built static site, and how it answers a path it does not have — which is the
 	// one thing every static host has to be told and this kind was not asking.
@@ -2349,7 +2349,7 @@ var V2Resources = []*Node{
 	// a name, a zone says what the name resolves to AT ALL — MX for mail, TXT for SPF
 	// and domain verification, CNAME for a third-party service, A for a box that is
 	// not tau. None of that is routing, and none of it should force a second DNS
-	// provider when seer is already an authoritative server.
+	// provider when dns is already an authoritative server.
 	//
 	// `records` is a list of ZONE-FILE PRESENTATION LINES — "www 300 IN A 1.2.3.4" —
 	// and that is a deliberate trade with a stated cost. It is the interchange format
@@ -2468,7 +2468,7 @@ var V2Resources = []*Node{
 				String(Key("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("naming"), ShowWhen(Key("host", "kind"), "zone"), Doc("Certificate", "generated: issued on demand for this name. provided: from the secret below. A host under the cloud's own zone needs neither — that zone has a wildcard.")),
 				certificateSecret("naming")[0], certificateSecret("naming")[1],
 
-				// THE NESTING IS DECLARED BY Path, never spelled into the key. TNS is
+				// THE NESTING IS DECLARED BY Path, never spelled into the key. The register is
 				// a CRDT and the compiled object is a tree, so route -> handler ->
 				// namespace has to be three mergeable levels; a key that spelled the
 				// path itself would be one opaque leaf that can only be replaced whole,
@@ -2690,7 +2690,7 @@ var V2Resources = []*Node{
 	// claimant, `stream` fans out to every subscriber, `bus` fans out and forgets, and
 	// `channel` is two workloads and a socket. Nobody has to be told which is which.
 	//
-	// IMPLEMENTATION NOTE: `services/substrate/components/pubsub/` is v1's home for
+	// IMPLEMENTATION NOTE: v1's `services/substrate/components/pubsub/` is v1's home for
 	// this. It is not being renamed, so someone reading `p2p/stream.go` while writing a
 	// `stream` resource is looking at the wrong kind — that file is the `channel` kind.
 	//
@@ -2900,8 +2900,8 @@ var V2Resources = []*Node{
 	// word for durable fan-out (Kinesis Data Streams, NATS JetStream, Redpanda).
 	//
 	// A NOTE FOR ANYONE READING THE IMPLEMENTATION: v1's directories are now inverted
-	// relative to this vocabulary. `services/substrate/components/p2p/stream.go` is
-	// what this kind describes, and `services/substrate/components/pubsub/` is what the
+	// relative to this vocabulary. v1's `services/substrate/components/p2p/stream.go` is
+	// what this kind describes, and v1's `services/substrate/components/pubsub/` is what the
 	// `stream` kind describes. Those are v1's and v1 is not being renamed; the v2
 	// successors take the names this vocabulary uses.
 	//
@@ -3158,7 +3158,7 @@ var V2Resources = []*Node{
 			Section("memory", "Memory", "What it remembers, and how wide the vectors are."),
 			Ops(WriteOp("invoke")),
 
-			// AN AGENT LOWERS, like a workflow: nothing in the substrate runs "agents".
+			// AN AGENT LOWERS, like a workflow: nothing in the worker runs "agents".
 			// The loop is a function, and what it remembers is a vector index — both
 			// resources the platform already runs, so an agent adds a vocabulary and no
 			// component.
@@ -3221,7 +3221,7 @@ var V2Resources = []*Node{
 	// each does one thing, may be retried, and may hand off to another step when it
 	// finally fails.
 	//
-	// IT LOWERS. A workflow is not a component — nothing in the substrate runs
+	// IT LOWERS. A workflow is not a component — nothing in the worker runs
 	// "workflows". Each step becomes a queue holding its work and a DRIVER consuming it,
 	// failures land in a dead-letter queue, and the run's own state is the message that
 	// travels between them. Every one of those is a

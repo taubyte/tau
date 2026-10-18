@@ -19,7 +19,7 @@ import (
 // out in queues and an entity.
 //
 // Every other kind in a vocabulary names something a component holds — a queue is a
-// queue because something in the substrate keeps one. A transpiled kind names none:
+// queue because something in the platform keeps one. A transpiled kind names none:
 // it is a way of WRITING resources that already exist, and it lowers into them at
 // compile. The vocabulary gains a construct; operations gains nothing to deploy.
 //

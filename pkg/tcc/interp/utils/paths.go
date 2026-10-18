@@ -94,7 +94,7 @@ func ResolveNameToId(ct transform.Context[object.Refrence], group, name, nameFie
 	}
 
 	// Default arm only: fall back to parent scopes (app -> project -> root),
-	// matching substrate resolution order.
+	// matching the worker's resolution order.
 	for i := len(scope) - 1; i >= 1; i-- {
 		if ret, err = localResolveNameToId(ct.Store(), scope[:i], group, bare, nameField); err == nil {
 			return ret, nil

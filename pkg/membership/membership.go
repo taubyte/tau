@@ -32,7 +32,7 @@
 // two nodes legitimately disagreeing under an asymmetric partition is
 // information rather than a bug — v1 found that liveness rides multi-hop
 // gossip while a durability barrier needs a direct dial, and the two disagree
-// exactly when it matters (services/hoarder/kvdb.go:292-307).
+// exactly when it matters (v1's services/hoarder/kvdb.go:292-307).
 //
 // # What is not decided here
 //

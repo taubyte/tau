@@ -13,9 +13,9 @@ import (
 )
 
 // Defaults. Fields on Config set through New, never mutable package globals —
-// services/patrick/service.go's BootstrapTime, DefaultReAnnounceJobTime and
+// v1's services/patrick/service.go's BootstrapTime, DefaultReAnnounceJobTime and
 // MaxReAnnounceJobs are those, shared by every instance in a process, and
-// services/patrick/types.go already records that as a fixed race.
+// v1's services/patrick/types.go already records that as a fixed race.
 const (
 	// DefaultMaxBodyBytes bounds a webhook body. GitHub's own push payloads run
 	// to a few hundred KiB at the truncation limits it documents (20 commits,
@@ -65,7 +65,7 @@ var (
 	DefaultJobRate = Rate{Burst: 600, Per: time.Minute}
 )
 
-// DefaultEligibleRefs is RESTATED, not imported. legacy/specs/common's
+// DefaultEligibleRefs is RESTATED, not imported. v1's legacy/specs/common's
 // DefaultBranches is v1's frozen address space and nothing new imports it; the
 // list is also policy, and policy an operator can change does not belong in a
 // package v1 freezes.
@@ -228,7 +228,7 @@ type Hooks interface {
 	// It hands back the generated message rather than bare strings because
 	// THE FIELDS DECIDE AN AUTHENTICATION TOGETHER: the scheme and secret
 	// verify the body, and `repository_key` says which repository that
-	// signature is good for. v1 fetched only the secret — services/patrick/
+	// signature is good for. v1 fetched only the secret — v1's services/patrick/
 	// github.go's githubCheckHookAndExtractSecret sets exactly one context
 	// variable — which is the whole of how a signature under one hook came to
 	// authorize a job for any repository.

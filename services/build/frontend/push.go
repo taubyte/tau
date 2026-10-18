@@ -8,7 +8,7 @@ import "net/http"
 // the FRONTEND's decision, made before Enqueue is ever called"). The backend
 // validates a ref's SHAPE and does not re-filter it, so there is one list, in
 // one config field, that an operator changes in one place. v1 read
-// legacy/specs/common.DefaultBranches — a package-level var in v1's frozen
+// v1's legacy/specs/common.DefaultBranches — a package-level var in v1's frozen
 // address space — and then exempted itself from it entirely in dev mode, so
 // the policy differed between the cloud an author tested on and the one they
 // deployed to.

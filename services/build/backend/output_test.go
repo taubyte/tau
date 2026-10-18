@@ -240,7 +240,7 @@ func TestAnAssetStoreThatRefusesTheLogLeavesTheJobWithoutOne(t *testing.T) {
 	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
 		require.NoError(t, out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact")))
 		fmt.Fprint(out, "built\n")
-		h.assets.fail(errors.New("hoarder is down"))
+		h.assets.fail(errors.New("storage is down"))
 		return nil
 	}
 	require.True(t, h.mustStep(t))
@@ -670,7 +670,7 @@ func TestAnAssetStoreThatRefusesAnArtifactTellsTheRunner(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	h.assets.fail(errors.New("hoarder is down"))
+	h.assets.fail(errors.New("storage is down"))
 	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
 		return out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact"))
 	}
@@ -678,7 +678,7 @@ func TestAnAssetStoreThatRefusesAnArtifactTellsTheRunner(t *testing.T) {
 
 	rec := h.mustRecord(t, id)
 	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
-	require.Contains(t, rec.Reason, "hoarder is down")
+	require.Contains(t, rec.Reason, "storage is down")
 	require.Empty(t, rec.Assets)
 }
 

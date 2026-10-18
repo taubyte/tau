@@ -13,15 +13,8 @@ import (
 // generated service names gives the same answer, because the id names the
 // package's listener and all five mount behind it.
 //
-// The "tau." prefix in that package is what keeps this off v1's "/auth/v1"
-// (services/common/names.go:5) for the whole span in which both run in one
-// swarm and one binary. It is not decoration: rpc.Listen refuses the second
-// listener with ErrProtocolTaken, and libp2p on its own would have silently
-// let it replace the first. The prefix was missing from the schema when this
-// package was written and this constant carried it by hand, with the drift
-// written out here; pkg/proto's TestTheRulesBufCannotCheck now holds it
-// for every v2 package, reading v1's live ids out of names.go rather than
-// arguing that a collision is impossible.
+// The "tau." prefix in that package keeps the id from being a bare service
+// word; pkg/proto's rules test holds it for every package.
 var Protocol = rpc.Protocol(authv2connect.ProjectServiceName)
 
 // Ingress states which side of the trust boundary a service is on

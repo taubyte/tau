@@ -16,7 +16,7 @@ import (
 // on every cloud that hosts it. Only the cloud's own fqdn is resolved at deploy.
 //
 // The derivation itself lives in the engine's registry (engine.DeriveDNSLabel), not
-// here, so tau-cli, the web console and seer compute this name the same way instead of
+// here, so tau-cli, the web console and dns compute this name the same way instead of
 // each carrying their own. Why base32 and why 13 characters are documented there.
 
 // ProjectLabelLength is the label's width; see engine.DeriveDNSLabel.

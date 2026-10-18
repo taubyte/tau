@@ -30,8 +30,8 @@ func TestAHostWithoutBothBuildHalvesIsOneNode(t *testing.T) {
 		[]string{node.Auth, node.Secrets, node.Discovery, node.DNS, node.Gateway, node.BuildBackend, node.Proxy})
 }
 
-// TestEveryNodeRunsStats, even when no shape asked for seer.
-func TestEveryNodeRunsStats(t *testing.T) {
+// TestEveryNodeRunsDiscovery, even when no shape asked for seer.
+func TestEveryNodeRunsDiscovery(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	assert.NilError(t, p.Shapes().Shape("shape1").Services().Set("tns"))
 	assert.NilError(t, p.Shapes().Shape("shape2").Services().Set("hoarder", "substrate"))

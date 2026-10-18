@@ -81,7 +81,7 @@ func TestResolveNameToId_GlobalFallback(t *testing.T) {
 }
 
 func TestResolveNameToId_ProjectScopeFallbackFromApp(t *testing.T) {
-	// Index at project scope, resolve from app context (aligns with substrate: app -> project -> root).
+	// Index at project scope, resolve from app context (aligns with the worker: app -> project -> root).
 	root := object.New[object.Refrence]()
 	root.Set("name", "root")
 

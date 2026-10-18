@@ -262,14 +262,11 @@ func TestTheRulesBufCannotCheck(t *testing.T) {
 	// ─── §6. v2's schema imports only v2's schema ──────────────────────
 	//
 	// buf.gen.yaml's own doc: cross-service types belong in
-	// tau/common/v1/common.proto, imported the way drive.proto imports
-	// config.proto — "v2's own, never legacy's pkg/specs address space".
-	// buf.yaml puts this module in a workspace with pkg/taucorder/proto,
+	// tau/common/v2/common.proto, imported the way drive.proto imports
+	// config.proto. buf.yaml puts this module in a workspace with
 	// tools/spore-drive/proto and ee/proto, so an import across that boundary
-	// resolves and builds clean. It also arrives with everything that file
-	// declares: `taucorder.v1.RepositoryId` is `oneof id { int64 github = 1;
-	// string bitbucket = 2; }` — §1's whole subject, both halves of it, in
-	// one import. Refusing the import is refusing that, and the check is
+	// resolves and builds clean, and arrives with everything that file
+	// declares. Refusing the import is refusing that, and the check is
 	// against what this module actually declares on disk rather than a
 	// prefix, so a v1 tree that ever moved under tau/ would not be waved
 	// through. This is pkg/tcc/taubyte/v2's boundary test one layer along,

@@ -42,7 +42,7 @@ import (
 //     delete by subscribing to a shard it does not hold — it ASKS. An
 //     unreachable index holder means UNKNOWN, never DEAD. That is v1's one
 //     piece of discipline worth carrying verbatim (reconcile.go's rule that a
-//     TNS outage is not a deletion), and it is the difference between a
+//     register outage is not a deletion), and it is the difference between a
 //     partition costing availability and a partition costing data.
 //
 //  4. THE GRACE WINDOW HAS ELAPSED, TIMED FROM LOCAL OBSERVATION. Never from

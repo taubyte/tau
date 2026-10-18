@@ -202,7 +202,7 @@ func WithLogger(logf func(format string, args ...any)) Option {
 // New validates and allocates. It binds nothing — no listener until Start — so
 // a Service can be constructed to be inspected, and a node can construct every
 // service before starting any of them (service-conventions.md §2a). v1's New
-// serves: services/patrick/service.go starts its stream, then can still fail
+// serves: v1's services/patrick/service.go starts its stream, then can still fail
 // and leak it.
 //
 // Four dependencies, each an interface this package declares rather than a

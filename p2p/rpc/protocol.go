@@ -20,12 +20,10 @@ import (
 // there is only one place either is written down.
 //
 // v1 spells its ids out as free-standing string vars beside the service name
-// (services/common/names.go), tied to no message definition, which is how
-// "/tns/v1" survived a run of wire changes without a bump. It is also why
-// every v2 package carries the "tau." prefix: v1 answers on "/auth/v1", and
-// the two coexist in one swarm and one binary for the whole span between the
-// first v2 service and the swap. pkg/proto's TestTheRulesBufCannotCheck
-// checks that no v2 package derives an id v1 already answers on.
+// (v1's services/common/names.go), tied to no message definition, which is how
+// "/tns/v1" survived a run of wire changes without a bump. Every tau package
+// also carries the "tau." prefix, so an id derived from it names tau and not
+// just a service word; pkg/proto's rules test holds the package shape.
 func Protocol(serviceName string) protocol.ID {
 	pkg := serviceName
 	if i := strings.LastIndex(serviceName, "."); i >= 0 {

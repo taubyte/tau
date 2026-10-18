@@ -9,9 +9,7 @@ import (
 
 // Protocol is the libp2p protocol id this service listens on: "/" plus the
 // proto package with dots as slashes, walked off the schema rather than typed
-// here. The "tau." prefix in that package is what keeps this off v1's
-// "/tns/v1" (services/common/names.go) for the whole span in which both run in
-// one swarm.
+// here.
 var Protocol = rpc.Protocol(registerv2connect.RegisterServiceName)
 
 // Ingress states which side of the trust boundary a service is on.

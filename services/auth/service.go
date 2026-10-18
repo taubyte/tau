@@ -41,7 +41,7 @@ type Service struct {
 // Option configures a Service at construction. v2's tunables are fields set
 // through Option, never package-level vars every instance in a process
 // would share (service-conventions.md §1's complaint about
-// services/patrick/service.go's BootstrapTime and friends).
+// v1's services/patrick/service.go's BootstrapTime and friends).
 type Option func(*Service) error
 
 // WithServerOptions passes p2p/rpc.ServerOption values through to

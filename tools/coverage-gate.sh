@@ -23,36 +23,7 @@ BASE="${1:-$(git merge-base HEAD main)}"
 # where a coverage number is meaningless. Matched as substrings of the import
 # path. Keep this list short and justified — every entry weakens the gate.
 EXEMPT=(
-	"/pkg/config-compiler/fixtures"   # test fixtures, no logic
-	"/pkg/tcc/taubyte/v1/fixtures"    # test fixtures, no logic
-	"/pkg/tcc/wasm"                   # GOOS=js only, cannot run under host go test
-	"/tools/dream"                    # dream harness entrypoint
-	"/core/services/hoarder"          # interface + struct/option declarations, no logic
-	"/pkg/specs/structure"            # resource struct declarations, no logic
-	# Surgical-edit-only in this branch (replica-config removal / one-line change);
-	# these carry pre-existing integration coverage from parent/e2e suites that a
-	# per-package run cannot see. Enforcement stays on the net-new-logic packages
-	# (services/hoarder, clients/p2p/hoarder, pkg/specs/hoarder).
-	"/pkg/config-compiler/compile"
-	"/pkg/tcc/taubyte/v1/schema"
-	"/pkg/tcc/taubyte/v1/pass1"
-	"/pkg/kvdb"
-	"/services/monkey"
-	"/services/monkey/jobs"
-	"/tools/tau/prompts/database"
-	"/pkg/taucorder/service" # surgical Stash-RPC rewrite (79% covered); package total
-	                         # is dragged by unrelated pre-existing debug RPCs
-	# Substrate DB/storage cutover (PR3): pubsub-placement path swapped for the
-	# remote hoarder KVDB client. Behaviour is covered by the dream E2E suites at
-	# components/{database,storage}/tests — including the new "substrate holds no
-	# crdt/<hash>" cutover assertion — but those tests live in a sibling dir, so a
-	# per-package `-coverpkg PKG PKG/...` run attributes nothing to the logic
-	# packages below (the leaf ones have no local _test.go at all → 0.0%).
-	"/services/substrate/components/database"
-	"/services/substrate/components/storage"
-	'/services/substrate$' # anchored: only the wiring package (new.go/type.go/attach.go),
-	                       # not the whole components/ tree
-
+	"/pkg/tcc/taubyte/v2/wasm" # GOOS=js only, cannot run under host go test
 )
 
 is_exempt() {
@@ -97,7 +68,7 @@ trap 'rm -rf "$tmp"' EXIT
 #
 # One dreaming-tagged run of PKG/... measures the true union: unit tests build
 # under the dreaming tag too, and PKG/... pulls in sibling test packages (e.g.
-# services/hoarder/tests) whose coverage -coverpkg attributes back to PKG. So a
+# services/discovery/dream) whose coverage -coverpkg attributes back to PKG. So a
 # service exercised only through an external _test package is still counted.
 #
 # Heavy dreaming suites can flake under the cumulative load of a full gate run

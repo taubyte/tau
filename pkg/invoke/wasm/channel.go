@@ -21,7 +21,7 @@ import (
 // poor name for a route. What this is, is a named, ordered conduit between
 // exactly two workloads inside one project — the way in that is not an ingress
 // — and libp2p is how it is carried. Anyone reading v1's
-// `services/substrate/components/p2p/` is reading this.
+// v1's `services/substrate/components/p2p/` is reading this.
 //
 // # One verb, and it is a write
 //

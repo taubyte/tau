@@ -195,7 +195,7 @@ func code(err error) error {
 	// kv is the engine named here; a connector that answers a miss with an error
 	// of its own falls through to Unavailable until pkg/database carries one
 	// shared sentinel for every engine to wrap. That is a gap worth naming
-	// rather than papering over with a string match, which is how the substrate
+	// rather than papering over with a string match, which is how v1's substrate
 	// cache ended up whitelisting a sentence nothing had produced in months.
 	case errors.Is(err, ErrNotSet), errors.Is(err, kvengine.ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, err)

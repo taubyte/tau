@@ -31,7 +31,7 @@
 //
 // # v1 did this differently and worse
 //
-// services/substrate/components/database/kv keeps a parallel `size/<key>` row
+// v1's services/substrate/components/database/kv keeps a parallel `size/<key>` row
 // per entry and LISTS AND SUMS ALL OF THEM ON EVERY PUT — O(n) reads per write
 // — then refuses when full, and has no notion of a lifetime at all. None of
 // that is carried here.

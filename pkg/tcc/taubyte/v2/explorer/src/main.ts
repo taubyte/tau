@@ -371,7 +371,7 @@ function mainPane(result: CompileOk | { error: string }): HTMLElement {
     pane.appendChild(
       sectionTitle(
         "the compiled object",
-        "a nested map, shown as JSON. On the wire it is CBOR in TNS — never YAML.",
+        "a nested map, shown as JSON. On the wire it is CBOR in the register — never YAML.",
       ),
     );
     pane.appendChild(jsonRoot(result.object, "project", 3));

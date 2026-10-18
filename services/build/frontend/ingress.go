@@ -65,9 +65,9 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("PUT /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleSetSecret))
 	mux.HandleFunc("DELETE /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleDeleteSecret))
 
-	// No /ping. v1 has one, unauthenticated, and a liveness endpoint is a
+	// No /ping. v1 had one, unauthenticated, and a liveness endpoint is a
 	// decision about what this process will tell the internet about itself
 	// before anyone has asked for it — including that it is here. Nothing in
-	// this cloud reads patrick's today.
+	// this cloud reads one.
 	return mux
 }

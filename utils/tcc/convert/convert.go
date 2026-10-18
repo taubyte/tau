@@ -11,8 +11,8 @@ import (
 )
 
 // MapToTCCObject converts a map to a TCC object.Object[object.Refrence]
-// This is needed because TCC decompiler expects an object, but TNS returns a map
-// The map structure from TNS matches the Flat() output structure
+// This is needed because TCC decompiler expects an object, but the register returns a map
+// The map structure from the register matches the Flat() output structure
 // Handles both map[string]any and map[any]any
 func MapToTCCObject(m any) object.Object[object.Refrence] {
 	// Normalize the map first
@@ -99,7 +99,7 @@ func normalizeMap(v any) any {
 		}
 		// Restore []string from a JSON-eroded []any so the decompiler's
 		// domains.([]string) assertions (pass2 websites/functions) hold. Serialized
-		// sources (TNS maps, wasm JSON) lose the concrete slice type otherwise.
+		// sources (register maps, wasm JSON) lose the concrete slice type otherwise.
 		if allStrings {
 			strs := make([]string, len(result))
 			for i, v := range result {

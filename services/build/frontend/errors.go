@@ -150,7 +150,7 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 // accepted is the webhook's whole answer: a status and NOTHING ELSE.
 //
 // v1 returns the entire Job — id included — to whoever posted the webhook
-// (services/patrick/github.go returns newJob), and its unauthenticated
+// (v1's services/patrick/github.go returns newJob), and its unauthenticated
 // /download route is keyed by that id. A verified webhook proves that somebody
 // holds a hook secret; it does not make them a reader of this cloud's state.
 func accepted(w http.ResponseWriter, reason string) {

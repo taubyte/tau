@@ -3,7 +3,7 @@
 //
 // # What v1 did
 //
-// The substrate opened the database. Every node that ever served a request for
+// v1's substrate opened the database. Every node that ever served a request for
 // a project held that project's connection, its indexes and, for tau's own
 // engines, its rows — so the data plane was every node that had ever run code,
 // the connection table was unbounded and never expired, and a database's

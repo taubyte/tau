@@ -25,7 +25,7 @@ import (
 //   - the private role may not import pkg/http. That is
 //     service-conventions.md §5a's second, mechanical half of the ingress
 //     check: the one that catches a listener added without touching the
-//     descriptor. services/substrate/new.go is that case in v1 today.
+//     descriptor.
 //   - the dial adapters may import neither role, so that neither role's
 //     internals can reach the other through them.
 //
@@ -140,10 +140,6 @@ func TestThePrivateRoleHasNoIngress(t *testing.T) {
 		"the private role must not depend on the public one")
 	requireNoImport(t, paths, "github.com/taubyte/tau/legacy",
 		"nothing new imports v1's frozen address space")
-	requireNoImport(t, paths, "github.com/taubyte/tau/services/patrick",
-		"v1 is a base to read, not a dependency")
-	requireNoImport(t, paths, "github.com/taubyte/tau/services/monkey",
-		"v1 is a base to read, not a dependency")
 
 	for name := range sources(t, "backend") {
 		require.NotEqual(t, "ingress.go", name,
@@ -181,8 +177,6 @@ func TestThePublicRoleServesNoP2PRPC(t *testing.T) {
 		"a host is what a p2p listener is mounted on, and this role has none")
 	requireNoImport(t, paths, "github.com/taubyte/tau/legacy",
 		"nothing new imports v1's frozen address space")
-	requireNoImport(t, paths, "github.com/taubyte/tau/services/patrick",
-		"v1 is a base to read, not a dependency")
 	requireNoImport(t, paths, "gopkg.in/go-playground/webhooks.v5",
 		"the library v1 verifies webhooks with is sha1-only and skips the MAC on an empty secret")
 

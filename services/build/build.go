@@ -34,10 +34,6 @@ import (
 // rpc.Protocol(JobServiceName) both return it, because the id names the proto
 // PACKAGE's listener and both service blocks mount behind one mux; build_test.go
 // holds that rather than this comment.
-//
-// The "tau." segment is what keeps this off v1's live "/patrick/v1" and
-// "/monkey/v1" (services/common/names.go) for the whole span in which v1 and
-// v2 run in one swarm and one binary.
 var Protocol = rpc.Protocol(buildv2connect.QueueServiceName)
 
 // QueueDomain names the consistency domain build's queue lives in — the one

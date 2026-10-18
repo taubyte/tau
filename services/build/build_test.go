@@ -18,17 +18,6 @@ func TestBothServiceBlocksDeriveOneProtocolID(t *testing.T) {
 	require.EqualValues(t, "/tau/build/v2", Protocol)
 }
 
-// v1 answers on "/patrick/v1" and "/monkey/v1" today, and both processes run
-// in the same swarm and the same binary as this one until the swap. The "tau."
-// segment in the proto package is what keeps them apart; pkg/proto's
-// TestTheRulesBufCannotCheck holds it for every v2 package, reading v1's ids
-// out of services/common/names.go. Restated here as the one-line form because
-// this is the constant a reader of this package sees.
-func TestProtocolIsNotOneOfV1s(t *testing.T) {
-	require.NotEqualValues(t, "/patrick/v1", Protocol)
-	require.NotEqualValues(t, "/monkey/v1", Protocol)
-}
-
 // The frontend's empty protocol id is a claim about the trust boundary, not an
 // oversight: build.proto's header makes "this role hosts no RPC surface" the
 // thing a reader can check. A registry that required a protocol id per

@@ -16,8 +16,8 @@ import (
 // *http.Client that reaches exactly one peer on exactly one protocol, and the
 // base URL to address it by.
 //
-//	c, err := connect.NewClient(h, pid, "/tau/seer/v2")
-//	seer := seerv2connect.NewSeerServiceClient(c.HTTP(), c.URL())
+//	c, err := connect.NewClient(h, pid, "/tau/register/v2")
+//	register := registerv2connect.NewRegisterServiceClient(c.HTTP(), c.URL())
 //
 // One Client holds one libp2p stream and multiplexes every call over it, the
 // way HTTP/2 is meant to be used. Opening a second Client to the same peer

@@ -18,7 +18,7 @@ import (
 
 // Defaults. Every one of them is a field on Config set through New, never a
 // mutable package var two Services in one process would share — which is what
-// services/patrick/service.go's BootstrapTime, DefaultReAnnounceJobTime and
+// v1's services/patrick/service.go's BootstrapTime, DefaultReAnnounceJobTime and
 // MaxReAnnounceJobs are, and which its own types.go already records as a fixed
 // race.
 const (
@@ -376,7 +376,7 @@ type Work struct {
 //
 // The log is DURABLE ENOUGH WHEN Write RETURNS: the bytes are readable by
 // anybody following the build, and they survive this process dying. v1 writes
-// to a file too (os.CreateTemp, services/monkey/monkey.go) — what it does not
+// to a file too (os.CreateTemp, v1's services/monkey/monkey.go) — what it does not
 // do is let anything READ that file: it is published to IPFS from a `defer` at
 // the end of the run and served by cid afterwards, so a build that killed its
 // worker never reached the defer and left a temp file in /tmp that nothing

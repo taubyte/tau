@@ -10,7 +10,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// MockCluster is an in-memory Cluster implementation for unit tests (e.g. non-dreaming patrick/monkey tests).
+// MockCluster is an in-memory Cluster implementation for unit tests (e.g. non-dreaming build tests).
 // It is a no-op leader: Set/Delete/Batch succeed; Get/Keys read from local map.
 func NewMockCluster() *MockCluster {
 	return &MockCluster{data: make(map[string][]byte)}

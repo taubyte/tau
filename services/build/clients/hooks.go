@@ -19,7 +19,7 @@ import (
 // It is the frontend's single most security-sensitive call, because its answer
 // decides an authentication: the secret verifies the body's signature, and the
 // repository key says which repository that signature is good FOR. v1 fetched
-// only the secret (services/patrick/github.go's githubCheckHookAndExtractSecret
+// only the secret (v1's services/patrick/github.go's githubCheckHookAndExtractSecret
 // sets one context variable, "GithubSecret") and then let the BODY name the
 // repository — so a signature made under any registered hook authorized a job
 // for any repository. auth.proto carries repository_key, the scheme and the

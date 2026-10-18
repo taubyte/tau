@@ -117,7 +117,7 @@ func scopeSegments(scope interp.ScopeChain) []string {
 //     as `%C3%A9` noise — and which characters those are is the standard library's policy
 //     rather than ours. What goes into a persisted index has to be frozen here.
 //   - Hex or base64 over the whole branch round-trips as well and costs the legibility
-//     that is the reason a TNS path is a path. Under this encoding the branches almost
+//     that is the reason a register path is a path. Under this encoding the branches almost
 //     every project has are untouched: `main` is `main`.
 //
 // The encoded form also needs nothing from the reader's grammar: `%2F` is not a `/`, so
