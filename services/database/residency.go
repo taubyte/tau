@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/pkg/placement"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // residency.go turns what an author wrote about WHERE into the region list
@@ -68,16 +69,16 @@ type placed struct {
 // where it asked.
 func (p placed) regions(at address, allowance []string) ([]string, error) {
 	switch p.policy {
-	case "pinned":
+	case specs.RegionsPolicyPinned:
 		return within(p.policy, p.in, allowance)
-	case "failover":
+	case specs.RegionsPolicyFailover:
 		// BOTH, and not main-with-standby-as-fallback. Copies live in each of
 		// the two from the moment it is written — a standby that only receives
 		// state once the main is gone is a standby with nothing to take over.
 		// Which of them SERVES is the routing question this file does not
 		// answer.
 		return within(p.policy, []string{p.main, p.standby}, allowance)
-	case "cdn":
+	case specs.RegionsPolicyCdn:
 		if len(p.in) > 0 {
 			return within(p.policy, p.in, allowance)
 		}

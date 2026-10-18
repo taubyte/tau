@@ -2,6 +2,8 @@ package primitives
 
 import (
 	"strings"
+
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // spec.go is what a sync resource IS, and the one name every layer below
@@ -11,16 +13,16 @@ import (
 // them. Nothing is renamed on the way in and there is no second vocabulary to
 // map between.
 const (
-	syncKind  = "sync"
-	queueType = "queue"
-	logType   = "log"
+	syncKind  = specs.KindSync
+	queueType = specs.SyncTypeQueue
+	logType   = specs.SyncTypeLog
 )
 
 // The two resolutions the `sync` types may declare, which are the same two
-// words and the same axis `database.consensus` carries.
+// words on a queue and a log, and the same axis `database.consensus` carries.
 const (
-	consensusRaft = "raft"
-	consensusCRDT = "crdt"
+	consensusRaft = specs.SyncQueueConsensusRaft
+	consensusCRDT = specs.SyncQueueConsensusCrdt
 )
 
 // Spec is one sync resource as the store layer needs it.

@@ -122,7 +122,7 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	if !held {
 		return declared{}, fmt.Errorf("%w: %s", ErrNotDeclared, ref.id)
 	}
-	if kind != "database" {
+	if kind != specs.KindDatabase {
 		return declared{}, fmt.Errorf("%w: %s is a %s", ErrNotADatabase, ref.id, kind)
 	}
 
@@ -135,16 +135,18 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	// compiles to a `type` of "kv", which is how a reader knows which of the
 	// four operation surfaces this resource has without guessing from which
 	// block is present.
-	model := resource.String("type")
+	db := specs.ReadDatabase(resource)
+	model := db.Type
 	if model == "" {
 		return declared{}, fmt.Errorf("%w: %s declares no model", ErrNotADatabase, ref.id)
 	}
+	block := blockOf(db)
 
 	out := declared{
 		revision: pointer.Revision,
 		spec: database.Spec{
 			Type:        database.Type(model),
-			Engine:      resource.String(model, "engine"),
+			Engine:      block.engine,
 			Project:     ref.project,
 			Environment: ref.environment,
 
@@ -152,24 +154,24 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 			// already gives: two workloads may call one database different
 			// things, and two databases may both be called `tokens`.
 			Name:     ref.storeName(),
-			Address:  resource.String(model, "host"),
-			Database: resource.String(model, "database"),
+			Address:  block.host,
+			Database: block.database,
 
 			// RESOLVED HERE AND NOWHERE LATER. The store a resident engine is
 			// handed is chosen by this word, so a hole in it would be a
 			// database kept by whichever branch happened to be first.
-			Consensus: consensusOf(resource.String(model, "consensus")),
+			Consensus: consensusOf(block.consensus),
 		},
 	}
-	if n, ok := resource.Int(model, "size"); ok {
-		out.size = n
+	if n := block.size; n != nil {
+		out.size = *n
 	}
 
 	// TLS IS ON UNLESS THE AUTHOR WROTE `disable`, which is the vocabulary's own
 	// polarity, and `require` is served as verify-full because pkg/database
 	// carries a bool and serving the weaker of the two would quietly accept a
 	// network attacker as the server.
-	out.spec.Credentials.TLS = resource.String(model, "tls") != "disable"
+	out.spec.Credentials.TLS = !block.plaintext
 
 	// WHERE IT LIVES IS THE RESOURCE'S OWN STATEMENT, bounded by its
 	// environment's. Reading it here and not on the grant is the same rule the
@@ -180,24 +182,49 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	// allowance all at once. Nothing lowered it into the resource, so this is
 	// the walk up rather than a read of a copy — and a resource placed by
 	// neither is one the audit already calls Broken.
-	region := placedOf(resource)
+	region := placedOf(db.Regions)
 	if out.regions, err = region.regions(ref, project.Allowance(ref.environment)); err != nil {
 		return declared{}, fmt.Errorf("%s: %w", ref.id, err)
 	}
 
 	// PER-MODEL DECLARATIONS TRAVEL AS OPTIONS. A vector's width and metric mean
 	// nothing to the other three.
-	for _, option := range []string{"dimensions", "metric"} {
-		if value := resource.String(model, option); value != "" {
-			out.option(option, value)
-			continue
-		}
-		if n, ok := resource.Int(model, option); ok {
-			out.option(option, fmt.Sprint(n))
-		}
+	if n := db.Vector.Dimensions; model == specs.DatabaseTypeVector && n != nil {
+		out.option("dimensions", fmt.Sprint(*n))
+	}
+	if metric := db.Vector.Metric; model == specs.DatabaseTypeVector && metric != "" {
+		out.option("metric", metric)
 	}
 
 	return out, nil
+}
+
+// typeBlock is the fields every data model's own block may carry, off
+// whichever block the type names: the engines a type may have differ, which is
+// the vocabulary's reason for putting them under the type, and a model that
+// does not declare one reads it empty.
+type typeBlock struct {
+	engine, host, database, consensus string
+	size                              *int64
+
+	// plaintext is the author writing `tls: disable`, the only way off.
+	plaintext bool
+}
+
+func blockOf(db specs.Database) typeBlock {
+	switch db.Type {
+	case specs.DatabaseTypeSql:
+		s := db.Sql
+		return typeBlock{s.Engine, s.Host, s.Database, s.Consensus, s.Size, s.Tls == specs.DatabaseSqlTlsDisable}
+	case specs.DatabaseTypeDocument:
+		d := db.Document
+		return typeBlock{d.Engine, d.Host, d.Database, d.Consensus, d.Size, d.Tls == specs.DatabaseDocumentTlsDisable}
+	case specs.DatabaseTypeKv:
+		return typeBlock{engine: db.Kv.Engine, consensus: db.Kv.Consensus, size: db.Kv.Size}
+	case specs.DatabaseTypeVector:
+		return typeBlock{engine: db.Vector.Engine, consensus: db.Vector.Consensus, size: db.Vector.Size}
+	}
+	return typeBlock{}
 }
 
 // consensusOf is what the author wrote, or what a database that wrote nothing
@@ -217,11 +244,11 @@ func (d *declared) option(name, value string) {
 }
 
 // placedOf reads a resource's own placement block.
-func placedOf(r specs.Resource) placed {
+func placedOf(r specs.Regions) placed {
 	return placed{
-		policy:  r.String("regions", "policy"),
-		in:      r.Strings("regions", "in"),
-		main:    r.String("regions", "main"),
-		standby: r.String("regions", "standby"),
+		policy:  r.Policy,
+		in:      r.In,
+		main:    r.Main,
+		standby: r.Standby,
 	}
 }

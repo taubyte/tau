@@ -140,7 +140,8 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	// a `type` of "queue", which is how a reader knows which of the two
 	// operation surfaces this resource has without guessing from which block is
 	// present.
-	kindOf := resource.String("type")
+	primitive := specs.ReadSync(resource)
+	kindOf := primitive.Type
 	if kindOf == "" {
 		return declared{}, fmt.Errorf("%w: %s declares no type", ErrNotASync, ref.id)
 	}
@@ -162,17 +163,25 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 			// RESOLVED HERE AND NOWHERE LATER, so nothing below has to decide
 			// what silence meant. `consensus` is RequiredWhen the type is
 			// written, so a hole in it is a resource the compiler let through.
-			Consensus: consensusOf(resource.String(kindOf, "consensus")),
+			Consensus: consensusOf(consensusIn(primitive)),
 		},
 	}
 
 	switch kindOf {
 	case queueType:
-		out.delivery = deliveryOf(out.spec, resource)
+		out.delivery = deliveryOf(out.spec, primitive.Queue)
 	case logType:
-		out.keep = keepOf(resource)
+		out.keep = keepOf(primitive.Log)
 	}
 	return out, nil
+}
+
+// consensusIn is the consensus the type's own block declares.
+func consensusIn(primitive specs.Sync) string {
+	if primitive.Type == logType {
+		return primitive.Log.Consensus
+	}
+	return primitive.Queue.Consensus
 }
 
 // consensusOf is what the author wrote, or what a resource that wrote nothing
@@ -191,7 +200,7 @@ func consensusOf(written string) string {
 // pkg/queue FILLS ITS OWN DEFAULTS and they are the vocabulary's — a 30s
 // visibility timeout, five attempts — so an absent attribute is left absent
 // here rather than being written twice in two places that can drift.
-func deliveryOf(spec Spec, resource specs.Resource) queue.Config {
+func deliveryOf(spec Spec, declared specs.SyncQueue) queue.Config {
 	cfg := queue.Config{Name: spec.Prefix()}
 
 	// A DEAD LETTER IS A REFERENCE TO ANOTHER QUEUE, and the compiled value is
@@ -200,34 +209,34 @@ func deliveryOf(spec Spec, resource specs.Resource) queue.Config {
 	// leaves pkg/queue to derive a keyspace from this queue's name — which
 	// nothing declares and therefore nothing can drain, which is why
 	// retention.go bounds it.
-	if dead := resource.String(queueType, "dead_letter", "name"); dead != "" {
+	if dead := declared.DeadLetterName; dead != "" {
 		cfg.DeadLetter = Spec{
 			Project: spec.Project, Environment: spec.Environment,
 			Type: queueType, Name: dead,
 		}.Prefix()
 	}
 
-	if d, ok := resource.Duration(queueType, "visibility_timeout"); ok {
-		cfg.VisibilityTimeout = d
+	if d := declared.VisibilityTimeout; d != nil {
+		cfg.VisibilityTimeout = *d
 	}
-	if d, ok := resource.Duration(queueType, "delay"); ok {
-		cfg.Delay = d
+	if d := declared.Delay; d != nil {
+		cfg.Delay = *d
 	}
-	if d, ok := resource.Duration(queueType, "retry", "interval"); ok {
-		cfg.RetryInterval = d
+	if d := declared.RetryInterval; d != nil {
+		cfg.RetryInterval = *d
 	}
-	if d, ok := resource.Duration(queueType, "retry", "ceiling"); ok {
-		cfg.RetryCeiling = d
+	if d := declared.RetryCeiling; d != nil {
+		cfg.RetryCeiling = *d
 	}
-	if n, ok := resource.Int(queueType, "max_attempts"); ok && n > 0 {
-		cfg.MaxAttempts = uint32(n)
+	if n := declared.MaxAttempts; n != nil && *n > 0 {
+		cfg.MaxAttempts = uint32(*n)
 	}
 	// A COMPILED NUMBER IS A NUMBER. `retry/factor` is a Float in the
 	// vocabulary; reading it as a string answers "" and the multiplier never
 	// travels, so an author who wrote `factor: 2` gets a flat interval with
 	// nothing saying so.
-	if f, ok := resource.Float(queueType, "retry", "factor"); ok {
-		cfg.RetryFactor = f
+	if f := declared.RetryFactor; f != nil {
+		cfg.RetryFactor = *f
 	}
 	return cfg
 }
@@ -237,13 +246,13 @@ func deliveryOf(spec Spec, resource specs.Resource) queue.Config {
 // ABSENT MEANS FOREVER, which is the vocabulary's own sentence and the safe
 // direction for a ledger — and the one place this service does not get to
 // improve on it. What forever costs is in retention.go.
-func keepOf(resource specs.Resource) retention {
+func keepOf(declared specs.SyncLog) retention {
 	var out retention
-	if d, ok := resource.Duration(logType, "retention", "age"); ok {
-		out.age = d
+	if d := declared.RetentionAge; d != nil {
+		out.age = *d
 	}
-	if n, ok := resource.Int(logType, "retention", "size"); ok {
-		out.size = n
+	if n := declared.RetentionSize; n != nil {
+		out.size = *n
 	}
 	return out
 }

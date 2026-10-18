@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/pkg/specs"
+
 	"github.com/robfig/cron/v3"
 	"google.golang.org/protobuf/proto"
 
@@ -278,9 +280,9 @@ const (
 // The three values `on_overlap` takes, as the vocabulary spells them. `skip` is
 // its default and is the only one that cannot make things worse.
 const (
-	overlapSkip  = "skip"
-	overlapQueue = "queue"
-	overlapAllow = "allow"
+	overlapSkip  = specs.CronOnOverlapSkip
+	overlapQueue = specs.CronOnOverlapQueue
+	overlapAllow = specs.CronOnOverlapAllow
 )
 
 // deliveryHeaders for a fired schedule. A workload invoked by a clock has no
