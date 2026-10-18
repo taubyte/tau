@@ -25,7 +25,6 @@ require (
 	github.com/google/go-github/v71 v71.0.0
 	github.com/google/jsonschema-go v0.4.2
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/h2non/filetype v1.1.3
 	github.com/h2non/gock v1.2.0
