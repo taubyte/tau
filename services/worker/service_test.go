@@ -124,18 +124,18 @@ func TestTheProtocolIsNotV1s(t *testing.T) {
 // Engines(); a kind with two authors the choice, and one that names neither is
 // refused rather than defaulted.
 func TestARuntimeIsNeverGuessed(t *testing.T) {
-	got, err := runtimeOf("function", specs.Resource{})
+	got, err := runtimeOf("function", specs.ReadWorkloadBlock(specs.Resource{}))
 	require.NoError(t, err)
 	require.Equal(t, "wasm", got)
 
-	got, err = runtimeOf("worker", specs.Resource{"runtime": "container"})
+	got, err = runtimeOf("worker", specs.ReadWorkloadBlock(specs.Resource{"runtime": "container"}))
 	require.NoError(t, err)
 	require.Equal(t, "container", got, "the resource's own choice wins over the kind's set")
 
-	_, err = runtimeOf("worker", specs.Resource{})
+	_, err = runtimeOf("worker", specs.ReadWorkloadBlock(specs.Resource{}))
 	require.ErrorIs(t, err, ErrAmbiguous, "worker runs on two tiers and this one says neither")
 
-	_, err = runtimeOf("cache", specs.Resource{})
+	_, err = runtimeOf("cache", specs.ReadWorkloadBlock(specs.Resource{}))
 	require.ErrorIs(t, err, ErrNoRuntime, "nothing runs a cache")
 }
 
@@ -170,19 +170,19 @@ func TestHeadersSurviveTheRoundTrip(t *testing.T) {
 func TestOnlyRunTimeEnvironmentVariablesAreHandedOver(t *testing.T) {
 	s := &Service{}
 
-	env, err := s.envOf(t.Context(), Target{Name: "api"}, specs.Resource{
+	env, err := s.envOf(t.Context(), Target{Name: "api"}, specs.ReadWorkloadBlock(specs.Resource{
 		"variables": map[string]any{
 			"LOG_LEVEL": map[string]any{"as": "env", "at": "run", "value": "info"},
 			"BUILT_AT":  map[string]any{"as": "env", "at": "build", "value": "2026"},
 			"CERT":      map[string]any{"as": "file", "at": "run", "value": "-----BEGIN"},
 		},
-	})
+	}).Variables)
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{"LOG_LEVEL": "info"}, env)
 
 	// No variables at all is nil rather than an empty map, so a spec with no
 	// environment says so.
-	env, err = s.envOf(t.Context(), Target{Name: "api"}, specs.Resource{})
+	env, err = s.envOf(t.Context(), Target{Name: "api"}, nil)
 	require.NoError(t, err)
 	require.Nil(t, env)
 }

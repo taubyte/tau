@@ -148,7 +148,7 @@ var (
 
 	regionsRefused = excuse{handled, "where a resource's copies go, on a kind nothing places by region. worker reads the block's policy and refuses the grant by name (unservable), so the regions under it are never served weaker than written — the target is not served."}
 
-	externalStreamRefused = excuse{handled, "the credentials for a stream on somebody else's broker. worker refuses a stream on any engine but tau's by name (unservableKind), so the credential is never served weaker than written."}
+	externalStreamRefused = excuse{handled, "where somebody else's broker is and how to reach it: its host, its tls and its credentials, which only a kafka or nats stream declares. worker refuses a stream on any engine but tau's by name (unservableKind), so none of them is ever served weaker than written."}
 
 	agentLowered = excuse{handled, "consumed by the agent's lowering: limits/timeout and limits/memory become the loop function's execution/timeout and execution/memory, and the memory block becomes a vector database's dimensions and size. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption."}
 
@@ -200,6 +200,8 @@ var unread = map[string]excuse{
 	"storage/streaming/ttl":        streamingStorageRefused,
 	"stream/credentials/name":      externalStreamRefused,
 	"stream/credentials/namespace": externalStreamRefused,
+	"stream/host":                  externalStreamRefused,
+	"stream/tls":                   externalStreamRefused,
 
 	"agent/limits/timeout":            agentLowered,
 	"agent/limits/memory":             agentLowered,
@@ -263,6 +265,9 @@ var readers = map[string][]string{
 	"services/v2/proxy/socket.go": {"proxy"},
 	"services/v2/proxy/limits.go": {"proxy"},
 	"services/v2/proxy/tls.go":    {"proxy"},
+
+	// A zone's own server, which takes the generated Zone it serves.
+	"node/zone/zone.go": {"zone"},
 }
 
 var everyKind = []string{"*"}
@@ -528,7 +533,29 @@ var skipped = map[string]bool{
 // is the same call shape on a different receiver, and reading it as a resource
 // read would make half the vocabulary look consumed.
 func scan(t *testing.T, root string) map[string]map[string]bool {
+	spelled, typed := scanReads(t, root)
 	out := map[string]map[string]bool{}
+	for _, reads := range []map[string]map[string]bool{spelled, typed} {
+		for file, paths := range reads {
+			if out[file] == nil {
+				out[file] = map[string]bool{}
+			}
+			for path := range paths {
+				out[file][path] = true
+			}
+		}
+	}
+	return out
+}
+
+// scanReads is scan's two halves apart: what each file reads by a SPELLED path,
+// and what it reads through a generated type. The guard in
+// generated_readers_test.go holds the first half to what nothing generated
+// covers.
+func scanReads(t *testing.T, root string) (spelledReads, typedReads map[string]map[string]bool) {
+	out := map[string]map[string]bool{}
+	typedOut := map[string]map[string]bool{}
+	types := generatedTypes(t, root)
 	consts := map[string]map[string]string{}
 
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
@@ -572,16 +599,22 @@ func scan(t *testing.T, root string) map[string]map[string]bool {
 			consts[dir] = stringConsts(dir)
 		}
 		paths := readsIn(file, consts[dir])
-		if len(paths) == 0 {
+		typed := typedReadsIn(file, typedPackageOf(dir, types), types)
+		if len(paths) == 0 && len(typed) == 0 {
 			return nil
 		}
 		relative, err := filepath.Rel(root, path)
 		require.NoError(t, err)
-		out[filepath.ToSlash(relative)] = paths
+		if len(paths) > 0 {
+			out[filepath.ToSlash(relative)] = paths
+		}
+		if len(typed) > 0 {
+			typedOut[filepath.ToSlash(relative)] = typed
+		}
 		return nil
 	})
 	require.NoError(t, err)
-	return out
+	return out, typedOut
 }
 
 // stringConsts is every string constant a package spells, so a read written as

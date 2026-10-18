@@ -154,7 +154,7 @@ func TestArtifactOf(t *testing.T) {
 		},
 		{
 			name:     "a builtin has no artifact and asks nothing",
-			resource: source("kind", sourceBuiltin, sourceBuiltin, "step"),
+			resource: source("kind", specs.SourceBlockSourceKindBuiltin, specs.SourceBlockSourceKindBuiltin, "step"),
 			seam:     &asked{answer: "never asked for"},
 			artifact: "", // shipped by the runtime; asking for one is the bug
 		},

@@ -9,6 +9,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
@@ -162,7 +163,7 @@ var declared = map[string][]string{
 	"cache":    {settingTTL, settingSize, settingAdmission, settingLimit, settingValidator, settingValidated, settingDeliverPort, settingDeliverPath},
 	"volume":   {settingQuota, settingCheckpointEvery, settingMountPath},
 	"storage":  {settingStorageType, settingStorageSize, settingVersioning},
-	"database": {settingType, "sql/" + settingCredentials, "sql/" + settingCredentialsScope},
+	"database": {settingType, specs.DatabaseSqlKeyCredentialsName, specs.DatabaseSqlKeyCredentialsNamespace},
 	"sync":     {settingSyncType, "queue/max_attempts", "queue/visibility_timeout", "queue/delay", "queue/dead_letter/name", "log/consensus", "log/retention/age", "log/retention/size"},
 	"channel":  {settingProtocol, settingServeKind, settingServeName, settingServeScope},
 	"mcp":      {settingMCPCacheScope, settingMCPCacheTTL},

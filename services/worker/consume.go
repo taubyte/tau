@@ -229,7 +229,7 @@ func sentToBy(spec invoke.Spec, receiving string) []invoke.Grant {
 
 // The vocabulary's own words for what a driver is granted.
 const (
-	functionKind = "function"
+	functionKind = specs.KindFunction
 	opInvoke     = "invoke"
 	opSend       = "send"
 )

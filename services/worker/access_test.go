@@ -130,7 +130,7 @@ func TestTheCanonicalFixtureServesOneCacheAndRefusesTheOther(t *testing.T) {
 // raft asked for "nothing is silently discarded"; a CRDT merges
 // concurrent writes last-writer-wins and the loser is gone with no error.
 func TestASingleWriterCacheIsRefusedByName(t *testing.T) {
-	reason := unservable(reachFor("ledger"), specs.Resource{"consensus": raftConsensus})
+	reason := unservable(reachFor("ledger"), specs.Resource{"consensus": specs.CacheConsensusRaft})
 
 	require.Contains(t, reason, "raft", "it names what was declared")
 	require.Contains(t, reason, "last-writer-wins", "and what it would have got instead")
@@ -151,7 +151,7 @@ func TestAGossipCacheIsServed(t *testing.T) {
 // the write anyway answers the wrong question.
 func TestAnUnservableTargetIsStillRefusedWhenItIsGuarded(t *testing.T) {
 	both := specs.Resource{
-		"consensus": raftConsensus,
+		"consensus": specs.CacheConsensusRaft,
 		"authorizer": map[string]any{
 			"name": "tier_check",
 		},
@@ -422,4 +422,19 @@ func TestAStreamingStorageIsRefused(t *testing.T) {
 		specs.Resource{"type": "streaming"})
 	require.Contains(t, why, "streaming")
 	require.Contains(t, why, "object storage")
+}
+
+// TestALOGISREFUSEDUNLESSITISRAFT, compared against the vocabulary's own value
+// rather than a literal beside it: a log asking for the raft it is served is
+// never refused for it, and one asking to converge is refused by name.
+func TestALogIsRefusedUnlessItIsRaft(t *testing.T) {
+	reach := specs.Reach{Kind: specs.KindSync, Label: "events"}
+	log := func(consensus string) specs.Resource {
+		return specs.Resource{"type": specs.SyncTypeLog, "log": map[string]any{"consensus": consensus}}
+	}
+
+	require.Empty(t, unservable(reach, log(specs.SyncLogConsensusRaft)))
+	require.Contains(t, unservable(reach, log(specs.SyncLogConsensusCrdt)), `asks for "crdt" consensus`)
+	require.Empty(t, unservable(reach, specs.Resource{"type": specs.SyncTypeQueue, "queue": map[string]any{"consensus": specs.SyncQueueConsensusCrdt}}),
+		"a queue is not a log")
 }

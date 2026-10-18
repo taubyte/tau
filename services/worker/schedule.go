@@ -87,7 +87,7 @@ type Schedule struct {
 }
 
 // cronKind is the vocabulary's name for a schedule.
-const cronKind = "cron"
+const cronKind = specs.KindCron
 
 // Schedules is every cron in the deployments this node already holds.
 //
@@ -132,7 +132,8 @@ func scheduleOf(proj *specs.Project, name, environment string, scope []string, c
 		return Schedule{}, false
 	}
 
-	spec := resource.String("schedule")
+	declared := specs.ReadCron(resource)
+	spec := declared.Schedule
 	if spec == "" {
 		// Required by the vocabulary, so this is a compiled object that did not
 		// come from tcc. Firing it would mean inventing a schedule.
@@ -146,10 +147,12 @@ func scheduleOf(proj *specs.Project, name, environment string, scope []string, c
 		Scope:     scope,
 		Path:      specs.NamespaceOf(scope, cron),
 		Spec:      spec,
-		Timezone:  resource.String("timezone"),
-		OnOverlap: resource.String("on_overlap"),
+		Timezone:  declared.Timezone,
+		OnOverlap: declared.OnOverlap,
 	}
-	out.Jitter, _ = resource.Duration("jitter")
+	if jitter := declared.Jitter; jitter != nil {
+		out.Jitter = *jitter
+	}
 
 	// WHAT IT FIRES IS ITS ACCESS BLOCK, which is the vocabulary's own
 	// sentence: "it fires whatever it edges to; the target declares nothing".

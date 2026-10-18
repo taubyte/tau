@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
@@ -89,7 +91,7 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 	var runtime, artifact string
 	if !servedHere(t.Kind) {
 		var err error
-		if runtime, err = runtimeOf(t.Kind, r); err != nil {
+		if runtime, err = runtimeOf(t.Kind, specs.ReadWorkloadBlock(r)); err != nil {
 			return invoke.Spec{}, err
 		}
 		if artifact, err = s.artifactOf(ctx, t, r, resourceID); err != nil {
@@ -97,7 +99,8 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 		}
 	}
 
-	env, err := s.envOf(ctx, t, r)
+	workload := specs.ReadWorkloadBlock(r)
+	env, err := s.envOf(ctx, t, workload.Variables)
 	if err != nil {
 		return invoke.Spec{}, err
 	}
@@ -123,33 +126,29 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 		Project:     t.Project,
 		Environment: t.Environment,
 		Kind:        t.Kind,
-		Label:       r.String("name"),
+		Label:       workload.Name,
 		Completes:   schema.CompletesOf(t.Kind),
 	}
 	if _, scope, _, ok := proj.Locate(resourceID); ok {
 		spec.Scope = scope
 	}
-	if memory, ok := r.Int("execution", "memory"); ok {
-		spec.Memory = memory
-	}
-	spec.Ports = portsOf(r)
-	if timeout, ok := r.Duration("execution", "timeout"); ok {
-		spec.Timeout = timeout
-	}
-	if concurrency, ok := r.Int("limits", "concurrency"); ok {
-		spec.Concurrency = int(concurrency)
+	spec.Memory = workload.ExecutionMemory
+	spec.Ports = portsOf(workload.Ports)
+	spec.Timeout = workload.ExecutionTimeout
+	if concurrency := workload.LimitsConcurrency; concurrency != nil {
+		spec.Concurrency = int(*concurrency)
 	}
 	// WHAT THE PLATFORM ITSELF RUNS, if anything. It travels beside the
 	// artifact rather than instead of it so that a tier reads one field to
 	// know which it has.
-	spec.Builtin = r.String("source", sourceBuiltin)
+	spec.Builtin = specs.ReadSourceBlock(r).SourceBuiltin
 
-	spec.Settings = settingsOf(r)
+	spec.Settings = settingsOf(workload)
 
 	// AN MCP'S OWN FIELDS. It runs no engine, so nothing else would carry them
 	// — and what they say is how widely its listing may be cached.
 	if t.Kind == mcpKind {
-		spec.Settings = merged(spec.Settings, mcpSettings(r))
+		spec.Settings = merged(spec.Settings, mcpSettings(specs.ReadMcp(r).Tools))
 	}
 
 	// WHERE A WORKLOAD MAY REACH ON THE NETWORK IS THE RESOURCE'S, and an
@@ -157,7 +156,7 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 	// vocabulary's own sentence. The tier enforces it; this only carries it,
 	// because which mechanism does the enforcing is the tier's business and
 	// the allowlist is the author's.
-	spec.Egress = r.Strings("egress")
+	spec.Egress = workload.Egress
 	return spec, nil
 }
 
@@ -250,25 +249,22 @@ func reachesOf(t Target, proj *specs.Project, r specs.Resource) ([]invoke.Grant,
 }
 
 const (
-	cacheKind    = "cache"
-	volumeKind   = "volume"
-	streamKind   = "stream"
-	storageKind  = "storage"
-	workflowKind = "workflow"
-	busKind      = "bus"
-	databaseKind = "database"
-	channelKind  = "channel"
-	modelKind    = "model"
+	cacheKind    = specs.KindCache
+	volumeKind   = specs.KindVolume
+	streamKind   = specs.KindStream
+	storageKind  = specs.KindStorage
+	workflowKind = specs.KindWorkflow
+	busKind      = specs.KindBus
+	databaseKind = specs.KindDatabase
+	channelKind  = specs.KindChannel
+	modelKind    = specs.KindModel
 
 	// syncKind is one kind with two primitives under it; the type selects which,
 	// and settingSyncType is how that travels to a tier.
-	syncKind        = "sync"
-	queueType       = "queue"
-	logType         = "log"
-	settingSyncType = "type"
-
-	// sourceBuiltin is the vocabulary's word for a program the runtime ships.
-	sourceBuiltin = "builtin"
+	syncKind        = specs.KindSync
+	queueType       = specs.SyncTypeQueue
+	logType         = specs.SyncTypeLog
+	settingSyncType = specs.SyncKeyType
 )
 
 // portsOf is what this workload binds inside its container, by name.
@@ -277,16 +273,15 @@ const (
 // container that binds a fixed port — which is every off-the-shelf image — was
 // given an ephemeral port in $PORT and mapped to that same ephemeral number, so
 // the thing it was actually listening on was reachable from nowhere.
-func portsOf(r specs.Resource) map[string]int {
-	declared := r.Sub("ports")
+func portsOf(declared map[string]specs.ApplicationPortsEntry) map[string]int {
 	if len(declared) == 0 {
 		return nil
 	}
 
 	out := make(map[string]int, len(declared))
-	for _, name := range declared.Keys() {
-		if number, ok := declared.Sub(name).Int("number"); ok && number > 0 {
-			out[name] = int(number)
+	for name, port := range declared {
+		if port.Number > 0 {
+			out[name] = int(port.Number)
 		}
 	}
 	if len(out) == 0 {
@@ -322,8 +317,8 @@ func merged(first, second map[string]string) map[string]string {
 // where a consumer needs the read path to understand a scope that is not a
 // namespace.
 func startedBy(proj *specs.Project, t Target, workflow specs.Resource, id string, grant *invoke.Grant) error {
-	kind := workflow.String("entry", "start", "kind")
-	name := workflow.String("entry", "start", "name")
+	entry := specs.ReadWorkflow(workflow).Entry[workflowEntryStart]
+	kind, name := entry.Kind, entry.Name
 	if kind == "" || name == "" {
 		// A workflow whose shell carries no entry is a compiled object that did
 		// not come from tcc; starting it would mean guessing.
@@ -354,7 +349,7 @@ func startedBy(proj *specs.Project, t Target, workflow specs.Resource, id string
 	grant.Settings = merged(grant.Settings, map[string]string{
 		settingStartKind:   kind,
 		settingStartHandle: specs.Handle(t.Project, t.Environment, startID),
-		settingStartAs:     workflow.String("entry", "start", "as"),
+		settingStartAs:     entry.As,
 	})
 	return nil
 }
@@ -367,6 +362,11 @@ func startedBy(proj *specs.Project, t Target, workflow specs.Resource, id string
 // already cost once.
 const (
 	opStart = "start"
+
+	// workflowEntryStart is the entry the lowering records a workflow's start
+	// under. The entry's NAME is the lowering's word and not an attribute, so
+	// the vocabulary has no constant for it: the shell is written with it.
+	workflowEntryStart = "start"
 
 	settingStartKind   = invoke.SettingStartKind
 	settingStartHandle = invoke.SettingStartHandle
@@ -392,8 +392,8 @@ const (
 // grant leaves the rest of the workload running, which is the whole reason
 // Grant.Refused exists.
 func servedBy(proj *specs.Project, t Target, channel specs.Resource, id string, grant *invoke.Grant) {
-	kind := channel.String("serve", "kind")
-	name := channel.String("serve", "name")
+	declared := specs.ReadChannel(channel)
+	kind, name := declared.Serve.Kind, declared.Serve.Name
 	if kind == "" || name == "" {
 		grant.Refused = fmt.Sprintf("channel %q names nothing that serves it, so a dial has nowhere to land", grant.Label)
 		return
@@ -413,28 +413,29 @@ func servedBy(proj *specs.Project, t Target, channel specs.Resource, id string, 
 		return
 	}
 
-	at := specs.ScopeOf(scope, channel.String("serve", "namespace"))
+	at := specs.ScopeOf(scope, declared.Serve.Namespace)
 	if _, _, err := proj.Resource(at, kind, name); err != nil {
 		grant.Refused = fmt.Sprintf("channel %q is served by %s/%s, which is not in this project: %s", grant.Label, kind, name, err)
 		return
 	}
 
 	grant.Settings = merged(grant.Settings, map[string]string{
-		settingProtocol:   channel.String("protocol"),
+		settingProtocol:   declared.Protocol,
 		settingServeKind:  kind,
 		settingServeName:  name,
 		settingServeScope: "/" + strings.Join(at, "/"),
-		settingServePort:  channel.String("serve", "port"),
+		settingServePort:  declared.Serve.Port,
 	})
 }
 
-// What a channel's own block becomes.
+// What a channel's own block becomes. The namespace travels RESOLVED, as the
+// chain the server was found in, under the attribute's own key.
 const (
-	settingProtocol   = "protocol"
-	settingServeKind  = "serve/kind"
-	settingServeName  = "serve/name"
-	settingServeScope = "serve/namespace"
-	settingServePort  = "serve/port"
+	settingProtocol   = specs.ChannelKeyProtocol
+	settingServeKind  = specs.ChannelServeKeyKind
+	settingServeName  = specs.ChannelServeKeyName
+	settingServeScope = specs.ChannelServeKeyNamespace
+	settingServePort  = specs.ChannelServeKeyPort
 )
 
 // invokedAt records which function an `invoke` grant actually resolved to.
@@ -455,7 +456,7 @@ func invokedAt(proj *specs.Project, target specs.Resource, id string, grant *inv
 	}
 
 	grant.Settings = merged(grant.Settings, map[string]string{
-		settingInvokeName:  target.String("name"),
+		settingInvokeName:  specs.ReadFunction(target).Name,
 		settingInvokeScope: "/" + strings.Join(scope, "/"),
 	})
 }
@@ -483,7 +484,8 @@ const (
 // come from tcc — and a guard nobody can run must not read as a resource nobody
 // guarded.
 func guardedBy(proj *specs.Project, t Target, target specs.Resource, id string, grant *invoke.Grant) {
-	name := target.String("authorizer", "name")
+	guardian := specs.ReadAuthorizer(target)
+	name := guardian.Name
 	if name == "" {
 		return
 	}
@@ -500,8 +502,8 @@ func guardedBy(proj *specs.Project, t Target, target specs.Resource, id string, 
 		return
 	}
 
-	at := specs.ScopeOf(scope, target.String("authorizer", "namespace"))
-	guard, _, err := proj.Resource(at, "function", name)
+	at := specs.ScopeOf(scope, guardian.Namespace)
+	guard, _, err := proj.Resource(at, specs.KindFunction, name)
 	if err != nil {
 		grant.Refused = fmt.Sprintf("%s %q is guarded by the function %q, which is not in this project: %s",
 			grant.Kind, grant.Label, name, err)
@@ -512,7 +514,7 @@ func guardedBy(proj *specs.Project, t Target, target specs.Resource, id string, 
 	// world would instantiate and then be called with a question it reads as a
 	// request — the failure `implements` exists to prevent, caught here where
 	// the sentence can name both resources instead of at a cold start.
-	if world := guard.String("implements"); world != wasm.WorldAuthorizer {
+	if world := specs.ReadFunction(guard).Implements; world != wasm.WorldAuthorizer {
 		grant.Refused = fmt.Sprintf("%s %q is guarded by %q, which implements %q rather than an authorizer",
 			grant.Kind, grant.Label, name, world)
 		return
@@ -524,11 +526,11 @@ func guardedBy(proj *specs.Project, t Target, target specs.Resource, id string, 
 	})
 }
 
-// What a resource's own `authorizer:` block becomes, spelled as
-// pkg/invoke/wasm reads it.
+// What a resource's own `authorizer:` block becomes, under the keys
+// pkg/invoke/wasm reads it by. The namespace travels RESOLVED.
 const (
-	settingAuthorizer      = "authorizer/name"
-	settingAuthorizerScope = "authorizer/namespace"
+	settingAuthorizer      = specs.AuthorizerKeyName
+	settingAuthorizerScope = specs.AuthorizerKeyNamespace
 )
 
 // settingsFor is what the TARGET (and, for a mount, the entry) declared, in the
@@ -552,7 +554,7 @@ func settingsFor(kind string, reach specs.Reach, target specs.Resource) map[stri
 		// string in an MCP listing: it is how a model decides whether to call
 		// one. It travels for every function because an mcp's tools ARE the
 		// functions it declares access to — see services/worker/mcp.go.
-		if d := target.String("description"); d != "" {
+		if d := specs.ReadFunction(target).Description; d != "" {
 			return map[string]string{settingDescription: d}
 		}
 	}
@@ -566,7 +568,8 @@ func settingsFor(kind string, reach specs.Reach, target specs.Resource) map[stri
 // omitted `namespace:` means everywhere in this vocabulary — the same rule a
 // proxy's forward and a gateway's transformer follow.
 func localModelScope(proj *specs.Project, target specs.Resource, id string) map[string]string {
-	if target.String("inference", "kind") != "local" {
+	inference := specs.ReadModel(target).Inference
+	if inference.Kind != specs.ModelInferenceKindLocal {
 		return nil
 	}
 
@@ -575,7 +578,7 @@ func localModelScope(proj *specs.Project, target specs.Resource, id string) map[
 		return nil
 	}
 
-	resolved := specs.ScopeOf(scope, target.String("inference", "local", "namespace"))
+	resolved := specs.ScopeOf(scope, inference.LocalNamespace)
 	if len(resolved) == 0 {
 		// The project root. An empty value is still a value — the backing has
 		// to tell "the root" from "nobody worked it out".
@@ -600,47 +603,43 @@ const settingLocalScope = "inference/local/scope"
 // particular is a ceiling the host clamps a guest's request to, so it has to be
 // where the host can read it rather than where only the backing can.
 func modelSettings(target specs.Resource) map[string]string {
+	model := specs.ReadModel(target)
 	out := map[string]string{}
-
-	for _, field := range []string{"identifier", "format"} {
-		if value := target.String(field); value != "" {
-			out[field] = value
+	put := func(key, value string) {
+		if value != "" {
+			out[key] = value
 		}
 	}
+
+	put(specs.ModelKeyIdentifier, model.Identifier)
+	put(specs.ModelKeyFormat, model.Format)
 
 	// WHICH BRANCH OF THE SWITCH, then that branch's own fields. A backing that
 	// had to guess from which keys are present would be reading the shape back
 	// out of its contents.
-	if kind := target.String("inference", "kind"); kind != "" {
-		out["inference/kind"] = kind
-	}
-	for _, path := range [][]string{
-		{"inference", "remote", "endpoint"},
-		{"inference", "remote", "credentials", "name"},
-		{"inference", "remote", "credentials", "namespace"},
-		{"inference", "local", "name"},
-		{"inference", "local", "namespace"},
-		{"inference", "local", "port"},
-	} {
-		if value := target.String(path...); value != "" {
-			out[strings.Join(path, "/")] = value
-		}
-	}
+	put(specs.ModelInferenceKeyKind, model.Inference.Kind)
+	put(specs.ModelInferenceKeyRemoteEndpoint, model.Inference.RemoteEndpoint)
+	put(specs.ModelInferenceKeyRemoteCredentialsName, model.Inference.RemoteCredentialsName)
+	put(specs.ModelInferenceKeyRemoteCredentialsNamespace, model.Inference.RemoteCredentialsNamespace)
+	put(specs.ModelInferenceKeyLocalName, model.Inference.LocalName)
+	put(specs.ModelInferenceKeyLocalNamespace, model.Inference.LocalNamespace)
+	put(specs.ModelInferenceKeyLocalPort, model.Inference.LocalPort)
 
-	if t, ok := target.Float("parameters", "temperature"); ok {
-		out["parameters/temperature"] = strconv.FormatFloat(t, 'g', -1, 64)
+	parameters := model.Parameters
+	if t := parameters.Temperature; t != nil {
+		out[specs.ModelParametersKeyTemperature] = strconv.FormatFloat(*t, 'g', -1, 64)
 	}
-	if t, ok := target.Float("parameters", "top_p"); ok {
-		out["parameters/top_p"] = strconv.FormatFloat(t, 'g', -1, 64)
+	if t := parameters.TopP; t != nil {
+		out[specs.ModelParametersKeyTopP] = strconv.FormatFloat(*t, 'g', -1, 64)
 	}
-	if n, ok := target.Int("parameters", "max_tokens"); ok {
-		out["parameters/max_tokens"] = strconv.FormatInt(n, 10)
+	if n := parameters.MaxTokens; n != nil {
+		out[specs.ModelParametersKeyMaxTokens] = strconv.FormatInt(*n, 10)
 	}
-	if stop := target.Strings("parameters", "stop"); len(stop) > 0 {
+	if stop := parameters.Stop; len(stop) > 0 {
 		// ONE KEY AND NOT N, because Settings is a flat map and a list has to
 		// arrive whole: a stop sequence is an exact string, so the separator is
 		// a newline — the one character a stop sequence cannot usefully be.
-		out["parameters/stop"] = strings.Join(stop, "\n")
+		out[specs.ModelParametersKeyStop] = strings.Join(stop, "\n")
 	}
 
 	if len(out) == 0 {
@@ -664,28 +663,29 @@ func modelSettings(target specs.Resource) map[string]string {
 // THE DEAD LETTER IS A REFERENCE and its compiled value is another queue's id,
 // which is what a consumer opens to drain it.
 func syncSettings(reach specs.Reach, target specs.Resource) map[string]string {
-	model := target.String("type")
-	if model == "" {
+	declared := specs.ReadSync(target)
+	if declared.Type == "" {
 		return nil
 	}
-	out := map[string]string{settingSyncType: model}
+	out := map[string]string{settingSyncType: declared.Type}
+	duration := func(key string, d *time.Duration) {
+		if d != nil {
+			out[key] = d.String()
+		}
+	}
 
 	// WHAT HAPPENS TO TWO CONCURRENT WRITES, for every type. A tier that cannot
 	// serve the answer refuses the target by name rather than serving a weaker
 	// promise than the author wrote.
-	if consensus := target.String(model, "consensus"); consensus != "" {
-		out[model+"/consensus"] = consensus
-	}
-
-	switch model {
+	switch declared.Type {
 	case logType:
-		for _, path := range [][]string{{"retention", "age"}} {
-			if d, ok := target.Duration(append([]string{model}, path...)...); ok {
-				out[model+"/"+strings.Join(path, "/")] = d.String()
-			}
+		log := declared.Log
+		if log.Consensus != "" {
+			out[specs.SyncLogKeyConsensus] = log.Consensus
 		}
-		if n, ok := target.Int(model, "retention", "size"); ok {
-			out[model+"/retention/size"] = strconv.FormatInt(n, 10)
+		duration(specs.SyncLogKeyRetentionAge, log.RetentionAge)
+		if n := log.RetentionSize; n != nil {
+			out[specs.SyncLogKeyRetentionSize] = strconv.FormatInt(*n, 10)
 		}
 		return out
 	case queueType:
@@ -693,26 +693,27 @@ func syncSettings(reach specs.Reach, target specs.Resource) map[string]string {
 		return out
 	}
 
-	for _, path := range [][]string{
-		{"visibility_timeout"}, {"delay"}, {"retry", "interval"}, {"retry", "ceiling"},
-	} {
-		if d, ok := target.Duration(append([]string{queueType}, path...)...); ok {
-			out[queueType+"/"+strings.Join(path, "/")] = d.String()
-		}
+	queue := declared.Queue
+	if queue.Consensus != "" {
+		out[specs.SyncQueueKeyConsensus] = queue.Consensus
 	}
-	if n, ok := target.Int(queueType, "max_attempts"); ok {
-		out[queueType+"/max_attempts"] = strconv.FormatInt(n, 10)
+	duration(specs.SyncQueueKeyVisibilityTimeout, queue.VisibilityTimeout)
+	duration(specs.SyncQueueKeyDelay, queue.Delay)
+	duration(specs.SyncQueueKeyRetryInterval, queue.RetryInterval)
+	duration(specs.SyncQueueKeyRetryCeiling, queue.RetryCeiling)
+	if n := queue.MaxAttempts; n != nil {
+		out[specs.SyncQueueKeyMaxAttempts] = strconv.FormatInt(*n, 10)
 	}
 	// A COMPILED NUMBER IS A NUMBER. `retry/factor` is a Float in the
 	// vocabulary, so reading it as a string answered "" and the multiplier
 	// never travelled — an author who wrote `factor: 2` got a flat interval and
 	// nothing said so. Float rather than Int because 1.5 is a legal factor and
 	// truncating it would be the same defect one step quieter.
-	if f, ok := target.Float(queueType, "retry", "factor"); ok {
-		out[queueType+"/retry/factor"] = strconv.FormatFloat(f, 'g', -1, 64)
+	if f := queue.RetryFactor; f != nil {
+		out[specs.SyncQueueKeyRetryFactor] = strconv.FormatFloat(*f, 'g', -1, 64)
 	}
-	if name := target.String(queueType, "dead_letter", "name"); name != "" {
-		out[queueType+"/dead_letter/name"] = name
+	if name := queue.DeadLetterName; name != "" {
+		out[specs.SyncQueueKeyDeadLetterName] = name
 	}
 
 	// WHERE AN ITEM IS POSTED comes from the ENTRY, because it is per use: one
@@ -733,8 +734,8 @@ func syncSettings(reach specs.Reach, target specs.Resource) map[string]string {
 // `streaming` each own their block, so the size lives under whichever one the
 // author wrote.
 func storageSettings(target specs.Resource) map[string]string {
-	model := target.String("type")
-	if model == "" {
+	storage := specs.ReadStorage(target)
+	if storage.Type == "" {
 		return nil
 	}
 
@@ -742,13 +743,16 @@ func storageSettings(target specs.Resource) map[string]string {
 	// here. `size` is written under the type block — `object: {size: 1GB}` —
 	// and compiles to a FLAT `size`, because the vocabulary declares it
 	// Key("size") with Path(Either("object","streaming"), "size"). `versioning`
-	// is Key("object","versioning") and stays nested. Reading either the way
-	// the other is spelled returns nothing at all.
-	out := map[string]string{settingStorageType: model}
-	if size, ok := target.Int("size"); ok {
-		out[settingStorageSize] = strconv.FormatInt(size, 10)
+	// is Key("object","versioning") and stays nested. The generated reader
+	// reads each where it compiles, which is the mistake this used to make by
+	// hand.
+	//
+	// THE SIZE IS REQUIRED, so a compiled storage always carries one.
+	out := map[string]string{
+		settingStorageType: storage.Type,
+		settingStorageSize: strconv.FormatInt(storage.Size, 10),
 	}
-	if versioning, ok := target.Bool(objectStorage, "versioning"); ok && versioning {
+	if versioning := storage.Object.Versioning; versioning != nil && *versioning {
 		out[settingVersioning] = "true"
 	}
 	return out
@@ -762,48 +766,72 @@ func storageSettings(target specs.Resource) map[string]string {
 // postgres, host: …}` — because the engines a type may have are not the same,
 // which is the schema's own reason for putting them there.
 func databaseSettings(target specs.Resource) map[string]string {
-	model := target.String("type")
-	if model == "" {
+	database := specs.ReadDatabase(target)
+	if database.Type == "" {
 		return nil
 	}
 
 	// EVERY FIELD OF THE TYPE'S OWN BLOCK THAT THE PLATFORM READS. `dimensions`
 	// and `metric` are a vector's and mean nothing to the other three, which is
 	// why they travel as settings rather than as fields on anything.
-	out := map[string]string{settingType: model}
+	out := map[string]string{settingType: database.Type}
+	put := func(key, value string) {
+		if value != "" {
+			out[key] = value
+		}
+	}
+	// A width is an Int in the vocabulary, not a string.
+	number := func(key string, n *int64) {
+		if n != nil {
+			out[key] = strconv.FormatInt(*n, 10)
+		}
+	}
 	//
-	// `consensus` IS IN THE LIST BECAUSE A NODE WITH NO DATABASE SERVICE STILL
-	// OPENS ONE. Without it a ledger that asked for raft reached that node's
-	// own engines as a crdt and was merged -- silently, which is the one thing
-	// the field exists to prevent. Carried, the fallback refuses it by name.
+	// `consensus` TRAVELS BECAUSE A NODE WITH NO DATABASE SERVICE STILL OPENS
+	// ONE. Without it a ledger that asked for raft reached that node's own
+	// engines as a crdt and was merged -- silently, which is the one thing the
+	// field exists to prevent. Carried, the fallback refuses it by name.
 	//
 	// `size` TRAVELS SO THE ENGINE CAN HOLD IT. A ceiling the author declared and
 	// nothing carried is a ceiling nothing enforces.
-	for _, field := range []string{"engine", "host", "database", "tls", "consensus", "size", "dimensions", "metric"} {
-		if value := target.String(model, field); value != "" {
-			out[model+"/"+field] = value
-			continue
-		}
-		// A width is an Int in the vocabulary, not a string.
-		if n, ok := target.Int(model, field); ok {
-			out[model+"/"+field] = strconv.FormatInt(n, 10)
-		}
-	}
+	//
 	// THE CREDENTIAL IS A REFERENCE AND STAYS ONE. What resolves it is the
 	// vault, on the node, at the moment a connection is opened — carrying the
 	// value here would put a password in a spec that is logged, cached and
-	// compared.
-	//
-	// FILED UNDER THE MODEL, like every other field in this function. It used to
-	// be read from `<model>/credentials/name` and written to a bare
-	// `credentials/name` — the right path in, an invented one out — which is a
-	// key `database` does not declare at all. `stream` and `bus` DO declare a
-	// bare one, so the constant looked right wherever a reader happened to check.
-	if name := target.String(model, "credentials", "name"); name != "" {
-		out[model+"/"+settingCredentials] = name
-	}
-	if namespace := target.String(model, "credentials", "namespace"); namespace != "" {
-		out[model+"/"+settingCredentialsScope] = namespace
+	// compared. It is filed under the type, like every other field here.
+	switch database.Type {
+	case specs.DatabaseTypeSql:
+		sql := database.Sql
+		put(specs.DatabaseSqlKeyEngine, sql.Engine)
+		put(specs.DatabaseSqlKeyHost, sql.Host)
+		put(specs.DatabaseSqlKeyDatabase, sql.Database)
+		put(specs.DatabaseSqlKeyTls, sql.Tls)
+		put(specs.DatabaseSqlKeyConsensus, sql.Consensus)
+		number(specs.DatabaseSqlKeySize, sql.Size)
+		put(specs.DatabaseSqlKeyCredentialsName, sql.CredentialsName)
+		put(specs.DatabaseSqlKeyCredentialsNamespace, sql.CredentialsNamespace)
+	case specs.DatabaseTypeDocument:
+		document := database.Document
+		put(specs.DatabaseDocumentKeyEngine, document.Engine)
+		put(specs.DatabaseDocumentKeyHost, document.Host)
+		put(specs.DatabaseDocumentKeyDatabase, document.Database)
+		put(specs.DatabaseDocumentKeyTls, document.Tls)
+		put(specs.DatabaseDocumentKeyConsensus, document.Consensus)
+		number(specs.DatabaseDocumentKeySize, document.Size)
+		put(specs.DatabaseDocumentKeyCredentialsName, document.CredentialsName)
+		put(specs.DatabaseDocumentKeyCredentialsNamespace, document.CredentialsNamespace)
+	case specs.DatabaseTypeKv:
+		kv := database.Kv
+		put(specs.DatabaseKvKeyEngine, kv.Engine)
+		put(specs.DatabaseKvKeyConsensus, kv.Consensus)
+		number(specs.DatabaseKvKeySize, kv.Size)
+	case specs.DatabaseTypeVector:
+		vector := database.Vector
+		put(specs.DatabaseVectorKeyEngine, vector.Engine)
+		put(specs.DatabaseVectorKeyConsensus, vector.Consensus)
+		number(specs.DatabaseVectorKeySize, vector.Size)
+		number(specs.DatabaseVectorKeyDimensions, vector.Dimensions)
+		put(specs.DatabaseVectorKeyMetric, vector.Metric)
 	}
 	return out
 }
@@ -812,22 +840,20 @@ func databaseSettings(target specs.Resource) map[string]string {
 // where it appears inside the workload — a mount path is per use, which is why
 // the vocabulary puts it on the access entry.
 func volumeSettings(reach specs.Reach, target specs.Resource) map[string]string {
-	out := map[string]string{}
-	if quota, ok := target.Int("quota"); ok {
-		out[settingQuota] = strconv.FormatInt(quota, 10)
-	}
+	volume := specs.ReadVolume(target)
+
+	// THE QUOTA IS REQUIRED, so a compiled volume always carries one.
+	out := map[string]string{settingQuota: strconv.FormatInt(volume.Quota, 10)}
+
 	// HOW OFTEN IT IS CHECKPOINTED, which is the author's number and was not
 	// travelling at all: the node fell back to its own default, so a volume
 	// asking to be checkpointed every 10s was checkpointed every minute and a
 	// restore lost fifty seconds more than the author budgeted for.
-	if every, ok := target.Duration("checkpoint", "interval"); ok {
+	if every := volume.Checkpoint.Interval; every != nil {
 		out[settingCheckpointEvery] = every.String()
 	}
 	if path := reach.Path; path != "" {
 		out[settingMountPath] = path
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
 }
@@ -857,7 +883,7 @@ func unservable(reach specs.Reach, target specs.Resource) string {
 	// for a database, and placement for a kind a tier runs. A cache, a store,
 	// a volume, a queue, or a workflow whose queues those are, has nothing that
 	// keeps it where its author pinned it — and a pin is usually a legal line.
-	if policy := target.String("regions", "policy"); policy != "" && !placedByRegion(reach.Kind) {
+	if policy := specs.ReadRegions(target).Policy; policy != "" && !placedByRegion(reach.Kind) {
 		return fmt.Sprintf("%s %q is %s to regions, and this cloud does not place a %s by region — "+
 			"served, it would be held wherever the node holding it is",
 			reach.Kind, reach.Label, policy, reach.Kind)
@@ -883,22 +909,22 @@ func unservable(reach specs.Reach, target specs.Resource) string {
 // attribute, so its presence is the declaration and a target without one holds
 // exactly one instance.
 func instanceSettings(target specs.Resource) map[string]string {
-	admission := target.String("instances", "admission")
-	if admission == "" {
+	instances := specs.ReadInstances(target)
+	if instances.Admission == "" {
 		return nil
 	}
 
-	out := map[string]string{settingAdmission: admission}
-	if name := target.String("instances", "validator", "name"); name != "" {
+	out := map[string]string{settingAdmission: instances.Admission}
+	if name := instances.ValidatorName; name != "" {
 		out[settingValidator] = name
 	}
-	if namespace := target.String("instances", "validator", "namespace"); namespace != "" {
+	if namespace := instances.ValidatorNamespace; namespace != "" {
 		out[settingValidated] = namespace
 	}
 	// A LIMIT OF ZERO IS AN ANSWER AND NOT AN ABSENCE — the vocabulary makes it
 	// required precisely so that "no ceiling" is a sentence somebody wrote.
-	if limit, ok := target.Int("instances", "limit"); ok {
-		out[settingLimit] = strconv.FormatInt(limit, 10)
+	if limit := instances.Limit; limit != nil {
+		out[settingLimit] = strconv.FormatInt(*limit, 10)
 	}
 	return out
 }
@@ -921,7 +947,7 @@ func unservableKind(reach specs.Reach, target specs.Resource) string {
 		// "IT HAS NO ENGINE AXIS, and the absence is the statement" — so this
 		// could never fire for one, and a reader had to check the vocabulary to
 		// learn that the branch was dead.
-		if engine := target.String("engine"); engine != "" && engine != schema.TauEngine() {
+		if engine := specs.ReadStream(target).Engine; engine != "" && engine != schema.TauEngine() {
 			return fmt.Sprintf("%s %q is on the %q engine, and this cloud has no driver for it — "+
 				"it publishes to the swarm's own gossipsub and nothing else",
 				reach.Kind, reach.Label, engine)
@@ -932,7 +958,7 @@ func unservableKind(reach specs.Reach, target specs.Resource) string {
 		// verbs move bytes a caller does not hold all of at once, so serving it
 		// through the object functions would mean a guest holding a whole
 		// stream in memory to write it.
-		if model := target.String("type"); model != "" && model != objectStorage {
+		if model := specs.ReadStorage(target).Type; model != "" && model != objectStorage {
 			return fmt.Sprintf("storage %q is %q, and this cloud serves object storage — "+
 				"a streaming store's verbs are not these and half-serving them would mean "+
 				"holding a whole stream in a guest's memory",
@@ -945,8 +971,8 @@ func unservableKind(reach specs.Reach, target specs.Resource) string {
 		// cloud keeps the raft promise and has no convergent log yet,
 		// so a target asking for the other one is refused BY NAME — the
 		// workload still deploys and still reaches everything else it declared.
-		if reach.Kind == syncKind && target.String("type") == logType {
-			if c := target.String(logType, "consensus"); c != "" && c != "raft" {
+		if declared := specs.ReadSync(target); declared.Type == logType {
+			if c := declared.Log.Consensus; c != "" && c != specs.SyncLogConsensusRaft {
 				return fmt.Sprintf("log %q asks for %q consensus, and this cloud serves raft logs — "+
 					"a convergent log is a different promise, not a slower one",
 					reach.Label, c)
@@ -977,15 +1003,13 @@ func unservableKind(reach specs.Reach, target specs.Resource) string {
 	// `gossip` IS ACCEPTED and is served STRONGER than declared: gossip is
 	// eventually consistent and lossy, a CRDT is eventually consistent and
 	// not. An author who accepted a dropped entry gets one that arrives.
-	if consensus := target.String("consensus"); consensus == raftConsensus {
+	if consensus := specs.ReadCache(target).Consensus; consensus == specs.CacheConsensusRaft {
 		return fmt.Sprintf("%s %q declares consensus %q, and the store behind a cache here merges "+
 			"concurrent writes last-writer-wins — a write that lost would be gone with no error",
 			reach.Kind, reach.Label, consensus)
 	}
 	return ""
 }
-
-const raftConsensus = "raft"
 
 // The vocabulary's own compiled keys, so a reader finds the attribute by
 // searching the schema for the string.
@@ -1003,52 +1027,51 @@ const raftConsensus = "raft"
 // default. A key that is composed rather than copied — a handle, a resolved
 // scope — is listed in that test as such, with the reason.
 const (
-	settingTTL       = "ttl"
-	settingSize      = "size"
-	settingQuota     = "quota"
+	settingTTL   = specs.CacheKeyTtl
+	settingSize  = specs.CacheKeySize
+	settingQuota = specs.VolumeKeyQuota
+
+	// Where a volume appears inside the workload. It is the ACCESS ENTRY's,
+	// per use, and the access entry's shape is handed to Reaches by the
+	// vocabulary rather than generated, so this is its name on a grant.
 	settingMountPath = "path"
 
 	// How often a volume is walked into the content-addressed store.
-	settingCheckpointEvery = "checkpoint/interval"
+	settingCheckpointEvery = specs.VolumeCheckpointKeyInterval
 
 	// Where the platform posts an item to a consumer that has no host ABI.
 	settingDeliverPort = "deliver/port"
 	settingDeliverPath = "deliver/path"
 
-	// The `instances:` block, spelled as pkg/invoke/wasm reads it.
-	settingAdmission = "instances/admission"
-	settingLimit     = "instances/limit"
-	settingValidator = "instances/validator/name"
-	settingValidated = "instances/validator/namespace"
+	// The `instances:` block, under the keys pkg/invoke/wasm reads it by.
+	settingAdmission = specs.InstancesKeyAdmission
+	settingLimit     = specs.InstancesKeyLimit
+	settingValidator = specs.InstancesKeyValidatorName
+	settingValidated = specs.InstancesKeyValidatorNamespace
 
 	// What a storage declared: which data model, how big, and whether old
 	// versions are kept.
-	settingStorageType = "type"
-	settingStorageSize = "size"
-	settingVersioning  = "object/versioning"
+	settingStorageType = specs.StorageKeyType
+	settingStorageSize = specs.StorageKeySize
+	settingVersioning  = specs.StorageObjectKeyVersioning
 
 	// objectStorage is the one data model this cloud serves.
-	objectStorage = "object"
+	objectStorage = specs.StorageTypeObject
 
 	// settingType is a database's data model, and the prefix every other
 	// connection setting is filed under.
-	settingType             = "type"
-	settingCredentials      = "credentials/name"
-	settingCredentialsScope = "credentials/namespace"
+	settingType = specs.DatabaseKeyType
 )
 
 // cacheSettings is what the TARGET declared, carried to whatever backs the
 // kind — which has the handle and not the compiled project.
 func cacheSettings(target specs.Resource) map[string]string {
-	out := map[string]string{}
-	if ttl, ok := target.Duration("ttl"); ok {
+	cache := specs.ReadCache(target)
+
+	// THE SIZE IS REQUIRED, so a compiled cache always carries one.
+	out := map[string]string{settingSize: strconv.FormatInt(cache.Size, 10)}
+	if ttl := cache.Ttl; ttl != nil {
 		out[settingTTL] = ttl.String()
-	}
-	if size, ok := target.Int("size"); ok {
-		out[settingSize] = strconv.FormatInt(size, 10)
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
 }
@@ -1070,23 +1093,24 @@ func cacheSettings(target specs.Resource) map[string]string {
 //
 // Nothing here is per-environment beyond what the compile already did: this
 // reads the compiled object, so a `mode_preview` is already `mode`.
-func settingsOf(r specs.Resource) map[string]string {
+func settingsOf(w specs.WorkloadBlock) map[string]string {
 	out := map[string]string{}
-
-	if block, ok := r.Map("serve"); ok {
-		for key, value := range block {
-			if s, ok := value.(string); ok {
-				out["serve/"+key] = s
-			}
+	put := func(key, value string) {
+		if value != "" {
+			out[key] = value
 		}
 	}
 
-	if call := r.String("execution", "call"); call != "" {
-		out["execution/call"] = call
-	}
-	if world := r.String("implements"); world != "" {
-		out["implements"] = world
-	}
+	put(specs.WorkloadBlockKeyServeIndex, w.ServeIndex)
+	put(specs.WorkloadBlockKeyServeMode, w.ServeMode)
+	put(specs.WorkloadBlockKeyServeNotFound, w.ServeNotFound)
+	put(specs.WorkloadBlockKeyServeKind, w.ServeKind)
+	put(specs.WorkloadBlockKeyServeName, w.ServeName)
+	put(specs.WorkloadBlockKeyServeNamespace, w.ServeNamespace)
+	put(specs.WorkloadBlockKeyServePort, w.ServePort)
+
+	put(specs.WorkloadBlockKeyExecutionCall, w.ExecutionCall)
+	put(specs.WorkloadBlockKeyImplements, w.Implements)
 
 	if len(out) == 0 {
 		return nil
@@ -1117,10 +1141,10 @@ func placedByRegion(kind string) bool {
 // of that here would be a second place to add a tier — one of which would be
 // forgotten, and the failure would be a workload that will not start on the
 // tier its config selected.
-func runtimeOf(kind string, r specs.Resource) (string, error) {
+func runtimeOf(kind string, w specs.WorkloadBlock) (string, error) {
 	// A kind with more than one tier authors the choice; `worker` is the one
 	// that does today.
-	if declared := r.String("runtime"); declared != "" {
+	if declared := w.Runtime; declared != "" {
 		return declared, nil
 	}
 
@@ -1140,10 +1164,11 @@ func runtimeOf(kind string, r specs.Resource) (string, error) {
 func (s *Service) artifactOf(ctx context.Context, t Target, r specs.Resource, resourceID string) (string, error) {
 	// `source/kind` is the vocabulary's own discriminator, so which branch was
 	// taken is read rather than guessed from which field happens to be set.
-	switch r.String("source", "kind") {
-	case "image":
-		return r.String("source", "image"), nil
-	case "component":
+	source := specs.ReadSourceBlock(r)
+	switch source.SourceKind {
+	case specs.SourceBlockSourceKindImage:
+		return source.SourceImage, nil
+	case specs.SourceBlockSourceKindComponent:
 		// A COMPONENT IS A REFERENCE, NOT AN ARTIFACT. `source.component` is
 		// declared `Ref("component")` with `IsVariableName()`, so what a
 		// compiled resource carries here is the referenced COMPONENT'S OWN
@@ -1157,15 +1182,15 @@ func (s *Service) artifactOf(ctx context.Context, t Target, r specs.Resource, re
 		// other built resource uses -- asked about the COMPONENT, not about the
 		// workload that names it, because the artifact was published under the
 		// component's own id.
-		component := r.String("source", "component")
+		component := source.SourceComponent
 		if component == "" {
 			return "", fmt.Errorf("%w: %s/%s names no component", ErrNoArtifact, t.Kind, t.Name)
 		}
 		if s.artifacts == nil {
 			return "", fmt.Errorf("%w: component %s", ErrNoArtifact, component)
 		}
-		return s.artifacts.Artifact(ctx, t.Project, t.Environment, "component", component)
-	case sourceBuiltin:
+		return s.artifacts.Artifact(ctx, t.Project, t.Environment, specs.KindComponent, component)
+	case specs.SourceBlockSourceKindBuiltin:
 		// A BUILTIN HAS NO ARTIFACT AND ASKING FOR ONE IS THE BUG. The program
 		// is one the runtime ships — a workflow step's driver, an agent's loop
 		// — so there was never a build, and falling through to the artifact
@@ -1185,20 +1210,27 @@ func (s *Service) artifactOf(ctx context.Context, t Target, r specs.Resource, re
 // BUILD-TIME VARIABLES ARE NOT HERE. `at: build` says the value is baked into
 // the artifact, and handing one to a running workload would be handing it a
 // value that may not be the one it was built with.
-func (s *Service) envOf(ctx context.Context, t Target, r specs.Resource) (map[string]string, error) {
-	variables := r.Sub("variables")
+func (s *Service) envOf(ctx context.Context, t Target, variables map[string]specs.VariablesEntry) (map[string]string, error) {
 	if len(variables) == 0 {
 		return nil, nil
 	}
 
+	// IN NAME ORDER, so which secret is asked for first — and which failure is
+	// the one reported — is the same on every call.
+	names := make([]string, 0, len(variables))
+	for name := range variables {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
 	out := map[string]string{}
-	for _, name := range r.Keys("variables") {
-		v := variables.Sub(name)
-		if v.String("at") == "build" || v.String("as") != "env" {
+	for _, name := range names {
+		v := variables[name]
+		if v.At == specs.VariablesEntryAtBuild || v.As != specs.VariablesEntryAsEnv {
 			continue
 		}
 
-		if id := v.String("secret", "name"); id != "" {
+		if id := v.Secret.Name; id != "" {
 			if s.secrets == nil {
 				return nil, fmt.Errorf("%w: %s wants %s", ErrNoSecrets, t.Name, name)
 			}
@@ -1209,7 +1241,7 @@ func (s *Service) envOf(ctx context.Context, t Target, r specs.Resource) (map[st
 			out[name] = value
 			continue
 		}
-		out[name] = v.String("value")
+		out[name] = v.Value
 	}
 	return out, nil
 }
@@ -1236,12 +1268,12 @@ func (s *Service) Resolve(ctx context.Context, t Target) (invoke.Spec, error) {
 }
 
 // mcpSettings is what an mcp declares about its listing.
-func mcpSettings(r specs.Resource) map[string]string {
+func mcpSettings(tools specs.McpTools) map[string]string {
 	out := map[string]string{}
-	if scope := r.String("tools", "cache_scope"); scope != "" {
+	if scope := tools.CacheScope; scope != "" {
 		out[settingMCPCacheScope] = scope
 	}
-	if ttl, ok := r.Duration("tools", "cache_ttl"); ok {
+	if ttl := tools.CacheTtl; ttl != nil {
 		out[settingMCPCacheTTL] = ttl.String()
 	}
 	if len(out) == 0 {

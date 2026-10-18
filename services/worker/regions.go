@@ -25,9 +25,9 @@ type Regions struct {
 // a workload as to a database — where copies are — and differ only in what a
 // copy IS: a database's is state, a workload's is an instance serving it.
 const (
-	regionsPinned   = "pinned"
-	regionsFailover = "failover"
-	regionsCDN      = "cdn"
+	regionsPinned   = specs.RegionsPolicyPinned
+	regionsFailover = specs.RegionsPolicyFailover
+	regionsCDN      = specs.RegionsPolicyCdn
 )
 
 // RegionsOf is what one resource asks for.
@@ -46,13 +46,14 @@ const (
 // off the air. A database, which holds state, IS bounded that way.
 func RegionsOf(proj *specs.Project, environment string, r specs.Resource) Regions {
 	var tiers [][]string
-	switch r.String("regions", "policy") {
+	declared := specs.ReadRegions(r)
+	switch declared.Policy {
 	case regionsPinned:
-		tiers = tiersOf(r.Strings("regions", "in"))
+		tiers = tiersOf(declared.In)
 	case regionsFailover:
-		tiers = tiersOf([]string{r.String("regions", "main")}, []string{r.String("regions", "standby")})
+		tiers = tiersOf([]string{declared.Main}, []string{declared.Standby})
 	case regionsCDN:
-		tiers = tiersOf(r.Strings("regions", "in"))
+		tiers = tiersOf(declared.In)
 	}
 	if tiers == nil {
 		return Regions{}

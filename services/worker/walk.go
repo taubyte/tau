@@ -56,7 +56,7 @@ func eachScope(proj *specs.Project, scope []string, visit func(scope []string)) 
 }
 
 // proxyKind is the vocabulary's name for a raw-connection listener.
-const proxyKind = "proxy"
+const proxyKind = specs.KindProxy
 
 // Proxy is one proxy resource in a deployment this node holds, addressed the
 // way services/v2/proxy takes one.

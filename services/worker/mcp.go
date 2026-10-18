@@ -40,13 +40,13 @@ import (
 // rather than claiming it takes nothing. What the client sends as `arguments`
 // is what the function is POSTed.
 
-const mcpKind = "mcp"
+const mcpKind = specs.KindMcp
 
 // mcpToolKind is what an mcp groups. One kind, deliberately: a tool is
 // something a model may call with arguments and read an answer from, which is
 // what `invoke` on a function means and what nothing else in this vocabulary
 // offers.
-const mcpToolKind = "function"
+const mcpToolKind = specs.KindFunction
 
 // mcpInvokeOp is the verb a tool is published for.
 const mcpInvokeOp = "invoke"
@@ -96,9 +96,9 @@ func mcpHeaders(spec invoke.Spec) map[string][]string {
 
 	ttl := spec.Settings[settingMCPCacheTTL]
 	switch spec.Settings[settingMCPCacheScope] {
-	case "public":
+	case specs.McpToolsCacheScopePublic:
 		out["Cache-Control"] = []string{cacheControl("public", ttl)}
-	case "principal":
+	case specs.McpToolsCacheScopePrincipal:
 		// PER CALLER. `private` is HTTP's word for "one user's cache may hold
 		// this and a shared one may not", which is what a principal-scoped
 		// listing means: what a caller may see depends on who it is.
@@ -206,13 +206,13 @@ func (m *mcpTools) Call(ctx context.Context, name string, arguments json.RawMess
 
 // The vocabulary's own attribute paths, as they travel in a spec's settings.
 const (
-	settingMCPCacheScope = "tools/cache_scope"
-	settingMCPCacheTTL   = "tools/cache_ttl"
+	settingMCPCacheScope = specs.McpToolsKeyCacheScope
+	settingMCPCacheTTL   = specs.McpToolsKeyCacheTtl
 
 	// settingDescription is the target's own description, carried so that a
 	// tool published to a model has one. It is the single most load-bearing
 	// string in a tool listing — it is how the model decides whether to call it.
-	settingDescription = "description"
+	settingDescription = specs.FunctionKeyDescription
 )
 
 func parseDurationSetting(raw string) (time.Duration, error) { return time.ParseDuration(raw) }
