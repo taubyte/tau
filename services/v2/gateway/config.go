@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -47,6 +48,11 @@ type Workers interface {
 	// Transform: a router is a workload of this deployment and decides per
 	// request, so it runs where the project is warm.
 	Route(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Routing, error)
+
+	// Conn opens a connection to one of a workload's ports, by the name it
+	// declared — what a route that names a port is delivered over. See
+	// port.go.
+	Conn(ctx context.Context, at specs.Address, port string) (net.Conn, error)
 }
 
 // Buses attaches a caller to an ephemeral bus.

@@ -1,9 +1,13 @@
 package gateway
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -193,11 +197,20 @@ func cloneRequest(req *invoke.Request) *invoke.Request {
 type call struct {
 	at  specs.Address
 	req *invoke.Request
+
+	// port is the named port a request was delivered over, "" for one that
+	// was invoked.
+	port string
 }
 
 func (w *recordingWorkers) Invoke(_ context.Context, at specs.Address, req *invoke.Request) (*invoke.Response, error) {
+	return w.served(call{at: at, req: req})
+}
+
+// served records one delivery and answers it.
+func (w *recordingWorkers) served(c call) (*invoke.Response, error) {
 	w.mu.Lock()
-	w.calls = append(w.calls, call{at: at, req: req})
+	w.calls = append(w.calls, c)
 	err, reply := w.err, w.reply
 	w.mu.Unlock()
 
@@ -207,11 +220,49 @@ func (w *recordingWorkers) Invoke(_ context.Context, at specs.Address, req *invo
 	if reply != nil {
 		return reply, nil
 	}
-	return &invoke.Response{
-		Status:  http.StatusOK,
-		Headers: map[string][]string{"X-Served": {at.Kind + "/" + at.Name}},
-		Body:    []byte(req.Path),
-	}, nil
+	headers := map[string][]string{"X-Served": {c.at.Kind + "/" + c.at.Name}}
+	if c.port != "" {
+		headers["X-Port"] = []string{c.port}
+	}
+	return &invoke.Response{Status: http.StatusOK, Headers: headers, Body: []byte(c.req.Path)}, nil
+}
+
+// Conn stands in for a connection to a workload's named port: what is spoken
+// over it is HTTP, answered the way Invoke answers, and recorded with the
+// port it came in on.
+func (w *recordingWorkers) Conn(_ context.Context, at specs.Address, port string) (net.Conn, error) {
+	w.mu.Lock()
+	err := w.err
+	w.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+
+	client, workload := net.Pipe()
+	go func() {
+		defer workload.Close()
+		hr, err := http.ReadRequest(bufio.NewReader(workload))
+		if err != nil {
+			return
+		}
+		body, err := io.ReadAll(hr.Body)
+		if err != nil {
+			return
+		}
+		res, err := w.served(call{at: at, port: port, req: &invoke.Request{
+			Method: hr.Method, Path: hr.URL.Path, Headers: hr.Header, Body: body,
+		}})
+		if err != nil {
+			return
+		}
+		out := &http.Response{
+			StatusCode: res.Status, ProtoMajor: 1, ProtoMinor: 1,
+			Header: res.Headers, Body: io.NopCloser(bytes.NewReader(res.Body)),
+			ContentLength: int64(len(res.Body)),
+		}
+		out.Write(workload)
+	}()
+	return client, nil
 }
 
 func (w *recordingWorkers) seen() []call {

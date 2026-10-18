@@ -306,7 +306,14 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := s.workers.Invoke(ctx, at, req)
+	// A PORT IS THE ROUTE'S, so it applies where the route's own handler is
+	// the destination — a router that chose somewhere else chose a target and
+	// not a socket on this one.
+	var port string
+	if router, _ := m.router(); router == "" {
+		port = m.handler().HandlerPort
+	}
+	res, err := s.deliver(ctx, at, port, req)
 	if err != nil {
 		s.logf("gateway: %s/%s %s/%s could not be served: %v", at.Project, at.Environment, at.Kind, at.Name, err)
 		refuse(w, statusFor(err), "this route could not be served")
