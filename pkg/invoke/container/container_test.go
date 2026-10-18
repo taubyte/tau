@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -50,6 +51,21 @@ type fakeBackend struct {
 
 	servers []closer
 	next    int
+}
+
+// publishOnly holds a loopback port the way a published port with nothing
+// listening behind it is held: bound, so nothing else can take it, and not
+// listening, so a dial is refused.
+func publishOnly(port int) (closer, error) {
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Bind(fd, &syscall.SockaddrInet4{Port: port, Addr: [4]byte{127, 0, 0, 1}}); err != nil {
+		syscall.Close(fd)
+		return nil, fmt.Errorf("port %d is already allocated: %w", port, err)
+	}
+	return closerFunc(func() error { return syscall.Close(fd) }), nil
 }
 
 // closer is what a fake "container" hands back so a test can shut it down.
@@ -114,6 +130,17 @@ func (f *fakeBackend) Start(_ context.Context, id core.ContainerID) error {
 		srv, err := listen(m.HostPort)
 		if err != nil {
 			return err
+		}
+		// A CONTAINER THAT BINDS NOTHING STILL HAS ITS PORT PUBLISHED. Docker's
+		// proxy holds a published host port whether or not anything inside
+		// listens, so a dial is refused and no other process can take it —
+		// and a port already taken fails the start. A fake that left it free
+		// let any process on the machine answer the readiness probe, which a
+		// gate running packages in parallel did.
+		if srv == nil {
+			if srv, err = publishOnly(m.HostPort); err != nil {
+				return err
+			}
 		}
 		if srv != nil {
 			f.mu.Lock()
