@@ -88,14 +88,14 @@ jobs:
       run: |
         for project in "spore-drive"; do
           (
-            cd pkg/$project/clients/mock
+            cd tools/$project/clients/mock
             go build .
           ) || exit 1
         done
     - name: Run JS/TS tests with retries
       run: |
         max_attempts=5
-        for project in "pkg/spore-drive/clients/js"; do
+        for project in "tools/spore-drive/clients/js"; do
           attempt_num=1 
           (
             cd $project
@@ -299,7 +299,7 @@ jobs:
       run: |
         for project in "spore-drive"; do
           (
-            cd pkg/$project/clients/mock
+            cd tools/$project/clients/mock
             go build .
           ) || exit 1
         done
@@ -312,7 +312,7 @@ jobs:
         max_attempts=5
         attempt_num=1
         (
-          cd pkg/spore-drive/clients/py
+          cd tools/spore-drive/clients/py
           echo "Creating Python virtual environment"
           python -m venv venv
           source venv/bin/activate

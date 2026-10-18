@@ -268,7 +268,7 @@ func TestTheRulesBufCannotCheck(t *testing.T) {
 	// tau/common/v1/common.proto, imported the way drive.proto imports
 	// config.proto — "v2's own, never legacy's pkg/specs address space".
 	// buf.yaml puts this module in a workspace with pkg/taucorder/proto,
-	// pkg/spore-drive/proto and ee/proto, so an import across that boundary
+	// tools/spore-drive/proto and ee/proto, so an import across that boundary
 	// resolves and builds clean. It also arrives with everything that file
 	// declares: `taucorder.v1.RepositoryId` is `oneof id { int64 github = 1;
 	// string bitbucket = 2; }` — §1's whole subject, both halves of it, in

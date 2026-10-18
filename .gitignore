@@ -4,7 +4,7 @@
 
 .claude/
 
-pkg/spore-drive/clients/mock/mock
+tools/spore-drive/clients/mock/mock
 
 .vscode/
 
@@ -197,9 +197,9 @@ dmypy.json
 .pyre/
 
 spore-drive/bin/
-pkg/spore-drive/clients/py/example/config/
-pkg/spore-drive/clients/py/example/hosts.csv
-pkg/spore-drive/clients/py/spore_drive/bin/
+tools/spore-drive/clients/py/example/config/
+tools/spore-drive/clients/py/example/hosts.csv
+tools/spore-drive/clients/py/spore_drive/bin/
 tools/spore-drive/service/service
 
 .gstack/

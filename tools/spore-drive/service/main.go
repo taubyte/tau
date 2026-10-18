@@ -9,13 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	confSrv "github.com/taubyte/tau/pkg/spore-drive/config/service"
-	driveSrv "github.com/taubyte/tau/pkg/spore-drive/drive/service"
-	healthSrv "github.com/taubyte/tau/pkg/spore-drive/health"
+	confSrv "github.com/taubyte/tau/tools/spore-drive/config/service"
+	driveSrv "github.com/taubyte/tau/tools/spore-drive/drive/service"
+	healthSrv "github.com/taubyte/tau/tools/spore-drive/health"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
-	sporedrive "github.com/taubyte/tau/pkg/spore-drive"
+	sporedrive "github.com/taubyte/tau/tools/spore-drive"
 )
 
 func main() {

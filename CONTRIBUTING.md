@@ -98,7 +98,7 @@ If you are contributing to Go or JavaScript/TypeScript components, please run au
 
 **JavaScript/TypeScript Tests:**
 
-- From the relevant client directory (e.g., `pkg/spore-drive/clients/js`):
+- From the relevant client directory (e.g., `tools/spore-drive/clients/js`):
   ```bash
   npm run test
   ```

@@ -6,7 +6,7 @@ version: v2
 #
 # Membership here is what gives a module the workspace's shared lint/breaking
 # config below instead of buf's bare defaults — pkg/proto and
-# pkg/spore-drive/proto carry no buf.yaml of their own for exactly that
+# tools/spore-drive/proto carry no buf.yaml of their own for exactly that
 # reason.
 #
 # A bare `buf lint`/`buf build`/`buf generate` run from the repo root walks
@@ -20,7 +20,7 @@ version: v2
 # who runs a bare `buf lint` by hand will hit it; that is buf's own
 # workspace behavior, not a bug in this file.
 modules:
-  - path: pkg/spore-drive/proto
+  - path: tools/spore-drive/proto
   - path: pkg/proto
   - path: ee/proto
 lint:

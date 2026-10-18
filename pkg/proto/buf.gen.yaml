@@ -2,11 +2,11 @@
 # direct require) served over libp2p streams via go-libp2p-gostream — the
 # shape pkg/raft/transport.go already runs in production for the raft
 # consensus transport. No browser client: this is server-to-server only, so
-# unlike pkg/taucorder/proto and pkg/spore-drive/proto there is no
+# unlike pkg/taucorder/proto and tools/spore-drive/proto there is no
 # protoc-gen-es/connect-es pair here.
 #
 # One tree, one package per v2 service — tau/<service>/v1/<service>.proto,
-# package tau.<service>.v1 — the same split pkg/spore-drive/proto uses for its
+# package tau.<service>.v1 — the same split tools/spore-drive/proto uses for its
 # independent domains (config/drive/health/mock), not taucorder's one shared
 # package across every file. v2's services are independent bounded contexts
 # owned separately, so each versions and breaking-checks on its own; nothing

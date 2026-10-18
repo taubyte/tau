@@ -1,0 +1,21 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/taubyte/tau/tools/spore-drive/proto/gen
+plugins:
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  - local: protoc-gen-connect-go
+    out: gen
+    opt: paths=source_relative
+  - local: protoc-gen-es
+    out: ../clients/js/gen
+    opt: target=ts
+  - local: protoc-gen-connect-es
+    out: ../clients/js/gen
+    opt: target=ts
+  - remote: buf.build/protocolbuffers/python:v31.1
+    out: ../clients/py/spore_drive/proto
