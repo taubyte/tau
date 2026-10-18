@@ -29,7 +29,7 @@ import (
 // found: both functions omitted `execution/timeout`, which is Required(), so
 // tcc would have REFUSED the very project this test claimed to be running, and
 // neither carried `implements: handler`, which the vocabulary defaults. The
-// yaml under projects/with/channel is compiled here, so the declaration and the
+// yaml under projects/with/channel/function is compiled here, so the declaration and the
 // dial are tested as one thing.
 //
 // THE SERVER IS THE SAME BINARY, which is what makes the answer proof rather
@@ -64,7 +64,7 @@ func TestAGuestDialsAChannelAndASecondGuestAnswers(t *testing.T) {
 	// would be this test's runtime answering this test's dialer.
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	r := deploy(t, "with/channel", "reserve.example.com", cacherWASM(t))
+	r := deploy(t, "with/channel/function", "reserve.example.com", cacherWASM(t))
 
 	// THE GRANT CARRIES THE RESOLVED SERVER, not the name the author wrote —
 	// the dialer holds a handle and cannot turn `server` into a workload.

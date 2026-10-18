@@ -52,30 +52,20 @@ func TestAnOmittedNamespaceResolvesToTheChannelsScope(t *testing.T) {
 		"the project root, stated rather than left empty for a reader to guess")
 }
 
-// TestANamedContainerPortIsRefusedByName — a channel served by a container may
-// say which of its ports the bytes go to, and an instance here is given exactly
-// one. Delivering to the wrong socket and timing out is the failure this
-// refusal exists to replace.
-func TestANamedContainerPortIsRefusedByName(t *testing.T) {
-	h := newHarness(t)
-	grants := channelGrants(t, resolveIn(t, h, nil, "function", "checkout"))
-
-	require.Contains(t, grants, "sync")
-	require.Contains(t, grants["sync"].Refused, "port",
-		"the sentence names what cannot be done")
-	require.False(t, grants["sync"].Allows("dial"))
-}
-
-// TestOneRefusedChannelDoesNotTakeTheOthersDown — the whole reason
-// Grant.Refused exists. `checkout` dials both, one is servable, and the
-// workload still runs with the one that is.
-func TestOneRefusedChannelDoesNotTakeTheOthersDown(t *testing.T) {
+// TestANamedContainerPortTravelsOnTheGrant — a channel served by a container
+// may say which of its ports the bytes go to. The tier keeps every declared port
+// by name, so the name is carried for the dial to use rather than refused.
+func TestANamedContainerPortTravelsOnTheGrant(t *testing.T) {
 	h := newHarness(t)
 	grants := channelGrants(t, resolveIn(t, h, nil, "function", "checkout"))
 
 	require.Len(t, grants, 2)
-	require.True(t, grants["reserve"].Allows("dial"))
-	require.False(t, grants["sync"].Allows("dial"))
+	sync := grants["sync"]
+	require.Empty(t, sync.Refused)
+	require.True(t, sync.Allows("dial"))
+	require.Equal(t, "application", sync.Settings["serve/kind"])
+	require.NotEmpty(t, sync.Settings["serve/port"], "the port's name, for the dial to connect to")
+	require.Empty(t, grants["reserve"].Settings["serve/port"], "and a channel naming none carries none")
 }
 
 // TestAnAuthorizerIsHONOUREDOnEveryKindThatCanDeclareOne — attachAccess gives

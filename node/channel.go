@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/specs"
+	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/v2/placement"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -72,6 +75,7 @@ const (
 	settingServeKind  = "serve/kind"
 	settingServeName  = "serve/name"
 	settingServeScope = "serve/namespace"
+	settingServePort  = "serve/port"
 )
 
 // channels dials the workload a channel grant names.
@@ -94,13 +98,23 @@ func (c *channels) Dial(ctx context.Context, grant invoke.Grant, body []byte) ([
 		return nil, fmt.Errorf("node: the handle %q does not name a deployment", grant.Handle)
 	}
 
-	res, err := c.invoke(ctx, worker.Target{
+	at := worker.Target{
 		Project:     proj,
 		Environment: environment,
 		Scope:       specs.ScopeOf(nil, grant.Settings[settingServeScope]),
 		Kind:        kind,
 		Name:        name,
-	}, &invoke.Request{
+	}
+
+	// A WORKLOAD WITH PORTS GETS THE BYTES ON ONE. A channel is a byte channel,
+	// and a container is a process listening on a socket: what it is handed is
+	// what the dialer sent, not an HTTP request wrapped around it. A component
+	// has no socket and is dispatched, below.
+	if schema.Connected(kind) {
+		return c.connect(ctx, grant, at, body)
+	}
+
+	res, err := c.invoke(ctx, at, &invoke.Request{
 		Method: http.MethodPost,
 		Path:   "/",
 		Headers: map[string][]string{
@@ -125,6 +139,50 @@ func (c *channels) Dial(ctx context.Context, grant invoke.Grant, body []byte) ([
 		return nil, fmt.Errorf("%w: %s answered %d", wasmtier.ErrChannelFailed, grant.Label, res.Status)
 	}
 	return res.Body, nil
+}
+
+// connect delivers body to the named port of the workload at, half-closes, and
+// answers with everything it wrote back until it closed.
+//
+// HALF-CLOSED, SO A SERVER READING TO EOF KNOWS THE REQUEST ENDED — the one
+// signal a byte stream has. A transport that cannot half-close still delivers;
+// its server then has to know where its own requests end, as HTTP/1.0 does.
+func (c *channels) connect(ctx context.Context, grant invoke.Grant, at specs.Address, body []byte) ([]byte, error) {
+	conn, err := c.conn(ctx, at, grant.Settings[settingServePort])
+	if err != nil {
+		if unanswered(err) {
+			return nil, fmt.Errorf("%w: nothing in %s/%s serves %s/%s", wasmtier.ErrNoAnswer, at.Project, at.Environment, at.Kind, at.Name)
+		}
+		return nil, fmt.Errorf("node: dialling %s failed: %w", grant.Label, err)
+	}
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		conn.SetDeadline(deadline)
+	}
+
+	if _, err := conn.Write(body); err != nil {
+		return nil, fmt.Errorf("%w: %s: writing: %v", wasmtier.ErrChannelFailed, grant.Label, err)
+	}
+	if hc, ok := conn.(interface{ CloseWrite() error }); ok {
+		hc.CloseWrite()
+	}
+	answer, err := io.ReadAll(conn)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: reading: %v", wasmtier.ErrChannelFailed, grant.Label, err)
+	}
+	return answer, nil
+}
+
+// conn is invoke's rule for a connection: through placement where this node
+// can route, through the local worker where it cannot.
+func (c *channels) conn(ctx context.Context, at specs.Address, port string) (net.Conn, error) {
+	if c.node.workers != nil {
+		return c.node.workers.Conn(ctx, at, port)
+	}
+	if c.node.worker != nil {
+		return c.node.worker.Conn(ctx, at, port)
+	}
+	return nil, placement.ErrNoWorkers
 }
 
 // invoke sends through placement when this node can route, and through the

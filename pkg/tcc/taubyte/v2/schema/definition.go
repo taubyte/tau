@@ -1125,6 +1125,24 @@ func StreamEngines() []string { return append([]string(nil), streamEngines...) }
 // to tell it apart from a server somebody else runs.
 func TauEngine() string { return tauEngine }
 
+// Connected reports whether a kind is reached over a SOCKET rather than
+// dispatched as a call: every tier it may run on is the container tier, so an
+// instance is a process with ports and not a component with an entrypoint. A
+// channel's bytes go to such a workload's port, and to anything else as an
+// invocation.
+func Connected(kind string) bool {
+	engines := EnginesOf(kind)
+	if len(engines) == 0 {
+		return false
+	}
+	for _, e := range engines {
+		if e != containerEngine {
+			return false
+		}
+	}
+	return true
+}
+
 // channelServerKinds are what may answer a channel. A container gets the bytes on one of
 // its own ports; a function is dispatched with the connection in hand. Both are real, and
 // nothing else is: a website is HTTP by definition and a gateway is an ingress.

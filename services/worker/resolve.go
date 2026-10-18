@@ -424,6 +424,7 @@ func servedBy(proj *specs.Project, t Target, channel specs.Resource, id string, 
 		settingServeKind:  kind,
 		settingServeName:  name,
 		settingServeScope: "/" + strings.Join(at, "/"),
+		settingServePort:  channel.String("serve", "port"),
 	})
 }
 
@@ -433,6 +434,7 @@ const (
 	settingServeKind  = "serve/kind"
 	settingServeName  = "serve/name"
 	settingServeScope = "serve/namespace"
+	settingServePort  = "serve/port"
 )
 
 // invokedAt records which function an `invoke` grant actually resolved to.
@@ -952,21 +954,9 @@ func unservableKind(reach specs.Reach, target specs.Resource) string {
 		}
 		return ""
 	case channelKind:
-		// A NAMED PORT IS THE ONE THING A DIAL CANNOT REACH. A channel served
-		// by a container may name which of its ports the bytes go to, and the
-		// container tier gives an instance exactly one port — the one it puts
-		// in $PORT and proxies to. Nothing here resolves a second one, so a
-		// channel that names one is refused BY NAME rather than delivered to
-		// the wrong socket and timed out.
-		//
-		// IT IS REFUSED PER TARGET RATHER THAN PER WORKLOAD, which is the whole
-		// reason Grant.Refused exists: the project still deploys, everything
-		// else in it still runs, and the dial is told why in a sentence.
-		if port := target.String("serve", "port"); port != "" {
-			return fmt.Sprintf("channel %q is delivered to the port %q, and a container here is reached "+
-				"on the one port it was given — nothing resolves a second one",
-				reach.Label, port)
-		}
+		// A NAMED PORT IS DELIVERED TO, not refused: the container tier keeps
+		// every port a workload declared by name (pkg/invoke/container's
+		// reachable map), and node/channel.go dials the one named here.
 		return ""
 	case cacheKind:
 	default:
