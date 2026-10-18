@@ -1,0 +1,26 @@
+#!/bin/sh
+# as-root runs a test binary with root, or says why it cannot and skips.
+#
+# Used as `go test -exec scripts/as-root ...` by the targets whose tests need
+# what only root has: a container firewall (CAP_NET_ADMIN), the system
+# containerd socket. The binary is built as the user, so nothing root-owned
+# lands in the Go cache; only the binary is run with the privilege.
+#
+#   root already          run it
+#   passwordless sudo     run it under `sudo -n` (the homelab, GitHub's runners)
+#   neither               print SKIP and exit 0 — a laptop is not a failure
+#
+# The environment the caller set (TMPDIR, GOCOVERDIR, the cap's limits) is
+# carried through sudo, because a test that runs elsewhere than it was told to
+# is a test that lies about where it ran.
+
+if [ "$(id -u)" -eq 0 ]; then
+	exec "$@"
+fi
+
+if sudo -n true 2>/dev/null; then
+	exec sudo -n -E "$@"
+fi
+
+echo "SKIP: $(basename "$1") needs root, and this user is not root and has no passwordless sudo"
+exit 0

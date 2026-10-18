@@ -66,8 +66,10 @@ test-raft:
 test-docker:
 	go test -tags docker_integration -run '_Integration$$' -p 1 -timeout 15m $(FLAGS) ./pkg/containers/...
 
+# Run as root when the user is root or has passwordless sudo, skipped otherwise:
+# the system containerd socket is root's (scripts/as-root).
 test-containerd:
-	go test -tags containerd_integration -run '_Integration$$' -p 1 -timeout 20m $(FLAGS) ./pkg/containers/...
+	go test -exec $(AS_ROOT) -tags containerd_integration -run '_Integration$$' -p 1 -timeout 20m $(FLAGS) ./pkg/containers/...
 
 test-containers: test-docker test-containerd test-application test-build test-external-databases
 
@@ -76,23 +78,21 @@ test-containers: test-docker test-containerd test-application test-build test-ex
 # container tier started on docker. It needs a docker daemon AND CAP_NET_ADMIN,
 # because the tier always restricts egress and the backend refuses to create a
 # container it cannot firewall. So the binary is BUILT as the user and only the
-# binary runs under sudo -- nothing root-owned lands in the Go cache -- from
-# node/dream, where the corpus paths are relative. It fails rather than skips
-# without a daemon or the privilege.
-APPLICATION_TEST := $(CURDIR)/node/dream/application.test
+# binary runs as root -- nothing root-owned lands in the Go cache. Without root
+# or passwordless sudo it SKIPS and says so; with them and no daemon it fails.
+#
+# AS_ROOT runs a test binary with root or skips it (scripts/as-root).
+AS_ROOT := $(CURDIR)/scripts/as-root
 
 test-application:
-	cd node/dream && go test -c -tags 'dreaming docker_integration' -o $(APPLICATION_TEST) .
-	cd node/dream && sudo -n $(APPLICATION_TEST) -test.run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' -test.timeout 10m -test.v
+	go test -exec $(AS_ROOT) -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./node/dream/
 
 # test-build runs the build service's builds in real containers, for the same
 # reason and under the same privilege as test-application: a build runs a
 # stranger's commands, and the engine will not start one it cannot firewall.
-BUILD_TEST := $(CURDIR)/services/build/artifact/artifact.test
 
 test-build:
-	cd services/build/artifact && go test -c -tags docker_integration -o $(BUILD_TEST) .
-	cd services/build/artifact && sudo -n $(BUILD_TEST) -test.run '^TestARealBuild' -test.timeout 15m -test.v
+	go test -exec $(AS_ROOT) -tags docker_integration -count=1 -v -timeout 15m -run '^TestARealBuild' ./services/build/artifact/
 
 # test-external-databases deploys projects/with/database/{postgres,mysql}/sql
 # against real servers the test starts in docker. No firewall is installed for a
