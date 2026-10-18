@@ -945,12 +945,16 @@ func (b *ContainerdBackend) Start(ctx context.Context, id core.ContainerID) erro
 
 	b.putTask(id, tio)
 
-	// THE PROCESS SEES EOF WHEN THE COPY ENDS, which closing the FIFO's write
-	// end is.
+	// THE PROCESS SEES EOF WHEN THE COPY ENDS — but not from closing the FIFO:
+	// the shim keeps a handle of its own on it, so the process sees EOF only
+	// when the task is told to close its stdin, which is what `ctr` does too.
+	// The context is the backend's: Start's may end before the copy does.
 	if feed {
+		task := tio.task
 		go func() {
 			io.Copy(tio.directIO.Stdin, stdin)
 			tio.directIO.Stdin.Close()
+			task.CloseIO(namespaces.WithNamespace(context.Background(), b.config.Namespace), containerd.WithStdinCloser)
 		}()
 	}
 
