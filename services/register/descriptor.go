@@ -4,7 +4,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v1/registerv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 )
 
 // Protocol is the libp2p protocol id this service listens on: "/" plus the
@@ -12,7 +12,7 @@ import (
 // here. The "tau." prefix in that package is what keeps this off v1's
 // "/tns/v1" (services/common/names.go) for the whole span in which both run in
 // one swarm.
-var Protocol = rpc.Protocol(registerv1connect.RegisterServiceName)
+var Protocol = rpc.Protocol(registerv2connect.RegisterServiceName)
 
 // Ingress states which side of the trust boundary a service is on.
 type Ingress int

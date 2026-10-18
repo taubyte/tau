@@ -4,7 +4,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
 // Protocol is the libp2p protocol id this service listens on: "/" plus the
@@ -22,7 +22,7 @@ import (
 // written out here; pkg/proto's TestTheRulesBufCannotCheck now holds it
 // for every v2 package, reading v1's live ids out of names.go rather than
 // arguing that a collision is impossible.
-var Protocol = rpc.Protocol(authv1connect.ProjectServiceName)
+var Protocol = rpc.Protocol(authv2connect.ProjectServiceName)
 
 // Ingress states which side of the trust boundary a service is on
 // (service-conventions.md §5a).

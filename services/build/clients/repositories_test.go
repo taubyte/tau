@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/discovery"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/deploy"
 )
@@ -20,7 +20,7 @@ import (
 var _ backend.Repositories = (*RepositoryClient)(nil)
 
 func TestAuthProtocolIsWalkedOffAuthsSchema(t *testing.T) {
-	require.EqualValues(t, "/tau/auth/v1", AuthProtocol)
+	require.EqualValues(t, "/tau/auth/v2", AuthProtocol)
 }
 
 func TestRepositoriesRefusesAPoolForTheWrongProtocol(t *testing.T) {
@@ -30,16 +30,16 @@ func TestRepositoriesRefusesAPoolForTheWrongProtocol(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, c)
 
-	p, err := NewPool(newHost(t, mn), discovery.Static(), "/tau/build/v1", 4)
+	p, err := NewPool(newHost(t, mn), discovery.Static(), "/tau/build/v2", 4)
 	require.NoError(t, err)
 	t.Cleanup(p.Close)
 
 	c, err = Repositories(p)
-	require.ErrorContains(t, err, "/tau/auth/v1")
+	require.ErrorContains(t, err, "/tau/auth/v2")
 	require.Nil(t, c)
 }
 
-func newRepositories(t *testing.T, get func(string) (*authv1.Repository, error)) *RepositoryClient {
+func newRepositories(t *testing.T, get func(string) (*authv2.Repository, error)) *RepositoryClient {
 	t.Helper()
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
@@ -56,9 +56,9 @@ func newRepositories(t *testing.T, get func(string) (*authv1.Repository, error))
 
 func TestProjectReadsTheProjectIDOffAuth(t *testing.T) {
 	var asked string
-	c := newRepositories(t, func(key string) (*authv1.Repository, error) {
+	c := newRepositories(t, func(key string) (*authv2.Repository, error) {
 		asked = key
-		return &authv1.Repository{RepositoryKey: key, ProjectId: "proj-1", DeployKey: "SECRET"}, nil
+		return &authv2.Repository{RepositoryKey: key, ProjectId: "proj-1", DeployKey: "SECRET"}, nil
 	})
 
 	got, err := c.Project(t.Context(), "github.com/acme/pay")
@@ -71,7 +71,7 @@ func TestProjectReadsTheProjectIDOffAuth(t *testing.T) {
 // repository" is a push to refuse, and "auth is unreachable" is a push to
 // retry, and they are the same string.
 func TestAnUnregisteredRepositoryStaysNotFound(t *testing.T) {
-	c := newRepositories(t, func(string) (*authv1.Repository, error) {
+	c := newRepositories(t, func(string) (*authv2.Repository, error) {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such repository"))
 	})
 
@@ -80,8 +80,8 @@ func TestAnUnregisteredRepositoryStaysNotFound(t *testing.T) {
 }
 
 func TestARepositoryWithNoProjectIsAFailedPrecondition(t *testing.T) {
-	c := newRepositories(t, func(key string) (*authv1.Repository, error) {
-		return &authv1.Repository{RepositoryKey: key}, nil
+	c := newRepositories(t, func(key string) (*authv2.Repository, error) {
+		return &authv2.Repository{RepositoryKey: key}, nil
 	})
 
 	_, err := c.Project(t.Context(), "github.com/acme/pay")
@@ -89,7 +89,7 @@ func TestARepositoryWithNoProjectIsAFailedPrecondition(t *testing.T) {
 }
 
 func TestProjectRefusesAnEmptyKeyWithoutDialling(t *testing.T) {
-	c := newRepositories(t, func(string) (*authv1.Repository, error) {
+	c := newRepositories(t, func(string) (*authv2.Repository, error) {
 		t.Fatal("an empty key must not reach the wire")
 		return nil, nil
 	})
@@ -104,8 +104,8 @@ var _ deploy.Credentials = (*RepositoryClient)(nil)
 // people who do not know each other, and an account-scoped token leaked from
 // one build would be a key to every repository in that account.
 func TestDeployKey(t *testing.T) {
-	c := newRepositories(t, func(key string) (*authv1.Repository, error) {
-		return &authv1.Repository{
+	c := newRepositories(t, func(key string) (*authv2.Repository, error) {
+		return &authv2.Repository{
 			RepositoryKey: key,
 			ProjectId:     "pay",
 			DeployKey:     "-----BEGIN OPENSSH PRIVATE KEY-----\nnope\n-----END OPENSSH PRIVATE KEY-----\n",
@@ -118,8 +118,8 @@ func TestDeployKey(t *testing.T) {
 
 	// NO KEY IS NOT AN ERROR. It is the right answer for a public repository,
 	// and the clone then proceeds unauthenticated.
-	public := newRepositories(t, func(key string) (*authv1.Repository, error) {
-		return &authv1.Repository{RepositoryKey: key, ProjectId: "pay"}, nil
+	public := newRepositories(t, func(key string) (*authv2.Repository, error) {
+		return &authv2.Repository{RepositoryKey: key, ProjectId: "pay"}, nil
 	})
 	key, err = public.DeployKey(t.Context(), "github.com/acme/open")
 	require.NoError(t, err)
@@ -127,7 +127,7 @@ func TestDeployKey(t *testing.T) {
 }
 
 func TestDeployKeyRefusesWhatItCannotAsk(t *testing.T) {
-	c := newRepositories(t, func(string) (*authv1.Repository, error) {
+	c := newRepositories(t, func(string) (*authv2.Repository, error) {
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("auth is down"))
 	})
 

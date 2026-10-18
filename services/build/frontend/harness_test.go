@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // This package's whole fixture is five fakes and an httptest recorder. There is
@@ -41,10 +41,10 @@ const (
 type fakeHooks struct {
 	mu    sync.Mutex
 	calls int
-	get   func(id string) (*authv1.Hook, error)
+	get   func(id string) (*authv2.Hook, error)
 }
 
-func (f *fakeHooks) Get(_ context.Context, id string) (*authv1.Hook, error) {
+func (f *fakeHooks) Get(_ context.Context, id string) (*authv2.Hook, error) {
 	f.mu.Lock()
 	f.calls++
 	f.mu.Unlock()
@@ -54,7 +54,7 @@ func (f *fakeHooks) Get(_ context.Context, id string) (*authv1.Hook, error) {
 	if id != testHookID {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no hook %s", id))
 	}
-	return &authv1.Hook{Id: id, Secret: []byte(testSecret), RepositoryKey: testRepoKey}, nil
+	return &authv2.Hook{Id: id, Secret: []byte(testSecret), RepositoryKey: testRepoKey}, nil
 }
 
 func (f *fakeHooks) count() int {
@@ -71,12 +71,12 @@ func (f *fakeHooks) count() int {
 // By default a delivery verifies when its test signature is the hook's secret,
 // and means the push its body names, for the hook's own repository.
 type fakeDeliveries struct {
-	verify func(hook *authv1.Hook, header http.Header, body []byte) (Push, error)
+	verify func(hook *authv2.Hook, header http.Header, body []byte) (Push, error)
 }
 
 const testSignatureHeader = "X-Test-Signature"
 
-func (f *fakeDeliveries) Verify(hook *authv1.Hook, header http.Header, body []byte) (Push, error) {
+func (f *fakeDeliveries) Verify(hook *authv2.Hook, header http.Header, body []byte) (Push, error) {
 	if f.verify != nil {
 		return f.verify(hook, header, body)
 	}
@@ -116,7 +116,7 @@ type fakeBackend struct {
 	ctx  context.Context
 
 	enqueue func(key, ref, sha string) (string, error)
-	get     func(id string) (*buildv1.Job, error)
+	get     func(id string) (*buildv2.Job, error)
 	list    func(projectID string, emit func(string) error) error
 	cancel  func(id string) error
 	retry   func(id string) error
@@ -144,7 +144,7 @@ func (f *fakeBackend) Enqueue(ctx context.Context, key, ref, sha string) (string
 	return testJobID, nil
 }
 
-func (f *fakeBackend) Get(ctx context.Context, id string) (*buildv1.Job, error) {
+func (f *fakeBackend) Get(ctx context.Context, id string) (*buildv2.Job, error) {
 	f.mu.Lock()
 	f.ctx = ctx
 	f.mu.Unlock()
@@ -154,9 +154,9 @@ func (f *fakeBackend) Get(ctx context.Context, id string) (*buildv1.Job, error) 
 	if id != testJobID {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no job %s", id))
 	}
-	return &buildv1.Job{
+	return &buildv2.Job{
 		Id:            id,
-		Status:        buildv1.JobStatus_JobStatusSuccess,
+		Status:        buildv2.JobStatus_JobStatusSuccess,
 		RepositoryKey: testRepoKey,
 		Ref:           "refs/heads/main",
 		CommitSha:     testSHA,

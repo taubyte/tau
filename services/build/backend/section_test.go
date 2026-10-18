@@ -11,7 +11,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build/backend/section"
 )
@@ -68,9 +68,9 @@ func TestAWriteMadeByTheBodyThatReadItIsAllowed(t *testing.T) {
 	id := h.push(t, testRef, testCommit)
 
 	require.NoError(t, h.withJob(id, func(j *held) error {
-		return j.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+		return j.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled")
 	}))
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 }
 
 // A HANDLE ASSEMBLED RATHER THAN HANDED OVER IS DEAD, AND THAT IS WHY FORGING
@@ -94,11 +94,11 @@ func TestAHandleAssembledOutsideAHoldingIsDead(t *testing.T) {
 	requireRefused(t, h, id, forged.withdraw())
 	requireRefused(t, h, id, forged.register(func() {}))
 	requireRefused(t, h, id, forged.stopRun())
-	requireRefused(t, h, id, forged.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled"))
+	requireRefused(t, h, id, forged.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled"))
 	require.ErrorIs(t, forged.reread(), section.ErrStale,
 		"and it cannot read itself a value to write on either")
 
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
 // A GOROUTINE THAT HOLDS NOTHING CAN READ AND HAS NOTHING TO WRITE WITH. This
@@ -131,7 +131,7 @@ func TestAGoroutineThatHoldsNothingHasNothingToWriteWith(t *testing.T) {
 		// cannot even be pointed at the job it just read: a handle has no id
 		// field to fill in, because the subject lives inside the holding.
 		_ = rec
-		done <- (&held{s: h.Service}).finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+		done <- (&held{s: h.Service}).finish(buildv2.JobStatus_JobStatusCancelled, "cancelled")
 	}()
 
 	require.NoError(t, h.withJob(id, func(*held) error {
@@ -141,7 +141,7 @@ func TestAGoroutineThatHoldsNothingHasNothingToWriteWith(t *testing.T) {
 	}))
 
 	requireRefused(t, h, id, <-done)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id),
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id),
 		"and the record the sectionless read decided on must not have moved")
 }
 
@@ -171,13 +171,13 @@ func TestAHandleSpentInsideALaterSectionIsRefused(t *testing.T) {
 	var heldAtTheWrite bool
 	require.NoError(t, h.withJob(id, func(*held) error {
 		heldAtTheWrite = jobLock.Held()
-		err = stale.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+		err = stale.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled")
 		return nil
 	}))
 
 	require.True(t, heldAtTheWrite, "the lock is held at the write, which is exactly what the old needle asked")
 	requireRefused(t, h, id, err)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id),
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id),
 		"and the record the stale read decided on must not have moved")
 }
 
@@ -192,7 +192,7 @@ func TestAWriteFromACallDeferredAfterTheSectionHasNoSectionAtAll(t *testing.T) {
 	var err error
 	func() {
 		var j *held
-		defer func() { err = j.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled") }()
+		defer func() { err = j.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled") }()
 
 		require.NoError(t, h.withJob(id, func(in *held) error {
 			j = in
@@ -201,7 +201,7 @@ func TestAWriteFromACallDeferredAfterTheSectionHasNoSectionAtAll(t *testing.T) {
 	}()
 
 	requireRefused(t, h, id, err)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
 // FORM 3 — A CLOSURE BUILT INSIDE AND INVOKED OUTSIDE. The write is written
@@ -212,12 +212,12 @@ func TestAClosureBuiltInASectionAndInvokedOutsideItIsRefused(t *testing.T) {
 
 	var pending func() error
 	require.NoError(t, h.withJob(id, func(j *held) error {
-		pending = func() error { return j.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled") }
+		pending = func() error { return j.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled") }
 		return nil
 	}))
 
 	requireRefused(t, h, id, pending())
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
 // FORM 4 — A WRITE IN ANOTHER FUNCTION. It takes the handle or it cannot write
@@ -235,14 +235,14 @@ func TestAWriteInAnotherFunctionTakesTheHandleOrIsRefused(t *testing.T) {
 	// The helper. It reads nothing and decides nothing; it is handed a handle
 	// and writes what that handle's read decided.
 	elsewhere := func(j *held) error {
-		return j.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+		return j.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled")
 	}
 
 	requireRefused(t, h, id, elsewhere(escapee(t, h, id)))
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 
 	require.NoError(t, h.withJob(id, elsewhere), "and the same call from inside is allowed")
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 }
 
 // AND THE QUEUE WRITES ARE CHECKED THE SAME WAY, which matters because the
@@ -371,13 +371,13 @@ func TestTheHandleDiesBeforeTheExclusionIsReleased(t *testing.T) {
 	go func() {
 		wrote <- h.withJob(id, func(*held) error {
 			close(entered)
-			return stale.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+			return stale.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled")
 		})
 	}()
 	<-entered
 
 	requireRefused(t, h, id, <-wrote)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
 // THE LIVENESS IS NOT THIS PACKAGE'S TO ASSIGN, AND THAT IS THE COMPILER'S
@@ -424,12 +424,12 @@ func TestEveryTransitionWritesInTheSectionItReadIn(t *testing.T) {
 
 	// begin and settle.
 	require.True(t, h.mustStep(t))
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 
 	// retry, then cancel the reopened job.
 	require.NoError(t, h.retry(id))
 	require.NoError(t, h.cancel(id))
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 
 	// the dead-letter drain.
 	second := h.push(t, testRef, shaOf(1))
@@ -437,7 +437,7 @@ func TestEveryTransitionWritesInTheSectionItReadIn(t *testing.T) {
 	drained, err := h.drainDeadLetter()
 	require.NoError(t, err)
 	require.True(t, drained)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, h.status(t, second))
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, h.status(t, second))
 
 	// mend, both branches: an orphaned row to delete and a live one to leave.
 	h.store.put(t, openIndexKey(testRepo, id), nil)
@@ -480,7 +480,7 @@ func TestACancelStopsTheRunTheClaimRegistered(t *testing.T) {
 	require.NoError(t, h.cancel(id))
 	require.ErrorIs(t, <-stopped, context.Canceled)
 	require.NoError(t, <-ran)
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 }
 
 // ── ABOUT WHAT ───────────────────────────────────────────────────────────
@@ -590,17 +590,17 @@ func TestAHandleCannotBePointedAtAnotherJob(t *testing.T) {
 	b := h.push(t, testRef, shaOf(1))
 
 	ghost := escapee(t, h, b)
-	requireRefused(t, h, b, ghost.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled"))
+	requireRefused(t, h, b, ghost.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled"))
 
 	require.NoError(t, h.withJob(a, func(j *held) error {
 		ghost.in = j.in
 		require.Equal(t, a, ghost.id(), "the subject came with the holding")
-		return ghost.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled")
+		return ghost.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled")
 	}))
 
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, a),
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, a),
 		"the write it made is the LIVE section's own, which its own handle could already make")
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, b),
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, b),
 		"and the job the ghost was entered for is untouched")
 }
 

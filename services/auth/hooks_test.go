@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // HookService.Get is covered here as a direct call. .List needs a real
@@ -25,7 +25,7 @@ func TestHookGet_NotFound(t *testing.T) {
 	s := newTestService(t)
 	h := &hookHandler{s}
 
-	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "does-not-exist"}))
+	_, err := h.Get(t.Context(), connect.NewRequest(&authv2.HookRef{Id: "does-not-exist"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
@@ -37,7 +37,7 @@ func TestHookGet(t *testing.T) {
 	h := &hookHandler{s}
 	require.NoError(t, putHook(t.Context(), s.kv, "hook-1", hook("gitlab.example.com/acme/pay")))
 
-	res, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-1"}))
+	res, err := h.Get(t.Context(), connect.NewRequest(&authv2.HookRef{Id: "hook-1"}))
 	require.NoError(t, err)
 	assert.Equal(t, "hook-1", res.Msg.GetId())
 	assert.Equal(t, "gitlab.example.com/acme/pay", res.Msg.GetRepositoryKey())
@@ -55,7 +55,7 @@ func TestHookGet_MissingRow(t *testing.T) {
 		require.NoError(t, putHook(t.Context(), s.kv, "hook-1", hook("github.com/acme/pay")))
 		require.NoError(t, s.kv.Delete(t.Context(), row("hook-1")))
 
-		_, err := h.Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-1"}))
+		_, err := h.Get(t.Context(), connect.NewRequest(&authv2.HookRef{Id: "hook-1"}))
 		require.Error(t, err)
 		assert.Equal(t, connect.CodeInternal, connect.CodeOf(err), row("hook-1"))
 	}
@@ -67,7 +67,7 @@ func TestHookGet_StoreFailure(t *testing.T) {
 	require.NoError(t, putHook(t.Context(), s.kv, "hook-1", hook("github.com/acme/pay")))
 	s.kv = &gettingKVDB{Store: s.kv, fail: map[string]bool{hookRepoRow("hook-1"): true}}
 
-	_, err := (&hookHandler{s}).Get(t.Context(), connect.NewRequest(&authv1.HookRef{Id: "hook-1"}))
+	_, err := (&hookHandler{s}).Get(t.Context(), connect.NewRequest(&authv2.HookRef{Id: "hook-1"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }

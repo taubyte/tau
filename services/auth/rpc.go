@@ -3,7 +3,7 @@ package auth
 import (
 	"net/http"
 
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
 // mount assembles the five generated connect handlers behind one mux, which
@@ -19,10 +19,10 @@ import (
 // interfaces.
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(authv1connect.NewProjectServiceHandler(&projectHandler{s}))
-	mux.Handle(authv1connect.NewRepositoryServiceHandler(&repositoryHandler{s}))
-	mux.Handle(authv1connect.NewHookServiceHandler(&hookHandler{s}))
-	mux.Handle(authv1connect.NewDomainServiceHandler(&domainHandler{s}))
-	mux.Handle(authv1connect.NewCertificateServiceHandler(&certificateHandler{s}))
+	mux.Handle(authv2connect.NewProjectServiceHandler(&projectHandler{s}))
+	mux.Handle(authv2connect.NewRepositoryServiceHandler(&repositoryHandler{s}))
+	mux.Handle(authv2connect.NewHookServiceHandler(&hookHandler{s}))
+	mux.Handle(authv2connect.NewDomainServiceHandler(&domainHandler{s}))
+	mux.Handle(authv2connect.NewCertificateServiceHandler(&certificateHandler{s}))
 	return mux
 }

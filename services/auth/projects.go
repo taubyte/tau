@@ -7,19 +7,19 @@ import (
 
 	"github.com/taubyte/tau/utils/id"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// projectHandler implements authv1connect.ProjectServiceHandler. See
+// projectHandler implements authv2connect.ProjectServiceHandler. See
 // repositories.go's repositoryHandler doc for why this is its own type
 // rather than a method set on *Service.
 type projectHandler struct{ s *Service }
 
-var _ authv1connect.ProjectServiceHandler = (*projectHandler)(nil)
+var _ authv2connect.ProjectServiceHandler = (*projectHandler)(nil)
 
 // Get returns a project by id.
-func (h *projectHandler) Get(ctx context.Context, req *connect.Request[authv1.ProjectRef]) (*connect.Response[authv1.Project], error) {
+func (h *projectHandler) Get(ctx context.Context, req *connect.Request[authv2.ProjectRef]) (*connect.Response[authv2.Project], error) {
 	projectID := req.Msg.GetId()
 	if err := requireID("id", projectID); err != nil {
 		return nil, err
@@ -28,7 +28,7 @@ func (h *projectHandler) Get(ctx context.Context, req *connect.Request[authv1.Pr
 	if err != nil {
 		return nil, errNotFound("%w", err)
 	}
-	return connect.NewResponse(&authv1.Project{
+	return connect.NewResponse(&authv2.Project{
 		Id:                  projectID,
 		Name:                record.name,
 		ConfigRepositoryKey: record.config,
@@ -37,13 +37,13 @@ func (h *projectHandler) Get(ctx context.Context, req *connect.Request[authv1.Pr
 }
 
 // List streams the id of every registered project.
-func (h *projectHandler) List(ctx context.Context, _ *connect.Request[authv1.Empty], stream *connect.ServerStream[authv1.ProjectRef]) error {
+func (h *projectHandler) List(ctx context.Context, _ *connect.Request[authv2.Empty], stream *connect.ServerStream[authv2.ProjectRef]) error {
 	ids, err := listProjectIDs(ctx, h.s.kv)
 	if err != nil {
 		return errInternal("listing projects: %w", err)
 	}
 	for _, projectID := range ids {
-		if err := stream.Send(&authv1.ProjectRef{Id: projectID}); err != nil {
+		if err := stream.Send(&authv2.ProjectRef{Id: projectID}); err != nil {
 			return err
 		}
 	}
@@ -66,7 +66,7 @@ func (h *projectHandler) List(ctx context.Context, _ *connect.Request[authv1.Emp
 // service creating a project is always the same one that registered its
 // repositories — which nothing in scope establishes. Per authz.go, this is
 // the documented OSS default: any authenticated peer may call it.
-func (h *projectHandler) Create(ctx context.Context, req *connect.Request[authv1.CreateProjectRequest]) (*connect.Response[authv1.CreateProjectResponse], error) {
+func (h *projectHandler) Create(ctx context.Context, req *connect.Request[authv2.CreateProjectRequest]) (*connect.Response[authv2.CreateProjectResponse], error) {
 	name := req.Msg.GetName()
 	if name == "" {
 		return nil, errInvalidArgument("name is required")
@@ -97,7 +97,7 @@ func (h *projectHandler) Create(ctx context.Context, req *connect.Request[authv1
 		return nil, errInternal("linking code repository: %w", err)
 	}
 
-	return connect.NewResponse(&authv1.CreateProjectResponse{
+	return connect.NewResponse(&authv2.CreateProjectResponse{
 		Id:   projectID,
 		Name: name,
 	}), nil

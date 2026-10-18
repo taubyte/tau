@@ -15,8 +15,8 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 
-	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1/workerv1connect"
+	workerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2/workerv2connect"
 )
 
 // client.go is the other side of rpc.go, and it exists for the same reason the
@@ -30,7 +30,7 @@ import (
 // Client calls a worker on another peer.
 type Client struct {
 	conn *rpc.Client
-	svc  workerv1connect.WorkerServiceClient
+	svc  workerv2connect.WorkerServiceClient
 }
 
 // NewClient prepares calls to the worker on p. Nothing is dialled until the
@@ -40,7 +40,7 @@ func NewClient(h host.Host, p libp2ppeer.ID) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("worker: dialling %s: %w", p, err)
 	}
-	return &Client{conn: conn, svc: workerv1connect.NewWorkerServiceClient(conn.HTTP(), conn.URL())}, nil
+	return &Client{conn: conn, svc: workerv2connect.NewWorkerServiceClient(conn.HTTP(), conn.URL())}, nil
 }
 
 // Close releases the stream. Calls after it fail.
@@ -52,8 +52,8 @@ func (c *Client) Invoke(ctx context.Context, t specs.Address, req *invoke.Reques
 		req = &invoke.Request{}
 	}
 
-	res, err := c.svc.Invoke(ctx, connect.NewRequest(&workerv1.InvokeRequest{
-		Target: &workerv1.Target{
+	res, err := c.svc.Invoke(ctx, connect.NewRequest(&workerv2.InvokeRequest{
+		Target: &workerv2.Target{
 			Project: t.Project, Environment: t.Environment,
 			Scope: t.Scope, Kind: t.Kind, Name: t.Name,
 		},
@@ -80,8 +80,8 @@ func (c *Client) Transform(ctx context.Context, t specs.Address, req *invoke.Req
 		req = &invoke.Request{}
 	}
 
-	res, err := c.svc.Transform(ctx, connect.NewRequest(&workerv1.TransformRequest{
-		Target: &workerv1.Target{
+	res, err := c.svc.Transform(ctx, connect.NewRequest(&workerv2.TransformRequest{
+		Target: &workerv2.Target{
 			Project: t.Project, Environment: t.Environment,
 			Scope: t.Scope, Kind: t.Kind, Name: t.Name,
 		},
@@ -95,14 +95,14 @@ func (c *Client) Transform(ctx context.Context, t specs.Address, req *invoke.Req
 	}
 
 	switch out := res.Msg.GetOutcome().(type) {
-	case *workerv1.TransformResponse_Answer:
+	case *workerv2.TransformResponse_Answer:
 		return &invoke.Outcome{Answer: &invoke.Response{
 			Status:  int(out.Answer.GetStatus()),
 			Headers: fromWire(out.Answer.GetHeaders()),
 			Body:    out.Answer.GetBody(),
 		}}, nil
 
-	case *workerv1.TransformResponse_Forward:
+	case *workerv2.TransformResponse_Forward:
 		return &invoke.Outcome{Forward: &invoke.Request{
 			Method:  out.Forward.GetMethod(),
 			Path:    out.Forward.GetPath(),
@@ -121,8 +121,8 @@ func (c *Client) Route(ctx context.Context, t specs.Address, req *invoke.Request
 		req = &invoke.Request{}
 	}
 
-	res, err := c.svc.Route(ctx, connect.NewRequest(&workerv1.RouteRequest{
-		Target: &workerv1.Target{
+	res, err := c.svc.Route(ctx, connect.NewRequest(&workerv2.RouteRequest{
+		Target: &workerv2.Target{
 			Project: t.Project, Environment: t.Environment,
 			Scope: t.Scope, Kind: t.Kind, Name: t.Name,
 		},
@@ -136,19 +136,19 @@ func (c *Client) Route(ctx context.Context, t specs.Address, req *invoke.Request
 	}
 
 	switch d := res.Msg.GetDecision().(type) {
-	case *workerv1.RouteResponse_To:
+	case *workerv2.RouteResponse_To:
 		return &invoke.Routing{To: &invoke.Destination{
 			Kind: d.To.GetKind(), Namespace: d.To.GetNamespace(), Name: d.To.GetName(),
 		}}, nil
 
-	case *workerv1.RouteResponse_Answer:
+	case *workerv2.RouteResponse_Answer:
 		return &invoke.Routing{Answer: &invoke.Response{
 			Status:  int(d.Answer.GetStatus()),
 			Headers: fromWire(d.Answer.GetHeaders()),
 			Body:    d.Answer.GetBody(),
 		}}, nil
 
-	case *workerv1.RouteResponse_None:
+	case *workerv2.RouteResponse_None:
 		return &invoke.Routing{None: d.None}, nil
 	}
 
@@ -158,7 +158,7 @@ func (c *Client) Route(ctx context.Context, t specs.Address, req *invoke.Request
 // Direct asks a proxy router, on whichever node holds the deployment, where one
 // connection should go.
 func (c *Client) Direct(ctx context.Context, t specs.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error) {
-	res, err := c.svc.Direct(ctx, connect.NewRequest(&workerv1.DirectRequest{
+	res, err := c.svc.Direct(ctx, connect.NewRequest(&workerv2.DirectRequest{
 		Target:     targetWire(t),
 		Connection: connectionWire(conn),
 		Peeked:     peeked,
@@ -168,15 +168,15 @@ func (c *Client) Direct(ctx context.Context, t specs.Address, conn *invoke.Conne
 	}
 
 	switch d := res.Msg.GetDecision().(type) {
-	case *workerv1.DirectResponse_To:
+	case *workerv2.DirectResponse_To:
 		return &invoke.Direction{To: &invoke.Endpoint{
 			Kind: d.To.GetKind(), Namespace: d.To.GetNamespace(), Name: d.To.GetName(), Port: d.To.GetPort(),
 		}}, nil
 
-	case *workerv1.DirectResponse_More:
+	case *workerv2.DirectResponse_More:
 		return &invoke.Direction{More: d.More}, nil
 
-	case *workerv1.DirectResponse_Refuse:
+	case *workerv2.DirectResponse_Refuse:
 		return &invoke.Direction{Refused: d.Refuse}, nil
 	}
 
@@ -190,12 +190,12 @@ func (c *Client) Shape(ctx context.Context, t specs.Address, stream *invoke.Stre
 		stream = &invoke.Stream{}
 	}
 
-	way := workerv1.ShapeRequest_DIRECTION_INBOUND
+	way := workerv2.ShapeRequest_DIRECTION_INBOUND
 	if stream.Way == invoke.Outbound {
-		way = workerv1.ShapeRequest_DIRECTION_OUTBOUND
+		way = workerv2.ShapeRequest_DIRECTION_OUTBOUND
 	}
 
-	res, err := c.svc.Shape(ctx, connect.NewRequest(&workerv1.ShapeRequest{
+	res, err := c.svc.Shape(ctx, connect.NewRequest(&workerv2.ShapeRequest{
 		Target:     targetWire(t),
 		Connection: connectionWire(stream.Conn),
 		Way:        way,
@@ -208,30 +208,30 @@ func (c *Client) Shape(ctx context.Context, t specs.Address, stream *invoke.Stre
 	}
 
 	switch v := res.Msg.GetVerdict().(type) {
-	case *workerv1.ShapeResponse_Pass:
+	case *workerv2.ShapeResponse_Pass:
 		return &invoke.Shaping{Pass: &invoke.Shaped{
 			Out: v.Pass.GetOut(), State: v.Pass.GetState(),
 		}}, nil
 
-	case *workerv1.ShapeResponse_Close:
+	case *workerv2.ShapeResponse_Close:
 		return &invoke.Shaping{Refused: v.Close}, nil
 	}
 
 	return nil, ErrNoOutcome
 }
 
-func targetWire(t specs.Address) *workerv1.Target {
-	return &workerv1.Target{
+func targetWire(t specs.Address) *workerv2.Target {
+	return &workerv2.Target{
 		Project: t.Project, Environment: t.Environment,
 		Scope: t.Scope, Kind: t.Kind, Name: t.Name,
 	}
 }
 
-func connectionWire(c *invoke.Connection) *workerv1.Connection {
+func connectionWire(c *invoke.Connection) *workerv2.Connection {
 	if c == nil {
 		c = &invoke.Connection{}
 	}
-	return &workerv1.Connection{
+	return &workerv2.Connection{
 		Source:     c.Source,
 		Host:       c.Host,
 		Protocol:   c.Protocol,

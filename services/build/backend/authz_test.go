@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v1/buildv1connect"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 )
 
 func TestAllowAnyPeerIsTheDefaultAndAllowsAnyone(t *testing.T) {
@@ -54,28 +54,28 @@ func TestTheseHandlersCannotBeServedOnAnHTTPIngress(t *testing.T) {
 	srv := httptest.NewServer(h.mount())
 	t.Cleanup(srv.Close)
 
-	queueClient := buildv1connect.NewQueueServiceClient(srv.Client(), srv.URL)
-	jobClient := buildv1connect.NewJobServiceClient(srv.Client(), srv.URL)
+	queueClient := buildv2connect.NewQueueServiceClient(srv.Client(), srv.URL)
+	jobClient := buildv2connect.NewJobServiceClient(srv.Client(), srv.URL)
 
-	_, err := queueClient.Enqueue(t.Context(), connect.NewRequest(&buildv1.PushEvent{
+	_, err := queueClient.Enqueue(t.Context(), connect.NewRequest(&buildv2.PushEvent{
 		RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 	}))
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 
-	_, err = jobClient.Get(t.Context(), connect.NewRequest(&buildv1.JobRef{Id: id}))
+	_, err = jobClient.Get(t.Context(), connect.NewRequest(&buildv2.JobRef{Id: id}))
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 
-	_, err = jobClient.Cancel(t.Context(), connect.NewRequest(&buildv1.JobRef{Id: id}))
+	_, err = jobClient.Cancel(t.Context(), connect.NewRequest(&buildv2.JobRef{Id: id}))
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 
-	_, err = jobClient.Retry(t.Context(), connect.NewRequest(&buildv1.JobRef{Id: id}))
+	_, err = jobClient.Retry(t.Context(), connect.NewRequest(&buildv2.JobRef{Id: id}))
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 
-	stream, err := jobClient.List(t.Context(), connect.NewRequest(&buildv1.ProjectRef{Id: "p"}))
+	stream, err := jobClient.List(t.Context(), connect.NewRequest(&buildv2.ProjectRef{Id: "p"}))
 	require.NoError(t, err)
 	require.False(t, stream.Receive())
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(stream.Err()))
 
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id),
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id),
 		"nothing reached over an ingress may have changed anything")
 }

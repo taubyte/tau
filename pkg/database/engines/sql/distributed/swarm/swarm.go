@@ -5,7 +5,7 @@
 // # One service and one router for every database
 //
 // A node holds many databases and has one host. So anti-entropy is ONE
-// ConnectRPC service (tau.sqlsync.v1, generated from pkg/proto) whose every
+// ConnectRPC service (tau.sqlsync.v2, generated from pkg/proto) whose every
 // request names its database, and a write's low-latency delivery is a message on
 // the database's own pubsub topic, joined on the router the node already runs.
 // A protocol or a router per database would be a stream handler or a gossip
@@ -32,12 +32,12 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	sqlsyncv1 "github.com/taubyte/tau/pkg/proto/gen/tau/sqlsync/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/sqlsync/v1/sqlsyncv1connect"
+	sqlsyncv2 "github.com/taubyte/tau/pkg/proto/gen/tau/sqlsync/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/sqlsync/v2/sqlsyncv2connect"
 )
 
 // Protocol is the stream protocol the anti-entropy service answers on.
-var Protocol = rpc.Protocol(sqlsyncv1connect.SQLSyncServiceName)
+var Protocol = rpc.Protocol(sqlsyncv2connect.SQLSyncServiceName)
 
 // PubSub is the slice of a pubsub router this package needs: joining a topic.
 // *pubsub.PubSub satisfies it, and so does the node's.
@@ -55,7 +55,7 @@ type Mesh struct {
 
 	mu      sync.Mutex
 	stores  map[string]*replication.Store
-	clients map[peer.ID]sqlsyncv1connect.SQLSyncServiceClient
+	clients map[peer.ID]sqlsyncv2connect.SQLSyncServiceClient
 
 	server *rpc.Server
 }
@@ -69,9 +69,9 @@ func New(ctx context.Context, h host.Host, ps PubSub) (*Mesh, error) {
 		host:    h,
 		ps:      ps,
 		stores:  map[string]*replication.Store{},
-		clients: map[peer.ID]sqlsyncv1connect.SQLSyncServiceClient{},
+		clients: map[peer.ID]sqlsyncv2connect.SQLSyncServiceClient{},
 	}
-	path, handler := sqlsyncv1connect.NewSQLSyncServiceHandler(&service{m: m})
+	path, handler := sqlsyncv2connect.NewSQLSyncServiceHandler(&service{m: m})
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	server, err := rpc.Listen(ctx, h, Protocol, mux)
@@ -132,7 +132,7 @@ func (m *Mesh) attach(ctx context.Context, topic string, store *replication.Stor
 }
 
 // client is the anti-entropy client for one peer, opened once.
-func (m *Mesh) client(id peer.ID) (sqlsyncv1connect.SQLSyncServiceClient, error) {
+func (m *Mesh) client(id peer.ID) (sqlsyncv2connect.SQLSyncServiceClient, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if c, ok := m.clients[id]; ok {
@@ -142,7 +142,7 @@ func (m *Mesh) client(id peer.ID) (sqlsyncv1connect.SQLSyncServiceClient, error)
 	if err != nil {
 		return nil, err
 	}
-	c := sqlsyncv1connect.NewSQLSyncServiceClient(conn.HTTP(), conn.URL())
+	c := sqlsyncv2connect.NewSQLSyncServiceClient(conn.HTTP(), conn.URL())
 	m.clients[id] = c
 	return c, nil
 }
@@ -176,7 +176,7 @@ func (t *transport) Peers() []replication.PeerID {
 	return out
 }
 
-func (t *transport) clientFor(p replication.PeerID) (sqlsyncv1connect.SQLSyncServiceClient, error) {
+func (t *transport) clientFor(p replication.PeerID) (sqlsyncv2connect.SQLSyncServiceClient, error) {
 	id, err := peer.Decode(string(p))
 	if err != nil {
 		return nil, fmt.Errorf("swarm: %q is not a peer: %w", p, err)
@@ -189,7 +189,7 @@ func (t *transport) ExchangeVV(ctx context.Context, p replication.PeerID, vv rep
 	if err != nil {
 		return nil, err
 	}
-	res, err := c.ExchangeVV(ctx, connect.NewRequest(&sqlsyncv1.ExchangeVVRequest{Database: t.database, Vv: vvToPB(vv)}))
+	res, err := c.ExchangeVV(ctx, connect.NewRequest(&sqlsyncv2.ExchangeVVRequest{Database: t.database, Vv: vvToPB(vv)}))
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func (t *transport) GetOps(ctx context.Context, p replication.PeerID, site strin
 	if err != nil {
 		return nil, err
 	}
-	res, err := c.GetOps(ctx, connect.NewRequest(&sqlsyncv1.GetOpsRequest{
+	res, err := c.GetOps(ctx, connect.NewRequest(&sqlsyncv2.GetOpsRequest{
 		Database: t.database, Site: site, FromSeq: fromSeq, Limit: uint32(limit),
 	}))
 	if err != nil {
@@ -218,7 +218,7 @@ func (t *transport) ExchangeAcks(ctx context.Context, p replication.PeerID, acks
 	if err != nil {
 		return nil, err
 	}
-	res, err := c.ExchangeAcks(ctx, connect.NewRequest(&sqlsyncv1.ExchangeAcksRequest{Database: t.database, Acks: acksToPB(acks)}))
+	res, err := c.ExchangeAcks(ctx, connect.NewRequest(&sqlsyncv2.ExchangeAcksRequest{Database: t.database, Acks: acksToPB(acks)}))
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func (t *transport) GetSnapshot(ctx context.Context, p replication.PeerID, part 
 	if err != nil {
 		return replication.SnapshotPage{}, err
 	}
-	res, err := c.GetSnapshot(ctx, connect.NewRequest(&sqlsyncv1.GetSnapshotRequest{
+	res, err := c.GetSnapshot(ctx, connect.NewRequest(&sqlsyncv2.GetSnapshotRequest{
 		Database: t.database, Part: uint32(part), Cursor: cursor,
 	}))
 	if err != nil {
@@ -247,7 +247,7 @@ func (t *transport) GetSnapshot(ctx context.Context, p replication.PeerID, part 
 // caller blocked there blocks the database's Close. pkg/kvdb's broadcaster was
 // changed the same way after the wedge hung a node's shutdown.
 func (t *transport) PushOp(ctx context.Context, _ replication.PeerID, op replication.Op) error {
-	data, err := proto.Marshal(&sqlsyncv1.Push{Op: opToPB(op)})
+	data, err := proto.Marshal(&sqlsyncv2.Push{Op: opToPB(op)})
 	if err != nil {
 		return fmt.Errorf("swarm: encoding a push: %w", err)
 	}
@@ -277,7 +277,7 @@ func (t *transport) SubscribePush(ctx context.Context) (<-chan replication.PeerO
 			if msg.ReceivedFrom == self {
 				continue
 			}
-			var push sqlsyncv1.Push
+			var push sqlsyncv2.Push
 			if proto.Unmarshal(msg.Data, &push) != nil || push.GetOp() == nil {
 				continue // not ours to apply; a malformed push is dropped, anti-entropy recovers it
 			}
@@ -294,41 +294,41 @@ func (t *transport) SubscribePush(ctx context.Context) (<-chan replication.PeerO
 // service answers every database this node holds open.
 type service struct{ m *Mesh }
 
-var _ sqlsyncv1connect.SQLSyncServiceHandler = (*service)(nil)
+var _ sqlsyncv2connect.SQLSyncServiceHandler = (*service)(nil)
 
-func (s *service) ExchangeVV(_ context.Context, req *connect.Request[sqlsyncv1.ExchangeVVRequest]) (*connect.Response[sqlsyncv1.ExchangeVVResponse], error) {
+func (s *service) ExchangeVV(_ context.Context, req *connect.Request[sqlsyncv2.ExchangeVVRequest]) (*connect.Response[sqlsyncv2.ExchangeVVResponse], error) {
 	store, err := s.m.store(req.Msg.GetDatabase())
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&sqlsyncv1.ExchangeVVResponse{Vv: vvToPB(store.LocalVV())}), nil
+	return connect.NewResponse(&sqlsyncv2.ExchangeVVResponse{Vv: vvToPB(store.LocalVV())}), nil
 }
 
-func (s *service) GetOps(ctx context.Context, req *connect.Request[sqlsyncv1.GetOpsRequest]) (*connect.Response[sqlsyncv1.GetOpsResponse], error) {
+func (s *service) GetOps(ctx context.Context, req *connect.Request[sqlsyncv2.GetOpsRequest]) (*connect.Response[sqlsyncv2.GetOpsResponse], error) {
 	store, err := s.m.store(req.Msg.GetDatabase())
 	if err != nil {
 		return nil, err
 	}
 	ops, err := store.OpsSince(ctx, req.Msg.GetSite(), req.Msg.GetFromSeq(), int(req.Msg.GetLimit()))
 	if errors.Is(err, replication.ErrPruned) {
-		return connect.NewResponse(&sqlsyncv1.GetOpsResponse{Pruned: true}), nil
+		return connect.NewResponse(&sqlsyncv2.GetOpsResponse{Pruned: true}), nil
 	}
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&sqlsyncv1.GetOpsResponse{Ops: opsToPB(ops)}), nil
+	return connect.NewResponse(&sqlsyncv2.GetOpsResponse{Ops: opsToPB(ops)}), nil
 }
 
-func (s *service) ExchangeAcks(_ context.Context, req *connect.Request[sqlsyncv1.ExchangeAcksRequest]) (*connect.Response[sqlsyncv1.ExchangeAcksResponse], error) {
+func (s *service) ExchangeAcks(_ context.Context, req *connect.Request[sqlsyncv2.ExchangeAcksRequest]) (*connect.Response[sqlsyncv2.ExchangeAcksResponse], error) {
 	store, err := s.m.store(req.Msg.GetDatabase())
 	if err != nil {
 		return nil, err
 	}
 	store.MergeAcks(acksFromPB(req.Msg.GetAcks()))
-	return connect.NewResponse(&sqlsyncv1.ExchangeAcksResponse{Acks: acksToPB(store.Acks())}), nil
+	return connect.NewResponse(&sqlsyncv2.ExchangeAcksResponse{Acks: acksToPB(store.Acks())}), nil
 }
 
-func (s *service) GetSnapshot(ctx context.Context, req *connect.Request[sqlsyncv1.GetSnapshotRequest]) (*connect.Response[sqlsyncv1.GetSnapshotResponse], error) {
+func (s *service) GetSnapshot(ctx context.Context, req *connect.Request[sqlsyncv2.GetSnapshotRequest]) (*connect.Response[sqlsyncv2.GetSnapshotResponse], error) {
 	store, err := s.m.store(req.Msg.GetDatabase())
 	if err != nil {
 		return nil, err

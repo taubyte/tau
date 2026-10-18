@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // barrier_test.go SPENDS the barrier budget, because "every section takes its
@@ -74,7 +74,7 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 		t.Logf("barriers=%d", n)
 		require.Equal(t, int64(7), n,
 			"the three above, plus begin's lead(), settle's two lead()s and settle's ack")
-		require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+		require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	})
 
 	// The dead-letter drain's own section costs one more, on a path that only
@@ -91,7 +91,7 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 		})
 		t.Logf("barriers=%d", n)
 		require.Equal(t, int64(3), n, "the claim, the section's lead(), and the ack")
-		require.Equal(t, buildv1.JobStatus_JobStatusFailed, h.status(t, id))
+		require.Equal(t, buildv2.JobStatus_JobStatusFailed, h.status(t, id))
 	})
 
 	// AND THIS IS WHY mend'S BARRIER IS ON THE DELETE BRANCH. A reconcile pass
@@ -126,7 +126,7 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 			d, err := h.work.Claim()
 			require.NoError(t, err)
 			require.NoError(t, h.work.Ack(d))
-			require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+			require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 		}
 		h.clock.advance(h.cfg.Queue.VisibilityTimeout + h.cfg.BuildTimeout + time.Minute)
 

@@ -1,0 +1,399 @@
+syntax = "proto3";
+
+// build's inter-service RPC surface. v1's patrick (webhook + job store) and
+// monkey (CI runner) merge into one v2 service, `build`, split into two
+// ROLES on either side of a trust boundary rather than a scaling one
+// (service-topology.md §2): a public FRONTEND that takes webhooks off the
+// internet, and a private BACKEND that clones, builds and publishes.
+//
+// EVERY RPC BELOW IS SERVED BY THE BACKEND. The frontend calls them; it
+// hosts no RPC surface of its own. Its only listener is plain HTTP:
+//   - a forge's push webhook (POST /hook/{hook}), verified under the scheme
+//     and secret stored with the hook, which it fetches from auth over
+//     tau.auth.v2's already-modeled HookService.Get — not duplicated here.
+//   - the forge-token-authenticated job API a human or the CLI calls
+//     (v1's services/patrick/api.go's setupJobRoutes: GET /jobs/{projectId},
+//     GET /job/{jid}, POST /cancel/{jid}, POST /retry/{jid}, plus
+//     GET /download/{jobId}/{resourceId} and GET /logs/{cid}).
+// Both are caller-facing HTTP, not peer-to-peer RPC between v2 services, for
+// the identical reason auth.proto keeps auth's GitHub-token HTTP surface
+// (github_http_endpoints.go, domains_http_endpoints.go) out of auth.proto —
+// restated there, not repeated here. The job API's four mutating/reading
+// routes are why QueueService and JobService below exist at all: the
+// frontend answers them by calling into the backend, which is where the
+// queue and the job records actually live.
+//
+// AN EMPTY SURFACE IS A STRONG CLAIM AND IT IS MEANT AS ONE. The frontend is
+// the one process in this service a stranger can reach, so trust across the
+// boundary has to run in exactly one direction: the frontend may ASK the
+// backend, and may never be asked. A p2p listener on the frontend reverses
+// that — every node in the swarm would then be dialling, and believing, a
+// process whose input is an unauthenticated POST body, and the peer identity
+// on the far side of that stream (service-conventions.md §5b) would say
+// "a tau node" while meaning "whatever reached the webhook handler". The
+// emptiness IS the boundary: it is what service-topology.md §2's capability
+// list ("it needs no container runtime, no clone credentials, no build
+// images, no publish rights") reduces to on the wire, since a capability the
+// frontend cannot be asked to exercise is one it does not need to hold.
+//
+// So the file is falsifiable rather than merely asserted: the day the
+// frontend must be CALLED, it needs a package of its own, which is a
+// protocol id of its own (§2d), which is a second listener on the public
+// side — none of which can be reached by adding a `service` block here.
+// That is deliberately more friction than an edit to this file, because it
+// is the change that deserves the review.
+//
+// What a compiled descriptor CANNOT see is which role serves which block —
+// pkg/proto/rules_test.go names that gap rather than pretending to close
+// it, and refuses the capability NAMES (clone, checkout, run/exec a
+// container, push an image, publish) as the nearest mechanical proxy.
+//
+// ONE PACKAGE, TWO `service` BLOCKS, NOT TWO PACKAGES. auth.proto already
+// sets the precedent this follows: one proto package per v2 SERVICE (in
+// service-topology.md's sense — the process that owns a protocol id and a
+// mux), containing as many `service` blocks as the domain has facets; a
+// node's protocol id is derived from the PACKAGE
+// (`rpc.Protocol(...ServiceName)` -> `/<package, dots as slashes>`, so
+// `tau.build.v2` -> `/tau/build/v2`, the row service-conventions.md §2d's
+// table already reserves for this service), so tau.auth.v2 already mounts
+// five `service` blocks (ProjectService, RepositoryService, HookService,
+// DomainService, CertificateService) behind one protocol id and one mux.
+// The `tau.` segment is that rule's anti-collision half and is not optional:
+// `build.v2` would derive `/build/v2`, a bare service-name id with nothing to
+// say it belongs to tau rather than to anything else on the swarm.
+// Splitting QueueService and JobService into their own packages would buy no isolation — both are
+// served by the same backend process on the same listener — and would force
+// either duplicating JobStatus/Job/JobRef or an awkward cross-package import
+// for two facets of one job lifecycle: a job is CREATED through
+// QueueService and OBSERVED/ADMINISTERED through JobService. There is no
+// `tau.build.frontend.v2`/`tau.build.backend.v2` split for the same reason:
+// the frontend serves no RPC of its own to need one.
+//
+// IDENTITY, as in auth.proto: a repository is named by its canonical
+// clone-URL key alone (pkg/git/repokey: host/owner/name) — never a
+// provider-native or numeric id, never a `oneof` over providers, because the
+// host in the key already says which provider serves it. v1's
+// `Repository.ID int` (v1's core/services/patrick/types.go, cbor field 65) and
+// its deprecated `SSHURL` (superseded by `URI`, per this agent's decision 3)
+// do not survive into PushEvent or Job below: the key is carried, the
+// integer is not, and a clone URL is never carried either — see PushEvent.
+//
+// THE QUEUE IS A TRUST BOUNDARY (service-topology.md §5, decision D5): every
+// field QueueService.Enqueue accepts originates in a webhook delivered off
+// the internet to the frontend, so the crossing is kept small and typed
+// rather than a copy of whatever shape the provider's payload happens to
+// have. See PushEvent and QueueService for the argument in full — it is the
+// central decision this file exists to encode, so it is argued once, in
+// place, rather than summarized here.
+//
+// FIVE RPCs CROSS FROM FRONTEND TO BACKEND, NOT ONE, and the distinction is
+// what the field lists below turn on rather than a technicality. Enqueue is
+// the only one whose contents a STRANGER authored: an unauthenticated POST
+// to the webhook route decides them, which is why PushEvent carries three
+// fields and re-derives the rest. JobService's four carry a job id or a
+// project id that an authenticated caller was already handed — a different
+// input with a different exposure, so the shape restriction that produced
+// PushEvent does not apply to them and is not imitated there. What does
+// apply to them, and is NOT in this file, is that the backend cannot take
+// the frontend's word for WHO is asking: the identity on a p2p stream is
+// the calling node's (service-conventions.md §5b), and a frontend relaying
+// four HTTP routes is one node relaying many humans. That is authorization,
+// it belongs in the backend's authz.go beside auth's, and a field in these
+// messages would be exactly the identity-the-caller-encodes that §5b exists
+// to refuse.
+//
+// STREAMING, as in auth.proto: List below is server-streaming because it
+// enumerates an unbounded, unpaginated store — both v1's raw job-id stream
+// action (v1's services/patrick/api.go's listHandler, `db.List(ctx, "/jobs/")`
+// plus the archive, with no bound) and its project-scoped HTTP twin
+// (`projectAllJobHandler`, `db.List(ctx, "/by/project/"+projectId+"/")`)
+// materialize the whole result in memory before answering today. Every
+// other RPC here is a single lookup or a single mutation and stays unary,
+// matching today's cbor transport's fire-once, first-response-wins send —
+// the same reasoning auth.proto states once and this file does not repeat.
+package tau.build.v2;
+
+// Empty is the response for a call whose only interesting outcome is
+// whether it errored — see auth.proto's Empty for the reasoning, not
+// repeated per file.
+message Empty {}
+
+// ─────────────────────────────── Queue ───────────────────────────────
+
+// PushEvent is what a verified GitHub push becomes on the wire from
+// frontend to backend, and it is the ONLY message in this file whose
+// fields originate, even indirectly, in a webhook payload. Three fields,
+// by deliberate and argued exclusion of everything else v1's cbor `Meta`
+// carried (v1's core/services/patrick/types.go):
+//
+//   - `repository_key` — pkg/git/repokey's canonical identity, parsed by
+//     the frontend from the payload's repository URL. Never the numeric
+//     `Repository.ID` v1 sent instead: the backend re-derives clone access
+//     for this key by calling tau.auth.v2's RepositoryService.Get (already
+//     modeled — deploy_key comes back from there), not from a URL or a
+//     credential the frontend hands it. `repository_key` alone is also
+//     enough to reconstruct a clone address, because it already contains
+//     the host that serves the repository — carrying a separate clone URL
+//     across this boundary would only ever agree with the key or lie about
+//     it, the identical argument auth.proto makes against a `provider`
+//     field beside a repository key.
+//   - `ref` — the pushed git ref, e.g. "refs/heads/main". Branch-eligibility
+//     policy (v1's check against legacy/specs/common's `DefaultBranches`,
+//     `main`/`master`) is the FRONTEND's decision, made before Enqueue is
+//     ever called: a push to an ineligible ref is refused at the HTTP
+//     handler and never reaches this RPC. So `ref` here already passed that
+//     policy — it is not raw material for the backend to re-filter.
+//   - `commit_sha` — the pushed HEAD. v1 carried this twice (`Meta.After`
+//     and `Meta.HeadCommit.ID`), collapsed to one field here: a push event
+//     carries them equal, and two fields that must always agree are one
+//     fact spelled twice, the same objection auth.proto raises against a
+//     redundant `provider` field.
+//
+// NOT HERE, on D5's explicit ruling (service-topology.md §5): the payload's
+// per-commit `commits[].added|modified|removed` list — provider-shaped,
+// truncates past 20 commits or 3000 files in GitHub's own payload, and
+// forwarding it would hand the backend's path-filter logic data shaped by
+// an internet-facing listener instead of by the repository itself. `before`
+// is not carried either, and not merely as a smaller version of the same
+// caution: it is exactly as webhook-supplied as `commit_sha` is, so
+// carrying it would not have bought back any trust `commit_sha` alone
+// lacks. Instead the backend computes its own before..after diff AFTER the
+// clone: `commit_sha` is `after`, and `before` is whatever commit sha this
+// backend itself last processed for this exact (repository_key, ref) —
+// read from its own job history, never from the frontend. A ref with no
+// prior processed commit has no `before` to diff against and the backend
+// treats it as a full build, exactly what a GitHub payload's all-zero
+// `before` signals today for a newly created branch.
+//
+// One consequence worth stating rather than leaving implicit: v1's job id
+// (`PushEventJobID`) folds in `Repository.PushedAt` specifically so a
+// redelivered webhook for the same push still dedupes while two distinct
+// pushes that happen to land on the same commit do not collide. `PushedAt`
+// does not cross this boundary either, on the same D5 reasoning — and
+// losing it is not a loss: two pushes landing on the same (repository_key,
+// ref, commit_sha) have nothing different to build, since a build is a
+// function of that triple and nothing else. Deduplicating them is correct,
+// not merely tolerated, and QueueService.Enqueue below relies on exactly
+// that.
+message PushEvent {
+  string repository_key = 1;
+  string ref = 2;
+  string commit_sha = 3;
+}
+
+// QueueService.Enqueue is the crossing that carries a STRANGER'S bytes —
+// not the only crossing, which is JobService's four as well (see the header),
+// but the only one whose arguments an unauthenticated POST decides. That is
+// the reason PushEvent's doc comment states, at length, everything it
+// deliberately does not carry: this single RPC is what
+// service-topology.md §2 draws the entire frontend/backend split around.
+// Keeping it to one small message and one small method is what makes that
+// boundary auditable by reading this file, rather than something a
+// reviewer has to reconstruct by diffing two structs that happen to share
+// most of their fields.
+//
+// This service intentionally carries no direct queue READ or CLAIM
+// operation (v1's `dequeue`/`isAssigned`/`timeout` p2p actions,
+// v1's services/patrick/api.go). In v1 those existed because monkey — the
+// process running a job — and patrick — the process holding the queue —
+// were different services, so claiming work and reporting a stale claim
+// both had to cross an RPC. In v2 the backend owns both the queue and job
+// execution, so a backend node claims its own work by joining the
+// "build/queue" consistency domain directly (service-conventions.md §4,
+// `Groups.Join(ctx, "build/queue")` — consensus is the seam, not a message
+// in this file) and applies to it in-process; claim/visibility-timeout/
+// dead-letter is the raft `queue` kind's own job (cluster-service.md §2,
+// services-are-rewritten.md §5), not a request-response pair here. Nothing
+// about backend-to-backend job claiming belongs in an inter-service .proto,
+// because after this decision it no longer is one.
+service QueueService {
+  // Enqueue durably records a push and returns its job id. Idempotent: a
+  // redelivered webhook for the same push (repository_key, ref, commit_sha)
+  // returns the existing job's id rather than creating a second one,
+  // matching v1's services/patrick/github.go's `if existing, err := ...; err ==
+  // nil { return existing, nil }` — and, per PushEvent's doc comment,
+  // correctly so, since there is nothing different to build.
+  rpc Enqueue(PushEvent) returns (JobRef);
+}
+
+// ──────────────────────────────── Jobs ────────────────────────────────
+
+// JobStatus mirrors v1's core/services/patrick.JobStatus with one rename.
+// v1's zero value is JobStatusOpen (`iota - 1` starting at JobStatusFailed
+// = -1, which proto3 cannot express as an enum's required zero value
+// anyway), kept at 0 here too so a zero-value Job reads as "queued", never
+// as a status that already happened.
+enum JobStatus {
+  JobStatusOpen = 0;
+  // Claimed: a backend node has popped this job off the queue and is
+  // running it. v1 names this JobStatusLocked; renamed to match the
+  // claim/visibility-timeout vocabulary the raft `queue` kind specifies
+  // (cluster-service.md §2, services-are-rewritten.md §5) — "locked"
+  // described v1's hand-rolled dequeue-then-write-an-/assigned/-row dance
+  // (v1's services/patrick/api.go's dequeueHandler); "claimed" is what the same
+  // state is called in the mechanism replacing it.
+  JobStatusClaimed = 1;
+  JobStatusSuccess = 2;
+  JobStatusFailed = 3;
+  JobStatusCancelled = 4;
+}
+
+message JobRef {
+  string id = 1;
+}
+
+// Job is not v1's cbor Job (core/services/patrick/types.go): its
+// `Repository` carries `repository_key` in place of the numeric
+// `Repository.ID`/deprecated `SSHURL`, per decision 3. `project_id` is
+// deliberately absent, matching v1 exactly: v1 never stored it on the job
+// either, only in a separate `/by/project/<id>/<jid>` index the backend
+// keeps privately — a project is how a caller finds a job (see List
+// below), not a field of the job itself.
+message Job {
+  string id = 1;
+  JobStatus status = 2;
+  string repository_key = 3;
+  string ref = 4;
+  string commit_sha = 5;
+  // Unix seconds. v1's Job.Timestamp.
+  int64 timestamp = 6;
+  int32 attempt = 7;
+  // Keyed the way v1's Job.SetLog (core/services/patrick/methods.go) keys
+  // it: an RFC3339 timestamp per log entry a build step recorded
+  // (v1's services/monkey/jobs/helpers.go's handleLog) — a job with several
+  // buildable resources produces several entries. Not a single log per job.
+  map<string, string> logs = 8;
+  // Keyed by resource id (a function/website/library/... within the
+  // pushed project) -> the built artifact's cid, matching v1's Job.SetCid
+  // (v1's services/monkey/jobs/helpers.go's handleCompressedBuild) and what
+  // v1's HTTP `/download/{jobId}/{resourceId}` route reads back by that
+  // same resource id.
+  map<string, string> asset_cid = 9;
+}
+
+message ProjectRef {
+  string id = 1;
+}
+
+// JobService answers what the frontend's GitHub-token-authenticated HTTP
+// job API (out of scope here, see this file's header) needs from the
+// backend, which is where every job record actually lives.
+//
+// Cancel and Retry are each ONE RPC where v1 needed a round trip between
+// two services to do the equivalent thing, and stating why is worth doing
+// once, here, rather than leaving it to be rediscovered:
+//
+//   - v1's cancel is a three-hop dance: the HTTP handler
+//     (v1's services/patrick/api.go's cancelJob) reads which monkey is assigned,
+//     calls that monkey's OWN p2p service to stop it
+//     (v1's clients/p2p/monkey's Cancel), and monkey — separately — reports back
+//     to patrick with the accumulated logs so patrick can write
+//     JobStatusCancelled (v1's services/monkey/api_monkeys.go's cancelHandler
+//     calling `m.patrickClient.Cancel(jid, monkey.Job.Logs)`). That
+//     round trip exists only because monkey (execution) and patrick (the
+//     job record) are different services. In v2 the backend is both, so
+//     stopping the run and writing the terminal status are two lines in
+//     one process; Cancel(JobRef) returns (Empty) is the whole surface a
+//     caller outside the backend ever needs, and no log payload crosses
+//     because the backend already holds the logs it is about to write.
+//     A backend node that does not itself hold the running job forwards
+//     to the one that does using this SAME RPC against that specific peer
+//     (service-conventions.md §3's `pool.Peer(ctx, pid)`, the peer read
+//     from the same claim record the raft queue already tracks) — that is
+//     an implementation detail of one backend node calling another, not a
+//     second method here.
+//   - Retry returns Empty, not the job's id: v1's retryJob
+//     (v1's services/patrick/api.go) always re-queues the SAME id it was given
+//     and returns exactly that id back — `{"retry": jid}` — which the
+//     caller already sent as the request. Echoing it back is the identical
+//     redundancy auth.proto's RepositoryService.Register comment argues
+//     against for its own response, and the fix is the same one: return
+//     Empty, because success/failure is the only fact this call can tell
+//     the caller that it did not already know.
+// FollowRequest asks for a running build's output.
+//
+// THE OFFSET IS WHY THIS IS NOT A DOWNLOAD. A log is written while it is read,
+// so a viewer joining late resumes at 0 and catches up, and one whose
+// connection dropped resumes at the offset it had and misses nothing in
+// between. v1 has no equivalent: patrick can hand over a log only once the
+// build has ended and the whole of it has reached IPFS, so "watch this build"
+// was not a thing that could be asked for.
+//
+// It is a BYTE offset and not a line or a record number, because that is what
+// livelog's Reader takes and translating between the two would put a second
+// idea of "where am I" on the wire.
+message FollowRequest {
+  string job_id = 1;
+  // offset to resume from. Zero is the beginning of this attempt's log.
+  int64 offset = 2;
+}
+
+// LogChunk is some bytes of a build's output and where they ended.
+//
+// `next_offset` IS WHAT A RESUMING CLIENT SENDS BACK. It is carried per chunk
+// rather than derived by the client from the length it has received, because
+// the two disagree the moment a client drops a chunk it could not write — and a
+// resume computed from a count that lost bytes silently skips them.
+message LogChunk {
+  bytes data = 1;
+  int64 next_offset = 2;
+}
+
+// ArtifactRequest asks what one resource of one deployment currently runs.
+message ArtifactRequest {
+  string project = 1;
+  string environment = 2;
+  string resource = 3;
+}
+
+// Built is what a resource currently runs.
+//
+// The message is not called Artifact because the rpc below is, and a message
+// may not share a name with a method of the service that returns it —
+// register.proto's CompiledProject is the same rename for the same reason.
+message Built {
+  // cid is the content id of what the last successful build of that resource
+  // produced.
+  string cid = 1;
+}
+
+service JobService {
+  rpc Get(JobRef) returns (Job);
+  rpc List(ProjectRef) returns (stream JobRef);
+  rpc Cancel(JobRef) returns (Empty);
+  rpc Retry(JobRef) returns (Empty);
+
+  // Artifact is the content id of what one resource of one deployment
+  // currently runs.
+  //
+  // IT IS A ROW AND NOT A SEARCH. The row is written in the same replicated
+  // entry as the record of the build that produced it, so "this job succeeded"
+  // and "this is what that deployment now runs" cannot end up disagreeing — and
+  // a reader pays one read rather than a walk over a project's job history
+  // looking for the newest one that built this resource.
+  //
+  // ONLY A SUCCESSFUL BUILD MOVES IT. A failed run's log is kept, because that
+  // is the output somebody wants; what a deployment RUNS must not become
+  // something a build failed to finish.
+  //
+  // A resource nothing has built answers NotFound. That is not the same as a
+  // resource that needs no build — an image is pulled, a component is built as
+  // its own resource — and the caller is the one that knows which it asked
+  // about.
+  rpc Artifact(ArtifactRequest) returns (Built);
+
+  // Follow streams a RUNNING build's output, from `offset` to the end of it.
+  //
+  // ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
+  // Unavailable rather than NotFound — which is what makes a caller's pool walk
+  // to the next backend instead of stopping at the first that does not have it.
+  // The alternative, forwarding to the claim record's holder the way Cancel
+  // does, would put a proxy hop in front of a stream that is already a proxy
+  // hop behind the public role.
+  //
+  // A FINISHED BUILD'S LOG IS NOT HERE. What survives a run is a content id in
+  // the asset store, and reading one back is that store's business — this
+  // answers FailedPrecondition and names the id, rather than returning an empty
+  // stream that reads like a build with no output.
+  rpc Follow(FollowRequest) returns (stream LogChunk);
+}

@@ -13,8 +13,8 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/database"
-	databasev1 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v1/databasev1connect"
+	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
 )
 
 // says is a Holdings that answers whatever a test needs, and records nothing
@@ -80,7 +80,7 @@ func (s *says) Destroy(_ context.Context, spec database.Spec) error {
 	return nil
 }
 
-func asking(t *testing.T, holds *says) (databasev1connect.DatabaseServiceClient, *accounting) {
+func asking(t *testing.T, holds *says) (databasev2connect.DatabaseServiceClient, *accounting) {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -114,11 +114,11 @@ func asking(t *testing.T, holds *says) (databasev1connect.DatabaseServiceClient,
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 
-	return databasev1connect.NewDatabaseServiceClient(conn.HTTP(), conn.URL()), engine
+	return databasev2connect.NewDatabaseServiceClient(conn.HTTP(), conn.URL()), engine
 }
 
-func sessionsRef() *databasev1.Ref {
-	return &databasev1.Ref{Project: projectID, Environment: "prod", Id: kvID}
+func sessionsRef() *databasev2.Ref {
+	return &databasev2.Ref{Project: projectID, Environment: "prod", Id: kvID}
 }
 
 // TestASKINGDOESNOTMAKEITSO.

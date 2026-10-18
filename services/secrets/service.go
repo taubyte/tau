@@ -1,5 +1,5 @@
 // Package secrets serves the values a config deliberately does not carry:
-// four RPCs, declared in pkg/proto/tau/secrets/v1/secrets.proto.
+// four RPCs, declared in pkg/proto/tau/secrets/v2/secrets.proto.
 //
 // # Why this is not a table in the register
 //

@@ -21,7 +21,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 
-	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1/workerv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2/workerv2connect"
 )
 
 // harness is a worker over a real register holding a really-compiled project,
@@ -40,7 +40,7 @@ type harness struct {
 	Register *countingRegister
 	Runtime  *fakeRuntime
 	Static   *fakeRuntime
-	Client   workerv1connect.WorkerServiceClient
+	Client   workerv2connect.WorkerServiceClient
 
 	CallerHost host.Host
 	ServerHost host.Host
@@ -133,7 +133,7 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 		Register: counting,
 		Runtime:  rt,
 		Static:   site,
-		Client:   workerv1connect.NewWorkerServiceClient(c.HTTP(), c.URL()),
+		Client:   workerv2connect.NewWorkerServiceClient(c.HTTP(), c.URL()),
 
 		CallerHost: caller,
 		ServerHost: server,

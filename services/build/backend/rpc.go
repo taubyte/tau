@@ -5,7 +5,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v1/buildv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 )
 
 // mount assembles build.proto's two generated connect handlers behind one mux,
@@ -28,7 +28,7 @@ import (
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
 	max := connect.WithReadMaxBytes(s.cfg.MaxMessageBytes)
-	mux.Handle(buildv1connect.NewQueueServiceHandler(&queueHandler{s}, max))
-	mux.Handle(buildv1connect.NewJobServiceHandler(&jobHandler{s}, max))
+	mux.Handle(buildv2connect.NewQueueServiceHandler(&queueHandler{s}, max))
+	mux.Handle(buildv2connect.NewJobServiceHandler(&jobHandler{s}, max))
 	return mux
 }

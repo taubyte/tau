@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build/backend/row"
 	"github.com/taubyte/tau/services/build/backend/section"
@@ -831,7 +831,7 @@ func (h *held) stopRun() error {
 // composed from this job: the `extra ...raft.BatchOp` this replaces was the one
 // parameter in this file through which a correctly-held handle could name
 // another job's rows.
-func (h *held) ends(status buildv1.JobStatus, reason string, p produced) stated {
+func (h *held) ends(status buildv2.JobStatus, reason string, p produced) stated {
 	rec := h.rec().with(p)
 	rec.Status = int32(status)
 	rec.UpdatedAt = h.s.now().Unix()
@@ -844,7 +844,7 @@ func (h *held) ends(status buildv1.JobStatus, reason string, p produced) stated 
 // finish ends this job and writes nothing else. It is the terminal write of the
 // transitions that ran NO BUILD — a cancel, a dead letter drain — so there is
 // nothing produced to carry.
-func (h *held) finish(status buildv1.JobStatus, reason string) error {
+func (h *held) finish(status buildv2.JobStatus, reason string) error {
 	return h.ends(status, reason, produced{}).commit("finishing")
 }
 
@@ -855,7 +855,7 @@ func (h *held) finish(status buildv1.JobStatus, reason string) error {
 // publish is a `defer` in the run, so a worker that died skipped it and the
 // file it wrote stayed on that node with no cid naming it.
 func (h *held) fail(reason string, p produced) error {
-	return h.ends(buildv1.JobStatus_JobStatusFailed, reason, p).commit("finishing")
+	return h.ends(buildv2.JobStatus_JobStatusFailed, reason, p).commit("finishing")
 }
 
 // succeed ends this job, records what it produced, AND moves the ref anchor,
@@ -864,7 +864,7 @@ func (h *held) fail(reason string, p produced) error {
 // webhook (build.proto: "read from its own job history, never from the
 // frontend").
 func (h *held) succeed(p produced) error {
-	return h.ends(buildv1.JobStatus_JobStatusSuccess, "", p).artifacts(p).anchor().commit("finishing")
+	return h.ends(buildv2.JobStatus_JobStatusSuccess, "", p).artifacts(p).anchor().commit("finishing")
 }
 
 // logged records what a run produced WITHOUT MOVING THE STATUS, and changes
@@ -906,7 +906,7 @@ func (h *held) logged(p produced) error {
 // unidentifiable job nobody can run — which is exactly v1's orphan.
 func (h *held) requeue() error {
 	rec := h.rec()
-	if rec.terminal() || rec.status() == buildv1.JobStatus_JobStatusClaimed {
+	if rec.terminal() || rec.status() == buildv2.JobStatus_JobStatusClaimed {
 		return nil
 	}
 	if err := h.push(); err != nil {

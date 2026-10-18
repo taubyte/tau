@@ -56,7 +56,7 @@ func jobID(key repokey.Key, ref, commitSHA string) string {
 // a digest computed for some other purpose over the same bytes is a different
 // value. The NUL is part of it: it cannot occur in any of the three fields, so
 // the prefix cannot be absorbed into the first one.
-const jobIDDomain = "tau.build.v1/job\x00"
+const jobIDDomain = "tau.build.v2/job\x00"
 
 // refPattern is what this service will accept as a git ref.
 //

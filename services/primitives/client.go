@@ -12,8 +12,8 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	primitivesv1 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v1/primitivesv1connect"
+	primitivesv2 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2/primitivesv2connect"
 )
 
 // client.go is the other side of rpc.go, and it is what lets a worker stop
@@ -164,7 +164,7 @@ func (t *Tier) Read(ctx context.Context, grant invoke.Grant, after string, limit
 // Client reaches a primitives service.
 type Client struct {
 	conn *rpc.Client
-	svc  primitivesv1connect.PrimitivesServiceClient
+	svc  primitivesv2connect.PrimitivesServiceClient
 }
 
 // NewClient dials one. The peer is the caller's to choose — placement, or a view
@@ -177,7 +177,7 @@ func NewClient(h host.Host, at libp2ppeer.ID) (*Client, error) {
 	}
 	return &Client{
 		conn: conn,
-		svc:  primitivesv1connect.NewPrimitivesServiceClient(conn.HTTP(), conn.URL()),
+		svc:  primitivesv2connect.NewPrimitivesServiceClient(conn.HTTP(), conn.URL()),
 	}, nil
 }
 
@@ -197,7 +197,7 @@ var (
 // context rather than taken as an argument, so a node passing a tasking on
 // cannot forget to say that it did.
 func (c *Client) CronTask(ctx context.Context, since, upto time.Time) error {
-	req := connect.NewRequest(&primitivesv1.CronTaskRequest{
+	req := connect.NewRequest(&primitivesv2.CronTaskRequest{
 		Since: since.Unix(), Upto: upto.Unix(),
 	})
 	req.Header().Set(hopHeader, strconv.Itoa(hopsOf(ctx)+1))
@@ -211,7 +211,7 @@ func (c *Client) Send(ctx context.Context, grant invoke.Grant, id string, data [
 	if err != nil {
 		return err
 	}
-	_, err = c.svc.QueueSend(ctx, connect.NewRequest(&primitivesv1.QueueSendRequest{
+	_, err = c.svc.QueueSend(ctx, connect.NewRequest(&primitivesv2.QueueSendRequest{
 		Ref: ref, Id: id, Data: data,
 	}))
 	return remoteError(err)
@@ -222,7 +222,7 @@ func (c *Client) Claim(ctx context.Context, grant invoke.Grant, max int) ([]Deli
 	if err != nil {
 		return nil, err
 	}
-	out, err := c.svc.QueueClaim(ctx, connect.NewRequest(&primitivesv1.QueueClaimRequest{
+	out, err := c.svc.QueueClaim(ctx, connect.NewRequest(&primitivesv2.QueueClaimRequest{
 		Ref: ref, Max: uint32(max),
 	}))
 	if err != nil {
@@ -241,7 +241,7 @@ func (c *Client) Settle(ctx context.Context, grant invoke.Grant, delivery Delive
 	if err != nil {
 		return err
 	}
-	_, err = c.svc.QueueSettle(ctx, connect.NewRequest(&primitivesv1.QueueSettleRequest{
+	_, err = c.svc.QueueSettle(ctx, connect.NewRequest(&primitivesv2.QueueSettleRequest{
 		Ref: ref, Delivery: deliveryTo(delivery), Done: done,
 	}))
 	return remoteError(err)
@@ -266,7 +266,7 @@ func (c *Client) Append(ctx context.Context, grant invoke.Grant, data []byte) (s
 	if err != nil {
 		return "", err
 	}
-	out, err := c.svc.LogAppend(ctx, connect.NewRequest(&primitivesv1.LogAppendRequest{
+	out, err := c.svc.LogAppend(ctx, connect.NewRequest(&primitivesv2.LogAppendRequest{
 		Ref: ref, Data: data,
 	}))
 	if err != nil {
@@ -280,7 +280,7 @@ func (c *Client) Read(ctx context.Context, grant invoke.Grant, after string, lim
 	if err != nil {
 		return nil, err
 	}
-	out, err := c.svc.LogRead(ctx, connect.NewRequest(&primitivesv1.LogReadRequest{
+	out, err := c.svc.LogRead(ctx, connect.NewRequest(&primitivesv2.LogReadRequest{
 		Ref: ref, After: after, Limit: limit,
 	}))
 	if err != nil {
@@ -298,7 +298,7 @@ func (c *Client) Read(ctx context.Context, grant invoke.Grant, after string, lim
 
 // refOf is the grant's handle as a Ref, refused here rather than sent as three
 // empty strings for the service to reject.
-func refOf(grant invoke.Grant) (*primitivesv1.Ref, error) {
+func refOf(grant invoke.Grant) (*primitivesv2.Ref, error) {
 	at, err := addressFrom(grant.Handle)
 	if err != nil {
 		return nil, err

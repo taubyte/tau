@@ -12,7 +12,7 @@
 //
 //	pid, err := d.Any(ctx)                         // or d.Peers(ctx, 4) to fan out
 //	c, err := rpc.NewClient(h, pid, d.Protocol())  // the two lines that join the packages
-//	auth := authv1connect.NewAuthServiceClient(c.HTTP(), c.URL())
+//	auth := authv2connect.NewAuthServiceClient(c.HTTP(), c.URL())
 //
 // # Where the answers come from
 //

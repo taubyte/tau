@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	primitivesv1 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v1"
+	primitivesv2 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -186,23 +186,23 @@ func TestAnInstanceIsRefusedUntilTheVocabularyCanDeclareOne(t *testing.T) {
 	ctx := t.Context()
 	api := &handler{h.Service}
 
-	at := func(id string) *primitivesv1.Ref {
-		return &primitivesv1.Ref{Project: projectID, Environment: "prod", Id: id, Instance: "eu"}
+	at := func(id string) *primitivesv2.Ref {
+		return &primitivesv2.Ref{Project: projectID, Environment: "prod", Id: id, Instance: "eu"}
 	}
 
-	_, err := api.QueueSend(ctx, connect.NewRequest(&primitivesv1.QueueSendRequest{
+	_, err := api.QueueSend(ctx, connect.NewRequest(&primitivesv2.QueueSendRequest{
 		Ref: at(jobsID), Id: "job-1", Data: []byte("work"),
 	}))
 	require.ErrorIs(t, err, ErrInstanceUnserved)
 	require.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err),
 		"a refusal a release fixes is not one to retry")
 
-	_, err = api.LogAppend(ctx, connect.NewRequest(&primitivesv1.LogAppendRequest{
+	_, err = api.LogAppend(ctx, connect.NewRequest(&primitivesv2.LogAppendRequest{
 		Ref: at(tracesID), Data: []byte("a record"),
 	}))
 	require.ErrorIs(t, err, ErrInstanceUnserved)
 
-	_, err = api.LogRead(ctx, connect.NewRequest(&primitivesv1.LogReadRequest{Ref: at(tracesID)}))
+	_, err = api.LogRead(ctx, connect.NewRequest(&primitivesv2.LogReadRequest{Ref: at(tracesID)}))
 	require.ErrorIs(t, err, ErrInstanceUnserved)
 
 	// AND THE RESOURCE ITSELF IS UNTOUCHED. A refusal that had already written

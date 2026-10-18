@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/discovery"
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/worker"
@@ -48,13 +48,13 @@ func TestBuildsRefusesAPoolForTheWrongProtocol(t *testing.T) {
 	t.Cleanup(p.Close)
 
 	c, err = Builds(p)
-	require.ErrorContains(t, err, "/tau/build/v1")
+	require.ErrorContains(t, err, "/tau/build/v2")
 	require.Nil(t, c)
 }
 
 func TestEnqueueCarriesThreeFieldsAndReturnsTheJobId(t *testing.T) {
-	var got *buildv1.PushEvent
-	c := newBuilds(t, &fakeBackend{enqueue: func(p *buildv1.PushEvent) (string, error) {
+	var got *buildv2.PushEvent
+	c := newBuilds(t, &fakeBackend{enqueue: func(p *buildv2.PushEvent) (string, error) {
 		got = p
 		return "job-1", nil
 	}})
@@ -69,7 +69,7 @@ func TestEnqueueCarriesThreeFieldsAndReturnsTheJobId(t *testing.T) {
 }
 
 func TestAnEnqueueWithNoIdIsAFault(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{enqueue: func(*buildv1.PushEvent) (string, error) { return "", nil }})
+	c := newBuilds(t, &fakeBackend{enqueue: func(*buildv2.PushEvent) (string, error) { return "", nil }})
 
 	_, err := c.Enqueue(t.Context(), "github.com/acme/pay", "refs/heads/main", "abc")
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
@@ -83,16 +83,16 @@ func TestAFollowerIsWalkedPastForEveryRPC(t *testing.T) {
 		return connect.NewError(connect.CodeUnavailable, errors.New("not the leader of build/queue"))
 	}
 	follower := &fakeBackend{
-		enqueue: func(*buildv1.PushEvent) (string, error) { return "", notLeader() },
-		get:     func(string) (*buildv1.Job, error) { return nil, notLeader() },
-		list:    func(string, func(*buildv1.JobRef) error) error { return notLeader() },
+		enqueue: func(*buildv2.PushEvent) (string, error) { return "", notLeader() },
+		get:     func(string) (*buildv2.Job, error) { return nil, notLeader() },
+		list:    func(string, func(*buildv2.JobRef) error) error { return notLeader() },
 		cancel:  func(string) error { return notLeader() },
 		retry:   func(string) error { return notLeader() },
 	}
 	leader := &fakeBackend{
-		enqueue: func(*buildv1.PushEvent) (string, error) { return "job-1", nil },
-		get:     func(id string) (*buildv1.Job, error) { return &buildv1.Job{Id: id}, nil },
-		list:    func(_ string, send func(*buildv1.JobRef) error) error { return send(&buildv1.JobRef{Id: "job-1"}) },
+		enqueue: func(*buildv2.PushEvent) (string, error) { return "job-1", nil },
+		get:     func(id string) (*buildv2.Job, error) { return &buildv2.Job{Id: id}, nil },
+		list:    func(_ string, send func(*buildv2.JobRef) error) error { return send(&buildv2.JobRef{Id: "job-1"}) },
 		cancel:  func(string) error { return nil },
 		retry:   func(string) error { return nil },
 	}
@@ -141,15 +141,15 @@ func TestAConsideredRefusalIsNotRetried(t *testing.T) {
 // start its listing from the beginning and the caller would see the first ids
 // twice.
 func TestAListThatBrokeAfterItStartedIsNotRetriedAgainstAnotherPeer(t *testing.T) {
-	breaks := &fakeBackend{list: func(_ string, send func(*buildv1.JobRef) error) error {
-		if err := send(&buildv1.JobRef{Id: "a"}); err != nil {
+	breaks := &fakeBackend{list: func(_ string, send func(*buildv2.JobRef) error) error {
+		if err := send(&buildv2.JobRef{Id: "a"}); err != nil {
 			return err
 		}
 		return connect.NewError(connect.CodeUnavailable, errors.New("leadership lost mid-stream"))
 	}}
-	whole := &fakeBackend{list: func(_ string, send func(*buildv1.JobRef) error) error {
+	whole := &fakeBackend{list: func(_ string, send func(*buildv2.JobRef) error) error {
 		for _, id := range []string{"a", "b", "c"} {
-			if err := send(&buildv1.JobRef{Id: id}); err != nil {
+			if err := send(&buildv2.JobRef{Id: id}); err != nil {
 				return err
 			}
 		}
@@ -171,11 +171,11 @@ func TestAListThatBrokeAfterItStartedIsNotRetriedAgainstAnotherPeer(t *testing.T
 
 // A stream that broke BEFORE its first id is still safe to retry, and is.
 func TestAListThatBrokeBeforeItStartedIsRetried(t *testing.T) {
-	breaks := &fakeBackend{list: func(string, func(*buildv1.JobRef) error) error {
+	breaks := &fakeBackend{list: func(string, func(*buildv2.JobRef) error) error {
 		return connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
 	}}
-	whole := &fakeBackend{list: func(_ string, send func(*buildv1.JobRef) error) error {
-		return send(&buildv1.JobRef{Id: "a"})
+	whole := &fakeBackend{list: func(_ string, send func(*buildv2.JobRef) error) error {
+		return send(&buildv2.JobRef{Id: "a"})
 	}}
 
 	c := newBuilds(t, breaks, whole)
@@ -191,9 +191,9 @@ func TestAListThatBrokeBeforeItStartedIsRetried(t *testing.T) {
 // The caller's own failure — a broken HTTP connection, most likely — is never a
 // routing problem, so it must not be retried either.
 func TestTheCallersOwnFailureStopsTheWalk(t *testing.T) {
-	emit := func(_ string, send func(*buildv1.JobRef) error) error {
+	emit := func(_ string, send func(*buildv2.JobRef) error) error {
 		for _, id := range []string{"a", "b"} {
-			if err := send(&buildv1.JobRef{Id: id}); err != nil {
+			if err := send(&buildv2.JobRef{Id: id}); err != nil {
 				return err
 			}
 		}
@@ -227,7 +227,7 @@ func TestEveryPeerUnavailableIsErrNoBackend(t *testing.T) {
 	}
 	follower := func() *fakeBackend {
 		return &fakeBackend{
-			get:    func(string) (*buildv1.Job, error) { return nil, notLeader() },
+			get:    func(string) (*buildv2.Job, error) { return nil, notLeader() },
 			cancel: func(string) error { return notLeader() },
 		}
 	}
@@ -246,14 +246,14 @@ func TestEveryPeerUnavailableIsErrNoBackend(t *testing.T) {
 // ── following a running build ────────────────────────────────────────────
 
 // chunks is a Follow the fake backend serves from a fixed string.
-func chunks(text string, size int) func(string, int64, func(*buildv1.LogChunk) error) error {
-	return func(_ string, offset int64, send func(*buildv1.LogChunk) error) error {
+func chunks(text string, size int) func(string, int64, func(*buildv2.LogChunk) error) error {
+	return func(_ string, offset int64, send func(*buildv2.LogChunk) error) error {
 		if offset > int64(len(text)) {
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("offset past the end"))
 		}
 		for at := offset; at < int64(len(text)); {
 			end := min(at+int64(size), int64(len(text)))
-			if err := send(&buildv1.LogChunk{Data: []byte(text[at:end]), NextOffset: end}); err != nil {
+			if err := send(&buildv2.LogChunk{Data: []byte(text[at:end]), NextOffset: end}); err != nil {
 				return err
 			}
 			at = end
@@ -298,9 +298,9 @@ func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 
 	// The first peer serves a little and then goes Unavailable — the shape of a
 	// backend whose claim lapsed mid-build.
-	partial := serveBuild(t, mn, &fakeBackend{follow: func(_ string, offset int64, send func(*buildv1.LogChunk) error) error {
+	partial := serveBuild(t, mn, &fakeBackend{follow: func(_ string, offset int64, send func(*buildv2.LogChunk) error) error {
 		if offset == 0 {
-			if err := send(&buildv1.LogChunk{Data: []byte("cloning\n"), NextOffset: 8}); err != nil {
+			if err := send(&buildv2.LogChunk{Data: []byte("cloning\n"), NextOffset: 8}); err != nil {
 				return err
 			}
 		}

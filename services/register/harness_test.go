@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 
-	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v1/registerv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 )
 
 // harness is a running Service on one mocknet host, reached from a second one
@@ -27,7 +27,7 @@ import (
 type harness struct {
 	Service    *Service
 	Store      pkgregister.Store
-	Client     registerv1connect.RegisterServiceClient
+	Client     registerv2connect.RegisterServiceClient
 	CallerHost host.Host
 	ServerHost host.Host
 }
@@ -53,7 +53,7 @@ func newHarness(t testing.TB, store pkgregister.Store) *harness {
 	return &harness{
 		Service:    s,
 		Store:      store,
-		Client:     registerv1connect.NewRegisterServiceClient(c.HTTP(), c.URL()),
+		Client:     registerv2connect.NewRegisterServiceClient(c.HTTP(), c.URL()),
 		CallerHost: caller,
 		ServerHost: server,
 	}

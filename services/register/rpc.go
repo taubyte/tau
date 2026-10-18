@@ -9,8 +9,8 @@ import (
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
 
-	registerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v1/registerv1connect"
+	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 )
 
 // rpc.go is the whole wire surface: three calls, each one line of work and one
@@ -24,13 +24,13 @@ import (
 // mount is the one handler rpc.Listen serves.
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(registerv1connect.NewRegisterServiceHandler(&handler{s}))
+	mux.Handle(registerv2connect.NewRegisterServiceHandler(&handler{s}))
 	return mux
 }
 
 type handler struct{ s *Service }
 
-var _ registerv1connect.RegisterServiceHandler = (*handler)(nil)
+var _ registerv2connect.RegisterServiceHandler = (*handler)(nil)
 
 // Publish stores a compiled project and points an environment at it.
 //
@@ -38,7 +38,7 @@ var _ registerv1connect.RegisterServiceHandler = (*handler)(nil)
 // any peer that can reach this service can move any pointer. That is the OSS
 // trust model — swarm membership is the boundary and the swarm key is what
 // enforces it. See .notes/tee/v2-seam.md.
-func (h *handler) Publish(ctx context.Context, req *connect.Request[registerv1.PublishRequest]) (*connect.Response[registerv1.PublishResponse], error) {
+func (h *handler) Publish(ctx context.Context, req *connect.Request[registerv2.PublishRequest]) (*connect.Response[registerv2.PublishResponse], error) {
 	id, err := h.s.reg.Publish(ctx, pkgregister.Publication{
 		Project:     req.Msg.GetProject(),
 		Environment: req.Msg.GetEnvironment(),
@@ -49,46 +49,46 @@ func (h *handler) Publish(ctx context.Context, req *connect.Request[registerv1.P
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&registerv1.PublishResponse{Object: string(id)}), nil
+	return connect.NewResponse(&registerv2.PublishResponse{Object: string(id)}), nil
 }
 
 // Resolve answers which object an environment runs. This is the read on the
 // request path, and it returns the pointer rather than the object for the
 // reason the schema gives: the pointer is the part that changes.
-func (h *handler) Resolve(ctx context.Context, req *connect.Request[registerv1.ResolveRequest]) (*connect.Response[registerv1.Pointer], error) {
+func (h *handler) Resolve(ctx context.Context, req *connect.Request[registerv2.ResolveRequest]) (*connect.Response[registerv2.Pointer], error) {
 	p, err := h.s.reg.Resolve(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment())
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&registerv1.Pointer{Object: string(p.Object), Revision: p.Revision}), nil
+	return connect.NewResponse(&registerv2.Pointer{Object: string(p.Object), Revision: p.Revision}), nil
 }
 
 // Object is one compiled project by its content address. A caller makes this
 // call once per id and never again.
-func (h *handler) Object(ctx context.Context, req *connect.Request[registerv1.ObjectRequest]) (*connect.Response[registerv1.CompiledProject], error) {
+func (h *handler) Object(ctx context.Context, req *connect.Request[registerv2.ObjectRequest]) (*connect.Response[registerv2.CompiledProject], error) {
 	compiled, err := h.s.reg.Object(ctx, pkgregister.ObjectID(req.Msg.GetObject()))
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&registerv1.CompiledProject{Compiled: compiled}), nil
+	return connect.NewResponse(&registerv2.CompiledProject{Compiled: compiled}), nil
 }
 
 // ResolveHost says whose environment answers on a name — the first thing a
 // gateway does with a request.
-func (h *handler) Environments(ctx context.Context, req *connect.Request[registerv1.ProjectRequest]) (*connect.Response[registerv1.Deployments], error) {
+func (h *handler) Environments(ctx context.Context, req *connect.Request[registerv2.ProjectRequest]) (*connect.Response[registerv2.Deployments], error) {
 	environments, err := h.s.reg.Environments(ctx, req.Msg.GetProject())
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&registerv1.Deployments{Environments: environments}), nil
+	return connect.NewResponse(&registerv2.Deployments{Environments: environments}), nil
 }
 
-func (h *handler) ResolveHost(ctx context.Context, req *connect.Request[registerv1.HostRequest]) (*connect.Response[registerv1.HostAnswer], error) {
+func (h *handler) ResolveHost(ctx context.Context, req *connect.Request[registerv2.HostRequest]) (*connect.Response[registerv2.HostAnswer], error) {
 	project, environment, err := h.s.reg.ResolveHost(ctx, req.Msg.GetFqdn())
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&registerv1.HostAnswer{Project: project, Environment: environment}), nil
+	return connect.NewResponse(&registerv2.HostAnswer{Project: project, Environment: environment}), nil
 }
 
 // wire is the one code table: every connect.NewError in this package goes

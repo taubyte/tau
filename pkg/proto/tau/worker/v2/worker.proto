@@ -1,0 +1,326 @@
+syntax = "proto3";
+
+// worker is where code runs. v1 called it substrate.
+//
+// ONE CALL, AND EVERYTHING INTERESTING IS IN WHAT IT NAMES. A worker is handed
+// a target and a request; it resolves the target against the register, reads
+// what that resource declares about itself, and runs it. Which tier runs it —
+// wasm, container, and whatever is registered next — is read off the config and
+// is not in this schema, because a caller has no business choosing.
+//
+// THE TARGET IS A NAME AND NEVER AN ID. Every reference in v2 is by name and
+// the compiled object carries an index for exactly this lookup. A caller that
+// sent an id would be a caller that had already resolved one, which means it
+// held a compiled project, which means it is doing the worker's job.
+//
+// A REVISION IS NOT IN THE REQUEST EITHER. What an environment runs is the
+// register's answer, not the caller's, and a caller that could name a revision
+// could keep sending traffic at code that was replaced — which is a rollback
+// nobody performed and nobody can see.
+//
+// THIS IS UNARY, AND THAT IS A REAL LIMIT rather than an oversight. The whole
+// request body arrives before the workload sees any of it, and the whole
+// response is buffered before the caller sees any of it, so an upload and a
+// streamed response are both bounded by memory. The invocation model behind it
+// (pkg/invoke) has the same shape, and changing one without the other would
+// buy nothing. Streaming is a change to both, together, when something needs
+// it — and it is easier to add a streaming RPC beside this than to discover
+// that half the pipeline was never able to.
+package tau.worker.v2;
+
+// Target names one resource in one environment of one project.
+message Target {
+  string project = 1;
+  string environment = 2;
+
+  // scope is the chain of namespace NAMES from the project root — the
+  // `/shop/eu` an author writes, split. Empty is the project itself.
+  //
+  // It is the ASKER's scope, not the resource's: a name resolves in the scope
+  // that asked and then in each parent, which is how a namespace inherits its
+  // parent's resources without restating them.
+  repeated string scope = 3;
+
+  // kind and name are the vocabulary's own — "function", "checkout". kind is a
+  // string rather than an enum because the vocabulary grows in
+  // pkg/tcc/taubyte/v2/schema and an enum here would be a second place to add
+  // a kind, one of which would be forgotten.
+  string kind = 4;
+  string name = 5;
+}
+
+// Headers is one header's values. proto3 maps cannot hold a repeated value, so
+// the list needs a message around it.
+message Headers {
+  repeated string values = 1;
+}
+
+message InvokeRequest {
+  Target target = 1;
+
+  // method, path and headers carry an HTTP-shaped call and are empty for an
+  // invocation that is not one — a queue delivery, a channel dial.
+  string method = 2;
+  string path = 3;
+  map<string, Headers> headers = 4;
+
+  bytes body = 5;
+}
+
+message InvokeResponse {
+  int32 status = 1;
+  map<string, Headers> headers = 2;
+  bytes body = 3;
+}
+
+// TransformRequest runs one request through a TRANSFORMER — a function a
+// gateway or a proxy declares that traffic passes through on its way in.
+//
+// IT IS A SECOND RPC AND NOT A FLAG ON Invoke, because what comes back is a
+// different thing. An invocation answers with a response; a transformer answers
+// with EITHER a request that carries on or a response that stops the chain, and
+// a caller that could not tell those apart could not run a chain at all.
+message TransformRequest {
+  Target target = 1;
+
+  string method = 2;
+  string path = 3;
+  map<string, Headers> headers = 4;
+  bytes body = 5;
+}
+
+// ForwardedRequest is the traffic as the transformer left it: the same shape
+// InvokeRequest carries WITHOUT a target, because where it goes next is the
+// caller's to decide and never the transformer's.
+message ForwardedRequest {
+  string method = 1;
+  string path = 2;
+  map<string, Headers> headers = 3;
+  bytes body = 4;
+}
+
+// TransformResponse is what the transformer decided.
+//
+// A oneof RATHER THAN A STATUS CONVENTION. Encoding "carry on" as a response
+// with some reserved status would make every real status ambiguous — a
+// transformer that legitimately answers 200 could not — and an unset oneof is a
+// malformed answer a caller can refuse rather than a default it must guess.
+message TransformResponse {
+  oneof outcome {
+    ForwardedRequest forward = 1;
+    InvokeResponse answer = 2;
+  }
+}
+
+// RouteRequest asks a ROUTER where one request should go.
+message RouteRequest {
+  Target target = 1;
+
+  string method = 2;
+  string path = 3;
+  map<string, Headers> headers = 4;
+  bytes body = 5;
+}
+
+// Destination is where a router said a request should go: the vocabulary's own
+// kind, the namespace holding it, and its name.
+//
+// AN ADDRESS AND NEVER A WORKLOAD. What runs it is the gateway's business, which
+// is what keeps placement, metering, timeouts and the transformer chain in one
+// place rather than in every router anybody writes.
+message Destination {
+  string kind = 1;
+  // Empty means the asking resource's own scope, then its parents — what an
+  // omitted `namespace:` means everywhere in this vocabulary.
+  string namespace = 2;
+  string name = 3;
+}
+
+// RouteResponse is what the router decided.
+//
+// `none` is a DECISION and not a failure: the router ran, understood the request
+// and says nothing handles it. A router that could not be RUN is a different
+// thing, because a routing table that cannot be read is not the same as a path
+// that is not in it — so that one is an RPC error and this is not.
+message RouteResponse {
+  oneof decision {
+    Destination to = 1;
+    InvokeResponse answer = 2;
+    string none = 3;
+  }
+}
+
+// Connection is what is known about a raw connection before a byte of it is
+// forwarded, and it is all a proxy has: a peer address and then bytes.
+//
+// IT IS THE PEER ADDRESS AND NEVER ANYTHING THE CLIENT SENT. A proxy has no
+// forwarded header to be lied to with, which is the one advantage of seeing no
+// protocol.
+message Connection {
+  string source = 1;
+
+  // The name this proxy answers on, and how a client looked it up. One router
+  // or one transformer can serve several proxies, so it has to be able to tell
+  // which connection it is deciding about.
+  string host = 2;
+  string protocol = 3;
+  string transport = 4;
+
+  // What the client asked for in its TLS handshake, when the proxy terminated
+  // one. Empty when it did not — which is not the same as a client that sent
+  // no SNI.
+  string server_name = 5;
+}
+
+// DirectRequest asks a PROXY ROUTER where one connection should go.
+message DirectRequest {
+  Target target = 1;
+  Connection connection = 2;
+
+  // Everything the proxy has read from the client so far. The WHOLE prefix
+  // travels on every call, which is what lets the router stay pooled: it has
+  // to remember nothing between them, so it is not pinned to the node the
+  // connection landed on.
+  bytes peeked = 3;
+}
+
+// Endpoint is Destination plus a port, and the extra field is why it is not
+// that message: a workload binds several ports and a connection has to arrive
+// at one of them, where an invocation has only the workload.
+message Endpoint {
+  string kind = 1;
+  string namespace = 2;
+  string name = 3;
+  // Which of the workload's own named ports to stream to. Empty is the one
+  // port a workload that declared none was given.
+  string port = 4;
+}
+
+// DirectResponse is what the proxy router decided.
+//
+// `more` and `refuse` are DECISIONS and not failures: the first says it cannot
+// tell yet and wants that many bytes in total, the second that this connection
+// does not belong here. A router that could not be RUN is an RPC error.
+//
+// THERE IS NO ARM THAT ANSWERS. A gateway router can serve a request itself
+// because a response is a thing this vocabulary can spell; a raw stream has no
+// such shape, and an arm that handed back bytes would be a transformer wearing
+// a router's name.
+message DirectResponse {
+  oneof decision {
+    Endpoint to = 1;
+    uint32 more = 2;
+    string refuse = 3;
+  }
+}
+
+// ShapeRequest runs one chunk of a connection through a PROXY TRANSFORMER.
+//
+// IT IS ONE CALL PER CHUNK, PER DIRECTION, and that is the cost of declaring a
+// transformer on a proxy: it is priced in bytes rather than in requests. The
+// `concurrent` limit in the vocabulary is what bounds how many conversations
+// can be paying it at once.
+message ShapeRequest {
+  Target target = 1;
+  Connection connection = 2;
+
+  // Which way these bytes are going.
+  enum Direction {
+    // From the client toward the workload.
+    DIRECTION_INBOUND = 0;
+    // From the workload back to the client.
+    DIRECTION_OUTBOUND = 1;
+  }
+  Direction way = 3;
+
+  // What this transformer handed back the last time it was called for this
+  // connection and this direction. Empty on the first chunk.
+  //
+  // THE HOST CARRIES IT so the instance does not have to. A transformer that
+  // kept its own state would need one instance per connection, pinned to the
+  // node that connection landed on for as long as it lives.
+  bytes state = 4;
+
+  // The bytes that just arrived. Empty when `last` is set and nothing arrived
+  // with the close.
+  bytes chunk = 5;
+
+  // The other end is done writing this direction: the transformer's last
+  // chance to emit what it has been holding.
+  bool last = 6;
+}
+
+// Shaped is what to pass on, and what to remember.
+message Shaped {
+  // The bytes to send on. May be EMPTY — a transformer buffering a frame
+  // passes nothing until it has one — and may be longer or shorter than the
+  // chunk it was given.
+  bytes out = 1;
+  // What to hand back on the next chunk of this connection and direction.
+  bytes state = 2;
+}
+
+// ShapeResponse is what the proxy transformer decided.
+//
+// THERE IS NO "CARRY ON UNCHANGED" ARM. A transformer that wants the bytes
+// through says so by passing them back, because a convention where an absent
+// answer meant pass-through would make a transformer that crashed
+// indistinguishable from one that agreed.
+message ShapeResponse {
+  oneof verdict {
+    Shaped pass = 1;
+    // Close the connection. The reason goes to the operator's log, because a
+    // raw socket has nowhere to write one.
+    string close = 2;
+  }
+}
+
+// Open is the first thing written on a raw connection stream, and the only
+// framed thing on it: everything after it is the workload's own bytes.
+//
+// IT IS NOT AN RPC. A proxy carries bytes it cannot parse, in both directions,
+// for as long as the client holds the socket open — which is the one shape the
+// WorkerService above says in its own doc that it cannot take. So this travels
+// on its own libp2p protocol as a length-prefixed header followed by a splice,
+// and it is declared here because the header still deserves a schema: a
+// hand-rolled struct on a wire between two versions of this binary is how a
+// field gets read as another one.
+message Open {
+  Target target = 1;
+
+  // The workload's own port, by the name its author declared. Empty is the one
+  // port a workload that declared none was given.
+  string port = 2;
+}
+
+// Opened is the answer to Open, written before the splice begins.
+//
+// A STATUS RATHER THAN A CLOSED STREAM, because the two failures a caller acts
+// on differently are indistinguishable otherwise: a workload that could not be
+// reached is worth another node, and a target that does not exist is worth none.
+message Opened {
+  bool ok = 1;
+  // Empty when ok. Otherwise why, for a log at the edge.
+  string error = 2;
+  // Set when the failure is this node's rather than the target's, which is what
+  // tells the caller to try another.
+  bool unreachable = 3;
+}
+
+service WorkerService {
+  // Invoke runs one request against one resource.
+  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+
+  // Transform runs one request through one transformer and answers with what
+  // it decided.
+  rpc Transform(TransformRequest) returns (TransformResponse);
+
+  // Route asks one router where a request should go.
+  rpc Route(RouteRequest) returns (RouteResponse);
+
+  // Direct asks one proxy router where a connection should go.
+  rpc Direct(DirectRequest) returns (DirectResponse);
+
+  // Shape runs one chunk of a connection through one proxy transformer.
+  rpc Shape(ShapeRequest) returns (ShapeResponse);
+}

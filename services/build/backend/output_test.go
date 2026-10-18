@@ -16,7 +16,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/services/build/livelog"
 )
 
@@ -68,7 +68,7 @@ func TestARunningBuildsLogIsFollowedWhileItIsStillBeingWritten(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, rest)
 
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	require.Empty(t, logFiles(t, h))
 
 	// And it is not followable any more: what a reader wants now is the cid on
@@ -132,7 +132,7 @@ func TestAFailedBuildKeepsWhatItPrintedBeforeItFailed(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, "compile error")
 	require.Equal(t, "undefined: Frobnicate\n", h.assets.content(t, rec.Logs[stamp(1)]))
 }
@@ -150,7 +150,7 @@ func TestAPanickingBuildKeepsWhatItPrinted(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, "panicked")
 	require.Equal(t, "step 3 of 4\n", h.assets.content(t, rec.Logs[stamp(1)]))
 }
@@ -173,7 +173,7 @@ func TestACancelledBuildStillGetsItsLog(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, rec.status(),
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, rec.status(),
 		"the run's outcome must not overwrite the cancel")
 	require.Equal(t, "cancelled", rec.Reason)
 	require.Equal(t, "installing dependencies\n", h.assets.content(t, rec.Logs[stamp(1)]),
@@ -224,7 +224,7 @@ func TestANodeWithNoAssetStoreBuildsAndKeepsNothing(t *testing.T) {
 		"a runner is told there is nowhere to put an artifact rather than told it worked")
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status())
 	require.Empty(t, rec.Logs)
 	require.Empty(t, rec.Assets)
 	require.Empty(t, logFiles(t, h))
@@ -246,7 +246,7 @@ func TestAnAssetStoreThatRefusesTheLogLeavesTheJobWithoutOne(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status())
 	require.Empty(t, rec.Logs, "the log had nowhere to go")
 	require.Equal(t, map[string]string{"prod/website/home": assetCID([]byte("the artifact"))}, rec.Assets,
 		"and what DID reach the store is still named by the record")
@@ -271,7 +271,7 @@ func TestAPublishThatOutlastsItsDeadlineCostsTheLogAndNotTheJob(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status())
 	require.Empty(t, rec.Logs)
 }
 
@@ -299,7 +299,7 @@ func TestALogPastItsCapIsTruncatedAndTheBuildStillSucceeds(t *testing.T) {
 		"and it must report the whole write, or an io.Copy of a build's stdout stops early")
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status())
 	stored := h.assets.content(t, rec.Logs[stamp(1)])
 	require.Contains(t, stored, "0123456789this ")
 	require.Contains(t, stored, "truncated", "a truncated log that does not say so is a log that lies")
@@ -324,7 +324,7 @@ func TestARunThatCannotOpenALogIsAFailedBuild(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, "log directory")
 	require.Empty(t, rec.Logs)
 
@@ -525,7 +525,7 @@ func TestALogThatLostBytesFailsTheBuildRatherThanBeingStoredShort(t *testing.T) 
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status(),
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status(),
 		"a log this node cannot read back is a failed build, not a build with no log")
 	require.Contains(t, rec.Reason, "reading back the log it wrote")
 	require.Empty(t, rec.Logs, "and nothing names a short log")
@@ -550,7 +550,7 @@ func TestAStoreThatSwallowedAReadErrorDoesNotGetToNameTheLog(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, "reading back the log it wrote")
 	require.Empty(t, rec.Logs, "the cid it answered with names bytes that are not the log")
 }
@@ -574,7 +574,7 @@ func TestAStoreThatStoppedReadingDoesNotGetToNameTheLog(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, "took 4 of the 26 bytes")
 	require.Empty(t, rec.Logs, "a cid over a prefix of the log is not this log")
 }
@@ -660,7 +660,7 @@ func TestARunThatCannotCreateItsLogFileIsAFailedBuild(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, id, "the failure names the job it belongs to")
 }
 
@@ -677,7 +677,7 @@ func TestAnAssetStoreThatRefusesAnArtifactTellsTheRunner(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, "hoarder is down")
 	require.Empty(t, rec.Assets)
 }
@@ -737,7 +737,7 @@ func TestACancelledJobWithNoOutputCostsNoEntry(t *testing.T) {
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusCancelled, "cancelled"))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusCancelled, "cancelled"))
 
 	out, err := h.output(Work{JobID: id, Attempt: 1})
 	require.NoError(t, err)
@@ -762,7 +762,7 @@ func TestALogIsFiledUnderTheRunsAttemptAndNotTheRecordsAtSettleTime(t *testing.T
 	require.NoError(t, err)
 
 	rec := h.mustRecord(t, id)
-	rec.Status = int32(buildv1.JobStatus_JobStatusClaimed)
+	rec.Status = int32(buildv2.JobStatus_JobStatusClaimed)
 	rec.Attempt = 7
 	value, err := rec.encode()
 	require.NoError(t, err)
@@ -790,7 +790,7 @@ func TestRecordingALogOnACancelledJobMovesNothingElse(t *testing.T) {
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusCancelled, "cancelled"))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusCancelled, "cancelled"))
 
 	out, err := h.output(Work{JobID: id, Attempt: 1})
 	require.NoError(t, err)
@@ -850,7 +850,7 @@ func TestALogIsNeverOpenedThroughASymlinkPlantedAtItsPath(t *testing.T) {
 	require.NotZero(t, link.Mode()&os.ModeSymlink)
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status(),
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status(),
 		"a node that cannot open a log of its own is not the node that runs the build")
 	require.Contains(t, rec.Reason, id)
 }
@@ -868,7 +868,7 @@ func TestTheLogDirectoryTheServiceUsesIsOneNobodyElseCanWriteIn(t *testing.T) {
 	})
 	id := h.push(t, testRef, testCommit)
 	require.True(t, h.mustStep(t))
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 
 	fi, err := os.Lstat(shared)
 	require.NoError(t, err)
@@ -928,7 +928,7 @@ func TestASlowAssetStoreDoesNotStallEveryOtherJobOnTheNode(t *testing.T) {
 
 	enqueued := make(chan error, 1)
 	go func() {
-		_, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+		_, err := h.enqueue(context.Background(), &buildv2.PushEvent{
 			RepositoryKey: elsewhere, Ref: testRef, CommitSha: testCommit,
 		})
 		enqueued <- err
@@ -944,7 +944,7 @@ func TestASlowAssetStoreDoesNotStallEveryOtherJobOnTheNode(t *testing.T) {
 
 	close(release)
 	require.NoError(t, <-settled)
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 }
 
 // THE ONE THING A LOG'S TRIP TO THE STORE IS NOT IS ATOMIC WITH THE RECORD,
@@ -990,7 +990,7 @@ func TestALogCanReachTheStoreAndNoCidReachAnyJob(t *testing.T) {
 	require.Equal(t, "attempt 1 printed this\n", h.assets.content(t, orphaned))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusClaimed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, rec.status())
 	require.Empty(t, rec.Logs, "and no job names it")
 
 	ready, claimed := h.work.Depth()
@@ -1003,7 +1003,7 @@ func TestALogCanReachTheStoreAndNoCidReachAnyJob(t *testing.T) {
 	h.clock.advance(h.cfg.Queue.VisibilityTimeout + h.cfg.BuildTimeout + time.Minute)
 	require.NoError(t, h.reconcile())
 	require.True(t, h.mustStep(t))
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 
 	after := h.mustRecord(t, id)
 	require.Equal(t, map[string]string{stamp(2): assetCID([]byte("attempt 2 printed this\n"))},
@@ -1051,7 +1051,7 @@ func TestAJobReopenedWhileItsLogWasStoredKeepsThatLog(t *testing.T) {
 	require.NoError(t, <-stepped)
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, rec.status(),
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, rec.status(),
 		"the run that was cancelled does not get to write over the attempt that replaced it")
 	require.Equal(t,
 		map[string]string{stamp(1): assetCID([]byte("what the cancelled attempt printed\n"))},

@@ -5,7 +5,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // queueHandler is the connect adapter for QueueService. Every method on it is
@@ -20,7 +20,7 @@ import (
 // reachable only over the wire.
 type queueHandler struct{ s *Service }
 
-func (h *queueHandler) Enqueue(ctx context.Context, req *connect.Request[buildv1.PushEvent]) (*connect.Response[buildv1.JobRef], error) {
+func (h *queueHandler) Enqueue(ctx context.Context, req *connect.Request[buildv2.PushEvent]) (*connect.Response[buildv2.JobRef], error) {
 	if err := h.s.allow(ctx, ActEnqueue, req.Msg.GetRepositoryKey()); err != nil {
 		return nil, err
 	}
@@ -28,7 +28,7 @@ func (h *queueHandler) Enqueue(ctx context.Context, req *connect.Request[buildv1
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&buildv1.JobRef{Id: id}), nil
+	return connect.NewResponse(&buildv2.JobRef{Id: id}), nil
 }
 
 // enqueue durably records a push and returns its job id.
@@ -53,7 +53,7 @@ func (h *queueHandler) Enqueue(ctx context.Context, req *connect.Request[buildv1
 // (build.proto: "the only one whose contents a STRANGER authored"), so this is
 // the last place the three are looked at before they become a hash and three
 // key segments.
-func (s *Service) enqueue(ctx context.Context, p *buildv1.PushEvent) (string, error) {
+func (s *Service) enqueue(ctx context.Context, p *buildv2.PushEvent) (string, error) {
 	key, ok := parseRepositoryKey(p.GetRepositoryKey())
 	if !ok {
 		return "", errInvalidArgument("repository key %q is not canonical", p.GetRepositoryKey())
@@ -140,7 +140,7 @@ func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) er
 		now := s.now()
 		rec := jobRecord{
 			ID:            id,
-			Status:        int32(buildv1.JobStatus_JobStatusOpen),
+			Status:        int32(buildv2.JobStatus_JobStatusOpen),
 			RepositoryKey: repositoryKey,
 			Ref:           ref,
 			CommitSHA:     commitSHA,

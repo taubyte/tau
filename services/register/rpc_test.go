@@ -8,12 +8,12 @@ import (
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
 
-	registerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v1"
+	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 )
 
 func publish(t *testing.T, h *harness, project, env string, rev uint64, compiled string) string {
 	t.Helper()
-	res, err := h.Client.Publish(t.Context(), connect.NewRequest(&registerv1.PublishRequest{
+	res, err := h.Client.Publish(t.Context(), connect.NewRequest(&registerv2.PublishRequest{
 		Project: project, Environment: env, Revision: rev, Compiled: []byte(compiled),
 	}))
 	require.NoError(t, err)
@@ -33,14 +33,14 @@ func TestTheWholeChainOverTheWire(t *testing.T) {
 
 	id := publish(t, h, "shop", "prod", 1, "memory: 64MB")
 
-	p, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv1.ResolveRequest{
+	p, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv2.ResolveRequest{
 		Project: "shop", Environment: "prod",
 	}))
 	require.NoError(t, err)
 	require.Equal(t, id, p.Msg.GetObject())
 	require.Equal(t, uint64(1), p.Msg.GetRevision())
 
-	obj, err := h.Client.Object(t.Context(), connect.NewRequest(&registerv1.ObjectRequest{Object: id}))
+	obj, err := h.Client.Object(t.Context(), connect.NewRequest(&registerv2.ObjectRequest{Object: id}))
 	require.NoError(t, err)
 	require.Equal(t, []byte("memory: 64MB"), obj.Msg.GetCompiled())
 }
@@ -66,7 +66,7 @@ func TestAStaleRevisionIsFailedPrecondition(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
 	publish(t, h, "shop", "prod", 7, "current")
 
-	_, err := h.Client.Publish(t.Context(), connect.NewRequest(&registerv1.PublishRequest{
+	_, err := h.Client.Publish(t.Context(), connect.NewRequest(&registerv2.PublishRequest{
 		Project: "shop", Environment: "prod", Revision: 3, Compiled: []byte("late"),
 	}))
 	require.Equal(t, connect.CodeFailedPrecondition, codeOf(t, err))
@@ -78,12 +78,12 @@ func TestAStaleRevisionIsFailedPrecondition(t *testing.T) {
 func TestAnUnpublishedEnvironmentIsNotFound(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
 
-	_, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv1.ResolveRequest{
+	_, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv2.ResolveRequest{
 		Project: "shop", Environment: "prod",
 	}))
 	require.Equal(t, connect.CodeNotFound, codeOf(t, err))
 
-	_, err = h.Client.Object(t.Context(), connect.NewRequest(&registerv1.ObjectRequest{
+	_, err = h.Client.Object(t.Context(), connect.NewRequest(&registerv2.ObjectRequest{
 		Object: string(pkgregister.IDOf([]byte("never published"))),
 	}))
 	require.Equal(t, connect.CodeNotFound, codeOf(t, err))
@@ -96,12 +96,12 @@ func TestMalformedRequestsAreInvalidArgument(t *testing.T) {
 
 	for _, c := range []struct {
 		name string
-		req  *registerv1.PublishRequest
+		req  *registerv2.PublishRequest
 	}{
-		{"no project", &registerv1.PublishRequest{Environment: "prod", Revision: 1, Compiled: []byte("x")}},
-		{"no environment", &registerv1.PublishRequest{Project: "shop", Revision: 1, Compiled: []byte("x")}},
-		{"nothing compiled", &registerv1.PublishRequest{Project: "shop", Environment: "prod", Revision: 1}},
-		{"a name with a separator", &registerv1.PublishRequest{Project: "a/prod", Environment: "prod", Revision: 1, Compiled: []byte("x")}},
+		{"no project", &registerv2.PublishRequest{Environment: "prod", Revision: 1, Compiled: []byte("x")}},
+		{"no environment", &registerv2.PublishRequest{Project: "shop", Revision: 1, Compiled: []byte("x")}},
+		{"nothing compiled", &registerv2.PublishRequest{Project: "shop", Environment: "prod", Revision: 1}},
+		{"a name with a separator", &registerv2.PublishRequest{Project: "a/prod", Environment: "prod", Revision: 1, Compiled: []byte("x")}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := h.Client.Publish(t.Context(), connect.NewRequest(c.req))
@@ -109,7 +109,7 @@ func TestMalformedRequestsAreInvalidArgument(t *testing.T) {
 		})
 	}
 
-	_, err := h.Client.Object(t.Context(), connect.NewRequest(&registerv1.ObjectRequest{}))
+	_, err := h.Client.Object(t.Context(), connect.NewRequest(&registerv2.ObjectRequest{}))
 	require.Equal(t, connect.CodeNotFound, codeOf(t, err), "an empty content address names no object")
 }
 
@@ -128,14 +128,14 @@ func TestACorruptedPointerIsDataLoss(t *testing.T) {
 		}
 	}
 
-	_, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv1.ResolveRequest{
+	_, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv2.ResolveRequest{
 		Project: "shop", Environment: "prod",
 	}))
 	require.Equal(t, connect.CodeDataLoss, codeOf(t, err))
 
 	// And a publish repairs it, so there is no state only a human can leave.
 	publish(t, h, "shop", "prod", 2, "compiled again")
-	p, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv1.ResolveRequest{
+	p, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv2.ResolveRequest{
 		Project: "shop", Environment: "prod",
 	}))
 	require.NoError(t, err)
@@ -147,17 +147,17 @@ func TestACorruptedPointerIsDataLoss(t *testing.T) {
 func TestAStoreFailureIsUnavailable(t *testing.T) {
 	h := newHarness(t, brokenStore{pkgregister.NewMemStore()})
 
-	_, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv1.ResolveRequest{
+	_, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv2.ResolveRequest{
 		Project: "shop", Environment: "prod",
 	}))
 	require.Equal(t, connect.CodeUnavailable, codeOf(t, err))
 
-	_, err = h.Client.Publish(t.Context(), connect.NewRequest(&registerv1.PublishRequest{
+	_, err = h.Client.Publish(t.Context(), connect.NewRequest(&registerv2.PublishRequest{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("x"),
 	}))
 	require.Equal(t, connect.CodeUnavailable, codeOf(t, err))
 
-	_, err = h.Client.Object(t.Context(), connect.NewRequest(&registerv1.ObjectRequest{
+	_, err = h.Client.Object(t.Context(), connect.NewRequest(&registerv2.ObjectRequest{
 		Object: string(pkgregister.IDOf([]byte("x"))),
 	}))
 	require.Equal(t, connect.CodeUnavailable, codeOf(t, err))
@@ -177,12 +177,12 @@ func TestEnvironmentsAndProjectsDoNotShareAPointer(t *testing.T) {
 		{"shop", "staging", "shop staging"},
 		{"blog", "prod", "blog prod"},
 	} {
-		p, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv1.ResolveRequest{
+		p, err := h.Client.Resolve(t.Context(), connect.NewRequest(&registerv2.ResolveRequest{
 			Project: c.project, Environment: c.env,
 		}))
 		require.NoError(t, err)
 
-		obj, err := h.Client.Object(t.Context(), connect.NewRequest(&registerv1.ObjectRequest{Object: p.Msg.GetObject()}))
+		obj, err := h.Client.Object(t.Context(), connect.NewRequest(&registerv2.ObjectRequest{Object: p.Msg.GetObject()}))
 		require.NoError(t, err)
 		require.Equal(t, c.want, string(obj.Msg.GetCompiled()))
 	}
@@ -193,20 +193,20 @@ func TestEnvironmentsAndProjectsDoNotShareAPointer(t *testing.T) {
 func TestResolveHostOverTheWire(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
 
-	_, err := h.Client.Publish(t.Context(), connect.NewRequest(&registerv1.PublishRequest{
+	_, err := h.Client.Publish(t.Context(), connect.NewRequest(&registerv2.PublishRequest{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("compiled"),
 		Hosts: []string{"shop.example.com"},
 	}))
 	require.NoError(t, err)
 
-	answer, err := h.Client.ResolveHost(t.Context(), connect.NewRequest(&registerv1.HostRequest{
+	answer, err := h.Client.ResolveHost(t.Context(), connect.NewRequest(&registerv2.HostRequest{
 		Fqdn: "SHOP.example.com",
 	}))
 	require.NoError(t, err)
 	require.Equal(t, "shop", answer.Msg.GetProject())
 	require.Equal(t, "prod", answer.Msg.GetEnvironment())
 
-	_, err = h.Client.ResolveHost(t.Context(), connect.NewRequest(&registerv1.HostRequest{
+	_, err = h.Client.ResolveHost(t.Context(), connect.NewRequest(&registerv2.HostRequest{
 		Fqdn: "nobody.example.com",
 	}))
 	require.Equal(t, connect.CodeNotFound, codeOf(t, err))
@@ -218,13 +218,13 @@ func TestResolveHostOverTheWire(t *testing.T) {
 func TestAClaimedNameIsAlreadyExists(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
 
-	_, err := h.Client.Publish(t.Context(), connect.NewRequest(&registerv1.PublishRequest{
+	_, err := h.Client.Publish(t.Context(), connect.NewRequest(&registerv2.PublishRequest{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("compiled"),
 		Hosts: []string{"shop.example.com"},
 	}))
 	require.NoError(t, err)
 
-	_, err = h.Client.Publish(t.Context(), connect.NewRequest(&registerv1.PublishRequest{
+	_, err = h.Client.Publish(t.Context(), connect.NewRequest(&registerv2.PublishRequest{
 		Project: "impostor", Environment: "prod", Revision: 1, Compiled: []byte("compiled"),
 		Hosts: []string{"shop.example.com"},
 	}))
@@ -240,7 +240,7 @@ func TestEnvironmentsOverTheWire(t *testing.T) {
 	publish(t, h, "shop", "staging", 1, `{"object":{"id":"b"}}`)
 	publish(t, h, "other", "production", 1, `{"object":{"id":"c"}}`)
 
-	got, err := h.Client.Environments(t.Context(), connect.NewRequest(&registerv1.ProjectRequest{Project: "shop"}))
+	got, err := h.Client.Environments(t.Context(), connect.NewRequest(&registerv2.ProjectRequest{Project: "shop"}))
 	require.NoError(t, err)
 	require.Equal(t, []string{"production", "staging"}, got.Msg.GetEnvironments())
 
@@ -248,11 +248,11 @@ func TestEnvironmentsOverTheWire(t *testing.T) {
 	// question has an answer and the answer is none. A caller made to treat
 	// that as an error would have to tell it apart from a register that was
 	// simply unreachable.
-	got, err = h.Client.Environments(t.Context(), connect.NewRequest(&registerv1.ProjectRequest{Project: "never-deployed"}))
+	got, err = h.Client.Environments(t.Context(), connect.NewRequest(&registerv2.ProjectRequest{Project: "never-deployed"}))
 	require.NoError(t, err)
 	require.Empty(t, got.Msg.GetEnvironments())
 
 	// A project name that is not one keeps its code across the wire.
-	_, err = h.Client.Environments(t.Context(), connect.NewRequest(&registerv1.ProjectRequest{Project: ""}))
+	_, err = h.Client.Environments(t.Context(), connect.NewRequest(&registerv2.ProjectRequest{Project: ""}))
 	require.Equal(t, connect.CodeInvalidArgument, codeOf(t, err))
 }

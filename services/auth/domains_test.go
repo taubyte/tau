@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // testProjectID is a valid CIDv0-shaped id — the same shape utils/id.Generate
@@ -26,7 +26,7 @@ func TestDomainRegister(t *testing.T) {
 	h := &domainHandler{s}
 	projectID := testProjectID(t)
 
-	res, err := h.Register(t.Context(), connect.NewRequest(&authv1.RegisterDomainRequest{
+	res, err := h.Register(t.Context(), connect.NewRequest(&authv2.RegisterDomainRequest{
 		Fqdn:      "www.example.com",
 		ProjectId: projectID,
 	}))
@@ -40,7 +40,7 @@ func TestDomainRegister_EmptyFQDN(t *testing.T) {
 	s := newTestService(t)
 	h := &domainHandler{s}
 
-	_, err := h.Register(t.Context(), connect.NewRequest(&authv1.RegisterDomainRequest{
+	_, err := h.Register(t.Context(), connect.NewRequest(&authv2.RegisterDomainRequest{
 		Fqdn:      "",
 		ProjectId: testProjectID(t),
 	}))
@@ -52,7 +52,7 @@ func TestDomainRegister_ShortProjectID(t *testing.T) {
 	s := newTestService(t)
 	h := &domainHandler{s}
 
-	_, err := h.Register(t.Context(), connect.NewRequest(&authv1.RegisterDomainRequest{
+	_, err := h.Register(t.Context(), connect.NewRequest(&authv2.RegisterDomainRequest{
 		Fqdn:      "www.example.com",
 		ProjectId: "short",
 	}))
@@ -64,7 +64,7 @@ func TestDomainRegister_NotACID(t *testing.T) {
 	s := newTestService(t)
 	h := &domainHandler{s}
 
-	_, err := h.Register(t.Context(), connect.NewRequest(&authv1.RegisterDomainRequest{
+	_, err := h.Register(t.Context(), connect.NewRequest(&authv2.RegisterDomainRequest{
 		Fqdn:      "www.example.com",
 		ProjectId: "not-a-cid-but-long-enough",
 	}))
@@ -81,7 +81,7 @@ func TestDomainRegister_UnparsablePrivateKey(t *testing.T) {
 	s := &Service{cfg: Config{DomainValidation: KeyPair{Private: "not a pem", Public: "not a pem"}}}
 	h := &domainHandler{s}
 
-	_, err := h.Register(t.Context(), connect.NewRequest(&authv1.RegisterDomainRequest{
+	_, err := h.Register(t.Context(), connect.NewRequest(&authv2.RegisterDomainRequest{
 		Fqdn:      "www.example.com",
 		ProjectId: testProjectID(t),
 	}))
@@ -116,7 +116,7 @@ func TestDomainRegister_TooShortAProjectID(t *testing.T) {
 
 			s := newTestService(t)
 			h := &domainHandler{s}
-			res, err := h.Register(t.Context(), connect.NewRequest(&authv1.RegisterDomainRequest{
+			res, err := h.Register(t.Context(), connect.NewRequest(&authv2.RegisterDomainRequest{
 				Fqdn:      "www.example.com",
 				ProjectId: tc.projectID,
 			}))

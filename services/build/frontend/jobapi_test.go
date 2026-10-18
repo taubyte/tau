@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // The four routes v1 guards with "does this bearer hold a working GitHub
@@ -147,11 +147,11 @@ func TestAMutationIsAuthorizedBeforeItHappens(t *testing.T) {
 
 func TestAnUnknownJobAndADeniedOneAreTheSameAnswer(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.get = func(id string) (*buildv1.Job, error) {
+	h.backend.get = func(id string) (*buildv2.Job, error) {
 		if id == "unknown" {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("no job"))
 		}
-		return &buildv1.Job{Id: id, RepositoryKey: "github.com/someone/else"}, nil
+		return &buildv2.Job{Id: id, RepositoryKey: "github.com/someone/else"}, nil
 	}
 	h.identity.write = func(_ string, key repokey.Key) (Access, error) {
 		if key.String() == testRepoKey {
@@ -170,7 +170,7 @@ func TestAnUnknownJobAndADeniedOneAreTheSameAnswer(t *testing.T) {
 
 func TestAnIdTheBackendCouldNotHaveMintedIsABadRequest(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.get = func(id string) (*buildv1.Job, error) {
+	h.backend.get = func(id string) (*buildv2.Job, error) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%q is not a job id", id))
 	}
 
@@ -186,7 +186,7 @@ func TestAnOversizedIdNeverReachesTheBackend(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			h := newHarness(t, Config{})
 			reached := false
-			h.backend.get = func(string) (*buildv1.Job, error) { reached = true; return nil, nil }
+			h.backend.get = func(string) (*buildv2.Job, error) { reached = true; return nil, nil }
 			h.backend.list = func(string, func(string) error) error { reached = true; return nil }
 			h.projects.repositories = func(string) ([]string, error) { reached = true; return nil, nil }
 
@@ -219,7 +219,7 @@ func TestNoJobRouteSpendsTheCloudOnceForEveryRequest(t *testing.T) {
 	const flood = 1000
 
 	countGets := func(h *harness, n *int) {
-		h.backend.get = func(string) (*buildv1.Job, error) {
+		h.backend.get = func(string) (*buildv2.Job, error) {
 			*n++
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("no job"))
 		}
@@ -302,7 +302,7 @@ func TestAFloodOfInventedCredentialsMeetsTheGlobalJobLimit(t *testing.T) {
 		CallerRate: Rate{Burst: 100, Per: time.Minute},
 	})
 	asked := 0
-	h.backend.get = func(string) (*buildv1.Job, error) {
+	h.backend.get = func(string) (*buildv2.Job, error) {
 		asked++
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no job"))
 	}

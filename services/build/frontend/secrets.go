@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // secrets.go holds auth's answer about a hook for a little while, and the
@@ -126,8 +126,8 @@ func (c *cache[V]) forget(key string) {
 // is what makes a flood of invented hook ids cost one round trip each instead
 // of one per request. "auth is unreachable" is the opposite: remembering it
 // would keep this node refusing real pushes for a minute after auth came back.
-func (s *Service) hook(ctx context.Context, hookID string) (*authv1.Hook, error) {
-	return s.secrets.do(hookID, func() (*authv1.Hook, error) {
+func (s *Service) hook(ctx context.Context, hookID string) (*authv2.Hook, error) {
+	return s.secrets.do(hookID, func() (*authv2.Hook, error) {
 		ctx, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
 		defer cancel()
 		return s.hooks.Get(ctx, hookID)

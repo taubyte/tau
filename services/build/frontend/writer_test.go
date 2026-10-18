@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // A caller that hangs up mid-response is the ordinary case for a listing of a
@@ -61,8 +61,8 @@ func TestAListStopsWhenTheCallerGoesAway(t *testing.T) {
 // body.
 func TestAJobThatCannotBeEncodedIsNotHalfWritten(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.get = func(id string) (*buildv1.Job, error) {
-		return &buildv1.Job{Id: id, RepositoryKey: testRepoKey, Ref: "refs/heads/\xff"}, nil
+	h.backend.get = func(id string) (*buildv2.Job, error) {
+		return &buildv2.Job{Id: id, RepositoryKey: testRepoKey, Ref: "refs/heads/\xff"}, nil
 	}
 
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken))

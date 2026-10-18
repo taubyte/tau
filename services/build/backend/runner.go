@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
 )
 
@@ -237,7 +237,7 @@ func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.Cance
 		}
 
 		rec := j.rec()
-		rec.Status = int32(buildv1.JobStatus_JobStatusClaimed)
+		rec.Status = int32(buildv2.JobStatus_JobStatusClaimed)
 		rec.Attempt++
 		rec.UpdatedAt = s.now().Unix()
 		rec.ClaimedUntil = deadline.UnixNano()
@@ -405,7 +405,7 @@ func (s *Service) settle(ctx context.Context, d queue.Delivery, out *runOutput, 
 		}
 		// A record that is neither terminal nor this run's claim is the
 		// reopening above: its item goes back and this run's output is nobody's.
-		if !j.rec().terminal() && j.rec().status() != buildv1.JobStatus_JobStatusClaimed {
+		if !j.rec().terminal() && j.rec().status() != buildv2.JobStatus_JobStatusClaimed {
 			return j.requeue()
 		}
 		wanted = true
@@ -448,7 +448,7 @@ func (s *Service) settle(ctx context.Context, d queue.Delivery, out *runOutput, 
 			// untrue. So what is dropped here is the log, not the outcome.
 			return j.logged(p)
 		}
-		if j.rec().status() != buildv1.JobStatus_JobStatusClaimed {
+		if j.rec().status() != buildv2.JobStatus_JobStatusClaimed {
 			// THE REOPENED JOB KEEPS THIS RUN'S LOG, and that is the one thing
 			// this branch does that the single section did not have to. The
 			// first section found a record this run's outcome was about and the
@@ -536,7 +536,7 @@ func (s *Service) drainDeadLetter() (bool, error) {
 
 	return true, s.withJob(d.ID, func(j *held) error {
 		if j.found() && !j.rec().terminal() {
-			if err := j.finish(buildv1.JobStatus_JobStatusFailed, "attempts exhausted"); err != nil {
+			if err := j.finish(buildv2.JobStatus_JobStatusFailed, "attempts exhausted"); err != nil {
 				return err
 			}
 		}

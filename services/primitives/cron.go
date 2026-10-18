@@ -17,7 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	primitivesv1 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v1"
+	primitivesv2 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
 )
@@ -701,7 +701,7 @@ func overlapOf(schedule Schedule) string {
 func owed(schedule Schedule, slot time.Time) []queue.Item {
 	items := make([]queue.Item, 0, len(schedule.Fires)+len(schedule.Starts))
 
-	add := func(id string, fire *primitivesv1.CronFire, what string) {
+	add := func(id string, fire *primitivesv2.CronFire, what string) {
 		fire.Cron, fire.Slot, fire.Jitter = schedule.Name, slot.Unix(), int64(schedule.Jitter)
 		body, err := proto.Marshal(fire)
 		if err != nil {
@@ -712,8 +712,8 @@ func owed(schedule Schedule, slot time.Time) []queue.Item {
 	}
 
 	for _, target := range schedule.Fires {
-		add(fireID(schedule, slot, target.key()), &primitivesv1.CronFire{
-			Owes: &primitivesv1.CronFire_Target{Target: &primitivesv1.CronTarget{
+		add(fireID(schedule, slot, target.key()), &primitivesv2.CronFire{
+			Owes: &primitivesv2.CronFire_Target{Target: &primitivesv2.CronTarget{
 				Project:     target.Project,
 				Environment: target.Environment,
 				Scope:       target.Scope,
@@ -729,8 +729,8 @@ func owed(schedule Schedule, slot time.Time) []queue.Item {
 		// start actually needs is the queue it lands in, which the handle names
 		// on its own. See invoke.StartGrant for why the handle is the first
 		// step's queue and never the workflow's own id.
-		add(startID(schedule, slot, start.Handle), &primitivesv1.CronFire{
-			Owes: &primitivesv1.CronFire_Start{Start: &primitivesv1.CronStart{
+		add(startID(schedule, slot, start.Handle), &primitivesv2.CronFire{
+			Owes: &primitivesv2.CronFire_Start{Start: &primitivesv2.CronStart{
 				Handle: start.Handle,
 				Label:  start.Label,
 			}},
@@ -747,7 +747,7 @@ func owed(schedule Schedule, slot time.Time) []queue.Item {
 // NACKED rather than left to expire, because this queue declares a retry
 // interval to space the next attempt by — see fireRetry.
 func (c *crons) run(ctx context.Context, held *queue.Queue, schedule Schedule, item queue.Delivery) {
-	fire := &primitivesv1.CronFire{}
+	fire := &primitivesv2.CronFire{}
 	if err := proto.Unmarshal(item.Data, fire); err != nil || fire.GetOwes() == nil {
 		// A BODY NOTHING CAN READ IS NOT WORK TO RETRY. Five more attempts at
 		// the same bytes end in a dead letter nobody drains; discarding it says
@@ -804,7 +804,7 @@ func (c *crons) run(ctx context.Context, held *queue.Queue, schedule Schedule, i
 // name it was written with; the schedule is the cron as it stands this minute.
 // They differ only across a rename, and there the live one is what the callee
 // can look up — the handle naming the queue is the id either way.
-func (c *crons) invoke(ctx context.Context, schedule Schedule, fire *primitivesv1.CronFire) bool {
+func (c *crons) invoke(ctx context.Context, schedule Schedule, fire *primitivesv2.CronFire) bool {
 	at := Target{
 		Project:     fire.GetTarget().GetProject(),
 		Environment: fire.GetTarget().GetEnvironment(),
@@ -841,7 +841,7 @@ func (c *crons) invoke(ctx context.Context, schedule Schedule, fire *primitivesv
 // own budget on it — which is why this is a send and not an invocation: a
 // workflow runs on no tier. The id is the cron and the SLOT, so a fire this
 // queue delivered twice is still one run.
-func (c *crons) begin(ctx context.Context, fire *primitivesv1.CronFire, start *primitivesv1.CronStart) bool {
+func (c *crons) begin(ctx context.Context, fire *primitivesv2.CronFire, start *primitivesv2.CronStart) bool {
 	// THE HANDLE IS THE WHOLE OF WHAT IS READ. [Tier.Send] resolves a grant by
 	// taking its handle apart and reading the DECLARATION — "the caller names a
 	// primitive; it does not describe one" — so the author's budget comes off

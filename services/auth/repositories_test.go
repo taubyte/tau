@@ -10,7 +10,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // This file covers RepositoryService's handler directly — no wire, no
@@ -25,7 +25,7 @@ func TestRepositoryGet_NotFound(t *testing.T) {
 	s := newTestService(t)
 	h := &repositoryHandler{s}
 
-	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
+	_, err := h.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
@@ -34,7 +34,7 @@ func TestRepositoryGet_BadKey(t *testing.T) {
 	s := newTestService(t)
 	h := &repositoryHandler{s}
 
-	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: ""}))
+	_, err := h.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: ""}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }
@@ -46,7 +46,7 @@ func TestRepositoryGet_Found(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, registerRepository(t.Context(), s.kv, key, peer.ID("QmOwner")))
 
-	res, err := h.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
+	res, err := h.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
 	require.NoError(t, err)
 	assert.Equal(t, "github.com/acme/pay", res.Msg.GetRepositoryKey())
 	assert.NotEmpty(t, res.Msg.GetDeployKey())
@@ -61,7 +61,7 @@ func TestRepositoryGet_CarriesProjectLink(t *testing.T) {
 	require.NoError(t, registerRepository(t.Context(), s.kv, key, peer.ID("QmOwner")))
 	require.NoError(t, linkRepositoryToProject(t.Context(), s.kv, key, "proj-1"))
 
-	res, err := h.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
+	res, err := h.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
 	require.NoError(t, err)
 	assert.Equal(t, "proj-1", res.Msg.GetProjectId())
 }
@@ -70,7 +70,7 @@ func TestRepositoryRegister_BadKey(t *testing.T) {
 	s := newTestService(t)
 	h := &repositoryHandler{s}
 
-	_, err := h.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: ""}))
+	_, err := h.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: ""}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }
@@ -83,7 +83,7 @@ func TestRepositoryRegister_NoCallerIdentity(t *testing.T) {
 	s := newTestService(t)
 	h := &repositoryHandler{s}
 
-	_, err := h.Register(context.Background(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
+	_, err := h.Register(context.Background(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 }
@@ -92,7 +92,7 @@ func TestRepositoryUnregister_BadKey(t *testing.T) {
 	s := newTestService(t)
 	h := &repositoryHandler{s}
 
-	_, err := h.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: ""}))
+	_, err := h.Unregister(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: ""}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }
@@ -101,7 +101,7 @@ func TestRepositoryUnregister_NoCallerIdentity(t *testing.T) {
 	s := newTestService(t)
 	h := &repositoryHandler{s}
 
-	_, err := h.Unregister(context.Background(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
+	_, err := h.Unregister(context.Background(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 }

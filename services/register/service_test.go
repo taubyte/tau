@@ -93,7 +93,7 @@ func TestCloseIsIdempotentAndFinal(t *testing.T) {
 // first v2 service and the swap, and libp2p would silently let the second
 // listener replace the first.
 func TestTheProtocolIsNotV1s(t *testing.T) {
-	require.Equal(t, "/tau/register/v1", string(Protocol))
+	require.Equal(t, "/tau/register/v2", string(Protocol))
 	require.Equal(t, Protocol, Descriptor.Protocol)
 	require.Equal(t, IngressNone, Descriptor.Ingress, "publish moves what a project runs; it does not face the internet")
 }

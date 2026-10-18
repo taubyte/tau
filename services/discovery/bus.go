@@ -30,7 +30,7 @@ func TopicOf(cloud string) string {
 	if cloud == "" {
 		cloud = "default"
 	}
-	return "/tau/discovery/v1/" + cloud
+	return "/tau/discovery/v2/" + cloud
 }
 
 // PubSub is the slice of a libp2p pubsub this bus needs, declared here so the

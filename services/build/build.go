@@ -26,10 +26,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v1/buildv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 )
 
-// Protocol is "/tau/build/v1" — walked off the schema, never typed
+// Protocol is "/tau/build/v2" — walked off the schema, never typed
 // (service-conventions.md §2d). rpc.Protocol(QueueServiceName) and
 // rpc.Protocol(JobServiceName) both return it, because the id names the proto
 // PACKAGE's listener and both service blocks mount behind one mux; build_test.go
@@ -38,7 +38,7 @@ import (
 // The "tau." segment is what keeps this off v1's live "/patrick/v1" and
 // "/monkey/v1" (services/common/names.go) for the whole span in which v1 and
 // v2 run in one swarm and one binary.
-var Protocol = rpc.Protocol(buildv1connect.QueueServiceName)
+var Protocol = rpc.Protocol(buildv2connect.QueueServiceName)
 
 // QueueDomain names the consistency domain build's queue lives in — the one
 // build.proto fixes by literal ("a backend node claims its own work by joining

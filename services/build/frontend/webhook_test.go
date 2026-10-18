@@ -11,7 +11,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // A hostile caller gets one of these. The friendly case is one test; the rest
@@ -51,7 +51,7 @@ func TestEachAnswerAboutADeliveryHasItsOwnStatus(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, Config{})
-			h.deliveries.verify = func(*authv1.Hook, http.Header, []byte) (Push, error) { return Push{}, tc.err }
+			h.deliveries.verify = func(*authv2.Hook, http.Header, []byte) (Push, error) { return Push{}, tc.err }
 
 			w := h.do(t, webhookRequest(webhookOpts{}))
 
@@ -67,7 +67,7 @@ func TestEachAnswerAboutADeliveryHasItsOwnStatus(t *testing.T) {
 // role passes that on without reading the payload itself.
 func TestWhatIsQueuedIsWhatWasVerified(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.deliveries.verify = func(hook *authv1.Hook, _ http.Header, _ []byte) (Push, error) {
+	h.deliveries.verify = func(hook *authv2.Hook, _ http.Header, _ []byte) (Push, error) {
 		return Push{Repository: "gitlab.example.com/group/sub/pay", Ref: "refs/heads/main", Commit: testSHA}, nil
 	}
 
@@ -78,7 +78,7 @@ func TestWhatIsQueuedIsWhatWasVerified(t *testing.T) {
 func TestAQueryParameterCannotChooseTheHook(t *testing.T) {
 	h := newHarness(t, Config{})
 	asked := []string{}
-	h.hooks.get = func(id string) (*authv1.Hook, error) {
+	h.hooks.get = func(id string) (*authv2.Hook, error) {
 		asked = append(asked, id)
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such hook"))
 	}
@@ -96,8 +96,8 @@ func TestAQueryParameterCannotChooseTheHook(t *testing.T) {
 // hook this cloud cannot authenticate must fail closed.
 func TestAnEmptySecretIsAFailureAndNeverASkippedMAC(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.hooks.get = func(id string) (*authv1.Hook, error) {
-		return &authv1.Hook{Id: id, RepositoryKey: testRepoKey}, nil
+	h.hooks.get = func(id string) (*authv2.Hook, error) {
+		return &authv2.Hook{Id: id, RepositoryKey: testRepoKey}, nil
 	}
 
 	w := h.do(t, webhookRequest(webhookOpts{omitSig: true}))
@@ -280,7 +280,7 @@ func TestARedeliveredWebhookCostsOneLookupNotTwo(t *testing.T) {
 // zero-valued secret out of a nil message.
 func TestAHookThatIsNeitherAnAnswerNorAnErrorFailsClosed(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.hooks.get = func(string) (*authv1.Hook, error) { return nil, nil }
+	h.hooks.get = func(string) (*authv2.Hook, error) { return nil, nil }
 
 	w := h.do(t, webhookRequest(webhookOpts{}))
 

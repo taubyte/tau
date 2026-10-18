@@ -8,16 +8,16 @@ import (
 	"github.com/ipfs/go-cid"
 	dv "github.com/taubyte/domain-validation"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// domainHandler implements authv1connect.DomainServiceHandler. See
+// domainHandler implements authv2connect.DomainServiceHandler. See
 // repositories.go's repositoryHandler doc for why this is its own type
 // rather than a method set on *Service.
 type domainHandler struct{ s *Service }
 
-var _ authv1connect.DomainServiceHandler = (*domainHandler)(nil)
+var _ authv2connect.DomainServiceHandler = (*domainHandler)(nil)
 
 // minProjectIDLength mirrors services/auth/api_hooks.go's registerDomainStream,
 // which refuses a project id shorter than 8 characters before it even tries
@@ -39,7 +39,7 @@ const minProjectIDLength = 8
 // registerDomainStream does not either — because that verification happens
 // on the read side, when whoever resolves the DNS record checks the claim
 // against the project's own published config, not here at signing time.
-func (h *domainHandler) Register(ctx context.Context, req *connect.Request[authv1.RegisterDomainRequest]) (*connect.Response[authv1.RegisterDomainResponse], error) {
+func (h *domainHandler) Register(ctx context.Context, req *connect.Request[authv2.RegisterDomainRequest]) (*connect.Response[authv2.RegisterDomainResponse], error) {
 	fqdn := req.Msg.GetFqdn()
 	if err := requireID("fqdn", fqdn); err != nil {
 		return nil, err
@@ -65,7 +65,7 @@ func (h *domainHandler) Register(ctx context.Context, req *connect.Request[authv
 		return nil, errInternal("signing domain claim: %w", err)
 	}
 
-	return connect.NewResponse(&authv1.RegisterDomainResponse{
+	return connect.NewResponse(&authv2.RegisterDomainResponse{
 		Token:         string(token),
 		DnsEntry:      fmt.Sprintf("%s.%s", projectID[:minProjectIDLength], fqdn),
 		DnsRecordType: "txt",

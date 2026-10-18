@@ -16,7 +16,7 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
 )
@@ -534,7 +534,7 @@ func newHarnessOverCfg(t testing.TB, over Store, store *fakeStore, adjust func(*
 
 func (h *harness) push(t testing.TB, ref, commit string) string {
 	t.Helper()
-	id, err := h.enqueue(t.Context(), &buildv1.PushEvent{
+	id, err := h.enqueue(t.Context(), &buildv2.PushEvent{
 		RepositoryKey: testRepo,
 		Ref:           ref,
 		CommitSha:     commit,
@@ -555,7 +555,7 @@ func (h *harness) mustRecord(t testing.TB, id string) jobRecord {
 // one read, and the write that read decided. A fixture cannot write it any
 // other way — finish is a method on the handle withJob hands its body, and
 // there is no handle anywhere else — so the fixture does what the code does.
-func (h *harness) finishNow(t testing.TB, id string, status buildv1.JobStatus, reason string) error {
+func (h *harness) finishNow(t testing.TB, id string, status buildv2.JobStatus, reason string) error {
 	t.Helper()
 	return h.withJob(id, func(j *held) error {
 		require.True(t, j.found(), "job %s must exist", id)
@@ -563,7 +563,7 @@ func (h *harness) finishNow(t testing.TB, id string, status buildv1.JobStatus, r
 	})
 }
 
-func (h *harness) status(t testing.TB, id string) buildv1.JobStatus {
+func (h *harness) status(t testing.TB, id string) buildv2.JobStatus {
 	t.Helper()
 	return h.mustRecord(t, id).status()
 }

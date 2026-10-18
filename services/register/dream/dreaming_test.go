@@ -16,8 +16,8 @@ import (
 	"github.com/taubyte/tau/services/register"
 	registerDream "github.com/taubyte/tau/services/register/dream"
 
-	registerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v1/registerv1connect"
+	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 )
 
 // THIS IS THE PROPERTY A MAP CANNOT SHOW. pkg/register is a state machine over
@@ -50,16 +50,16 @@ func TestAPublishOnOneNodeResolvesOnAnother(t *testing.T) {
 	toB := dial(t, nodes[a], b)
 	toA := dial(t, nodes[b], a)
 
-	_, err = toB.Publish(t.Context(), connect.NewRequest(&registerv1.PublishRequest{
+	_, err = toB.Publish(t.Context(), connect.NewRequest(&registerv2.PublishRequest{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("memory: 64MB"),
 	}))
 	require.NoError(t, err)
 
 	// The CRDT is eventually consistent, so the assertion is that it arrives,
 	// not that it has already arrived.
-	var pointer *registerv1.Pointer
+	var pointer *registerv2.Pointer
 	require.Eventually(t, func() bool {
-		res, err := toA.Resolve(t.Context(), connect.NewRequest(&registerv1.ResolveRequest{
+		res, err := toA.Resolve(t.Context(), connect.NewRequest(&registerv2.ResolveRequest{
 			Project: "shop", Environment: "prod",
 		}))
 		if err != nil {
@@ -73,7 +73,7 @@ func TestAPublishOnOneNodeResolvesOnAnother(t *testing.T) {
 
 	// And the object it names came across too, which is the half that actually
 	// carries the user's configuration.
-	obj, err := toA.Object(t.Context(), connect.NewRequest(&registerv1.ObjectRequest{Object: pointer.GetObject()}))
+	obj, err := toA.Object(t.Context(), connect.NewRequest(&registerv2.ObjectRequest{Object: pointer.GetObject()}))
 	require.NoError(t, err)
 	require.Equal(t, []byte("memory: 64MB"), obj.Msg.GetCompiled())
 }
@@ -86,7 +86,7 @@ func nodesByID(m *mesh.Mesh) map[string]peer.Node {
 	return out
 }
 
-func dial(t *testing.T, from peer.Node, to string) registerv1connect.RegisterServiceClient {
+func dial(t *testing.T, from peer.Node, to string) registerv2connect.RegisterServiceClient {
 	t.Helper()
 	id, err := libp2ppeer.Decode(to)
 	require.NoError(t, err)
@@ -95,5 +95,5 @@ func dial(t *testing.T, from peer.Node, to string) registerv1connect.RegisterSer
 	require.NoError(t, err)
 	t.Cleanup(c.Close)
 
-	return registerv1connect.NewRegisterServiceClient(c.HTTP(), c.URL())
+	return registerv2connect.NewRegisterServiceClient(c.HTTP(), c.URL())
 }

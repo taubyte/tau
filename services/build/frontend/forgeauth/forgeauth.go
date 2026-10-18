@@ -27,7 +27,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/services/build/frontend"
 )
 
@@ -108,7 +108,7 @@ func (i *Forges) WriteAccess(ctx context.Context, token string, key repokey.Key)
 //     that reads no deliveries, a key it cannot address) -> the error itself
 //   - anything else, which is a genuine delivery naming no usable push ->
 //     ErrMalformed
-func (i *Forges) Verify(hook *authv1.Hook, header http.Header, body []byte) (frontend.Push, error) {
+func (i *Forges) Verify(hook *authv2.Hook, header http.Header, body []byte) (frontend.Push, error) {
 	key, err := repokey.Parse("https://" + hook.GetRepositoryKey())
 	if err != nil {
 		return frontend.Push{}, fmt.Errorf("build: hook %q names no repository: %w", hook.GetId(), err)

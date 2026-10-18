@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/services/build/frontend"
 )
 
@@ -26,9 +26,9 @@ import (
 
 const commit = "1111111111111111111111111111111111111111"
 
-type hooks struct{ hook *authv1.Hook }
+type hooks struct{ hook *authv2.Hook }
 
-func (h hooks) Get(context.Context, string) (*authv1.Hook, error) { return h.hook, nil }
+func (h hooks) Get(context.Context, string) (*authv2.Hook, error) { return h.hook, nil }
 
 type projects struct{}
 
@@ -66,7 +66,7 @@ func TestEveryForgesDeliveriesReachTheSameRoute(t *testing.T) {
 
 			queue := &backend{}
 			svc, err := frontend.New(frontend.Config{},
-				frontend.WithHooks(hooks{&authv1.Hook{
+				frontend.WithHooks(hooks{&authv2.Hook{
 					Id: "hook-1", RepositoryKey: key.String(), Handle: "7",
 					Scheme: string(sig.Scheme()), Secret: secret.Expose(),
 				}}),
@@ -132,11 +132,11 @@ func TestAHookThisCloudCannotCheckIsNotAnUnverifiedDelivery(t *testing.T) {
 	forges, err := New(reg)
 	require.NoError(t, err)
 
-	_, err = forges.Verify(&authv1.Hook{RepositoryKey: "codeberg.org/acme/pay", Scheme: "hub-sha256", Secret: bytes.Repeat([]byte("k"), 32)}, http.Header{}, []byte("{}"))
+	_, err = forges.Verify(&authv2.Hook{RepositoryKey: "codeberg.org/acme/pay", Scheme: "hub-sha256", Secret: bytes.Repeat([]byte("k"), 32)}, http.Header{}, []byte("{}"))
 	require.Error(t, err)
 	require.NotErrorIs(t, err, frontend.ErrUnverified)
 
-	_, err = forges.Verify(&authv1.Hook{RepositoryKey: "not a key"}, http.Header{}, nil)
+	_, err = forges.Verify(&authv2.Hook{RepositoryKey: "not a key"}, http.Header{}, nil)
 	require.ErrorContains(t, err, "names no repository")
 }
 
@@ -156,7 +156,7 @@ func TestAGenuineButUnreadableDeliveryIsMalformed(t *testing.T) {
 	require.NoError(t, err)
 	header.Set("X-Fake-Event", "push")
 
-	_, err = forges.Verify(&authv1.Hook{
+	_, err = forges.Verify(&authv2.Hook{
 		RepositoryKey: f.Keys().Writable.String(), Scheme: string(forge.SchemeHubSHA256), Secret: secret.Expose(),
 	}, header, body)
 	require.ErrorIs(t, err, frontend.ErrMalformed)

@@ -10,7 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/services/build/livelog"
 )
 
@@ -21,17 +21,17 @@ import (
 // collector is a ServerStream's Send, which is all the handler uses.
 type collector struct {
 	mu     sync.Mutex
-	chunks []*buildv1.LogChunk
+	chunks []*buildv2.LogChunk
 	fail   error
 }
 
-func (c *collector) send(chunk *buildv1.LogChunk) error {
+func (c *collector) send(chunk *buildv2.LogChunk) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.fail != nil {
 		return c.fail
 	}
-	c.chunks = append(c.chunks, &buildv1.LogChunk{
+	c.chunks = append(c.chunks, &buildv2.LogChunk{
 		Data:       append([]byte(nil), chunk.GetData()...),
 		NextOffset: chunk.GetNextOffset(),
 	})

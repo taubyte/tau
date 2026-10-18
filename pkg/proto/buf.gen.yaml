@@ -2,25 +2,24 @@
 # direct require) served over libp2p streams via go-libp2p-gostream — the
 # shape pkg/raft/transport.go already runs in production for the raft
 # consensus transport. No browser client: this is server-to-server only, so
-# unlike pkg/taucorder/proto and tools/spore-drive/proto there is no
+# unlike tools/spore-drive/proto there is no
 # protoc-gen-es/connect-es pair here.
 #
-# One tree, one package per v2 service — tau/<service>/v1/<service>.proto,
-# package tau.<service>.v1 — the same split tools/spore-drive/proto uses for its
-# independent domains (config/drive/health/mock), not taucorder's one shared
-# package across every file. v2's services are independent bounded contexts
+# One tree, one package per v2 service — tau/<service>/v2/<service>.proto,
+# package tau.<service>.v2 — the same split tools/spore-drive/proto uses for its
+# independent domains (config/drive/health/mock), not one shared package
+# across every file. v2's services are independent bounded contexts
 # owned separately, so each versions and breaking-checks on its own; nothing
 # here forces them to move together the way one shared package would.
 # Cross-service types (a repository key, a peer id, an environment — v2's
-# own, never legacy's pkg/specs address space: see pkg/tcc/taubyte/v2's
-# boundary test) belong in tau/common/v1/common.proto, package tau.common.v1,
+# own: see pkg/tcc/taubyte/v2's boundary test) belong in
+# tau/common/v2/common.proto, package tau.common.v2,
 # imported by each service the way drive.proto imports config.proto.
 #
 # The "tau." segment is service-conventions.md §2d's anti-collision rule, and
 # it is load-bearing rather than tidy: the protocol id a v2 service listens on
-# is derived from the package (rpc.Protocol), so `package auth.v1` would derive
-# "/auth/v1" — the id v1 answers on today (services/common/names.go) and will
-# keep answering on for the whole coexistence window. The directory follows the
+# is derived from the package (rpc.Protocol), so `package auth.v2` would derive
+# "/auth/v2", a bare service name with nothing marking it as tau's. The directory follows the
 # package because buf's PACKAGE_DIRECTORY_MATCH requires it. Both halves are
 # checked by drift_test.go's neighbour, rules_test.go.
 #

@@ -12,7 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build"
 )
@@ -21,7 +21,7 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	var during buildv1.JobStatus
+	var during buildv2.JobStatus
 	h.runner.run = func(_ context.Context, w Work, out Output) error {
 		during = h.status(t, w.JobID)
 		fmt.Fprintf(out, "building %s\n", w.CommitSHA)
@@ -30,11 +30,11 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 
 	require.True(t, h.mustStep(t))
 
-	require.Equal(t, buildv1.JobStatus_JobStatusClaimed, during,
+	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, during,
 		"the record must say Claimed while the run is going")
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status())
 	require.Equal(t, uint32(1), rec.Attempt)
 	require.Zero(t, rec.ClaimedUntil)
 	require.Empty(t, rec.Holder)
@@ -107,7 +107,7 @@ func TestARunThatFailsIsTerminalRatherThanRetried(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, "compile error")
 
 	ready, claimed := h.work.Depth()
@@ -127,7 +127,7 @@ func TestARunnerThatPanicsIsAFailedBuild(t *testing.T) {
 	h.runner.run = func(context.Context, Work, Output) error { panic("nil map write") }
 
 	require.True(t, h.mustStep(t))
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, h.status(t, id))
 	require.Contains(t, h.mustRecord(t, id).Reason, "panicked")
 }
 
@@ -148,7 +148,7 @@ func TestCancelWhileRunningStopsTheRunAndKeepsTheCancelledStatus(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	require.Equal(t, context.Canceled, ctxErr)
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id),
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id),
 		"a cancelled job must not be overwritten with the outcome of the run that was cancelled")
 	require.Empty(t, h.lastCommit(testRepo, testRef))
 }
@@ -221,7 +221,7 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 	require.ErrorIs(t, err, queue.ErrStaleDelivery)
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusClaimed, rec.status(),
+	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, rec.status(),
 		"the loser must not write a terminal status")
 	require.Empty(t, h.lastCommit(testRepo, testRef), "and must not move the anchor")
 	require.Zero(t, h.assets.count(),
@@ -250,7 +250,7 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	_, err := h.step(t.Context())
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 	require.ErrorContains(t, err, "not the leader of "+build.QueueDomain)
-	require.Equal(t, buildv1.JobStatus_JobStatusClaimed, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, h.status(t, id))
 	require.Empty(t, h.lastCommit(testRepo, testRef))
 
 	_, claimed := h.work.Depth()
@@ -272,7 +272,7 @@ func TestAWorkerThatDiedCostsAnAttemptAndTheJobComesBack(t *testing.T) {
 	h.clock.advance(h.cfg.Queue.VisibilityTimeout + time.Second)
 
 	require.True(t, h.mustStep(t))
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	require.Equal(t, uint32(1), h.mustRecord(t, id).Attempt,
 		"the record counts the runs it actually saw")
 
@@ -299,7 +299,7 @@ func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
 
 	// The sweep in this cycle buries it; there is nothing left to claim.
 	require.False(t, h.mustStep(t))
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id),
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id),
 		"a buried job's record is still Open until something drains the dead letter")
 
 	dead := h.deadLetter(t)
@@ -310,7 +310,7 @@ func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Equal(t, "attempts exhausted", rec.Reason)
 	require.Empty(t, h.store.Keys(openIndexPrefix(testRepo)))
 
@@ -325,12 +325,12 @@ func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
 func TestDrainingADeadLetterEntryForAFinishedJobJustAcksIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusCancelled, "cancelled"))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusCancelled, "cancelled"))
 
 	require.NoError(t, h.dead.Push(id, nil))
 	require.True(t, h.mustStep(t))
 
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 	ready, _ := h.dead.Depth()
 	require.Equal(t, 0, ready)
 }
@@ -354,7 +354,7 @@ func TestAnItemWithNoRecordIsAckedAndDropped(t *testing.T) {
 func TestARedeliveredJobThatIsAlreadyFinishedIsDropped(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusSuccess, ""))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusSuccess, ""))
 
 	require.True(t, h.mustStep(t))
 	require.Empty(t, h.runner.seen())
@@ -382,7 +382,7 @@ func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 	_, err = h.step(t.Context())
 	require.ErrorIs(t, err, queue.ErrNotLeader)
 
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 	ready, claimed := h.work.Depth()
 	require.Equal(t, 1, ready)
 	require.Equal(t, 0, claimed)
@@ -397,7 +397,7 @@ func TestANodeWithNoRunnerKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
-	id, err := s.enqueue(t.Context(), &buildv1.PushEvent{
+	id, err := s.enqueue(t.Context(), &buildv2.PushEvent{
 		RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 	})
 	require.NoError(t, err)
@@ -413,7 +413,7 @@ func TestANodeWithNoRunnerKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 	rec, found, err := s.readRecord(id)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, rec.status())
 }
 
 func TestStepReportsAStoreThatRefusesTheClaimWrite(t *testing.T) {
@@ -458,7 +458,7 @@ func TestTheStartedLoopEventuallyRunsAQueuedJob(t *testing.T) {
 	}
 
 	require.Eventually(t, func() bool {
-		return h.status(t, id) == buildv1.JobStatus_JobStatusSuccess
+		return h.status(t, id) == buildv2.JobStatus_JobStatusSuccess
 	}, 5*time.Second, time.Millisecond)
 }
 
@@ -537,7 +537,7 @@ func TestSettleReportsARecordItCannotRead(t *testing.T) {
 func TestTheDeadLetterDrainReportsAnAckItCannotMake(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusCancelled, "cancelled"))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusCancelled, "cancelled"))
 	require.NoError(t, h.dead.Push(id, nil))
 
 	// The claim's own entry commits, and the ack's does not.
@@ -580,7 +580,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 		_, err := h.step(t.Context())
 		require.ErrorContains(t, err, "barrier on "+build.QueueDomain)
 		require.Empty(t, h.runner.seen(), "a job whose section could not barrier must not run")
-		require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id),
+		require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id),
 			"and its record must not have moved")
 	})
 
@@ -598,7 +598,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 		require.ErrorContains(t, err, "barrier on "+build.QueueDomain)
 
 		h.store.failBarrier(nil)
-		require.Equal(t, buildv1.JobStatus_JobStatusClaimed, h.status(t, id),
+		require.Equal(t, buildv2.JobStatus_JobStatusClaimed, h.status(t, id),
 			"a section that could not barrier must not decide the outcome of the run")
 		require.Empty(t, h.lastCommit(testRepo, testRef))
 		_, claimed := h.work.Depth()
@@ -616,7 +616,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 		require.ErrorContains(t, err, "barrier on "+build.QueueDomain)
 
 		h.store.failBarrier(nil)
-		require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+		require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 		ready, claimed := h.dead.Depth()
 		require.Equal(t, 0, ready)
 		require.Equal(t, 1, claimed, "the entry stays claimed and comes back")
@@ -736,7 +736,7 @@ func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 		return out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact"))
 	}
 	require.True(t, h.mustStep(t))
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 }
 
 func TestWithMeterRefusesNil(t *testing.T) {

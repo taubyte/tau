@@ -8,7 +8,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // The one inconsistency this design can produce: a record written and a push
@@ -36,7 +36,7 @@ func TestReconcileReQueuesARecordWhosePushWasLost(t *testing.T) {
 
 	ready, _ = h.work.Depth()
 	require.Equal(t, 1, ready)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
 // IT CANNOT TOUCH A RUNNING JOB, and that is Push's own dedup rather than a
@@ -59,7 +59,7 @@ func TestReconcileCannotDisturbAClaimedJob(t *testing.T) {
 
 	// And the delivery is still the live one.
 	require.NoError(t, h.work.Ack(d))
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
 // An open row whose record has finished, or has gone, is the row that is wrong.
@@ -69,7 +69,7 @@ func TestReconcileDropsStaleOpenRows(t *testing.T) {
 	h := newHarness(t)
 
 	finished := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finishNow(t, finished, buildv1.JobStatus_JobStatusSuccess, ""))
+	require.NoError(t, h.finishNow(t, finished, buildv2.JobStatus_JobStatusSuccess, ""))
 	// finish already removed the row; put it back to stand for a crash between
 	// the two halves of some earlier transition.
 	h.store.put(t, openIndexKey(testRepo, finished), nil)
@@ -136,7 +136,7 @@ func TestReconcileReportsWhatItCannotRead(t *testing.T) {
 		d, err := h.work.Claim()
 		require.NoError(t, err)
 		require.NoError(t, h.work.Ack(d))
-		require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "boom"))
+		require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "boom"))
 
 		applied, exists := stale.fakeStore.Get(jobRecordKey(id))
 		require.True(t, exists)
@@ -213,7 +213,7 @@ func TestMendDoesNotDropAnOpenRowItReadAtAnOlderPrefix(t *testing.T) {
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	require.NoError(t, h.work.Ack(d))
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "boom"))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "boom"))
 	applied, exists := stale.fakeStore.Get(jobRecordKey(id))
 	require.True(t, exists)
 
@@ -236,7 +236,7 @@ func TestMendDoesNotDropAnOpenRowItReadAtAnOlderPrefix(t *testing.T) {
 	_, row = stale.fakeStore.Get(openIndexKey(testRepo, id))
 	t.Logf("status=%s openRow=%v barriers=%d", rec.status(), row, n)
 
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, rec.status(),
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, rec.status(),
 		"the retry was accepted, so the job is open")
 	require.True(t, row,
 		"and its open row must survive a pass whose record read predates the retry")

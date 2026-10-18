@@ -16,8 +16,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	taupeer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
-	raftv1 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v1/raftv1connect"
+	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
 )
 
 var clientLogger = logging.Logger("raft-client")
@@ -70,7 +70,7 @@ type client struct {
 
 type peerConn struct {
 	conn *rpc.Client
-	svc  raftv1connect.RaftServiceClient
+	svc  raftv2connect.RaftServiceClient
 }
 
 // newInternalClient creates a new internal raft p2p client for the given namespace
@@ -102,7 +102,7 @@ func NewClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD
 	return cli.(*client), nil
 }
 
-func (c *client) to(pid peer.ID) (raftv1connect.RaftServiceClient, error) {
+func (c *client) to(pid peer.ID) (raftv2connect.RaftServiceClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.peers == nil {
@@ -115,7 +115,7 @@ func (c *client) to(pid peer.ID) (raftv1connect.RaftServiceClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	pc := &peerConn{conn: conn, svc: raftv1connect.NewRaftServiceClient(conn.HTTP(), conn.URL(), c.opts...)}
+	pc := &peerConn{conn: conn, svc: raftv2connect.NewRaftServiceClient(conn.HTTP(), conn.URL(), c.opts...)}
 	c.peers[pid] = pc
 	return pc.svc, nil
 }
@@ -124,7 +124,7 @@ func (c *client) to(pid peer.ID) (raftv1connect.RaftServiceClient, error) {
 // every peer failing it returns the first failure, so a caller can tell a
 // refusal (no leader) from an unreachable peer.
 func first[T any](ctx context.Context, c *client, peers []peer.ID, timeout time.Duration,
-	call func(context.Context, raftv1connect.RaftServiceClient) (*connect.Response[T], error)) (*connect.Response[T], error) {
+	call func(context.Context, raftv2connect.RaftServiceClient) (*connect.Response[T], error)) (*connect.Response[T], error) {
 	if len(peers) == 0 {
 		return nil, errors.New("no peers to send to")
 	}
@@ -175,8 +175,8 @@ func (c *client) Set(key string, value []byte, timeout time.Duration, peers ...p
 	if value == nil {
 		value = []byte{}
 	}
-	req := &raftv1.SetRequest{Key: key, Value: value, TimeoutMs: timeout.Milliseconds()}
-	_, err := first(c.ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.SetResponse], error) {
+	req := &raftv2.SetRequest{Key: key, Value: value, TimeoutMs: timeout.Milliseconds()}
+	_, err := first(c.ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.SetResponse], error) {
 		return s.Set(ctx, connect.NewRequest(req))
 	})
 	if err != nil {
@@ -186,7 +186,7 @@ func (c *client) Set(key string, value []byte, timeout time.Duration, peers ...p
 }
 
 func (c *client) Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, bool, error) {
-	req := &raftv1.GetRequest{Key: key}
+	req := &raftv2.GetRequest{Key: key}
 	if barrierNs != 0 {
 		if barrierNs <= 0 {
 			return nil, false, ErrInvalidBarrier
@@ -198,7 +198,7 @@ func (c *client) Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, boo
 		req.BarrierNs = &barrierNs
 	}
 
-	res, err := first(c.ctx, c, peers, sendToPeerTimeout+time.Duration(barrierNs), func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.GetResponse], error) {
+	res, err := first(c.ctx, c, peers, sendToPeerTimeout+time.Duration(barrierNs), func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.GetResponse], error) {
 		return s.Get(ctx, connect.NewRequest(req))
 	})
 	if err != nil {
@@ -215,8 +215,8 @@ func (c *client) Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, boo
 }
 
 func (c *client) Delete(key string, timeout time.Duration, peers ...peer.ID) error {
-	req := &raftv1.DeleteRequest{Key: key, TimeoutMs: timeout.Milliseconds()}
-	_, err := first(c.ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.DeleteResponse], error) {
+	req := &raftv2.DeleteRequest{Key: key, TimeoutMs: timeout.Milliseconds()}
+	_, err := first(c.ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.DeleteResponse], error) {
 		return s.Delete(ctx, connect.NewRequest(req))
 	})
 	if err != nil {
@@ -229,8 +229,8 @@ func (c *client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.
 	clientLogger.Infof("sending joinVoter for %s to %d targets (timeout=%v)",
 		peerID.ShortString(), len(peers), timeout)
 
-	req := &raftv1.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: timeout.Milliseconds()}
-	_, err := first(c.ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.JoinVoterResponse], error) {
+	req := &raftv2.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: timeout.Milliseconds()}
+	_, err := first(c.ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.JoinVoterResponse], error) {
 		return s.JoinVoter(ctx, connect.NewRequest(req))
 	})
 	if err != nil {
@@ -247,8 +247,8 @@ func (c *client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.
 }
 
 func (c *client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
-	req := &raftv1.KeysRequest{Prefix: prefix}
-	res, err := first(c.ctx, c, peers, sendToPeerTimeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.KeysResponse], error) {
+	req := &raftv2.KeysRequest{Prefix: prefix}
+	res, err := first(c.ctx, c, peers, sendToPeerTimeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.KeysResponse], error) {
 		return s.Keys(ctx, connect.NewRequest(req))
 	})
 	if err != nil {
@@ -262,11 +262,11 @@ func (c *client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
 }
 
 func (c *client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error) {
-	req := &raftv1.ExchangePeersRequest{StartMs: ourStart.UnixMilli(), SeenAt: ourPeers}
+	req := &raftv2.ExchangePeersRequest{StartMs: ourStart.UnixMilli(), SeenAt: ourPeers}
 	if req.SeenAt == nil {
 		req.SeenAt = map[string]int64{}
 	}
-	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.ExchangePeersResponse], error) {
+	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.ExchangePeersResponse], error) {
 		return s.ExchangePeers(ctx, connect.NewRequest(req))
 	})
 	if err != nil {
@@ -282,8 +282,8 @@ func (c *client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, ta
 func (c *client) ClusterInfo(target peer.ID) (*ClusterInfoResponse, error) {
 	clientLogger.Infof("querying clusterInfo from %s", target.ShortString())
 
-	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.ClusterInfoResponse], error) {
-		return s.ClusterInfo(ctx, connect.NewRequest(&raftv1.ClusterInfoRequest{}))
+	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.ClusterInfoResponse], error) {
+		return s.ClusterInfo(ctx, connect.NewRequest(&raftv2.ClusterInfoRequest{}))
 	})
 	if err != nil {
 		clientLogger.Infof("clusterInfo from %s failed: %v", target.ShortString(), err)
@@ -308,8 +308,8 @@ func (c *client) ClusterInfo(target peer.ID) (*ClusterInfoResponse, error) {
 func (c *client) ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error) {
 	clientLogger.Infof("requesting exportFSM from %s", target.ShortString())
 
-	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.ExportFSMResponse], error) {
-		return s.ExportFSM(ctx, connect.NewRequest(&raftv1.ExportFSMRequest{}))
+	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.ExportFSMResponse], error) {
+		return s.ExportFSM(ctx, connect.NewRequest(&raftv2.ExportFSMRequest{}))
 	})
 	if err != nil {
 		clientLogger.Infof("exportFSM from %s failed: %v", target.ShortString(), err)
@@ -328,8 +328,8 @@ func (c *client) ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error)
 
 func (c *client) HealAck(target peer.ID) error {
 	clientLogger.Infof("sending healAck to %s", target.ShortString())
-	_, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.HealAckResponse], error) {
-		return s.HealAck(ctx, connect.NewRequest(&raftv1.HealAckRequest{}))
+	_, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.HealAckResponse], error) {
+		return s.HealAck(ctx, connect.NewRequest(&raftv2.HealAckRequest{}))
 	})
 	if err != nil {
 		clientLogger.Warnf("healAck to %s failed: %v", target.ShortString(), err)

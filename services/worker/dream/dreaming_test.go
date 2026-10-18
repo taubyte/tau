@@ -24,8 +24,8 @@ import (
 	"github.com/taubyte/tau/services/worker"
 	workerDream "github.com/taubyte/tau/services/worker/dream"
 
-	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1/workerv1connect"
+	workerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2/workerv2connect"
 )
 
 // THIS IS THE WHOLE CHAIN, ON REAL NODES.
@@ -73,8 +73,8 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	client := dialWorker(t, nodes[registers[0]], workers[0])
 
 	require.Eventually(t, func() bool {
-		_, err := client.Invoke(t.Context(), connect.NewRequest(&workerv1.InvokeRequest{
-			Target: &workerv1.Target{
+		_, err := client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
+			Target: &workerv2.Target{
 				Project: "shop", Environment: "prod", Kind: "application", Name: "db",
 			},
 			Method: "GET", Path: "/",
@@ -128,8 +128,8 @@ func TestAUniverseWithNoTierSaysSo(t *testing.T) {
 
 	var last error
 	require.Eventually(t, func() bool {
-		_, last = client.Invoke(t.Context(), connect.NewRequest(&workerv1.InvokeRequest{
-			Target: &workerv1.Target{
+		_, last = client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
+			Target: &workerv2.Target{
 				Project: "shop", Environment: "prod", Kind: "application", Name: "db",
 			},
 		}))
@@ -154,12 +154,12 @@ func decode(t *testing.T, id string) libp2ppeer.ID {
 	return p
 }
 
-func dialWorker(t *testing.T, from peer.Node, to string) workerv1connect.WorkerServiceClient {
+func dialWorker(t *testing.T, from peer.Node, to string) workerv2connect.WorkerServiceClient {
 	t.Helper()
 	c, err := rpc.NewClient(from.Peer(), decode(t, to), worker.Protocol)
 	require.NoError(t, err)
 	t.Cleanup(c.Close)
-	return workerv1connect.NewWorkerServiceClient(c.HTTP(), c.URL())
+	return workerv2connect.NewWorkerServiceClient(c.HTTP(), c.URL())
 }
 
 func compiled(t *testing.T) []byte {

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // One allow and one deny per guarded route (service-conventions.md §6c), plus
@@ -49,7 +49,7 @@ func TestEveryJobRouteAllowsAWriterAndDeniesEverybodyElse(t *testing.T) {
 			t.Run("no credential", func(t *testing.T) {
 				h := newHarness(t, Config{})
 				reached := false
-				h.backend.get = func(string) (*buildv1.Job, error) { reached = true; return nil, nil }
+				h.backend.get = func(string) (*buildv2.Job, error) { reached = true; return nil, nil }
 				h.projects.repositories = func(string) ([]string, error) { reached = true; return nil, nil }
 
 				w := h.do(t, authed(r.method, r.path, ""))
@@ -189,7 +189,7 @@ func TestAnUnknownProjectIsTheSameAnswerAsADeniedOne(t *testing.T) {
 // is still answered as a 404 rather than confirming that the job exists.
 func TestABackendPermissionDenialDoesNotConfirmExistence(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.get = func(string) (*buildv1.Job, error) {
+	h.backend.get = func(string) (*buildv2.Job, error) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("peer may not read"))
 	}
 

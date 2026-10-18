@@ -10,8 +10,8 @@ import (
 
 	"github.com/taubyte/tau/pkg/database"
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
-	databasev1 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v1/databasev1connect"
+	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
 )
 
 // rpc.go is the whole wire surface: four calls, each one resolution and one
@@ -30,15 +30,15 @@ const maxKeys = 512
 // mount is the one handler rpc.Listen serves.
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(databasev1connect.NewDatabaseServiceHandler(&handler{s}))
+	mux.Handle(databasev2connect.NewDatabaseServiceHandler(&handler{s}))
 	return mux
 }
 
 type handler struct{ s *Service }
 
-var _ databasev1connect.DatabaseServiceHandler = (*handler)(nil)
+var _ databasev2connect.DatabaseServiceHandler = (*handler)(nil)
 
-func (h *handler) KVGet(ctx context.Context, req *connect.Request[databasev1.KVGetRequest]) (*connect.Response[databasev1.KVValue], error) {
+func (h *handler) KVGet(ctx context.Context, req *connect.Request[databasev2.KVGetRequest]) (*connect.Response[databasev2.KVValue], error) {
 	at := addressOf(req.Msg.GetRef())
 	ctx = hopsIn(ctx, req.Header())
 	if req.Msg.GetKey() == "" {
@@ -54,12 +54,12 @@ func (h *handler) KVGet(ctx context.Context, req *connect.Request[databasev1.KVG
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&databasev1.KVValue{Value: value}), nil
+	return connect.NewResponse(&databasev2.KVValue{Value: value}), nil
 }
 
 // KVPut is an upsert: the vocabulary's kv has no create, so writing twice is
 // writing.
-func (h *handler) KVPut(ctx context.Context, req *connect.Request[databasev1.KVPutRequest]) (*connect.Response[databasev1.Empty], error) {
+func (h *handler) KVPut(ctx context.Context, req *connect.Request[databasev2.KVPutRequest]) (*connect.Response[databasev2.Empty], error) {
 	at := addressOf(req.Msg.GetRef())
 	ctx = hopsIn(ctx, req.Header())
 	if req.Msg.GetKey() == "" {
@@ -72,12 +72,12 @@ func (h *handler) KVPut(ctx context.Context, req *connect.Request[databasev1.KVP
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&databasev1.Empty{}), nil
+	return connect.NewResponse(&databasev2.Empty{}), nil
 }
 
 // KVDelete removes one. Deleting what is not there succeeds — the caller wanted
 // it gone and it is gone.
-func (h *handler) KVDelete(ctx context.Context, req *connect.Request[databasev1.KVDeleteRequest]) (*connect.Response[databasev1.Empty], error) {
+func (h *handler) KVDelete(ctx context.Context, req *connect.Request[databasev2.KVDeleteRequest]) (*connect.Response[databasev2.Empty], error) {
 	at := addressOf(req.Msg.GetRef())
 	ctx = hopsIn(ctx, req.Header())
 	if req.Msg.GetKey() == "" {
@@ -93,7 +93,7 @@ func (h *handler) KVDelete(ctx context.Context, req *connect.Request[databasev1.
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&databasev1.Empty{}), nil
+	return connect.NewResponse(&databasev2.Empty{}), nil
 }
 
 // KVList pages the keys under a prefix.
@@ -103,7 +103,7 @@ func (h *handler) KVDelete(ctx context.Context, req *connect.Request[databasev1.
 // paging, and inventing one per engine is a bigger change than this call is
 // worth today. The wire shape already carries `after` and `more`, so the day an
 // engine pages, nothing above changes.
-func (h *handler) KVList(ctx context.Context, req *connect.Request[databasev1.KVListRequest]) (*connect.Response[databasev1.KVKeys], error) {
+func (h *handler) KVList(ctx context.Context, req *connect.Request[databasev2.KVListRequest]) (*connect.Response[databasev2.KVKeys], error) {
 	at := addressOf(req.Msg.GetRef())
 	ctx = hopsIn(ctx, req.Header())
 
@@ -136,7 +136,7 @@ func (h *handler) KVList(ctx context.Context, req *connect.Request[databasev1.KV
 		keys = keys[:page]
 	}
 
-	return connect.NewResponse(&databasev1.KVKeys{Keys: keys, More: more}), nil
+	return connect.NewResponse(&databasev2.KVKeys{Keys: keys, More: more}), nil
 }
 
 // wire is how a failure leaves this service: the one status table, plus the
@@ -228,7 +228,7 @@ func code(err error) error {
 // holder BECAUSE IT WAS ASKED, and would then answer a digest that looks
 // converged — which is how a node placement never chose ends up authorising
 // another node's drop. Not held is an answer, not a miss.
-func (h *handler) KVDigest(ctx context.Context, req *connect.Request[databasev1.Ref]) (*connect.Response[databasev1.KVDigestValue], error) {
+func (h *handler) KVDigest(ctx context.Context, req *connect.Request[databasev2.Ref]) (*connect.Response[databasev2.KVDigestValue], error) {
 	at := addressOf(req.Msg)
 
 	holding, err := h.holding(ctx, at)
@@ -236,7 +236,7 @@ func (h *handler) KVDigest(ctx context.Context, req *connect.Request[databasev1.
 		return nil, wire(err)
 	}
 	if !holding.GetHeld() {
-		return connect.NewResponse(&databasev1.KVDigestValue{Keeps: holding.GetKeeps()}), nil
+		return connect.NewResponse(&databasev2.KVDigestValue{Keeps: holding.GetKeeps()}), nil
 	}
 
 	kv, err := h.s.kv(ctx, at)
@@ -252,7 +252,7 @@ func (h *handler) KVDigest(ctx context.Context, req *connect.Request[databasev1.
 	// that this node holds it, so a keeps taken beforehand answers false for
 	// the first ask about every database — and the first ask is the one a
 	// departing node makes.
-	return connect.NewResponse(&databasev1.KVDigestValue{
+	return connect.NewResponse(&databasev2.KVDigestValue{
 		Keys: keys, Digest: sum, Held: true, Keeps: h.s.own.keeps(at.key()),
 	}), nil
 }
@@ -260,7 +260,7 @@ func (h *handler) KVDigest(ctx context.Context, req *connect.Request[databasev1.
 // Hold is KVDigest without the digest: whether this node has a database and
 // means to keep it. It is what the repair sweep asks of co-holders, which needs
 // presence rather than proof of convergence.
-func (h *handler) Hold(ctx context.Context, req *connect.Request[databasev1.Ref]) (*connect.Response[databasev1.Holding], error) {
+func (h *handler) Hold(ctx context.Context, req *connect.Request[databasev2.Ref]) (*connect.Response[databasev2.Holding], error) {
 	holding, err := h.holding(ctx, addressOf(req.Msg))
 	if err != nil {
 		return nil, wire(err)
@@ -274,7 +274,7 @@ func (h *handler) Hold(ctx context.Context, req *connect.Request[databasev1.Ref]
 // what this node has decided about its own copy, under the same lock as its own
 // release. That is what makes it something a peer may rely on — a node that
 // says it keeps a database will not let go without its own gated release.
-func (h *handler) holding(ctx context.Context, at address) (*databasev1.Holding, error) {
+func (h *handler) holding(ctx context.Context, at address) (*databasev2.Holding, error) {
 	declaration, err := h.s.declared(ctx, at)
 	if err != nil {
 		return nil, err
@@ -289,7 +289,7 @@ func (h *handler) holding(ctx context.Context, at address) (*databasev1.Holding,
 	}
 
 	if h.s.holdings == nil || !h.s.holdings.Held(ctx, declaration.spec) {
-		return &databasev1.Holding{}, nil
+		return &databasev2.Holding{}, nil
 	}
-	return &databasev1.Holding{Held: true, Keeps: h.s.own.keeps(at.key())}, nil
+	return &databasev2.Holding{Held: true, Keeps: h.s.own.keeps(at.key())}, nil
 }

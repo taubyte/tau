@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	databasev1 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v1"
+	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
 )
 
 // address.go is the one place a Ref becomes something this package uses.
@@ -21,7 +21,7 @@ type address struct {
 	instance    string
 }
 
-func addressOf(ref *databasev1.Ref) address {
+func addressOf(ref *databasev2.Ref) address {
 	return address{
 		project:     ref.GetProject(),
 		environment: ref.GetEnvironment(),

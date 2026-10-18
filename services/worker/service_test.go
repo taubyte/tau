@@ -14,7 +14,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/specs"
 
-	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
+	workerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2"
 )
 
 func newBits(t *testing.T) (*fakeRuntime, Pool) {
@@ -114,7 +114,7 @@ func TestTheLifecycleIsNotForgiving(t *testing.T) {
 }
 
 func TestTheProtocolIsNotV1s(t *testing.T) {
-	require.Equal(t, "/tau/worker/v1", string(Protocol))
+	require.Equal(t, "/tau/worker/v2", string(Protocol))
 	require.Equal(t, Protocol, Descriptor.Protocol)
 	require.Equal(t, IngressNone, Descriptor.Ingress,
 		"a request from the internet arrives through a gateway, which is what decides what may be reached")
@@ -144,11 +144,11 @@ func TestARuntimeIsNeverGuessed(t *testing.T) {
 func TestHeadersSurviveTheRoundTrip(t *testing.T) {
 	h := newHarness(t)
 
-	res, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv1.InvokeRequest{
+	res, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
 		Target: target("application", "api"),
 		Method: "POST",
 		Path:   "/checkout",
-		Headers: map[string]*workerv1.Headers{
+		Headers: map[string]*workerv2.Headers{
 			"Accept": {Values: []string{"application/json", "text/plain"}},
 		},
 		Body: []byte("an order"),
@@ -160,7 +160,7 @@ func TestHeadersSurviveTheRoundTrip(t *testing.T) {
 	require.Nil(t, toWire(nil))
 	require.Equal(t,
 		map[string][]string{"Accept": {"application/json", "text/plain"}},
-		fromWire(map[string]*workerv1.Headers{"Accept": {Values: []string{"application/json", "text/plain"}}}))
+		fromWire(map[string]*workerv2.Headers{"Accept": {Values: []string{"application/json", "text/plain"}}}))
 }
 
 // TestOnlyRunTimeEnvironmentVariablesAreHandedOver. A `build`-time variable is

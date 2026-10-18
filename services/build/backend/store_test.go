@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/raft"
 )
 
@@ -192,7 +192,7 @@ func TestStampClampsBelowZeroAndIsFixedWidth(t *testing.T) {
 func TestJobRecordRoundTrips(t *testing.T) {
 	rec := jobRecord{
 		ID:            "id",
-		Status:        int32(buildv1.JobStatus_JobStatusClaimed),
+		Status:        int32(buildv2.JobStatus_JobStatusClaimed),
 		RepositoryKey: "github.com/a/b",
 		Ref:           "refs/heads/main",
 		CommitSHA:     strings.Repeat("a", 40),
@@ -242,12 +242,12 @@ func TestADecodedRecordMustBeTheOneItsKeyNames(t *testing.T) {
 }
 
 func TestTerminalIsExactlyTheThreeEndStates(t *testing.T) {
-	for status, want := range map[buildv1.JobStatus]bool{
-		buildv1.JobStatus_JobStatusOpen:      false,
-		buildv1.JobStatus_JobStatusClaimed:   false,
-		buildv1.JobStatus_JobStatusSuccess:   true,
-		buildv1.JobStatus_JobStatusFailed:    true,
-		buildv1.JobStatus_JobStatusCancelled: true,
+	for status, want := range map[buildv2.JobStatus]bool{
+		buildv2.JobStatus_JobStatusOpen:      false,
+		buildv2.JobStatus_JobStatusClaimed:   false,
+		buildv2.JobStatus_JobStatusSuccess:   true,
+		buildv2.JobStatus_JobStatusFailed:    true,
+		buildv2.JobStatus_JobStatusCancelled: true,
 	} {
 		rec := jobRecord{Status: int32(status)}
 		require.Equal(t, want, rec.terminal(), "status %v", status)

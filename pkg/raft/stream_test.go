@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
-	raftv1 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v1"
+	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"gotest.tools/v3/assert"
 )
 
@@ -16,9 +16,9 @@ func TestProtocol(t *testing.T) {
 		namespace string
 		expected  string
 	}{
-		{"/raft/test", "/tau/raft/v1/raft/test"},
-		{"/raft/my-service", "/tau/raft/v1/raft/my-service"},
-		{"/raft/complex/path", "/tau/raft/v1/raft/complex/path"},
+		{"/raft/test", "/tau/raft/v2/raft/test"},
+		{"/raft/my-service", "/tau/raft/v2/raft/my-service"},
+		{"/raft/complex/path", "/tau/raft/v2/raft/complex/path"},
 	}
 
 	for _, tt := range tests {
@@ -34,9 +34,9 @@ func TestTransportProtocol(t *testing.T) {
 		namespace string
 		expected  string
 	}{
-		{"/raft/test", "/tau/raft/v1/raft/test/transport"},
-		{"/raft/my-service", "/tau/raft/v1/raft/my-service/transport"},
-		{"/raft/complex/path", "/tau/raft/v1/raft/complex/path/transport"},
+		{"/raft/test", "/tau/raft/v2/raft/test/transport"},
+		{"/raft/my-service", "/tau/raft/v2/raft/my-service/transport"},
+		{"/raft/complex/path", "/tau/raft/v2/raft/complex/path/transport"},
 	}
 
 	for _, tt := range tests {
@@ -73,7 +73,7 @@ func TestStreamService_HandleGet(t *testing.T) {
 	cl, ss := leaderService(t)
 	require.NoError(t, cl.Set("testkey", []byte("testvalue"), time.Second))
 
-	resp, err := ss.Get(context.Background(), connect.NewRequest(&raftv1.GetRequest{Key: "testkey"}))
+	resp, err := ss.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "testkey"}))
 	require.NoError(t, err)
 	assert.Assert(t, resp.Msg.GetFound())
 	assert.Equal(t, string(resp.Msg.GetValue()), "testvalue")
@@ -82,7 +82,7 @@ func TestStreamService_HandleGet(t *testing.T) {
 func TestStreamService_HandleGet_NotFound(t *testing.T) {
 	_, ss := leaderService(t)
 
-	resp, err := ss.Get(context.Background(), connect.NewRequest(&raftv1.GetRequest{Key: "nonexistent"}))
+	resp, err := ss.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "nonexistent"}))
 	require.NoError(t, err)
 	assert.Assert(t, !resp.Msg.GetFound())
 }
@@ -90,7 +90,7 @@ func TestStreamService_HandleGet_NotFound(t *testing.T) {
 func TestStreamService_HandleGet_MissingKey(t *testing.T) {
 	_, ss := leaderService(t)
 
-	_, err := ss.Get(context.Background(), connect.NewRequest(&raftv1.GetRequest{}))
+	_, err := ss.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{}))
 	require.Error(t, err, "expected error for missing key")
 }
 
@@ -98,7 +98,7 @@ func TestStreamService_HandleSet_AsLeader(t *testing.T) {
 	cl, ss := leaderService(t)
 
 	value := []byte("handlervalue")
-	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv1.SetRequest{Key: "handlerkey", Value: value, TimeoutMs: 1000}))
+	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv2.SetRequest{Key: "handlerkey", Value: value, TimeoutMs: 1000}))
 	require.NoError(t, err)
 
 	val, found := cl.Get("handlerkey")
@@ -109,7 +109,7 @@ func TestStreamService_HandleSet_AsLeader(t *testing.T) {
 func TestStreamService_HandleSet_EmptyValue(t *testing.T) {
 	cl, ss := leaderService(t)
 
-	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv1.SetRequest{Key: "empty", Value: []byte{}}))
+	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv2.SetRequest{Key: "empty", Value: []byte{}}))
 	require.NoError(t, err)
 
 	val, found := cl.Get("empty")
@@ -120,14 +120,14 @@ func TestStreamService_HandleSet_EmptyValue(t *testing.T) {
 func TestStreamService_HandleSet_MissingKey(t *testing.T) {
 	_, ss := leaderService(t)
 
-	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv1.SetRequest{Value: []byte("v")}))
+	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv2.SetRequest{Value: []byte("v")}))
 	require.Error(t, err, "expected error for missing key")
 }
 
 func TestStreamService_HandleSet_MissingValue(t *testing.T) {
 	_, ss := leaderService(t)
 
-	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv1.SetRequest{Key: "k"}))
+	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv2.SetRequest{Key: "k"}))
 	require.Error(t, err, "expected error for missing value")
 }
 
@@ -135,7 +135,7 @@ func TestStreamService_HandleDelete_AsLeader(t *testing.T) {
 	cl, ss := leaderService(t)
 	require.NoError(t, cl.Set("delkey", []byte("delvalue"), time.Second))
 
-	_, err := ss.Delete(context.Background(), connect.NewRequest(&raftv1.DeleteRequest{Key: "delkey", TimeoutMs: 1000}))
+	_, err := ss.Delete(context.Background(), connect.NewRequest(&raftv2.DeleteRequest{Key: "delkey", TimeoutMs: 1000}))
 	require.NoError(t, err)
 
 	_, found := cl.Get("delkey")
@@ -145,7 +145,7 @@ func TestStreamService_HandleDelete_AsLeader(t *testing.T) {
 func TestStreamService_HandleDelete_MissingKey(t *testing.T) {
 	_, ss := leaderService(t)
 
-	_, err := ss.Delete(context.Background(), connect.NewRequest(&raftv1.DeleteRequest{}))
+	_, err := ss.Delete(context.Background(), connect.NewRequest(&raftv2.DeleteRequest{}))
 	require.Error(t, err, "expected error for missing key")
 }
 
@@ -155,7 +155,7 @@ func TestStreamService_HandleKeys(t *testing.T) {
 		require.NoError(t, cl.Set(key, []byte("value"), time.Second))
 	}
 
-	resp, err := ss.Keys(context.Background(), connect.NewRequest(&raftv1.KeysRequest{Prefix: "prefix/"}))
+	resp, err := ss.Keys(context.Background(), connect.NewRequest(&raftv2.KeysRequest{Prefix: "prefix/"}))
 	require.NoError(t, err)
 	assert.Equal(t, len(resp.Msg.GetKeys()), 2)
 }
@@ -164,7 +164,7 @@ func TestStreamService_HandleKeys_NoPrefix(t *testing.T) {
 	cl, ss := leaderService(t)
 	require.NoError(t, cl.Set("key1", []byte("value"), time.Second))
 
-	resp, err := ss.Keys(context.Background(), connect.NewRequest(&raftv1.KeysRequest{}))
+	resp, err := ss.Keys(context.Background(), connect.NewRequest(&raftv2.KeysRequest{}))
 	require.NoError(t, err)
 	assert.Assert(t, len(resp.Msg.GetKeys()) >= 1)
 }
@@ -172,7 +172,7 @@ func TestStreamService_HandleKeys_NoPrefix(t *testing.T) {
 func TestStreamService_HandleClusterInfo(t *testing.T) {
 	cl, ss := leaderService(t)
 
-	resp, err := ss.ClusterInfo(context.Background(), connect.NewRequest(&raftv1.ClusterInfoRequest{}))
+	resp, err := ss.ClusterInfo(context.Background(), connect.NewRequest(&raftv2.ClusterInfoRequest{}))
 	require.NoError(t, err)
 	leader, err := cl.Leader()
 	require.NoError(t, err)
@@ -205,7 +205,7 @@ func TestStreamService_HandleExchangePeers_WithTracker(t *testing.T) {
 
 	peer1Str := "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt"
 
-	resp, err := ss.ExchangePeers(context.Background(), connect.NewRequest(&raftv1.ExchangePeersRequest{
+	resp, err := ss.ExchangePeers(context.Background(), connect.NewRequest(&raftv2.ExchangePeersRequest{
 		StartMs: time.Now().UnixMilli(),
 		SeenAt:  map[string]int64{peer1Str: 10},
 	}))
@@ -226,5 +226,5 @@ func TestStreamService_ForwardToLeader_NoLeader(t *testing.T) {
 	// Don't wait for leader - a write either applies (already leading) or
 	// is refused for want of one; it must not panic either way.
 	ss := getClusterInternal(cl).streamService
-	ss.Set(context.Background(), connect.NewRequest(&raftv1.SetRequest{Key: "test-key", Value: []byte("test-value")}))
+	ss.Set(context.Background(), connect.NewRequest(&raftv2.SetRequest{Key: "test-key", Value: []byte("test-value")}))
 }

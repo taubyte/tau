@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // This file is the one denial-per-guarded-RPC set (service-conventions.md
@@ -23,18 +23,18 @@ func TestRegister_AllowsTheOriginalRegistrant(t *testing.T) {
 	h := newWireHarness(t)
 	key := "github.com/acme/pay"
 
-	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
 	// A repeat Register by the same peer is a no-op, not an error and not a
 	// key rotation (repositories.go's Register doc).
-	before, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	before, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
-	_, err = h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err = h.Repositories.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
-	after, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	after, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 	assert.Equal(t, before.Msg.GetDeployKey(), after.Msg.GetDeployKey(), "a repeat Register by its own owner must not rotate the deploy key")
 }
@@ -49,16 +49,16 @@ func TestRegister_DeniesAPeerThatDidNotRegisterIt(t *testing.T) {
 	h := newWireHarness(t)
 	key := "github.com/acme/pay"
 
-	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
 	_, otherClient := h.secondCaller(t)
-	_, err = otherClient.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err = otherClient.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 
 	// The original registration must be untouched by the denied attempt.
-	got, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	got, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 	assert.NotEmpty(t, got.Msg.GetDeployKey())
 }
@@ -71,7 +71,7 @@ func TestRegister_AnUnregisteredKeyIsOpenToAnyPeer(t *testing.T) {
 	h := newWireHarness(t)
 	_, otherClient := h.secondCaller(t)
 
-	_, err := otherClient.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
+	_, err := otherClient.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
 	assert.NoError(t, err)
 }
 
@@ -79,10 +79,10 @@ func TestUnregister_AllowsTheOwner(t *testing.T) {
 	h := newWireHarness(t)
 	key := "github.com/acme/pay"
 
-	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
-	_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
 	// Nothing at all survives: /key, /registered_by, /project and every
@@ -103,17 +103,17 @@ func TestUnregister_DeniesAPeerThatDidNotRegisterIt(t *testing.T) {
 	h := newWireHarness(t)
 	key := "github.com/acme/pay"
 
-	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
 	otherNode, otherClient := h.secondCaller(t)
 	assert.NotEqual(t, h.CallerHost.ID(), otherNode.ID(), "the denial must come from a genuinely different peer, not the same one twice")
 
-	_, err = otherClient.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err = otherClient.Unregister(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 
-	got, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	got, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err, "a denied Unregister must not have removed anything")
 	assert.NotEmpty(t, got.Msg.GetDeployKey())
 }
@@ -124,7 +124,7 @@ func TestUnregister_DeniesAPeerThatDidNotRegisterIt(t *testing.T) {
 func TestUnregister_NotFoundIsNotConflatedWithDenied(t *testing.T) {
 	h := newWireHarness(t)
 
-	_, err := h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/never-registered"}))
+	_, err := h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: "github.com/acme/never-registered"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
@@ -178,9 +178,9 @@ func TestRepositoryTakeoverThroughANestedNamespaceIsImpossible(t *testing.T) {
 			victimKey, err := parseRepoKey(tc.victim)
 			require.NoError(t, err)
 
-			_, err = h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			_, err = h.Repositories.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: tc.victim}))
 			require.NoError(t, err)
-			registered, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			registered, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: tc.victim}))
 			require.NoError(t, err)
 			deployKey := registered.Msg.GetDeployKey()
 			require.NotEmpty(t, deployKey)
@@ -189,18 +189,18 @@ func TestRepositoryTakeoverThroughANestedNamespaceIsImpossible(t *testing.T) {
 			require.NotEqual(t, h.CallerHost.ID(), attackerHost.ID(), "the attacker must be a genuinely different peer")
 
 			// Head on, the attacker is refused — this much always held.
-			_, err = attackerClient.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			_, err = attackerClient.Unregister(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: tc.victim}))
 			require.Error(t, err)
 			assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 
 			// So it takes the long way round, entirely within its rights.
-			_, err = attackerClient.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.attacker}))
+			_, err = attackerClient.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: tc.attacker}))
 			require.NoError(t, err, "an unclaimed key is open to any peer; that is not the bug")
-			_, err = attackerClient.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.attacker}))
+			_, err = attackerClient.Unregister(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: tc.attacker}))
 			require.NoError(t, err)
 
 			// The victim's registration survives it, whole.
-			after, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			after, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: tc.victim}))
 			require.NoError(t, err, "the victim's repository must still be registered")
 			assert.Equal(t, deployKey, after.Msg.GetDeployKey(), "and must still hold the same deploy key")
 
@@ -210,12 +210,12 @@ func TestRepositoryTakeoverThroughANestedNamespaceIsImpossible(t *testing.T) {
 			assert.Equal(t, h.CallerHost.ID(), owner, "/registered_by is what a deleted victim loses first")
 
 			// So the attacker still cannot have it.
-			_, err = attackerClient.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			_, err = attackerClient.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: tc.victim}))
 			require.Error(t, err)
 			assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 
 			// And the owner can still tear down its own repository.
-			_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: tc.victim}))
+			_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: tc.victim}))
 			require.NoError(t, err)
 			assertNothingUnderPrefix(t, h.Store, repoRoot(victimKey))
 		})

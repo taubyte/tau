@@ -15,18 +15,18 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 
-	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
+	workerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2"
 )
 
-func target(kind, name string, scope ...string) *workerv1.Target {
-	return &workerv1.Target{
+func target(kind, name string, scope ...string) *workerv2.Target {
+	return &workerv2.Target{
 		Project: "shop", Environment: "prod", Scope: scope, Kind: kind, Name: name,
 	}
 }
 
-func invokeOver(t *testing.T, h *harness, tgt *workerv1.Target) *workerv1.InvokeResponse {
+func invokeOver(t *testing.T, h *harness, tgt *workerv2.Target) *workerv2.InvokeResponse {
 	t.Helper()
-	res, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv1.InvokeRequest{
+	res, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
 		Target: tgt, Method: "GET", Path: "/orders",
 	}))
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestANameResolvesInTheScopeThatAsked(t *testing.T) {
 func TestABuiltResourceIsRefusedRatherThanGuessedAt(t *testing.T) {
 	h := newBareHarness(t)
 
-	_, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv1.InvokeRequest{
+	_, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
 		Target: target("application", "worker_pool"),
 	}))
 	require.Error(t, err)
@@ -132,7 +132,7 @@ func TestASecretIsNeverAnEmptyString(t *testing.T) {
 		return "an-image", nil
 	})))
 
-	_, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv1.InvokeRequest{
+	_, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
 		Target: target("application", "api"),
 	}))
 	require.Error(t, err)
@@ -153,7 +153,7 @@ func TestAFailingSecretFailsTheInvocation(t *testing.T) {
 		return "", errRefused
 	})))
 
-	_, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv1.InvokeRequest{
+	_, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
 		Target: target("application", "api"),
 	}))
 	require.Error(t, err)
@@ -270,16 +270,16 @@ func TestWhatIsMissingSaysWhichKindOfMissing(t *testing.T) {
 
 	for _, c := range []struct {
 		name string
-		req  *workerv1.InvokeRequest
+		req  *workerv2.InvokeRequest
 		want connect.Code
 	}{
-		{"no target at all", &workerv1.InvokeRequest{}, connect.CodeInvalidArgument},
-		{"an empty target", &workerv1.InvokeRequest{Target: &workerv1.Target{}}, connect.CodeInvalidArgument},
-		{"no such resource", &workerv1.InvokeRequest{Target: target("application", "nope")}, connect.CodeNotFound},
-		{"no such environment", &workerv1.InvokeRequest{Target: &workerv1.Target{
+		{"no target at all", &workerv2.InvokeRequest{}, connect.CodeInvalidArgument},
+		{"an empty target", &workerv2.InvokeRequest{Target: &workerv2.Target{}}, connect.CodeInvalidArgument},
+		{"no such resource", &workerv2.InvokeRequest{Target: target("application", "nope")}, connect.CodeNotFound},
+		{"no such environment", &workerv2.InvokeRequest{Target: &workerv2.Target{
 			Project: "shop", Environment: "staging", Kind: "application", Name: "api",
 		}}, connect.CodeNotFound},
-		{"a kind nothing runs", &workerv1.InvokeRequest{Target: target("cache", "orders")}, connect.CodeFailedPrecondition},
+		{"a kind nothing runs", &workerv2.InvokeRequest{Target: target("cache", "orders")}, connect.CodeFailedPrecondition},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := h.Client.Invoke(t.Context(), connect.NewRequest(c.req))

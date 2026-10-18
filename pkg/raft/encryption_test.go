@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	raftv1 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v1"
+	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"google.golang.org/protobuf/proto"
 	"gotest.tools/v3/assert"
 )
@@ -263,7 +263,7 @@ func TestSealedCodec_RoundTrip(t *testing.T) {
 	codec := sealedCodec{gcm: keyToCipher(t, key)}
 
 	value := []byte("value")
-	in := &raftv1.SetRequest{Key: "key", Value: value, TimeoutMs: 42}
+	in := &raftv2.SetRequest{Key: "key", Value: value, TimeoutMs: 42}
 	sealed1, err := codec.Marshal(in)
 	require.NoError(t, err)
 	sealed2, err := codec.Marshal(in)
@@ -275,7 +275,7 @@ func TestSealedCodec_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Assert(t, !bytes.Contains(sealed1, plain), "the proto encoding is on the wire in the clear")
 
-	out := &raftv1.SetRequest{}
+	out := &raftv2.SetRequest{}
 	require.NoError(t, codec.Unmarshal(sealed1, out))
 	assert.Assert(t, proto.Equal(in, out))
 }
@@ -287,18 +287,18 @@ func TestSealedCodec_Refuses(t *testing.T) {
 	rand.Read(key2)
 	codec := sealedCodec{gcm: keyToCipher(t, key1)}
 
-	sealed, err := codec.Marshal(&raftv1.KeysRequest{Prefix: "p"})
+	sealed, err := codec.Marshal(&raftv2.KeysRequest{Prefix: "p"})
 	require.NoError(t, err)
 
-	err = sealedCodec{gcm: keyToCipher(t, key2)}.Unmarshal(sealed, &raftv1.KeysRequest{})
+	err = sealedCodec{gcm: keyToCipher(t, key2)}.Unmarshal(sealed, &raftv2.KeysRequest{})
 	assert.ErrorContains(t, err, "decryption failed")
 
-	plain, err := proto.Marshal(&raftv1.KeysRequest{Prefix: "a longer prefix in the clear"})
+	plain, err := proto.Marshal(&raftv2.KeysRequest{Prefix: "a longer prefix in the clear"})
 	require.NoError(t, err)
-	err = codec.Unmarshal(plain, &raftv1.KeysRequest{})
+	err = codec.Unmarshal(plain, &raftv2.KeysRequest{})
 	assert.ErrorContains(t, err, "decryption failed")
 
-	err = codec.Unmarshal([]byte("short"), &raftv1.KeysRequest{})
+	err = codec.Unmarshal([]byte("short"), &raftv2.KeysRequest{})
 	assert.ErrorContains(t, err, "too short")
 
 	_, err = codec.Marshal("not a message")

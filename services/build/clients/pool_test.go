@@ -11,8 +11,8 @@ import (
 
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/rpc"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
 func TestNewPoolRefusesWhatItCannotDialWith(t *testing.T) {
@@ -54,8 +54,8 @@ func TestAPeerThatDoesNotServeTheProtocolIsUnavailable(t *testing.T) {
 
 	var seen error
 	err = p.Do(t.Context(), func(c *rpc.Client) error {
-		repos := authv1connect.NewRepositoryServiceClient(c.HTTP(), c.URL())
-		_, seen = repos.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/a/b"}))
+		repos := authv2connect.NewRepositoryServiceClient(c.HTTP(), c.URL())
+		_, seen = repos.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: "github.com/a/b"}))
 		return seen
 	})
 
@@ -216,8 +216,8 @@ func TestThePoolNeverHoldsMoreThanItsBound(t *testing.T) {
 func TestAClientIsReusedBetweenCalls(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
-	server := serveAuth(t, mn, func(string) (*authv1.Repository, error) {
-		return &authv1.Repository{ProjectId: "p"}, nil
+	server := serveAuth(t, mn, func(string) (*authv2.Repository, error) {
+		return &authv2.Repository{ProjectId: "p"}, nil
 	})
 
 	p, err := NewPool(caller, discovery.Static(server.ID()), AuthProtocol, 4)
@@ -248,8 +248,8 @@ func TestCloseIsIdempotentAndStopsDo(t *testing.T) {
 func TestADialThatCannotBeBuiltIsTriedPastRatherThanReturned(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
-	good := serveAuth(t, mn, func(string) (*authv1.Repository, error) {
-		return &authv1.Repository{ProjectId: "p"}, nil
+	good := serveAuth(t, mn, func(string) (*authv2.Repository, error) {
+		return &authv2.Repository{ProjectId: "p"}, nil
 	})
 
 	// An empty peer id fails rpc.NewClient's Validate; the next peer answers.

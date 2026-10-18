@@ -322,7 +322,7 @@ var (
 
 // Repositories is the one question this service asks auth.
 //
-// ONE FACT, not authv1connect's whole client: naming only this keeps
+// ONE FACT, not authv2connect's whole client: naming only this keeps
 // deploy_key out of this package's vocabulary until the Runner needs it, which
 // is also the security question auth.proto and services/auth/repositories.go
 // left open on purpose — "because nothing named the consumer". Build is that

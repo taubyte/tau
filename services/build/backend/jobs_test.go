@@ -10,7 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 const unknownJobID = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -45,7 +45,7 @@ func TestEveryJobRPCIsLeaderOnly(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.cancel(id)))
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.retry(id)))
 	require.Equal(t, connect.CodeUnavailable,
-		connect.CodeOf(h.list("p", func(*buildv1.JobRef) error { return nil })))
+		connect.CodeOf(h.list("p", func(*buildv2.JobRef) error { return nil })))
 }
 
 // THE MAPS ARE A READ SHAPE OFF THE RECORD, which is one Get rather than a
@@ -68,7 +68,7 @@ func TestGetCarriesTheCidsOfEveryAttemptAndResource(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, id, job.GetId())
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, job.GetStatus())
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, job.GetStatus())
 	require.Equal(t, testRepo, job.GetRepositoryKey())
 	require.Equal(t, testRef, job.GetRef())
 	require.Equal(t, testCommit, job.GetCommitSha())
@@ -123,7 +123,7 @@ func TestListStreamsAProjectsJobIDs(t *testing.T) {
 	}
 
 	var got []string
-	require.NoError(t, h.list(project, func(ref *buildv1.JobRef) error {
+	require.NoError(t, h.list(project, func(ref *buildv2.JobRef) error {
 		got = append(got, ref.GetId())
 		return nil
 	}))
@@ -134,7 +134,7 @@ func TestListStreamsAProjectsJobIDs(t *testing.T) {
 	}
 
 	// Another project's listing is empty rather than everybody's.
-	require.NoError(t, h.list("someone-else", func(*buildv1.JobRef) error {
+	require.NoError(t, h.list("someone-else", func(*buildv2.JobRef) error {
 		t.Fatal("a project must only list its own jobs")
 		return nil
 	}))
@@ -145,10 +145,10 @@ func TestListRefusesAnEmptyProjectAndPropagatesASendFailure(t *testing.T) {
 	h.push(t, testRef, testCommit)
 
 	require.Equal(t, connect.CodeInvalidArgument,
-		connect.CodeOf(h.list("", func(*buildv1.JobRef) error { return nil })))
+		connect.CodeOf(h.list("", func(*buildv2.JobRef) error { return nil })))
 
 	sendErr := errors.New("client went away")
-	require.ErrorIs(t, h.list("project-of-"+testRepo, func(*buildv1.JobRef) error { return sendErr }), sendErr)
+	require.ErrorIs(t, h.list("project-of-"+testRepo, func(*buildv2.JobRef) error { return sendErr }), sendErr)
 }
 
 func TestListReportsAnIndexRowItCannotDecode(t *testing.T) {
@@ -156,7 +156,7 @@ func TestListReportsAnIndexRowItCannotDecode(t *testing.T) {
 	h.store.put(t, projectIndexPrefix("p")+"!!!", nil)
 
 	require.Equal(t, connect.CodeInternal,
-		connect.CodeOf(h.list("p", func(*buildv1.JobRef) error { return nil })))
+		connect.CodeOf(h.list("p", func(*buildv2.JobRef) error { return nil })))
 }
 
 // Cancel is a record write and the withdrawal of the item that record was
@@ -168,7 +168,7 @@ func TestCancelWritesTheRecordAndTakesTheItemOutOfTheQueue(t *testing.T) {
 	id := h.push(t, testRef, testCommit)
 
 	require.NoError(t, h.cancel(id))
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 	require.Empty(t, h.store.Keys(openIndexPrefix(testRepo)), "a finished job is not open")
 	require.Len(t, h.store.Keys(rootSegment+"/"+indexSegment+"/"+terminalSegment+"/"), 1)
 
@@ -201,9 +201,9 @@ func TestACancelledJobLeavesNoWorkBehindItInTheQueue(t *testing.T) {
 		require.Equal(t, 1, ready, "only the job somebody still wants built is queued")
 
 		require.True(t, h.mustStep(t))
-		require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, live),
+		require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, live),
 			"a cancelled job must not spend the cycle the live one needed")
-		require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, cancelled))
+		require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, cancelled))
 		require.Len(t, h.runner.seen(), 1)
 	})
 
@@ -231,8 +231,8 @@ func TestCancellingACancelledJobIsTheOutcomeTheCallerAskedFor(t *testing.T) {
 }
 
 func TestCancellingAFinishedJobIsAFailedPrecondition(t *testing.T) {
-	for _, status := range []buildv1.JobStatus{
-		buildv1.JobStatus_JobStatusSuccess, buildv1.JobStatus_JobStatusFailed,
+	for _, status := range []buildv2.JobStatus{
+		buildv2.JobStatus_JobStatusSuccess, buildv2.JobStatus_JobStatusFailed,
 	} {
 		t.Run(status.String(), func(t *testing.T) {
 			h := newHarness(t)
@@ -255,7 +255,7 @@ func TestCancellingAJobWhoseItemIsAlreadyGoneIsNotAnError(t *testing.T) {
 	require.NoError(t, h.work.Ack(d))
 
 	require.NoError(t, h.cancel(id))
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 }
 
 // The withdrawal is a second entry and can fail on its own. The record is what
@@ -270,7 +270,7 @@ func TestCancelReportsAWithdrawalThatFailedAndTheNextCancelFinishesIt(t *testing
 	h.store.onBatch(func() { h.store.failBatches(errors.New("log is full")) })
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.cancel(id)))
 
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id),
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id),
 		"the record is what cancels the job, and it landed")
 	ready, _ := h.work.Depth()
 	require.Equal(t, 1, ready, "the item the entry did not remove is still there")
@@ -301,7 +301,7 @@ func TestRetryOnANonTerminalJobIsRefusedRatherThanSilentlyIgnored(t *testing.T) 
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(h.retry(id)))
 
 	rec := h.mustRecord(t, id)
-	rec.Status = int32(buildv1.JobStatus_JobStatusClaimed)
+	rec.Status = int32(buildv2.JobStatus_JobStatusClaimed)
 	value, err := rec.encode()
 	require.NoError(t, err)
 	h.store.put(t, jobRecordKey(id), value)
@@ -323,7 +323,7 @@ func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 	require.NoError(t, err)
 	h.store.put(t, jobRecordKey(id), value)
 
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "it broke"))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "it broke"))
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
@@ -332,7 +332,7 @@ func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 	require.NoError(t, h.retry(id))
 
 	reopened := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, reopened.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, reopened.status())
 	require.Equal(t, uint32(1), reopened.Attempt, "the counter keeps going up, it does not reset")
 	require.Empty(t, reopened.Reason)
 	require.Len(t, h.store.Keys(openIndexPrefix(testRepo)), 1, "reopened means open again")
@@ -349,7 +349,7 @@ func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 func TestRetryReportsAStoreThatRefusedTheWrite(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "x"))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "x"))
 
 	h.store.failBatches(errors.New("log is full"))
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.retry(id)))
@@ -370,7 +370,7 @@ func TestACorruptRecordIsInternalOnEveryRead(t *testing.T) {
 func TestRetryReportsAPushThatFailsAfterTheRecordWasReopened(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "x"))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "x"))
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
@@ -407,7 +407,7 @@ func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
 	id := h.push(t, testRef, testCommit)
 
 	h.clock.advance(5 * time.Minute)
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "x"))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "x"))
 
 	terminal := rootSegment + "/" + indexSegment + "/" + terminalSegment + "/"
 	rec := h.mustRecord(t, id)
@@ -491,7 +491,7 @@ func TestAFailedBuildDoesNotMoveWhatADeploymentRuns(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	record := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusFailed, record.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, record.status())
 	require.NotEmpty(t, record.Assets, "what the failed run produced is still on the record")
 
 	_, err := h.built(t, record.ProjectID, "prod", "website/home")

@@ -6,11 +6,11 @@ import (
 	"connectrpc.com/connect"
 	"golang.org/x/crypto/acme/autocert"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// certificateHandler implements authv1connect.CertificateServiceHandler. See
+// certificateHandler implements authv2connect.CertificateServiceHandler. See
 // repositories.go's repositoryHandler doc for why this is its own type
 // rather than a method set on *Service — CertificateService's method names
 // happen not to collide with the other four services, but every handler
@@ -37,10 +37,10 @@ import (
 // describes.
 type certificateHandler struct{ s *Service }
 
-var _ authv1connect.CertificateServiceHandler = (*certificateHandler)(nil)
+var _ authv2connect.CertificateServiceHandler = (*certificateHandler)(nil)
 
 // GetCertificate reads the ACME-issued certificate for fqdn.
-func (h *certificateHandler) GetCertificate(ctx context.Context, req *connect.Request[authv1.FqdnRequest]) (*connect.Response[authv1.Certificate], error) {
+func (h *certificateHandler) GetCertificate(ctx context.Context, req *connect.Request[authv2.FqdnRequest]) (*connect.Response[authv2.Certificate], error) {
 	if err := requireID("fqdn", req.Msg.GetFqdn()); err != nil {
 		return nil, err
 	}
@@ -48,24 +48,24 @@ func (h *certificateHandler) GetCertificate(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&authv1.Certificate{Pem: pem}), nil
+	return connect.NewResponse(&authv2.Certificate{Pem: pem}), nil
 }
 
 // SetCertificate stores the ACME-issued certificate for fqdn.
-func (h *certificateHandler) SetCertificate(ctx context.Context, req *connect.Request[authv1.SetCertificateRequest]) (*connect.Response[authv1.Empty], error) {
+func (h *certificateHandler) SetCertificate(ctx context.Context, req *connect.Request[authv2.SetCertificateRequest]) (*connect.Response[authv2.Empty], error) {
 	if err := requireID("fqdn", req.Msg.GetFqdn()); err != nil {
 		return nil, err
 	}
 	if err := h.s.kv.Put(ctx, acmeCertRow(req.Msg.GetFqdn()), req.Msg.GetPem()); err != nil {
 		return nil, errInternal("storing certificate: %w", err)
 	}
-	return connect.NewResponse(&authv1.Empty{}), nil
+	return connect.NewResponse(&authv2.Empty{}), nil
 }
 
 // GetStaticCertificate reads the operator-injected certificate for fqdn,
 // falling back to the wildcard of fqdn's parent domain on a miss — the same
 // fallback services/auth/api_acme.go's getACMEStaticCertificate runs.
-func (h *certificateHandler) GetStaticCertificate(ctx context.Context, req *connect.Request[authv1.FqdnRequest]) (*connect.Response[authv1.Certificate], error) {
+func (h *certificateHandler) GetStaticCertificate(ctx context.Context, req *connect.Request[authv2.FqdnRequest]) (*connect.Response[authv2.Certificate], error) {
 	fqdn := req.Msg.GetFqdn()
 	if err := requireID("fqdn", fqdn); err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (h *certificateHandler) GetStaticCertificate(ctx context.Context, req *conn
 			return nil, err
 		}
 	}
-	return connect.NewResponse(&authv1.Certificate{Pem: pem}), nil
+	return connect.NewResponse(&authv2.Certificate{Pem: pem}), nil
 }
 
 // SetStaticCertificate stores the operator-injected certificate for fqdn.
@@ -85,18 +85,18 @@ func (h *certificateHandler) GetStaticCertificate(ctx context.Context, req *conn
 // injecting `*.example.com` sends that literal fqdn, the same way
 // services/auth/api_acme.go's setACMEStaticCertificate never rewrites what
 // it was given.
-func (h *certificateHandler) SetStaticCertificate(ctx context.Context, req *connect.Request[authv1.SetCertificateRequest]) (*connect.Response[authv1.Empty], error) {
+func (h *certificateHandler) SetStaticCertificate(ctx context.Context, req *connect.Request[authv2.SetCertificateRequest]) (*connect.Response[authv2.Empty], error) {
 	if err := requireID("fqdn", req.Msg.GetFqdn()); err != nil {
 		return nil, err
 	}
 	if err := h.s.kv.Put(ctx, staticCertRow(req.Msg.GetFqdn()), req.Msg.GetPem()); err != nil {
 		return nil, errInternal("storing static certificate: %w", err)
 	}
-	return connect.NewResponse(&authv1.Empty{}), nil
+	return connect.NewResponse(&authv2.Empty{}), nil
 }
 
 // GetCache reads an autocert cache entry by its opaque key.
-func (h *certificateHandler) GetCache(ctx context.Context, req *connect.Request[authv1.CacheKeyRequest]) (*connect.Response[authv1.CacheEntry], error) {
+func (h *certificateHandler) GetCache(ctx context.Context, req *connect.Request[authv2.CacheKeyRequest]) (*connect.Response[authv2.CacheEntry], error) {
 	if err := requireID("key", req.Msg.GetKey()); err != nil {
 		return nil, err
 	}
@@ -104,31 +104,31 @@ func (h *certificateHandler) GetCache(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&authv1.CacheEntry{Data: data}), nil
+	return connect.NewResponse(&authv2.CacheEntry{Data: data}), nil
 }
 
 // SetCache writes an autocert cache entry. v1 also wrote a timestamp beside
 // it (services/auth/api_acme.go's setACMECache) that nothing ever read back
 // — CacheEntry has no timestamp field, so it is not carried forward.
-func (h *certificateHandler) SetCache(ctx context.Context, req *connect.Request[authv1.SetCacheRequest]) (*connect.Response[authv1.Empty], error) {
+func (h *certificateHandler) SetCache(ctx context.Context, req *connect.Request[authv2.SetCacheRequest]) (*connect.Response[authv2.Empty], error) {
 	if err := requireID("key", req.Msg.GetKey()); err != nil {
 		return nil, err
 	}
 	if err := h.s.kv.Put(ctx, cacheDataRow(req.Msg.GetKey()), req.Msg.GetData()); err != nil {
 		return nil, errInternal("storing cache entry: %w", err)
 	}
-	return connect.NewResponse(&authv1.Empty{}), nil
+	return connect.NewResponse(&authv2.Empty{}), nil
 }
 
 // DeleteCache removes an autocert cache entry.
-func (h *certificateHandler) DeleteCache(ctx context.Context, req *connect.Request[authv1.CacheKeyRequest]) (*connect.Response[authv1.Empty], error) {
+func (h *certificateHandler) DeleteCache(ctx context.Context, req *connect.Request[authv2.CacheKeyRequest]) (*connect.Response[authv2.Empty], error) {
 	if err := requireID("key", req.Msg.GetKey()); err != nil {
 		return nil, err
 	}
 	if err := h.s.kv.Delete(ctx, cacheDataRow(req.Msg.GetKey())); err != nil {
 		return nil, errInternal("deleting cache entry: %w", err)
 	}
-	return connect.NewResponse(&authv1.Empty{}), nil
+	return connect.NewResponse(&authv2.Empty{}), nil
 }
 
 // getCertRow reads one PEM/opaque-blob row, mapping a miss — or an empty row

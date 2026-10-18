@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/discovery"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/services/build/frontend"
 )
 
@@ -17,7 +17,7 @@ import (
 // (services/build/boundary_test.go).
 var _ frontend.Hooks = (*HookClient)(nil)
 
-func newHooks(t *testing.T, get func(string) (*authv1.Hook, error)) *HookClient {
+func newHooks(t *testing.T, get func(string) (*authv2.Hook, error)) *HookClient {
 	t.Helper()
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
@@ -37,9 +37,9 @@ func newHooks(t *testing.T, get func(string) (*authv1.Hook, error)) *HookClient 
 // repository it is good for. v1 fetched only the secret.
 func TestGetReturnsTheHookWhole(t *testing.T) {
 	var asked string
-	c := newHooks(t, func(id string) (*authv1.Hook, error) {
+	c := newHooks(t, func(id string) (*authv2.Hook, error) {
 		asked = id
-		return &authv1.Hook{Id: id, RepositoryKey: "gitlab.example.com/acme/pay", Handle: "7", Scheme: "standard-webhooks", Secret: []byte("s3cret")}, nil
+		return &authv2.Hook{Id: id, RepositoryKey: "gitlab.example.com/acme/pay", Handle: "7", Scheme: "standard-webhooks", Secret: []byte("s3cret")}, nil
 	})
 
 	got, err := c.Get(t.Context(), "hook-1")
@@ -52,7 +52,7 @@ func TestGetReturnsTheHookWhole(t *testing.T) {
 }
 
 func TestAnUnknownHookStaysNotFound(t *testing.T) {
-	c := newHooks(t, func(string) (*authv1.Hook, error) {
+	c := newHooks(t, func(string) (*authv2.Hook, error) {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such hook"))
 	})
 
@@ -61,7 +61,7 @@ func TestAnUnknownHookStaysNotFound(t *testing.T) {
 }
 
 func TestGetRefusesAnEmptyHookIdWithoutDialling(t *testing.T) {
-	c := newHooks(t, func(string) (*authv1.Hook, error) {
+	c := newHooks(t, func(string) (*authv2.Hook, error) {
 		t.Fatal("an empty hook id must not reach the wire")
 		return nil, nil
 	})
@@ -77,11 +77,11 @@ func TestHooksRefusesAPoolForTheWrongProtocol(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, c)
 
-	p, err := NewPool(newHost(t, mn), discovery.Static(), "/tau/build/v1", 4)
+	p, err := NewPool(newHost(t, mn), discovery.Static(), "/tau/build/v2", 4)
 	require.NoError(t, err)
 	t.Cleanup(p.Close)
 
 	c, err = Hooks(p)
-	require.ErrorContains(t, err, "/tau/auth/v1")
+	require.ErrorContains(t, err, "/tau/auth/v2")
 	require.Nil(t, c)
 }

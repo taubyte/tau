@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // queueKeyRoot is the prefix every key pkg/queue writes lives under
@@ -65,7 +65,7 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 	t.Logf("status=%s reason=%q attempt=%d ready=%d claimed=%d openRows=%d",
 		rec.status(), rec.Reason, rec.Attempt, ready, claimed, open)
 
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, rec.status(),
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, rec.status(),
 		"the retry was accepted, so the job the caller sees must be open")
 	require.NotEqual(t, context.Canceled.Error(), rec.Reason,
 		"and must not carry the outcome of the build it cancelled")
@@ -78,7 +78,7 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 	// claims the retried job and builds it.
 	h.runner.run = nil
 	require.True(t, h.mustStep(t))
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	require.Len(t, h.runner.seen(), 2, "the retry is a second build, not the first one re-reported")
 	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef))
 }
@@ -166,7 +166,7 @@ func TestTheDropDecisionAndItsAckAreOneSection(t *testing.T) {
 
 	require.False(t, loose.Load(),
 		"the ack carries out what the drop decision read, and must be made inside the section that read it")
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, rec.status())
 	require.Equal(t, 1, ready+claimed,
 		"a reopened job must have an item, not wait out VisibilityTimeout+BuildTimeout")
 	require.Equal(t, 1, open)

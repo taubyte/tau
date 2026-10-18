@@ -7,19 +7,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 func TestCertificate_SetAndGet(t *testing.T) {
 	s := newTestService(t)
 	h := &certificateHandler{s}
 
-	_, err := h.SetCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{
+	_, err := h.SetCertificate(t.Context(), connect.NewRequest(&authv2.SetCertificateRequest{
 		Fqdn: "example.com", Pem: []byte("acme-pem"),
 	}))
 	require.NoError(t, err)
 
-	res, err := h.GetCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{Fqdn: "example.com"}))
+	res, err := h.GetCertificate(t.Context(), connect.NewRequest(&authv2.FqdnRequest{Fqdn: "example.com"}))
 	require.NoError(t, err)
 	assert.Equal(t, []byte("acme-pem"), res.Msg.GetPem())
 }
@@ -28,7 +28,7 @@ func TestCertificate_GetMiss(t *testing.T) {
 	s := newTestService(t)
 	h := &certificateHandler{s}
 
-	_, err := h.GetCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{Fqdn: "missing.example.com"}))
+	_, err := h.GetCertificate(t.Context(), connect.NewRequest(&authv2.FqdnRequest{Fqdn: "missing.example.com"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
@@ -44,12 +44,12 @@ func TestCertificate_GetDoesNotFallBackToStatic(t *testing.T) {
 	s := newTestService(t)
 	h := &certificateHandler{s}
 
-	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{
+	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv2.SetCertificateRequest{
 		Fqdn: "example.com", Pem: []byte("static-pem"),
 	}))
 	require.NoError(t, err)
 
-	_, err = h.GetCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{Fqdn: "example.com"}))
+	_, err = h.GetCertificate(t.Context(), connect.NewRequest(&authv2.FqdnRequest{Fqdn: "example.com"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
@@ -58,12 +58,12 @@ func TestStaticCertificate_SetAndGet(t *testing.T) {
 	s := newTestService(t)
 	h := &certificateHandler{s}
 
-	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{
+	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv2.SetCertificateRequest{
 		Fqdn: "www.example.com", Pem: []byte("static-pem"),
 	}))
 	require.NoError(t, err)
 
-	res, err := h.GetStaticCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{Fqdn: "www.example.com"}))
+	res, err := h.GetStaticCertificate(t.Context(), connect.NewRequest(&authv2.FqdnRequest{Fqdn: "www.example.com"}))
 	require.NoError(t, err)
 	assert.Equal(t, []byte("static-pem"), res.Msg.GetPem())
 }
@@ -75,12 +75,12 @@ func TestStaticCertificate_WildcardFallback(t *testing.T) {
 	s := newTestService(t)
 	h := &certificateHandler{s}
 
-	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{
+	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv2.SetCertificateRequest{
 		Fqdn: "*.example.com", Pem: []byte("wildcard-pem"),
 	}))
 	require.NoError(t, err)
 
-	res, err := h.GetStaticCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{Fqdn: "anything.example.com"}))
+	res, err := h.GetStaticCertificate(t.Context(), connect.NewRequest(&authv2.FqdnRequest{Fqdn: "anything.example.com"}))
 	require.NoError(t, err)
 	assert.Equal(t, []byte("wildcard-pem"), res.Msg.GetPem())
 }
@@ -89,7 +89,7 @@ func TestStaticCertificate_Miss(t *testing.T) {
 	s := newTestService(t)
 	h := &certificateHandler{s}
 
-	_, err := h.GetStaticCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{Fqdn: "nowhere.example.com"}))
+	_, err := h.GetStaticCertificate(t.Context(), connect.NewRequest(&authv2.FqdnRequest{Fqdn: "nowhere.example.com"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
@@ -98,19 +98,19 @@ func TestCache_SetGetDelete(t *testing.T) {
 	s := newTestService(t)
 	h := &certificateHandler{s}
 
-	_, err := h.SetCache(t.Context(), connect.NewRequest(&authv1.SetCacheRequest{
+	_, err := h.SetCache(t.Context(), connect.NewRequest(&authv2.SetCacheRequest{
 		Key: "challenge-token", Data: []byte("challenge-data"),
 	}))
 	require.NoError(t, err)
 
-	res, err := h.GetCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{Key: "challenge-token"}))
+	res, err := h.GetCache(t.Context(), connect.NewRequest(&authv2.CacheKeyRequest{Key: "challenge-token"}))
 	require.NoError(t, err)
 	assert.Equal(t, []byte("challenge-data"), res.Msg.GetData())
 
-	_, err = h.DeleteCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{Key: "challenge-token"}))
+	_, err = h.DeleteCache(t.Context(), connect.NewRequest(&authv2.CacheKeyRequest{Key: "challenge-token"}))
 	require.NoError(t, err)
 
-	_, err = h.GetCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{Key: "challenge-token"}))
+	_, err = h.GetCache(t.Context(), connect.NewRequest(&authv2.CacheKeyRequest{Key: "challenge-token"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
@@ -119,7 +119,7 @@ func TestCache_GetMiss(t *testing.T) {
 	s := newTestService(t)
 	h := &certificateHandler{s}
 
-	_, err := h.GetCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{Key: "never-set"}))
+	_, err := h.GetCache(t.Context(), connect.NewRequest(&authv2.CacheKeyRequest{Key: "never-set"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
@@ -131,7 +131,7 @@ func TestCache_DeleteOfAMissingKeyIsNotAnError(t *testing.T) {
 	s := newTestService(t)
 	h := &certificateHandler{s}
 
-	_, err := h.DeleteCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{Key: "never-set"}))
+	_, err := h.DeleteCache(t.Context(), connect.NewRequest(&authv2.CacheKeyRequest{Key: "never-set"}))
 	assert.NoError(t, err)
 }
 
@@ -144,7 +144,7 @@ func TestSetCertificate_StoreFails(t *testing.T) {
 	s := &Service{kv: &failingKVDB{Store: newStore(t), failPut: true}}
 	h := &certificateHandler{s}
 
-	_, err := h.SetCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{Fqdn: "example.com", Pem: []byte("x")}))
+	_, err := h.SetCertificate(t.Context(), connect.NewRequest(&authv2.SetCertificateRequest{Fqdn: "example.com", Pem: []byte("x")}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
@@ -153,7 +153,7 @@ func TestSetStaticCertificate_StoreFails(t *testing.T) {
 	s := &Service{kv: &failingKVDB{Store: newStore(t), failPut: true}}
 	h := &certificateHandler{s}
 
-	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{Fqdn: "example.com", Pem: []byte("x")}))
+	_, err := h.SetStaticCertificate(t.Context(), connect.NewRequest(&authv2.SetCertificateRequest{Fqdn: "example.com", Pem: []byte("x")}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
@@ -162,7 +162,7 @@ func TestSetCache_StoreFails(t *testing.T) {
 	s := &Service{kv: &failingKVDB{Store: newStore(t), failPut: true}}
 	h := &certificateHandler{s}
 
-	_, err := h.SetCache(t.Context(), connect.NewRequest(&authv1.SetCacheRequest{Key: "k", Data: []byte("x")}))
+	_, err := h.SetCache(t.Context(), connect.NewRequest(&authv2.SetCacheRequest{Key: "k", Data: []byte("x")}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
@@ -171,7 +171,7 @@ func TestDeleteCache_StoreFails(t *testing.T) {
 	s := &Service{kv: &failingKVDB{Store: newStore(t), failDelete: true}}
 	h := &certificateHandler{s}
 
-	_, err := h.DeleteCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{Key: "k"}))
+	_, err := h.DeleteCache(t.Context(), connect.NewRequest(&authv2.CacheKeyRequest{Key: "k"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
@@ -192,43 +192,43 @@ func TestEveryWireIdIsRefusedEmpty(t *testing.T) {
 
 	for name, call := range map[string]func() error{
 		"CertificateService.GetCertificate": func() error {
-			_, err := certs.GetCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{}))
+			_, err := certs.GetCertificate(t.Context(), connect.NewRequest(&authv2.FqdnRequest{}))
 			return err
 		},
 		"CertificateService.SetCertificate": func() error {
-			_, err := certs.SetCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{Pem: []byte("pem")}))
+			_, err := certs.SetCertificate(t.Context(), connect.NewRequest(&authv2.SetCertificateRequest{Pem: []byte("pem")}))
 			return err
 		},
 		"CertificateService.GetStaticCertificate": func() error {
-			_, err := certs.GetStaticCertificate(t.Context(), connect.NewRequest(&authv1.FqdnRequest{}))
+			_, err := certs.GetStaticCertificate(t.Context(), connect.NewRequest(&authv2.FqdnRequest{}))
 			return err
 		},
 		"CertificateService.SetStaticCertificate": func() error {
-			_, err := certs.SetStaticCertificate(t.Context(), connect.NewRequest(&authv1.SetCertificateRequest{Pem: []byte("pem")}))
+			_, err := certs.SetStaticCertificate(t.Context(), connect.NewRequest(&authv2.SetCertificateRequest{Pem: []byte("pem")}))
 			return err
 		},
 		"CertificateService.GetCache": func() error {
-			_, err := certs.GetCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{}))
+			_, err := certs.GetCache(t.Context(), connect.NewRequest(&authv2.CacheKeyRequest{}))
 			return err
 		},
 		"CertificateService.SetCache": func() error {
-			_, err := certs.SetCache(t.Context(), connect.NewRequest(&authv1.SetCacheRequest{Data: []byte("d")}))
+			_, err := certs.SetCache(t.Context(), connect.NewRequest(&authv2.SetCacheRequest{Data: []byte("d")}))
 			return err
 		},
 		"CertificateService.DeleteCache": func() error {
-			_, err := certs.DeleteCache(t.Context(), connect.NewRequest(&authv1.CacheKeyRequest{}))
+			_, err := certs.DeleteCache(t.Context(), connect.NewRequest(&authv2.CacheKeyRequest{}))
 			return err
 		},
 		"HookService.Get": func() error {
-			_, err := (&hookHandler{s}).Get(t.Context(), connect.NewRequest(&authv1.HookRef{}))
+			_, err := (&hookHandler{s}).Get(t.Context(), connect.NewRequest(&authv2.HookRef{}))
 			return err
 		},
 		"ProjectService.Get": func() error {
-			_, err := (&projectHandler{s}).Get(t.Context(), connect.NewRequest(&authv1.ProjectRef{}))
+			_, err := (&projectHandler{s}).Get(t.Context(), connect.NewRequest(&authv2.ProjectRef{}))
 			return err
 		},
 		"DomainService.Register": func() error {
-			_, err := (&domainHandler{s}).Register(t.Context(), connect.NewRequest(&authv1.RegisterDomainRequest{ProjectId: testProjectID(t)}))
+			_, err := (&domainHandler{s}).Register(t.Context(), connect.NewRequest(&authv2.RegisterDomainRequest{ProjectId: testProjectID(t)}))
 			return err
 		},
 	} {

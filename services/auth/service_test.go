@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
 // TestServiceNeedsOnlyAMocknetHostAndAnInMemoryStore is the narrow-dependency
@@ -53,8 +53,8 @@ func TestServiceNeedsOnlyAMocknetHostAndAnInMemoryStore(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	_, err = authv1connect.NewProjectServiceClient(client.HTTP(), client.URL()).
-		Get(t.Context(), connect.NewRequest(&authv1.ProjectRef{Id: "nope"}))
+	_, err = authv2connect.NewProjectServiceClient(client.HTTP(), client.URL()).
+		Get(t.Context(), connect.NewRequest(&authv2.ProjectRef{Id: "nope"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "the answer came from the handler, not from a transport failure")
 }

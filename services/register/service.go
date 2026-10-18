@@ -1,5 +1,5 @@
 // Package register serves pkg/register over p2p: three RPCs, declared in
-// pkg/proto/tau/register/v1/register.proto.
+// pkg/proto/tau/register/v2/register.proto.
 //
 // v1 called this tns. The name said name resolution; the job is holding what
 // has been published and answering lookups, which is a register.

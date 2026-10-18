@@ -8,7 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // jobHandler is the connect adapter for JobService. As in queue.go, each method
@@ -16,7 +16,7 @@ import (
 // where this package's coverage comes from.
 type jobHandler struct{ s *Service }
 
-func (h *jobHandler) Get(ctx context.Context, req *connect.Request[buildv1.JobRef]) (*connect.Response[buildv1.Job], error) {
+func (h *jobHandler) Get(ctx context.Context, req *connect.Request[buildv2.JobRef]) (*connect.Response[buildv2.Job], error) {
 	if err := h.s.allow(ctx, ActRead, req.Msg.GetId()); err != nil {
 		return nil, err
 	}
@@ -27,31 +27,31 @@ func (h *jobHandler) Get(ctx context.Context, req *connect.Request[buildv1.JobRe
 	return connect.NewResponse(job), nil
 }
 
-func (h *jobHandler) List(ctx context.Context, req *connect.Request[buildv1.ProjectRef], stream *connect.ServerStream[buildv1.JobRef]) error {
+func (h *jobHandler) List(ctx context.Context, req *connect.Request[buildv2.ProjectRef], stream *connect.ServerStream[buildv2.JobRef]) error {
 	if err := h.s.allow(ctx, ActRead, req.Msg.GetId()); err != nil {
 		return err
 	}
 	return h.s.list(req.Msg.GetId(), stream.Send)
 }
 
-func (h *jobHandler) Cancel(ctx context.Context, req *connect.Request[buildv1.JobRef]) (*connect.Response[buildv1.Empty], error) {
+func (h *jobHandler) Cancel(ctx context.Context, req *connect.Request[buildv2.JobRef]) (*connect.Response[buildv2.Empty], error) {
 	if err := h.s.allow(ctx, ActCancel, req.Msg.GetId()); err != nil {
 		return nil, err
 	}
 	if err := h.s.cancel(req.Msg.GetId()); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&buildv1.Empty{}), nil
+	return connect.NewResponse(&buildv2.Empty{}), nil
 }
 
-func (h *jobHandler) Retry(ctx context.Context, req *connect.Request[buildv1.JobRef]) (*connect.Response[buildv1.Empty], error) {
+func (h *jobHandler) Retry(ctx context.Context, req *connect.Request[buildv2.JobRef]) (*connect.Response[buildv2.Empty], error) {
 	if err := h.s.allow(ctx, ActRetry, req.Msg.GetId()); err != nil {
 		return nil, err
 	}
 	if err := h.s.retry(req.Msg.GetId()); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&buildv1.Empty{}), nil
+	return connect.NewResponse(&buildv2.Empty{}), nil
 }
 
 // job assembles one Job. It is ONE READ: the record carries the whole of it,
@@ -72,7 +72,7 @@ func (h *jobHandler) Retry(ctx context.Context, req *connect.Request[buildv1.Job
 // THE MAPS ARE COPIED OUT. The proto message a caller is handed must not share
 // a map with the record this process decoded, or a reader and a later write of
 // that record are two writers of one map.
-func (s *Service) job(id string) (*buildv1.Job, error) {
+func (s *Service) job(id string) (*buildv2.Job, error) {
 	if err := requireJobID(id); err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (s *Service) job(id string) (*buildv1.Job, error) {
 		return nil, errNotFound("no job %s", id)
 	}
 
-	return &buildv1.Job{
+	return &buildv2.Job{
 		Id:            rec.ID,
 		Status:        rec.status(),
 		RepositoryKey: rec.RepositoryKey,
@@ -111,7 +111,7 @@ func (s *Service) job(id string) (*buildv1.Job, error) {
 // It is unbounded and unpaginated, as v1's was. The difference from v1 is that
 // v1 materialized the whole result in memory before answering; this hands each
 // id to the transport as it finds it.
-func (s *Service) list(projectID string, emit func(*buildv1.JobRef) error) error {
+func (s *Service) list(projectID string, emit func(*buildv2.JobRef) error) error {
 	if projectID == "" {
 		return errInvalidArgument("project id is required")
 	}
@@ -126,7 +126,7 @@ func (s *Service) list(projectID string, emit func(*buildv1.JobRef) error) error
 		if err != nil {
 			return errInternal("%v", err)
 		}
-		if err := emit(&buildv1.JobRef{Id: id}); err != nil {
+		if err := emit(&buildv2.JobRef{Id: id}); err != nil {
 			return err
 		}
 	}
@@ -173,7 +173,7 @@ func (s *Service) cancel(id string) error {
 			return errNotFound("no job %s", id)
 		}
 		rec := j.rec()
-		if rec.status() == buildv1.JobStatus_JobStatusCancelled {
+		if rec.status() == buildv2.JobStatus_JobStatusCancelled {
 			// Cancelling a cancelled job is the outcome the caller asked for —
 			// and is where a withdrawal whose entry did not land is finished
 			// off, the same way Enqueue's push repairs a record whose push was
@@ -190,7 +190,7 @@ func (s *Service) cancel(id string) error {
 		// reading the record; the other order leaves an open job with no item,
 		// which reconcile would push back into the queue — a build somebody
 		// asked to stop.
-		if err := j.finish(buildv1.JobStatus_JobStatusCancelled, "cancelled"); err != nil {
+		if err := j.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled"); err != nil {
 			return err
 		}
 		if err := j.withdraw(); err != nil {
@@ -231,7 +231,7 @@ func (s *Service) retry(id string) error {
 			return errFailedPrecondition("job %s is %s, not finished", id, rec.status())
 		}
 
-		rec.Status = int32(buildv1.JobStatus_JobStatusOpen)
+		rec.Status = int32(buildv2.JobStatus_JobStatusOpen)
 		rec.UpdatedAt = s.now().Unix()
 		rec.ClaimedUntil = 0
 		rec.Holder = ""
@@ -264,12 +264,12 @@ func (s *Service) retry(id string) error {
 // fast one sends full ones with no rule here deciding which.
 const followChunk = 16 << 10
 
-func (h *jobHandler) Artifact(ctx context.Context, req *connect.Request[buildv1.ArtifactRequest]) (*connect.Response[buildv1.Built], error) {
+func (h *jobHandler) Artifact(ctx context.Context, req *connect.Request[buildv2.ArtifactRequest]) (*connect.Response[buildv2.Built], error) {
 	cid, err := h.s.artifact(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment(), req.Msg.GetResource())
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&buildv1.Built{Cid: cid}), nil
+	return connect.NewResponse(&buildv2.Built{Cid: cid}), nil
 }
 
 // artifact reads what one resource of one deployment currently runs.
@@ -312,7 +312,7 @@ func (s *Service) artifact(ctx context.Context, project, environment, resource s
 	return string(cid), nil
 }
 
-func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv1.FollowRequest], stream *connect.ServerStream[buildv1.LogChunk]) error {
+func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv2.FollowRequest], stream *connect.ServerStream[buildv2.LogChunk]) error {
 	if err := h.s.allow(ctx, ActRead, req.Msg.GetJobId()); err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv1.Fo
 // IT IS SEPARATE FROM THE HANDLER for the same reason job() and list() are: the
 // connect adapter decides authorization and nothing else, so what this does can
 // be driven without a stream on either side of it.
-func (s *Service) follow(ctx context.Context, jobID string, offset int64, send func(*buildv1.LogChunk) error) error {
+func (s *Service) follow(ctx context.Context, jobID string, offset int64, send func(*buildv2.LogChunk) error) error {
 	if offset < 0 {
 		return errInvalidArgument("build: offset %d is before the start of the log", offset)
 	}
@@ -360,7 +360,7 @@ func (s *Service) follow(ctx context.Context, jobID string, offset int64, send f
 		n, err := reader.Read(buf)
 		if n > 0 {
 			offset += int64(n)
-			if sendErr := send(&buildv1.LogChunk{Data: buf[:n], NextOffset: offset}); sendErr != nil {
+			if sendErr := send(&buildv2.LogChunk{Data: buf[:n], NextOffset: offset}); sendErr != nil {
 				return sendErr
 			}
 		}

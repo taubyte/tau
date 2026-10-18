@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	primitivesv1 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v1"
+	primitivesv2 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
 )
 
 // address.go is the one place a Ref becomes something this package uses.
@@ -21,7 +21,7 @@ type address struct {
 	instance    string
 }
 
-func addressOf(ref *primitivesv1.Ref) address {
+func addressOf(ref *primitivesv2.Ref) address {
 	return address{
 		project:     ref.GetProject(),
 		environment: ref.GetEnvironment(),
@@ -83,8 +83,8 @@ func (a address) valid() error {
 	return nil
 }
 
-func (a address) ref() *primitivesv1.Ref {
-	return &primitivesv1.Ref{
+func (a address) ref() *primitivesv2.Ref {
+	return &primitivesv2.Ref{
 		Project: a.project, Environment: a.environment, Id: a.id, Instance: a.instance,
 	}
 }

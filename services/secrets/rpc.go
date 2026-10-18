@@ -7,8 +7,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	secretsv1 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v1/secretsv1connect"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2/secretsv2connect"
 )
 
 // rpc.go is the whole wire surface: four calls, each one line of work and one
@@ -21,21 +21,21 @@ import (
 // mount is the one handler rpc.Listen serves.
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(secretsv1connect.NewSecretsServiceHandler(&handler{s}))
+	mux.Handle(secretsv2connect.NewSecretsServiceHandler(&handler{s}))
 	return mux
 }
 
 type handler struct{ s *Service }
 
-var _ secretsv1connect.SecretsServiceHandler = (*handler)(nil)
+var _ secretsv2connect.SecretsServiceHandler = (*handler)(nil)
 
-func (h *handler) Get(ctx context.Context, req *connect.Request[secretsv1.SecretRequest]) (*connect.Response[secretsv1.SecretValue], error) {
+func (h *handler) Get(ctx context.Context, req *connect.Request[secretsv2.SecretRequest]) (*connect.Response[secretsv2.SecretValue], error) {
 	scope := req.Msg.GetScope()
 	value, err := h.s.vault.Get(ctx, scope.GetProject(), scope.GetEnvironment(), req.Msg.GetName())
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&secretsv1.SecretValue{Value: value}), nil
+	return connect.NewResponse(&secretsv2.SecretValue{Value: value}), nil
 }
 
 // Set is an upsert: rotating is setting again.
@@ -43,28 +43,28 @@ func (h *handler) Get(ctx context.Context, req *connect.Request[secretsv1.Secret
 // AUTHORIZATION IS NOT HERE, and the omission is stated rather than implied:
 // any peer that can reach this service can write any project's secrets, and
 // read them back. See the package doc and .notes/tee/v2-seam.md.
-func (h *handler) Set(ctx context.Context, req *connect.Request[secretsv1.SetRequest]) (*connect.Response[secretsv1.SetResponse], error) {
+func (h *handler) Set(ctx context.Context, req *connect.Request[secretsv2.SetRequest]) (*connect.Response[secretsv2.SetResponse], error) {
 	scope := req.Msg.GetScope()
 	if err := h.s.vault.Set(ctx, scope.GetProject(), scope.GetEnvironment(), req.Msg.GetName(), req.Msg.GetValue()); err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&secretsv1.SetResponse{}), nil
+	return connect.NewResponse(&secretsv2.SetResponse{}), nil
 }
 
-func (h *handler) Delete(ctx context.Context, req *connect.Request[secretsv1.SecretRequest]) (*connect.Response[secretsv1.DeleteResponse], error) {
+func (h *handler) Delete(ctx context.Context, req *connect.Request[secretsv2.SecretRequest]) (*connect.Response[secretsv2.DeleteResponse], error) {
 	scope := req.Msg.GetScope()
 	if err := h.s.vault.Delete(ctx, scope.GetProject(), scope.GetEnvironment(), req.Msg.GetName()); err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&secretsv1.DeleteResponse{}), nil
+	return connect.NewResponse(&secretsv2.DeleteResponse{}), nil
 }
 
-func (h *handler) List(ctx context.Context, req *connect.Request[secretsv1.Scope]) (*connect.Response[secretsv1.SecretNames], error) {
+func (h *handler) List(ctx context.Context, req *connect.Request[secretsv2.Scope]) (*connect.Response[secretsv2.SecretNames], error) {
 	names, err := h.s.vault.List(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment())
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&secretsv1.SecretNames{Names: names}), nil
+	return connect.NewResponse(&secretsv2.SecretNames{Names: names}), nil
 }
 
 // wire is the one code table: every connect.NewError in this package goes

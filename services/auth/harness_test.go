@@ -9,7 +9,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
 // wireHarness is a running Service on one mocknet host reached from a second
@@ -31,11 +31,11 @@ type wireHarness struct {
 	ServerHost host.Host
 	CallerHost host.Host
 
-	Projects     authv1connect.ProjectServiceClient
-	Repositories authv1connect.RepositoryServiceClient
-	Hooks        authv1connect.HookServiceClient
-	Domains      authv1connect.DomainServiceClient
-	Certificates authv1connect.CertificateServiceClient
+	Projects     authv2connect.ProjectServiceClient
+	Repositories authv2connect.RepositoryServiceClient
+	Hooks        authv2connect.HookServiceClient
+	Domains      authv2connect.DomainServiceClient
+	Certificates authv2connect.CertificateServiceClient
 }
 
 func newWireHarness(t testing.TB, opts ...Option) *wireHarness {
@@ -59,11 +59,11 @@ func newWireHarness(t testing.TB, opts ...Option) *wireHarness {
 		Mocknet:      mn,
 		ServerHost:   server,
 		CallerHost:   caller,
-		Projects:     authv1connect.NewProjectServiceClient(client.HTTP(), client.URL()),
-		Repositories: authv1connect.NewRepositoryServiceClient(client.HTTP(), client.URL()),
-		Hooks:        authv1connect.NewHookServiceClient(client.HTTP(), client.URL()),
-		Domains:      authv1connect.NewDomainServiceClient(client.HTTP(), client.URL()),
-		Certificates: authv1connect.NewCertificateServiceClient(client.HTTP(), client.URL()),
+		Projects:     authv2connect.NewProjectServiceClient(client.HTTP(), client.URL()),
+		Repositories: authv2connect.NewRepositoryServiceClient(client.HTTP(), client.URL()),
+		Hooks:        authv2connect.NewHookServiceClient(client.HTTP(), client.URL()),
+		Domains:      authv2connect.NewDomainServiceClient(client.HTTP(), client.URL()),
+		Certificates: authv2connect.NewCertificateServiceClient(client.HTTP(), client.URL()),
 	}
 }
 
@@ -81,9 +81,9 @@ func dialAuth(t testing.TB, from, to host.Host) *rpc.Client {
 // RepositoryServiceClient dialled from it — a second, genuinely different
 // libp2p identity, for proving Register and Unregister deny a peer that is
 // not the one that registered a repository.
-func (h *wireHarness) secondCaller(t testing.TB) (host.Host, authv1connect.RepositoryServiceClient) {
+func (h *wireHarness) secondCaller(t testing.TB) (host.Host, authv2connect.RepositoryServiceClient) {
 	t.Helper()
 	other := newHost(t, h.Mocknet)
 	client := dialAuth(t, other, h.ServerHost)
-	return other, authv1connect.NewRepositoryServiceClient(client.HTTP(), client.URL())
+	return other, authv2connect.NewRepositoryServiceClient(client.HTTP(), client.URL())
 }

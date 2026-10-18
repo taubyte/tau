@@ -11,8 +11,8 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 
-	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1/workerv1connect"
+	workerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2/workerv2connect"
 )
 
 // rpc.go is the wire surface: one call, and the mapping from a failure to a
@@ -20,15 +20,15 @@ import (
 
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(workerv1connect.NewWorkerServiceHandler(&handler{s}))
+	mux.Handle(workerv2connect.NewWorkerServiceHandler(&handler{s}))
 	return mux
 }
 
 type handler struct{ s *Service }
 
-var _ workerv1connect.WorkerServiceHandler = (*handler)(nil)
+var _ workerv2connect.WorkerServiceHandler = (*handler)(nil)
 
-func (h *handler) Invoke(ctx context.Context, req *connect.Request[workerv1.InvokeRequest]) (*connect.Response[workerv1.InvokeResponse], error) {
+func (h *handler) Invoke(ctx context.Context, req *connect.Request[workerv2.InvokeRequest]) (*connect.Response[workerv2.InvokeResponse], error) {
 	t := req.Msg.GetTarget()
 	if t == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, ErrNoTarget)
@@ -52,14 +52,14 @@ func (h *handler) Invoke(ctx context.Context, req *connect.Request[workerv1.Invo
 		return nil, wire(err)
 	}
 
-	return connect.NewResponse(&workerv1.InvokeResponse{
+	return connect.NewResponse(&workerv2.InvokeResponse{
 		Status:  int32(res.Status),
 		Headers: toWire(res.Headers),
 		Body:    res.Body,
 	}), nil
 }
 
-func (h *handler) Transform(ctx context.Context, req *connect.Request[workerv1.TransformRequest]) (*connect.Response[workerv1.TransformResponse], error) {
+func (h *handler) Transform(ctx context.Context, req *connect.Request[workerv2.TransformRequest]) (*connect.Response[workerv2.TransformResponse], error) {
 	t := req.Msg.GetTarget()
 	if t == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, ErrNoTarget)
@@ -85,8 +85,8 @@ func (h *handler) Transform(ctx context.Context, req *connect.Request[workerv1.T
 
 	switch {
 	case out.Answer != nil:
-		return connect.NewResponse(&workerv1.TransformResponse{
-			Outcome: &workerv1.TransformResponse_Answer{Answer: &workerv1.InvokeResponse{
+		return connect.NewResponse(&workerv2.TransformResponse{
+			Outcome: &workerv2.TransformResponse_Answer{Answer: &workerv2.InvokeResponse{
 				Status:  int32(out.Answer.Status),
 				Headers: toWire(out.Answer.Headers),
 				Body:    out.Answer.Body,
@@ -94,8 +94,8 @@ func (h *handler) Transform(ctx context.Context, req *connect.Request[workerv1.T
 		}), nil
 
 	case out.Forward != nil:
-		return connect.NewResponse(&workerv1.TransformResponse{
-			Outcome: &workerv1.TransformResponse_Forward{Forward: &workerv1.ForwardedRequest{
+		return connect.NewResponse(&workerv2.TransformResponse{
+			Outcome: &workerv2.TransformResponse_Forward{Forward: &workerv2.ForwardedRequest{
 				Method:  out.Forward.Method,
 				Path:    out.Forward.Path,
 				Headers: toWire(out.Forward.Headers),
@@ -109,7 +109,7 @@ func (h *handler) Transform(ctx context.Context, req *connect.Request[workerv1.T
 	return nil, connect.NewError(connect.CodeInternal, ErrNoOutcome)
 }
 
-func (h *handler) Route(ctx context.Context, req *connect.Request[workerv1.RouteRequest]) (*connect.Response[workerv1.RouteResponse], error) {
+func (h *handler) Route(ctx context.Context, req *connect.Request[workerv2.RouteRequest]) (*connect.Response[workerv2.RouteResponse], error) {
 	t := req.Msg.GetTarget()
 	if t == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, ErrNoTarget)
@@ -135,15 +135,15 @@ func (h *handler) Route(ctx context.Context, req *connect.Request[workerv1.Route
 
 	switch {
 	case out.To != nil:
-		return connect.NewResponse(&workerv1.RouteResponse{
-			Decision: &workerv1.RouteResponse_To{To: &workerv1.Destination{
+		return connect.NewResponse(&workerv2.RouteResponse{
+			Decision: &workerv2.RouteResponse_To{To: &workerv2.Destination{
 				Kind: out.To.Kind, Namespace: out.To.Namespace, Name: out.To.Name,
 			}},
 		}), nil
 
 	case out.Answer != nil:
-		return connect.NewResponse(&workerv1.RouteResponse{
-			Decision: &workerv1.RouteResponse_Answer{Answer: &workerv1.InvokeResponse{
+		return connect.NewResponse(&workerv2.RouteResponse{
+			Decision: &workerv2.RouteResponse_Answer{Answer: &workerv2.InvokeResponse{
 				Status:  int32(out.Answer.Status),
 				Headers: toWire(out.Answer.Headers),
 				Body:    out.Answer.Body,
@@ -151,15 +151,15 @@ func (h *handler) Route(ctx context.Context, req *connect.Request[workerv1.Route
 		}), nil
 
 	case out.None != "":
-		return connect.NewResponse(&workerv1.RouteResponse{
-			Decision: &workerv1.RouteResponse_None{None: out.None},
+		return connect.NewResponse(&workerv2.RouteResponse{
+			Decision: &workerv2.RouteResponse_None{None: out.None},
 		}), nil
 	}
 
 	return nil, connect.NewError(connect.CodeInternal, ErrNoOutcome)
 }
 
-func (h *handler) Direct(ctx context.Context, req *connect.Request[workerv1.DirectRequest]) (*connect.Response[workerv1.DirectResponse], error) {
+func (h *handler) Direct(ctx context.Context, req *connect.Request[workerv2.DirectRequest]) (*connect.Response[workerv2.DirectResponse], error) {
 	t := req.Msg.GetTarget()
 	if t == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, ErrNoTarget)
@@ -172,34 +172,34 @@ func (h *handler) Direct(ctx context.Context, req *connect.Request[workerv1.Dire
 
 	switch {
 	case out.To != nil:
-		return connect.NewResponse(&workerv1.DirectResponse{
-			Decision: &workerv1.DirectResponse_To{To: &workerv1.Endpoint{
+		return connect.NewResponse(&workerv2.DirectResponse{
+			Decision: &workerv2.DirectResponse_To{To: &workerv2.Endpoint{
 				Kind: out.To.Kind, Namespace: out.To.Namespace, Name: out.To.Name, Port: out.To.Port,
 			}},
 		}), nil
 
 	case out.More > 0:
-		return connect.NewResponse(&workerv1.DirectResponse{
-			Decision: &workerv1.DirectResponse_More{More: out.More},
+		return connect.NewResponse(&workerv2.DirectResponse{
+			Decision: &workerv2.DirectResponse_More{More: out.More},
 		}), nil
 
 	case out.Refused != "":
-		return connect.NewResponse(&workerv1.DirectResponse{
-			Decision: &workerv1.DirectResponse_Refuse{Refuse: out.Refused},
+		return connect.NewResponse(&workerv2.DirectResponse{
+			Decision: &workerv2.DirectResponse_Refuse{Refuse: out.Refused},
 		}), nil
 	}
 
 	return nil, connect.NewError(connect.CodeInternal, ErrNoOutcome)
 }
 
-func (h *handler) Shape(ctx context.Context, req *connect.Request[workerv1.ShapeRequest]) (*connect.Response[workerv1.ShapeResponse], error) {
+func (h *handler) Shape(ctx context.Context, req *connect.Request[workerv2.ShapeRequest]) (*connect.Response[workerv2.ShapeResponse], error) {
 	t := req.Msg.GetTarget()
 	if t == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, ErrNoTarget)
 	}
 
 	way := invoke.Inbound
-	if req.Msg.GetWay() == workerv1.ShapeRequest_DIRECTION_OUTBOUND {
+	if req.Msg.GetWay() == workerv2.ShapeRequest_DIRECTION_OUTBOUND {
 		way = invoke.Outbound
 	}
 
@@ -216,15 +216,15 @@ func (h *handler) Shape(ctx context.Context, req *connect.Request[workerv1.Shape
 
 	switch {
 	case out.Pass != nil:
-		return connect.NewResponse(&workerv1.ShapeResponse{
-			Verdict: &workerv1.ShapeResponse_Pass{Pass: &workerv1.Shaped{
+		return connect.NewResponse(&workerv2.ShapeResponse{
+			Verdict: &workerv2.ShapeResponse_Pass{Pass: &workerv2.Shaped{
 				Out: out.Pass.Out, State: out.Pass.State,
 			}},
 		}), nil
 
 	case out.Refused != "":
-		return connect.NewResponse(&workerv1.ShapeResponse{
-			Verdict: &workerv1.ShapeResponse_Close{Close: out.Refused},
+		return connect.NewResponse(&workerv2.ShapeResponse{
+			Verdict: &workerv2.ShapeResponse_Close{Close: out.Refused},
 		}), nil
 	}
 
@@ -232,7 +232,7 @@ func (h *handler) Shape(ctx context.Context, req *connect.Request[workerv1.Shape
 }
 
 // targetOf and connectionOf lift the two records every proxy call carries.
-func targetOf(t *workerv1.Target) Target {
+func targetOf(t *workerv2.Target) Target {
 	return Target{
 		Project:     t.GetProject(),
 		Environment: t.GetEnvironment(),
@@ -242,7 +242,7 @@ func targetOf(t *workerv1.Target) Target {
 	}
 }
 
-func connectionOf(c *workerv1.Connection) *invoke.Connection {
+func connectionOf(c *workerv2.Connection) *invoke.Connection {
 	return &invoke.Connection{
 		Source:     c.GetSource(),
 		Host:       c.GetHost(),
@@ -252,7 +252,7 @@ func connectionOf(c *workerv1.Connection) *invoke.Connection {
 	}
 }
 
-func fromWire(in map[string]*workerv1.Headers) map[string][]string {
+func fromWire(in map[string]*workerv2.Headers) map[string][]string {
 	if len(in) == 0 {
 		return nil
 	}
@@ -263,13 +263,13 @@ func fromWire(in map[string]*workerv1.Headers) map[string][]string {
 	return out
 }
 
-func toWire(in map[string][]string) map[string]*workerv1.Headers {
+func toWire(in map[string][]string) map[string]*workerv2.Headers {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make(map[string]*workerv1.Headers, len(in))
+	out := make(map[string]*workerv2.Headers, len(in))
 	for name, values := range in {
-		out[name] = &workerv1.Headers{Values: values}
+		out[name] = &workerv2.Headers{Values: values}
 	}
 	return out
 }

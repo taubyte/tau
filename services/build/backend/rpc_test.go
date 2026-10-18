@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v1/buildv1connect"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 	"github.com/taubyte/tau/services/build"
 )
 
@@ -48,8 +48,8 @@ type wireHarness struct {
 	*harness
 	authorizer *recordingAuthorizer
 	caller     host.Host
-	Queue      buildv1connect.QueueServiceClient
-	Jobs       buildv1connect.JobServiceClient
+	Queue      buildv2connect.QueueServiceClient
+	Jobs       buildv2connect.JobServiceClient
 }
 
 func newWireHarness(t *testing.T, opts ...Option) *wireHarness {
@@ -81,8 +81,8 @@ func newWireHarness(t *testing.T, opts ...Option) *wireHarness {
 		},
 		authorizer: authorizer,
 		caller:     callerHost,
-		Queue:      buildv1connect.NewQueueServiceClient(c.HTTP(), c.URL()),
-		Jobs:       buildv1connect.NewJobServiceClient(c.HTTP(), c.URL()),
+		Queue:      buildv2connect.NewQueueServiceClient(c.HTTP(), c.URL()),
+		Jobs:       buildv2connect.NewJobServiceClient(c.HTTP(), c.URL()),
 	}
 }
 
@@ -93,18 +93,18 @@ func newWireHarness(t *testing.T, opts ...Option) *wireHarness {
 func TestEveryRPCOverTheWireAuthorizesOnTheCallingPeer(t *testing.T) {
 	h := newWireHarness(t)
 
-	ref, err := h.Queue.Enqueue(t.Context(), connect.NewRequest(&buildv1.PushEvent{
+	ref, err := h.Queue.Enqueue(t.Context(), connect.NewRequest(&buildv2.PushEvent{
 		RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 	}))
 	require.NoError(t, err)
 	id := ref.Msg.GetId()
 	require.NoError(t, requireJobID(id))
 
-	job, err := h.Jobs.Get(t.Context(), connect.NewRequest(&buildv1.JobRef{Id: id}))
+	job, err := h.Jobs.Get(t.Context(), connect.NewRequest(&buildv2.JobRef{Id: id}))
 	require.NoError(t, err)
 	require.Equal(t, testRepo, job.Msg.GetRepositoryKey())
 
-	stream, err := h.Jobs.List(t.Context(), connect.NewRequest(&buildv1.ProjectRef{Id: "project-of-" + testRepo}))
+	stream, err := h.Jobs.List(t.Context(), connect.NewRequest(&buildv2.ProjectRef{Id: "project-of-" + testRepo}))
 	require.NoError(t, err)
 	var listed []string
 	for stream.Receive() {
@@ -114,13 +114,13 @@ func TestEveryRPCOverTheWireAuthorizesOnTheCallingPeer(t *testing.T) {
 	require.NoError(t, stream.Close())
 	require.Equal(t, []string{id}, listed)
 
-	_, err = h.Jobs.Cancel(t.Context(), connect.NewRequest(&buildv1.JobRef{Id: id}))
+	_, err = h.Jobs.Cancel(t.Context(), connect.NewRequest(&buildv2.JobRef{Id: id}))
 	require.NoError(t, err)
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 
-	_, err = h.Jobs.Retry(t.Context(), connect.NewRequest(&buildv1.JobRef{Id: id}))
+	_, err = h.Jobs.Retry(t.Context(), connect.NewRequest(&buildv2.JobRef{Id: id}))
 	require.NoError(t, err)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 
 	require.Equal(t, []Action{ActEnqueue, ActRead, ActRead, ActCancel, ActRetry}, h.authorizer.acts)
 	require.Equal(t, []string{testRepo, id, "project-of-" + testRepo, id, id}, h.authorizer.subs)
@@ -139,21 +139,21 @@ func TestADeniedCallerIsRefusedOnEveryRPC(t *testing.T) {
 		call func(*wireHarness, string) error
 	}{
 		{ActEnqueue, func(h *wireHarness, _ string) error {
-			_, err := h.Queue.Enqueue(context.Background(), connect.NewRequest(&buildv1.PushEvent{
+			_, err := h.Queue.Enqueue(context.Background(), connect.NewRequest(&buildv2.PushEvent{
 				RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 			}))
 			return err
 		}},
 		{ActRead, func(h *wireHarness, id string) error {
-			_, err := h.Jobs.Get(context.Background(), connect.NewRequest(&buildv1.JobRef{Id: id}))
+			_, err := h.Jobs.Get(context.Background(), connect.NewRequest(&buildv2.JobRef{Id: id}))
 			return err
 		}},
 		{ActCancel, func(h *wireHarness, id string) error {
-			_, err := h.Jobs.Cancel(context.Background(), connect.NewRequest(&buildv1.JobRef{Id: id}))
+			_, err := h.Jobs.Cancel(context.Background(), connect.NewRequest(&buildv2.JobRef{Id: id}))
 			return err
 		}},
 		{ActRetry, func(h *wireHarness, id string) error {
-			_, err := h.Jobs.Retry(context.Background(), connect.NewRequest(&buildv1.JobRef{Id: id}))
+			_, err := h.Jobs.Retry(context.Background(), connect.NewRequest(&buildv2.JobRef{Id: id}))
 			return err
 		}},
 	} {
@@ -171,7 +171,7 @@ func TestADeniedCallerIsRefusedOnEveryRPC(t *testing.T) {
 		h.push(t, testRef, testCommit)
 		h.authorizer.deny, h.authorizer.denyOn = ActRead, true
 
-		stream, err := h.Jobs.List(t.Context(), connect.NewRequest(&buildv1.ProjectRef{Id: "p"}))
+		stream, err := h.Jobs.List(t.Context(), connect.NewRequest(&buildv2.ProjectRef{Id: "p"}))
 		require.NoError(t, err)
 		require.False(t, stream.Receive())
 		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(stream.Err()))
@@ -184,7 +184,7 @@ func TestAFollowerAnswersUnavailableOverTheWire(t *testing.T) {
 	h := newWireHarness(t)
 	h.store.stepDown()
 
-	_, err := h.Queue.Enqueue(t.Context(), connect.NewRequest(&buildv1.PushEvent{
+	_, err := h.Queue.Enqueue(t.Context(), connect.NewRequest(&buildv2.PushEvent{
 		RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 	}))
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
@@ -195,15 +195,15 @@ func TestAFollowerAnswersUnavailableOverTheWire(t *testing.T) {
 // for an unexpected return.
 func TestAnUnknownJobIsNotFoundOverEveryJobRPC(t *testing.T) {
 	h := newWireHarness(t)
-	ref := connect.NewRequest(&buildv1.JobRef{Id: unknownJobID})
+	ref := connect.NewRequest(&buildv2.JobRef{Id: unknownJobID})
 
 	_, err := h.Jobs.Get(t.Context(), ref)
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
-	_, err = h.Jobs.Cancel(t.Context(), connect.NewRequest(&buildv1.JobRef{Id: unknownJobID}))
+	_, err = h.Jobs.Cancel(t.Context(), connect.NewRequest(&buildv2.JobRef{Id: unknownJobID}))
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
-	_, err = h.Jobs.Retry(t.Context(), connect.NewRequest(&buildv1.JobRef{Id: unknownJobID}))
+	_, err = h.Jobs.Retry(t.Context(), connect.NewRequest(&buildv2.JobRef{Id: unknownJobID}))
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
 
@@ -211,7 +211,7 @@ func TestAnUnknownJobIsNotFoundOverEveryJobRPC(t *testing.T) {
 func (h *wireHarness) built(t *testing.T, project, environment, resource string) (string, error) {
 	t.Helper()
 
-	res, err := h.Jobs.Artifact(t.Context(), connect.NewRequest(&buildv1.ArtifactRequest{
+	res, err := h.Jobs.Artifact(t.Context(), connect.NewRequest(&buildv2.ArtifactRequest{
 		Project: project, Environment: environment, Resource: resource,
 	}))
 	if err != nil {

@@ -13,8 +13,8 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 
-	registerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v1/registerv1connect"
+	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 )
 
 // client.go is the other side of rpc.go, and it exists so that a consumer can
@@ -33,7 +33,7 @@ import (
 // Client calls a register on another peer.
 type Client struct {
 	conn *rpc.Client
-	svc  registerv1connect.RegisterServiceClient
+	svc  registerv2connect.RegisterServiceClient
 }
 
 // NewClient prepares calls to the register on p. Nothing is dialled until the
@@ -43,14 +43,14 @@ func NewClient(h host.Host, p libp2ppeer.ID) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("register: dialling %s: %w", p, err)
 	}
-	return &Client{conn: conn, svc: registerv1connect.NewRegisterServiceClient(conn.HTTP(), conn.URL())}, nil
+	return &Client{conn: conn, svc: registerv2connect.NewRegisterServiceClient(conn.HTTP(), conn.URL())}, nil
 }
 
 // Close releases the stream. Calls after it fail.
 func (c *Client) Close() { c.conn.Close() }
 
 func (c *Client) Publish(ctx context.Context, p pkgregister.Publication) (pkgregister.ObjectID, error) {
-	res, err := c.svc.Publish(ctx, connect.NewRequest(&registerv1.PublishRequest{
+	res, err := c.svc.Publish(ctx, connect.NewRequest(&registerv2.PublishRequest{
 		Project: p.Project, Environment: p.Environment, Revision: p.Revision,
 		Compiled: p.Compiled, Hosts: p.Hosts,
 	}))
@@ -61,7 +61,7 @@ func (c *Client) Publish(ctx context.Context, p pkgregister.Publication) (pkgreg
 }
 
 func (c *Client) Resolve(ctx context.Context, project, environment string) (pkgregister.Pointer, error) {
-	res, err := c.svc.Resolve(ctx, connect.NewRequest(&registerv1.ResolveRequest{
+	res, err := c.svc.Resolve(ctx, connect.NewRequest(&registerv2.ResolveRequest{
 		Project: project, Environment: environment,
 	}))
 	if err != nil {
@@ -76,7 +76,7 @@ func (c *Client) Resolve(ctx context.Context, project, environment string) (pkgr
 // ResolveHost says whose environment answers on a name.
 // Environments is which deployments a project has, sorted.
 func (c *Client) Environments(ctx context.Context, project string) ([]string, error) {
-	res, err := c.svc.Environments(ctx, connect.NewRequest(&registerv1.ProjectRequest{Project: project}))
+	res, err := c.svc.Environments(ctx, connect.NewRequest(&registerv2.ProjectRequest{Project: project}))
 	if err != nil {
 		return nil, unwire(err)
 	}
@@ -84,7 +84,7 @@ func (c *Client) Environments(ctx context.Context, project string) ([]string, er
 }
 
 func (c *Client) ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error) {
-	res, err := c.svc.ResolveHost(ctx, connect.NewRequest(&registerv1.HostRequest{Fqdn: fqdn}))
+	res, err := c.svc.ResolveHost(ctx, connect.NewRequest(&registerv2.HostRequest{Fqdn: fqdn}))
 	if err != nil {
 		return "", "", unwire(err)
 	}
@@ -92,7 +92,7 @@ func (c *Client) ResolveHost(ctx context.Context, fqdn string) (project, environ
 }
 
 func (c *Client) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
-	res, err := c.svc.Object(ctx, connect.NewRequest(&registerv1.ObjectRequest{Object: string(id)}))
+	res, err := c.svc.Object(ctx, connect.NewRequest(&registerv2.ObjectRequest{Object: string(id)}))
 	if err != nil {
 		return nil, unwire(err)
 	}

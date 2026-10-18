@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // TestRepositoryLifecycle_GitLabSubgroup is the task's required scenario run
@@ -22,15 +22,15 @@ func TestRepositoryLifecycle_GitLabSubgroup(t *testing.T) {
 	h := newWireHarness(t)
 	const key = "gitlab.com/acme/team/widget"
 
-	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
-	got, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	got, err := h.Repositories.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 	assert.Equal(t, key, got.Msg.GetRepositoryKey())
 	assert.NotEmpty(t, got.Msg.GetDeployKey())
 
-	stream, err := h.Repositories.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
+	stream, err := h.Repositories.List(t.Context(), connect.NewRequest(&authv2.Empty{}))
 	require.NoError(t, err)
 	var listed []string
 	for stream.Receive() {
@@ -39,14 +39,14 @@ func TestRepositoryLifecycle_GitLabSubgroup(t *testing.T) {
 	require.NoError(t, stream.Err())
 	assert.Equal(t, []string{key}, listed)
 
-	_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
-	_, err = h.Repositories.Get(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err = h.Repositories.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
-	stream, err = h.Repositories.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
+	stream, err = h.Repositories.List(t.Context(), connect.NewRequest(&authv2.Empty{}))
 	require.NoError(t, err)
 	listed = nil
 	for stream.Receive() {
@@ -69,7 +69,7 @@ func TestProjectList_OverTheWire(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, putProject(t.Context(), h.Service.kv, "proj-1", "demo", config, code))
 
-	stream, err := h.Projects.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
+	stream, err := h.Projects.List(t.Context(), connect.NewRequest(&authv2.Empty{}))
 	require.NoError(t, err)
 	var ids []string
 	for stream.Receive() {
@@ -86,7 +86,7 @@ func TestHookList_OverTheWire(t *testing.T) {
 
 	require.NoError(t, putHook(t.Context(), h.Service.kv, "hook-1", hook("github.com/acme/pay")))
 
-	stream, err := h.Hooks.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
+	stream, err := h.Hooks.List(t.Context(), connect.NewRequest(&authv2.Empty{}))
 	require.NoError(t, err)
 	var ids []string
 	for stream.Receive() {
@@ -104,7 +104,7 @@ func TestRemotePeerReachesAuthzThroughTheRealTransport(t *testing.T) {
 	key, err := parseRepoKey("github.com/acme/pay")
 	require.NoError(t, err)
 
-	_, err = h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key.String()}))
+	_, err = h.Repositories.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key.String()}))
 	require.NoError(t, err)
 
 	owner, registered := repositoryOwner(t.Context(), h.Service.kv, key)
@@ -126,7 +126,7 @@ func TestRepositoryList_StoreFails(t *testing.T) {
 	h := newWireHarness(t)
 	h.Service.kv = &failingKVDB{Store: h.Service.kv, failListRegEx: true}
 
-	stream, err := h.Repositories.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
+	stream, err := h.Repositories.List(t.Context(), connect.NewRequest(&authv2.Empty{}))
 	require.NoError(t, err)
 	assert.False(t, stream.Receive())
 	require.Error(t, stream.Err())
@@ -137,7 +137,7 @@ func TestProjectList_StoreFails(t *testing.T) {
 	h := newWireHarness(t)
 	h.Service.kv = &failingKVDB{Store: h.Service.kv, failListRegEx: true}
 
-	stream, err := h.Projects.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
+	stream, err := h.Projects.List(t.Context(), connect.NewRequest(&authv2.Empty{}))
 	require.NoError(t, err)
 	assert.False(t, stream.Receive())
 	require.Error(t, stream.Err())
@@ -148,7 +148,7 @@ func TestHookList_StoreFails(t *testing.T) {
 	h := newWireHarness(t)
 	h.Service.kv = &failingKVDB{Store: h.Service.kv, failListRegEx: true}
 
-	stream, err := h.Hooks.List(t.Context(), connect.NewRequest(&authv1.Empty{}))
+	stream, err := h.Hooks.List(t.Context(), connect.NewRequest(&authv2.Empty{}))
 	require.NoError(t, err)
 	assert.False(t, stream.Receive())
 	require.Error(t, stream.Err())
@@ -159,7 +159,7 @@ func TestRegister_StoreFailureIsInternal(t *testing.T) {
 	h := newWireHarness(t)
 	h.Service.kv = &failingKVDB{Store: h.Service.kv, failBatch: true}
 
-	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
+	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: "github.com/acme/pay"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
@@ -167,12 +167,12 @@ func TestRegister_StoreFailureIsInternal(t *testing.T) {
 func TestUnregister_StoreFailureIsInternal(t *testing.T) {
 	h := newWireHarness(t)
 	key := "github.com/acme/pay"
-	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err := h.Repositories.Register(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.NoError(t, err)
 
 	h.Service.kv = &failingKVDB{Store: h.Service.kv, failBatch: true}
 
-	_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: key}))
+	_, err = h.Repositories.Unregister(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: key}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }

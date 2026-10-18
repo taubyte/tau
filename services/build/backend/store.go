@@ -9,7 +9,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // store.go is the key layout — the only file in this package that builds a
@@ -389,13 +389,13 @@ func decodeJobRecord(key, id string, raw []byte) (jobRecord, error) {
 	return r, nil
 }
 
-func (r jobRecord) status() buildv1.JobStatus { return buildv1.JobStatus(r.Status) }
+func (r jobRecord) status() buildv2.JobStatus { return buildv2.JobStatus(r.Status) }
 
 // terminal reports whether this job is finished for good. A terminal job is
 // never claimed, never re-queued by reconcile, and its open-index row is gone.
 func (r jobRecord) terminal() bool {
 	switch r.status() {
-	case buildv1.JobStatus_JobStatusSuccess, buildv1.JobStatus_JobStatusFailed, buildv1.JobStatus_JobStatusCancelled:
+	case buildv2.JobStatus_JobStatusSuccess, buildv2.JobStatus_JobStatusFailed, buildv2.JobStatus_JobStatusCancelled:
 		return true
 	default:
 		return false

@@ -12,14 +12,14 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build/backend/row"
 )
 
 func enqueue(t *testing.T, h *harness, key, ref, commit string) (string, error) {
 	t.Helper()
-	return h.enqueue(t.Context(), &buildv1.PushEvent{RepositoryKey: key, Ref: ref, CommitSha: commit})
+	return h.enqueue(t.Context(), &buildv2.PushEvent{RepositoryKey: key, Ref: ref, CommitSha: commit})
 }
 
 // One Enqueue writes four things in a fixed order: the record, the project
@@ -39,7 +39,7 @@ func TestEnqueueWritesTheRecordAndBothIndexesInOneEntry(t *testing.T) {
 	require.Equal(t, 0, duringBatch, "no row may land before the one entry that writes them all")
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, rec.status())
 	require.Equal(t, testRepo, rec.RepositoryKey)
 	require.Equal(t, testRef, rec.Ref)
 	require.Equal(t, testCommit, rec.CommitSHA)
@@ -74,11 +74,11 @@ func TestARedeliveredPushIsTheSameJob(t *testing.T) {
 // A redelivery of a job somebody is running must not push it again, and one of
 // a finished job must not resurrect it.
 func TestARedeliveryOfAClaimedOrFinishedJobChangesNothing(t *testing.T) {
-	for _, status := range []buildv1.JobStatus{
-		buildv1.JobStatus_JobStatusClaimed,
-		buildv1.JobStatus_JobStatusSuccess,
-		buildv1.JobStatus_JobStatusFailed,
-		buildv1.JobStatus_JobStatusCancelled,
+	for _, status := range []buildv2.JobStatus{
+		buildv2.JobStatus_JobStatusClaimed,
+		buildv2.JobStatus_JobStatusSuccess,
+		buildv2.JobStatus_JobStatusFailed,
+		buildv2.JobStatus_JobStatusCancelled,
 	} {
 		t.Run(status.String(), func(t *testing.T) {
 			h := newHarness(t)
@@ -254,7 +254,7 @@ func TestAdmissionBoundsTheQueueAndTheRepository(t *testing.T) {
 		h := newHarnessCfg(t, func(c *Config) { c.MaxOpenPerRepo = 1 })
 
 		id := h.push(t, testRef, testCommit)
-		require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusSuccess, ""))
+		require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusSuccess, ""))
 
 		_, err := enqueue(t, h, testRepo, "refs/heads/other", testCommit)
 		require.NoError(t, err)
@@ -339,7 +339,7 @@ func TestTheRepairPushCanFailOnItsOwn(t *testing.T) {
 
 	_, err = enqueue(t, h, testRepo, testRef, testCommit)
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
 // gatedRepositories is auth with a hold on the one question this service asks
@@ -395,7 +395,7 @@ func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) 
 	}
 	overlapped := make(chan answer, 1)
 	go func() {
-		id, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+		id, err := h.enqueue(context.Background(), &buildv2.PushEvent{
 			RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 		})
 		overlapped <- answer{id, err}
@@ -407,7 +407,7 @@ func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) 
 	id, err := enqueue(t, h, testRepo, testRef, testCommit)
 	require.NoError(t, err)
 	require.True(t, h.mustStep(t), "the second delivery's job must run")
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 
 	close(gate.release)
 	got := <-overlapped
@@ -415,7 +415,7 @@ func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) 
 	require.Equal(t, id, got.id, "both deliveries name one job")
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, rec.status(),
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status(),
 		"a finished job must not be reopened by a delivery that read the table before it finished")
 	require.Equal(t, uint32(1), rec.Attempt, "the attempt counter must not be rewound")
 
@@ -542,7 +542,7 @@ func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+		_, err := h.enqueue(context.Background(), &buildv2.PushEvent{
 			RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 		})
 		done <- err
@@ -551,7 +551,7 @@ func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
 
 	finished := jobRecord{
 		ID:            id,
-		Status:        int32(buildv1.JobStatus_JobStatusSuccess),
+		Status:        int32(buildv2.JobStatus_JobStatusSuccess),
 		RepositoryKey: testRepo,
 		Ref:           testRef,
 		CommitSHA:     testCommit,
@@ -573,7 +573,7 @@ func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
 	close(gate.release)
 	require.NoError(t, <-done)
 
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id),
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id),
 		"a job another node finished must not be reopened by the delivery that was away")
 	ready, claimed := h.work.Depth()
 	require.Zero(t, ready+claimed, "and it must not be queued here either")
@@ -648,7 +648,7 @@ func TestASecondDeliveryCannotDecideWhileTheFirstIsWriting(t *testing.T) {
 		defer close(done)
 		<-writing
 		close(trying)
-		second, secondErr = h.enqueue(context.Background(), &buildv1.PushEvent{
+		second, secondErr = h.enqueue(context.Background(), &buildv2.PushEvent{
 			RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 		})
 	}()
@@ -679,7 +679,7 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 
 		done := make(chan error, 1)
 		go func() {
-			_, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+			_, err := h.enqueue(context.Background(), &buildv2.PushEvent{
 				RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 			})
 			done <- err
@@ -705,7 +705,7 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 
 		done := make(chan error, 1)
 		go func() {
-			_, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+			_, err := h.enqueue(context.Background(), &buildv2.PushEvent{
 				RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 			})
 			done <- err

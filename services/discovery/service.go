@@ -26,7 +26,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/membership"
 	"github.com/taubyte/tau/pkg/placement"
-	discoveryv1 "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v1"
+	discoveryv2 "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v2"
 	"github.com/taubyte/tau/pkg/stats"
 )
 
@@ -187,7 +187,7 @@ func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
 			if !ok {
 				return
 			}
-			var r discoveryv1.Report
+			var r discoveryv2.Report
 			if err := proto.Unmarshal(b, &r); err != nil {
 				continue
 			}
@@ -248,7 +248,7 @@ func (s *Service) report(ctx context.Context) {
 		return
 	}
 
-	b, err := proto.Marshal(&discoveryv1.Report{
+	b, err := proto.Marshal(&discoveryv2.Report{
 		Peer:        s.peer,
 		Incarnation: s.incarnation,
 		Load:        snap.Load,
@@ -318,7 +318,7 @@ func (s *Service) Get(peer string) (stats.Node, bool) { return s.view.Get(peer) 
 // uint32 because proto3 has no uint16, so a sender that put 70000 there would
 // otherwise become port 4464 on every reader — a routable-looking answer to a
 // listener nobody has.
-func socketsOf(in []*discoveryv1.Socket) []stats.Socket {
+func socketsOf(in []*discoveryv2.Socket) []stats.Socket {
 	out := make([]stats.Socket, 0, len(in))
 	for _, s := range in {
 		if s.GetPort() == 0 || s.GetPort() > math.MaxUint16 {
@@ -334,10 +334,10 @@ func socketsOf(in []*discoveryv1.Socket) []stats.Socket {
 	return out
 }
 
-func wireSockets(in []stats.Socket) []*discoveryv1.Socket {
-	out := make([]*discoveryv1.Socket, 0, len(in))
+func wireSockets(in []stats.Socket) []*discoveryv2.Socket {
+	out := make([]*discoveryv2.Socket, 0, len(in))
 	for _, s := range in {
-		out = append(out, &discoveryv1.Socket{
+		out = append(out, &discoveryv2.Socket{
 			Host:      s.Host,
 			Protocol:  s.Protocol,
 			Transport: s.Transport,

@@ -8,17 +8,17 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// AuthProtocol is "/tau/auth/v1", derived from auth's schema exactly the way
+// AuthProtocol is "/tau/auth/v2", derived from auth's schema exactly the way
 // auth itself derives it (service-conventions.md §2d) rather than typed here.
 // Any of auth's five generated service names gives the same answer, because
 // the id names the proto package's listener.
-var AuthProtocol = rpc.Protocol(authv1connect.RepositoryServiceName)
+var AuthProtocol = rpc.Protocol(authv2connect.RepositoryServiceName)
 
-// RepositoryClient answers one question against tau.auth.v1's
+// RepositoryClient answers one question against tau.auth.v2's
 // RepositoryService: which project a repository belongs to.
 //
 // ONE FACT, not the whole generated client. auth's Repository message also
@@ -58,8 +58,8 @@ func (c *RepositoryClient) Project(ctx context.Context, repositoryKey string) (s
 
 	var projectID string
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		repos := authv1connect.NewRepositoryServiceClient(client.HTTP(), client.URL())
-		resp, err := repos.Get(ctx, connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: repositoryKey}))
+		repos := authv2connect.NewRepositoryServiceClient(client.HTTP(), client.URL())
+		resp, err := repos.Get(ctx, connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: repositoryKey}))
 		if err != nil {
 			return err
 		}
@@ -98,8 +98,8 @@ func (c *RepositoryClient) DeployKey(ctx context.Context, repositoryKey string) 
 
 	var key string
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		repos := authv1connect.NewRepositoryServiceClient(client.HTTP(), client.URL())
-		resp, err := repos.Get(ctx, connect.NewRequest(&authv1.RepositoryRef{RepositoryKey: repositoryKey}))
+		repos := authv2connect.NewRepositoryServiceClient(client.HTTP(), client.URL())
+		resp, err := repos.Get(ctx, connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: repositoryKey}))
 		if err != nil {
 			return err
 		}

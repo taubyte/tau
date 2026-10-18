@@ -16,8 +16,8 @@ import (
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	databasev1 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v1/databasev1connect"
+	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
 )
 
 // client.go is the other side of rpc.go, and it is what lets a worker stop
@@ -39,7 +39,7 @@ import (
 // Client reaches a database service.
 type Client struct {
 	conn *rpc.Client
-	svc  databasev1connect.DatabaseServiceClient
+	svc  databasev2connect.DatabaseServiceClient
 }
 
 // NewClient dials one. The peer is the caller's to choose — placement, or a
@@ -50,7 +50,7 @@ func NewClient(h host.Host, at libp2ppeer.ID) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{conn: conn, svc: databasev1connect.NewDatabaseServiceClient(conn.HTTP(), conn.URL())}, nil
+	return &Client{conn: conn, svc: databasev2connect.NewDatabaseServiceClient(conn.HTTP(), conn.URL())}, nil
 }
 
 func (c *Client) Close() error { c.conn.Close(); return nil }
@@ -65,19 +65,19 @@ func (c *Client) OpenKV(_ context.Context, grant invoke.Grant) (wasmtier.KV, err
 	if project == "" || environment == "" || id == "" {
 		return nil, fmt.Errorf("%w: %q", ErrNoID, grant.Handle)
 	}
-	return &remoteKV{svc: c.svc, ref: &databasev1.Ref{
+	return &remoteKV{svc: c.svc, ref: &databasev2.Ref{
 		Project: project, Environment: environment, Id: id,
 	}}, nil
 }
 
 // remoteKV is one database, addressed per call.
 type remoteKV struct {
-	svc databasev1connect.DatabaseServiceClient
-	ref *databasev1.Ref
+	svc databasev2connect.DatabaseServiceClient
+	ref *databasev2.Ref
 }
 
 func (r *remoteKV) Get(ctx context.Context, key string) ([]byte, error) {
-	out, err := r.svc.KVGet(ctx, connect.NewRequest(&databasev1.KVGetRequest{Ref: r.ref, Key: key}))
+	out, err := r.svc.KVGet(ctx, connect.NewRequest(&databasev2.KVGetRequest{Ref: r.ref, Key: key}))
 	if err != nil {
 		return nil, tierError(err)
 	}
@@ -85,12 +85,12 @@ func (r *remoteKV) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (r *remoteKV) Put(ctx context.Context, key string, value []byte) error {
-	_, err := r.svc.KVPut(ctx, connect.NewRequest(&databasev1.KVPutRequest{Ref: r.ref, Key: key, Value: value}))
+	_, err := r.svc.KVPut(ctx, connect.NewRequest(&databasev2.KVPutRequest{Ref: r.ref, Key: key, Value: value}))
 	return tierError(err)
 }
 
 func (r *remoteKV) Delete(ctx context.Context, key string) error {
-	_, err := r.svc.KVDelete(ctx, connect.NewRequest(&databasev1.KVDeleteRequest{Ref: r.ref, Key: key}))
+	_, err := r.svc.KVDelete(ctx, connect.NewRequest(&databasev2.KVDeleteRequest{Ref: r.ref, Key: key}))
 	return tierError(err)
 }
 
@@ -100,7 +100,7 @@ func (r *remoteKV) Keys(ctx context.Context, prefix string) ([]string, error) {
 	var out []string
 	after := ""
 	for {
-		page, err := r.svc.KVList(ctx, connect.NewRequest(&databasev1.KVListRequest{
+		page, err := r.svc.KVList(ctx, connect.NewRequest(&databasev2.KVListRequest{
 			Ref: r.ref, Prefix: prefix, After: after,
 		}))
 		if err != nil {
@@ -175,8 +175,8 @@ func (c *Client) kv(at address, hops int) database.KVConn {
 
 // oneKV is one database on another node.
 type oneKV struct {
-	svc  databasev1connect.DatabaseServiceClient
-	ref  *databasev1.Ref
+	svc  databasev2connect.DatabaseServiceClient
+	ref  *databasev2.Ref
 	hops int
 }
 
@@ -189,7 +189,7 @@ func (o *oneKV) sent(req interface{ Header() http.Header }) {
 }
 
 func (o *oneKV) Get(ctx context.Context, key string) ([]byte, error) {
-	req := connect.NewRequest(&databasev1.KVGetRequest{Ref: o.ref, Key: key})
+	req := connect.NewRequest(&databasev2.KVGetRequest{Ref: o.ref, Key: key})
 	o.sent(req)
 	out, err := o.svc.KVGet(ctx, req)
 	if err != nil {
@@ -199,14 +199,14 @@ func (o *oneKV) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (o *oneKV) Put(ctx context.Context, key string, value []byte) error {
-	req := connect.NewRequest(&databasev1.KVPutRequest{Ref: o.ref, Key: key, Value: value})
+	req := connect.NewRequest(&databasev2.KVPutRequest{Ref: o.ref, Key: key, Value: value})
 	o.sent(req)
 	_, err := o.svc.KVPut(ctx, req)
 	return refusal(err)
 }
 
 func (o *oneKV) Delete(ctx context.Context, key string) error {
-	req := connect.NewRequest(&databasev1.KVDeleteRequest{Ref: o.ref, Key: key})
+	req := connect.NewRequest(&databasev2.KVDeleteRequest{Ref: o.ref, Key: key})
 	o.sent(req)
 	_, err := o.svc.KVDelete(ctx, req)
 	return refusal(err)
@@ -219,7 +219,7 @@ func (o *oneKV) List(ctx context.Context, prefix string) ([]string, error) {
 	var out []string
 	after := ""
 	for {
-		req := connect.NewRequest(&databasev1.KVListRequest{Ref: o.ref, Prefix: prefix, After: after})
+		req := connect.NewRequest(&databasev2.KVListRequest{Ref: o.ref, Prefix: prefix, After: after})
 		o.sent(req)
 		page, err := o.svc.KVList(ctx, req)
 		if err != nil {
@@ -326,8 +326,8 @@ func (c *Client) Hold(ctx context.Context, at address) (keeper, error) {
 	return keeper{held: out.Msg.GetHeld(), keeps: out.Msg.GetKeeps()}, nil
 }
 
-func (c *Client) ref(at address) *databasev1.Ref {
-	return &databasev1.Ref{
+func (c *Client) ref(at address) *databasev2.Ref {
+	return &databasev2.Ref{
 		Project: at.project, Environment: at.environment, Id: at.id, Instance: at.instance,
 	}
 }

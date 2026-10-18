@@ -41,7 +41,7 @@ func TestTranslateIsTheWholeCodeTable(t *testing.T) {
 // underneath is still found — an ErrNoBackend is a 503 and not a 502.
 func TestAWrappedConnectCodeIsStillFound(t *testing.T) {
 	noBackend := errors.New("build: no peer answered")
-	wrapped := fmt.Errorf("%w on %s: %w", noBackend, "/tau/build/v1",
+	wrapped := fmt.Errorf("%w on %s: %w", noBackend, "/tau/build/v2",
 		connect.NewError(connect.CodeUnavailable, errors.New("not the leader")))
 
 	status, _ := translate(wrapped)

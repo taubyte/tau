@@ -10,7 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build/backend/row"
 )
@@ -214,11 +214,11 @@ func requireCancelKept(t *testing.T, h *harness, id string, err error) {
 			"the only honest refusal is a job that had already finished")
 		rec := h.mustRecord(t, id)
 		require.True(t, rec.terminal(), "and then it really must have finished")
-		require.NotEqual(t, buildv1.JobStatus_JobStatusCancelled, rec.status(),
+		require.NotEqual(t, buildv2.JobStatus_JobStatusCancelled, rec.status(),
 			"a refusal means something else finished it")
 		return
 	}
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id),
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id),
 		"a cancel that answered nil must not be overwritten")
 	require.Empty(t, h.lastCommit(testRepo, testRef),
 		"and a cancelled build must not advance the ref anchor")
@@ -284,7 +284,7 @@ func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	claim := h.mustRecord(t, id)
-	claim.Status = int32(buildv1.JobStatus_JobStatusClaimed)
+	claim.Status = int32(buildv2.JobStatus_JobStatusClaimed)
 	value, err := claim.encode()
 	require.NoError(t, err)
 	claimed := row.Sized(1)
@@ -377,7 +377,7 @@ func TestAReopenIsNotLostToTheReconcileThatOverlapsIt(t *testing.T) {
 	// The reopen this node holds committed and has not applied, built now and
 	// planted the instant mend's triage read of it has answered.
 	reopened := h.mustRecord(t, ahead)
-	reopened.Status = int32(buildv1.JobStatus_JobStatusOpen)
+	reopened.Status = int32(buildv2.JobStatus_JobStatusOpen)
 	reopened.UpdatedAt = h.clock.now().Unix()
 	value, err := reopened.encode()
 	require.NoError(t, err)
@@ -422,8 +422,8 @@ func TestAReopenIsNotLostToTheReconcileThatOverlapsIt(t *testing.T) {
 	t.Logf("raced=%s ahead=%s openRows=%d ready=%d",
 		h.status(t, raced), h.status(t, ahead), len(rows), ready)
 
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, raced))
-	require.Equal(t, buildv1.JobStatus_JobStatusOpen, h.status(t, ahead))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, raced))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, ahead))
 	require.ElementsMatch(t,
 		[]string{openIndexKey(testRepo, raced), openIndexKey(testRepo, ahead)}, rows,
 		"a reopened job must be in the open index, or nothing will ever look at it again")
@@ -440,7 +440,7 @@ func finishedAndStillListed(t *testing.T, h *harness, commit string) string {
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	require.NoError(t, h.work.Ack(d))
-	require.NoError(t, h.finishNow(t, id, buildv1.JobStatus_JobStatusFailed, "boom"))
+	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "boom"))
 	h.store.put(t, openIndexKey(testRepo, id), nil)
 	return id
 }
@@ -456,7 +456,7 @@ func TestAWithdrawnItemIsNotPutBackByTheDeliveryThatOverlapsIt(t *testing.T) {
 	var cancelErr error
 	cancelled := gated(t, h, jobRecordKey(id)).on(t, func() { cancelErr = h.cancel(id) })
 
-	_, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+	_, err := h.enqueue(context.Background(), &buildv2.PushEvent{
 		RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 	})
 	require.NoError(t, err)
@@ -466,7 +466,7 @@ func TestAWithdrawnItemIsNotPutBackByTheDeliveryThatOverlapsIt(t *testing.T) {
 	ready, claimed := h.work.Depth()
 	t.Logf("status=%s ready=%d claimed=%d", h.status(t, id), ready, claimed)
 
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 	require.Zero(t, ready+claimed, "a cancelled job must not be left with work in the queue")
 }
 
@@ -483,7 +483,7 @@ func TestANewJobIsNotLeftWithAnItemByTheCancelThatOverlapsItsCreation(t *testing
 	var cancelErr error
 	cancelled := gated(t, h, jobRecordKey(id)).onWritten(t, func() { cancelErr = h.cancel(id) })
 
-	pushed, err := h.enqueue(context.Background(), &buildv1.PushEvent{
+	pushed, err := h.enqueue(context.Background(), &buildv2.PushEvent{
 		RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,
 	})
 	require.NoError(t, err)
@@ -494,6 +494,6 @@ func TestANewJobIsNotLeftWithAnItemByTheCancelThatOverlapsItsCreation(t *testing
 	ready, claimed := h.work.Depth()
 	t.Logf("status=%s ready=%d claimed=%d", h.status(t, id), ready, claimed)
 
-	require.Equal(t, buildv1.JobStatus_JobStatusCancelled, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 	require.Zero(t, ready+claimed, "a cancelled job must not be left with work in the queue")
 }

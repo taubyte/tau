@@ -4,12 +4,12 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1/workerv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2/workerv2connect"
 )
 
 // Protocol is the libp2p protocol id this service listens on, walked off the
 // schema rather than typed here.
-var Protocol = rpc.Protocol(workerv1connect.WorkerServiceName)
+var Protocol = rpc.Protocol(workerv2connect.WorkerServiceName)
 
 // Ingress states which side of the trust boundary a service is on.
 type Ingress int

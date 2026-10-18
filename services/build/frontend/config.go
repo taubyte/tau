@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // Defaults. Fields on Config set through New, never mutable package globals —
@@ -232,7 +232,7 @@ type Hooks interface {
 	// github.go's githubCheckHookAndExtractSecret sets exactly one context
 	// variable — which is the whole of how a signature under one hook came to
 	// authorize a job for any repository.
-	Get(ctx context.Context, hookID string) (*authv1.Hook, error)
+	Get(ctx context.Context, hookID string) (*authv2.Hook, error)
 }
 
 // Deliveries authenticates a webhook delivery and says what it means.
@@ -250,7 +250,7 @@ type Deliveries interface {
 	// build; ErrMalformed is a genuine delivery naming no usable push;
 	// ErrUnverified is a delivery that is not genuine. Anything else is a hook
 	// this cloud cannot check at all.
-	Verify(hook *authv1.Hook, header http.Header, body []byte) (Push, error)
+	Verify(hook *authv2.Hook, header http.Header, body []byte) (Push, error)
 }
 
 // Push is what a verified delivery means: build.proto's PushEvent, and nothing
@@ -309,7 +309,7 @@ type Vault interface {
 // reach past the five RPCs into anything else the backend holds.
 type Backend interface {
 	Enqueue(ctx context.Context, repositoryKey, ref, commitSHA string) (jobID string, err error)
-	Get(ctx context.Context, jobID string) (*buildv1.Job, error)
+	Get(ctx context.Context, jobID string) (*buildv2.Job, error)
 	// List hands each id to emit as it arrives, so neither this process nor the
 	// backend has to hold a project's whole job history to answer.
 	List(ctx context.Context, projectID string, emit func(jobID string) error) error

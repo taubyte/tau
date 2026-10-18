@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build"
@@ -189,7 +189,7 @@ func TestCloseAbandonsTheRunInFlightRatherThanFailingTheJob(t *testing.T) {
 	require.NoError(t, h.Close())
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv1.JobStatus_JobStatusClaimed, rec.status(),
+	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, rec.status(),
 		"a shutdown must not write a terminal status for a build nothing finished")
 	require.Empty(t, rec.Reason)
 
@@ -221,7 +221,7 @@ func TestARunThatFinishedDuringAShutdownIsStillSettled(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, worked)
 
-	require.Equal(t, buildv1.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef))
 
 	ready, claimed := h.work.Depth()

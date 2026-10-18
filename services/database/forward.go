@@ -12,7 +12,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/placement"
-	databasev1 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v1"
+	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
 )
 
 // forward.go is who answers for a raft database, which is the one thing its
@@ -455,13 +455,13 @@ func (s *Service) warm(ctx context.Context, at address, peers []string) {
 // here, from this node's own membership view and the floor the cloud published.
 // A node that opened because it was asked would be a voter in a group nobody
 // placed it in, which is how a fleet ends up with a quorum it did not choose.
-func (s *Service) voting(ctx context.Context, at address, d declared) *databasev1.Holding {
+func (s *Service) voting(ctx context.Context, at address, d declared) *databasev2.Holding {
 	_, mine := s.desired(ctx, at, d)
 	if !mine && !s.opened(at.key()) {
-		return &databasev1.Holding{}
+		return &databasev2.Holding{}
 	}
 	if _, err := s.here(ctx, at, d); err != nil {
-		return &databasev1.Holding{}
+		return &databasev2.Holding{}
 	}
 	s.opening(at)
 
@@ -469,5 +469,5 @@ func (s *Service) voting(ctx context.Context, at address, d declared) *databasev
 	// they are for a crdt copy: leaving a raft group is a membership change and
 	// not a local drop, so nothing in the maintenance sweep ever asks this in
 	// order to delete anything.
-	return &databasev1.Holding{Held: true, Keeps: true}
+	return &databasev2.Holding{Held: true, Keeps: true}
 }

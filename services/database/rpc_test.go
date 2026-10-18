@@ -14,8 +14,8 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/fleet"
-	databasev1 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v1/databasev1connect"
+	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
 	"github.com/taubyte/tau/pkg/register"
 )
 
@@ -126,7 +126,7 @@ func declaringFloor(t *testing.T, object []byte, replication int) *published {
 }
 
 // serving is the service on one host and a client on another, over mocknet.
-func serving(t *testing.T) (databasev1connect.DatabaseServiceClient, *Service) {
+func serving(t *testing.T) (databasev2connect.DatabaseServiceClient, *Service) {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -155,11 +155,11 @@ func serving(t *testing.T) (databasev1connect.DatabaseServiceClient, *Service) {
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 
-	return databasev1connect.NewDatabaseServiceClient(conn.HTTP(), conn.URL()), s
+	return databasev2connect.NewDatabaseServiceClient(conn.HTTP(), conn.URL()), s
 }
 
-func ref(id string) *databasev1.Ref {
-	return &databasev1.Ref{Project: "shop", Environment: "prod", Id: id}
+func ref(id string) *databasev2.Ref {
+	return &databasev2.Ref{Project: "shop", Environment: "prod", Id: id}
 }
 
 // TestADatabaseRoundTripsOverTheWire, which is the whole service: a caller
@@ -167,12 +167,12 @@ func ref(id string) *databasev1.Ref {
 func TestADatabaseRoundTripsOverTheWire(t *testing.T) {
 	client, s := serving(t)
 
-	_, err := client.KVPut(t.Context(), connect.NewRequest(&databasev1.KVPutRequest{
+	_, err := client.KVPut(t.Context(), connect.NewRequest(&databasev2.KVPutRequest{
 		Ref: ref(kvID), Key: "token-1", Value: []byte("alice"),
 	}))
 	require.NoError(t, err)
 
-	got, err := client.KVGet(t.Context(), connect.NewRequest(&databasev1.KVGetRequest{
+	got, err := client.KVGet(t.Context(), connect.NewRequest(&databasev2.KVGetRequest{
 		Ref: ref(kvID), Key: "token-1",
 	}))
 	require.NoError(t, err)
@@ -181,13 +181,13 @@ func TestADatabaseRoundTripsOverTheWire(t *testing.T) {
 	require.Equal(t, 1, s.Held(), "the database is warm after the call that opened it")
 
 	// A KEY NOBODY WROTE IS NotFound, not an empty value.
-	_, err = client.KVGet(t.Context(), connect.NewRequest(&databasev1.KVGetRequest{
+	_, err = client.KVGet(t.Context(), connect.NewRequest(&databasev2.KVGetRequest{
 		Ref: ref(kvID), Key: "never-written",
 	}))
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
 	// AND DELETING WHAT IS NOT THERE SUCCEEDS: the caller wanted it gone.
-	_, err = client.KVDelete(t.Context(), connect.NewRequest(&databasev1.KVDeleteRequest{
+	_, err = client.KVDelete(t.Context(), connect.NewRequest(&databasev2.KVDeleteRequest{
 		Ref: ref(kvID), Key: "never-written",
 	}))
 	require.NoError(t, err)
@@ -199,7 +199,7 @@ func TestADatabaseRoundTripsOverTheWire(t *testing.T) {
 func TestAModelThisServiceDoesNotServeIsRefusedByName(t *testing.T) {
 	client, _ := serving(t)
 
-	_, err := client.KVGet(t.Context(), connect.NewRequest(&databasev1.KVGetRequest{
+	_, err := client.KVGet(t.Context(), connect.NewRequest(&databasev2.KVGetRequest{
 		Ref: ref(sqlID), Key: "anything",
 	}))
 	require.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err),
@@ -217,7 +217,7 @@ func TestAModelThisServiceDoesNotServeIsRefusedByName(t *testing.T) {
 func TestANodeThatCannotKeepAConsensusRefusesByName(t *testing.T) {
 	client, _ := serving(t)
 
-	_, err := client.KVPut(t.Context(), connect.NewRequest(&databasev1.KVPutRequest{
+	_, err := client.KVPut(t.Context(), connect.NewRequest(&databasev2.KVPutRequest{
 		Ref: ref(raftID), Key: "entry", Value: []byte("1"),
 	}))
 	require.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
@@ -230,7 +230,7 @@ func TestANodeThatCannotKeepAConsensusRefusesByName(t *testing.T) {
 func TestAnIdThisDeploymentDoesNotDeclareIsNotFound(t *testing.T) {
 	client, _ := serving(t)
 
-	_, err := client.KVGet(t.Context(), connect.NewRequest(&databasev1.KVGetRequest{
+	_, err := client.KVGet(t.Context(), connect.NewRequest(&databasev2.KVGetRequest{
 		Ref: ref("QmNobodyDeclaredThis"), Key: "k",
 	}))
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
@@ -242,16 +242,16 @@ func TestAnAddressWithAHoleInItSaysWhichPart(t *testing.T) {
 
 	for _, tc := range []struct {
 		name string
-		ref  *databasev1.Ref
+		ref  *databasev2.Ref
 		says string
 	}{
-		{"no project", &databasev1.Ref{Environment: "prod", Id: kvID}, "no project"},
-		{"no environment", &databasev1.Ref{Project: "shop", Id: kvID}, "no environment"},
-		{"no id", &databasev1.Ref{Project: "shop", Environment: "prod"}, "no database id"},
-		{"a separator", &databasev1.Ref{Project: "shop", Environment: "prod", Id: "a/b"}, "carries a separator"},
+		{"no project", &databasev2.Ref{Environment: "prod", Id: kvID}, "no project"},
+		{"no environment", &databasev2.Ref{Project: "shop", Id: kvID}, "no environment"},
+		{"no id", &databasev2.Ref{Project: "shop", Environment: "prod"}, "no database id"},
+		{"a separator", &databasev2.Ref{Project: "shop", Environment: "prod", Id: "a/b"}, "carries a separator"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := client.KVGet(t.Context(), connect.NewRequest(&databasev1.KVGetRequest{
+			_, err := client.KVGet(t.Context(), connect.NewRequest(&databasev2.KVGetRequest{
 				Ref: tc.ref, Key: "k",
 			}))
 			require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
@@ -266,20 +266,20 @@ func TestListPagesByKey(t *testing.T) {
 	client, _ := serving(t)
 
 	for _, key := range []string{"a", "b", "c", "d"} {
-		_, err := client.KVPut(t.Context(), connect.NewRequest(&databasev1.KVPutRequest{
+		_, err := client.KVPut(t.Context(), connect.NewRequest(&databasev2.KVPutRequest{
 			Ref: ref(kvID), Key: key, Value: []byte(key),
 		}))
 		require.NoError(t, err)
 	}
 
-	first, err := client.KVList(t.Context(), connect.NewRequest(&databasev1.KVListRequest{
+	first, err := client.KVList(t.Context(), connect.NewRequest(&databasev2.KVListRequest{
 		Ref: ref(kvID), Limit: 2,
 	}))
 	require.NoError(t, err)
 	require.Equal(t, []string{"a", "b"}, first.Msg.GetKeys())
 	require.True(t, first.Msg.GetMore())
 
-	next, err := client.KVList(t.Context(), connect.NewRequest(&databasev1.KVListRequest{
+	next, err := client.KVList(t.Context(), connect.NewRequest(&databasev2.KVListRequest{
 		Ref: ref(kvID), Limit: 2, After: "b",
 	}))
 	require.NoError(t, err)

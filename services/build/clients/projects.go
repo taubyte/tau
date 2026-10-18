@@ -8,11 +8,11 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// ProjectClient answers what gates a project, against tau.auth.v1's
+// ProjectClient answers what gates a project, against tau.auth.v2's
 // ProjectService.
 type ProjectClient struct {
 	pool *Pool
@@ -46,8 +46,8 @@ func (c *ProjectClient) Repositories(ctx context.Context, projectID string) ([]s
 
 	var keys []string
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		projects := authv1connect.NewProjectServiceClient(client.HTTP(), client.URL())
-		resp, err := projects.Get(ctx, connect.NewRequest(&authv1.ProjectRef{Id: projectID}))
+		projects := authv2connect.NewProjectServiceClient(client.HTTP(), client.URL())
+		resp, err := projects.Get(ctx, connect.NewRequest(&authv2.ProjectRef{Id: projectID}))
 		if err != nil {
 			return err
 		}
@@ -93,8 +93,8 @@ func (c *ProjectClient) Configures(ctx context.Context, projectID, repositoryKey
 
 	var configures bool
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		projects := authv1connect.NewProjectServiceClient(client.HTTP(), client.URL())
-		resp, err := projects.Get(ctx, connect.NewRequest(&authv1.ProjectRef{Id: projectID}))
+		projects := authv2connect.NewProjectServiceClient(client.HTTP(), client.URL())
+		resp, err := projects.Get(ctx, connect.NewRequest(&authv2.ProjectRef{Id: projectID}))
 		if err != nil {
 			return err
 		}
@@ -125,8 +125,8 @@ func (c *ProjectClient) CodeRepository(ctx context.Context, projectID string) (s
 
 	var key string
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		projects := authv1connect.NewProjectServiceClient(client.HTTP(), client.URL())
-		resp, err := projects.Get(ctx, connect.NewRequest(&authv1.ProjectRef{Id: projectID}))
+		projects := authv2connect.NewProjectServiceClient(client.HTTP(), client.URL())
+		resp, err := projects.Get(ctx, connect.NewRequest(&authv2.ProjectRef{Id: projectID}))
 		if err != nil {
 			return err
 		}

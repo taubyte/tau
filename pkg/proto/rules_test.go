@@ -163,16 +163,13 @@ func TestTheRulesBufCannotCheck(t *testing.T) {
 	// ─── §3. Package, directory and protocol id agree ──────────────────
 	//
 	// service-conventions.md §2d, whose table gives three rows — auth ->
-	// tau.auth.v1 -> /tau/auth/v1, tns, build — and one rule: the protocol
+	// tau.auth.v2 -> /tau/auth/v2, tns, build — and one rule: the protocol
 	// id is "/" plus the proto package with dots as slashes, derived
 	// (rpc.Protocol) and never typed twice. The "tau." segment is the
-	// anti-collision half. It is not decoration: `package auth.v1` derives
-	// "/auth/v1", which is the id v1 answers on today and will keep
-	// answering on for the whole span between the first v2 service and the
-	// swap — and that is precisely what was committed until this test's own
-	// commit. v1's source is gone from this tree, so its ids can no longer be
-	// read here; packageShape is what keeps the "tau." segment, and every v1
-	// id (/auth/v1, /tns/v1, /seer/v1, ...) lacks it.
+	// anti-collision half. It is not decoration: `package auth.v2` would
+	// derive "/auth/v2", a bare service name on a swarm that carries other
+	// protocols too, and v1's ids (/auth/v1, /tns/v1, /seer/v1, ...) were
+	// exactly that shape. packageShape is what keeps the "tau." segment.
 	//
 	// The directory half is buf's PACKAGE_DIRECTORY_MATCH as well, but
 	// buf.yaml's lint `except:` list is one line away from not being, and

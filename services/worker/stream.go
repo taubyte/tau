@@ -13,7 +13,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	workerv1 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v1"
+	workerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/splice"
 )
@@ -22,7 +22,7 @@ import (
 //
 // # Why this is not the connect RPC beside it
 //
-// `/tau/worker/v1` is connect-go over a libp2p stream and its own schema says it
+// `/tau/worker/v2` is connect-go over a libp2p stream and its own schema says it
 // is unary on purpose: the whole request arrives before the workload sees any of
 // it and the whole response is buffered before the caller sees any of it. That
 // is right for an invocation and impossible for a proxy, which carries bytes it
@@ -105,7 +105,7 @@ func (s *Service) serveStreams(ctx context.Context) error {
 func (s *Service) carry(ctx context.Context, from net.Conn) {
 	defer from.Close()
 
-	var open workerv1.Open
+	var open workerv2.Open
 	if err := protodelim.UnmarshalFrom(newByteReader(from), &open); err != nil {
 		// NOTHING IS ANSWERED HERE. A caller that could not write a header is a
 		// caller that is not speaking this protocol, and writing an Opened at
@@ -132,7 +132,7 @@ func (s *Service) carry(ctx context.Context, from net.Conn) {
 	}
 	defer to.Close()
 
-	if err := answer(from, &workerv1.Opened{Ok: true}); err != nil {
+	if err := answer(from, &workerv2.Opened{Ok: true}); err != nil {
 		return
 	}
 	splice.Both(from, to)
@@ -140,10 +140,10 @@ func (s *Service) carry(ctx context.Context, from net.Conn) {
 
 // refuse answers with why, and says whether another node is worth trying.
 func refuse(to net.Conn, why string, retry bool) {
-	answer(to, &workerv1.Opened{Error: why, Unreachable: retry})
+	answer(to, &workerv2.Opened{Error: why, Unreachable: retry})
 }
 
-func answer(to net.Conn, msg *workerv1.Opened) error {
+func answer(to net.Conn, msg *workerv2.Opened) error {
 	_, err := protodelim.MarshalTo(to, msg)
 	return err
 }
@@ -195,8 +195,8 @@ func DialWorkload(ctx context.Context, h host.Host, at libp2ppeer.ID, t specs.Ad
 		return nil, fmt.Errorf("worker: dialling %s: %w", at, err)
 	}
 
-	if _, err := protodelim.MarshalTo(conn, &workerv1.Open{
-		Target: &workerv1.Target{
+	if _, err := protodelim.MarshalTo(conn, &workerv2.Open{
+		Target: &workerv2.Target{
 			Project: t.Project, Environment: t.Environment,
 			Scope: t.Scope, Kind: t.Kind, Name: t.Name,
 		},
@@ -206,7 +206,7 @@ func DialWorkload(ctx context.Context, h host.Host, at libp2ppeer.ID, t specs.Ad
 		return nil, fmt.Errorf("worker: opening %s/%s: %w", t.Kind, t.Name, err)
 	}
 
-	var opened workerv1.Opened
+	var opened workerv2.Opened
 	if err := protodelim.UnmarshalFrom(newByteReader(conn), &opened); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("worker: opening %s/%s: %w", t.Kind, t.Name, err)

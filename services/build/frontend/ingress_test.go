@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // ingress_test.go holds the three properties net/http's own ServeMux gives and
@@ -33,7 +33,7 @@ func TestAPathValueCannotBeOverriddenFromAnywhereElse(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, Config{})
 			var asked []string
-			h.backend.get = func(id string) (*buildv1.Job, error) { asked = append(asked, id); return nil, errDenied }
+			h.backend.get = func(id string) (*buildv2.Job, error) { asked = append(asked, id); return nil, errDenied }
 
 			r := authed(http.MethodGet, "/job/"+testJobID, testToken)
 			tc.mangle(r)

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // ProjectService.Create and .Get carry no caller identity requirement (see
@@ -18,7 +18,7 @@ func TestProjectGet_NotFound(t *testing.T) {
 	s := newTestService(t)
 	h := &projectHandler{s}
 
-	_, err := h.Get(t.Context(), connect.NewRequest(&authv1.ProjectRef{Id: "does-not-exist"}))
+	_, err := h.Get(t.Context(), connect.NewRequest(&authv2.ProjectRef{Id: "does-not-exist"}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
@@ -27,7 +27,7 @@ func TestProjectCreate_And_Get(t *testing.T) {
 	s := newTestService(t)
 	h := &projectHandler{s}
 
-	res, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
+	res, err := h.Create(t.Context(), connect.NewRequest(&authv2.CreateProjectRequest{
 		Name:                "demo",
 		ConfigRepositoryKey: "github.com/acme/config",
 		CodeRepositoryKey:   "github.com/acme/code",
@@ -38,7 +38,7 @@ func TestProjectCreate_And_Get(t *testing.T) {
 	// CreateProjectResponse deliberately does not echo the repository keys
 	// back (auth.proto's own comment on CreateProjectResponse).
 
-	got, err := h.Get(t.Context(), connect.NewRequest(&authv1.ProjectRef{Id: res.Msg.GetId()}))
+	got, err := h.Get(t.Context(), connect.NewRequest(&authv2.ProjectRef{Id: res.Msg.GetId()}))
 	require.NoError(t, err)
 	assert.Equal(t, "demo", got.Msg.GetName())
 	assert.Equal(t, "github.com/acme/config", got.Msg.GetConfigRepositoryKey())
@@ -57,7 +57,7 @@ func TestProjectCreate_EmptyName(t *testing.T) {
 	s := newTestService(t)
 	h := &projectHandler{s}
 
-	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
+	_, err := h.Create(t.Context(), connect.NewRequest(&authv2.CreateProjectRequest{
 		Name:                "",
 		ConfigRepositoryKey: "github.com/acme/config",
 		CodeRepositoryKey:   "github.com/acme/code",
@@ -70,7 +70,7 @@ func TestProjectCreate_BadConfigKey(t *testing.T) {
 	s := newTestService(t)
 	h := &projectHandler{s}
 
-	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
+	_, err := h.Create(t.Context(), connect.NewRequest(&authv2.CreateProjectRequest{
 		Name:                "demo",
 		ConfigRepositoryKey: "",
 		CodeRepositoryKey:   "github.com/acme/code",
@@ -83,7 +83,7 @@ func TestProjectCreate_BadCodeKey(t *testing.T) {
 	s := newTestService(t)
 	h := &projectHandler{s}
 
-	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
+	_, err := h.Create(t.Context(), connect.NewRequest(&authv2.CreateProjectRequest{
 		Name:                "demo",
 		ConfigRepositoryKey: "github.com/acme/config",
 		CodeRepositoryKey:   "",
@@ -101,7 +101,7 @@ func TestProjectCreate_RepositoriesNeedNotBeRegistered(t *testing.T) {
 	s := newTestService(t)
 	h := &projectHandler{s}
 
-	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
+	_, err := h.Create(t.Context(), connect.NewRequest(&authv2.CreateProjectRequest{
 		Name:                "demo",
 		ConfigRepositoryKey: "github.com/acme/config",
 		CodeRepositoryKey:   "github.com/acme/code",
@@ -118,7 +118,7 @@ func TestProjectCreate_PutProjectFails(t *testing.T) {
 	s := &Service{kv: &batchFailingKVDB{Store: newStore(t), failAt: 1}}
 	h := &projectHandler{s}
 
-	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
+	_, err := h.Create(t.Context(), connect.NewRequest(&authv2.CreateProjectRequest{
 		Name: "demo", ConfigRepositoryKey: "github.com/acme/config", CodeRepositoryKey: "github.com/acme/code",
 	}))
 	require.Error(t, err)
@@ -129,7 +129,7 @@ func TestProjectCreate_LinkingConfigFails(t *testing.T) {
 	s := &Service{kv: &putFailsAfter{Store: newStore(t), failOn: 1}}
 	h := &projectHandler{s}
 
-	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
+	_, err := h.Create(t.Context(), connect.NewRequest(&authv2.CreateProjectRequest{
 		Name: "demo", ConfigRepositoryKey: "github.com/acme/config", CodeRepositoryKey: "github.com/acme/code",
 	}))
 	require.Error(t, err)
@@ -140,7 +140,7 @@ func TestProjectCreate_LinkingCodeFails(t *testing.T) {
 	s := &Service{kv: &putFailsAfter{Store: newStore(t), failOn: 2}}
 	h := &projectHandler{s}
 
-	_, err := h.Create(t.Context(), connect.NewRequest(&authv1.CreateProjectRequest{
+	_, err := h.Create(t.Context(), connect.NewRequest(&authv2.CreateProjectRequest{
 		Name: "demo", ConfigRepositoryKey: "github.com/acme/config", CodeRepositoryKey: "github.com/acme/code",
 	}))
 	require.Error(t, err)

@@ -6,16 +6,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v1/buildv1connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 )
 
 // The protocol id belongs to the proto PACKAGE, not to either service block
 // in it, so both generated names have to derive the same string. If they ever
 // did not, one of the two would be mounted behind a listener nothing dials.
 func TestBothServiceBlocksDeriveOneProtocolID(t *testing.T) {
-	require.Equal(t, Protocol, rpc.Protocol(buildv1connect.QueueServiceName))
-	require.Equal(t, Protocol, rpc.Protocol(buildv1connect.JobServiceName))
-	require.EqualValues(t, "/tau/build/v1", Protocol)
+	require.Equal(t, Protocol, rpc.Protocol(buildv2connect.QueueServiceName))
+	require.Equal(t, Protocol, rpc.Protocol(buildv2connect.JobServiceName))
+	require.EqualValues(t, "/tau/build/v2", Protocol)
 }
 
 // v1 answers on "/patrick/v1" and "/monkey/v1" today, and both processes run

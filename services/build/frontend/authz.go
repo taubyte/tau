@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	buildv1 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v1"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 // authz.go is the only file in this package that decides whether a caller may
@@ -79,7 +79,7 @@ func (s *Service) mayTouchProject(ctx context.Context, token, projectID string) 
 //
 // The job's own repository_key is the subject: a job belongs to a repository,
 // and whoever may write to that repository may see and stop its builds.
-func (s *Service) mayTouchJob(ctx context.Context, token, jobID string) (*buildv1.Job, error) {
+func (s *Service) mayTouchJob(ctx context.Context, token, jobID string) (*buildv2.Job, error) {
 	job, err := s.backend.Get(ctx, jobID)
 	if err != nil {
 		return nil, err

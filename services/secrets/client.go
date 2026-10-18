@@ -12,8 +12,8 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 
-	secretsv1 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v1/secretsv1connect"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2/secretsv2connect"
 )
 
 // client.go is the other side of rpc.go, and it exists so a consumer holds ONE
@@ -25,7 +25,7 @@ import (
 // Client calls a secrets service on another peer.
 type Client struct {
 	conn *rpc.Client
-	svc  secretsv1connect.SecretsServiceClient
+	svc  secretsv2connect.SecretsServiceClient
 }
 
 // NewClient prepares calls to the vault on p. Nothing is dialled until the
@@ -35,15 +35,15 @@ func NewClient(h host.Host, p libp2ppeer.ID) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("secrets: dialling %s: %w", p, err)
 	}
-	return &Client{conn: conn, svc: secretsv1connect.NewSecretsServiceClient(conn.HTTP(), conn.URL())}, nil
+	return &Client{conn: conn, svc: secretsv2connect.NewSecretsServiceClient(conn.HTTP(), conn.URL())}, nil
 }
 
 // Close releases the stream. Calls after it fail.
 func (c *Client) Close() { c.conn.Close() }
 
 func (c *Client) Get(ctx context.Context, project, environment, name string) ([]byte, error) {
-	res, err := c.svc.Get(ctx, connect.NewRequest(&secretsv1.SecretRequest{
-		Scope: &secretsv1.Scope{Project: project, Environment: environment}, Name: name,
+	res, err := c.svc.Get(ctx, connect.NewRequest(&secretsv2.SecretRequest{
+		Scope: &secretsv2.Scope{Project: project, Environment: environment}, Name: name,
 	}))
 	if err != nil {
 		return nil, unwire(err)
@@ -52,8 +52,8 @@ func (c *Client) Get(ctx context.Context, project, environment, name string) ([]
 }
 
 func (c *Client) Set(ctx context.Context, project, environment, name string, value []byte) error {
-	_, err := c.svc.Set(ctx, connect.NewRequest(&secretsv1.SetRequest{
-		Scope: &secretsv1.Scope{Project: project, Environment: environment}, Name: name, Value: value,
+	_, err := c.svc.Set(ctx, connect.NewRequest(&secretsv2.SetRequest{
+		Scope: &secretsv2.Scope{Project: project, Environment: environment}, Name: name, Value: value,
 	}))
 	if err != nil {
 		return unwire(err)
@@ -62,8 +62,8 @@ func (c *Client) Set(ctx context.Context, project, environment, name string, val
 }
 
 func (c *Client) Delete(ctx context.Context, project, environment, name string) error {
-	_, err := c.svc.Delete(ctx, connect.NewRequest(&secretsv1.SecretRequest{
-		Scope: &secretsv1.Scope{Project: project, Environment: environment}, Name: name,
+	_, err := c.svc.Delete(ctx, connect.NewRequest(&secretsv2.SecretRequest{
+		Scope: &secretsv2.Scope{Project: project, Environment: environment}, Name: name,
 	}))
 	if err != nil {
 		return unwire(err)
@@ -72,7 +72,7 @@ func (c *Client) Delete(ctx context.Context, project, environment, name string) 
 }
 
 func (c *Client) List(ctx context.Context, project, environment string) ([]string, error) {
-	res, err := c.svc.List(ctx, connect.NewRequest(&secretsv1.Scope{Project: project, Environment: environment}))
+	res, err := c.svc.List(ctx, connect.NewRequest(&secretsv2.Scope{Project: project, Environment: environment}))
 	if err != nil {
 		return nil, unwire(err)
 	}

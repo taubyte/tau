@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // Service is build's public half: an http.Server, a mux, and the four
@@ -42,7 +42,7 @@ type Service struct {
 	// The keyed ones are all keyed by a string a stranger chooses, so all three
 	// are the same bounded, expiring map; the global ones are one bucket each
 	// and cannot be keyed at all. See secrets.go and ratelimit.go.
-	secrets       *cache[*authv1.Hook]
+	secrets       *cache[*authv2.Hook]
 	hookBuckets   *cache[*bucket]
 	callerBuckets *cache[*bucket]
 	globalHooks   *bucket
@@ -255,7 +255,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	// A miss is remembered only when it is an ANSWER — see secrets.go's
 	// terminal. Remembering "auth is unreachable" would keep this node
 	// refusing real pushes for a whole TTL after auth came back.
-	s.secrets = newCache[*authv1.Hook](s.cfg.SecretCacheMax, s.cfg.SecretCacheTTL, s.now, terminal)
+	s.secrets = newCache[*authv2.Hook](s.cfg.SecretCacheMax, s.cfg.SecretCacheTTL, s.now, terminal)
 	// A bucket's lifetime is one refill period, because a bucket untouched for
 	// that long has refilled to full and is indistinguishable from a new one.
 	//

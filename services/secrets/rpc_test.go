@@ -172,5 +172,5 @@ func TestStartingTwiceOrAfterCloseIsAnError(t *testing.T) {
 // internet.
 func TestTheSecretsServiceIsNotOnTheInternet(t *testing.T) {
 	require.Equal(t, IngressNone, Descriptor.Ingress)
-	require.Equal(t, "/tau/secrets/v1", string(Descriptor.Protocol))
+	require.Equal(t, "/tau/secrets/v2", string(Descriptor.Protocol))
 }

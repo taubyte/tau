@@ -9,11 +9,11 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	authv1 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v1/authv1connect"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// HookClient answers one question against tau.auth.v1's HookService: what does
+// HookClient answers one question against tau.auth.v2's HookService: what does
 // this cloud know about the webhook a stranger just POSTed to.
 //
 // It is the frontend's single most security-sensitive call, because its answer
@@ -37,15 +37,15 @@ func Hooks(p *Pool) (*HookClient, error) {
 }
 
 // Get returns the hook registered under id.
-func (c *HookClient) Get(ctx context.Context, hookID string) (*authv1.Hook, error) {
+func (c *HookClient) Get(ctx context.Context, hookID string) (*authv2.Hook, error) {
 	if hookID == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("build: hook id is required"))
 	}
 
-	var hook *authv1.Hook
+	var hook *authv2.Hook
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		hooks := authv1connect.NewHookServiceClient(client.HTTP(), client.URL())
-		resp, err := hooks.Get(ctx, connect.NewRequest(&authv1.HookRef{Id: hookID}))
+		hooks := authv2connect.NewHookServiceClient(client.HTTP(), client.URL())
+		resp, err := hooks.Get(ctx, connect.NewRequest(&authv2.HookRef{Id: hookID}))
 		if err != nil {
 			return err
 		}

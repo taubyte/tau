@@ -23,7 +23,7 @@ import (
 //
 // A channel is a named request/response conduit to one other workload in the
 // same project. v2 already moves exactly that between nodes: the worker's own
-// `/tau/worker/v1`, connect-go over a libp2p stream, carrying
+// `/tau/worker/v2`, connect-go over a libp2p stream, carrying
 // `(address, request) -> response`. So a dial resolves the address the channel
 // names and invokes it. There is no second protocol, no second discovery and no
 // second timeout.

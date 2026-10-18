@@ -1,6 +1,6 @@
 // Package auth is v2's rewrite of services/auth: the Project, Repository,
 // Hook, Domain and Certificate RPCs declared in
-// pkg/proto/tau/auth/v1/auth.proto, served to other tau nodes over
+// pkg/proto/tau/auth/v2/auth.proto, served to other tau nodes over
 // p2p/rpc (ConnectRPC on a libp2p stream). See auth.proto's own package doc
 // for what is deliberately not modelled here (the GitHub-token HTTP surface,
 // ACME's health/stats boilerplate), and service-conventions.md for the shape

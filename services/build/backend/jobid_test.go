@@ -105,7 +105,7 @@ func TestAJobIDIsDeterministicAndExactlyOneKeySegment(t *testing.T) {
 // The domain separator is what keeps this hash from equalling some other
 // sha256 over the same bytes.
 func TestTheDomainSeparatorIsInTheDigest(t *testing.T) {
-	require.Contains(t, jobIDDomain, "tau.build.v1")
+	require.Contains(t, jobIDDomain, "tau.build.v2")
 	require.True(t, strings.HasSuffix(jobIDDomain, "\x00"))
 
 	// Without the domain, framing alone would give a different digest; the

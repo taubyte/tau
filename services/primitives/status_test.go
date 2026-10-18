@@ -14,8 +14,8 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	primitivesv1 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v1"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v1/primitivesv1connect"
+	primitivesv2 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2/primitivesv2connect"
 )
 
 // status_test is the one check that replaces per-method vigilance.
@@ -28,7 +28,7 @@ import (
 // refusingService answers every QueueSend with whatever refusal the case is
 // about, encoded the way a handler encodes one.
 type refusingService struct {
-	primitivesv1connect.UnimplementedPrimitivesServiceHandler
+	primitivesv2connect.UnimplementedPrimitivesServiceHandler
 
 	mu  sync.Mutex
 	err error
@@ -40,7 +40,7 @@ func (r *refusingService) refuse(err error) {
 	r.err = err
 }
 
-func (r *refusingService) QueueSend(context.Context, *connect.Request[primitivesv1.QueueSendRequest]) (*connect.Response[primitivesv1.Empty], error) {
+func (r *refusingService) QueueSend(context.Context, *connect.Request[primitivesv2.QueueSendRequest]) (*connect.Response[primitivesv2.Empty], error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return nil, wire(r.err)
@@ -65,7 +65,7 @@ func refusing(t *testing.T) (*Client, *refusingService) {
 
 	svc := &refusingService{}
 	mux := http.NewServeMux()
-	mux.Handle(primitivesv1connect.NewPrimitivesServiceHandler(svc))
+	mux.Handle(primitivesv2connect.NewPrimitivesServiceHandler(svc))
 
 	listener, err := rpc.Listen(t.Context(), server, Protocol, mux)
 	require.NoError(t, err)

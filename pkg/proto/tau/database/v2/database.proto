@@ -1,0 +1,207 @@
+syntax = "proto3";
+
+// database is the service that holds a project's databases, and the reason it
+// is not the worker is that v1 made it the worker.
+//
+// IN V1 THE SUBSTRATE OPENED THE DATABASE. Every compute node that ever served
+// a request for a project held that project's connection, its indexes and, for
+// tau's own engines, its rows — so the data plane was every node that had ever
+// run code, the connection table was unbounded, and a database's warmth was an
+// accident of which node happened to get the traffic. v2 splits the three data
+// services (storage, database, cache) because their requirements differ at
+// scale, and this is the one whose state is RESIDENT: a bucket's current
+// version is derived from its keys, and a database's is an open engine — a
+// vector index, a sql pool, a document collection — that costs more to build
+// than the request that needs it.
+//
+// So the mechanism, rather than the word "hot": a bucket can be served by
+// whichever node holds the blocks, and a database must be served where its
+// engine already IS. That is a placement fact, and a service that owns the
+// engines is the only thing that can state it.
+//
+// # The caller names a database; it does not describe one
+//
+// Every call carries the deployment and the resource id, and NOTHING about what
+// that database is. No engine, no host, no size, no consensus. The service
+// resolves the declaration itself out of the register, for the same reason the
+// secrets service keys on an id rather than trusting a path: a caller that
+// described the database would be a caller that could describe a DIFFERENT one
+// — name postgres for a kv, point `host` somewhere else, ask for a size nobody
+// declared — and the service would have no way to tell.
+//
+// It is also what finally gives `size` and `consensus` somewhere to land. Both
+// are RequiredWhen the engine is distributed and today neither leaves the
+// compiler: the worker carries engine, host, database, tls, dimensions and
+// metric, and no one reads the other two. A service that reads the declaration
+// reads all of it.
+//
+// # There is no Open and there are no handles
+//
+// A caller cannot open, close, or hold a database. It names one per call and
+// the service decides what is resident, for how long, and where — which is the
+// whole of what makes this a service rather than a library the worker links.
+// Warming policy, idle eviction and the bound on how many engines a node holds
+// are implementation and change without a wire change.
+//
+// The alternative, a session handle, would put the lifetime back in the
+// caller's hands and reproduce exactly what it is here to stop: a worker
+// holding a database open forever because nothing told it to let go.
+//
+// # Four models, one service
+//
+// The vocabulary has ONE `database` kind with a type axis — kv, sql, document,
+// vector — so this is one service with four groups of calls rather than four
+// services. Their operations genuinely differ (a vector has a width and a
+// metric; a sql result is a cursor), which is why they are not one generic
+// Get/Put pair with a bag of options.
+package tau.database.v2;
+
+// Ref is one database, in one environment of one project.
+//
+// THE ID AND NEVER THE AUTHOR'S LABEL. A label is local to the resource that
+// wrote it: two workloads may call one database different things, and two
+// different databases may both be called `tokens`. The id is what ADDRESSES the
+// resource — node/database.go already says so where it builds a Spec — and it
+// is what a reference compiles to.
+message Ref {
+  string project = 1;
+  string environment = 2;
+
+  // id is the database resource's content-addressed id.
+  string id = 3;
+
+  // instance names one of many, for a store whose config says it holds many.
+  // Empty is the store itself. It is a separate field rather than a suffix on
+  // id, because a separator inside an id is how one instance reads another's
+  // rows.
+  string instance = 4;
+}
+
+// ---------------------------------------------------------------- key/value
+
+message KVGetRequest {
+  Ref ref = 1;
+  string key = 2;
+}
+
+// KVValue is bytes. A miss is NotFound and never an empty value — a workload
+// handed "" for what it stored does not fail where the value is missing, it
+// fails later looking like a bug in the workload.
+message KVValue {
+  bytes value = 1;
+}
+
+message KVPutRequest {
+  Ref ref = 1;
+  string key = 2;
+  bytes value = 3;
+}
+
+message KVDeleteRequest {
+  Ref ref = 1;
+  string key = 2;
+}
+
+message KVListRequest {
+  Ref ref = 1;
+  string prefix = 2;
+
+  // after is the last key of the previous page. Paging is by key rather than by
+  // offset so that a page is stable under concurrent writes.
+  string after = 3;
+  uint32 limit = 4;
+}
+
+message KVKeys {
+  repeated string keys = 1;
+
+  // more says the prefix has keys past this page, so a caller knows to ask
+  // again rather than inferring it from a full page.
+  bool more = 2;
+}
+
+// KVDigest asks a node what it holds for one database, as one comparable value.
+//
+// IT IS THE ONLY WAY A NODE LEAVING A DATABASE CAN KNOW IT IS SAFE TO GO.
+// Placement moves a database by having one node stop holding it and another
+// start; "another node is alive and should hold this" is NOT the same statement
+// as "another node HAS this", and the difference is the whole failure. A region
+// goes dark, an operator repins to somewhere else to restore service, the
+// region comes back, reads the new placement and drops the only copies there
+// ever were -- because the new holders were alive the whole time and never
+// received a row, their source having been down.
+//
+// So the departing node asks, and it compares. Equal digests mean the other
+// node holds the same keys with the same values, which for a store whose writes
+// converge is a proof and not a sample.
+message KVDigestValue {
+  // keys is how many this node holds for the database, which makes an
+  // unequal answer readable instead of only unequal.
+  uint64 keys = 1;
+
+  // digest covers the keys AND their values. Keys alone would call two nodes
+  // converged while one of them held a stale value for every one of them.
+  bytes digest = 2;
+
+  // held says this node has a copy at all. Asking must not create one: a node
+  // that answered by OPENING the database would become a holder because it was
+  // asked, and would then answer a digest that looks converged.
+  bool held = 3;
+
+  // keeps says this node means to go on holding it — its OWN placement answer,
+  // decided under the same lock as its own release.
+  //
+  // IT IS A DIFFERENT QUESTION FROM held, AND THE DIFFERENCE IS THE WHOLE GATE.
+  // A node mid-release holds the bytes and is about to delete them. Counting it
+  // as a reason to leave is how two nodes delete a database between them: a pin
+  // that moved between revisions, two nodes relabelled inside one freshness
+  // window, or two nodes draining at once -- a rolling restart -- each leave
+  // both nodes computing the other desired and both dropping. A node that is
+  // leaving answers false, so neither may go.
+  bool keeps = 4;
+}
+
+// Holding is the cheap half of KVDigestValue: whether a node has a database and
+// means to keep it, with no digest computed.
+//
+// IT IS WHAT REPAIR ASKS. A holder checking that its co-holders are still there
+// needs no proof of convergence, only presence -- and a peer answering
+// held=false while keeps=true is a nudge to open, which it does on its OWN
+// computation and never on a stranger's word.
+message Holding {
+  bool held = 1;
+  bool keeps = 2;
+}
+
+// ------------------------------------------------------------------ results
+
+// Empty stays a message rather than google.protobuf.Empty so a field can be
+// added later without every caller recompiling against a different type.
+message Empty {}
+
+service DatabaseService {
+  // KVGet reads one key. NotFound is a miss.
+  rpc KVGet(KVGetRequest) returns (KVValue);
+
+  // KVPut writes one. It is an upsert: the vocabulary's kv has no create.
+  rpc KVPut(KVPutRequest) returns (Empty);
+
+  // KVDelete removes one. Deleting what is not there succeeds — the caller
+  // wanted it gone and it is gone.
+  rpc KVDelete(KVDeleteRequest) returns (Empty);
+
+  // KVList pages the keys under a prefix. Keys only: a list that returned
+  // values would turn one call into an export of the database, and every
+  // caller that only wanted to enumerate would be making it.
+  rpc KVList(KVListRequest) returns (KVKeys);
+
+  // KVDigest is what one node holds for a database, as one comparable value.
+  // It answers a question no other call can: whether it is safe to stop
+  // holding something. See KVDigestValue.
+  rpc KVDigest(Ref) returns (KVDigestValue);
+
+  // Hold is whether this node has a database and means to keep it. It is
+  // KVDigest without the digest, for the sweep that checks co-holders are
+  // still there.
+  rpc Hold(Ref) returns (Holding);
+}
