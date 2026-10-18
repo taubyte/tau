@@ -24,7 +24,7 @@ func TestTheConfigThisTierBuildsIsAcceptedByContainerd(t *testing.T) {
 	require.NoError(t, err, "no containerd to ask")
 
 	r := &Runtime{}
-	cfg := r.config(Image{Ref: "docker.io/library/busybox:latest"}, 18081, "", nil)
+	cfg := r.config(Image{Ref: "docker.io/library/busybox:latest"}, nil, 18081, "", nil)
 
 	require.NotNil(t, cfg.Network)
 	t.Logf("tier asks for: mode=%q restrict-egress=%v port-mappings=%d",

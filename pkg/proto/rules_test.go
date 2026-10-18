@@ -2,9 +2,6 @@ package proto
 
 import (
 	"bytes"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io/fs"
 	"os"
 	"path"
@@ -65,11 +62,9 @@ func TestTheRulesBufCannotCheck(t *testing.T) {
 
 	s := load(t, root)
 	t.Logf("pkg/proto: %d .proto files (%d on disk), %d packages, %d messages, "+
-		"%d fields, %d oneofs, %d enums, %d enum values, %d services, %d rpcs; "+
-		"%d v1 protocol ids read from services/common/names.go",
+		"%d fields, %d oneofs, %d enums, %d enum values, %d services, %d rpcs",
 		len(s.files), s.onDisk, len(s.packages), len(s.messages), len(s.fields),
-		len(s.oneofs), len(s.enums), len(s.values), len(s.services), len(s.methods),
-		len(s.v1Protocols))
+		len(s.oneofs), len(s.enums), len(s.values), len(s.services), len(s.methods))
 
 	// The count keeps the whole file from going quiet the way tools/tcc-gen's
 	// check once did at 2 files of 57 (commit 481fab44), and the way an
@@ -79,11 +74,6 @@ func TestTheRulesBufCannotCheck(t *testing.T) {
 	if s.onDisk == 0 || len(s.files) != s.onDisk {
 		t.Fatalf("buf built %d files from a module holding %d .proto sources on disk — "+
 			"every rule below would be checking a tree that isn't there", len(s.files), s.onDisk)
-	}
-	if len(s.v1Protocols) < 5 {
-		t.Fatalf("read %d protocol ids out of services/common/names.go, expected v1's whole set — "+
-			"if v1's ids moved or died, §3's collision check needs re-pointing, not deleting",
-			len(s.v1Protocols))
 	}
 
 	// ─── §1. A repository is one string key ────────────────────────────
@@ -180,9 +170,9 @@ func TestTheRulesBufCannotCheck(t *testing.T) {
 	// "/auth/v1", which is the id v1 answers on today and will keep
 	// answering on for the whole span between the first v2 service and the
 	// swap — and that is precisely what was committed until this test's own
-	// commit. So the collision is measured against v1's live list rather
-	// than argued: the ids are read out of services/common/names.go, where
-	// v1 declares them.
+	// commit. v1's source is gone from this tree, so its ids can no longer be
+	// read here; packageShape is what keeps the "tau." segment, and every v1
+	// id (/auth/v1, /tns/v1, /seer/v1, ...) lacks it.
 	//
 	// The directory half is buf's PACKAGE_DIRECTORY_MATCH as well, but
 	// buf.yaml's lint `except:` list is one line away from not being, and
@@ -198,10 +188,6 @@ func TestTheRulesBufCannotCheck(t *testing.T) {
 			}
 			if dir := path.Dir(f.GetName()); dir != strings.ReplaceAll(pkg, ".", "/") {
 				found = append(found, f.GetName()+" sits at "+dir+" but declares package "+pkg)
-			}
-			if id := "/" + strings.ReplaceAll(pkg, ".", "/"); slices.Contains(s.v1Protocols, id) {
-				found = append(found, f.GetName()+" derives protocol id "+id+
-					", which v1 already answers on (services/common/names.go)")
 			}
 		}
 		refuse(t, "§3 the protocol id is the package, and it may not be one v1 holds", found)
@@ -510,8 +496,6 @@ type schema struct {
 	// and §2 checks separately — one flat list so a name rule cannot forget
 	// a kind of declaration.
 	everything []ref
-
-	v1Protocols []string
 }
 
 // load compiles the module into a FileDescriptorSet and flattens it. The
@@ -545,7 +529,7 @@ func load(t *testing.T, root string) *schema {
 		t.Fatal(err)
 	}
 
-	s := &schema{onDisk: countProtoFiles(t, dir), v1Protocols: v1ProtocolIDs(t, root)}
+	s := &schema{onDisk: countProtoFiles(t, dir)}
 	for _, f := range set.GetFile() {
 		// A FileDescriptorSet carries the transitive closure, so the
 		// well-known types and — the whole point of §6 — any file reached
@@ -642,32 +626,6 @@ func countProtoFiles(t *testing.T, dir string) int {
 		t.Fatal(err)
 	}
 	return n
-}
-
-// v1ProtocolIDs reads v1's live protocol ids out of the file that declares
-// them, so §3's anti-collision check is a measurement rather than an
-// argument that a collision cannot happen. Every "/…" literal in names.go
-// counts: the stream protocols and the pubsub topic alike, since a v2
-// package deriving either would be as wrong.
-func v1ProtocolIDs(t *testing.T, root string) []string {
-	t.Helper()
-	const rel = "services/common/names.go"
-	f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, rel), nil, 0)
-	if err != nil {
-		t.Fatalf("reading v1's protocol ids from %s: %v", rel, err)
-	}
-	var ids []string
-	ast.Inspect(f, func(n ast.Node) bool {
-		lit, ok := n.(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			return true
-		}
-		if v, err := strconv.Unquote(lit.Value); err == nil && strings.HasPrefix(v, "/") {
-			ids = append(ids, v)
-		}
-		return true
-	})
-	return ids
 }
 
 func mustGetwd(t *testing.T) string {

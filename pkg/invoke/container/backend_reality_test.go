@@ -31,7 +31,7 @@ func TestTheConfigThisTierBuildsIsAcceptedByDocker(t *testing.T) {
 	// EXACTLY WHAT THE TIER SENDS, built by the tier's own function rather than
 	// restated here — a copy would drift and then agree with itself.
 	r := &Runtime{}
-	cfg := r.config(Image{Ref: "docker.io/library/busybox:latest"}, 18080, "", nil)
+	cfg := r.config(Image{Ref: "docker.io/library/busybox:latest"}, nil, 18080, "", nil)
 
 	require.NotNil(t, cfg.Network)
 	t.Logf("tier asks for: mode=%q restrict-egress=%v port-mappings=%d",

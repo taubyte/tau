@@ -5,7 +5,6 @@
 .claude/
 
 pkg/spore-drive/clients/mock/mock
-pkg/taucorder/clients/mock/mock
 
 .vscode/
 
@@ -17,19 +16,10 @@ coverage.out
 **/npm/bin/
 **/src/bin/
 
-./services/hoarder/testGIT
-./services/monkey/build/
-./services/auth/build/
-./services/seer/build/
-./services/patrick/build/
-./services/patrick/.patrick/
 **fakeroot/
-./services/node/.node/
-./services/tns/storage
 **/testGIT
 **/cover.out
 /tau
-/tools/tau/tau
 
 # Node artifact files
 node_modules/

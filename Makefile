@@ -31,7 +31,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-containers test-all vm-fixtures test-cli test-cli-cover proto-v2 proto-v2-check
+.PHONY: test test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-containers test-all proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -41,36 +41,12 @@ DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xa
 # runs past the default and the gate reports a timeout for a package that was
 # only going to finish later. The tagged suites below already say a number; the
 # untagged ones inherited the guess, so they say one now too.
+# ee/ shares this module but is ported separately, so the community sweep
+# lists its packages instead of taking ./... whole.
+TAU_PKGS = $(shell go list -e ./... 2>/dev/null | grep -v '/ee/')
+
 test:
-	go test -timeout 20m $(FLAGS) ./...
-
-# tau-cli coverage. The command tree is driven in-process through cli.Run, so
-# coverage only shows up when credited across the whole module — -coverpkg does
-# that (a plain per-package run reports each package against its own _test files
-# and hides the e2e reach). Reports the module total and hard-enforces the DSL
-# surface this refactor owns; the module total is gated by the I/O packages
-# (git/OAuth/container/accounts) that need live-service mocks to unit-test.
-# The gate is on tools/tau/tcc — the DSL reader the CLI is now built on, which is
-# the substantive logic this refactor introduced. The tools/tau command tree is
-# reported for visibility but not gated: the remaining uncovered statements are
-# I/O shells (git clone/push against github, the OAuth login flow, container
-# builds, interactive survey prompts, OS process-discovery) that the e2e/dreaming
-# suites drive against real services and that no unit test can reach without a
-# git server / PTY / container. The accounts service is mocked with a local
-# httptest server (see cli/commands/accounts). Coverage is credited in-process
-# via -coverpkg (a plain per-package run hides the e2e reach).
-CLI_CORE ?= ./tools/tau/tcc/...
-CLI_CORE_MIN ?= 80.0
-test-cli:
-	go test -timeout 20m $(FLAGS) ./tools/tau/...
-
-test-cli-cover:
-	go test -timeout 20m -coverpkg=./tools/tau/... -coverprofile=/tmp/tau-cli.cov $(FLAGS) ./tools/tau/...
-	@echo "tau-cli module coverage (reported): $$(go tool cover -func=/tmp/tau-cli.cov | awk '/^total:/{print $$3}')"
-	go test -timeout 20m -coverpkg=$$(echo $(CLI_CORE) | tr ' ' ,) -coverprofile=/tmp/tau-core.cov $(FLAGS) $(CLI_CORE)
-	@core=$$(go tool cover -func=/tmp/tau-core.cov | awk '/^total:/{sub(/%/,"",$$3); print $$3}'); \
-	echo "tools/tau/tcc coverage: $$core% (min $(CLI_CORE_MIN)%)"; \
-	awk "BEGIN{exit !($$core >= $(CLI_CORE_MIN))}" || { echo "tcc coverage below $(CLI_CORE_MIN)%"; exit 1; }
+	go test -timeout 20m $(FLAGS) $(TAU_PKGS)
 
 test-dreaming:
 	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -p $(DREAM_P) -timeout 30m $(FLAGS) $(DREAM_PKGS)
@@ -125,13 +101,6 @@ test-external-databases:
 	go test -tags 'dreaming docker_integration' -run '^TestAnExternal' -count=1 -timeout 15m $(FLAGS) ./node/dream/
 
 test-all: test test-dreaming test-raft
-
-# Recompile the vm-low-orbit guest test fixtures (Go via tinygo/container,
-# Rust via cargo/native) to size-optimized wasm importing "taubyte/sdk".
-# Output is committed; only rerun when the guest sources change.
-vm-fixtures:
-	bash pkg/vm-low-orbit/tests/fixtures/build.sh
-
 
 # Regenerate v2's inter-service RPC stubs (protoc-gen-go + protoc-gen-connect-go,
 # both pinned in pkg/proto/buf.gen.yaml) from pkg/proto. Requires buf,
