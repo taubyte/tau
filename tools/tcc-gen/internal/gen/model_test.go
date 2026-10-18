@@ -88,8 +88,15 @@ func TestACoreNameIsNotShadowed(t *testing.T) {
 // than emitting a Declared that is always true.
 func TestABlockOfDefaultsHasNoDeclared(t *testing.T) {
 	_, types := modelOf(t)
-	require.False(t, types["VolumeCheckpoint"].hasDeclared)
-	require.Contains(t, string(types["VolumeCheckpoint"].render()), "EVERY FIELD IN IT IS DEFAULTED")
+	// A proxy's tls is one defaulted mode: every proxy carries it.
+	require.False(t, types["ProxyTls"].hasDeclared)
+	require.Contains(t, string(types["ProxyTls"].render()), "EVERY FIELD IN IT IS DEFAULTED")
+	require.NotContains(t, string(types["ProxyTls"].render()), "Declared bool")
+
+	// A checkpoint's interval is defaulted and its rpo budget is not, so the
+	// budget is the evidence.
+	cp := types["VolumeCheckpoint"]
+	require.Equal(t, [][]string{{"checkpoint", "rpo_budget"}}, cp.declared)
 
 	live := types["ApplicationLiveness"]
 	require.True(t, live.hasDeclared)
