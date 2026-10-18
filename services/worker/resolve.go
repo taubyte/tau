@@ -124,6 +124,7 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 		Environment: t.Environment,
 		Kind:        t.Kind,
 		Label:       r.String("name"),
+		Completes:   schema.CompletesOf(t.Kind),
 	}
 	if _, scope, _, ok := proj.Locate(resourceID); ok {
 		spec.Scope = scope

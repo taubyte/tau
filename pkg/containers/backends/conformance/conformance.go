@@ -50,6 +50,8 @@ func Run(t *testing.T, b Backend) {
 	t.Run("Stdout", func(t *testing.T) { testStdout(t, b) })
 	t.Run("Stderr", func(t *testing.T) { testStderr(t, b) })
 	t.Run("ExitCode", func(t *testing.T) { testExitCode(t, b) })
+	t.Run("Stdin", func(t *testing.T) { testStdin(t, b) })
+	t.Run("NoStdinIsClosed", func(t *testing.T) { testNoStdinIsClosed(t, b) })
 	t.Run("Env", func(t *testing.T) { testEnv(t, b) })
 	t.Run("WorkDir", func(t *testing.T) { testWorkDir(t, b) })
 	t.Run("BindMount", func(t *testing.T) { testBindMount(t, b) })
@@ -140,6 +142,27 @@ func testExitCode(t *testing.T, b Backend) {
 
 	assert.Equal(t, 3, got.exitCode, "inspect must report the container's exit code")
 	assert.Contains(t, got.stdout, "failing output", "output of a failed container must still be readable")
+}
+
+// A CONTAINER GIVEN A STDIN READS IT TO EOF. `cat` exits only at EOF, so a
+// backend that delivered the bytes but never closed the stream would hang the
+// container to the run's deadline rather than pass.
+func testStdin(t *testing.T, b Backend) {
+	config := sh("cat; echo; echo done")
+	config.Stdin = strings.NewReader("payload from the caller")
+	got := run(t, b, config)
+
+	assert.Contains(t, got.stdout, "payload from the caller", "stdin must reach the process")
+	assert.Contains(t, got.stdout, "done", "and end, so a reader of it finishes")
+	assert.Equal(t, 0, got.exitCode)
+}
+
+// AND ONE GIVEN NONE SEES A CLOSED STDIN rather than one that never ends.
+func testNoStdinIsClosed(t *testing.T, b Backend) {
+	got := run(t, b, sh("cat; echo done"))
+
+	assert.Contains(t, got.stdout, "done", "a container nobody feeds must not wait for input")
+	assert.Equal(t, 0, got.exitCode)
 }
 
 func testEnv(t *testing.T, b Backend) {

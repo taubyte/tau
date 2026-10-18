@@ -107,6 +107,11 @@ type Backend interface {
 	Remove(ctx context.Context, id core.ContainerID) error
 	Inspect(ctx context.Context, id core.ContainerID) (*core.ContainerInfo, error)
 	Image(name string) core.Image
+
+	// Wait and Logs are what a run to completion (job.go) needs: when it ended,
+	// and what it said.
+	Wait(ctx context.Context, id core.ContainerID) error
+	Logs(ctx context.Context, id core.ContainerID) (io.ReadCloser, error)
 }
 
 // Option configures the runtime. The backend is the only thing it cannot work
@@ -352,6 +357,12 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, ErrNoImage
 	}
 
+	// A WORKLOAD THAT RUNS TO COMPLETION listens on nothing, so nothing below —
+	// ports, the Runtime API, readiness — applies to it.
+	if spec.Completes {
+		return e.startJob(ctx, spec, img, mounts)
+	}
+
 	// WHAT THIS WORKLOAD LISTENS ON, and there are two products here.
 	//
 	// A workload that DECLARED ports binds the numbers it declared, because
@@ -487,7 +498,11 @@ func (e *Runtime) config(img Image, ports []core.PortMapping, port int, runtimeA
 		}
 		env = append(env, k+"="+v)
 	}
-	env = append(env, "PORT="+strconv.Itoa(port))
+	// A workload that listens is told where. One that runs to completion has
+	// no port, and a PORT=0 would be telling it something false.
+	if port > 0 {
+		env = append(env, "PORT="+strconv.Itoa(port))
+	}
 
 	// THE LAMBDA RUNTIME API'S ADDRESS IS ALWAYS SET, and an image that is not
 	// a Lambda ignores a variable it does not read. Setting it only for images

@@ -566,6 +566,24 @@ func PlacedKinds() []string {
 	return out
 }
 
+// Completes declares that a kind RUNS TO COMPLETION: an invocation starts it, its
+// exit is the answer, and nothing about it listens. It is what a tier asks
+// before deciding how a call reaches a workload — wait for a port, or run a
+// process and read how it ended — and it is a statement about the kind, not about
+// any one resource, so it lives here beside Placed() and Engines().
+func Completes() NodeOption { return GroupAnnotate("completes", true) }
+
+// CompletesOf reports whether a kind declares Completes().
+func CompletesOf(kind string) bool {
+	for _, g := range V2Resources {
+		if key, _ := g.Match.(string); key == kind && len(g.Children) > 0 {
+			completes, _ := g.Children[0].Meta["completes"].(bool)
+			return completes
+		}
+	}
+	return false
+}
+
 // attachPlacement hangs the region block off every kind that declared Placed(), once
 // the vocabulary exists. Same shape as attachAccess: a rule that holds for a set of
 // kinds is not four lines repeated in each of them, one of which is forgotten when the
@@ -1858,7 +1876,7 @@ var V2Resources = []*Node{
 				String("runtime", InSet(workerEngines...), Required(), InSection("code"), Doc("Runtime", "Which tier runs this worker: wasm or container.")),
 			),
 			Nested(variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
-			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"), Placed(), Engines(workerEngines...),
+			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"), Placed(), Completes(), Engines(workerEngines...),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")),
 			Resource("worker", "Worker", "Worker", "worker"),

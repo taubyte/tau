@@ -95,6 +95,12 @@ type Spec struct {
 	// Timeout bounds one request. Zero means the pool's default.
 	Timeout time.Duration
 
+	// Completes is a workload that runs to completion: each request starts it,
+	// hands it the request, and its exit is the answer. Nothing listens, so a
+	// tier that waits for a port or a poll would wait for nothing. It is the
+	// kind's statement (schema.Completes), carried here so no tier names a kind.
+	Completes bool
+
 	// Ports are what this workload binds INSIDE its container, by the name its
 	// author gave them — `ports: {pg: {number: 5432}}`.
 	//

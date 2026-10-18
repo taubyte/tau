@@ -107,7 +107,7 @@ APPLICATION_TEST := $(CURDIR)/node/dream/application.test
 
 test-application:
 	cd node/dream && go test -c -tags 'dreaming docker_integration' -o $(APPLICATION_TEST) .
-	cd node/dream && sudo -n $(APPLICATION_TEST) -test.run '^TestAnApplicationAnswersThroughTheGateway$$' -test.timeout 10m -test.v
+	cd node/dream && sudo -n $(APPLICATION_TEST) -test.run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation)$$' -test.timeout 10m -test.v
 
 # test-build runs the build service's builds in real containers, for the same
 # reason and under the same privilege as test-application: a build runs a

@@ -30,6 +30,12 @@ type DockerBackend struct {
 	// build step), and Create/Remove/every lookup mutate the map.
 	mu         sync.Mutex
 	containers map[core.ContainerID]string // Map container ID to Docker container ID
+
+	// stdins are what Start attaches to the containers created with one, held
+	// from Create because docker only takes a stream from an attach, and an
+	// attach has to be in place before the process starts or its first read
+	// sees nothing.
+	stdins map[core.ContainerID]io.Reader
 }
 
 func (b *DockerBackend) putContainer(id core.ContainerID, dockerID string) {
@@ -233,6 +239,14 @@ func (b *DockerBackend) Create(ctx context.Context, config *core.ContainerConfig
 	}
 
 	b.putContainer(containerID, resp.ID)
+	if config.Stdin != nil {
+		b.mu.Lock()
+		if b.stdins == nil {
+			b.stdins = map[core.ContainerID]io.Reader{}
+		}
+		b.stdins[containerID] = config.Stdin
+		b.mu.Unlock()
+	}
 
 	return containerID, nil
 }
@@ -270,10 +284,14 @@ func (b *DockerBackend) ensureRestrictedNetwork(ctx context.Context) error {
 // createDockerConfig converts core.ContainerConfig to Docker API types
 func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
 	containerConfig := &container.Config{
-		Image:      config.Image,
-		Cmd:        config.Command,
-		Env:        config.Env,
-		WorkingDir: config.WorkDir,
+		Image: config.Image,
+		Cmd:   config.Command,
+		Env:   config.Env,
+
+		OpenStdin:   config.Stdin != nil,
+		StdinOnce:   config.Stdin != nil,
+		AttachStdin: config.Stdin != nil,
+		WorkingDir:  config.WorkDir,
 	}
 
 	if len(containerConfig.Env) == 0 {
@@ -454,8 +472,36 @@ func (b *DockerBackend) Start(ctx context.Context, id core.ContainerID) error {
 		return err
 	}
 
+	b.mu.Lock()
+	stdin, attach := b.stdins[id]
+	delete(b.stdins, id)
+	b.mu.Unlock()
+
+	var attached client.ContainerAttachResult
+	if attach {
+		attached, err = b.client.ContainerAttach(ctx, dockerID, client.ContainerAttachOptions{Stream: true, Stdin: true})
+		if err != nil {
+			return fmt.Errorf("attaching stdin to container %s: %w", id, err)
+		}
+	}
+
 	if _, err := b.client.ContainerStart(ctx, dockerID, client.ContainerStartOptions{}); err != nil {
+		if attach {
+			attached.Close()
+		}
 		return fmt.Errorf("failed to start container %s: %w", id, err)
+	}
+
+	// THE PROCESS SEES EOF WHEN THE COPY ENDS: the container was created with
+	// StdinOnce, so docker closes its stdin when this attach closes its write
+	// half. A process that never reads leaves the copy blocked on a full pipe
+	// until the container exits and docker drops the connection.
+	if attach {
+		go func() {
+			defer attached.Close()
+			io.Copy(attached.Conn, stdin)
+			attached.CloseWrite()
+		}()
 	}
 
 	return nil

@@ -1,9 +1,12 @@
 package container
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -13,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/containers/core"
@@ -51,6 +55,19 @@ type fakeBackend struct {
 
 	servers []closer
 	next    int
+
+	// run is what a run-to-completion "container" does with its stdin: what it
+	// writes and how it exits. Set, it replaces listening for every start.
+	run   func(cfg *core.ContainerConfig, stdin []byte) (stdout, stderr string, code int)
+	ended map[core.ContainerID]ran
+	// block, set, holds Wait until the context ends: a run that never finishes.
+	block bool
+}
+
+// ran is how a fake run ended.
+type ran struct {
+	stdout, stderr string
+	code           int
 }
 
 // publishOnly holds a loopback port the way a published port with nothing
@@ -108,7 +125,26 @@ func (f *fakeBackend) Start(_ context.Context, id core.ContainerID) error {
 	f.statuses[id] = "running"
 	cfg := f.configFor(id)
 	listen := f.listen
+	run := f.run
 	f.mu.Unlock()
+
+	if run != nil {
+		var stdin []byte
+		if cfg.Stdin != nil {
+			stdin, _ = io.ReadAll(cfg.Stdin)
+		}
+		stdout, stderr, code := run(cfg, stdin)
+		f.mu.Lock()
+		if f.ended == nil {
+			f.ended = map[core.ContainerID]ran{}
+		}
+		f.ended[id] = ran{stdout, stderr, code}
+		if !f.block {
+			f.statuses[id] = "exited"
+		}
+		f.mu.Unlock()
+		return nil
+	}
 
 	if listen == nil {
 		listen = echoServer
@@ -183,7 +219,44 @@ func (f *fakeBackend) Inspect(_ context.Context, id core.ContainerID) (*core.Con
 	if !ok {
 		return nil, errors.New("no such container")
 	}
-	return &core.ContainerInfo{ID: id, Status: st, ExitCode: 7}, nil
+	code := 7
+	if r, ok := f.ended[id]; ok {
+		code = r.code
+	}
+	return &core.ContainerInfo{ID: id, Status: st, ExitCode: code}, nil
+}
+
+func (f *fakeBackend) Wait(ctx context.Context, id core.ContainerID) error {
+	f.mu.Lock()
+	block := f.block
+	f.mu.Unlock()
+	if block {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return nil
+}
+
+// Logs frames a run's output the way both real backends do.
+func (f *fakeBackend) Logs(_ context.Context, id core.ContainerID) (io.ReadCloser, error) {
+	f.mu.Lock()
+	r := f.ended[id]
+	f.mu.Unlock()
+	var buf bytes.Buffer
+	frame(&buf, stdcopy.Stdout, r.stdout)
+	frame(&buf, stdcopy.Stderr, r.stderr)
+	return io.NopCloser(&buf), nil
+}
+
+// frame writes one docker log frame: the stream, three zero bytes, the length.
+func frame(w *bytes.Buffer, stream stdcopy.StdType, payload string) {
+	if payload == "" {
+		return
+	}
+	header := [8]byte{byte(stream)}
+	binary.BigEndian.PutUint32(header[4:], uint32(len(payload)))
+	w.Write(header[:])
+	w.WriteString(payload)
 }
 
 func (f *fakeBackend) Image(name string) core.Image { return &fakeImage{rt: f, name: name} }

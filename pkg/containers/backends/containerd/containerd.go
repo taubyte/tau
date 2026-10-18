@@ -129,6 +129,10 @@ type ContainerdBackend struct {
 	mu         sync.Mutex
 	tasks      map[core.ContainerID]*taskIO              // Store tasks and their IO for log access
 	containers map[core.ContainerID]containerd.Container // Store containers for cleanup
+
+	// stdins are what Start writes to the containers created with one: a task's
+	// IO is made at Start, so the stream waits here from Create.
+	stdins map[core.ContainerID]io.Reader
 }
 
 func (b *ContainerdBackend) putTask(id core.ContainerID, t *taskIO) {
@@ -445,6 +449,14 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 	}
 
 	b.putContainer(containerID, container)
+	if config.Stdin != nil {
+		b.mu.Lock()
+		if b.stdins == nil {
+			b.stdins = map[core.ContainerID]io.Reader{}
+		}
+		b.stdins[containerID] = config.Stdin
+		b.mu.Unlock()
+	}
 
 	return containerID, nil
 }
@@ -886,12 +898,19 @@ func (b *ContainerdBackend) Start(ctx context.Context, id core.ContainerID) erro
 		return fmt.Errorf("failed to create FIFO set: %w", err)
 	}
 
-	// No stdin. Nothing here ever writes to the container, and a stdin FIFO that
-	// is never written to and never closed never reaches EOF: any command that
-	// reads it — /bin/sh, which is what many images run by default — waits for
-	// input that will never come. Without the FIFO the process gets a closed
-	// stdin, which is what docker gives a container nobody is attached to.
-	tio.fifoSet.Stdin = ""
+	b.mu.Lock()
+	stdin, feed := b.stdins[id]
+	delete(b.stdins, id)
+	b.mu.Unlock()
+
+	// No stdin unless the container was given one. A stdin FIFO that is never
+	// written to and never closed never reaches EOF: any command that reads it —
+	// /bin/sh, which is what many images run by default — waits for input that
+	// will never come. Without the FIFO the process gets a closed stdin, which is
+	// what docker gives a container nobody is attached to.
+	if !feed {
+		tio.fifoSet.Stdin = ""
+	}
 
 	tio.directIO, err = cio.NewDirectIO(ctx, tio.fifoSet)
 	if err != nil {
@@ -925,6 +944,15 @@ func (b *ContainerdBackend) Start(ctx context.Context, id core.ContainerID) erro
 	}
 
 	b.putTask(id, tio)
+
+	// THE PROCESS SEES EOF WHEN THE COPY ENDS, which closing the FIFO's write
+	// end is.
+	if feed {
+		go func() {
+			io.Copy(tio.directIO.Stdin, stdin)
+			tio.directIO.Stdin.Close()
+		}()
+	}
 
 	return nil
 }

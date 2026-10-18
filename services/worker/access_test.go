@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -259,7 +260,11 @@ func (refusingBackend) Remove(context.Context, core.ContainerID) error { return 
 func (refusingBackend) Inspect(context.Context, core.ContainerID) (*core.ContainerInfo, error) {
 	return nil, errNoBackend
 }
-func (refusingBackend) Image(string) core.Image { return nil }
+func (refusingBackend) Image(string) core.Image                      { return nil }
+func (refusingBackend) Wait(context.Context, core.ContainerID) error { return errNoBackend }
+func (refusingBackend) Logs(context.Context, core.ContainerID) (io.ReadCloser, error) {
+	return nil, errNoBackend
+}
 
 var errNoBackend = errors.New("nothing should reach the backend")
 

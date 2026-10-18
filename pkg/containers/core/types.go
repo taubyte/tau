@@ -137,6 +137,11 @@ type ContainerConfig struct {
 	Network   *NetworkConfig // Unified network configuration
 	Resources *ResourceLimits
 
+	// Stdin is what the container's process reads on its standard input, then
+	// EOF. Nil is a closed stdin, which is what a container nobody attached to
+	// gets. It is read once, from Start, so a container given one is started once.
+	Stdin io.Reader
+
 	// Privileges a container needs beyond the runtime's defaults. Nothing but
 	// the image build sets these today: BuildKit has to mount filesystems to
 	// assemble layers, which the default sandbox forbids. They are here rather
