@@ -12,10 +12,10 @@
 //
 // # What is kept from dream, and why
 //
-// The three things about a universe's network that were measured rather than
-// chosen are kept exactly: a peer's services start before it joins (see Add),
-// the canonical-direction dial (see dial), and the bounded WaitForSwarm after
-// it. Each is commented where it lives.
+// The things about a universe's network that were measured rather than chosen
+// are kept: one dial per pair from a canonical side, and nothing else dialing
+// (see dial and Add), and the bounded WaitForSwarm after it. Each is commented
+// where it lives. A peer's services also start before it joins, as in dream.
 // dream's 750ms settle is NOT here, because dream only ever paid it for a
 // simple — a client node — and a mesh has none.
 package mesh
@@ -110,25 +110,14 @@ func (m *Mesh) Peers() []peer.Node {
 	return append([]peer.Node(nil), m.peers...)
 }
 
-// Add makes a peer, starts what runs on it, and then meshes it with every peer
+// Add makes a peer, starts what runs on it, and then dials it to every peer
 // already here.
 //
 // WHAT RUNS ON A PEER STARTS BEFORE IT JOINS, which is the order dream always
-// had and the one a fleet is measured against: a CRDT whose node starts after
-// it is already connected never fetches the heads it is told about (node/dream's
-// TestACacheReplicatesBetweenNodes stays at "a node never reached the project"
-// with the order reversed). start may be nil.
+// had: a service's first moves happen against a peer that is about to be
+// connected rather than racing the connection. start may be nil.
 func (m *Mesh) Add(start func(peer.Node) error) (peer.Node, error) {
 	existing := m.Peers()
-
-	bootstrap := peer.StandAlone()
-	if len(existing) > 0 {
-		infos := make([]peercore.AddrInfo, 0, len(existing))
-		for _, n := range existing {
-			infos = append(infos, peercore.AddrInfo{ID: n.ID(), Addrs: n.Peer().Addrs()})
-		}
-		bootstrap = peer.Bootstrap(infos...)
-	}
 
 	m.mu.Lock()
 	dir := filepath.Join(m.root, fmt.Sprintf("peer-%d", m.added))
@@ -138,7 +127,13 @@ func (m *Mesh) Add(start func(peer.Node) error) (peer.Node, error) {
 		return nil, err
 	}
 
-	n, err := peer.NewPublic(m.ctx, dir, keypair.NewRaw(), m.swarmKey, []string{listen}, []string{listen}, bootstrap)
+	// NO BOOTSTRAP LIST. The dial below is the one way a peer joins, because a
+	// bootstrap dial runs in the background and races it: the two cross, both
+	// handshakes park in dial backoff, and a CRDT on the pair never fetches
+	// the heads it is told about. Measured with two register nodes: bootstrap
+	// plus dial resolved a publish on the other node about one run in three,
+	// the dial alone every run.
+	n, err := peer.NewPublic(m.ctx, dir, keypair.NewRaw(), m.swarmKey, []string{listen}, []string{listen}, peer.StandAlone())
 	if err != nil {
 		return nil, err
 	}
