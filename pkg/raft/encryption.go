@@ -8,9 +8,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/fxamacker/cbor/v2"
-	"github.com/taubyte/tau/p2p/streams/command"
-	cr "github.com/taubyte/tau/p2p/streams/command/response"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -93,122 +91,44 @@ func (ec *encryptedConn) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// encryptBody encrypts a command body or response for stream service
-func encryptBody(body command.Body, gcm cipher.AEAD) (command.Body, error) {
-	if gcm == nil {
-		return nil, fmt.Errorf("encryption cipher is required")
-	}
+// sealedCodec is the proto codec with every message sealed under the group's
+// key: a random nonce, then the AEAD of the proto encoding. It keeps the name
+// "proto" so it replaces connect's own codec on both ends rather than sitting
+// beside it, and a peer without the key fails to decode instead of falling
+// back to the clear.
+type sealedCodec struct {
+	gcm cipher.AEAD
+}
 
-	bodyBytes, err := cbor.Marshal(body)
+func (sealedCodec) Name() string { return "proto" }
+
+func (c sealedCodec) Marshal(m any) ([]byte, error) {
+	msg, ok := m.(proto.Message)
+	if !ok {
+		return nil, fmt.Errorf("%T is not a proto message", m)
+	}
+	plain, err := proto.Marshal(msg)
 	if err != nil {
-		return nil, fmt.Errorf("serializing body to CBOR: %w", err)
+		return nil, err
 	}
-
-	nonce := make([]byte, nonceSize)
+	nonce := make([]byte, nonceSize, nonceSize+len(plain)+c.gcm.Overhead())
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, fmt.Errorf("generating nonce: %w", err)
 	}
-
-	ciphertext := gcm.Seal(nil, nonce, bodyBytes, nil)
-	encrypted := append(nonce, ciphertext...)
-
-	return command.Body{
-		"data": encrypted,
-	}, nil
+	return c.gcm.Seal(nonce, nonce, plain, nil), nil
 }
 
-// decryptBody decrypts a command body or response from stream service
-func decryptBody(body command.Body, gcm cipher.AEAD) (command.Body, error) {
-	if gcm == nil {
-		return nil, fmt.Errorf("decryption cipher is required")
-	}
-
-	encryptedData, ok := body["data"]
+func (c sealedCodec) Unmarshal(data []byte, m any) error {
+	msg, ok := m.(proto.Message)
 	if !ok {
-		return nil, fmt.Errorf("body is not encrypted but decryption cipher is required")
+		return fmt.Errorf("%T is not a proto message", m)
 	}
-
-	encrypted, ok := encryptedData.([]byte)
-	if !ok {
-		return nil, fmt.Errorf("invalid encrypted data type: expected []byte, got %T", encryptedData)
+	if len(data) < nonceSize {
+		return fmt.Errorf("encrypted data too short: expected at least %d bytes, got %d", nonceSize, len(data))
 	}
-
-	if len(encrypted) < nonceSize {
-		return nil, fmt.Errorf("encrypted data too short: expected at least %d bytes, got %d", nonceSize, len(encrypted))
-	}
-
-	nonce := encrypted[:nonceSize]
-	ciphertext := encrypted[nonceSize:]
-
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	plain, err := c.gcm.Open(nil, data[:nonceSize], data[nonceSize:], nil)
 	if err != nil {
-		return nil, fmt.Errorf("decryption failed: %w", err)
+		return fmt.Errorf("decryption failed: %w", err)
 	}
-
-	var decryptedBody command.Body
-	if err := cbor.Unmarshal(plaintext, &decryptedBody); err != nil {
-		return nil, fmt.Errorf("deserializing body from CBOR: %w", err)
-	}
-
-	return decryptedBody, nil
-}
-
-// encryptResponse encrypts a response for stream service
-func encryptResponse(resp cr.Response, gcm cipher.AEAD) (cr.Response, error) {
-	if gcm == nil {
-		return nil, fmt.Errorf("encryption cipher is required")
-	}
-
-	respBytes, err := cbor.Marshal(resp)
-	if err != nil {
-		return nil, fmt.Errorf("serializing response to CBOR: %w", err)
-	}
-
-	nonce := make([]byte, nonceSize)
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("generating nonce: %w", err)
-	}
-
-	ciphertext := gcm.Seal(nil, nonce, respBytes, nil)
-	encrypted := append(nonce, ciphertext...)
-
-	return cr.Response{
-		"data": encrypted,
-	}, nil
-}
-
-// decryptResponse decrypts a response from stream service
-func decryptResponse(resp cr.Response, gcm cipher.AEAD) (cr.Response, error) {
-	if gcm == nil {
-		return nil, fmt.Errorf("decryption cipher is required")
-	}
-
-	encryptedData, ok := resp["data"]
-	if !ok {
-		return nil, fmt.Errorf("response is not encrypted but decryption cipher is required")
-	}
-
-	encrypted, ok := encryptedData.([]byte)
-	if !ok {
-		return nil, fmt.Errorf("invalid encrypted data type: expected []byte, got %T", encryptedData)
-	}
-
-	if len(encrypted) < nonceSize {
-		return nil, fmt.Errorf("encrypted data too short: expected at least %d bytes, got %d", nonceSize, len(encrypted))
-	}
-
-	nonce := encrypted[:nonceSize]
-	ciphertext := encrypted[nonceSize:]
-
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return nil, fmt.Errorf("decryption failed: %w", err)
-	}
-
-	var decryptedResp cr.Response
-	if err := cbor.Unmarshal(plaintext, &decryptedResp); err != nil {
-		return nil, fmt.Errorf("deserializing response from CBOR: %w", err)
-	}
-
-	return decryptedResp, nil
+	return proto.Unmarshal(plain, msg)
 }

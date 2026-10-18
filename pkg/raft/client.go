@@ -1,22 +1,30 @@
 package raft
 
 import (
+	"context"
 	"crypto/cipher"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/fxamacker/cbor/v2"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	taupeer "github.com/taubyte/tau/p2p/peer"
-	streamClient "github.com/taubyte/tau/p2p/streams/client"
-	"github.com/taubyte/tau/p2p/streams/command"
-	cr "github.com/taubyte/tau/p2p/streams/command/response"
-	"github.com/taubyte/tau/utils/mapstructure"
+	"github.com/taubyte/tau/p2p/rpc"
+	raftv1 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v1"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v1/raftv1connect"
 )
 
 var clientLogger = logging.Logger("raft-client")
+
+// sendToPeerTimeout bounds one call to one peer, dial included. A write is
+// given its own apply timeout on top of it.
+const sendToPeerTimeout = 10 * time.Second
 
 // Client represents a Raft p2p client for external use
 type Client interface {
@@ -47,23 +55,41 @@ type internalClient interface {
 	Close() error
 }
 
+// client reaches one group's members, holding one connection per peer.
 type client struct {
-	*streamClient.Client
-	encryptionCipher cipher.AEAD
+	node     taupeer.Node
+	protocol protocol.ID
+	opts     []connect.ClientOption
+
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	mu    sync.Mutex
+	peers map[peer.ID]*peerConn
+}
+
+type peerConn struct {
+	conn *rpc.Client
+	svc  raftv1connect.RaftServiceClient
 }
 
 // newInternalClient creates a new internal raft p2p client for the given namespace
 func newInternalClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD) (internalClient, error) {
-	protocol := Protocol(namespace)
-
-	streamCli, err := streamClient.New(node, protocol)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create stream client: %w", err)
+	if node == nil {
+		return nil, errors.New("no node to call from")
 	}
-
+	var opts []connect.ClientOption
+	if opt, ok := codecOptions(encryptionCipher); ok {
+		opts = append(opts, opt)
+	}
+	ctx, cancel := context.WithCancel(node.Context())
 	return &client{
-		Client:           streamCli,
-		encryptionCipher: encryptionCipher,
+		node:     node,
+		protocol: protocol.ID(Protocol(namespace)),
+		opts:     opts,
+		ctx:      ctx,
+		cancel:   cancel,
+		peers:    make(map[peer.ID]*peerConn),
 	}, nil
 }
 
@@ -76,38 +102,91 @@ func NewClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD
 	return cli.(*client), nil
 }
 
-func (c *client) Set(key string, value []byte, timeout time.Duration, peers ...peer.ID) error {
-	body := command.Body{
-		keyKey:     key,
-		keyValue:   value,
-		keyTimeout: float64(timeout.Milliseconds()),
+func (c *client) to(pid peer.ID) (raftv1connect.RaftServiceClient, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.peers == nil {
+		return nil, errors.New("client is closed")
+	}
+	if pc, ok := c.peers[pid]; ok {
+		return pc.svc, nil
+	}
+	conn, err := rpc.NewClient(c.node.Peer(), pid, c.protocol)
+	if err != nil {
+		return nil, err
+	}
+	pc := &peerConn{conn: conn, svc: raftv1connect.NewRaftServiceClient(conn.HTTP(), conn.URL(), c.opts...)}
+	c.peers[pid] = pc
+	return pc.svc, nil
+}
+
+// first sends call to every peer at once and returns the first success. With
+// every peer failing it returns the first failure, so a caller can tell a
+// refusal (no leader) from an unreachable peer.
+func first[T any](ctx context.Context, c *client, peers []peer.ID, timeout time.Duration,
+	call func(context.Context, raftv1connect.RaftServiceClient) (*connect.Response[T], error)) (*connect.Response[T], error) {
+	if len(peers) == 0 {
+		return nil, errors.New("no peers to send to")
 	}
 
-	if c.encryptionCipher != nil {
-		encryptedBody, err := encryptBody(body, c.encryptionCipher)
-		if err != nil {
-			return fmt.Errorf("encrypting body: %w", err)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	type result struct {
+		res *connect.Response[T]
+		err error
+	}
+	results := make(chan result, len(peers))
+	for _, pid := range peers {
+		go func() {
+			svc, err := c.to(pid)
+			if err != nil {
+				results <- result{err: err}
+				return
+			}
+			res, err := call(ctx, svc)
+			results <- result{res: res, err: err}
+		}()
+	}
+
+	var errs []error
+	for range peers {
+		r := <-results
+		if r.err == nil {
+			return r.res, nil
 		}
-		body = encryptedBody
+		errs = append(errs, sentinel(r.err))
 	}
+	return nil, errs[0]
+}
 
-	resp, err := c.sendCommand(cmdSet, body, peers...)
+// sentinel turns a remote refusal back into the error the remote returned, so
+// errors.Is works across the wire for the ones callers branch on.
+func sentinel(err error) error {
+	for _, s := range []error{ErrNoLeader, ErrInvalidBarrier, ErrNotLeader} {
+		if strings.Contains(err.Error(), s.Error()) {
+			return fmt.Errorf("%w: %v", s, err)
+		}
+	}
+	return err
+}
+
+func (c *client) Set(key string, value []byte, timeout time.Duration, peers ...peer.ID) error {
+	if value == nil {
+		value = []byte{}
+	}
+	req := &raftv1.SetRequest{Key: key, Value: value, TimeoutMs: timeout.Milliseconds()}
+	_, err := first(c.ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.SetResponse], error) {
+		return s.Set(ctx, connect.NewRequest(req))
+	})
 	if err != nil {
 		return fmt.Errorf("set failed: %w", err)
 	}
-
-	if c.encryptionCipher != nil {
-		decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
-		if err != nil {
-			return fmt.Errorf("decrypting response: %w", err)
-		}
-		resp = decryptedResp
-	}
-
 	return nil
 }
 
 func (c *client) Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, bool, error) {
+	req := &raftv1.GetRequest{Key: key}
 	if barrierNs != 0 {
 		if barrierNs <= 0 {
 			return nil, false, ErrInvalidBarrier
@@ -116,89 +195,33 @@ func (c *client) Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, boo
 		if barrierTimeout > MaxGetHandlerBarrierTimeout {
 			return nil, false, ErrInvalidBarrier
 		}
+		req.BarrierNs = &barrierNs
 	}
 
-	body := command.Body{
-		keyKey: key,
-	}
-
-	if barrierNs > 0 {
-		body[keyBarrier] = barrierNs
-	}
-
-	if c.encryptionCipher != nil {
-		encryptedBody, err := encryptBody(body, c.encryptionCipher)
-		if err != nil {
-			return nil, false, fmt.Errorf("encrypting body: %w", err)
-		}
-		body = encryptedBody
-	}
-
-	resp, err := c.sendCommand(cmdGet, body, peers...)
+	res, err := first(c.ctx, c, peers, sendToPeerTimeout+time.Duration(barrierNs), func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.GetResponse], error) {
+		return s.Get(ctx, connect.NewRequest(req))
+	})
 	if err != nil {
 		return nil, false, fmt.Errorf("get failed: %w", err)
 	}
-
-	if c.encryptionCipher != nil {
-		decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
-		if err != nil {
-			return nil, false, fmt.Errorf("decrypting response: %w", err)
-		}
-		resp = decryptedResp
-	}
-
-	found, err := resp.Get(keyFound)
-	if err != nil {
+	if !res.Msg.GetFound() {
 		return nil, false, nil
 	}
-	foundBool, _ := found.(bool)
-
-	if !foundBool {
-		return nil, false, nil
+	val := res.Msg.GetValue()
+	if val == nil {
+		val = []byte{}
 	}
-
-	val, err := resp.Get(keyValue)
-	if err != nil {
-		return nil, false, nil
-	}
-
-	switch v := val.(type) {
-	case []byte:
-		return v, true, nil
-	case string:
-		return []byte(v), true, nil
-	default:
-		return nil, false, fmt.Errorf("unexpected value type: %T", val)
-	}
+	return val, true, nil
 }
 
 func (c *client) Delete(key string, timeout time.Duration, peers ...peer.ID) error {
-	body := command.Body{
-		keyKey:     key,
-		keyTimeout: float64(timeout.Milliseconds()),
-	}
-
-	if c.encryptionCipher != nil {
-		encryptedBody, err := encryptBody(body, c.encryptionCipher)
-		if err != nil {
-			return fmt.Errorf("encrypting body: %w", err)
-		}
-		body = encryptedBody
-	}
-
-	resp, err := c.sendCommand(cmdDelete, body, peers...)
+	req := &raftv1.DeleteRequest{Key: key, TimeoutMs: timeout.Milliseconds()}
+	_, err := first(c.ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.DeleteResponse], error) {
+		return s.Delete(ctx, connect.NewRequest(req))
+	})
 	if err != nil {
 		return fmt.Errorf("delete failed: %w", err)
 	}
-
-	if c.encryptionCipher != nil {
-		decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
-		if err != nil {
-			return fmt.Errorf("decrypting response: %w", err)
-		}
-		resp = decryptedResp
-	}
-
 	return nil
 }
 
@@ -206,254 +229,74 @@ func (c *client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.
 	clientLogger.Infof("sending joinVoter for %s to %d targets (timeout=%v)",
 		peerID.ShortString(), len(peers), timeout)
 
-	body := command.Body{
-		keyPeer:    peerID.String(),
-		keyTimeout: float64(timeout.Milliseconds()),
-	}
-
-	if c.encryptionCipher != nil {
-		encryptedBody, err := encryptBody(body, c.encryptionCipher)
-		if err != nil {
-			return fmt.Errorf("encrypting body: %w", err)
-		}
-		body = encryptedBody
-	}
-
-	resCh, err := c.Client.New(cmdJoinVoter, streamClient.Body(body), streamClient.To(peers...), streamClient.Threshold(1)).Do()
+	req := &raftv1.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: timeout.Milliseconds()}
+	_, err := first(c.ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.JoinVoterResponse], error) {
+		return s.JoinVoter(ctx, connect.NewRequest(req))
+	})
 	if err != nil {
+		if errors.Is(err, ErrNoLeader) {
+			clientLogger.Infof("joinVoter for %s failed: no leader available", peerID.ShortString())
+			return ErrNoLeader
+		}
+		clientLogger.Infof("joinVoter for %s failed: %v", peerID.ShortString(), err)
 		return fmt.Errorf("join voter failed: %w", err)
 	}
 
-	var firstErr error
-	sawNoLeader := false
-	for res := range resCh {
-		if res == nil {
-			continue
-		}
-		if err := res.Error(); err != nil {
-			if strings.Contains(err.Error(), ErrNoLeader.Error()) {
-				sawNoLeader = true
-			}
-			if firstErr == nil {
-				firstErr = fmt.Errorf("join voter failed: %w", err)
-			}
-			res.Close()
-			continue
-		}
-		resp := res.Response
-		res.Close()
-
-		if c.encryptionCipher != nil {
-			decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
-			if err != nil {
-				if firstErr == nil {
-					firstErr = fmt.Errorf("decrypting response: %w", err)
-				}
-				continue
-			}
-			resp = decryptedResp
-		}
-
-		clientLogger.Infof("joinVoter for %s succeeded", peerID.ShortString())
-		return nil
-	}
-
-	if sawNoLeader {
-		clientLogger.Infof("joinVoter for %s failed: no leader available", peerID.ShortString())
-		return ErrNoLeader
-	}
-	if firstErr != nil {
-		clientLogger.Infof("joinVoter for %s failed: %v", peerID.ShortString(), firstErr)
-		return firstErr
-	}
-	return fmt.Errorf("join voter failed: no responses")
+	clientLogger.Infof("joinVoter for %s succeeded", peerID.ShortString())
+	return nil
 }
 
 func (c *client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
-	body := command.Body{
-		keyPrefix: prefix,
-	}
-
-	if c.encryptionCipher != nil {
-		encryptedBody, err := encryptBody(body, c.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("encrypting body: %w", err)
-		}
-		body = encryptedBody
-	}
-
-	resp, err := c.sendCommand(cmdKeys, body, peers...)
+	req := &raftv1.KeysRequest{Prefix: prefix}
+	res, err := first(c.ctx, c, peers, sendToPeerTimeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.KeysResponse], error) {
+		return s.Keys(ctx, connect.NewRequest(req))
+	})
 	if err != nil {
 		return nil, fmt.Errorf("keys failed: %w", err)
 	}
-
-	if c.encryptionCipher != nil {
-		respBody := make(command.Body)
-		for k, v := range resp {
-			respBody[k] = v
-		}
-		decryptedBody, err := decryptBody(respBody, c.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting response: %w", err)
-		}
-		resp = make(cr.Response)
-		for k, v := range decryptedBody {
-			resp[k] = v
-		}
+	keys := res.Msg.GetKeys()
+	if keys == nil {
+		keys = []string{}
 	}
-
-	keysVal, err := resp.Get(keyKeys)
-	if err != nil || keysVal == nil {
-		return []string{}, nil
-	}
-
-	switch v := keysVal.(type) {
-	case []string:
-		return v, nil
-	case []interface{}:
-		keys := make([]string, 0, len(v))
-		for _, k := range v {
-			if s, ok := k.(string); ok {
-				keys = append(keys, s)
-			}
-		}
-		return keys, nil
-	default:
-		return []string{}, nil
-	}
+	return keys, nil
 }
 
 func (c *client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error) {
-	body := command.Body{
-		keyStartTime: ourStart.UnixMilli(),
-		keySeenAt:    ourPeers,
+	req := &raftv1.ExchangePeersRequest{StartMs: ourStart.UnixMilli(), SeenAt: ourPeers}
+	if req.SeenAt == nil {
+		req.SeenAt = map[string]int64{}
 	}
-
-	if c.encryptionCipher != nil {
-		encryptedBody, err := encryptBody(body, c.encryptionCipher)
-		if err != nil {
-			return time.Time{}, nil, fmt.Errorf("encrypting body: %w", err)
-		}
-		body = encryptedBody
-	}
-
-	resCh, err := c.Client.New(cmdExchangePeers,
-		streamClient.Body(body),
-		streamClient.To(target),
-		streamClient.Threshold(1),
-	).Do()
+	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.ExchangePeersResponse], error) {
+		return s.ExchangePeers(ctx, connect.NewRequest(req))
+	})
 	if err != nil {
 		return time.Time{}, nil, err
 	}
-
-	for res := range resCh {
-		if res == nil {
-			continue
-		}
-		if err := res.Error(); err != nil {
-			res.Close()
-			return time.Time{}, nil, err
-		}
-		resp := res.Response
-		res.Close()
-
-		if c.encryptionCipher != nil {
-			decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
-			if err != nil {
-				return time.Time{}, nil, fmt.Errorf("decrypting response: %w", err)
-			}
-			resp = decryptedResp
-		}
-
-		theirStartRaw, _ := resp.Get(keyStartTime)
-		theirStart := time.UnixMilli(toInt64(theirStartRaw))
-
-		theirPeersRaw, _ := resp.Get(keySeenAt)
-		theirPeers := make(map[string]int64)
-
-		if m, ok := theirPeersRaw.(map[string]interface{}); ok {
-			for k, v := range m {
-				theirPeers[k] = toInt64(v)
-			}
-		}
-
-		return theirStart, theirPeers, nil
+	theirPeers := res.Msg.GetSeenAt()
+	if theirPeers == nil {
+		theirPeers = map[string]int64{}
 	}
-
-	return time.Time{}, nil, fmt.Errorf("exchange peers failed: no responses")
-}
-
-// sendCommand sends a command and returns the first successful response.
-func (c *client) sendCommand(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error) {
-	opts := []streamClient.Option[streamClient.Request]{
-		streamClient.Body(body),
-	}
-	if len(peers) > 0 {
-		opts = append(opts, streamClient.To(peers...), streamClient.Threshold(len(peers)))
-	}
-
-	resCh, err := c.Client.New(cmd, opts...).Do()
-	if err != nil {
-		return nil, fmt.Errorf("sending command %q failed: %w", cmd, err)
-	}
-
-	var firstErr error
-	for res := range resCh {
-		if res == nil {
-			continue
-		}
-		if err := res.Error(); err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("command %q failed: %w", cmd, err)
-			}
-			res.Close()
-			continue
-		}
-		resp := res.Response
-		res.Close()
-		return resp, nil
-	}
-
-	if firstErr != nil {
-		return nil, firstErr
-	}
-	return nil, fmt.Errorf("command %q failed: no responses", cmd)
-}
-
-func (c *client) sendInternal(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error) {
-	if c.encryptionCipher != nil {
-		encryptedBody, err := encryptBody(body, c.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("encrypting body: %w", err)
-		}
-		body = encryptedBody
-	}
-	resp, err := c.sendCommand(cmd, body, peers...)
-	if err != nil {
-		return nil, err
-	}
-	if c.encryptionCipher != nil {
-		decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting response: %w", err)
-		}
-		resp = decryptedResp
-	}
-	return resp, nil
+	return time.UnixMilli(res.Msg.GetStartMs()), theirPeers, nil
 }
 
 func (c *client) ClusterInfo(target peer.ID) (*ClusterInfoResponse, error) {
 	clientLogger.Infof("querying clusterInfo from %s", target.ShortString())
 
-	resp, err := c.sendInternal(cmdClusterInfo, command.Body{}, target)
+	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.ClusterInfoResponse], error) {
+		return s.ClusterInfo(ctx, connect.NewRequest(&raftv1.ClusterInfoRequest{}))
+	})
 	if err != nil {
 		clientLogger.Infof("clusterInfo from %s failed: %v", target.ShortString(), err)
 		return nil, fmt.Errorf("clusterInfo failed: %w", err)
 	}
 
-	info := &ClusterInfoResponse{}
-	if err := mapstructure.Decode(map[string]interface{}(resp), info); err != nil {
-		return nil, fmt.Errorf("decoding clusterInfo response: %w", err)
+	m := res.Msg
+	info := &ClusterInfoResponse{
+		LeaderID:    m.GetLeader(),
+		Term:        m.GetTerm(),
+		LastIndex:   m.GetLastIndex(),
+		MemberCount: int(m.GetMemberCount()),
+		NodeID:      m.GetNodeId(),
 	}
 
 	clientLogger.Infof("clusterInfo from %s: leader=%s term=%d lastIndex=%d members=%d",
@@ -465,30 +308,29 @@ func (c *client) ClusterInfo(target peer.ID) (*ClusterInfoResponse, error) {
 func (c *client) ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error) {
 	clientLogger.Infof("requesting exportFSM from %s", target.ShortString())
 
-	resp, err := c.sendInternal(cmdExportFSM, command.Body{}, target)
+	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.ExportFSMResponse], error) {
+		return s.ExportFSM(ctx, connect.NewRequest(&raftv1.ExportFSMRequest{}))
+	})
 	if err != nil {
 		clientLogger.Infof("exportFSM from %s failed: %v", target.ShortString(), err)
 		return nil, 0, fmt.Errorf("exportFSM failed: %w", err)
 	}
 
-	var out ExportFSMResponse
-	if err := mapstructure.Decode(map[string]interface{}(resp), &out); err != nil {
-		return nil, 0, fmt.Errorf("decoding exportFSM response: %w", err)
-	}
-
 	var state map[string]CRDTEntry
-	if err := cbor.Unmarshal(out.FSMState, &state); err != nil {
+	if err := cbor.Unmarshal(res.Msg.GetFsmState(), &state); err != nil {
 		return nil, 0, fmt.Errorf("unmarshaling FSM state: %w", err)
 	}
 
-	clientLogger.Infof("exportFSM from %s: %d keys, clock=%d", target.ShortString(), len(state), out.Clock)
+	clientLogger.Infof("exportFSM from %s: %d keys, clock=%d", target.ShortString(), len(state), res.Msg.GetClock())
 
-	return state, out.Clock, nil
+	return state, res.Msg.GetClock(), nil
 }
 
 func (c *client) HealAck(target peer.ID) error {
 	clientLogger.Infof("sending healAck to %s", target.ShortString())
-	_, err := c.sendInternal(cmdHealAck, command.Body{}, target)
+	_, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv1connect.RaftServiceClient) (*connect.Response[raftv1.HealAckResponse], error) {
+		return s.HealAck(ctx, connect.NewRequest(&raftv1.HealAckRequest{}))
+	})
 	if err != nil {
 		clientLogger.Warnf("healAck to %s failed: %v", target.ShortString(), err)
 	}
@@ -496,27 +338,12 @@ func (c *client) HealAck(target peer.ID) error {
 }
 
 func (c *client) Close() error {
-	c.Client.Close()
-	return nil
-}
-
-func toInt64(v interface{}) int64 {
-	switch n := v.(type) {
-	case int64:
-		return n
-	case uint64:
-		return int64(n)
-	case float64:
-		return int64(n)
-	case int:
-		return int64(n)
-	case uint:
-		return int64(n)
-	case int32:
-		return int64(n)
-	case uint32:
-		return int64(n)
-	default:
-		return 0
+	c.cancel()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, pc := range c.peers {
+		pc.conn.Close()
 	}
+	c.peers = nil
+	return nil
 }

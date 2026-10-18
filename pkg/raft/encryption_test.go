@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/taubyte/tau/p2p/streams/command"
-	cr "github.com/taubyte/tau/p2p/streams/command/response"
+	raftv1 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v1"
+	"google.golang.org/protobuf/proto"
 	"gotest.tools/v3/assert"
 )
 
@@ -148,237 +148,6 @@ func TestEncryptedConn_Read_DecryptionFailure(t *testing.T) {
 	assert.Assert(t, err != nil)
 }
 
-func TestEncryptBody(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	body := command.Body{
-		"key":   "test-key",
-		"value": []byte("test-value"),
-		"num":   42,
-	}
-
-	encrypted, err := encryptBody(body, keyToCipher(t, key))
-	require.NoError(t, err)
-	assert.Assert(t, encrypted != nil)
-	assert.Assert(t, encrypted["data"] != nil)
-
-	// Should not be the same as original
-	assert.Assert(t, encrypted["key"] == nil)
-}
-
-func TestEncryptBody_WithDataField(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	// Body with "data" field should still encrypt (it will be serialized and encrypted)
-	body := command.Body{
-		"data": []byte("some data"),
-		"key":  "value",
-	}
-
-	encrypted, err := encryptBody(body, keyToCipher(t, key))
-	require.NoError(t, err)
-	// Should return encrypted body with "data" field
-	assert.Assert(t, encrypted["data"] != nil)
-	encData, ok := encrypted["data"].([]byte)
-	assert.Assert(t, ok)
-	assert.Assert(t, len(encData) > 0)
-}
-
-func TestEncryptBody_InvalidKey(t *testing.T) {
-	body := command.Body{"key": "value"}
-
-	// Test with nil cipher - should error
-	_, err := encryptBody(body, nil)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "encryption cipher is required")
-}
-
-func TestDecryptBody(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	originalBody := command.Body{
-		"key":   "test-key",
-		"value": []byte("test-value"),
-		"num":   42,
-	}
-
-	// Encrypt first
-	encrypted, err := encryptBody(originalBody, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	// Decrypt
-	decrypted, err := decryptBody(encrypted, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	// Verify values
-	assert.Equal(t, decrypted["key"], originalBody["key"])
-	assert.Equal(t, string(decrypted["value"].([]byte)), string(originalBody["value"].([]byte)))
-	// CBOR may convert int to uint64, so check value matches
-	decryptedNum, ok := decrypted["num"].(uint64)
-	if !ok {
-		decryptedNum = uint64(decrypted["num"].(int))
-	}
-	assert.Equal(t, decryptedNum, uint64(42))
-}
-
-func TestDecryptBody_NotEncrypted(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	body := command.Body{
-		"key": "value",
-	}
-
-	// When encryption is required (cipher provided) but body is not encrypted, should error
-	_, err := decryptBody(body, keyToCipher(t, key))
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "body is not encrypted but decryption cipher is required")
-}
-
-func TestDecryptBody_InvalidKey(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	encrypted, _ := encryptBody(command.Body{"key": "value"}, keyToCipher(t, key))
-
-	shortKey := make([]byte, 16)
-	_, err := decryptBody(encrypted, keyToCipher(t, shortKey))
-	require.Error(t, err)
-}
-
-func TestDecryptBody_InvalidFormat(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	body := command.Body{
-		"data": "invalid", // Not a []byte
-	}
-
-	_, err := decryptBody(body, keyToCipher(t, key))
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "invalid encrypted data type")
-}
-
-func TestEncryptResponse(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	resp := cr.Response{
-		"success": true,
-		"data":    []byte("response data"),
-		"count":   10,
-	}
-
-	encrypted, err := encryptResponse(resp, keyToCipher(t, key))
-	require.NoError(t, err)
-	assert.Assert(t, encrypted != nil)
-	assert.Assert(t, encrypted["data"] != nil)
-
-	// Should not contain original keys
-	assert.Assert(t, encrypted["success"] == nil)
-}
-
-func TestEncryptResponse_WithDataField(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	// Response with "data" field should still encrypt (it will be serialized and encrypted)
-	resp := cr.Response{
-		"data":    []byte("some data"),
-		"success": true,
-	}
-
-	encrypted, err := encryptResponse(resp, keyToCipher(t, key))
-	require.NoError(t, err)
-	// Should return encrypted response with "data" field
-	assert.Assert(t, encrypted["data"] != nil)
-	encData, ok := encrypted["data"].([]byte)
-	assert.Assert(t, ok)
-	assert.Assert(t, len(encData) > 0)
-}
-
-func TestDecryptResponse(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	originalResp := cr.Response{
-		"success": true,
-		"data":    []byte("response data"),
-		"count":   10,
-	}
-
-	// Encrypt first
-	encrypted, err := encryptResponse(originalResp, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	// Decrypt
-	decrypted, err := decryptResponse(encrypted, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	// Verify values
-	assert.Equal(t, decrypted["success"], originalResp["success"])
-	assert.Equal(t, string(decrypted["data"].([]byte)), string(originalResp["data"].([]byte)))
-	// CBOR may convert int to uint64
-	decryptedCount, ok := decrypted["count"].(uint64)
-	if !ok {
-		decryptedCount = uint64(decrypted["count"].(int))
-	}
-	assert.Equal(t, decryptedCount, uint64(10))
-}
-
-func TestDecryptResponse_NotEncrypted(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	resp := cr.Response{
-		"key": "value",
-	}
-
-	// When encryption is required (cipher provided) but response is not encrypted, should error
-	_, err := decryptResponse(resp, keyToCipher(t, key))
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "response is not encrypted but decryption cipher is required")
-}
-
-func TestEncryptDecrypt_RoundTrip(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	// Test with complex nested data
-	body := command.Body{
-		"string": "test",
-		"bytes":  []byte("test bytes"),
-		"int":    42,
-		"float":  3.14,
-		"map": map[string]interface{}{
-			"nested": "value",
-		},
-		"slice": []interface{}{1, 2, 3},
-	}
-
-	encrypted, err := encryptBody(body, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	decrypted, err := decryptBody(encrypted, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	// Verify all fields
-	assert.Equal(t, decrypted["string"], body["string"])
-	// CBOR may convert int to uint64
-	decryptedInt, ok := decrypted["int"].(uint64)
-	if !ok {
-		decryptedInt = uint64(decrypted["int"].(int))
-	}
-	assert.Equal(t, decryptedInt, uint64(42))
-	// Float comparison
-	decryptedFloat, ok := decrypted["float"].(float64)
-	assert.Assert(t, ok)
-	assert.Assert(t, decryptedFloat > 3.13 && decryptedFloat < 3.15)
-}
-
 func TestEncryptedConn_Read_ShortBuffer(t *testing.T) {
 	key := make([]byte, AESKeySize)
 	rand.Read(key)
@@ -436,54 +205,6 @@ func TestEncryptedConn_Read_Error(t *testing.T) {
 	require.Error(t, err)
 }
 
-// Test encryption with different keys (should fail)
-func TestDecryptBody_WrongKey(t *testing.T) {
-	key1 := make([]byte, AESKeySize)
-	key2 := make([]byte, AESKeySize)
-	rand.Read(key1)
-	rand.Read(key2)
-
-	body := command.Body{"key": "value"}
-
-	encrypted, err := encryptBody(body, keyToCipher(t, key1))
-	require.NoError(t, err)
-
-	// Try to decrypt with wrong key
-	_, err = decryptBody(encrypted, keyToCipher(t, key2))
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "decryption failed")
-}
-
-// Test that encrypted data is actually different
-func TestEncryptBody_ProducesDifferentOutput(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	body := command.Body{"key": "value"}
-
-	encrypted1, err := encryptBody(body, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	encrypted2, err := encryptBody(body, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	// Encrypted outputs should be different (due to random nonce)
-	// but both should decrypt to the same value
-	decrypted1, err := decryptBody(encrypted1, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	decrypted2, err := decryptBody(encrypted2, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	// Verify they decrypt to the same values
-	assert.Equal(t, decrypted1["key"], decrypted2["key"])
-
-	// But encrypted forms should be different
-	enc1Data := encrypted1["data"].([]byte)
-	enc2Data := encrypted2["data"].([]byte)
-	assert.Assert(t, !bytes.Equal(enc1Data, enc2Data))
-}
-
 // TestCluster_WithEncryption tests encryption with an actual cluster
 func TestCluster_WithEncryption(t *testing.T) {
 	key := make([]byte, AESKeySize)
@@ -534,4 +255,54 @@ func TestCluster_Encryption_Transport(t *testing.T) {
 
 	err = cl.WaitForLeader(ctx)
 	require.NoError(t, err, "leader election should succeed with fast timeouts")
+}
+
+func TestSealedCodec_RoundTrip(t *testing.T) {
+	key := make([]byte, AESKeySize)
+	rand.Read(key)
+	codec := sealedCodec{gcm: keyToCipher(t, key)}
+
+	value := []byte("value")
+	in := &raftv1.SetRequest{Key: "key", Value: value, TimeoutMs: 42}
+	sealed1, err := codec.Marshal(in)
+	require.NoError(t, err)
+	sealed2, err := codec.Marshal(in)
+	require.NoError(t, err)
+	// A fresh nonce each time, so one message never seals the same way twice.
+	assert.Assert(t, !bytes.Equal(sealed1, sealed2))
+
+	plain, err := proto.Marshal(in)
+	require.NoError(t, err)
+	assert.Assert(t, !bytes.Contains(sealed1, plain), "the proto encoding is on the wire in the clear")
+
+	out := &raftv1.SetRequest{}
+	require.NoError(t, codec.Unmarshal(sealed1, out))
+	assert.Assert(t, proto.Equal(in, out))
+}
+
+func TestSealedCodec_Refuses(t *testing.T) {
+	key1 := make([]byte, AESKeySize)
+	key2 := make([]byte, AESKeySize)
+	rand.Read(key1)
+	rand.Read(key2)
+	codec := sealedCodec{gcm: keyToCipher(t, key1)}
+
+	sealed, err := codec.Marshal(&raftv1.KeysRequest{Prefix: "p"})
+	require.NoError(t, err)
+
+	err = sealedCodec{gcm: keyToCipher(t, key2)}.Unmarshal(sealed, &raftv1.KeysRequest{})
+	assert.ErrorContains(t, err, "decryption failed")
+
+	plain, err := proto.Marshal(&raftv1.KeysRequest{Prefix: "a longer prefix in the clear"})
+	require.NoError(t, err)
+	err = codec.Unmarshal(plain, &raftv1.KeysRequest{})
+	assert.ErrorContains(t, err, "decryption failed")
+
+	err = codec.Unmarshal([]byte("short"), &raftv1.KeysRequest{})
+	assert.ErrorContains(t, err, "too short")
+
+	_, err = codec.Marshal("not a message")
+	assert.ErrorContains(t, err, "not a proto message")
+	err = codec.Unmarshal(sealed, new(string))
+	assert.ErrorContains(t, err, "not a proto message")
 }

@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+// raft is how the members of one pkg/raft group reach each other and how an
+// outside client reaches a group, beside the consensus transport itself (which
+// is hashicorp/raft's own wire over a separate stream).
+//
+// ONE LISTENER PER GROUP. A host can be a member of many groups, each a
+// namespace, and each answers on the package's protocol id with its namespace
+// appended. The calls therefore carry no namespace: the stream already names
+// the group.
+//
+// THE KV CALLS ARE THE GROUP'S OWN SURFACE. Set and Delete are applied by the
+// leader; a follower that receives one forwards it there. Get is answered by
+// whichever member is asked, after an optional barrier that makes the read
+// reflect everything committed before it.
+//
+// THE REST ARE MEMBERSHIP AND HEALING. ExchangePeers gossips who has been
+// seen, JoinVoter asks the leader to add the caller as a voter, and
+// ClusterInfo, ExportFSM and HealAck are the split-brain healer's: compare
+// views, take the winner's state, release the loser.
+//
+// ENCRYPTION IS NOT IN THE SCHEMA. A group configured with a key seals every
+// message with it in the codec, so a request or a reply is never on the wire
+// in the clear and a peer without the key cannot be understood at all.
+package tau.raft.v1;
+
+service RaftService {
+  rpc Set(SetRequest) returns (SetResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc Keys(KeysRequest) returns (KeysResponse);
+  rpc ExchangePeers(ExchangePeersRequest) returns (ExchangePeersResponse);
+  rpc JoinVoter(JoinVoterRequest) returns (JoinVoterResponse);
+  rpc ClusterInfo(ClusterInfoRequest) returns (ClusterInfoResponse);
+  rpc ExportFSM(ExportFSMRequest) returns (ExportFSMResponse);
+  rpc HealAck(HealAckRequest) returns (HealAckResponse);
+}
+
+message SetRequest {
+  string key = 1;
+  // optional so an absent value is an error, not an empty write.
+  optional bytes value = 2;
+  // How long the leader may take to apply it; zero means the default.
+  int64 timeout_ms = 3;
+}
+
+message SetResponse {}
+
+message GetRequest {
+  string key = 1;
+  // When present, the member runs a barrier of this many nanoseconds before
+  // reading. Present and not positive, or above the maximum, is refused.
+  optional int64 barrier_ns = 2;
+}
+
+message GetResponse {
+  bytes value = 1;
+  bool found = 2;
+}
+
+message DeleteRequest {
+  string key = 1;
+  int64 timeout_ms = 2;
+}
+
+message DeleteResponse {}
+
+message KeysRequest {
+  string prefix = 1;
+}
+
+message KeysResponse {
+  repeated string keys = 1;
+}
+
+// Each side's start time and when it last saw each peer, both in unix
+// milliseconds; peers are keyed by their encoded id.
+message ExchangePeersRequest {
+  int64 start_ms = 1;
+  map<string, int64> seen_at = 2;
+}
+
+message ExchangePeersResponse {
+  int64 start_ms = 1;
+  map<string, int64> seen_at = 2;
+}
+
+message JoinVoterRequest {
+  // The peer to add. Empty means the caller, which is what a member asks for
+  // itself; a follower forwarding the request names the original caller.
+  string peer = 1;
+  int64 timeout_ms = 2;
+}
+
+message JoinVoterResponse {}
+
+message ClusterInfoRequest {}
+
+message ClusterInfoResponse {
+  string leader = 1;
+  uint64 term = 2;
+  uint64 last_index = 3;
+  int64 member_count = 4;
+  string node_id = 5;
+}
+
+message ExportFSMRequest {}
+
+message ExportFSMResponse {
+  // The FSM's entries, as pkg/raft encodes them for its own snapshots.
+  bytes fsm_state = 1;
+  uint64 clock = 2;
+}
+
+message HealAckRequest {}
+
+message HealAckResponse {}

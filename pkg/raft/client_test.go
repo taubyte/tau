@@ -214,31 +214,6 @@ func TestClient_Keys_TypeConversions(t *testing.T) {
 	}
 }
 
-func TestClient_toInt64(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    interface{}
-		expected int64
-	}{
-		{"int64", int64(42), 42},
-		{"uint64", uint64(42), 42},
-		{"float64", float64(42.5), 42},
-		{"int", int(42), 42},
-		{"uint", uint(42), 42},
-		{"int32", int32(42), 42},
-		{"uint32", uint32(42), 42},
-		{"string", "not a number", 0},
-		{"nil", nil, 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := toInt64(tt.input)
-			assert.Equal(t, result, tt.expected)
-		})
-	}
-}
-
 // TestClient_JoinVoter tests the JoinVoter method
 func TestClient_JoinVoter(t *testing.T) {
 	node := newMockNode(t)

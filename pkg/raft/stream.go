@@ -3,64 +3,44 @@ package raft
 import (
 	"context"
 	"crypto/cipher"
+	"errors"
 	"fmt"
+	"net/http"
 	"path"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/fxamacker/cbor/v2"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/taubyte/tau/p2p/streams"
-	streamClient "github.com/taubyte/tau/p2p/streams/client"
-	"github.com/taubyte/tau/p2p/streams/command"
-	cr "github.com/taubyte/tau/p2p/streams/command/response"
-	streamService "github.com/taubyte/tau/p2p/streams/service"
+	"github.com/libp2p/go-libp2p/core/protocol"
+	discoveryUtil "github.com/libp2p/go-libp2p/p2p/discovery/util"
+	"github.com/taubyte/tau/p2p/rpc"
+	raftv1 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v1"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v1/raftv1connect"
 )
 
 var streamLogger = logging.Logger("raft-stream")
 
-const (
-	// ProtocolRaftPrefix is the prefix for raft stream protocols
-	ProtocolRaftPrefix = "/raft/v1"
+// ProtocolRaftPrefix is the protocol id every group's calls and transport
+// are found under; a group appends its namespace to it.
+var ProtocolRaftPrefix = string(rpc.Protocol(raftv1connect.RaftServiceName))
 
-	cmdSet           = "set"
-	cmdGet           = "get"
-	cmdDelete        = "delete"
-	cmdKeys          = "keys"
-	cmdExchangePeers = "exchangePeers"
-	cmdJoinVoter     = "joinVoter"
-	cmdClusterInfo   = "clusterInfo"
-	cmdExportFSM     = "exportFSM"
-	cmdHealAck       = "healAck"
-
-	keyKey         = "key"
-	keyValue       = "value"
-	keyPrefix      = "prefix"
-	keyTimeout     = "timeout"
-	keyKeys        = "keys"
-	keyFound       = "found"
-	keyStartTime   = "start"
-	keySeenAt      = "seenAt"
-	keyPeer        = "peer"
-	keyBarrier     = "barrier"
-	keyLeader      = "leader"
-	keyTerm        = "term"
-	keyLastIndex   = "lastIndex"
-	keyMemberCount = "memberCount"
-	keyNodeID      = "nodeID"
-	keyFSMState    = "fsmState"
-	keyClock       = "clock"
-	keySuccess     = "success"
-)
+// defaultApplyTimeout is how long the leader may take to apply a write whose
+// request names no timeout.
+const defaultApplyTimeout = 5 * time.Second
 
 // MaxGetHandlerBarrierTimeout is the maximum barrier timeout for Get operations
 const MaxGetHandlerBarrierTimeout = 30 * time.Second
 
+// raftStreamService answers one group's calls on Protocol(namespace).
 type raftStreamService struct {
-	cluster          *cluster
-	service          streamService.CommandService
-	encryptionCipher cipher.AEAD
+	cluster *cluster
+	server  *rpc.Server
+	cancel  context.CancelFunc
 }
+
+var _ raftv1connect.RaftServiceHandler = (*raftStreamService)(nil)
 
 func Protocol(namespace string) string {
 	return path.Join(ProtocolRaftPrefix, namespace)
@@ -70,160 +50,96 @@ func TransportProtocol(namespace string) string {
 	return path.Join(ProtocolRaftPrefix, namespace, "transport")
 }
 
+// codecOptions seals every message with the group's key when it has one.
+func codecOptions(gcm cipher.AEAD) (connect.Option, bool) {
+	if gcm == nil {
+		return nil, false
+	}
+	return connect.WithCodec(sealedCodec{gcm: gcm}), true
+}
+
 func newStreamService(c *cluster) (*raftStreamService, error) {
-	protocol := Protocol(c.namespace)
+	protocol := protocol.ID(Protocol(c.namespace))
+	ss := &raftStreamService{cluster: c}
 
-	service, err := streamService.New(c.node, "raft", protocol)
+	var opts []connect.HandlerOption
+	if opt, ok := codecOptions(c.encryptionCipher); ok {
+		opts = append(opts, opt)
+	}
+	route, handler := raftv1connect.NewRaftServiceHandler(ss, opts...)
+	mux := http.NewServeMux()
+	mux.Handle(route, handler)
+
+	ctx, cancel := context.WithCancel(c.node.Context())
+	server, err := rpc.Listen(ctx, c.node.Peer(), protocol, mux)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create stream service: %w", err)
+		cancel()
+		return nil, fmt.Errorf("failed to listen on %s: %w", protocol, err)
 	}
+	ss.server = server
+	ss.cancel = cancel
 
-	ss := &raftStreamService{
-		cluster:          c,
-		service:          service,
-		encryptionCipher: c.encryptionCipher,
+	if d := c.node.Discovery(); d != nil {
+		discoveryUtil.Advertise(ctx, d, string(protocol))
 	}
-
-	if err := service.Define(cmdSet, ss.handleSet); err != nil {
-		service.Stop()
-		return nil, fmt.Errorf("failed to define set handler: %w", err)
-	}
-
-	if err := service.Define(cmdGet, ss.handleGet); err != nil {
-		service.Stop()
-		return nil, fmt.Errorf("failed to define get handler: %w", err)
-	}
-
-	if err := service.Define(cmdDelete, ss.handleDelete); err != nil {
-		service.Stop()
-		return nil, fmt.Errorf("failed to define delete handler: %w", err)
-	}
-
-	if err := service.Define(cmdKeys, ss.handleKeys); err != nil {
-		service.Stop()
-		return nil, fmt.Errorf("failed to define keys handler: %w", err)
-	}
-
-	if err := service.Define(cmdExchangePeers, ss.handleExchangePeers); err != nil {
-		service.Stop()
-		return nil, fmt.Errorf("failed to define exchangePeers handler: %w", err)
-	}
-
-	if err := service.Define(cmdJoinVoter, ss.handleJoinVoter); err != nil {
-		service.Stop()
-		return nil, fmt.Errorf("failed to define joinVoter handler: %w", err)
-	}
-
-	if err := service.Define(cmdClusterInfo, ss.handleClusterInfo); err != nil {
-		service.Stop()
-		return nil, fmt.Errorf("failed to define clusterInfo handler: %w", err)
-	}
-
-	if err := service.Define(cmdExportFSM, ss.handleExportFSM); err != nil {
-		service.Stop()
-		return nil, fmt.Errorf("failed to define exportFSM handler: %w", err)
-	}
-
-	if err := service.Define(cmdHealAck, ss.handleHealAck); err != nil {
-		service.Stop()
-		return nil, fmt.Errorf("failed to define healAck handler: %w", err)
-	}
-
-	service.Start()
 
 	return ss, nil
 }
 
 func (s *raftStreamService) stop() {
-	if s.service != nil {
-		s.service.Stop()
+	if s.cancel != nil {
+		s.cancel()
+	}
+	if s.server != nil {
+		s.server.Close()
 	}
 }
 
-// handleSet handles set requests
-func (s *raftStreamService) handleSet(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	if s.encryptionCipher != nil {
-		decryptedBody, err := decryptBody(body, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting body: %w", err)
-		}
-		body = decryptedBody
+// remotePeer is the caller, or "" when the call did not arrive over a stream
+// (a handler invoked directly).
+func remotePeer(ctx context.Context) peer.ID {
+	pid, err := rpc.RemotePeer(ctx)
+	if err != nil {
+		return ""
 	}
-
-	key, ok := body[keyKey].(string)
-	if !ok {
-		return nil, fmt.Errorf("missing or invalid key")
-	}
-
-	value, ok := body[keyValue].([]byte)
-	if !ok {
-		if strVal, ok := body[keyValue].(string); ok {
-			value = []byte(strVal)
-		} else {
-			return nil, fmt.Errorf("missing or invalid value")
-		}
-	}
-
-	timeout := 5 * time.Second
-	if timeoutVal, ok := body[keyTimeout].(float64); ok {
-		timeout = time.Duration(timeoutVal) * time.Millisecond
-	}
-
-	if s.cluster.IsLeader() {
-		if err := s.cluster.Set(key, value, timeout); err != nil {
-			return nil, err
-		}
-		resp := cr.Response{"success": true}
-
-		if s.encryptionCipher != nil {
-			encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
-			if err != nil {
-				return nil, fmt.Errorf("encrypting response: %w", err)
-			}
-			resp = encryptedResp
-		}
-
-		return resp, nil
-	}
-
-	return s.forwardToLeader(cmdSet, body)
+	return pid
 }
 
-// handleGet handles get requests
-func (s *raftStreamService) handleGet(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	if s.encryptionCipher != nil {
-		decryptedBody, err := decryptBody(body, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting body: %w", err)
-		}
-		body = decryptedBody
+func applyTimeout(ms int64) time.Duration {
+	if ms <= 0 {
+		return defaultApplyTimeout
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+func (s *raftStreamService) Set(ctx context.Context, req *connect.Request[raftv1.SetRequest]) (*connect.Response[raftv1.SetResponse], error) {
+	m := req.Msg
+	if m.GetKey() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("missing or invalid key"))
+	}
+	if m.Value == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("missing or invalid value"))
 	}
 
-	key, ok := body[keyKey].(string)
-	if !ok {
-		return nil, fmt.Errorf("missing or invalid key")
+	if !s.cluster.IsLeader() {
+		return forwardToLeader(ctx, s, "set", func(ctx context.Context, c raftv1connect.RaftServiceClient) (*connect.Response[raftv1.SetResponse], error) {
+			return c.Set(ctx, connect.NewRequest(m))
+		})
+	}
+	if err := s.cluster.Set(m.GetKey(), m.GetValue(), applyTimeout(m.GetTimeoutMs())); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&raftv1.SetResponse{}), nil
+}
+
+func (s *raftStreamService) Get(ctx context.Context, req *connect.Request[raftv1.GetRequest]) (*connect.Response[raftv1.GetResponse], error) {
+	m := req.Msg
+	if m.GetKey() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("missing or invalid key"))
 	}
 
-	if barrierVal, ok := body[keyBarrier]; ok {
-		var barrierNs int64
-		switch v := barrierVal.(type) {
-		case int64:
-			barrierNs = v
-		case uint64:
-			barrierNs = int64(v)
-		case float64:
-			barrierNs = int64(v)
-		case int:
-			barrierNs = int64(v)
-		case uint:
-			barrierNs = int64(v)
-		case int32:
-			barrierNs = int64(v)
-		case uint32:
-			barrierNs = int64(v)
-		default:
-			return nil, ErrInvalidBarrier
-		}
+	if m.BarrierNs != nil {
+		barrierNs := m.GetBarrierNs()
 		if barrierNs <= 0 {
 			return nil, ErrInvalidBarrier
 		}
@@ -236,190 +152,85 @@ func (s *raftStreamService) handleGet(ctx context.Context, conn streams.Connecti
 		}
 	}
 
-	val, found := s.cluster.Get(key)
-	resp := cr.Response{
-		keyValue: val,
-		keyFound: found,
-	}
-
-	if s.encryptionCipher != nil {
-		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("encrypting response: %w", err)
-		}
-		resp = encryptedResp
-	}
-
-	return resp, nil
+	val, found := s.cluster.Get(m.GetKey())
+	return connect.NewResponse(&raftv1.GetResponse{Value: val, Found: found}), nil
 }
 
-// handleDelete handles delete requests
-func (s *raftStreamService) handleDelete(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	if s.encryptionCipher != nil {
-		decryptedBody, err := decryptBody(body, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting body: %w", err)
-		}
-		body = decryptedBody
+func (s *raftStreamService) Delete(ctx context.Context, req *connect.Request[raftv1.DeleteRequest]) (*connect.Response[raftv1.DeleteResponse], error) {
+	m := req.Msg
+	if m.GetKey() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("missing or invalid key"))
 	}
 
-	key, ok := body[keyKey].(string)
-	if !ok {
-		return nil, fmt.Errorf("missing or invalid key")
+	if !s.cluster.IsLeader() {
+		return forwardToLeader(ctx, s, "delete", func(ctx context.Context, c raftv1connect.RaftServiceClient) (*connect.Response[raftv1.DeleteResponse], error) {
+			return c.Delete(ctx, connect.NewRequest(m))
+		})
 	}
-
-	timeout := 5 * time.Second
-	if timeoutVal, ok := body[keyTimeout].(float64); ok {
-		timeout = time.Duration(timeoutVal) * time.Millisecond
+	if err := s.cluster.Delete(m.GetKey(), applyTimeout(m.GetTimeoutMs())); err != nil {
+		return nil, err
 	}
-
-	if s.cluster.IsLeader() {
-		if err := s.cluster.Delete(key, timeout); err != nil {
-			return nil, err
-		}
-		resp := cr.Response{"success": true}
-
-		if s.encryptionCipher != nil {
-			encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
-			if err != nil {
-				return nil, fmt.Errorf("encrypting response: %w", err)
-			}
-			resp = encryptedResp
-		}
-
-		return resp, nil
-	}
-
-	return s.forwardToLeader(cmdDelete, body)
+	return connect.NewResponse(&raftv1.DeleteResponse{}), nil
 }
 
-// handleKeys handles keys requests
-func (s *raftStreamService) handleKeys(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	if s.encryptionCipher != nil {
-		decryptedBody, err := decryptBody(body, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting body: %w", err)
-		}
-		body = decryptedBody
-	}
-
-	prefix := ""
-	if prefixVal, ok := body[keyPrefix].(string); ok {
-		prefix = prefixVal
-	}
-
-	keys := s.cluster.Keys(prefix)
+func (s *raftStreamService) Keys(ctx context.Context, req *connect.Request[raftv1.KeysRequest]) (*connect.Response[raftv1.KeysResponse], error) {
+	keys := s.cluster.Keys(req.Msg.GetPrefix())
 	if keys == nil {
 		keys = []string{}
 	}
-	resp := cr.Response{
-		keyKeys: keys,
-	}
-
-	if s.encryptionCipher != nil {
-		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("encrypting response: %w", err)
-		}
-		resp = encryptedResp
-	}
-
-	return resp, nil
+	return connect.NewResponse(&raftv1.KeysResponse{Keys: keys}), nil
 }
 
-// forwardToLeader forwards a command to the current leader
-func (s *raftStreamService) forwardToLeader(cmd string, body command.Body) (cr.Response, error) {
+// forwardToLeader sends a call this member cannot answer to the current
+// leader and returns the leader's answer as its own.
+func forwardToLeader[T any](ctx context.Context, s *raftStreamService, what string,
+	call func(context.Context, raftv1connect.RaftServiceClient) (*connect.Response[T], error)) (*connect.Response[T], error) {
 	leader, err := s.cluster.Leader()
 	if err != nil {
-		streamLogger.Infof("[%s] cannot forward %q: no leader", s.cluster.node.ID().ShortString(), cmd)
+		streamLogger.Infof("[%s] cannot forward %q: no leader", s.cluster.node.ID().ShortString(), what)
 		return nil, ErrNoLeader
 	}
 
-	streamLogger.Infof("[%s] forwarding %q to leader %s", s.cluster.node.ID().ShortString(), cmd, leader.ShortString())
+	streamLogger.Infof("[%s] forwarding %q to leader %s", s.cluster.node.ID().ShortString(), what, leader.ShortString())
 
-	cli := s.cluster.raftClient.(*client)
-	resCh, err := cli.New(cmd,
-		streamClient.Body(body),
-		streamClient.To(leader),
-		streamClient.Threshold(1),
-	).Do()
+	cli, ok := s.cluster.raftClient.(*client)
+	if !ok {
+		return nil, fmt.Errorf("forwarding to leader failed: no client")
+	}
+	res, err := first(ctx, cli, []peer.ID{leader}, sendToPeerTimeout, call)
 	if err != nil {
 		return nil, fmt.Errorf("forwarding to leader failed: %w", err)
 	}
-
-	res := <-resCh
-	if res == nil {
-		return nil, fmt.Errorf("forwarding to leader failed: no responses")
-	}
-	defer res.Close()
-
-	if err := res.Error(); err != nil {
-		return nil, fmt.Errorf("forwarding to leader failed: %w", err)
-	}
-
-	return res.Response, nil
+	return res, nil
 }
 
-func (s *raftStreamService) handleExchangePeers(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	if s.encryptionCipher != nil {
-		decryptedBody, err := decryptBody(body, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting body: %w", err)
-		}
-		body = decryptedBody
-	}
-
+func (s *raftStreamService) ExchangePeers(ctx context.Context, req *connect.Request[raftv1.ExchangePeersRequest]) (*connect.Response[raftv1.ExchangePeersResponse], error) {
 	tracker := s.cluster.tracker
+	m := req.Msg
 
-	theirStart := time.UnixMilli(toInt64(body[keyStartTime]))
-
-	if theirSeenAt, ok := body[keySeenAt].(map[string]interface{}); ok {
-		theirPeers := make(map[string]int64)
-		for k, v := range theirSeenAt {
-			theirPeers[k] = toInt64(v)
-		}
-		newPeers := tracker.mergePeers(theirStart, theirPeers)
+	if m.SeenAt != nil {
+		newPeers := tracker.mergePeers(time.UnixMilli(m.GetStartMs()), m.GetSeenAt())
 		for _, newPeer := range newPeers {
 			s.cluster.dialPeer(ctx, newPeer)
 		}
 	}
 
-	if conn != nil {
-		tracker.addPeer(conn.RemotePeer())
+	if from := remotePeer(ctx); from != "" {
+		tracker.addPeer(from)
 	}
 
 	ourStart, ourPeers := tracker.getPeersMap()
-	resp := cr.Response{
-		keyStartTime: ourStart.UnixMilli(),
-		keySeenAt:    ourPeers,
-	}
-
-	if s.encryptionCipher != nil {
-		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("encrypting response: %w", err)
-		}
-		resp = encryptedResp
-	}
-
-	return resp, nil
+	return connect.NewResponse(&raftv1.ExchangePeersResponse{
+		StartMs: ourStart.UnixMilli(),
+		SeenAt:  ourPeers,
+	}), nil
 }
 
-func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	if s.encryptionCipher != nil {
-		decryptedBody, err := decryptBody(body, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting body: %w", err)
-		}
-		body = decryptedBody
-	}
+func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[raftv1.JoinVoterRequest]) (*connect.Response[raftv1.JoinVoterResponse], error) {
+	m := req.Msg
+	timeout := applyTimeout(m.GetTimeoutMs())
 
-	timeout := 5 * time.Second
-	if timeoutVal, ok := body[keyTimeout].(float64); ok {
-		timeout = time.Duration(timeoutVal) * time.Millisecond
-	}
-
-	peerID, err := peerFromBodyOrConn(body, conn)
+	peerID, err := peerFromRequestOrCaller(ctx, m.GetPeer())
 	if err != nil {
 		return nil, err
 	}
@@ -433,17 +244,7 @@ func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Co
 				s.cluster.node.ID().ShortString(), peerID.ShortString(), err)
 			return nil, err
 		}
-		resp := cr.Response{"success": true}
-
-		if s.encryptionCipher != nil {
-			encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
-			if err != nil {
-				return nil, fmt.Errorf("encrypting response: %w", err)
-			}
-			resp = encryptedResp
-		}
-
-		return resp, nil
+		return connect.NewResponse(&raftv1.JoinVoterResponse{}), nil
 	}
 
 	leaderCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -459,48 +260,30 @@ func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Co
 				s.cluster.node.ID().ShortString(), peerID.ShortString(), err)
 			return nil, err
 		}
-		resp := cr.Response{"success": true}
-		if s.encryptionCipher != nil {
-			encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
-			if err != nil {
-				return nil, fmt.Errorf("encrypting response: %w", err)
-			}
-			resp = encryptedResp
-		}
-		return resp, nil
+		return connect.NewResponse(&raftv1.JoinVoterResponse{}), nil
 	}
 
 	streamLogger.Infof("[%s] joinVoter: forwarding request for %s to leader",
 		s.cluster.node.ID().ShortString(), peerID.ShortString())
 
-	body[keyPeer] = peerID.String()
-	resp, err := s.forwardToLeader(cmdJoinVoter, body)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
+	forward := &raftv1.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: m.GetTimeoutMs()}
+	return forwardToLeader(ctx, s, "joinVoter", func(ctx context.Context, c raftv1connect.RaftServiceClient) (*connect.Response[raftv1.JoinVoterResponse], error) {
+		return c.JoinVoter(ctx, connect.NewRequest(forward))
+	})
 }
 
-func peerFromBodyOrConn(body command.Body, conn streams.Connection) (peer.ID, error) {
-	if peerVal, ok := body[keyPeer].(string); ok && peerVal != "" {
-		return peer.Decode(peerVal)
+func peerFromRequestOrCaller(ctx context.Context, named string) (peer.ID, error) {
+	if named != "" {
+		return peer.Decode(named)
 	}
-	if conn != nil {
-		return conn.RemotePeer(), nil
+	if from := remotePeer(ctx); from != "" {
+		return from, nil
 	}
 	return "", fmt.Errorf("missing peer id")
 }
 
-// handleClusterInfo returns this node's cluster view; does not require leadership.
-func (s *raftStreamService) handleClusterInfo(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	if s.encryptionCipher != nil {
-		decryptedBody, err := decryptBody(body, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting body: %w", err)
-		}
-		body = decryptedBody
-	}
-
+// ClusterInfo returns this node's cluster view; does not require leadership.
+func (s *raftStreamService) ClusterInfo(ctx context.Context, req *connect.Request[raftv1.ClusterInfoRequest]) (*connect.Response[raftv1.ClusterInfoResponse], error) {
 	leaderID := ""
 	if leader, err := s.cluster.Leader(); err == nil {
 		leaderID = leader.String()
@@ -519,51 +302,28 @@ func (s *raftStreamService) handleClusterInfo(ctx context.Context, conn streams.
 		memberCount = len(members)
 	}
 
-	from := ""
-	if conn != nil {
-		from = conn.RemotePeer().ShortString()
-	}
 	streamLogger.Infof("[%s] clusterInfo requested (from=%s): leader=%s term=%d lastIndex=%d members=%d",
-		s.cluster.node.ID().ShortString(), from, leaderID, term, lastIdx, memberCount)
+		s.cluster.node.ID().ShortString(), remotePeer(ctx).ShortString(), leaderID, term, lastIdx, memberCount)
 
-	resp := cr.Response{
-		keyLeader:      leaderID,
-		keyTerm:        term,
-		keyLastIndex:   lastIdx,
-		keyMemberCount: memberCount,
-		keyNodeID:      s.cluster.node.ID().String(),
-	}
-
-	if s.encryptionCipher != nil {
-		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("encrypting response: %w", err)
-		}
-		resp = encryptedResp
-	}
-
-	return resp, nil
+	return connect.NewResponse(&raftv1.ClusterInfoResponse{
+		Leader:      leaderID,
+		Term:        term,
+		LastIndex:   lastIdx,
+		MemberCount: int64(memberCount),
+		NodeId:      s.cluster.node.ID().String(),
+	}), nil
 }
 
-// handleExportFSM serves FSM state from the leader (followers forward).
-func (s *raftStreamService) handleExportFSM(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	if s.encryptionCipher != nil {
-		decryptedBody, err := decryptBody(body, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting body: %w", err)
-		}
-		body = decryptedBody
-	}
-
-	from := ""
-	if conn != nil {
-		from = conn.RemotePeer().ShortString()
-	}
+// ExportFSM serves FSM state from the leader (followers forward).
+func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[raftv1.ExportFSMRequest]) (*connect.Response[raftv1.ExportFSMResponse], error) {
+	from := remotePeer(ctx).ShortString()
 
 	if !s.cluster.IsLeader() {
 		streamLogger.Infof("[%s] exportFSM requested (from=%s) — forwarding to leader",
 			s.cluster.node.ID().ShortString(), from)
-		return s.forwardToLeader(cmdExportFSM, body)
+		return forwardToLeader(ctx, s, "exportFSM", func(ctx context.Context, c raftv1connect.RaftServiceClient) (*connect.Response[raftv1.ExportFSMResponse], error) {
+			return c.ExportFSM(ctx, connect.NewRequest(&raftv1.ExportFSMRequest{}))
+		})
 	}
 
 	streamLogger.Infof("[%s] exportFSM requested (from=%s) — serving as leader",
@@ -586,36 +346,12 @@ func (s *raftStreamService) handleExportFSM(ctx context.Context, conn streams.Co
 
 	streamLogger.Infof("[%s] exportFSM: %d keys, clock=%d", s.cluster.node.ID().ShortString(), len(state), clock)
 
-	resp := cr.Response{
-		keyFSMState: stateBytes,
-		keyClock:    clock,
-	}
-
-	if s.encryptionCipher != nil {
-		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("encrypting response: %w", err)
-		}
-		resp = encryptedResp
-	}
-
-	return resp, nil
+	return connect.NewResponse(&raftv1.ExportFSMResponse{FsmState: stateBytes, Clock: clock}), nil
 }
 
-// handleHealAck wakes losers blocked in yieldAndRejoin after the winner merged.
-func (s *raftStreamService) handleHealAck(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	if s.encryptionCipher != nil {
-		decryptedBody, err := decryptBody(body, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting body: %w", err)
-		}
-		body = decryptedBody
-	}
-
-	var fromPeer peer.ID
-	if conn != nil {
-		fromPeer = conn.RemotePeer()
-	}
+// HealAck wakes losers blocked in yieldAndRejoin after the winner merged.
+func (s *raftStreamService) HealAck(ctx context.Context, req *connect.Request[raftv1.HealAckRequest]) (*connect.Response[raftv1.HealAckResponse], error) {
+	fromPeer := remotePeer(ctx)
 	streamLogger.Infof("[%s] received healAck from %s — signaling healer",
 		s.cluster.node.ID().ShortString(), fromPeer.ShortString())
 
@@ -623,17 +359,7 @@ func (s *raftStreamService) handleHealAck(ctx context.Context, conn streams.Conn
 		s.cluster.healer.signalHealAck(fromPeer)
 	}
 
-	resp := cr.Response{keySuccess: true}
-
-	if s.encryptionCipher != nil {
-		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
-		if err != nil {
-			return nil, fmt.Errorf("encrypting response: %w", err)
-		}
-		resp = encryptedResp
-	}
-
-	return resp, nil
+	return connect.NewResponse(&raftv1.HealAckResponse{}), nil
 }
 
 func parseUint64(s string) uint64 {

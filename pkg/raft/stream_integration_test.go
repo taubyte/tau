@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
-	"github.com/taubyte/tau/p2p/streams/command"
+	raftv1 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v1"
 	"gotest.tools/v3/assert"
 )
 
@@ -30,20 +31,11 @@ func TestStreamService_HandleGet_WithBarrier_Integration(t *testing.T) {
 
 	// Test get through internal stream service handler with barrier
 	c := getClusterInternal(cl)
-	body := command.Body{
-		keyKey:     "barrier-key",
-		keyBarrier: int64(time.Second.Nanoseconds()),
-	}
-
-	resp, err := c.streamService.handleGet(context.Background(), nil, body)
-	require.NoError(t, err, "handleGet with barrier should succeed")
-
-	found, ok := resp[keyFound].(bool)
-	require.True(t, ok && found, "expected found to be true")
-
-	val, ok := resp[keyValue].([]byte)
-	require.True(t, ok, "expected value to be []byte")
-	assert.Equal(t, "barrier-value", string(val))
+	barrier := time.Second.Nanoseconds()
+	resp, err := c.streamService.Get(context.Background(), connect.NewRequest(&raftv1.GetRequest{Key: "barrier-key", BarrierNs: &barrier}))
+	require.NoError(t, err, "Get with barrier should succeed")
+	require.True(t, resp.Msg.GetFound(), "expected found to be true")
+	assert.Equal(t, "barrier-value", string(resp.Msg.GetValue()))
 }
 
 func TestStreamService_HandleGet_WithBarrier_Invalid_Integration(t *testing.T) {
@@ -62,22 +54,14 @@ func TestStreamService_HandleGet_WithBarrier_Invalid_Integration(t *testing.T) {
 	c := getClusterInternal(cl)
 
 	// Test with barrier <= 0
-	body := command.Body{
-		keyKey:     "test-key",
-		keyBarrier: int64(-1),
-	}
-
-	_, err = c.streamService.handleGet(context.Background(), nil, body)
+	negative := int64(-1)
+	_, err = c.streamService.Get(context.Background(), connect.NewRequest(&raftv1.GetRequest{Key: "test-key", BarrierNs: &negative}))
 	require.Error(t, err, "handleGet with negative barrier should fail")
 	require.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
 
 	// Test with barrier > MaxGetHandlerBarrierTimeout
-	body = command.Body{
-		keyKey:     "test-key",
-		keyBarrier: int64((MaxGetHandlerBarrierTimeout + time.Second).Nanoseconds()),
-	}
-
-	_, err = c.streamService.handleGet(context.Background(), nil, body)
+	over := (MaxGetHandlerBarrierTimeout + time.Second).Nanoseconds()
+	_, err = c.streamService.Get(context.Background(), connect.NewRequest(&raftv1.GetRequest{Key: "test-key", BarrierNs: &over}))
 	require.Error(t, err, "handleGet with barrier > max should fail")
 	require.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
 }
