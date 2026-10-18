@@ -238,7 +238,7 @@ async def setup_service_shapes(self) -> None:
     """Set up service shapes configuration."""
     all_shape = self.config.shapes.get("all")
     await all_shape.services.set([
-        "auth", "tns", "hoarder", "seer", "substrate", "patrick", "monkey"
+        "register", "worker", "discovery", "gateway", "auth", "dns"
     ])
     await all_shape.ports.port("main").set(4242)
     await all_shape.ports.port("lite").set(4262)

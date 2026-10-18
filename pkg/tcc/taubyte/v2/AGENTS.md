@@ -158,7 +158,7 @@ Related conditionals: `RequiredWhen`, `RequiredUnless`, `OnlyWhen`, `ShowWhen`,
 ## 4. A key may never contain `/`
 
 The compiled configuration is an OBJECT, and `/` is what separates one level of it from
-the next — in a TNS path, in a lowering's `At(path…)`, in every walk over the tree. So a
+the next — in a register path, in a lowering's `At(path…)`, in every walk over the tree. So a
 key holding a slash is a key pretending to be a path: it reads as hierarchy everywhere it
 is printed and is one opaque leaf everywhere it is stored, which for a CRDT means two
 writers touching different halves of it collide over one cell.

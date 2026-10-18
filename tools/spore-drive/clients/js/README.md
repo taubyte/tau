@@ -85,14 +85,14 @@ await withKeyAuth.key.path.set("/keys/test.pem");
 ```ts
 await config.shapes.set({
   shape1: {
-    services: ["auth", "seer"],
+    services: ["auth", "discovery"],
     ports: {
       main: 4242,
       lite: 4262,
     },
   },
   shape2: {
-    services: ["gateway", "patrick", "monkey"],
+    services: ["gateway", "build-frontend"],
     ports: {
       main: 6242,
       lite: 6262,
@@ -105,7 +105,7 @@ await config.shapes.set({
 Or
 ```ts
 const shape1 = config.shape["shape1"];
-await shape1.services.set(["auth", "seer"]);
+await shape1.services.set(["auth", "discovery"]);
 await shape1.ports.port["main"].set(4242);
 await shape1.ports.port["lite"].set(4262);
 ```

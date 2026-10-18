@@ -28,9 +28,6 @@ Same rule kills read-modify-write on a collection. Never store a CBOR slice or m
 callers append to: reader A and reader B both read `[x]`, write `[x,y]` and `[x,z]`, and
 one entry disappears. Split the collection into one key per element.
 
-`services/accounts/paths.go` states this convention and the layouts follow it — lookup
-indexes, passkey sub-collections, all one key per entry.
-
 ### 2. Put the discriminator in the key path.
 
 If an entry belongs to a `(provider, owner, account)` tuple, all three go in the path. Any
@@ -53,7 +50,7 @@ prevent it with a lock you do not have; resolve it on read:
 
 Every node then computes the same answer from the same replicated state, with no
 coordination and no dependence on write ordering or clock skew between nodes mattering to
-correctness. `services/accounts/account.go`'s `lookupIDBySlug` does exactly this.
+correctness.
 
 ### 4. Read-then-write guards are UX, not correctness.
 
@@ -72,7 +69,7 @@ lose. If ordering matters, carry it in the value and resolve on read.
 A kvdb replicates to instances that are **open and subscribed**. A write acknowledged by a
 single node can die with that node if no other holder had the database open. Anything doing
 load/unload must keep claimants co-loaded during active writes and barrier on acknowledgement
-from more than one holder. See `pkg/kvdb` and the hoarder replication path.
+from more than one holder. See `pkg/kvdb`.
 
 ### 7. Byte order is your only sort order.
 

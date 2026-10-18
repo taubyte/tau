@@ -28,12 +28,12 @@ Before you start contributing, make sure you have the following prerequisites in
 
 **Required:**
 
-- **Go** 1.21 or later ([install guide](https://golang.org/doc/install))
+- **Go** 1.27 or later ([install guide](https://golang.org/doc/install))
 - **Git** for version control
 - **Node.js** 18+ and **npm** (for JavaScript/TypeScript components)
-- **Docker** (needed for dream testing)
+- **Docker** (needed for the container, application and build suites)
 
-For detailed setup instructions, see our [README](README.md) or visit [tau.how](https://tau.how) for comprehensive documentation.
+See the [README](README.md) for the node, its services and the test targets.
 
 ## Types of Contributions We Welcome
 
@@ -49,12 +49,11 @@ Before starting work, **please open an issue** to discuss your proposed change. 
 
 1. **Check for similar issues first** - Search existing [issues](https://github.com/taubyte/tau/issues) to avoid duplicates
 2. Click **New Issue** and name it specifically using our format:
-   - `[dream] Brief description of the bug`
-   - `[tau-cli] Brief description of the new feature`
-   - `[cicd] Brief description of your idea`
+   - `[node] Brief description of the bug`
+   - `[build] Brief description of the new feature`
    - `[auth] Brief description of your idea`
-   - `[seer] Brief description of your idea`
-   - `[tns] Brief description of your idea`
+   - `[discovery] Brief description of your idea`
+   - `[register] Brief description of your idea`
    - `[spore-drive] Brief description of your idea`
    - `[feature] Brief description of your idea`
 3. Describe your proposal clearly
@@ -89,12 +88,9 @@ If you are contributing to Go or JavaScript/TypeScript components, please run au
 
 **Go Tests:**
 
-- From the root or any Go package directory:
-  ```bash
-  go test -p 1 ./...
-  ```
-  - `-p 1` runs tests serially (one package at a time).
-  - `./...` runs all tests recursively in the current directory and subdirectories.
+- From the root, `make test` runs every package. The tagged suites
+  (`make test-dreaming`, `make test-raft`, and the container suites) are
+  listed in the [README](README.md#tests).
 
 **JavaScript/TypeScript Tests:**
 
@@ -111,12 +107,14 @@ Use the same format as issue naming:
 ```bash
 git commit -m "[bug] fix memory leak in request handler"
 git commit -m "[feature] add OAuth2 integration"
-git commit -m "[dream] add new testing scenarios"
+git commit -m "[node] add new testing scenarios"
 ```
 
 ### 6. Testing
 
-You can test your changes using **dream**, our local cloud environment. See the [dream documentation](https://tau.how/01-dev-getting-started/01-local-cloud/) for setup and usage details.
+`node/dream` runs a multi-node cloud in-process and deploys the projects under
+`node/dream/projects/` through it; a change to a resource kind belongs in a
+project there (see [AGENTS.md](AGENTS.md)).
 
 ### 7. Push to Your Fork
 
@@ -144,8 +142,7 @@ Expect initial review within 2-3 business days. Be responsive to feedback and ma
 
 **Need Help?**
 
-- **Discord:** Join our community at [discord.gg/zCHbgKcB](https://discord.gg/zCHbgKcB)
-- **Documentation:** Visit [tau.how](https://tau.how) for comprehensive guides
+- **Discord:** Join our community at [discord.gg/KbN3KN7kpQ](https://discord.gg/KbN3KN7kpQ)
 
 ## License
 
