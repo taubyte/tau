@@ -19,8 +19,8 @@ import (
 
 // candidate is one gateway resource that answers on the requested name.
 type candidate struct {
-	host     specs.Host
-	resource specs.Resource
+	host    specs.Host
+	gateway specs.Gateway
 }
 
 // match is the winning route, decomposed.
@@ -31,10 +31,11 @@ type match struct {
 	// before the request is handed on.
 	Path  string
 	Strip bool
-
-	// Handler is what serves it.
-	Handler specs.Resource
 }
+
+// handler is what serves the winning route: its kind, name and namespace, as
+// the route declared them.
+func (m match) handler() specs.GatewayRoute { return m.gateway.Route }
 
 // pick chooses the route that serves this request.
 //
@@ -53,8 +54,11 @@ func pick(candidates []candidate, path, method string) (m match, found, methodOn
 
 	var wins []scored
 	for _, c := range candidates {
-		route := c.resource.Sub("route")
-		if len(route) == 0 {
+		// A ROUTE BLOCK IS ONE THE COMPILER WROTE, and Declared alone would miss
+		// the one below: `match` is defaulted, so `route: {match: prefix}` is
+		// written on the author's behalf and declares nothing.
+		route := c.gateway.Route
+		if !route.Declared && route.Match == "" {
 			continue
 		}
 
@@ -64,24 +68,22 @@ func pick(candidates []candidate, path, method string) (m match, found, methodOn
 		// one. An empty prefix matches anything at score 0, so it sits below
 		// every declared route including a bare `/`: where a name carries both,
 		// the one that named a path wins and the function is the fallback.
-		declared := route.String("path")
-		score, ok := pathScore(route.String("match"), declared, path)
+		declared := route.Path
+		score, ok := pathScore(route.Match, declared, path)
 		if !ok {
 			continue
 		}
 
-		if !methodAllowed(route.Strings("methods"), method) {
+		if !methodAllowed(route.Methods, method) {
 			methodOnly = true
 			continue
 		}
 
-		strip, _ := route.Bool("strip_prefix")
 		wins = append(wins, scored{
 			match: match{
 				candidate: c,
 				Path:      declared,
-				Strip:     strip,
-				Handler:   route.Sub("handler"),
+				Strip:     route.StripPrefix != nil && *route.StripPrefix,
 			},
 			score: score,
 		})
@@ -111,11 +113,11 @@ func pick(candidates []candidate, path, method string) (m match, found, methodOn
 // the single most common shape in every imported compose file.
 func pathScore(kind, declared, path string) (int, bool) {
 	switch kind {
-	case "exact":
+	case specs.GatewayRouteMatchExact:
 		if declared == path {
 			return 1 << 20, true
 		}
-	case "regex":
+	case specs.GatewayRouteMatchRegex:
 		re, err := regex.Compile(declared)
 		if err != nil {
 			// A route whose pattern does not compile matches nothing. It is
@@ -188,15 +190,16 @@ func (m match) stripped(path string) string {
 // nothing.
 func (m match) address(projectName, environment string) specs.Address {
 	scope := m.host.Scope
-	if declared := m.Handler.String("namespace"); declared != "" {
+	handler := m.handler()
+	if declared := handler.HandlerNamespace; declared != "" {
 		scope = splitScope(declared)
 	}
 	return specs.Address{
 		Project:     projectName,
 		Environment: environment,
 		Scope:       scope,
-		Kind:        m.Handler.String("kind"),
-		Name:        m.Handler.String("name"),
+		Kind:        handler.HandlerKind,
+		Name:        handler.HandlerName,
 	}
 }
 
@@ -221,11 +224,11 @@ func splitScope(namespace string) []string {
 // guard is the authorizer this route answers to: its own if it named one, and
 // the gateway's otherwise.
 func (m match) guard() (name string, scope []string) {
-	if n := m.resource.Sub("route").Sub("authorizer").String("name"); n != "" {
-		return n, scopeOrNil(m.resource.Sub("route").Sub("authorizer").String("namespace"))
+	if route := m.gateway.Route; route.AuthorizerName != "" {
+		return route.AuthorizerName, scopeOrNil(route.AuthorizerNamespace)
 	}
-	if n := m.resource.Sub("authorizer").String("name"); n != "" {
-		return n, scopeOrNil(m.resource.Sub("authorizer").String("namespace"))
+	if own := m.gateway.Authorizer; own.Name != "" {
+		return own.Name, scopeOrNil(own.Namespace)
 	}
 	return "", nil
 }
@@ -236,13 +239,13 @@ func (m match) router() (name string, scope []string) {
 	// target IS a handler — so the guard above was true in exactly the case the
 	// value below is empty, the branch never fired, and a route-routed gateway
 	// fell through to an address with no kind and no name.
-	if m.resource.String("route", "target") == "router" {
-		if n := m.resource.String("route", "router", "name"); n != "" {
-			return n, scopeOrNil(m.resource.String("route", "router", "namespace"))
+	if route := m.gateway.Route; route.Target == specs.GatewayRouteTargetRouter {
+		if route.RouterName != "" {
+			return route.RouterName, scopeOrNil(route.RouterNamespace)
 		}
 	}
-	if m.resource.String("routing") == "router" {
-		return m.resource.String("router", "name"), scopeOrNil(m.resource.String("router", "namespace"))
+	if m.gateway.Routing == specs.GatewayRoutingRouter {
+		return m.gateway.Router.Name, scopeOrNil(m.gateway.Router.Namespace)
 	}
 	return "", nil
 }

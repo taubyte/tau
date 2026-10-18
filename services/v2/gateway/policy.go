@@ -21,14 +21,14 @@ import (
 // THE ORIGIN IS ECHOED, NEVER WILDCARDED. `Access-Control-Allow-Origin: *`
 // cannot carry credentials and is a different policy from the list an author
 // wrote; echoing the one that matched says exactly what the config says.
-func cors(w http.ResponseWriter, r *http.Request, gateway specs.Resource, self string) {
+func cors(w http.ResponseWriter, r *http.Request, policy specs.GatewayCors, self string) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return
 	}
 
-	allowed := gateway.Strings("cors", "origins")
-	if own, _ := gateway.Bool("cors", "allow_self"); own && self != "" {
+	allowed := policy.Origins
+	if own := policy.AllowSelf; own != nil && *own && self != "" {
 		// The name this gateway itself answers on. It is the only way to say
 		// it when the name is generated, because the cloud's half of it is not
 		// knowable when the config is written.
@@ -42,7 +42,7 @@ func cors(w http.ResponseWriter, r *http.Request, gateway specs.Resource, self s
 	w.Header().Add("Vary", "Origin")
 	w.Header().Set("Access-Control-Allow-Origin", origin)
 
-	if methods := gateway.Strings("cors", "methods"); len(methods) > 0 {
+	if methods := policy.Methods; len(methods) > 0 {
 		w.Header().Set("Access-Control-Allow-Methods", strings.Join(methods, ", "))
 	}
 	if requested := r.Header.Get("Access-Control-Request-Headers"); requested != "" {

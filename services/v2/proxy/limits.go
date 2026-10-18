@@ -43,18 +43,18 @@ type limits struct {
 }
 
 func limitsOf(r specs.Resource) limits {
-	value := func(path ...string) int {
-		n, ok := r.Int(path...)
-		if !ok || n < 0 {
+	declared := specs.ReadProxy(r).RateLimit
+	value := func(n *int64) int {
+		if n == nil || *n < 0 {
 			return 0
 		}
-		return int(n)
+		return int(*n)
 	}
 	return limits{
-		rate:       value("rate_limit", "connections_per_minute"),
-		burst:      value("rate_limit", "burst"),
-		concurrent: value("rate_limit", "concurrent"),
-		per:        r.String("rate_limit", "key"),
+		rate:       value(declared.ConnectionsPerMinute),
+		burst:      value(declared.Burst),
+		concurrent: value(declared.Concurrent),
+		per:        declared.Key,
 	}
 }
 
@@ -82,7 +82,7 @@ func sourceKey(addr net.Addr, per string) string {
 	}
 	ip := ap.Addr().Unmap()
 
-	if per != "subnet" {
+	if per != specs.ProxyRateLimitKeySubnet {
 		return ip.String()
 	}
 

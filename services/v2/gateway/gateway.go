@@ -207,7 +207,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// it asks about has no route, because that is a question about what is
 		// allowed and not a request for a page.
 		if r.Method == http.MethodOptions {
-			cors(w, r, candidates[0].resource, name)
+			cors(w, r, candidates[0].gateway.Cors, name)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -219,11 +219,14 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cors(w, r, m.resource, name)
+	cors(w, r, m.gateway.Cors, name)
 
-	if rpm, ok := m.resource.Int("rate_limit", "rpm"); ok && rpm > 0 {
-		burst, _ := m.resource.Int("rate_limit", "burst")
-		key := limitKey(m.resource.String("rate_limit", "key"), r)
+	if limit := m.gateway.RateLimit; limit.Rpm != nil && *limit.Rpm > 0 {
+		rpm, burst := *limit.Rpm, int64(0)
+		if limit.Burst != nil {
+			burst = *limit.Burst
+		}
+		key := limitKey(limit.Key, r)
 		if !s.limits.Allow(name+"\x00"+key, int(rpm), int(burst)) {
 			w.Header().Set("Retry-After", retryAfter(int(rpm)))
 			refuse(w, http.StatusTooManyRequests, "too many requests")
@@ -284,7 +287,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// index, which skipped the path, the methods, the CORS, the rate limit and
 	// the chain: a bus could not be authorized or rate-limited at all. Reached as
 	// a handler, it gets every one of them for the price of being named.
-	if m.Handler.String("kind") == busKind {
+	if m.handler().HandlerKind == busKind {
 		s.attachRouted(w, r, billed, m, proj, projectName, environment)
 		return
 	}
@@ -459,14 +462,14 @@ func (s *Service) destination(ctx context.Context, m match, projectName, environ
 // It answers (answer, 0, "") to stop the chain with that response, (nil, 0, "")
 // to carry on, and (nil, code, why) to refuse.
 func (s *Service) shaped(ctx context.Context, m match, projectName, environment string, req *invoke.Request) (*invoke.Response, int, string) {
-	for _, t := range m.resource.List("transformers") {
-		name := t.String("name")
+	for _, t := range m.gateway.Transformers {
+		name := t.Name
 		if name == "" {
 			continue
 		}
 
 		scope := m.host.Scope
-		if declared := t.String("namespace"); declared != "" {
+		if declared := t.Namespace; declared != "" {
 			scope = splitScope(declared)
 		}
 
@@ -474,12 +477,12 @@ func (s *Service) shaped(ctx context.Context, m match, projectName, environment 
 			Project:     projectName,
 			Environment: environment,
 			Scope:       scope,
-			Kind:        "function",
+			Kind:        specs.KindFunction,
 			Name:        name,
 		}, req)
 		if err != nil {
 			s.logf("gateway: %s/%s transformer %s could not be run: %v", projectName, environment, name, err)
-			if t.String("fail") == "open" {
+			if t.Fail == specs.TransformersEntryFailOpen {
 				// The author said the request is better served without it.
 				continue
 			}
@@ -520,7 +523,7 @@ func (s *Service) candidatesAt(p *specs.Project, name, projectName string) []can
 		if err != nil {
 			continue
 		}
-		out = append(out, candidate{host: h, resource: r})
+		out = append(out, candidate{host: h, gateway: specs.ReadGateway(r)})
 	}
 	return out
 }
@@ -528,7 +531,7 @@ func (s *Service) candidatesAt(p *specs.Project, name, projectName string) []can
 // gatewayKind is what an HTTP entry point is called in the vocabulary. A proxy
 // answers on a name too, and is not one of these: it carries a raw connection
 // and never a request, so nothing here can parse it.
-const gatewayKind = "gateway"
+const gatewayKind = specs.KindGateway
 
 // ownerOf says whose name this is, remembering the answer for HostTTL.
 func (s *Service) ownerOf(ctx context.Context, name string) (string, string, error) {

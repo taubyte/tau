@@ -117,7 +117,7 @@ func TestAllowSelf(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		r.Header.Set("Origin", origin)
 
-		cors(w, r, gateway, "gen.tau.example.io")
+		cors(w, r, specs.ReadGateway(gateway).Cors, "gen.tau.example.io")
 		require.Equal(t, origin, w.Header().Get("Access-Control-Allow-Origin"))
 	}
 
@@ -125,12 +125,12 @@ func TestAllowSelf(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Origin", "https://evil.example.com")
-	cors(w, r, gateway, "gen.tau.example.io")
+	cors(w, r, specs.ReadGateway(gateway).Cors, "gen.tau.example.io")
 	require.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
 
 	// A request with no Origin is not a CORS request at all.
 	w = httptest.NewRecorder()
-	cors(w, httptest.NewRequest(http.MethodGet, "/", nil), gateway, "gen.tau.example.io")
+	cors(w, httptest.NewRequest(http.MethodGet, "/", nil), specs.ReadGateway(gateway).Cors, "gen.tau.example.io")
 	require.Empty(t, w.Header())
 }
 
@@ -144,6 +144,6 @@ func TestCorsMethodsAreEchoedWhenDeclared(t *testing.T) {
 	r := httptest.NewRequest(http.MethodOptions, "/", nil)
 	r.Header.Set("Origin", "https://shop.example.com")
 
-	cors(w, r, gateway, "")
+	cors(w, r, specs.ReadGateway(gateway).Cors, "")
 	require.Equal(t, "GET, POST", w.Header().Get("Access-Control-Allow-Methods"))
 }

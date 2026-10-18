@@ -46,7 +46,9 @@ type Secrets interface {
 }
 
 // terminates says this proxy answers the TLS handshake itself.
-func terminates(r specs.Resource) bool { return r.String("tls", "mode") == "terminate" }
+func terminates(r specs.Resource) bool {
+	return specs.ReadProxy(r).Tls.Mode == specs.ProxyTlsModeTerminate
+}
 
 // certificateFor is the certificate this proxy answers with, or an error
 // naming what is missing.
@@ -55,9 +57,9 @@ func (s *Service) certificateFor(ctx context.Context, r specs.Resource, b Bind, 
 		return nil, nil
 	}
 
-	source := r.String("certificate", "source")
+	source := specs.ReadProxy(r).Certificate.Source
 	if source == "" {
-		source = "generated"
+		source = specs.CertificateSourceGenerated
 	}
 
 	var (
@@ -65,9 +67,9 @@ func (s *Service) certificateFor(ctx context.Context, r specs.Resource, b Bind, 
 		err  error
 	)
 	switch source {
-	case "provided":
+	case specs.CertificateSourceProvided:
 		cert, err = s.providedCertificate(ctx, r, b)
-	case "generated":
+	case specs.CertificateSourceGenerated:
 		cert, err = s.wildcardFor(host)
 	default:
 		return nil, fmt.Errorf("%w: its certificate source is %q", ErrUnservable, source)
@@ -81,7 +83,7 @@ func (s *Service) certificateFor(ctx context.Context, r specs.Resource, b Bind, 
 
 // providedCertificate reads the secret the resource names.
 func (s *Service) providedCertificate(ctx context.Context, r specs.Resource, b Bind) (tls.Certificate, error) {
-	id := r.String("certificate", "secret", "name")
+	id := specs.ReadProxy(r).Certificate.SecretName
 	if id == "" {
 		return tls.Certificate{}, fmt.Errorf("%w: it provides a certificate and names no secret", ErrUnservable)
 	}

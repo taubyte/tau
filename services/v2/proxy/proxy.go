@@ -392,7 +392,7 @@ func (s *Service) resource(ctx context.Context, b Bind) (*specs.Project, specs.R
 	if err != nil {
 		return nil, nil, "", err
 	}
-	r, id, err := proj.Resource(b.Scope, "proxy", b.Name)
+	r, id, err := proj.Resource(b.Scope, specs.KindProxy, b.Name)
 	return proj, r, id, err
 }
 
@@ -490,7 +490,7 @@ func (s *Service) carry(ctx context.Context, from net.Conn, b Bind) {
 		port   string
 		peeked []byte
 	)
-	if r.String("routing") == "router" {
+	if specs.ReadProxy(r).Routing == specs.ProxyRoutingRouter {
 		at, port, peeked, err = s.directed(ctx, r, b, scope, conn, from)
 	} else {
 		at, port, err = s.forwardedTo(r, b, scope)
@@ -545,9 +545,10 @@ func (s *Service) connectionOf(r specs.Resource, b Bind, from net.Conn) *invoke.
 	// only the listener knows what the cloud's zone made of a generated host.
 	// A proxy served by hand through Accept has no listener entry, and then
 	// the name is simply empty rather than invented.
-	conn := &invoke.Connection{Protocol: r.String("service"), Transport: Transport}
+	declared := specs.ReadProxy(r)
+	conn := &invoke.Connection{Protocol: declared.Service, Transport: Transport}
 	if conn.Protocol == "" {
-		conn.Protocol = r.String("name")
+		conn.Protocol = declared.Name
 	}
 	if conn.Protocol == "" {
 		conn.Protocol = b.Name
@@ -582,8 +583,8 @@ func (s *Service) heldSocket(key string) (Socket, bool) {
 
 // forwardedTo is the workload a `routing: forward` proxy streams to.
 func (s *Service) forwardedTo(r specs.Resource, b Bind, scope []string) (specs.Address, string, error) {
-	kind := r.String("forward", "kind")
-	name := r.String("forward", "name")
+	forward := specs.ReadProxy(r).Forward
+	kind, name := forward.Kind, forward.Name
 	if kind == "" || name == "" {
 		return specs.Address{}, "", fmt.Errorf("%w: it forwards to nothing", ErrUnservable)
 	}
@@ -591,10 +592,10 @@ func (s *Service) forwardedTo(r specs.Resource, b Bind, scope []string) (specs.A
 	return specs.Address{
 		Project:     b.Project,
 		Environment: b.Environment,
-		Scope:       specs.ScopeOf(scope, r.String("forward", "namespace")),
+		Scope:       specs.ScopeOf(scope, forward.Namespace),
 		Kind:        kind,
 		Name:        name,
-	}, r.String("forward", "port"), nil
+	}, forward.Port, nil
 }
 
 // Close stops accepting. Connections already open are left alone: a proxy that

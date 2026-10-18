@@ -95,13 +95,14 @@ func (s *Service) listen(proj *specs.Project, r specs.Resource, id, name string)
 // through a parent scope and be neither the resource's nor a service anybody
 // has heard of.
 func (s *Service) socketOf(proj *specs.Project, r specs.Resource, id, name string) Socket {
+	declared := specs.ReadProxy(r)
 	sock := Socket{
 		Host:      s.hostOf(proj, id),
-		Protocol:  r.String("service"),
+		Protocol:  declared.Service,
 		Transport: Transport,
 	}
 	if sock.Protocol == "" {
-		sock.Protocol = r.String("name")
+		sock.Protocol = declared.Name
 	}
 	if sock.Protocol == "" {
 		sock.Protocol = name

@@ -48,7 +48,7 @@ var ErrClosedByTransformer = errors.New("proxy: a transformer closed the connect
 
 // chain builds the shaper for one direction, or nil when nothing shapes it.
 func (s *Service) chain(ctx context.Context, r specs.Resource, b Bind, scope []string, conn *invoke.Connection, way invoke.Way) splice.Shaper {
-	entries := r.List("transformers")
+	entries := specs.ReadProxy(r).Transformers
 	if len(entries) == 0 {
 		return nil
 	}
@@ -60,7 +60,7 @@ func (s *Service) chain(ctx context.Context, r specs.Resource, b Bind, scope []s
 
 	links := make([]link, 0, len(entries))
 	for _, t := range entries {
-		name := t.String("name")
+		name := t.Name
 		if name == "" {
 			continue
 		}
@@ -68,13 +68,13 @@ func (s *Service) chain(ctx context.Context, r specs.Resource, b Bind, scope []s
 			at: specs.Address{
 				Project:     b.Project,
 				Environment: b.Environment,
-				Scope:       specs.ScopeOf(scope, t.String("namespace")),
-				Kind:        "function",
+				Scope:       specs.ScopeOf(scope, t.Namespace),
+				Kind:        specs.KindFunction,
 				Name:        name,
 			},
 			// `closed` is the vocabulary's default, so anything that is not
 			// the word `open` is closed.
-			open: t.String("fail") == "open",
+			open: t.Fail == specs.TransformersEntryFailOpen,
 		})
 	}
 	if len(links) == 0 {

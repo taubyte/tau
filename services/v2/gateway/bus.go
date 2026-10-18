@@ -51,7 +51,7 @@ import (
 // quietly served as the resource itself.
 
 // busKind is what an ephemeral n:n bus is called in the vocabulary.
-const busKind = "bus"
+const busKind = specs.KindBus
 
 const (
 	// maxBusMessage is the largest frame either direction carries.
@@ -146,20 +146,20 @@ func instanceOf(path string) (string, bool) {
 // vocabulary's own shape: it is a Captures() attribute, so its presence is the
 // declaration.
 func instanceSettings(resource specs.Resource) map[string]string {
-	admission := resource.String("instances", "admission")
-	if admission == "" {
+	instances := specs.ReadInstances(resource)
+	if instances.Admission == "" {
 		return nil
 	}
 
-	out := map[string]string{"instances/admission": admission}
-	if name := resource.String("instances", "validator", "name"); name != "" {
-		out["instances/validator/name"] = name
+	out := map[string]string{specs.InstancesKeyAdmission: instances.Admission}
+	if name := instances.ValidatorName; name != "" {
+		out[specs.InstancesKeyValidatorName] = name
 	}
-	if namespace := resource.String("instances", "validator", "namespace"); namespace != "" {
-		out["instances/validator/namespace"] = namespace
+	if namespace := instances.ValidatorNamespace; namespace != "" {
+		out[specs.InstancesKeyValidatorNamespace] = namespace
 	}
-	if limit, ok := resource.Int("instances", "limit"); ok {
-		out["instances/limit"] = strconv.FormatInt(limit, 10)
+	if limit := instances.Limit; limit != nil {
+		out[specs.InstancesKeyLimit] = strconv.FormatInt(*limit, 10)
 	}
 	return out
 }

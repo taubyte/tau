@@ -1,11 +1,14 @@
 package gateway
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/specs"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // route_test.go tests the matching directly, because the interesting cases are
@@ -14,8 +17,8 @@ import (
 
 func gw(name string, route map[string]any) candidate {
 	return candidate{
-		host:     specs.Host{Kind: "gateway", Name: name},
-		resource: specs.Resource{"name": name, "route": route},
+		host:    specs.Host{Kind: "gateway", Name: name},
+		gateway: specs.ReadGateway(specs.Resource{"name": name, "route": route}),
 	}
 }
 
@@ -42,7 +45,7 @@ func TestTheMostSpecificRouteWins(t *testing.T) {
 	} {
 		m, found, _ := pick(candidates, c.path, "GET")
 		require.True(t, found, c.path)
-		require.Equal(t, c.want, m.Handler.String("name"), c.path)
+		require.Equal(t, c.want, m.handler().HandlerName, c.path)
 	}
 }
 
@@ -55,12 +58,12 @@ func TestAnExactMatchBeatsEveryPrefix(t *testing.T) {
 
 	m, found, _ := pick(candidates, "/api/v2/orders", "GET")
 	require.True(t, found)
-	require.Equal(t, "exact", m.Handler.String("name"))
+	require.Equal(t, "exact", m.handler().HandlerName)
 
 	// And an exact route claims nothing below it.
 	m, found, _ = pick(candidates, "/api/v2/orders/1", "GET")
 	require.True(t, found)
-	require.Equal(t, "prefixed", m.Handler.String("name"))
+	require.Equal(t, "prefixed", m.handler().HandlerName)
 }
 
 // TestAPrefixIsSegmentwise. `/api` must not match `/apiary`, which a plain
@@ -96,7 +99,7 @@ func TestARegexRouteMatchesAndABrokenOneMatchesNothing(t *testing.T) {
 
 	m, found, _ := pick(candidates, "/u/42", "GET")
 	require.True(t, found)
-	require.Equal(t, "user", m.Handler.String("name"))
+	require.Equal(t, "user", m.handler().HandlerName)
 
 	// A pattern that does not compile matches nothing rather than taking down
 	// the other routes at this name.
@@ -143,7 +146,7 @@ func TestTwoEquallySpecificRoutesAreStable(t *testing.T) {
 	for range 20 {
 		m, found, _ := pick(candidates, "/x", "GET")
 		require.True(t, found)
-		require.Equal(t, "a", m.Handler.String("name"))
+		require.Equal(t, "a", m.handler().HandlerName)
 	}
 }
 
@@ -151,8 +154,8 @@ func TestTwoEquallySpecificRoutesAreStable(t *testing.T) {
 // and it must not be picked as if it had an empty path.
 func TestAGatewayWithNoRouteBlockIsNotACandidate(t *testing.T) {
 	_, found, _ := pick([]candidate{{
-		host:     specs.Host{Kind: "gateway", Name: "routed"},
-		resource: specs.Resource{"name": "routed", "routing": "router"},
+		host:    specs.Host{Kind: "gateway", Name: "routed"},
+		gateway: specs.ReadGateway(specs.Resource{"name": "routed", "routing": "router"}),
 	}}, "/anything", "GET")
 	require.False(t, found)
 }
@@ -186,9 +189,9 @@ func TestStripPrefix(t *testing.T) {
 func TestTheHandlersScope(t *testing.T) {
 	inNamespace := candidate{
 		host: specs.Host{Kind: "gateway", Name: "g", Scope: []string{"shop"}},
-		resource: specs.Resource{"name": "g", "route": map[string]any{
+		gateway: specs.ReadGateway(specs.Resource{"name": "g", "route": map[string]any{
 			"path": "/", "handler": handler("function", "notify"),
-		}},
+		}}),
 	}
 	m, found, _ := pick([]candidate{inNamespace}, "/", "GET")
 	require.True(t, found)
@@ -197,9 +200,9 @@ func TestTheHandlersScope(t *testing.T) {
 
 	elsewhere := candidate{
 		host: specs.Host{Kind: "gateway", Name: "g", Scope: []string{"shop"}},
-		resource: specs.Resource{"name": "g", "route": map[string]any{
+		gateway: specs.ReadGateway(specs.Resource{"name": "g", "route": map[string]any{
 			"path": "/", "handler": map[string]any{"kind": "function", "name": "invoice", "namespace": "/billing"},
-		}},
+		}}),
 	}
 	m, _, _ = pick([]candidate{elsewhere}, "/", "GET")
 	require.Equal(t, []string{"billing"}, m.address("shop", "prod").Scope)
@@ -236,9 +239,45 @@ func TestARouteNamesItsOwnRouter(t *testing.T) {
 
 // TestAGatewayLevelRouterStillWins where no route declares one of its own.
 func TestAGatewayLevelRouterIsUnchanged(t *testing.T) {
-	m := match{resource: specs.Resource{"routing": "router",
-		"router": map[string]any{"name": "everything"}}}
+	m := match{gateway: specs.ReadGateway(specs.Resource{"routing": "router",
+		"router": map[string]any{"name": "everything"}})}
 
 	name, _ := m.router()
 	require.Equal(t, "everything", name)
+}
+
+// TestAROUTESOWNAUTHORIZERISREADWHERETHECOMPILERPUTSIT, which is
+// `route/authorizer/*`: httpAuthorizerAttributes("route") declares it there and
+// the compile leaves it there. It is pinned against a COMPILED gateway, because
+// a hand-built map would agree with whatever path this package spelled.
+func TestARoutesOwnAuthorizerIsReadWhereTheCompilerPutsIt(t *testing.T) {
+	c, err := schema.New(schema.WithLocal("../../../node/dream/projects/with/bus"), schema.WithBranch("main"))
+	require.NoError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	require.NoError(t, err)
+	raw, err := json.Marshal(obj.Flat())
+	require.NoError(t, err)
+	p, err := specs.Load(raw)
+	require.NoError(t, err)
+
+	front, _, err := p.Resource(nil, specs.KindGateway, "front")
+	require.NoError(t, err)
+	name, scope := match{candidate: candidate{gateway: specs.ReadGateway(front)}}.guard()
+	require.Equal(t, "doorman", name, "the route's own authorizer, as compiled")
+	require.Nil(t, scope, "no namespace written, so the gateway's own scope")
+
+	// AND IT ANSWERS INSTEAD OF THE GATEWAY'S, which is the vocabulary's own
+	// sentence: "A route's own answers instead of the gateway's."
+	both := specs.ReadGateway(specs.Resource{
+		"authorizer": map[string]any{"name": "everything"},
+		"route":      map[string]any{"authorizer": map[string]any{"name": "this", "namespace": "/shop"}},
+	})
+	name, scope = match{candidate: candidate{gateway: both}}.guard()
+	require.Equal(t, "this", name)
+	require.Equal(t, []string{"shop"}, scope)
+
+	name, _ = match{candidate: candidate{gateway: specs.ReadGateway(specs.Resource{
+		"authorizer": map[string]any{"name": "everything"},
+	})}}.guard()
+	require.Equal(t, "everything", name, "and the gateway's covers a route that names none")
 }

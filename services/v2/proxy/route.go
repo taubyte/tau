@@ -137,15 +137,16 @@ func (s *Service) lastWord(ctx context.Context, at specs.Address, conn *invoke.C
 
 // routerAt is where this proxy's router function lives.
 func (s *Service) routerAt(r specs.Resource, b Bind, scope []string) (specs.Address, error) {
-	name := r.String("router", "name")
+	router := specs.ReadProxy(r).Router
+	name := router.Name
 	if name == "" {
 		return specs.Address{}, fmt.Errorf("%w: it is router-routed and names no router", ErrUnservable)
 	}
 	return specs.Address{
 		Project:     b.Project,
 		Environment: b.Environment,
-		Scope:       specs.ScopeOf(scope, r.String("router", "namespace")),
-		Kind:        "function",
+		Scope:       specs.ScopeOf(scope, router.Namespace),
+		Kind:        specs.KindFunction,
 		Name:        name,
 	}, nil
 }
