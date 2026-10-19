@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -161,6 +162,11 @@ type Config struct {
 	// node with none terminates only the names whose gateways provide a
 	// certificate of their own. See tls.go.
 	Wildcard certificate.Pair
+
+	// ACME issues a certificate for a generated name the wildcard does not
+	// cover. The gateway reads none of it: the node builds the issuer from it
+	// and hands it over with WithIssuer. See pkg/certificate/acme.
+	ACME certificate.ACME
 }
 
 // Defaults.
@@ -191,7 +197,28 @@ type options struct {
 	logf    func(format string, args ...any)
 
 	secrets    Secrets
+	issuer     Issuer
 	terminates bool
+}
+
+// Issuer issues a certificate for a generated name the operator's wildcard
+// does not cover, and answers the CA's HTTP-01 challenges for it.
+// pkg/certificate/acme's Issuer is one.
+type Issuer interface {
+	Certificate(ctx context.Context, name string) (tls.Certificate, error)
+	Challenge(token string) (string, bool)
+}
+
+// WithIssuer issues certificates for generated names. Optional: without it a
+// generated name is answered by the wildcard or not at all.
+func WithIssuer(i Issuer) Option {
+	return func(o *options) error {
+		if i == nil {
+			return errors.New("gateway: a nil issuer")
+		}
+		o.issuer = i
+		return nil
+	}
 }
 
 // WithHosts is where "whose name is this" is answered. Required.

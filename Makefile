@@ -31,7 +31,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-containers test-all proto-v2 proto-v2-check
+.PHONY: test test-acme test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-containers test-all proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -83,6 +83,12 @@ test-containers: test-docker test-containerd test-application test-build test-ex
 #
 # AS_ROOT runs a test binary with root or skips it (scripts/as-root).
 AS_ROOT := $(CURDIR)/scripts/as-root
+
+# test-acme issues real certificates from pebble, Let's Encrypt's test CA, run
+# in process: the issuer against it, and a node's https listener presenting
+# what it issued. It needs nothing installed, so make test runs it too.
+test-acme:
+	go test -count=1 -v -timeout 10m ./pkg/certificate/acme/ && go test -count=1 -v -timeout 10m -run '^TestAGeneratedNameIsIssuedByACMEAndServedOverTLS$$' ./node/boot/
 
 test-application:
 	go test -exec $(AS_ROOT) -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./node/dream/

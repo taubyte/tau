@@ -3,6 +3,8 @@ package dns
 import (
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/taubyte/tau/pkg/stats"
@@ -80,6 +82,21 @@ type Config struct {
 	// every resolver back over TCP — a cost paid on every query to punish a
 	// name for being popular.
 	MaxRecords int
+
+	// CAA are the certificate authorities each zone the operator names lets
+	// issue, answered as `0 issue "<issuer>"` for the zone and every name
+	// under it — the cloud's own zone, whose certificates a node issues by
+	// ACME. Every name, not only the apex: a CA climbs from the name it
+	// issues for, and a SERVFAIL on the way (a name nothing serves) is a
+	// refusal to issue.
+	CAA []CAA
+}
+
+// CAA is one zone and the CA domain allowed to issue for it, e.g.
+// {Zone: "g.example.com", Issuer: "letsencrypt.org"}.
+type CAA struct {
+	Zone   string
+	Issuer string
 }
 
 // Defaults.
@@ -131,6 +148,14 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if c.MaxRecords == 0 {
 		c.MaxRecords = DefaultMaxRecords
+	}
+	c.CAA = slices.Clone(c.CAA)
+	for i, caa := range c.CAA {
+		caa.Zone = strings.ToLower(strings.Trim(caa.Zone, "."))
+		if caa.Zone == "" || caa.Issuer == "" {
+			return Config{}, fmt.Errorf("dns: a caa record needs a zone and an issuer, got %+v", c.CAA[i])
+		}
+		c.CAA[i] = caa
 	}
 	if c.TTL < 0 || c.MaxAge <= 0 || c.MaxRecords < 1 {
 		return Config{}, fmt.Errorf("dns: ttl %s, max age %s and %d records: an answer needs a positive budget for all three",

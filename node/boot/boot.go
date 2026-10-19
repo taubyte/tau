@@ -95,8 +95,10 @@ type File struct {
 	//
 	// EACH HANDSHAKE IS ANSWERED BY THE GATEWAY THAT SERVES ITS NAME: the
 	// cloud's own wildcard (node.gateway.wildcard) for a generated name, the
-	// secret a gateway names for one that provides its own. Nothing here
-	// issues a certificate — see services/gateway's tls.go.
+	// secret a gateway names for one that provides its own, and an ACME
+	// issuance (node.gateway.acme) for a generated name the wildcard does not
+	// cover — see services/gateway's tls.go. The CA's HTTP-01 challenges are
+	// answered on HTTP.
 	HTTPS string `yaml:"https"`
 }
 

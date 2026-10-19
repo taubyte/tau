@@ -53,6 +53,7 @@ import (
 	"github.com/taubyte/tau/node/stream"
 	"github.com/taubyte/tau/node/volume"
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/static"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
@@ -769,6 +770,19 @@ func (n *Node) openGateway() error {
 	}
 	if n.opts.terminates {
 		gatewayOptions = append(gatewayOptions, gateway.WithTLS())
+	}
+
+	if n.cfg.Gateway.ACME.Enabled {
+		// KEPT UNDER THE ROOT, so a restart reissues nothing; a node with no
+		// root would ask a CA again on every start, and is refused instead.
+		if n.opts.root == "" {
+			return errors.New("node: gateway: acme keeps what it issues under the node's root, and this node has none")
+		}
+		issuer, err := acme.New(n.cfg.Gateway.ACME, filepath.Join(n.opts.root, "acme"), acme.WithLogger(logger.Warnf))
+		if err != nil {
+			return fmt.Errorf("node: gateway: %w", err)
+		}
+		gatewayOptions = append(gatewayOptions, gateway.WithIssuer(issuer))
 	}
 
 	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)

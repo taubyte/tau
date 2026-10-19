@@ -31,7 +31,8 @@ import (
 //
 //	generated   the operator's wildcard for the cloud's own zone, when it
 //	            covers the name — pkg/certificate's Wildcard, the same code a
-//	            proxy terminates with
+//	            proxy terminates with — and otherwise, for a name under the
+//	            zone, one issued by ACME when the node has an Issuer
 //	provided    the secret the gateway names, read through the same resolver
 //	            the worker and the proxy take
 //
@@ -48,6 +49,9 @@ import (
 // security control silently not applied. A node that DOES terminate serves the
 // same name over both, as any site does, and the handshake carries the
 // certificate.
+
+// acmeChallengePrefix is where a CA fetches an HTTP-01 answer.
+const acmeChallengePrefix = "/.well-known/acme-challenge/"
 
 // Secrets resolves the secret a gateway's provided certificate names. It is
 // the same seam services/worker and services/proxy take.
@@ -138,6 +142,12 @@ func (s *Service) certificateOf(ctx context.Context, declared specs.Certificate,
 
 	case specs.CertificateSourceGenerated, "":
 		cert, err := certificate.Wildcard(s.cfg.Wildcard, s.cfg.CloudFqdn, name)
+		// THE OPERATOR'S WILDCARD FIRST, when it covers the name: it was
+		// supplied on purpose and costs no CA a request. Otherwise a name
+		// under the cloud's zone is issued, and nothing else ever is.
+		if errors.Is(err, certificate.ErrNoWildcard) && s.issuer != nil && certificate.Under(s.cfg.CloudFqdn, name) {
+			cert, err = s.issuer.Certificate(ctx, name)
+		}
 		if err != nil {
 			return tls.Certificate{}, fmt.Errorf("%w: %w", ErrNoCertificate, err)
 		}

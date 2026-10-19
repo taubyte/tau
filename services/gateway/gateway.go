@@ -83,6 +83,7 @@ type Service struct {
 	// secrets reads a provided certificate, and terminates says the composer
 	// serves this handler over TLS too. See tls.go.
 	secrets    Secrets
+	issuer     Issuer
 	terminates bool
 
 	// mu guards the host table: which project owns a name, and when that was
@@ -152,6 +153,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		owner:    map[string]ownerEntry{},
 
 		secrets:    o.secrets,
+		issuer:     o.issuer,
 		terminates: o.terminates,
 	}, nil
 }
@@ -160,6 +162,20 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 func (s *Service) Handler() http.Handler { return s }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// A CA PROVING A NAME is answered before any name is looked up: the
+	// answer is the account's, and the name may not be published yet on the
+	// node the CA reached.
+	if token, ok := strings.CutPrefix(r.URL.Path, acmeChallengePrefix); ok && s.issuer != nil {
+		answer, ok := s.issuer.Challenge(token)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		io.WriteString(w, answer)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.Timeout)
 	defer cancel()
 

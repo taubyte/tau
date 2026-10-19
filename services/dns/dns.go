@@ -154,6 +154,13 @@ func (s *Service) AnswerContext(ctx context.Context, req *dns.Msg) *dns.Msg {
 		return reply
 	}
 
+	if q.Qtype == dns.TypeCAA {
+		if records := s.caa(name, q.Name); records != nil {
+			reply.Answer = records
+			return reply
+		}
+	}
+
 	// THEN THE ZONE'S RESOLVER, for the names its file does not carry. Second
 	// because the file is the more specific statement and first would put a
 	// component start on every query the lines already answer.
@@ -545,4 +552,21 @@ func portOf(n stats.Node, host, protocol, transport string) uint16 {
 		}
 	}
 	return 0
+}
+
+// caa is the operator's CAA records for a name at or under one of its zones,
+// or nil when the name is in none.
+func (s *Service) caa(name, qname string) []dns.RR {
+	var out []dns.RR
+	for _, c := range s.cfg.CAA {
+		if name != c.Zone && !strings.HasSuffix(name, "."+c.Zone) {
+			continue
+		}
+		out = append(out, &dns.CAA{
+			Hdr:   dns.RR_Header{Name: qname, Rrtype: dns.TypeCAA, Class: dns.ClassINET, Ttl: uint32(s.cfg.TTL / time.Second)},
+			Tag:   "issue",
+			Value: c.Issuer,
+		})
+	}
+	return out
 }

@@ -11,7 +11,9 @@
 // cloud's fqdn is: a generated name ends in a zone no project declares, so no
 // project can hold a key for it.
 //
-// NOTHING HERE ISSUES A CERTIFICATE. A name the wildcard does not cover is an
+// NOTHING HERE ISSUES A CERTIFICATE; pkg/certificate/acme does, for a name
+// under the cloud's zone, when the operator enables it. A name the wildcard
+// does not cover is otherwise an
 // error rather than a wrong certificate or plaintext: a resource that asked
 // for TLS and got an open socket would be a security control silently not
 // applied.
@@ -64,10 +66,16 @@ func Wildcard(p Pair, cloudFqdn, host string) (tls.Certificate, error) {
 	if !p.Held() {
 		return tls.Certificate{}, ErrNoWildcard
 	}
-	if cloudFqdn == "" || !strings.HasSuffix(strings.ToLower(host), "."+strings.ToLower(cloudFqdn)) {
+	if !Under(cloudFqdn, host) {
 		return tls.Certificate{}, fmt.Errorf("%w: %s is not under %q", ErrNotCovered, host, cloudFqdn)
 	}
 	return tls.X509KeyPair([]byte(p.Certificate), []byte(p.Key))
+}
+
+// Under reports whether host is a name inside the zone cloudFqdn, never the
+// zone itself.
+func Under(cloudFqdn, host string) bool {
+	return cloudFqdn != "" && strings.HasSuffix(strings.ToLower(host), "."+strings.ToLower(cloudFqdn))
 }
 
 // KeyPair splits one PEM blob into the chain and the key.
