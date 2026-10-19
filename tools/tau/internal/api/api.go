@@ -189,25 +189,44 @@ func (c *Client) UnsetSecret(ctx context.Context, projectID, environment, name s
 	return c.json(ctx, http.MethodDelete, []string{"secrets", projectID, environment, name}, nil, nil)
 }
 
-// Project is a project the cloud created.
+// Project is a project linked on a cloud: project.yaml's id, the
+// configuration repository that claimed it, and the code repositories it
+// attaches.
 type Project struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID     string   `json:"id"`
+	Config string   `json:"config_repository_key"`
+	Code   []string `json:"code_repository_keys"`
 }
 
-// CreateProject links a configuration and a code repository as one project.
-// The caller's token must write to both.
-func (c *Client) CreateProject(ctx context.Context, name, configKey, codeKey string) (*Project, error) {
-	body, err := json.Marshal(map[string]string{
+// LinkProject claims project.yaml's id on the cloud for a configuration
+// repository and attaches code repositories. An id another repository claimed
+// is a 409 whose message says so.
+func (c *Client) LinkProject(ctx context.Context, id, configKey string, codeKeys []string) (*Project, error) {
+	if codeKeys == nil {
+		codeKeys = []string{}
+	}
+	body, err := json.Marshal(map[string]any{
 		"config_repository_key": configKey,
-		"code_repository_key":   codeKey,
+		"code_repository_keys":  codeKeys,
 	})
 	if err != nil {
 		return nil, err
 	}
 	var p Project
-	if err := c.json(ctx, http.MethodPost, []string{"projects", name}, bytes.NewReader(body), &p); err != nil {
+	if err := c.json(ctx, http.MethodPost, []string{"projects", id}, bytes.NewReader(body), &p); err != nil {
 		return nil, err
 	}
 	return &p, nil
 }
+
+// Projects is every project the token's holder linked, as the forge serving
+// host knows them.
+func (c *Client) Projects(ctx context.Context, host string) ([]Project, error) {
+	var out []Project
+	err := c.json(ctx, http.MethodGet, []string{"forges", host, "projects"}, nil, &out)
+	return out, err
+}
+
+// Token is the credential this client sends: the developer's forge token,
+// which is also what `tau link` installs a hook and a deploy key with.
+func (c *Client) Token() string { return c.token }

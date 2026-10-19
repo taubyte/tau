@@ -13,14 +13,16 @@ import (
 // relative to the directory.
 const LinkFile = ".tau/link.yaml"
 
-// Link is a project directory's binding to a project on a cloud. It holds no
-// credential, so it may be committed or not as the developer likes.
+// Link is a project directory's binding to a cloud. The project id is
+// project.yaml's own — the cloud mints none — so this records only which cloud
+// profile it was linked on and which repositories the link claimed. It holds
+// no credential, so it may be committed or not as the developer likes.
 type Link struct {
-	ProjectID string `yaml:"project_id" json:"project_id"`
-	Name      string `yaml:"name" json:"name"`
-	Profile   string `yaml:"profile,omitempty" json:"profile,omitempty"`
-	Config    string `yaml:"config_repository_key" json:"config_repository_key"`
-	Code      string `yaml:"code_repository_key" json:"code_repository_key"`
+	ProjectID string   `yaml:"project_id" json:"project_id"`
+	Name      string   `yaml:"name" json:"name"`
+	Profile   string   `yaml:"profile,omitempty" json:"profile,omitempty"`
+	Config    string   `yaml:"config_repository_key" json:"config_repository_key"`
+	Code      []string `yaml:"code_repository_keys,omitempty" json:"code_repository_keys,omitempty"`
 }
 
 // ErrNotLinked is a directory no `tau link` has run in.

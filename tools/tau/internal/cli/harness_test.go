@@ -21,6 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/fake"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
@@ -30,6 +32,13 @@ var update = flag.Bool("update", false, "rewrite the golden files")
 var mintedID = regexp.MustCompile(`Qm[1-9A-HJ-NP-Za-km-z]{44}`)
 
 const goodToken = "tok-good"
+
+// forgeToken is the fake forge's good token, which the fake frontend accepts
+// too: `tau link` installs with the same token it logs in with.
+var forgeToken = fake.New(fake.GitHubLike).TokenString()
+
+// takenID is a project id the fake frontend says somebody else claimed.
+const takenID = "QmTakenTakenTakenTakenTakenTakenTakenTakenTake"
 
 // frontend is a fake build frontend: the routes ingress.go mounts, answering
 // from memory, refusing any token but goodToken the way the real one does.
@@ -42,6 +51,8 @@ type frontend struct {
 	created  []string
 	calls    []string
 	dropOnce bool
+	// failSecrets makes every secret write a 503.
+	failSecrets bool
 	// pushAfter counts down list calls; at zero, pushed runs (under mu).
 	pushAfter int
 	pushed    func()
@@ -64,7 +75,7 @@ func newFrontend(t *testing.T) *frontend {
 			f.mu.Lock()
 			f.calls = append(f.calls, r.Method+" "+r.URL.Path)
 			f.mu.Unlock()
-			if r.Header.Get("Authorization") != "Bearer "+goodToken {
+			if auth := r.Header.Get("Authorization"); auth != "Bearer "+goodToken && auth != "Bearer "+forgeToken {
 				w.WriteHeader(http.StatusUnauthorized)
 				json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 				return
@@ -150,6 +161,10 @@ func newFrontend(t *testing.T) *frontend {
 		v, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if f.failSecrets {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		if f.secrets[secretKey(r)] == nil {
 			f.secrets[secretKey(r)] = map[string][]byte{}
 		}
@@ -162,18 +177,37 @@ func newFrontend(t *testing.T) *frontend {
 		delete(f.secrets[secretKey(r)], r.PathValue("name"))
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	mux.HandleFunc("POST /projects/{name}", authed(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]string
+	mux.HandleFunc("POST /projects/{projectId}", authed(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Config string   `json:"config_repository_key"`
+			Code   []string `json:"code_repository_keys"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		id := r.PathValue("projectId")
+		if id == takenID {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "register: project id is already claimed: project " + id + " is already claimed by github.com/someone/else; generate a new id in project.yaml"})
+			return
+		}
 		f.mu.Lock()
-		f.created = append(f.created, r.PathValue("name")+"|"+body["config_repository_key"]+"|"+body["code_repository_key"])
-		f.byProj["proj-"+r.PathValue("name")] = nil
+		f.created = append(f.created, id+"|"+body.Config+"|"+strings.Join(body.Code, ","))
+		f.byProj[id] = nil
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{"id": "proj-" + r.PathValue("name"), "name": r.PathValue("name")})
+		json.NewEncoder(w).Encode(map[string]any{"id": id, "config_repository_key": body.Config, "code_repository_keys": body.Code})
+	}))
+	mux.HandleFunc("GET /forges/{forge}/projects", authed(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		out := []map[string]any{}
+		for _, c := range f.created {
+			parts := strings.SplitN(c, "|", 3)
+			out = append(out, map[string]any{"id": parts[0], "config_repository_key": parts[1], "code_repository_keys": strings.Split(parts[2], ",")})
+		}
+		json.NewEncoder(w).Encode(out)
 	}))
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
@@ -290,6 +324,7 @@ type run struct {
 
 type tester struct {
 	t           *testing.T
+	forges      *forge.Registry
 	f           *frontend
 	dir         string
 	interactive bool
@@ -312,6 +347,7 @@ func (x *tester) run(args ...string) run {
 	env := Env{
 		Stdin: strings.NewReader(x.stdin), Stdout: &out, Stderr: &errs,
 		Interactive: x.interactive, Prompter: x.prompter, HTTP: x.f.srv.Client(), Program: drive,
+		Forges: x.forges,
 	}
 	code := Run(env, args)
 	return run{code: code, stdout: out.String(), stderr: errs.String()}
@@ -331,7 +367,7 @@ func (x *tester) login() {
 
 func (x *tester) link(project string) {
 	x.t.Helper()
-	require.NoError(x.t, config.WriteLink(x.dir, config.Link{ProjectID: project, Name: "shop", Config: "github.com/acme/cfg", Code: "github.com/acme/pay"}))
+	require.NoError(x.t, config.WriteLink(x.dir, config.Link{ProjectID: project, Name: "shop", Config: "github.com/acme/cfg", Code: []string{"github.com/acme/pay"}}))
 }
 
 // golden compares got against testdata/name.golden, rewriting it under -update.

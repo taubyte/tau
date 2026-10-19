@@ -10,7 +10,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/fake"
+	"github.com/taubyte/tau/pkg/linkcreds"
 	"github.com/taubyte/tau/tools/tau/internal/config"
+	"github.com/taubyte/tau/tools/tau/internal/project"
 )
 
 // ── login / profiles ─────────────────────────────────────────────────────────
@@ -198,38 +202,161 @@ func TestNewPromptsForWhatTheResourceOwes(t *testing.T) {
 
 // ── link / status ────────────────────────────────────────────────────────────
 
-func TestLinkCreatesTheProjectAndRemembersIt(t *testing.T) {
+// linkTester is a tester whose forge is pkg/forge/fake, so what `tau link`
+// installs is recorded by a real driver.
+func linkTester(t *testing.T) (*tester, *fake.Forge) {
 	x := newTester(t)
-	x.login()
+	f := fake.New(fake.GitHubLike)
+	reg, err := f.Registry(forge.Policy{AllowInsecureCallback: true})
+	require.NoError(t, err)
+	x.forges = reg
+	x.ok("login", "--cloud", x.f.srv.URL, "--token", f.TokenString())
 	x.ok("init", "shop", "--dir", x.dir)
+	return x, f
+}
 
-	out := x.ok("link", "--dir", x.dir, "--config-repo", "https://github.com/acme/cfg.git", "--code-repo", "git@github.com:acme/pay.git")
-	require.Contains(t, out, `linked "shop" as proj-shop`)
-	require.Equal(t, []string{"shop|github.com/acme/cfg|github.com/acme/pay"}, x.f.created)
+func projectYAMLID(t *testing.T, dir string) string {
+	t.Helper()
+	p, err := project.Open(dir)
+	require.NoError(t, err)
+	require.NotEmpty(t, p.ID())
+	return p.ID()
+}
+
+// `tau link` claims project.yaml's own id, stores the credentials it made on
+// the cloud, and installs their public halves on the forge with the
+// developer's token.
+func TestLinkClaimsTheProjectsOwnIdAndInstallsItsCredentials(t *testing.T) {
+	x, f := linkTester(t)
+	id := projectYAMLID(t, x.dir)
+	cfg, code := f.Keys().Admin, f.Keys().Deletable
+
+	out := x.ok("link", "--dir", x.dir, "--config-repo", "https://"+cfg.String()+".git", "--code-repo", code.String())
+	require.Contains(t, out, "linked "+cfg.String()+" as "+id)
+	require.Equal(t, []string{id + "|" + cfg.String() + "|" + code.String()}, x.f.created, "the id is project.yaml's, never one the cloud mints")
+
+	// The cloud got the private halves under the well-known names.
+	names := x.f.secrets[id+"/"+linkcreds.Environment]
+	require.Contains(t, names, linkcreds.HookSecret)
+	require.Contains(t, names, linkcreds.DeployKey(cfg.String()))
+	require.Contains(t, names, linkcreds.DeployKey(code.String()))
+	require.Contains(t, string(names[linkcreds.DeployKey(code.String())]), "OPENSSH PRIVATE KEY")
+	require.Len(t, names[linkcreds.HookSecret], forge.SecretSize)
+
+	// The forge got a webhook and a read-only deploy key.
+	require.NotEmpty(t, f.LastHookWire())
+	require.True(t, f.LastDeployKeyReadOnly())
 
 	l, err := config.ReadLink(x.dir)
 	require.NoError(t, err)
-	require.Equal(t, "proj-shop", l.ProjectID)
+	require.Equal(t, id, l.ProjectID)
+	require.Equal(t, []string{code.String()}, l.Code)
 
 	golden(t, "status-linked-empty", strings.ReplaceAll(x.ok("status", "--dir", x.dir), x.f.srv.URL, "URL"))
 
-	require.Contains(t, x.run("link", "--dir", x.dir, "--config-repo", "github.com/acme/cfg").stderr, "--code-repo is required")
-	require.NotZero(t, x.run("link", "--dir", x.dir, "--config-repo", "nope", "--code-repo", "github.com/acme/pay").code)
-	require.NotZero(t, x.run("link", "--dir", x.dir, "--config-repo", "github.com/acme/cfg", "--code-repo", "::").code)
-	require.Contains(t, x.run("link", "--dir", t.TempDir(), "--config-repo", "github.com/acme/cfg", "--code-repo", "github.com/acme/pay").stderr, "--name is required")
+	var listed []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(x.ok("projects", "-o", "json")), &listed))
+	require.Len(t, listed, 1)
+	require.Contains(t, x.ok("projects"), id)
+}
+
+// AN ID SOMEBODY ELSE CLAIMED IS SHOWN AS THE CLOUD SAID IT, and nothing is
+// stored or installed.
+func TestLinkShowsAClaimedIdsRefusal(t *testing.T) {
+	x, f := linkTester(t)
+	id := projectYAMLID(t, x.dir)
+	yaml, err := os.ReadFile(filepath.Join(x.dir, "project.yaml"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(x.dir, "project.yaml"), []byte(strings.Replace(string(yaml), id, takenID, 1)), 0o644))
+	require.Equal(t, takenID, projectYAMLID(t, x.dir))
+
+	r := x.run("link", "--dir", x.dir, "--config-repo", f.Keys().Admin.String())
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, "is already claimed by github.com/someone/else; generate a new id in project.yaml")
+	require.Empty(t, x.f.secrets)
+	require.Empty(t, f.LastHookWire(), "nothing reached the forge")
+}
+
+// --manual installs nothing and prints what to paste: the forge's wire form of
+// the secret, which is what the cloud verifies against.
+func TestLinkManualPrintsWhatToInstall(t *testing.T) {
+	x, f := linkTester(t)
+	id := projectYAMLID(t, x.dir)
+
+	var out struct {
+		ProjectID string `json:"project_id"`
+		Install   []struct {
+			Repository, Webhook, Secret string
+			DeployKey                   string `json:"deploy_key"`
+		} `json:"install"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(x.ok("link", "--manual", "--dir", x.dir, "--config-repo", f.Keys().Admin.String(), "-o", "json")), &out))
+	require.Equal(t, id, out.ProjectID)
+	require.Len(t, out.Install, 1)
+	require.Equal(t, x.f.srv.URL+"/hook/"+id, out.Install[0].Webhook)
+	require.True(t, strings.HasPrefix(out.Install[0].DeployKey, "ssh-ed25519 "))
+	wire, err := forge.SchemeHubSHA256.Wire(forge.SecretFrom(x.f.secrets[id+"/"+linkcreds.Environment][linkcreds.HookSecret]))
+	require.NoError(t, err)
+	require.Equal(t, wire, out.Install[0].Secret)
+	require.Empty(t, f.LastHookWire(), "--manual sends nothing to the forge")
+
+	require.Contains(t, x.ok("link", "--manual", "--dir", x.dir, "--config-repo", f.Keys().Admin.String()), "Install these yourself")
+}
+
+func TestLinkRefusals(t *testing.T) {
+	x, f := linkTester(t)
+	require.NotZero(t, x.run("link", "--dir", x.dir, "--config-repo", "nope").code)
+	require.NotZero(t, x.run("link", "--dir", x.dir, "--config-repo", f.Keys().Admin.String(), "--code-repo", "::").code)
+	require.Contains(t, x.run("link", "--dir", t.TempDir(), "--config-repo", f.Keys().Admin.String()).stderr, "tau init")
+	require.Contains(t, x.run("link", "--dir", x.dir).stderr, "--config-repo is required")
+
+	// A repository the forge does not know, one the token may not administer,
+	// or a forge this CLI has no driver for.
+	require.NotZero(t, x.run("link", "--dir", x.dir, "--config-repo", f.Keys().Missing.String()).code)
+	require.Contains(t, x.run("link", "--dir", x.dir, "--config-repo", f.Keys().Writable.String()).stderr, "takes admin")
+	r := x.run("link", "--dir", x.dir, "--config-repo", "codeberg.org/acme/cfg")
+	require.Contains(t, r.stderr, "--manual")
+	require.Empty(t, x.f.created)
 
 	x.interactive = true
-	x.prompter.answers = []string{"github.com/acme/cfg", "github.com/acme/pay"}
-	x.ok("link", "--dir", t.TempDir(), "--name", "other")
+	x.prompter.answers = []string{f.Keys().Admin.String()}
+	x.ok("link", "--dir", x.dir)
+}
+
+// A CLOUD THAT CANNOT STORE THE CREDENTIALS stops the link before anything is
+// installed on the forge, and a forge this CLI cannot sign for cannot be
+// installed by hand either.
+func TestLinkStopsWhereItFails(t *testing.T) {
+	x, f := linkTester(t)
+	x.f.failSecrets = true
+	r := x.run("link", "--dir", x.dir, "--config-repo", f.Keys().Admin.String())
+	require.Contains(t, r.stderr, "storing the link's credentials")
+	require.Empty(t, f.LastHookWire())
+	x.f.failSecrets = false
+
+	r = x.run("link", "--manual", "--dir", x.dir, "--config-repo", "codeberg.org/acme/cfg")
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, "codeberg.org")
+
+	require.Len(t, x.f.created, 1, "the manual link to a forge it cannot sign for claimed nothing")
+	require.Contains(t, x.ok("projects"), f.Keys().Admin.String(), "a claim whose credentials failed to store is still the cloud's")
+}
+
+func TestNoProjectsYet(t *testing.T) {
+	x := newTester(t)
+	x.login()
+	require.Contains(t, x.ok("projects"), "no projects linked yet")
+	require.Equal(t, "[]\n", x.ok("projects", "-o", "json"))
 }
 
 func TestLinkNeedsALogin(t *testing.T) {
 	x := newTester(t)
-	r := x.run("link", "--dir", x.dir, "--name", "shop", "--config-repo", "github.com/acme/cfg", "--code-repo", "github.com/acme/pay")
+	x.ok("init", "shop", "--dir", x.dir)
+	r := x.run("link", "--dir", x.dir, "--config-repo", "github.com/acme/cfg")
 	require.Contains(t, r.stderr, "tau login")
 
 	x.ok("login", "--cloud", x.f.srv.URL, "--token", "tok-bad")
-	r = x.run("link", "--dir", x.dir, "--name", "shop", "--config-repo", "github.com/acme/cfg", "--code-repo", "github.com/acme/pay")
+	r = x.run("link", "--manual", "--dir", x.dir, "--config-repo", "github.com/acme/cfg")
 	require.Contains(t, r.stderr, "unauthorized")
 }
 

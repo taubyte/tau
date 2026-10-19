@@ -42,72 +42,38 @@ func originOf(ctx context.Context, dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func linkCommand(env Env) *cobra.Command {
+// projectsCommand lists the projects the token's holder linked on the cloud.
+func projectsCommand(env Env) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "link",
-		Short: "register this project's repositories with the cloud and create the project there",
-		Long: "The token must write to both repositories. The configuration repository defaults to\n" +
-			"the directory's git origin. The cloud's project id is written to " + config.LinkFile + ".",
+		Use:   "projects",
+		Short: "the projects you linked on this cloud",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir := flagString(cmd, "dir")
-			name := flagString(cmd, "name")
-			if name == "" {
-				if p, err := project.Open(dir); err == nil {
-					name = p.Name()
-				}
-			}
-			if name == "" {
-				var err error
-				if name, err = need(cmd, env, "name", "Project name", nil); err != nil {
-					return err
-				}
-			}
-			check := func(s string) error { _, err := repoKey(s); return err }
-
-			configRepo := flagString(cmd, "config-repo")
-			if configRepo == "" {
-				configRepo = originOf(cmd.Context(), dir)
-			}
-			if configRepo == "" {
-				var err error
-				if configRepo, err = need(cmd, env, "config-repo", "Configuration repository", check); err != nil {
-					return err
-				}
-			}
-			codeRepo, err := need(cmd, env, "code-repo", "Code repository", check)
-			if err != nil {
-				return err
-			}
-			configKey, err := repoKey(configRepo)
-			if err != nil {
-				return err
-			}
-			codeKey, err := repoKey(codeRepo)
-			if err != nil {
-				return err
-			}
-
 			cl, err := client(cmd, env)
 			if err != nil {
 				return err
 			}
-			created, err := cl.CreateProject(cmd.Context(), name, configKey, codeKey)
+			ps, err := cl.Projects(cmd.Context(), flagString(cmd, "forge"))
 			if err != nil {
 				return err
 			}
-			link := config.Link{ProjectID: created.ID, Name: created.Name, Profile: flagString(cmd, "profile"), Config: configKey, Code: codeKey}
-			if err := config.WriteLink(dir, link); err != nil {
-				return err
-			}
 			t := theme(env)
-			return emit(cmd, env, link, t.Done(fmt.Sprintf("linked %q as %s", created.Name, created.ID))+
-				t.Muted.Render("  config "+configKey+"\n  code   "+codeKey)+"\n")
+			var b strings.Builder
+			if len(ps) == 0 {
+				b.WriteString(t.Muted.Render("no projects linked yet: run `tau link` in a project") + "\n")
+			}
+			for _, p := range ps {
+				fmt.Fprintf(&b, "%s  %s\n", t.Accent.Render(p.ID), p.Config)
+				for _, c := range p.Code {
+					b.WriteString(t.Muted.Render("    code "+c) + "\n")
+				}
+			}
+			if ps == nil {
+				ps = []api.Project{}
+			}
+			return emit(cmd, env, ps, b.String())
 		},
 	}
-	addDir(cmd)
-	cmd.Flags().String("name", "", "the project name (default: project.yaml's)")
-	cmd.Flags().String("config-repo", "", "the configuration repository (clone URL or host/owner/name)")
-	cmd.Flags().String("code-repo", "", "the code repository")
+	cmd.Flags().String("forge", "github.com", "the forge your token is for")
 	return cmd
 }
 
@@ -322,7 +288,9 @@ func deployCommand(env Env) *cobra.Command {
 			var b strings.Builder
 			if link, err := config.ReadLink(dir); err == nil {
 				fmt.Fprintf(&b, "Deploys are push-driven. Push the configuration repository to deploy it:\n  %s\n", t.Accent.Render(link.Config))
-				fmt.Fprintf(&b, "and the code repository to build it:\n  %s\n", t.Accent.Render(link.Code))
+				for _, code := range link.Code {
+					fmt.Fprintf(&b, "and the code repository to build it:\n  %s\n", t.Accent.Render(code))
+				}
 			} else {
 				b.WriteString("Deploys are push-driven: push the project's repositories.\n")
 			}

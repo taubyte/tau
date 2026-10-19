@@ -1,5 +1,5 @@
 profile  default
 cloud    URL
 project  shop
-linked   proj-shop
+linked   <id>
 no jobs yet — push the project's repositories to start one

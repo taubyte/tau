@@ -5,6 +5,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
+	publicforges "github.com/taubyte/tau/pkg/forge/public"
 
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
@@ -84,4 +85,23 @@ func TestAnInjectedForgeRegistryWins(t *testing.T) {
 	got, err = (&Node{}).forgeRegistry()
 	require.NoError(t, err)
 	require.NotSame(t, reg, got)
+}
+
+// THE CLI SIGNS WHAT THE CLOUD VERIFIES. `tau link` installs a hook through
+// pkg/forge/public, deriving the wire secret under each driver's scheme; a
+// cloud with no forges declared verifies under DefaultForges. The two must
+// agree on every host, or every delivery a developer's link installs fails.
+func TestTheCLIsPublicForgesSignAsTheDefaultCloudVerifies(t *testing.T) {
+	cloud, err := forges(nil)
+	require.NoError(t, err)
+	cli, err := publicforges.Registry(forge.Policy{})
+	require.NoError(t, err)
+	require.Equal(t, cloud.Hosts(), cli.Hosts())
+	for _, host := range cloud.Hosts() {
+		want, err := cloud.Driver(host)
+		require.NoError(t, err)
+		got, err := cli.Driver(host)
+		require.NoError(t, err)
+		require.Equal(t, want.(forge.Signatures).Scheme(), got.(forge.Signatures).Scheme(), host)
+	}
 }

@@ -118,3 +118,16 @@ func TestOpenSkipsDotDirectories(t *testing.T) {
 	_, err = Open(filepath.Join(dir, "missing"))
 	require.Error(t, err)
 }
+
+func TestTheProjectIdIsProjectYAMLs(t *testing.T) {
+	dir := t.TempDir()
+	_, err := Init(t.Context(), dir, "shop", false)
+	require.NoError(t, err)
+	p, err := Open(dir)
+	require.NoError(t, err)
+	require.Regexp(t, `^Qm[1-9A-HJ-NP-Za-km-z]{44}$`, p.ID())
+
+	empty, err := Open(t.TempDir())
+	require.NoError(t, err)
+	require.Empty(t, empty.ID())
+}

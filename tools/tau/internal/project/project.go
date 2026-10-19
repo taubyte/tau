@@ -98,6 +98,18 @@ func (p *Project) Name() string {
 	return name
 }
 
+// ID is the project's id, read from its root document: the CID tcc's
+// generator minted, which is the id the project is linked and deployed under.
+func (p *Project) ID() string {
+	idField, _ := identity()
+	v, err := p.s.Get(p.s.Root(), []string{idField})
+	if err != nil {
+		return ""
+	}
+	id, _ := v.(string)
+	return id
+}
+
 // Issue is a field a resource still owes, or holds wrongly.
 type Issue = session.FieldIssue
 

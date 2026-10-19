@@ -27,6 +27,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/tools/tau/internal/api"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 	"github.com/taubyte/tau/tools/tau/internal/ui"
@@ -42,6 +43,9 @@ type Env struct {
 	Interactive bool
 	Prompter    ui.Prompter
 	HTTP        *http.Client
+	// Forges is where `tau link` installs a webhook and a deploy key. Nil is
+	// the public forges (pkg/forge/public).
+	Forges *forge.Registry
 	// Program runs a bubbletea model to completion; alt is whether it takes
 	// the whole screen.
 	Program func(m tea.Model, alt bool) (tea.Model, error)
@@ -103,7 +107,7 @@ func New(env Env) *cobra.Command {
 	root.AddCommand(
 		loginCommand(env), logoutCommand(env), profilesCommand(env),
 		initCommand(env), newCommand(env), validateCommand(env), viewsCommand(env),
-		linkCommand(env), deployCommand(env), statusCommand(env),
+		linkCommand(env), projectsCommand(env), deployCommand(env), statusCommand(env),
 		jobsCommand(env), jobCommand(env), logsCommand(env), cancelCommand(env), retryCommand(env),
 		secretsCommand(env),
 	)

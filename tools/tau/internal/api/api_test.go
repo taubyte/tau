@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -82,8 +83,40 @@ func TestUnreachable(t *testing.T) {
 	require.Error(t, err)
 	_, err = c.Jobs(t.Context(), "p")
 	require.Error(t, err)
-	_, err = c.CreateProject(t.Context(), "n", "a", "b")
+	_, err = c.LinkProject(t.Context(), "n", "a", nil)
 	require.Error(t, err)
+	_, err = c.Projects(t.Context(), "github.com")
+	require.Error(t, err)
+}
+
+func TestLinkingAndListingProjects(t *testing.T) {
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /projects/QmShop":
+			var body map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			require.Equal(t, []any{}, body["code_repository_keys"], "no code repositories is an empty list, not null")
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"id":"QmShop","config_repository_key":"github.com/a/c","code_repository_keys":[]}`))
+		case "GET /forges/github.com/projects":
+			w.Write([]byte(`[{"id":"QmShop","config_repository_key":"github.com/a/c"}]`))
+		default:
+			w.WriteHeader(http.StatusConflict)
+			w.Write([]byte(`{"error":"project QmTaken is already claimed by github.com/x/y; generate a new id in project.yaml"}`))
+		}
+	})
+	p, err := c.LinkProject(t.Context(), "QmShop", "github.com/a/c", nil)
+	require.NoError(t, err)
+	require.Equal(t, "github.com/a/c", p.Config)
+
+	ps, err := c.Projects(t.Context(), "github.com")
+	require.NoError(t, err)
+	require.Len(t, ps, 1)
+
+	_, err = c.LinkProject(t.Context(), "QmTaken", "github.com/a/c", []string{"github.com/a/d"})
+	require.True(t, IsStatus(err, http.StatusConflict))
+	require.ErrorContains(t, err, "generate a new id in project.yaml")
+	require.Equal(t, "tok", c.Token())
 }
 
 func TestAJobThatIsNotAJob(t *testing.T) {
