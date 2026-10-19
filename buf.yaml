@@ -1,7 +1,6 @@
 version: v2
 # Workspace spanning the community spore-drive and v2 protos, and
-# a private submodule's protos, so that module can import
-# config/v1. When the submodule is checked out all modules resolve; buf
+# the ee (private submodule) protos. When the ee submodule is checked out all modules resolve; buf
 # generate is dev-time and this team always has the submodule.
 #
 # Membership here is what gives a module the workspace's shared lint/breaking

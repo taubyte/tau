@@ -1,8 +1,0 @@
-session-ttl: 168h
-email:
-    smtp:
-        host: smtp.example.com
-        port: 587
-        user: noreply@example.com
-        pass: secret
-        from: noreply@example.com

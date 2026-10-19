@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+// drive.v2 deploys a cloud from one document.
+//
+// THE DOCUMENT IS THE CLOUD CONFIG AS IT SITS ON DISK: cloud.yaml, hosts.yaml,
+// shapes.yaml, auth.yaml, added.yaml and the key files they name, each under
+// its path relative to the config root. A client reads a config directory into
+// it and writes the normalized form back out; nothing here mirrors the fields
+// of those files, so a field the service reads is added in one place.
+package drive.v2;
+
+option go_package = ".";
+
+message Document {
+  // files is every file of the config, by its path relative to the config
+  // root, e.g. "cloud.yaml" or "keys/swarm.key". A path is relative and
+  // stays inside the root.
+  map<string, bytes> files = 1;
+}
+
+message ValidateRequest {
+  Document document = 1;
+}
+
+message ValidateResponse {
+  // errors is every reason the document cannot be planned. Empty means it
+  // can.
+  repeated string errors = 1;
+
+  // ignored is what the document sets that a v2 node does not read.
+  repeated string ignored = 2;
+
+  // document is the normalized form: the input, with any secret it leaves
+  // to be generated (the swarm key, the domain validation keys, a host's
+  // node key) generated and written in. A client keeps it, or the next
+  // validate generates different ones.
+  Document document = 3;
+}
+
+message PlanRequest {
+  // document must be complete: Plan generates nothing, because a key
+  // generated here would be a node identity nobody kept.
+  Document document = 1;
+
+  // tau is the binary every host is given.
+  oneof tau {
+    bool latest = 2;
+    string version = 3;
+    string url = 4;
+    string path = 5;
+  }
+
+  // shapes are deployed in this order, one hop each. Empty is every shape
+  // in the document, by name.
+  repeated string shapes = 6;
+
+  // concurrency is how many hosts of one hop are deployed at once. Zero is
+  // the default.
+  int32 concurrency = 7;
+}
+
+// Course is a plan: what Apply will do, and the id it is applied by.
+//
+// A COURSE LIVES IN THE SERVICE THAT PLANNED IT, until it is applied to the
+// end, aborted, or left unapplied past the service's expiry. Nothing has to
+// free it.
+message Course {
+  string id = 1;
+  repeated Hop hops = 2;
+  repeated Host hosts = 3;
+}
+
+// Hop is one step of a course: the hosts of one shape.
+message Hop {
+  string name = 1;
+  repeated string shapes = 2;
+  repeated string hosts = 3;
+}
+
+// Host is what one host will run.
+message Host {
+  string name = 1;
+  repeated Node nodes = 2;
+  repeated string ignored = 3;
+}
+
+// Node is one tau process on a host.
+message Node {
+  string name = 1;
+  int32 port = 2;
+  repeated string services = 3;
+}
+
+message ApplyRequest {
+  string course = 1;
+}
+
+message Progress {
+  string hop = 1;
+  string host = 2;
+  string step = 3;
+  int32 progress = 4;
+  string error = 5;
+}
+
+message AbortRequest {
+  string course = 1;
+}
+
+message AbortResponse {}
+
+service DriveService {
+  rpc Validate(ValidateRequest) returns (ValidateResponse);
+  rpc Plan(PlanRequest) returns (Course);
+  // Apply runs a course and streams its progress. The course ends with the
+  // stream: a client that goes away aborts it.
+  rpc Apply(ApplyRequest) returns (stream Progress);
+  rpc Abort(AbortRequest) returns (AbortResponse);
+}

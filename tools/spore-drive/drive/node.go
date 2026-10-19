@@ -237,6 +237,7 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 		return nil, err
 	}
 
+	added := p.Added()
 	mainPort := int(p.Shapes().Shape(primary).Ports().Get("main"))
 	key := hc.Shapes().Instance(primary).Key()
 
@@ -249,6 +250,10 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 			Node: node.Config{
 				Services: services,
 				Cloud:    p.Cloud().Domain().Root(),
+				// ADDED SERVICES' CONFIGURATION IS COPIED, NEVER READ. Each
+				// service decodes its own entry; a node built without one
+				// refuses the entry by name.
+				Added: added,
 			},
 			Listen:     []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port)},
 			Announce:   announce,
@@ -309,9 +314,31 @@ func (d *sporedrive) ignoredFields(hostName string, droppedServices []string) []
 		out = append(out, "service "+svc)
 	}
 	add(len(p.Cloud().Domain().Hosts()) > 0, "cloud.domain.hosts")
-	a := p.Accounts()
-	add(a.SessionTTL() != "" || a.Email().SMTP().Host() != "", "accounts")
-	t := p.Tenancy()
-	add(t.Provider() != "" || t.Owner() != "" || t.App().ClientId() != "", "tenancy")
 	return out
+}
+
+// Node is one tau process a host runs, as a plan shows it.
+type Node struct {
+	Name     string
+	Port     int
+	Services []string
+}
+
+// Nodes is what a host runs, and what of its config no v2 node reads.
+type Nodes struct {
+	Nodes   []Node
+	Ignored []string
+}
+
+// Nodes computes what a host runs without touching it: the plan of one host.
+func (d *sporedrive) Nodes(hostName string) (*Nodes, error) {
+	hn, err := d.nodesFor(hostName)
+	if err != nil {
+		return nil, err
+	}
+	out := &Nodes{Ignored: hn.ignored}
+	for _, inst := range hn.instances {
+		out.Nodes = append(out.Nodes, Node{Name: inst.name, Port: inst.port, Services: inst.file.Node.Services})
+	}
+	return out, nil
 }

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	sshSrv "github.com/taubyte/tau/tools/spore-drive/clients/mock/ssh"
-	confSrv "github.com/taubyte/tau/tools/spore-drive/config/service"
 	driveSrv "github.com/taubyte/tau/tools/spore-drive/drive/service"
 	healthSrv "github.com/taubyte/tau/tools/spore-drive/health"
 
@@ -33,12 +32,7 @@ func main() {
 
 	port := listener.Addr().(*net.TCPAddr).Port
 
-	csvr, err := confSrv.Serve()
-	if err != nil {
-		panic(err)
-	}
-
-	dsvr, err := driveSrv.Serve(ctx, csvr)
+	dsvr, err := driveSrv.Serve(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -54,7 +48,6 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	csvr.Attach(mux)
 	dsvr.Attach(mux)
 	ssrv.Attach(mux)
 	hsvr.Attach(mux)

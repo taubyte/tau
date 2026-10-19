@@ -10,8 +10,7 @@ type Parser interface {
 	Hosts() HostsParser
 	Shapes() ShapesParser
 	Auth() AuthParser
-	Accounts() AccountsParser
-	Tenancy() TenancyParser
+	Added() map[string]any
 	Sync() error
 }
 
@@ -51,10 +50,12 @@ func (p *parser) Auth() AuthParser {
 	return &auth{root: p, Query: p.Get("auth").Document()}
 }
 
-func (p *parser) Accounts() AccountsParser {
-	return &accounts{root: p, Query: p.Get("accounts").Document()}
-}
-
-func (p *parser) Tenancy() TenancyParser {
-	return &tenancy{root: p, Query: p.Get("tenancy").Document()}
+// Added is the configuration of each service a node is built with beyond the
+// ones tau ships, keyed by the name it is added by: added.yaml, copied into
+// every node's `node.added` unread. Which services those are is the binary's
+// business; a node built without one refuses its entry by name.
+func (p *parser) Added() map[string]any {
+	var m map[string]any
+	p.Get("added").Document().Value(&m)
+	return m
 }

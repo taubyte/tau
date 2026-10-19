@@ -1,0 +1,12 @@
+all:
+    services:
+        - auth
+        - tns
+        - hoarder
+        - seer
+        - substrate
+        - patrick
+        - monkey
+    ports:
+        main: 4242
+        lite: 4262

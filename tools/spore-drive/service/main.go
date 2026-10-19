@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	confSrv "github.com/taubyte/tau/tools/spore-drive/config/service"
 	driveSrv "github.com/taubyte/tau/tools/spore-drive/drive/service"
 	healthSrv "github.com/taubyte/tau/tools/spore-drive/health"
 	"golang.org/x/net/http2"
@@ -39,12 +38,7 @@ func main() {
 		panic(err)
 	}
 
-	csvr, err := confSrv.Serve()
-	if err != nil {
-		panic(err)
-	}
-
-	dsvr, err := driveSrv.Serve(ctx, csvr)
+	dsvr, err := driveSrv.Serve(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -55,7 +49,6 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	csvr.Attach(mux)
 	dsvr.Attach(mux)
 	hsvr.Attach(mux)
 

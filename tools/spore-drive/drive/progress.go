@@ -10,6 +10,8 @@ import (
 
 type Progress interface {
 	Path() string // example: /hypha-generated-name/host/stepId
+	Hop() string
+	Host() string
 	Name() string
 	Progress() int
 	Error() error
@@ -27,6 +29,10 @@ type progress struct {
 func (p *progress) Path() string { // example: /hypha-generated-name/host/stepId
 	return "/" + path.Join(p.hypha.Name, p.host.String(), p.stepName)
 }
+
+func (p *progress) Hop() string { return p.hypha.Name }
+
+func (p *progress) Host() string { return p.host.Name() }
 
 func (p *progress) Name() string {
 	return p.stepName

@@ -22,4 +22,5 @@ type sporedrive struct {
 type Spore interface {
 	Displace(ctx context.Context, course course.Course) <-chan Progress
 	Network() *mycelium.Network
+	Nodes(host string) (*Nodes, error)
 }

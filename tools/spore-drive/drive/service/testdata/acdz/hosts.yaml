@@ -1,0 +1,15 @@
+node1.example.com:
+    addr:
+        - 203.0.113.10/32
+    ssh:
+        addr: 203.0.113.10
+        port: 22
+        auth:
+            - main
+    location:
+        lat: 40.73061
+        long: -73.93524
+    shapes:
+        all:
+            key: CAESQFLORvZ0m+ux9JT9tlU9eHQF3j98/euwHBZs1MEer5zwyAruXe5fOAB5lASArbqUFIcY/YjFuXFv4fcgFvBi+NA=
+            id: 12D3KooWPHFNknVoCof8durXXM5JuneXz4q6p5eJyswAc5oaZfhR

@@ -19,3 +19,5 @@ plugins:
     opt: target=ts
   - remote: buf.build/protocolbuffers/python:v31.1
     out: ../clients/py/spore_drive/proto
+  - remote: buf.build/protocolbuffers/pyi:v31.1
+    out: ../clients/py/spore_drive/proto

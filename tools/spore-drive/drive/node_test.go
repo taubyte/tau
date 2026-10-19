@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/spf13/afero"
 	"gotest.tools/v3/assert"
 
 	"github.com/taubyte/tau/node"
@@ -54,7 +55,6 @@ func TestAnUnknownServiceIsRefused(t *testing.T) {
 func TestWhatHasNoV2HomeIsReported(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	assert.NilError(t, p.Cloud().Domain().SetHost("admin.test.com", "gateway"))
-	assert.NilError(t, config.SetEnterprisePath(p, "svc", []string{"k"}, "v"))
 
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
@@ -65,8 +65,6 @@ func TestWhatHasNoV2HomeIsReported(t *testing.T) {
 		"shapes.shape2.plugins",
 		"service accounts",
 		"cloud.domain.hosts",
-		"accounts",
-		"tenancy",
 	} {
 		assert.Assert(t, slices.Contains(nodes.ignored, want), "%q not in %v", want, nodes.ignored)
 	}
@@ -132,4 +130,39 @@ func TestAMissingKeyFileIsAnError(t *testing.T) {
 	assert.NilError(t, fs.Remove("/keys/swarm.key"))
 	_, err = driveFor(p).nodesFor("host1")
 	assert.ErrorContains(t, err, "swarm key")
+}
+
+// TestAddedServicesConfigurationReachesEveryNode, copied and never read: the
+// split-off build-frontend node gets it too, because every node of a binary
+// adds the same services.
+func TestAddedServicesConfigurationReachesEveryNode(t *testing.T) {
+	fs, p := fixtures.VirtConfig()
+	assert.NilError(t, afero.WriteFile(fs, "/added.yaml", []byte("svc:\n    host: example.com\n    admins: [a, b]\n"), 0600))
+	assert.NilError(t, p.Sync())
+	p, err := config.New(fs, "/")
+	assert.NilError(t, err)
+
+	nodes, err := driveFor(p).nodesFor("host1")
+	assert.NilError(t, err)
+	assert.Assert(t, len(nodes.instances) == 2)
+	want := map[string]any{"svc": map[string]any{"host": "example.com", "admins": []any{"a", "b"}}}
+	for _, inst := range nodes.instances {
+		assert.DeepEqual(t, inst.file.Node.Added, want)
+	}
+}
+
+// TestNodesIsThePlanOfOneHost.
+func TestNodesIsThePlanOfOneHost(t *testing.T) {
+	_, p := fixtures.VirtConfig()
+	plan, err := driveFor(p).Nodes("host1")
+	assert.NilError(t, err)
+	assert.Equal(t, len(plan.Nodes), 2)
+	assert.Equal(t, plan.Nodes[0].Name, mainInstance)
+	assert.Equal(t, plan.Nodes[1].Name, node.BuildFrontend)
+	assert.Equal(t, plan.Nodes[1].Port, plan.Nodes[0].Port+1)
+	assert.Assert(t, slices.Contains(plan.Ignored, "shapes.shape2.plugins"))
+
+	assert.NilError(t, p.Shapes().Shape("shape2").Services().Set("gatewya"))
+	_, err = driveFor(p).Nodes("host1")
+	assert.ErrorContains(t, err, "gatewya")
 }
