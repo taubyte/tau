@@ -31,7 +31,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-acme test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-containers test-all proto-v2 proto-v2-check
+.PHONY: test test-acme test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-containers test-taucorder test-all proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -105,6 +105,14 @@ test-build:
 # server the TEST runs, so it needs a docker daemon and no sudo.
 test-external-databases:
 	go test -tags 'dreaming docker_integration' -run '^TestAnExternal' -count=1 -timeout 15m $(FLAGS) ./node/dream/
+
+# test-taucorder runs tools/taucorder, which is its own module (the root never
+# imports it, so `make test` does not sweep it). It includes the end-to-end
+# test against a node/dream fleet, and prints coverage over the whole module so
+# the e2e run counts toward the code it exercises.
+TAUCORDER_COVER ?= $${TMPDIR:-/tmp}/taucorder.cover
+test-taucorder:
+	cd tools/taucorder && GOMEMLIMIT=$(GOMEMLIMIT) go test -timeout 20m -coverpkg=./... -coverprofile=$(TAUCORDER_COVER) $(FLAGS) ./... && go tool cover -func=$(TAUCORDER_COVER) | tail -1
 
 test-all: test test-dreaming test-raft
 
