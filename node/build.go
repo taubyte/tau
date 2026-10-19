@@ -164,6 +164,25 @@ func (n *Node) openAuth() error {
 	return nil
 }
 
+// buildClone is the checkout the build backend clones with.
+//
+// SSH, BECAUSE A DEPLOY KEY IS AN SSH KEY, and a cloud reaching a provider over
+// https could only read what is already public. The address and its account
+// are the forge's, and the host it answers from is pinned.
+func (n *Node) buildClone(keys deploy.Credentials) (*deploy.Clone, error) {
+	registry, err := n.forgeRegistry()
+	if err != nil {
+		return nil, err
+	}
+	pinned, err := hostKeys(n.cfg.Forges)
+	if err != nil {
+		return nil, err
+	}
+	return deploy.NewClone(keys,
+		deploy.WithAddress(deploy.Forged(registry, forge.SSH)),
+		deploy.WithHostKeys(func(host string) []gossh.PublicKey { return pinned[host] })), nil
+}
+
 // openBuildBackend is the private half: the queue, the job records, and the
 // runner that turns a push into a deploy.
 func (n *Node) openBuildBackend() error {
@@ -203,22 +222,10 @@ func (n *Node) openBuildBackend() error {
 		}
 		return backendVault
 	}
-	keys := linkSecrets{projects: projects, vault: vaults()}
-
-	// SSH, BECAUSE A DEPLOY KEY IS AN SSH KEY, and a cloud reaching a provider
-	// over https could only read what is already public. The address and its
-	// account are the forge's.
-	registry, err := n.forgeRegistry()
+	clone, err := n.buildClone(linkSecrets{projects: projects, vault: vaults()})
 	if err != nil {
 		return err
 	}
-	pinned, err := hostKeys(n.cfg.Forges)
-	if err != nil {
-		return err
-	}
-	clone := deploy.NewClone(keys,
-		deploy.WithAddress(deploy.Forged(registry, forge.SSH)),
-		deploy.WithHostKeys(func(host string) []gossh.PublicKey { return pinned[host] }))
 
 	options := []deploy.Option{
 		deploy.WithProjects(projects),
