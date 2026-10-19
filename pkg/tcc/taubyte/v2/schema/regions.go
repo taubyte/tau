@@ -62,6 +62,10 @@ type Regions interface {
 	Place(Placement) Answer
 	// Allow answers a scope's or an environment's own `regions` line.
 	Allow(regions []string) []Concern
+	// Serves is every region this build places anything in: the destinations a
+	// compiled project is projected onto, one view each, whether or not anything is
+	// placed there. A region it does not name is not a destination at all.
+	Serves() []string
 }
 
 // DefaultRegion is the destination a build with no regions places everything in. It
@@ -103,6 +107,8 @@ func (o oneRegion) Place(p Placement) Answer {
 	}
 	return placed
 }
+
+func (o oneRegion) Serves() []string { return []string{o.region} }
 
 func (o oneRegion) Allow(regions []string) []Concern {
 	other := otherThan(o.region, regions)
@@ -215,16 +221,8 @@ func place(root map[string]any, all []compiled, in auditOf) []Finding {
 		}
 	}
 
-	placed := make(map[string]bool, len(PlacedKinds()))
-	for _, kind := range PlacedKinds() {
-		placed[kind] = true
-	}
-	environment := environmentRegions(root, in.environment)
-	for _, res := range all {
-		if !placed[res.kind] {
-			continue
-		}
-		answer := regions.Place(placementOf(res, scopes, environment))
+	for _, at := range placementsOf(root, all, in) {
+		res, answer := at.res, at.answer
 		for _, c := range answer.Concerns {
 			out = append(out, Finding{c.Severity, res.kind, res.name, res.scope, c.Title, c.Detail, res.id})
 		}
@@ -233,6 +231,33 @@ func place(root map[string]any, all []compiled, in auditOf) []Finding {
 				"is not placed anywhere",
 				"Anything with a footprint runs somewhere, and the regions this build serves place it nowhere. Give it regions this build serves, or give a scope above it some.", res.id})
 		}
+	}
+	return out
+}
+
+// placed is one resource with a footprint, what it states, and what the Regions answered.
+type placed struct {
+	res       compiled
+	placement Placement
+	answer    Answer
+}
+
+// placementsOf asks the Regions where every resource with a footprint runs, in the
+// order collect found them.
+func placementsOf(root map[string]any, all []compiled, in auditOf) []placed {
+	kinds := make(map[string]bool, len(PlacedKinds()))
+	for _, kind := range PlacedKinds() {
+		kinds[kind] = true
+	}
+	scopes := scopeAllowances(root)
+	environment := environmentRegions(root, in.environment)
+	var out []placed
+	for _, res := range all {
+		if !kinds[res.kind] {
+			continue
+		}
+		p := placementOf(res, scopes, environment)
+		out = append(out, placed{res: res, placement: p, answer: in.regions.Place(p)})
 	}
 	return out
 }

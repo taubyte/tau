@@ -23,6 +23,7 @@ func (o onlyNamed) Place(p schema.Placement) schema.Answer {
 }
 
 func (onlyNamed) Allow([]string) []schema.Concern { return nil }
+func (onlyNamed) Serves() []string                { return []string{"eu", "us"} }
 
 func compileDocs(t *testing.T, env string, docs map[string]string) map[string]any {
 	t.Helper()
@@ -227,6 +228,7 @@ type refuses struct{}
 func (refuses) Place(p schema.Placement) schema.Answer {
 	return schema.Answer{In: p.Named(), Concerns: []schema.Concern{{schema.Broken, "is refused", "because"}}}
 }
+func (refuses) Serves() []string { return []string{"eu"} }
 func (refuses) Allow([]string) []schema.Concern {
 	return []schema.Concern{{schema.Broken, "allowance refused", "because"}}
 }

@@ -4,8 +4,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // EVERY RELATIONSHIP BETWEEN TWO RESOURCES, resolved.
@@ -56,11 +54,38 @@ const (
 
 // Relations resolves every relationship in a compiled project.
 func Relations(obj map[string]any) []Relation {
-	root := obj
-	if inner, ok := obj[interp.ProjectKey].(map[string]any); ok {
-		root = inner
+	declared := declaredRelations(collect(projectOf(obj), ""))
+	out := make([]Relation, len(declared))
+	for i, d := range declared {
+		out[i] = d.Relation
 	}
-	all := collect(root, "")
+	return out
+}
+
+// declared is a relation with who WROTE it: Relation's direction is the flow's, which an
+// inbound verb or reference turns around, and what a resource needs in order to resolve
+// is the other question — the declarer needs its target, whichever way work moves.
+type declared struct {
+	Relation
+	turned bool
+}
+
+// By is the resource that declared the relation, Of the one it names.
+func (d declared) By() string {
+	if d.turned {
+		return d.To
+	}
+	return d.From
+}
+
+func (d declared) Of() string {
+	if d.turned {
+		return d.From
+	}
+	return d.To
+}
+
+func declaredRelations(all []compiled) []declared {
 
 	// what exists, by kind and scope, so a name can be looked up the way the compiler
 	// looks one up
@@ -80,7 +105,7 @@ func Relations(obj map[string]any) []Relation {
 		return compiled{}, false
 	}
 
-	var out []Relation
+	var out []declared
 	for _, res := range all {
 		out = append(out, accessRelations(res, find)...)
 		out = append(out, referenceRelations(res, byID, find)...)
@@ -106,8 +131,8 @@ func Relations(obj map[string]any) []Relation {
 // workload nothing ever starts. `get` on a secret is the same shape without the push:
 // the value is DELIVERED to the workload that named it, and nothing writes into a
 // secret, so an arrow pointing at one draws a flow that cannot happen.
-func accessRelations(res compiled, find func(kind, name, own, ns string) (compiled, bool)) []Relation {
-	var out []Relation
+func accessRelations(res compiled, find func(kind, name, own, ns string) (compiled, bool)) []declared {
+	var out []declared
 	for kind, val := range res.fields {
 		entries, ok := val.(map[string]any)
 		if !ok || len(OpsOf(kind)) == 0 {
@@ -125,9 +150,9 @@ func accessRelations(res compiled, find func(kind, name, own, ns string) (compil
 			}
 			for _, op := range ops(entry) {
 				effect, _ := EffectOf(kind, op)
-				r := Relation{From: res.id, To: to.id, Kind: kind, Verb: op, Effect: effect, Class: Use}
+				r := declared{Relation: Relation{From: res.id, To: to.id, Kind: kind, Verb: op, Effect: effect, Class: Use}}
 				if inbound(kind, op) {
-					r.From, r.To = to.id, res.id
+					r.From, r.To, r.turned = to.id, res.id, true
 				}
 				out = append(out, r)
 			}
@@ -151,8 +176,8 @@ func inbound(kind, op string) bool {
 
 // referenceRelations: every declared reference, resolved. A reference that resolves to
 // an id is looked up by id; one that keeps a name is looked up the way a name is.
-func referenceRelations(res compiled, byID map[string]compiled, find func(kind, name, own, ns string) (compiled, bool)) []Relation {
-	var out []Relation
+func referenceRelations(res compiled, byID map[string]compiled, find func(kind, name, own, ns string) (compiled, bool)) []declared {
+	var out []declared
 	for _, ref := range References() {
 		if ref.On != res.kind {
 			continue
@@ -182,12 +207,12 @@ func referenceRelations(res compiled, byID map[string]compiled, find func(kind, 
 	return out
 }
 
-func resolveReference(res compiled, from map[string]any, ref Reference, byID map[string]compiled, find func(kind, name, own, ns string) (compiled, bool)) (Relation, bool) {
+func resolveReference(res compiled, from map[string]any, ref Reference, byID map[string]compiled, find func(kind, name, own, ns string) (compiled, bool)) (declared, bool) {
 	// A reference is a name it KEEPS, or the id it resolved to. Either way, one value —
 	// at the field's own key, which for a block is more than one level down.
 	val, _ := fieldValue(from, ref.Field).(string)
 	if val == "" {
-		return Relation{}, false
+		return declared{}, false
 	}
 
 	kind := ref.Kind
@@ -195,7 +220,7 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 		kind, _ = fieldValue(from, ref.KindFrom).(string)
 	}
 	if kind == "" {
-		return Relation{}, false
+		return declared{}, false
 	}
 
 	// The label is the field without the segment that holds the name: a reference is a
@@ -210,11 +235,11 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 		// a resolved reference is `{<kind>: <id>}`, whatever the kind is
 		to, ok := byID[val]
 		if !ok {
-			return Relation{}, false
+			return declared{}, false
 		}
-		r := Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: Depends}
+		r := declared{Relation: Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: Depends}}
 		if ref.Inbound {
-			r.From, r.To = to.id, res.id
+			r.From, r.To, r.turned = to.id, res.id, true
 		}
 		return r, true
 	}
@@ -227,7 +252,7 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 	}
 	to, found := find(kind, val, res.scope, ns)
 	if !found {
-		return Relation{}, false
+		return declared{}, false
 	}
 	// WHERE TRAFFIC GOES IS DECLARED. It used to be read off KindFrom — the author
 	// picking the kind stood in for "this is a handoff" — which a router breaks: its
@@ -236,13 +261,13 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 	if ref.Serves {
 		class, verb = Handoff, "serves"
 	}
-	r := Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: class}
+	r := declared{Relation: Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: class}}
 	// Direction is a property of the REFERENCE, not of how its value happens to be
 	// stored. This branch used to drop Inbound on the floor, so `Ref(k, ByName(),
 	// Inbound())` compiled, read back true from References(), and drew the arrow the
 	// wrong way round — a term that means nothing in half the cases it is legal in.
 	if ref.Inbound {
-		r.From, r.To = to.id, res.id
+		r.From, r.To, r.turned = to.id, res.id, true
 	}
 	return r, true
 }

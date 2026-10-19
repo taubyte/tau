@@ -47,6 +47,7 @@ type placesNothing struct{}
 
 func (placesNothing) Place(schema.Placement) schema.Answer { return schema.Answer{} }
 func (placesNothing) Allow([]string) []schema.Concern      { return nil }
+func (placesNothing) Serves() []string                     { return nil }
 
 // A PLACEMENT THE CLOUD CANNOT HONOUR IS REFUSED BEFORE ANYTHING PUBLISHES.
 func TestAnUnplaceableDeploymentPublishesNothing(t *testing.T) {
