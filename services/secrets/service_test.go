@@ -45,6 +45,10 @@ const settleFor = 30 * time.Second
 const never = time.Hour
 
 type cluster struct {
+	// mu guards nodes, services and stopped against memberIDs, which every
+	// running service reads from its own goroutines.
+	mu sync.Mutex
+
 	db       string
 	opts     []Option
 	nodes    []peerNode.Node
@@ -139,7 +143,9 @@ func (c *cluster) launch(t *testing.T, node peerNode.Node, db coreKvdb.KVDB, pat
 	t.Helper()
 
 	srv := c.serve(t, node, db, path)
+	c.mu.Lock()
 	c.services = append(c.services, srv)
+	c.mu.Unlock()
 
 	return srv
 }
@@ -149,7 +155,12 @@ func (c *cluster) launch(t *testing.T, node peerNode.Node, db coreKvdb.KVDB, pat
 func (c *cluster) serve(t *testing.T, node peerNode.Node, db coreKvdb.KVDB, path string) *Service {
 	t.Helper()
 
-	opts := append([]Option{WithRoot(path), WithPubSub(node.Messaging()), WithBootstrapDelay(never)}, c.opts...)
+	// MEMBERSHIP IS STATED, as discovery states it on a node. It used to be
+	// read off identify's record of which peers speak the protocol, and a
+	// service starts listening after its node has connected, so that record
+	// arrived only by an identify push -- late under load, and on a busy
+	// machine never inside the mesh wait.
+	opts := append([]Option{WithRoot(path), WithPubSub(node.Messaging()), WithBootstrapDelay(never), WithMembers(c.memberIDs)}, c.opts...)
 	srv, err := New(node.Peer(), db, opts...)
 	require.NoError(t, err)
 	require.NoError(t, srv.Start(context.Background()))
@@ -171,7 +182,9 @@ func (c *cluster) grow(t *testing.T, ctx context.Context) {
 		require.NoError(t, node.Peer().Connect(ctx, other.Peer().Peerstore().PeerInfo(other.ID())))
 	}
 
+	c.mu.Lock()
 	c.nodes = append(c.nodes, node)
+	c.mu.Unlock()
 	c.start(t, node)
 
 	c.awaitMesh(t, ctx)
@@ -192,7 +205,10 @@ func (c *cluster) restart(t *testing.T, i int) {
 
 	require.NoError(t, c.services[i].Close())
 
-	c.services[i] = c.serve(t, c.nodes[i], c.dbs[i], c.paths[i])
+	srv := c.serve(t, c.nodes[i], c.dbs[i], c.paths[i])
+	c.mu.Lock()
+	c.services[i] = srv
+	c.mu.Unlock()
 }
 
 // stop takes a node out of service for good, the way a lost machine does. The
@@ -202,7 +218,9 @@ func (c *cluster) stop(t *testing.T, i int) {
 	t.Helper()
 
 	require.NoError(t, c.services[i].Close())
+	c.mu.Lock()
 	c.stopped = append(c.stopped, i)
+	c.mu.Unlock()
 }
 
 func (c *cluster) live() []*Service {
@@ -287,6 +305,8 @@ func (c *cluster) client(t *testing.T) refClient {
 
 // memberIDs are the nodes whose service is running.
 func (c *cluster) memberIDs() []peerCore.ID {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	var out []peerCore.ID
 	for i, node := range c.nodes {
 		if i < len(c.services) && !slices.Contains(c.stopped, i) {
