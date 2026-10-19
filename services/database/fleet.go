@@ -13,12 +13,11 @@ import (
 //
 // # It is one value the fleet shares, and it used to be each node's config
 //
-// Placement takes four inputs and all four are per-node views. Three of them
-// heal: a pin read at an older register revision, a membership view that has
-// not caught up, a region reported a moment ago. The floor did not. Two nodes
+// Placement takes three inputs and all three are per-node views. Two of them
+// heal: a declaration read at an older register revision, and a membership
+// view that has not caught up. The floor did not. Two nodes
 // configured differently disagreed about who should hold a database forever,
-// and `copies()` — what an operator is billed for — depended on which node was
-// asked.
+// and how many copies a database had depended on which node was asked.
 //
 // So it is published like a project: content-addressed, monotone revision, read
 // from the register every node already polls. A node that is behind is behind

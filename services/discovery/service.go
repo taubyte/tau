@@ -42,15 +42,6 @@ type Service struct {
 	// routing one — see beat. Nil only in a service composed without one.
 	members *membership.Set
 
-	// regionMu guards regions, which is where a peer's region is kept for as
-	// long as MEMBERSHIP remembers it rather than as long as the routing view
-	// does. The two forget on different timescales — routing drops a row at 20
-	// intervals, placement keeps a peer far longer — and reading the region out
-	// of the routing view meant a settled node lost its region while it was
-	// still in the placement set, landing under "" as if it had never said.
-	regionMu sync.Mutex
-	regions  map[string]string
-
 	// incarnation distinguishes this run from the last. It is chosen once, at
 	// construction, and never lowered — see the proto's field comment.
 	incarnation uint64
@@ -202,12 +193,11 @@ func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
 				Ready:       r.GetReady(),
 				Addresses:   r.GetAddresses(),
 				Sockets:     socketsOf(r.GetSockets()),
-				Region:      r.GetRegion(),
 
 				FleetRevision:    r.GetFleetRevision(),
 				DatabasesPending: int(r.GetDatabasesPending()),
 			})
-			s.beat(r.GetPeer(), r.GetIncarnation(), r.GetReady(), r.GetRegion())
+			s.beat(r.GetPeer(), r.GetIncarnation(), r.GetReady())
 		}
 	}
 }
@@ -257,13 +247,8 @@ func (s *Service) report(ctx context.Context) {
 		Addresses:   snap.Addresses,
 		Sockets:     wireSockets(snap.Sockets),
 
-		// NOT FROM THE SNAPSHOT. Where a node is, is what an operator
-		// configured, not something it measures each tick — so it sits beside
-		// the peer id rather than travelling with the load.
-		Region: s.cfg.Region,
-
-		// THESE DO come from the snapshot: they are what this node's own
-		// services answer about themselves, and they change every tick.
+		// What this node's own services answer about themselves, which
+		// changes every tick.
 		FleetRevision:    snap.FleetRevision,
 		DatabasesPending: uint32(snap.DatabasesPending),
 	})
@@ -283,12 +268,11 @@ func (s *Service) report(ctx context.Context) {
 		Ready:       snap.Ready,
 		Addresses:   snap.Addresses,
 		Sockets:     snap.Sockets,
-		Region:      s.cfg.Region,
 
 		FleetRevision:    snap.FleetRevision,
 		DatabasesPending: snap.DatabasesPending,
 	})
-	s.beat(s.peer, s.incarnation, snap.Ready, s.cfg.Region)
+	s.beat(s.peer, s.incarnation, snap.Ready)
 
 	s.opts.bus.Publish(ctx, b)
 }
@@ -356,58 +340,24 @@ func wireSockets(in []stats.Socket) []*discoveryv2.Socket {
 // that on a blip is how a fleet spends its day rebalancing. pkg/membership is
 // written for exactly this split: Live is the acknowledgement target, Stable is
 // "who owns data", and it requires continuous presence in both directions.
-func (s *Service) beat(peer string, incarnation uint64, accepts bool, region string) {
+func (s *Service) beat(peer string, incarnation uint64, accepts bool) {
 	if s.members == nil || peer == "" {
 		return
 	}
 	// Observe refuses a stale run on its own, the same way the view does.
 	s.members.Observe(membership.Beat{Peer: peer, Incarnation: incarnation, Accepts: accepts})
-
-	s.regionMu.Lock()
-	defer s.regionMu.Unlock()
-	if s.regions == nil {
-		s.regions = map[string]string{}
-	}
-	s.regions[peer] = region
 }
 
-// Placement is the member set a placement runs over, grouped by the region each
-// node reports.
+// Placement is the member set a placement runs over.
 //
-// IT IS THE STABLE SET AND NOT THE FRESH ONE — see beat. View.ByRegion answers
-// the routing question and is the wrong input here: it would move data on a
-// blip.
-//
-// A STABLE MEMBER THIS NODE HAS NO REGION FOR IS STILL A MEMBER, under "" — the
-// key for "said nothing", which is never a region name. Dropping it would make a
-// node invisible to placement entirely, which is worse than placing it in the
-// bucket for nodes that will not say where they are.
-func (s *Service) Placement() map[string][]placement.Member {
+// IT IS THE STABLE SET AND NOT THE FRESH ONE — see beat. The routing view
+// answers a different question and is the wrong input here: it would move data
+// on a blip.
+func (s *Service) Placement() []placement.Member {
 	if s.members == nil {
 		return nil
 	}
-
-	s.regionMu.Lock()
-	defer s.regionMu.Unlock()
-
-	out := map[string][]placement.Member{}
-	known := map[string]bool{}
-	for _, m := range s.members.StablePlacement() {
-		at := s.regions[m.ID]
-		out[at] = append(out[at], m)
-		known[m.ID] = true
-	}
-
-	// FORGOTTEN BY MEMBERSHIP IS FORGOTTEN HERE, so a fleet that has churned
-	// does not carry a region for every peer it has ever heard from.
-	for peer := range s.regions {
-		if !known[peer] {
-			if _, remembered := s.members.Get(peer); !remembered {
-				delete(s.regions, peer)
-			}
-		}
-	}
-	return out
+	return s.members.StablePlacement()
 }
 
 // Pending is how many databases the whole fleet knows to be below their floor,
@@ -421,10 +371,8 @@ func (s *Service) Placement() map[string][]placement.Member {
 // its own copies, which it can see exactly.
 func (s *Service) Pending(maxAge time.Duration) int {
 	total := 0
-	for _, n := range s.view.ByRegion(maxAge) {
-		for _, node := range n {
-			total += node.DatabasesPending
-		}
+	for _, node := range s.view.Within(maxAge) {
+		total += node.DatabasesPending
 	}
 	return total
 }

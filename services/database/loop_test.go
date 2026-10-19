@@ -13,7 +13,7 @@ import (
 )
 
 // sweeping builds a service that holds one database and can see a fleet.
-func sweeping(t *testing.T, holds *says, at map[string][]placement.Member, region string, floor int) *Service {
+func sweeping(t *testing.T, holds *says, at []placement.Member, floor int) *Service {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -29,8 +29,7 @@ func sweeping(t *testing.T, holds *says, at map[string][]placement.Member, regio
 		WithEngines(registry),
 		WithRegister(declaringFloor(t, compiled(), floor)),
 		WithHoldings(holds),
-		WithMembers(func() map[string][]placement.Member { return at }),
-		WithRegion(region),
+		WithMembers(func() []placement.Member { return at }),
 		WithIdle(time.Hour))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
@@ -45,9 +44,9 @@ func sessionsSpec() database.Spec {
 // its answer to a peer asking mean anything.
 func TestASweepKeepsWhatItShould(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
-	fleet := map[string][]placement.Member{"eu": members("me")}
+	fleet := members("me")
 
-	s := sweeping(t, holds, fleet, "eu", 1)
+	s := sweeping(t, holds, fleet, 1)
 	s.peer = "me"
 
 	s.reconsider(t.Context())
@@ -63,9 +62,9 @@ func TestASweepKeepsWhatItShould(t *testing.T) {
 func TestASweepHoldsOnWhenItsReplacementCannotBeReached(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
 	// `other` is desired and is not this node — and is not dialable either.
-	fleet := map[string][]placement.Member{"eu": members("other")}
+	fleet := members("other")
 
-	s := sweeping(t, holds, fleet, "eu", 1)
+	s := sweeping(t, holds, fleet, 1)
 	s.peer = "me"
 
 	s.reconsider(t.Context())
@@ -82,7 +81,7 @@ func TestASweepHoldsOnWhenItsReplacementCannotBeReached(t *testing.T) {
 // which is what lets it need no shared index of who-holds-what.
 func TestASweepWalksOnlyWhatThisNodeHolds(t *testing.T) {
 	holds := &says{held: true}
-	s := sweeping(t, holds, map[string][]placement.Member{"eu": members("other")}, "eu", 1)
+	s := sweeping(t, holds, members("other"), 1)
 	s.peer = "me"
 
 	s.reconsider(t.Context())
@@ -132,9 +131,9 @@ func TestASweepWithoutAFleetDoesNothing(t *testing.T) {
 func TestASweepCountsACoHolderItCannotConfirm(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
 	// Two desired at a floor of two, and the other one is not dialable.
-	fleet := map[string][]placement.Member{"eu": members("me", "other")}
+	fleet := members("me", "other")
 
-	s := sweeping(t, holds, fleet, "eu", 2)
+	s := sweeping(t, holds, fleet, 2)
 	s.peer = "me"
 
 	s.reconsider(t.Context())
@@ -143,15 +142,15 @@ func TestASweepCountsACoHolderItCannotConfirm(t *testing.T) {
 		"a database whose second copy could not be confirmed was counted as fine")
 }
 
-// TestAREGIONSMALLERTHANTHEFLOORISNOTSHORT. A one-node region asked for two
+// TestAFLEETSMALLERTHANTHEFLOORISNOTSHORT. A one-node fleet asked for two
 // copies has one, which is what it has — reporting it as pending forever would
 // make the number mean "this cloud is small" rather than "something needs
 // repair".
-func TestASweepDoesNotReportASmallRegionAsShort(t *testing.T) {
+func TestASweepDoesNotReportASmallFleetAsShort(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
-	fleet := map[string][]placement.Member{"eu": members("me")}
+	fleet := members("me")
 
-	s := sweeping(t, holds, fleet, "eu", 2)
+	s := sweeping(t, holds, fleet, 2)
 	s.peer = "me"
 
 	s.reconsider(t.Context())
@@ -163,7 +162,7 @@ func TestASweepDoesNotReportASmallRegionAsShort(t *testing.T) {
 // inputs heal on their own; this is the one they must all agree on.
 func TestASweepReportsTheFleetRevisionItComputedWith(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
-	s := sweeping(t, holds, map[string][]placement.Member{"eu": members("me")}, "eu", 1)
+	s := sweeping(t, holds, members("me"), 1)
 	s.peer = "me"
 
 	s.reconsider(t.Context())
@@ -181,7 +180,7 @@ func TestASweepLeavesWhatItCannotResolve(t *testing.T) {
 		Type: database.KV, Project: projectID, Environment: "prod", Name: "QmNobodyDeclaresThis",
 	}}}
 
-	s := sweeping(t, holds, map[string][]placement.Member{"eu": members("me")}, "eu", 1)
+	s := sweeping(t, holds, members("me"), 1)
 	s.peer = "me"
 
 	s.reconsider(t.Context())

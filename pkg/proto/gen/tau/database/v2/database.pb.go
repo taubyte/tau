@@ -496,9 +496,9 @@ func (x *KVKeys) GetMore() bool {
 // IT IS THE ONLY WAY A NODE LEAVING A DATABASE CAN KNOW IT IS SAFE TO GO.
 // Placement moves a database by having one node stop holding it and another
 // start; "another node is alive and should hold this" is NOT the same statement
-// as "another node HAS this", and the difference is the whole failure. A region
-// goes dark, an operator repins to somewhere else to restore service, the
-// region comes back, reads the new placement and drops the only copies there
+// as "another node HAS this", and the difference is the whole failure. The
+// holders go dark, membership moves the database elsewhere, the old holders
+// come back, read the new placement and drop the only copies there
 // ever were -- because the new holders were alive the whole time and never
 // received a row, their source having been down.
 //
@@ -522,9 +522,9 @@ type KVDigestValue struct {
 	//
 	// IT IS A DIFFERENT QUESTION FROM held, AND THE DIFFERENCE IS THE WHOLE GATE.
 	// A node mid-release holds the bytes and is about to delete them. Counting it
-	// as a reason to leave is how two nodes delete a database between them: a pin
-	// that moved between revisions, two nodes relabelled inside one freshness
-	// window, or two nodes draining at once -- a rolling restart -- each leave
+	// as a reason to leave is how two nodes delete a database between them: a floor
+	// that moved between revisions, or two nodes draining at once -- a rolling
+	// restart -- each leave
 	// both nodes computing the other desired and both dropping. A node that is
 	// leaving answers false, so neither may go.
 	Keeps         bool `protobuf:"varint,4,opt,name=keeps,proto3" json:"keeps,omitempty"`

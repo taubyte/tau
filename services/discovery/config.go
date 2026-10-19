@@ -120,11 +120,6 @@ type Config struct {
 	// has no thrash to buy off and a minute is a minute of nothing happening —
 	// see node/dream, which is the only thing in this repo that sets it.
 	Stabilize time.Duration
-
-	// Region is where this node is, broadcast with every report. Empty means a
-	// node that will not say. See stats.Report.Region for why this one field is
-	// different in kind from everything else a node reports about itself.
-	Region string
 }
 
 // Option injects what this service is built from.

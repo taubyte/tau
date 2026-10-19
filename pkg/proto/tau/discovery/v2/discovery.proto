@@ -117,25 +117,8 @@ message Report {
   // learns it is the SRV record built out of this.
   repeated Socket sockets = 7;
 
-  // region is where this node is, as one of the opaque labels a project writes.
-  // Empty means a node that will not say.
-  //
-  // IT IS THE ONE FIELD HERE A NODE CAN LIE ITSELF *INTO* SOMETHING WITH, and
-  // that is worth stating rather than discovering. Everything else a report
-  // carries is a claim about capacity: a node that overstates `load` or
-  // understates `serving` only ever takes LESS traffic, and pkg/placement is
-  // built on exactly that asymmetry — a member may decline, and can never raise
-  // its own score. A region is different, because placement groups members by
-  // it: a node that says `eu` joins the set competing for EU-pinned data, so a
-  // wrong label is a node holding data somebody pinned for a legal reason.
-  //
-  // It is reported anyway, because nothing else knows: the vocabulary never
-  // enumerates regions, so there is no registry to look a node up in and the
-  // operator's word is the only source there is. What that buys is an operator
-  // typo becoming a residency breach with nothing to catch it, and closing that
-  // means admitting a node's region rather than hearing it — which is a
-  // membership change, not a field.
-  string region = 8;
+  reserved 8;
+  reserved "region";
 
   // fleet_revision is the revision of the cloud's own document this node last
   // computed placement with.

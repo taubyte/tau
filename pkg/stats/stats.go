@@ -129,24 +129,6 @@ type Report struct {
 	// an address before it dials the port.
 	Sockets []Socket
 
-	// Region is where this node is, as one of the opaque labels a project
-	// writes. Empty means a node that will not say.
-	//
-	// IT IS THE ONE FIELD HERE A NODE CAN LIE ITSELF *INTO* SOMETHING WITH.
-	// Everything else is a claim about capacity, and overstating any of them
-	// only ever wins a node LESS traffic — which is the asymmetry pkg/placement
-	// is built on, where a member may decline and can never raise its own
-	// score. A region is different, because placement groups members BY it: a
-	// node that says `eu` joins the set competing for EU-pinned data, so a
-	// wrong label is a node holding data somebody pinned for a legal reason.
-	//
-	// It is reported anyway, because nothing else knows: the vocabulary never
-	// enumerates regions, so there is no registry to look a node up in and the
-	// operator's word is all there is. Closing the gap means ADMITTING a node's
-	// region rather than hearing it, which is a membership change rather than a
-	// field, and it is not done.
-	Region string
-
 	// FleetRevision is the revision of the cloud's own document this node last
 	// computed placement with. It is how a node that is behind becomes visible:
 	// placement's other inputs heal on their own, and this is the one every
@@ -185,7 +167,6 @@ type Node struct {
 	Ready       bool
 	Addresses   []string
 	Sockets     []Socket
-	Region      string
 
 	FleetRevision    uint64
 	DatabasesPending int
@@ -247,7 +228,6 @@ type row struct {
 	ready       bool
 	addresses   []string
 	sockets     []Socket
-	region      string
 	fleet       uint64
 	pending     int
 	received    time.Time
@@ -297,7 +277,6 @@ func (v *View) Observe(r Report) error {
 		ready:       r.Ready,
 		addresses:   append([]string(nil), r.Addresses...),
 		sockets:     append([]Socket(nil), r.Sockets...),
-		region:      r.Region,
 		fleet:       r.FleetRevision,
 		pending:     r.DatabasesPending,
 		received:    now,
@@ -401,7 +380,6 @@ func node(peer string, r *row, now time.Time) Node {
 		Ready:       r.ready,
 		Addresses:   append([]string(nil), r.addresses...),
 		Sockets:     append([]Socket(nil), r.sockets...),
-		Region:      r.region,
 
 		FleetRevision:    r.fleet,
 		DatabasesPending: r.pending,
@@ -410,22 +388,7 @@ func node(peer string, r *row, now time.Time) Node {
 	}
 }
 
-// ByRegion is every fresh node grouped by the region it reports, which is the
-// member set a placement runs over.
-//
-// ONE PLACEMENT PER REGION IS WHAT A PIN MEANS: a database pinned to eu and us
-// has copies in BOTH, and the floor is how many in EACH, so the sets have to be
-// separate rather than one list carrying a label. Nodes reporting no region
-// land under "" — which is a key and never a region name, so a caller can tell
-// "the cloud decides" from any region an operator declared.
-//
-// FRESH ONLY. A node that has stopped reporting is a node whose region nobody
-// can vouch for any more, and placing a copy on it would be placing a copy on
-// a row rather than on a peer.
-func (v *View) ByRegion(maxAge time.Duration) map[string][]Node {
-	out := map[string][]Node{}
-	for _, n := range v.snapshot(func(n Node) bool { return n.Age <= maxAge }) {
-		out[n.Region] = append(out[n.Region], n)
-	}
-	return out
+// Within is every node reported no longer ago than maxAge, ordered by peer.
+func (v *View) Within(maxAge time.Duration) []Node {
+	return v.snapshot(func(n Node) bool { return n.Age <= maxAge })
 }

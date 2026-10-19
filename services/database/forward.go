@@ -99,15 +99,9 @@ func hopsOf(ctx context.Context) int {
 
 // voters is every node that should be in this database's raft group, in the
 // order placement ranked them.
-//
-// THE UNION OVER PINNED REGIONS AND NOT ONE OF THEM. A group is one consistency
-// domain; a database pinned to two regions is one group whose voters are drawn
-// from both, and the floor multiplies exactly as it does for a crdt copy. A
-// node is only ever ranked within its own region's member set, so an eu node is
-// never a voter for a us-only pin.
-func (s *Service) voters(ctx context.Context, at address, d declared) []string {
-	byRegion := s.fleet()
-	if len(byRegion) == 0 {
+func (s *Service) voters(ctx context.Context, at address) []string {
+	members := s.fleet()
+	if len(members) == 0 {
 		// A NODE THAT CANNOT SEE A FLEET IS THE WHOLE FLEET as far as it knows,
 		// and saying "somebody else holds this" would refuse a database nobody
 		// else can answer for. It keeps its own group.
@@ -130,16 +124,12 @@ func (s *Service) voters(ctx context.Context, at address, d declared) []string {
 		floor = DefaultReplication
 	}
 
-	var out []string
-	for _, region := range placementRegions(d.regions) {
-		out = append(out, placement.Desired(resourceOf(at), membersIn(byRegion, region), floor)...)
-	}
-	return out
+	return holders(at, members, floor)
 }
 
 // fleet is this node's membership view, or nothing when it has no way to have
 // one.
-func (s *Service) fleet() map[string][]placement.Member {
+func (s *Service) fleet() []placement.Member {
 	if s.members == nil {
 		return nil
 	}
@@ -154,7 +144,7 @@ func (s *Service) fleet() map[string][]placement.Member {
 // fleet cannot count. An empty voter list is the same fact in both: nobody is
 // placed, so this node is the whole fleet.
 func (s *Service) desired(ctx context.Context, at address, d declared) (others []string, mine bool) {
-	voters := s.voters(ctx, at, d)
+	voters := s.voters(ctx, at)
 
 	others = make([]string, 0, len(voters))
 	mine = len(voters) == 0

@@ -40,7 +40,6 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services/worker"
@@ -100,16 +99,6 @@ var (
 	ErrNoHost    = errors.New("placement: no host to dial from")
 	ErrNoRouter  = errors.New("placement: nothing to route from")
 	ErrNoWorkers = errors.New("placement: no worker is ready to take this")
-
-	// ErrNoRegion is a resource that asked for regions no ready worker is in.
-	// It is not ErrNoWorkers with a filter on: running it anywhere else is
-	// exactly what the author said not to do, so it is refused rather than
-	// sent to the nearest node.
-	ErrNoRegion = errors.New("placement: no worker is ready in the regions this resource asks for")
-
-	// ErrOutsideAllowance is a resource asking for a region its deployment
-	// does not allow.
-	ErrOutsideAllowance = errors.New("placement: that region is outside what this deployment allows")
 )
 
 // Defaults.
@@ -132,7 +121,6 @@ type options struct {
 	local    Invoker
 	maxAge   time.Duration
 	attempts int
-	projects register.Registry
 }
 
 // WithLocal is this node's own worker, used when the router picks this peer.
@@ -147,22 +135,6 @@ func WithLocal(w Invoker) Option {
 			return errors.New("placement: a nil local worker")
 		}
 		o.local = w
-		return nil
-	}
-}
-
-// WithProjects is where the compiled projects are read from, which is how a
-// resource's own `regions` block reaches the choice of node.
-//
-// WITHOUT IT THERE IS NO REGION FILTER, and that is a composition choice rather
-// than a fallback: a router built for a test over a table of nodes has no
-// project to read. The node always supplies one.
-func WithProjects(r register.Registry) Option {
-	return func(o *options) error {
-		if r == nil {
-			return errors.New("placement: a nil project source")
-		}
-		o.projects = r
 		return nil
 	}
 }
@@ -191,10 +163,9 @@ func WithAttempts(n int) Option {
 
 // Workers routes a request to a worker and runs it there.
 type Workers struct {
-	host     host.Host
-	router   Router
-	opts     options
-	projects *register.Cache[*specs.Project]
+	host   host.Host
+	router Router
+	opts   options
 
 	// mu guards the client cache. A client is one libp2p stream multiplexing
 	// every call to that peer, so it is worth keeping and worth not opening
@@ -220,15 +191,7 @@ func New(h host.Host, router Router, opts ...Option) (*Workers, error) {
 		}
 	}
 
-	w := &Workers{host: h, router: router, opts: o, clients: map[libp2ppeer.ID]*worker.Client{}}
-	if o.projects != nil {
-		projects, err := register.NewCache(o.projects, specs.Load)
-		if err != nil {
-			return nil, err
-		}
-		w.projects = projects
-	}
-	return w, nil
+	return &Workers{host: h, router: router, opts: o, clients: map[libp2ppeer.ID]*worker.Client{}}, nil
 }
 
 // Invoke runs one request on whichever node should take it.
@@ -335,10 +298,7 @@ func (w *Workers) Shape(ctx context.Context, at specs.Address, s *invoke.Stream)
 // worker was injected, the connection is made here rather than over a stream to
 // ourselves.
 func (w *Workers) Conn(ctx context.Context, at specs.Address, port string) (net.Conn, error) {
-	candidates, err := w.eligible(ctx, at)
-	if err != nil {
-		return nil, err
-	}
+	candidates := w.candidates(at)
 	if len(candidates) == 0 {
 		return nil, ErrNoWorkers
 	}
@@ -385,10 +345,7 @@ func (w *Workers) connectTo(ctx context.Context, id string, at specs.Address, po
 // somewhere runs call against the warmest node that will take this address,
 // trying the next one only when a node could not be REACHED.
 func (w *Workers) somewhere(ctx context.Context, at specs.Address, call func(Invoker) error) error {
-	candidates, err := w.eligible(ctx, at)
-	if err != nil {
-		return err
-	}
+	candidates := w.candidates(at)
 	if len(candidates) == 0 {
 		return ErrNoWorkers
 	}
@@ -446,70 +403,6 @@ func (w *Workers) candidates(at specs.Address) []stats.Node {
 		}
 	}
 	return out
-}
-
-// eligible is candidates narrowed to where the resource asked to run.
-//
-// THE RESOURCE ASKS AND THIS DECIDES. worker.RegionsOf reads the block and the
-// deployment's ceiling and carries both; the intersection with what the nodes
-// report is made here, because this is the one place a node is chosen — a
-// gateway that filtered too would be a second policy for one config block.
-//
-// A PROJECT THAT CANNOT BE READ IS A REFUSAL, not a request placed anywhere:
-// what it would have said about regions is unknown, and "anywhere" is the one
-// answer a pinned resource forbids. A resource that is not in it is not this
-// function's to refuse — the worker answers that one by name.
-func (w *Workers) eligible(ctx context.Context, at specs.Address) ([]stats.Node, error) {
-	candidates := w.candidates(at)
-	if w.projects == nil {
-		return candidates, nil
-	}
-
-	proj, _, err := w.projects.At(ctx, register.Deployment{Project: at.Project, Environment: at.Environment})
-	if err != nil {
-		return nil, fmt.Errorf("placement: reading where %s/%s may run: %w", at.Kind, at.Name, err)
-	}
-	r, _, err := proj.Resource(at.Scope, at.Kind, at.Name)
-	if err != nil {
-		return candidates, nil
-	}
-	return inRegions(at, worker.RegionsOf(proj, at.Environment, r), candidates)
-}
-
-// inRegions keeps the nodes in the regions asked for, first tier first, each
-// tier in the order candidates already had them — warm before cold.
-func inRegions(at specs.Address, regions worker.Regions, candidates []stats.Node) ([]stats.Node, error) {
-	if regions.Tiers == nil {
-		return candidates, nil
-	}
-
-	allowed := map[string]bool{}
-	for _, region := range regions.Allowance {
-		allowed[region] = true
-	}
-
-	var out []stats.Node
-	for _, tier := range regions.Tiers {
-		want := map[string]bool{}
-		for _, region := range tier {
-			// REFUSED AND NOT DROPPED. Running in the regions that did pass
-			// would run it somewhere its author never wrote.
-			if len(allowed) > 0 && !allowed[region] {
-				return nil, fmt.Errorf("%w: %s/%s names %s, and the deployment allows %v",
-					ErrOutsideAllowance, at.Kind, at.Name, region, regions.Allowance)
-			}
-			want[region] = true
-		}
-		for _, n := range candidates {
-			if want[n.Region] {
-				out = append(out, n)
-			}
-		}
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("%w: %s/%s asks for %v", ErrNoRegion, at.Kind, at.Name, regions.Tiers)
-	}
-	return out, nil
 }
 
 // invokerFor is how this node talks to that one: directly when it is this node,

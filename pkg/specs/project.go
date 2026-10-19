@@ -813,34 +813,6 @@ func (p *Project) Deployments(branch string) []string {
 	return schema.DeploymentNames(p.Environments(), branch)
 }
 
-// Allowance is the regions one deployment may be in: the environment's own
-// list, or the project's when it declares none. Empty means the cloud decides,
-// which narrows nothing. It is the CEILING a resource is placed within, never
-// the placement itself — a resource's own `regions` block is that.
-//
-// A SHADOW HAS NO ALLOWANCE OF ITS OWN and takes the one it was written inside.
-// It is a deployment over another environment's state, so placing that state
-// was never its to do — which is why the vocabulary gives a shadow no `regions`
-// field rather than a rule about ignoring one.
-func (p *Project) Allowance(environment string) []string {
-	for _, env := range p.Environments() {
-		if env.Name == environment && len(env.Regions) > 0 {
-			return env.Regions
-		}
-		for _, shadow := range env.Shadows {
-			if shadow.Name == environment && len(env.Regions) > 0 {
-				return env.Regions
-			}
-		}
-	}
-
-	// THE PROJECT'S OWN, WHEN THE DEPLOYMENT NAMES NONE. `regions` is one word
-	// at every level: a scope's is where everything under it may be, and an
-	// environment that declares none inherits rather than resetting to the
-	// cloud's whole world.
-	return p.Root().Strings("regions")
-}
-
 // hosts.go answers "what names does this project answer on", which is the
 // question a gateway asks before it can route anything.
 //

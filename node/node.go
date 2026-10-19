@@ -301,13 +301,7 @@ func (n *Node) openStats() error {
 		options = append(options, discovery.WithClock(n.opts.now))
 	}
 
-	// THE NODE'S REGION IS THE ONE STATS BROADCASTS. It is operator config on
-	// both sides, and carrying it here rather than asking the reporter for it
-	// keeps "where this node is" out of the per-tick measurement.
-	discoveryConfig := n.cfg.Discovery
-	discoveryConfig.Region = n.cfg.Region
-
-	svc, err := discovery.New(n.opts.host, discoveryConfig, options...)
+	svc, err := discovery.New(n.opts.host, n.cfg.Discovery, options...)
 	if err != nil {
 		return err
 	}
@@ -403,10 +397,6 @@ func (n *Node) openSecrets() error {
 // tests: which tiers a node ended up with is decided by three separate
 // conditions, and reading them back is how that is checked rather than asserted.
 func (n *Node) tiers() []invoke.Runtime { return n.runtimes }
-
-// Region is where this node is, as the operator configured it. Empty means a
-// node that will not say, which competes for nothing anybody pinned.
-func (n *Node) Region() string { return n.cfg.Region }
 
 func (n *Node) openWorker() error {
 	if !n.cfg.runs(Worker) {
@@ -708,8 +698,7 @@ func (n *Node) openPlacement() error {
 		return nil
 	}
 
-	// THE PROJECTS, so a resource's own regions reach the choice of node.
-	options := []placement.Option{placement.WithProjects(n.registerSource())}
+	var options []placement.Option
 	if n.worker != nil {
 		options = append(options, placement.WithLocal(n.worker))
 	}

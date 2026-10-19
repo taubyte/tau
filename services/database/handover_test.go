@@ -26,7 +26,7 @@ type pair struct {
 	nodes   map[string]*Service
 	holds   map[string]*says
 	engines map[string]*accounting
-	fleet   map[string][]placement.Member
+	fleet   []placement.Member
 	going   string // the peer placement does NOT want
 	saying  *says
 }
@@ -46,14 +46,14 @@ func pairOf(t *testing.T, floor int) *pair {
 	require.NoError(t, mn.ConnectAllButSelf())
 
 	at := address{project: projectID, environment: "prod", id: kvID}
-	fleet := map[string][]placement.Member{"eu": {
+	fleet := []placement.Member{
 		{ID: hosts[0].ID().String(), Accepts: true},
 		{ID: hosts[1].ID().String(), Accepts: true},
-	}}
+	}
 
 	// WHICHEVER PLACEMENT WANTS, THE OTHER IS THE ONE THAT LEAVES. Asserting
 	// about a fixed one of the two would be asserting about a hash.
-	want := placement.Desired(resourceOf(at), fleet["eu"], floor)
+	want := placement.Desired(resourceOf(at), fleet, floor)
 	require.NotEmpty(t, want)
 	keeping := map[string]bool{}
 	for _, id := range want {
@@ -74,8 +74,7 @@ func pairOf(t *testing.T, floor int) *pair {
 			WithEngines(registry),
 			WithRegister(declaringFloor(t, compiled(), floor)),
 			WithHoldings(holds),
-			WithRegion("eu"),
-			WithMembers(func() map[string][]placement.Member { return fleet }),
+			WithMembers(func() []placement.Member { return fleet }),
 			WithIdle(time.Hour),
 			// LONG, so the only sweep in these tests is the one the test runs.
 			// A ticking one would be a second actor racing the assertion.
@@ -119,8 +118,9 @@ func TestADatabaseIsReleasedOnlyToANodeThatHasIt(t *testing.T) {
 }
 
 // TestITSTAYSWHENTHEREPLACEMENTHASNOTCAUGHTUP, which is the failure the gate
-// exists for: eu goes dark, an operator repins, the new holders are alive and
-// received nothing, eu comes back and must not drop the only copies.
+// exists for: the holders go dark, membership moves the database, the new
+// holders are alive and received nothing, and the old holders come back and
+// must not drop the only copies.
 func TestADatabaseIsNotReleasedToANodeThatIsBehind(t *testing.T) {
 	p := pairOf(t, 1)
 
@@ -143,13 +143,12 @@ func TestTheSweepRunsOnItsInterval(t *testing.T) {
 	registry := database.NewRegistry()
 	require.NoError(t, registry.Register(t.Context(), &accounting{}))
 
-	fleet := map[string][]placement.Member{"eu": {{ID: h.ID().String(), Accepts: true}}}
+	fleet := []placement.Member{{ID: h.ID().String(), Accepts: true}}
 	s, err := New(h,
 		WithEngines(registry),
 		WithRegister(declaringFloor(t, compiled(), 1)),
 		WithHoldings(holds),
-		WithRegion("eu"),
-		WithMembers(func() map[string][]placement.Member { return fleet }),
+		WithMembers(func() []placement.Member { return fleet }),
 		WithIdle(time.Hour),
 		WithSweep(5*time.Millisecond))
 	require.NoError(t, err)
@@ -176,10 +175,10 @@ func bothDesired(t *testing.T, otherHolds bool) (*Service, *says) {
 	require.NoError(t, mn.LinkAll())
 	require.NoError(t, mn.ConnectAllButSelf())
 
-	fleet := map[string][]placement.Member{"eu": {
+	fleet := []placement.Member{
 		{ID: hosts[0].ID().String(), Accepts: true},
 		{ID: hosts[1].ID().String(), Accepts: true},
-	}}
+	}
 
 	build := func(h host.Host, holds *says) *Service {
 		registry := database.NewRegistry()
@@ -190,8 +189,7 @@ func bothDesired(t *testing.T, otherHolds bool) (*Service, *says) {
 			WithEngines(registry),
 			WithRegister(declaringFloor(t, compiled(), 2)),
 			WithHoldings(holds),
-			WithRegion("eu"),
-			WithMembers(func() map[string][]placement.Member { return fleet }),
+			WithMembers(func() []placement.Member { return fleet }),
 			WithIdle(time.Hour),
 			WithSweep(time.Hour))
 		require.NoError(t, err)

@@ -249,14 +249,13 @@ func (n *Node) openDatabase(ctx context.Context) error {
 		// it can open: a node answers "do you hold this" from its disk, and is
 		// the only thing that can let go of a copy.
 		databaseService.WithHoldings(stores.holdings),
-		databaseService.WithRegion(n.cfg.Region),
 
 		// THE FLEET AS THIS NODE SEES IT, asked each sweep rather than taken
 		// once: a snapshot at construction would place every database on the
 		// fleet as it was when the process started. A node running no discovery
 		// sees no fleet and moves nothing, which is the honest answer for a
 		// node that cannot tell who else is there.
-		databaseService.WithMembers(func() map[string][]placement.Member {
+		databaseService.WithMembers(func() []placement.Member {
 			if n.discovery == nil {
 				return nil
 			}

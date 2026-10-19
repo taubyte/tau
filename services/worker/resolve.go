@@ -887,17 +887,6 @@ func unservable(reach specs.Reach, target specs.Resource) string {
 			reach.Kind, reach.Label, reach.Tools)
 	}
 
-	// A REGIONS BLOCK NOTHING HERE PLACES IS REFUSED, not served from wherever
-	// the data happens to be. Two things place by region: services/database
-	// for a database, and placement for a kind a tier runs. A cache, a store,
-	// a volume, a queue, or a workflow whose queues those are, has nothing that
-	// keeps it where its author pinned it — and a pin is usually a legal line.
-	if policy := specs.ReadRegions(target).Policy; policy != "" && !placedByRegion(reach.Kind) {
-		return fmt.Sprintf("%s %q is %s to regions, and this cloud does not place a %s by region — "+
-			"served, it would be held wherever the node holding it is",
-			reach.Kind, reach.Label, policy, reach.Kind)
-	}
-
 	// AN `instances:` BLOCK IS NO LONGER A REFUSAL. It was one for as long as
 	// nothing honoured it — the target named who admits an instance and how
 	// many there may be, and serving the grant anyway handed a workload ONE
@@ -1194,13 +1183,6 @@ func settingsOf(w specs.WorkloadBlock) map[string]string {
 // tier runs it BECAUSE this service does, so the tier and the artifact are
 // questions that have no answer rather than questions that failed.
 func servedHere(kind string) bool { return kind == mcpKind }
-
-// placedByRegion is whether something in this cloud honours a kind's `regions`
-// block: services/database for a database, and placement for every kind a tier
-// runs — which is the vocabulary's own list of engines, not a copy of it.
-func placedByRegion(kind string) bool {
-	return kind == databaseKind || len(schema.EnginesOf(kind)) > 0
-}
 
 // runtimeOf says which tier runs this.
 //

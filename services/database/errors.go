@@ -132,9 +132,3 @@ var ErrUnreachable = fmt.Errorf("%w: and it could not be reached", ErrNotHere)
 // form; told this, it asks another voter. Same code on the wire, different
 // sentence and a different place for the next call to land.
 var ErrGroupClosed = fmt.Errorf("%w: this node has closed its raft groups", ErrNotHere)
-
-// ErrOutsideAllowance is a resource pinned to a region its scope does not
-// permit. The compiler's audit reports a widening where a scope declares an
-// allowance to check against; this is the same refusal at the one moment the
-// region names are real, and it is an operator's to fix rather than a caller's.
-var ErrOutsideAllowance = errors.New("database: that region is outside what this scope allows")

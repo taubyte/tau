@@ -81,7 +81,7 @@ func (s *Service) run(ctx context.Context) {
 // reconsider walks this node's copies once.
 func (s *Service) reconsider(ctx context.Context) {
 	floor, known := s.floor.read(ctx)
-	byRegion := s.members()
+	members := s.members()
 
 	short := 0
 	for _, spec := range s.holdings.OnDisk(ctx) {
@@ -90,7 +90,7 @@ func (s *Service) reconsider(ctx context.Context) {
 			return
 		default:
 		}
-		if s.reconsiderOne(ctx, byRegion, spec, floor, known) {
+		if s.reconsiderOne(ctx, members, spec, floor, known) {
 			short++
 		}
 	}
@@ -151,7 +151,7 @@ func (s *Service) reconsiderLedgers(ctx context.Context) {
 
 // reconsiderOne decides about one copy, and reports whether it is below its
 // floor as far as this node can tell.
-func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]placement.Member, spec database.Spec, floor int, known bool) (short bool) {
+func (s *Service) reconsiderOne(ctx context.Context, members []placement.Member, spec database.Spec, floor int, known bool) (short bool) {
 	// THE ADDRESS ROUND-TRIPS THROUGH THE SPEC. Name is what storeName wrote,
 	// so reading it back as the id reproduces the same key and the same prefix.
 	at := address{project: spec.Project, environment: spec.Environment, id: spec.Name}
@@ -185,10 +185,10 @@ func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]place
 		return false
 	}
 
-	desired, keep := moved(at, byRegion, declaration.regions, floor, s.peer, s.region)
+	desired, keep := moved(at, members, floor, s.peer)
 	if keep {
 		// THIS NODE IS ONE OF THE HOLDERS, so it checks the others.
-		return s.repair(ctx, at, byRegion, declaration.regions, floor)
+		return s.repair(ctx, at, members, floor)
 	}
 
 	// ADDITIVE-ONLY UNTIL THE FLOOR IS KNOWN. A node that has never read what
@@ -263,32 +263,23 @@ func (s *Service) reconsiderOne(ctx context.Context, byRegion map[string][]place
 // is a copy it cannot count on. This number is advisory, so erring toward
 // "somebody look at this" is the right direction — unlike release, where the
 // same uncertainty must mean "change nothing".
-func (s *Service) repair(ctx context.Context, at address, byRegion map[string][]placement.Member, regions []string, floor int) (short bool) {
-	for _, region := range placementRegions(regions) {
-		held := 1 // this node
-		others := 0
-		for _, id := range placement.Desired(resourceOf(at), membersIn(byRegion, region), floor) {
-			if id == s.peer {
-				continue
-			}
-			others++
-			answer, err := s.nudge(ctx, id, at)
-			if err == nil && answer.held {
-				held++
-			}
+func (s *Service) repair(ctx context.Context, at address, members []placement.Member, floor int) (short bool) {
+	held := 1 // this node
+	others := 0
+	for _, id := range holders(at, members, floor) {
+		if id == s.peer {
+			continue
 		}
-
-		want := floor
-		if others+1 < want {
-			// The region is smaller than the floor, so the floor is the region
-			// — the same bar release applies, and for the same reason.
-			want = others + 1
-		}
-		if held < want {
-			short = true
+		others++
+		answer, err := s.nudge(ctx, id, at)
+		if err == nil && answer.held {
+			held++
 		}
 	}
-	return short
+
+	// A fleet smaller than the floor is its own bar — the same one release
+	// applies, and for the same reason.
+	return held < min(floor, others+1)
 }
 
 // nudge is the cheap ask: has this peer got the database, and does it keep it.
@@ -308,7 +299,7 @@ func (s *Service) nudge(ctx context.Context, peer string, at address) (keeper, e
 }
 
 // mayGo is this node's own digest, compared against its replacements'.
-func (s *Service) mayGo(ctx context.Context, at address, desired map[string][]string, floor int) bool {
+func (s *Service) mayGo(ctx context.Context, at address, desired []string, floor int) bool {
 	kv, err := s.kv(ctx, at)
 	if err != nil {
 		return false

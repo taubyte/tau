@@ -1059,7 +1059,7 @@ type universe struct {
 //
 // NOTHING BELOW THE HELPERS WAS EVER SINGLE-PROJECT — see publish — so all this
 // adds is a publish per project and a settle barrier that waits for every one
-// of them. The universe, the region, the fleet document and the component are
+// of them. The universe, the fleet document and the component are
 // shared exactly as a real cloud shares them between its tenants.
 func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byte, projects ...deployed) universe {
 	t.Helper()
@@ -1069,11 +1069,7 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 		Services: []string{
 			node.Register, node.Worker, node.Discovery, node.Gateway,
 			node.Database, node.Primitives},
-		// ONE REGION, NAMED, because the project pins its state to it and a
-		// node that cannot say where it is competes for nothing anybody
-		// pinned.
-		Regions: []string{"eu"},
-		Copies:  copies,
+		Copies: copies,
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
@@ -1135,7 +1131,7 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 				waiting = "the fleet document"
 				return false
 			}
-			if len(n.Discovery().Placement()["eu"]) != copies {
+			if len(n.Discovery().Placement()) != copies {
 				waiting = "the placement set"
 				return false
 			}

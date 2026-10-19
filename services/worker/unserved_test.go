@@ -188,3 +188,19 @@ func TestWhatAWorkflowsDriversDoNotDoIsRefused(t *testing.T) {
 	// AND THROUGH THE ONE DOOR A GRANT IS DECIDED AT.
 	require.Contains(t, refusal(workflowKind, specs.Resource{"concurrency": float64(2)}), "runs in flight")
 }
+
+// TestARegionBlockIsNotRead. Placement in this build is one region, so a grant
+// to a resource pinned somewhere is served like any other rather than refused.
+func TestARegionBlockIsNotRead(t *testing.T) {
+	pinned := specs.Resource{"regions": map[string]any{"policy": "pinned", "in": []any{"eu"}}}
+	for _, kind := range []string{cacheKind, storageKind, volumeKind, syncKind, workflowKind, databaseKind, functionKind} {
+		require.Empty(t, unservable(specs.Reach{Kind: kind, Label: "x", Ops: []string{"get"}}, pinned), kind)
+	}
+}
+
+func fixture(t *testing.T) *specs.Project {
+	t.Helper()
+	p, err := specs.Load(compiled(t))
+	require.NoError(t, err)
+	return p
+}

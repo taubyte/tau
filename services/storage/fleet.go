@@ -14,9 +14,9 @@ import (
 // # They are the cloud's numbers, and they used to be each node's config
 //
 // R is the first kind of published number: one every node must compute with
-// identically. Placement takes four inputs and three of them heal — a pin read
-// at an older register revision, a membership view that has not caught up, a
-// region reported a moment ago. R did not. Two nodes configured differently
+// identically. Placement takes three inputs and two of them heal — a declaration
+// read at an older register revision, and a membership view that has not
+// caught up. R did not. Two nodes configured differently
 // computed different desired sets forever, disagreed about which shards each
 // should open at all, and billed a tenant's bytes at whichever node was asked.
 //

@@ -59,7 +59,7 @@ func TestWhatHasNoV2HomeIsReported(t *testing.T) {
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
 	for _, want := range []string{
-		"hosts.host1.location (v2 places by region label, which the cloud config does not carry)",
+		"hosts.host1.location (a v2 node reads no location)",
 		"shapes.shape1.ports.lite",
 		"shapes.shape2.ports.lite",
 		"shapes.shape2.plugins",

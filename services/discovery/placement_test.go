@@ -31,18 +31,15 @@ func TestPlacementIsTheStableSetAndNotTheFreshOne(t *testing.T) {
 		mu.Unlock()
 	}
 
-	s, err := New(newHost(t), Config{Interval: time.Second, Region: "eu"},
+	s, err := New(newHost(t), Config{Interval: time.Second},
 		WithClock(clock), WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{Ready: true})))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
-	for _, n := range []struct{ peer, region string }{
-		{"eu1", "eu"}, {"eu2", "eu"}, {"us1", "us"},
-	} {
-		require.NoError(t, s.view.Observe(stats.Report{
-			Peer: n.peer, Load: 0.1, Ready: true, Region: n.region,
-		}))
-		s.beat(n.peer, 1, true, n.region)
+	peers := []string{"n1", "n2", "n3"}
+	for _, peer := range peers {
+		require.NoError(t, s.view.Observe(stats.Report{Peer: peer, Load: 0.1, Ready: true}))
+		s.beat(peer, 1, true)
 	}
 
 	// A PEER THAT HAS JUST APPEARED OWNS NOTHING YET. It is routable — it
@@ -52,21 +49,17 @@ func TestPlacementIsTheStableSetAndNotTheFreshOne(t *testing.T) {
 	// Kept reporting, it settles, and only then does it enter the placement set.
 	for range 120 {
 		advance(time.Second)
-		for _, n := range []struct{ peer, region string }{
-			{"eu1", "eu"}, {"eu2", "eu"}, {"us1", "us"},
-		} {
-			s.beat(n.peer, 1, true, n.region)
+		for _, peer := range peers {
+			s.beat(peer, 1, true)
 		}
 	}
 
-	at := s.Placement()
-	require.Len(t, at["eu"], 2)
-	require.Len(t, at["us"], 1)
+	require.Len(t, s.Placement(), 3)
 
 	// AND A BLIP DOES NOT MOVE ANYTHING. One missed interval drops a peer out
 	// of the fresh view; the placement set does not notice.
 	advance(3 * time.Second)
-	require.Len(t, s.Placement()["eu"], 2, "a blip moved data")
+	require.Len(t, s.Placement(), 3, "a blip moved data")
 }
 
 // TestTheStabilizeWindowIsTheMinuteFloorUnlessTheConfigSaysOtherwise.
@@ -118,14 +111,14 @@ func TestAConfiguredStabilizeIsWhatPlacementRunsOn(t *testing.T) {
 		return now
 	}
 
-	s, err := New(newHost(t), Config{Interval: time.Second, Stabilize: 10 * time.Second, Region: "eu"},
+	s, err := New(newHost(t), Config{Interval: time.Second, Stabilize: 10 * time.Second},
 		WithClock(clock), WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{Ready: true})))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
 	beat := func() {
-		require.NoError(t, s.view.Observe(stats.Report{Peer: "eu1", Load: 0.1, Ready: true, Region: "eu"}))
-		s.beat("eu1", 1, true, "eu")
+		require.NoError(t, s.view.Observe(stats.Report{Peer: "eu1", Load: 0.1, Ready: true}))
+		s.beat("eu1", 1, true)
 	}
 
 	beat()
@@ -141,5 +134,5 @@ func TestAConfiguredStabilizeIsWhatPlacementRunsOn(t *testing.T) {
 	now = now.Add(time.Second)
 	mu.Unlock()
 	beat()
-	require.Len(t, s.Placement()["eu"], 1, "the configured window elapsed and nothing settled")
+	require.Len(t, s.Placement(), 1, "the configured window elapsed and nothing settled")
 }

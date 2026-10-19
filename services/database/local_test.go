@@ -173,11 +173,9 @@ func TestTheServiceTakesWhatItIsGiven(t *testing.T) {
 	s := local(t,
 		WithSweep(17*time.Second),
 		WithMaxResident(3),
-		WithRegion("eu"),
 		WithClock(func() time.Time { return time.Unix(0, 0) }),
 	)
 
 	require.Equal(t, 17*time.Second, s.sweep)
-	require.Equal(t, "eu", s.region)
 	require.Zero(t, s.Held(), "nothing is open until something is asked for")
 }

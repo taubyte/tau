@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -316,11 +315,6 @@ type Config struct {
 	// Copies is how many nodes. Zero is one.
 	Copies int
 
-	// Regions the nodes are spread across — see regionOf. None is a node in
-	// no region, which is what a single-region universe wants and what every
-	// test that is not about placement gets.
-	Regions []string
-
 	// Container is the daemon the nodes run container workloads on —
 	// node.BackendDocker or node.BackendContainerd — the way a machine's
 	// config names one.
@@ -424,7 +418,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int) error {
 	nodeConfig := node.Config{
 		Services:  append([]string(nil), cfg.Services...),
 		Cloud:     m.Name(),
-		Region:    regionOf(cfg.Regions, index),
 		Container: node.ContainerConfig{Backend: cfg.Container},
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
@@ -488,38 +481,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int) error {
 
 	m.OnClose(closer{id: id, node: n, root: root})
 	return nil
-}
-
-// regionOf is the region the index-th node is in, out of the regions the
-// universe declares.
-//
-// WHICH ONE IS THE COPY INDEX, round-robin over the regions in name order.
-//
-// IT WAS HRW OVER THE PEER ID, and this comment claimed that "spreads evenly"
-// and is "reproducible: the same universe puts the same peer in the same region
-// every run". Neither held. HRW spreads evenly in expectation ACROSS MANY KEYS,
-// and four nodes over two regions is not many: each node is an independent coin
-// flip, so all four land together 2*(1/2)^4 = ONE RUN IN EIGHT. And a universe
-// mints a fresh peer id per run, so "the same peer every run" described a peer
-// that never came back -- the assignment was re-rolled each time, and a spread
-// the placement tests depend on was a 12.5% flake with a real failure behind
-// it.
-//
-// Round-robin over the copy index spreads by construction rather than by
-// expectation, and the regions are sorted so the mapping does not depend on the
-// order a test happened to list them in.
-func regionOf(regions []string, index int) string {
-	var declared []string
-	for _, name := range regions {
-		if name != "" {
-			declared = append(declared, name)
-		}
-	}
-	if len(declared) == 0 {
-		return ""
-	}
-	sort.Strings(declared)
-	return declared[index%len(declared)]
 }
 
 type closer struct {

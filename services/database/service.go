@@ -99,13 +99,12 @@ type Service struct {
 	// to every ask — honest for a node that holds nothing of its own.
 	holdings Holdings
 
-	// members is the fleet a placement runs over, grouped by region. Nil on a
-	// node that cannot see one, which is a node that never moves anything.
-	members func() map[string][]placement.Member
+	// members is the fleet a placement runs over. Nil on a node that cannot
+	// see one, which is a node that never moves anything.
+	members func() []placement.Member
 
-	// peer and region are who this node is in that fleet.
-	peer   string
-	region string
+	// peer is who this node is in that fleet.
+	peer string
 
 	// consensus is what this node can KEEP, which is a narrower question than
 	// what this package implements: a raft database needs a group to be opened
@@ -124,7 +123,7 @@ type Service struct {
 	ledgerMu    sync.Mutex
 	ledgersOpen map[string]address
 
-	// floor is how many nodes hold each database in EACH pinned region, read
+	// floor is how many nodes hold each database, read
 	// from what the cloud published rather than from this node's config.
 	floor *fleetFloor
 
@@ -162,8 +161,7 @@ type options struct {
 	idle     time.Duration
 	holdings Holdings
 
-	members   func() map[string][]placement.Member
-	region    string
+	members   func() []placement.Member
 	sweep     time.Duration
 	consensus []string
 
@@ -171,12 +169,12 @@ type options struct {
 }
 
 // WithMembers is how this node sees the fleet: the member set a placement runs
-// over, grouped by the region each node reports.
+// over.
 //
 // A FUNCTION AND NOT A LIST, because membership changes under the service and a
 // snapshot taken at construction would place every database on the fleet as it
 // was when the process started.
-func WithMembers(members func() map[string][]placement.Member) Option {
+func WithMembers(members func() []placement.Member) Option {
 	return func(o *options) error {
 		o.members = members
 		return nil
@@ -202,15 +200,6 @@ func WithConsensus(kinds ...string) Option {
 			}
 		}
 		o.consensus = append(o.consensus, kinds...)
-		return nil
-	}
-}
-
-// WithRegion is where this node is. Empty means a node that will not say, which
-// competes for nothing anybody pinned.
-func WithRegion(region string) Option {
-	return func(o *options) error {
-		o.region = region
 		return nil
 	}
 }
@@ -343,7 +332,6 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 		holdings:      o.holdings,
 		members:       o.members,
 		peer:          h.ID().String(),
-		region:        o.region,
 		consensus:     consensus,
 		floor:         &fleetFloor{from: fleetFrom(o.source)},
 		sweep:         sweep,

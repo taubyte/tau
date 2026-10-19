@@ -153,8 +153,8 @@ func TestANodePlacementDidNotChooseNeverOpensTheGroup(t *testing.T) {
 	outsider, chosen := services[0], services[1]
 
 	// A fleet of exactly one node, and it is not this one.
-	outsider.members = func() map[string][]placement.Member {
-		return map[string][]placement.Member{"": {{ID: chosen.peer, Accepts: true}}}
+	outsider.members = func() []placement.Member {
+		return []placement.Member{{ID: chosen.peer, Accepts: true}}
 	}
 
 	kvs, err := outsider.Local().OpenKV(t.Context(), ledgerGrant())
@@ -180,8 +180,8 @@ func TestANodeThatCanNameNobodyRefusesRatherThanOpening(t *testing.T) {
 
 	// A fleet whose one member is a node that is not here and cannot be
 	// reached, which is what a membership view mid-change looks like.
-	alone.members = func() map[string][]placement.Member {
-		return map[string][]placement.Member{"": {{ID: "12D3KooWnobodyhomeQmNotAPeerAtAll", Accepts: true}}}
+	alone.members = func() []placement.Member {
+		return []placement.Member{{ID: "12D3KooWnobodyhomeQmNotAPeerAtAll", Accepts: true}}
 	}
 
 	kvs, err := alone.Local().OpenKV(t.Context(), ledgerGrant())
@@ -304,8 +304,8 @@ func TestANodeAnswersALedgerAsAVoterAndNotAsBytesOnDisk(t *testing.T) {
 	// act a later placement answer undoes: a node that has become a voter says
 	// so for as long as it is one, which is the other half of this rule and is
 	// TestAGroupThisNodeOpenedIsStillAnsweredWhenPlacementMovesOn.
-	elsewhere.members = func() map[string][]placement.Member {
-		return map[string][]placement.Member{"": {{ID: asked.peer, Accepts: true}}}
+	elsewhere.members = func() []placement.Member {
+		return []placement.Member{{ID: asked.peer, Accepts: true}}
 	}
 
 	holding = elsewhere.voting(t.Context(), at, declaration)
@@ -329,11 +329,11 @@ func TestANodeWhoseGroupHasNoLeaderAsksTheOtherVoters(t *testing.T) {
 	services, engines := ledgers(t, 2)
 	asking, other := services[0], services[1]
 
-	fleet := func() map[string][]placement.Member {
-		return map[string][]placement.Member{"": {
+	fleet := func() []placement.Member {
+		return []placement.Member{
 			{ID: asking.peer, Accepts: true},
 			{ID: other.peer, Accepts: true},
-		}}
+		}
 	}
 	asking.members, other.members = fleet, fleet
 
@@ -531,8 +531,8 @@ func TestAGroupThisNodeOpenedIsStillAnsweredWhenPlacementMovesOn(t *testing.T) {
 	require.Equal(t, 1, opened, "the node placement chose never opened the group")
 
 	// AND THEN PLACEMENT NAMES SOMEBODY ELSE.
-	leads.members = func() map[string][]placement.Member {
-		return map[string][]placement.Member{"": {{ID: elsewhere.peer, Accepts: true}}}
+	leads.members = func() []placement.Member {
+		return []placement.Member{{ID: elsewhere.peer, Accepts: true}}
 	}
 
 	again, err := leads.Local().OpenKV(t.Context(), ledgerGrant())
@@ -569,11 +569,11 @@ func TestTheSweepKeepsAskingTheOtherVotersAboutALedger(t *testing.T) {
 	services, engines := ledgers(t, 2)
 	opened, other := services[0], services[1]
 
-	fleet := func() map[string][]placement.Member {
-		return map[string][]placement.Member{"": {
+	fleet := func() []placement.Member {
+		return []placement.Member{
 			{ID: opened.peer, Accepts: true},
 			{ID: other.peer, Accepts: true},
-		}}
+		}
 	}
 	opened.members, other.members = fleet, fleet
 
@@ -627,11 +627,11 @@ func TestANodeThatHasClosedItsGroupsSendsTheCallOn(t *testing.T) {
 	services, engines := ledgers(t, 2)
 	leaving, other := services[0], services[1]
 
-	fleet := func() map[string][]placement.Member {
-		return map[string][]placement.Member{"": {
+	fleet := func() []placement.Member {
+		return []placement.Member{
 			{ID: leaving.peer, Accepts: true},
 			{ID: other.peer, Accepts: true},
-		}}
+		}
 	}
 	leaving.members, other.members = fleet, fleet
 

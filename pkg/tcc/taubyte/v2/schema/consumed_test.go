@@ -101,13 +101,18 @@ import (
 
 // # What an excuse can say, and what it cannot
 //
-// An excuse is one of these three:
+// An excuse is one of these four:
 //
 //   - HANDLED. The value is not ignored; it is used somewhere this scan cannot
 //     see. The compile consumed it (a reference's namespace, a lowering's
 //     terms), or the runtime refuses by name the branch that holds it.
 //   - INERT. It asks the cloud to do nothing: a label, an advisory note. There
 //     is nothing for a runtime to apply, so there is nothing to ignore.
+//   - NOT SERVED BY THIS BUILD. A whole concept this build does not have, on
+//     every kind that declares it: placement here is one region and reads no
+//     region, so a `regions` block is accepted and ignored on purpose rather
+//     than served weaker than written. It is a property of the build, not of
+//     any one runtime, which is why it is its own class.
 //   - PREPARATORY, which is said of a KIND and not an attribute: see
 //     preparatoryKinds. Every declaration on it is ignored, and may be, because
 //     the kind has NO RUNTIME AT ALL — no tier runs it and nothing dispatches
@@ -125,6 +130,7 @@ type class int
 const (
 	handled class = iota + 1
 	inert
+	notServed
 )
 
 type excuse struct {
@@ -149,7 +155,7 @@ var (
 
 	streamingStorageRefused = excuse{handled, "the lifetime of a streaming storage's entries. worker refuses any storage whose type is not `object` by name (unservableKind), so this branch's only field is never served weaker than written — it is never served."}
 
-	regionsRefused = excuse{handled, "where a resource's copies go, on a kind nothing places by region. worker reads the block's policy and refuses the grant by name (unservable), so the regions under it are never served weaker than written — the target is not served."}
+	oneRegion = excuse{notServed, "where a resource or a scope is placed across regions. Placement here is one region and reads no region, so the block is accepted and asks this build for nothing."}
 
 	replicationRaftOnly = excuse{handled, "whether a cache keeps a copy on every peer. The vocabulary says it is only a question under raft consensus, because crdt and gossip both put a copy on every peer whatever it says - and worker refuses a raft cache by name (unservableKind), so the one branch where this field decides anything is never served."}
 
@@ -183,24 +189,13 @@ var unread = map[string]excuse{
 
 	"secret/rotation": advisoryRotation,
 
+	"*/regions/policy":  oneRegion,
+	"*/regions/in":      oneRegion,
+	"*/regions/main":    oneRegion,
+	"*/regions/standby": oneRegion,
+
 	"sync/queue/dead_letter/namespace":   deadLetterScopeConsumed,
 	"proxy/certificate/secret/namespace": proxyCertScopeConsumed,
-
-	"cache/regions/in":         regionsRefused,
-	"cache/regions/main":       regionsRefused,
-	"cache/regions/standby":    regionsRefused,
-	"storage/regions/in":       regionsRefused,
-	"storage/regions/main":     regionsRefused,
-	"storage/regions/standby":  regionsRefused,
-	"sync/regions/in":          regionsRefused,
-	"sync/regions/main":        regionsRefused,
-	"sync/regions/standby":     regionsRefused,
-	"volume/regions/in":        regionsRefused,
-	"volume/regions/main":      regionsRefused,
-	"volume/regions/standby":   regionsRefused,
-	"workflow/regions/in":      regionsRefused,
-	"workflow/regions/main":    regionsRefused,
-	"workflow/regions/standby": regionsRefused,
 
 	"cache/replicated":             replicationRaftOnly,
 	"storage/streaming/ttl":        streamingStorageRefused,
@@ -248,9 +243,6 @@ var readers = map[string][]string{
 	// unserved.go is resolve's arm for what a workload declares about itself:
 	// carried to the tier that honours it, or refused by name.
 	"services/worker/unserved.go": everyKind,
-	// regions.go reads the regions block of what a tier runs, for placement to
-	// choose a node by.
-	"services/worker/regions.go": {"application", "function", "sandbox", "worker"},
 	// schedule.go is the cron arm of the same service.
 	"services/worker/schedule.go": {"cron"},
 

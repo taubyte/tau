@@ -75,19 +75,11 @@ func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]stri
 				if !ok {
 					continue
 				}
-				// THE WORKFLOW'S PIN IS TAKEN OFF, and it is the second rewrite
-				// that has to be. The fixture pins `checkout` to eu, and nothing
-				// in this cloud places a workflow's queues by region — so the
-				// start grant is refused by name (worker's unservable), which is
-				// right and is tested there. What this test runs is a pipeline,
-				// not a placement.
-				//
-				// SO ARE ITS RUN CEILING AND ITS STEPS' SELECTORS, for the same
-				// reason: a driver hands on the whole message, and nothing
-				// counts runs, so worker refuses the start by name over each
+				// THE WORKFLOW'S RUN CEILING AND ITS STEPS' SELECTORS ARE TAKEN
+				// OFF: a driver hands on the whole message, and nothing counts
+				// runs, so worker refuses the start by name over each
 				// (unservableWorkflow). What this test runs is the hand-on.
 				if kind == "workflow" {
-					delete(res, "regions")
 					delete(res, "concurrency")
 					steps, _ := res["steps"].([]any)
 					for _, s := range steps {

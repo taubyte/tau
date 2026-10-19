@@ -297,7 +297,7 @@ func (d *sporedrive) ignoredFields(hostName string, droppedServices []string) []
 	}
 
 	if lat, lng := p.Hosts().Host(hostName).Location(); lat != 0 || lng != 0 {
-		out = append(out, "hosts."+hostName+".location (v2 places by region label, which the cloud config does not carry)")
+		out = append(out, "hosts."+hostName+".location (a v2 node reads no location)")
 	}
 	for _, shape := range p.Hosts().Host(hostName).Shapes().List() {
 		for _, port := range p.Shapes().Shape(shape).Ports().List() {

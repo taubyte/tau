@@ -17,9 +17,8 @@ import (
 // Placement moves a database by having one node stop holding it and another
 // start. "Another node is alive and should hold this" is NOT the same statement
 // as "another node HAS this", and the gap between them is where the data goes:
-// a region goes dark, an operator repins elsewhere to restore service, the
-// region comes back, reads the new placement, and drops the only copies there
-// ever were — because the new holders were alive the whole time and never
+// the holders go dark, membership moves the database elsewhere, the old holders
+// come back, read the new placement, and drop the only copies there ever were — because the new holders were alive the whole time and never
 // received a row, their source having been down.
 //
 // So a departing node asks, and compares. Equal digests mean the other node

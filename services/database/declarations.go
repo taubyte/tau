@@ -44,11 +44,6 @@ type declared struct {
 	// size is the ceiling the author declared, in bytes. Zero means none was
 	// written, which the vocabulary only allows for a connector.
 	size int64
-
-	// regions is where this database's copies go, already resolved: what the
-	// resource's own region block declared, bounded by what its environment
-	// allows. placement.go is asked about these and nothing else.
-	regions []string
 }
 
 // served is what this service implements today.
@@ -173,20 +168,6 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	// network attacker as the server.
 	out.spec.Credentials.TLS = !block.plaintext
 
-	// WHERE IT LIVES IS THE RESOURCE'S OWN STATEMENT, bounded by its
-	// environment's. Reading it here and not on the grant is the same rule the
-	// file doc gives for size and consensus: a caller that described the
-	// database could describe a different one.
-	// A RESOURCE'S OWN REGIONS, and where it sits when it declares none: the
-	// scope's `regions`, which is the same word, the same plural, and the
-	// allowance all at once. Nothing lowered it into the resource, so this is
-	// the walk up rather than a read of a copy — and a resource placed by
-	// neither is one the audit already calls Broken.
-	region := placedOf(db.Regions)
-	if out.regions, err = region.regions(ref, project.Allowance(ref.environment)); err != nil {
-		return declared{}, fmt.Errorf("%s: %w", ref.id, err)
-	}
-
 	// PER-MODEL DECLARATIONS TRAVEL AS OPTIONS. A vector's width and metric mean
 	// nothing to the other three.
 	if n := db.Vector.Dimensions; model == specs.DatabaseTypeVector && n != nil {
@@ -241,14 +222,4 @@ func (d *declared) option(name, value string) {
 		d.spec.Options = map[string]string{}
 	}
 	d.spec.Options[name] = value
-}
-
-// placedOf reads a resource's own placement block.
-func placedOf(r specs.Regions) placed {
-	return placed{
-		policy:  r.Policy,
-		in:      r.In,
-		main:    r.Main,
-		standby: r.Standby,
-	}
 }

@@ -22,18 +22,17 @@ import (
 // # Nobody agrees about placement, and that is fine
 //
 // holds() is deterministic, not agreed: same inputs, same answer, with no
-// coordination. But the inputs are four PER-NODE views — the floor, the pin at
-// a register revision, a freshness-filtered membership, and a self-reported
-// region — so two nodes can and do compute different desired sets.
+// coordination. But the inputs are PER-NODE views — the floor, the declaration
+// at a register revision, and a freshness-filtered membership — so two nodes
+// can and do compute different desired sets.
 //
 // Membership divergence alone cannot produce a cycle. If P is desired by A and
-// A is not, P outranks A; symmetrically A outranks P; contradiction. The other
-// three CAN: a pin that moved between revisions, two nodes relabelled inside
-// one freshness window, or two nodes draining at once — which is just a rolling
-// restart — each leave both nodes computing the other desired, both converged,
-// and both dropping.
+// A is not, P outranks A; symmetrically A outranks P; contradiction. The others
+// CAN: a floor that moved between revisions, or two nodes draining at once —
+// which is just a rolling restart — each leave both nodes computing the other
+// desired, both converged, and both dropping.
 //
-// ONE RULE CLOSES ALL THREE: a keeper counts only if it answers `keeps` — its
+// ONE RULE CLOSES THEM: a keeper counts only if it answers `keeps` — its
 // OWN holds() from its own inputs, decided under the same lock as its own
 // release. In every cycle each node is releasing BECAUSE it computed itself not
 // desired, so it answers keeps=false and the other stays. No two nodes have to
@@ -63,9 +62,9 @@ type digester func(ctx context.Context, peer string, at address) (keeper, error)
 // IT IS THE ONLY THING THAT MAY AUTHORISE A DELETE ON A MOVE, and the argument
 // for it is a failure it prevents rather than a property it has:
 //
-//	eu goes dark; an operator repins to us to restore service; us nodes are
-//	alive and are now the desired holders, but their source is down so they
-//	receive nothing; eu comes back, reads the new placement, and drops the
+//	the holders go dark; membership moves the database to other nodes, which
+//	are alive and now desired, but their source is down so they receive
+//	nothing; the old holders come back, read the new placement, and drop the
 //	only copies that ever existed.
 //
 // So this asks. Equal digests mean that node holds the same keys with the same
@@ -75,67 +74,42 @@ type digester func(ctx context.Context, peer string, at address) (keeper, error)
 // A NODE THAT CANNOT BE REACHED HAS NOT CONVERGED. An error is not a maybe: the
 // answer to "may I delete the data" defaults to no, every time, for every reason.
 //
-// PER REGION, because that is what a pin means. A database pinned to eu and us
-// has copies in BOTH and the floor is how many in EACH, so an eu node that lost
-// its eu slot must not leave on the strength of two converged us keepers while
-// its actual replacement in eu has not synced. A pinned region no node serves
-// requires nothing — it is already the refusal placement.go returns empty for —
-// but a desired set that is empty EVERYWHERE is not a move at all.
-func release(ctx context.Context, at address, keys uint64, sum []byte, desired map[string][]string, replication int, ask digester) bool {
-	total := 0
-	for _, peers := range desired {
-		total += len(peers)
-	}
-	if total == 0 {
-		// NOBODY IS SUPPOSED TO HOLD THIS, which is not a move — it is a
-		// database whose regions no node serves, and placement.go returns that
-		// empty rather than filling it from elsewhere. Letting go here would
-		// delete a copy that nothing is replacing.
+// THE BAR IS THE FLOOR, or every replacement when fewer exist: requiring the
+// floor where the fleet holds fewer nodes than that is a bar nothing can clear,
+// and the copy would be held forever.
+func release(ctx context.Context, at address, keys uint64, sum []byte, desired []string, replication int, ask digester) bool {
+	if len(desired) == 0 {
+		// NOBODY ELSE IS SUPPOSED TO HOLD THIS, which is not a move. Letting go
+		// here would delete a copy that nothing is replacing.
 		return false
 	}
 
-	for _, peers := range desired {
-		want := replication
-		if len(peers) < want {
-			// THE REGION IS ITS OWN BAR WHEN IT IS SMALLER. Requiring the floor
-			// where the region holds fewer nodes than that is a bar nothing can
-			// clear, and the copy would be held forever.
-			want = len(peers)
+	want := min(replication, len(desired))
+	converged := 0
+	for _, peer := range desired {
+		answer, err := ask(ctx, peer, at)
+		if err != nil {
+			continue
 		}
-
-		converged := 0
-		for _, peer := range peers {
-			answer, err := ask(ctx, peer, at)
-			if err != nil {
-				continue
-			}
-			if answer.held && answer.keeps && answer.keys == keys && bytes.Equal(answer.sum, sum) {
-				converged++
-			}
-		}
-		if converged < want {
-			return false
+		if answer.held && answer.keeps && answer.keys == keys && bytes.Equal(answer.sum, sum) {
+			converged++
 		}
 	}
-	return true
+	return converged >= want
 }
 
-// moved reports whether this node should still hold a database, and who should,
-// BY REGION — because the bar release applies is per region.
+// moved reports whether this node should still hold a database, and who should.
 //
-// The desired sets EXCLUDE this node: a node comparing its digest against its
+// The desired set EXCLUDES this node: a node comparing its digest against its
 // own would converge with itself and let go.
-func moved(at address, byRegion map[string][]placement.Member, regions []string, replication int, me, region string) (desired map[string][]string, keep bool) {
-	if holds(at, byRegion, regions, replication, me, region) {
+func moved(at address, members []placement.Member, replication int, me string) (desired []string, keep bool) {
+	if holds(at, members, replication, me) {
 		return nil, true
 	}
 
-	desired = map[string][]string{}
-	for _, pinned := range placementRegions(regions) {
-		for _, id := range placement.Desired(resourceOf(at), membersIn(byRegion, pinned), replication) {
-			if id != me {
-				desired[pinned] = append(desired[pinned], id)
-			}
+	for _, id := range holders(at, members, replication) {
+		if id != me {
+			desired = append(desired, id)
 		}
 	}
 	return desired, false

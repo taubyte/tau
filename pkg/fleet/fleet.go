@@ -38,19 +38,17 @@ var ErrMalformed = errors.New("fleet: this document cannot be read")
 
 // Fleet is the operator's statement about the cloud.
 type Fleet struct {
-	// Replication is the floor on how many nodes hold each database, in EACH
-	// region it is pinned to. Zero means the reader's default.
+	// Replication is the floor on how many nodes hold each database. Zero
+	// means the reader's default.
 	//
 	// AN OPERATOR'S NUMBER AND NEVER AN AUTHOR'S: it is how many machines this
 	// cloud can afford to lose, and an author writing it per database would be
-	// spending somebody else's hardware. What an author controls is the regions
-	// — which multiply it.
+	// spending somebody else's hardware.
 	Replication int `json:"replication,omitempty"`
 
 	// Storage is what the cloud promises about objects. It is NOT Replication
 	// under another name and must never be collapsed into it: that floor is
-	// per pinned region and multiplies by them, this one is per shard over one
-	// global member set — and the two buy different things with different
+	// per database, this one is per shard over one global member set — and the two buy different things with different
 	// money, kv rows against object bytes.
 	//
 	// omitzero AND NOT omitempty, because omitempty has never omitted a struct
