@@ -360,15 +360,35 @@ func publish(t *testing.T, pids []string, at deployed, components artifacts) []*
 		nodes = append(nodes, nodeOf(t, id))
 	}
 
+	// CUT AS A DEPLOY CUTS IT: one view per region the Regions serves, and each node
+	// reads its own region's. Publishing the whole object uncut would let a node serve
+	// what is placed somewhere else.
+	var flat map[string]any
+	require.NoError(t, json.Unmarshal(compiled, &flat))
 	_, err := nodes[0].Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: at.project, Environment: "prod", Revision: 1,
-		Compiled: compiled, Hosts: []string{at.host},
+		Compiled: compiled, Hosts: []string{at.host}, Views: cutFor(t, flat, regions),
 	})
 	require.NoError(t, err)
 
 	out := make([]*running, 0, len(nodes))
 	for _, n := range nodes {
 		out = append(out, &running{node: n, host: at.host, object: obj})
+	}
+	return out
+}
+
+// cutFor is the views a deploy publishes for a compiled project, one per region the
+// Regions serves.
+func cutFor(t *testing.T, flat map[string]any, regions schema.Regions) []pkgregister.View {
+	t.Helper()
+	views, _, err := schema.Views(flat, schema.WithRegions(regions))
+	require.NoError(t, err)
+	out := make([]pkgregister.View, 0, len(views))
+	for region, v := range views {
+		b, err := json.Marshal(v.Object)
+		require.NoError(t, err)
+		out = append(out, pkgregister.View{Destination: region, Compiled: b})
 	}
 	return out
 }

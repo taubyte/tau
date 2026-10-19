@@ -1,0 +1,5 @@
+id: QmPZVNdFnq1vBqWQ56rTHJkFUuA16uBpHUZSDzLToCVdVz
+description: says nothing about where it runs, so every region holds it
+size: 1MB
+ttl: 1h
+consensus: crdt

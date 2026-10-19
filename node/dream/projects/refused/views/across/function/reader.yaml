@@ -1,0 +1,17 @@
+id: QmSSumLpvBM8vHPASQuwdRwi1YyuXTwdR3opsg5VqzowuH
+description: runs in us, and reaches the cache in eu
+source: services/reader
+build:
+    commands:
+        image: rust:1.83
+        run: cargo build --release --target wasm32-wasip2
+        output: target/wasm32-wasip2/release/reader.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MB
+regions:
+    pinned: [us]
+cache:
+    sessions_eu:
+        ops: [get]

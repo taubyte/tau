@@ -1,0 +1,14 @@
+id: QmdfHasko25A7PymGC1oYenVhzbtoNBx7D3GY1GMYBZJhj
+description: places nothing of its own - it is held wherever what it routes to is
+host:
+    zone:
+        in:
+            name: example_com
+        name: regional
+route:
+    path: /
+    match: prefix
+    methods: [GET, POST]
+    handler:
+        function:
+            name: hello
