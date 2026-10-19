@@ -5,6 +5,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/utils/id"
 
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
@@ -79,6 +80,11 @@ func (h *projectHandler) Create(ctx context.Context, req *connect.Request[authv2
 	codeKey, err := parseRepoKey(req.Msg.GetCodeRepositoryKey())
 	if err != nil {
 		return nil, errInvalidArgument("code_repository_key: %w", err)
+	}
+	for _, key := range []repokey.Key{configKey, codeKey} {
+		if err := h.s.tenancy.Refuse(key); err != nil {
+			return nil, errPermissionDenied("%w", err)
+		}
 	}
 
 	projectID := id.Generate(name, configKey.String(), codeKey.String())

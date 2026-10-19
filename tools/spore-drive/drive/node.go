@@ -15,6 +15,7 @@ import (
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/pkg/tenancy"
 	"github.com/taubyte/tau/tools/spore-drive/config"
 	"github.com/taubyte/tau/utils"
 )
@@ -238,6 +239,10 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 	}
 
 	added := p.Added()
+	served, err := tenancy.Parse(p.Tenancy())
+	if err != nil {
+		return nil, fmt.Errorf("tenancy.yaml: %w", err)
+	}
 	mainPort := int(p.Shapes().Shape(primary).Ports().Get("main"))
 	key := hc.Shapes().Instance(primary).Key()
 
@@ -254,6 +259,9 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 				// service decodes its own entry; a node built without one
 				// refuses the entry by name.
 				Added: added,
+				// The tenancy is cloud-wide: every node carries it, and the
+				// ones that register, link or build a repository apply it.
+				Tenancy: served.Namespaces(),
 			},
 			Listen:     []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port)},
 			Announce:   announce,
@@ -314,6 +322,7 @@ func (d *sporedrive) ignoredFields(hostName string, droppedServices []string) []
 		out = append(out, "service "+svc)
 	}
 	add(len(p.Cloud().Domain().Hosts()) > 0, "cloud.domain.hosts")
+	add(p.TenancyApp(), "tenancy.app (a v2 node checks the namespace, not membership)")
 	return out
 }
 

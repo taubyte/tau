@@ -11,6 +11,8 @@ type Parser interface {
 	Shapes() ShapesParser
 	Auth() AuthParser
 	Added() map[string]any
+	Tenancy() []string
+	TenancyApp() bool
 	Sync() error
 }
 
@@ -59,3 +61,35 @@ func (p *parser) Added() map[string]any {
 	p.Get("added").Document().Value(&m)
 	return m
 }
+
+// Tenancy is the forge namespaces the cloud serves, from tenancy.yaml, each as
+// host/namespace. The file names them under `namespaces`, and the one-owner
+// form — `provider` (github, gitlab, or a forge host) and `owner` — is one
+// more. Nothing here canonicalises: the node does, and refuses a malformed
+// entry by name.
+func (p *parser) Tenancy() []string {
+	doc := p.Get("tenancy").Document()
+	var out []string
+	doc.Get("namespaces").Value(&out)
+	var provider, owner string
+	doc.Get("provider").Value(&provider)
+	doc.Get("owner").Value(&owner)
+	if owner != "" {
+		host, known := publicForges[provider]
+		if !known {
+			host = provider
+		}
+		out = append(out, host+"/"+owner)
+	}
+	return out
+}
+
+// TenancyApp reports whether tenancy.yaml carries an app credential, which no
+// v2 node reads.
+func (p *parser) TenancyApp() bool {
+	var app map[string]any
+	p.Get("tenancy").Document().Get("app").Value(&app)
+	return len(app) > 0
+}
+
+var publicForges = map[string]string{"github": "github.com", "gitlab": "gitlab.com"}

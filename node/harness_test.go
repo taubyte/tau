@@ -162,6 +162,40 @@ func (k *memKV) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+// Batch applies its writes on Commit, all at once.
+func (k *memKV) Batch(context.Context) (kvdb.Batch, error) { return &memBatch{kv: k}, nil }
+
+type memBatch struct {
+	kv   *memKV
+	puts map[string][]byte
+	dels []string
+}
+
+func (b *memBatch) Put(key string, v []byte) error {
+	if b.puts == nil {
+		b.puts = map[string][]byte{}
+	}
+	b.puts[key] = v
+	return nil
+}
+
+func (b *memBatch) Delete(key string) error {
+	b.dels = append(b.dels, key)
+	return nil
+}
+
+func (b *memBatch) Commit() error {
+	b.kv.mu.Lock()
+	defer b.kv.mu.Unlock()
+	for key, v := range b.puts {
+		b.kv.rows[datastoreKey(key)] = v
+	}
+	for _, key := range b.dels {
+		delete(b.kv.rows, datastoreKey(key))
+	}
+	return nil
+}
+
 func (k *memKV) Close() {
 	k.factory.mu.Lock()
 	k.factory.closed++

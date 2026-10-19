@@ -147,6 +147,9 @@ func (s *Service) writesAny(ctx context.Context, token string, keys []string) er
 // 404 a denial is: the caller holds the repository, and what they lack is
 // something they can go and get.
 func (s *Service) admit(ctx context.Context, token string, key repokey.Key) error {
+	if err := s.tenancy.Refuse(key); err != nil {
+		return problem(http.StatusForbidden, err.Error())
+	}
 	if s.admissions == nil {
 		return nil
 	}

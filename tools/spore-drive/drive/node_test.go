@@ -166,3 +166,40 @@ func TestNodesIsThePlanOfOneHost(t *testing.T) {
 	_, err = driveFor(p).Nodes("host1")
 	assert.ErrorContains(t, err, "gatewya")
 }
+
+// TestTheTenancyReachesEveryNode, canonical, in both of the file's forms, and
+// an app credential no node reads is reported.
+func TestTheTenancyReachesEveryNode(t *testing.T) {
+	fs, p := fixtures.VirtConfig()
+	assert.NilError(t, afero.WriteFile(fs, "/tenancy.yaml", []byte("provider: github\nowner: Acme\nnamespaces: [GitLab.example.com/Team]\napp:\n    client-id: x\n"), 0600))
+	p, err := config.New(fs, "/")
+	assert.NilError(t, err)
+
+	nodes, err := driveFor(p).nodesFor("host1")
+	assert.NilError(t, err)
+	assert.Assert(t, len(nodes.instances) == 2)
+	for _, inst := range nodes.instances {
+		assert.DeepEqual(t, inst.file.Node.Tenancy, []string{"github.com/acme", "gitlab.example.com/team"})
+	}
+	assert.Assert(t, slices.Contains(nodes.ignored, "tenancy.app (a v2 node checks the namespace, not membership)"))
+
+	assert.NilError(t, afero.WriteFile(fs, "/tenancy.yaml", []byte("provider: git.internal:8443\nowner: ops\n"), 0600))
+	p, err = config.New(fs, "/")
+	assert.NilError(t, err)
+	nodes, err = driveFor(p).nodesFor("host1")
+	assert.NilError(t, err)
+	assert.DeepEqual(t, nodes.instances[0].file.Node.Tenancy, []string{"git.internal:8443/ops"})
+
+	assert.NilError(t, afero.WriteFile(fs, "/tenancy.yaml", []byte("namespaces: [acme]\n"), 0600))
+	p, err = config.New(fs, "/")
+	assert.NilError(t, err)
+	_, err = driveFor(p).nodesFor("host1")
+	assert.ErrorContains(t, err, "tenancy.yaml")
+}
+
+func TestNoTenancyFileServesEverything(t *testing.T) {
+	_, p := fixtures.VirtConfig()
+	nodes, err := driveFor(p).nodesFor("host1")
+	assert.NilError(t, err)
+	assert.Assert(t, nodes.instances[0].file.Node.Tenancy == nil)
+}

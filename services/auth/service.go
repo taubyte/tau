@@ -17,6 +17,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/tenancy"
 )
 
 // Service is auth's whole state: the host it answers on, the store it was
@@ -28,6 +29,10 @@ type Service struct {
 
 	// identity decides admission; see identity.go.
 	identity Identity
+
+	// tenancy is which forge namespaces a repository may be registered or
+	// linked under. The zero value serves all of them.
+	tenancy tenancy.Tenancy
 
 	serverOptions []rpc.ServerOption
 
@@ -46,6 +51,15 @@ type Service struct {
 // would share (service-conventions.md §1's complaint about
 // v1's services/patrick/service.go's BootstrapTime and friends).
 type Option func(*Service) error
+
+// WithTenancy limits the repositories Register and project Create accept to
+// the namespaces t serves. Without it, every repository a caller names.
+func WithTenancy(t tenancy.Tenancy) Option {
+	return func(s *Service) error {
+		s.tenancy = t
+		return nil
+	}
+}
 
 // WithServerOptions passes p2p/rpc.ServerOption values through to
 // rpc.Listen in Start — WithPrefaceTimeout, WithHTTPServer, and whatever

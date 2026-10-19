@@ -91,6 +91,9 @@ func (h *repositoryHandler) Register(ctx context.Context, req *connect.Request[a
 	if err != nil {
 		return nil, errInvalidArgument("repository_key: %w", err)
 	}
+	if err := h.s.tenancy.Refuse(key); err != nil {
+		return nil, errPermissionDenied("%w", err)
+	}
 
 	who, err := caller(ctx)
 	if err != nil {

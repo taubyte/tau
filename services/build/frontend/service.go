@@ -11,6 +11,7 @@ import (
 	"time"
 
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/tenancy"
 )
 
 // Service is build's public half: an http.Server, a mux, and the four
@@ -32,6 +33,7 @@ type Service struct {
 	identity   Identity
 	admissions Admissions
 	vault      Vault
+	tenancy    tenancy.Tenancy
 	cfg        Config
 
 	now    func() time.Time
@@ -75,6 +77,7 @@ type options struct {
 	identity   Identity
 	admissions Admissions
 	vault      Vault
+	tenancy    tenancy.Tenancy
 
 	tune func(*http.Server)
 	now  func() time.Time
@@ -162,6 +165,15 @@ func WithAdmissions(a Admissions) Option {
 			return errors.New("build: a nil admissions")
 		}
 		o.admissions = a
+		return nil
+	}
+}
+
+// WithTenancy limits the repositories this cloud builds and answers for to the
+// namespaces t serves. Without it, every repository a forge grants.
+func WithTenancy(t tenancy.Tenancy) Option {
+	return func(o *options) error {
+		o.tenancy = t
 		return nil
 	}
 }
@@ -261,6 +273,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		identity:   o.identity,
 		admissions: o.admissions,
 		vault:      o.vault,
+		tenancy:    o.tenancy,
 		cfg:        effective,
 		tune:       o.tune,
 		now:        o.now,

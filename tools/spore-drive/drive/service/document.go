@@ -26,7 +26,7 @@ import (
 // notRead are documents of the on-disk layout a v2 node has no use for. They
 // are accepted and reported, never refused: a config written for v1 keeps
 // loading.
-var notRead = []string{"accounts.yaml", "tenancy.yaml"}
+var notRead = []string{"accounts.yaml"}
 
 // load writes a document into a fresh in-memory tree and parses it.
 func load(doc *pb.Document) (afero.Fs, config.Parser, error) {

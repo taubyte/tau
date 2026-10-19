@@ -219,12 +219,11 @@ func TestWhatADocumentCannotBe(t *testing.T) {
 // TestDocumentsNoV2NodeReadsAreReportedNotRefused.
 func TestDocumentsNoV2NodeReadsAreReportedNotRefused(t *testing.T) {
 	_, c := serve(t, nil)
-	doc := with(with(acdz(t), "accounts.yaml", "session-ttl: 168h\n"), "tenancy.yaml", "provider: github\n")
+	doc := with(acdz(t), "accounts.yaml", "session-ttl: 168h\n")
 	res, err := c.Validate(context.Background(), connect.NewRequest(&pb.ValidateRequest{Document: doc}))
 	assert.NilError(t, err)
 	assert.DeepEqual(t, res.Msg.Errors, []string(nil))
 	assert.Assert(t, slices.Contains(res.Msg.Ignored, "accounts.yaml (no v2 node reads it)"))
-	assert.Assert(t, slices.Contains(res.Msg.Ignored, "tenancy.yaml (no v2 node reads it)"))
 }
 
 func TestPlanTakesItsShapesAndConcurrency(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/tenancy"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/artifact"
@@ -166,7 +167,11 @@ func (n *Node) openAuth() error {
 			"Put a pair in the config to keep them.")
 	}
 
-	var authOptions []authService.Option
+	served, err := tenancy.Parse(n.cfg.Tenancy)
+	if err != nil {
+		return err
+	}
+	authOptions := []authService.Option{authService.WithTenancy(served)}
 	identity, err := n.identityOption()
 	if err != nil {
 		return err
@@ -332,6 +337,10 @@ func (n *Node) openBuildFrontend() error {
 	// THE PROVIDER IS THE IDENTITY. Whether a caller may act on a repository is
 	// that repository's host's answer and never this cloud's, which is what
 	// keeps a token this cloud has not stored from becoming one it has.
+	served, err := tenancy.Parse(n.cfg.Tenancy)
+	if err != nil {
+		return err
+	}
 	registry, err := forges(n.cfg.Forges)
 	if err != nil {
 		return err
@@ -355,6 +364,7 @@ func (n *Node) openBuildFrontend() error {
 		frontend.WithBackend(builds),
 		frontend.WithIdentity(forges),
 		frontend.WithDeliveries(forges),
+		frontend.WithTenancy(served),
 	}
 	// THE PUBLIC ROLE NEVER HOLDS A VAULT ITSELF. It is the one process a
 	// stranger reaches, and withDefaults already refuses it running the

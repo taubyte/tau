@@ -14,6 +14,7 @@ import (
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/pkg/tenancy"
 	auth "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/backend"
@@ -95,6 +96,13 @@ type Config struct {
 	// or bridged by a stray peer, must not pool their load figures and route
 	// each other's traffic.
 	Cloud string
+
+	// Tenancy are the forge namespaces this cloud serves, each written
+	// host/namespace ("github.com/acme"). A repository outside them is
+	// refused by name wherever one is registered, linked to a project or
+	// built; empty serves whatever the forges grant. Entries are
+	// canonicalised (lowercased) at construction. See pkg/tenancy.
+	Tenancy []string
 
 	// Forges are the git hosts this cloud serves, and the driver for each.
 	// Empty means DefaultForges. See forge.go.
@@ -382,6 +390,11 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 	if slices.Contains(c.Services, BuildFrontend) && slices.Contains(c.Services, BuildBackend) {
 		return Config{}, ErrBothHalves
 	}
+	served, err := tenancy.Parse(c.Tenancy)
+	if err != nil {
+		return Config{}, fmt.Errorf("node: %w", err)
+	}
+	c.Tenancy = served.Namespaces()
 	for name := range c.Added {
 		if !slices.Contains(added, name) {
 			return Config{}, fmt.Errorf("node: there is configuration for %q, which is not a service added to this node; it adds %v", name, added)
