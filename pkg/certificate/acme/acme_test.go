@@ -64,6 +64,11 @@ func loopbackResolver(t *testing.T) string {
 func newCloud(t *testing.T, eab map[string]string) *cloud {
 	t.Helper()
 	t.Setenv("PEBBLE_VA_NOSLEEP", "1")
+	// NO NONCE IS REJECTED: pebble refuses 5% of good nonces by default, and each
+	// refusal costs the client an exponential backoff of up to ten seconds, so a
+	// run that drew a few spent its whole wait on them. Retrying a bad nonce is the
+	// ACME client's job, not what these tests are about.
+	t.Setenv("PEBBLE_WFE_NONCEREJECT", "0")
 	// EVERY ORDER IS PROVED: pebble otherwise reuses a valid authorization at
 	// random, so whether a renewal reaches the challenge would be chance.
 	t.Setenv("PEBBLE_AUTHZREUSE", "0")
