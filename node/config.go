@@ -184,6 +184,8 @@ type options struct {
 	extra     []Service
 	identity  func(Host) (auth.Identity, error)
 	regions   schema.Regions
+	// destination is the region whose views this node reads; see AsDestination.
+	destination string
 
 	// terminates says whatever serves Handler serves it over TLS too, with
 	// TLSConfig. See WithTLS.

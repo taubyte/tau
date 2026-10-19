@@ -527,6 +527,22 @@ func (n *Node) publisher(ctx context.Context) (deploy.Register, error) {
 	return n.registers.Now(ctx)
 }
 
+// AsDestination is the region whose views this node reads: every project it serves is
+// read as that region's view of it, and nothing placed elsewhere reaches it.
+//
+// WITHOUT IT THE NODE READS schema.DefaultRegion, the one destination of a build with no
+// regions — so an OSS node reads the view a deploy published for it with no region in
+// its configuration at all. A build serving several regions says which this node is.
+func AsDestination(region string) Option {
+	return func(o *options) error {
+		if region == "" {
+			return errors.New("node: a destination with no name")
+		}
+		o.destination = region
+		return nil
+	}
+}
+
 // WithRegions is what this node's deploys answer about where a project runs. Without
 // it a deploy reads no regions (schema.NoRegion): everything is placed in
 // schema.DefaultRegion, and any region a project names is said.

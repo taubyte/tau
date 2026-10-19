@@ -46,6 +46,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -121,6 +122,7 @@ type Builder interface {
 // then publish.
 type Register interface {
 	Resolve(ctx context.Context, project, environment string) (register.Pointer, error)
+	ResolveView(ctx context.Context, project, environment, destination string) (register.ViewPointer, error)
 	Publish(ctx context.Context, p register.Publication) (register.ObjectID, error)
 }
 
@@ -227,6 +229,7 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 		name    string
 		bytes   []byte
 		project *specs.Project
+		views   []register.View
 	}
 	plan := make([]compiled, 0, len(names))
 	for _, name := range names {
@@ -234,10 +237,11 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 		if err != nil {
 			return err
 		}
-		if err := d.place(flat, name, out); err != nil {
+		views, err := d.cut(flat, name, out)
+		if err != nil {
 			return err
 		}
-		plan = append(plan, compiled{name: name, bytes: bytes, project: p})
+		plan = append(plan, compiled{name: name, bytes: bytes, project: p, views: views})
 		say(out, "compiled %s", name)
 	}
 
@@ -249,7 +253,7 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 	for _, c := range plan {
 		hosts, incomplete := hostsOf(c.project, d.cloudFqdn)
 
-		object, revision, unchanged, err := d.put(ctx, r, w.ProjectID, c.name, c.bytes, hosts)
+		object, revision, unchanged, err := d.put(ctx, r, w.ProjectID, c.name, c.bytes, c.views, hosts)
 		if err != nil {
 			return err
 		}
@@ -276,13 +280,17 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 // nothing this deployment reads produces the same object id, and moving the
 // pointer for it would churn every reader to say the same thing.
 func (d *Deploy) put(ctx context.Context, r Register, projectID, environment string,
-	compiled []byte, hosts []string) (register.ObjectID, uint64, bool, error) {
+	compiled []byte, views []register.View, hosts []string) (register.ObjectID, uint64, bool, error) {
 
 	var revision uint64
 	current, err := r.Resolve(ctx, projectID, environment)
 	switch {
 	case err == nil:
-		if current.Object == register.IDOf(compiled) {
+		same, err := sameViews(ctx, r, projectID, environment, views)
+		if err != nil {
+			return "", 0, false, err
+		}
+		if current.Object == register.IDOf(compiled) && same {
 			return current.Object, current.Revision, true, nil
 		}
 		revision = current.Revision + 1
@@ -298,6 +306,7 @@ func (d *Deploy) put(ctx context.Context, r Register, projectID, environment str
 		Revision:    revision,
 		Compiled:    compiled,
 		Hosts:       hosts,
+		Views:       views,
 	})
 	if err != nil {
 		return "", 0, false, err
@@ -384,26 +393,70 @@ func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *specs.Pr
 	return compiled, p, flat, nil
 }
 
-// place asks this cloud's Regions where a compiled deployment runs, and says what it
-// answered.
+// cut asks this cloud's Regions where a compiled deployment runs, and cuts it into one
+// view per region it serves — what each region reads, and nothing it would filter out.
 //
-// A PLACEMENT THIS CLOUD CANNOT HONOUR IS REFUSED BEFORE ANYTHING PUBLISHES, exactly as
-// a compile error is: a resource with nowhere to run is a deployment that half works.
-// Everything short of that is said in the build log, so a region a project names and
-// this cloud does not serve is never silently dropped.
-func (d *Deploy) place(flat map[string]any, environment string, out backend.Output) error {
+// WHAT CANNOT BE CUT IS REFUSED BEFORE ANYTHING PUBLISHES, exactly as a compile error
+// is: a resource with nowhere to run, or one reaching across regions to something held
+// only in another, is a deployment that half works. Everything short of that is said in
+// the build log, so a region a project names and this cloud does not serve is never
+// silently dropped.
+func (d *Deploy) cut(flat map[string]any, environment string, out backend.Output) ([]register.View, error) {
+	views, findings, err := schema.Views(flat, schema.WithRegions(d.regions), schema.AuditIn(environment))
 	var refused []string
-	for _, f := range schema.Place(flat, schema.WithRegions(d.regions), schema.AuditIn(environment)) {
+	for _, f := range findings {
 		if f.Severity == schema.Broken {
 			refused = append(refused, f.String())
 			continue
 		}
 		say(out, "%s: %s", environment, f)
 	}
-	if len(refused) > 0 {
-		return fmt.Errorf("%w: %s: %s", ErrUnplaced, environment, strings.Join(refused, "; "))
+	if len(refused) > 0 || err != nil {
+		if len(refused) == 0 {
+			refused = append(refused, err.Error())
+		}
+		return nil, fmt.Errorf("%w: %s: %s", ErrUnplaced, environment, strings.Join(refused, "; "))
 	}
-	return nil
+
+	regions := make([]string, 0, len(views))
+	for region := range views {
+		regions = append(regions, region)
+	}
+	sort.Strings(regions)
+	cut := make([]register.View, 0, len(regions))
+	for _, region := range regions {
+		v := views[region]
+		b, err := json.Marshal(v.Object)
+		if err != nil {
+			return nil, fmt.Errorf("deploy: %w", err)
+		}
+		cut = append(cut, register.View{Destination: region, Compiled: b})
+		if v.Empty() {
+			say(out, "%s in %s: nothing placed", environment, region)
+		} else {
+			say(out, "%s in %s: %d resources", environment, region, len(v.Roles))
+		}
+	}
+	return cut, nil
+}
+
+// sameViews is whether every view of a deployment is what is already published, so a
+// push that changed nothing any region reads moves no pointer — and a change in what
+// this cloud serves, with the object the same, still does.
+func sameViews(ctx context.Context, r Register, projectID, environment string, views []register.View) (bool, error) {
+	for _, v := range views {
+		current, err := r.ResolveView(ctx, projectID, environment, v.Destination)
+		switch {
+		case errors.Is(err, register.ErrNoView), errors.Is(err, register.ErrNotPublished):
+			return false, nil
+		case err != nil:
+			return false, fmt.Errorf("deploy: reading what %s/%s holds in %s: %w", projectID, environment, v.Destination, err)
+		}
+		if current.Object != register.IDOf(v.Compiled) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // hostsOf is the fully-qualified names a deployment answers on, and the

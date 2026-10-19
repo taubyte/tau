@@ -61,6 +61,7 @@ import (
 
 	manet "github.com/multiformats/go-multiaddr/net"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 
@@ -1208,12 +1209,22 @@ var (
 	_ gateway.Hosts     = (*source)(nil)
 )
 
+// Resolve is what this node runs of a deployment: its destination's VIEW, so every
+// consumer reading through the cache holds only what is placed where this node is.
 func (s *source) Resolve(ctx context.Context, name, environment string) (pkgregister.Pointer, error) {
 	c, err := s.client(ctx)
 	if err != nil {
 		return pkgregister.Pointer{}, err
 	}
-	return c.Resolve(ctx, name, environment)
+	return pkgregister.InRegion(c, s.node.destination()).Resolve(ctx, name, environment)
+}
+
+// destination is the region whose views this node reads.
+func (n *Node) destination() string {
+	if n.opts.destination != "" {
+		return n.opts.destination
+	}
+	return schema.DefaultRegion
 }
 
 func (s *source) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {

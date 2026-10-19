@@ -601,3 +601,14 @@ func TestWithRegions(t *testing.T) {
 	require.NoError(t, WithRegions(schema.NoRegion())(&o))
 	require.Equal(t, schema.NoRegion(), o.regions)
 }
+
+// WHICH VIEW A NODE READS: its destination's, DefaultRegion unless it is told another —
+// so an OSS node needs no region in its configuration to read the one view its deploy
+// published.
+func TestAsDestination(t *testing.T) {
+	var o options
+	require.Error(t, AsDestination("")(&o))
+	require.Equal(t, schema.DefaultRegion, (&Node{opts: o}).destination())
+	require.NoError(t, AsDestination("eu")(&o))
+	require.Equal(t, "eu", (&Node{opts: o}).destination())
+}

@@ -44,6 +44,7 @@ var ErrNoRegister = errors.New("node: no register is reachable")
 // it: nothing this composition wires is allowed to deploy.
 type registerReader interface {
 	Resolve(ctx context.Context, project, environment string) (pkgregister.Pointer, error)
+	ResolveView(ctx context.Context, project, environment, destination string) (pkgregister.ViewPointer, error)
 	Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error)
 	ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error)
 }
