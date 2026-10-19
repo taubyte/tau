@@ -89,18 +89,19 @@
 //
 // # What it deliberately does not do
 //
-// It does not run a build. Runner, Work, Output and Assets are the seam, and
-// the reason is not effort: v2 has no tns schema to publish a compiled config
-// to, and reaching for v1's clients would import the cbor stack v2 exists to
-// leave. Everything around the run — idempotency, claiming, attempts,
-// cancellation, the before..after anchor, the log a viewer can follow and the
-// cids of what a run produced — ships now, so the runner is a drop-in.
+// It does not run a build itself. Runner, Work, Output and Assets are the
+// seam, and the node supplies the runner: services/build/deploy compiles the
+// pushed config, builds what it declares through services/build/artifact, and
+// publishes to the register (node/build.go). What this package owns is
+// everything around the run — idempotency, claiming, attempts, cancellation,
+// the before..after anchor, the log a viewer can follow and the cids of what a
+// run produced — so a runner never has to.
 //
-// It does not STORE the bytes either. Assets (config.go) is the seam onto v2's
-// storage service — v1's hoarder — which is not written yet, and what a real
-// implementation owes it is written down there rather than guessed at here. A
-// node without one still builds; its logs are followable while the build runs
-// and gone afterwards, and its jobs carry no cids.
+// It does not STORE the bytes either. Assets (config.go) is the seam onto the
+// node's asset store, which the node hands it (node/build.go), and what an
+// implementation owes it is written down there. A node without one still
+// builds; its logs are followable while the build runs and gone afterwards,
+// and its jobs carry no cids.
 //
 // # A log is a file, and only its cid is replicated
 //

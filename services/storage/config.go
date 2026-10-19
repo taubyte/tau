@@ -141,10 +141,10 @@ type Datastore interface {
 var _ Datastore = (*kvdb.Datastore)(nil)
 
 // Catalog is which buckets this cloud declares. It is the compiled config,
-// reached through an interface because THE CONFIG SERVICE DOES NOT EXIST:
-// services/build/backend/doc.go names the same gap for itself — "no tns schema
-// to publish a compiled config to". Declaring the dependency makes it explicit
-// rather than blocking, and it is what shard.go asks "does this shard hold
+// which the register holds — reached through an interface so this package does
+// not depend on it, and so a node that supplies no catalog runs rather than
+// blocks. Nothing in the node supplies one yet. Declaring the dependency makes
+// it explicit, and it is what shard.go asks "does this shard hold
 // anything" so a three-node dev cloud with five buckets opens five topics and
 // not two hundred and fifty-six.
 type Catalog interface {
