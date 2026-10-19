@@ -9,6 +9,7 @@ import {
   makeBinding,
   type CompileOptions,
   type CompileResult,
+  type ViewsOptions,
   type WasmAssets,
   type Kind,
 } from "./loader.js";
@@ -25,7 +26,7 @@ export * from "./gen/schema.js";
 export async function compile(
   fs: AsyncFs,
   dir: string,
-  opts: CompileOptions = {},
+  opts: ViewsOptions = {},
   assets?: WasmAssets,
 ): Promise<CompileResult> {
   const tcc = await loadWasm(assets);

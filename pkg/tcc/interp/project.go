@@ -37,18 +37,8 @@ import (
 // answers true for, plus the scopes they sit in. root is the shape the object was
 // compiled to — the lowered one, for a vocabulary that lowers.
 func Project(root *engine.Node, flat map[string]any, holds func(id string) bool) map[string]any {
-	groups := map[string]bool{}
-	for _, g := range root.Children {
-		if key, _ := g.Match.(string); key != "" {
-			groups[key] = true
-		}
-	}
-	containers := map[string]bool{}
-	for _, key := range ContainerKeys(root) {
-		containers[key] = true
-	}
-
-	p := projector{root: root, groups: groups, containers: containers, holds: holds, dropped: map[string]bool{}}
+	p := newProjector(root)
+	p.holds = holds
 
 	out := make(map[string]any, len(flat))
 	for key, val := range flat {
@@ -78,15 +68,7 @@ func Project(root *engine.Node, flat map[string]any, holds func(id string) bool)
 // Held is every resource and scope id a compiled object holds, sorted, walked the way
 // Project walks it — so a projection's Held is exactly what its destination received.
 func Held(root *engine.Node, flat map[string]any) []string {
-	p := projector{root: root, groups: map[string]bool{}, containers: map[string]bool{}}
-	for _, g := range root.Children {
-		if key, _ := g.Match.(string); key != "" {
-			p.groups[key] = true
-		}
-	}
-	for _, key := range ContainerKeys(root) {
-		p.containers[key] = true
-	}
+	p := newProjector(root)
 	var out []string
 	p.holds = func(id string) bool { out = append(out, id); return true }
 	if project, ok := flat[ProjectKey].(map[string]any); ok {
@@ -94,6 +76,28 @@ func Held(root *engine.Node, flat map[string]any) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// newProjector reads which groups hold resources, and which of those are scopes.
+//
+// A GROUP THAT DECLARES NO RESOURCE IS CONFIGURATION, not something a destination
+// holds: an entry under it is a setting of whatever it sits in — a table of
+// deployments, say — and it travels with that, whole.
+func newProjector(root *engine.Node) projector {
+	p := projector{root: root, groups: map[string]bool{}, containers: map[string]bool{}, dropped: map[string]bool{}}
+	for _, key := range ContainerKeys(root) {
+		p.containers[key] = true
+	}
+	for _, g := range root.Children {
+		key, _ := g.Match.(string)
+		if key == "" || len(g.Children) == 0 {
+			continue
+		}
+		if _, ok := g.Children[0].Meta["resource"].([4]string); ok || p.containers[key] {
+			p.groups[key] = true
+		}
+	}
+	return p
 }
 
 type projector struct {

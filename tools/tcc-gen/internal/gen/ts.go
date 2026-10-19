@@ -497,6 +497,8 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 		`  SessionBinding,` + "\n" +
 		`  CompileOptions,` + "\n" +
 		`  CompileResult,` + "\n" +
+		`  ViewsOptions,` + "\n" +
+		`  ViewsResult,` + "\n" +
 		`  Validation,` + "\n" +
 		`  Kind,` + "\n" +
 		`  FieldIssue,` + "\n" +
@@ -601,6 +603,9 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 	}
 	b.WriteString("  compile(opts?: CompileOptions): Promise<CompileResult> {\n    return this.binding.compile(this.handle, opts);\n  }\n")
 	b.WriteString("  validate(opts?: CompileOptions): Promise<Validation[]> {\n    return this.binding.validate(this.handle, opts);\n  }\n")
+	// views() is the compile cut one view per region — the cut a deploy publishes —
+	// with the canonical object beside it.
+	b.WriteString("  views(opts?: ViewsOptions): Promise<ViewsResult> {\n    return this.binding.views(this.handle, opts);\n  }\n")
 	b.WriteString("  save(fs: AsyncFs, dir: string): Promise<void> {\n    return this.binding.save(this.handle, fs, dir);\n  }\n")
 	// fork() returns a copy-on-write child Session; edit + validate it, then
 	// merge() to adopt its changes onto this one, or close() to discard.

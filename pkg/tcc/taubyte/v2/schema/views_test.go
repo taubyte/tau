@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mr-tron/base58"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -308,4 +309,82 @@ func TestAnEnvironmentNarrowsItsViews(t *testing.T) {
 			require.Len(t, views[region].Roles, n, "%s in %s", env, region)
 		}
 	}
+}
+
+// THROUGH THE SESSION, which is how a CLI, a console and the explorer ask: the same
+// views, the canonical object beside them, and the environment bound the way a deploy
+// binds it.
+func TestTheSessionAsksForTheSameViews(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	for path, body := range map[string]string{
+		"/project.yaml": regionsProject +
+			"environments:\n    production:\n        branches: [main]\n        regions: [us]\n" +
+			"    preview:\n        branches: [\"*\"]\n",
+		"/cache/c.yaml": regionsCache("size_preview: 2MB\n"),
+	} {
+		require.NoError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
+	}
+
+	s, err := schema.NewSession(fs, "/")
+	require.NoError(t, err)
+	_, err = s.Views(context.Background(), schema.CompileOptions{Branch: "main"})
+	require.ErrorIs(t, err, schema.ErrUnviewable, "the default build has no regions, and production names one")
+
+	s, err = schema.NewSessionIn(fs, "/", schema.TryOneRegion())
+	require.NoError(t, err)
+	got, err := s.Views(context.Background(), schema.CompileOptions{Branch: "main"})
+	require.NoError(t, err)
+	require.Len(t, got.Views, 1)
+	require.Equal(t, schema.DefaultRegion, got.Views[0].Destination)
+	require.Equal(t, got.Canonical.Flat(), got.Views[0].Object)
+
+	s, err = schema.NewSessionIn(fs, "/", several{"eu", "us"})
+	require.NoError(t, err)
+	got, err = s.Views(context.Background(), schema.CompileOptions{Branch: "main", Environment: "production"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"eu", "us"}, []string{got.Views[0].Destination, got.Views[1].Destination})
+	require.True(t, got.Views[0].Empty())
+	require.Equal(t, map[string]string{cidOfCache: "anywhere"}, got.Views[1].Roles)
+
+	got, err = s.Views(context.Background(), schema.CompileOptions{Branch: "main", Environment: "preview"})
+	require.NoError(t, err)
+	size := got.Views[0].Object["object"].(map[string]any)["cache"].(map[string]any)[cidOfCache].(map[string]any)["size"]
+	require.EqualValues(t, 2000000, size, "compiled for preview")
+
+	require.NoError(t, afero.WriteFile(fs, "/cache/c.yaml", []byte(regionsCache("regions:\n    pinned: [ap]\n")), 0o644))
+	s, err = schema.NewSessionIn(fs, "/", several{"eu"})
+	require.NoError(t, err)
+	got, err = s.Views(context.Background(), schema.CompileOptions{Branch: "main"})
+	require.ErrorIs(t, err, schema.ErrUnviewable)
+	require.NotEmpty(t, got.Notes)
+	require.Equal(t, "broken", got.Notes[0].Severity)
+}
+
+const cidOfCache = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB"
+
+// A PREVIEW SHOWS THE REGIONS IT IS GIVEN AND REFUSES NOTHING: what a tool offers
+// before any cloud is chosen, from the regions the project itself names.
+func TestAPreviewOfTheRegionsTheProjectNames(t *testing.T) {
+	flat := compileDocs(t, "", map[string]string{
+		"/project.yaml":    regionsProject + "regions: [eu, us, ap]\n",
+		"/cache/pin.yaml":  viewCache("pin", "regions:\n    pinned: [eu]\n"),
+		"/cache/ha.yaml":   viewCache("ha", "regions:\n    failover:\n        main: us\n        standby: mars\n"),
+		"/cache/edge.yaml": viewCache("edge", "regions:\n    cdn: [ap]\n"),
+	})
+	named := schema.RegionsNamed(flat)
+	require.Equal(t, []string{"ap", "eu", "mars", "us"}, named)
+
+	views, findings, err := schema.Views(flat, schema.WithRegions(schema.Preview("eu", "us", "ap", "eu", "")))
+	require.NoError(t, err)
+	require.Equal(t, []string{`cache/ha: is placed in region "mars", which this preview does not show`}, findingsTitled(findings, schema.Check))
+	require.Equal(t, schema.RoleSeed, views["ap"].Roles[cidFor("cache/edge")])
+	require.Equal(t, schema.RoleDemand, views["eu"].Roles[cidFor("cache/edge")])
+	require.Equal(t, schema.RoleMain, views["us"].Roles[cidFor("cache/ha")])
+	require.Len(t, views, 3)
+
+	require.Equal(t, []schema.Concern{{schema.Check, `allows region "mars", which this preview does not show`, "This preview shows eu."}},
+		schema.Preview("eu").Allow([]string{"eu", "mars"}))
+	require.Nil(t, schema.Preview("eu").Allow([]string{"eu"}))
+	require.Equal(t, "This preview shows no regions.", schema.Preview().Allow([]string{"x"})[0].Detail)
+	require.Equal(t, []string{"us"}, schema.Preview("eu", "us").Place(schema.Placement{Allowed: []string{"us"}}).In)
 }

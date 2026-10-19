@@ -27,7 +27,8 @@ func projectionRoot() *engine.Node {
 		Attributes: []*engine.Attribute{{Name: "id", Validator: isID}, {Name: "name"}},
 		Children:   []*engine.Node{res("fn"), res("db")},
 	}}}
-	root := mkRoot(res("fn"), res("db"), scope)
+	settings := mkGroup("settings", []*engine.Attribute{{Name: "branches"}}, nil)
+	root := mkRoot(res("fn"), res("db"), scope, settings)
 	root.Meta = map[string]any{"identity": [2]string{"id", "name"}}
 	return root
 }
@@ -36,6 +37,7 @@ func projectionObject() map[string]any {
 	return map[string]any{
 		ProjectKey: map[string]any{
 			"id": "QmP", "name": "p",
+			"settings": map[string]any{"prod": map[string]any{"branches": []any{"main"}}},
 			"fn": map[string]any{
 				"QmF1": map[string]any{"name": "a", "db": map[string]any{"orders": map[string]any{"ops": []any{"get"}}}},
 				"QmF2": map[string]any{"name": "b"},
@@ -113,7 +115,7 @@ func TestAProjectionOfNothingKeepsOnlyTheProject(t *testing.T) {
 	root, flat := projectionRoot(), projectionObject()
 	got := Project(root, flat, func(string) bool { return false })
 	project := got[ProjectKey].(map[string]any)
-	require.Equal(t, []string{"id", "name"}, keys(project))
+	require.Equal(t, []string{"id", "name", "settings"}, keys(project), "a group that declares no resource is configuration")
 	require.Empty(t, Held(root, got))
 	require.Equal(t, map[string]any{"projects/QmP/hole": []string{}, "projects/QmP/other": 42}, got[IndexesKey])
 

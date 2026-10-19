@@ -71,6 +71,7 @@ func main() {
 	api.Set("sessionDelete", js.FuncOf(sessionDeleteFn))
 	api.Set("sessionList", js.FuncOf(sessionListFn))
 	api.Set("sessionCompile", js.FuncOf(sessionCompileFn))
+	api.Set("sessionViews", js.FuncOf(sessionViewsFn))
 	api.Set("sessionValidate", js.FuncOf(sessionValidateFn))
 	api.Set("sessionValidateField", js.FuncOf(sessionValidateFieldFn))
 	api.Set("sessionValidateResource", js.FuncOf(sessionValidateResourceFn))
@@ -327,6 +328,14 @@ func compileFn(_ js.Value, args []js.Value) any {
 		})
 	}
 	out["relations"] = rels
+
+	// ONE VIEW PER REGION, cut from what RUNS — the same cut a deploy publishes. The
+	// page picks a region and draws what that region holds.
+	var opts js.Value
+	if len(args) > 1 {
+		opts = args[1]
+	}
+	out["views"] = viewsResult(lowered, "", regionsFrom(opts, lowered))
 
 	// ALWAYS PRESENT, EMPTY WHEN THERE ARE NONE. The client declares validations as a
 	// list, not an optional one, so omitting the key made a clean compile the case

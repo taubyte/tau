@@ -26,7 +26,7 @@ import (
 // CompilerFor builds a compiler over an afero filesystem for the given compile
 // parameters. The schema package supplies the Taubyte binding; the session never
 // imports schema, keeping the dependency one-way.
-type CompilerFor func(fs afero.Fs, branch, cloud string) (*interp.Compiler, error)
+type CompilerFor func(fs afero.Fs, opts CompileOptions) (*interp.Compiler, error)
 
 // FieldValidator runs a DSL's declared single-value field validators (enum, string
 // shape, cid, fqdn, ...) for partial validation — no compile. Injected by the
@@ -155,6 +155,9 @@ type Bindings struct {
 	Completer      Completer
 	Layout         Layout
 	Generator      Generator
+	// Viewer cuts a compiled configuration into the views its destinations hold. Unset,
+	// a session has one view, the whole configuration.
+	Viewer Viewer
 }
 
 // CompileOptions are the per-compile parameters (empty Branch uses the compiler's
@@ -162,6 +165,9 @@ type Bindings struct {
 type CompileOptions struct {
 	Branch string
 	Cloud  string
+	// Environment is the deployment compiled for, when the DSL compiles per
+	// deployment; empty compiles the bare keys.
+	Environment string
 }
 
 // Session is an editable configuration, resident on a private in-memory
@@ -372,7 +378,7 @@ func (s *Session) compiler(opts CompileOptions) (*interp.Compiler, error) {
 	if err := s.seer.Sync(); err != nil {
 		return nil, err
 	}
-	return s.bind.CompilerFor(s.fs, opts.Branch, opts.Cloud)
+	return s.bind.CompilerFor(s.fs, opts)
 }
 
 // ValidateField checks one field of a resource against value WITHOUT compiling —

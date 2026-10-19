@@ -447,3 +447,29 @@ test("decompile a compiled object into an editable session", async () => {
   assert.equal((recompiled.object.function as any)[FN_ID].execution.memory, 128000000);
   await session.close();
 });
+
+test("views: the build with no regions is one view of the whole project; a preview cuts by region", async () => {
+  // The fixture names regions, so the strict build refuses it and says why…
+  const strict = await compile(fixtureFs(), "/", { branch: "main" });
+  assert.ok(strict.views?.refused, "a project naming regions is refused by the build with none");
+  assert.equal(strict.views?.views, undefined);
+
+  // …the lenient one holds everything in `default`…
+  const lenient = await compile(fixtureFs(), "/", { branch: "main", regions: "lenient" });
+  assert.deepEqual(lenient.views?.destinations, ["default"]);
+  const one = lenient.views!.views!.default;
+  assert.equal(one.empty, false);
+  assert.deepEqual(Object.keys((one.object as any).object.function).sort(), Object.keys((lenient.object as any).function).sort());
+
+  // …and a session asks for the same cut, with the canonical object beside it.
+  const session = await open(fixtureFs(), "/");
+  const viewed = await session.views({ branch: "main", regions: "lenient" });
+  assert.deepEqual(Object.keys(viewed.views!), ["default"]);
+  assert.ok(viewed.canonical, "the whole object travels with the views");
+
+  // A preview of the regions it names refuses an edge across them, by name.
+  const named = await session.views({ branch: "main", regions: "named" });
+  assert.deepEqual(named.destinations, named.named);
+  assert.match(named.refused ?? "", /reaches workflow\/checkout, which is not placed in/);
+  assert.ok(named.notes.some((n) => n.severity === "broken"));
+});

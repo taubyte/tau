@@ -9,7 +9,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func noCompiler(afero.Fs, string, string) (*interp.Compiler, error) {
+func noCompiler(afero.Fs, CompileOptions) (*interp.Compiler, error) {
 	return nil, errors.New("compiler not needed in this test")
 }
 

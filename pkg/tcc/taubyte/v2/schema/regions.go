@@ -301,3 +301,104 @@ func stringAt(m map[string]any, key string) string {
 	s, _ := m[key].(string)
 	return s
 }
+
+// Preview is the Regions of no build at all: an author's look at how a project would
+// be cut across the regions named, for tooling that shows views before any cloud is
+// chosen. It places like a cloud that has exactly those regions — what says nothing
+// runs wherever its ceiling allows, a cdn wherever it is seeded and may follow demand —
+// and it never refuses: a region outside the list is a Check, because a preview has no
+// authority to say a region does not exist.
+//
+// A BUILD NEVER USES IT. Which regions a cloud serves is the cloud's to say, and the
+// one that says it is whatever the build composes; this is what an explorer passes
+// when the question is "what would each region hold".
+func Preview(regions ...string) Regions {
+	p := preview{}
+	for _, r := range regions {
+		if r != "" && !slices.Contains(p.regions, r) {
+			p.regions = append(p.regions, r)
+		}
+	}
+	return p
+}
+
+type preview struct{ regions []string }
+
+func (p preview) Serves() []string { return slices.Clone(p.regions) }
+
+func (p preview) Place(pl Placement) Answer {
+	var a Answer
+	if other := p.outside(pl.Named()); len(other) > 0 {
+		a.Concerns = []Concern{{Check, fmt.Sprintf("is placed in %s, which this preview does not show", quoted(other)), p.shows()}}
+	}
+	from := p.regions
+	if pl.Allowed != nil {
+		from = pl.Allowed
+	}
+	switch {
+	case pl.Policy == "cdn":
+		from = append(slices.Clone(pl.In), from...)
+	case len(pl.Named()) > 0:
+		from = pl.Named()
+	}
+	for _, r := range from {
+		if slices.Contains(p.regions, r) && !slices.Contains(a.In, r) {
+			a.In = append(a.In, r)
+		}
+	}
+	return a
+}
+
+func (p preview) Allow(regions []string) []Concern {
+	if other := p.outside(regions); len(other) > 0 {
+		return []Concern{{Check, fmt.Sprintf("allows %s, which this preview does not show", quoted(other)), p.shows()}}
+	}
+	return nil
+}
+
+func (p preview) outside(regions []string) []string {
+	var out []string
+	for _, r := range regions {
+		if !slices.Contains(p.regions, r) && !slices.Contains(out, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (p preview) shows() string {
+	if len(p.regions) == 0 {
+		return "This preview shows no regions."
+	}
+	return "This preview shows " + strings.Join(p.regions, ", ") + "."
+}
+
+// RegionsNamed is every region a compiled project names anywhere — a scope's or an
+// environment's allowance, a resource's placement — sorted: what a preview offers to
+// show when nobody has said which regions a cloud has.
+func RegionsNamed(obj map[string]any) []string {
+	root := projectOf(obj)
+	seen := map[string]bool{}
+	add := func(rs ...string) {
+		for _, r := range rs {
+			if r != "" {
+				seen[r] = true
+			}
+		}
+	}
+	for _, s := range scopeAllowances(root) {
+		add(s.regions...)
+	}
+	for _, env := range EnvironmentsIn(root) {
+		add(env.Regions...)
+	}
+	for _, res := range collect(root, "") {
+		add(placementOf(res, nil, nil).Named()...)
+	}
+	out := make([]string, 0, len(seen))
+	for r := range seen {
+		out = append(out, r)
+	}
+	sort.Strings(out)
+	return out
+}

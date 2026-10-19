@@ -30,11 +30,42 @@ type (
 // binding, so both were silently true here.
 //
 // Completer is the one that stays unset, and deliberately — see v2FieldValidator.
-var bindings = session.Bindings{
-	CompilerFor:    v2CompilerFor,
-	FieldValidator: v2FieldValidator{},
-	Layout:         v2Layout{},
-	Generator:      v2Generator{},
+var bindings = bindingsIn(nil)
+
+// bindingsIn is the bindings with the Regions a session's views are cut by; nil is
+// NoRegion's, which is one view of everything.
+func bindingsIn(r Regions) session.Bindings {
+	return session.Bindings{
+		CompilerFor:    v2CompilerFor,
+		FieldValidator: v2FieldValidator{},
+		Layout:         v2Layout{},
+		Generator:      v2Generator{},
+		Viewer:         v2Viewer{regions: r},
+	}
+}
+
+// v2Viewer is Views, as the session asks for it.
+type v2Viewer struct{ regions Regions }
+
+func (v v2Viewer) Views(flat map[string]any, environment string) ([]session.View, []session.Note, error) {
+	views, findings, err := Views(flat, WithRegions(v.regions), AuditIn(environment))
+	notes := make([]session.Note, 0, len(findings))
+	for _, f := range findings {
+		notes = append(notes, session.Note{Severity: string(f.Severity), Kind: f.Kind, Name: f.Name,
+			Scope: f.Scope, ID: f.ID, Title: f.Title, Detail: f.Detail})
+	}
+	if err != nil {
+		return nil, notes, err
+	}
+	out := make([]session.View, 0, len(views))
+	for _, view := range views {
+		roles := make(map[string]string, len(view.Roles))
+		for id, role := range view.Roles {
+			roles[id] = string(role)
+		}
+		out = append(out, session.View{Destination: view.Region, Object: view.Object, Roles: roles})
+	}
+	return out, notes, nil
 }
 
 // v2FieldValidator runs this vocabulary's declared per-value checks — the same ones the
@@ -180,14 +211,32 @@ func (v2Generator) Generate(kind string, seed ...any) (string, error) {
 // resource can ask what it becomes, with the same address and nothing new to learn.
 func NewSession(fs afero.Fs, dir string) (*Session, error) { return session.New(fs, dir, bindings) }
 
+// NewSessionIn is NewSession whose views are cut by the Regions given — what a build
+// serving those regions would publish.
+func NewSessionIn(fs afero.Fs, dir string, r Regions) (*Session, error) {
+	return session.New(fs, dir, bindingsIn(r))
+}
+
 // AdoptSession opens a session directly over fs (no copy), for a caller that already
 // owns a private filesystem.
 func AdoptSession(fs afero.Fs) (*Session, error) { return session.Adopt(fs, bindings) }
 
-func v2CompilerFor(fs afero.Fs, branch, _ string) (*interp.Compiler, error) {
+func v2CompilerFor(fs afero.Fs, o session.CompileOptions) (*interp.Compiler, error) {
 	opts := []Option{WithVirtual(fs, "/")}
-	if branch != "" {
-		opts = append(opts, WithBranch(branch))
+	if o.Branch != "" {
+		opts = append(opts, WithBranch(o.Branch))
+	}
+	// THE WHOLE TABLE IS DECLARED, the way deploy compiles: one document carries every
+	// deployment's spelling, so a suffix is a field and not a typo, bound or not.
+	declared, err := EnvironmentsOf(fs, "/")
+	if err != nil {
+		return nil, err
+	}
+	if len(declared) > 0 {
+		opts = append(opts, WithEnvironments(EnvironmentNames(declared)...))
+	}
+	if o.Environment != "" {
+		opts = append(opts, WithEnvironment(o.Environment))
 	}
 	return New(opts...)
 }

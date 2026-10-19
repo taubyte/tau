@@ -6,6 +6,8 @@ import type {
   SessionBinding,
   CompileOptions,
   CompileResult,
+  ViewsOptions,
+  ViewsResult,
   Validation,
   Kind,
   FieldIssue,
@@ -270,6 +272,9 @@ export class Session {
   }
   validate(opts?: CompileOptions): Promise<Validation[]> {
     return this.binding.validate(this.handle, opts);
+  }
+  views(opts?: ViewsOptions): Promise<ViewsResult> {
+    return this.binding.views(this.handle, opts);
   }
   save(fs: AsyncFs, dir: string): Promise<void> {
     return this.binding.save(this.handle, fs, dir);

@@ -205,6 +205,9 @@ func compileOpts(args []js.Value, optIdx int) schema.CompileOptions {
 		if v := args[optIdx].Get("cloud"); v.Truthy() {
 			o.Cloud = v.String()
 		}
+		if v := args[optIdx].Get("environment"); v.Truthy() {
+			o.Environment = v.String()
+		}
 	}
 	return o
 }

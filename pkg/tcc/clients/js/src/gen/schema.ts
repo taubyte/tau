@@ -6,6 +6,8 @@ import type {
   SessionBinding,
   CompileOptions,
   CompileResult,
+  ViewsOptions,
+  ViewsResult,
   Validation,
   Kind,
   FieldIssue,
@@ -16,19 +18,19 @@ import type { AsyncFs } from "../fs.js";
 export type ApplicationKind = "image" | "git";
 export type ApplicationReadinessKind = "http" | "function";
 export type ApplicationLivenessKind = "http" | "function";
-export type ApplicationRegionPolicy = "auto" | "cdn" | "failover";
+export type ApplicationRegionsPolicy = "pinned" | "cdn" | "failover";
 export type ApplicationBuildKind = "dockerfile";
 export type FunctionKind = "component" | "builtin" | "git";
-export type FunctionRegionPolicy = "auto" | "cdn" | "failover";
+export type FunctionRegionsPolicy = "pinned" | "cdn" | "failover";
 export type FunctionBuildKind = "commands" | "script";
-export type FunctionImplements = "handler" | "authorizer" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
+export type FunctionImplements = "handler" | "authorizer" | "http-authorizer" | "dns-resolver" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
 export type WorkerKind = "component" | "builtin" | "git" | "image";
-export type WorkerRegionPolicy = "auto" | "cdn" | "failover";
+export type WorkerRegionsPolicy = "pinned" | "cdn" | "failover";
 export type WorkerBuildKind = "commands" | "script" | "dockerfile";
-export type WorkerImplements = "handler" | "authorizer" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
+export type WorkerImplements = "handler" | "authorizer" | "http-authorizer" | "dns-resolver" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
 export type WorkerRuntime = "wasm" | "container";
 export type SandboxKind = "image" | "git";
-export type SandboxRegionPolicy = "auto" | "cdn" | "failover";
+export type SandboxRegionsPolicy = "pinned" | "cdn" | "failover";
 export type SandboxBuildKind = "dockerfile";
 export type CronOn_overlap = "skip" | "queue" | "allow";
 export type ComponentKind = "git";
@@ -37,7 +39,7 @@ export type WebsiteKind = "git";
 export type WebsiteBuildKind = "commands" | "script";
 export type WebsiteMode = "static" | "spa";
 export type CacheInstancesAdmission = "validator";
-export type CacheRegionPolicy = "auto" | "cdn" | "failover";
+export type CacheRegionsPolicy = "pinned" | "cdn" | "failover";
 export type CacheConsensus = "raft" | "crdt" | "gossip";
 export type DatabaseType = "kv" | "document" | "sql" | "vector";
 export type DatabaseKvEngine = "distributed";
@@ -45,7 +47,7 @@ export type DatabaseDocumentEngine = "distributed" | "mongo";
 export type DatabaseSqlEngine = "distributed" | "postgres" | "mysql";
 export type DatabaseVectorEngine = "distributed";
 export type DatabaseInstancesAdmission = "validator";
-export type DatabaseRegionPolicy = "auto" | "cdn" | "failover";
+export type DatabaseRegionsPolicy = "pinned" | "cdn" | "failover";
 export type DatabaseKvConsensus = "crdt" | "raft";
 export type DatabaseDocumentConsensus = "crdt" | "raft";
 export type DatabaseDocumentTls = "verify-full" | "require" | "disable";
@@ -55,39 +57,37 @@ export type DatabaseVectorConsensus = "crdt" | "raft";
 export type DatabaseMetric = "cosine" | "dot" | "euclidean";
 export type StorageType = "object" | "streaming";
 export type StorageInstancesAdmission = "validator";
-export type StorageRegionPolicy = "auto" | "cdn" | "failover";
-export type VolumeRegionPolicy = "auto" | "cdn" | "failover";
+export type StorageRegionsPolicy = "pinned" | "cdn" | "failover";
+export type VolumeRegionsPolicy = "pinned" | "cdn" | "failover";
 export type VolumeOn_budget_exceeded = "alert" | "freeze-writes";
 export type SecretSource = "value" | "oidc";
 export type SyncType = "queue" | "log";
-export type SyncRegionPolicy = "auto" | "cdn" | "failover";
+export type SyncRegionsPolicy = "pinned" | "cdn" | "failover";
 export type SyncQueueConsensus = "crdt" | "raft";
 export type SyncLogConsensus = "crdt" | "raft";
 export type GatewayHostKind = "generated" | "zone";
 export type GatewayRouting = "route" | "router";
 export type GatewayRouteTarget = "handler" | "router";
-export type GatewayHandlerKind = "function" | "application" | "website" | "gateway" | "mcp" | "agent";
+export type GatewayHandlerKind = "function" | "application" | "website" | "gateway" | "mcp" | "agent" | "bus";
 export type GatewayCertSource = "generated" | "provided";
 export type GatewayMatch = "prefix" | "exact" | "regex";
 export type GatewayMethods = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
 export type ProxyHostKind = "generated" | "zone";
 export type ProxyRouting = "forward" | "router";
 export type ProxyHandlerKind = "application";
-export type ProxyProtocol = "tcp" | "udp" | "sctp";
 export type ProxyTlsMode = "none" | "terminate";
 export type ProxyCertSource = "generated" | "provided";
 export type ProxyKey = "ip" | "subnet";
 export type StreamEngine = "distributed" | "kafka" | "nats";
 export type StreamTls = "verify-full" | "require" | "disable";
-export type BusHostKind = "generated" | "zone";
 export type BusInstancesAdmission = "validator";
 export type MCPCache_scope = "none" | "public" | "principal";
 export type ChannelServeKind = "application" | "function";
 export type ModelInferenceKind = "remote" | "local";
 export type ModelFormat = "openai" | "anthropic" | "ollama";
 export type AgentKind = "git";
-export type AgentRegionPolicy = "auto" | "cdn" | "failover";
-export type WorkflowRegionPolicy = "auto" | "cdn" | "failover";
+export type AgentRegionsPolicy = "pinned" | "cdn" | "failover";
+export type WorkflowRegionsPolicy = "pinned" | "cdn" | "failover";
 
 /** An editable, wasm-resident project config session. */
 export class Session {
@@ -273,6 +273,9 @@ export class Session {
   validate(opts?: CompileOptions): Promise<Validation[]> {
     return this.binding.validate(this.handle, opts);
   }
+  views(opts?: ViewsOptions): Promise<ViewsResult> {
+    return this.binding.views(this.handle, opts);
+  }
   save(fs: AsyncFs, dir: string): Promise<void> {
     return this.binding.save(this.handle, fs, dir);
   }
@@ -454,6 +457,16 @@ export class ApplicationConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   /** Which application this is — the key its settings live under. */
   async readinessKind(): Promise<ApplicationReadinessKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["readiness"]).catch(() => null);
@@ -541,42 +554,42 @@ export class ApplicationConfig extends ResourceConfig {
   }
 
   /** Which application this is — the key its settings live under. */
-  async regionPolicy(): Promise<ApplicationRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<ApplicationRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as ApplicationRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as ApplicationRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the application's kind, so the branch is explicit. */
-  async regionName(regionPolicy: ApplicationRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: ApplicationRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: ApplicationRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: ApplicationRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: ApplicationRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: ApplicationRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
   /** Which application this is — the key its settings live under. */
@@ -742,6 +755,16 @@ export class FunctionConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   async call(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["execution", "call"])) as string | undefined;
   }
@@ -793,42 +816,42 @@ export class FunctionConfig extends ResourceConfig {
   }
 
   /** Which function this is — the key its settings live under. */
-  async regionPolicy(): Promise<FunctionRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<FunctionRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as FunctionRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as FunctionRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the function's kind, so the branch is explicit. */
-  async regionName(regionPolicy: FunctionRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: FunctionRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: FunctionRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: FunctionRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: FunctionRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: FunctionRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
   /** Which function this is — the key its settings live under. */
@@ -1028,6 +1051,16 @@ export class WorkerConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   async image(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["source", "image"])) as string | undefined;
   }
@@ -1099,42 +1132,42 @@ export class WorkerConfig extends ResourceConfig {
   }
 
   /** Which worker this is — the key its settings live under. */
-  async regionPolicy(): Promise<WorkerRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<WorkerRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as WorkerRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as WorkerRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the worker's kind, so the branch is explicit. */
-  async regionName(regionPolicy: WorkerRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: WorkerRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: WorkerRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: WorkerRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: WorkerRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: WorkerRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
   /** Which worker this is — the key its settings live under. */
@@ -1334,6 +1367,16 @@ export class SandboxConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   async idle(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["lifetime", "idle"])) as string | undefined;
   }
@@ -1385,42 +1428,42 @@ export class SandboxConfig extends ResourceConfig {
   }
 
   /** Which sandbox this is — the key its settings live under. */
-  async regionPolicy(): Promise<SandboxRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<SandboxRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as SandboxRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as SandboxRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the sandbox's kind, so the branch is explicit. */
-  async regionName(regionPolicy: SandboxRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: SandboxRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: SandboxRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: SandboxRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: SandboxRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: SandboxRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
   /** Which sandbox this is — the key its settings live under. */
@@ -1633,6 +1676,16 @@ export class ComponentConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   /** Which component this is — the key its settings live under. */
   async buildKind(): Promise<ComponentBuildKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
@@ -1788,6 +1841,16 @@ export class WebsiteConfig extends ResourceConfig {
   }
   unsetPath(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
   }
 
   async index(): Promise<string | undefined> {
@@ -2020,42 +2083,42 @@ export class CacheConfig extends ResourceConfig {
   }
 
   /** Which cache this is — the key its settings live under. */
-  async regionPolicy(): Promise<CacheRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<CacheRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as CacheRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as CacheRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the cache's kind, so the branch is explicit. */
-  async regionName(regionPolicy: CacheRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: CacheRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: CacheRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: CacheRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: CacheRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: CacheRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 }
 
@@ -2396,42 +2459,42 @@ export class DatabaseConfig extends ResourceConfig {
   }
 
   /** Which database this is — the key its settings live under. */
-  async regionPolicy(): Promise<DatabaseRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<DatabaseRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as DatabaseRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as DatabaseRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the database's kind, so the branch is explicit. */
-  async regionName(regionPolicy: DatabaseRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: DatabaseRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: DatabaseRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: DatabaseRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: DatabaseRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: DatabaseRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
   async namespace(): Promise<string | undefined> {
@@ -2571,42 +2634,42 @@ export class StorageConfig extends ResourceConfig {
   }
 
   /** Which storage this is — the key its settings live under. */
-  async regionPolicy(): Promise<StorageRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<StorageRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as StorageRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as StorageRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the storage's kind, so the branch is explicit. */
-  async regionName(regionPolicy: StorageRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: StorageRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: StorageRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: StorageRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: StorageRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: StorageRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
   async namespace(): Promise<string | undefined> {
@@ -2707,42 +2770,42 @@ export class VolumeConfig extends ResourceConfig {
   }
 
   /** Which volume this is — the key its settings live under. */
-  async regionPolicy(): Promise<VolumeRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<VolumeRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as VolumeRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as VolumeRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the volume's kind, so the branch is explicit. */
-  async regionName(regionPolicy: VolumeRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: VolumeRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: VolumeRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: VolumeRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: VolumeRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: VolumeRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
   async namespace(): Promise<string | undefined> {
@@ -2988,42 +3051,42 @@ export class SyncConfig extends ResourceConfig {
   }
 
   /** Which sync this is — the key its settings live under. */
-  async regionPolicy(): Promise<SyncRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<SyncRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as SyncRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as SyncRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the sync's kind, so the branch is explicit. */
-  async regionName(regionPolicy: SyncRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: SyncRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: SyncRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: SyncRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: SyncRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: SyncRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 }
 
@@ -3091,6 +3154,26 @@ export class ZoneConfig extends ResourceConfig {
   }
   unsetRecords(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["records"]);
+  }
+
+  async file(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["file"])) as string | undefined;
+  }
+  setFile(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["file"], v);
+  }
+  unsetFile(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["file"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["resolver", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["resolver", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["resolver", "namespace"]);
   }
 }
 
@@ -3260,7 +3343,7 @@ export class GatewayConfig extends ResourceConfig {
   async handlerKind(): Promise<GatewayHandlerKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["route", "handler"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["function", "application", "website", "gateway", "mcp", "agent"] as readonly string[]) if (k in block) return k as GatewayHandlerKind;
+    for (const k of ["function", "application", "website", "gateway", "mcp", "agent", "bus"] as readonly string[]) if (k in block) return k as GatewayHandlerKind;
     return undefined;
   }
 
@@ -3442,16 +3525,6 @@ export class ProxyConfig extends ResourceConfig {
     return undefined;
   }
 
-  async protocol(): Promise<ProxyProtocol | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["protocol"])) as ProxyProtocol | undefined;
-  }
-  setProtocol(v: ProxyProtocol): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["protocol"], v);
-  }
-  unsetProtocol(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["protocol"]);
-  }
-
   async service(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["service"])) as string | undefined;
   }
@@ -3460,16 +3533,6 @@ export class ProxyConfig extends ResourceConfig {
   }
   unsetService(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["service"]);
-  }
-
-  async srv(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["srv"])) as string | undefined;
-  }
-  setSrv(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["srv"], v);
-  }
-  unsetSrv(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["srv"]);
   }
 
   async tlsMode(): Promise<ProxyTlsMode | undefined> {
@@ -3750,46 +3813,6 @@ export class BusConfig extends ResourceConfig {
   }
 
   /** Which bus this is — the key its settings live under. */
-  async hostKind(): Promise<BusHostKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["host"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["generated", "zone"] as readonly string[]) if (k in block) return k as BusHostKind;
-    return undefined;
-  }
-
-  /** Lives under the bus's kind, so the branch is explicit. */
-  async hostName(hostKind: BusHostKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "name"])) as string | undefined;
-  }
-  setHostName(hostKind: BusHostKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "name"], v);
-  }
-  unsetHostName(hostKind: BusHostKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "name"]);
-  }
-
-  async namespace(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["host", "zone", "in", "namespace"])) as string | undefined;
-  }
-  setNamespace(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["host", "zone", "in", "namespace"], v);
-  }
-  unsetNamespace(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["host", "zone", "in", "namespace"]);
-  }
-
-  /** Lives under the bus's kind, so the branch is explicit. */
-  async hostZoneInName(hostKind: BusHostKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "in", "name"])) as string | undefined;
-  }
-  setHostZoneInName(hostKind: BusHostKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "in", "name"], v);
-  }
-  unsetHostZoneInName(hostKind: BusHostKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "in", "name"]);
-  }
-
-  /** Which bus this is — the key its settings live under. */
   async instancesAdmission(): Promise<BusInstancesAdmission | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["instances"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
@@ -3827,6 +3850,16 @@ export class BusConfig extends ResourceConfig {
   }
   unsetLimit(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["instances", "limit"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
   }
 }
 
@@ -4324,43 +4357,53 @@ export class AgentConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
   }
 
+  async config(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
+  }
+  setConfig(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
+  }
+  unsetConfig(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  }
+
   /** Which agent this is — the key its settings live under. */
-  async regionPolicy(): Promise<AgentRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<AgentRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as AgentRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as AgentRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the agent's kind, so the branch is explicit. */
-  async regionName(regionPolicy: AgentRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: AgentRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: AgentRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: AgentRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: AgentRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: AgentRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 }
 
@@ -4441,42 +4484,42 @@ export class WorkflowConfig extends ResourceConfig {
   }
 
   /** Which workflow this is — the key its settings live under. */
-  async regionPolicy(): Promise<WorkflowRegionPolicy | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["region"]).catch(() => null);
+  async regionsPolicy(): Promise<WorkflowRegionsPolicy | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["auto", "cdn", "failover"] as readonly string[]) if (k in block) return k as WorkflowRegionPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as WorkflowRegionsPolicy;
     return undefined;
   }
 
   /** Lives under the workflow's kind, so the branch is explicit. */
-  async regionName(regionPolicy: WorkflowRegionPolicy): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", regionPolicy, "name"])) as string | undefined;
+  async regionsIn(regionsPolicy: WorkflowRegionsPolicy): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionName(regionPolicy: WorkflowRegionPolicy, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", regionPolicy, "name"], v);
+  setRegionsIn(regionsPolicy: WorkflowRegionsPolicy, v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionName(regionPolicy: WorkflowRegionPolicy): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", regionPolicy, "name"]);
+  unsetRegionsIn(regionsPolicy: WorkflowRegionsPolicy): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
   async main(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "main"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "main"])) as string | undefined;
   }
   setMain(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "main"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "main"], v);
   }
   unsetMain(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "main"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "main"]);
   }
 
   async standby(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["region", "failover", "standby"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "failover", "standby"])) as string | undefined;
   }
   setStandby(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["region", "failover", "standby"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "failover", "standby"], v);
   }
   unsetStandby(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["region", "failover", "standby"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
   async namespace(): Promise<string | undefined> {
@@ -4629,6 +4672,7 @@ export interface Application {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   readinesskind?: string;
   port?: string;
   livenesskind?: string;
@@ -4638,8 +4682,8 @@ export interface Application {
   egress?: string[];
   max_instances?: number;
   concurrency?: number;
-  regionpolicy?: string;
-  regionname?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
   buildkind?: string;
@@ -4662,13 +4706,14 @@ export interface Function {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   call?: string;
   timeout?: number;
   memory?: number;
   cpu?: number;
   egress?: string[];
-  regionpolicy?: string;
-  regionname?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
   buildkind?: string;
@@ -4694,6 +4739,7 @@ export interface Worker {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   image?: string;
   call?: string;
   timeout?: number;
@@ -4701,8 +4747,8 @@ export interface Worker {
   cpu?: number;
   egress?: string[];
   runtime?: WorkerRuntime;
-  regionpolicy?: string;
-  regionname?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
   buildkind?: string;
@@ -4728,13 +4774,14 @@ export interface Sandbox {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   idle?: number;
   max?: number;
   egress?: string[];
   memory?: number;
   cpu?: number;
-  regionpolicy?: string;
-  regionname?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
   buildkind?: string;
@@ -4765,6 +4812,7 @@ export interface Component {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   buildkind?: string;
   buildimage?: string;
   buildoutput?: string;
@@ -4784,6 +4832,7 @@ export interface Website {
   git?: string;
   branch?: string;
   path?: string;
+  config?: string;
   index?: string;
   mode?: WebsiteMode;
   not_found?: string;
@@ -4810,8 +4859,8 @@ export interface Cache {
   replicated?: boolean;
   consensus?: CacheConsensus;
   namespace?: string;
-  regionpolicy?: string;
-  regionname?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
 }
@@ -4851,8 +4900,8 @@ export interface Database {
   instancesvalidatornamespace?: string;
   instancesvalidatorname?: string;
   limit?: number;
-  regionpolicy?: string;
-  regionname?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
   namespace?: string;
@@ -4872,8 +4921,8 @@ export interface Storage {
   versioning?: boolean;
   ttl?: number;
   size?: number;
-  regionpolicy?: string;
-  regionname?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
   namespace?: string;
@@ -4889,8 +4938,8 @@ export interface Volume {
   interval?: number;
   rpo_budget?: number;
   on_budget_exceeded?: VolumeOn_budget_exceeded;
-  regionpolicy?: string;
-  regionname?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
   namespace?: string;
@@ -4924,8 +4973,8 @@ export interface Sync {
   logconsensus?: SyncLogConsensus;
   age?: number;
   size?: number;
-  regionpolicy?: string;
-  regionname?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
 }
@@ -4938,6 +4987,8 @@ export interface Zone {
   tags?: string[];
   fqdn?: string;
   records?: string[];
+  file?: string;
+  namespace?: string;
 }
 
 /** Gateway as decoded from the compiled config object. */
@@ -4980,9 +5031,7 @@ export interface Proxy {
   namespace?: string;
   hostzoneinname?: string;
   routing?: string;
-  protocol?: ProxyProtocol;
   service?: string;
-  srv?: string;
   tlsmode?: ProxyTlsMode;
   certsource?: ProxyCertSource;
   certsecret?: string;
@@ -5017,14 +5066,11 @@ export interface Bus {
   name?: string;
   description?: string;
   tags?: string[];
-  hostkind?: string;
-  hostname?: string;
-  namespace?: string;
-  hostzoneinname?: string;
   instancesadmission?: string;
   instancesvalidatornamespace?: string;
   instancesvalidatorname?: string;
   limit?: number;
+  namespace?: string;
 }
 
 /** MCP as decoded from the compiled config object. */
@@ -5088,8 +5134,9 @@ export interface Agent {
   git?: string;
   branch?: string;
   path?: string;
-  regionpolicy?: string;
-  regionname?: string;
+  config?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
 }
@@ -5103,8 +5150,8 @@ export interface Workflow {
   timeout?: number;
   concurrency?: number;
   start?: string;
-  regionpolicy?: string;
-  regionname?: string;
+  regionspolicy?: string;
+  regionsin?: string[];
   main?: string;
   standby?: string;
   namespace?: string;

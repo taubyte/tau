@@ -10,6 +10,57 @@ export interface CompileOptions {
   branch?: string;
   /** Cloud FQDN to pin the compile to (optional). */
   cloud?: string;
+  /** The deployment compiled for, when the project declares environments. */
+  environment?: string;
+}
+
+/**
+ * Which regions the views are cut for. Omitted: the build with no regions, one view
+ * `default` (what an OSS deploy publishes), refusing a region the project names.
+ * `"lenient"`: the same, saying rather than refusing. `"named"`: a preview of every
+ * region the project names. A list: a preview of exactly those.
+ */
+export interface ViewsOptions extends CompileOptions {
+  regions?: "lenient" | "named" | string[];
+}
+
+/** How a resource is held in one region. */
+export type Role =
+  | "anywhere" | "pinned" | "main" | "standby" | "seed" | "demand"
+  | "placed" | "needed" | "follows" | "scope";
+
+/** Something the cut had to say: a placement concern, or an edge it refused. */
+export interface ViewNote {
+  severity: "broken" | "check" | "note" | string;
+  kind: string;
+  name: string;
+  scope?: string;
+  id?: string;
+  title: string;
+  detail?: string;
+}
+
+/** One region's view: the compiled object as that region holds it, ids unchanged. */
+export interface RegionView {
+  object: Record<string, unknown>;
+  /** Compiled id -> how it is held there. */
+  roles: Record<string, Role>;
+  /** A region served with nothing placed in it — unlike one not served at all. */
+  empty: boolean;
+}
+
+export interface ViewsResult {
+  /** Every region the views were cut for, one view each. */
+  destinations: string[];
+  /** Every region the project names, for offering a preview. */
+  named: string[];
+  /** Absent when the cut was refused; `refused` then says why and `notes` say what.
+   *  (Not `error`: that key is a failed call, and a refused cut is an answer.) */
+  views?: Record<string, RegionView>;
+  notes: ViewNote[];
+  refused?: string;
+  /** The whole compiled object (sessions only). */
+  canonical?: Record<string, unknown>;
 }
 
 export interface Validation {
@@ -23,6 +74,8 @@ export interface CompileResult {
   object: Record<string, unknown>;
   indexes: Record<string, unknown>;
   validations: Validation[];
+  /** One view per region, cut from what runs (stateless compile only). */
+  views?: ViewsResult;
 }
 
 /** One failed check on a resource, attributed to the field that failed it.
@@ -65,7 +118,7 @@ export class TccError extends Error {
 }
 
 export interface TccGlobal {
-  compile(fs: SyncFs, opts?: CompileOptions): CompileResult | { error: string };
+  compile(fs: SyncFs, opts?: ViewsOptions): CompileResult | { error: string };
   decompile(obj: unknown, fs: SyncFs): null | { error: string };
   /** The config JSON Schema (Draft 2020-12), generated from this wasm's own DSL. */
   schema(): Record<string, unknown> | { error: string };
@@ -77,6 +130,7 @@ export interface TccGlobal {
   sessionGet(handle: number, resource: string[], field: string[]): unknown; // value | null(absent) | { error }
   sessionSet(handle: number, resource: string[], field: string[], value: unknown): null | { error: string };
   sessionCompile(handle: number, opts?: CompileOptions): CompileResult | { error: string };
+  sessionViews(handle: number, opts?: ViewsOptions): ViewsResult | { error: string };
   sessionValidate(handle: number, opts?: CompileOptions): { validations: Validation[] } | { error: string };
   sessionValidateField(handle: number, resource: string[], field: string[], value: unknown): null | { error: string };
   sessionValidateResource(handle: number, resource: string[]): { issues: FieldIssue[] } | { error: string };
@@ -110,6 +164,7 @@ export interface SessionBinding {
   delete(handle: number, resource: string[], field?: string[]): Promise<void>;
   list(handle: number, path: string[]): Promise<string[]>;
   compile(handle: number, opts?: CompileOptions): Promise<CompileResult>;
+  views(handle: number, opts?: ViewsOptions): Promise<ViewsResult>;
   validate(handle: number, opts?: CompileOptions): Promise<Validation[]>;
   validateField(handle: number, resource: string[], field: string[], value: unknown): Promise<void>;
   validateResource(handle: number, resource: string[]): Promise<FieldIssue[]>;
@@ -154,6 +209,9 @@ export function makeBinding(tcc: TccGlobal): SessionBinding {
     },
     async compile(handle, opts) {
       return orThrow(tcc.sessionCompile(handle, opts));
+    },
+    async views(handle, opts) {
+      return orThrow(tcc.sessionViews(handle, opts));
     },
     async validate(handle, opts) {
       return orThrow(tcc.sessionValidate(handle, opts)).validations;
