@@ -37,7 +37,10 @@ const (
 	// process a bounded amount of memory, not an unbounded one.
 	DefaultBackendTimeout = 30 * time.Second
 	// DefaultSecretCacheTTL is how long a hook's registration is believed. It
-	// is the window in which a rotated secret still verifies, so it is short.
+	// bounds how long a replaced secret still verifies on a node that remembers
+	// it — the first delivery under the new one ends that sooner, by re-asking
+	// (webhook.go) — and how long an unlinked project's deliveries do; so it is
+	// short.
 	DefaultSecretCacheTTL = time.Minute
 	// DefaultSecretCacheMax bounds the cache and the per-hook rate limiter
 	// alike. Both are keyed by a string a stranger chooses, so both need a
@@ -52,6 +55,15 @@ const (
 // THE NUMBERS ARE POLICY and an operator overrides every one of them. What is
 // not policy is that a Config naming none of them is limited rather than open,
 // which is why they are defaults and not zero.
+//
+// THE TWO WEBHOOK LIMITS ARE ALSO THE LOOKUP BUDGET. Both are taken before
+// every hook lookup, and an admitted request makes AT MOST ONE logical lookup:
+// a cold one when nothing is remembered, or one refresh when a remembered hook
+// fails to verify the delivery — never both, since a fresh answer is not
+// re-asked (webhook.go). So the register and the vault see at most WebhookRate
+// lookups per node and HookRate per project, whatever a stranger sends, and a
+// refresh needs no cooldown of its own: it spends the token its request
+// already paid for.
 var (
 	DefaultHookRate    = Rate{Burst: 30, Per: time.Minute}
 	DefaultWebhookRate = Rate{Burst: 300, Per: time.Minute}
@@ -237,8 +249,8 @@ type Hook struct {
 }
 
 // ErrNoHook is a project this cloud cannot verify a push for: nobody linked
-// it, or no hook secret is set for it. It is an answer, not a failure, and is
-// remembered as one (secrets.go).
+// it, or no hook secret is set for it. It is an answer, not a failure: the
+// webhook route denies it, where a failure to ask is a 503 (secrets.go).
 var ErrNoHook = errors.New("build: no hook for this project")
 
 // Hooks is what verifies a webhook addressed to a project: the register's

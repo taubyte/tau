@@ -97,14 +97,14 @@ func TestEveryForgesDeliveriesReachTheSameRoute(t *testing.T) {
 			require.Equal(t, []frontend.Push{{Repository: key.String(), Ref: "refs/heads/main", Commit: commit}}, queue.queued)
 
 			// the same bytes changed after signing do not verify
-			require.Equal(t, http.StatusForbidden, post(push, true).Code)
+			require.Equal(t, http.StatusNotFound, post(push, true).Code)
 
 			// a genuine signature speaking for another repository does not verify
 			other, err := repokey.Parse("https://" + shape.Host + "/someone/else")
 			require.NoError(t, err)
 			foreign, err := f.DeliveryFor(hook, other, "refs/heads/main", commit)
 			require.NoError(t, err)
-			require.Equal(t, http.StatusForbidden, post(foreign, false).Code)
+			require.Equal(t, http.StatusNotFound, post(foreign, false).Code)
 
 			// a genuine ping is accepted and costs no build
 			ping, err := f.NonPushDelivery(hook)

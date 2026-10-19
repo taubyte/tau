@@ -97,10 +97,11 @@ func (s *Service) handleSetSecret(w http.ResponseWriter, r *http.Request, token,
 		respond(w, err)
 		return
 	}
-	// A ROTATED HOOK SECRET IS BELIEVED NOW, on the frontend it was set
-	// through, rather than after this project's cached hook expires: a relink
-	// rotates it, and until then the old hook's deliveries would still verify
-	// and the new one's would not.
+	// A ROTATED HOOK SECRET IS BELIEVED NOW on the frontend it was set
+	// through, rather than at its first delivery under the new secret. This is
+	// a local speedup and nothing more: every OTHER frontend still remembers
+	// the old secret, and what makes them correct is the webhook route's
+	// re-ask on a remembered hook that refuses a delivery (webhook.go).
 	s.secrets.drop(projectID)
 	w.WriteHeader(http.StatusNoContent)
 }

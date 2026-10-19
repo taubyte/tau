@@ -28,23 +28,42 @@ func TestAHookIsBelievedForOneTTLAndNoLonger(t *testing.T) {
 	require.Equal(t, 2, h.hooks.count())
 }
 
-// "No such hook" is a fact about this cloud that will not change in the next
-// minute, so a flood of invented ids costs one round trip each rather than one
-// per request.
-func TestAnAnsweredMissIsRemembered(t *testing.T) {
+// A MISS IS NOT REMEMBERED. A project whose secret has just been set must be
+// accepted at its very next push, on every node, not a minute later.
+func TestAMissIsNotRemembered(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.hooks.get = func(string) (Hook, error) {
-		return Hook{}, ErrNoHook
+	linked := false
+	h.hooks.get = func(id string) (Hook, error) {
+		if !linked {
+			return Hook{}, ErrNoHook
+		}
+		return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
 	}
 
-	for range 5 {
+	for range 3 {
 		require.Equal(t, http.StatusNotFound, h.do(t, webhookRequest(webhookOpts{})).Code)
 	}
-	require.Equal(t, 1, h.hooks.count())
+	require.Equal(t, 3, h.hooks.count())
+
+	linked = true
+	require.Equal(t, http.StatusAccepted, h.do(t, webhookRequest(webhookOpts{})).Code)
 }
 
-// "auth is unreachable" is the opposite: remembering it would keep this node
-// refusing real pushes for a whole TTL after auth came back.
+// A hook with no secret is not remembered either: it is not usable, and the
+// secret may be set a moment later.
+func TestAHookWithNoSecretIsNotRemembered(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.hooks.get = func(id string) (Hook, error) {
+		return Hook{Project: id, Repositories: []string{testRepoKey}}, nil
+	}
+	for range 2 {
+		require.Equal(t, http.StatusInternalServerError, h.do(t, webhookRequest(webhookOpts{})).Code)
+	}
+	require.Equal(t, 2, h.hooks.count())
+}
+
+// "auth is unreachable" is not remembered, and is a 503 rather than a denial:
+// this node does not know whether the hook exists.
 func TestAFailureToReachAuthIsNotRemembered(t *testing.T) {
 	for _, err := range []error{
 		connect.NewError(connect.CodeUnavailable, errors.New("no peer answered")),
@@ -57,7 +76,7 @@ func TestAFailureToReachAuthIsNotRemembered(t *testing.T) {
 			h.hooks.get = func(string) (Hook, error) { return Hook{}, err }
 
 			for range 3 {
-				h.do(t, webhookRequest(webhookOpts{}))
+				require.Equal(t, http.StatusServiceUnavailable, h.do(t, webhookRequest(webhookOpts{})).Code)
 			}
 			require.Equal(t, 3, h.hooks.count())
 		})
@@ -73,7 +92,7 @@ func TestAFailureToReachAuthIsNotRemembered(t *testing.T) {
 		return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
 	}
 
-	require.Equal(t, http.StatusNotFound, h.do(t, webhookRequest(webhookOpts{})).Code)
+	require.Equal(t, http.StatusServiceUnavailable, h.do(t, webhookRequest(webhookOpts{})).Code)
 	failing = false
 	require.Equal(t, http.StatusAccepted, h.do(t, webhookRequest(webhookOpts{})).Code)
 }
@@ -106,7 +125,7 @@ func TestTheCacheHasACeiling(t *testing.T) {
 }
 
 func TestAnExpiredEntryIsForgottenRatherThanCounted(t *testing.T) {
-	c := newCache[int](2, time.Minute, (&clock{at: time.Unix(0, 0)}).now, nil)
+	c := newCache[int](2, time.Minute, (&clock{at: time.Unix(0, 0)}).now)
 	moving := &clock{at: time.Unix(0, 0)}
 	c.now = moving.now
 
@@ -130,8 +149,8 @@ func TestAnExpiredEntryIsForgottenRatherThanCounted(t *testing.T) {
 	require.Len(t, c.items, 1)
 }
 
-func TestACacheWithNoRetainPredicateRemembersNothingThatFailed(t *testing.T) {
-	c := newCache[int](4, time.Minute, time.Now, nil)
+func TestACacheRemembersNothingThatFailed(t *testing.T) {
+	c := newCache[int](4, time.Minute, time.Now)
 
 	fetches := 0
 	fetch := func() (int, error) { fetches++; return 0, errors.New("no") }
@@ -143,7 +162,7 @@ func TestACacheWithNoRetainPredicateRemembersNothingThatFailed(t *testing.T) {
 	require.Equal(t, 3, fetches)
 }
 
-func TestTerminalNamesTheAnswersWorthRemembering(t *testing.T) {
+func TestAbsentNamesTheAnswersThatDeny(t *testing.T) {
 	for code, want := range map[connect.Code]bool{
 		connect.CodeNotFound:           true,
 		connect.CodeInvalidArgument:    true,
@@ -155,7 +174,8 @@ func TestTerminalNamesTheAnswersWorthRemembering(t *testing.T) {
 		connect.CodeInternal:           false,
 		connect.CodeUnauthenticated:    false,
 	} {
-		require.Equal(t, want, terminal(connect.NewError(code, errors.New("x"))), code.String())
+		require.Equal(t, want, absent(connect.NewError(code, errors.New("x"))), code.String())
 	}
-	require.False(t, terminal(errors.New("not a connect error")))
+	require.True(t, absent(ErrNoHook))
+	require.False(t, absent(errors.New("not a connect error")))
 }

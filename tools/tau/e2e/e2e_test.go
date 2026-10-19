@@ -1,8 +1,8 @@
 //go:build dreaming
 
 // Package e2e runs the CLI against a real v2 fleet: a dream universe of two
-// nodes, one running the build frontend (the public role) and the other every
-// private service it reaches — auth, the build backend, secrets, register.
+// nodes running the build frontend (the public role) and a third running every
+// private service they reach — auth, the build backend, secrets, register.
 // `tau link` installs on the same fake forge the fleet verifies with, so a
 // delivery signed with what the link installed is the real check. The
 // forge is pkg/forge/fake, so "write access" is a real answer from a real
@@ -71,10 +71,10 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	t.Cleanup(func() { forges = nil })
 
 	u, err := dream.Start(t.Context(), t.Name(), dream.Config{
-		Copies:  2,
+		Copies:  3,
 		Options: []node.Option{node.WithForges(forges)},
 		Configure: func(index int, c *node.Config) {
-			if index == 1 {
+			if index > 0 {
 				c.Services = []string{node.Discovery, node.BuildFrontend}
 				c.BuildFrontend.Listen = "127.0.0.1:0"
 			}
@@ -88,6 +88,14 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	addr := front.BuildFrontendAddr()
 	require.NotNil(t, addr)
 	cloud := "http://" + addr.String()
+
+	// A SECOND FRONTEND, which the CLI never talks to: what a relink through
+	// the first does to it is only what the fleet itself carries.
+	second, found := dream.Node(u.Pids()[2])
+	require.True(t, found)
+	otherAddr := second.BuildFrontendAddr()
+	require.NotNil(t, otherAddr)
+	otherCloud := "http://" + otherAddr.String()
 
 	ok(t, "login", "--cloud", cloud, "--token", f.TokenString())
 
@@ -137,10 +145,18 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	// THE FIRST PUSH VERIFIES BEFORE ANYTHING IS PUBLISHED: the forge signs a
 	// delivery with the wire secret the link installed, and the cloud checks it
 	// against the secret the link stored. A wrong signature is refused.
+	// A bad signature and a project nobody linked are one answer.
 	hook := cloud + "/hook/" + linked.ProjectID
 	require.Equal(t, http.StatusAccepted, deliver(t, f, hook, configRepo, wire).StatusCode)
-	require.Equal(t, http.StatusForbidden, deliver(t, f, hook, configRepo, "not-the-secret").StatusCode)
+	require.Equal(t, http.StatusNotFound, deliver(t, f, hook, configRepo, "not-the-secret").StatusCode)
 	require.Equal(t, http.StatusNotFound, deliver(t, f, cloud+"/hook/QmNobodyLinkedThisProjectId", configRepo, wire).StatusCode)
+
+	// The second frontend verifies the same push, and now remembers the
+	// secret it verified with.
+	otherHook := otherCloud + "/hook/" + linked.ProjectID
+	require.Eventually(t, func() bool {
+		return deliver(t, f, otherHook, configRepo, wire).StatusCode == http.StatusAccepted
+	}, time.Minute, time.Second, "the second frontend never verified the push")
 	var jobs []any
 	require.Eventually(t, func() bool {
 		jobs = nil
@@ -162,8 +178,14 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	require.NotEqual(t, before[0].Handle, after[0].Handle)
 	rewired := f.LastHookWire()
 	require.NotEqual(t, wire, rewired)
-	require.Equal(t, http.StatusForbidden, deliver(t, f, hook, configRepo, wire).StatusCode, "the old hook's secret is gone from the cloud")
+	require.Equal(t, http.StatusNotFound, deliver(t, f, hook, configRepo, wire).StatusCode, "the old hook's secret is gone from the cloud")
 	require.Equal(t, http.StatusAccepted, deliver(t, f, hook, configRepo, rewired).StatusCode)
+
+	// THE SECOND FRONTEND STILL REMEMBERS THE OLD SECRET and was told nothing.
+	// The first delivery under the new one is refused by what it remembers,
+	// so it asks again, verifies, and from then on the old wire is refused.
+	require.Equal(t, http.StatusAccepted, deliver(t, f, otherHook, configRepo, rewired).StatusCode)
+	require.Equal(t, http.StatusNotFound, deliver(t, f, otherHook, configRepo, wire).StatusCode)
 
 	// Secrets: set, then listed by name only.
 	require.Eventually(t, func() bool {

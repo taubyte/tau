@@ -45,7 +45,7 @@ type Service struct {
 	// The keyed ones are all keyed by a string a stranger chooses, so all three
 	// are the same bounded, expiring map; the global ones are one bucket each
 	// and cannot be keyed at all. See secrets.go and ratelimit.go.
-	secrets       *cache[Hook]
+	secrets       *hookCache
 	hookBuckets   *cache[*bucket]
 	callerBuckets *cache[*bucket]
 	globalHooks   *bucket
@@ -295,10 +295,9 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		logf:       o.logf,
 	}
 
-	// A miss is remembered only when it is an ANSWER — see secrets.go's
-	// terminal. Remembering "auth is unreachable" would keep this node
-	// refusing real pushes for a whole TTL after auth came back.
-	s.secrets = newCache[Hook](s.cfg.SecretCacheMax, s.cfg.SecretCacheTTL, s.now, terminal)
+	// ONLY A USABLE HOOK IS REMEMBERED — never a miss, never a failure to ask;
+	// see secrets.go.
+	s.secrets = newHookCache(s.cfg.SecretCacheMax, s.cfg.SecretCacheTTL, s.now, s.fetchHook)
 	// A bucket's lifetime is one refill period, because a bucket untouched for
 	// that long has refilled to full and is indistinguishable from a new one.
 	//
@@ -306,8 +305,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	// credentials would let a flood of invented keys on either surface evict
 	// the other's buckets — and an evicted bucket comes back full, which is the
 	// per-key limiter being turned off by a caller rather than by an operator.
-	s.hookBuckets = newCache[*bucket](s.cfg.SecretCacheMax, max(s.cfg.HookRate.Per, time.Second), s.now, nil)
-	s.callerBuckets = newCache[*bucket](s.cfg.SecretCacheMax, max(s.cfg.CallerRate.Per, time.Second), s.now, nil)
+	s.hookBuckets = newCache[*bucket](s.cfg.SecretCacheMax, max(s.cfg.HookRate.Per, time.Second), s.now)
+	s.callerBuckets = newCache[*bucket](s.cfg.SecretCacheMax, max(s.cfg.CallerRate.Per, time.Second), s.now)
 	s.globalHooks = newBucket(s.cfg.WebhookRate, s.now)
 	s.globalJobs = newBucket(s.cfg.JobRate, s.now)
 	s.router = s.mount()

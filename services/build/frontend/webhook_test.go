@@ -41,7 +41,7 @@ func TestEachAnswerAboutADeliveryHasItsOwnStatus(t *testing.T) {
 		status int
 		says   string
 	}{
-		{"not genuine", fmt.Errorf("%w: signature", ErrUnverified), http.StatusForbidden, ""},
+		{"not genuine", fmt.Errorf("%w: signature", ErrUnverified), http.StatusNotFound, ""},
 		{"a ping", ErrNotAPush, http.StatusAccepted, "not a push event"},
 		{"a deleted branch", ErrRefDeleted, http.StatusAccepted, "ref deleted"},
 		{"genuine and unreadable", fmt.Errorf("%w: no repository", ErrMalformed), http.StatusBadRequest, ""},

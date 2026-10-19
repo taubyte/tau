@@ -59,8 +59,8 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// NO EVENT CHECK HERE. Which header names the event is the forge's —
 	// X-GitHub-Event, X-Gitlab-Event, X-Event-Key — and this route names no
 	// forge, so a ping is told apart from a push only after the delivery
-	// verifies (ErrNotAPush below). It costs a cached, rate-limited lookup,
-	// which is what every push already costs.
+	// verifies (ErrNotAPush below). It costs a rate-limited lookup, which is
+	// what every push already costs.
 
 	// ONE ENCODING, BECAUSE THE HOOK IS THIS CLOUD'S OWN. GitHub can be asked
 	// to send `application/x-www-form-urlencoded` with the payload in a form
@@ -95,27 +95,22 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The cloud is asked. A project nobody linked, or one with no hook secret,
-	// is a 404; a delivery whose signature does not verify is a 403 below. That
-	// distinction admits, to somebody who can already name a project id, that
-	// the project is linked here — and a project id is in its project.yaml, so
-	// what leaks is "is this project linked" to somebody who read its config. It
-	// is kept because the alternative makes a rotated secret indistinguishable
-	// from an unlinked project in the provider's delivery log, which is where an
-	// operator has to debug it.
-	hook, err := s.hook(r.Context(), hookID)
+	// The cloud is asked — once, and at most once more below.
+	//
+	// AN ABSENT HOOK AND A BAD SIGNATURE ARE ONE ANSWER: the same status and
+	// the same body, with the reason in this process's log only. Telling them
+	// apart tells anybody who can name a project id whether it is linked here,
+	// and a project id is in its project.yaml. An operator debugging a rotated
+	// secret reads it in the frontend's log, not in the provider's delivery
+	// log. A failure to ASK is different — the register or the vault did not
+	// answer — and is a 503, because this node does not know which it is and a
+	// provider retries a 5xx.
+	look, err := s.secrets.get(r.Context(), hookID)
 	if err != nil {
-		s.log("hook %s: %v", hookID, err)
-		respond(w, errDenied)
+		s.refuseLookup(w, hookID, err)
 		return
 	}
-
-	// AN EMPTY SECRET IS A 500, NEVER A SKIPPED MAC. It is a hook this cloud
-	// registered and cannot check, which is the operator's to see; forge refuses
-	// it too, but its refusal reads as a delivery that did not verify.
-	if len(hook.Secret) == 0 {
-		s.log("hook %s has no secret; refusing to accept an unauthenticated push", hookID)
-		respond(w, problem(http.StatusInternalServerError, "hook is not configured"))
+	if !s.usable(w, hookID, look.hook) {
 		return
 	}
 
@@ -126,7 +121,30 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// push is only ever for one of the project's own repositories — otherwise a
 	// signature under any project's secret would authorize a job for any
 	// repository this cloud has.
-	event, err := s.deliveries.Verify(hook, r.Header, body)
+	event, err := s.deliveries.Verify(look.hook, r.Header, body)
+
+	// A REMEMBERED HOOK THAT REFUSES A DELIVERY IS ASKED FOR AGAIN, ONCE, and
+	// the same headers and body are verified against the answer. This — not
+	// the drop secretapi.go and projectapi.go make — is what makes a rotation
+	// correct across the fleet: that drop reaches only the frontend the secret
+	// was set through, and every other one is still holding the old secret.
+	// Only a CACHED answer is re-asked, never a fresh one, and never twice, so
+	// an admitted request costs at most one lookup either way (config.go). Only
+	// ErrUnverified triggers it: a delivery that verified and was malformed, or
+	// was an event this cloud ignores, says nothing about the secret.
+	if errors.Is(err, ErrUnverified) && look.cached {
+		s.log("hook %s: %v; asking again in case the secret was rotated", hookID, err)
+		look, err = s.secrets.refresh(r.Context(), hookID, look.ticket)
+		if err != nil {
+			s.refuseLookup(w, hookID, err)
+			return
+		}
+		if !s.usable(w, hookID, look.hook) {
+			return
+		}
+		event, err = s.deliveries.Verify(look.hook, r.Header, body)
+	}
+
 	switch {
 	case errors.Is(err, ErrNotAPush):
 		accepted(w, "not a push event")
@@ -139,8 +157,8 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		respond(w, problem(http.StatusBadRequest, "malformed payload"))
 		return
 	case errors.Is(err, ErrUnverified):
-		s.log("hook %s: %v", hookID, err)
-		respond(w, problem(http.StatusForbidden, "delivery does not verify"))
+		s.log("hook %s: delivery refused: %v", hookID, err)
+		respond(w, errDenied)
 		return
 	case err != nil:
 		s.log("hook %s cannot be verified here: %v", hookID, err)
@@ -193,4 +211,29 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 func isJSON(header string) bool {
 	mediaType, _, err := mime.ParseMediaType(header)
 	return err == nil && mediaType == "application/json"
+}
+
+// refuseLookup answers a hook lookup that did not produce a hook: the uniform
+// denial when the cloud said there is none, a 503 when it could not be asked.
+func (s *Service) refuseLookup(w http.ResponseWriter, hookID string, err error) {
+	if absent(err) {
+		s.log("hook %s: refused, no hook: %v", hookID, err)
+		respond(w, errDenied)
+		return
+	}
+	s.log("hook %s: lookup failed: %v", hookID, err)
+	respond(w, problem(http.StatusServiceUnavailable, "try again later"))
+}
+
+// usable refuses a hook with no secret. AN EMPTY SECRET IS A 500, NEVER A
+// SKIPPED MAC: it is a hook this cloud registered and cannot check, which is
+// the operator's to see; forge refuses it too, but its refusal reads as a
+// delivery that did not verify.
+func (s *Service) usable(w http.ResponseWriter, hookID string, hook Hook) bool {
+	if len(hook.Secret) > 0 {
+		return true
+	}
+	s.log("hook %s has no secret; refusing to accept an unauthenticated push", hookID)
+	respond(w, problem(http.StatusInternalServerError, "hook is not configured"))
+	return false
 }

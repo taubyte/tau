@@ -20,8 +20,20 @@ import (
 //
 // A cache alone would move the problem rather than solve it: a cache keyed by a
 // string the stranger chooses grows with the number of DISTINCT strings they
-// send. So the cache is bounded, it caches misses as well as hits, and
-// ratelimit.go bounds what reaches it in the first place.
+// send. So the cache is bounded, and ratelimit.go bounds what reaches it in the
+// first place.
+//
+// ONLY A USABLE HOOK IS REMEMBERED — found, with a secret. A miss is not: the
+// rate limits already bound what a flood of invented ids costs (one lookup per
+// admitted request), and a remembered miss is a project whose secret was just
+// set refusing its first pushes for a minute on every node but the one it was
+// set through. A failure to reach the register or the vault is not either, for
+// the same reason in the other direction.
+//
+// A REMEMBERED HOOK IS RE-ASKED ONCE WHEN IT FAILS TO VERIFY A DELIVERY
+// (webhook.go). That is what makes a rotation correct on every frontend, not
+// just the one the secret was set through: the old secret here is a guess, and a
+// delivery it refuses is the evidence it went stale.
 
 // cache is a bounded, expiring map of one fetch's outcome. Entries leave by
 // expiry or, when the map is full, oldest-inserted-first.
@@ -29,9 +41,6 @@ type cache[V any] struct {
 	max int
 	ttl time.Duration
 	now func() time.Time
-	// retain decides whether a FAILED fetch is worth remembering. Only a
-	// terminal answer is; see s.hook.
-	retain func(error) bool
 
 	mu    sync.Mutex
 	items map[string]cacheEntry[V]
@@ -40,21 +49,20 @@ type cache[V any] struct {
 
 type cacheEntry[V any] struct {
 	value V
-	err   error
 	at    time.Time
 }
 
-func newCache[V any](max int, ttl time.Duration, now func() time.Time, retain func(error) bool) *cache[V] {
+func newCache[V any](max int, ttl time.Duration, now func() time.Time) *cache[V] {
 	return &cache[V]{
-		max:    max,
-		ttl:    ttl,
-		now:    now,
-		retain: retain,
-		items:  make(map[string]cacheEntry[V], min(max, 64)),
+		max:   max,
+		ttl:   ttl,
+		now:   now,
+		items: make(map[string]cacheEntry[V], min(max, 64)),
 	}
 }
 
-// do returns the remembered outcome for key, or calls fetch and remembers it.
+// do returns the remembered value for key, or calls fetch and remembers what
+// it returns. A failed fetch is never remembered.
 //
 // FETCH RUNS WITHOUT THE LOCK HELD, deliberately: it is a network call, and a
 // cache that serialized every webhook behind one mutex would be a better denial
@@ -63,12 +71,12 @@ func newCache[V any](max int, ttl time.Duration, now func() time.Time, retain fu
 // that does not change — and the rate limiter is what bounds how many.
 func (c *cache[V]) do(key string, fetch func() (V, error)) (V, error) {
 	if entry, ok := c.load(key); ok {
-		return entry.value, entry.err
+		return entry.value, nil
 	}
 
 	value, err := fetch()
-	if err == nil || (c.retain != nil && c.retain(err)) {
-		c.store(key, cacheEntry[V]{value: value, err: err, at: c.now()})
+	if err == nil {
+		c.store(key, cacheEntry[V]{value: value, at: c.now()})
 	}
 	return value, err
 }
@@ -92,7 +100,10 @@ func (c *cache[V]) load(key string) (cacheEntry[V], bool) {
 func (c *cache[V]) store(key string, entry cacheEntry[V]) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.storeLocked(key, entry)
+}
 
+func (c *cache[V]) storeLocked(key string, entry cacheEntry[V]) {
 	if _, ok := c.items[key]; !ok {
 		c.order = append(c.order, key)
 	}
@@ -109,14 +120,6 @@ func (c *cache[V]) store(key string, entry cacheEntry[V]) {
 	}
 }
 
-// drop discards what is held for key, so the next lookup asks again.
-func (c *cache[V]) drop(key string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.items, key)
-	c.forget(key)
-}
-
 func (c *cache[V]) forget(key string) {
 	for i, k := range c.order {
 		if k == key {
@@ -126,25 +129,138 @@ func (c *cache[V]) forget(key string) {
 	}
 }
 
-// hook resolves a project's hook through the cache.
+// hookCache is the cache the webhook route reads hooks through: the bounded,
+// expiring map above, plus ONE FETCH IN FLIGHT PER PROJECT and an order on
+// fetches, because a refresh is a write that must not lose to an older read.
 //
-// WHICH FAILURES ARE REMEMBERED IS THE WHOLE OF IT. "No such hook" is a fact
-// about this cloud that will not change in the next minute, and remembering it
-// is what makes a flood of invented project ids cost one round trip each
-// instead of one per request. "the vault is unreachable" is the opposite:
-// remembering it would keep this node refusing real pushes for a minute after
-// it came back.
-func (s *Service) hook(ctx context.Context, project string) (Hook, error) {
-	return s.secrets.do(project, func() (Hook, error) {
-		ctx, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
-		defer cancel()
-		return s.hooks.Hook(ctx, project)
-	})
+// Every fetch takes a ticket from one counter when it starts, and an entry
+// carries the ticket of the fetch that produced it. Only the LATEST fetch
+// started for a key may write that key, and a newer start, or a drop, makes
+// the older one's result its own callers' alone. So an old lookup that comes
+// back after a refresh — the case where a slow answer from before a rotation
+// would put the old secret back — changes nothing.
+//
+// THE MUTEX IS NEVER HELD ACROSS A FETCH. A waiter blocks on the flight's
+// channel, not on the lock.
+type hookCache struct {
+	*cache[hookEntry]
+	fetch func(ctx context.Context, project string) (Hook, error)
+
+	seq     uint64
+	flights map[string]*hookFlight
 }
 
-// terminal reports whether an error is an answer rather than a failure to get
-// one. Only an answer is worth caching.
-func terminal(err error) bool {
+type hookEntry struct {
+	hook   Hook
+	ticket uint64
+}
+
+type hookFlight struct {
+	ticket uint64
+	done   chan struct{}
+	hook   Hook
+	err    error
+}
+
+// hookLookup is one answer and where it came from. cached is what the webhook
+// route needs to know: only a remembered hook can be stale.
+type hookLookup struct {
+	hook   Hook
+	cached bool
+	ticket uint64
+}
+
+func newHookCache(max int, ttl time.Duration, now func() time.Time, fetch func(context.Context, string) (Hook, error)) *hookCache {
+	return &hookCache{
+		cache:   newCache[hookEntry](max, ttl, now),
+		fetch:   fetch,
+		flights: make(map[string]*hookFlight),
+	}
+}
+
+// get answers from the cache, or joins the fetch in flight for project, or
+// starts one.
+func (c *hookCache) get(ctx context.Context, project string) (hookLookup, error) {
+	if entry, ok := c.load(project); ok {
+		return hookLookup{hook: entry.value.hook, cached: true, ticket: entry.value.ticket}, nil
+	}
+	return c.await(ctx, project, 0)
+}
+
+// refresh asks again for a hook the cache answered with ticket, never answering
+// from the cache. A fetch already in flight is joined only when it started
+// AFTER that answer was produced; one started before could return the very
+// value being doubted.
+func (c *hookCache) refresh(ctx context.Context, project string, ticket uint64) (hookLookup, error) {
+	return c.await(ctx, project, ticket+1)
+}
+
+func (c *hookCache) await(ctx context.Context, project string, notBefore uint64) (hookLookup, error) {
+	c.mu.Lock()
+	f, ok := c.flights[project]
+	if !ok || f.ticket < notBefore {
+		c.seq++
+		f = &hookFlight{ticket: c.seq, done: make(chan struct{})}
+		c.flights[project] = f
+		go c.run(ctx, project, f)
+	}
+	c.mu.Unlock()
+
+	select {
+	case <-f.done:
+		return hookLookup{hook: f.hook, ticket: f.ticket}, f.err
+	case <-ctx.Done():
+		return hookLookup{}, ctx.Err()
+	}
+}
+
+// run is one fetch. ITS CONTEXT OUTLIVES THE REQUEST THAT STARTED IT, since
+// other requests may be waiting on it; the fetch is bounded by the caller's
+// own timeout (s.hook's), not by whichever request happened to start it.
+func (c *hookCache) run(ctx context.Context, project string, f *hookFlight) {
+	f.hook, f.err = c.fetch(context.WithoutCancel(ctx), project)
+
+	c.mu.Lock()
+	if c.flights[project] == f {
+		delete(c.flights, project)
+		switch {
+		case f.err == nil && len(f.hook.Secret) > 0:
+			c.storeLocked(project, cacheEntry[hookEntry]{value: hookEntry{hook: f.hook, ticket: f.ticket}, at: c.now()})
+		case absent(f.err) || f.err == nil:
+			// AN AUTHORITATIVE ABSENCE EVICTS, and so does a hook that came back
+			// with no secret: whatever was remembered is no longer the cloud's
+			// answer. A failure to ask leaves the entry as it was — and its
+			// expiry as it was, so a lookup that keeps failing never extends how
+			// long an old secret is believed.
+			delete(c.items, project)
+			c.forget(project)
+		}
+	}
+	c.mu.Unlock()
+	close(f.done)
+}
+
+// drop discards what is held for project and detaches any fetch in flight, so
+// that fetch's answer — which may predate whatever made the caller drop — is
+// not remembered.
+func (c *hookCache) drop(project string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.items, project)
+	c.forget(project)
+	delete(c.flights, project)
+}
+
+func (s *Service) fetchHook(ctx context.Context, project string) (Hook, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
+	defer cancel()
+	return s.hooks.Hook(ctx, project)
+}
+
+// absent reports whether an error is the cloud's ANSWER that there is no hook,
+// rather than a failure to get an answer. The first is a denial; the second is
+// a 503, because this node cannot say either way.
+func absent(err error) bool {
 	if errors.Is(err, ErrNoHook) {
 		return true
 	}
