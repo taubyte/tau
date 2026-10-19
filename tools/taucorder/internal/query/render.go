@@ -66,9 +66,9 @@ func ServicesTable(ss []Service) Table {
 
 // ProjectsTable is the projects as a table.
 func ProjectsTable(ps []Project) Table {
-	t := Table{Headers: []string{"ID", "NAME", "ENVIRONMENTS"}}
+	t := Table{Headers: []string{"ID", "CONFIG", "ENVIRONMENTS"}}
 	for _, p := range ps {
-		t.Rows = append(t.Rows, []string{p.ID, p.Name, list(p.Environments)})
+		t.Rows = append(t.Rows, []string{p.ID, p.Config, list(p.Environments)})
 	}
 	return t
 }

@@ -220,14 +220,6 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 	if err != nil {
 		return nil, fmt.Errorf("swarm key: %w", err)
 	}
-	dvPrivate, err := readAll(p.Cloud().Domain().Validation().OpenPrivateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open private domain key: %w", err)
-	}
-	dvPublic, err := readAll(p.Cloud().Domain().Validation().OpenPublicKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open public domain key: %w", err)
-	}
 
 	peers, err := bootstrap(p, hostName)
 	if err != nil {
@@ -274,10 +266,6 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 			f.HTTP = ":80"
 			f.HTTPS = ":443"
 		}
-		if slices.Contains(services, node.Auth) {
-			f.Node.Auth.DomainValidation.Private = dvPrivate
-			f.Node.Auth.DomainValidation.Public = dvPublic
-		}
 		return f
 	}
 
@@ -322,6 +310,7 @@ func (d *sporedrive) ignoredFields(hostName string, droppedServices []string) []
 		out = append(out, "service "+svc)
 	}
 	add(len(p.Cloud().Domain().Hosts()) > 0, "cloud.domain.hosts")
+	add(domainKeys(p), "cloud.domain.validation (a v2 node signs no domain claims)")
 	add(p.TenancyApp(), "tenancy.app (a v2 node checks the namespace, not membership)")
 	return out
 }
@@ -350,4 +339,18 @@ func (d *sporedrive) Nodes(hostName string) (*Nodes, error) {
 		out.Nodes = append(out.Nodes, Node{Name: inst.name, Port: inst.port, Services: inst.file.Node.Services})
 	}
 	return out, nil
+}
+
+// domainKeys reports whether the config names a domain-validation key pair.
+func domainKeys(p config.Parser) bool {
+	for _, open := range []func() (io.ReadCloser, error){
+		p.Cloud().Domain().Validation().OpenPrivateKey,
+		p.Cloud().Domain().Validation().OpenPublicKey,
+	} {
+		if f, err := open(); err == nil {
+			f.Close()
+			return true
+		}
+	}
+	return false
 }

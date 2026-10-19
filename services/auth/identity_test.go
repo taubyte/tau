@@ -63,6 +63,6 @@ func TestAnIdentityThatCannotAnswerIsUnavailable(t *testing.T) {
 
 func TestANilIdentityIsRefused(t *testing.T) {
 	mn := newMocknet(t)
-	_, err := New(newHost(t, mn), newStore(t), newTestConfig(t), WithIdentity(nil))
+	_, err := New(newHost(t, mn), WithIdentity(nil))
 	require.Error(t, err)
 }

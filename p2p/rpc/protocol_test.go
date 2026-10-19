@@ -15,14 +15,11 @@ import (
 // here twice: whatever the schema declares is what these constants say, so a
 // package rename shows up as a failure at exactly one place.
 func TestProtocolIsTheProtoPackage(t *testing.T) {
-	require.EqualValues(t, "/tau/auth/v2", rpc.Protocol(authv2connect.ProjectServiceName))
+	require.EqualValues(t, "/tau/auth/v2", rpc.Protocol(authv2connect.IdentityServiceName))
 	require.EqualValues(t, "/tau/build/v2", rpc.Protocol(buildv2connect.QueueServiceName))
 
 	// Every service block in one package derives the same id — the id names
-	// the listener, and five blocks share one.
-	require.Equal(t,
-		rpc.Protocol(authv2connect.ProjectServiceName),
-		rpc.Protocol(authv2connect.CertificateServiceName))
+	// the listener, and the blocks share one.
 	require.Equal(t,
 		rpc.Protocol(buildv2connect.QueueServiceName),
 		rpc.Protocol(buildv2connect.JobServiceName))

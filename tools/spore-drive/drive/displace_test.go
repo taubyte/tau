@@ -188,8 +188,7 @@ func testDisplace(t *testing.T, sd Spore) {
 		assert.Equal(t, main.HTTP, ":80")
 		assert.Equal(t, main.HTTPS, ":443")
 		assert.DeepEqual(t, main.Listen, []string{"/ip4/0.0.0.0/tcp/4242"})
-		assert.Assert(t, strings.Contains(main.Node.Auth.DomainValidation.Private, "PRIVATE KEY"))
-		assert.Assert(t, strings.Contains(main.Node.Auth.DomainValidation.Public, "PUBLIC KEY"))
+		assert.Assert(t, !strings.Contains(string(read("/tmp/node.yaml")), "PRIVATE KEY"), "no domain key reaches a node: none signs a domain claim")
 
 		swarm, err := base64.StdEncoding.DecodeString(main.SwarmKey)
 		assert.NilError(t, err)

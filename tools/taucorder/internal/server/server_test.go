@@ -116,14 +116,14 @@ func TestWritesNeedTheFlag(t *testing.T) {
 
 func TestSensitiveNeedsItsOwnFlag(t *testing.T) {
 	e := start(t, server.Options{Allow: policy.Allow{Writes: true}})
-	r := authv2connect.NewRepositoryServiceClient(http.DefaultClient, e.url)
-	_, err := r.Get(context.Background(), connect.NewRequest(&authv2.RepositoryRef{}))
+	r := authv2connect.NewIdentityServiceClient(http.DefaultClient, e.url)
+	_, err := r.Admit(context.Background(), connect.NewRequest(&authv2.Caller{}))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatal(err)
 	}
 	e = start(t, server.Options{Allow: policy.Allow{Sensitive: true}})
-	r = authv2connect.NewRepositoryServiceClient(http.DefaultClient, e.url)
-	_, err = r.Get(context.Background(), connect.NewRequest(&authv2.RepositoryRef{}))
+	r = authv2connect.NewIdentityServiceClient(http.DefaultClient, e.url)
+	_, err = r.Admit(context.Background(), connect.NewRequest(&authv2.Caller{}))
 	// Allowed through; nobody serves auth in this fixture.
 	if connect.CodeOf(err) != connect.CodeUnavailable && connect.CodeOf(err) != connect.CodeUnimplemented {
 		t.Fatal(err)

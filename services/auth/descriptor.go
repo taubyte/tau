@@ -9,13 +9,12 @@ import (
 
 // Protocol is the libp2p protocol id this service listens on: "/" plus the
 // proto package with dots as slashes, walked off the schema rather than
-// typed here (service-conventions.md §2d, rpc.Protocol). Any of the five
-// generated service names gives the same answer, because the id names the
-// package's listener and all five mount behind it.
+// typed here (service-conventions.md §2d, rpc.Protocol). The id names the
+// package's listener, not the one service mounted behind it.
 //
 // The "tau." prefix in that package keeps the id from being a bare service
 // word; pkg/proto's rules test holds it for every package.
-var Protocol = rpc.Protocol(authv2connect.ProjectServiceName)
+var Protocol = rpc.Protocol(authv2connect.IdentityServiceName)
 
 // Ingress states which side of the trust boundary a service is on
 // (service-conventions.md §5a).

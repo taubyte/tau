@@ -17,12 +17,12 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// TestServiceNeedsOnlyAMocknetHostAndAnInMemoryStore is the narrow-dependency
-// rule in its falsifiable form (.notes/v2/service-conventions.md, "The
-// narrowest dependency is a REQUIREMENT"):
+// TestServiceNeedsOnlyAMocknetHost is the narrow-dependency rule in its
+// falsifiable form (.notes/v2/service-conventions.md, "The narrowest dependency
+// is a REQUIREMENT"):
 //
-//	Can this service be constructed against mocknet.GenPeer() and an
-//	in-memory store, with nothing else standing up?
+//	Can this service be constructed against mocknet.GenPeer(), with nothing
+//	else standing up?
 //
 // Everything it needs is written out inline here rather than taken from
 // helpers_test.go, because the point of the test is exactly the list of
@@ -30,14 +30,14 @@ import (
 // gossipsub, no temp directory, no config bag, no port. If someone later
 // widens what New takes, this is the test that stops compiling, and it is
 // meant to be read as the spec for the other seven services.
-func TestServiceNeedsOnlyAMocknetHostAndAnInMemoryStore(t *testing.T) {
+func TestServiceNeedsOnlyAMocknetHost(t *testing.T) {
 	mn := mocknet.New()
 	defer mn.Close()
 
 	server, err := mn.GenPeer()
 	require.NoError(t, err)
 
-	s, err := New(server, newStore(t), newTestConfig(t))
+	s, err := New(server)
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -53,41 +53,19 @@ func TestServiceNeedsOnlyAMocknetHostAndAnInMemoryStore(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	_, err = authv2connect.NewProjectServiceClient(client.HTTP(), client.URL()).
-		Get(t.Context(), connect.NewRequest(&authv2.ProjectRef{Id: "nope"}))
+	_, err = authv2connect.NewIdentityServiceClient(client.HTTP(), client.URL()).
+		Admit(t.Context(), connect.NewRequest(&authv2.Caller{Forge: "github.com"}))
 	require.Error(t, err)
-	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "the answer came from the handler, not from a transport failure")
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "the answer came from the handler, not from a transport failure")
 }
 
 func TestNew_NoHost(t *testing.T) {
-	_, err := New(nil, newStore(t), newTestConfig(t))
+	_, err := New(nil)
 	assert.Error(t, err)
-}
-
-func TestNew_NoStore(t *testing.T) {
-	_, err := New(newHost(t, newMocknet(t)), nil, newTestConfig(t))
-	assert.Error(t, err)
-}
-
-func TestNew_EmptyDomainValidationKeys(t *testing.T) {
-	valid := newTestConfig(t)
-	for _, tc := range []struct {
-		name string
-		cfg  Config
-	}{
-		{"both empty", Config{}},
-		{"private empty", Config{DomainValidation: KeyPair{Public: valid.DomainValidation.Public}}},
-		{"public empty", Config{DomainValidation: KeyPair{Private: valid.DomainValidation.Private}}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := New(newHost(t, newMocknet(t)), newStore(t), tc.cfg)
-			assert.Error(t, err)
-		})
-	}
 }
 
 func TestNew_OptionFailure(t *testing.T) {
-	_, err := New(newHost(t, newMocknet(t)), newStore(t), newTestConfig(t), func(*Service) error {
+	_, err := New(newHost(t, newMocknet(t)), func(*Service) error {
 		return errors.New("deliberate option failure")
 	})
 	assert.Error(t, err)
@@ -99,11 +77,11 @@ func TestNew_OptionFailure(t *testing.T) {
 func TestNew_BindsNothing(t *testing.T) {
 	host := newHost(t, newMocknet(t))
 
-	first, err := New(host, newStore(t), newTestConfig(t))
+	first, err := New(host)
 	require.NoError(t, err)
 	defer first.Close()
 
-	second, err := New(host, newStore(t), newTestConfig(t))
+	second, err := New(host)
 	require.NoError(t, err)
 	defer second.Close()
 
@@ -131,23 +109,6 @@ func TestClose_WithoutStart(t *testing.T) {
 	s := newTestService(t)
 	assert.NoError(t, s.Close())
 	assert.NoError(t, s.Close())
-}
-
-// TestClose_LeavesTheInjectedStoreUsable: the store was handed to New by
-// whoever composed the node and is shared with the services composed beside
-// it, so closing this service must not take it down. Store has no Close
-// method (config.go), which makes that structural rather than a promise —
-// this test is the observable half.
-func TestClose_LeavesTheInjectedStoreUsable(t *testing.T) {
-	store := newStore(t)
-	s, err := New(newHost(t, newMocknet(t)), store, newTestConfig(t))
-	require.NoError(t, err)
-	require.NoError(t, s.Close())
-
-	require.NoError(t, store.Put(t.Context(), "/probe", []byte("x")))
-	got, err := store.Get(t.Context(), "/probe")
-	require.NoError(t, err)
-	assert.Equal(t, []byte("x"), got)
 }
 
 func TestWithServerOptions(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 // generated connect service name — "/" plus the proto package with dots as
 // slashes:
 //
-//	rpc.Protocol(authv2connect.ProjectServiceName) // "tau.auth.v2.ProjectService" -> "/tau/auth/v2"
+//	rpc.Protocol(authv2connect.IdentityServiceName) // "tau.auth.v2.IdentityService" -> "/tau/auth/v2"
 //
 // The id belongs to the PACKAGE, not to any one service in it, which is why
 // any of the package's names may be passed: auth mounts five service blocks

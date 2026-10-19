@@ -34,7 +34,7 @@ func TestAComposedIdentityIsWhatAuthAnswersWith(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 	h := newHost(t, mn)
-	n, err := New(Config{Services: []string{Auth}, Auth: authService.Config{DomainValidation: keyPair(t)}},
+	n, err := New(Config{Services: []string{Auth}},
 		WithHost(h), WithDatabases(&memFactory{}),
 		WithIdentity(func(host Host) (authService.Identity, error) {
 			handed = host
@@ -87,7 +87,7 @@ func TestAdmissionsAsksTheForgeWhoThenAuthWhether(t *testing.T) {
 	t.Cleanup(func() { mn.Close() })
 	server, caller := newHost(t, mn), newHost(t, mn)
 
-	auth, err := authService.New(server, &memKV{rows: map[string][]byte{}, factory: &memFactory{}}, authService.Config{DomainValidation: keyPair(t)}, authService.WithIdentity(&linked{}))
+	auth, err := authService.New(server, authService.WithIdentity(&linked{}))
 	require.NoError(t, err)
 	require.NoError(t, auth.Start(t.Context()))
 	t.Cleanup(func() { auth.Close() })
@@ -116,11 +116,4 @@ func TestAdmissionsAsksTheForgeWhoThenAuthWhether(t *testing.T) {
 	require.NoError(t, auth.Close())
 	_, _, err = a.Admit(t.Context(), f.TokenString(), f.Keys().Writable)
 	require.Error(t, err)
-}
-
-func keyPair(t *testing.T) authService.KeyPair {
-	t.Helper()
-	pair, err := authService.GenerateKeyPair()
-	require.NoError(t, err)
-	return pair
 }

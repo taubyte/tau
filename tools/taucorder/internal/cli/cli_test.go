@@ -61,7 +61,6 @@ func newWorld(t *testing.T) *world {
 	node := fixture.Host(t)
 	cloud := fixture.NewCloud()
 	fixture.Serve(t, node, cloud.Register)
-	fixture.Serve(t, node, cloud.Auth)
 	fixture.Serve(t, node, cloud.Build)
 	w.boot = node.Addrs()[0].String() + "/p2p/" + node.ID().String()
 	psNode := gossip(t, node)
@@ -104,7 +103,7 @@ func (w *world) run(t *testing.T, env Env, args ...string) (string, error) {
 func TestReadCommands(t *testing.T) {
 	w := newWorld(t)
 	out, err := w.run(t, Env{}, "projects")
-	if err != nil || !strings.Contains(out, "shop") || !strings.Contains(out, "main,staging") {
+	if err != nil || !strings.Contains(out, "github/10") || !strings.Contains(out, "main,staging") {
 		t.Fatal(out, err)
 	}
 	if w.got.Cloud != "c1" || len(w.got.Bootstrap) != 1 || len(w.got.SwarmKey) == 0 {
@@ -183,7 +182,7 @@ func TestProfile(t *testing.T) {
 	if err := App(env).RunContext(context.Background(), []string{"taucorder", "-p", prof, "projects"}); err != nil {
 		t.Fatal(err)
 	}
-	if w.got.Cloud != "c1" || !strings.Contains(out.String(), "blog") {
+	if w.got.Cloud != "c1" || !strings.Contains(out.String(), "github/20") {
 		t.Fatal(w.got, out.String())
 	}
 }

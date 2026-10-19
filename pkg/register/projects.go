@@ -499,3 +499,36 @@ func (r *Register) ProjectsOf(ctx context.Context, claimant string) ([]ProjectRe
 	slices.SortFunc(out, func(a, b ProjectRecord) int { return strings.Compare(a.ID, b.ID) })
 	return out, nil
 }
+
+// ListProjects is every linked project, sorted by id: the operator's view.
+// Each id appears once however many claims it has, resolved like any other
+// read.
+func (r *Register) ListProjects(ctx context.Context) ([]ProjectRecord, error) {
+	keys, err := r.store.List(ctx, claimPrefix)
+	if err != nil {
+		return nil, fmt.Errorf("register: listing claims: %w", err)
+	}
+	seen := map[string]bool{}
+	var out []ProjectRecord
+	for _, key := range keys {
+		_, rest, ok := strings.Cut(key, claimPrefix)
+		if !ok {
+			continue
+		}
+		id, _, ok := strings.Cut(rest, sep)
+		if !ok || id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		rec, err := r.project(ctx, id)
+		if errors.Is(err, ErrNotLinked) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	slices.SortFunc(out, func(a, b ProjectRecord) int { return strings.Compare(a.ID, b.ID) })
+	return out, nil
+}

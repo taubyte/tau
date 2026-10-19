@@ -39,8 +39,13 @@
 // publish is claimed by the repository it was pushed to. See pkg/register's
 // projects.go for the layout and the rule two racing claims resolve by.
 //
-// NOTHING ELSE ENUMERATES. ProjectsOf lists one claimant's own index and
-// nothing wider. There is no List of projects, no List of
+// ListProjects is the one enumeration: every linked project, for an operator's
+// view of a cloud (taucorder). It is a scan of the project table, which grows
+// with links rather than with traffic, and like everything here it is
+// reachable by any swarm peer — the OSS trust model. ProjectsOf lists one
+// claimant's own index.
+//
+// NOTHING ELSE ENUMERATES. There is no List of projects, no List of
 // environments and no history. Every call names exactly one row, which is what
 // the runtime needs; an operator's "what is deployed" question is a different
 // surface with different trust properties, and inventing it here would put a
@@ -98,6 +103,9 @@ const (
 	// RegisterServiceProjectsOfProcedure is the fully-qualified name of the RegisterService's
 	// ProjectsOf RPC.
 	RegisterServiceProjectsOfProcedure = "/tau.register.v2.RegisterService/ProjectsOf"
+	// RegisterServiceListProjectsProcedure is the fully-qualified name of the RegisterService's
+	// ListProjects RPC.
+	RegisterServiceListProjectsProcedure = "/tau.register.v2.RegisterService/ListProjects"
 	// RegisterServicePublishProcedure is the fully-qualified name of the RegisterService's Publish RPC.
 	RegisterServicePublishProcedure = "/tau.register.v2.RegisterService/Publish"
 	// RegisterServiceResolveProcedure is the fully-qualified name of the RegisterService's Resolve RPC.
@@ -132,6 +140,8 @@ type RegisterServiceClient interface {
 	// ProjectsOf is every project one claimant linked and its repository still
 	// owns.
 	ProjectsOf(context.Context, *connect.Request[v2.ClaimantRequest]) (*connect.Response[v2.ProjectRecords], error)
+	// ListProjects is every linked project, sorted by id.
+	ListProjects(context.Context, *connect.Request[v2.ListProjectsRequest]) (*connect.Response[v2.ProjectRecords], error)
 	// Publish stores a compiled project and points an environment at it.
 	Publish(context.Context, *connect.Request[v2.PublishRequest]) (*connect.Response[v2.PublishResponse], error)
 	// Resolve answers which object an environment runs, and under which
@@ -203,6 +213,12 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(registerServiceMethods.ByName("ProjectsOf")),
 			connect.WithClientOptions(opts...),
 		),
+		listProjects: connect.NewClient[v2.ListProjectsRequest, v2.ProjectRecords](
+			httpClient,
+			baseURL+RegisterServiceListProjectsProcedure,
+			connect.WithSchema(registerServiceMethods.ByName("ListProjects")),
+			connect.WithClientOptions(opts...),
+		),
 		publish: connect.NewClient[v2.PublishRequest, v2.PublishResponse](
 			httpClient,
 			baseURL+RegisterServicePublishProcedure,
@@ -254,6 +270,7 @@ type registerServiceClient struct {
 	project      *connect.Client[v2.ProjectRequest, v2.ProjectRecord]
 	repository   *connect.Client[v2.RepositoryRequest, v2.RepositoryRecord]
 	projectsOf   *connect.Client[v2.ClaimantRequest, v2.ProjectRecords]
+	listProjects *connect.Client[v2.ListProjectsRequest, v2.ProjectRecords]
 	publish      *connect.Client[v2.PublishRequest, v2.PublishResponse]
 	resolve      *connect.Client[v2.ResolveRequest, v2.Pointer]
 	object       *connect.Client[v2.ObjectRequest, v2.CompiledProject]
@@ -281,6 +298,11 @@ func (c *registerServiceClient) Repository(ctx context.Context, req *connect.Req
 // ProjectsOf calls tau.register.v2.RegisterService.ProjectsOf.
 func (c *registerServiceClient) ProjectsOf(ctx context.Context, req *connect.Request[v2.ClaimantRequest]) (*connect.Response[v2.ProjectRecords], error) {
 	return c.projectsOf.CallUnary(ctx, req)
+}
+
+// ListProjects calls tau.register.v2.RegisterService.ListProjects.
+func (c *registerServiceClient) ListProjects(ctx context.Context, req *connect.Request[v2.ListProjectsRequest]) (*connect.Response[v2.ProjectRecords], error) {
+	return c.listProjects.CallUnary(ctx, req)
 }
 
 // Publish calls tau.register.v2.RegisterService.Publish.
@@ -332,6 +354,8 @@ type RegisterServiceHandler interface {
 	// ProjectsOf is every project one claimant linked and its repository still
 	// owns.
 	ProjectsOf(context.Context, *connect.Request[v2.ClaimantRequest]) (*connect.Response[v2.ProjectRecords], error)
+	// ListProjects is every linked project, sorted by id.
+	ListProjects(context.Context, *connect.Request[v2.ListProjectsRequest]) (*connect.Response[v2.ProjectRecords], error)
 	// Publish stores a compiled project and points an environment at it.
 	Publish(context.Context, *connect.Request[v2.PublishRequest]) (*connect.Response[v2.PublishResponse], error)
 	// Resolve answers which object an environment runs, and under which
@@ -399,6 +423,12 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 		connect.WithSchema(registerServiceMethods.ByName("ProjectsOf")),
 		connect.WithHandlerOptions(opts...),
 	)
+	registerServiceListProjectsHandler := connect.NewUnaryHandler(
+		RegisterServiceListProjectsProcedure,
+		svc.ListProjects,
+		connect.WithSchema(registerServiceMethods.ByName("ListProjects")),
+		connect.WithHandlerOptions(opts...),
+	)
 	registerServicePublishHandler := connect.NewUnaryHandler(
 		RegisterServicePublishProcedure,
 		svc.Publish,
@@ -451,6 +481,8 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 			registerServiceRepositoryHandler.ServeHTTP(w, r)
 		case RegisterServiceProjectsOfProcedure:
 			registerServiceProjectsOfHandler.ServeHTTP(w, r)
+		case RegisterServiceListProjectsProcedure:
+			registerServiceListProjectsHandler.ServeHTTP(w, r)
 		case RegisterServicePublishProcedure:
 			registerServicePublishHandler.ServeHTTP(w, r)
 		case RegisterServiceResolveProcedure:
@@ -488,6 +520,10 @@ func (UnimplementedRegisterServiceHandler) Repository(context.Context, *connect.
 
 func (UnimplementedRegisterServiceHandler) ProjectsOf(context.Context, *connect.Request[v2.ClaimantRequest]) (*connect.Response[v2.ProjectRecords], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.ProjectsOf is not implemented"))
+}
+
+func (UnimplementedRegisterServiceHandler) ListProjects(context.Context, *connect.Request[v2.ListProjectsRequest]) (*connect.Response[v2.ProjectRecords], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.ListProjects is not implemented"))
 }
 
 func (UnimplementedRegisterServiceHandler) Publish(context.Context, *connect.Request[v2.PublishRequest]) (*connect.Response[v2.PublishResponse], error) {

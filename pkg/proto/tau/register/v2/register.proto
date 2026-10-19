@@ -37,8 +37,13 @@ syntax = "proto3";
 // publish is claimed by the repository it was pushed to. See pkg/register's
 // projects.go for the layout and the rule two racing claims resolve by.
 //
-// NOTHING ELSE ENUMERATES. ProjectsOf lists one claimant's own index and
-// nothing wider. There is no List of projects, no List of
+// ListProjects is the one enumeration: every linked project, for an operator's
+// view of a cloud (taucorder). It is a scan of the project table, which grows
+// with links rather than with traffic, and like everything here it is
+// reachable by any swarm peer — the OSS trust model. ProjectsOf lists one
+// claimant's own index.
+//
+// NOTHING ELSE ENUMERATES. There is no List of projects, no List of
 // environments and no history. Every call names exactly one row, which is what
 // the runtime needs; an operator's "what is deployed" question is a different
 // surface with different trust properties, and inventing it here would put a
@@ -232,6 +237,8 @@ message ProjectRecords {
   repeated ProjectRecord projects = 1;
 }
 
+message ListProjectsRequest {}
+
 service RegisterService {
   // Link claims a project id for a configuration repository and attaches
   // code repositories. An id or repository another project owns is
@@ -248,6 +255,9 @@ service RegisterService {
   // ProjectsOf is every project one claimant linked and its repository still
   // owns.
   rpc ProjectsOf(ClaimantRequest) returns (ProjectRecords);
+
+  // ListProjects is every linked project, sorted by id.
+  rpc ListProjects(ListProjectsRequest) returns (ProjectRecords);
 
   // Publish stores a compiled project and points an environment at it.
   rpc Publish(PublishRequest) returns (PublishResponse);

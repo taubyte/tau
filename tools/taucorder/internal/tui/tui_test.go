@@ -44,7 +44,7 @@ func (s *src) Jobs(_ context.Context, p string) ([]query.Job, error) {
 
 func newSrc() *src {
 	return &src{
-		projects: []query.Project{{ID: "p1", Name: "shop", Environments: []string{"main"}}},
+		projects: []query.Project{{ID: "p1", Config: "github/10", Environments: []string{"main"}}},
 		jobs:     map[string][]query.Job{"p1": {{ID: "j1", Project: "p1", Status: "success", Commit: "abc"}}},
 	}
 }
@@ -119,7 +119,7 @@ func TestViews(t *testing.T) {
 		t.Fatal(m.View())
 	}
 	m = press(m, "3")
-	if !strings.Contains(m.View(), "shop") {
+	if !strings.Contains(m.View(), "github/10") {
 		t.Fatal(m.View())
 	}
 	m = press(m, "4")

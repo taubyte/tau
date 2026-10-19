@@ -1,7 +1,7 @@
 [
   {
     "id": "p1",
-    "name": "shop",
+    "config_repository": "github/10",
     "environments": [
       "main",
       "staging"
@@ -9,7 +9,7 @@
   },
   {
     "id": "p2",
-    "name": "blog",
+    "config_repository": "github/20",
     "environments": null
   }
 ]

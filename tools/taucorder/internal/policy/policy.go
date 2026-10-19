@@ -54,20 +54,13 @@ const (
 // Table maps a full service name to its methods' classes.
 var Table = map[string]map[string]Class{
 	"tau.register.v2.RegisterService": {
+		"Link": W, "Project": R, "Repository": R, "ProjectsOf": R, "ListProjects": R,
 		"Publish": W, "Resolve": R, "Object": R, "Environments": R,
 		"ResolveHost": R, "ResolveView": R, "Assigned": R,
 	},
 	"tau.build.v2.QueueService": {"Enqueue": W},
 	"tau.build.v2.JobService": {
 		"Get": R, "List": R, "Cancel": W, "Retry": W, "Artifact": R, "Follow": R,
-	},
-	"tau.auth.v2.ProjectService":    {"Get": R, "List": R, "Create": W},
-	"tau.auth.v2.RepositoryService": {"Get": S, "List": R, "Register": W, "Unregister": W},
-	"tau.auth.v2.HookService":       {"Get": S, "List": R},
-	"tau.auth.v2.DomainService":     {"Register": W},
-	"tau.auth.v2.CertificateService": {
-		"GetCertificate": S, "SetCertificate": W, "GetStaticCertificate": S,
-		"SetStaticCertificate": W, "GetCache": S, "SetCache": W, "DeleteCache": W,
 	},
 	"tau.auth.v2.IdentityService": {"Admit": S},
 	"tau.raft.v2.RaftService": {

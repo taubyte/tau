@@ -13,8 +13,6 @@ import (
 
 	"connectrpc.com/connect"
 
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
@@ -30,7 +28,6 @@ type Fleet interface {
 // Client reads a cloud.
 type Client struct {
 	fleet    Fleet
-	projects authv2connect.ProjectServiceClient
 	register registerv2connect.RegisterServiceClient
 	jobs     buildv2connect.JobServiceClient
 }
@@ -39,7 +36,6 @@ type Client struct {
 func New(f Fleet, hc connect.HTTPClient, base string) *Client {
 	return &Client{
 		fleet:    f,
-		projects: authv2connect.NewProjectServiceClient(hc, base),
 		register: registerv2connect.NewRegisterServiceClient(hc, base),
 		jobs:     buildv2connect.NewJobServiceClient(hc, base),
 	}
@@ -119,28 +115,24 @@ func (c *Client) Services() []Service {
 	return out
 }
 
-// Project is one project and the environments it is deployed to.
+// Project is one linked project, by id and configuration repository, and the
+// environments it is deployed to.
 type Project struct {
 	ID           string   `json:"id"`
-	Name         string   `json:"name"`
+	Config       string   `json:"config_repository"`
 	Environments []string `json:"environments"`
 }
 
-// Projects lists every project auth knows, with register's deployments.
+// Projects lists every project the register has linked, with its deployments.
 func (c *Client) Projects(ctx context.Context) ([]Project, error) {
-	ids, err := c.projectIDs(ctx)
+	list, err := c.register.ListProjects(ctx, connect.NewRequest(&registerv2.ListProjectsRequest{}))
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Project, 0, len(ids))
-	for _, id := range ids {
-		p := Project{ID: id}
-		got, err := c.projects.Get(ctx, connect.NewRequest(&authv2.ProjectRef{Id: id}))
-		if err != nil {
-			return nil, err
-		}
-		p.Name = got.Msg.GetName()
-		envs, err := c.register.Environments(ctx, connect.NewRequest(&registerv2.ProjectRequest{Project: id}))
+	out := make([]Project, 0, len(list.Msg.GetProjects()))
+	for _, rec := range list.Msg.GetProjects() {
+		p := Project{ID: rec.GetId(), Config: rec.GetConfigRepository()}
+		envs, err := c.register.Environments(ctx, connect.NewRequest(&registerv2.ProjectRequest{Project: p.ID}))
 		switch {
 		case err == nil:
 			p.Environments = envs.Msg.GetEnvironments()
@@ -153,19 +145,6 @@ func (c *Client) Projects(ctx context.Context) ([]Project, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
-}
-
-func (c *Client) projectIDs(ctx context.Context) ([]string, error) {
-	s, err := c.projects.List(ctx, connect.NewRequest(&authv2.Empty{}))
-	if err != nil {
-		return nil, err
-	}
-	defer s.Close()
-	var ids []string
-	for s.Receive() {
-		ids = append(ids, s.Msg().GetId())
-	}
-	return ids, s.Err()
 }
 
 // Job is one build.
@@ -262,4 +241,16 @@ func status(s buildv2.JobStatus) string {
 		return "cancelled"
 	}
 	return s.String()
+}
+
+func (c *Client) projectIDs(ctx context.Context) ([]string, error) {
+	list, err := c.register.ListProjects(ctx, connect.NewRequest(&registerv2.ListProjectsRequest{}))
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(list.Msg.GetProjects()))
+	for _, rec := range list.Msg.GetProjects() {
+		ids = append(ids, rec.GetId())
+	}
+	return ids, nil
 }

@@ -3,13 +3,9 @@ package auth
 import (
 	"testing"
 
-	logpkg "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/host"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
-
-	"github.com/taubyte/tau/core/kvdb"
-	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 )
 
 // This package's whole test fixture is a mocknet host and a map. That is not
@@ -23,35 +19,12 @@ import (
 // testLogger is the log.StandardLogger the in-memory kvdb factory wants. It
 // is the only logger this package's tests construct, and nothing in the
 // service itself takes one.
-var testLogger = logpkg.Logger("tau.v2.auth.test")
 
 // newStore returns an in-memory store: a map behind kvdb.KVDB
 // (pkg/kvdb/mock), which is what "a store interface, not a constructed
 // store" buys — the service never sees the factory. It is typed kvdb.KVDB
 // rather than Store so a test can still List a raw prefix to prove nothing
 // was left behind; the service only ever sees the narrower Store.
-func newStore(t testing.TB) kvdb.KVDB {
-	t.Helper()
-	factory := kvdbmock.New()
-	t.Cleanup(factory.Close)
-	db, err := factory.New(testLogger, "auth", 1)
-	require.NoError(t, err)
-	return db
-}
-
-// newTestConfig is a valid, freshly generated domain-validation key pair in
-// the exact PEM shape github.com/taubyte/domain-validation's
-// PrivateKey/PublicKey options parse (store.go's generateECKeyPair).
-func newTestConfig(t testing.TB) Config {
-	t.Helper()
-	priv, pub, err := generateECKeyPair()
-	require.NoError(t, err)
-	return Config{DomainValidation: KeyPair{Private: priv, Public: pub}}
-}
-
-// newMocknet returns a mocknet private to one test — not the process-wide
-// one p2p/peer.Mock shares — so nothing a test registers can be seen by a
-// test running beside it.
 func newMocknet(t testing.TB) mocknet.Mocknet {
 	t.Helper()
 	mn := mocknet.New()
@@ -78,7 +51,7 @@ func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {
 // peer are the point.
 func newTestService(t testing.TB, opts ...Option) *Service {
 	t.Helper()
-	s, err := New(newHost(t, newMocknet(t)), newStore(t), newTestConfig(t), opts...)
+	s, err := New(newHost(t, newMocknet(t)), opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s

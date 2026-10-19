@@ -33,6 +33,10 @@ func TestTheProjectTableCrossesTheWire(t *testing.T) {
 	mine, err := c.ProjectsOf(ctx, "github.com/1")
 	require.NoError(t, err)
 	require.Equal(t, []pkgregister.ProjectRecord{got}, mine)
+
+	all, err := c.ListProjects(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []pkgregister.ProjectRecord{got}, all)
 }
 
 func TestEveryProjectSentinelSurvivesTheWire(t *testing.T) {
@@ -62,7 +66,20 @@ func TestEveryProjectSentinelSurvivesTheWire(t *testing.T) {
 	_, err = c.ProjectsOf(ctx, "")
 	require.ErrorIs(t, err, pkgregister.ErrNoClaimant)
 
-	broken := newClient(t, newHarness(t, brokenStore{pkgregister.NewMemStore()}))
+	store := pkgregister.NewMemStore()
+	seeded, err := pkgregister.New(pkgregister.WithStore(store))
+	require.NoError(t, err)
+	_, err = seeded.LinkProject(ctx, pkgregister.Link{Project: "QmShop", Config: "github.com/acme/config", Claimant: "github.com/1"})
+	require.NoError(t, err)
+	broken := newClient(t, newHarness(t, brokenStore{store}))
 	_, err = broken.Project(ctx, "QmShop")
+	require.Error(t, err)
+	_, err = broken.Repository(ctx, "github.com/acme/config")
+	require.Error(t, err)
+	_, err = broken.ProjectsOf(ctx, "github.com/1")
+	require.Error(t, err)
+	_, err = broken.ListProjects(ctx)
+	require.Error(t, err)
+	_, err = broken.LinkProject(ctx, pkgregister.Link{Project: "QmShop", Config: "github.com/acme/config", Claimant: "github.com/1"})
 	require.Error(t, err)
 }

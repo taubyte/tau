@@ -119,7 +119,6 @@ type Config struct {
 	Discovery discovery.Config
 	Worker    worker.Config
 	Gateway   gateway.Config
-	Auth      auth.Config
 	Secrets   secrets.Config
 	Proxy     proxy.Config
 	DNS       dns.Config

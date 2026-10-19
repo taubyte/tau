@@ -31,7 +31,7 @@ import (
 // build.go composes the two halves of the build service and the auth they both
 // ask.
 //
-//	auth           the store of projects, repositories, hooks and their keys.
+//	auth           who is admitted to this cloud, once a forge said who a caller is.
 //	build-backend  the queue, the job records, and the runners that clone a
 //	               pushed commit and deploy it.
 //	build-frontend the webhook a provider posts to, and the job API a
@@ -141,39 +141,12 @@ func (n *Node) openAuth() error {
 	if !n.cfg.runs(Auth) {
 		return nil
 	}
-	if n.opts.databases == nil {
-		return errors.New("node: auth needs somewhere to keep projects, repositories and hooks")
-	}
 
-	db, err := n.opts.databases.New(logger, Auth, rebroadcastSeconds)
-	if err != nil {
-		return err
-	}
-	n.closers = append(n.closers, closerFunc(func() { db.Close() }))
-
-	// A CLOUD THAT HAS NEVER BEEN GIVEN A KEY PAIR STILL STARTS, and is told
-	// what that costs. Domain-ownership claims are signed with this key, so a
-	// minted one means anything this cloud verified under a previous key stops
-	// verifying — which is fine for a development cloud and is a data loss for
-	// a real one. The alternative would be a key baked into the binary, and
-	// then every cloud could sign for every other cloud's domains.
-	cfg := n.cfg.Auth
-	if cfg.DomainValidation.Private == "" && cfg.DomainValidation.Public == "" {
-		pair, err := authService.GenerateKeyPair()
-		if err != nil {
-			return fmt.Errorf("node: auth: %w", err)
-		}
-		cfg.DomainValidation = pair
-		logger.Warnf("auth: no domain-validation key pair was configured, so one was minted for this run. " +
-			"Every domain this cloud has already verified stops verifying, and will again on the next restart. " +
-			"Put a pair in the config to keep them.")
-	}
-
-	served, err := tenancy.Parse(n.cfg.Tenancy)
-	if err != nil {
-		return err
-	}
-	authOptions := []authService.Option{authService.WithTenancy(served)}
+	// AUTH KEEPS NOTHING, so it opens no database: who a project is lives in
+	// the register, and its credentials in the vault. What is left is the one
+	// question of who is admitted, answered from whatever identity this node
+	// was composed with.
+	var authOptions []authService.Option
 	identity, err := n.identityOption()
 	if err != nil {
 		return err
@@ -182,7 +155,7 @@ func (n *Node) openAuth() error {
 		authOptions = append(authOptions, identity)
 	}
 
-	svc, err := authService.New(n.opts.host, db, cfg, authOptions...)
+	svc, err := authService.New(n.opts.host, authOptions...)
 	if err != nil {
 		return err
 	}

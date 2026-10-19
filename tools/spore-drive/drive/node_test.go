@@ -41,7 +41,6 @@ func TestEveryNodeRunsDiscovery(t *testing.T) {
 	assert.NilError(t, err)
 	assert.DeepEqual(t, nodes.instances[0].file.Node.Services,
 		[]string{node.Register, node.Database, node.Primitives, node.Worker, node.Gateway, node.Discovery})
-	assert.Equal(t, nodes.instances[0].file.Node.Auth.DomainValidation.Private, "", "no auth, no domain key")
 }
 
 func TestAnUnknownServiceIsRefused(t *testing.T) {
@@ -117,18 +116,8 @@ func TestReadAll(t *testing.T) {
 
 func TestAMissingKeyFileIsAnError(t *testing.T) {
 	fs, p := fixtures.VirtConfig()
-	assert.NilError(t, fs.Remove("/keys/dv_public.key"))
-	_, err := driveFor(p).nodesFor("host1")
-	assert.ErrorContains(t, err, "public domain key")
-
-	fs, p = fixtures.VirtConfig()
-	assert.NilError(t, fs.Remove("/keys/dv_private.key"))
-	_, err = driveFor(p).nodesFor("host1")
-	assert.ErrorContains(t, err, "private domain key")
-
-	fs, p = fixtures.VirtConfig()
 	assert.NilError(t, fs.Remove("/keys/swarm.key"))
-	_, err = driveFor(p).nodesFor("host1")
+	_, err := driveFor(p).nodesFor("host1")
 	assert.ErrorContains(t, err, "swarm key")
 }
 

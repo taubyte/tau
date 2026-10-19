@@ -41,8 +41,13 @@
 // publish is claimed by the repository it was pushed to. See pkg/register's
 // projects.go for the layout and the rule two racing claims resolve by.
 //
-// NOTHING ELSE ENUMERATES. ProjectsOf lists one claimant's own index and
-// nothing wider. There is no List of projects, no List of
+// ListProjects is the one enumeration: every linked project, for an operator's
+// view of a cloud (taucorder). It is a scan of the project table, which grows
+// with links rather than with traffic, and like everything here it is
+// reachable by any swarm peer — the OSS trust model. ProjectsOf lists one
+// claimant's own index.
+//
+// NOTHING ELSE ENUMERATES. There is no List of projects, no List of
 // environments and no history. Every call names exactly one row, which is what
 // the runtime needs; an operator's "what is deployed" question is a different
 // surface with different trust properties, and inventing it here would put a
@@ -1302,6 +1307,42 @@ func (x *ProjectRecords) GetProjects() []*ProjectRecord {
 	return nil
 }
 
+type ListProjectsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListProjectsRequest) Reset() {
+	*x = ListProjectsRequest{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProjectsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProjectsRequest) ProtoMessage() {}
+
+func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProjectsRequest.ProtoReflect.Descriptor instead.
+func (*ListProjectsRequest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{22}
+}
+
 var File_tau_register_v2_register_proto protoreflect.FileDescriptor
 
 const file_tau_register_v2_register_proto_rawDesc = "" +
@@ -1384,14 +1425,16 @@ const file_tau_register_v2_register_proto_rawDesc = "" +
 	"\x0fClaimantRequest\x12\x1a\n" +
 	"\bclaimant\x18\x01 \x01(\tR\bclaimant\"L\n" +
 	"\x0eProjectRecords\x12:\n" +
-	"\bprojects\x18\x01 \x03(\v2\x1e.tau.register.v2.ProjectRecordR\bprojects2\xdc\x06\n" +
+	"\bprojects\x18\x01 \x03(\v2\x1e.tau.register.v2.ProjectRecordR\bprojects\"\x15\n" +
+	"\x13ListProjectsRequest2\xb3\a\n" +
 	"\x0fRegisterService\x12D\n" +
 	"\x04Link\x12\x1c.tau.register.v2.LinkRequest\x1a\x1e.tau.register.v2.ProjectRecord\x12J\n" +
 	"\aProject\x12\x1f.tau.register.v2.ProjectRequest\x1a\x1e.tau.register.v2.ProjectRecord\x12S\n" +
 	"\n" +
 	"Repository\x12\".tau.register.v2.RepositoryRequest\x1a!.tau.register.v2.RepositoryRecord\x12O\n" +
 	"\n" +
-	"ProjectsOf\x12 .tau.register.v2.ClaimantRequest\x1a\x1f.tau.register.v2.ProjectRecords\x12L\n" +
+	"ProjectsOf\x12 .tau.register.v2.ClaimantRequest\x1a\x1f.tau.register.v2.ProjectRecords\x12U\n" +
+	"\fListProjects\x12$.tau.register.v2.ListProjectsRequest\x1a\x1f.tau.register.v2.ProjectRecords\x12L\n" +
 	"\aPublish\x12\x1f.tau.register.v2.PublishRequest\x1a .tau.register.v2.PublishResponse\x12D\n" +
 	"\aResolve\x12\x1f.tau.register.v2.ResolveRequest\x1a\x18.tau.register.v2.Pointer\x12J\n" +
 	"\x06Object\x12\x1e.tau.register.v2.ObjectRequest\x1a .tau.register.v2.CompiledProject\x12M\n" +
@@ -1413,30 +1456,31 @@ func file_tau_register_v2_register_proto_rawDescGZIP() []byte {
 	return file_tau_register_v2_register_proto_rawDescData
 }
 
-var file_tau_register_v2_register_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_tau_register_v2_register_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_tau_register_v2_register_proto_goTypes = []any{
-	(*Pointer)(nil),            // 0: tau.register.v2.Pointer
-	(*PublishRequest)(nil),     // 1: tau.register.v2.PublishRequest
-	(*View)(nil),               // 2: tau.register.v2.View
-	(*ViewRequest)(nil),        // 3: tau.register.v2.ViewRequest
-	(*ViewPointer)(nil),        // 4: tau.register.v2.ViewPointer
-	(*DestinationRequest)(nil), // 5: tau.register.v2.DestinationRequest
-	(*Assignment)(nil),         // 6: tau.register.v2.Assignment
-	(*Assignments)(nil),        // 7: tau.register.v2.Assignments
-	(*PublishResponse)(nil),    // 8: tau.register.v2.PublishResponse
-	(*ResolveRequest)(nil),     // 9: tau.register.v2.ResolveRequest
-	(*ObjectRequest)(nil),      // 10: tau.register.v2.ObjectRequest
-	(*CompiledProject)(nil),    // 11: tau.register.v2.CompiledProject
-	(*ProjectRequest)(nil),     // 12: tau.register.v2.ProjectRequest
-	(*Deployments)(nil),        // 13: tau.register.v2.Deployments
-	(*HostRequest)(nil),        // 14: tau.register.v2.HostRequest
-	(*HostAnswer)(nil),         // 15: tau.register.v2.HostAnswer
-	(*LinkRequest)(nil),        // 16: tau.register.v2.LinkRequest
-	(*ProjectRecord)(nil),      // 17: tau.register.v2.ProjectRecord
-	(*RepositoryRequest)(nil),  // 18: tau.register.v2.RepositoryRequest
-	(*RepositoryRecord)(nil),   // 19: tau.register.v2.RepositoryRecord
-	(*ClaimantRequest)(nil),    // 20: tau.register.v2.ClaimantRequest
-	(*ProjectRecords)(nil),     // 21: tau.register.v2.ProjectRecords
+	(*Pointer)(nil),             // 0: tau.register.v2.Pointer
+	(*PublishRequest)(nil),      // 1: tau.register.v2.PublishRequest
+	(*View)(nil),                // 2: tau.register.v2.View
+	(*ViewRequest)(nil),         // 3: tau.register.v2.ViewRequest
+	(*ViewPointer)(nil),         // 4: tau.register.v2.ViewPointer
+	(*DestinationRequest)(nil),  // 5: tau.register.v2.DestinationRequest
+	(*Assignment)(nil),          // 6: tau.register.v2.Assignment
+	(*Assignments)(nil),         // 7: tau.register.v2.Assignments
+	(*PublishResponse)(nil),     // 8: tau.register.v2.PublishResponse
+	(*ResolveRequest)(nil),      // 9: tau.register.v2.ResolveRequest
+	(*ObjectRequest)(nil),       // 10: tau.register.v2.ObjectRequest
+	(*CompiledProject)(nil),     // 11: tau.register.v2.CompiledProject
+	(*ProjectRequest)(nil),      // 12: tau.register.v2.ProjectRequest
+	(*Deployments)(nil),         // 13: tau.register.v2.Deployments
+	(*HostRequest)(nil),         // 14: tau.register.v2.HostRequest
+	(*HostAnswer)(nil),          // 15: tau.register.v2.HostAnswer
+	(*LinkRequest)(nil),         // 16: tau.register.v2.LinkRequest
+	(*ProjectRecord)(nil),       // 17: tau.register.v2.ProjectRecord
+	(*RepositoryRequest)(nil),   // 18: tau.register.v2.RepositoryRequest
+	(*RepositoryRecord)(nil),    // 19: tau.register.v2.RepositoryRecord
+	(*ClaimantRequest)(nil),     // 20: tau.register.v2.ClaimantRequest
+	(*ProjectRecords)(nil),      // 21: tau.register.v2.ProjectRecords
+	(*ListProjectsRequest)(nil), // 22: tau.register.v2.ListProjectsRequest
 }
 var file_tau_register_v2_register_proto_depIdxs = []int32{
 	2,  // 0: tau.register.v2.PublishRequest.views:type_name -> tau.register.v2.View
@@ -1447,26 +1491,28 @@ var file_tau_register_v2_register_proto_depIdxs = []int32{
 	12, // 5: tau.register.v2.RegisterService.Project:input_type -> tau.register.v2.ProjectRequest
 	18, // 6: tau.register.v2.RegisterService.Repository:input_type -> tau.register.v2.RepositoryRequest
 	20, // 7: tau.register.v2.RegisterService.ProjectsOf:input_type -> tau.register.v2.ClaimantRequest
-	1,  // 8: tau.register.v2.RegisterService.Publish:input_type -> tau.register.v2.PublishRequest
-	9,  // 9: tau.register.v2.RegisterService.Resolve:input_type -> tau.register.v2.ResolveRequest
-	10, // 10: tau.register.v2.RegisterService.Object:input_type -> tau.register.v2.ObjectRequest
-	12, // 11: tau.register.v2.RegisterService.Environments:input_type -> tau.register.v2.ProjectRequest
-	14, // 12: tau.register.v2.RegisterService.ResolveHost:input_type -> tau.register.v2.HostRequest
-	3,  // 13: tau.register.v2.RegisterService.ResolveView:input_type -> tau.register.v2.ViewRequest
-	5,  // 14: tau.register.v2.RegisterService.Assigned:input_type -> tau.register.v2.DestinationRequest
-	17, // 15: tau.register.v2.RegisterService.Link:output_type -> tau.register.v2.ProjectRecord
-	17, // 16: tau.register.v2.RegisterService.Project:output_type -> tau.register.v2.ProjectRecord
-	19, // 17: tau.register.v2.RegisterService.Repository:output_type -> tau.register.v2.RepositoryRecord
-	21, // 18: tau.register.v2.RegisterService.ProjectsOf:output_type -> tau.register.v2.ProjectRecords
-	8,  // 19: tau.register.v2.RegisterService.Publish:output_type -> tau.register.v2.PublishResponse
-	0,  // 20: tau.register.v2.RegisterService.Resolve:output_type -> tau.register.v2.Pointer
-	11, // 21: tau.register.v2.RegisterService.Object:output_type -> tau.register.v2.CompiledProject
-	13, // 22: tau.register.v2.RegisterService.Environments:output_type -> tau.register.v2.Deployments
-	15, // 23: tau.register.v2.RegisterService.ResolveHost:output_type -> tau.register.v2.HostAnswer
-	4,  // 24: tau.register.v2.RegisterService.ResolveView:output_type -> tau.register.v2.ViewPointer
-	7,  // 25: tau.register.v2.RegisterService.Assigned:output_type -> tau.register.v2.Assignments
-	15, // [15:26] is the sub-list for method output_type
-	4,  // [4:15] is the sub-list for method input_type
+	22, // 8: tau.register.v2.RegisterService.ListProjects:input_type -> tau.register.v2.ListProjectsRequest
+	1,  // 9: tau.register.v2.RegisterService.Publish:input_type -> tau.register.v2.PublishRequest
+	9,  // 10: tau.register.v2.RegisterService.Resolve:input_type -> tau.register.v2.ResolveRequest
+	10, // 11: tau.register.v2.RegisterService.Object:input_type -> tau.register.v2.ObjectRequest
+	12, // 12: tau.register.v2.RegisterService.Environments:input_type -> tau.register.v2.ProjectRequest
+	14, // 13: tau.register.v2.RegisterService.ResolveHost:input_type -> tau.register.v2.HostRequest
+	3,  // 14: tau.register.v2.RegisterService.ResolveView:input_type -> tau.register.v2.ViewRequest
+	5,  // 15: tau.register.v2.RegisterService.Assigned:input_type -> tau.register.v2.DestinationRequest
+	17, // 16: tau.register.v2.RegisterService.Link:output_type -> tau.register.v2.ProjectRecord
+	17, // 17: tau.register.v2.RegisterService.Project:output_type -> tau.register.v2.ProjectRecord
+	19, // 18: tau.register.v2.RegisterService.Repository:output_type -> tau.register.v2.RepositoryRecord
+	21, // 19: tau.register.v2.RegisterService.ProjectsOf:output_type -> tau.register.v2.ProjectRecords
+	21, // 20: tau.register.v2.RegisterService.ListProjects:output_type -> tau.register.v2.ProjectRecords
+	8,  // 21: tau.register.v2.RegisterService.Publish:output_type -> tau.register.v2.PublishResponse
+	0,  // 22: tau.register.v2.RegisterService.Resolve:output_type -> tau.register.v2.Pointer
+	11, // 23: tau.register.v2.RegisterService.Object:output_type -> tau.register.v2.CompiledProject
+	13, // 24: tau.register.v2.RegisterService.Environments:output_type -> tau.register.v2.Deployments
+	15, // 25: tau.register.v2.RegisterService.ResolveHost:output_type -> tau.register.v2.HostAnswer
+	4,  // 26: tau.register.v2.RegisterService.ResolveView:output_type -> tau.register.v2.ViewPointer
+	7,  // 27: tau.register.v2.RegisterService.Assigned:output_type -> tau.register.v2.Assignments
+	16, // [16:28] is the sub-list for method output_type
+	4,  // [4:16] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
 	4,  // [4:4] is the sub-list for extension extendee
 	0,  // [0:4] is the sub-list for field type_name
@@ -1483,7 +1529,7 @@ func file_tau_register_v2_register_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_register_v2_register_proto_rawDesc), len(file_tau_register_v2_register_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

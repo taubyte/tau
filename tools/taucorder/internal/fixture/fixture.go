@@ -17,8 +17,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
@@ -62,7 +60,7 @@ func Serve(t testing.TB, h host.Host, mount func() (string, http.Handler)) proto
 // Cloud is the fakes' state.
 type Cloud struct {
 	mu       sync.Mutex
-	Projects map[string]string   // id -> name
+	Projects map[string]string   // id -> config repository
 	Envs     map[string][]string // project -> environments
 	Jobs     map[string][]*buildv2.Job
 	// Ghosts are job ids List names that Get does not know.
@@ -76,7 +74,7 @@ type Cloud struct {
 // NewCloud is a cloud with two projects and three jobs.
 func NewCloud() *Cloud {
 	return &Cloud{
-		Projects: map[string]string{"p1": "shop", "p2": "blog"},
+		Projects: map[string]string{"p1": "github/10", "p2": "github/20"},
 		Envs:     map[string][]string{"p1": {"main", "staging"}},
 		Jobs: map[string][]*buildv2.Job{
 			"p1": {
@@ -110,12 +108,6 @@ func (c *Cloud) Register() (string, http.Handler) {
 	return registerv2connect.RegisterServiceName, h
 }
 
-// Auth serves ProjectService.
-func (c *Cloud) Auth() (string, http.Handler) {
-	_, h := authv2connect.NewProjectServiceHandler(&projects{c: c})
-	return authv2connect.ProjectServiceName, h
-}
-
 // Build serves JobService.
 func (c *Cloud) Build() (string, http.Handler) {
 	_, h := buildv2connect.NewJobServiceHandler(&jobs{c: c})
@@ -136,39 +128,23 @@ func (r *register) Environments(_ context.Context, req *connect.Request[register
 	return connect.NewResponse(&registerv2.Deployments{Environments: envs}), nil
 }
 
+func (r *register) ListProjects(_ context.Context, _ *connect.Request[registerv2.ListProjectsRequest]) (*connect.Response[registerv2.ProjectRecords], error) {
+	r.c.count("RegisterService/ListProjects")
+	out := &registerv2.ProjectRecords{}
+	for _, id := range []string{"p1", "p2"} {
+		if repo, ok := r.c.Projects[id]; ok {
+			out.Projects = append(out.Projects, &registerv2.ProjectRecord{Id: id, ConfigRepository: repo})
+		}
+	}
+	return connect.NewResponse(out), nil
+}
+
 func (r *register) Publish(_ context.Context, req *connect.Request[registerv2.PublishRequest]) (*connect.Response[registerv2.PublishResponse], error) {
 	r.c.count("RegisterService/Publish")
 	r.c.mu.Lock()
 	r.c.Published = append(r.c.Published, req.Msg.GetProject())
 	r.c.mu.Unlock()
 	return connect.NewResponse(&registerv2.PublishResponse{Object: "obj"}), nil
-}
-
-type projects struct {
-	authv2connect.UnimplementedProjectServiceHandler
-	c *Cloud
-}
-
-func (p *projects) List(_ context.Context, _ *connect.Request[authv2.Empty], s *connect.ServerStream[authv2.ProjectRef]) error {
-	p.c.count("ProjectService/List")
-	for _, id := range []string{"p2", "p1"} {
-		if _, ok := p.c.Projects[id]; !ok {
-			continue
-		}
-		if err := s.Send(&authv2.ProjectRef{Id: id}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (p *projects) Get(_ context.Context, req *connect.Request[authv2.ProjectRef]) (*connect.Response[authv2.Project], error) {
-	p.c.count("ProjectService/Get")
-	name, ok := p.c.Projects[req.Msg.GetId()]
-	if !ok {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s", req.Msg.GetId()))
-	}
-	return connect.NewResponse(&authv2.Project{Id: req.Msg.GetId(), Name: name}), nil
 }
 
 type jobs struct {

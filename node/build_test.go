@@ -16,7 +16,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -75,39 +74,6 @@ func TestTheBackendNeedsARaft(t *testing.T) {
 	// And a nil opener is refused where it is given rather than where it is
 	// used, so the failure names the wiring and not the first build.
 	require.ErrorIs(t, WithRaft(nil)(&options{}), ErrNoRaft)
-}
-
-func TestAuthNeedsSomewhereToKeepThings(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{Services: []string{Auth}}, WithHost(h))
-	require.ErrorContains(t, err, "projects, repositories and hooks")
-}
-
-// A CLOUD THAT HAS NEVER BEEN GIVEN A KEY PAIR STILL STARTS. The alternative is
-// a key baked into the binary, and then every cloud could sign for every other
-// cloud's domains.
-func TestAuthMintsAKeyPairWhenItHasNone(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Auth}})
-	require.NotNil(t, n.auth)
-
-	// The operator's own pair is used unchanged when there is one.
-	pair, err := authService.GenerateKeyPair()
-	require.NoError(t, err)
-	require.NotEmpty(t, pair.Private)
-	require.NotEmpty(t, pair.Public)
-	require.NotEqual(t, pair.Private, pair.Public)
-
-	given, _, _ := makeNode(t, Config{Services: []string{Auth}, Auth: authService.Config{DomainValidation: pair}})
-	require.NotNil(t, given.auth)
-
-	// Two mints are two different keys, which is exactly why the log says
-	// what a minted one costs.
-	second, err := authService.GenerateKeyPair()
-	require.NoError(t, err)
-	require.NotEqual(t, pair.Private, second.Private)
 }
 
 // ── a node runs them, and says it does ───────────────────────────────────

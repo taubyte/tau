@@ -125,3 +125,28 @@ func (c *Client) ProjectsOf(ctx context.Context, claimant string) ([]pkgregister
 	}
 	return out, nil
 }
+
+func (h *handler) ListProjects(ctx context.Context, _ *connect.Request[registerv2.ListProjectsRequest]) (*connect.Response[registerv2.ProjectRecords], error) {
+	recs, err := h.s.reg.ListProjects(ctx)
+	if err != nil {
+		return nil, wire(err)
+	}
+	out := &registerv2.ProjectRecords{}
+	for _, rec := range recs {
+		out.Projects = append(out.Projects, recordToWire(rec))
+	}
+	return connect.NewResponse(out), nil
+}
+
+// ListProjects is every linked project.
+func (c *Client) ListProjects(ctx context.Context) ([]pkgregister.ProjectRecord, error) {
+	res, err := c.svc.ListProjects(ctx, connect.NewRequest(&registerv2.ListProjectsRequest{}))
+	if err != nil {
+		return nil, unwire(err)
+	}
+	var out []pkgregister.ProjectRecord
+	for _, rec := range res.Msg.GetProjects() {
+		out = append(out, recordFromWire(rec))
+	}
+	return out, nil
+}

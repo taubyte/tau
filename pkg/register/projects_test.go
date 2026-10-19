@@ -467,3 +467,28 @@ func TestPublicationsAndRecordsNeverTouchEachOther(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rec.Code, 2)
 }
+
+func TestEveryLinkedProjectIsListedOnce(t *testing.T) {
+	storeA, storeB := NewMemStore(), NewMemStore()
+	a := linked(t, storeA, func() time.Time { return time.Unix(1, 0) })
+	b := linked(t, storeB, func() time.Time { return time.Unix(2, 0) })
+	_, err := a.LinkProject(ctx, Link{Project: pid, Config: cfg, Claimant: alice})
+	require.NoError(t, err)
+	_, err = b.LinkProject(ctx, Link{Project: pid, Config: "github.com/b/config", Claimant: mallet})
+	require.NoError(t, err)
+	_, err = a.LinkProject(ctx, Link{Project: "QmAnother", Config: "github.com/acme/another", Claimant: alice})
+	require.NoError(t, err)
+	merge(t, storeA, storeB)
+	require.NoError(t, storeA.Put(ctx, claimPrefix+"QmBroken"+sep+segment("x"), []byte("not json")))
+
+	all, err := a.ListProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, all, 2, "two claims on one id are one project, and an unreadable claim is none")
+	require.Equal(t, pid, all[1].ID)
+	require.Equal(t, cfg, all[1].Config)
+
+	_, err = linked(t, &failing{MemStore: storeA, list: true}, nil).ListProjects(ctx)
+	require.ErrorIs(t, err, errFailing)
+	_, err = linked(t, &failing{MemStore: storeA, get: true}, nil).ListProjects(ctx)
+	require.ErrorIs(t, err, errFailing)
+}
