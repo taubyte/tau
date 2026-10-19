@@ -97,6 +97,11 @@ func (s *Service) handleSetSecret(w http.ResponseWriter, r *http.Request, token,
 		respond(w, err)
 		return
 	}
+	// A ROTATED HOOK SECRET IS BELIEVED NOW, on the frontend it was set
+	// through, rather than after this project's cached hook expires: a relink
+	// rotates it, and until then the old hook's deliveries would still verify
+	// and the new one's would not.
+	s.secrets.drop(projectID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -118,6 +123,7 @@ func (s *Service) handleDeleteSecret(w http.ResponseWriter, r *http.Request, tok
 		respond(w, err)
 		return
 	}
+	s.secrets.drop(projectID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

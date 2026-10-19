@@ -118,6 +118,8 @@ func (s *Service) handleLinkProject(w http.ResponseWriter, r *http.Request, toke
 		respond(w, err)
 		return
 	}
+	// The project's repositories just changed, and a cached hook carries them.
+	s.secrets.drop(projectID)
 	writeJSON(w, http.StatusCreated, projectOut(rec))
 }
 

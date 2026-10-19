@@ -270,3 +270,26 @@ func TestAVaultMustNotBeNil(t *testing.T) {
 		WithBackend(&fakeBackend{}), WithIdentity(&fakeIdentity{}), WithVault(nil))
 	require.ErrorContains(t, err, "no vault")
 }
+
+// TestSettingASecretIsBelievedAtOnceByTheHookItVerifies: a relink rotates the
+// hook secret through this route, and the frontend it went through must not
+// keep verifying the old one until its cached hook expires.
+func TestSettingASecretIsBelievedAtOnceByTheHookItVerifies(t *testing.T) {
+	h := newHarness(t, Config{}, WithVault(newVault()))
+	h.hooks.get = func(id string) (Hook, error) {
+		return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
+	}
+	push := func() { h.do(t, webhookRequest(webhookOpts{hookID: testProject})) }
+
+	push()
+	push()
+	require.Equal(t, 1, h.hooks.count(), "a hook is cached")
+
+	require.Equal(t, http.StatusNoContent, h.do(t, withBody(authed(http.MethodPut, secretPath+"/TOKEN", testToken), []byte("v"))).Code)
+	push()
+	require.Equal(t, 2, h.hooks.count(), "setting a secret drops the cached hook")
+
+	require.Equal(t, http.StatusNoContent, h.do(t, authed(http.MethodDelete, secretPath+"/TOKEN", testToken)).Code)
+	push()
+	require.Equal(t, 3, h.hooks.count(), "deleting one does too")
+}

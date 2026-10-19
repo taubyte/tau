@@ -109,6 +109,14 @@ func (c *cache[V]) store(key string, entry cacheEntry[V]) {
 	}
 }
 
+// drop discards what is held for key, so the next lookup asks again.
+func (c *cache[V]) drop(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.items, key)
+	c.forget(key)
+}
+
 func (c *cache[V]) forget(key string) {
 	for i, k := range c.order {
 		if k == key {
