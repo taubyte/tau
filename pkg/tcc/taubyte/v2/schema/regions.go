@@ -67,48 +67,56 @@ type Regions interface {
 // DefaultRegion is the one region a build that serves one region places everything in.
 const DefaultRegion = "default"
 
-// OneRegion is the Regions of a build that serves one region: DefaultRegion. Every
-// resource runs there, and a placement or allowance naming any other region is
-// Broken: the author stated a place this build cannot put it, and deploying it
-// anyway would put it somewhere it was told not to be.
+// OneRegion is the Regions of a build that serves one region: DefaultRegion. It is
+// AsRegion(DefaultRegion).
 //
 // IT IS THE DEFAULT, so an audit nobody configured refuses what it cannot honour
 // rather than accepting it quietly. A project writing no `regions` anywhere — or
 // naming DefaultRegion — compiles clean, which is what "an absent block is anywhere
 // the allowance permits" promises.
-func OneRegion() Regions { return oneRegion{severity: Broken} }
+func OneRegion() Regions { return AsRegion(DefaultRegion) }
 
-// OneRegionLenient is OneRegion for a harness that runs projects written for
-// clouds with more regions than it has: every placement still lands in
-// DefaultRegion, and naming another region is a Check rather than a refusal.
-func OneRegionLenient() Regions { return oneRegion{severity: Check} }
+// AsRegion is the Regions of a build that serves the one region named. Every
+// resource runs there, and a placement or allowance naming any other region is
+// Broken: the author stated a place this build cannot put it, and deploying it
+// anyway would put it somewhere it was told not to be. A harness standing in for
+// one region of a larger cloud passes that region's name.
+func AsRegion(region string) Regions { return oneRegion{region: region, severity: Broken} }
 
-type oneRegion struct{ severity Severity }
+// TryOneRegion is OneRegion for a harness that runs projects written for clouds
+// with more regions than it has: every placement still lands in DefaultRegion, and
+// naming another region is a Check rather than a refusal.
+func TryOneRegion() Regions { return oneRegion{region: DefaultRegion, severity: Check} }
+
+type oneRegion struct {
+	region   string
+	severity Severity
+}
 
 func (o oneRegion) Place(p Placement) Answer {
-	placed := Answer{In: []string{DefaultRegion}}
-	if other := notDefault(p.Named()); len(other) > 0 {
+	placed := Answer{In: []string{o.region}}
+	if other := otherThan(o.region, p.Named()); len(other) > 0 {
 		placed.Concerns = []Concern{{o.severity,
-			fmt.Sprintf("is placed in %s, which this build does not serve; it runs in %q", quoted(other), DefaultRegion),
-			fmt.Sprintf("This build serves one region, %q.", DefaultRegion)}}
+			fmt.Sprintf("is placed in %s, which this build does not serve; it runs in %q", quoted(other), o.region),
+			fmt.Sprintf("This build serves one region, %q.", o.region)}}
 	}
 	return placed
 }
 
 func (o oneRegion) Allow(regions []string) []Concern {
-	other := notDefault(regions)
+	other := otherThan(o.region, regions)
 	if len(other) == 0 {
 		return nil
 	}
 	return []Concern{{o.severity,
-		fmt.Sprintf("allows %s, which this build does not serve; everything under it runs in %q", quoted(other), DefaultRegion),
-		fmt.Sprintf("This build serves one region, %q.", DefaultRegion)}}
+		fmt.Sprintf("allows %s, which this build does not serve; everything under it runs in %q", quoted(other), o.region),
+		fmt.Sprintf("This build serves one region, %q.", o.region)}}
 }
 
-func notDefault(regions []string) []string {
+func otherThan(region string, regions []string) []string {
 	var out []string
 	for _, r := range regions {
-		if r != DefaultRegion && !slices.Contains(out, r) {
+		if r != region && !slices.Contains(out, r) {
 			out = append(out, r)
 		}
 	}

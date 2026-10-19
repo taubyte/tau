@@ -132,6 +132,13 @@ func (a artifacts) of(label string) string {
 // say here. Both say it through worker.Artifacts.
 func project(t *testing.T, name string, components artifacts) ([]byte, map[string]any, map[string]string) {
 	t.Helper()
+	return projectAs(t, name, components, schema.TryOneRegion())
+}
+
+// projectAs is project placed by the Regions given: TryOneRegion for the corpus,
+// or AsRegion("eu") for a test standing in for one region of a larger cloud.
+func projectAs(t *testing.T, name string, components artifacts, regions schema.Regions) ([]byte, map[string]any, map[string]string) {
+	t.Helper()
 
 	c, err := schema.New(
 		schema.WithLocal(projectDir(name)),
@@ -148,7 +155,7 @@ func project(t *testing.T, name string, components artifacts) ([]byte, map[strin
 	// WHERE IT RUNS IS THE PLATFORM'S ANSWER, and this one serves one region: a
 	// corpus project writes no `regions` and is placed, which is the claim that
 	// lets it write none.
-	for _, f := range schema.Place(flat, schema.WithRegions(schema.OneRegionLenient())) {
+	for _, f := range schema.Place(flat, schema.WithRegions(regions)) {
 		require.NotEqual(t, schema.Broken, f.Severity, "%s: %s", name, f)
 	}
 
@@ -318,6 +325,9 @@ type deployed struct {
 	project string
 	name    string
 	host    string
+
+	// regions places it; nil is TryOneRegion, the corpus's one region.
+	regions schema.Regions
 }
 
 // publish puts one project into a universe that is already running, and answers
@@ -338,7 +348,11 @@ type deployed struct {
 func publish(t *testing.T, pids []string, at deployed, components artifacts) []*running {
 	t.Helper()
 
-	compiled, obj, pointed := project(t, at.name, components)
+	regions := at.regions
+	if regions == nil {
+		regions = schema.TryOneRegion()
+	}
+	compiled, obj, pointed := projectAs(t, at.name, components, regions)
 	stagedOn(t, pids, at.project, pointed)
 
 	nodes := make([]*node.Node, 0, len(pids))

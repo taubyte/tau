@@ -75,7 +75,7 @@ func TestOneRegionWarnsAndPlacesInDefault(t *testing.T) {
 		severity schema.Severity
 	}{
 		{"strict", schema.OneRegion(), schema.Broken},
-		{"lenient", schema.OneRegionLenient(), schema.Check},
+		{"lenient", schema.TryOneRegion(), schema.Check},
 	} {
 		t.Run(v.name, func(t *testing.T) { oneRegionPlaces(t, v.r, v.severity) })
 	}
@@ -148,7 +148,7 @@ func TestTheAuditHearsOneRegionByDefault(t *testing.T) {
 	require.ElementsMatch(t, want, findingsTitled(schema.Place(obj), schema.Broken))
 
 	// A HARNESS IS LENIENT: the same statements are Checks, and nothing is Broken.
-	lenient := schema.Audit(obj, nil, schema.WithRegions(schema.OneRegionLenient()))
+	lenient := schema.Audit(obj, nil, schema.WithRegions(schema.TryOneRegion()))
 	require.ElementsMatch(t, want, findingsTitled(lenient, schema.Check))
 	require.Empty(t, findingsTitled(lenient, schema.Broken))
 
@@ -238,4 +238,29 @@ func TestTheAuditFilesWhatTheRegionsSays(t *testing.T) {
 	})
 	require.Contains(t, findingsTitled(found, schema.Broken), "cache/c: is refused")
 	require.Contains(t, findingsTitled(found, schema.Broken), "project/p: allowance refused")
+}
+
+// AS A REGION, a build serves the one region it is named for: everything runs there,
+// naming it is clean, and naming any other region is Broken — the way a harness
+// stands in for one region of a larger cloud.
+func TestAsRegionServesTheRegionItNames(t *testing.T) {
+	r := schema.AsRegion("eu")
+
+	clean := r.Place(schema.Placement{Policy: "pinned", In: []string{"eu"}})
+	require.Equal(t, []string{"eu"}, clean.In)
+	require.Empty(t, clean.Concerns)
+	require.Equal(t, []string{"eu"}, r.Place(schema.Placement{}).In)
+	require.Empty(t, r.Allow([]string{"eu"}))
+
+	other := r.Place(schema.Placement{Policy: "pinned", In: []string{"us"}})
+	require.Equal(t, []string{"eu"}, other.In)
+	require.Len(t, other.Concerns, 1)
+	require.Equal(t, schema.Broken, other.Concerns[0].Severity)
+	require.Equal(t, `is placed in region "us", which this build does not serve; it runs in "eu"`, other.Concerns[0].Title)
+
+	allow := r.Allow([]string{"eu", "us"})
+	require.Len(t, allow, 1)
+	require.Equal(t, schema.Broken, allow[0].Severity)
+
+	require.Equal(t, schema.AsRegion(schema.DefaultRegion), schema.OneRegion())
 }
