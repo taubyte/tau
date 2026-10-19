@@ -31,12 +31,7 @@ var ErrNoSecrets = errors.New("node: no secrets service is reachable")
 // holder is what both halves offer: this node's own vault and a client onto
 // another node's answer with the same four methods, so nothing above knows
 // which it got.
-type holder interface {
-	Secret(ctx context.Context, project, environment, secretID string) (string, error)
-	Set(ctx context.Context, project, environment, name string, value []byte) error
-	Delete(ctx context.Context, project, environment, name string) error
-	List(ctx context.Context, project, environment string) ([]string, error)
-}
+type holder = Vault
 
 // vault resolves a secret for whichever of this node's services needs one.
 //

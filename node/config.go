@@ -175,6 +175,7 @@ type options struct {
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
 	now       func() time.Time
+	extra     []Service
 
 	// terminates says whatever serves Handler serves it over TLS too, with
 	// TLSConfig. See WithTLS.
@@ -367,11 +368,14 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-func (c Config) withDefaults() (Config, error) {
+// withDefaults fills and checks the service list. added are the names of the
+// services a composer added with WithService: an empty list runs them too, and
+// a list may name them.
+func (c Config) withDefaults(added ...string) (Config, error) {
 	if len(c.Services) == 0 {
-		c.Services = append([]string(nil), All...)
+		c.Services = append(append([]string(nil), All...), added...)
 	}
-	known := append(append([]string(nil), All...), BuildFrontend)
+	known := append(builtIn(), added...)
 	for _, name := range c.Services {
 		if !slices.Contains(known, name) {
 			return Config{}, fmt.Errorf("node: %q is not a service this node can run; it runs %v", name, known)

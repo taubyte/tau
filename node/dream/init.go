@@ -331,6 +331,10 @@ type Config struct {
 	// a universe that names one builds the same tier a machine's config builds
 	// (node/container.go).
 	Container string
+
+	// Options are added to every node's own, such as services added with
+	// node.WithService, which Services may then name.
+	Options []node.Option
 }
 
 // Universe is a running fleet of nodes.
@@ -464,6 +468,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int) error {
 	if now != nil {
 		options = append(options, node.WithClock(now))
 	}
+	options = append(options, cfg.Options...)
 
 	n, err := node.New(nodeConfig, options...)
 	if err != nil {

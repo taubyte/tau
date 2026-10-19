@@ -148,6 +148,12 @@ type Node struct {
 	closersMu sync.Mutex
 	closers   []io.Closer
 
+	// public is what services added with WithService serve on the public
+	// listener, and addedVault the one vault reach they share. See extend.go.
+	public     public
+	publicMu   sync.Mutex
+	addedVault *vault
+
 	// THE THREE LOCATORS, each one rule: if this node runs the service, use it
 	// directly; otherwise ask discovery which node does and dial that one. The rule
 	// is p2p/rpc's — see node/locate.go — and each holds at most one stream,
@@ -177,16 +183,20 @@ type Node struct {
 
 // New builds the services this node runs. It binds nothing and starts nothing.
 func New(cfg Config, opts ...Option) (*Node, error) {
-	cfg, err := cfg.withDefaults()
-	if err != nil {
-		return nil, err
-	}
-
 	var o options
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
 			return nil, fmt.Errorf("node: option: %w", err)
 		}
+	}
+
+	added := make([]string, 0, len(o.extra))
+	for _, s := range o.extra {
+		added = append(added, s.Name)
+	}
+	cfg, err := cfg.withDefaults(added...)
+	if err != nil {
+		return nil, err
 	}
 	if o.host == nil {
 		return nil, ErrNoHost
@@ -851,6 +861,13 @@ func (n *Node) Start(ctx context.Context) error {
 		return err
 	}
 
+	// ADDED SERVICES AFTER EVERY BUILT-IN ONE, so whatever they reach on this
+	// node is answering, and closed before them because their closers are the
+	// last recorded.
+	if err := n.startAdded(ctx); err != nil {
+		return err
+	}
+
 	// THE BACKGROUND LOOPS LAST. They outlive the call that started them, so
 	// they take a context of their own that Close cancels.
 	needsLoops := n.proxy != nil || n.worker != nil || n.disks != nil
@@ -924,11 +941,20 @@ func (n *Node) addCloser(c io.Closer) {
 
 // Handler is what this node serves on the internet, or nil when it runs no
 // gateway.
+//
+// A node running a service added with WithService always has one: what that
+// service handles is served in front of the gateway.
 func (n *Node) Handler() http.Handler {
-	if n.gateway == nil {
-		return nil
+	var gateway http.Handler
+	if n.gateway != nil {
+		gateway = n.gateway.Handler()
 	}
-	return n.gateway.Handler()
+	for _, s := range n.opts.extra {
+		if n.cfg.runs(s.Name) {
+			return n.public.front(gateway)
+		}
+	}
+	return gateway
 }
 
 // TLSConfig is what a composer serving Handler over TLS answers handshakes

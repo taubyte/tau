@@ -30,6 +30,10 @@ var (
 
 var logger = log.Logger("tau")
 
+// composed are node options a build adds to every node this binary starts —
+// a file built under a tag appends to it in init. The default build adds none.
+var composed []node.Option
+
 func main() {
 	os.Exit(run(os.Args, os.Stdout, os.Stderr))
 }
@@ -73,7 +77,7 @@ func startCommand(started func(*boot.Running)) *cli.Command {
 				file.Root = root
 			}
 
-			running, err := boot.Start(ctx.Context, file)
+			running, err := boot.Start(ctx.Context, file, composed...)
 			if err != nil {
 				return err
 			}

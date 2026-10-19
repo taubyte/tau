@@ -181,8 +181,9 @@ type Running struct {
 }
 
 // Start builds the machine's resources, starts the node, and serves its gateway
-// when it has one.
-func Start(ctx context.Context, f File) (*Running, error) {
+// when it has one. added are options a composer adds to the node, such as
+// services added with node.WithService that f's service list may then name.
+func Start(ctx context.Context, f File, added ...node.Option) (*Running, error) {
 	f, err := f.withDefaults()
 	if err != nil {
 		return nil, err
@@ -241,7 +242,7 @@ func Start(ctx context.Context, f File) (*Running, error) {
 		serving = append(serving, node.WithTLS())
 	}
 
-	n, err := node.New(f.Node, append(serving,
+	n, err := node.New(f.Node, append(append(serving,
 		node.WithHost(p.Peer()),
 		node.WithDatabaseEngines(dbEngines),
 		node.WithPubSub(p.Messaging()),
@@ -263,7 +264,7 @@ func Start(ctx context.Context, f File) (*Running, error) {
 		// root the rest of this file already has. Without it a container that
 		// declares a mount is refused rather than started with an empty layer.
 		node.WithRoot(f.Root),
-	)...)
+	), added...)...)
 	if err != nil {
 		p.Close()
 		return nil, err
