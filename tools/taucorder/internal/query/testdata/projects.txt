@@ -1,0 +1,3 @@
+ID  NAME  ENVIRONMENTS
+p1  shop  main,staging
+p2  blog  -

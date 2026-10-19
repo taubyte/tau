@@ -1,0 +1,17 @@
+[
+  {
+    "name": "register",
+    "nodes": [
+      "12D3KooWAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "12D3KooWBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    "ready": 1
+  },
+  {
+    "name": "worker",
+    "nodes": [
+      "12D3KooWBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    "ready": 1
+  }
+]

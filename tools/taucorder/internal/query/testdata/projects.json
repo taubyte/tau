@@ -1,0 +1,15 @@
+[
+  {
+    "id": "p1",
+    "name": "shop",
+    "environments": [
+      "main",
+      "staging"
+    ]
+  },
+  {
+    "id": "p2",
+    "name": "blog",
+    "environments": null
+  }
+]

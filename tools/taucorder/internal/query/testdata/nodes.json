@@ -1,0 +1,29 @@
+[
+  {
+    "peer": "12D3KooWAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ready": false,
+    "load": 0.9,
+    "age": "21s",
+    "serving": [
+      "register"
+    ],
+    "addresses": null,
+    "databases_pending": 0,
+    "fleet_revision": 0
+  },
+  {
+    "peer": "12D3KooWBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "ready": true,
+    "load": 0.25,
+    "age": "3s",
+    "serving": [
+      "register",
+      "worker"
+    ],
+    "addresses": [
+      "10.0.0.2"
+    ],
+    "databases_pending": 0,
+    "fleet_revision": 0
+  }
+]

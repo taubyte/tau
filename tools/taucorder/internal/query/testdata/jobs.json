@@ -1,0 +1,32 @@
+[
+  {
+    "id": "j2",
+    "project": "p1",
+    "status": "failed",
+    "repository": "github/1",
+    "ref": "refs/heads/dev",
+    "commit": "fedcba",
+    "attempt": 2,
+    "time": "2023-11-14T22:15:00Z"
+  },
+  {
+    "id": "j3",
+    "project": "p2",
+    "status": "running",
+    "repository": "github/2",
+    "ref": "refs/heads/main",
+    "commit": "abc",
+    "attempt": 1,
+    "time": "2023-11-14T22:14:10Z"
+  },
+  {
+    "id": "j1",
+    "project": "p1",
+    "status": "success",
+    "repository": "github/1",
+    "ref": "refs/heads/main",
+    "commit": "0123456789abcdef",
+    "attempt": 1,
+    "time": "2023-11-14T22:13:20Z"
+  }
+]

@@ -1,0 +1,3 @@
+PEER         READY  LOAD  AGE  SERVING          ADDRESSES
+12D3…aaaaaa  no     0.90  21s  register         -
+12D3…bbbbbb  yes    0.25  3s   register,worker  10.0.0.2
