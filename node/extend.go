@@ -13,6 +13,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
@@ -83,6 +84,11 @@ type Host interface {
 
 	// Logger is a logger named for the service.
 	Logger() log.StandardLogger
+
+	// Config decodes the service's entry in Config.Added into into, the way
+	// the node's own file decodes: by yaml. With no entry it leaves into as
+	// it was, so whatever into held is the default.
+	Config(into any) error
 }
 
 // Vault is what the cloud's secrets service answers, from whichever node runs it.
@@ -185,6 +191,24 @@ func (a *added) Peers(service string) []libp2ppeer.ID {
 }
 
 func (a *added) Secrets() Vault { return a.node.Vault() }
+
+func (a *added) Config(into any) error {
+	entry, ok := a.node.cfg.Added[a.name]
+	if !ok {
+		return nil
+	}
+	// A ROUND TRIP AND NOT A CAST. From a file the entry is whatever yaml
+	// decoded it to; from Go it may be the service's own struct. Either way
+	// the service gets what its yaml tags say, exactly as an operator wrote it.
+	raw, err := yaml.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("node: %s: config: %w", a.name, err)
+	}
+	if err := yaml.Unmarshal(raw, into); err != nil {
+		return fmt.Errorf("node: %s: config: %w", a.name, err)
+	}
+	return nil
+}
 
 // public is what added services serve on the node's public listener, in front
 // of the gateway.

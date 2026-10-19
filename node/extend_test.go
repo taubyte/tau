@@ -216,3 +216,53 @@ func TestAnAddedServiceThatFailsToStartFailsTheNode(t *testing.T) {
 	require.ErrorIs(t, err, refused)
 	require.Contains(t, err.Error(), addedName)
 }
+
+// TestAnAddedServiceDecodesItsOwnConfig: an added service's entry in
+// Config.Added reaches it through Host.Config by its yaml tags, whether the
+// entry came from a file (generic values) or from Go (the service's struct),
+// and a service with no entry keeps its defaults.
+func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
+	type settings struct {
+		Host  string   `yaml:"host"`
+		Hosts []string `yaml:"hosts"`
+		Port  int      `yaml:"port"`
+	}
+	for name, entry := range map[string]any{
+		"from a file": map[string]any{"host": "mail.example.com", "hosts": []any{"a", "b"}, "port": 25},
+		"from go":     settings{Host: "mail.example.com", Hosts: []string{"a", "b"}, Port: 25},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := &recording{}
+			n, _, _ := makeNode(t, Config{Services: []string{addedName}, Added: map[string]any{addedName: entry}}, WithService(r.service()))
+			require.NoError(t, n.Start(t.Context()))
+			got := settings{Port: 1}
+			require.NoError(t, r.host.Config(&got))
+			require.Equal(t, settings{Host: "mail.example.com", Hosts: []string{"a", "b"}, Port: 25}, got)
+		})
+	}
+
+	t.Run("no entry keeps the defaults", func(t *testing.T) {
+		r := &recording{}
+		n, _, _ := makeNode(t, Config{Services: []string{addedName}}, WithService(r.service()))
+		require.NoError(t, n.Start(t.Context()))
+		got := settings{Port: 1}
+		require.NoError(t, r.host.Config(&got))
+		require.Equal(t, settings{Port: 1}, got)
+	})
+
+	t.Run("an entry of the wrong shape is an error", func(t *testing.T) {
+		r := &recording{}
+		n, _, _ := makeNode(t, Config{Services: []string{addedName}, Added: map[string]any{addedName: map[string]any{"port": "many"}}}, WithService(r.service()))
+		require.NoError(t, n.Start(t.Context()))
+		var got settings
+		require.ErrorContains(t, r.host.Config(&got), addedName)
+	})
+
+}
+
+func TestConfigForAServiceNotAddedIsRefused(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	_, err := New(Config{Added: map[string]any{"mail": map[string]any{}}}, WithHost(newHost(t, mn)))
+	require.ErrorContains(t, err, `"mail"`)
+}

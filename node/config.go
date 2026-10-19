@@ -138,6 +138,12 @@ type Config struct {
 	// A node uses at most one of them.
 	BuildFrontend frontend.Config
 	BuildBackend  backend.Config
+
+	// Added is the configuration of each service added with WithService, under
+	// the name it was added by. Nothing here reads it: the service decodes its
+	// own entry with Host.Config. An entry naming no added service is refused,
+	// for the reason a misspelled service name is.
+	Added map[string]any
 }
 
 var (
@@ -386,6 +392,11 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 	}
 	if slices.Contains(c.Services, BuildFrontend) && slices.Contains(c.Services, BuildBackend) {
 		return Config{}, ErrBothHalves
+	}
+	for name := range c.Added {
+		if !slices.Contains(added, name) {
+			return Config{}, fmt.Errorf("node: there is configuration for %q, which is not a service added to this node; it adds %v", name, added)
+		}
 	}
 	return c, nil
 }
