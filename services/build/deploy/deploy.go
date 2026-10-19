@@ -117,7 +117,9 @@ type Checkout interface {
 	Checkout(ctx context.Context, repositoryKey, branch, commit string) (dir string, done func(), err error)
 }
 
-// Builder is what a push to a CODE repository becomes.
+// Builder is what a push to a CODE repository becomes, and what a push to the
+// configuration repository becomes too once it is published: a resource whose
+// source is a bare path is built from the configuration repository.
 //
 // It is an interface rather than the concrete builder so that this package
 // does not import the one that runs containers — routing a push and running a
@@ -288,6 +290,13 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 		for _, host := range incomplete {
 			say(out, "    %s.<cloud fqdn> — not published; this cloud was not told its own zone", host)
 		}
+	}
+
+	// A BARE PATH IS IN THIS REPOSITORY, so what it backs is built from this
+	// commit — after publishing, because the builder reads what to build from
+	// the deployments just published.
+	if d.builder != nil {
+		return d.builder.Build(ctx, w, out)
 	}
 	return nil
 }

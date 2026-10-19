@@ -70,17 +70,15 @@ func (p projectTable) Configures(ctx context.Context, projectID, repositoryKey s
 	return rec.Project == projectID && rec.Configures, nil
 }
 
-// CodeRepository is the repository a bare-path resource is built from: the
-// project's first code repository, or none.
-func (p projectTable) CodeRepository(ctx context.Context, projectID string) (string, error) {
+// MainRepository is the repository a bare-path resource is built from: the
+// configuration repository the project is claimed by. Code repositories are
+// built from only when a source names them.
+func (p projectTable) MainRepository(ctx context.Context, projectID string) (string, error) {
 	rec, err := p.record(ctx, projectID)
 	if err != nil {
 		return "", err
 	}
-	if len(rec.Code) == 0 {
-		return "", nil
-	}
-	return rec.Code[0], nil
+	return rec.Config, nil
 }
 
 // Repositories is every repository that gates a project.

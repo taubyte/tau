@@ -26,7 +26,7 @@ const (
 	basicFixture = "../../../pkg/tcc/taubyte/v2/fixtures/basic"
 	envsFixture  = "../../../pkg/tcc/taubyte/v2/fixtures/environments"
 
-	codeRepo   = "github.com/acme/shop-code"
+	mainRepo   = "github.com/acme/shop-config"
 	paylibRepo = "github.com/acme/paylib"
 	projectID  = "shop"
 )
@@ -34,11 +34,11 @@ const (
 // ── the seams, stood up ──────────────────────────────────────────────────
 
 type projects struct {
-	code string
+	main string
 	err  error
 }
 
-func (p projects) CodeRepository(context.Context, string) (string, error) { return p.code, p.err }
+func (p projects) MainRepository(context.Context, string) (string, error) { return p.main, p.err }
 
 type checkout struct {
 	dir      string
@@ -246,11 +246,11 @@ func work(repository string) backend.Work {
 	}
 }
 
-func builder(t *testing.T, r artifact.Register, c *checkout, e *engine, code string, opts ...artifact.Option) *artifact.Builder {
+func builder(t *testing.T, r artifact.Register, c *checkout, e *engine, main string, opts ...artifact.Option) *artifact.Builder {
 	t.Helper()
 	b, err := artifact.New(append([]artifact.Option{
 		artifact.WithRegister(r),
-		artifact.WithProjects(projects{code: code}),
+		artifact.WithProjects(projects{main: main}),
 		artifact.WithCheckout(c),
 		artifact.WithEngine(e),
 	}, opts...)...)
@@ -290,8 +290,8 @@ func TestAPushBuildsWhatTheConfigurationSaysItMakes(t *testing.T) {
 	c := &checkout{dir: source(t)}
 	o := newOut()
 
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), c, e, codeRepo).
-		Build(t.Context(), work(codeRepo), o))
+	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), c, e, mainRepo).
+		Build(t.Context(), work(mainRepo), o))
 
 	// Every resource whose source is a bare path in the project's own code
 	// repository, and nothing else.
@@ -321,7 +321,7 @@ func TestAResourceWithItsOwnRepository(t *testing.T) {
 	e := &engine{}
 	o := newOut()
 
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, codeRepo).
+	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo).
 		Build(t.Context(), work(paylibRepo), o))
 
 	specs := e.seen()
@@ -338,8 +338,8 @@ func TestTheBuildCommandsAreTheAuthors(t *testing.T) {
 	e := &engine{}
 	o := newOut()
 
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, codeRepo).
-		Build(t.Context(), work(codeRepo), o))
+	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo).
+		Build(t.Context(), work(mainRepo), o))
 
 	for _, spec := range e.seen() {
 		switch spec.Image {
@@ -359,8 +359,8 @@ func TestOneResourceBuildsOncePerDeployment(t *testing.T) {
 	o := newOut()
 
 	r := deployed(t, perEnvironment(t), "production", "preview", "staging", "ab")
-	require.NoError(t, builder(t, r, &checkout{dir: t.TempDir()}, e, codeRepo).
-		Build(t.Context(), work(codeRepo), o))
+	require.NoError(t, builder(t, r, &checkout{dir: t.TempDir()}, e, mainRepo).
+		Build(t.Context(), work(mainRepo), o))
 
 	// main feeds production, its shadow, and preview — but not staging.
 	stored := o.stored()
@@ -400,8 +400,8 @@ func TestAProjectThatWasNeverDeployed(t *testing.T) {
 	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
 	require.NoError(t, err)
 
-	err = builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, codeRepo).
-		Build(t.Context(), work(codeRepo), newOut())
+	err = builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo).
+		Build(t.Context(), work(mainRepo), newOut())
 	require.ErrorIs(t, err, artifact.ErrNeverDeployed)
 }
 
@@ -412,7 +412,7 @@ func TestAPushThatTouchesNothing(t *testing.T) {
 	c := &checkout{dir: t.TempDir()}
 	o := newOut()
 
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), c, e, codeRepo).
+	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), c, e, mainRepo).
 		Build(t.Context(), work("github.com/acme/somebody-elses"), o))
 
 	require.Empty(t, e.seen(), "nothing was built")
@@ -425,39 +425,39 @@ func TestWhatItRefuses(t *testing.T) {
 	r := deployed(t, oneEnvironment(t))
 
 	// A tag is not a deployment.
-	w := work(codeRepo)
+	w := work(mainRepo)
 	w.Ref = "refs/tags/v1.0.0"
-	err := builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, codeRepo).
+	err := builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo).
 		Build(t.Context(), w, newOut())
 	require.ErrorIs(t, err, artifact.ErrNotABranch)
 
 	// A checkout that could not read the repository names the commit, so a
 	// rewritten branch is diagnosable.
-	err = builder(t, r, &checkout{err: errors.New("no such ref")}, &engine{}, codeRepo).
-		Build(t.Context(), work(codeRepo), newOut())
+	err = builder(t, r, &checkout{err: errors.New("no such ref")}, &engine{}, mainRepo).
+		Build(t.Context(), work(mainRepo), newOut())
 	require.ErrorContains(t, err, "no such ref")
 	require.ErrorContains(t, err, "0f1e2d3c")
 
 	// An engine that could not run says which resource.
-	err = builder(t, r, &checkout{dir: source(t)}, &engine{err: errors.New("the daemon is down")}, codeRepo).
-		Build(t.Context(), work(codeRepo), newOut())
+	err = builder(t, r, &checkout{dir: source(t)}, &engine{err: errors.New("the daemon is down")}, mainRepo).
+		Build(t.Context(), work(mainRepo), newOut())
 	require.ErrorContains(t, err, "the daemon is down")
 
 	// A store that could not keep what was built fails the job: an artifact
 	// nobody kept is a build that reported success and produced nothing.
 	broken := newOut()
 	broken.err = errors.New("no space left")
-	err = builder(t, r, &checkout{dir: source(t)}, &engine{}, codeRepo).
-		Build(t.Context(), work(codeRepo), broken)
+	err = builder(t, r, &checkout{dir: source(t)}, &engine{}, mainRepo).
+		Build(t.Context(), work(mainRepo), broken)
 	require.ErrorContains(t, err, "no space left")
 }
 
-// A PROJECT WITH NO CODE REPOSITORY REGISTERED has no bare-path resources to
-// build, and a push claiming to be it builds nothing rather than everything.
-func TestNoCodeRepositoryRegistered(t *testing.T) {
+// A PROJECT WITH NO MAIN REPOSITORY KNOWN has no bare-path resources to build,
+// and a push claiming to be it builds nothing rather than everything.
+func TestNoMainRepositoryKnown(t *testing.T) {
 	e := &engine{}
 	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: t.TempDir()}, e, "").
-		Build(t.Context(), work(codeRepo), newOut()))
+		Build(t.Context(), work(mainRepo), newOut()))
 	require.Empty(t, e.seen())
 }
 
@@ -498,8 +498,8 @@ func TestWhatItCannotBeBuiltWithout(t *testing.T) {
 func TestADockerfileBuildIsRefusedByName(t *testing.T) {
 	e := &engine{}
 
-	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, codeRepo).
-		Build(t.Context(), work(codeRepo), newOut())
+	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo).
+		Build(t.Context(), work(mainRepo), newOut())
 
 	require.ErrorContains(t, err, "dockerfile")
 	require.ErrorContains(t, err, "application/worker_pool")
@@ -514,8 +514,8 @@ func TestADockerfileBuildIsRefusedByName(t *testing.T) {
 func TestAResourceWithNoSourceIsNotBuilt(t *testing.T) {
 	e := &engine{}
 
-	require.NoError(t, builder(t, deployed(t, envsFixture, "production"), &checkout{dir: t.TempDir()}, e, codeRepo).
-		Build(t.Context(), work(codeRepo), newOut()))
+	require.NoError(t, builder(t, deployed(t, envsFixture, "production"), &checkout{dir: t.TempDir()}, e, mainRepo).
+		Build(t.Context(), work(mainRepo), newOut()))
 	require.Empty(t, e.seen())
 }
 
@@ -552,19 +552,19 @@ func TestWhenItCannotAskAuth(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	require.ErrorContains(t, b.Build(t.Context(), work(codeRepo), newOut()), "auth is down")
+	require.ErrorContains(t, b.Build(t.Context(), work(mainRepo), newOut()), "auth is down")
 }
 
 func TestWhenItCannotReadTheRegister(t *testing.T) {
 	b, err := artifact.New(
 		artifact.WithRegister(unreachable{}),
-		artifact.WithProjects(projects{code: codeRepo}),
+		artifact.WithProjects(projects{main: mainRepo}),
 		artifact.WithCheckout(&checkout{dir: t.TempDir()}),
 		artifact.WithEngine(&engine{}),
 	)
 	require.NoError(t, err)
 
-	err = b.Build(t.Context(), work(codeRepo), newOut())
+	err = b.Build(t.Context(), work(mainRepo), newOut())
 	require.ErrorContains(t, err, "the register is unreachable")
 	require.NotErrorIs(t, err, artifact.ErrNeverDeployed,
 		"a register that cannot be read is not a project that was never deployed")
@@ -589,10 +589,10 @@ func TestABranchWhoseDeploymentIsNotLive(t *testing.T) {
 	// Only production is published; release/* feeds staging, which is not.
 	r := deployed(t, perEnvironment(t), "production")
 
-	w := work(codeRepo)
+	w := work(mainRepo)
 	w.Ref = "refs/heads/release/1.4"
 
-	err := builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, codeRepo).
+	err := builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo).
 		Build(t.Context(), w, newOut())
 	require.ErrorIs(t, err, artifact.ErrNoDeployment)
 	require.ErrorContains(t, err, "none of those is deployed")
@@ -616,8 +616,8 @@ func TestOnlyBuildTimeVariablesReachTheBuild(t *testing.T) {
 	})
 
 	e := &engine{}
-	require.NoError(t, builder(t, deployed(t, config), &checkout{dir: t.TempDir()}, e, codeRepo).
-		Build(t.Context(), work(codeRepo), newOut()))
+	require.NoError(t, builder(t, deployed(t, config), &checkout{dir: t.TempDir()}, e, mainRepo).
+		Build(t.Context(), work(mainRepo), newOut()))
 
 	specs := e.seen()
 	require.Len(t, specs, 1)
@@ -630,7 +630,7 @@ func TestOnlyBuildTimeVariablesReachTheBuild(t *testing.T) {
 func TestABuildThatNeedsASecret(t *testing.T) {
 	e := &engine{}
 
-	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, codeRepo).
+	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo).
 		Build(t.Context(), work(paylibRepo), newOut())
 
 	require.ErrorIs(t, err, artifact.ErrNoSecrets)
@@ -645,7 +645,7 @@ func TestABuildTimeSecretReachesTheBuild(t *testing.T) {
 	e := &engine{}
 	held := vault{projectID + "/prod/QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy": "ghp_thetoken"}
 
-	require.NoError(t, builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, codeRepo,
+	require.NoError(t, builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo,
 		artifact.WithSecrets(held)).
 		Build(t.Context(), work(paylibRepo), newOut()))
 
@@ -660,7 +660,7 @@ func TestABuildTimeSecretReachesTheBuild(t *testing.T) {
 func TestAVaultThatRefusesFailsTheBuildBeforeAnythingRuns(t *testing.T) {
 	e := &engine{}
 
-	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, codeRepo,
+	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo,
 		artifact.WithSecrets(vault{})).
 		Build(t.Context(), work(paylibRepo), newOut())
 
@@ -673,7 +673,7 @@ func TestAVaultThatRefusesFailsTheBuildBeforeAnythingRuns(t *testing.T) {
 // record, which everyone who can read the repository can read.
 func TestTheValueNeverReachesTheJobLog(t *testing.T) {
 	out := newOut()
-	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, &engine{}, codeRepo,
+	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, &engine{}, mainRepo,
 		artifact.WithSecrets(vault{})).
 		Build(t.Context(), work(paylibRepo), out)
 
@@ -684,7 +684,7 @@ func TestTheValueNeverReachesTheJobLog(t *testing.T) {
 func TestASecretsResolverMustNotBeNil(t *testing.T) {
 	_, err := artifact.New(
 		artifact.WithRegister(deployed(t, basicFixture)),
-		artifact.WithProjects(projects{code: codeRepo}),
+		artifact.WithProjects(projects{main: mainRepo}),
 		artifact.WithCheckout(&checkout{dir: t.TempDir()}),
 		artifact.WithEngine(&engine{}),
 		artifact.WithSecrets(nil),
@@ -704,9 +704,35 @@ func TestAnUnreadDelegatedBlockIsRefusedByName(t *testing.T) {
 	})
 	e := &engine{}
 
-	err := builder(t, deployed(t, delegated), &checkout{dir: source(t)}, e, codeRepo).
+	err := builder(t, deployed(t, delegated), &checkout{dir: source(t)}, e, mainRepo).
 		Build(t.Context(), work(paylibRepo), newOut())
 	require.ErrorIs(t, err, artifact.ErrUnfilled)
 	require.ErrorContains(t, err, `component/paylib names source.config "taubyte.yaml"`)
 	require.Empty(t, e.seen())
+}
+
+// A BARE PATH IS THE MAIN REPOSITORY, never a code repository, however many
+// the project links: pushing the configuration repository builds the bare-path
+// resource, pushing a code repository no source names builds nothing, and
+// pushing the one a source names by git URL builds only that resource.
+func TestABarePathIsTheMainRepositoryNotACodeRepository(t *testing.T) {
+	r := deployed(t, oneEnvironment(t))
+	for _, c := range []struct {
+		pushed string
+		images []string
+	}{
+		{mainRepo, []string{"rust:1.83"}},
+		{"github.com/acme/shop-code", nil},
+		{"github.com/acme/another-code", nil},
+		{paylibRepo, []string{"taubyte/go-wasi:v2"}},
+	} {
+		e := &engine{}
+		require.NoError(t, builder(t, r, &checkout{dir: source(t)}, e, mainRepo).
+			Build(t.Context(), work(c.pushed), newOut()), c.pushed)
+		var images []string
+		for _, s := range e.seen() {
+			images = append(images, s.Image)
+		}
+		require.Equal(t, c.images, images, c.pushed)
+	}
 }

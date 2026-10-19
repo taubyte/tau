@@ -95,13 +95,15 @@ type Register interface {
 	Object(ctx context.Context, id register.ObjectID) ([]byte, error)
 }
 
-// Projects says which repository backs a project's code.
+// Projects says which repository a bare path is in.
 //
-// IT IS ASKED RATHER THAN INFERRED because half of it is not in the config: a
-// resource whose source is a bare path is in the project's own code repository,
-// and which repository that IS is the register's project table to say.
+// IT IS ASKED RATHER THAN INFERRED because it is not in the config: a resource
+// whose source is a bare path is in the project's MAIN repository — the
+// configuration repository the project is claimed by — and which repository
+// that IS is the register's project table to say. A code repository is built
+// from only when a source names it by its git URL.
 type Projects interface {
-	CodeRepository(ctx context.Context, projectID string) (string, error)
+	MainRepository(ctx context.Context, projectID string) (string, error)
 }
 
 // Secrets resolves a build-time secret — the token a private dependency needs,
@@ -207,14 +209,14 @@ func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output)
 		return err
 	}
 
-	own, err := b.projects.CodeRepository(ctx, w.ProjectID)
+	main, err := b.projects.MainRepository(ctx, w.ProjectID)
 	if err != nil {
 		return fmt.Errorf("artifact: %w", err)
 	}
 
 	// WHAT TO BUILD IS DECIDED BEFORE ANYTHING IS CLONED, so a push that
 	// touches nothing costs no network and says so.
-	work, err := b.plan(ctx, w.ProjectID, deployments, w.RepositoryKey, own)
+	work, err := b.plan(ctx, w.ProjectID, deployments, w.RepositoryKey, main)
 	if err != nil {
 		return err
 	}
@@ -324,7 +326,7 @@ type item struct {
 }
 
 // plan is every build this push touches, across every deployment it feeds.
-func (b *Builder) plan(ctx context.Context, projectID string, deployments []string, pushed, own string) ([]item, error) {
+func (b *Builder) plan(ctx context.Context, projectID string, deployments []string, pushed, main string) ([]item, error) {
 	var out []item
 
 	for _, environment := range deployments {
@@ -334,7 +336,7 @@ func (b *Builder) plan(ctx context.Context, projectID string, deployments []stri
 		}
 
 		for _, buildable := range p.Buildables() {
-			backs, err := backedBy(buildable, pushed, own)
+			backs, err := backedBy(buildable, pushed, main)
 			if err != nil {
 				return nil, err
 			}
@@ -369,12 +371,12 @@ func (b *Builder) plan(ctx context.Context, projectID string, deployments []stri
 // backedBy reports whether a pushed repository is the one this resource is
 // built from.
 //
-// A BARE PATH IS THE PROJECT'S OWN CODE REPOSITORY, which the config cannot
-// say — so `own` comes from the project table, and a project with no code repository
-// registered has no bare-path resources to build.
-func backedBy(b specs.Buildable, pushed, own string) (bool, error) {
+// A BARE PATH IS THE PROJECT'S MAIN REPOSITORY, the configuration repository
+// it is claimed by, which the config cannot say — so `main` comes from the
+// project table. A code repository backs only a source naming it.
+func backedBy(b specs.Buildable, pushed, main string) (bool, error) {
 	if b.Source.Git == "" {
-		return own != "" && own == pushed, nil
+		return main != "" && main == pushed, nil
 	}
 
 	key, err := repokey.Parse(b.Source.Git)

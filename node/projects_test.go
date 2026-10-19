@@ -69,9 +69,9 @@ func TestTheProjectTableAnswersBothBuildRoles(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, got, "configuring one project is not configuring another")
 
-	code, err := p.CodeRepository(ctx, linkedID)
+	main, err := p.MainRepository(ctx, linkedID)
 	require.NoError(t, err)
-	require.Equal(t, linkedCode, code)
+	require.Equal(t, linkedCfg, main, "a bare path is the configuration repository, not a code one")
 
 	repos, err := p.Repositories(ctx, linkedID)
 	require.NoError(t, err)
@@ -87,10 +87,15 @@ func TestTheProjectTableAnswersBothBuildRoles(t *testing.T) {
 
 	_, err = p.LinkProject(ctx, pkgregister.Link{Project: "QmConfigOnly", Config: "github.com/acme/other", Claimant: "github.com/1"})
 	require.NoError(t, err)
-	code, err = p.CodeRepository(ctx, "QmConfigOnly")
+	// SEVERAL CODE REPOSITORIES, in an order that is not sorted: the bare
+	// path is still the configuration repository, never the first of them.
+	_, err = p.LinkProject(ctx, pkgregister.Link{Project: "QmManyCode", Config: "github.com/acme/many-config",
+		Code: []string{"github.com/acme/zeta", "github.com/acme/alpha", "github.com/acme/mid"}, Claimant: "github.com/1"})
 	require.NoError(t, err)
-	require.Empty(t, code, "a project with no code repository builds no bare path")
-	_, err = p.CodeRepository(ctx, "QmNobody")
+	main, err = p.MainRepository(ctx, "QmManyCode")
+	require.NoError(t, err)
+	require.Equal(t, "github.com/acme/many-config", main)
+	_, err = p.MainRepository(ctx, "QmNobody")
 	require.Error(t, err)
 }
 

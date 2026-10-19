@@ -464,11 +464,15 @@ func TestACodePushIsDelegated(t *testing.T) {
 	require.Equal(t, w.RepositoryKey, b.saw.RepositoryKey)
 	require.Contains(t, log.String(), "delegated")
 
-	// AND A CONFIGURATION PUSH DOES NOT. The same runner, the same auth
-	// answer, a different job.
+	// A CONFIGURATION PUSH PUBLISHES, THEN BUILDS: a bare path is in the
+	// configuration repository, so the builder is handed the same push once
+	// the deployments it reads are published.
 	b.calls = 0
+	log = out{}
 	require.NoError(t, d.Run(t.Context(), work(), &log))
-	require.Zero(t, b.calls)
+	require.Equal(t, 1, b.calls)
+	require.Equal(t, work().RepositoryKey, b.saw.RepositoryKey)
+	require.Less(t, strings.Index(log.String(), "published"), strings.Index(log.String(), "delegated"), "published before it built")
 }
 
 // A builder that failed is the job's failure, not a deploy that fell back to
