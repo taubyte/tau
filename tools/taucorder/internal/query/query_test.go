@@ -133,6 +133,16 @@ func TestErrors(t *testing.T) {
 	}
 }
 
+func TestDurationRoundTrips(t *testing.T) {
+	var d query.Duration
+	if err := d.UnmarshalText([]byte("3s")); err != nil || time.Duration(d) != 3*time.Second {
+		t.Fatal(d, err)
+	}
+	if err := d.UnmarshalText([]byte("x")); err == nil {
+		t.Fatal("parsed x")
+	}
+}
+
 func TestShortAndStatus(t *testing.T) {
 	if query.Short("abc") != "abc" {
 		t.Fatal("short")

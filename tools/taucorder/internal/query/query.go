@@ -67,6 +67,13 @@ func (d Duration) String() string { return time.Duration(d).Round(time.Second).S
 // MarshalText is the duration as text, so JSON stays readable.
 func (d Duration) MarshalText() ([]byte, error) { return []byte(d.String()), nil }
 
+// UnmarshalText reads what MarshalText wrote, so the JSON output round-trips.
+func (d *Duration) UnmarshalText(b []byte) error {
+	v, err := time.ParseDuration(string(b))
+	*d = Duration(v)
+	return err
+}
+
 // Nodes is the fleet, by peer id.
 func (c *Client) Nodes() []Node {
 	var out []Node
