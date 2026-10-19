@@ -3,7 +3,6 @@ package peer
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -35,16 +34,15 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
 
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	port1 := 15000 + rnd.Intn(20000)
-	port2 := port1 + 1
+	// AN UNBOUND PORT, so the kernel picks one free: a random one collided with whatever
+	// else the machine was running. The peers dial each other by what they announce.
 
 	p1, err := New(
 		ctx,
 		dir1,
 		keypair.NewRaw(),
 		nil,
-		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port1)},
+		[]string{"/ip4/127.0.0.1/tcp/0"},
 		nil,
 		true,
 		false,
@@ -59,7 +57,7 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		dir2,
 		keypair.NewRaw(),
 		nil,
-		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port2)},
+		[]string{"/ip4/127.0.0.1/tcp/0"},
 		nil,
 		true,
 		false,
@@ -271,15 +269,15 @@ func TestPubSubTopicReuseAfterError(t *testing.T) {
 
 	dir1 := t.TempDir()
 
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	port1 := 16000 + rnd.Intn(20000)
+	// AN UNBOUND PORT, so the kernel picks one free: a random one collided with whatever
+	// else the machine was running. The peers dial each other by what they announce.
 
 	p1, err := New(
 		ctx,
 		dir1,
 		keypair.NewRaw(),
 		nil,
-		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port1)},
+		[]string{"/ip4/127.0.0.1/tcp/0"},
 		nil,
 		true,
 		false,
@@ -357,15 +355,15 @@ func TestPubSubMultipleSubscriptionsSameTopic(t *testing.T) {
 
 	dir1 := t.TempDir()
 
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	port1 := 17000 + rnd.Intn(20000)
+	// AN UNBOUND PORT, so the kernel picks one free: a random one collided with whatever
+	// else the machine was running. The peers dial each other by what they announce.
 
 	p1, err := New(
 		ctx,
 		dir1,
 		keypair.NewRaw(),
 		nil,
-		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port1)},
+		[]string{"/ip4/127.0.0.1/tcp/0"},
 		nil,
 		true,
 		false,
