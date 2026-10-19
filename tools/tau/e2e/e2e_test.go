@@ -147,6 +147,24 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 		return json.Unmarshal([]byte(ok(t, "jobs", "--dir", dir, "-o", "json")), &jobs) == nil && len(jobs) == 1
 	}, time.Minute, time.Second, "the verified push queued a job")
 
+	// RELINKING REPLACES. The forge already holds this cloud's hook, so a link
+	// without a terminal refuses until told; --replace-hook deletes the old
+	// hook and deploy key, rotates the secret and installs new ones. A delivery
+	// signed with the old wire is then refused and one with the new verifies.
+	before := installed(t, f, configRepo)
+	require.Len(t, before, 1)
+	r = tau("link", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String())
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, "--replace-hook")
+	ok(t, "link", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String(), "--replace-hook")
+	after := installed(t, f, configRepo)
+	require.Len(t, after, 1, "the old hook is gone and exactly one new one is installed")
+	require.NotEqual(t, before[0].Handle, after[0].Handle)
+	rewired := f.LastHookWire()
+	require.NotEqual(t, wire, rewired)
+	require.Equal(t, http.StatusForbidden, deliver(t, f, hook, configRepo, wire).StatusCode, "the old hook's secret is gone from the cloud")
+	require.Equal(t, http.StatusAccepted, deliver(t, f, hook, configRepo, rewired).StatusCode)
+
 	// Secrets: set, then listed by name only.
 	require.Eventually(t, func() bool {
 		return tau("secrets", "set", "DB_URL", "postgres://x", "--dir", dir, "--env", "prod").code == 0
@@ -186,6 +204,16 @@ func deliver(t *testing.T, f *fake.Forge, hook string, repo repokey.Key, wire st
 	require.NoError(t, err)
 	resp.Body.Close()
 	return resp
+}
+
+// installed is the hooks the fake forge holds on repo.
+func installed(t *testing.T, f *fake.Forge, repo repokey.Key) []forge.InstalledPushHook {
+	t.Helper()
+	s, err := forges.For(repo, f.Token())
+	require.NoError(t, err)
+	hooks, err := s.ListPushHooks(t.Context(), repo)
+	require.NoError(t, err)
+	return hooks
 }
 
 // copyProject copies a project's documents, so a second directory carries

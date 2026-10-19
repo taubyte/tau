@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +15,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/linkcreds"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 	"github.com/taubyte/tau/tools/tau/internal/project"
@@ -523,4 +527,169 @@ func TestSecrets(t *testing.T) {
 	x.ok("secrets", "set", "API_KEY", "--dir", x.dir)
 	require.Equal(t, []byte("s3cret"), x.f.secrets["proj-1/prod"]["API_KEY"])
 	require.Equal(t, []string{"Environment", "Value of API_KEY"}, x.prompter.asked)
+}
+
+// hooksOn is what the fake forge holds on key: the hooks and the deploy keys.
+func hooksOn(t *testing.T, x *tester, f *fake.Forge, key repokey.Key) ([]forge.InstalledPushHook, []forge.InstalledDeployKey) {
+	t.Helper()
+	s, err := x.forges.For(key, f.Token())
+	require.NoError(t, err)
+	hooks, err := s.ListPushHooks(context.Background(), key)
+	require.NoError(t, err)
+	keys, err := s.ListDeployKeys(context.Background(), key)
+	require.NoError(t, err)
+	return hooks, keys
+}
+
+// A SECOND LINK FINDS THE FIRST ONE'S HOOK and asks before replacing it; it
+// never installs a duplicate that the rotated secret would leave dead.
+func TestRelinkAsksAboutTheHookAlreadyInstalled(t *testing.T) {
+	x, f := linkTester(t)
+	id := projectYAMLID(t, x.dir)
+	cfg := f.Keys().Admin
+	x.ok("link", "--dir", x.dir, "--config-repo", cfg.String())
+	first, firstKeys := hooksOn(t, x, f, cfg)
+	require.Len(t, first, 1)
+	require.Len(t, firstKeys, 1)
+	require.Equal(t, x.f.srv.URL+"/hook/"+id, first[0].Callback)
+	secret := func() string { return string(x.f.secrets[id+"/"+linkcreds.Environment][linkcreds.HookSecret]) }
+	stored := secret()
+
+	// Not at a terminal, and no flag: refused, naming both flags, and nothing
+	// moved.
+	r := x.run("link", "--dir", x.dir, "--config-repo", cfg.String())
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, "--replace-hook")
+	require.Contains(t, r.stderr, "--keep-hook")
+	require.Equal(t, stored, secret())
+
+	// At a terminal, no: the hook and the credentials stay.
+	x.interactive = true
+	x.prompter.answers = []string{"no"}
+	require.Contains(t, x.ok("link", "--dir", x.dir, "--config-repo", cfg.String()), "kept the webhook")
+	require.Contains(t, x.prompter.asked[len(x.prompter.asked)-1], cfg.String())
+	hooks, keys := hooksOn(t, x, f, cfg)
+	require.Equal(t, first, hooks)
+	require.Equal(t, firstKeys, keys)
+	require.Equal(t, stored, secret())
+
+	// At a terminal, yes: the old hook and deploy key are gone, one new of
+	// each is installed, and the secret rotated.
+	x.prompter.answers = []string{"yes"}
+	require.Contains(t, x.ok("link", "--dir", x.dir, "--config-repo", cfg.String()), "deleted this cloud's previous webhook")
+	hooks, keys = hooksOn(t, x, f, cfg)
+	require.Len(t, hooks, 1)
+	require.Len(t, keys, 1)
+	require.NotEqual(t, first[0].Handle, hooks[0].Handle)
+	require.NotEqual(t, firstKeys[0].Handle, keys[0].Handle)
+	require.NotEqual(t, stored, secret())
+
+	// A prompt that fails stops the link.
+	x.prompter.err = errors.New("interrupted")
+	require.Contains(t, x.run("link", "--dir", x.dir, "--config-repo", cfg.String()).stderr, "interrupted")
+	x.prompter.err = nil
+	x.interactive = false
+
+	// The flags decide without asking.
+	before, _ := hooksOn(t, x, f, cfg)
+	x.ok("link", "--dir", x.dir, "--config-repo", cfg.String(), "--keep-hook")
+	after, _ := hooksOn(t, x, f, cfg)
+	require.Equal(t, before, after)
+	x.ok("link", "--dir", x.dir, "--config-repo", cfg.String(), "--replace-hook")
+	after, keys = hooksOn(t, x, f, cfg)
+	require.Len(t, after, 1)
+	require.Len(t, keys, 1)
+	require.NotEqual(t, before[0].Handle, after[0].Handle)
+	require.NotZero(t, x.run("link", "--dir", x.dir, "--config-repo", cfg.String(), "--keep-hook", "--replace-hook").code)
+
+	// Keeping cannot give a newly added repository a hook: the secret it would
+	// need is the cloud's alone.
+	r = x.run("link", "--dir", x.dir, "--config-repo", cfg.String(), "--code-repo", f.Keys().Deletable.String(), "--keep-hook")
+	require.Contains(t, r.stderr, f.Keys().Deletable.String()+" cannot be given a hook")
+	x.ok("link", "--dir", x.dir, "--config-repo", cfg.String(), "--code-repo", f.Keys().Deletable.String(), "--replace-hook")
+	code, codeKeys := hooksOn(t, x, f, f.Keys().Deletable)
+	require.Len(t, code, 1)
+	require.Len(t, codeKeys, 1)
+}
+
+// A forge that cannot answer the questions a relink asks stops it.
+func TestRelinkStopsWhenTheForgeCannotAnswer(t *testing.T) {
+	x, f := linkTester(t)
+	cfg := f.Keys().Admin
+	x.ok("link", "--dir", x.dir, "--config-repo", cfg.String())
+	f.Break()
+	defer f.Unbreak()
+	require.NotZero(t, x.run("link", "--dir", x.dir, "--config-repo", cfg.String(), "--replace-hook").code)
+}
+
+// stuckForge is a forge whose removals, or whose deploy-key listing, fail: the
+// one shape the fake forge cannot take, and the one a replacing link must stop
+// on rather than install beside what it could not delete.
+type stuckForge struct {
+	host, callback, title string
+	failHook, failList    bool
+}
+
+func (d *stuckForge) Host() string                  { return d.host }
+func (d *stuckForge) Addressable(repokey.Key) error { return nil }
+func (d *stuckForge) Bind(forge.Credential) (forge.Client, error) {
+	return d, nil
+}
+func (d *stuckForge) Scheme() forge.Scheme { return forge.SchemeHubSHA256 }
+func (d *stuckForge) Push(forge.VerifiedBody, http.Header) (forge.PushClaim, error) {
+	return forge.PushClaim{}, forge.ErrNotAPush
+}
+func (d *stuckForge) Whoami(context.Context) (forge.Identity, error) {
+	return forge.Identity{Login: "me"}, nil
+}
+func (d *stuckForge) Access(context.Context, repokey.Key) (forge.Access, error) {
+	return forge.AccessAdmin, nil
+}
+func (d *stuckForge) Repository(_ context.Context, k repokey.Key) (forge.Repository, error) {
+	return forge.Repository{Key: k}, nil
+}
+func (d *stuckForge) RegisterPushHook(context.Context, repokey.Key, *url.URL, string) (forge.Handle, error) {
+	return "h-new", nil
+}
+func (d *stuckForge) RemovePushHook(context.Context, repokey.Key, forge.Handle) error {
+	if d.failHook {
+		return errors.New("stuck hook")
+	}
+	return nil
+}
+func (d *stuckForge) ListPushHooks(context.Context, repokey.Key) ([]forge.InstalledPushHook, error) {
+	return []forge.InstalledPushHook{{Handle: "h-old", Callback: d.callback}}, nil
+}
+func (d *stuckForge) InstallDeployKey(context.Context, repokey.Key, string, string) (forge.Handle, error) {
+	return "k-new", nil
+}
+func (d *stuckForge) RemoveDeployKey(context.Context, repokey.Key, forge.Handle) error {
+	return errors.New("stuck key")
+}
+func (d *stuckForge) ListDeployKeys(context.Context, repokey.Key) ([]forge.InstalledDeployKey, error) {
+	if d.failList {
+		return nil, errors.New("stuck listing")
+	}
+	return []forge.InstalledDeployKey{{Handle: "k-other", Title: "someone else's"}, {Handle: "k-old", Title: d.title}}, nil
+}
+
+func TestReplacingStopsOnWhatItCouldNotDelete(t *testing.T) {
+	for want, d := range map[string]*stuckForge{
+		"deleting the previous webhook":    {failHook: true},
+		"reading the deploy keys":          {failList: true},
+		"deleting the previous deploy key": {},
+	} {
+		x := newTester(t)
+		d.host = "forge.example"
+		d.callback = "" // set once the cloud's URL is known
+		reg, err := forge.New(forge.Policy{AllowInsecureCallback: true}, forge.Binding{Host: d.host, Driver: d})
+		require.NoError(t, err)
+		x.forges = reg
+		x.login()
+		x.ok("init", "shop", "--dir", x.dir)
+		d.callback = x.f.srv.URL + "/hook/" + projectYAMLID(t, x.dir)
+		d.title = "tau " + x.f.srv.URL
+		r := x.run("link", "--dir", x.dir, "--config-repo", d.host+"/acme/cfg", "--replace-hook")
+		require.Contains(t, r.stderr, want)
+	}
 }
