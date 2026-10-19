@@ -18,6 +18,13 @@
 //	Resolve      — the runtime, asking which object an environment runs now
 //	Object       — the runtime, once, the first time it sees an id
 //	ResolveHost  — a gateway, asking whose name a request just arrived for
+//	ResolveView  — a destination, asking which object it holds of a deployment
+//	Assigned     — a destination, asking which deployments it holds a view of
+//
+// A DEPLOYMENT IS CUT INTO VIEWS, one per destination: the part of the whole
+// object one place holds. Each revision's views and the whole object are named
+// by a manifest, itself an immutable object, and a destination reads only its
+// own view. See pkg/register's views.go.
 //
 // So Resolve returns a POINTER and not an object. Returning the object would
 // be correct and would also move a whole compiled project across the wire on
@@ -84,6 +91,12 @@ const (
 	// RegisterServiceResolveHostProcedure is the fully-qualified name of the RegisterService's
 	// ResolveHost RPC.
 	RegisterServiceResolveHostProcedure = "/tau.register.v2.RegisterService/ResolveHost"
+	// RegisterServiceResolveViewProcedure is the fully-qualified name of the RegisterService's
+	// ResolveView RPC.
+	RegisterServiceResolveViewProcedure = "/tau.register.v2.RegisterService/ResolveView"
+	// RegisterServiceAssignedProcedure is the fully-qualified name of the RegisterService's Assigned
+	// RPC.
+	RegisterServiceAssignedProcedure = "/tau.register.v2.RegisterService/Assigned"
 )
 
 // RegisterServiceClient is a client for the tau.register.v2.RegisterService service.
@@ -114,6 +127,14 @@ type RegisterServiceClient interface {
 	// compiled object, which the caller fetches once and keeps. A register that
 	// returned routes would be a register that parsed the vocabulary.
 	ResolveHost(context.Context, *connect.Request[v2.HostRequest]) (*connect.Response[v2.HostAnswer], error)
+	// ResolveView answers which object a destination holds of a deployment: the
+	// newest revision whose view has arrived. A destination the current revision
+	// does not list is NotFound with the no-view message, unlike a deployment
+	// nobody published.
+	ResolveView(context.Context, *connect.Request[v2.ViewRequest]) (*connect.Response[v2.ViewPointer], error)
+	// Assigned is every deployment a destination holds a view of now, read from
+	// the destination's own index rather than from every project.
+	Assigned(context.Context, *connect.Request[v2.DestinationRequest]) (*connect.Response[v2.Assignments], error)
 }
 
 // NewRegisterServiceClient constructs a client for the tau.register.v2.RegisterService service. By
@@ -157,6 +178,18 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(registerServiceMethods.ByName("ResolveHost")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveView: connect.NewClient[v2.ViewRequest, v2.ViewPointer](
+			httpClient,
+			baseURL+RegisterServiceResolveViewProcedure,
+			connect.WithSchema(registerServiceMethods.ByName("ResolveView")),
+			connect.WithClientOptions(opts...),
+		),
+		assigned: connect.NewClient[v2.DestinationRequest, v2.Assignments](
+			httpClient,
+			baseURL+RegisterServiceAssignedProcedure,
+			connect.WithSchema(registerServiceMethods.ByName("Assigned")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -167,6 +200,8 @@ type registerServiceClient struct {
 	object       *connect.Client[v2.ObjectRequest, v2.CompiledProject]
 	environments *connect.Client[v2.ProjectRequest, v2.Deployments]
 	resolveHost  *connect.Client[v2.HostRequest, v2.HostAnswer]
+	resolveView  *connect.Client[v2.ViewRequest, v2.ViewPointer]
+	assigned     *connect.Client[v2.DestinationRequest, v2.Assignments]
 }
 
 // Publish calls tau.register.v2.RegisterService.Publish.
@@ -192,6 +227,16 @@ func (c *registerServiceClient) Environments(ctx context.Context, req *connect.R
 // ResolveHost calls tau.register.v2.RegisterService.ResolveHost.
 func (c *registerServiceClient) ResolveHost(ctx context.Context, req *connect.Request[v2.HostRequest]) (*connect.Response[v2.HostAnswer], error) {
 	return c.resolveHost.CallUnary(ctx, req)
+}
+
+// ResolveView calls tau.register.v2.RegisterService.ResolveView.
+func (c *registerServiceClient) ResolveView(ctx context.Context, req *connect.Request[v2.ViewRequest]) (*connect.Response[v2.ViewPointer], error) {
+	return c.resolveView.CallUnary(ctx, req)
+}
+
+// Assigned calls tau.register.v2.RegisterService.Assigned.
+func (c *registerServiceClient) Assigned(ctx context.Context, req *connect.Request[v2.DestinationRequest]) (*connect.Response[v2.Assignments], error) {
+	return c.assigned.CallUnary(ctx, req)
 }
 
 // RegisterServiceHandler is an implementation of the tau.register.v2.RegisterService service.
@@ -222,6 +267,14 @@ type RegisterServiceHandler interface {
 	// compiled object, which the caller fetches once and keeps. A register that
 	// returned routes would be a register that parsed the vocabulary.
 	ResolveHost(context.Context, *connect.Request[v2.HostRequest]) (*connect.Response[v2.HostAnswer], error)
+	// ResolveView answers which object a destination holds of a deployment: the
+	// newest revision whose view has arrived. A destination the current revision
+	// does not list is NotFound with the no-view message, unlike a deployment
+	// nobody published.
+	ResolveView(context.Context, *connect.Request[v2.ViewRequest]) (*connect.Response[v2.ViewPointer], error)
+	// Assigned is every deployment a destination holds a view of now, read from
+	// the destination's own index rather than from every project.
+	Assigned(context.Context, *connect.Request[v2.DestinationRequest]) (*connect.Response[v2.Assignments], error)
 }
 
 // NewRegisterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -261,6 +314,18 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 		connect.WithSchema(registerServiceMethods.ByName("ResolveHost")),
 		connect.WithHandlerOptions(opts...),
 	)
+	registerServiceResolveViewHandler := connect.NewUnaryHandler(
+		RegisterServiceResolveViewProcedure,
+		svc.ResolveView,
+		connect.WithSchema(registerServiceMethods.ByName("ResolveView")),
+		connect.WithHandlerOptions(opts...),
+	)
+	registerServiceAssignedHandler := connect.NewUnaryHandler(
+		RegisterServiceAssignedProcedure,
+		svc.Assigned,
+		connect.WithSchema(registerServiceMethods.ByName("Assigned")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.register.v2.RegisterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RegisterServicePublishProcedure:
@@ -273,6 +338,10 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 			registerServiceEnvironmentsHandler.ServeHTTP(w, r)
 		case RegisterServiceResolveHostProcedure:
 			registerServiceResolveHostHandler.ServeHTTP(w, r)
+		case RegisterServiceResolveViewProcedure:
+			registerServiceResolveViewHandler.ServeHTTP(w, r)
+		case RegisterServiceAssignedProcedure:
+			registerServiceAssignedHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -300,4 +369,12 @@ func (UnimplementedRegisterServiceHandler) Environments(context.Context, *connec
 
 func (UnimplementedRegisterServiceHandler) ResolveHost(context.Context, *connect.Request[v2.HostRequest]) (*connect.Response[v2.HostAnswer], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.ResolveHost is not implemented"))
+}
+
+func (UnimplementedRegisterServiceHandler) ResolveView(context.Context, *connect.Request[v2.ViewRequest]) (*connect.Response[v2.ViewPointer], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.ResolveView is not implemented"))
+}
+
+func (UnimplementedRegisterServiceHandler) Assigned(context.Context, *connect.Request[v2.DestinationRequest]) (*connect.Response[v2.Assignments], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Assigned is not implemented"))
 }

@@ -53,6 +53,7 @@ func (c *Client) Publish(ctx context.Context, p pkgregister.Publication) (pkgreg
 	res, err := c.svc.Publish(ctx, connect.NewRequest(&registerv2.PublishRequest{
 		Project: p.Project, Environment: p.Environment, Revision: p.Revision,
 		Compiled: p.Compiled, Hosts: p.Hosts,
+		Views: viewsToWire(p.Views), Cut: p.Views != nil,
 	}))
 	if err != nil {
 		return "", unwire(err)
@@ -106,6 +107,46 @@ func (c *Client) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, e
 // code: NotFound is both "this environment has nothing published" and "there is
 // no such object", and they are different answers — the first says deploy, the
 // second says the store lost an object a pointer still names.
+func viewsToWire(in []pkgregister.View) []*registerv2.View {
+	out := make([]*registerv2.View, 0, len(in))
+	for _, v := range in {
+		out = append(out, &registerv2.View{Destination: v.Destination, Compiled: v.Compiled})
+	}
+	return out
+}
+
+func viewFromWire(p *registerv2.ViewPointer) pkgregister.ViewPointer {
+	return pkgregister.ViewPointer{
+		Object:   pkgregister.ObjectID(p.GetObject()),
+		Revision: p.GetRevision(),
+		Manifest: pkgregister.ObjectID(p.GetManifest()),
+	}
+}
+
+// ResolveView is which object a destination holds of a deployment.
+func (c *Client) ResolveView(ctx context.Context, project, environment, destination string) (pkgregister.ViewPointer, error) {
+	res, err := c.svc.ResolveView(ctx, connect.NewRequest(&registerv2.ViewRequest{
+		Project: project, Environment: environment, Destination: destination,
+	}))
+	if err != nil {
+		return pkgregister.ViewPointer{}, unwire(err)
+	}
+	return viewFromWire(res.Msg), nil
+}
+
+// Assigned is every deployment a destination holds a view of now.
+func (c *Client) Assigned(ctx context.Context, destination string) ([]pkgregister.Assignment, error) {
+	res, err := c.svc.Assigned(ctx, connect.NewRequest(&registerv2.DestinationRequest{Destination: destination}))
+	if err != nil {
+		return nil, unwire(err)
+	}
+	var out []pkgregister.Assignment
+	for _, a := range res.Msg.GetAssignments() {
+		out = append(out, pkgregister.Assignment{Project: a.GetProject(), Environment: a.GetEnvironment(), View: viewFromWire(a.GetView())})
+	}
+	return out, nil
+}
+
 func unwire(err error) error {
 	var cerr *connect.Error
 	if !errors.As(err, &cerr) {
@@ -115,7 +156,7 @@ func unwire(err error) error {
 	switch cerr.Code() {
 	case connect.CodeNotFound:
 		if sentinel := matching(cerr.Message(),
-			pkgregister.ErrNotPublished, pkgregister.ErrNoObject, pkgregister.ErrNoHost); sentinel != nil {
+			pkgregister.ErrNotPublished, pkgregister.ErrNoObject, pkgregister.ErrNoHost, pkgregister.ErrNoView); sentinel != nil {
 			return fmt.Errorf("%w: %s", sentinel, cerr.Message())
 		}
 	case connect.CodeAlreadyExists:
@@ -127,7 +168,7 @@ func unwire(err error) error {
 	case connect.CodeInvalidArgument:
 		if sentinel := matching(cerr.Message(),
 			pkgregister.ErrNoProject, pkgregister.ErrNoEnvironment,
-			pkgregister.ErrEmptyObject, pkgregister.ErrSeparator); sentinel != nil {
+			pkgregister.ErrEmptyObject, pkgregister.ErrSeparator, pkgregister.ErrNoDestination); sentinel != nil {
 			return fmt.Errorf("%w: %s", sentinel, cerr.Message())
 		}
 	}

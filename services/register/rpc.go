@@ -45,6 +45,7 @@ func (h *handler) Publish(ctx context.Context, req *connect.Request[registerv2.P
 		Revision:    req.Msg.GetRevision(),
 		Compiled:    req.Msg.GetCompiled(),
 		Hosts:       req.Msg.GetHosts(),
+		Views:       viewsFromWire(req.Msg.GetCut(), req.Msg.GetViews()),
 	})
 	if err != nil {
 		return nil, wire(err)
@@ -91,6 +92,45 @@ func (h *handler) ResolveHost(ctx context.Context, req *connect.Request[register
 	return connect.NewResponse(&registerv2.HostAnswer{Project: project, Environment: environment}), nil
 }
 
+// viewsFromWire keeps the one distinction a repeated field cannot: nil is a revision
+// published whole, and an empty list one cut for no destination.
+func viewsFromWire(cut bool, in []*registerv2.View) []pkgregister.View {
+	if !cut {
+		return nil
+	}
+	out := make([]pkgregister.View, 0, len(in))
+	for _, v := range in {
+		out = append(out, pkgregister.View{Destination: v.GetDestination(), Compiled: v.GetCompiled()})
+	}
+	return out
+}
+
+func viewPointer(p pkgregister.ViewPointer) *registerv2.ViewPointer {
+	return &registerv2.ViewPointer{Object: string(p.Object), Revision: p.Revision, Manifest: string(p.Manifest)}
+}
+
+// ResolveView answers which object a destination holds of a deployment.
+func (h *handler) ResolveView(ctx context.Context, req *connect.Request[registerv2.ViewRequest]) (*connect.Response[registerv2.ViewPointer], error) {
+	p, err := h.s.reg.ResolveView(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment(), req.Msg.GetDestination())
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(viewPointer(p)), nil
+}
+
+// Assigned is every deployment a destination holds a view of now.
+func (h *handler) Assigned(ctx context.Context, req *connect.Request[registerv2.DestinationRequest]) (*connect.Response[registerv2.Assignments], error) {
+	as, err := h.s.reg.Assigned(ctx, req.Msg.GetDestination())
+	if err != nil {
+		return nil, wire(err)
+	}
+	out := &registerv2.Assignments{}
+	for _, a := range as {
+		out.Assignments = append(out.Assignments, &registerv2.Assignment{Project: a.Project, Environment: a.Environment, View: viewPointer(a.View)})
+	}
+	return connect.NewResponse(out), nil
+}
+
 // wire is the one code table: every connect.NewError in this package goes
 // through it, so the mapping from a register failure to a wire status is
 // decided once.
@@ -104,11 +144,13 @@ func wire(err error) error {
 	case errors.Is(err, pkgregister.ErrNoProject),
 		errors.Is(err, pkgregister.ErrNoEnvironment),
 		errors.Is(err, pkgregister.ErrEmptyObject),
+		errors.Is(err, pkgregister.ErrNoDestination),
 		errors.Is(err, pkgregister.ErrSeparator):
 		return connect.NewError(connect.CodeInvalidArgument, err)
 
 	case errors.Is(err, pkgregister.ErrNotPublished),
 		errors.Is(err, pkgregister.ErrNoObject),
+		errors.Is(err, pkgregister.ErrNoView),
 		errors.Is(err, pkgregister.ErrNoHost):
 		return connect.NewError(connect.CodeNotFound, err)
 

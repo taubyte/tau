@@ -322,6 +322,11 @@ func (r *Register) Publish(ctx context.Context, p Publication) (ObjectID, error)
 	if err := r.claim(ctx, project, environment, p.Hosts); err != nil {
 		return "", err
 	}
+	// THE VIEWS BEFORE THE POINTER too: a pointer that moved ahead of its manifest
+	// would be a revision its destinations could not read yet.
+	if err := r.publishViews(ctx, p, id); err != nil {
+		return "", err
+	}
 
 	if err := r.store.Put(ctx, pointerKey(project, environment), encodePointer(Pointer{Object: id, Revision: revision})); err != nil {
 		return "", fmt.Errorf("register: moving %s/%s: %w", project, environment, err)
@@ -435,6 +440,12 @@ type Publication struct {
 	// not in the config at all. Deriving them here would put the vocabulary and
 	// the operator's cloud name inside a package that is meant to hold neither.
 	Hosts []string
+
+	// Views is the object each destination holds of this revision, opaque here as
+	// Compiled is. NIL IS A PUBLICATION NOBODY CUT: every destination reads the whole
+	// object. An empty, non-nil list is a deployment cut for no destination at all.
+	// See views.go.
+	Views []View
 }
 
 // Resolve is the read the runtime makes: what does this environment run, and

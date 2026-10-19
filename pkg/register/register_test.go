@@ -1,6 +1,7 @@
 package register
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -56,11 +57,14 @@ func TestTheSameConfigurationIsTheSameObject(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, first, second)
 
-	// And it was stored once: an object's key is its content.
+	// And it was stored once: an object's key is its content. Each revision's manifest
+	// is an object too, and the two say different revisions.
 	objects := 0
 	for _, k := range store.Keys() {
 		if len(k) > 2 && k[:2] == "o/" {
-			objects++
+			if b, _, _ := store.Get(ctx, k); !bytes.HasPrefix(b, []byte("manifest 1\n")) {
+				objects++
+			}
 		}
 	}
 	require.Equal(t, 1, objects, "republishing the same configuration stores nothing new")

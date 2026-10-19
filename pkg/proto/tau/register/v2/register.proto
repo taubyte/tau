@@ -16,6 +16,13 @@ syntax = "proto3";
 //   Resolve      — the runtime, asking which object an environment runs now
 //   Object       — the runtime, once, the first time it sees an id
 //   ResolveHost  — a gateway, asking whose name a request just arrived for
+//   ResolveView  — a destination, asking which object it holds of a deployment
+//   Assigned     — a destination, asking which deployments it holds a view of
+//
+// A DEPLOYMENT IS CUT INTO VIEWS, one per destination: the part of the whole
+// object one place holds. Each revision's views and the whole object are named
+// by a manifest, itself an immutable object, and a destination reads only its
+// own view. See pkg/register's views.go.
 //
 // So Resolve returns a POINTER and not an object. Returning the object would
 // be correct and would also move a whole compiled project across the wire on
@@ -81,6 +88,51 @@ message PublishRequest {
   // keeps what it still lists and releases what it dropped, so a renamed
   // gateway does not hold its old name forever.
   repeated string hosts = 5;
+
+  // views is each destination's object of this revision, opaque here as
+  // compiled is.
+  repeated View views = 6;
+
+  // cut says the publisher cut this revision into views, so an empty views
+  // list is a deployment cut for no destination. Unset, the revision is
+  // published whole: every destination reads compiled.
+  bool cut = 7;
+}
+
+// View is one destination's object.
+message View {
+  string destination = 1;
+  bytes compiled = 2;
+}
+
+message ViewRequest {
+  string project = 1;
+  string environment = 2;
+  string destination = 3;
+}
+
+// ViewPointer is what one destination of one deployment runs now.
+message ViewPointer {
+  string object = 1;
+  uint64 revision = 2;
+  // manifest is the revision's manifest, naming the whole object beside it.
+  string manifest = 3;
+}
+
+message DestinationRequest {
+  string destination = 1;
+}
+
+message Assignment {
+  string project = 1;
+  string environment = 2;
+  ViewPointer view = 3;
+}
+
+// Assignments is every deployment a destination holds a view of now. A
+// destination's deployments are bounded by what is placed there, so a list.
+message Assignments {
+  repeated Assignment assignments = 1;
 }
 
 message PublishResponse {
@@ -162,4 +214,14 @@ service RegisterService {
   // compiled object, which the caller fetches once and keeps. A register that
   // returned routes would be a register that parsed the vocabulary.
   rpc ResolveHost(HostRequest) returns (HostAnswer);
+
+  // ResolveView answers which object a destination holds of a deployment: the
+  // newest revision whose view has arrived. A destination the current revision
+  // does not list is NotFound with the no-view message, unlike a deployment
+  // nobody published.
+  rpc ResolveView(ViewRequest) returns (ViewPointer);
+
+  // Assigned is every deployment a destination holds a view of now, read from
+  // the destination's own index rather than from every project.
+  rpc Assigned(DestinationRequest) returns (Assignments);
 }

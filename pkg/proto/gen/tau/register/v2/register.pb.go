@@ -20,6 +20,13 @@
 //   Resolve      — the runtime, asking which object an environment runs now
 //   Object       — the runtime, once, the first time it sees an id
 //   ResolveHost  — a gateway, asking whose name a request just arrived for
+//   ResolveView  — a destination, asking which object it holds of a deployment
+//   Assigned     — a destination, asking which deployments it holds a view of
+//
+// A DEPLOYMENT IS CUT INTO VIEWS, one per destination: the part of the whole
+// object one place holds. Each revision's views and the whole object are named
+// by a manifest, itself an immutable object, and a destination reads only its
+// own view. See pkg/register's views.go.
 //
 // So Resolve returns a POINTER and not an object. Returning the object would
 // be correct and would also move a whole compiled project across the wire on
@@ -145,7 +152,14 @@ type PublishRequest struct {
 	// deployed second would otherwise take the first one's traffic. A republish
 	// keeps what it still lists and releases what it dropped, so a renamed
 	// gateway does not hold its old name forever.
-	Hosts         []string `protobuf:"bytes,5,rep,name=hosts,proto3" json:"hosts,omitempty"`
+	Hosts []string `protobuf:"bytes,5,rep,name=hosts,proto3" json:"hosts,omitempty"`
+	// views is each destination's object of this revision, opaque here as
+	// compiled is.
+	Views []*View `protobuf:"bytes,6,rep,name=views,proto3" json:"views,omitempty"`
+	// cut says the publisher cut this revision into views, so an empty views
+	// list is a deployment cut for no destination. Unset, the revision is
+	// published whole: every destination reads compiled.
+	Cut           bool `protobuf:"varint,7,opt,name=cut,proto3" json:"cut,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -215,6 +229,345 @@ func (x *PublishRequest) GetHosts() []string {
 	return nil
 }
 
+func (x *PublishRequest) GetViews() []*View {
+	if x != nil {
+		return x.Views
+	}
+	return nil
+}
+
+func (x *PublishRequest) GetCut() bool {
+	if x != nil {
+		return x.Cut
+	}
+	return false
+}
+
+// View is one destination's object.
+type View struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Destination   string                 `protobuf:"bytes,1,opt,name=destination,proto3" json:"destination,omitempty"`
+	Compiled      []byte                 `protobuf:"bytes,2,opt,name=compiled,proto3" json:"compiled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *View) Reset() {
+	*x = View{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *View) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*View) ProtoMessage() {}
+
+func (x *View) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use View.ProtoReflect.Descriptor instead.
+func (*View) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *View) GetDestination() string {
+	if x != nil {
+		return x.Destination
+	}
+	return ""
+}
+
+func (x *View) GetCompiled() []byte {
+	if x != nil {
+		return x.Compiled
+	}
+	return nil
+}
+
+type ViewRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Environment   string                 `protobuf:"bytes,2,opt,name=environment,proto3" json:"environment,omitempty"`
+	Destination   string                 `protobuf:"bytes,3,opt,name=destination,proto3" json:"destination,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ViewRequest) Reset() {
+	*x = ViewRequest{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ViewRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ViewRequest) ProtoMessage() {}
+
+func (x *ViewRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ViewRequest.ProtoReflect.Descriptor instead.
+func (*ViewRequest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ViewRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *ViewRequest) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *ViewRequest) GetDestination() string {
+	if x != nil {
+		return x.Destination
+	}
+	return ""
+}
+
+// ViewPointer is what one destination of one deployment runs now.
+type ViewPointer struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Object   string                 `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
+	Revision uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	// manifest is the revision's manifest, naming the whole object beside it.
+	Manifest      string `protobuf:"bytes,3,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ViewPointer) Reset() {
+	*x = ViewPointer{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ViewPointer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ViewPointer) ProtoMessage() {}
+
+func (x *ViewPointer) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ViewPointer.ProtoReflect.Descriptor instead.
+func (*ViewPointer) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ViewPointer) GetObject() string {
+	if x != nil {
+		return x.Object
+	}
+	return ""
+}
+
+func (x *ViewPointer) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *ViewPointer) GetManifest() string {
+	if x != nil {
+		return x.Manifest
+	}
+	return ""
+}
+
+type DestinationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Destination   string                 `protobuf:"bytes,1,opt,name=destination,proto3" json:"destination,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DestinationRequest) Reset() {
+	*x = DestinationRequest{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DestinationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DestinationRequest) ProtoMessage() {}
+
+func (x *DestinationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DestinationRequest.ProtoReflect.Descriptor instead.
+func (*DestinationRequest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DestinationRequest) GetDestination() string {
+	if x != nil {
+		return x.Destination
+	}
+	return ""
+}
+
+type Assignment struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Environment   string                 `protobuf:"bytes,2,opt,name=environment,proto3" json:"environment,omitempty"`
+	View          *ViewPointer           `protobuf:"bytes,3,opt,name=view,proto3" json:"view,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Assignment) Reset() {
+	*x = Assignment{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Assignment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Assignment) ProtoMessage() {}
+
+func (x *Assignment) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Assignment.ProtoReflect.Descriptor instead.
+func (*Assignment) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Assignment) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *Assignment) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *Assignment) GetView() *ViewPointer {
+	if x != nil {
+		return x.View
+	}
+	return nil
+}
+
+// Assignments is every deployment a destination holds a view of now. A
+// destination's deployments are bounded by what is placed there, so a list.
+type Assignments struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Assignments   []*Assignment          `protobuf:"bytes,1,rep,name=assignments,proto3" json:"assignments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Assignments) Reset() {
+	*x = Assignments{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Assignments) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Assignments) ProtoMessage() {}
+
+func (x *Assignments) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Assignments.ProtoReflect.Descriptor instead.
+func (*Assignments) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Assignments) GetAssignments() []*Assignment {
+	if x != nil {
+		return x.Assignments
+	}
+	return nil
+}
+
 type PublishResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// object is the content address the compiled bytes landed under. Publishing
@@ -227,7 +580,7 @@ type PublishResponse struct {
 
 func (x *PublishResponse) Reset() {
 	*x = PublishResponse{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[2]
+	mi := &file_tau_register_v2_register_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -239,7 +592,7 @@ func (x *PublishResponse) String() string {
 func (*PublishResponse) ProtoMessage() {}
 
 func (x *PublishResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[2]
+	mi := &file_tau_register_v2_register_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -252,7 +605,7 @@ func (x *PublishResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishResponse.ProtoReflect.Descriptor instead.
 func (*PublishResponse) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{2}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PublishResponse) GetObject() string {
@@ -272,7 +625,7 @@ type ResolveRequest struct {
 
 func (x *ResolveRequest) Reset() {
 	*x = ResolveRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[3]
+	mi := &file_tau_register_v2_register_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -284,7 +637,7 @@ func (x *ResolveRequest) String() string {
 func (*ResolveRequest) ProtoMessage() {}
 
 func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[3]
+	mi := &file_tau_register_v2_register_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -297,7 +650,7 @@ func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveRequest.ProtoReflect.Descriptor instead.
 func (*ResolveRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{3}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ResolveRequest) GetProject() string {
@@ -325,7 +678,7 @@ type ObjectRequest struct {
 
 func (x *ObjectRequest) Reset() {
 	*x = ObjectRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[4]
+	mi := &file_tau_register_v2_register_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -337,7 +690,7 @@ func (x *ObjectRequest) String() string {
 func (*ObjectRequest) ProtoMessage() {}
 
 func (x *ObjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[4]
+	mi := &file_tau_register_v2_register_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -350,7 +703,7 @@ func (x *ObjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObjectRequest.ProtoReflect.Descriptor instead.
 func (*ObjectRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{4}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ObjectRequest) GetObject() string {
@@ -372,7 +725,7 @@ type CompiledProject struct {
 
 func (x *CompiledProject) Reset() {
 	*x = CompiledProject{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[5]
+	mi := &file_tau_register_v2_register_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -384,7 +737,7 @@ func (x *CompiledProject) String() string {
 func (*CompiledProject) ProtoMessage() {}
 
 func (x *CompiledProject) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[5]
+	mi := &file_tau_register_v2_register_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -397,7 +750,7 @@ func (x *CompiledProject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompiledProject.ProtoReflect.Descriptor instead.
 func (*CompiledProject) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{5}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CompiledProject) GetCompiled() []byte {
@@ -416,7 +769,7 @@ type ProjectRequest struct {
 
 func (x *ProjectRequest) Reset() {
 	*x = ProjectRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[6]
+	mi := &file_tau_register_v2_register_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -428,7 +781,7 @@ func (x *ProjectRequest) String() string {
 func (*ProjectRequest) ProtoMessage() {}
 
 func (x *ProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[6]
+	mi := &file_tau_register_v2_register_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -441,7 +794,7 @@ func (x *ProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectRequest.ProtoReflect.Descriptor instead.
 func (*ProjectRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{6}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ProjectRequest) GetProject() string {
@@ -466,7 +819,7 @@ type Deployments struct {
 
 func (x *Deployments) Reset() {
 	*x = Deployments{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[7]
+	mi := &file_tau_register_v2_register_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -478,7 +831,7 @@ func (x *Deployments) String() string {
 func (*Deployments) ProtoMessage() {}
 
 func (x *Deployments) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[7]
+	mi := &file_tau_register_v2_register_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -491,7 +844,7 @@ func (x *Deployments) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Deployments.ProtoReflect.Descriptor instead.
 func (*Deployments) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{7}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Deployments) GetEnvironments() []string {
@@ -510,7 +863,7 @@ type HostRequest struct {
 
 func (x *HostRequest) Reset() {
 	*x = HostRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[8]
+	mi := &file_tau_register_v2_register_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -522,7 +875,7 @@ func (x *HostRequest) String() string {
 func (*HostRequest) ProtoMessage() {}
 
 func (x *HostRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[8]
+	mi := &file_tau_register_v2_register_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -535,7 +888,7 @@ func (x *HostRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostRequest.ProtoReflect.Descriptor instead.
 func (*HostRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{8}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *HostRequest) GetFqdn() string {
@@ -555,7 +908,7 @@ type HostAnswer struct {
 
 func (x *HostAnswer) Reset() {
 	*x = HostAnswer{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[9]
+	mi := &file_tau_register_v2_register_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -567,7 +920,7 @@ func (x *HostAnswer) String() string {
 func (*HostAnswer) ProtoMessage() {}
 
 func (x *HostAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[9]
+	mi := &file_tau_register_v2_register_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -580,7 +933,7 @@ func (x *HostAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostAnswer.ProtoReflect.Descriptor instead.
 func (*HostAnswer) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{9}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *HostAnswer) GetProject() string {
@@ -604,13 +957,35 @@ const file_tau_register_v2_register_proto_rawDesc = "" +
 	"\x1etau/register/v2/register.proto\x12\x0ftau.register.v2\"=\n" +
 	"\aPointer\x12\x16\n" +
 	"\x06object\x18\x01 \x01(\tR\x06object\x12\x1a\n" +
-	"\brevision\x18\x02 \x01(\x04R\brevision\"\x9a\x01\n" +
+	"\brevision\x18\x02 \x01(\x04R\brevision\"\xd9\x01\n" +
 	"\x0ePublishRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +
 	"\brevision\x18\x03 \x01(\x04R\brevision\x12\x1a\n" +
 	"\bcompiled\x18\x04 \x01(\fR\bcompiled\x12\x14\n" +
-	"\x05hosts\x18\x05 \x03(\tR\x05hosts\")\n" +
+	"\x05hosts\x18\x05 \x03(\tR\x05hosts\x12+\n" +
+	"\x05views\x18\x06 \x03(\v2\x15.tau.register.v2.ViewR\x05views\x12\x10\n" +
+	"\x03cut\x18\a \x01(\bR\x03cut\"D\n" +
+	"\x04View\x12 \n" +
+	"\vdestination\x18\x01 \x01(\tR\vdestination\x12\x1a\n" +
+	"\bcompiled\x18\x02 \x01(\fR\bcompiled\"k\n" +
+	"\vViewRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment\x12 \n" +
+	"\vdestination\x18\x03 \x01(\tR\vdestination\"]\n" +
+	"\vViewPointer\x12\x16\n" +
+	"\x06object\x18\x01 \x01(\tR\x06object\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x04R\brevision\x12\x1a\n" +
+	"\bmanifest\x18\x03 \x01(\tR\bmanifest\"6\n" +
+	"\x12DestinationRequest\x12 \n" +
+	"\vdestination\x18\x01 \x01(\tR\vdestination\"z\n" +
+	"\n" +
+	"Assignment\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment\x120\n" +
+	"\x04view\x18\x03 \x01(\v2\x1c.tau.register.v2.ViewPointerR\x04view\"L\n" +
+	"\vAssignments\x12=\n" +
+	"\vassignments\x18\x01 \x03(\v2\x1b.tau.register.v2.AssignmentR\vassignments\")\n" +
 	"\x0fPublishResponse\x12\x16\n" +
 	"\x06object\x18\x01 \x01(\tR\x06object\"L\n" +
 	"\x0eResolveRequest\x12\x18\n" +
@@ -629,13 +1004,15 @@ const file_tau_register_v2_register_proto_rawDesc = "" +
 	"\n" +
 	"HostAnswer\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
-	"\venvironment\x18\x02 \x01(\tR\venvironment2\x8a\x03\n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment2\xa4\x04\n" +
 	"\x0fRegisterService\x12L\n" +
 	"\aPublish\x12\x1f.tau.register.v2.PublishRequest\x1a .tau.register.v2.PublishResponse\x12D\n" +
 	"\aResolve\x12\x1f.tau.register.v2.ResolveRequest\x1a\x18.tau.register.v2.Pointer\x12J\n" +
 	"\x06Object\x12\x1e.tau.register.v2.ObjectRequest\x1a .tau.register.v2.CompiledProject\x12M\n" +
 	"\fEnvironments\x12\x1f.tau.register.v2.ProjectRequest\x1a\x1c.tau.register.v2.Deployments\x12H\n" +
-	"\vResolveHost\x12\x1c.tau.register.v2.HostRequest\x1a\x1b.tau.register.v2.HostAnswerB\xc3\x01\n" +
+	"\vResolveHost\x12\x1c.tau.register.v2.HostRequest\x1a\x1b.tau.register.v2.HostAnswer\x12I\n" +
+	"\vResolveView\x12\x1c.tau.register.v2.ViewRequest\x1a\x1c.tau.register.v2.ViewPointer\x12M\n" +
+	"\bAssigned\x12#.tau.register.v2.DestinationRequest\x1a\x1c.tau.register.v2.AssignmentsB\xc3\x01\n" +
 	"\x13com.tau.register.v2B\rRegisterProtoP\x01Z?github.com/taubyte/tau/pkg/proto/gen/tau/register/v2;registerv2\xa2\x02\x03TRX\xaa\x02\x0fTau.Register.V2\xca\x02\x0fTau\\Register\\V2\xe2\x02\x1bTau\\Register\\V2\\GPBMetadata\xea\x02\x11Tau::Register::V2b\x06proto3"
 
 var (
@@ -650,35 +1027,48 @@ func file_tau_register_v2_register_proto_rawDescGZIP() []byte {
 	return file_tau_register_v2_register_proto_rawDescData
 }
 
-var file_tau_register_v2_register_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_tau_register_v2_register_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_tau_register_v2_register_proto_goTypes = []any{
-	(*Pointer)(nil),         // 0: tau.register.v2.Pointer
-	(*PublishRequest)(nil),  // 1: tau.register.v2.PublishRequest
-	(*PublishResponse)(nil), // 2: tau.register.v2.PublishResponse
-	(*ResolveRequest)(nil),  // 3: tau.register.v2.ResolveRequest
-	(*ObjectRequest)(nil),   // 4: tau.register.v2.ObjectRequest
-	(*CompiledProject)(nil), // 5: tau.register.v2.CompiledProject
-	(*ProjectRequest)(nil),  // 6: tau.register.v2.ProjectRequest
-	(*Deployments)(nil),     // 7: tau.register.v2.Deployments
-	(*HostRequest)(nil),     // 8: tau.register.v2.HostRequest
-	(*HostAnswer)(nil),      // 9: tau.register.v2.HostAnswer
+	(*Pointer)(nil),            // 0: tau.register.v2.Pointer
+	(*PublishRequest)(nil),     // 1: tau.register.v2.PublishRequest
+	(*View)(nil),               // 2: tau.register.v2.View
+	(*ViewRequest)(nil),        // 3: tau.register.v2.ViewRequest
+	(*ViewPointer)(nil),        // 4: tau.register.v2.ViewPointer
+	(*DestinationRequest)(nil), // 5: tau.register.v2.DestinationRequest
+	(*Assignment)(nil),         // 6: tau.register.v2.Assignment
+	(*Assignments)(nil),        // 7: tau.register.v2.Assignments
+	(*PublishResponse)(nil),    // 8: tau.register.v2.PublishResponse
+	(*ResolveRequest)(nil),     // 9: tau.register.v2.ResolveRequest
+	(*ObjectRequest)(nil),      // 10: tau.register.v2.ObjectRequest
+	(*CompiledProject)(nil),    // 11: tau.register.v2.CompiledProject
+	(*ProjectRequest)(nil),     // 12: tau.register.v2.ProjectRequest
+	(*Deployments)(nil),        // 13: tau.register.v2.Deployments
+	(*HostRequest)(nil),        // 14: tau.register.v2.HostRequest
+	(*HostAnswer)(nil),         // 15: tau.register.v2.HostAnswer
 }
 var file_tau_register_v2_register_proto_depIdxs = []int32{
-	1, // 0: tau.register.v2.RegisterService.Publish:input_type -> tau.register.v2.PublishRequest
-	3, // 1: tau.register.v2.RegisterService.Resolve:input_type -> tau.register.v2.ResolveRequest
-	4, // 2: tau.register.v2.RegisterService.Object:input_type -> tau.register.v2.ObjectRequest
-	6, // 3: tau.register.v2.RegisterService.Environments:input_type -> tau.register.v2.ProjectRequest
-	8, // 4: tau.register.v2.RegisterService.ResolveHost:input_type -> tau.register.v2.HostRequest
-	2, // 5: tau.register.v2.RegisterService.Publish:output_type -> tau.register.v2.PublishResponse
-	0, // 6: tau.register.v2.RegisterService.Resolve:output_type -> tau.register.v2.Pointer
-	5, // 7: tau.register.v2.RegisterService.Object:output_type -> tau.register.v2.CompiledProject
-	7, // 8: tau.register.v2.RegisterService.Environments:output_type -> tau.register.v2.Deployments
-	9, // 9: tau.register.v2.RegisterService.ResolveHost:output_type -> tau.register.v2.HostAnswer
-	5, // [5:10] is the sub-list for method output_type
-	0, // [0:5] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2,  // 0: tau.register.v2.PublishRequest.views:type_name -> tau.register.v2.View
+	4,  // 1: tau.register.v2.Assignment.view:type_name -> tau.register.v2.ViewPointer
+	6,  // 2: tau.register.v2.Assignments.assignments:type_name -> tau.register.v2.Assignment
+	1,  // 3: tau.register.v2.RegisterService.Publish:input_type -> tau.register.v2.PublishRequest
+	9,  // 4: tau.register.v2.RegisterService.Resolve:input_type -> tau.register.v2.ResolveRequest
+	10, // 5: tau.register.v2.RegisterService.Object:input_type -> tau.register.v2.ObjectRequest
+	12, // 6: tau.register.v2.RegisterService.Environments:input_type -> tau.register.v2.ProjectRequest
+	14, // 7: tau.register.v2.RegisterService.ResolveHost:input_type -> tau.register.v2.HostRequest
+	3,  // 8: tau.register.v2.RegisterService.ResolveView:input_type -> tau.register.v2.ViewRequest
+	5,  // 9: tau.register.v2.RegisterService.Assigned:input_type -> tau.register.v2.DestinationRequest
+	8,  // 10: tau.register.v2.RegisterService.Publish:output_type -> tau.register.v2.PublishResponse
+	0,  // 11: tau.register.v2.RegisterService.Resolve:output_type -> tau.register.v2.Pointer
+	11, // 12: tau.register.v2.RegisterService.Object:output_type -> tau.register.v2.CompiledProject
+	13, // 13: tau.register.v2.RegisterService.Environments:output_type -> tau.register.v2.Deployments
+	15, // 14: tau.register.v2.RegisterService.ResolveHost:output_type -> tau.register.v2.HostAnswer
+	4,  // 15: tau.register.v2.RegisterService.ResolveView:output_type -> tau.register.v2.ViewPointer
+	7,  // 16: tau.register.v2.RegisterService.Assigned:output_type -> tau.register.v2.Assignments
+	10, // [10:17] is the sub-list for method output_type
+	3,  // [3:10] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_tau_register_v2_register_proto_init() }
@@ -692,7 +1082,7 @@ func file_tau_register_v2_register_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_register_v2_register_proto_rawDesc), len(file_tau_register_v2_register_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
