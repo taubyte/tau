@@ -95,7 +95,7 @@ type Groups func(namespace string) (raft.Cluster, error)
 // project's entries and this cloud's own work are different lifetimes, different
 // sizes and different blast radii — node/queue.go's argument, and it holds
 // harder here because a ledger is somebody's system of record.
-const Domain = "/tau/databases/v1"
+const Domain = "/tau/databases/v2"
 
 // Budget is what one write or one barrier may cost.
 //

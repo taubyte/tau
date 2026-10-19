@@ -101,7 +101,7 @@ func (f *follower) IsLeader() bool {
 	return f.leader && !f.lost
 }
 
-func (f *follower) Namespace() string { return "/tau/databases/v1/shop/prod/kv/QmLedger" }
+func (f *follower) Namespace() string { return "/tau/databases/v2/shop/prod/kv/QmLedger" }
 
 func (f *follower) Get(key string) ([]byte, bool) {
 	if f.gone() {

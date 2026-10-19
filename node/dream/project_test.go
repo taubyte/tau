@@ -1003,7 +1003,7 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 	// is IDENTICAL in both projects (projects/…/kv/raft{,-b}/database/ledger.yaml),
 	// which is what leaves the project as the only separator.
 	const ledger = "QmVYRA67L6sJ1c8bZTwcs7UBvFdYesu414kPa2V9whE42e"
-	const domain = "/tau/databases/v1"
+	const domain = "/tau/databases/v2"
 	groups := map[string]bool{
 		domain + "/shop/prod/kv/" + ledger:   false,
 		domain + "/market/prod/kv/" + ledger: false,

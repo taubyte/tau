@@ -28,7 +28,7 @@ import "time"
 // `cron/fire/` for a schedule's fires. A SCHEDULE'S POSITION IS NOT HERE AND IS
 // NOT ANYWHERE: the clock's memory is one leader's process, and cron.go states
 // the trade that buys.
-const namespace = "/tau/primitives/v1"
+const namespace = "/tau/primitives/v2"
 
 // recordStore is the replicated store a log's records live in.
 //
