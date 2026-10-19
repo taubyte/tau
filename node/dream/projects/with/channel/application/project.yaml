@@ -1,4 +1,3 @@
 id: QmNfGYamR5ViY1HsWeKW3eaVQiVxwTHpEBErR9kJh6fCJF
 name: channelapp
 description: a channel served by a container on one of its named ports - the bytes a function dials go to that socket, not through an http wrapper
-regions: [eu]

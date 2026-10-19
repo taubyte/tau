@@ -17,10 +17,7 @@ func auditDocs(t *testing.T, r schema.Resolver, docs map[string]string) []schema
 	t.Helper()
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"+
-			// a scope's regions place everything under them, so a test that is
-			// not about placement is not about placement
-			"regions: [eu]\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 	for path, body := range docs {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
 	}
@@ -708,30 +705,24 @@ func TestAPerEnvironmentPlacementIsBoundedToo(t *testing.T) {
 
 // TestAnythingWithAFootprintIsPlaced.
 //
-// The rule has two halves in two documents — required here, defaulted there —
-// which is why it is an audit and not Required() on the attribute. Required()
-// would be the OTHER rule: every resource, every time, no default possible.
+// WHERE SOMETHING RUNS IS THE REGIONS' ANSWER, not an authored line: the default
+// places everything in one region, so a project that writes no `regions` anywhere is
+// placed, and only a Regions that places a resource nowhere makes it Broken.
 func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 	const bare = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"
-	const defaulted = bare + "regions: [eu]\n"
 	cache := func(region string) string {
 		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" + region
 	}
+	docs := map[string]string{"/project.yaml": bare, "/cache/c.yaml": cache("")}
 
-	// Neither says where it goes.
-	has(t, auditDocs(t, nil, map[string]string{
-		"/project.yaml": bare,
-		"/cache/c.yaml": cache(""),
-	}), schema.Broken, "is not placed anywhere")
+	// Neither says where it goes, and the default places it.
+	hasNo(t, auditDocs(t, nil, docs), "is not placed anywhere")
 
-	// The project's own regions place everything that does not say.
-	hasNo(t, auditDocs(t, nil, map[string]string{
-		"/project.yaml": defaulted,
-		"/cache/c.yaml": cache(""),
-	}), "is not placed anywhere")
+	// A Regions that serves nothing named places it nowhere.
+	has(t, auditWith(t, onlyNamed{}, docs), schema.Broken, "is not placed anywhere")
 
-	// Or the resource says it itself.
-	hasNo(t, auditDocs(t, nil, map[string]string{
+	// …and the same Regions places what says where it goes.
+	hasNo(t, auditWith(t, onlyNamed{}, map[string]string{
 		"/project.yaml": bare,
 		"/cache/c.yaml": cache("regions:\n    pinned: [eu]\n"),
 	}), "is not placed anywhere")
@@ -741,7 +732,7 @@ func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 	// a kind that gains a footprint tomorrow is covered the moment it declares
 	// Placed().
 	require.NotContains(t, schema.PlacedKinds(), "secret")
-	hasNo(t, auditDocs(t, nil, map[string]string{
+	hasNo(t, auditWith(t, onlyNamed{}, map[string]string{
 		"/project.yaml":  bare,
 		"/secret/s.yaml": "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\nsource: value\nrotation: 720h\n",
 	}), "is not placed anywhere")

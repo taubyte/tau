@@ -1,4 +1,3 @@
 id: QmVoCmDmkj9fBwpHwT3MiH36UHj6r2wswrAfrzpEWAK63n
 name: syncqueue
 description: one function on both ends of a queue - it sends an item, and the platform comes back and hands it to the same guest without being asked
-regions: [eu]

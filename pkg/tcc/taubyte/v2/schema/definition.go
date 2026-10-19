@@ -622,7 +622,8 @@ func attachPlacement() {
 // list of regions, and the config will never hold one. The audit below catches it
 // wherever a scope declares an allowance to check against — a label outside the ceiling
 // is simply not within it — and where no scope declares one, the only place left that
-// knows is the implementation, at deploy.
+// knows is the implementation: the Regions the audit is given (regions.go) answers
+// every label against the regions the platform compiling it actually serves.
 //
 // WHICH IS THE SEAM `EmitValidation` EXISTS FOR, and it now carries this one. It could
 // not before, and both reasons were in `emitAttrValidations` (interp/index.go): it read
@@ -3464,9 +3465,10 @@ func rootAttributes() []*Attribute {
 		// THE CEILING, AND IT IS A SCOPE'S STATEMENT RATHER THAN A RESOURCE'S. A
 		// resource says where it IS placed; a scope says where anything under it may be
 		// placed at all, and the difference is that this one is inherited. Absent means
-		// the parent's, and absent all the way up means every region the cloud has — so
-		// a project that never heard of the feature writes nothing and is bounded by
-		// nothing.
+		// the parent's, and absent all the way up means wherever the platform compiling
+		// it places it — the audit asks its Regions (regions.go), so a project that never
+		// heard of the feature writes nothing and is bounded only by what the platform
+		// serves.
 		//
 		// NARROWING ONLY, which the audit enforces because nothing else can: the rule is
 		// cross-document, so neither the schema nor load time can see both ends of it.
@@ -3482,7 +3484,7 @@ func rootAttributes() []*Attribute {
 		// everything — and PerEnv is what lets production stay in the EU while
 		// preview goes somewhere cheaper, in one line at the top of the project.
 		StringSlice("regions", PerEnv(),
-			Doc("Regions", "The regions everything in this project may be in, and where anything that does not say otherwise is placed. Absent means every region the cloud has. A scope below may narrow this list and may never widen it.")),
+			Doc("Regions", "The regions everything in this project may be in, and where anything that does not say otherwise is placed. Absent means wherever the platform places it. A scope below may narrow this list and may never widen it.")),
 	}
 }
 

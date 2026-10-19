@@ -145,6 +145,13 @@ func project(t *testing.T, name string, components artifacts) ([]byte, map[strin
 	root, ok := flat["object"].(map[string]any)
 	require.True(t, ok, "%s compiled to something with no object in it", name)
 
+	// WHERE IT RUNS IS THE PLATFORM'S ANSWER, and this one serves one region: a
+	// corpus project writes no `regions` and is placed, which is the claim that
+	// lets it write none.
+	for _, f := range schema.Place(flat, schema.WithRegions(schema.OneRegion())) {
+		require.NotEqual(t, schema.Broken, f.Severity, "%s: %s", name, f)
+	}
+
 	pointed := map[string]string{}
 	runs := 0
 	for _, group := range root {

@@ -1,4 +1,3 @@
 id: QmVTzdPABLdPriB9mEAAwuLppGppxKvjwHhD4BYggPC7Wd
 name: channel
 description: one component deployed twice under two names, with a channel between them - the only path in this vocabulary where the caller is a workload and not the outside
-regions: [eu]

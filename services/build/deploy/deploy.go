@@ -77,6 +77,8 @@ var (
 	ErrNoRegister = errors.New("deploy: nowhere to publish to")
 	ErrNoCheckout = errors.New("deploy: no way to read a repository")
 	ErrNoProjects = errors.New("deploy: no way to tell a configuration repository from a code one")
+	// ErrUnplaced is a deployment this cloud cannot place where it says it runs.
+	ErrUnplaced = errors.New("deploy: this cloud cannot place it")
 )
 
 // Projects answers what a repository IS to a project.
@@ -135,6 +137,9 @@ type Deploy struct {
 	// builder runs a push to a code repository, when this node was given one.
 	builder Builder
 
+	// regions answers where a deployment runs; see WithRegions.
+	regions schema.Regions
+
 	// cloudFqdn is the zone this cloud serves. It completes the generated half
 	// of a name — `<label>.<project label>` in the config, the rest here — and
 	// a name that cannot be completed is reported rather than published
@@ -163,12 +168,18 @@ func New(opts ...Option) (*Deploy, error) {
 		return nil, ErrNoRegister
 	}
 
+	regions := o.regions
+	if regions == nil {
+		regions = schema.OneRegion()
+	}
+
 	return &Deploy{
 		projects:  o.projects,
 		checkout:  o.checkout,
 		register:  o.register,
 		builder:   o.builder,
 		cloudFqdn: o.cloudFqdn,
+		regions:   regions,
 	}, nil
 }
 
@@ -219,8 +230,11 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 	}
 	plan := make([]compiled, 0, len(names))
 	for _, name := range names {
-		bytes, p, err := compileFor(fs, dir, branch, name)
+		bytes, p, flat, err := compileFor(fs, dir, branch, name)
 		if err != nil {
+			return err
+		}
+		if err := d.place(flat, name, out); err != nil {
 			return err
 		}
 		plan = append(plan, compiled{name: name, bytes: bytes, project: p})
@@ -328,10 +342,10 @@ const DefaultEnvironment = "prod"
 // THE BYTES ARE JSON OF THE COMPILED OBJECT, which is what pkg/project reads
 // back. Saying so in one place is what keeps the writer and the reader from
 // disagreeing about a format nobody else names.
-func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *specs.Project, error) {
+func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *specs.Project, map[string]any, error) {
 	declared, err := schema.EnvironmentsOf(fs, dir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("deploy: reading the environment table: %w", err)
+		return nil, nil, nil, fmt.Errorf("deploy: reading the environment table: %w", err)
 	}
 
 	options := []schema.Option{
@@ -349,24 +363,47 @@ func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *specs.Pr
 
 	c, err := schema.New(options...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("deploy: reading the configuration: %w", err)
+		return nil, nil, nil, fmt.Errorf("deploy: reading the configuration: %w", err)
 	}
 
 	obj, _, err := c.Compile(context.Background())
 	if err != nil {
-		return nil, nil, fmt.Errorf("deploy: compiling %s: %w", environment, err)
+		return nil, nil, nil, fmt.Errorf("deploy: compiling %s: %w", environment, err)
 	}
 
-	compiled, err := json.Marshal(obj.Flat())
+	flat := obj.Flat()
+	compiled, err := json.Marshal(flat)
 	if err != nil {
-		return nil, nil, fmt.Errorf("deploy: %w", err)
+		return nil, nil, nil, fmt.Errorf("deploy: %w", err)
 	}
 
 	p, err := specs.Load(compiled)
 	if err != nil {
-		return nil, nil, fmt.Errorf("deploy: reading back what was compiled: %w", err)
+		return nil, nil, nil, fmt.Errorf("deploy: reading back what was compiled: %w", err)
 	}
-	return compiled, p, nil
+	return compiled, p, flat, nil
+}
+
+// place asks this cloud's Regions where a compiled deployment runs, and says what it
+// answered.
+//
+// A PLACEMENT THIS CLOUD CANNOT HONOUR IS REFUSED BEFORE ANYTHING PUBLISHES, exactly as
+// a compile error is: a resource with nowhere to run is a deployment that half works.
+// Everything short of that is said in the build log, so a region a project names and
+// this cloud does not serve is never silently dropped.
+func (d *Deploy) place(flat map[string]any, environment string, out backend.Output) error {
+	var refused []string
+	for _, f := range schema.Place(flat, schema.WithRegions(d.regions), schema.AuditIn(environment)) {
+		if f.Severity == schema.Broken {
+			refused = append(refused, f.String())
+			continue
+		}
+		say(out, "%s: %s", environment, f)
+	}
+	if len(refused) > 0 {
+		return fmt.Errorf("%w: %s: %s", ErrUnplaced, environment, strings.Join(refused, "; "))
+	}
+	return nil
 }
 
 // hostsOf is the fully-qualified names a deployment answers on, and the

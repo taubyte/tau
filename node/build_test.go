@@ -11,6 +11,8 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -589,4 +591,13 @@ func TestAWorkerAsksTheBuildBackendOnAnotherNode(t *testing.T) {
 	// AND THE FAILURE IS NOT CACHED. "Nothing has built this yet" ends the
 	// moment a build finishes.
 	require.Empty(t, a.seen)
+}
+
+// WHERE A PROJECT RUNS IS THE COMPOSER'S ANSWER: a node given Regions hands them to
+// its deploys, and a nil one is refused rather than read as "the default".
+func TestWithRegions(t *testing.T) {
+	var o options
+	require.Error(t, WithRegions(nil)(&o))
+	require.NoError(t, WithRegions(schema.OneRegion())(&o))
+	require.Equal(t, schema.OneRegion(), o.regions)
 }

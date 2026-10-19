@@ -3,6 +3,8 @@ package deploy
 import (
 	"context"
 	"errors"
+
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // Option configures a Deploy.
@@ -14,6 +16,7 @@ type options struct {
 	register  func(context.Context) (Register, error)
 	builder   Builder
 	cloudFqdn string
+	regions   schema.Regions
 }
 
 // WithProjects is how a deploy tells a configuration repository from a code
@@ -80,6 +83,19 @@ func WithBuilder(b Builder) Option {
 			return errors.New("builder must not be nil")
 		}
 		o.builder = b
+		return nil
+	}
+}
+
+// WithRegions is what this cloud can do with where a project says it runs. Without
+// it a deploy asks schema.OneRegion, which places everything in one region and says
+// so for any other a project names.
+func WithRegions(r schema.Regions) Option {
+	return func(o *options) error {
+		if r == nil {
+			return errors.New("regions must not be nil")
+		}
+		o.regions = r
 		return nil
 	}
 }

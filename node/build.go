@@ -15,6 +15,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/pkg/tenancy"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
@@ -238,6 +239,9 @@ func (n *Node) openBuildBackend() error {
 		deploy.WithCheckout(clone),
 		deploy.WithRegister(n.publisher),
 		deploy.WithCloudFqdn(n.cfg.Gateway.CloudFqdn),
+	}
+	if n.opts.regions != nil {
+		options = append(options, deploy.WithRegions(n.opts.regions))
 	}
 
 	// A NODE THAT CANNOT RUN A CONTAINER CANNOT BUILD CODE, and it says so on
@@ -521,4 +525,17 @@ func (n *Node) clock() time.Time {
 // became, and a push is the only thing that may.
 func (n *Node) publisher(ctx context.Context) (deploy.Register, error) {
 	return n.registers.Now(ctx)
+}
+
+// WithRegions is what this node's deploys answer about where a project runs. Without
+// it a deploy places everything in one region (schema.OneRegion) and says so for any
+// other a project names.
+func WithRegions(r schema.Regions) Option {
+	return func(o *options) error {
+		if r == nil {
+			return errors.New("node: nil regions")
+		}
+		o.regions = r
+		return nil
+	}
 }

@@ -23,13 +23,16 @@ import (
 // deploy path does, so a project like this one publishes and fails when its
 // container is asked to start.
 //
-// IT IS PAIRED WITH THE PROJECT THAT WORKS. The refused one is also unrouted and
-// unplaced, which the audit says too; those are not what it is about. The same
-// audit over projects/with/application finds nothing broken at all, so the
+// IT IS PAIRED WITH THE PROJECT THAT WORKS. The refused one is also unrouted,
+// which the audit says too; that is not what it is about. Neither writes any
+// `regions`, and both are placed — in the one region a build that serves one
+// places everything in — so being unplaced is not a reason either is broken. The
+// same audit over projects/with/application finds nothing broken at all, so the
 // finding asserted here is the one thing the two differ in.
 func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 	broken := brokenIn(t, "refused/application/noartifact")
 	require.Contains(t, broken, "application: names no image and declares no build")
+	require.NotContains(t, broken, "application: is not placed anywhere")
 
 	require.Empty(t, brokenIn(t, "with/application"),
 		"the project that runs has nothing broken, so the refusal above is about the image")

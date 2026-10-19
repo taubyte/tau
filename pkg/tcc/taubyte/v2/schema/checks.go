@@ -92,7 +92,29 @@ type compiled struct {
 // AuditOption narrows what an audit can know about the compile it is reading.
 type AuditOption func(*auditOf)
 
-type auditOf struct{ environment string }
+type auditOf struct {
+	environment string
+	regions     Regions
+}
+
+func auditOptions(opts []AuditOption) auditOf {
+	in := auditOf{regions: OneRegion()}
+	for _, opt := range opts {
+		opt(&in)
+	}
+	if in.regions == nil {
+		in.regions = OneRegion()
+	}
+	return in
+}
+
+// projectOf is the project inside a compiled object, or the object when it is one.
+func projectOf(obj map[string]any) map[string]any {
+	if inner, ok := obj[interp.ProjectKey].(map[string]any); ok {
+		return inner
+	}
+	return obj
+}
 
 // AuditIn names the environment the object was compiled FOR.
 //
@@ -112,14 +134,8 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	if r == nil {
 		r = StubResolver()
 	}
-	var in auditOf
-	for _, opt := range opts {
-		opt(&in)
-	}
-	root := obj
-	if inner, ok := obj[interp.ProjectKey].(map[string]any); ok {
-		root = inner
-	}
+	in := auditOptions(opts)
+	root := projectOf(obj)
 
 	all := collect(root, "")
 	byKind := map[string][]compiled{}
@@ -142,7 +158,7 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	out = append(out, checkAccessDuplicates(all)...)
 	out = append(out, checkDatabaseOps(all)...)
 	out = append(out, checkWorkflows(all)...)
-	out = append(out, checkRegions(root, all, in.environment)...)
+	out = append(out, checkRegions(root, all, in)...)
 	// The record of what the compile produced sits BESIDE the project, so it is read
 	// from the object rather than from the project inside it.
 	out = append(out, checkAuthoredBuiltins(interp.LoweredOf(obj), all)...)
@@ -949,7 +965,7 @@ func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 }
 
 // effectiveAllowance is a scope's own list if it declared one, else the nearest one
-// above it. Nothing anywhere means no ceiling — every region the cloud has.
+// above it. Nothing anywhere means no ceiling — wherever the Regions places it.
 func effectiveAllowance(scopes map[string]scopeAllowance, path string) []string {
 	for {
 		s, known := scopes[path]
@@ -980,11 +996,11 @@ func effectiveAllowance(scopes map[string]scopeAllowance, path string) []string 
 // allowance; and a placement outside the chain is a resource that has nowhere to run.
 //
 // Where NO scope in a chain declares an allowance there is nothing to check against,
-// and that is the zero-config project: it writes nothing and is bounded by nothing. It
-// is also why this doubles as the typo-catcher — once a ceiling exists, `eu-wst` is
-// simply not within it — and why a project with no ceiling has no typo-catcher at all
-// until the deferred validation regionAttributes describes can be carried.
-func checkRegions(root map[string]any, all []compiled, environment string) []Finding {
+// and that is the zero-config project: it writes nothing and is placed wherever the
+// Regions places it. This doubles as a typo-catcher — once a ceiling exists, `eu-wst`
+// is simply not within it — and the Regions is the other one: it answers every label
+// against what the platform compiling the project serves (place, in regions.go).
+func checkRegions(root map[string]any, all []compiled, in auditOf) []Finding {
 	scopes := scopeAllowances(root)
 	out := checkEnvironmentRegions(root)
 
@@ -1048,8 +1064,8 @@ func checkRegions(root map[string]any, all []compiled, environment string) []Fin
 		}
 	}
 
-	out = append(out, checkEverythingIsPlaced(root, all)...)
-	return append(out, checkPlacedInsideTheEnvironment(root, all, environment)...)
+	out = append(out, place(root, all, in)...)
+	return append(out, checkPlacedInsideTheEnvironment(root, all, in.environment)...)
 }
 
 // checkEnvironmentRegions: an environment narrows the project's allowance and
@@ -1092,21 +1108,10 @@ func checkPlacedInsideTheEnvironment(root map[string]any, all []compiled, enviro
 		return nil
 	}
 
-	var allowed []string
-	for _, env := range EnvironmentsIn(root) {
-		if env.Name == environment {
-			allowed = env.Regions
-			break
-		}
-		// A SHADOW KEEPS NO STATE OF ITS OWN, so it is bounded by the
-		// environment it was written inside — which is also why the vocabulary
-		// gives it no regions field to disagree with.
-		for _, shadow := range env.Shadows {
-			if shadow.Name == environment {
-				allowed = env.Regions
-			}
-		}
-	}
+	// A SHADOW KEEPS NO STATE OF ITS OWN, so it is bounded by the environment it
+	// was written inside — which is also why the vocabulary gives it no regions
+	// field to disagree with. See environmentRegions.
+	allowed := environmentRegions(root, environment)
 	if len(allowed) == 0 {
 		return nil
 	}
@@ -1121,43 +1126,6 @@ func checkPlacedInsideTheEnvironment(root map[string]any, all []compiled, enviro
 				fmt.Sprintf("is placed in region %q, which %s does not keep state in", region, environment),
 				"A deployment keeps its state in the regions it declares. Widen the environment's regions, or place this within them.", res.id})
 		}
-	}
-	return out
-}
-
-// checkEverythingIsPlaced: a resource with a physical footprint says where it is,
-// or the project says it for everything that does not.
-//
-// WHY HERE AND NOT IN THE SCHEMA. "Required, unless the project declared a
-// default" is a rule whose two halves are in different documents, and an
-// attribute cannot see the project it sits under — the same reason the ceiling
-// is checked here. Required() on the block would be the other rule: every
-// resource, every time, with no default possible.
-//
-// PLACED IS READ OFF THE SCHEMA, never a list kept beside it. A kind that gains
-// a footprint tomorrow is covered by this the moment it declares Placed().
-func checkEverythingIsPlaced(root map[string]any, all []compiled) []Finding {
-	scopes := scopeAllowances(root)
-	placed := make(map[string]bool, len(PlacedKinds()))
-	for _, kind := range PlacedKinds() {
-		placed[kind] = true
-	}
-
-	var out []Finding
-	for _, res := range all {
-		if !placed[res.kind] || res.str("regions/policy") != "" {
-			continue
-		}
-		// THE SCOPE'S OWN `regions` IS THE DEFAULT, which is the same word and
-		// the same list a resource writes — one concept narrowing down rather
-		// than an allowance and a placement that differ by a letter. A chain
-		// that declares one places everything under it that says nothing.
-		if len(effectiveAllowance(scopes, res.scope)) > 0 {
-			continue
-		}
-		out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-			"is not placed anywhere",
-			"Anything with a footprint is placed. Give it regions, or give a scope above it regions for everything that does not say.", res.id})
 	}
 	return out
 }
